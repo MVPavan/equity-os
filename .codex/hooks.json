@@ -12,6 +12,30 @@
         "matcher": "manual|auto"
       }
     ],
+    "PreToolUse": [
+      {
+        "description": "Block destructive shell commands and unsafe recursive removes",
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/block-dangerous-commands.sh\"",
+            "statusMessage": "Checking command safety",
+            "type": "command"
+          }
+        ],
+        "matcher": "^Bash$"
+      },
+      {
+        "description": "Block direct edits to Beads-generated workstream mirrors",
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/block-generated-edits.sh\"",
+            "statusMessage": "Checking generated-file policy",
+            "type": "command"
+          }
+        ],
+        "matcher": "^apply_patch$"
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [
