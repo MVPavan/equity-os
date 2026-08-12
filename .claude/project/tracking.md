@@ -3,7 +3,10 @@
 This repo uses **bd (beads)** for durable issue tracking.
 
 - **Backend:** embedded Dolt (`.beads/`), database `equity_os`.
-- **Issue prefix:** `equity-os` (auto-detected; issues like `equity-os-klx`).
+- **Issue prefix:** `eqos` (issues like `eqos-klx`). Initially auto-detected as
+  `equity-os`; renamed via `bd rename-prefix eqos-` per the short-prefix rule in
+  `.claude/docs/beads-issue-tracking-adoption.md`, and pinned as
+  `issue-prefix: "eqos"` in `.beads/config.yaml`.
 - **Sync remote:** `git+https://github.com/MVPavan/equity-os.git`
   (`sync.remote` in `.beads/config.yaml` — the repo's own git remote).
 - **JSONL export:** `export.auto: true`.
