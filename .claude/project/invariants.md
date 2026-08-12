@@ -16,9 +16,10 @@ Hard constraints. Violating any of these is a defect.
 4. **Beads sync remote = the repo's own git remote**
    (`git+https://github.com/MVPavan/equity-os.git` in `.beads/config.yaml`).
 5. **Blueprint docs are inputs, not scratch.** `docs/blueprint/` records the
-   approved review and decision register. The register's **Status column is
-   the single canonical record of decision status**; beads issues track
-   execution work referencing register IDs. Never silently rewrite the
+   approved review and decision register. The **v2 register** is the single
+   operational source of truth — its wording is authoritative for gates and
+   its Status column is the canonical record of decision status; beads issues
+   track execution work referencing register IDs. Never silently rewrite the
    review's judgments.
 
 ## Product doctrine (from the approved blueprint — binding on all future code)
