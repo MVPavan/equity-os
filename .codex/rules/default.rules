@@ -1,0 +1,35 @@
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Do not destroy local worktree or history state; use a non-destructive inspection or ask the user for a narrower recovery action.",
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "forbidden",
+    justification = "Do not remove untracked files; inspect exact targets and ask the user before any cleanup.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f"]],
+    decision = "forbidden",
+    justification = "Do not force-push; use a normal push or ask the user to resolve the history policy.",
+)
+
+prefix_rule(
+    pattern = ["git", "branch", "-D"],
+    decision = "forbidden",
+    justification = "Do not force-delete branches; inspect the branch and ask the user first.",
+)
+
+prefix_rule(
+    pattern = ["git", ["checkout", "restore"], "."],
+    decision = "forbidden",
+    justification = "Do not rewrite the whole worktree; target explicit files only after user approval.",
+)
+
+prefix_rule(
+    pattern = ["bd", "init", ["--force", "--reinit-local"]],
+    decision = "forbidden",
+    justification = "Do not reinitialize the Beads store; diagnose the workspace or ask the user before destructive recovery.",
+)
