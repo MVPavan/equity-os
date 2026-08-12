@@ -113,15 +113,31 @@ out at 10 min, retry at high effort completed — session
   later phase must pass a measurable value gate (wording still tightened to
   cite the formal scorecards).
 
+## Post-adoption addendum (same day)
+
+Two blueprint docs landed in `docs/blueprint/` after the initial scan and were
+swept into commit 822b6a3 unreviewed:
+`funda-blueprint-implementation-decision-register-v2.md` and
+`funda-third-order-review-disposition-report.md`. Both were then read and the
+overlay updated: **v2 is the canonical register** ("single operational source
+of truth"; v1 superseded), the vertical slice is **four** quarters (Q0 manual
+baseline + bootstrap thesis, Q1–3 assisted), A-items grew to 13 (adding
+materiality policy, bootstrap thesis, operating calendar, success-metric
+contract), and Phase 0A now has a formal exit gate. `docs-index.md`,
+`CONTEXT.md`, `brief.md`, `repo-map.md`, and `invariants.md` were realigned.
+
 ## Recommended next steps
 
 1. Review this report, the overlay, and `CONTEXT.md`; commit when satisfied
    (nothing staged by me; c9dade1 was bd's own commit).
-2. Start Phase 0A as a workstream: all nine register A-items are Open —
-   distribution boundary (A-01), discovery company (A-02), **manual analyst
-   baseline (A-03), output contract (A-04)**, source-rights register (A-05),
-   XBRL-vs-PDF spike (A-06), **workflow budgets (A-07)**, golden-set owner
-   (A-08), name/trademark check (A-09) — ready to become beads issues.
+2. Start Phase 0A as a workstream: all thirteen **v2** register A-items are
+   Open — distribution boundary (A-01), discovery company + four quarters
+   (A-02), manual baseline (A-03), output contract (A-04), source-rights
+   register (A-05), XBRL-vs-PDF spike (A-06), workflow budgets (A-07),
+   golden-set owner (A-08), name/trademark check (A-09), materiality policy
+   (A-10), bootstrap thesis (A-11), operating calendar/capacity (A-12),
+   success-metric contract (A-13) — ready to become beads issues, respecting
+   the register's Dependencies column.
 3. Extend `.gitignore` (scratchpad, Python artifacts) before first code.
 4. Decide the `AGENTS.md`/`.codex` story before any Codex-driven session relies
    on it.

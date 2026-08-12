@@ -13,23 +13,23 @@ The product and repo name — a persistent, evidence-governed equity-research sy
 _Avoid_: Funda (the blueprint's working title; use only when citing the blueprint docs)
 
 **Blueprint**:
-The approved reference pair in `docs/blueprint/`: the consolidated review (architecture + product judgment) and the decision register. Strategy reference, **not** the build specification.
+The approved reference set in `docs/blueprint/`: the consolidated review (architecture rationale), the v2 decision register (operational authority), and the third-order disposition report. Strategy reference, **not** the build specification.
 _Avoid_: spec, design doc
 
 **Decision register**:
-The trackable list of frozen/open decisions, spikes, and phase gates (`funda-blueprint-implementation-decision-register.md`, IDs A-01…E-09). Its Status column is the canonical record of decision status; beads issues reference register IDs for execution tracking.
+The single operational source of truth for decisions, spikes, and phase gates (`funda-blueprint-implementation-decision-register-v2.md`, IDs A-01…E-10; v1 is superseded). Its wording is authoritative for implementation gates — narrative reviews do not override it. Its Status column is the canonical record of decision status; beads issues reference register IDs for execution tracking.
 _Avoid_: backlog
 
 **Blueprint phase**:
-A delivery stage from the register (0A, 0.5, 1, 2, …); later phases must pass a measurable value gate (formal exit scorecards exist for 0.5, 1, and 2). Qualify as "blueprint phase" when a workstream also has phases (a roadmap unit materialised as a bd epic).
+A delivery stage from the register (0A, 0.5, 1, 2, …), each with an exit gate in the v2 scorecard (§F). Qualify as "blueprint phase" when a workstream also has phases (a roadmap unit materialised as a bd epic).
 _Avoid_: milestone, sprint
 
 **Vertical slice**:
-Blueprint phase 0.5 — one discovery company across three consecutive quarters, one earnings update each, semi-manual where necessary; schemas derived from actual use.
+Blueprint phase 0.5 — one discovery company across four consecutive quarters: Quarter 0 is the manual baseline + bootstrap thesis, Quarters 1–3 are three assisted incremental updates; schemas derived from actual use.
 _Avoid_: prototype, POC
 
 **Discovery company**:
-The single company chosen for the vertical slice (register A-02).
+The single company chosen for the vertical slice, with four consecutive quarters of source material (register A-02).
 
 **Earnings-review workflow**:
 The first product workflow: a fixed, resumable state machine from run registration through ingestion, extraction, reconciliation, deterministic calculation, drafting, human review, and publication. Not an autonomous planner.

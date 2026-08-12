@@ -23,12 +23,14 @@ commitments, calculations, uncertainties, and thesis.
 
 No first-party source code, no CI, no README. The repo holds the agent harness
 (`.claude/`), beads tracking (`.beads/`), and two authoritative blueprint docs
-under `docs/blueprint/`. Next milestones per the blueprint: **Phase 0A** —
-freeze the distribution boundary, discovery company, source rights, **manual
-analyst baseline (A-03), output contract (A-04), and workflow budgets (A-07)**,
-plus the XBRL-vs-PDF spike — then **Phase 0.5** (vertical slice: one company ×
-three quarters). All register A-items are currently Open; no Phase 0A gate is
-accepted yet.
+under `docs/blueprint/` (the **v2 decision register is the operational
+authority**; the consolidated review is rationale). Next milestones: **Phase
+0A** — freeze the distribution boundary, discovery company, source rights,
+manual baseline, output contract, materiality policy, success-metric contract,
+budgets/capacity, and the XBRL-vs-PDF spike (register items A-01…A-13, all
+currently Open) — then **Phase 0.5** (vertical slice: one company × four
+quarters — Quarter 0 manual baseline + bootstrap thesis, Quarters 1–3
+assisted updates).
 
 ## Intended stack (user-confirmed 2026-08-12)
 
