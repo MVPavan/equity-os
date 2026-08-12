@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "equity_os",
+  "project_id": "bfc6cd3a-df42-4868-a25a-56ca47dca7d9"
+}
