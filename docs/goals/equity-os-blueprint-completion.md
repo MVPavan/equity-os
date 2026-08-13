@@ -1,14 +1,13 @@
 # Equity-OS Blueprint Completion Goal
 
-**Status:** DRAFT FOR USER REVIEW
+**Status:** ACTIVE — `RUNNING`
 
-**Activation:** NOT ACTIVATED
+**Activation:** ACTIVATED — 2026-08-13T01:06:47Z
 
-This document does **not** authorize starting the goal. The user must approve
-this exact contract, and the approved contract must then be activated through
-the available goal tool. Until both events occur, agents must not create the
-ledger, human-review document, specs, Beads program, workstream, plans, product
-artifacts, commits, or pushes described below.
+The current authenticated chat user approved and activated this exact contract
+through `/goal complete docs/goals/equity-os-blueprint-completion.md`. The
+coordinator is authorized to run the contract while its lifecycle state is
+`RUNNING`; the activation evidence is recorded below.
 
 ## Goal and approval decision
 
@@ -4094,31 +4093,39 @@ approval plus a new or explicitly resumed goal activation before restart.
 
 ## Activation record
 
-This template is intentionally unfilled. Every value that depends on actual
-approval or activation is recorded as `not activated`, not `TBD`.
+Activation evidence keys used in every row:
+
+- `C0`: approved pre-activation contract at
+  `docs/goals/equity-os-blueprint-completion.md`, SHA-256
+  `0e63f684d43ef2afcea998135c6d77f83c023a76c4075f42a2f2c6aba3f0028f`.
+- `U0`: current authenticated chat user's explicit command
+  `/goal complete docs/goals/equity-os-blueprint-completion.md`, approving the
+  objective and this contract; no legal name is asserted.
+- `A0`: goal/thread `019ff786-f5dc-75b3-8670-502b0fe0a8f9`, activated by the
+  goal tool at `2026-08-13T01:06:47Z`.
 
 | Field | Activation value |
 |---|---|
-| Exact contract path and approved content hash | not activated |
-| Approving user message or durable reference | not activated |
-| Approving user identity | not activated |
-| Approval date/time (UTC) | not activated |
-| Goal-tool activation record/identifier | not activated |
-| Activation date/time (UTC) | not activated |
-| Approved v2 register hash | not activated |
-| Approved disposition-report hash | not activated |
-| Verified register snapshot and D-01 active scope | not activated |
-| Approved S01–S25 split and exact epic title | not activated |
-| Approved delegated artifact gates | not activated |
-| Approved typed approval vocabulary and one-to-one proof rules | not activated |
-| Approved derived-scope, activation/rejection, and typed evidence-proof rules | not activated |
-| Approved Luna exploratory routing, Sol/Terra routing, effort policy, fresh-Sol review boundary, and review cap | not activated |
-| Approved workstream name | not activated |
-| Approved repo-write, Beads, narrow-delete, commit, and push authority | not activated |
-| Approved default-deny Docker, web, and external-research authority | not activated |
-| Approved pause, resume, cancellation, and authority-revocation controls | not activated |
-| Initial dirty-tree baseline, including paths and hashes | not activated |
-| Configured remote, branch, upstream, and divergence at activation | not activated |
+| Exact contract path and approved content hash | `docs/goals/equity-os-blueprint-completion.md`; SHA-256 `0e63f684d43ef2afcea998135c6d77f83c023a76c4075f42a2f2c6aba3f0028f` (`C0`; `U0`; `A0`) |
+| Approving user message or durable reference | `U0`, bound to the exact `C0` contract and recorded by `A0` |
+| Approving user identity | Current authenticated chat user; no legal name inferred or asserted (`C0`; `U0`; `A0`) |
+| Approval date/time (UTC) | `2026-08-13T01:06:47Z`, the supplied goal-tool timestamp for `U0` (`C0`; `A0`) |
+| Goal-tool activation record/identifier | `019ff786-f5dc-75b3-8670-502b0fe0a8f9` (`C0`; `U0`; `A0`) |
+| Activation date/time (UTC) | `2026-08-13T01:06:47Z` (`C0`; `U0`; `A0`) |
+| Approved v2 register hash | `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md`; SHA-256 `26d51b313688cb340ec57ef5e952f5497b7ca212add610b803a0033d5fad7164` (`C0`; `U0`; `A0`) |
+| Approved disposition-report hash | `docs/blueprint/funda-third-order-review-disposition-report.md`; SHA-256 `a9021c154c3e84bd70b64a9dae99c29f760c2b3356b522f089a7b1a314322738` (`C0`; `U0`; `A0`) |
+| Verified register snapshot and D-01 active scope | 60 rows: 45 `Open`, 15 `Deferred`; D-01 is active subject to C-15 (`C0`; `U0`; `A0`) |
+| Approved S01–S25 split and exact epic title | Exact 25-spec table in `C0`; epic title `[25 specs] Equity-OS blueprint specification program` (`U0`; `A0`) |
+| Approved delegated artifact gates | Clean fresh-context Sol xhigh may approve a spec, roadmap, or JIT plan only under delegated goal authority; all named human/external approvals remain excluded (`C0`; `U0`; `A0`) |
+| Approved typed approval vocabulary and one-to-one proof rules | Closed approval vocabulary, purpose-matching non-revoked records, and unique one-to-one satisfaction rules in `C0` are approved (`U0`; `A0`) |
+| Approved derived-scope, activation/rejection, and typed evidence-proof rules | The closed schemas, content-bound records, predicates, transitions, and proof rules in `C0` are approved without alteration (`U0`; `A0`) |
+| Approved Luna exploratory routing, Sol/Terra routing, effort policy, fresh-Sol review boundary, and review cap | Luna `high`/`xhigh` exploration; Sol `xhigh` authoring/planning/review; Terra `xhigh` implementation; fresh Sol review before relying on Luna; `r0`–`r4` maximum then fresh Sol adjudication (`C0`; `U0`; `A0`) |
+| Approved workstream name | `equity-os-blueprint-completion` (`C0`; `U0`; `A0`) |
+| Approved repo-write, Beads, narrow-delete, commit, and push authority | Goal-scoped repo writes, Beads operations, narrowly proved deletions, explicit-path verified commits, and bounded pushes under the Git authority in `C0` (`U0`; `A0`) |
+| Approved default-deny Docker, web, and external-research authority | Only goal-scoped Docker, web, and external research necessary for an active contract, within the named default-deny boundaries and approval checkpoints in `C0` (`U0`; `A0`) |
+| Approved pause, resume, cancellation, and authority-revocation controls | `RUNNING`, `PAUSED_BY_USER`, resume reconciliation, and `CANCELLED_OR_AUTHORITY_REVOKED` controls in `C0` are approved (`U0`; `A0`) |
+| Initial dirty-tree baseline, including paths and hashes | Clean at activation: no dirty paths or path hashes; HEAD `088c8695e89b9ac8c013dc7f9284b0f926676cd2` (`C0`; `U0`; `A0`) |
+| Configured remote, branch, upstream, and divergence at activation | `origin=https://github.com/MVPavan/equity-os.git`; branch `main`; upstream `origin/main`; 0 behind, 0 ahead (`C0`; `U0`; `A0`) |
 
 Activation is valid only when every row above is populated with real evidence,
 the contract and authority hashes have been verified, and the goal tool records
