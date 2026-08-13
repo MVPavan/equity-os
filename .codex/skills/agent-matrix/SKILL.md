@@ -1,6 +1,7 @@
 ---
 name: agent-matrix
 description: "Validate Codex subagent model, effort, context, and capability selections against the active runtime and an optional repository Agent Matrix catalog. Use only when the user explicitly asks for Agent Matrix selection or runtime support checks. Do not invent catalog values or apply Claude-only invocation fields to Codex."
+disable-model-invocation: true
 ---
 
 # Agent Matrix
