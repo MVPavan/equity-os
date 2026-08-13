@@ -45,6 +45,7 @@ Correction 6.3 is controlling qualification: ISIN is an external identifier. It 
 S17 specifies:
 
 - stable, opaque internal company and security identities;
+- stable, opaque person endpoints only where needed to type management relationships;
 - versioned external-identifier mappings;
 - source assertions and an approved authority/conflict policy;
 - bitemporal factual entity relationships;
@@ -76,29 +77,59 @@ Company contains company_id, legal-name history reference, entity type, jurisdic
 
 Security contains security_id, issuer company_id, security type/class, currency, listing lifecycle, created_at, and provenance. One company may issue multiple securities. A listing is not a company and a symbol is not a security identity.
 
-### 3.3 ExternalIdentifierMapping
+### 3.3 Person
 
-Each mapping contains mapping_id, subject_type, subject_id, identifier_type, normalized_value, issuing_authority/market, valid_from, valid_to, knowledge_from, knowledge_to, source_assertion_ids, resolution_status, resolution_decision_id, supersedes_mapping_id, and mapping_digest.
+Person contains person_id, sourced name-history reference, created_at, and provenance. person_id is opaque, stable, and non-reusable. It exists only to type relationship endpoints; a name, provider key, or employment record is never the person identity.
+
+### 3.4 EntityParticipant and predicate contracts
+
+An EntityParticipant is a tagged pair of `participant_type` (`COMPANY`, `PERSON`, or `SECURITY`) and the corresponding stable `participant_id`. The tag and ID kind must agree. Every relationship validates the following predicate-specific roles before it can leave CANDIDATE:
+
+| Predicate | Subject role | Object role | Required predicate attributes |
+|---|---|---|---|
+| PARENT_OF | COMPANY | COMPANY | Relationship scope; ownership attributes only when asserted by the source |
+| SUBSIDIARY_OF | COMPANY | COMPANY | Relationship scope; ownership attributes only when asserted by the source |
+| MANAGEMENT_ROLE_AT | PERSON | COMPANY | Versioned role type, source-reported role title, and appointment scope; appointment/cessation timing is carried by the relationship valid-time interval |
+| OWNS | COMPANY or PERSON | COMPANY or SECURITY | Ownership basis and scope; quantity, percentage, denominator, and as-of semantics are typed when asserted and never guessed |
+| CROSS_HOLDING_WITH | COMPANY | COMPANY | Symmetric relationship stored once with endpoints ordered by stable ID; each directional interest and its denominator/scope are separate typed attributes |
+
+Any other participant pairing fails validation. Predicate-attribute definitions are versioned under the approved C-17 relationship policy and require the existing S17-G04 domain acceptance; unregistered role or ownership semantics remain unresolved.
+
+### 3.5 ExternalIdentifierMapping
+
+Each mapping contains mapping_id, subject_type, subject_id, identifier_type, normalized_value, issuing_authority/market, valid_from, valid_to, knowledge_from, knowledge_to, source_assertion IDs and content digests, policy ID/version/digest, authority_state, authority_transition_ids, acceptance_binding, supersedes_mapping_id, and mapping_digest.
 
 Intervals are half-open. Null valid_to or knowledge_to means open-ended, not unknown. Unknown endpoints use explicit unknown fields and cannot be represented by guessed dates.
 
 Supported initial identifier types include ISIN, EXCHANGE_SYMBOL, CIN, and LEI. Adding a type requires a versioned policy entry, normalization rules, collision rules, and human approval.
 
-### 3.4 SourceAssertion
+### 3.6 SourceAssertion
 
 A source assertion preserves assertion_id, source document/location, captured bytes hash, issuer/source identity, observed value, parsed value, parser version, valid-time claim, knowledge time, confidence/quality flags, and supersession linkage. Assertions never become authoritative merely because multiple providers repeat them.
 
-### 3.5 EntityRelationship
+### 3.7 EntityRelationship
 
-Each relationship contains relationship_id, subject_company_id, predicate, object_company_id or object_person_id, quantitative attributes where applicable, valid_from/to, knowledge_from/to, source assertion IDs, approval/reconciliation status, supersession linkage, and digest.
+Each relationship contains relationship_id, typed subject EntityParticipant, predicate, typed object EntityParticipant, the predicate-specific attributes above, valid_from/to, knowledge_from/to, source assertion IDs and content digests, policy ID/version/digest, authority_state, authority_transition_ids, acceptance_binding, supersession linkage, and digest.
 
 Initial predicates are PARENT_OF, SUBSIDIARY_OF, MANAGEMENT_ROLE_AT, OWNS, and CROSS_HOLDING_WITH. Inverse edges are derived views unless separately asserted; they are never separate authorities.
 
-### 3.6 CorporateAction
+### 3.8 CorporateAction
 
-Each action contains corporate_action_id, action_type, issuer_company_id, affected security_ids, announcement/ex/reference/record/payment dates with explicit semantics, terms as typed fields, currency/unit, valid time, knowledge time, source assertions, status, revision/supersession linkage, reconciliation decision, and digest.
+Each action contains corporate_action_id, action_type, issuer_company_id, affected security_ids, announcement/ex/reference/record/payment dates with explicit semantics, terms as typed fields, currency/unit, valid time, knowledge time, source assertion IDs and content digests, policy ID/version/digest, event_status, authority_state, authority_transition_ids, acceptance_binding, revision/supersession linkage, and digest.
 
 Initial action types are SPLIT, BONUS, RIGHTS, DEMERGER, DIVIDEND, TICKER_CHANGE, and DELISTING. A ticker change versions the mapping; it does not replace company_id or security_id. A split, bonus, rights issue, or demerger records affected and resulting securities explicitly and never rewrites prior observations.
+
+`event_status` is one of ANNOUNCED, CONFIRMED, EFFECTIVE, or CANCELLED. Across immutable action versions, the only forward transitions are ANNOUNCED to CONFIRMED, EFFECTIVE, or CANCELLED and CONFIRMED to EFFECTIVE or CANCELLED. EFFECTIVE and CANCELLED are terminal; a correction creates a new version rather than an illegal reverse transition.
+
+### 3.9 Authority state, transition, and digest contract
+
+`authority_state` is derived from an append-only transition chain and is one of CANDIDATE, CONFLICTED, ACCEPTED, REJECTED, SUPERSEDED, or REVOKED. A new record starts CANDIDATE. The only legal transitions are CANDIDATE to CONFLICTED, ACCEPTED, or REJECTED; CONFLICTED to ACCEPTED or REJECTED; and ACCEPTED to SUPERSEDED or REVOKED. REJECTED, SUPERSEDED, and REVOKED are terminal. Corrections and reacceptance create a new CANDIDATE version.
+
+Every authority transition contains transition_id, record type/ID and record content digest, consecutive sequence, from_state, to_state, reason, policy ID/version/content digest, evidence IDs/content digests, nullable human_review_id, nullable approval_record_id, nullable resolution_decision_id and resolution_content_sha256, previous_transition_sha256, and transition_sha256. The transition digest is SHA-256 of the program's canonical JSON of every preceding transition field except `transition_sha256`. The first previous hash is null; every later transition names the immediately preceding digest. A human reconciliation must bind the exact active canonical resolution and its matching approval record; stale, revoked, mismatched-scope, mismatched-purpose, or content-digest-mismatched decisions fail.
+
+`acceptance_binding` declares `POLICY_MATCH` or `HUMAN_RECONCILIATION`, the current approved policy ID/version/digest, and the applicable approval-record and canonical-resolution bindings. POLICY_MATCH is valid only when the approved policy deterministically selects the record without a material conflict. HUMAN_RECONCILIATION is mandatory for CONFLICTED to ACCEPTED and includes the exact policy-designated human decision. Missing or stale bindings prohibit ACCEPTED.
+
+For ExternalIdentifierMapping, EntityRelationship, and CorporateAction, the named record digest is SHA-256 of the program's canonical JSON of every immutable payload field listed in its contract, including source assertion IDs/content digests, policy ID/version/digest, and supersession linkage, but excluding the digest itself, derived `authority_state`, `authority_transition_ids`, and `acceptance_binding`. Each transition and human resolution binds that immutable record digest; changing content requires a new record/version and transition chain.
 
 ## 4. C-17 authority and conflict policy
 
@@ -121,13 +152,15 @@ The approved policy must identify exact source names, access methods, rights sta
 
 Input: identifier type/value, issuing authority or market, valid_at, known_at, and intended subject type.
 
-Output: exactly one company_id/security_id plus the selected mapping and evidence, or a typed AMBIGUOUS, NOT_FOUND, CONFLICT, OUTSIDE_VALID_TIME, or OUTSIDE_KNOWLEDGE_TIME result. Ambiguous resolution never returns a best guess.
+Output: exactly one company_id/security_id plus the selected mapping and evidence, or a typed AMBIGUOUS, NOT_FOUND, CONFLICT, OUTSIDE_VALID_TIME, OUTSIDE_KNOWLEDGE_TIME, POLICY_UNAVAILABLE, or RECORD_INVALID result. Ambiguous resolution never returns a best guess.
+
+A mapping is selectable only when its recomputed authority_state is ACCEPTED, its identifier/subject types and intervals match the query, its approved policy and acceptance binding are current at `known_at`, every bound source assertion is resolvable, and no unresolved material conflict applies. A missing/stale policy or approval binding returns POLICY_UNAVAILABLE; an illegal transition, broken chain, invalid endpoint, or content-digest mismatch returns RECORD_INVALID; an unresolved material conflict returns CONFLICT.
 
 ### 5.2 Resolve subject state
 
-Input: company_id or security_id, valid_at, known_at.
+Input: company_id, security_id, or person_id, valid_at, known_at.
 
-Output: all active identifiers, listings, relationships, and corporate actions whose valid and knowledge intervals include the query points, with source and reconciliation records.
+Output: all authoritative identifiers, listings, relationships, and corporate actions whose valid and knowledge intervals include the query points and satisfy the consumption predicates below, with source, policy, transition, and reconciliation records; otherwise a typed CONFLICT, POLICY_UNAVAILABLE, RECORD_INVALID, or INCOMPLETE_AUTHORITY result. If a requested subject depends on a non-consumable record, the resolver returns the applicable failure instead of silently omitting that record and presenting a complete state.
 
 ### 5.3 Record assertion
 
@@ -137,13 +170,15 @@ Output: a new SourceAssertion and candidate record. It never mutates an accepted
 
 ### 5.4 Reconcile conflict
 
-Input: conflicting record IDs, exact policy version, human decision record, rationale, selected outcome, and evidence.
+Input: conflicting record IDs and content digests, exact policy ID/version/content digest, human-review ID, approval-record ID, active resolution decision ID/content digest, rationale, selected outcome, and evidence IDs/content digests.
 
-Output: a versioned resolution and any newly accepted mapping/relationship/action. The decision cannot erase rejected assertions.
+Output: an append-only CONFLICTED-to-ACCEPTED or CONFLICTED-to-REJECTED transition and any newly accepted mapping/relationship/action version. The decision cannot erase rejected assertions, reuse a decision for another scope, or mutate the reconciled payload.
 
 ### 5.5 Query corporate actions and relationships
 
 Every query requires valid_at and known_at. Omitting known_at is invalid for evidence packages and historical replay. Results include the policy version and record digests used.
+
+`consumable(record, valid_at, known_at)` is TRUE if and only if authority_state is ACCEPTED, the transition chain recomputes, policy and acceptance bindings are current, participant tags satisfy the predicate contract, valid and knowledge intervals contain the query points, every bound evidence digest resolves, and no material conflict remains. A corporate action may affect calculations only when `consumable` is TRUE, `event_status=EFFECTIVE`, and the query satisfies the action's typed date semantics; ANNOUNCED or CONFIRMED actions may be returned as accepted evidence but cannot drive an effective adjustment, and CANCELLED actions never drive one.
 
 ## 6. Invariants and fail-closed behavior
 
@@ -159,6 +194,7 @@ Every query requires valid_at and known_at. Omitting known_at is invalid for evi
 10. Query APIs fail if valid_at or known_at is absent where point-in-time behavior matters.
 11. Unresolved identity or action conflicts block dependent facts, calculations, and reports that require that resolution.
 12. No corporate-action record may invoke execution or mutate an external account.
+13. CANDIDATE, CONFLICTED, REJECTED, SUPERSEDED, REVOKED, illegally transitioned, stale-policy, stale-resolution, or digest-mismatched records are never authoritative inputs.
 
 ## 7. Evidence and typed approval gates
 
@@ -177,7 +213,7 @@ Required evidence inventory:
 - approved source-authority and conflict-policy artifact with content hash;
 - source-rights records linked to the policy;
 - schema/constraint and migration artifacts;
-- source-assertion, reconciliation, bitemporal query, and corporate-action fixtures;
+- source-assertion, typed participant/predicate, authority-state transition, reconciliation, bitemporal query, and corporate-action fixtures;
 - one real, source-linked identifier-change case exercising old and new mappings at different valid/knowledge cutoffs;
 - typed approval records for S17-G02 through S17-G05;
 - current delegated review and verification outputs bound to artifact hashes.
@@ -189,17 +225,18 @@ Required evidence inventory:
 | S17-T01 | Changing a symbol, ISIN, company name, listing, CIN, or LEI never changes company_id or security_id. |
 | S17-T02 | One company with multiple securities and one security with sequential listings resolves without collapsing concepts. |
 | S17-T03 | valid_at and known_at queries return historically correct mappings and exclude later corrections. |
-| S17-T04 | Conflicting source assertions remain preserved and produce CONFLICT until approved reconciliation. |
+| S17-T04 | Conflicting source assertions remain preserved and produce CONFLICT until a policy-designated human reconciliation binds the exact record, policy, approval record, active resolution decision, and content digests. |
 | S17-T05 | Overlapping accepted mappings for one identifier/authority interval and different subjects are rejected by constraints. |
 | S17-T06 | A real identifier-change case resolves the old and new identifiers over their correct intervals and retains both source histories. |
-| S17-T07 | Split, bonus, rights, demerger, dividend, ticker-change, and delisting fixtures each create versioned events with source evidence. |
+| S17-T07 | Split, bonus, rights, demerger, dividend, ticker-change, and delisting fixtures each create versioned events with a closed event_status and source evidence; only an ACCEPTED EFFECTIVE version can drive an adjustment. |
 | S17-T08 | Revising corporate-action terms creates a new version and leaves the prior known-at view reproducible. |
-| S17-T09 | Parent/subsidiary, management-role, ownership, and cross-holding fixtures preserve direction, scope, validity, knowledge, and evidence. |
-| S17-T10 | Missing valid_at/known_at, unknown policy versions, unresolved conflicts, absent source evidence, and unapproved sources fail closed. |
-| S17-T11 | Downstream fact/calculation requests cannot consume an unresolved subject or material corporate-action term. |
+| S17-T09 | Parent/subsidiary, management-role, ownership, and cross-holding fixtures enforce the predicate endpoint table. In particular, MANAGEMENT_ROLE_AT requires PERSON-to-COMPANY endpoints plus role type/title/scope, and wrong endpoint tags or missing predicate attributes fail. |
+| S17-T10 | Missing valid_at/known_at, unknown or stale policy versions, illegal authority/event transitions, unresolved conflicts, absent source evidence, unapproved sources, stale/revoked resolutions, and digest mismatches fail closed. |
+| S17-T11 | Downstream fact/calculation requests consume only records satisfying the exact ACCEPTED-state predicate; every other authority state and every non-EFFECTIVE corporate-action adjustment is rejected. |
 | S17-T12 | Corporate-action records cannot carry credentials, executable instructions, or account-operation side effects. |
+| S17-T13 | Mutating an endpoint, predicate attribute, action term, source assertion digest, policy digest, or supersession link changes the record digest and invalidates the prior transition chain, reconciliation, and downstream proof. |
 
-Verification requires schema checks, constraint tests, bitemporal query fixtures, the real identifier-change case, current source/evidence hashes, and all applicable approvals. Mechanical tests cannot satisfy data-rights, product-owner, domain, or analyst gates.
+Verification requires schema checks, participant/predicate and state-machine constraint tests, bitemporal query fixtures, the real identifier-change case, current source/evidence hashes, and all applicable approvals. Mechanical tests cannot satisfy data-rights, product-owner, domain, or analyst gates.
 
 ## 9. Dependencies, activation, and amendment guards
 

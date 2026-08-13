@@ -76,7 +76,7 @@ Each catalog entry contains:
 | `stratification` | Required dimensions such as workflow mode, company, report, materiality, epistemic class, claim/correction type, and phase. |
 | `measurement_method` | Source event schema, deterministic transformation/version, and instrumentation overhead treatment. |
 | `phase_applicability` | One or more exact blueprint phases plus gate use; `NOT_APPLICABLE` requires rationale. |
-| `threshold` | Nullable until approved; includes direction, value/range, effective version, and authority record. |
+| `threshold` | Nullable until approved; when present, contains stable `threshold_id`, monotonic `threshold_version`, comparator/direction, value or range, unit, effective interval, and authority record. |
 | `owner`, `status` | Named measurement owner and `DRAFT`, `APPROVED`, `DEPRECATED`, or `SUPERSEDED`; status requires evidence. |
 
 The initial catalog contains definitions for exactly the register-required
@@ -116,11 +116,22 @@ required family may be represented only by a vague proxy.
 ### `WorkflowBudget`
 
 Required fields are `budget_id`, `version`, `workflow_id`, applicable phase,
-effective interval, model-cost ceiling or measurement rule, tool-call ceiling
-or rule, latency ceiling/rule, document-volume ceiling/rule, retry ceiling/rule,
-analyst-minute ceiling/rule, breach action, currency, allocation method,
-evidence refs, and budget-approval record. `CEILING_NOT_APPROVED` is distinct
-from `NO_LIMIT`; null never means unlimited.
+effective interval, one typed control for each of model cost, tool calls,
+latency, document volume, retries, and analyst minutes, breach action, currency,
+allocation method, evidence refs, and `authorization_class`.
+
+Each control uses exactly one `control_mode`: `MEASUREMENT_RULE` binds an exact
+rule to an approved `MetricDefinition` ID/version and carries no ceiling;
+`CEILING` binds a value/range, unit, effective interval, and breach action and
+carries no measurement-only substitute. `authorization_class` is
+`MEASUREMENT_RULE_ONLY` exactly when every control is a measurement rule and is
+`BUDGET_COMMITMENT` when any control is a ceiling. Every measurement rule binds
+a distinct scoped `PRODUCT_OWNER_DECISION` authorization record. A
+`BUDGET_APPROVAL` record is null and not required for
+`MEASUREMENT_RULE_ONLY`; it is mandatory and exact-scope for
+`BUDGET_COMMITMENT`. Neither class implies purchase, provider, capacity, or
+standing-budget authority. `CEILING_NOT_APPROVED` is distinct from `NO_LIMIT`;
+null never means unlimited.
 
 ### `OperatingCapacityPlan`
 
@@ -133,11 +144,28 @@ plan remain separate objects with explicit links.
 
 ### `MetricObservation`
 
-Each observation contains metric/version, phase, run/report/company keys,
-population and strata, raw event refs, calculation version, value/unit,
-missingness state, instrumentation overhead, captured time, and knowledge
-cutoff. Corrections append a superseding observation; no historical result is
-silently overwritten.
+Each observation contains stable `observation_id`, metric/version, phase,
+run/report/company keys, population and strata, raw event refs, calculation
+version, value/unit, missingness state, instrumentation overhead, captured
+time, knowledge cutoff, nullable `supersedes_observation_id`, and nullable
+`correction_reason`. A correction appends a new observation that supersedes the
+current leaf of the same metric/version and exact phase, run/report/company,
+population, and strata scope. IDs are unique; cross-scope links, cycles,
+superseding a non-current leaf, and multiple current leaves invalidate the
+chain. Consumers replay from the root and use the sole unsuperseded leaf;
+historical observations remain retrievable and are never silently overwritten.
+
+### `PhaseGateMetricBinding`
+
+A phase gate that consumes a metric records `gate_id`, `binding_id`, exact
+`metric_id` and `metric_version`, and `binding_kind`. `METRIC_REFERENCE` uses
+the metric as named evidence and has null threshold fields.
+`THRESHOLD_PREDICATE` additionally binds an exact approved `threshold_id` and
+`threshold_version` plus its comparator; the threshold's authority record must
+be current. A qualitative gate may have no metric binding. Only a
+`THRESHOLD_PREDICATE` requires threshold approval; neither a qualitative gate
+nor `METRIC_REFERENCE` may fabricate or require a threshold merely to fit this
+interface.
 
 ### Required interfaces
 
@@ -147,8 +175,9 @@ silently overwritten.
   artifact identities.
 - The analyst-economics/throughput spec consumes catalog definitions and
   reports actual outcomes without changing them.
-- Phase gates reference exact metric IDs and versions plus approved thresholds;
-  they do not copy definitions into new prose.
+- Phase gates use `PhaseGateMetricBinding` when they consume a metric and do
+  not copy definitions into prose. Only a threshold-bearing predicate binds an
+  approved threshold; qualitative gates and metric references do not.
 
 ## Invariants and fail-closed behavior
 
@@ -175,6 +204,11 @@ silently overwritten.
 10. Quality controls do not trade off: favorable cost, latency, acceptance
     rate, or throughput cannot override unsupported claims, bad citations,
     missing traces, or required approvals.
+11. Observation correction chains have one current leaf per root and scope.
+    Broken, forked, cyclic, or cross-scope chains make the observation invalid.
+12. Threshold approval is required exactly for `THRESHOLD_PREDICATE` bindings.
+    Missing threshold proof blocks that predicate; absence of a threshold does
+    not block a qualitative gate or a `METRIC_REFERENCE`.
 
 ## Evidence and typed approval gates
 
@@ -183,7 +217,9 @@ silently overwritten.
 | Delegated spec approval | Fresh clean Sol xhigh review bound to the exact S08 bytes and persisted review evidence | `DELEGATED_ARTIFACT_APPROVAL` | S08 remains draft and cannot authorize dependent implementation. |
 | Metric-contract freeze | Versioned catalog, measurement fixtures, phase map, and explicit decision | `PRODUCT_OWNER_DECISION` | A-13 remains unresolved. |
 | Analyst measurement fitness | Timed manual/assisted fixture evidence and explicit acceptance of clock/pause/overhead rules | `ANALYST_ACCEPTANCE` | Analyst-economics metrics cannot pass. |
-| Per-workflow and standing budget | Exact ceilings/rules, currency, period, breach action, and authority evidence | `BUDGET_APPROVAL` | A-07/A-12 remain unresolved; null is not unlimited. |
+| Per-workflow measurement-rule authorization | Exact rules bound to approved metric definitions, scope, period, breach observation, and explicit non-commitment classification | `PRODUCT_OWNER_DECISION` | The measurement-rule path for A-07 remains unresolved; no spend or capacity is authorized. |
+| Per-workflow ceiling commitment | Exact ceilings, units/currency, period, breach action, and authority evidence; applicable only when `authorization_class=BUDGET_COMMITMENT` | `BUDGET_APPROVAL` | The ceiling path for A-07 remains unresolved; null is not unlimited. |
+| Standing budget | Exact A-12 monthly provider/model/infrastructure ceilings, period, allocation, and breach action | `BUDGET_APPROVAL` | A-12 standing budget remains unresolved; per-workflow authorization cannot substitute. |
 | Builder/analyst capacity | Weekly commitments, maintenance allowance, coverage assumptions, effective period, and evidence | `CAPACITY_COMMITMENT` | Capacity and target dates remain planning assumptions, not commitments. |
 
 Provider, purchase, or external-service approvals required by a chosen budget
@@ -202,15 +238,21 @@ Verification must prove:
   denominator, unit, sampling, stratification, and phase applicability;
 - rejection of unknown units, missing definitions, missing evidence, stale
   versions, unapproved thresholds, and silent zero/default coercion;
+- append-only observation correction replay by stable ID, rejection of
+  cross-scope/cyclic/forked chains, and selection of exactly one current leaf;
 - identical instrumentation schema for manual and assisted workflows and
   explicit overhead measurement;
 - rejection of report-level P90 for the three-update pilot and preservation of
   report/company clustering;
-- a distinct per-workflow budget and operating capacity plan;
+- a distinct per-workflow budget and operating capacity plan, including an
+  A-07 measurement-rule-only fixture that passes without `BUDGET_APPROVAL` and
+  a ceiling/mixed fixture that fails without it;
 - budget-breach behavior for cost, calls, latency, volume, retries, and analyst
   minutes;
 - M-8 peak-week volume, backlog, next-material-event completion, and Phase 1
-  company-count capacity measures; and
+  company-count capacity measures;
+- qualitative, metric-reference, and threshold-predicate phase-gate fixtures,
+  proving that only the last requires an approved threshold record; and
 - current one-to-one typed evidence and approval records for every mandatory
   human gate.
 

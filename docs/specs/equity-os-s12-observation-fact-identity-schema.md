@@ -42,8 +42,9 @@ changes require explicit reconciliation rather than key-based overwrite.
 
 This contract owns:
 
-- identity and separation of source occurrence, extraction result, observation,
-  measurement slot, revision family, reconciled fact, and canonical selection;
+- identity and separation of source occurrence (`ObservationOccurrence`),
+  extraction result, measurement slot, revision family, reconciled fact, and
+  canonical selection;
 - raw/normalized value, unit/currency, dimensions, statement/scope, exact
   source location, valid time, knowledge time, definition version, quality,
   and reconciliation invariants;
@@ -68,12 +69,17 @@ The following concepts are distinct even if an implementation co-locates them:
 
 | Concept | Stable identity and required meaning | Mutability rule |
 |---|---|---|
-| Source occurrence / observation | `observation_id` identifies one immutable value occurrence at an exact location in one immutable source version; it preserves raw text/value and source coordinates | Never overwritten; corrected source bytes create a new source version and occurrence |
+| Source occurrence (`ObservationOccurrence`) | `observation_id` identifies one immutable value occurrence at an exact location in one immutable source version; it preserves raw text/value and source coordinates | Never overwritten; corrected source bytes create a new source version and occurrence |
 | Extraction result | `extraction_result_id` identifies parser/model output for one `observation_id`, extractor identity/version, prompt/config where applicable, and extraction time | A parser/config upgrade appends a new result; it does not rewrite the occurrence or an earlier result |
 | Measurement key | `measurement_key_id` identifies the economic slot composed from entity, metric definition/version, period, statement/consolidation scope, dimension set, and accounting/adjustment basis | Definition or dimensional meaning changes create a new key/version; aliases cannot merge incompatible slots |
 | Revision family | `revision_family_id` groups occurrences believed, through explicit reconciliation, to represent the same measurement slot | Membership is append-only and reasoned; equality of a key alone does not auto-supersede |
 | Reconciled fact revision | `fact_revision_id` records one reconciled use of a selected observation/extraction for a measurement key, its quality/reconciliation state, temporal bounds, and reason | Append-only; a correction or restatement creates another revision and edge |
-| Canonical selection | `canonical_selection_id` records which fact revision is approved for a measurement key over a knowledge-time interval and why | Never update in place; close the prior knowledge interval and append a new selection |
+| Canonical selection | `canonical_selection_id` records which fact revision is approved for a measurement key from one knowledge time, its exact predecessor, event class, policy, evidence, and approval bindings | Never updated in place; an atomic compare-and-append creates one successor, and the successor's start derives the predecessor's end |
+
+`Source occurrence` is the canonical domain term. `ObservationOccurrence` and
+the shorter `observation` are schema/code aliases for that same immutable
+lifecycle object and the same `observation_id`; they do not name a second object
+or transition.
 
 The logical measurement key is:
 
@@ -139,24 +145,80 @@ fresh Sol xhigh review.
   observation/extraction refs;
 - raw and normalized value, unit, currency, dimensions, scope, metric
   definition version, source location, valid-time interval, knowledge-time
-  interval, quality status, and reconciliation status;
+  evidence, quality status, and reconciliation status;
 - supersession/revision edge with typed reason and prior revision; and
-- append-only canonical selection with selector authority/evidence and exact
-  knowledge-time applicability.
+- append-only canonical selection with `measurement_key_id`, selected
+  `fact_revision_id`, `effective_from_knowledge_time`, transition sequence,
+  exact predecessor ID, selection-event type, reconciliation-policy
+  version and policy-approval binding, selector evidence, typed event-approval
+  requirement/record refs, and exact human-resolution bindings where a human
+  approval is required.
 
 No field may be silently null-filled or defaulted when its absence could alter
 identity, period, units, currency, scope, definition, cutoff eligibility, or
 canonical selection. Such a candidate remains unresolved.
 
+### Atomic append-only canonical-selection transition
+
+Canonical-selection applicability uses successor-derived bounds; no stored
+selection row is closed or mutated. For one `measurement_key_id`, the immutable
+chain has exactly one root, each selection has at most one successor, and each
+`(measurement_key_id, transition_sequence)` and
+`(measurement_key_id, effective_from_knowledge_time)` pair is unique. A
+successor has sequence `predecessor.sequence + 1`, starts strictly after its
+predecessor, and binds the predecessor's exact immutable ID.
+
+The only write interface is an atomic compare-and-append operation receiving
+the measurement key, expected predecessor ID (null only for the root),
+selected fact revision, event type, effective-from time, reconciliation policy,
+evidence, and approval bindings. In one transaction it:
+
+1. verifies the fact belongs to the measurement key, the expected predecessor
+   is the unique current head, the start time is monotonic, and every required
+   approval binding is satisfied;
+2. enforces the root, successor, sequence, and start-time uniqueness
+   constraints; and
+3. appends the new selection and commits without updating the predecessor.
+
+A stale predecessor, concurrent winner, fork, duplicate start/sequence, missing
+approval, or partial write aborts the entire append and leaves the prior chain
+unchanged. At cutoff `t`, the selected row must be the unique chain member with
+`effective_from_knowledge_time <= t` and either no valid successor or a
+successor whose `effective_from_knowledge_time > t`. Zero or multiple matches,
+a broken link, or an incomplete transition is unresolved and fails closed.
+
+### Event-level approval mapping and resolution binding
+
+S15 owns the closed event-to-approval-requirement mapping for
+`INITIAL_SELECTION`, `ISSUER_RESTATEMENT`, `SOURCE_CORRECTION`,
+`PARSER_INDUCED_FACT_REVISION`, `MANUAL_CORRECTION`, and
+`NORMALIZATION_POLICY_CHANGE`. The mapping is versioned and returns exact typed
+requirements from the goal's closed approval vocabulary; it has no default or
+generic escape. It cannot remove S12's policy-level
+`DOMAIN_EXPERT_ACCEPTANCE` gate, and `MANUAL_CORRECTION` retains its distinct
+`ANALYST_ACCEPTANCE` requirement.
+
+Each selection binds the approved reconciliation-policy version and that
+policy's distinct satisfied requirement, approval record, and resolution, then
+binds the event-mapping version and every resulting `approval_id` and matched
+`approval_record_id`. Every required event-level record uses
+`HUMAN_RESOLUTION` and also binds its canonical
+`human_review_id`, `resolution_decision_id`, and
+`resolution_content_sha256`; `DELEGATED_ARTIFACT_APPROVAL` never satisfies an
+event-level selection requirement. Requirement and record must match
+type, authority, exact scope, actor, timestamp, evidence, and authority source
+one-to-one. Until S15 declares the event mapping and every returned requirement
+is `SATISFIED`, the candidate remains unresolved and no selection is appended.
+
 ## Revision and correction semantics
 
 | Event | Required behavior | Forbidden behavior |
 |---|---|---|
-| Issuer restatement | Preserve original occurrence/fact; ingest new occurrence; reconcile into the family; append selection effective at its knowledge time with `ISSUER_RESTATEMENT` | Rewrite the earlier fact or make the restatement visible before it was known |
-| Source correction | Preserve old source version and occurrence when retention permits; append corrected version/result and `SOURCE_CORRECTION` fact revision | Replace source bytes under the old document hash |
-| Parser re-extraction | Append extraction result for the same immutable occurrence and extractor version/config; revalidation decides whether a new fact revision is required | Treat parser upgrade as issuer restatement or overwrite prior result |
-| Manual correction | Append reasoned correction with human decision evidence and affected dependency invalidation | Edit normalized value in place or omit actor/rationale |
-| Normalization-policy change | Version the policy/definition; append result/revision; use a new measurement key when semantic meaning changes | Retroactively rewrite all historical normalized values without versioned provenance |
+| Issuer restatement | Preserve original occurrence/fact; ingest new occurrence; reconcile into the family; if selected, use the atomic transition with `ISSUER_RESTATEMENT`, its knowledge time, and S15-mapped approvals | Rewrite the earlier fact or make the restatement visible before it was known |
+| Source correction | Preserve old source version and occurrence when retention permits; append corrected version/result and `SOURCE_CORRECTION` fact revision; if selected, use the mapped atomic transition | Replace source bytes under the old document hash |
+| Parser re-extraction | Append extraction result for the same immutable occurrence and extractor version/config; revalidation decides whether a new fact revision is required; any induced selection uses `PARSER_INDUCED_FACT_REVISION` and its mapped approvals | Treat parser upgrade as issuer restatement, overwrite prior result, or promote its result directly |
+| Manual correction | Append reasoned correction with distinct `ANALYST_ACCEPTANCE`, affected dependency invalidation, and the mapped atomic transition if selected | Edit normalized value in place or omit actor/rationale/approval binding |
+| Normalization-policy change | Version the policy/definition; append result/revision; use a new measurement key when semantic meaning changes; any selection uses its mapped atomic transition | Retroactively rewrite all historical normalized values without versioned provenance |
 | Conflicting sources | Preserve every occurrence and explicit conflict; apply source hierarchy/reconciliation; allow unresolved status | Select the latest or largest value silently |
 | Reclassification/segment change | Preserve both definitions/dimensions and reconcile comparability explicitly | Group under one key solely because labels resemble each other |
 
@@ -227,16 +289,19 @@ evidence exists.
 - Source occurrence, extraction result, measurement key, revision family, fact
   revision, and canonical selection have distinct IDs and lifecycles.
 - All occurrences, conflicts, revisions, reasons, and prior selections are
-  append-only and auditable; there is no silent overwrite.
+  append-only and auditable. Selection changes append one atomic successor;
+  predecessor applicability ends only by that successor-derived bound.
 - Raw values and exact source location survive normalization. Normalized output
   never replaces raw evidence.
 - Unit, currency, period, statement/consolidation scope, dimensions, metric
   definition/version, valid time, and knowledge time are explicit when they can
   change meaning. Ambiguity blocks canonical selection.
-- Canonical selection is always `(measurement key, knowledge cutoff)` aware.
-  "Newest" is not a valid selection policy.
+- Canonical selection is always `(measurement key, knowledge cutoff)` aware and
+  uses the unique successor-derived predicate above. "Newest" is not a valid
+  selection policy; a fork, overlap, gap, or ambiguous match fails closed.
 - A parser result cannot become a fact or canonical selection without
-  reconciliation and required approval evidence.
+  reconciliation, the S15 event mapping, and one-to-one required approval and
+  resolution evidence.
 - Unknown revision reason, incompatible dimension/definition, broken source
   digest, unsafe migration, or missing comparative handling fails closed.
 - Provisional envelopes cannot be represented as final B-05 or B-10 acceptance.
@@ -245,8 +310,9 @@ evidence exists.
 
 | Gate | Required evidence | Approval type and authority | Fail-closed result |
 |---|---|---|---|
-| Initial S12 delegated artifact approval | Fresh clean Sol xhigh review bound to current bytes, exact ownership, M-2, provisional posture, and both amendment gates | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
+| Initial S12 delegated artifact approval | Fresh clean Sol xhigh review bound to current bytes, exact ownership, M-2, provisional posture, both amendment gates, declared identity/transition interfaces, S15 mapping delegation, fixture catalogue, and test specifications; no product execution result is required | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
 | Reconciliation/canonical-selection policy | Source hierarchy, fixtures, conflict outcomes, comparative tests, and audit fields | `DOMAIN_EXPERT_ACCEPTANCE` by a competent human for financial meaning and reconciliation policy | Conflicted candidate remains unresolved and cannot become canonical fact |
+| Canonical-selection event | Versioned closed S15 event mapping, exact event/scope evidence, and all resulting requirement, record, and resolution bindings | Each distinct typed approval returned by S15's mapping; one record satisfies one requirement and no nearby approval is inferred | Selection append is denied and the candidate remains unresolved |
 | Manual correction | Exact source/error evidence, affected dependency closure, reason, and new revision | `ANALYST_ACCEPTANCE` by the responsible analyst for the correction scope | Original remains; proposed correction is not canonical |
 | B-05 final schema amendment | A-06 and actual B-11/B-12 evidence, field traceability, fixtures, migration/compatibility proof, and fresh review | distinct `DELEGATED_ARTIFACT_APPROVAL`; plus `DOMAIN_EXPERT_ACCEPTANCE` for semantic field/definition decisions that require human judgment | B-05 cannot be Accepted and dependent schema implementation remains blocked |
 | B-10 schema-delta amendment | B-02/B-05/B-06 evidence, complete retained/deleted/added/deferred table, dependency/reconstruction proof, and fresh review | distinct `DELEGATED_ARTIFACT_APPROVAL`; `PRODUCT_OWNER_DECISION` for the exact removal/deferral scope, plus domain approval where meaning changes | B-10 cannot be Accepted; destructive or speculative schema changes remain blocked |
@@ -290,7 +356,15 @@ owned row to Deferred, fails pending authority reconciliation and re-review.
 
 ## Acceptance tests and verification
 
-Before initial delegated S12 approval, structural fixtures must prove:
+Initial delegated S12 approval reviews this contract, its declared fixture
+catalogue, and the test specifications below for completeness and internal
+consistency. It does not require identity persistence, reconciliation,
+canonical-selection writes, migration machinery, or cutoff queries to exist or
+execute.
+
+Before B-11 or C-03 acceptance, at their corresponding implementation phase
+gates, and at the B-05/B-10 amendment gates where applicable, executable
+fixtures must prove:
 
 1. each identity layer is distinct and all records retain source/version links;
 2. a parser re-extraction appends a result without rewriting the occurrence or
@@ -298,15 +372,23 @@ Before initial delegated S12 approval, structural fixtures must prove:
 3. restatement, source correction, manual correction, and normalization-policy
    change produce distinct typed revisions;
 4. conflicting observations coexist and cannot auto-select by latest timestamp;
-5. as-of selection before a later restatement returns the earlier fact;
-6. prior-period comparatives cover unchanged, restated, reclassified,
+5. initial selection and every selection-producing revision event use the
+   closed S15 mapping and exact one-to-one requirement, approval-record, and
+   human-resolution bindings;
+6. two concurrent transitions from the same predecessor permit one atomic
+   successor and reject the other without mutation, while a partial write
+   leaves the prior chain valid;
+7. the successor-derived cutoff predicate returns exactly the earlier fact
+   before a later restatement and the successor at/after its effective time;
+   forked, duplicate, broken, zero-match, or multi-match chains fail closed;
+8. prior-period comparatives cover unchanged, restated, reclassified,
    dimension-changed, unit/currency-changed, and parser-only cases;
-7. unsafe destructive migration, missing raw/source proof, or semantic nulls
+9. unsafe destructive migration, missing raw/source proof, or semantic nulls
    fail before canonical switch;
-8. the provisional schema and delta cannot report B-05 or B-10 final acceptance;
-9. both amendment gates block their exact dependency cones until fresh review;
+10. the provisional schema and delta cannot report B-05 or B-10 final acceptance;
+11. both amendment gates block their exact dependency cones until fresh review;
    and
-10. a source-to-spec audit finds B-05, B-10, B-11, C-03, and M-2 exactly once
+12. a source-to-spec audit finds B-05, B-10, B-11, C-03, and M-2 exactly once
     under S12 and no register row owned by another spec.
 
 For B-05 amendment acceptance, rerun fixtures against the evidence-derived
@@ -327,7 +409,8 @@ cutoff reconstruction through S11.
 - S10 consumes fact/revision records as the authoritative SQL contract and
   includes them in evidence packages.
 - S11 applies knowledge cutoffs to canonical selection and historical replay.
-- S15 supplies correction and human review transitions.
+- S15 supplies the closed canonical-selection event/approval mapping plus
+  correction and human review transitions.
 - S16 consumes canonical facts and must reject unresolved/ambiguous inputs.
 - S17 supplies stable internal entity/security IDs used by measurement keys.
 

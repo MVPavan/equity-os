@@ -85,15 +85,22 @@ Each executable operator version contains:
 | output_contract | Output type, unit/dimension, currency behavior, scale, and sign convention |
 | replay_class | EXACT, TOLERANCE, or STOCHASTIC |
 | tolerance_policy | Null for EXACT; absolute/relative tolerances and comparison method for TOLERANCE |
-| seed_policy | Null unless STOCHASTIC |
+| seed_policy | Required and non-null for STOCHASTIC; null otherwise |
+| distribution_check_policy | Required and non-null for STOCHASTIC, including distributional assertions, sample count, confidence/error bounds, and pass rule; null otherwise |
 | rounding_policy | Mode, precision, and whether rounding occurs only at display or within the operator |
 | missing_input_policy | Always FAIL_CLOSED for this MVP |
 | zero_denominator_policy | Always FAIL_CLOSED unless the operator version explicitly returns a typed NOT_MEANINGFUL result |
 | applicability_rules | Required accounting basis, consolidation scope, period type, and exclusions |
-| approval_state | DRAFT or APPROVED with a resolvable approval record |
 | code_artifact | Repository-relative implementation identity and content hash |
+| operator_definition_sha256 | SHA-256 of the canonical definition preimage specified below |
+| approval_bindings | Exactly one S16-G02 requirement binding and one S16-G03 requirement binding; each names its component-local approval_id and, when satisfied, its unique matched approval_record_id, human_review_id, resolution_decision_id, and resolution_content_sha256 |
+| approval_state | Derived DRAFT or APPROVED; never caller supplied |
 
-Only APPROVED definitions may execute in an approvable run. This specification proposes the minimum families but does not mark any definition approved.
+The `operator_definition_sha256` preimage is the program's canonical JSON of every immutable field in this table from `operator_id` through `code_artifact`, excluding `operator_definition_sha256`, `approval_bindings`, and derived `approval_state`. Referenced policies and the code artifact appear as stable IDs, versions, and content digests, not unresolved labels.
+
+Every definition carries both approval requirements even while unresolved. `approval_state=APPROVED` if and only if the S16-G02 `PRODUCT_OWNER_DECISION` requirement for the inventory containing this exact definition digest and the S16-G03 `DOMAIN_EXPERT_ACCEPTANCE` requirement scoped to this exact operator ID, version, and digest are each `SATISFIED` one-to-one by distinct, current `APPROVED` records. Each binding must match type, authority, scope, actor, timestamp, evidence, active human-resolution decision ID, and resolution content digest. A missing, stale, denied, revoked, expired, mismatched, reused, or delegated-review record makes the derived state DRAFT. One record may not satisfy both requirements.
+
+Only a definition whose conjunction above recomputes to APPROVED may execute in an approvable run. This specification proposes the minimum families but does not mark any definition approved.
 
 ### 3.2 CalculationInput
 
@@ -103,7 +110,7 @@ An input without a resolvable fact/evidence identity is invalid. A request may n
 
 ### 3.3 CalculationRequest
 
-A request contains calculation_id, run_id, evidence_package_id/version, knowledge_cutoff, operator_id/version, ordered inputs, explicit assumptions, requested output role, and caller identity. The request digest binds all fields and referenced evidence digests.
+A request contains calculation_id, run_id, evidence_package_id/version/digest, an evidence_reconstruction_key containing the ordered registered source IDs, fact IDs, claim IDs, and cutoff ID/value supplied by S10/S11, operator_id/version, ordered inputs, explicit assumptions, requested output role, caller identity, and request_digest. `request_digest` is SHA-256 of the program's canonical JSON of all preceding request fields plus the current operator-definition digest and the fact/evidence content digests for every ordered input; it excludes only `request_digest` itself. Missing or unresolved reconstruction identifiers or referenced digests make the request invalid.
 
 ### 3.4 CalculationTrace
 
@@ -116,9 +123,11 @@ A completed attempt contains:
 - resolved inputs and assumptions;
 - normalized operation tree and intermediate steps;
 - output value/unit or a typed failure;
-- tolerance, seed, and rounding records as applicable;
+- tolerance, seed, distribution-check, and rounding records as applicable;
 - warnings that do not change pass/fail;
 - created-at time and trace digest.
+
+The trace digest is SHA-256 of the program's canonical JSON of every trace field above except the digest itself. It therefore binds the request digest, definition/code digests, runtime, ordered resolved inputs, operation tree, intermediates, outcome, and applicable tolerance, seed, distribution-check, and rounding records.
 
 Allowed outcomes are SUCCEEDED, BLOCKED_MISSING_INPUT, BLOCKED_INVALID_INPUT, BLOCKED_AMBIGUOUS_DEFINITION, BLOCKED_SCOPE_MISMATCH, BLOCKED_UNIT_MISMATCH, BLOCKED_ZERO_DENOMINATOR, and REPLAY_MISMATCH. A blocked outcome has no authoritative numeric output.
 
@@ -136,7 +145,7 @@ The approved B-07 list must include at least one explicitly named, versioned ope
 | Guidance comparison | Bind actual and guidance to the same metric definition, unit, currency, scope, period, and guidance version; classify below, within, or above only after range normalization. |
 | Reconciliation | Express opening value plus typed movements equals closing value; retain every movement and residual. A residual outside the declared exact/tolerance rule fails. |
 
-MVP implementations should use EXACT where decimal arithmetic and operator semantics support exact replay. TOLERANCE is permitted only with an approved, operator-specific tolerance. STOCHASTIC is outside the minimum list unless this specification is amended and separately approved; a seed alone does not make a stochastic result exact.
+MVP implementations should use EXACT where decimal arithmetic and operator semantics support exact replay. TOLERANCE is permitted only with an approved, operator-specific tolerance. STOCHASTIC is outside the minimum list unless this specification is amended and separately approved; registry validation rejects a STOCHASTIC definition, including one carrying otherwise valid S16-G02/S16-G03 records, while that amendment is absent. After such an amendment, both seed and distribution-check policies are mandatory; a seed alone does not make a stochastic result exact.
 
 ## 5. Invariants and fail-closed behavior
 
@@ -152,6 +161,7 @@ MVP implementations should use EXACT where decimal arithmetic and operator seman
 10. Display rounding never mutates the stored authoritative value.
 11. The approved narrative hash is outside the calculation result; narrative regeneration cannot establish calculation replay.
 12. Unknown operator versions, absent code hashes, missing traces, or unapproved definitions fail closed.
+13. S16 verification cannot satisfy its assigned G-1 obligations unless the applicable S10/S11 proof reconstructs the same evidence-package version exactly from its registered source, fact, claim, and cutoff identifiers and verifies the reconstructed package digest. A calculation replay alone cannot satisfy that proof.
 
 ## 6. Evidence and typed approval gates
 
@@ -170,6 +180,7 @@ Required evidence inventory:
 - code and dependency-lock hashes for every implemented operator;
 - exact, tolerance, missing-input, zero-denominator, unit/scope mismatch, and replay-mismatch fixtures;
 - source-linked calculation traces for all minimum families;
+- current S10/S11 evidence-package reconstruction proof bound to the same package ID/version, registered source/fact/claim/cutoff identifiers, and package digest used by the S16 fixtures;
 - current typed approval records for S16-G02 through S16-G04;
 - fresh delegated review evidence for S16-G01;
 - verification command output bound to the tested artifact hashes.
@@ -178,8 +189,8 @@ Required evidence inventory:
 
 | Test ID | Required proof |
 |---|---|
-| S16-T01 | Registry validation rejects a definition missing formula, input roles, replay class, code hash, or approval state. |
-| S16-T02 | Every minimum family has at least one approved version before B-07 can be accepted. |
+| S16-T01 | Registry validation rejects a definition missing formula, input roles, replay class, code hash, either approval requirement binding, or a replay-class-required tolerance, seed, or distribution-check policy. |
+| S16-T02 | Every minimum family has at least one version whose APPROVED state recomputes from distinct current one-to-one S16-G02 and S16-G03 records before B-07 can be accepted; one generic, reused, stale, or mismatched record never passes. |
 | S16-T03 | Exact-class fixture replays with identical normalized inputs, steps, and output. |
 | S16-T04 | Tolerance-class fixture passes at the boundary and fails immediately outside it. |
 | S16-T05 | Missing, post-cutoff, ambiguous, wrong-period, wrong-unit, wrong-currency, and wrong-scope inputs each yield a typed blocked outcome and no numeric output. |
@@ -187,16 +198,18 @@ Required evidence inventory:
 | S16-T07 | Margin, cash-conversion, and leverage requests cannot substitute an unregistered numerator or denominator. |
 | S16-T08 | Dilution/share-count and reconciliation fixtures preserve every movement and fail on an unexplained residual. |
 | S16-T09 | Guidance comparison rejects mismatched versions, periods, units, or scopes. |
-| S16-T10 | Changing an input, operator definition, code artifact, runtime, rounding rule, or tolerance invalidates the prior trace digest and dependent verification. |
+| S16-T10 | Changing an input, reconstruction identifier, operator definition, code artifact, runtime, rounding rule, tolerance, seed, or distribution-check policy invalidates the prior trace digest and dependent verification. |
 | S16-T11 | Narrative byte differences do not alter a valid calculation trace, while a changed approved narrative produces a different narrative artifact hash. |
 | S16-T12 | A generated computed claim resolves to the successful calculation trace; a blocked calculation cannot support a material computed claim. |
+| S16-T13 | From only the registered source, fact, claim, and cutoff identifiers in the request, the applicable S10/S11 reconstruction proof reproduces the exact evidence-package bytes and digest used by the trace; a missing identifier, substituted version, or digest mismatch blocks S16 verification. |
+| S16-T14 | Before an approved stochastic amendment exists, registry validation rejects every STOCHASTIC definition even if its approval bindings are otherwise satisfied; after such an amendment, a missing seed policy or distribution-check policy is rejected. |
 
-Verification is successful only when all tests pass against the current registry/code hashes and all required evidence and approvals are current. Test output alone cannot satisfy human gates.
+Verification is successful only when all tests pass against the current registry/code hashes, the same-package S10/S11 reconstruction proof passes, and all required evidence and one-to-one approvals are current. Test output alone cannot satisfy human gates.
 
 ## 8. Dependencies, activation, and amendment guards
 
 - B-07 is blocked on A-04. Because A-04 has a provisional-to-final amendment gate owned by S06, B-07 and dependent C-08 work remain blocked while the mandatory post-baseline A-04 amendment is due or A-04 is not validly accepted.
 - C-08 is blocked on accepted B-07 definitions.
-- S10/S11 supply evidence-package and run/reproducibility identities; S12 supplies fact identity; S13 supplies computed-claim validation. S16 consumes those interfaces without taking their ownership.
+- S10/S11 supply evidence-package and run/reproducibility identities; their applicable exact-reconstruction acceptance proof for the same package is a prerequisite to satisfying S16's assigned G-1 coverage. S12 supplies fact identity; S13 supplies computed-claim validation. S16 consumes those interfaces and proof without taking their ownership.
 - Deferred activation guard: not applicable to owned rows. B-07 and C-08 were Open at activation, so S16 is active-only and may not be marked dormant or require an ACTIVATE_DEFERRED resolution.
 - Amendment gate: S16 owns none of the four evidence-derived provisional contracts. Any semantic change to an approved operator creates a new version and repeats the relevant review and human gates; it is not an in-place amendment disguised as implementation.

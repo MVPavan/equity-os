@@ -96,6 +96,19 @@ All messages are immutable, versioned, uniquely identified, content-hashed, and
 auditable. Unknown fields, schema versions, identities, or enum values fail
 closed.
 
+### Canonical JSON digest contract
+
+Every structured-record digest defined by S04 is lowercase SHA-256 of canonical
+JSON bytes: UTF-8, object keys sorted, no insignificant whitespace, Unicode
+emitted directly, JSON booleans/null, and arrays retained in declared order.
+For each record digest, the preimage is the record's complete logical JSON
+object with exactly the field that stores that digest omitted. Other digest
+fields remain in the preimage because they bind referenced content. Thus
+`intent_sha256`, `authorization_sha256`, `request_sha256`, and
+`outcome_sha256` omit only themselves from their respective preimages; no
+digest is self-referential. Unknown fields are invalid rather than silently
+excluded from hashing.
+
 ### `ExecutionIntent`
 
 The research domain may produce an inert candidate only. The candidate cannot
@@ -112,7 +125,7 @@ be submitted directly and has no credential-bearing or executable field.
 | `constraints` | Explicit time, price, exposure, and validity bounds |
 | `rationale_claim_ids` | References only; prose cannot change control logic |
 | `created_at` / `expires_at` | UTC timestamps; expired intent is invalid |
-| `content_sha256` | Hash of canonical intent content |
+| `intent_sha256` | Digest of the canonical intent preimage defined above |
 
 ### `ExecutionAuthorization`
 
@@ -123,22 +136,41 @@ immutable authorization record.
 |---|---|
 | `authorization_id` | Stable unique identifier |
 | `intent_id` / `intent_sha256` | Exact bound candidate |
-| `approver_identity` / `authority_basis` | Competent human identity and current authority evidence |
+| `approval_record_id` | Exact canonical approval record matching this request and authorization decision |
+| `human_review_id` / `resolution_decision_id` | Exact canonical human-review entry and active immutable resolution supplying the approval |
+| `resolution_content_sha256` | Current canonical content digest of that resolution |
+| `approver_identity` / `authority_basis` | Copies from the canonical resolution for audit display; never independent authority |
 | `decision` | `APPROVED`, `DENIED`, `REVOKED`, or `EXPIRED` |
 | `approved_limits` | Limits no broader than the intent and deterministic policy |
+| `venue_account_scope` | Exact venue/account scope covered by the human resolution |
 | `timestamp` / `expires_at` | UTC, current at submission |
 | `evidence_ref_ids` | Nonempty content-bound approval evidence |
-| `authorization_sha256` | Hash of the complete authorization record |
+| `authorization_sha256` | Digest of the canonical authorization preimage defined above |
+
+An authorization permits execution only when `approval_record_id` resolves to
+the one canonical approval record whose type is
+`EXECUTION_TRUST_DOMAIN_APPROVAL`, decision is `APPROVED`, authority source is
+`HUMAN_RESOLUTION`, and exact intent, limits, account scope, actor, authority,
+timestamp, expiry, and evidence match the authorization. Its `human_review_id`,
+`resolution_decision_id`, and `resolution_content_sha256` must resolve through
+the canonical human-review artifact to that same active, immutable,
+non-superseded resolution. The validator recomputes the resolution digest from
+canonical content. Internally supplied approver identity, authority basis,
+evidence, or matching strings do not establish authority.
 
 ### `ExecutionRequest` and `ExecutionOutcome`
 
 An `ExecutionRequest` is created inside the execution domain from one current
-approved authorization. It binds the authorization hash, exact security
-mapping version, venue/account identity, deterministic-limit-policy version,
-idempotency key, and request hash. An `ExecutionOutcome` records request hash,
+approved authorization. It binds the authorization ID/hash, canonical approval
+record ID, human-review ID, resolution decision ID/content digest, exact
+security mapping version, venue/account identity, deterministic-limit-policy
+version, idempotency key, and `request_sha256`. Submission re-resolves the
+canonical records and recomputes their digests; a revoked, expired, superseded,
+missing, stale, or mismatched record blocks the request even when the stored
+authorization hash matches. An `ExecutionOutcome` records request hash,
 external acknowledgement identifiers, typed state transitions, quantities and
 prices with units/currencies, venue timestamps, ingestion timestamps, source
-evidence, correction/supersession links, and outcome hash.
+evidence, correction/supersession links, and `outcome_sha256`.
 
 No free-form text controls routing, credentials, limits, account selection,
 approval, kill-switch state, or submission.
@@ -150,7 +182,9 @@ approval, kill-switch state, or submission.
 2. No untrusted document, retrieved text, model output, claim, memory draft, or
    research artifact can invoke execution or obtain execution secrets.
 3. Every submitted request binds exactly one unexpired intent, one current human
-   authorization, one deterministic policy version, and one idempotency key.
+   authorization, that authorization's matching canonical approval record and
+   active immutable human resolution with recomputed content digest, one
+   deterministic policy version, and one idempotency key.
 4. Deterministic limits can narrow or reject an approved intent; no model,
    narrative, or operator bypass can broaden it.
 5. Missing identity mappings, stale prices or reference data, ambiguous units,
@@ -184,7 +218,7 @@ human authority below.
 | Credential access | `CREDENTIAL_ACCESS_APPROVAL` | Credential/account owner | Named principals, exact scopes, expiry, rotation/revocation evidence | No credential issuance or use |
 | External venue/service | `EXTERNAL_SERVICE_APPROVAL` | Competent service/account authority | Exact provider, account, terms, limits, environment, evidence | No external connection |
 | Production enablement | `PRODUCTION_APPROVAL` | Competent production owner | Current test, reconciliation, rollback/kill-switch, observability evidence | Non-production only |
-| Each executable request | `EXECUTION_TRUST_DOMAIN_APPROVAL` | Competent human execution approver | Exact intent hash, limits, account, expiry, immutable authorization | Request rejected |
+| Each executable request | `EXECUTION_TRUST_DOMAIN_APPROVAL` | Competent human execution approver | Exact intent hash, limits, account, expiry, immutable authorization, canonical approval-record/human-review/resolution IDs, and current resolution content digest | Request rejected |
 | Any security deviation | `SECURITY_EXCEPTION` | Competent security authority | Narrow scope, rationale, compensating controls, owner, expiry | Deviation prohibited |
 
 Purchase or external coordination needs separate `PURCHASE_AUTHORIZATION` or
@@ -205,18 +239,26 @@ Required executable tests after activation include:
 2. submit document text and model output containing execution instructions and
    prove no action or secret access occurs;
 3. reject missing, expired, revoked, mismatched, or wrong-scope authorization;
-4. reject unknown schema/enum values, ambiguous units, stale mappings, and hash
+   also reject an authorization whose internal approver/evidence fields appear
+   valid but whose canonical approval record, human-review entry, resolution,
+   or current resolution digest is missing, stale, superseded, or mismatched;
+4. compute intent, authorization, request, and outcome digests from their
+   canonical JSON preimages; prove key order and insignificant whitespace do
+   not change a digest, each own digest field is excluded without recursion,
+   referenced digests remain bound, and any semantic mutation invalidates
+   dependent authorization and submission;
+5. reject unknown schema/enum values, ambiguous units, stale mappings, and hash
    mismatches;
-5. prove deterministic limits reject over-limit and malformed requests even
+6. prove deterministic limits reject over-limit and malformed requests even
    when the intent is human-approved;
-6. replay one idempotency key and prove at-most-once external submission;
-7. activate the kill switch before, during, and after submission and verify the
+7. replay one idempotency key and prove at-most-once external submission;
+8. activate the kill switch before, during, and after submission and verify the
    defined safe state;
-8. inject lost, duplicate, reordered, conflicting, and corrected external
+9. inject lost, duplicate, reordered, conflicting, and corrected external
    outcomes and prove reconciliation is complete and append-only;
-9. prove restart defaults to blocked until authoritative state and current
+10. prove restart defaults to blocked until authoritative state and current
    approvals are reconstructed; and
-10. demonstrate that every request, authorization, external acknowledgement,
+11. demonstrate that every request, authorization, external acknowledgement,
     outcome, correction, and reconciliation result is hash-bound and auditable.
 
 Verification results must identify exact commands, immutable output evidence,

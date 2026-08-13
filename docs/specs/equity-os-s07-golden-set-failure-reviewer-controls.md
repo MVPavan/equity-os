@@ -72,6 +72,20 @@ All records are versioned, machine-readable, and addressed by stable IDs.
 Timestamps are UTC. Enumerations below are closed unless a later reviewed
 amendment explicitly versions them.
 
+### `GoldenSetManifest`
+
+The A-08 repository root contains one current manifest with `manifest_id`,
+`manifest_version`, `repository_path`, `owner_identity_id`,
+`owner_commitment_record_id`, `review_rrule`, `review_timezone`,
+`next_review_due_at`, exact ordered `case_refs` (`case_id` plus `case_version`),
+category-coverage results, `effective_at`, and `supersedes_manifest_version`.
+`repository_path` is repository-relative and must resolve to the manifest and
+referenced case records. `review_rrule` is a machine-parseable RFC 5545
+recurrence rule; `next_review_due_at` is its current computed UTC occurrence.
+The current initial manifest must reference at least twenty distinct current
+cases. Missing, duplicate, stale, unresolvable, or unparseable fields keep A-08
+unresolved rather than falling back to prose or directory inference.
+
 ### `GoldenCase`
 
 | Field | Contract |
@@ -84,7 +98,7 @@ amendment explicitly versions them.
 | `expected_failures` | Zero or more `FailureCode` values and expected fail-closed boundary. |
 | `adversarial_tags` | Includes `PROMPT_INJECTION` and/or `SOURCE_CONFUSION` where applicable. |
 | `label_authority` | Human/domain label record ID; unresolved until valid typed evidence exists. |
-| `promotion_eligible` | Must be `false` for every synthetic or seeded-error case. |
+| `promotion_eligible`, `publication_eligible` | Both are fixed to `false` for every golden case, including `REAL_SOURCE`; fixture status never authorizes promotion or publication. |
 | `created_at`, `supersedes_case_version` | Audit history; old versions remain retrievable. |
 
 The initial inventory passes only with at least twenty distinct, currently
@@ -119,9 +133,16 @@ Each claim review records `review_decision_id`, `run_id`, `report_id`,
 epistemic class, source-locate time, calculation-check time, total decision
 time, correction category, instrumentation overhead, and UTC timestamps.
 Known-case evaluation additionally records expected decision, observed
-decision, and outcome `TRUE_ACCEPT`, `TRUE_REJECT`, `FALSE_ACCEPT`, or
-`FALSE_REJECT`. Aggregation remains stratified by materiality and epistemic
-class and retains report/company clustering keys.
+decision, and a mechanically derived outcome: `CORRECT_ACCEPT`,
+`CORRECT_EDIT`, `CORRECT_REJECT`, or `CORRECT_DEFER` when they match, otherwise
+`FALSE_ACCEPT`, `FALSE_EDIT`, `FALSE_REJECT`, or `FALSE_DEFER` according to the
+observed decision. The expected/observed pair and derived outcome must agree;
+coercion between decision classes fails validation. Edit accuracy is the share
+of known cases whose expected decision is `EDIT` and observed decision is
+`EDIT`; reject accuracy is defined analogously. False-accept and false-reject
+categories are the mismatches whose observed decision is respectively
+`ACCEPT` or `REJECT`. All known-case aggregations remain stratified by
+materiality and epistemic class and retain report/company clustering keys.
 
 ### `SeededDrillIsolationRecord`
 
@@ -130,7 +151,10 @@ artifact ID if a corresponding clean run exists, isolation mechanism,
 promotion eligibility fixed to `false`, publication eligibility fixed to
 `false`, attempted boundary crossings, deletion/retention outcome, and a
 verification result. The promotion and publication services must reject the
-shadow artifact ID independently of document labels.
+shadow artifact ID independently of document labels. Every fixture-execution
+artifact carries its originating `case_id`, `case_version`, and run mode;
+golden or shadow lineage fixes both eligibility values to `false` through all
+derived test artifacts.
 
 ### Required interfaces
 
@@ -141,7 +165,8 @@ shadow artifact ID independently of document labels.
   accepted-unchanged rate as standalone quality or clustered claims as
   independent samples.
 - The claim-review workflow can open golden/shadow fixtures, but promotion and
-  publication interfaces must reject them.
+  publication interfaces must reject every fixture and every artifact with
+  golden/shadow lineage, including `REAL_SOURCE` cases.
 
 ## Invariants and fail-closed behavior
 
@@ -150,17 +175,20 @@ shadow artifact ID independently of document labels.
    cannot request secrets.
 2. A case without current source proof and competent label evidence is not an
    approved golden case and cannot count toward the initial twenty.
-3. Missing owner, location, cadence, category coverage, or label version keeps
-   A-08 unresolved.
+3. Missing or invalid manifest, owner commitment, resolvable repository
+   location, machine-readable cadence, current case references, category
+   coverage, or label version keeps A-08 unresolved.
 4. An unknown failure code fails validation; it is not coerced to `REVIEW`.
-5. Missing materiality or epistemic class prevents false-accept/false-reject
-   aggregation and blocks B-13 acceptance.
+5. Missing materiality, epistemic class, expected/observed decision, or a
+   consistent derived outcome prevents known-case accuracy and
+   false-accept/false-reject aggregation and blocks B-13 acceptance.
 6. Manual and assisted measurements use the same instrumentation version;
    instrumentation overhead is separately recorded. Quarter 0 cannot be
    reused as an assisted quarter.
-7. Every synthetic/seeded artifact is non-promotable and non-publishable by
-   enforced artifact type and service checks. A failed isolation check aborts
-   the drill and blocks dependent acceptance.
+7. Every golden fixture and fixture-derived test artifact is non-promotable
+   and non-publishable by lineage, enforced artifact type, and service checks;
+   this includes real-source, synthetic, and seeded fixtures. A failed
+   isolation check aborts the drill and blocks dependent acceptance.
 8. Memory-draft provenance remains visible at promotion review; source text
    cannot authorize memory promotion.
 9. External spot review is optional. Its procedure must be defined, but an
@@ -173,7 +201,7 @@ shadow artifact ID independently of document labels.
 | Gate | Required proof | Typed authority | Fail-closed result |
 |---|---|---|---|
 | Delegated spec approval | Fresh clean Sol xhigh review bound to this exact file hash and persisted review evidence | `DELEGATED_ARTIFACT_APPROVAL` | S07 remains draft; no implementation dependency may treat it as approved. |
-| Golden-set ownership | Named human, repository location, cadence, scope, and commitment evidence | `NAMED_OWNER_COMMITMENT` | A-08 remains unresolved. |
+| Golden-set ownership | Current manifest binding a named human and commitment record to a resolvable repository location, machine-readable cadence, scope, and initial cases | `NAMED_OWNER_COMMITMENT` | A-08 remains unresolved. |
 | Golden labels | Current evidence for the expert-labeled initial inventory and label-change process | `DOMAIN_EXPERT_ACCEPTANCE` | Unapproved cases do not count toward twenty or terminal proof. |
 | Analyst workflow fitness | Evidence that decision categories and timings match actual review work | `ANALYST_ACCEPTANCE` | B-13 remains unresolved. |
 | Any external spot review | Scope, reviewer authority, evidence, and explicit decision, only if performed | `EXTERNAL_COORDINATION_APPROVAL` | Procedure may exist, but no external-review claim is allowed. |
@@ -188,16 +216,23 @@ human, analyst, domain, owner, or external authority.
 Before owned rows can advance, verification must demonstrate:
 
 - exact ownership of A-08, B-08, and B-13 and no other register row;
+- one current machine-readable manifest whose named owner, commitment record,
+  resolvable repository path, cadence, next due time, and at least twenty exact
+  current case references validate;
 - at least twenty current, uniquely identified, expert-labeled cases;
 - explicit coverage for prompt injection, source confusion, wrong period,
   wrong unit, wrong source, unsupported claim, and fabricated citation;
 - complete top-level failure-code coverage and rejection of unknown codes;
 - symmetric manual/assisted instrumentation with separately measured overhead;
 - Quarter 0 rejection when supplied as an assisted run;
-- false-accept/false-reject aggregation by materiality and epistemic class;
+- all four correct and all four false known-case outcomes, rejection of an
+  outcome inconsistent with its expected/observed pair, edit and reject
+  accuracy, and false-accept/false-reject aggregation by materiality and
+  epistemic class;
 - a document-as-instruction fixture that cannot alter tools, permissions,
   cutoff, secrets, execution, or promotion;
-- seeded shadow artifacts rejected by both promotion and publication paths;
+- real-source, synthetic, and seeded golden fixtures, plus every derived
+  fixture-run artifact, rejected by both promotion and publication paths;
 - no known falsehood in a promotable or publishable artifact; and
 - current typed evidence and one-to-one approval records for each mandatory
   human gate.

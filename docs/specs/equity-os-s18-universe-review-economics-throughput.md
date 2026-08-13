@@ -39,7 +39,7 @@ The following cells reproduce the controlling register text exactly.
 
 - G-2: report the three Phase 0.5 observed totals directly; record total analyst minutes for each report and descriptive claim-level disposition/time summaries; do not manufacture report-level P90 or statistical-significance claims at n=3.
 - G-3: Phase 1 uses a manual baseline for each company or a matched historical quarter, workload-normalized measures, explicit complexity descriptors, and total report time without treating that total as a portable causal measure.
-- G-4: Quarter 0 is the manual baseline/bootstrap and Quarters 1–3 are later assisted updates; do not reuse the same quarter for the primary manual-versus-assisted comparison. Preserve unavoidable practice effects in the experiment log.
+- G-4: Quarter 0 is the manual baseline/bootstrap and Quarters 1–3 are later assisted updates; do not reuse the same quarter for the primary manual-versus-assisted comparison. Counterbalance order where possible across companies; when it is infeasible, evidence the specific constraint and preserve the practice/order confound in the experiment log.
 - M-8: track reports reviewable per analyst per week, peak-week document and claim volume, backlog age, percentage completed before the next material event, and capacity at the selected Phase 1 company count.
 - Correction 6.1: claims are clustered within reports and companies. Claim-level telemetry supports operations and error analysis, not unsupported significance claims.
 
@@ -50,6 +50,7 @@ S18 specifies:
 - the exact review-time and claim-disposition events needed for B-04;
 - the Phase 1 company-selection record and evidence;
 - baseline matching, workload normalization, complexity descriptors, and confound disclosure;
+- an attempted cross-company counterbalancing plan, or evidence that counterbalancing is infeasible;
 - a mechanically evaluated C-12 economics gate whose metric IDs and thresholds come from A-13;
 - peak-week workload, backlog, timeliness, and mitigation evidence for C-18;
 - typed human approvals, fail-closed rules, and verification fixtures.
@@ -82,7 +83,7 @@ The selection must not include the discovery company merely to improve measured 
 
 ### 3.3 ReviewSession
 
-Contains review_session_id, report_id/version, company_id, quarter, workflow_mode MANUAL or ASSISTED, analyst_id, started_at, ended_at, pause intervals with reasons, instrumentation overhead, evidence-package ID/version, source-set digest, claim count, complexity descriptor ID, and prior-familiarity declaration.
+Contains review_session_id, report_id/version, company_id, quarter, workflow_mode MANUAL or ASSISTED, analyst_id, started_at, ended_at, pause intervals with reasons, instrumentation overhead, evidence-package ID/version, source-set digest, claim count, complexity descriptor ID, prior-familiarity declaration, nullable counterbalance-plan ID/version, and nullable planned/actual order position. The counterbalance fields may be null for Phase 0.5 and are required for every Phase 1 session.
 
 Total review minutes equal active review duration excluding declared pauses but including source location, calculation checking, correction, and approval work. Both manual and assisted modes use the same timer rules. Instrumentation overhead is separately measured and also reported.
 
@@ -102,17 +103,41 @@ Contains match_id, assisted session, baseline session, method PER_COMPANY_MANUAL
 
 A discovery-company Quarter 0 manual baseline may measure Phase 0.5 workflow economics but is not by itself a valid causal baseline for unfamiliar Phase 1 companies.
 
-### 3.7 EconomicsEvaluation
+### 3.7 CounterbalancePlan
 
-Contains evaluation_id, A-13 metric-contract ID/version, evaluated sessions/matches, metric IDs, pre-agreed thresholds, observed raw values, workload-normalized values, total report times, confounds, aggregation method, result PASS/FAIL/BLOCKED, evaluator, evidence, and digest.
+Contains plan_id/version, selected company IDs, analyst IDs, comparison groups, planned company/workflow order assignments, assignment method, status PLANNED/EXECUTED/PARTIAL/INFEASIBLE, actual assignments when run, deviations, residual order/practice confounds, evidence references/content digests, and plan_digest. `plan_digest` is SHA-256 of the program's canonical JSON of every preceding field except `plan_digest`; a status, assignment, deviation, or evidence change creates a new immutable plan version.
+
+The plan must attempt to vary comparison order across companies when the available companies, analysts, and reporting calendar permit it. PARTIAL or INFEASIBLE requires a specific evidenced constraint and preserves the residual confound; a bare choice not to counterbalance is invalid. A Phase 1 economics result may proceed only with EXECUTED, or with PARTIAL/INFEASIBLE plus that evidence and disclosure.
+
+### 3.8 EconomicsEvaluation
+
+Contains evaluation_id, A-13 metric-contract ID/version/digest, evaluated sessions/matches and their digests, CounterbalancePlan ID/version/digest, metric IDs, pre-agreed thresholds, observed raw values, workload-normalized values, total report times, confounds, aggregation method, result PASS/FAIL/BLOCKED, evaluator, evidence IDs/content digests, and digest. The digest is SHA-256 of the program's canonical JSON of every preceding field except the digest itself.
 
 The evaluator reads thresholds from the approved A-13 contract. It cannot accept a threshold supplied after observing results. Missing pre-agreement, invalid matches, incomplete timings, or unsupported normalization yields BLOCKED.
 
-### 3.8 CapacityWindow
+### 3.9 CapacityWindow
 
-Contains capacity_window_id, selected universe version, week start/end, analyst roster and committed minutes, report arrivals, document volume, claim volume, completed reviews, backlog items and age, next material event per update, completion-before-next-event result, retry/failure load, maintenance load, mitigation actions, evidence, and decision status.
+Contains capacity_window_id/version, selected universe ID/version/digest, A-12 capacity-policy ID/version/digest and approval binding, A-13 metric-contract ID/version/digest and approval binding, pre-agreed limit-set ID/version/digest, evaluation-method ID/version/digest, week start/end, analyst roster and committed minutes, report arrivals, document volume, claim volume, completed reviews, backlog items and age, next material event per update, completion-before-next-event result, retry/failure load, maintenance load, mitigation actions already in force, evidence IDs/content digests, and window_digest.
 
 Derived measures include reports per analyst-week, peak-week documents and claims, maximum/median backlog age, percentage of updates completed before the next material event, required versus committed analyst minutes, and residual capacity. Every denominator and zero-denominator policy is explicit.
+
+`window_digest` is SHA-256 of the program's canonical JSON of every CapacityWindow field except `window_digest`. The A-12/A-13 policies, limit set, evaluation method, and their approval timestamps must predate the first observed result in the window. Missing, stale, post-agreed, or digest-mismatched references make the window unusable.
+
+### 3.10 CapacityEvaluation
+
+Contains evaluation_id/version, CapacityWindow ID/version/digest, selected universe ID/version/digest, A-12 policy ID/version/digest and approval binding, A-13 contract ID/version/digest and approval binding, evaluation-method ID/version/digest, the complete pre-agreed limit set, observed measures, per-limit outcomes, aggregate result PASS/FAIL/BLOCKED, mitigation ID/version/digest when applicable, evidence IDs/content digests, approval_bindings, acceptance_state UNACCEPTED/ACCEPTED, capacity_result_sha256, and capacity_decision_sha256.
+
+Each pre-agreed limit contains limit_id, A-13 metric ID/version, A-12 capacity dimension where applicable, comparison operator, threshold decimal string/scale, unit, denominator and zero-denominator policy, applicability interval, approval timestamp, and source-policy digests. Each per-limit outcome binds the limit ID/digest, observed value, predicate result TRUE/FALSE/UNKNOWN, and evidence digests.
+
+The mechanical result is PASS if every applicable limit predicate is TRUE. It is FAIL if all required inputs are valid and at least one predicate is FALSE. It is BLOCKED if any required policy, limit, universe, method, input, denominator, prerequisite A-12/A-13 policy approval binding, evidence item, or digest is missing, stale, ambiguous, post-agreed, or UNKNOWN. A human decision cannot alter this result.
+
+`capacity_result_sha256` is SHA-256 of the program's canonical JSON containing the evaluation/window/universe IDs, versions, and digests; the complete A-12/A-13 policy approval-binding objects with their resolution digests; evaluation-method digest; ordered complete limit definitions; observed measures; ordered per-limit outcomes; aggregate result; mitigation reference; and evidence IDs/content digests. It excludes both digest fields, the S18 post-result `approval_bindings`, and derived `acceptance_state`.
+
+`approval_bindings` contains one explicit component-local requirement binding for each applicable S18 gate. Every accepted evaluation requires distinct current one-to-one `SATISFIED`/`APPROVED` bindings for S18-G03, S18-G04, and S18-G05; a mitigation also requires S18-G02. When satisfied, each binding carries approval_id, approval_record_id, approval type, exact scope, actor, timestamp, evidence, human_review_id, active resolution_decision_id, and resolution_content_sha256. Missing, reused, denied, revoked, expired, stale, scope-mismatched, or digest-mismatched records leave `acceptance_state=UNACCEPTED`.
+
+The S18-G03 binding in this conjunction is the same prerequisite capacity-commitment requirement already bound through A-12, not a second approval requirement. Repeating its reference in the decision preimage binds terminal acceptance to the same current record without allowing that record to satisfy any different requirement.
+
+`acceptance_state=ACCEPTED` if and only if the mechanical result is PASS and the applicable conjunction above validates. `capacity_decision_sha256` is SHA-256 of the program's canonical JSON containing `capacity_result_sha256`, the ordered complete approval bindings with their resolution digests, and derived acceptance_state. Any change to a result or binding requires a new immutable evaluation version and invalidates the prior decision digest.
 
 ## 4. Measurement and decision rules
 
@@ -128,16 +153,19 @@ Derived measures include reports per analyst-week, peak-week documents and claim
 
 1. Every selected company has a per-company manual baseline or a justified matched historical quarter.
 2. Comparisons include raw total report time and the A-13-approved workload-normalized metrics.
-3. Complexity, analyst familiarity, order/practice effects, source changes, model/tool changes, and unmatched differences are explicit confounds.
-4. A pass is mechanical against pre-agreed A-13 thresholds, then subject to required human acceptance. Human acceptance cannot turn a mechanical threshold failure into PASS; mitigation and a new pre-agreed evaluation are required.
-5. The result is evidence about the measured workflow and universe, not a portable causal estimate for all companies or analysts.
+3. Before Phase 1 measurement begins, create a CounterbalancePlan and attempt cross-company order counterbalancing where feasible. PARTIAL or INFEASIBLE is valid only with evidenced constraints and the residual order/practice confound in the experiment log.
+4. Complexity, analyst familiarity, order/practice effects, source changes, model/tool changes, and unmatched differences are explicit confounds.
+5. A pass is mechanical against pre-agreed A-13 thresholds, then subject to required human acceptance. Human acceptance cannot turn a mechanical threshold failure into PASS; mitigation and a new pre-agreed evaluation are required.
+6. The result is evidence about the measured workflow and universe, not a portable causal estimate for all companies or analysts.
 
 ### Results-season throughput
 
 1. Capacity is evaluated over an identified actual or evidence-backed peak week for the selected universe.
-2. Report arrivals, documents, claims, review minutes, retry/failure load, maintenance, backlog age, and next material events are measured using one versioned method.
-3. C-18 passes only if capacity is accepted under the pre-agreed A-12/A-13 limits or an approved mitigation is evidenced and re-evaluated.
-4. Deferring work past the next material event, dropping material claims, or reducing review quality cannot be counted as capacity.
+2. Before the window begins, bind the accepted C-01 universe, current approved A-12/A-13 policies, complete pre-agreed limits, and one versioned evaluation method.
+3. Report arrivals, documents, claims, review minutes, retry/failure load, maintenance, backlog age, and next material events are measured into an immutable CapacityWindow using that method.
+4. Evaluate every limit mechanically and persist the typed result plus capacity_result_sha256 before seeking the post-result S18-G04/S18-G05 human acceptances; the prerequisite capacity and policy approvals remain bound separately.
+5. C-18 passes only when a PASS result has the applicable one-to-one human approval conjunction and a valid capacity_decision_sha256. A shortfall mitigation is approved before use, then produces a new window and evaluation; it cannot relabel the failed result.
+6. Deferring work past the next material event, dropping material claims, or reducing review quality cannot be counted as capacity.
 
 ## 5. Invariants and fail-closed behavior
 
@@ -152,8 +180,10 @@ Derived measures include reports per analyst-week, peak-week documents and claim
 9. Source-locate, calculation-check, correction, and approval time reconcile to total active time without double counting.
 10. Universe selection is exactly two or three core non-financial companies and carries current capacity evidence.
 11. Confounds are never silently normalized away.
-12. A capacity shortfall yields FAIL or BLOCKED until a typed mitigation decision and fresh evaluation exist.
+12. A capacity shortfall remains FAIL or BLOCKED. C-18 remains unaccepted until an approved mitigation is applied and a fresh window/evaluation independently passes.
 13. An analyst or product owner may accept evidence or mitigation only through a typed human resolution; delegated Sol review cannot supply that authority.
+14. Capacity acceptance is derived only from the typed mechanical result and applicable one-to-one approval bindings; a free-form decision status is never authoritative.
+15. A missing counterbalancing attempt, or a PARTIAL/INFEASIBLE status without evidenced constraints and confound disclosure, blocks the Phase 1 economics evaluation.
 
 ## 6. Evidence and typed approval gates
 
@@ -174,7 +204,8 @@ Required evidence inventory:
 - symmetric manual/assisted instrumentation protocol and content hash;
 - Quarter 0 plus Quarters 1–3 session/event exports with reconciliation results;
 - Phase 1 candidate rubric, selection decision, baseline matches, complexity descriptors, and confound log;
-- peak-week CapacityWindow evidence and any mitigation/re-evaluation;
+- CounterbalancePlan, actual order assignments, and either execution evidence or the evidenced PARTIAL/INFEASIBLE constraint;
+- peak-week CapacityWindow and CapacityEvaluation evidence, complete pre-agreed limit set, result/decision digests, and any mitigation/new-window/re-evaluation chain;
 - typed approval records for S18-G02 through S18-G05;
 - fresh delegated review and verification outputs bound to all current artifact hashes.
 
@@ -191,13 +222,14 @@ Required evidence inventory:
 | S18-T07 | A threshold created after the evaluated result, a stale A-13 version, or an incomplete complexity descriptor returns BLOCKED. |
 | S18-T08 | Raw total time, workload-normalized results, and every declared confound appear together in the economics result. |
 | S18-T09 | Universe selection rejects fewer than two, more than three, financial-sector, unsupported, or capacity-infeasible selections. |
-| S18-T10 | Capacity metrics reproduce reports per analyst-week, peak documents/claims, backlog age, completion before next event, and required-versus-committed minutes. |
+| S18-T10 | From the bound CapacityWindow, A-12/A-13 policies, limit set, and evaluation method, capacity metrics and every limit predicate reproduce reports per analyst-week, peak documents/claims, backlog age, completion before next event, required-versus-committed minutes, the aggregate PASS/FAIL/BLOCKED result, and capacity_result_sha256 exactly. |
 | S18-T11 | Dropped material work, overdue updates, or quality-gate bypass cannot improve a capacity result. |
-| S18-T12 | A shortfall without approved mitigation yields FAIL/BLOCKED; mitigation requires fresh evidence and evaluation. |
-| S18-T13 | Mechanical PASS without all applicable human gates remains unaccepted. |
-| S18-T14 | Mutation of a session, claim inventory, match, metric version, threshold, selected universe, or capacity record invalidates prior evaluation evidence. |
+| S18-T12 | A shortfall without approved mitigation yields FAIL/BLOCKED; an approved mitigation cannot rewrite that result and must produce a fresh CapacityWindow and CapacityEvaluation. |
+| S18-T13 | With prerequisite A-12/A-13 bindings current, mechanical PASS without distinct current S18-G04/G05 records remains UNACCEPTED; terminal acceptance also binds S18-G03, and a mitigated case additionally requires S18-G02. Reused, stale, revoked, or scope/digest-mismatched records fail and cannot reproduce capacity_decision_sha256. |
+| S18-T14 | Mutation of a session, claim inventory, match, metric/policy version, threshold, selected universe, evaluation method, CapacityWindow, result, mitigation, or approval binding changes the applicable digest and invalidates prior evaluation/acceptance evidence. |
+| S18-T15 | Each Phase 1 run has an EXECUTED counterbalance plan, or a PARTIAL/INFEASIBLE plan with a specific evidenced constraint and residual confound; a missing attempt or bare decline returns BLOCKED. |
 
-Verification succeeds only when current data reconcile, negative tests fail closed, evidence hashes match, and the applicable typed approvals are satisfied. Human acceptance cannot be inferred from a passing script.
+Verification succeeds only when current data reconcile, negative tests fail closed, evidence hashes and both capacity digests recompute, and the applicable one-to-one typed approvals are satisfied. Human acceptance cannot be inferred from a passing script.
 
 ## 8. Dependencies, activation, and amendment guards
 

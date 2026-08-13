@@ -26,11 +26,11 @@ S01 is a **mixed spec** at the pinned draft snapshot: A-01 and A-09 are active (
 
 S01 requires three versioned records:
 
-1. `OperatingBoundary` states the initial intended user, private/internal-use posture, public and paid distribution posture, personalization posture, execution linkage, intended future boundary, exclusions, owner, effective time, and superseded version.
+1. `OperatingBoundary` states the initial intended user, private/internal-use posture, public and paid distribution posture, personalization posture, execution linkage, intended future boundary, unapproved working label, content-bound product-identity decision, exclusions, owner, effective time, and superseded version.
 2. `ProductIdentityDecision` records the names searched, jurisdictions and classes examined, search evidence, conflicts or uncertainties, decision on continued use of the Blueprint working title, the approved product name, decision authority, decision time, and superseded version.
 3. `DistributionBoundaryGate` records the exact proposed mode, current legal and regulatory evidence, mandatory disclosures, reviewer responsibilities, technical distribution controls, decision records, and gate result.
 
-The initial operating posture is private/internal research unless a competent human explicitly approves a narrower or different posture. The record must separately address:
+The proposed initial posture is private/internal research. It records intent only: until a `PRODUCT_OWNER_DECISION` for the exact boundary ID, version, and digest is satisfied and A-01 legally transitions from `Open` to `Accepted`, **no private/internal or other product operation is authorized by S01**. After that transition, the accepted record supplies only the S01 boundary; every operation remains subject to all other applicable gates. The record must separately address:
 
 - private/internal use;
 - public distribution;
@@ -57,9 +57,12 @@ The initial operating posture is private/internal research unless a competent hu
 |---|---|---|
 | `boundary_id` | stable string | Unique and immutable. |
 | `version` | positive integer | Increases on every substantive boundary change. |
-| `product_name` | string | `Equity-OS` unless a competent human approves a later rename. |
+| `working_label` | string | Descriptive label only. `Equity-OS` is the initial working label and is not an approved product name. |
+| `product_identity_decision_id` | nullable stable ID | Must name the applicable `ProductIdentityDecision` before an approved product name may be represented. |
+| `product_identity_decision_sha256` | nullable lowercase SHA-256 | Must equal a fresh recomputation of that exact decision's `content_sha256`. ID and digest are both null while A-09 is unresolved. |
+| `approved_product_name` | nullable string | Must be null unless the bound identity decision is current, its exact `PRODUCT_OWNER_DECISION` is satisfied, and A-09 is `Accepted`; otherwise it exactly copies that decision's approved name. |
 | `intended_users` | nonempty array | Names roles, not inferred audiences. |
-| `private_internal_use` | boolean plus rationale | Must be explicit. |
+| `private_internal_use` | `PROHIBITED`, `PROPOSED`, or `APPROVED`, plus rationale | Must be explicit. `PROPOSED` records intent and is not authorization. |
 | `public_distribution` | `PROHIBITED`, `PROPOSED`, or `APPROVED` | Defaults to `PROHIBITED`. |
 | `paid_distribution` | same enum | Defaults to `PROHIBITED`. |
 | `personalization` | same enum | Defaults to `PROHIBITED`. |
@@ -68,10 +71,13 @@ The initial operating posture is private/internal research unless a competent hu
 | `legal_sufficiency_claimed` | boolean | Must be `false`. |
 | `effective_at`, `supersedes` | UTC timestamp, nullable ID | Preserve version history. |
 | `approval_record_ids` | array | Empty until competent human decisions exist. |
+| `content_sha256` | lowercase SHA-256 | Content digest computed from the exact preimage below. |
 
 ### 5.2 `ProductIdentityDecision`
 
-The record contains `decision_id`, `candidate_names`, `search_scope`, `search_evidence_refs`, `conflicts`, `uncertainties`, `decision`, `decision_authority`, `decided_at`, and `supersedes`. Missing search evidence or decision authority leaves A-09 unresolved.
+The closed record contains `decision_id`, `candidate_names`, `search_scope`, `search_evidence_refs`, `conflicts`, `uncertainties`, `decision`, `approved_product_name`, `decision_authority`, `decided_at`, `supersedes`, `approval_record_ids`, and `content_sha256`. `approved_product_name` is null unless `decision` explicitly adopts a name. Missing search evidence, an active canonical `SATISFY_APPROVAL` human resolution, or its matching `PRODUCT_OWNER_DECISION` approval record leaves A-09 unresolved and prevents any `OperatingBoundary` from representing an approved product name.
+
+For both records, canonical JSON is UTF-8 JSON with sorted keys, no insignificant whitespace, Unicode emitted directly, JSON booleans/null, and arrays retained in declared order. `OperatingBoundary.content_sha256` is SHA-256 of the closed `OperatingBoundary` object with only `content_sha256` and `approval_record_ids` omitted. `ProductIdentityDecision.content_sha256` uses the same rule over its closed object. Omitting approval IDs avoids a digest/approval cycle; each approval record instead binds the applicable record ID, version where present, and recomputed digest. Unknown fields fail validation.
 
 ### 5.3 `DistributionBoundaryGate`
 
@@ -80,21 +86,23 @@ The record contains `gate_id`, `boundary_version`, `intended_mode`, `legal_evide
 ## 6. Invariants and fail-closed behavior
 
 1. `legal_sufficiency_claimed` is always `false`; a boundary document that claims sufficiency is invalid.
-2. Missing, stale, ambiguous, or conflicting mode data resolves to the more restrictive boundary.
-3. `PROPOSED` is not authorization. Only `APPROVED` plus current typed human records may open a mode.
-4. Public, paid, personalized, and execution-connected behavior is disabled while E-08 remains `Deferred`.
-5. Crossing any one of those boundaries requires a separately evidenced current review for the exact intended mode; approval for one mode does not imply another.
-6. Execution linkage additionally remains blocked by S04/E-09 even if E-08 is later activated and accepted.
-7. Product-name search results do not constitute trademark clearance. Missing competent decision evidence leaves A-09 unresolved.
-8. Agent review and delegated artifact approval are documentation-quality controls only; they cannot satisfy legal, regulatory, product, or distribution authority.
-9. All decisions are versioned and auditable; no record is silently overwritten.
+2. No product operation, including private/internal research, is authorized by S01 before A-01 is `Accepted` against the exact current boundary digest and its `PRODUCT_OWNER_DECISION` approval record resolves through an active canonical human resolution.
+3. Missing, stale, ambiguous, or conflicting mode data resolves to the more restrictive boundary.
+4. `PROPOSED` is not authorization. Only `APPROVED` plus current typed human records may open a mode after A-01 is `Accepted`.
+5. Public, paid, personalized, and execution-connected behavior is disabled while E-08 remains `Deferred`.
+6. Crossing any one of those boundaries requires a separately evidenced current review for the exact intended mode; approval for one mode does not imply another.
+7. Execution linkage additionally remains blocked by S04/E-09 even if E-08 is later activated and accepted.
+8. `working_label` is never product-name approval. An approved name requires a current ID-and-digest binding to the exact accepted `ProductIdentityDecision`; an absent, stale, mismatched, superseded, or unapproved decision leaves `approved_product_name=null`.
+9. Product-name search results do not constitute trademark clearance. Missing competent decision evidence leaves A-09 unresolved.
+10. Agent review and delegated artifact approval are documentation-quality controls only; they cannot satisfy legal, regulatory, product, or distribution authority.
+11. All decisions are versioned and auditable; no record is silently overwritten.
 
 ## 7. Evidence and typed human-approval gates
 
 | Gate | Required evidence | Required typed authority | Fail-closed result |
 |---|---|---|---|
-| A-01 boundary freeze | Complete versioned `OperatingBoundary` covering all six required dimensions | `PRODUCT_OWNER_DECISION` for the exact boundary | A-01 remains unresolved. |
-| A-09 name decision | Search record with scope, evidence, conflicts, and explicit decision | `PRODUCT_OWNER_DECISION`; `LEGAL_REVIEW` when legal/trademark clearance is represented | The working title is not represented as cleared or adopted. |
+| A-01 boundary freeze | Complete versioned `OperatingBoundary` covering all six required dimensions and a recomputed content digest | `PRODUCT_OWNER_DECISION` approval record for the exact boundary ID, version, and digest, bound to an active canonical `SATISFY_APPROVAL` human resolution | A-01 remains unresolved and all product operation remains blocked under S01. |
+| A-09 name decision | Search record with scope, evidence, conflicts, explicit decision, and recomputed content digest | `PRODUCT_OWNER_DECISION` approval record for the exact identity-decision ID and digest, bound to an active canonical `SATISFY_APPROVAL` human resolution; `LEGAL_REVIEW` when legal/trademark clearance is represented | Only the unapproved working label may be shown; it is not represented as cleared or adopted. |
 | E-08 activation | Current, mechanically evaluated activation predicate plus an active canonical `ACTIVATE_DEFERRED` human resolution for E-08 | `PRODUCT_OWNER_DECISION` to activate evaluation; this is not distribution approval | E-08 remains dormant. |
 | E-08 intended-mode review | Current primary legal/regulatory evidence for the exact mode; obligations, disclosures, reviewer responsibilities, and controls | `LEGAL_REVIEW`, `REGULATORY_REVIEW`, and `DISTRIBUTION_APPROVAL`, each as a distinct human resolution | Intended mode remains prohibited. |
 | Delegated spec approval | Persisted clean fresh-context Sol xhigh review bound to this file and source hashes | `DELEGATED_ARTIFACT_APPROVAL` only | Spec remains draft; no other gate is affected. |
@@ -110,13 +118,15 @@ No actor, timestamp, authority evidence, or canonical resolution may be inferred
 1. Structural test: all three record types reject absent required fields and unknown enum values.
 2. Boundary-completeness fixture: omission of any of the six A-01 dimensions fails.
 3. Sufficiency fixture: `legal_sufficiency_claimed=true` fails.
-4. Restrictive-default fixture: unknown mode, stale review, or missing approval yields `BLOCKED`/`PROHIBITED`.
-5. Independence fixture: approval of public distribution does not approve paid distribution, personalization, or execution linkage.
-6. Dormancy fixture: a proposed mode without a legal register transition and canonical activation resolution cannot activate E-08.
-7. Distribution fixture: even after activation, missing legal review, regulatory review, disclosures, reviewer responsibilities, controls, or distribution approval blocks release.
-8. Execution fixture: execution linkage remains blocked unless both E-08 and S04/E-09 gates pass.
-9. Identity fixture: missing search evidence or competent decision keeps A-09 unresolved.
-10. Audit fixture: superseding a boundary preserves the prior immutable record.
+4. Pre-A-01 operation fixture: private/internal use marked `PROPOSED` or `APPROVED` still yields `BLOCKED` while A-01 is not `Accepted`, or when the exact boundary approval/resolution binding is missing or stale.
+5. Restrictive-default fixture: unknown mode, stale review, or missing approval yields `BLOCKED`/`PROHIBITED`.
+6. Independence fixture: approval of public distribution does not approve paid distribution, personalization, or execution linkage.
+7. Dormancy fixture: a proposed mode without a legal register transition and canonical activation resolution cannot activate E-08.
+8. Distribution fixture: even after activation, missing legal review, regulatory review, disclosures, reviewer responsibilities, controls, or distribution approval blocks release.
+9. Execution fixture: execution linkage remains blocked unless both E-08 and S04/E-09 gates pass.
+10. Identity-binding fixture: a working label, missing A-09 acceptance, missing approval resolution, wrong decision ID, or changed/superseded decision digest keeps `approved_product_name=null` and A-09 unresolved.
+11. Digest fixture: changing any field in either canonical digest preimage without recomputing the digest fails; changing an approval reference alone does not alter the semantic digest but is separately validated.
+12. Audit fixture: superseding a boundary preserves the prior immutable record.
 
 Verification evidence must include schema-test output, fixture output, content hashes for the decision artifacts, and separate typed human records where required. A fresh Sol xhigh reviewer must verify exact authority coverage and return a clean review before delegated artifact approval can be recorded.
 

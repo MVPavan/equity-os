@@ -52,8 +52,8 @@ must never be represented as the final frozen A-04 contract.
 
 Mandatory gate:
 
-> After A-03 baseline evidence, amend and re-review S06 before final A-04
-> acceptance or dependent final-contract work.
+> After A-03 baseline evidence and A-11 bootstrap-thesis acceptance, amend and
+> re-review S06 before final A-04 acceptance or dependent final-contract work.
 
 The amendment must use the same maximum review-round policy and require a fresh
 delegated Sol xhigh approval. Until that amendment is clean and approved:
@@ -87,6 +87,21 @@ typed evidence or materiality validation.
 
 ## Interfaces and data contracts
 
+### Canonical JSON digest contract
+
+Every structured-record digest defined by S06 is lowercase SHA-256 of canonical
+JSON bytes: UTF-8, object keys sorted, no insignificant whitespace, Unicode
+emitted directly, JSON booleans/null, and arrays retained in declared order.
+For each record digest, the preimage is the record's complete logical JSON
+object with exactly the field that stores that digest omitted. Other digest
+fields remain because they bind referenced content. `artifact_sha256`,
+`candidate_claim_inventory_sha256`, `policy_sha256`, `decision_sha256`,
+`falsifier_sha256`, and `draft_sha256` therefore omit only themselves from
+their respective preimages. Unknown fields are invalid rather than silently
+excluded from hashing. The canonical serialization of
+`EarningsReviewOutputV0` without `artifact_sha256` is the exact approved output
+preimage; changing any narrative string changes those canonical bytes.
+
 ### `EarningsReviewOutputV0`
 
 Every output is immutable by version and contains every field below. Empty
@@ -97,6 +112,8 @@ collections are explicit; missing required fields fail validation.
 | `output_id`, `output_version`, `contract_version` | Stable identity; `contract_version` identifies this provisional v0 until amended |
 | `contract_stage` | `PROVISIONAL_V0` or, only after the amendment gate, `FINAL_V1` |
 | `company_id`, `run_id`, `evidence_package_id` | Stable identities resolving to authoritative records |
+| `candidate_claim_inventory_id` / `candidate_claim_inventory_sha256` | Exact immutable candidate inventory emitted by the producing run |
+| `candidate_claim_ids` | Exact lexicographically sorted unique set of every claim in that inventory; no pre-evaluation omission or filtering |
 | `event` | Typed event kind, reporting period, publication/occurrence time, exact source set |
 | `knowledge_cutoff` | UTC cutoff enforced by the run; every input must be available by it |
 | `facts` | Reconciled fact references with source, scope, period, units/currency, valid time, knowledge time, and revision state |
@@ -108,15 +125,36 @@ collections are explicit; missing required fields fail validation.
 | `open_questions` | Question, why it matters, required evidence, owner/status if known |
 | `calculations` | Calculation-trace references; the narrative is never the authoritative calculator |
 | `memory_draft` | Draft-only proposed canonical-thesis changes with provenance and diff; never promoted by output creation |
-| `materiality_decisions` | One current policy-bound decision for each claim requiring evaluation |
-| `approval_record` | Separate approval reference bound to exact artifact bytes/hash |
-| `artifact_sha256` | Hash of the exact approved output bytes |
+| `materiality_decisions` | Exactly one current policy-bound decision for every `candidate_claim_id` |
+| `approval_record` | Separate approval reference bound to exact canonical artifact bytes/hash |
+| `artifact_sha256` | Digest of the canonical output preimage defined above |
 
-Every narrative claim carries an epistemic class: `observed`, `computed`,
-`inferred`, `forecast`, or `opinion`. Material observed/computed claims resolve
-to direct facts or calculation traces. Material inferred/forecast claims link
-evidence, assumptions, uncertainty, and falsifiers. Prose is the display layer,
-not evidence authority.
+Every narrative claim carries a unique `claim_id` and an epistemic class:
+`observed`, `computed`, `inferred`, `forecast`, or `opinion`. Material
+observed/computed claims resolve to direct facts or calculation traces.
+Material inferred/forecast claims link evidence, assumptions, uncertainty, and
+falsifiers. Prose is the display layer, not evidence authority.
+
+### `CandidateClaimInventory`
+
+The producing run opens this append-only inventory before materiality
+evaluation, narrative suppression, or output selection. It includes every
+structured or narrative assertion proposed, imported, derived, displayed,
+used as support, or considered for `facts`, `changes`, `driver_analysis`,
+`management_ledger`, `thesis_impact`, `open_questions`, calculations,
+falsifiers, or the memory draft, including candidates later rejected or omitted
+from display. Each entry contains a unique claim ID, exact content, epistemic
+class, origin stage/slot, evidence or calculation references, and disposition.
+Every claim-producing stage must append its candidate before the claim can be
+evaluated, used, or discarded. The run closes and makes the inventory immutable
+only after all such stages are complete, and
+`candidate_claim_inventory_sha256` binds its canonical preimage.
+
+Output validation requires an exact-set match between the closed inventory and
+`candidate_claim_ids`, an exact one-to-one match between those IDs and
+`materiality_decisions`, and registration of every claim ID reachable from any
+output field. A claim cannot avoid evaluation by being described as obviously
+immaterial, omitted from the final narrative, or introduced only as support.
 
 ### `MaterialityPolicy`
 
@@ -154,7 +192,12 @@ Each decision contains `decision_id`, `claim_id`, `policy_id/version/hash`,
 evaluated quantitative inputs and rule results, matched always-material
 categories, thesis-relevance results, conflict/uncertainty state, applied
 coverage override and approval, result, rationale, reviewer state, evidence
-references, timestamp, and decision hash.
+references, timestamp, and `decision_sha256`. It also contains one explicit
+dimension evaluation for each of `QUANTITATIVE`, `ALWAYS_MATERIAL`,
+`THESIS_RELEVANCE`, `UNCERTAINTY_CONFLICT`, and `COVERAGE_OVERRIDE`. Every rule
+in every dimension records its inputs, evidence, and `MATCHED`, `NOT_MATCHED`,
+`NOT_APPLICABLE`, or `UNKNOWN` result; `NOT_APPLICABLE` requires a rationale.
+Evaluation is exhaustive and does not short-circuit after a material match.
 
 The closed result set is `MATERIAL`, `NOT_MATERIAL`, and `REVIEW_REQUIRED`.
 `NOT_MATERIAL` requires complete inputs and a reasoned policy result; it is not
@@ -171,7 +214,8 @@ Each falsifier contains:
 - `thesis_effect`: `MATERIALLY_WEAKEN` or `REVERSE`;
 - current state: `UNOBSERVED`, `SUPPORTED`, `TRIGGERED`, `CONFLICTED`, or
   `UNKNOWN`, with evidence and evaluation timestamp; and
-- version, supersession link, owner/status if known, and content hash.
+- version, supersession link, owner/status if known, and
+  `falsifier_sha256`.
 
 A risk statement without an observable trigger and specified thesis effect is
 invalid. `UNKNOWN` or `CONFLICTED` cannot be silently treated as untriggered.
@@ -180,18 +224,21 @@ invalid. `UNKNOWN` or `CONFLICTED` cannot be silently treated as untriggered.
 
 The memory draft contains the approved prior thesis ID/hash, proposed diff,
 supporting claim/fact/calculation references, provenance, authoring run, and
-draft hash. It is always `DRAFT`; only a separate human-approved memory
+`draft_sha256`. It is always `DRAFT`; only a separate human-approved memory
 promotion transaction may affect the canonical thesis.
 
 ## Invariants and fail-closed behavior
 
 1. Every output declares event, knowledge cutoff, evidence package, contract
    version/stage, and exact artifact hash.
-2. Every material claim has an explicit current materiality decision and the
-   evidence required for its epistemic class. Missing support blocks approval.
+2. Every candidate claim appears in the closed candidate inventory and
+   has exactly one explicit current materiality decision covering every policy
+   dimension and rule. Every material claim has the evidence required for its
+   epistemic class. Any inventory/decision mismatch, skipped dimension, or
+   missing support blocks approval.
 3. `REVIEW_REQUIRED`, unknown policy version, stale policy hash, missing
-   coverage-override approval, unit/period ambiguity, or source conflict blocks
-   a final materiality result and output approval.
+   coverage-override approval, unit/period ambiguity, or unresolved source
+   conflict blocks a final materiality result and output approval.
 4. Always-material categories cannot be downgraded by a quantitative threshold
    alone.
 5. Facts, calculations, inferences, forecasts, and opinions remain typed and
@@ -202,16 +249,16 @@ promotion transaction may affect the canonical thesis.
 7. The evidence package reconstructs from registered identifiers. Approved
    narrative bytes are immutable and hash-bound; regenerated prose is a new
    artifact requiring review, not proof of reproduction.
-8. Every thesis impact contains at least one observable falsifier unless an
-   analyst supplies explicit, separately approved evidence that none is
-   applicable; generic risks do not satisfy the requirement.
+8. Every thesis impact contains at least one observable falsifier; generic
+   risks and a no-falsifier approval or waiver do not satisfy the requirement.
 9. Memory drafts never write canonical thesis state. Output approval and memory
    promotion are separate human decisions.
 10. Any mutation to source evidence, policy, materiality decision, output,
     calculation trace, falsifier, or approval makes dependent proofs stale.
-11. `FINAL_V1` is forbidden until A-03 baseline evidence exists and the S06
-    amendment has received a fresh clean Sol xhigh delegated approval plus all
-    required human acceptance.
+11. `FINAL_V1` is forbidden until A-03 baseline evidence exists, A-11 has a
+    current approved and versioned bootstrap thesis, and the S06 amendment has
+    received a fresh clean Sol xhigh delegated approval plus all required human
+    acceptance.
 
 ## Evidence and typed human-approval gates
 
@@ -226,7 +273,7 @@ legal, regulatory, distribution, or memory-promotion authority.
 | Coverage-specific override | `ANALYST_ACCEPTANCE` | Competent analyst for the named coverage scope | Exact override, rationale, scope, effective/expiry time, evidence | Override ignored |
 | Provisional v0 use for baseline | `ANALYST_ACCEPTANCE` | Competent baseline analyst | Exact v0 hash, instrumentability assessment, known gaps | A-03 cannot consume v0 |
 | Post-baseline amended S06 review | `DELEGATED_ARTIFACT_APPROVAL` | Fresh Sol xhigh reviewer under delegated goal authority | Baseline evidence, amended hash, finding/fix history, clean review | A-04 cannot be final |
-| Final output-contract acceptance | `ANALYST_ACCEPTANCE` | Competent analyst accountable for the first output contract | Exact final contract and fixtures, baseline-derived changes, known limits | A-04 remains open |
+| Final output-contract acceptance | `ANALYST_ACCEPTANCE` | Competent analyst accountable for the first output contract | Exact final contract and fixtures, baseline-derived changes, current A-11 thesis approval/version/hash, known limits | A-04 remains open |
 | Each output artifact | `ANALYST_ACCEPTANCE` | Competent reviewing analyst | Exact artifact hash, evidence package, materiality decisions, corrections | Artifact is unapproved |
 | Canonical-thesis update | `MEMORY_PROMOTION` | Competent analyst authorized to promote memory | Exact prior thesis, proposed diff/hash, provenance, approval resolution | Memory draft remains noncanonical |
 
@@ -252,19 +299,28 @@ They are never inferred from output or analyst approval.
    classified.
 6. Reject `NOT_MATERIAL` when required inputs are missing, conflicting,
    ambiguous, unit-incompatible, or policy-stale.
-7. Reject a generic risk as a falsifier; accept each observable type only when
+7. Assert the closed candidate inventory, `candidate_claim_ids`, and
+   materiality decisions are exact matching sets; require every policy rule in
+   all five dimensions to have an explicit result for every candidate.
+8. Omit an apparently immaterial, rejected, display-suppressed, or support-only
+   candidate or its decision and prove approval fails closed.
+9. Reject a generic risk and a zero-falsifier thesis impact even when an analyst
+   supplies a no-falsifier approval; accept each observable type only when
    trigger, horizon, evidence source, and thesis effect are explicit.
-8. Trigger, conflict, and invalidate falsifier evidence and prove the thesis
+10. Trigger, conflict, and invalidate falsifier evidence and prove the thesis
    impact becomes review-required.
-9. Attempt to promote a memory draft through output approval and prove canonical
+11. Attempt to promote a memory draft through output approval and prove canonical
    thesis state is unchanged.
-10. Mutate one approved artifact byte, policy rule, fixture, evidence reference,
-    or calculation trace and prove all dependent approvals and verification
-    results become stale.
+12. Compute output, candidate-inventory, policy, decision, falsifier, and
+    memory-draft digests from their canonical JSON preimages; prove key order
+    and insignificant whitespace do not change a digest, each own digest field
+    is excluded without recursion, referenced digests remain bound, and any
+    canonical-preimage content mutation or referenced evidence/calculation byte
+    mutation makes all dependent approvals and verification results stale.
 
 ### Mandatory amendment verification
 
-After A-03, the amendment must:
+After A-03 and A-11, the amendment must:
 
 1. inventory every baseline output field used, missing, ambiguous, redundant,
    or added outside v0;
@@ -272,8 +328,12 @@ After A-03, the amendment must:
    deferred contract decisions with evidence;
 3. rerun all v0 fixtures plus baseline-derived fixtures;
 4. receive a fresh clean Sol xhigh review and separate analyst acceptance bound
-   to the amended bytes; and
-5. prove `contract_stage=FINAL_V1` is impossible until all four prior steps
+   to the amended bytes;
+5. resolve the current approved A-11 bootstrap-thesis version/hash and its
+   observable falsifiers;
+6. attempt final freeze with complete A-03 and clean amendment evidence but a
+   missing, stale, or unapproved A-11 thesis and prove it fails closed; and
+7. prove `contract_stage=FINAL_V1` is impossible until all six prior steps
    pass.
 
 Verification results must identify exact command argv, repository-relative
@@ -285,8 +345,9 @@ screenshots are not proof.
 
 - **A-10** depends on A-01 boundary and A-02 discovery-company selection.
 - **A-03 / S05** consumes provisional A-04 v0 and the A-10 policy.
-- **A-04 final freeze** depends on completed A-03 baseline evidence and the
-  mandatory S06 amendment/re-review.
+- **A-04 final freeze** depends on completed A-03 baseline evidence, then a
+  current approved A-11 bootstrap thesis, then the mandatory S06
+  amendment/re-review.
 - **S11/S16** own run-manifest/reproducibility and deterministic-compute details;
   S06 consumes their identifiers and traces without duplicating ownership.
 - **S13** owns the final claim schema and vocabulary registry; S06 defines

@@ -65,6 +65,18 @@ as an assisted update. Full automated company initiation remains deferred.
 
 ## Interfaces and data contracts
 
+### Canonical JSON digest contract
+
+Every structured-record digest defined by S05 is lowercase SHA-256 of canonical
+JSON bytes: UTF-8, object keys sorted, no insignificant whitespace, Unicode
+emitted directly, JSON booleans/null, and arrays retained in declared order.
+For each record digest, the preimage is the record's complete logical JSON
+object with exactly the field that stores that digest omitted. Other digest
+fields remain because they bind referenced content. `manifest_sha256`,
+`event_sha256`, `package_sha256`, `disposition_sha256`, and `thesis_sha256`
+therefore omit only themselves from their respective preimages. Unknown fields
+are invalid rather than silently excluded from hashing.
+
 ### `DiscoverySliceManifest`
 
 The manifest is immutable after baseline start; corrections create a new
@@ -80,7 +92,7 @@ version linked to the prior version and require revalidation of affected work.
 | `management_commitment_candidate_ids` | At least one commitment observable across periods |
 | `selection_evidence_ref_ids` | Content-bound evidence for selection and availability |
 | `created_at` / `created_by` | UTC time and accountable actor |
-| `manifest_sha256` | Hash of canonical manifest content |
+| `manifest_sha256` | Digest of the canonical manifest preimage defined above |
 
 Each quarter entry contains period start/end, event/publication timestamp,
 knowledge cutoff, role, source-package ID/hash, source completeness assessment,
@@ -92,8 +104,8 @@ filenames.
 Every baseline action emits an immutable event with:
 
 - `event_id`, `baseline_run_id`, `activity_type`, UTC `started_at` and
-  `ended_at`, active-work duration, actor, source/artifact references, and event
-  hash;
+  `ended_at`, active-work duration, actor, source/artifact references, and
+  `event_sha256`;
 - `activity_type` from the closed set `READING`, `SOURCE_LOCATION`,
   `VERIFICATION`, `CALCULATION`, `DRAFTING`, `APPROVAL`, and
   `INSTRUMENTATION_OVERHEAD`; and
@@ -113,13 +125,31 @@ The Q0 package contains:
 - registered calculation inputs, assumptions, outputs, code/version, and trace;
 - draft artifact and final approved artifact identities/hashes;
 - complete instrumentation events and total durations by activity;
-- review corrections, unresolved gaps, and approval evidence; and
-- a package hash binding all component identities and versions.
+- review corrections, source-conflict records, unresolved gaps, and approval
+  evidence; and
+- `package_sha256` binding all component identities, versions, and referenced
+  digests under the canonical preimage contract.
 
 The manual baseline uses only evidence available at its declared cutoff. A
 missing source, ambiguous period/unit, unresolved conflict, calculation gap, or
 missing approval is recorded and blocks acceptance rather than being silently
 filled.
+
+### `SourceConflictDisposition`
+
+Every conflict between source occurrences is preserved under one stable
+`conflict_id` with all occurrence IDs/hashes, affected fact/claim/calculation
+IDs, conflict description, and status. The closed status set is `OPEN`,
+`RESOLVED`, and `EXCLUDED_FROM_BASELINE`. `RESOLVED` requires a typed resolution
+of `AUTHORITATIVE_SOURCE_SELECTED`, `SCOPES_DISTINGUISHED`, or
+`SOURCE_CORRECTED`, plus nonempty evidence references, rationale, resolver,
+timestamp, and current `ANALYST_ACCEPTANCE` bound to the exact disposition.
+`EXCLUDED_FROM_BASELINE` requires evidence that every affected item and
+dependent output was removed, plus the same typed analyst acceptance. A review,
+acknowledgement, or deferred decision does not change `OPEN`; any `OPEN`,
+unevidenced, stale, or unmatched disposition blocks baseline acceptance. Every
+record carries `disposition_sha256` under the canonical preimage contract, and
+the analyst acceptance binds that exact digest.
 
 ### `BootstrapCoverageThesis`
 
@@ -134,7 +164,8 @@ contains:
 | `risks` | Specific risk, mechanism, evidence, horizon, and thesis relevance |
 | `open_questions` | Question, evidence needed, owner/status if known |
 | `observable_falsifiers` | Observable event, metric, management outcome, or evidence that would materially weaken or reverse the thesis |
-| `approval_record` | Separate human approval bound to exact thesis bytes/hash |
+| `approval_record` | Separate human approval bound to exact canonical thesis bytes/hash |
+| `thesis_sha256` | Digest of the canonical thesis preimage defined above |
 
 The thesis version, approval, and hash must be available before any Q1 assisted
 run is registered.
@@ -155,14 +186,18 @@ run is registered.
    pause rules, and overhead accounting.
 6. The manual baseline is performed before the bootstrap thesis is approved;
    the approved thesis exists before Q1 begins.
-7. Approval applies to exact artifact bytes. Later edits create a new version
-   and require a new approval; an agent draft never becomes the approved thesis.
+7. Approval applies to exact canonical artifact bytes. Later edits create a new
+   version and require a new approval; an agent draft never becomes the
+   approved thesis.
 8. Practice effect, familiarity, source gaps, interruptions, and instrumentation
    overhead remain visible in the experiment log and are not normalized away.
 9. Results are descriptive for the slice. Report-level percentiles or claims of
    independent claim-level samples are prohibited at this scale.
 10. Full initiation remains deferred; the bootstrap thesis cannot be relabeled
     as a completed initiation product.
+11. Every source conflict is either evidentially `RESOLVED` or fully
+    `EXCLUDED_FROM_BASELINE` under a current typed analyst disposition before
+    baseline acceptance. `OPEN` and merely reviewed conflicts remain blockers.
 
 ## Evidence and typed human-approval gates
 
@@ -197,11 +232,20 @@ human-review process. None is inferred from product-owner or analyst approval.
 5. Assert the baseline package has a current analyst approval bound to its exact
    hash.
 6. Assert the bootstrap thesis contains every required section, has a distinct
-   current analyst approval bound to exact bytes, and predates Q1 registration.
+   current analyst approval bound to exact canonical bytes, and predates Q1
+   registration.
 7. Assert Q0 is absent from assisted-run inputs and Q1–Q3 have no completed
    assisted output at the S05 acceptance point.
-8. Mutate a source, manifest, baseline, or thesis byte and prove the associated
-   hash, approval, and downstream readiness become stale.
+8. Compute manifest, instrumentation-event, baseline-package,
+   conflict-disposition, and thesis digests from their canonical JSON
+   preimages; prove key order and insignificant whitespace do not change a
+   digest, each own digest field is excluded without recursion, referenced
+   digests remain bound, and any semantic record mutation or referenced
+   source/artifact byte mutation makes the associated approval and downstream
+   readiness stale.
+9. For every source conflict, assert a current evidenced `RESOLVED` or
+   `EXCLUDED_FROM_BASELINE` disposition with matching analyst acceptance;
+   reject `OPEN`, review-only, unevidenced, stale, or partially excluded cases.
 
 ### Scenario acceptance
 
@@ -210,8 +254,9 @@ human-review process. None is inferred from product-owner or analyst approval.
 - Pause and resume a manual activity without losing active time or double
   counting overhead.
 - Record a discovered source conflict without overwriting either occurrence;
-  prove baseline acceptance remains blocked until resolved or explicitly
-  reviewed.
+  prove baseline acceptance remains blocked until an evidenced `RESOLVED` or
+  `EXCLUDED_FROM_BASELINE` typed disposition is accepted, and that explicit
+  review alone does not unblock it.
 - Attempt Q1 registration without the approved bootstrap thesis and prove it
   fails closed.
 
