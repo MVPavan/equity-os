@@ -5,6 +5,7 @@ Core harness is stable; repo-specific facts live in `.codex/project/`.
 
 ## Critical guidelines
 
+- We have limited amount of time. Dont unecessarily spend time on checking/reviewing trivial things, time is critical, you will be killed if we run out of time. Make best use of it.
 - Prioritize factual accuracy over agreement with me.
 - Point out errors and unchecked assumptions in my thinking.
 - When I ask you to assess something, do so critically and avoid grade inflation.
