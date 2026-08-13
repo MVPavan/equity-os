@@ -14,10 +14,11 @@ run; do not use a host-native spawn surface or a Claude-side `codex-adapter`.
 | Need | Path |
 | --- | --- |
 | Small, reversible task | Work inline and self-check. |
-| Standard bounded implementation | Launch one Codex CLI sub-agent with the `implementer` role constraints and `workspace-write`, then verify locally. |
+| Standard bounded implementation | Launch one Terra `xhigh` Codex CLI sub-agent with the `implementer` role constraints and `workspace-write`, then verify locally. |
 | Spec or quality review | Launch `spec-reviewer` or `code-reviewer` through Codex CLI with a read-only sandbox. |
-| Current library/API/CLI facts | Launch `docs-researcher` through Codex CLI with a read-only sandbox, or use the relevant official documentation skill inline. |
-| Heavy or numerous stock documents | Split the sources into bounded packages and launch each through a separate Luna Codex CLI agent: `high` by default, `xhigh` for dense, ambiguous, cross-document, or high-stakes reading. |
+| Current library/API/CLI facts | Launch Sol `xhigh` with the `docs-researcher` constraints through Codex CLI and a read-only sandbox, or use the relevant official documentation skill inline. |
+| Repository, code, blueprint, schema, spec, plan, or tooling exploration | Launch Sol `xhigh`, including when the material is long or the exploration uses web documentation. |
+| Non-code, non-technical external web research or heavy stock/equity source documents | Split the sources into bounded packages and launch separate Luna Codex CLI agents: `high` by default, `xhigh` for dense, ambiguous, cross-document, or high-stakes reading. |
 | Deep independent analysis | Launch Codex CLI sub-agents only when the user, `AGENTS.md`, or the active skill authorizes delegation. |
 | Live Codex runtime truth | Inspect the installed CLI (`codex doctor --json`, `codex debug models`, or `codex debug prompt-input`) and report the actual output. |
 
@@ -38,11 +39,15 @@ Use only these project-approved model classes:
 Use only `medium`, `high`, or `xhigh` reasoning effort. Do not consult or run
 Agent Matrix: it is disabled for this repository until the user re-enables it.
 
-The stock-document lane covers annual reports, financial filings, quarterly
-results, earnings materials, investor presentations, transcripts, exchange
-disclosures, and similarly heavy or numerous equity-research sources. Luna
-output is candidate research or evidence. A fresh Sol `xhigh` review must occur
-before it becomes authoritative financial interpretation or feeds a spec, plan,
+The Luna lane is limited to external web research that is not code-, repository-,
+schema-, tooling-, or implementation-related, plus heavy or numerous public-
+equity source documents: annual reports, financial filings, quarterly results,
+earnings materials, investor presentations, transcripts, and exchange
+disclosures. Sol `xhigh` handles every repository/codebase exploration and all
+blueprint, design, schema, spec, plan, technical-documentation, provider/tool,
+and implementation-related reading, even when it is lengthy. Luna output is
+candidate research or evidence. A fresh Sol `xhigh` review must occur before it
+becomes authoritative financial interpretation or feeds a spec, plan,
 implementation, ledger acceptance, or completion claim.
 
 The CLI shape is:
