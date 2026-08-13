@@ -113,7 +113,8 @@ collections are explicit; missing required fields fail validation.
 | `contract_stage` | `PROVISIONAL_V0` or, only after the amendment gate, `FINAL_V1` |
 | `company_id`, `run_id`, `evidence_package_id` | Stable identities resolving to authoritative records |
 | `candidate_claim_inventory_id` / `candidate_claim_inventory_sha256` | Exact immutable candidate inventory emitted by the producing run |
-| `candidate_claim_ids` | Exact lexicographically sorted unique set of every claim in that inventory; no pre-evaluation omission or filtering |
+| `candidate_claim_ids` | Exact lexicographically sorted unique set of stable claim-lineage IDs in that inventory; no pre-evaluation omission or filtering |
+| `current_candidate_versions` | Exact set of `{claim_id, candidate_version_id, entry_version, claim_content_sha256}` for the validator-derived current version of every claim lineage, ordered by ascending `claim_id` |
 | `event` | Typed event kind, reporting period, publication/occurrence time, exact source set |
 | `knowledge_cutoff` | UTC cutoff enforced by the run; every input must be available by it |
 | `facts` | Reconciled fact references with source, scope, period, units/currency, valid time, knowledge time, and revision state |
@@ -125,7 +126,7 @@ collections are explicit; missing required fields fail validation.
 | `open_questions` | Question, why it matters, required evidence, owner/status if known |
 | `calculations` | Calculation-trace references; the narrative is never the authoritative calculator |
 | `memory_draft` | Draft-only proposed canonical-thesis changes with provenance and diff; never promoted by output creation |
-| `materiality_decisions` | Exactly one current policy-, inventory-, and claim-content-bound decision for every `candidate_claim_id` |
+| `materiality_decisions` | Exactly one current policy-, inventory-, candidate-version-, and claim-content-bound decision for every `candidate_claim_id` |
 | `approval_record` | Separate approval reference bound to exact canonical artifact bytes/hash |
 | `artifact_sha256` | Digest of the canonical output preimage defined above |
 
@@ -143,25 +144,94 @@ structured or narrative assertion proposed, imported, derived, displayed,
 used as support, or considered for `facts`, `changes`, `driver_analysis`,
 `management_ledger`, `thesis_impact`, `open_questions`, calculations,
 falsifiers, or the memory draft, including candidates later rejected or omitted
-from display. Each entry contains a unique claim ID, exact content, epistemic
-class, origin stage/slot, evidence or calculation references, disposition, and
-`claim_content_sha256`. That digest binds the entry's complete canonical
-claim-content object with only `claim_content_sha256` omitted, so retaining an
-ID while changing content, type, origin, support, or disposition changes the
-digest. Every claim-producing stage must append its candidate before the claim
-can be evaluated, used, or discarded. The run closes and makes the inventory
-immutable only after all such stages are complete, and
-`candidate_claim_inventory_sha256` binds its canonical preimage.
+from display.
 
-Output validation requires an exact-set match between the closed inventory and
-`candidate_claim_ids`, an exact one-to-one match between those IDs and
-`materiality_decisions`, and registration of every claim ID reachable from any
-output field. Each decision must name the output's exact
-`candidate_claim_inventory_id` and `candidate_claim_inventory_sha256` and the
-matching inventory entry's current `claim_content_sha256`. A claim cannot avoid
-evaluation by retaining its ID while changing content, being described as
-obviously immaterial, being omitted from the final narrative, or being
-introduced only as support.
+`claim_id` is the stable identity of one logical claim lineage; it is retained
+across content revisions and is not the identity of an immutable version.
+`candidate_version_id` is globally unique and identifies exactly one immutable
+candidate version. Within one `claim_id`, `entry_version` is a positive,
+contiguous integer and the pair `{claim_id, entry_version}` is also unique.
+
+The first version is appended as an immutable genesis record containing the
+stable `claim_id`, a unique `candidate_version_id`, `entry_version=1`, exact
+content, epistemic class, origin stage/slot, evidence or calculation references,
+`disposition_state=PENDING`, `supersedes_candidate_version_id=null`,
+`claim_content_sha256`, and `entry_sha256`. `claim_content_sha256` hashes
+canonical JSON for exactly the semantic claim content, epistemic class, origin,
+and support references; `entry_sha256` hashes the complete genesis record with
+only itself omitted. No final disposition is predicted at genesis.
+
+A changed claim is a new immutable version under the same `claim_id`, with a
+new `candidate_version_id`, `entry_version` exactly one greater than the current
+version, and `supersedes_candidate_version_id` equal to that exact current
+version ID. The successor starts in `PENDING`. New content that is a different
+logical assertion receives a new `claim_id` and `entry_version=1`; it may not be
+smuggled into an existing lineage. Version numbers cannot skip, repeat, regress,
+branch, or point across claim lineages.
+
+Disposition is an append-only `CandidateDispositionTransition` containing
+`transition_id`, `claim_id`, `candidate_version_id`, `entry_version`,
+`claim_content_sha256`, prior transition ID/hash or null, `from_state`,
+`to_state`, reason, `successor_candidate_version_id` when superseding,
+materiality-decision ID/hash when applicable, evidence references,
+actor/procedure identity, timestamp, and `transition_sha256`.
+
+The closed legal edges are:
+
+- a first decision transition from `PENDING` to `INCLUDED`,
+  `OMITTED_NOT_MATERIAL`, or `REJECTED_INVALID`;
+- supersession from `PENDING`, `INCLUDED`, `OMITTED_NOT_MATERIAL`, or
+  `REJECTED_INVALID` to `SUPERSEDED`, only while atomically appending the one
+  direct successor described above and binding its version ID; and
+- no transition out of `SUPERSEDED`, no second successor, no same-version
+  redisposition, and no other edge.
+
+`INCLUDED`, `OMITTED_NOT_MATERIAL`, and `REJECTED_INVALID` are decision-terminal
+while a version is current but remain legally supersedable; `SUPERSEDED` is the
+absorbing historical terminal state. A transition to `OMITTED_NOT_MATERIAL`
+requires the exact current `NOT_MATERIAL` decision; `REJECTED_INVALID` requires
+typed invalidity evidence and cannot masquerade as a materiality result. Later
+changes never mutate a genesis record or transition.
+
+Every claim-producing stage must append the applicable first-version or
+successor-version record before the claim can be evaluated, used, or discarded.
+The run closes the inventory only after all producing stages finish, every
+version's replayed state is unambiguous, and every current version is in a
+decision-terminal state. `candidate_claim_inventory_sha256` hashes canonical JSON
+for the inventory identity, ordered genesis references
+`{claim_id, candidate_version_id, entry_version,
+supersedes_candidate_version_id, claim_content_sha256, entry_sha256}`, ordered
+transition references `{transition_id, claim_id, candidate_version_id,
+transition_sha256}`, the derived current-version references ordered by
+ascending `claim_id`, producing-stage closure evidence, and close timestamp,
+with only the inventory digest omitted.
+
+For each `claim_id`, the current version is exactly the unique highest
+`entry_version`: it has no successor and its current disposition is not
+`SUPERSEDED`; every lower version is linked contiguously to its one direct
+successor and has current disposition `SUPERSEDED`. The validator derives this
+selection from version and transition records, never from a stored `current`
+flag. A gap, fork, cross-lineage link, multiple non-superseded versions, a
+superseded highest version, or a lower version not marked `SUPERSEDED` blocks
+inventory closure. The highest version must leave `PENDING` before closure.
+
+Output validation requires three deterministic exact-set checks: the unique
+lineage IDs in the closed inventory equal `candidate_claim_ids`; the derived
+current versions equal `current_candidate_versions`; and those current-version
+references equal the `{claim_id, candidate_version_id, entry_version,
+claim_content_sha256}` projection of `materiality_decisions`. Exactly one
+current materiality decision exists per stable `claim_id`, bound to that
+lineage's exact current version, the output's exact
+`candidate_claim_inventory_id` and `candidate_claim_inventory_sha256`, and the
+current `claim_content_sha256`. Prior-version decisions remain immutable audit
+history but become stale on supersession and cannot satisfy closure or appear
+as current decisions. Every claim/version reachable from an output field must
+resolve to the current-version reference. The validator replays every version
+and disposition transition and rejects mutation, forks, illegal edges, missing
+decisions/evidence, extra or duplicate decisions, or a nonterminal current
+`PENDING` state. A claim cannot avoid evaluation by retaining its stable ID
+while changing content, being described as obviously immaterial, being omitted
+from the final narrative, or being introduced only as support.
 
 ### `MaterialityPolicy`
 
@@ -195,7 +265,8 @@ Policy precedence is fixed:
 
 ### `MaterialityDecision`
 
-Each decision contains `decision_id`, `claim_id`, `claim_content_sha256`,
+Each decision contains `decision_id`, `claim_id`, `candidate_version_id`,
+`entry_version`, `claim_content_sha256`,
 `candidate_claim_inventory_id`, `candidate_claim_inventory_sha256`,
 `policy_id/version/hash`, evaluated quantitative inputs and rule results,
 matched always-material categories, thesis-relevance results,
@@ -241,12 +312,13 @@ promotion transaction may affect the canonical thesis.
 
 1. Every output declares event, knowledge cutoff, evidence package, contract
    version/stage, and exact artifact hash.
-2. Every candidate claim appears in the closed candidate inventory and has
-   exactly one explicit current materiality decision bound to that exact
-   inventory ID/hash and claim-content digest and covering every policy
+2. Every stable claim lineage appears in the closed candidate inventory, has
+   exactly one validator-derived current immutable version, and has exactly one
+   explicit current materiality decision bound to that exact version,
+   inventory ID/hash, and claim-content digest and covering every policy
    dimension and rule. Every material claim has the evidence required for its
-   epistemic class. Any inventory, content, or decision mismatch, skipped
-   dimension, or missing support blocks approval.
+   epistemic class. Any lineage, version, inventory, content, or decision
+   mismatch, skipped dimension, or missing support blocks approval.
 3. `REVIEW_REQUIRED`, unknown policy version, stale policy hash, missing
    coverage-override approval, unit/period ambiguity, or unresolved source
    conflict blocks a final materiality result and output approval.
@@ -265,8 +337,10 @@ promotion transaction may affect the canonical thesis.
 9. Memory drafts never write canonical thesis state. Output approval and memory
    promotion are separate human decisions.
 10. Any mutation to source evidence, candidate inventory, candidate claim
-    content, policy, materiality decision, output, calculation trace, falsifier,
-    or approval makes dependent proofs stale.
+    content, candidate disposition history, policy, materiality decision,
+    output, calculation trace, falsifier, or approval makes dependent proofs
+    stale. Candidate changes occur only through a new version or append-only
+    transition, never in-place mutation.
 11. `FINAL_V1` is forbidden until A-03 baseline evidence exists, A-11 has a
     current approved and versioned bootstrap thesis, and the S06 amendment has
     received a fresh clean Sol xhigh delegated approval plus all required human
@@ -311,17 +385,34 @@ They are never inferred from output or analyst approval.
    classified.
 6. Reject `NOT_MATERIAL` when required inputs are missing, conflicting,
    ambiguous, unit-incompatible, or policy-stale.
-7. Assert the closed candidate inventory, `candidate_claim_ids`, and
-   materiality decisions are exact matching sets; require every decision to
-   bind the exact inventory ID/hash and matching claim-content digest and every
-   policy rule in all five dimensions to have an explicit result for every
-   candidate.
+7. Assert the closed inventory's stable claim IDs, `candidate_claim_ids`,
+   derived current versions, `current_candidate_versions`, and current
+   materiality-decision version references are the required exact matching
+   sets, with exactly one decision per stable claim ID. Require every decision
+   to bind the exact current candidate-version ID/version, inventory ID/hash,
+   and matching claim-content digest and every policy rule in all five
+   dimensions to have an explicit result. Replay every genesis and disposition
+   transition; reject `PENDING` at closure, gaps, forks, cross-lineage links,
+   multiple current versions, stale prior-version decisions presented as
+   current, illegal edges, missing transition evidence, and an
+   `OMITTED_NOT_MATERIAL` transition without its exact current
+   `NOT_MATERIAL` decision.
 8. Omit an apparently immaterial, rejected, display-suppressed, or support-only
    candidate or its decision and prove approval fails closed.
-9. Change one candidate's content, epistemic class, support, or disposition
-   while retaining its `claim_id`; prove its prior decision and output approval
-   become stale and approval remains blocked until that exact changed claim is
-   reevaluated under the current inventory and policy.
+9. Attempt to mutate one candidate version's content, epistemic class, support,
+   genesis disposition, version identity, or prior transition in place and
+   reject it. From each applicable predecessor state—`PENDING`, `INCLUDED`,
+   `OMITTED_NOT_MATERIAL`, and `REJECTED_INVALID`—atomically append one legal
+   direct successor with the same `claim_id`, a new `candidate_version_id`, and
+   the next contiguous `entry_version`, and transition the predecessor to
+   `SUPERSEDED`; prove exact current-version selection, prior-decision
+   invalidation, and blocked approval until the successor reaches a legal
+   decision-terminal state and receives its own current policy decision. Reject
+   a skipped/reused/regressed version, new-version ID reuse, same-version
+   rewrite, cross-lineage or non-current predecessor, missing/incorrect
+   supersedes link, two successors, a predecessor not transitioned to
+   `SUPERSEDED`, any transition out of `SUPERSEDED`, and any attempt to keep a
+   prior-version decision current.
 10. Reject a generic risk and a zero-falsifier thesis impact even when an analyst
    supplies a no-falsifier approval; accept each observable type only when
    trigger, horizon, evidence source, and thesis effect are explicit.
@@ -329,8 +420,9 @@ They are never inferred from output or analyst approval.
    impact becomes review-required.
 12. Attempt to promote a memory draft through output approval and prove canonical
    thesis state is unchanged.
-13. Compute output, candidate-inventory, claim-content, policy, decision,
-    falsifier, and memory-draft digests from their canonical JSON preimages;
+13. Compute output, candidate-inventory, candidate-entry, disposition-transition,
+    claim-content, policy, decision, falsifier, and memory-draft digests from
+    their canonical JSON preimages;
     prove key order and insignificant whitespace do not change a digest, each
     own digest field is excluded without recursion, referenced digests remain
     bound, and any canonical-preimage content mutation or referenced

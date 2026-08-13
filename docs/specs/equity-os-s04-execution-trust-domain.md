@@ -105,9 +105,14 @@ For each record digest, the preimage is the record's complete logical JSON
 object with exactly the field that stores that digest omitted. Other digest
 fields remain in the preimage because they bind referenced content. Thus
 `intent_sha256`, `control_approval_set_sha256`, `request_sha256`,
-`authorization_sha256`, `consumption_sha256`, and `outcome_sha256` omit only
-themselves from their respective preimages; no digest is self-referential.
-Unknown fields are invalid rather than silently excluded from hashing.
+`authorization_sha256`, `consumption_sha256`, `outcome_sha256`,
+`state_sha256`, and `reset_authorization_sha256` omit only themselves from
+their respective preimages; no digest is self-referential. The reset-
+authorization preimage retains the referenced blocked-state, resolved-cause,
+control-approval-set, approval-record, and resolution digests. A semantic
+mutation to a `KillSwitchState` changes `state_sha256` and invalidates every
+reset authorization that references the prior digest. Unknown fields are
+invalid rather than silently excluded from hashing.
 
 ### `ExecutionIntent`
 
@@ -221,6 +226,29 @@ evidence, correction/supersession links, and `outcome_sha256`.
 No free-form text controls routing, credentials, limits, account selection,
 approval, kill-switch state, or submission.
 
+### Kill-switch state and reset authorization
+
+`KillSwitchState` is append-only and content-addressed. Each version contains
+`kill_switch_id`, `state_version`, `state` (`BLOCKED` or `ENABLED`),
+`cause_code`, `cause_evidence_refs`, `prior_state_ref`, `changed_at`, and
+`state_sha256`. Startup and every uncertain or failed reconciliation append a
+`BLOCKED` version; no caller may overwrite it.
+
+Re-enabling requires a separate immutable `KillSwitchResetAuthorization`
+containing `reset_authorization_id`, the exact blocked-state ID/version/hash,
+the resolved-cause evidence IDs/digests, the current control-approval-set
+ID/hash, one cause-specific required-approval ID, its canonical
+`PRODUCTION_APPROVAL` record ID, human-review/resolution IDs and current
+resolution digest, actor/authority display fields, decision, timestamp,
+expiry, and `reset_authorization_sha256`. Its canonical resolution scope must
+name the blocked-state digest, cause, resolved-cause evidence digests, and
+target environment. The reset requirement and record are distinct from the
+general production-enablement requirement and record; neither may satisfy the
+other. The validator re-resolves all references immediately before the atomic
+`BLOCKED` to `ENABLED` append. Missing, stale, revoked, superseded,
+wrong-cause, wrong-environment, reused, expired, or digest-mismatched evidence
+keeps the switch `BLOCKED`.
+
 ## Invariants and fail-closed behavior
 
 1. Research and execution are separate trust domains: separate process/service,
@@ -241,8 +269,9 @@ approval, kill-switch state, or submission.
    resolution digest, and scope at submission; no generic dependency-health flag
    satisfies this check.
 6. Kill-switch state defaults to `BLOCKED` on startup, loss of authoritative
-   state, reconciliation breach, or control-plane uncertainty. Re-enabling
-   requires a fresh typed human approval and evidence of resolved cause.
+   state, reconciliation breach, or control-plane uncertainty. Re-enabling is
+   one atomic append and requires the distinct cause-specific current reset
+   authorization above; general production enablement cannot substitute for it.
 7. Duplicate idempotency keys cannot create duplicate external actions, and one
    authorization cannot be consumed by two request hashes or keys. Retry of the
    exact pair resumes or reconciles its recorded attempt instead of sending a
@@ -271,6 +300,7 @@ human authority below.
 | Credential access | `CREDENTIAL_ACCESS_APPROVAL` | Credential/account owner | Named principals, exact scopes, expiry, rotation/revocation evidence | No credential issuance or use |
 | External venue/service | `EXTERNAL_SERVICE_APPROVAL` | Competent service/account authority | Exact provider, account, terms, limits, environment, evidence | No external connection |
 | Production enablement | `PRODUCTION_APPROVAL` | Competent production owner | Current test, reconciliation, rollback/kill-switch, observability evidence | Non-production only |
+| Each kill-switch re-enable | `PRODUCTION_APPROVAL` | Competent production owner for the exact environment and resolved cause | Exact blocked-state digest, resolved-cause evidence digests, current control-approval set, reset scope, expiry, and canonical human-resolution binding; this uses a distinct requirement and record from production enablement | Switch remains `BLOCKED` |
 | Each executable request | `EXECUTION_TRUST_DOMAIN_APPROVAL` | Competent human execution approver | Exact request ID/hash and idempotency key, intent hash, limits, account, expiry, immutable authorization, canonical approval-record/human-review/resolution IDs, and current resolution content digest | Request rejected |
 | Any security deviation | `SECURITY_EXCEPTION` | Competent security authority | Narrow scope, rationale, compensating controls, owner, expiry | Deviation prohibited |
 
@@ -305,18 +335,29 @@ Required executable tests after activation include:
    scope-mismatch its exact required-approval or canonical record after request
    construction and prove submission fails closed;
 6. compute intent, control-approval-set, request, authorization, consumption,
-   and outcome digests from their
+   outcome, kill-switch-state, and reset-authorization digests from their
    canonical JSON preimages; prove key order and insignificant whitespace do
-   not change a digest, each own digest field is excluded without recursion,
-   referenced digests remain bound, and any semantic mutation invalidates
-   dependent authorization and submission;
+   not change a digest, each of `intent_sha256`,
+   `control_approval_set_sha256`, `request_sha256`, `authorization_sha256`,
+   `consumption_sha256`, `outcome_sha256`, `state_sha256`, and
+   `reset_authorization_sha256` is excluded only from its own preimage without
+   recursion, every referenced digest remains bound, and every semantic
+   mutation invalidates the affected digest and dependent authorization,
+   submission, or reset;
 7. reject unknown schema/enum values, ambiguous units, stale mappings, and hash
    mismatches;
 8. prove deterministic limits reject over-limit and malformed requests even
    when the intent is human-approved;
 9. replay one idempotency key and prove at-most-once external submission;
 10. activate the kill switch before, during, and after submission and verify the
-   defined safe state;
+   defined safe state; for every re-enable attempt reject an absent, stale,
+   revoked, superseded, expired, wrong-cause, wrong-environment, reused,
+   scope-mismatched, or digest-mismatched reset approval/resolution or
+   resolved-cause evidence, and prove the general production-enablement record
+   cannot satisfy the reset requirement; mutate each semantic
+   `KillSwitchState` field and prove the changed `state_sha256` invalidates the
+   dependent reset authorization, then mutate each reset-authorization
+   semantic or referenced-digest field and prove re-enablement remains blocked;
 11. inject lost, duplicate, reordered, conflicting, and corrected external
    outcomes and prove reconciliation is complete and append-only;
 12. prove restart defaults to blocked until authoritative state and current
