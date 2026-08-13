@@ -157,7 +157,7 @@ After its own valid activation, D-05 evaluates evidence while `Open` or `In prog
 
 `NO_DECISION_INSUFFICIENT_EVIDENCE` is non-conclusive: it cannot support D-05 `Accepted`, delivery `VERIFIED`, or `gate_result=PASS`. D-05 retains its legal current active source/delivery state with an explicit blocker until new valid evidence is available; it does not skip or regress a source Status.
 
-A later D-02 rerun or D-05 reconsideration after that row is `Accepted` is blocked until a separate active canonical `REOPEN_ACCEPTED` human resolution for the exact row/scope is followed by source reconciliation of `Accepted → Open`. If both accepted rows must advance, each requires its own resolution and reconciliation. The trigger crossing and original evidence are inputs to that human decision; neither changes source Status, starts a run, nor invalidates the preserved original result. New scored work then uses a new manifest/protocol version and follows the ordinary activation/dependency/approval sequence from the reopened state.
+A later D-02 rerun, D-04 due-diligence refresh, or D-05 reconsideration after the affected row is `Accepted` is blocked until a separate active canonical `REOPEN_ACCEPTED` human resolution for that exact row/scope is followed by source reconciliation of `Accepted → Open`. A new GBrain revision or a replacement/refreshed due-diligence package advances D-04 and therefore requires this D-04 transition; it cannot replace accepted D-04 evidence in place. If a reevaluation advances more than one accepted row, each row requires its own resolution and reconciliation. The trigger crossing and original evidence are inputs to those human decisions; neither changes source Status, starts work, nor invalidates the preserved original result. New due-diligence or scored work then uses a new package or manifest/protocol version and follows the ordinary activation/dependency/approval sequence from each reopened state.
 
 ## Invariants and fail-closed behavior
 
@@ -173,21 +173,48 @@ A later D-02 rerun or D-05 reconsideration after that row is `Accepted` is block
 10. Results apply only to the measured current scale, workload, versions, and operating boundary.
 11. D-02, D-04, and D-05 implementation/delivery references remain absent while their individual Status is Deferred.
 12. Both conclusive D-05 outcomes require an exact-scope current product-owner resolution and complete D-05 as `Accepted`; insufficient evidence completes neither source acceptance nor delivery verification.
-13. Accepted D-02 or D-05 work cannot restart until that row has its own valid `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` source transition.
+13. Accepted D-02, D-04, or D-05 work cannot restart, and its accepted proof cannot be replaced, until that exact row has its own valid `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` source transition.
 
 ## Deferred activation guards
 
-Each row has its own typed predicate and requires its own human resolution:
+Each row has its own exact typed predicate and its own component-local `FILE_BYTES` activation-evidence object.
 
-| Row | Predicate contract | Required activation evidence |
+The D-04 predicate ID is exactly `AP-D04-GBRAIN-DUE-DILIGENCE-NEED`. Its expression is exactly:
+
+```json
+{"op":"COMPARE","metric_id":"MTR-D04-GBRAIN-DUE-DILIGENCE-REQUIRED","comparator":"EQ","expected":true}
+```
+
+The D-02 predicate ID is exactly `AP-D02-CURRENT-SCALE-BENCHMARK-READY`. Its expression is exactly:
+
+```json
+{"op":"ALL","args":[{"op":"COMPARE","metric_id":"MTR-D02-C05-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D02-D01-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D02-D04-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D02-BENCHMARK-READY","comparator":"EQ","expected":true}]}
+```
+
+The D-05 predicate ID is exactly `AP-D05-GBRAIN-ADOPTION-DECISION-READY`. Its expression is exactly:
+
+```json
+{"op":"ALL","args":[{"op":"COMPARE","metric_id":"MTR-D05-D02-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D05-D04-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D05-ADOPTION-DECISION-READY","comparator":"EQ","expected":true}]}
+```
+
+Every metric uses `source_kind=EVIDENCE_JSON` and `register_ids=[]`. Metrics for one predicate name the same current row-local evidence object and retain the declared order shown in that predicate's expression.
+
+| Metric ID | Type | Stable JSON pointer and binding |
 |---|---|---|
-| D-04 | `AP-D04-GBRAIN-DUE-DILIGENCE-NEED` reads boolean `/memory/gbrain_due_diligence_required` from current `EVIDENCE_JSON`. | A named candidate requiring evaluation; intended use/deployment scope; due-diligence owner/capacity; current evidence hashes. D-04 has no D-01 or other register dependency. |
-| D-02 | `AP-D02-CURRENT-SCALE-BENCHMARK-READY` is `ALL` of accepted/current dependency states for C-05, D-01, and activated D-04 plus boolean `/memory/benchmark_ready`. | Frozen workload candidate; parity-feasible artifact set; benchmark budget/capacity; metric/threshold draft; D-04 evidence; current dependency evidence. |
-| D-05 | `AP-D05-GBRAIN-ADOPTION-DECISION-READY` is `ALL` of current completed D-02 and D-04 evidence plus boolean `/memory/adoption_decision_ready`. | Current benchmark and due-diligence packages, decision-rule evaluation, limitations, proposed deployment scope, and approval inventory. |
+| `MTR-D04-GBRAIN-DUE-DILIGENCE-REQUIRED` | `BOOLEAN` | `/memory/gbrain_due_diligence_required`; the D-04 evidence names the candidate revision, intended use/deployment scope, due-diligence owner/capacity, and current evidence hashes. D-04 has no D-01 or other register dependency. |
+| `MTR-D02-C05-SOURCE-STATUS` | `STRING` | `/memory/c05_source_status`; the D-02 evidence binds `register_id="C-05"`, the live register file SHA-256, the exact C-05 row-span digest, and current acceptance-proof references. |
+| `MTR-D02-D01-SOURCE-STATUS` | `STRING` | `/memory/d01_source_status`; the D-02 evidence binds `register_id="D-01"`, the live register file SHA-256, the exact D-01 row-span digest, and current acceptance-proof references. |
+| `MTR-D02-D04-SOURCE-STATUS` | `STRING` | `/memory/d04_source_status`; the D-02 evidence binds `register_id="D-04"`, the live register file SHA-256, the exact D-04 row-span digest, and current acceptance-proof references. |
+| `MTR-D02-BENCHMARK-READY` | `BOOLEAN` | `/memory/benchmark_ready`; the D-02 evidence binds the frozen workload candidate, parity-feasible artifact set, benchmark budget/capacity, metric/threshold draft, and D-04 evidence. |
+| `MTR-D05-D02-SOURCE-STATUS` | `STRING` | `/memory/d02_source_status`; the D-05 evidence binds `register_id="D-02"`, the live register file SHA-256, the exact D-02 row-span digest, and current acceptance-proof references. |
+| `MTR-D05-D04-SOURCE-STATUS` | `STRING` | `/memory/d04_source_status`; the D-05 evidence binds `register_id="D-04"`, the live register file SHA-256, the exact D-04 row-span digest, and current acceptance-proof references. |
+| `MTR-D05-ADOPTION-DECISION-READY` | `BOOLEAN` | `/memory/adoption_decision_ready`; the D-05 evidence binds the current benchmark and due-diligence packages, decision-rule evaluation, limitations, proposed deployment scope, and approval inventory. |
 
-`gbrain_due_diligence_required` is the stable predicate pointer for this contract and must not be silently renamed; a correction requires reviewed contract amendment and predicate reconciliation.
+For every source-status metric, the producer and validator independently parse the live register and copy its exact Status; a ledger label or unbound status string is invalid. `REGISTER_STATUS` is not used because its boolean cannot distinguish `Open`, `In progress`, and `Accepted`. `gbrain_due_diligence_required`, `benchmark_ready`, and `adoption_decision_ready` are the stable predicate pointers for this contract and cannot be silently renamed.
 
-For every row, `FALSE`, `UNKNOWN`, expired evidence, stale digests, or unmet dependencies prevents activation. A recomputed `TRUE` still requires a distinct canonical human resolution with decision `ACTIVATE_DEFERRED`, exact row scope, competent product authority, evidence hashes, and matching `PRODUCT_OWNER_DECISION`. Neither this draft, a coordinator, another row's activation, nor a trigger crossing supplies that authority.
+Each metric names its current evidence reference, or `null` only before evidence exists, and its predeclared UTC expiry. Each predicate's `evaluation_sha256` is lowercase SHA-256 of the goal-defined canonical JSON object containing exactly `predicate_id`, `expression`, `metrics`, `resolved_values`, `digest_sources`, `result`, and `evaluated_at`; `expression` is the exact tree above, `metrics` retain their declared order, and the resolved-value and digest-source objects are keyed by metric ID. A missing or wrong-typed value, `FALSE`, `UNKNOWN`, any dependency Status other than exact `Accepted`, expired evidence, or a stale source/evidence digest prevents activation.
+
+A recomputed `TRUE` still requires a distinct active canonical human resolution with decision `ACTIVATE_DEFERRED`, exact row scope, competent product authority, evidence hashes, and one matching `PRODUCT_OWNER_DECISION`. The activation record and approval record must copy the same canonical resolution decision ID/content digest and bind that row's fixed predicate ID plus current `evaluation_sha256`. Neither this draft, a coordinator, another row's activation, a trigger crossing, nor a mismatched resolution supplies that authority.
 
 ## Evidence and typed human-approval gates
 
@@ -198,7 +225,7 @@ For every row, `FALSE`, `UNKNOWN`, expired evidence, stale digests, or unmet dep
 | D-04 acceptance | Complete due-diligence package, rerun tests, license/security/export evidence, and resolved load-bearing findings | `LEGAL_REVIEW`, `DATA_RIGHTS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, or `CREDENTIAL_ACCESS_APPROVAL` only when the evaluated posture crosses that boundary; any exception requires `SECURITY_EXCEPTION` | D-04 cannot be Accepted. |
 | D-02 execution | Frozen manifest and task/artifact parity; budget/capacity evidence; D-04 accepted | `BUDGET_APPROVAL`, `CAPACITY_COMMITMENT`, `PURCHASE_AUTHORIZATION`, `EXTERNAL_SERVICE_APPROVAL`, or `CREDENTIAL_ACCESS_APPROVAL` when the actual benchmark requires them | Benchmark cannot start or affected arm is invalid. |
 | D-05 conclusive decision | Current D-02/D-04 evidence, precommitted rule evaluation, exact outcome, and exact deployment/operations/exit scope | One `PRODUCT_OWNER_DECISION` for the exact `ADOPT_CURRENT_SCALE` or `DO_NOT_ADOPT_CURRENT_SCALE` outcome plus all boundary-triggered approvals applicable to that outcome | Decision is `NO_DECISION_INSUFFICIENT_EVIDENCE`; D-05 cannot become Accepted or VERIFIED. |
-| Accepted-row reevaluation | Crossed-trigger evidence, original result/decision hashes, proposed new scope, and current source proof | One separate active `REOPEN_ACCEPTED` human resolution and source reconciliation for each accepted D-02 or D-05 row to be advanced | Consideration may be recorded, but rerun/reconsideration cannot start. |
+| Accepted-row reevaluation | Crossed-trigger evidence, original result/decision or due-diligence hashes, proposed new scope/candidate revision, and current source proof | One separate active `REOPEN_ACCEPTED` human resolution and source reconciliation for each accepted D-02, D-04, or D-05 row to be advanced | Consideration may be recorded, but due-diligence refresh, rerun, or reconsideration cannot start. |
 
 Conditional approval types are not presumed satisfied. The approval inventory must explicitly prove whether each boundary applies. Automated Sol review may approve the artifact under delegated authority and may provide technical/security-review evidence; it cannot grant product adoption, legal/rights sufficiency, budget, capacity, credentials, purchase, external-service operation, production use, or a security exception.
 
@@ -219,9 +246,11 @@ After valid activation of the applicable rows, verification must mechanically pr
 11. The decision evaluator returns each of the three closed outcomes for positive, insufficient, and simpler-store-sufficient fixtures.
 12. Positive- and simpler-store-sufficient fixtures produce their respective conclusive outcome but cannot advance D-05 without a current exact-outcome `PRODUCT_OWNER_DECISION`; with the matching resolution/record and complete proof, each advances D-05 through `In progress → Accepted` and delivery `VERIFIED`.
 13. An insufficient-evidence fixture cannot produce D-05 `Accepted`, `VERIFIED`, or `PASS`, with or without a nearby, wrong-outcome, stale, expired, revoked, or digest-mismatched approval.
-14. A crossed-trigger fixture records consideration without changing adoption or source state; when D-02 or D-05 is already Accepted, rerun/reconsideration remains blocked until that exact row has a current `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` transition.
+14. A crossed-trigger fixture records consideration without changing adoption or source state; when D-02, D-04, or D-05 is already Accepted, any affected refresh/rerun/reconsideration remains blocked until that exact row has a current `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` transition. A new candidate revision or replacement due-diligence package specifically proves the D-04 block and preserves its prior accepted evidence.
 15. Decision-record validation recomputes the evaluation and record digest preimages and rejects any outcome, scope, evidence-hash, approval-record, resolution-ID, or resolution-digest mismatch.
 16. Structural checks prove no owned Deferred row has implementation references or an active delivery state before its own valid activation.
+17. Predicate fixtures recompute all three exact trees and prove that missing or wrong-typed values, `FALSE`, `UNKNOWN`, expired evidence, stale source/evidence digests, or any dependency Status of `Open`, `In progress`, `Deferred`, or `Rejected` cannot produce `TRUE`; only D-04's current required leaf or D-02/D-05's exact `Accepted` dependencies plus current readiness leaf can produce `TRUE` for that row.
+18. A `TRUE` predicate still cannot activate its row when the activation resolution or approval is absent, stale, revoked, wrong-row, wrong-scope, or mismatched on predicate ID, evaluation digest, resolution decision ID, or resolution content digest.
 
 Conversation summaries and agent reports are not proof. Each acceptance or decision must bind current command outputs, source/artifact hashes, typed approvals, and fresh content-bound reviews.
 

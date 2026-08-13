@@ -202,13 +202,16 @@ run is registered.
 ## Evidence and typed human-approval gates
 
 The obligations below are distinct. A clean Sol review may satisfy only the
-delegated artifact approval and cannot approve company selection, baseline
-work, or the thesis.
+delegated artifact approval and cannot approve company selection, a conflict
+disposition, baseline work, or the thesis. Every source conflict creates one
+separate disposition-approval requirement; neither the baseline-acceptance
+record nor another conflict's record can satisfy it.
 
 | Gate | Approval type | Required authority | Minimum evidence | Fail-closed result |
 |---|---|---|---|---|
 | S05 artifact review | `DELEGATED_ARTIFACT_APPROVAL` | Fresh Sol xhigh reviewer under delegated goal authority | Persisted clean review, source hashes, round, timestamp | Spec remains draft |
 | Discovery-company and quarter selection | `PRODUCT_OWNER_DECISION` | Competent human product owner | Exact company, four-quarter manifest, source availability, rationale, conflicts | A-02 remains open |
+| Each source-conflict disposition | `ANALYST_ACCEPTANCE` | Competent analyst accountable for the affected baseline content | Exact conflict ID and disposition hash, status-specific resolution or exclusion evidence, rationale, resolver, timestamp | Disposition does not pass; baseline acceptance blocked |
 | Q0 manual baseline acceptance | `ANALYST_ACCEPTANCE` | Competent analyst who reviewed the completed baseline | Exact package hash, timing log, source locations, calculations, corrections | A-03 remains open |
 | Bootstrap thesis acceptance | `ANALYST_ACCEPTANCE` | Competent analyst accountable for the coverage thesis | Exact thesis version/hash, complete required sections, source evidence | A-11 remains open and Q1 is blocked |
 
@@ -243,9 +246,12 @@ human-review process. None is inferred from product-owner or analyst approval.
    digests remain bound, and any semantic record mutation or referenced
    source/artifact byte mutation makes the associated approval and downstream
    readiness stale.
-9. For every source conflict, assert a current evidenced `RESOLVED` or
-   `EXCLUDED_FROM_BASELINE` disposition with matching analyst acceptance;
-   reject `OPEN`, review-only, unevidenced, stale, or partially excluded cases.
+9. For every source conflict, assert exactly one separate required
+   `ANALYST_ACCEPTANCE` obligation and matching current approval record bound to
+   an evidenced `RESOLVED` or `EXCLUDED_FROM_BASELINE` disposition; reject a
+   missing or extra obligation, reuse of the baseline or another conflict's
+   approval, and `OPEN`, review-only, unevidenced, stale, or partially excluded
+   cases.
 
 ### Scenario acceptance
 

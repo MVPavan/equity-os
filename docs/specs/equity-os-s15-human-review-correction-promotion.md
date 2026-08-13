@@ -56,7 +56,7 @@ Contains stable review-task ID, run/evidence-package version, exact claim and re
 
 ### 3.2 `ReviewDecision`
 
-Contains stable decision ID, task ID, exact reviewed version/hash, decision (`ACCEPT`, `REJECT`, `EDIT`, or `DEFER`), actor identity, human actor type, authority basis, exact scope, rationale, edit/correction reference when applicable, timestamp, evidence references, and immutable resolution content digest.
+The canonical record contains exactly `decision_id`, `task_id`, `reviewed_artifact_id`, `reviewed_version`, `reviewed_content_sha256`, `decision` (`ACCEPT`, `REJECT`, `EDIT`, or `DEFER`), `actor_identity`, `human_actor_type`, `authority_basis`, `exact_scope`, `rationale`, `edit_or_correction_ref`, `timestamp`, `evidence_refs`, and `resolution_content_digest`. `rationale` and `edit_or_correction_ref` are explicit `null` when inapplicable, never omitted. Its digest contract is defined in §3.8.
 
 - `ACCEPT` applies only to the exact reviewed bytes and declared scope.
 - `REJECT` requires a reason and correction target sufficient for S14 to determine or conservatively expand the invalidation cone.
@@ -73,17 +73,31 @@ Contains stable record ID, old and new version identities/hashes, relation (`COR
 
 ### 3.5 `PromotionRequest`
 
-Contains stable request ID, exact accepted claim/report/thesis version and hash, evidence-package/run/cutoff references, provenance closure, artifact mode, requested canonical target, required promotion approval ID, and idempotency key. The request is an intent, not a successful promotion.
+The canonical request contains exactly `request_id`, `accepted_artifact_id`, `accepted_artifact_type`, `accepted_artifact_version`, `accepted_content_sha256`, `evidence_package_id`, `evidence_package_version`, `run_id`, `run_cutoff`, `provenance_refs`, `artifact_mode`, `requested_canonical_target`, `required_promotion_approval_id`, `idempotency_key`, and `request_content_digest`. The request is an intent, not a successful promotion. Its digest contract is defined in §3.8.
 
 ### 3.6 `PromotionDecision` and `PromotionReceipt`
 
-The decision is a distinct `MEMORY_PROMOTION` human resolution binding exact request bytes, target, actor authority, scope, timestamp, evidence, and content digest. The receipt is returned only by the authoritative promotion transaction and binds request/decision IDs and hashes, canonical content identity, metadata identity, transaction/idempotency identity, commit time, and success state.
+The decision is a distinct canonical `MEMORY_PROMOTION` human resolution containing exactly `decision_id`, `approval_type` (exactly `MEMORY_PROMOTION`), `request_id`, `request_content_digest`, `requested_canonical_target`, `decision` (`APPROVED`, `DENIED`, `REVOKED`, or `EXPIRED`), `actor_identity`, `human_actor_type`, `authority_basis`, `exact_scope`, `timestamp`, `evidence_refs`, and `resolution_content_digest`. Its digest contract is defined in §3.8. The receipt is returned only by the authoritative promotion transaction and binds request/decision IDs and hashes, canonical content identity, metadata identity, transaction/idempotency identity, commit time, and success state.
 
 S15 invokes but does not reimplement the authoritative promotion adapter. Until S10 freezes the source-of-truth roles and the applicable S19 transaction is available, promotion is blocked rather than performed as independent best-effort writes.
 
 ### 3.7 `ArtifactMode`
 
 Every reviewable artifact is exactly one of `PRODUCTION`, `SHADOW_TEST`, or `GOLDEN_FIXTURE`. Mode is immutable for a version. Only `PRODUCTION` is eligible for acceptance that can lead to publication or promotion. Copying content from another mode creates a new production version with explicit provenance and ordinary validation/review; it does not change the source artifact's mode.
+
+### 3.8 Canonical decision bytes
+
+The shared byte contracts are:
+
+| Record | UTF-8 domain separator | Digest member excluded from its own preimage |
+|---|---|---|
+| `ReviewDecision` | `equity-os.s15.review-decision.v1` | `resolution_content_digest` |
+| `PromotionRequest` | `equity-os.s15.promotion-request.v1` | `request_content_digest` |
+| `PromotionDecision` | `equity-os.s15.promotion-decision.v1` | `resolution_content_digest` |
+
+For each record, the digest preimage is its domain separator, one LF byte, and RFC 8785 canonical JSON of every canonical member declared in its subsection except the excluded digest member. No declared member may be omitted and no additional member is accepted; every inapplicable value is explicit `null`. Identifier-reference collections, including `evidence_refs` and `provenance_refs`, are duplicate-free arrays sorted by identifier before canonicalization. Each digest is the lowercase SHA-256 hex digest of that exact preimage.
+
+The producer must retain and supply the complete canonical record bytes. Every S14 workflow consumer and authoritative promotion adapter must recognize the exact domain version, independently canonicalize and recompute the digest, and compare every bound ID, target, scope, authority, and content hash before acting. Unavailable bytes, an unknown domain version, noncanonical or incomplete membership, duplicate/unsorted reference collections, or any mismatch blocks approval, rework, or promotion. A digest string by itself is not authority.
 
 ## 4. Review behavior
 
@@ -111,7 +125,7 @@ The review surface must provide, for the exact version under review:
 
 ## 6. Invariants and fail-closed behavior
 
-1. Human decisions bind exact artifact bytes, version, scope, authority, and evidence; changing any of them makes the decision non-current.
+1. Human decisions bind exact artifact bytes, version, scope, authority, and evidence through the canonical-byte contract in §3.8; changing any of them makes the decision non-current.
 2. Review task state, UI display, model recommendation, or accepted-unchanged telemetry cannot create approval.
 3. Corrections append versions. Rejected, invalidated, and superseded items remain auditable.
 4. A prior acceptance never authorizes corrected bytes, a new evidence-package version, or a wider scope.
@@ -169,5 +183,6 @@ Interface dependencies are S07 for reviewer-bias/golden-set controls, S10 for so
 | S15-T08 Seed isolation | Attempt UI and direct-API promotion/publication of shadow/golden artifacts and derivatives. | Every path rejects server-side; production records remain untouched. |
 | S15-T09 Authority spoofing | Submit model-, coordinator-, document-, stale-, revoked-, or wrong-scope approvals. | All fail; only a current competent-human exact-scope resolution is accepted. |
 | S15-T10 Bias telemetry | Run known seeded-error cases across materiality and epistemic classes. | False accepts/rejects and disposition categories are recorded without treating claims as independent samples. |
+| S15-T11 Canonical decision bytes | Verify review, promotion-request, and promotion-decision records with exact bytes; reordered object keys; omitted explicit nulls; added members; duplicate/unsorted references; wrong domain versions; unavailable bytes; and one changed bound field without a matching digest. | RFC 8785 key reordering preserves the digest; only complete records under the recognized domain with canonical reference collections and recomputed matching digests pass, and every other case fails closed before workflow or promotion effects. |
 
 Verification is complete only when these tests run against the implementation, correction/supersession and promotion receipts are content-bound, every required human approval is valid, shadow isolation is proven on every route, and a fresh independent Sol xhigh review is clean. Structural presence of this file is not product verification.

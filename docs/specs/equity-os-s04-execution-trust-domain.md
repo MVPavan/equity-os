@@ -104,10 +104,10 @@ emitted directly, JSON booleans/null, and arrays retained in declared order.
 For each record digest, the preimage is the record's complete logical JSON
 object with exactly the field that stores that digest omitted. Other digest
 fields remain in the preimage because they bind referenced content. Thus
-`intent_sha256`, `authorization_sha256`, `request_sha256`, and
-`outcome_sha256` omit only themselves from their respective preimages; no
-digest is self-referential. Unknown fields are invalid rather than silently
-excluded from hashing.
+`intent_sha256`, `control_approval_set_sha256`, `request_sha256`,
+`authorization_sha256`, `consumption_sha256`, and `outcome_sha256` omit only
+themselves from their respective preimages; no digest is self-referential.
+Unknown fields are invalid rather than silently excluded from hashing.
 
 ### `ExecutionIntent`
 
@@ -127,15 +127,51 @@ be submitted directly and has no credential-bearing or executable field.
 | `created_at` / `expires_at` | UTC timestamps; expired intent is invalid |
 | `intent_sha256` | Digest of the canonical intent preimage defined above |
 
+### `ExecutionControlApprovalSet`
+
+Before constructing a request, the execution domain creates an immutable
+snapshot of the current environment approvals required for submission. The set
+contains exactly one entry for each of `REGULATORY_REVIEW`, `LEGAL_REVIEW`,
+`CREDENTIAL_ACCESS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, and
+`PRODUCTION_APPROVAL`. Each entry contains the exact required-approval ID,
+canonical approval-record ID, approval type, scope, actor, authority, decision,
+timestamp, validity or review period, evidence-reference IDs, human-review ID,
+resolution-decision ID, and current `resolution_content_sha256`. The set also
+declares the intended use mode and jurisdiction, provider/account/environment,
+and credential principals/scopes to which all entries must apply, and carries
+`control_approval_set_id` and `control_approval_set_sha256`.
+
+The validator resolves every entry through the canonical required-approval and
+approval-record inventories and recomputes the active immutable resolution
+digest. Missing, extra, denied, revoked, expired, superseded, digest-stale, or
+scope-mismatched entries make the set invalid. A stored snapshot is evidence of
+what was checked, not continuing authority: submission repeats these checks
+against current canonical records.
+
+### `ExecutionRequest`
+
+An `ExecutionRequest` is created inside the execution domain as an inert,
+immutable proposal before the request-specific human resolution and
+authorization exist. It cannot be submitted by itself. It contains
+`request_id`, schema version, exact intent ID/hash, security-mapping version,
+venue/account identity, deterministic-limit-policy ID/version/hash,
+`control_approval_set_id`/hash, a globally unique idempotency key, creation and
+expiry timestamps, and `request_sha256`. The request preimage contains no
+authorization field, so a later authorization can bind its hash without a
+digest cycle.
+
 ### `ExecutionAuthorization`
 
-The execution domain accepts a candidate only after producing a separate,
-immutable authorization record.
+The execution domain accepts an immutable request only after producing a
+separate, immutable authorization record specific to that request.
 
 | Field | Contract |
 |---|---|
 | `authorization_id` | Stable unique identifier |
 | `intent_id` / `intent_sha256` | Exact bound candidate |
+| `request_id` / `request_sha256` | Exact immutable request approved by the human resolution |
+| `idempotency_key` | Exact key in the bound request; no substitution or regeneration |
+| `control_approval_set_id` / `control_approval_set_sha256` | Exact environment-approval snapshot bound by the request |
 | `approval_record_id` | Exact canonical approval record matching this request and authorization decision |
 | `human_review_id` / `resolution_decision_id` | Exact canonical human-review entry and active immutable resolution supplying the approval |
 | `resolution_content_sha256` | Current canonical content digest of that resolution |
@@ -150,24 +186,34 @@ immutable authorization record.
 An authorization permits execution only when `approval_record_id` resolves to
 the one canonical approval record whose type is
 `EXECUTION_TRUST_DOMAIN_APPROVAL`, decision is `APPROVED`, authority source is
-`HUMAN_RESOLUTION`, and exact intent, limits, account scope, actor, authority,
-timestamp, expiry, and evidence match the authorization. Its `human_review_id`,
+`HUMAN_RESOLUTION`, and exact request ID/hash, idempotency key, intent, limits,
+account scope, control-approval-set ID/hash, actor, authority, timestamp,
+expiry, and evidence match the authorization. Its `human_review_id`,
 `resolution_decision_id`, and `resolution_content_sha256` must resolve through
 the canonical human-review artifact to that same active, immutable,
-non-superseded resolution. The validator recomputes the resolution digest from
-canonical content. Internally supplied approver identity, authority basis,
-evidence, or matching strings do not establish authority.
+non-superseded resolution, and the resolution's exact scope must name that
+request ID/hash and idempotency key. The validator recomputes the request,
+approval-set, and resolution digests from canonical content. Internally supplied
+approver identity, authority basis, evidence, or matching strings do not
+establish authority.
 
-### `ExecutionRequest` and `ExecutionOutcome`
+### Submission, authorization consumption, and `ExecutionOutcome`
 
-An `ExecutionRequest` is created inside the execution domain from one current
-approved authorization. It binds the authorization ID/hash, canonical approval
-record ID, human-review ID, resolution decision ID/content digest, exact
-security mapping version, venue/account identity, deterministic-limit-policy
-version, idempotency key, and `request_sha256`. Submission re-resolves the
-canonical records and recomputes their digests; a revoked, expired, superseded,
-missing, stale, or mismatched record blocks the request even when the stored
-authorization hash matches. An `ExecutionOutcome` records request hash,
+Submission accepts only the exact request/authorization pair whose hashes and
+cross-references match. It re-resolves the request-specific canonical approval,
+human resolution, and every entry in the bound control-approval set and
+recomputes all content digests. A revoked, expired, superseded, missing, stale,
+or mismatched record blocks submission even when stored hashes match each
+other.
+
+Before any external send, one atomic transaction creates an append-only
+`AuthorizationConsumption` containing authorization ID/hash, request ID/hash,
+idempotency key, state, timestamps, external-attempt reference when one exists,
+correction/supersession links, and `consumption_sha256`. `authorization_id` is a
+unique consumption key. A consumed authorization may only resume or reconcile
+the same request hash and idempotency key; it can never authorize another
+request or a new external attempt. Failure to prove or reserve uniqueness
+blocks the send. An `ExecutionOutcome` records consumption and request hashes,
 external acknowledgement identifiers, typed state transitions, quantities and
 prices with units/currencies, venue timestamps, ingestion timestamps, source
 evidence, correction/supersession links, and `outcome_sha256`.
@@ -181,19 +227,26 @@ approval, kill-switch state, or submission.
    credentials, mutable data authority, and network authorization.
 2. No untrusted document, retrieved text, model output, claim, memory draft, or
    research artifact can invoke execution or obtain execution secrets.
-3. Every submitted request binds exactly one unexpired intent, one current human
-   authorization, that authorization's matching canonical approval record and
-   active immutable human resolution with recomputed content digest, one
-   deterministic policy version, and one idempotency key.
+3. Every submitted request binds exactly one unexpired intent, one current
+   request-specific human authorization that binds back to the same request
+   ID/hash and idempotency key, that authorization's matching canonical approval
+   record and active immutable human resolution with recomputed content digest,
+   one current control-approval set, and one deterministic policy version.
 4. Deterministic limits can narrow or reject an approved intent; no model,
    narrative, or operator bypass can broaden it.
 5. Missing identity mappings, stale prices or reference data, ambiguous units,
    hash mismatches, unavailable approval evidence, failed reconciliation, or an
-   unhealthy dependency blocks submission.
+   invalid control-approval set blocks submission. All five environment approval
+   entries are re-resolved by exact required-approval ID, approval-record ID,
+   resolution digest, and scope at submission; no generic dependency-health flag
+   satisfies this check.
 6. Kill-switch state defaults to `BLOCKED` on startup, loss of authoritative
    state, reconciliation breach, or control-plane uncertainty. Re-enabling
    requires a fresh typed human approval and evidence of resolved cause.
-7. Duplicate idempotency keys cannot create duplicate external actions.
+7. Duplicate idempotency keys cannot create duplicate external actions, and one
+   authorization cannot be consumed by two request hashes or keys. Retry of the
+   exact pair resumes or reconciles its recorded attempt instead of sending a
+   second action.
 8. Reconciliation is append-only and preserves conflicting observations;
    corrections supersede records and never silently overwrite them.
 9. A research-side record of `approved`, a clean Sol review, or this contract's
@@ -218,7 +271,7 @@ human authority below.
 | Credential access | `CREDENTIAL_ACCESS_APPROVAL` | Credential/account owner | Named principals, exact scopes, expiry, rotation/revocation evidence | No credential issuance or use |
 | External venue/service | `EXTERNAL_SERVICE_APPROVAL` | Competent service/account authority | Exact provider, account, terms, limits, environment, evidence | No external connection |
 | Production enablement | `PRODUCTION_APPROVAL` | Competent production owner | Current test, reconciliation, rollback/kill-switch, observability evidence | Non-production only |
-| Each executable request | `EXECUTION_TRUST_DOMAIN_APPROVAL` | Competent human execution approver | Exact intent hash, limits, account, expiry, immutable authorization, canonical approval-record/human-review/resolution IDs, and current resolution content digest | Request rejected |
+| Each executable request | `EXECUTION_TRUST_DOMAIN_APPROVAL` | Competent human execution approver | Exact request ID/hash and idempotency key, intent hash, limits, account, expiry, immutable authorization, canonical approval-record/human-review/resolution IDs, and current resolution content digest | Request rejected |
 | Any security deviation | `SECURITY_EXCEPTION` | Competent security authority | Narrow scope, rationale, compensating controls, owner, expiry | Deviation prohibited |
 
 Purchase or external coordination needs separate `PURCHASE_AUTHORIZATION` or
@@ -242,24 +295,35 @@ Required executable tests after activation include:
    also reject an authorization whose internal approver/evidence fields appear
    valid but whose canonical approval record, human-review entry, resolution,
    or current resolution digest is missing, stale, superseded, or mismatched;
-4. compute intent, authorization, request, and outcome digests from their
+4. approve one immutable request, then reject a same-ID content mutation, a
+   second request hash, and a different idempotency key under that authorization;
+   atomically consume the authorization once and prove retry of the exact pair
+   cannot create a second external attempt;
+5. for each of `REGULATORY_REVIEW`, `LEGAL_REVIEW`,
+   `CREDENTIAL_ACCESS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, and
+   `PRODUCTION_APPROVAL`, expire, revoke, supersede, digest-mutate, omit, and
+   scope-mismatch its exact required-approval or canonical record after request
+   construction and prove submission fails closed;
+6. compute intent, control-approval-set, request, authorization, consumption,
+   and outcome digests from their
    canonical JSON preimages; prove key order and insignificant whitespace do
    not change a digest, each own digest field is excluded without recursion,
    referenced digests remain bound, and any semantic mutation invalidates
    dependent authorization and submission;
-5. reject unknown schema/enum values, ambiguous units, stale mappings, and hash
+7. reject unknown schema/enum values, ambiguous units, stale mappings, and hash
    mismatches;
-6. prove deterministic limits reject over-limit and malformed requests even
+8. prove deterministic limits reject over-limit and malformed requests even
    when the intent is human-approved;
-7. replay one idempotency key and prove at-most-once external submission;
-8. activate the kill switch before, during, and after submission and verify the
+9. replay one idempotency key and prove at-most-once external submission;
+10. activate the kill switch before, during, and after submission and verify the
    defined safe state;
-9. inject lost, duplicate, reordered, conflicting, and corrected external
+11. inject lost, duplicate, reordered, conflicting, and corrected external
    outcomes and prove reconciliation is complete and append-only;
-10. prove restart defaults to blocked until authoritative state and current
+12. prove restart defaults to blocked until authoritative state and current
    approvals are reconstructed; and
-11. demonstrate that every request, authorization, external acknowledgement,
-    outcome, correction, and reconciliation result is hash-bound and auditable.
+13. demonstrate that every request, authorization, consumption, external
+    acknowledgement, outcome, correction, and reconciliation result is
+    hash-bound and auditable.
 
 Verification results must identify exact commands, immutable output evidence,
 exit codes, source/artifact hashes, and execution time. Agent reports and

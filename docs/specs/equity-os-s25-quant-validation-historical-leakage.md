@@ -72,7 +72,7 @@ by convenience.
 | `protocol_id` | stable identifier | Immutable and unique. |
 | `spec_id` | enum | Exactly `S25`. |
 | `register_scope` | nonempty enum set | One or both of `E-05`, `E-10`; it selects operations, not dependency satisfaction. |
-| `activation_binding_by_register` | typed map | Key set equals `register_scope` exactly. Each value contains that register's `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`. |
+| `activation_binding_by_register` | typed activation-envelope map | Key set equals `register_scope` exactly. Each value contains that register's `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`. The map is attached after the body digest is computed and is outside that digest's preimage. |
 | `dependency_binding_by_register` | typed map | For E-05, exact keys are `B-09` and `E-10`; for E-10, exact key is `C-15`. Each value content-binds the live register row, source digest, required `Accepted` status, and retained activation record when the dependency was originally Deferred. Dependency bindings do not add an operation to `register_scope`. |
 | `hypothesis` | typed object | Subject, metric, direction, horizon, universe, materiality, and observable falsifier fixed in advance. |
 | `universe_snapshot_id` | identifier | Point-in-time membership with inclusion/exclusion rationale. |
@@ -85,17 +85,33 @@ by convenience.
 | `benchmark_definition` | typed object | Required for E-05: stable benchmark ID, point-in-time membership/version, return convention, rebalance rule, currency, and comparison method. E-10-only scope uses evidenced `NOT_APPLICABLE` only when it makes no performance claim. |
 | `budgets` | object | Maximum data, compute, trials, elapsed time, and analyst review. |
 | `stop_rules` | nonempty array | Leakage, rights, evidence, multiple-testing, budget, and safety stops. |
-| `required_approval_ids` | nonempty typed reference array | Exact one-to-one requirements from the gate table, each bound to its named register scope; boundary-conditioned requirements are resolved before protocol freeze. |
-| `protocol_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete protocol. |
+| `required_approval_ids` | nonempty typed reference array | Exact one-to-one pre-run requirements from `S25-G02` through `S25-G06`, each bound to its named register scope; boundary-conditioned requirements are resolved before protocol freeze. `S25-G01` is a separate spec-artifact gate, while `S25-G07` through `S25-G09` are instantiated after their report or downstream content exists. This pre-run approval envelope is outside the body digest's preimage. |
+| `protocol_body_sha256` | lowercase SHA-256 | Pre-activation body digest defined below. |
 
-`protocol_sha256` is SHA-256 of canonical JSON of every protocol field except
-`protocol_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
-whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
-Every approval requirement scope MUST name `protocol_id`, `protocol_sha256`,
-`S25`, and exactly one of `E-05` or `E-10`; a requirement bound to another
-digest or a compound register scope cannot pass. The protocol is frozen before
-holdout access. Changes create a new protocol and cannot overwrite the prior
-one.
+`protocol_body_sha256` is SHA-256 of canonical JSON of every protocol field
+except `activation_binding_by_register`, `required_approval_ids`, and
+`protocol_body_sha256`. Canonical JSON is UTF-8 with sorted keys, no
+insignificant whitespace, direct Unicode, JSON booleans/null, and arrays in
+declared order. The body is frozen and hashed before the activation and
+operational-approval envelopes are attached. Every operational approval
+requirement scope MUST name `protocol_id`, `protocol_body_sha256`, `S25`, and
+exactly one of `E-05` or `E-10`; a requirement bound to another digest or a
+compound register scope cannot pass. The validator recomputes the body
+projection exactly, validates each envelope independently, and rejects a
+missing field, an extra field in the digest preimage, or any body mutation not
+accompanied by a new digest and new scoped envelopes. The protocol body is
+frozen before holdout access. Changes create a new body and cannot overwrite
+the prior one.
+
+`S25-G01-DELEGATED-ARTIFACT` is independent of every runtime protocol. Its
+scope MUST name `S25`, this repository-relative path, and the SHA-256 of the
+exact spec file bytes reviewed. Its record carries the clean review round,
+reviewer identity/session, source hashes, timestamp, and persisted evidence
+path. It MUST NOT depend on or name a future `protocol_id`,
+`protocol_body_sha256`, activation record, `register_scope`, or E-05/E-10
+runtime approval. Any edit to the spec bytes requires a new artifact review and
+record; a later protocol change neither supplies nor invalidates the artifact
+approval for unchanged spec bytes.
 
 For each selected register, the validator dereferences its activation binding
 rather than trusting copied values. It recomputes the governed activation
@@ -109,21 +125,21 @@ resolution carry the same register, predicate ID/digest, exact scope, decision
 ID, and resolution digest. Missing, copied, stale, superseded, revoked, or
 content-mismatched values leave that register dormant.
 
-Each referenced approval requirement contains `approval_id`,
+Each referenced operational approval requirement contains `approval_id`,
 `approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
 `evidence_ref_ids`, and `matched_record_id`. Each record contains
 `approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
 `actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
-`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+`resolution_decision_id`, and `resolution_content_sha256`. Every operational
 record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
 timestamp, evidence, canonical decision ID, and digest from one active immutable
 resolution. That resolution digest is SHA-256 of canonical JSON of the complete
 resolution object except `content_sha256`; its `entry_authority_sha256` is the
 same digest over the referenced human-review entry excluding `state`,
-`resolution_decision_ids`, and `content_sha256`. Only
-`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
-resolution fields. Any absent field or mismatch leaves the requirement
-`UNRESOLVED`; only `SATISFIED` passes.
+`resolution_decision_ids`, and `content_sha256`. The separate `S25-G01`
+artifact record uses `DELEGATED_AUTOMATED` with null human-resolution fields.
+Any absent field or mismatch leaves the requirement `UNRESOLVED`; only
+`SATISFIED` passes.
 
 ### `PointInTimeDatasetManifest`
 
@@ -168,26 +184,33 @@ text is not equivalent to this disclosure.
 
 ### `QuantValidationReport`
 
-The report includes the frozen protocol, complete trial registry, dataset and
-code hashes, all leakage findings, failed and blocked runs, denominators,
-uncertainty, primary and secondary results, analyst review cost, limitations,
-E-05 fee and liquidity results and benchmark-relative results (or evidenced
-`NOT_APPLICABLE` in a non-performance E-10-only report), tested controllable
-store/tool leakage controls, the separate `ModelWeightLeakageDisclosure`, and
-terminal `PASS`, `FAIL`, or `BLOCKED`. `PASS` means only that the approved
-validation gate passed; it is not clean alpha evidence or production, causal,
-regulatory, distribution, or investment approval.
+The report has a stable `report_id` and includes the frozen protocol, complete
+trial registry, dataset and code hashes, all leakage findings, failed and
+blocked runs, denominators, uncertainty, primary and secondary results, analyst
+review cost, limitations, E-05 fee and liquidity results and benchmark-relative
+results (or evidenced `NOT_APPLICABLE` in a non-performance E-10-only report),
+tested controllable store/tool leakage controls, the separate
+`ModelWeightLeakageDisclosure`, terminal technical outcome `PASS`, `FAIL`, or
+`BLOCKED`, and `report_body_sha256`. The digest is SHA-256 of canonical JSON of
+every report field except `report_body_sha256`. `PASS` means only that the
+frozen validation rule passed; it does not encode `S25-G07` approval and is not
+clean alpha evidence or production, causal, regulatory, distribution, or
+investment approval.
 
 ## Invariants and fail-closed behavior
 
-1. E-05 and E-10 are independently conditional. For each selected operation,
-   its exact activation binding validates before dependency bindings and the
-   frozen protocol digest; `S25-G01`, the matching activation gate, both
+1. E-05 and E-10 are independently conditional. The separately scoped
+   spec-artifact gate controls whether this contract may be implemented but is
+   not a runtime protocol requirement. For each selected operation,
+   `protocol_body_sha256` validates before the activation and approval
+   envelopes; then the selected register's activation binding and dependency
+   bindings validate. The matching activation gate, both
    `S25-G04`, every applicable `S25-G05`, and both `S25-G06` requirements are
    `SATISFIED` before that operation starts. `S25-G07` may be satisfied only from
    completed results; production and distribution remain separately sequenced
-   behind `S25-G08` and `S25-G09`. Later-stage requirements are inventoried at
-   protocol freeze but remain `UNRESOLVED` until their evidence exists.
+   behind `S25-G08` and `S25-G09`. `S25-G07` through `S25-G09` are absent from
+   the frozen pre-run inventory and are instantiated in separate
+   report/downstream envelopes only after the content they bind exists.
 2. E-05 activation and operation fail closed unless live register authority
    shows both exact dependencies `B-09` and `E-10` as `Accepted`, with current
    content-bound dependency proof. E-10 being `Deferred`, `Open`, `In progress`,
@@ -233,9 +256,9 @@ regulatory, distribution, or investment approval.
 
 ## Evidence and typed human-approval gates
 
-| Gate ID | Register scope | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
+| Gate ID | Approval scope | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
 |---|---|---|---|---|---|
-| `S25-G01-DELEGATED-ARTIFACT` | S25 | Fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
+| `S25-G01-DELEGATED-ARTIFACT` | S25 spec artifact | Exact current spec-file SHA-256, fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
 | `S25-G02-E05-ACTIVATION` | E-05 | Current TRUE E-05 predicate digest, evidence, activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-05 `ACTIVATE_DEFERRED` scope | Quant validation remains dormant. |
 | `S25-G03-E10-ACTIVATION` | E-10 | Current TRUE E-10 predicate digest, evidence, activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-10 `ACTIVATE_DEFERRED` scope | Historical replay remains dormant. |
 | `S25-G04A-PROTOCOL-ANALYST` | One activated register | Frozen hypothesis, universe, features, target, splits, metrics, trial budget, and stops; E-05 also requires fees, liquidity, and benchmark, while non-performance E-10-only scope requires evidenced `NOT_APPLICABLE` | `ANALYST_ACCEPTANCE` | Competent analyst | Run does not start. |
@@ -256,8 +279,11 @@ regulatory, distribution, or investment approval.
 | `S25-G09B-DISTRIBUTION-LEGAL` | One activated register | Legal decision for exact content/version and audience | `LEGAL_REVIEW` | Competent legal authority | No external or personalized distribution. |
 | `S25-G09C-DISTRIBUTION-REGULATORY` | One activated register | Regulatory decision for exact content/version and audience | `REGULATORY_REVIEW` | Competent regulatory authority | No external or personalized distribution. |
 
-One approval record satisfies one requirement only and is scoped to one named
-register and the frozen protocol digest. Applicability predicates that are
+`S25-G01` and `S25-G07` through `S25-G09` are not listed in
+`required_approval_ids`. G01 has spec-artifact scope, not an E-05 or E-10
+register scope; G07 through G09 are separate report/downstream requirements.
+One approval record satisfies one runtime requirement only and is scoped to one
+named register and the frozen protocol body digest. Applicability predicates that are
 `UNKNOWN` block the affected dataset or production scope. Operational authority
 is represented without a new type by the separate `CAPACITY_COMMITMENT` and
 `NAMED_OWNER_COMMITMENT` requirements above. The closed vocabulary has no
@@ -270,6 +296,14 @@ approval does not satisfy E-05/E-10 activation, analyst, domain, rights, legal,
 provider, budget, capacity, security, operations, model-risk, regulatory,
 production, or distribution authority.
 
+Every `S25-G07` scope additionally names the exact `report_id` and
+`report_body_sha256` reviewed. Every `S25-G08` requirement additionally binds
+that accepted report and the exact proposed-production artifact ID and content
+digest. Every `S25-G09` requirement additionally binds the exact distributed
+content digest, audience, and purpose. None of these approvals changes the
+immutable report body; changed report, production, or distributed bytes require
+a new scoped requirement and record.
+
 ## Acceptance tests and verification
 
 Before activation:
@@ -278,44 +312,61 @@ Before activation:
    credential, compute job, schedule, runtime dependency, or execution hook.
 2. E-05-only approval fails an E-10 operation and E-10-only approval fails an
    E-05 operation. False, unknown, stale, expired, or mismatched predicates;
-   changed predicate preimages; unresolved metrics; mismatched protocol or
+   changed predicate preimages; unresolved metrics; mismatched protocol-body or
    resolution digests; superseded/revoked resolutions; reused approval records;
    and a register-scope/activation-map key mismatch fail before any operation.
 3. E-05 with E-10 `Deferred`, `Open`, `In progress`, `Rejected`, missing, or
    digest-stale is blocked. Only current `Accepted` bindings for both `B-09` and
    E-10 satisfy E-05 dependencies; selecting E-05 alone still cannot start an
    E-10 replay operation.
+4. Negative binding fixtures mutate a protocol-body field without replacing
+   `protocol_body_sha256`, bind an activation or operational approval to a
+   different body digest, and include either envelope in the canonical body
+   preimage; every fixture is rejected. Changing only an envelope leaves the
+   body digest stable but still fails unless the replacement envelope is
+   current and matches the frozen body and single-register scope exactly.
+5. Negative artifact-scope fixtures omit or alter the reviewed spec-file
+   SHA-256, bind `S25-G01` to a runtime protocol or to E-05/E-10, place G01 or
+   any `S25-G07` through `S25-G09` requirement in `required_approval_ids`,
+   pre-create a report/downstream requirement without its content digest, or use
+   a runtime approval to satisfy G01; every fixture is rejected without
+   affecting either register's dormant state.
 
 After the applicable activation:
 
-4. Synthetic temporal fixtures catch every minimum `LeakageFinding` category,
+6. Synthetic temporal fixtures catch every minimum `LeakageFinding` category,
    including revised filings, post-cutoff index membership, late source
    availability, future corporate actions, overlapping horizons, and repeated
    holdout access. Model-weight limitation output is classified
    `UNCONTROLLABLE_MODEL_WEIGHT` and remains separate from controllable
    store/tool failures.
-5. Advancing a source's availability past the frame cutoff removes it from the
+7. Advancing a source's availability past the frame cutoff removes it from the
    decision frame; substituting a present-day snapshot is rejected.
-6. Dataset and replay rebuilds from identical immutable inputs and code produce
+8. Dataset and replay rebuilds from identical immutable inputs and code produce
    identical hashes; revisions create new versions and preserve old results.
-7. Split tests enforce chronology, purge, embargo, and outcome isolation; no
+9. Split tests enforce chronology, purge, embargo, and outcome isolation; no
    target-derived transformation enters features.
-8. Trial-registry tests account for every attempted run, including failures,
+10. Trial-registry tests account for every attempted run, including failures,
    manual interruptions, budget stops, and null results.
-9. Missing rights, lineage, temporal proof, identity, corporate-action version,
+11. Missing rights, lineage, temporal proof, identity, corporate-action version,
    or activation evidence yields `BLOCKED`, not imputation or silent exclusion.
-10. For E-05, missing or silently defaulted fees, liquidity assumptions, or
+12. For E-05, missing or silently defaulted fees, liquidity assumptions, or
     benchmark yields `BLOCKED`. Valid E-05 reports disclose all three and
     reproduce their point-in-time calculations and benchmark-relative results;
     non-performance E-10-only reports prove `NOT_APPLICABLE` rather than omit
     them.
-11. Historical LLM fixtures require the separate model-weight disclosure and
+13. Historical LLM fixtures require the separate model-weight disclosure and
     reject every clean-alpha representation while retaining all controllable
     store/tool tests. A no-LLM fixture requires evidenced `NOT_APPLICABLE`.
-12. Reports state denominators, uncertainty, limitations, all leakage findings,
+14. Reports state denominators, uncertainty, limitations, all leakage findings,
     and the exact narrow meaning of `PASS`; they make no clean-alpha,
     production, causal, trading, or recommendation claim. Requirement and
-    record IDs are one-to-one and every scope matches `protocol_sha256`.
+    record IDs are one-to-one and every runtime scope matches
+    `protocol_body_sha256` and exactly one selected register. Negative fixtures
+    change report bytes after `S25-G07`, reuse one report approval for another
+    report, and change proposed-production or distributed content after
+    `S25-G08` or `S25-G09`; each invalidates the affected approval without
+    altering prior immutable evidence.
 
 Verification evidence MUST contain exact commands, exit statuses, immutable
 input/output hashes, protocol and code versions, validator output, timestamps,

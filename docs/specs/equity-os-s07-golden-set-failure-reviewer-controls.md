@@ -156,6 +156,53 @@ artifact carries its originating `case_id`, `case_version`, and run mode;
 golden or shadow lineage fixes both eligibility values to `false` through all
 derived test artifacts.
 
+### `ExternalSpotReviewProcedure`
+
+B-13's optional procedure exists as a current versioned record even when no
+external review is performed. It contains `procedure_id`, `procedure_version`,
+effective interval, eligible claim-review population, exclusion rules,
+stratification dimensions, deterministic selection algorithm, reviewer
+eligibility rule, input/output schemas, disagreement flow, and
+`supersedes_procedure_version`.
+
+Each `ExternalSpotReviewRun` freezes the eligible population at an exact
+knowledge cutoff, stores the ordered stable claim IDs and artifact hashes,
+predeclares the requested sample count and per-stratum allocation across
+materiality, epistemic class, and internal decision, and then selects within
+each stratum by a deterministic permutation of sorted claim IDs using a
+persisted seed. A short stratum yields every eligible item plus an explicit
+shortfall; identities cannot be substituted after selection.
+
+Before any input is shared, the run must bind a current exact-scope
+`EXTERNAL_COORDINATION_APPROVAL` and a reviewer record containing identity,
+scope-specific competence evidence, relationship/conflict disclosures, and an
+independence result closed to `INDEPENDENT`, `CONFLICTED`, or `UNKNOWN`. The
+reviewer is ineligible if they built, labeled, primarily reviewed, or hold
+disposition authority over any selected item. Missing competence, conflict
+disclosure, approval, or an `INDEPENDENT` result blocks the run without
+representing a review as performed.
+
+The hash-bound input manifest contains the selected immutable report and claim
+versions, evidence package and source locations, calculation traces,
+materiality-policy version, epistemic/decision rubric, and knowledge cutoff.
+The internal decision telemetry is withheld until the reviewer freezes an
+append-only result for every selected item: independent `ACCEPT`, `EDIT`,
+`REJECT`, or `DEFER`; applicable `FailureCode` values; exact evidence refs;
+rationale; and recommended correction.
+
+Only after those results are frozen may the validator join the internal
+decisions. Every decision, failure-category, or correction mismatch creates an
+append-only disagreement record with both results, affected artifact hashes,
+status, and evidence. The external result is advisory evidence: it cannot
+directly relabel a golden case, edit an artifact, authorize
+promotion/publication, or close its own disagreement.
+Existing typed domain or analyst authority must disposition the mismatch as
+`CONFIRM_EXTERNAL`, `CONFIRM_INTERNAL`, `PARTIAL_CORRECTION`, or `UNRESOLVED`.
+An accepted correction emits the applicable `FailureEvent`, appends a
+superseding label/artifact version, and recomputes affected telemetry; an
+unresolved mismatch remains visible and cannot count as agreement or passing
+spot-review evidence.
+
 ### Required interfaces
 
 - The earnings-review workflow emits failure and review-decision records.
@@ -167,6 +214,9 @@ derived test artifacts.
 - The claim-review workflow can open golden/shadow fixtures, but promotion and
   publication interfaces must reject every fixture and every artifact with
   golden/shadow lineage, including `REAL_SOURCE` cases.
+- The optional external spot-review executor consumes only an approved,
+  hash-bound selected input manifest and emits immutable run, result,
+  disagreement, and disposition records through the procedure above.
 
 ## Invariants and fail-closed behavior
 
@@ -193,7 +243,11 @@ derived test artifacts.
    cannot authorize memory promotion.
 9. External spot review is optional. Its procedure must be defined, but an
    absent external review may not be represented as performed.
-10. No register status, delegated approval, analyst approval, or domain
+10. A missing approval, reproducible selection, qualified independent reviewer,
+    complete input/output manifest, or authorized disagreement disposition
+    fails the affected spot-review run closed. External results never mutate
+    labels, artifacts, or telemetry in place.
+11. No register status, delegated approval, analyst approval, or domain
     approval is inferred from document completion.
 
 ## Evidence and typed approval gates
@@ -233,6 +287,17 @@ Before owned rows can advance, verification must demonstrate:
   cutoff, secrets, execution, or promotion;
 - real-source, synthetic, and seeded golden fixtures, plus every derived
   fixture-run artifact, rejected by both promotion and publication paths;
+- deterministic replay of an external spot-review sample from the frozen
+  population, strata, allocation, and seed, including shortfall handling and
+  rejection of post-selection substitution;
+- rejection before input sharing when external coordination approval,
+  qualification, conflict disclosure, or independence evidence is missing;
+- immutable independent outputs produced before internal decisions are
+  revealed, with every disagreement retained until an existing typed authority
+  dispositions it and every accepted correction append-versioned and
+  re-aggregated;
+- no run record for an unperformed review and no blocked or partial run
+  represented as completed spot-review evidence;
 - no known falsehood in a promotable or publishable artifact; and
 - current typed evidence and one-to-one approval records for each mandatory
   human gate.

@@ -58,6 +58,7 @@ The complete base-edge set is:
 
 | Transition kind | Allowed edge | Predicate |
 |---|---|---|
+| Genesis | `null → REGISTERED` | This is the first and only genesis record for the run; it is committed atomically with a complete valid `RunRecord` and binds that record's registration-payload digest. |
 | Forward | Each adjacent edge in the successful path through `HUMAN_REVIEW` | The predecessor's immutable output exists and every input hash required by the successor matches. |
 | Approval | `HUMAN_REVIEW → APPROVED` | A current `ACCEPT` resolution binds the exact reviewed artifact/claim bytes and declared scope. |
 | Publication | `APPROVED → PUBLISHED` | The exact `PublicationEligibilityResult` defined in §4.8 is `TRUE`. |
@@ -69,7 +70,7 @@ The complete base-edge set is:
 
 A rework target names the logical step that must execute next; it does not assert that the target step has already produced a valid replacement output. Its transition record must preserve `rework_resume_target=target`. After that new attempt commits, the run follows the declared forward edges. `DEFER` records a review outcome without changing `HUMAN_REVIEW`.
 
-For any otherwise allowed base edge `from → target`, an attempt may record `from → FAILED` instead of committing `target`; its transition record must preserve `resume_target=target`. `FAILED` may transition only to that exact `resume_target` through a new idempotent attempt, or to `BLOCKED` with the same target. If required input, evidence, or authority is unavailable before an allowed edge, `from → BLOCKED` is legal only with `blocked_resume_target=target`; after the recorded blocker is resolved, `BLOCKED` may transition only to that target. Thus failure and blocking edges are derived mechanically from the closed base-edge set rather than selected freely.
+For any otherwise allowed non-genesis base edge `from → target`, an attempt may record `from → FAILED` instead of committing `target`; its transition record must preserve `resume_target=target`. `FAILED` may transition only to that exact `resume_target` through a new idempotent attempt, or to `BLOCKED` with the same target. If required input, evidence, or authority is unavailable before an allowed non-genesis edge, `from → BLOCKED` is legal only with `blocked_resume_target=target`; after the recorded blocker is resolved, `BLOCKED` may transition only to that target. Thus failure and blocking edges are derived mechanically from the closed non-genesis base-edge set rather than selected freely. Invalid or incomplete registration creates no valid run or initial state; it does not create a pre-registration `FAILED` or `BLOCKED` transition.
 
 Human outcomes are:
 
@@ -84,13 +85,15 @@ No other transition is legal. A state label alone is not proof: each transition 
 
 ### 4.1 `RunRecord`
 
-Contains stable `run_id`, discovery company, quarter, run cutoff, source/evidence-package version, preceding approved thesis ID and content hash, workflow-definition version, created time, and ordered transition references. The current logical state is derived from the last valid chained transition record, never asserted independently. Quarters 1–3 must name the immediately preceding approved thesis; absence or hash mismatch blocks registration.
+The canonical registration fields are exactly `run_id`, `discovery_company_id`, `quarter`, `run_cutoff`, `source_package_id`, `source_package_version`, `evidence_package_id`, `evidence_package_version`, `preceding_approved_thesis_id`, `preceding_approved_thesis_content_sha256`, `workflow_definition_version`, `created_at`, `registration_payload_digest`, and `transition_refs`. The registration-payload digest is lowercase SHA-256 of the UTF-8 domain separator `equity-os.s14.run-registration.v1`, one LF byte, and RFC 8785 canonical JSON of every listed field except `registration_payload_digest` and `transition_refs`. The transition-reference list is an index that must exactly match the validated chain; it is not independent state authority.
+
+Creation atomically persists the `RunRecord` and its one initial genesis transition. That record has `from_state=null`, `to_state=REGISTERED`, `transition_kind=GENESIS`, `prior_transition_digest=null`, and `output_digests` containing exactly `registration_payload_digest`; all inapplicable attempt, review, correction, invalidation, blocker, and resume fields are explicit `null`. A run with no genesis, more than one genesis, a genesis that is not first, or a genesis whose run ID, workflow version, or output digest disagrees with the `RunRecord` is invalid. The current logical state is derived from the last valid chained transition record, never asserted independently. Quarters 1–3 must name the immediately preceding approved thesis; absence or hash mismatch blocks registration and creates neither record.
 
 ### 4.2 `WorkflowTransitionRecord`
 
 Contains stable transition ID, run ID, prior-transition digest, `from_state`, `to_state`, transition kind, workflow-definition version, triggering attempt/output references, exact input and output digests, review-outcome/approval resolution ID and digest when applicable, correction and invalidation references, evidence-package ID/version/digest, `resume_target`, `blocked_resume_target`, or `rework_resume_target` when applicable, blocker and resolution evidence, actor/authority reference when applicable, transition time, and `transition_digest`. Fields that do not apply are explicit `null`, not omitted.
 
-The digest preimage is the UTF-8 domain separator `equity-os.s14.workflow-transition.v1`, one LF byte, and RFC 8785 canonical JSON of every field above except `transition_digest`, including explicit nulls and the prior-transition digest. `transition_digest` is the lowercase SHA-256 hex digest of that exact preimage. Missing canonical bytes, a broken prior-digest chain, a digest mismatch, or disagreement between the record's target and the closed graph blocks the transition.
+The digest preimage is the UTF-8 domain separator `equity-os.s14.workflow-transition.v1`, one LF byte, and RFC 8785 canonical JSON of every field above except `transition_digest`, including explicit nulls and the prior-transition digest. `transition_digest` is the lowercase SHA-256 hex digest of that exact preimage. `prior_transition_digest=null` is valid only on the first genesis record. Every later record must name the immediately preceding valid `transition_digest`; another genesis or null/mismatched prior digest invalidates the chain. Missing canonical bytes, a broken prior-digest chain, a digest mismatch, or disagreement between the record's target and the closed graph blocks the transition.
 
 An approval edge must bind the exact S15 decision ID, immutable resolution digest, reviewed artifact/claim hashes, and scope; a rework edge must bind the exact `REJECT` or `EDIT` decision plus correction, invalidation, and new evidence-package records, with `rework_resume_target=to_state`. `FAILED` and `BLOCKED` records must bind the exact target they preserve. A copied outcome string, an unbound resolution, or an inferred resume target is invalid.
 
@@ -112,7 +115,7 @@ Every derived fact, calculation, claim, section, draft, review, and approval dec
 
 ### 4.7 `ReviewOutcome`
 
-S14 consumes the content-bound human decision contract supplied by S15: decision ID and type, exact reviewed artifact/claim version and hash, actor and human actor type, authority basis, exact scope, timestamp, rationale where required, evidence, and immutable resolution digest. S14 must verify the complete canonical decision record against that digest before using it in a transition. Unavailable canonical bytes, a digest mismatch, stale/revoked authority, changed scope, or a copied decision string blocks the transition.
+S14 consumes the content-bound human decision contract supplied by S15: decision ID and type, exact reviewed artifact/claim version and hash, actor and human actor type, authority basis, exact scope, timestamp, rationale where required, evidence, and immutable resolution digest. Before using it in a transition, S14 must obtain the complete canonical `ReviewDecision`, recognize the `equity-os.s15.review-decision.v1` contract, and independently recompute its digest under S15 §3.8. Unavailable canonical bytes, an unknown contract/domain version, omitted explicit null, extra member, digest mismatch, stale/revoked authority, changed scope, or a copied decision string blocks the transition.
 
 ### 4.8 `PublicationTarget` and `PublicationEligibilityResult`
 
@@ -165,7 +168,7 @@ If dependency edges are absent, ambiguous, cyclic, or stale, minimal rerun canno
 8. Quarter 1 consumes the approved Quarter 0 thesis; Quarters 2 and 3 each consume the approved preceding thesis. Draft or unapproved thesis versions block.
 9. A rejection invalidates the exact affected closure. No invalidated calculation, claim, draft, review, approval, or publication receipt remains current.
 10. `DEFER`, missing approval, unresolved review, failure, or blocker cannot reach `APPROVED` or `PUBLISHED`.
-11. Current state and every retry, blocked resume, rework, approval, and publication edge are derived from valid chained transition records; missing or inconsistent records block.
+11. Current state and every retry, blocked resume, rework, approval, and publication edge are derived from one valid genesis followed by valid chained transition records; missing, duplicate, out-of-order, or inconsistent records block.
 12. Publication consumes the current accepted S01 boundary. A target outside it, or any target whose eligibility is not exactly `TRUE`, cannot reach `PUBLISHED` or receive a successful receipt.
 
 ## 7. Evidence and typed human-approval gates
@@ -208,7 +211,7 @@ Interface dependencies are S01 for the current operating/distribution boundary, 
 
 | Test | Fixture/action | Required result |
 |---|---|---|
-| S14-T01 Legal transitions | Enumerate every base edge, derived `FAILED`/`BLOCKED` edge, all five `HUMAN_REVIEW` rework targets, skips, regressions, target substitutions, digest-chain tampering, and unknown states. | Only the closed graph with complete content-bound transition records passes; failure/block records resume only their bound target and all other cases fail closed. |
+| S14-T01 Legal transitions and genesis | Create a run with one valid atomic `null → REGISTERED` genesis, then exercise absent, duplicate, non-first, non-null-prior, run/workflow/digest-mismatched, and registration-prerequisite-failing genesis cases; enumerate every later base edge, derived `FAILED`/`BLOCKED` edge, all five `HUMAN_REVIEW` rework targets, skips, regressions, target substitutions, digest-chain tampering, and unknown states. | Only one first content-bound genesis plus the closed later graph passes; invalid registration creates no run, the first forward edge proves `REGISTERED` from genesis, failure/block records resume only their bound target, and all other cases fail closed. |
 | S14-T02 Crash resume | Crash before output commit, during commit, and after commit/ack. | Resume produces one committed output and no duplicate side effect. |
 | S14-T03 Idempotent retry | Repeat identical and changed-input attempts. | Identical key returns the committed result; changed input requires a new key/output. |
 | S14-T04 Rejected extraction | Reject a claim caused by extraction error and attempt rework once with the old extraction output and once with a corrected extraction attempt/output. | `v(N+1)` and `HUMAN_REVIEW → EXTRACTED` are recorded; the incorrect extraction output is invalidated/superseded but remains immutable; a new corrected extraction output is required; affected reconciliation/calculation/claim/draft/review outputs rerun in order; unrelated outputs remain only with matching dependencies. |
@@ -219,5 +222,6 @@ Interface dependencies are S01 for the current operating/distribution boundary, 
 | S14-T09 Cutoff/source injection | Add post-cutoff evidence and instruction-like source text during rework. | Evidence is excluded; source text cannot alter workflow control. |
 | S14-T10 Migration trigger | Cross and do not cross each recorded trigger. | Telemetry records the result; neither case silently changes the engine. |
 | S14-T11 Publication boundary | Attempt publication with a current exact private/internal target, each external mode, an out-of-audience target, and missing/stale/ambiguous boundary or resolution evidence. | Only the exact private/internal target can yield eligibility `TRUE`; every other case blocks `PUBLISHED` and emits no successful receipt, without activating E-08. |
+| S14-T12 Review-decision canonical bytes | Attempt approval and rework with the exact S15 canonical decision, unavailable canonical bytes, an unknown/wrong domain version, an omitted explicit-null member, an extra member, reordered object keys, and a changed field without a matching digest. | Reordered keys verify to the same RFC 8785 bytes; only the complete exact recognized S15 record with a recomputed matching digest may drive a transition, and every unverifiable case blocks. |
 
 Verification is complete only when these tests run against the implementation, all three real updates and the B-14 rework demonstration have current content-bound evidence, every required human approval is valid, and a fresh independent Sol xhigh review is clean. Structural presence of this file is not product verification.

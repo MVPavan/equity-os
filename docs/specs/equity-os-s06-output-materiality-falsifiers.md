@@ -95,10 +95,10 @@ emitted directly, JSON booleans/null, and arrays retained in declared order.
 For each record digest, the preimage is the record's complete logical JSON
 object with exactly the field that stores that digest omitted. Other digest
 fields remain because they bind referenced content. `artifact_sha256`,
-`candidate_claim_inventory_sha256`, `policy_sha256`, `decision_sha256`,
-`falsifier_sha256`, and `draft_sha256` therefore omit only themselves from
-their respective preimages. Unknown fields are invalid rather than silently
-excluded from hashing. The canonical serialization of
+`candidate_claim_inventory_sha256`, `claim_content_sha256`, `policy_sha256`,
+`decision_sha256`, `falsifier_sha256`, and `draft_sha256` therefore omit only
+themselves from their respective preimages. Unknown fields are invalid rather
+than silently excluded from hashing. The canonical serialization of
 `EarningsReviewOutputV0` without `artifact_sha256` is the exact approved output
 preimage; changing any narrative string changes those canonical bytes.
 
@@ -125,7 +125,7 @@ collections are explicit; missing required fields fail validation.
 | `open_questions` | Question, why it matters, required evidence, owner/status if known |
 | `calculations` | Calculation-trace references; the narrative is never the authoritative calculator |
 | `memory_draft` | Draft-only proposed canonical-thesis changes with provenance and diff; never promoted by output creation |
-| `materiality_decisions` | Exactly one current policy-bound decision for every `candidate_claim_id` |
+| `materiality_decisions` | Exactly one current policy-, inventory-, and claim-content-bound decision for every `candidate_claim_id` |
 | `approval_record` | Separate approval reference bound to exact canonical artifact bytes/hash |
 | `artifact_sha256` | Digest of the canonical output preimage defined above |
 
@@ -144,17 +144,24 @@ used as support, or considered for `facts`, `changes`, `driver_analysis`,
 `management_ledger`, `thesis_impact`, `open_questions`, calculations,
 falsifiers, or the memory draft, including candidates later rejected or omitted
 from display. Each entry contains a unique claim ID, exact content, epistemic
-class, origin stage/slot, evidence or calculation references, and disposition.
-Every claim-producing stage must append its candidate before the claim can be
-evaluated, used, or discarded. The run closes and makes the inventory immutable
-only after all such stages are complete, and
+class, origin stage/slot, evidence or calculation references, disposition, and
+`claim_content_sha256`. That digest binds the entry's complete canonical
+claim-content object with only `claim_content_sha256` omitted, so retaining an
+ID while changing content, type, origin, support, or disposition changes the
+digest. Every claim-producing stage must append its candidate before the claim
+can be evaluated, used, or discarded. The run closes and makes the inventory
+immutable only after all such stages are complete, and
 `candidate_claim_inventory_sha256` binds its canonical preimage.
 
 Output validation requires an exact-set match between the closed inventory and
 `candidate_claim_ids`, an exact one-to-one match between those IDs and
 `materiality_decisions`, and registration of every claim ID reachable from any
-output field. A claim cannot avoid evaluation by being described as obviously
-immaterial, omitted from the final narrative, or introduced only as support.
+output field. Each decision must name the output's exact
+`candidate_claim_inventory_id` and `candidate_claim_inventory_sha256` and the
+matching inventory entry's current `claim_content_sha256`. A claim cannot avoid
+evaluation by retaining its ID while changing content, being described as
+obviously immaterial, being omitted from the final narrative, or being
+introduced only as support.
 
 ### `MaterialityPolicy`
 
@@ -188,20 +195,23 @@ Policy precedence is fixed:
 
 ### `MaterialityDecision`
 
-Each decision contains `decision_id`, `claim_id`, `policy_id/version/hash`,
-evaluated quantitative inputs and rule results, matched always-material
-categories, thesis-relevance results, conflict/uncertainty state, applied
-coverage override and approval, result, rationale, reviewer state, evidence
-references, timestamp, and `decision_sha256`. It also contains one explicit
-dimension evaluation for each of `QUANTITATIVE`, `ALWAYS_MATERIAL`,
-`THESIS_RELEVANCE`, `UNCERTAINTY_CONFLICT`, and `COVERAGE_OVERRIDE`. Every rule
-in every dimension records its inputs, evidence, and `MATCHED`, `NOT_MATCHED`,
-`NOT_APPLICABLE`, or `UNKNOWN` result; `NOT_APPLICABLE` requires a rationale.
-Evaluation is exhaustive and does not short-circuit after a material match.
+Each decision contains `decision_id`, `claim_id`, `claim_content_sha256`,
+`candidate_claim_inventory_id`, `candidate_claim_inventory_sha256`,
+`policy_id/version/hash`, evaluated quantitative inputs and rule results,
+matched always-material categories, thesis-relevance results,
+conflict/uncertainty state, applied coverage override and approval, result,
+rationale, reviewer state, evidence references, timestamp, and
+`decision_sha256`. It also contains one explicit dimension evaluation for each
+of `QUANTITATIVE`, `ALWAYS_MATERIAL`, `THESIS_RELEVANCE`,
+`UNCERTAINTY_CONFLICT`, and `COVERAGE_OVERRIDE`. Every rule in every dimension
+records its inputs, evidence, and `MATCHED`, `NOT_MATCHED`, `NOT_APPLICABLE`, or
+`UNKNOWN` result; `NOT_APPLICABLE` requires a rationale. Evaluation is
+exhaustive and does not short-circuit after a material match.
 
 The closed result set is `MATERIAL`, `NOT_MATERIAL`, and `REVIEW_REQUIRED`.
 `NOT_MATERIAL` requires complete inputs and a reasoned policy result; it is not
-the default. Policy changes or evidence changes invalidate the decision.
+the default. Candidate-inventory, claim-content, policy, or evidence changes
+invalidate the decision and require evaluation against the changed content.
 
 ### `ObservableFalsifier`
 
@@ -231,11 +241,12 @@ promotion transaction may affect the canonical thesis.
 
 1. Every output declares event, knowledge cutoff, evidence package, contract
    version/stage, and exact artifact hash.
-2. Every candidate claim appears in the closed candidate inventory and
-   has exactly one explicit current materiality decision covering every policy
+2. Every candidate claim appears in the closed candidate inventory and has
+   exactly one explicit current materiality decision bound to that exact
+   inventory ID/hash and claim-content digest and covering every policy
    dimension and rule. Every material claim has the evidence required for its
-   epistemic class. Any inventory/decision mismatch, skipped dimension, or
-   missing support blocks approval.
+   epistemic class. Any inventory, content, or decision mismatch, skipped
+   dimension, or missing support blocks approval.
 3. `REVIEW_REQUIRED`, unknown policy version, stale policy hash, missing
    coverage-override approval, unit/period ambiguity, or unresolved source
    conflict blocks a final materiality result and output approval.
@@ -253,8 +264,9 @@ promotion transaction may affect the canonical thesis.
    risks and a no-falsifier approval or waiver do not satisfy the requirement.
 9. Memory drafts never write canonical thesis state. Output approval and memory
    promotion are separate human decisions.
-10. Any mutation to source evidence, policy, materiality decision, output,
-    calculation trace, falsifier, or approval makes dependent proofs stale.
+10. Any mutation to source evidence, candidate inventory, candidate claim
+    content, policy, materiality decision, output, calculation trace, falsifier,
+    or approval makes dependent proofs stale.
 11. `FINAL_V1` is forbidden until A-03 baseline evidence exists, A-11 has a
     current approved and versioned bootstrap thesis, and the S06 amendment has
     received a fresh clean Sol xhigh delegated approval plus all required human
@@ -300,23 +312,30 @@ They are never inferred from output or analyst approval.
 6. Reject `NOT_MATERIAL` when required inputs are missing, conflicting,
    ambiguous, unit-incompatible, or policy-stale.
 7. Assert the closed candidate inventory, `candidate_claim_ids`, and
-   materiality decisions are exact matching sets; require every policy rule in
-   all five dimensions to have an explicit result for every candidate.
+   materiality decisions are exact matching sets; require every decision to
+   bind the exact inventory ID/hash and matching claim-content digest and every
+   policy rule in all five dimensions to have an explicit result for every
+   candidate.
 8. Omit an apparently immaterial, rejected, display-suppressed, or support-only
    candidate or its decision and prove approval fails closed.
-9. Reject a generic risk and a zero-falsifier thesis impact even when an analyst
+9. Change one candidate's content, epistemic class, support, or disposition
+   while retaining its `claim_id`; prove its prior decision and output approval
+   become stale and approval remains blocked until that exact changed claim is
+   reevaluated under the current inventory and policy.
+10. Reject a generic risk and a zero-falsifier thesis impact even when an analyst
    supplies a no-falsifier approval; accept each observable type only when
    trigger, horizon, evidence source, and thesis effect are explicit.
-10. Trigger, conflict, and invalidate falsifier evidence and prove the thesis
+11. Trigger, conflict, and invalidate falsifier evidence and prove the thesis
    impact becomes review-required.
-11. Attempt to promote a memory draft through output approval and prove canonical
+12. Attempt to promote a memory draft through output approval and prove canonical
    thesis state is unchanged.
-12. Compute output, candidate-inventory, policy, decision, falsifier, and
-    memory-draft digests from their canonical JSON preimages; prove key order
-    and insignificant whitespace do not change a digest, each own digest field
-    is excluded without recursion, referenced digests remain bound, and any
-    canonical-preimage content mutation or referenced evidence/calculation byte
-    mutation makes all dependent approvals and verification results stale.
+13. Compute output, candidate-inventory, claim-content, policy, decision,
+    falsifier, and memory-draft digests from their canonical JSON preimages;
+    prove key order and insignificant whitespace do not change a digest, each
+    own digest field is excluded without recursion, referenced digests remain
+    bound, and any canonical-preimage content mutation or referenced
+    evidence/calculation byte mutation makes all dependent approvals and
+    verification results stale.
 
 ### Mandatory amendment verification
 

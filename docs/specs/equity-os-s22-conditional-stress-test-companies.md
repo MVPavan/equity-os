@@ -65,7 +65,7 @@ unknown; it is never represented by a guessed value.
 | `protocol_id` | stable identifier | Unique and immutable. |
 | `spec_id` | enum | Exactly `S22`. |
 | `register_id` | enum | Exactly `E-02`. |
-| `activation_binding` | content-bound reference object | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-02 activation record. |
+| `activation_binding` | content-bound activation envelope | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-02 activation record. It is attached after the body digest is computed and is outside that digest's preimage. |
 | `baseline_run_ids` | nonempty identifier array | Approved discovery-company runs used as the comparison baseline. |
 | `stress_dimensions` | nonempty enum array | Chosen from sector, size, reporting complexity, segment complexity, document variation, and source coverage. |
 | `candidate_companies` | exactly three typed objects | Unique stable entity IDs; exactly one object has each `mandatory_archetype` value `BANK_OR_NBFC`, `CONGLOMERATE`, and `DIFFICULT_DISCLOSURE_OR_CORPORATE_ACTION`. Each also contains selection rationale, covered dimensions, source-rights result, and reviewer decision ID. Generic stress dimensions never substitute for an archetype. |
@@ -73,14 +73,30 @@ unknown; it is never represented by a guessed value.
 | `budgets` | object | Maximum companies, documents, analyst minutes, compute, and elapsed time. |
 | `success_rules` | nonempty array | Mechanically evaluable thresholds fixed before execution. |
 | `stop_rules` | nonempty array | Safety, rights, evidence, quality, and budget termination conditions. |
-| `required_approval_ids` | nonempty typed reference array | Exact one-to-one requirements from the gate table; source-conditioned requirements are resolved before protocol freeze. |
-| `protocol_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete protocol. |
+| `required_approval_ids` | nonempty typed reference array | Exact one-to-one pre-run requirements from `S22-G02` through `S22-G05`; source-conditioned requirements are resolved before protocol freeze. `S22-G01` is a separate spec-artifact gate, while `S22-G06` and `S22-G07` are instantiated after their result or thesis diff exists. This pre-run approval envelope is outside the body digest's preimage. |
+| `protocol_body_sha256` | lowercase SHA-256 | Pre-activation body digest defined below. |
 
-`protocol_sha256` is SHA-256 of canonical JSON of every protocol field except
-`protocol_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
-whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
-Every approval requirement scope MUST name `protocol_id`, `protocol_sha256`,
-`S22`, and `E-02`; a requirement bound to another digest cannot pass.
+`protocol_body_sha256` is SHA-256 of canonical JSON of every protocol field
+except `activation_binding`, `required_approval_ids`, and
+`protocol_body_sha256`. Canonical JSON is UTF-8 with sorted keys, no
+insignificant whitespace, direct Unicode, JSON booleans/null, and arrays in
+declared order. The body is frozen and hashed before the activation and
+operational-approval envelopes are attached. Every operational approval
+requirement scope MUST name `protocol_id`, `protocol_body_sha256`, `S22`, and
+`E-02`; a requirement bound to another digest cannot pass. The validator
+recomputes the body projection exactly, validates each envelope independently,
+and rejects a missing field, an extra field in the digest preimage, or any body
+mutation not accompanied by a new digest and new scoped envelopes.
+
+`S22-G01-DELEGATED-ARTIFACT` is independent of every runtime protocol. Its
+scope MUST name `S22`, this repository-relative path, and the SHA-256 of the
+exact spec file bytes reviewed. Its record carries the clean review round,
+reviewer identity/session, source hashes, timestamp, and persisted evidence
+path. It MUST NOT depend on or name a future `protocol_id`,
+`protocol_body_sha256`, activation record, or E-02 runtime approval. Any edit
+to the spec bytes requires a new artifact review and record; a later protocol
+change neither supplies nor invalidates the artifact approval for unchanged
+spec bytes.
 
 The validator dereferences `activation_binding` rather than trusting copied
 values. It recomputes the governed activation predicate using three-valued
@@ -94,29 +110,31 @@ resolution carry the same predicate ID/digest, exact scope, decision ID, and
 resolution digest. Missing, copied, stale, superseded, revoked, or
 content-mismatched values leave E-02 dormant.
 
-Each referenced approval requirement contains `approval_id`,
+Each referenced operational approval requirement contains `approval_id`,
 `approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
 `evidence_ref_ids`, and `matched_record_id`. Each record contains
 `approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
 `actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
-`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+`resolution_decision_id`, and `resolution_content_sha256`. Every operational
 record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
 timestamp, evidence, canonical decision ID, and digest from one active immutable
 resolution. That resolution digest is SHA-256 of canonical JSON of the complete
 resolution object except `content_sha256`; its `entry_authority_sha256` is the
 same digest over the referenced human-review entry excluding `state`,
-`resolution_decision_ids`, and `content_sha256`. Only
-`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
-resolution fields. Any absent field or mismatch leaves the requirement
-`UNRESOLVED`; only `SATISFIED` passes.
+`resolution_decision_ids`, and `content_sha256`. The separate `S22-G01`
+artifact record uses `DELEGATED_AUTOMATED` with null human-resolution fields.
+Any absent field or mismatch leaves the requirement `UNRESOLVED`; only
+`SATISFIED` passes.
 
 ### `StressTestCompanyResult`
 
-Each result contains `protocol_id`, `entity_id`, `run_ids`, frozen evidence
-package IDs, source hashes, knowledge cutoff, interface versions, validator
-results, analyst-review minutes, corrections, unresolved failures, and a
-terminal state of `PASS`, `FAIL`, or `BLOCKED`. `BLOCKED` is not counted as a
-pass and missing companies remain in the denominator.
+Each result contains stable `result_id`, `protocol_id`, `entity_id`, `run_ids`,
+frozen evidence package IDs, source hashes, knowledge cutoff, interface
+versions, validator results, analyst-review minutes, corrections, unresolved
+failures, a terminal state of `PASS`, `FAIL`, or `BLOCKED`, and
+`result_body_sha256`. The digest is SHA-256 of canonical JSON of every result
+field except `result_body_sha256`. `BLOCKED` is not counted as a pass and
+missing companies remain in the denominator.
 
 ### `ContractDeltaDecision`
 
@@ -128,13 +146,16 @@ another spec or schema by implication.
 
 ## Invariants and fail-closed behavior
 
-1. Sequencing is fail closed: the activation binding and `protocol_sha256`
-   validate first; `S22-G01`, `S22-G02`, both `S22-G03` requirements, every
-   applicable `S22-G04` requirement, and both `S22-G05` requirements are
+1. Sequencing is fail closed: the separately scoped spec-artifact gate controls
+   whether this contract may be implemented but is not a runtime protocol
+   requirement. At runtime, `protocol_body_sha256` validates before the
+   activation and approval envelopes; `S22-G02`, both `S22-G03` requirements,
+   every applicable `S22-G04` requirement, and both `S22-G05` requirements are
    `SATISFIED` before a candidate run starts; `S22-G06` may be satisfied only
    from completed results; and `S22-G07` may be satisfied only after `S22-G06`.
-   Later-stage requirements are inventoried at protocol freeze but remain
-   `UNRESOLVED` until their evidence exists.
+   `S22-G06` and `S22-G07` are absent from the frozen pre-run inventory and are
+   instantiated in a separate result-level envelope only after the content they
+   bind exists.
 2. A copied ledger label, coordinator statement, this draft, or delegated
    artifact approval cannot activate E-02.
 3. The protocol contains exactly the three mandatory E-02 archetypes, with one
@@ -159,7 +180,7 @@ another spec or schema by implication.
 
 | Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
 |---|---|---|---|---|
-| `S22-G01-DELEGATED-ARTIFACT` | Clean fresh-context Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. This document records no such approval. |
+| `S22-G01-DELEGATED-ARTIFACT` | Exact current spec-file SHA-256, clean fresh-context Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. This document records no such approval. |
 | `S22-G02-ACTIVATION` | Current TRUE predicate digest, component-local evidence, E-02 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-02 `ACTIVATE_DEFERRED` scope | E-02 remains dormant. |
 | `S22-G03A-SELECTION-ANALYST` | Exact three-company matrix, source coverage, conflicts, rationales, and fixed denominator | `ANALYST_ACCEPTANCE` | Competent analyst | No candidate run starts. |
 | `S22-G03B-SELECTION-DOMAIN` | Evidence that each selected company satisfies its named mandatory archetype | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | No candidate run starts. |
@@ -171,11 +192,19 @@ another spec or schema by implication.
 | `S22-G06-RESULT` | Reviewed result and correction record | `ANALYST_ACCEPTANCE` | Competent analyst | Result remains unaccepted evaluation evidence. |
 | `S22-G07-PROMOTION` | Exact approved thesis diff through the separate promotion transaction | `MEMORY_PROMOTION` | Competent memory-promotion authority | Canonical thesis is unchanged. |
 
-One approval record satisfies one declared requirement only. A condition for
-`S22-G04B` or `S22-G04C` that is `UNKNOWN` blocks the source; it is never treated
-as false. Delegated artifact approval never satisfies activation, analyst,
-domain, provider, legal, rights, budget, capacity, regulatory, production,
-distribution, or promotion authority.
+`S22-G01`, `S22-G06`, and `S22-G07` are not listed in
+`required_approval_ids`. G01 cannot satisfy a runtime requirement; G06 and G07
+are separate result-level requirements. One approval record satisfies one
+declared requirement only. A condition for `S22-G04B` or `S22-G04C` that is
+`UNKNOWN` blocks the source; it is never treated as false. Delegated artifact
+approval never satisfies activation, analyst, domain, provider, legal, rights,
+budget, capacity, regulatory, production, distribution, or promotion authority.
+
+Every `S22-G06` scope additionally names the exact `result_id` and
+`result_body_sha256` reviewed. `S22-G07` additionally names that accepted result,
+the separate promotion-transaction ID, and the exact thesis-diff content digest.
+Neither approval changes the immutable result body; changed result or thesis-diff
+bytes require a new scoped requirement and record.
 
 ## Acceptance tests and verification
 
@@ -184,28 +213,42 @@ Before activation:
 1. A structural test proves no S22 executable entry point, schedule, provider
    call, credential, or runtime dependency is enabled.
 2. Attempts using no activation record, a false/unknown/stale predicate, a
-   changed predicate preimage, an unresolved metric, a mismatched protocol or
-   resolution digest, a superseded/revoked resolution, a reused approval
+   changed predicate preimage, an unresolved metric, a mismatched protocol-body
+   or resolution digest, a superseded/revoked resolution, a reused approval
    record, or delegated artifact approval alone are rejected before any run.
+3. Negative binding fixtures mutate a protocol-body field without replacing
+   `protocol_body_sha256`, bind an activation or operational approval to a
+   different body digest, and include either envelope in the canonical body
+   preimage; every fixture is rejected. Changing only an envelope leaves the
+   body digest stable but still fails unless the replacement envelope is
+   current and matches the frozen body scope exactly.
+4. Negative artifact-scope fixtures omit or alter the reviewed spec-file
+   SHA-256, bind `S22-G01` to a runtime protocol, place `S22-G01`, `S22-G06`,
+   or `S22-G07` in `required_approval_ids`, pre-create a result-level requirement
+   without its content digest, or use a runtime approval to satisfy G01; every
+   fixture is rejected without affecting E-02's dormant state.
 
 After activation:
 
-3. The fixture matrix contains exactly one distinct bank/NBFC, one distinct
+5. The fixture matrix contains exactly one distinct bank/NBFC, one distinct
    conglomerate, and one distinct difficult disclosure/corporate-action case.
    Omitting, duplicating, or replacing any archetype deterministically yields
    `BLOCKED`; a valid matrix runs against the same frozen contract versions and
    produces isolated content-addressed results.
-4. Missing evidence, source-rights denial, identity ambiguity, schema mismatch,
+6. Missing evidence, source-rights denial, identity ambiguity, schema mismatch,
    budget exhaustion, and validator failure each deterministically produce
    `BLOCKED` without partial promotion.
-5. Replaying identical inputs produces identical deterministic outputs or a
+7. Replaying identical inputs produces identical deterministic outputs or a
    documented nondeterministic boundary; no later-known evidence enters a run.
-6. Every discovered delta has exactly one `ContractDeltaDecision`, and no
+8. Every discovered delta has exactly one `ContractDeltaDecision`, and no
    `ADD` or `CHANGE` becomes operative without an amendment to its owning spec.
-7. The final report preserves all failures and blocked cases in its denominator
+9. The final report preserves all failures and blocked cases in its denominator
    and reconciles every run, approval, and evidence reference; requirement and
    record IDs are one-to-one and every approval scope matches the frozen
-   `protocol_sha256`.
+   `protocol_body_sha256`. Negative fixtures change result bytes after
+   `S22-G06`, reuse one result approval for another result, and change the thesis
+   diff after `S22-G07`; each invalidates the affected approval without altering
+   prior immutable evidence.
 
 Verification evidence MUST record the exact command, exit status, artifact
 hashes, validator output, execution time, and reviewer identity. Conversation

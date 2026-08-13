@@ -93,12 +93,12 @@ Each executable operator version contains:
 | applicability_rules | Required accounting basis, consolidation scope, period type, and exclusions |
 | code_artifact | Repository-relative implementation identity and content hash |
 | operator_definition_sha256 | SHA-256 of the canonical definition preimage specified below |
-| approval_bindings | Exactly one S16-G02 requirement binding and one S16-G03 requirement binding; each names its component-local approval_id and, when satisfied, its unique matched approval_record_id, human_review_id, resolution_decision_id, and resolution_content_sha256 |
+| approval_bindings | One exact reference to the registry-level S16-G02 requirement and one operator-version-specific S16-G03 requirement binding; each names its approval_id and, when satisfied, its unique matched approval_record_id, human_review_id, resolution_decision_id, and resolution_content_sha256 |
 | approval_state | Derived DRAFT or APPROVED; never caller supplied |
 
 The `operator_definition_sha256` preimage is the program's canonical JSON of every immutable field in this table from `operator_id` through `code_artifact`, excluding `operator_definition_sha256`, `approval_bindings`, and derived `approval_state`. Referenced policies and the code artifact appear as stable IDs, versions, and content digests, not unresolved labels.
 
-Every definition carries both approval requirements even while unresolved. `approval_state=APPROVED` if and only if the S16-G02 `PRODUCT_OWNER_DECISION` requirement for the inventory containing this exact definition digest and the S16-G03 `DOMAIN_EXPERT_ACCEPTANCE` requirement scoped to this exact operator ID, version, and digest are each `SATISFIED` one-to-one by distinct, current `APPROVED` records. Each binding must match type, authority, scope, actor, timestamp, evidence, active human-resolution decision ID, and resolution content digest. A missing, stale, denied, revoked, expired, mismatched, reused, or delegated-review record makes the derived state DRAFT. One record may not satisfy both requirements.
+Every definition references both approval requirements even while unresolved. S16-G02 is one registry-inventory requirement satisfied by one product-owner record for the exact inventory digest; definitions in that inventory reference the same requirement rather than minting duplicate requirements for the same decision. S16-G03 is a separate requirement for each exact operator ID, version, and digest. `approval_state=APPROVED` if and only if the referenced S16-G02 `PRODUCT_OWNER_DECISION` requirement and the operator-specific S16-G03 `DOMAIN_EXPERT_ACCEPTANCE` requirement are each `SATISFIED` one-to-one by distinct, current `APPROVED` records. Each binding must match type, authority, exact scope, actor, timestamp, evidence, authority source, active human-resolution decision ID, and resolution content digest. A missing, stale, denied, revoked, expired, mismatched, reused, or delegated-review record makes the derived state DRAFT. One record may not satisfy both requirements or any second requirement.
 
 Only a definition whose conjunction above recomputes to APPROVED may execute in an approvable run. This specification proposes the minimum families but does not mark any definition approved.
 
@@ -110,7 +110,7 @@ An input without a resolvable fact/evidence identity is invalid. A request may n
 
 ### 3.3 CalculationRequest
 
-A request contains calculation_id, run_id, evidence_package_id/version/digest, an evidence_reconstruction_key containing the ordered registered source IDs, fact IDs, claim IDs, and cutoff ID/value supplied by S10/S11, operator_id/version, ordered inputs, explicit assumptions, requested output role, caller identity, and request_digest. `request_digest` is SHA-256 of the program's canonical JSON of all preceding request fields plus the current operator-definition digest and the fact/evidence content digests for every ordered input; it excludes only `request_digest` itself. Missing or unresolved reconstruction identifiers or referenced digests make the request invalid.
+A request contains calculation_id, run_id, an `evidence_package_ref` containing the exact S10 evidence_package_id, version, and manifest_sha256, the S11 attempt-manifest ID/version/digest that binds that package, operator_id/version, ordered inputs, explicit assumptions, requested output role, caller identity, and request_digest. The package reference is the reconstruction key: it must resolve the exact sealed S10 manifest bytes, whose complete declared field set binds schema/profile, owning run/attempt, cutoff, creation time, document/fact/claim/calculation/policy references, parent-package reference, and change set. The registered source, fact, claim, and cutoff identifiers used by this calculation must match that resolved manifest; they are validation inputs, not a partial substitute from which omitted manifest fields are guessed. `request_digest` is SHA-256 of the program's canonical JSON of all preceding request fields plus the current operator-definition digest and the fact/evidence content digests for every ordered input; it excludes only `request_digest` itself. A missing or unresolved package/attempt reference, incomplete manifest closure, field mismatch, or referenced digest mismatch makes the request invalid.
 
 ### 3.4 CalculationTrace
 
@@ -122,14 +122,14 @@ A completed attempt contains:
 - replay class, runtime identity, dependency lock identity, locale, timezone, and decimal context;
 - resolved inputs and assumptions;
 - normalized operation tree and intermediate steps;
-- output value/unit or a typed failure;
+- closed outcome plus output value/unit when numeric, or typed non-numeric result/failure metadata;
 - tolerance, seed, distribution-check, and rounding records as applicable;
 - warnings that do not change pass/fail;
 - created-at time and trace digest.
 
 The trace digest is SHA-256 of the program's canonical JSON of every trace field above except the digest itself. It therefore binds the request digest, definition/code digests, runtime, ordered resolved inputs, operation tree, intermediates, outcome, and applicable tolerance, seed, distribution-check, and rounding records.
 
-Allowed outcomes are SUCCEEDED, BLOCKED_MISSING_INPUT, BLOCKED_INVALID_INPUT, BLOCKED_AMBIGUOUS_DEFINITION, BLOCKED_SCOPE_MISMATCH, BLOCKED_UNIT_MISMATCH, BLOCKED_ZERO_DENOMINATOR, and REPLAY_MISMATCH. A blocked outcome has no authoritative numeric output.
+Allowed outcomes are SUCCEEDED, NOT_MEANINGFUL, BLOCKED_MISSING_INPUT, BLOCKED_INVALID_INPUT, BLOCKED_AMBIGUOUS_DEFINITION, BLOCKED_SCOPE_MISMATCH, BLOCKED_UNIT_MISMATCH, BLOCKED_ZERO_DENOMINATOR, and REPLAY_MISMATCH. SUCCEEDED carries the typed numeric output. NOT_MEANINGFUL is a completed, non-numeric result permitted only when the approved operator version's explicit zero-denominator policy selects it; it carries the zero denominator, applicable input facts, and reason, and cannot support a numerical computed claim. BLOCKED_ZERO_DENOMINATOR applies when no approved NOT_MEANINGFUL policy exists. Every blocked outcome has no authoritative numeric output.
 
 ## 4. Minimum operator contract
 
@@ -161,7 +161,7 @@ MVP implementations should use EXACT where decimal arithmetic and operator seman
 10. Display rounding never mutates the stored authoritative value.
 11. The approved narrative hash is outside the calculation result; narrative regeneration cannot establish calculation replay.
 12. Unknown operator versions, absent code hashes, missing traces, or unapproved definitions fail closed.
-13. S16 verification cannot satisfy its assigned G-1 obligations unless the applicable S10/S11 proof reconstructs the same evidence-package version exactly from its registered source, fact, claim, and cutoff identifiers and verifies the reconstructed package digest. A calculation replay alone cannot satisfy that proof.
+13. S16 verification cannot satisfy its assigned G-1 obligations unless the exact package ID/version/digest resolves to the sealed S10 manifest, the applicable S10/S11 proof validates every declared manifest field and referenced dependency in that package's complete closure, and the registered source, fact, claim, and cutoff identifiers used by the calculation match that manifest. A partial identifier list or calculation replay alone cannot satisfy that proof.
 
 ## 6. Evidence and typed approval gates
 
@@ -180,7 +180,7 @@ Required evidence inventory:
 - code and dependency-lock hashes for every implemented operator;
 - exact, tolerance, missing-input, zero-denominator, unit/scope mismatch, and replay-mismatch fixtures;
 - source-linked calculation traces for all minimum families;
-- current S10/S11 evidence-package reconstruction proof bound to the same package ID/version, registered source/fact/claim/cutoff identifiers, and package digest used by the S16 fixtures;
+- current S10/S11 evidence-package reconstruction proof bound to the same package ID/version/digest and attempt-manifest reference used by the S16 fixtures, validating the complete S10 manifest field set and dependency closure plus the calculation's registered source/fact/claim/cutoff identifiers;
 - current typed approval records for S16-G02 through S16-G04;
 - fresh delegated review evidence for S16-G01;
 - verification command output bound to the tested artifact hashes.
@@ -194,15 +194,16 @@ Required evidence inventory:
 | S16-T03 | Exact-class fixture replays with identical normalized inputs, steps, and output. |
 | S16-T04 | Tolerance-class fixture passes at the boundary and fails immediately outside it. |
 | S16-T05 | Missing, post-cutoff, ambiguous, wrong-period, wrong-unit, wrong-currency, and wrong-scope inputs each yield a typed blocked outcome and no numeric output. |
-| S16-T06 | Growth handles zero and sign-changing comparison values only according to its declared policy. |
+| S16-T06 | Growth handles zero and sign-changing comparison values only according to its declared policy. An approved NOT_MEANINGFUL policy returns that closed non-numeric outcome with denominator facts and reason; without it, zero yields BLOCKED_ZERO_DENOMINATOR. |
 | S16-T07 | Margin, cash-conversion, and leverage requests cannot substitute an unregistered numerator or denominator. |
 | S16-T08 | Dilution/share-count and reconciliation fixtures preserve every movement and fail on an unexplained residual. |
 | S16-T09 | Guidance comparison rejects mismatched versions, periods, units, or scopes. |
 | S16-T10 | Changing an input, reconstruction identifier, operator definition, code artifact, runtime, rounding rule, tolerance, seed, or distribution-check policy invalidates the prior trace digest and dependent verification. |
 | S16-T11 | Narrative byte differences do not alter a valid calculation trace, while a changed approved narrative produces a different narrative artifact hash. |
-| S16-T12 | A generated computed claim resolves to the successful calculation trace; a blocked calculation cannot support a material computed claim. |
-| S16-T13 | From only the registered source, fact, claim, and cutoff identifiers in the request, the applicable S10/S11 reconstruction proof reproduces the exact evidence-package bytes and digest used by the trace; a missing identifier, substituted version, or digest mismatch blocks S16 verification. |
+| S16-T12 | A generated numerical computed claim resolves to a SUCCEEDED calculation trace; a NOT_MEANINGFUL or blocked calculation cannot support a numerical material computed claim. |
+| S16-T13 | Starting from the request's exact evidence-package ID/version/digest and bound S11 attempt-manifest reference, the applicable S10/S11 proof reconstructs the exact canonical manifest bytes, validates every declared manifest field and the full referenced dependency closure, and confirms the calculation's registered source/fact/claim/cutoff identifiers are included. A missing manifest field/reference, substituted version, partial identifier-only reconstruction, parent/change-set mismatch, or digest mismatch blocks S16 verification. |
 | S16-T14 | Before an approved stochastic amendment exists, registry validation rejects every STOCHASTIC definition even if its approval bindings are otherwise satisfied; after such an amendment, a missing seed policy or distribution-check policy is rejected. |
+| S16-T15 | For otherwise identical zero-denominator fixtures, an operator with an approved NOT_MEANINGFUL policy emits that exact non-numeric outcome, while an operator without it emits BLOCKED_ZERO_DENOMINATOR; neither trace exposes a numeric output or satisfies a numerical computed claim. |
 
 Verification is successful only when all tests pass against the current registry/code hashes, the same-package S10/S11 reconstruction proof passes, and all required evidence and one-to-one approvals are current. Test output alone cannot satisfy human gates.
 
@@ -210,6 +211,6 @@ Verification is successful only when all tests pass against the current registry
 
 - B-07 is blocked on A-04. Because A-04 has a provisional-to-final amendment gate owned by S06, B-07 and dependent C-08 work remain blocked while the mandatory post-baseline A-04 amendment is due or A-04 is not validly accepted.
 - C-08 is blocked on accepted B-07 definitions.
-- S10/S11 supply evidence-package and run/reproducibility identities; their applicable exact-reconstruction acceptance proof for the same package is a prerequisite to satisfying S16's assigned G-1 coverage. S12 supplies fact identity; S13 supplies computed-claim validation. S16 consumes those interfaces and proof without taking their ownership.
+- S10/S11 supply the sealed evidence-package manifest, complete dependency closure, and run/attempt/reproducibility identities; their applicable exact-reconstruction acceptance proof for the same package ID/version/digest is a prerequisite to satisfying S16's assigned G-1 coverage. S12 supplies fact identity; S13 supplies computed-claim validation. S16 consumes those interfaces and proof without taking their ownership.
 - Deferred activation guard: not applicable to owned rows. B-07 and C-08 were Open at activation, so S16 is active-only and may not be marked dormant or require an ACTIVATE_DEFERRED resolution.
 - Amendment gate: S16 owns none of the four evidence-derived provisional contracts. Any semantic change to an approved operator creates a new version and repeats the relevant review and human gates; it is not an in-place amendment disguised as implementation.
