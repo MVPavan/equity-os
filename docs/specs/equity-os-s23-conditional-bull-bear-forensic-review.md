@@ -19,6 +19,11 @@ authorize implementation.
 | Exact 25-spec table | `E-03` | Sole primary register owner. |
 | Exact 25-spec table | `None directly; v2 controls` | No direct disposition item is assigned; v2 remains controlling. |
 | Activation classification | `the dormant-only specs are exactly S03, S04, and S20–S25` | S23 is dormant-only at the pinned draft snapshot. |
+| E-03 register priority | `High` | Exact source priority; this draft does not change it. |
+| E-03 register decision or action | `Evaluate bull/bear and forensic review` | Exact owned action. |
+| E-03 required evidence / acceptance | `Compare with single senior-reviewer baseline; retain only if incremental valid issue detection justifies cost` | Exact comparison and retention rule. |
+| E-03 dependencies | `C-04, C-05` | Exact register dependency edges. |
+| E-03 source status | `Deferred` | E-03 remains dormant until the governed transition completes. |
 
 The v2 decision register is operational authority for E-03 Status and gates.
 This draft cannot change the register or supply an activation decision. A
@@ -49,14 +54,49 @@ It does not activate any other Deferred capability.
 |---|---|---|
 | `protocol_id` | stable identifier | Immutable and unique. |
 | `spec_id` / `register_id` | enums | Exactly `S23` / `E-03`. |
-| `activation_record_id` | identifier | Resolves to the active E-03 activation record. |
-| `baseline_run_ids` | nonempty identifier array | Runs reviewed without the challenged method. |
+| `activation_binding` | content-bound reference object | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-03 activation record. |
+| `senior_reviewer_baseline` | typed object | Exactly one stable senior-reviewer ID and one frozen baseline-method version, plus an exact `case_id -> baseline_run_id` map; every baseline run is that reviewer acting without the challenged method. |
 | `case_ids` | nonempty identifier array | Preselected, versioned evaluation cases. |
-| `evidence_package_id` | identifier per case | Frozen once and shared identically by all roles. |
+| `evidence_package_id_by_case` | nonempty identifier map | Key set equals `case_ids` exactly; each case resolves to one frozen package shared byte-identically by its baseline reviewer and all challenge roles. Missing and extra keys fail validation. |
 | `role_contract_versions` | object | Exact bull, bear, forensic, rebuttal, and adjudication instruction versions. |
-| `success_rules` | nonempty array | Fixed before outputs are viewed. |
+| `retention_rule` | typed object | Fixed before outputs are viewed; defines valid-issue adjudication, minimum positive incremental valid-issue detection, the cost measure, and the maximum approved cost per incremental valid issue. |
 | `budgets` / `stop_rules` | objects | Turns, tokens, elapsed time, analyst minutes, safety, and evidence limits. |
-| `required_approval_ids` | typed reference array | Resolves without inference. |
+| `required_approval_ids` | nonempty typed reference array | Exact one-to-one requirements from the gate table; boundary-conditioned requirements are resolved before protocol freeze. |
+| `protocol_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete protocol. |
+
+`protocol_sha256` is SHA-256 of canonical JSON of every protocol field except
+`protocol_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
+whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
+Every approval requirement scope MUST name `protocol_id`, `protocol_sha256`,
+`S23`, and `E-03`; a requirement bound to another digest cannot pass.
+
+The validator dereferences `activation_binding` rather than trusting copied
+values. It recomputes the governed activation predicate using three-valued
+logic and hashes canonical JSON with exactly these keys and values:
+`predicate_id`, `expression`, `metrics`, deterministically
+`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The binding
+passes only when that digest is current, the result is `TRUE`, all metrics are
+resolved and unexpired, and the activation record, approved
+`GOAL_OR_PROCESS_AUTHORIZATION` record, and active `ACTIVATE_DEFERRED` canonical human
+resolution carry the same predicate ID/digest, exact scope, decision ID, and
+resolution digest. Missing, copied, stale, superseded, revoked, or
+content-mismatched values leave E-03 dormant.
+
+Each referenced approval requirement contains `approval_id`,
+`approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
+`evidence_ref_ids`, and `matched_record_id`. Each record contains
+`approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
+`actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
+`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
+timestamp, evidence, canonical decision ID, and digest from one active immutable
+resolution. That resolution digest is SHA-256 of canonical JSON of the complete
+resolution object except `content_sha256`; its `entry_authority_sha256` is the
+same digest over the referenced human-review entry excluding `state`,
+`resolution_decision_ids`, and `content_sha256`. Only
+`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
+resolution fields. Any absent field or mismatch leaves the requirement
+`UNRESOLVED`; only `SATISFIED` passes.
 
 ### `ChallengeItem`
 
@@ -81,46 +121,65 @@ human and legal process required for such a claim.
 The result binds the protocol, all role outputs, deterministic validators,
 human adjudications, corrections, analyst minutes, accepted-unchanged rate,
 incremental material findings, false-positive categories, missed-baseline
-findings, and terminal `PASS`, `FAIL`, or `BLOCKED`. Missing or blocked cases
-remain in the denominator.
+findings, `incremental_valid_issue_count`, the cost numerator and denominator,
+the mechanically recomputed cost-per-incremental-valid-issue, and
+`retention_decision` (`RETAIN`, `DO_NOT_RETAIN`, or `BLOCKED`). Terminal `PASS`
+requires `RETAIN`; `RETAIN` is valid only when incremental valid-issue detection
+is positive and every pre-frozen `retention_rule` threshold passes. Missing or
+blocked cases remain in the denominator.
 
 ## Invariants and fail-closed behavior
 
-1. E-03 remains dormant unless its typed predicate recomputes `TRUE` and a
-   distinct active canonical human resolution authorizes `ACTIVATE_DEFERRED`
-   for E-03.
-2. Every role receives byte-identical frozen evidence and the same knowledge
+1. Sequencing is fail closed: the activation binding and `protocol_sha256`
+   validate first; `S23-G01`, `S23-G02`, both `S23-G03` requirements, and every
+   applicable `S23-G04` requirement are `SATISFIED` before an evaluation starts;
+   `S23-G05` may be satisfied only from complete results; and promotion or
+   distribution requires its own later `S23-G06` or `S23-G07` records.
+   Later-stage requirements are inventoried at protocol freeze but remain
+   `UNRESOLVED` until their evidence exists.
+2. The comparison baseline has exactly one senior reviewer, the exact case set,
+   and the frozen no-challenge method; missing, mixed-reviewer, or alternative
+   baselines are `BLOCKED`.
+3. Every role receives byte-identical frozen evidence and the same knowledge
    cutoff. No role or adjudicator may browse or retrieve additional evidence
    during the run.
-3. Bull and bear outputs are candidate claims, not votes. Repetition,
+4. Bull and bear outputs are candidate claims, not votes. Repetition,
    confidence, eloquence, or majority does not increase authority.
-4. Material outputs resolve to a fact ID, calculation trace, or exact source
+5. Material outputs resolve to a fact ID, calculation trace, or exact source
    location and preserve epistemic class, scope, horizon, and falsifier.
-5. Contradictory evidence and unresolved challenges MUST remain visible to the
+6. Contradictory evidence and unresolved challenges MUST remain visible to the
    analyst; summarization cannot delete them.
-6. The adjudicator cannot promote memory, approve its own artifact, or replace
+7. Only human-adjudicated valid issues count as incremental detection. The
+   challenged method MUST NOT be retained and the result MUST NOT be `PASS`
+   unless its positive increment justifies cost under the frozen rule.
+8. The adjudicator cannot promote memory, approve its own artifact, or replace
    analyst, legal, regulatory, or distribution authority.
-7. Missing evidence, evidence-package divergence, source-hash mismatch,
+9. Missing evidence, evidence-package divergence, source-hash mismatch,
    unsupported allegation, prompt/version drift, stale activation proof, or
    missing approval yields `BLOCKED` for the affected case.
-8. Dormant mode creates no runtime resources, credentials, model calls,
+10. Dormant mode creates no runtime resources, credentials, model calls,
    schedules, provider calls, or implementation dependency.
 
 ## Evidence and typed human-approval gates
 
-| Gate ID | Required evidence | Required authority | Fail-closed result |
-|---|---|---|---|
-| `S23-G01-DELEGATED-ARTIFACT` | Fresh clean Sol xhigh review with source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` under the activated goal | Draft remains unapproved. This document records no approval. |
-| `S23-G02-ACTIVATION` | Current TRUE predicate digest, evidence, E-03 activation record, and matching canonical human-resolution digest | Competent human authorized for exact E-03 `ACTIVATE_DEFERRED` scope | Capability remains dormant. |
-| `S23-G03-PROTOCOL` | Frozen cases, baseline, role contracts, metrics, denominator, budgets, and stop rules | Analyst/domain owner | Evaluation does not start. |
-| `S23-G04-FORENSIC` | Flag taxonomy, allegation-safe language controls, escalation path, and test fixtures | Analyst/domain owner; legal or regulatory authority where the proposed use crosses that boundary | Forensic mode remains disabled. |
-| `S23-G05-ADJUDICATION` | Complete role transcript/artifacts, evidence links, validator results, and correction record | Analyst | Output remains candidate evaluation evidence. |
-| `S23-G06-PROMOTION` | Exact approved claims and thesis diff | Analyst through the separate memory-promotion transaction | Canonical thesis is unchanged. |
-| `S23-G07-DISTRIBUTION` | Approved audience, purpose, legal/regulatory decision, and content version | Competent distribution/legal/regulatory authority | Output remains private/internal and undistributed. |
+| Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
+|---|---|---|---|---|
+| `S23-G01-DELEGATED-ARTIFACT` | Fresh clean Sol xhigh review with source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. This document records no approval. |
+| `S23-G02-ACTIVATION` | Current TRUE predicate digest, evidence, E-03 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-03 `ACTIVATE_DEFERRED` scope | Capability remains dormant. |
+| `S23-G03A-PROTOCOL-ANALYST` | Frozen cases, single-reviewer baseline, role contracts, metrics, denominator, retention rule, budgets, and stops | `ANALYST_ACCEPTANCE` | Competent analyst | Evaluation does not start. |
+| `S23-G03B-PROTOCOL-DOMAIN` | Valid-issue definition and case/forensic representativeness | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | Evaluation does not start. |
+| `S23-G04A-FORENSIC-LEGAL` | Exact use crosses the legal/allegation boundary; requirement is included when that boundary predicate is `TRUE` | `LEGAL_REVIEW` | Competent legal authority | Forensic mode remains disabled. |
+| `S23-G04B-FORENSIC-REGULATORY` | Exact use crosses a regulatory boundary; requirement is included when that boundary predicate is `TRUE` | `REGULATORY_REVIEW` | Competent regulatory authority | Forensic mode remains disabled. |
+| `S23-G05-ADJUDICATION` | Complete role artifacts, evidence links, validator results, valid-issue decisions, and corrections | `ANALYST_ACCEPTANCE` | Competent analyst | Output remains candidate evaluation evidence. |
+| `S23-G06-PROMOTION` | Exact approved claims and thesis diff through the separate promotion transaction | `MEMORY_PROMOTION` | Competent memory-promotion authority | Canonical thesis is unchanged. |
+| `S23-G07A-DISTRIBUTION` | Exact content/version, approved audience, and purpose | `DISTRIBUTION_APPROVAL` | Competent distribution authority | Output remains private/internal and undistributed. |
+| `S23-G07B-DISTRIBUTION-LEGAL` | Legal decision for the exact distributed content and audience | `LEGAL_REVIEW` | Competent legal authority | Output remains private/internal and undistributed. |
+| `S23-G07C-DISTRIBUTION-REGULATORY` | Regulatory decision for the exact distributed content and audience | `REGULATORY_REVIEW` | Competent regulatory authority | Output remains private/internal and undistributed. |
 
-Each record satisfies at most one requirement. Delegated artifact approval does
-not satisfy activation, analyst, domain, legal, regulatory, distribution, or
-promotion authority.
+Each record satisfies at most one requirement. An applicability predicate for
+`S23-G04A` or `S23-G04B` that is `UNKNOWN` disables forensic mode; it is never
+treated as false. Delegated artifact approval does not satisfy activation,
+analyst, domain, legal, regulatory, distribution, or promotion authority.
 
 ## Acceptance tests and verification
 
@@ -128,13 +187,17 @@ Before activation:
 
 1. Structural tests prove no debate/forensic executable, model route,
    credential, schedule, or runtime dependency is enabled.
-2. False, unknown, expired, stale, or unevaluated predicates; missing or
-   mismatched resolutions; and delegated approval alone are rejected.
+2. False, unknown, expired, stale, or unevaluated predicates; changed predicate
+   preimages; unresolved metrics; mismatched protocol/resolution digests;
+   superseded/revoked resolutions; reused approval records; and delegated
+   approval alone are rejected before any run.
 
 After activation:
 
-3. Identical case fixtures give all roles byte-identical evidence packages and
-   cutoffs; an attempted evidence fetch or package mutation fails closed.
+3. The case-to-package map has exactly one entry per case, and the single senior
+   reviewer and all challenge roles receive each case's byte-identical package
+   and cutoff; missing/extra mappings, a second reviewer, an alternative
+   baseline, evidence fetches, and package mutation fail closed.
 4. Unsupported, unlocated, or epistemically unlabeled material outputs are
    blocked and cannot enter adjudication or promotion.
 5. Contradictory fixtures retain both sides and unresolved state; a majority or
@@ -142,9 +205,12 @@ After activation:
 6. Forensic fixtures distinguish testable discrepancies from allegations and
    route boundary-crossing language to the typed human gate.
 7. Baseline-versus-challenge reports account for every case, failure,
-   correction, false positive, analyst minute, and blocked result.
+   correction, false positive, analyst minute, blocked result, and adjudicated
+   incremental valid issue. Zero valid increment or cost above the frozen limit
+   forces `DO_NOT_RETAIN` and prevents `PASS`.
 8. Replaying frozen deterministic validators yields the same result and binds
-   exact role-contract and source hashes.
+   exact role-contract, source, and `protocol_sha256` values; requirement and
+   approval-record IDs remain one-to-one.
 
 Verification evidence records the exact command, exit status, hashes,
 validator output, execution time, and reviewer identity. Conversation text and
@@ -152,7 +218,8 @@ agent summaries are not proof.
 
 ## Dependencies
 
-- Register authority and valid E-03 activation.
+- Exact register dependencies `E-03 -> C-04` and `E-03 -> C-05`, register
+  authority, and valid E-03 activation.
 - Frozen evidence-package, record-retention, run-manifest, and cutoff contracts
   (S10–S11).
 - Claim/vocabulary/evidence-validation and workflow contracts (S13–S14).

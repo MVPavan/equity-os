@@ -19,6 +19,11 @@ E-02 or authorize implementation merely by existing.
 | Exact 25-spec table | `E-02` | Sole primary register owner. |
 | Exact 25-spec table | `None directly; v2 controls` | No direct disposition item is assigned; v2 remains controlling. |
 | Activation classification | `the dormant-only specs are exactly S03, S04, and S20–S25` | S22 is dormant-only at the pinned draft snapshot. |
+| E-02 register priority | `High` | Exact source priority; this draft does not change it. |
+| E-02 register decision or action | `Add stress-test companies` | Exact owned action. |
+| E-02 required evidence / acceptance | `One bank/NBFC, one conglomerate, and one difficult disclosure/corporate-action case` | All three exact archetypes are mandatory. |
+| E-02 dependencies | `C-01` | Exact register dependency edge. |
+| E-02 source status | `Deferred` | E-02 remains dormant until the governed transition completes. |
 
 The v2 decision register is operational authority for E-02 Status and its
 gates. This draft neither changes that Status nor supplies an activation
@@ -60,15 +65,50 @@ unknown; it is never represented by a guessed value.
 | `protocol_id` | stable identifier | Unique and immutable. |
 | `spec_id` | enum | Exactly `S22`. |
 | `register_id` | enum | Exactly `E-02`. |
-| `activation_record_id` | identifier | Resolves to the active E-02 activation record. |
+| `activation_binding` | content-bound reference object | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-02 activation record. |
 | `baseline_run_ids` | nonempty identifier array | Approved discovery-company runs used as the comparison baseline. |
 | `stress_dimensions` | nonempty enum array | Chosen from sector, size, reporting complexity, segment complexity, document variation, and source coverage. |
-| `candidate_companies` | nonempty object array | Each item contains stable entity ID, selection rationale, covered dimensions, source-rights result, and reviewer decision ID. |
+| `candidate_companies` | exactly three typed objects | Unique stable entity IDs; exactly one object has each `mandatory_archetype` value `BANK_OR_NBFC`, `CONGLOMERATE`, and `DIFFICULT_DISCLOSURE_OR_CORPORATE_ACTION`. Each also contains selection rationale, covered dimensions, source-rights result, and reviewer decision ID. Generic stress dimensions never substitute for an archetype. |
 | `frozen_contract_versions` | nonempty map | Exact versions of every upstream interface under test. |
 | `budgets` | object | Maximum companies, documents, analyst minutes, compute, and elapsed time. |
 | `success_rules` | nonempty array | Mechanically evaluable thresholds fixed before execution. |
 | `stop_rules` | nonempty array | Safety, rights, evidence, quality, and budget termination conditions. |
-| `approved_by` | typed approval references | No approval may be inferred from an actor name. |
+| `required_approval_ids` | nonempty typed reference array | Exact one-to-one requirements from the gate table; source-conditioned requirements are resolved before protocol freeze. |
+| `protocol_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete protocol. |
+
+`protocol_sha256` is SHA-256 of canonical JSON of every protocol field except
+`protocol_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
+whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
+Every approval requirement scope MUST name `protocol_id`, `protocol_sha256`,
+`S22`, and `E-02`; a requirement bound to another digest cannot pass.
+
+The validator dereferences `activation_binding` rather than trusting copied
+values. It recomputes the governed activation predicate using three-valued
+logic and hashes canonical JSON with exactly these keys and values:
+`predicate_id`, `expression`, `metrics`, deterministically
+`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The binding
+passes only when that digest is current, the result is `TRUE`, all metrics are
+resolved and unexpired, and the activation record, approved
+`GOAL_OR_PROCESS_AUTHORIZATION` record, and active `ACTIVATE_DEFERRED` canonical human
+resolution carry the same predicate ID/digest, exact scope, decision ID, and
+resolution digest. Missing, copied, stale, superseded, revoked, or
+content-mismatched values leave E-02 dormant.
+
+Each referenced approval requirement contains `approval_id`,
+`approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
+`evidence_ref_ids`, and `matched_record_id`. Each record contains
+`approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
+`actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
+`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
+timestamp, evidence, canonical decision ID, and digest from one active immutable
+resolution. That resolution digest is SHA-256 of canonical JSON of the complete
+resolution object except `content_sha256`; its `entry_authority_sha256` is the
+same digest over the referenced human-review entry excluding `state`,
+`resolution_decision_ids`, and `content_sha256`. Only
+`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
+resolution fields. Any absent field or mismatch leaves the requirement
+`UNRESOLVED`; only `SATISFIED` passes.
 
 ### `StressTestCompanyResult`
 
@@ -88,40 +128,54 @@ another spec or schema by implication.
 
 ## Invariants and fail-closed behavior
 
-1. E-02 remains dormant unless its typed activation predicate recomputes
-   `TRUE` and a distinct active canonical human resolution authorizes
-   `ACTIVATE_DEFERRED` for E-02.
+1. Sequencing is fail closed: the activation binding and `protocol_sha256`
+   validate first; `S22-G01`, `S22-G02`, both `S22-G03` requirements, every
+   applicable `S22-G04` requirement, and both `S22-G05` requirements are
+   `SATISFIED` before a candidate run starts; `S22-G06` may be satisfied only
+   from completed results; and `S22-G07` may be satisfied only after `S22-G06`.
+   Later-stage requirements are inventoried at protocol freeze but remain
+   `UNRESOLVED` until their evidence exists.
 2. A copied ledger label, coordinator statement, this draft, or delegated
    artifact approval cannot activate E-02.
-3. The protocol and success rules are frozen before the first candidate run.
-4. Every run uses one frozen evidence package and one explicit knowledge
+3. The protocol contains exactly the three mandatory E-02 archetypes, with one
+   distinct company per archetype; omission, duplication, or substitution with
+   a generic stress dimension is `BLOCKED`.
+4. The protocol and success rules are frozen before the first candidate run.
+5. Every run uses one frozen evidence package and one explicit knowledge
    cutoff; downstream steps MUST NOT fetch new evidence invisibly.
-5. Company results remain isolated. Data, claims, and corrections MUST carry
+6. Company results remain isolated. Data, claims, and corrections MUST carry
    stable entity identity and MUST NOT leak between companies.
-6. Material claims resolve to a fact ID, calculation trace, or exact source
+7. Material claims resolve to a fact ID, calculation trace, or exact source
    location and retain epistemic class.
-7. A rights failure, missing source hash, unresolved identity, stale activation
+8. A rights failure, missing source hash, unresolved identity, stale activation
    proof, budget breach, validator failure, or missing approval produces
    `BLOCKED` and stops the affected run.
-8. No stress result is promoted to the canonical thesis without the separate
+9. No stress result is promoted to the canonical thesis without the separate
    analyst-controlled review and memory-promotion transaction.
-9. Dormant mode creates no runtime resources, schedules, credentials, provider
+10. Dormant mode creates no runtime resources, schedules, credentials, provider
    calls, purchases, or product-code dependency.
 
 ## Evidence and typed human-approval gates
 
-| Gate ID | Required evidence | Required authority | Fail-closed result |
-|---|---|---|---|
-| `S22-G01-DELEGATED-ARTIFACT` | Clean fresh-context Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` under the activated goal | Draft remains unapproved. This document records no such approval. |
-| `S22-G02-ACTIVATION` | Current TRUE predicate digest, component-local evidence, E-02 activation record, and matching canonical human-resolution digest | Competent human with authority to `ACTIVATE_DEFERRED` for the exact E-02 scope | E-02 remains dormant. |
-| `S22-G03-SELECTION` | Candidate matrix, source coverage, conflicts, selection rationale, and fixed denominator | Analyst/domain owner | No candidate run starts. |
-| `S22-G04-RIGHTS` | Source-by-source permitted-use and retention determination | Rights/legal or provider authority where required | Affected source and company are blocked. |
-| `S22-G05-BUDGET` | Bounded company/document/compute/review budget | Human budget or capacity owner | No resource-consuming run starts. |
-| `S22-G06-PROMOTION` | Reviewed result, correction record, and explicit promotion decision | Analyst | Result remains evaluation evidence only. |
+| Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
+|---|---|---|---|---|
+| `S22-G01-DELEGATED-ARTIFACT` | Clean fresh-context Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. This document records no such approval. |
+| `S22-G02-ACTIVATION` | Current TRUE predicate digest, component-local evidence, E-02 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-02 `ACTIVATE_DEFERRED` scope | E-02 remains dormant. |
+| `S22-G03A-SELECTION-ANALYST` | Exact three-company matrix, source coverage, conflicts, rationales, and fixed denominator | `ANALYST_ACCEPTANCE` | Competent analyst | No candidate run starts. |
+| `S22-G03B-SELECTION-DOMAIN` | Evidence that each selected company satisfies its named mandatory archetype | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | No candidate run starts. |
+| `S22-G04A-DATA-RIGHTS` | Source-by-source permitted-use and retention determination | `DATA_RIGHTS_APPROVAL` | Competent data-rights authority | Affected source and company are blocked. |
+| `S22-G04B-PROVIDER` | Provider terms require authorization for the exact use; requirement is included when that current policy predicate is `TRUE` | `PROVIDER_AUTHORIZATION` | Competent provider authority | Affected source and company are blocked. |
+| `S22-G04C-LEGAL` | Legal adjudication is required for the exact source/use; requirement is included when that current policy predicate is `TRUE` | `LEGAL_REVIEW` | Competent legal authority | Affected source and company are blocked. |
+| `S22-G05A-BUDGET` | Bounded company, document, compute, and review spend | `BUDGET_APPROVAL` | Competent budget authority | No resource-consuming run starts. |
+| `S22-G05B-CAPACITY` | Bounded analyst and compute capacity | `CAPACITY_COMMITMENT` | Competent capacity owner | No resource-consuming run starts. |
+| `S22-G06-RESULT` | Reviewed result and correction record | `ANALYST_ACCEPTANCE` | Competent analyst | Result remains unaccepted evaluation evidence. |
+| `S22-G07-PROMOTION` | Exact approved thesis diff through the separate promotion transaction | `MEMORY_PROMOTION` | Competent memory-promotion authority | Canonical thesis is unchanged. |
 
-One approval record satisfies one declared requirement only. Delegated artifact
-approval never satisfies activation, analyst, domain, legal, rights, budget,
-capacity, regulatory, production, distribution, or promotion authority.
+One approval record satisfies one declared requirement only. A condition for
+`S22-G04B` or `S22-G04C` that is `UNKNOWN` blocks the source; it is never treated
+as false. Delegated artifact approval never satisfies activation, analyst,
+domain, provider, legal, rights, budget, capacity, regulatory, production,
+distribution, or promotion authority.
 
 ## Acceptance tests and verification
 
@@ -130,13 +184,17 @@ Before activation:
 1. A structural test proves no S22 executable entry point, schedule, provider
    call, credential, or runtime dependency is enabled.
 2. Attempts using no activation record, a false/unknown/stale predicate, a
-   mismatched resolution digest, or delegated artifact approval alone are
-   rejected.
+   changed predicate preimage, an unresolved metric, a mismatched protocol or
+   resolution digest, a superseded/revoked resolution, a reused approval
+   record, or delegated artifact approval alone are rejected before any run.
 
 After activation:
 
-3. Fixture companies covering every declared stress dimension run against the
-   same frozen contract versions and produce isolated content-addressed results.
+3. The fixture matrix contains exactly one distinct bank/NBFC, one distinct
+   conglomerate, and one distinct difficult disclosure/corporate-action case.
+   Omitting, duplicating, or replacing any archetype deterministically yields
+   `BLOCKED`; a valid matrix runs against the same frozen contract versions and
+   produces isolated content-addressed results.
 4. Missing evidence, source-rights denial, identity ambiguity, schema mismatch,
    budget exhaustion, and validator failure each deterministically produce
    `BLOCKED` without partial promotion.
@@ -145,7 +203,9 @@ After activation:
 6. Every discovered delta has exactly one `ContractDeltaDecision`, and no
    `ADD` or `CHANGE` becomes operative without an amendment to its owning spec.
 7. The final report preserves all failures and blocked cases in its denominator
-   and reconciles every run, approval, and evidence reference.
+   and reconciles every run, approval, and evidence reference; requirement and
+   record IDs are one-to-one and every approval scope matches the frozen
+   `protocol_sha256`.
 
 Verification evidence MUST record the exact command, exit status, artifact
 hashes, validator output, execution time, and reviewer identity. Conversation
@@ -153,8 +213,8 @@ text and agent summaries are not proof.
 
 ## Dependencies
 
-- Register authority and valid E-02 activation are hard prerequisites for any
-  active implementation.
+- Exact register dependency `E-02 -> C-01`, register authority, and valid E-02
+  activation are hard prerequisites for any active implementation.
 - Approved discovery-company baseline and bootstrap thesis (S05).
 - Approved success metrics and operating budgets (S08).
 - Approved source/evidence, reproducibility, observation/fact, claim, workflow,

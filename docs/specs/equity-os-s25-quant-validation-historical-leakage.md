@@ -20,6 +20,19 @@ no performance claim.
 | Exact 25-spec table | `E-05, E-10` | Exact primary register owners; each retains independent status and activation. |
 | Exact 25-spec table | `M-4, 6.5` | Exact disposition references assigned to S25. |
 | Activation classification | `the dormant-only specs are exactly S03, S04, and S20–S25` | S25 is dormant-only at the pinned draft snapshot. |
+| E-05 register priority | `High` | Exact source priority; this draft does not change it. |
+| E-05 register decision or action | `Begin controlled quant validation` | Exact owned action. |
+| E-05 required evidence / acceptance | `Uses collected point-in-time data; leakage, revisions, universe history, fees, liquidity, and benchmark are disclosed` | Every named disclosure is mandatory. |
+| E-05 dependencies | `B-09, E-10` | Exact register dependency edges. |
+| E-05 source status | `Deferred` | E-05 remains dormant until the governed transition completes. |
+| E-10 register priority | `High` | Exact source priority; this draft does not change it. |
+| E-10 register decision or action | `Publish historical-replay leakage policy` | Exact owned action. |
+| E-10 required evidence / acceptance | `Store/tool leakage controls are tested; model-weight leakage is disclosed as an uncontrollable limitation; historical LLM results are not represented as clean alpha evidence` | The two leakage classes and clean-alpha prohibition are distinct and mandatory. |
+| E-10 dependencies | `C-15` | Exact register dependency edge. |
+| E-10 source status | `Deferred` | E-10 remains dormant until the governed transition completes. |
+| M-4 disposition | `Accept, split into two policies.` | Current/store/tool controls and model-weight disclosure remain separate. |
+| M-4 model-weight rule | `Model-weight leakage is different. It cannot be eliminated and must be disclosed for historical LLM evaluation.` | It is an uncontrollable historical limitation, not a controllable store/tool test result. |
+| 6.5 scope | `It is a standing caveat for historical LLM replay and agent-alpha claims.` | Historical LLM output cannot be promoted as clean alpha evidence. |
 
 The v2 decision register is operational authority for E-05 and E-10 Status and
 gates. The complete third-order disposition report is authoritative for the
@@ -58,19 +71,59 @@ by convenience.
 |---|---|---|
 | `protocol_id` | stable identifier | Immutable and unique. |
 | `spec_id` | enum | Exactly `S25`. |
-| `register_scope` | enum set | One or both of `E-05`, `E-10`, each with its own valid activation reference. |
+| `register_scope` | nonempty enum set | One or both of `E-05`, `E-10`; it selects operations, not dependency satisfaction. |
+| `activation_binding_by_register` | typed map | Key set equals `register_scope` exactly. Each value contains that register's `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`. |
+| `dependency_binding_by_register` | typed map | For E-05, exact keys are `B-09` and `E-10`; for E-10, exact key is `C-15`. Each value content-binds the live register row, source digest, required `Accepted` status, and retained activation record when the dependency was originally Deferred. Dependency bindings do not add an operation to `register_scope`. |
 | `hypothesis` | typed object | Subject, metric, direction, horizon, universe, materiality, and observable falsifier fixed in advance. |
 | `universe_snapshot_id` | identifier | Point-in-time membership with inclusion/exclusion rationale. |
 | `feature_set_version` | identifier | Closed feature definitions and allowed availability lags. |
 | `target_version` | identifier | Closed outcome definition and horizon. |
 | `split_plan` | object | Chronological train/validation/holdout periods and embargo/purge rules. |
 | `metrics` | nonempty array | Primary and secondary metrics, uncertainty method, and failure threshold. |
+| `fee_assumptions` | typed object | Required for E-05: complete fee schedule, effective dates, calculation method, and evidence; zero-fee treatment requires explicit evidence and rationale. E-10-only scope uses evidenced `NOT_APPLICABLE` only when it makes no performance claim. |
+| `liquidity_assumptions` | typed object | Required for E-05: point-in-time volume/depth inputs, participation and capacity limits, missing-data treatment, and evidence. E-10-only scope uses evidenced `NOT_APPLICABLE` only when it makes no performance claim. |
+| `benchmark_definition` | typed object | Required for E-05: stable benchmark ID, point-in-time membership/version, return convention, rebalance rule, currency, and comparison method. E-10-only scope uses evidenced `NOT_APPLICABLE` only when it makes no performance claim. |
 | `budgets` | object | Maximum data, compute, trials, elapsed time, and analyst review. |
 | `stop_rules` | nonempty array | Leakage, rights, evidence, multiple-testing, budget, and safety stops. |
-| `approval_ids` | typed reference array | Component-scoped and independently resolvable. |
+| `required_approval_ids` | nonempty typed reference array | Exact one-to-one requirements from the gate table, each bound to its named register scope; boundary-conditioned requirements are resolved before protocol freeze. |
+| `protocol_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete protocol. |
 
-The protocol is content-addressed and frozen before seeing holdout results.
-Changes create a new protocol and cannot overwrite the prior one.
+`protocol_sha256` is SHA-256 of canonical JSON of every protocol field except
+`protocol_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
+whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
+Every approval requirement scope MUST name `protocol_id`, `protocol_sha256`,
+`S25`, and exactly one of `E-05` or `E-10`; a requirement bound to another
+digest or a compound register scope cannot pass. The protocol is frozen before
+holdout access. Changes create a new protocol and cannot overwrite the prior
+one.
+
+For each selected register, the validator dereferences its activation binding
+rather than trusting copied values. It recomputes the governed activation
+predicate using three-valued logic and hashes canonical JSON with exactly these
+keys and values: `predicate_id`, `expression`, `metrics`, deterministically
+`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. A binding
+passes only when that digest is current, the result is `TRUE`, all metrics are
+resolved and unexpired, and the activation record, approved
+`GOAL_OR_PROCESS_AUTHORIZATION` record, and active `ACTIVATE_DEFERRED` canonical human
+resolution carry the same register, predicate ID/digest, exact scope, decision
+ID, and resolution digest. Missing, copied, stale, superseded, revoked, or
+content-mismatched values leave that register dormant.
+
+Each referenced approval requirement contains `approval_id`,
+`approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
+`evidence_ref_ids`, and `matched_record_id`. Each record contains
+`approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
+`actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
+`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
+timestamp, evidence, canonical decision ID, and digest from one active immutable
+resolution. That resolution digest is SHA-256 of canonical JSON of the complete
+resolution object except `content_sha256`; its `entry_authority_sha256` is the
+same digest over the referenced human-review entry excluding `state`,
+`resolution_decision_ids`, and `content_sha256`. Only
+`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
+resolution fields. Any absent field or mismatch leaves the requirement
+`UNRESOLVED`; only `SATISFIED` passes.
 
 ### `PointInTimeDatasetManifest`
 
@@ -92,70 +145,130 @@ never overwrite source facts or approved theses.
 
 ### `LeakageFinding`
 
-A finding contains stable ID, protocol/dataset/frame IDs, category, severity,
-affected rows and periods, exact evidence, detection rule/version, expected
-temporal relation, observed relation, remediation state, reviewer, and
-terminal disposition. The closed minimum categories are future-knowledge,
-revision/restatement, survivorship, universe-selection, target, feature,
-corporate-action, source-availability, label, split/embargo, analyst-memory,
-and repeated-holdout leakage.
+A finding contains stable ID, protocol/dataset/frame IDs, category,
+`control_class`, severity, affected rows and periods, exact evidence, detection
+rule/version, expected temporal relation, observed relation, remediation state,
+reviewer, and terminal disposition. The closed minimum categories are
+future-knowledge, revision/restatement, survivorship, universe-selection,
+target, feature, corporate-action, source-availability, label, split/embargo,
+analyst-memory, repeated-holdout, and model-weight leakage. `control_class` is
+`CONTROLLABLE_STORE_OR_TOOL` for testable data/retrieval/tool boundaries and
+`UNCONTROLLABLE_MODEL_WEIGHT` only for the standing historical LLM limitation;
+the classes MUST NOT be merged or substituted for one another.
+
+### `ModelWeightLeakageDisclosure`
+
+Every report carries this typed object separately from controllable leakage
+test results. It records whether an LLM contributed to historical outputs, the
+model/version evidence available, replay periods, the uncontrollable
+model-weight limitation, affected claims, and
+`clean_alpha_representation_prohibited=true`. When no LLM contributed, an
+evidenced `NOT_APPLICABLE` value is required; omission or generic limitations
+text is not equivalent to this disclosure.
 
 ### `QuantValidationReport`
 
 The report includes the frozen protocol, complete trial registry, dataset and
 code hashes, all leakage findings, failed and blocked runs, denominators,
 uncertainty, primary and secondary results, analyst review cost, limitations,
-and terminal `PASS`, `FAIL`, or `BLOCKED`. `PASS` means only that the approved
-validation gate passed; it is not production, causal, regulatory, distribution,
-or investment approval.
+E-05 fee and liquidity results and benchmark-relative results (or evidenced
+`NOT_APPLICABLE` in a non-performance E-10-only report), tested controllable
+store/tool leakage controls, the separate `ModelWeightLeakageDisclosure`, and
+terminal `PASS`, `FAIL`, or `BLOCKED`. `PASS` means only that the approved
+validation gate passed; it is not clean alpha evidence or production, causal,
+regulatory, distribution, or investment approval.
 
 ## Invariants and fail-closed behavior
 
-1. E-05 and E-10 are independently conditional. Each remains dormant unless
-   its own typed predicate recomputes `TRUE` and its own active canonical human
-   resolution authorizes `ACTIVATE_DEFERRED` for that exact register scope.
-2. E-05 activation cannot authorize historical replay under E-10; E-10
-   activation cannot authorize quant validation under E-05.
-3. A datum may enter a decision frame only when its knowledge time and source
+1. E-05 and E-10 are independently conditional. For each selected operation,
+   its exact activation binding validates before dependency bindings and the
+   frozen protocol digest; `S25-G01`, the matching activation gate, both
+   `S25-G04`, every applicable `S25-G05`, and both `S25-G06` requirements are
+   `SATISFIED` before that operation starts. `S25-G07` may be satisfied only from
+   completed results; production and distribution remain separately sequenced
+   behind `S25-G08` and `S25-G09`. Later-stage requirements are inventoried at
+   protocol freeze but remain `UNRESOLVED` until their evidence exists.
+2. E-05 activation and operation fail closed unless live register authority
+   shows both exact dependencies `B-09` and `E-10` as `Accepted`, with current
+   content-bound dependency proof. E-10 being `Deferred`, `Open`, `In progress`,
+   `Rejected`, missing, or digest-stale cannot satisfy E-05.
+3. E-05 activation cannot authorize a historical-replay operation under E-10;
+   accepted E-10 dependency proof does not place E-10 in `register_scope`.
+   E-10 activation cannot authorize quant validation under E-05.
+4. An E-10 operation fails closed unless exact dependency `C-15` is `Accepted`
+   with current content-bound proof.
+5. A datum may enter a decision frame only when its knowledge time and source
    availability are no later than the simulated decision time, including the
    configured operational lag.
-4. Later revisions, restatements, index membership, classifications, and
+6. Later revisions, restatements, index membership, classifications, and
    corporate-action knowledge MUST NOT replace the version knowable at the
    frame cutoff.
-5. Train, validation, and holdout are chronological. Purge and embargo rules
+7. Train, validation, and holdout are chronological. Purge and embargo rules
    prevent overlapping labels or feature windows from crossing splits.
-6. Hypothesis, universe, features, target, primary metric, thresholds, trial
-   budget, and stop rules are frozen before holdout access.
-7. Every attempted parameter/model variant is recorded. Failed, abandoned,
+8. Hypothesis, universe, features, target, primary metric, thresholds, trial
+   budget, and stop rules are frozen before holdout access. E-05 also freezes
+   fees, liquidity assumptions, and benchmark before holdout access.
+9. Every attempted parameter/model variant is recorded. Failed, abandoned,
    blocked, and null-result trials remain in the denominator.
-8. Missing point-in-time evidence yields missing data or `BLOCKED`; it MUST NOT
+10. Missing point-in-time evidence yields missing data or `BLOCKED`; it MUST NOT
    be filled from hindsight or a present-day snapshot and described as replay.
-9. Deterministic calculations use registered code and calculation traces; an
+11. Deterministic calculations use registered code and calculation traces; an
    LLM never serves as the authoritative calculator.
-10. Source-rights uncertainty, hash/lineage failure, entity ambiguity, stale
-    activation, budget breach, leakage Important/Critical finding, or missing
-    approval blocks the affected run and every dependent conclusion.
-11. Dormant mode creates no datasets, credentials, provider calls, compute
+12. E-05 always discloses fees, liquidity, and benchmark. Missing, unevidenced,
+    or silently zero/default assumptions produce `BLOCKED`, not `PASS`; an
+    E-10-only non-performance report records evidenced `NOT_APPLICABLE` rather
+    than omitting those fields.
+13. Historical LLM results always carry the separate uncontrollable
+    model-weight disclosure and MUST NOT be represented as clean alpha evidence;
+    this caveat never weakens controllable store/tool leakage tests.
+14. Source-rights uncertainty, hash/lineage failure, entity ambiguity, stale
+    activation, budget breach, a controllable store/tool Important/Critical
+    finding, or missing approval blocks the affected run and every dependent
+    conclusion. A disclosed `UNCONTROLLABLE_MODEL_WEIGHT` limitation blocks any
+    clean-alpha representation; omission of its required disclosure blocks the
+    run, while the disclosed limitation alone never weakens or substitutes for
+    controllable leakage tests.
+15. Dormant mode creates no datasets, credentials, provider calls, compute
     jobs, product-code dependencies, schedules, or execution integration.
 
 ## Evidence and typed human-approval gates
 
-| Gate ID | Register scope | Required evidence | Required authority | Fail-closed result |
-|---|---|---|---|---|
-| `S25-G01-DELEGATED-ARTIFACT` | S25 | Fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` under the activated goal | Draft remains unapproved. No approval is recorded here. |
-| `S25-G02-E05-ACTIVATION` | E-05 | Current TRUE E-05 predicate digest, evidence, activation record, and matching canonical human-resolution digest | Competent human authorized for exact E-05 `ACTIVATE_DEFERRED` scope | Quant validation remains dormant. |
-| `S25-G03-E10-ACTIVATION` | E-10 | Current TRUE E-10 predicate digest, evidence, activation record, and matching canonical human-resolution digest | Competent human authorized for exact E-10 `ACTIVATE_DEFERRED` scope | Historical replay remains dormant. |
-| `S25-G04-PROTOCOL` | Activated scope only | Frozen hypothesis, universe, features, target, splits, metrics, trial budget, and stop rules | Analyst/domain owner | Run does not start. |
-| `S25-G05-RIGHTS` | Activated scope only | Dataset-specific permitted use, retention, transformation, and derived-output decision | Rights/legal/provider authority as applicable | Dataset is excluded and affected run is blocked. |
-| `S25-G06-BUDGET` | Activated scope only | Data, compute, trial, elapsed-time, and analyst-review limits | Human budget/capacity owner | Resource-consuming work does not start. |
-| `S25-G07-RESULT` | Activated scope only | Full trial registry, leakage report, uncertainty, failed/blocked runs, and limitations | Analyst/domain owner | Result remains unaccepted evidence. |
-| `S25-G08-PRODUCTION` | Activated scope only | Separate security, operational, regulatory, model-risk, and production evidence | Competent human authorities for each declared type | No production use. |
-| `S25-G09-DISTRIBUTION` | Activated scope only | Exact content/version, audience, purpose, and legal/regulatory resolution | Competent distribution/legal/regulatory authority | No external or personalized distribution. |
+| Gate ID | Register scope | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
+|---|---|---|---|---|---|
+| `S25-G01-DELEGATED-ARTIFACT` | S25 | Fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
+| `S25-G02-E05-ACTIVATION` | E-05 | Current TRUE E-05 predicate digest, evidence, activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-05 `ACTIVATE_DEFERRED` scope | Quant validation remains dormant. |
+| `S25-G03-E10-ACTIVATION` | E-10 | Current TRUE E-10 predicate digest, evidence, activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-10 `ACTIVATE_DEFERRED` scope | Historical replay remains dormant. |
+| `S25-G04A-PROTOCOL-ANALYST` | One activated register | Frozen hypothesis, universe, features, target, splits, metrics, trial budget, and stops; E-05 also requires fees, liquidity, and benchmark, while non-performance E-10-only scope requires evidenced `NOT_APPLICABLE` | `ANALYST_ACCEPTANCE` | Competent analyst | Run does not start. |
+| `S25-G04B-PROTOCOL-DOMAIN` | One activated register | Domain validity of hypothesis, universe, features, target, and benchmark | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | Run does not start. |
+| `S25-G05A-DATA-RIGHTS` | One activated register | Dataset-specific permitted use, retention, transformation, and derived-output decision | `DATA_RIGHTS_APPROVAL` | Competent data-rights authority | Dataset is excluded and affected run is blocked. |
+| `S25-G05B-PROVIDER` | One activated register | Provider authorization is required for the exact dataset/use; included when the policy predicate is `TRUE` | `PROVIDER_AUTHORIZATION` | Competent provider authority | Dataset is excluded and affected run is blocked. |
+| `S25-G05C-LEGAL` | One activated register | Legal adjudication is required for the exact dataset/use; included when the policy predicate is `TRUE` | `LEGAL_REVIEW` | Competent legal authority | Dataset is excluded and affected run is blocked. |
+| `S25-G06A-BUDGET` | One activated register | Data, compute, trial, elapsed-time, and analyst-review spend | `BUDGET_APPROVAL` | Competent budget authority | Resource-consuming work does not start. |
+| `S25-G06B-CAPACITY` | One activated register | Data, compute, and analyst-review capacity | `CAPACITY_COMMITMENT` | Competent capacity owner | Resource-consuming work does not start. |
+| `S25-G07A-RESULT-ANALYST` | One activated register | Full trial registry, leakage reports, disclosures, uncertainty, failed/blocked runs, and limitations | `ANALYST_ACCEPTANCE` | Competent analyst | Result remains unaccepted evidence. |
+| `S25-G07B-RESULT-DOMAIN` | One activated register | Domain interpretation of results and limitations | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | Result remains unaccepted evidence. |
+| `S25-G08A-PRODUCTION` | One activated register | Exact proposed production scope and complete supporting evidence | `PRODUCTION_APPROVAL` | Competent production authority | No production use. |
+| `S25-G08B-PRODUCTION-REGULATORY` | One activated register | Regulatory decision for the exact proposed production scope | `REGULATORY_REVIEW` | Competent regulatory authority | No production use. |
+| `S25-G08C-PRODUCTION-CAPACITY` | One activated register | Operational capacity and recovery commitment | `CAPACITY_COMMITMENT` | Competent capacity owner | No production use. |
+| `S25-G08D-PRODUCTION-OWNER` | One activated register | Named operational owner and escalation commitment | `NAMED_OWNER_COMMITMENT` | Competent named owner | No production use. |
+| `S25-G08E-SECURITY-EXCEPTION` | One activated register | Exact exception evidence; included only when production requires a security exception | `SECURITY_EXCEPTION` | Competent security authority | No production use. |
+| `S25-G09A-DISTRIBUTION` | One activated register | Exact content/version, audience, and purpose | `DISTRIBUTION_APPROVAL` | Competent distribution authority | No external or personalized distribution. |
+| `S25-G09B-DISTRIBUTION-LEGAL` | One activated register | Legal decision for exact content/version and audience | `LEGAL_REVIEW` | Competent legal authority | No external or personalized distribution. |
+| `S25-G09C-DISTRIBUTION-REGULATORY` | One activated register | Regulatory decision for exact content/version and audience | `REGULATORY_REVIEW` | Competent regulatory authority | No external or personalized distribution. |
 
-One approval record satisfies one requirement only and is scoped to the named
-component. Delegated artifact approval does not satisfy E-05/E-10 activation,
-analyst, domain, rights, legal, provider, budget, capacity, security,
-operations, model-risk, regulatory, production, or distribution authority.
+One approval record satisfies one requirement only and is scoped to one named
+register and the frozen protocol digest. Applicability predicates that are
+`UNKNOWN` block the affected dataset or production scope. Operational authority
+is represented without a new type by the separate `CAPACITY_COMMITMENT` and
+`NAMED_OWNER_COMMITMENT` requirements above. The closed vocabulary has no
+model-risk approval type. S25 therefore MUST NOT map model-risk authority to a
+nearby type: proposed production remains blocked until the goal vocabulary and
+affected requirements are reconciled through a distinct active
+`RECONCILE_AUTHORITY` canonical human resolution, this draft is amended, and a
+fresh review confirms the new one-to-one requirement. Delegated artifact
+approval does not satisfy E-05/E-10 activation, analyst, domain, rights, legal,
+provider, budget, capacity, security, operations, model-risk, regulatory,
+production, or distribution authority.
 
 ## Acceptance tests and verification
 
@@ -164,28 +277,45 @@ Before activation:
 1. Structural tests prove there is no S25 dataset build, provider route,
    credential, compute job, schedule, runtime dependency, or execution hook.
 2. E-05-only approval fails an E-10 operation and E-10-only approval fails an
-   E-05 operation; false, unknown, stale, expired, or mismatched proof fails
-   both.
+   E-05 operation. False, unknown, stale, expired, or mismatched predicates;
+   changed predicate preimages; unresolved metrics; mismatched protocol or
+   resolution digests; superseded/revoked resolutions; reused approval records;
+   and a register-scope/activation-map key mismatch fail before any operation.
+3. E-05 with E-10 `Deferred`, `Open`, `In progress`, `Rejected`, missing, or
+   digest-stale is blocked. Only current `Accepted` bindings for both `B-09` and
+   E-10 satisfy E-05 dependencies; selecting E-05 alone still cannot start an
+   E-10 replay operation.
 
 After the applicable activation:
 
-3. Synthetic temporal fixtures catch every minimum `LeakageFinding` category,
+4. Synthetic temporal fixtures catch every minimum `LeakageFinding` category,
    including revised filings, post-cutoff index membership, late source
    availability, future corporate actions, overlapping horizons, and repeated
-   holdout access.
-4. Advancing a source's availability past the frame cutoff removes it from the
+   holdout access. Model-weight limitation output is classified
+   `UNCONTROLLABLE_MODEL_WEIGHT` and remains separate from controllable
+   store/tool failures.
+5. Advancing a source's availability past the frame cutoff removes it from the
    decision frame; substituting a present-day snapshot is rejected.
-5. Dataset and replay rebuilds from identical immutable inputs and code produce
+6. Dataset and replay rebuilds from identical immutable inputs and code produce
    identical hashes; revisions create new versions and preserve old results.
-6. Split tests enforce chronology, purge, embargo, and outcome isolation; no
+7. Split tests enforce chronology, purge, embargo, and outcome isolation; no
    target-derived transformation enters features.
-7. Trial-registry tests account for every attempted run, including failures,
+8. Trial-registry tests account for every attempted run, including failures,
    manual interruptions, budget stops, and null results.
-8. Missing rights, lineage, temporal proof, identity, corporate-action version,
+9. Missing rights, lineage, temporal proof, identity, corporate-action version,
    or activation evidence yields `BLOCKED`, not imputation or silent exclusion.
-9. Reports state denominators, uncertainty, limitations, all leakage findings,
-   and the exact narrow meaning of `PASS`; they make no production, causal,
-   trading, or recommendation claim.
+10. For E-05, missing or silently defaulted fees, liquidity assumptions, or
+    benchmark yields `BLOCKED`. Valid E-05 reports disclose all three and
+    reproduce their point-in-time calculations and benchmark-relative results;
+    non-performance E-10-only reports prove `NOT_APPLICABLE` rather than omit
+    them.
+11. Historical LLM fixtures require the separate model-weight disclosure and
+    reject every clean-alpha representation while retaining all controllable
+    store/tool tests. A no-LLM fixture requires evidenced `NOT_APPLICABLE`.
+12. Reports state denominators, uncertainty, limitations, all leakage findings,
+    and the exact narrow meaning of `PASS`; they make no clean-alpha,
+    production, causal, trading, or recommendation claim. Requirement and
+    record IDs are one-to-one and every scope matches `protocol_sha256`.
 
 Verification evidence MUST contain exact commands, exit statuses, immutable
 input/output hashes, protocol and code versions, validator output, timestamps,
@@ -194,8 +324,9 @@ ledger-authored labels are not proof.
 
 ## Dependencies
 
-- Register authority and a valid activation for each used component, E-05
-  and/or E-10.
+- Exact register dependencies `E-05 -> B-09`, `E-05 -> E-10`, and
+  `E-10 -> C-15`; register authority; and a valid activation for each selected
+  operation, E-05 and/or E-10.
 - Product/distribution and source-rights boundaries (S01–S02).
 - Golden-set, failure-taxonomy, success-metric, budget, and capacity controls
   (S07–S08).
@@ -214,13 +345,16 @@ dependency and activation cones do not intersect the blocker.
 
 ## Deferred activation guard
 
-Until the corresponding component is validly activated, permitted work is
-limited to authoring, reviewing, and structural verification of this dormant
+Until the corresponding component is validly activated and its exact register
+dependencies are accepted, permitted work is limited to authoring, reviewing,
+and structural verification of this dormant
 contract and non-executable synthetic fixtures. No source acquisition, dataset
 construction, historical replay, provider call, compute experiment, product
-code, runtime configuration, or execution integration is allowed. If only one
-of E-05 or E-10 activates, the other remains fully dormant. Neither activation
-activates E-02, E-03, or E-04.
+code, runtime configuration, or execution integration is allowed. E-10 may
+activate and reach `Accepted` while E-05 remains dormant. E-05 cannot activate
+while E-10 remains dormant; after E-10 is accepted as an E-05 dependency, an
+E-05-only operation still does not authorize a new E-10 historical replay.
+Neither activation activates E-02, E-03, or E-04.
 
 ## Amendment gate
 

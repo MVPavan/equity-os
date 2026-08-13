@@ -65,19 +65,26 @@ narrative, or permission to retrieve unregistered sources during a run.
 The fixed lifecycle is:
 
 1. allocate `run_id`, declare workflow purpose/version and UTC
-   `knowledge_cutoff`, and persist the run record;
-2. allocate `attempt_id` before any tool or store access;
-3. assemble and seal one S10 evidence package under the same cutoff;
+   `knowledge_cutoff`, and seal `RunManifest` version 1;
+2. allocate `attempt_id`, seal `AttemptManifest` version 1, and seal a new run
+   manifest version referencing it before any tool or store access;
+3. assemble and seal one S10 evidence package under the same cutoff, then seal
+   new attempt and run manifest versions that bind its exact ID/version/hash;
 4. execute only registered steps against that package;
 5. register calculation traces, QA, human/delegated decisions, costs, and
-   failures as append-only attempt records;
-6. bind approved artifact bytes by hash; and
-7. close the attempt as succeeded, failed, cancelled, or superseded without
-   deleting prior attempts.
+   failures by sealing new immutable attempt and run manifest versions;
+6. after the required approval resolves, bind approved artifact bytes, source
+   attempt/package, approval record, and resolution digest in new versions; and
+7. seal terminal attempt and run versions as succeeded, failed, cancelled, or
+   superseded without deleting any prior version or attempt.
 
 A retry creates a new attempt unless the registered step is explicitly
 idempotent and its immutable output is reused by hash. A run cutoff never
-changes. A different cutoff creates a different run.
+changes. A different cutoff creates a different run. Version numbers increase
+by exactly one within each manifest family. Version `N>1` names and verifies
+the exact ID, version `N-1`, and hash of its immediate predecessor. Null fields
+in an early version are resolved only by sealing a successor version; stored
+bytes and hashes are never populated or changed in place.
 
 ## Run manifest data contract
 
@@ -85,28 +92,56 @@ A `RunManifest` contains at minimum:
 
 | Field | Contract |
 |---|---|
+| `manifest_schema_version`, `canonicalization_profile` | Exact run-manifest schema version and the `eos-manifest-json-v1` profile imported from S10 |
 | `run_id` | Globally unique stable identifier |
+| `manifest_version`, `parent_manifest_ref` | Monotonic immutable version and exact immediate predecessor `{run_id, manifest_version, manifest_sha256}`; parent is null if and only if version 1 |
 | `workflow_name`, `workflow_version` | Registered fixed workflow and exact version |
 | `purpose`, `company_id`, `event_id` | Typed research scope; nullable only where the workflow contract says not applicable |
 | `knowledge_cutoff` | Required UTC timestamp fixed before retrieval |
 | `registered_at`, `closed_at`, `run_status` | Append-only lifecycle times and closed enum state |
 | `input_refs` | Exact initial thesis, policies, registries, company/security mapping, and other input versions |
-| `evidence_package_id`, `evidence_package_version`, `evidence_package_sha256` | One sealed S10 package for the attempt |
+| `attempt_refs` | Complete collection of exact `{attempt_id, attempt_manifest_version, attempt_manifest_sha256}` refs; each run-manifest version contains exactly one referenced version for every allocated attempt |
+| `failure_retry_summary` | Attempts, retry reasons, invalidations, reused outputs, and terminal state |
+| `published_artifact_binding` | Run-level `{published_artifact_ref, published_artifact_sha256, attempt_manifest_ref}` projection; valid only when the referenced attempt manifest carries the same artifact ref/hash and the exact package, approval requirement/record, and resolution bindings; null until separately approved in a successor version |
+| `manifest_sha256` | Lowercase hexadecimal SHA-256 of the run-manifest preimage defined below |
+
+An `AttemptManifest` contains at minimum:
+
+| Field | Contract |
+|---|---|
+| `attempt_id`, `run_id`, `parent_attempt_id` | Stable attempt and owning-run identity; exact prior attempt when this is a retry |
+| `manifest_schema_version`, `canonicalization_profile` | Exact attempt-manifest schema version and imported `eos-manifest-json-v1` profile |
+| `attempt_manifest_version`, `parent_attempt_manifest_ref` | Monotonic immutable version and exact immediate predecessor `{attempt_id, attempt_manifest_version, attempt_manifest_sha256}`; parent is null if and only if version 1 |
+| `registered_at`, `closed_at`, `attempt_status` | Immutable-version lifecycle state; version 1 is sealed before access |
+| `evidence_package_ref` | Exact `{evidence_package_id, version, manifest_sha256}` for this attempt; null only before successful package sealing or on a terminal pre-package failure |
 | `source_versions` | Exact document IDs, versions, byte hashes, capture times, and knowledge times represented by the package |
-| `tool_invocations` | Tool identity/version, cutoff capability, request digest, response/evidence ref, start/end times, status, and error category |
+| `tool_invocations` | Tool identity/version, cutoff capability, request digest, response/evidence ref or quarantine ref, start/end times, status, and error category |
 | `model_invocations` | Provider/model identity, effective version where available, prompt/template ID and hash, parameters, tool policy, input/output refs, token/cost/latency, and status |
 | `code_versions` | Repository commit/tree hash, dirty-state digest where permitted, dependency lock hash, runtime/container identity, and schema/migration version |
 | `calculation_trace_refs` | Registered S16 trace IDs, operator versions, replay classes, inputs, assumptions, and outputs |
 | `qa_refs` | Validator, golden-fixture, contradiction, citation, calculation, and review-result evidence |
-| `approval_refs` | Typed requirements and canonical decision evidence; absence is explicit, never inferred |
+| `approval_refs` | Exact typed requirement and matched approval-record data. Human decisions include `human_review_id`, `resolution_decision_id`, and `resolution_content_sha256`; only `DELEGATED_ARTIFACT_APPROVAL` uses delegated review evidence and null human-resolution fields |
 | `cost_summary` | Model, tool, provider, and infrastructure units/currency under S08 definitions |
-| `failure_retry_summary` | Attempts, retry reasons, invalidations, reused outputs, and terminal state |
-| `published_artifact_ref`, `published_artifact_sha256` | Exact immutable approved bytes; null until separately approved |
-| `manifest_sha256` | Hash of canonical manifest bytes excluding this field |
+| `step_outputs`, `failure_state`, `reused_output_proof` | Exact output hashes, invalidation/failure state, and proof for any idempotent reuse |
+| `published_artifact_binding` | Artifact ref/hash, exact package ref, approval requirement and record IDs, and human resolution ID/content hash when human approval is required; null until all required one-to-one approvals are `SATISFIED` |
+| `attempt_manifest_sha256` | Lowercase hexadecimal SHA-256 of the attempt-manifest preimage defined below |
 
-An `AttemptManifest` adds `attempt_id`, `parent_attempt_id`, step output hashes,
-reused-output proof, failure state, and package version. Tool and model records
-are structured audit records, not raw scratchpads.
+Tool and model records are structured audit records, not raw scratchpads. Each
+new attempt-manifest version must be referenced by a new run-manifest version;
+failure to persist either side atomically leaves the new version unusable.
+
+### Canonical digest preimages
+
+Both manifest types import `eos-manifest-json-v1` exactly from S10, including
+its key and collection ordering, timestamp, Unicode, number, null/absence, and
+unknown-field rules. The `RunManifest` hash input is ASCII
+`EquityOS:RunManifest:v1\n` followed by the canonical JSON object with
+`manifest_sha256` removed entirely. The `AttemptManifest` hash input is ASCII
+`EquityOS:AttemptManifest:v1\n` followed by the canonical JSON object with
+`attempt_manifest_sha256` removed entirely. Each stored digest is the lowercase
+hexadecimal SHA-256 of exactly its respective input. Profile/version mismatch,
+non-canonical bytes, omitted nullable fields, or a predecessor/ref digest
+mismatch fails before the manifest version can be registered or consumed.
 
 ## Knowledge-cutoff contract
 
@@ -125,16 +160,25 @@ are structured audit records, not raw scratchpads.
 - The tool gateway declares each tool invocation `CUTOFF_NATIVE`,
   `ARCHIVED_SOURCE_ONLY`, or `NOT_CUTOFF_CAPABLE`. The first two require exact
   enforcement evidence. `NOT_CUTOFF_CAPABLE` is denied for historical replay
-  and may be used for a current-period run only when the workflow policy and
-  source rights explicitly permit it and its observation time is recorded.
+  and for authoritative evidence retrieval. A current-period workflow may
+  invoke it only when workflow policy and source rights explicitly permit a
+  non-authoritative exploratory lane;
+  its response is quarantined and cannot enter an evidence package, fact,
+  claim, calculation, QA proof, approval evidence, or published artifact unless
+  every admitted record independently carries authoritative knowledge-time
+  proof satisfying `knowledge_time <= cutoff`. Invocation observation time is
+  audit metadata, not cutoff proof.
 - Downstream stages use the sealed evidence package and cannot fetch new
   evidence. A missing source creates an unresolved question or failure, not an
   unregistered retrieval.
 
 Canonical selection queries must take `(measurement_key, cutoff)` and return
-the selection whose recorded knowledge interval includes the cutoff. A later
-restatement, correction, parser result, or policy change never rewrites a
-historical run.
+exactly one selection from S12's immutable linear transition chain satisfying
+`effective_from_knowledge_time <= cutoff` and either having no valid successor
+or a successor with `cutoff < successor.effective_from_knowledge_time`. Zero
+matches, multiple matches, a fork, a stale predecessor, or an incomplete
+transition fails closed. A later restatement, correction, parser result, or
+policy change never rewrites a historical run.
 
 ## Layered reproducibility contract
 
@@ -159,14 +203,22 @@ cannot be retrieved by their recorded hash.
 - Every retrieved record carries knowledge-time proof at or before the cutoff.
   Missing/ambiguous knowledge time is excluded, not treated as old enough.
 - A tool that cannot prove the required cutoff behavior is denied for that
-  workflow; a copied `cutoff_aware=true` label is not proof.
+  authoritative lane. Quarantined output remains non-authoritative until each
+  admitted record supplies independent cutoff proof; a copied
+  `cutoff_aware=true` label or invocation time is not proof.
 - Every calculation chooses exactly one registered replay class before
   execution. Missing class, tolerance, runtime, seed, or distribution policy
   blocks authoritative output.
-- Every manifest reference resolves and matches its current hash. Partial or
-  mismatched manifests cannot advance to review or publication.
+- Every manifest and predecessor reference resolves and matches its recorded
+  immutable hash. Partial, non-canonical, forked, stale-parent, or mismatched
+  manifests cannot advance to review or publication.
+- Package, invocation, QA, approval, and artifact state is attempt-owned. A run
+  manifest only references or projects that state; any run/attempt/package or
+  artifact-binding disagreement invalidates the graph rather than choosing one.
 - Published bytes are immutable. Any edit creates a new artifact hash, review,
-  and analyst approval; changing a manifest hash in place is forbidden.
+  and analyst approval. Late approval or artifact state creates successor
+  attempt/run manifest versions; changing any prior manifest bytes or hash in
+  place is forbidden.
 - QA and approval omissions remain explicit. A successful workflow step cannot
   synthesize or imply an approval.
 - Model-weight leakage is never represented as controllable store/tool leakage
@@ -177,9 +229,9 @@ cannot be retrieved by their recorded hash.
 
 | Gate | Required evidence | Approval type and authority | Fail-closed result |
 |---|---|---|---|
-| S11 delegated artifact approval | Fresh clean Sol xhigh review bound to this file's current bytes and exact C-09/C-15/C-16, G-1/M-4/6.9 coverage | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
+| S11 delegated artifact approval | Fresh clean Sol xhigh review bound to this file's current bytes; exact C-09/C-15/C-16 and G-1/M-4/6.9 coverage; declared run/attempt interfaces, digest preimages, cutoff predicates, fixture catalogue, and test specifications; no product execution result is required | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
 | Reproducibility policy | Operator inventory with predeclared replay class, tolerances/seeds/distribution checks, runtime policy, and test evidence | `DOMAIN_EXPERT_ACCEPTANCE` by a competent human for the covered calculation domain where judgment is required | Affected operator cannot produce authoritative computed facts |
-| Approved narrative bytes | Sealed package, QA, exact artifact bytes/hash, diff, and review evidence | `ANALYST_ACCEPTANCE` by the responsible analyst for that artifact | `published_artifact_ref` remains null; no publication or promotion |
+| Approved narrative bytes | Sealed package, QA, exact artifact bytes/hash, diff, and review evidence | `ANALYST_ACCEPTANCE` by the responsible analyst for that artifact | `published_artifact_binding` remains null; no publication or promotion |
 | Memory promotion, if requested | Approved narrative hash plus S15 transaction evidence | separate `MEMORY_PROMOTION` human decision | Artifact approval does not change canonical thesis memory |
 | Production enablement | Cutoff-integration, recovery, monitoring, and replay evidence for the exact deployment | `PRODUCTION_APPROVAL` by competent human operations authority when production use is proposed | Deployment remains non-production |
 
@@ -199,26 +251,43 @@ may not be inferred from this spec.
 
 ## Acceptance tests and verification
 
-Before delegated S11 approval, executable fixtures or structural tests must
-prove:
+Initial delegated S11 approval reviews this contract, its declared fixture
+catalogue, and the test specifications below for completeness and internal
+consistency. It does not require adapters, a gateway, manifest persistence,
+replay operators, or artifact storage to exist or execute.
+
+Before C-09, C-15, or C-16 acceptance, and at the corresponding implementation
+phase gates, executable fixtures must prove:
 
 1. no retrieval is possible without a persisted run, attempt, and cutoff;
 2. SQL, document, memory, fact, event, relationship, policy, and index adapters
    exclude deliberately inserted post-cutoff records;
 3. canonical selection at an earlier cutoff is unchanged after a later
    restatement, correction, or parser re-extraction;
-4. the gateway rejects a non-cutoff-capable tool in historical replay and logs
-   the effective capability for every permitted call;
-5. a manifest captures every source/package/tool/model/prompt/code/cost/
+4. the gateway rejects a non-cutoff-capable tool in historical and authoritative
+   lanes; a permitted current-period exploratory response stays quarantined
+   unless every admitted record independently proves cutoff eligibility, and
+   every call records its effective capability and quarantine state;
+5. independent producers serialize identical run and attempt manifests to the
+   same preimage bytes/digests across ordering, timestamp, Unicode, number,
+   null, and absent-field cases, and reject every non-canonical case;
+6. multiple attempts bind their own exact package ID/version/hash; late QA,
+   approval, artifact, failure, and terminal state produce immutable successor
+   attempt/run versions with exact predecessor hashes and no in-place update;
+7. a manifest graph captures every source/package/tool/model/prompt/code/cost/
    calculation/QA/approval/artifact field or an explicit valid null state;
-6. exact-class, tolerance-class, and stochastic-class fixtures each pass their
+8. exact-class, tolerance-class, and stochastic-class fixtures each pass their
    own predeclared policy and fail under missing policy inputs;
-7. an evidence package reconstructs exactly, while missing or changed content
+9. an evidence package reconstructs exactly, while missing or changed content
    blocks completion;
-8. approved bytes round-trip by hash; regenerated prose is a new unapproved
-   version even when its claims match;
-9. changing the cutoff creates a new run rather than mutating the old one; and
-10. a source-to-spec audit finds C-09, C-15, C-16, G-1, M-4, and 6.9 exactly
+10. approved bytes round-trip by hash and bind their exact attempt, package,
+    approval record, and resolution digest; regenerated prose is a new
+    unapproved version even when its claims match;
+11. changing the cutoff creates a new run rather than mutating the old one;
+12. concurrent or partial canonical-selection transitions yield exactly one
+    valid as-of result or fail closed, never an overlapping/forked selection;
+    and
+13. a source-to-spec audit finds C-09, C-15, C-16, G-1, M-4, and 6.9 exactly
     once under S11 and does not absorb E-10.
 
 C-15 acceptance requires live adapter tests, not only manifest inspection.

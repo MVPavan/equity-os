@@ -27,6 +27,7 @@ S02 is **active-only** at the pinned draft snapshot: A-05 and C-13 are both `Ope
 S02 defines:
 
 - one versioned `ProviderRightsRegister` containing one `SourceRightsRecord` per source;
+- one independently derived, content-bound `SourceUsageInventory` against which register completeness is evaluated;
 - the lifecycle for proposed, reviewed, approved, restricted, denied, expired, and replaced source access;
 - exact separation among access, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement path;
 - a versioned `ConsensusDataDecision` that either proves consensus data is licensed and necessary for the MVP or explicitly excludes it; and
@@ -46,13 +47,27 @@ S02 defines:
 
 ### 5.1 `ProviderRightsRegister`
 
-The register contains `register_id`, `boundary_id`, `boundary_version`, `version`, `effective_at`, `records`, `supersedes`, and `approval_record_ids`. It is invalid if its S01 boundary reference is absent, stale, or not content-hash bound.
+The closed register contains `register_id`, `version`, `boundary_ref`, `source_usage_inventory_ref`, `effective_at`, `records`, `supersedes`, `approval_record_ids`, and `content_sha256`.
 
-### 5.2 `SourceRightsRecord`
+- `boundary_ref` is the typed object `{boundary_id, boundary_version, boundary_content_sha256}`. Its digest must freshly recompute from the exact accepted S01 `OperatingBoundary`, its ID and version must match that same record, and the boundary's exact `PRODUCT_OWNER_DECISION` approval/resolution binding must remain active. An absent or mismatched value, a changed boundary under unchanged identifiers, or A-01 not being `Accepted` invalidates the register.
+- `source_usage_inventory_ref` is `{inventory_id, inventory_version, inventory_content_sha256}` and must resolve to the current inventory below.
+- `records` contains the current `SourceRightsRecord` objects. Historical records remain reachable through `supersedes`, not duplicated as current records.
+- `content_sha256` is SHA-256 of canonical JSON for `{register_id, version, boundary_ref, source_usage_inventory_ref, effective_at, record_refs, supersedes}`, where `record_refs` is the array of `{rights_record_id, source_id, content_sha256}` sorted by `source_id`. This exact preimage excludes `approval_record_ids` to avoid a digest/approval cycle.
+
+Canonical JSON is UTF-8 JSON with sorted keys, no insignificant whitespace, Unicode emitted directly, JSON booleans/null, and arrays retained in the order just declared. Every digest is lowercase SHA-256. Unknown fields fail validation.
+
+### 5.2 `SourceUsageInventory`
+
+The closed inventory contains `inventory_id`, `version`, `effective_at`, `entries`, `supersedes`, and `content_sha256`. Each entry contains a stable `source_id` and content-addressed `use_surface_refs` for every independently observed path that can cause that source to be accessed, including configured primary, fallback/replacement, imported, queried, consensus, and externally mediated paths. A merely researched candidate with no reachable use surface is not used. The inventory is generated from the current product interfaces, manifests, configuration, and executable access paths—not from `ProviderRightsRegister` or its records—so the completeness check is not circular. For S02 completeness, the current validated inventory is the authoritative used-source set; stale references or an unrepresented reachable use surface invalidate it.
+
+Entries are unique and sorted by `source_id`. `content_sha256` is SHA-256 of canonical JSON for exactly `{inventory_id, version, effective_at, entries, supersedes}`. The current used-source set is `U = set(entries[*].source_id)`.
+
+### 5.3 `SourceRightsRecord`
 
 | Field | Type / allowed values | Contract |
 |---|---|---|
-| `source_id`, `source_name` | stable string, display string | Unique identity and human-readable label. |
+| `rights_record_id`, `version` | stable string, positive integer | Unique immutable record identity and monotonic source-record version. |
+| `source_id`, `source_name` | stable string, display string | Unique source identity and human-readable label. |
 | `source_category` | controlled string | Official filing, exchange disclosure, issuer material, licensed vendor, transcript/audio, market data, consensus, or explicitly added reviewed category. |
 | `evidence_as_of`, `evidence_refs` | UTC time, nonempty array when reviewed | Bind the exact current terms, contract, license, or primary-source evidence. |
 | `access_method` | structured record | Manual, API, download, feed, or other reviewed method; unknown is explicit. |
@@ -69,10 +84,11 @@ The register contains `register_id`, `boundary_id`, `boundary_version`, `version
 | `decision_state` | lifecycle enum | `PROPOSED`, `UNDER_REVIEW`, `APPROVED`, `RESTRICTED`, `DENIED`, `EXPIRED`, or `REPLACED`. |
 | `approval_record_ids` | array | Separate typed records for applicable rights and provider authority. |
 | `supersedes` | nullable record ID | Preserves immutable history. |
+| `content_sha256` | lowercase SHA-256 | SHA-256 of canonical JSON for the closed record with only `content_sha256` and `approval_record_ids` omitted. |
 
 Every rights dimension is independent. An `APPROVED` record with an `UNKNOWN` dimension does not authorize that dimension.
 
-### 5.3 `ConsensusDataDecision`
+### 5.4 `ConsensusDataDecision`
 
 The decision contains `decision_id`, `mvp_scope`, `necessity` (`NECESSARY` or `NOT_NECESSARY`), `necessity_rationale`, `provider_source_ids`, `license_evidence_refs`, `permitted_uses`, `excluded_uses`, `approval_record_ids`, `effective_at`, and `supersedes`.
 
@@ -85,8 +101,8 @@ Anything else is `UNRESOLVED` and behaves as excluded.
 
 ## 6. Invariants and fail-closed behavior
 
-1. A-05 cannot pass before S01/A-01 supplies the exact declared boundary.
-2. Every source used by the product has exactly one current rights record; duplicates, gaps, or stale boundary references fail.
+1. A-05 cannot pass before S01/A-01 is `Accepted` and supplies the exact current declared-boundary ID, version, and recomputed content digest.
+2. Register completeness is exact set equality: `U == R`, where `U` is the independently derived current `SourceUsageInventory` set and `R = set(records[*].source_id)`. Duplicate inventory entries, duplicate current records, either-direction set differences, or stale inventory/boundary references fail.
 3. Missing or ambiguous rights resolve to `UNKNOWN`, which denies the operation.
 4. Permission to access does not imply automation, caching, retention, commercial use, derived-output, or redistribution permission.
 5. Private/internal permission does not imply public, paid, personalized, or execution-connected permission.
@@ -102,9 +118,9 @@ Anything else is `UNRESOLVED` and behaves as excluded.
 
 | Gate | Required evidence | Required typed authority | Fail-closed result |
 |---|---|---|---|
-| Register completeness | One current `SourceRightsRecord` for every used source, bound to current S01 boundary and exact evidence | `DATA_RIGHTS_APPROVAL` for each source/scope; `LEGAL_REVIEW` when legal interpretation is required | Source operation prohibited. |
+| Register completeness | Current independent `SourceUsageInventory`; exact `U == R`; one current content-valid `SourceRightsRecord` for each member; current accepted S01 boundary ID/version/digest; exact rights evidence | `DATA_RIGHTS_APPROVAL` for each source/scope; `LEGAL_REVIEW` when legal interpretation is required | A-05 remains unresolved and every source operation is prohibited. |
 | Provider access | Current primary provider terms/contract and exact access scope | `PROVIDER_AUTHORIZATION`; additionally `PURCHASE_AUTHORIZATION`, `CREDENTIAL_ACCESS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, or `EXTERNAL_COORDINATION_APPROVAL` when applicable | No access or enrollment. |
-| Operational mode | Evidence for each requested automation/caching/retention/derived-output/redistribution operation | Separate applicable `DATA_RIGHTS_APPROVAL` records | Unknown or unapproved operation denied. |
+| Operational mode | Evidence for every applicable A-05 dimension: access method, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement-path use | Separate applicable `DATA_RIGHTS_APPROVAL` records for the exact source, boundary, mode, and dimension | Any unknown, omitted, stale, or unapproved dimension denies that operation. |
 | Consensus inclusion | Necessity analysis plus current provider/license evidence covering actual inputs, retention, calculations, output, and distribution mode | `PRODUCT_OWNER_DECISION`, `DATA_RIGHTS_APPROVAL`, and applicable `PROVIDER_AUTHORIZATION`/`LEGAL_REVIEW` | Consensus excluded. |
 | Consensus exclusion | Explicit MVP exclusion and dependent-interface rejection test | `PRODUCT_OWNER_DECISION` | C-13 remains unresolved, with consensus still blocked. |
 | Delegated spec approval | Persisted clean fresh-context Sol xhigh review bound to this file and source hashes | `DELEGATED_ARTIFACT_APPROVAL` only | Spec remains draft; no rights gate is affected. |
@@ -113,9 +129,9 @@ No source evidence or approval may be invented. Every non-delegated approval is 
 
 ## 8. Acceptance tests and verification
 
-1. Inventory fixture: any used source absent from the register fails.
-2. Boundary fixture: a stale or missing S01 boundary reference invalidates all dependent rights decisions.
-3. Dimension-independence fixture: access approval with caching `UNKNOWN` blocks caching.
+1. Inventory fixture: derive the usage inventory independently, then require exact set equality; a missing record, extra record, duplicate source ID, missing inventory, or changed/stale inventory digest fails.
+2. Boundary fixture: A-01 not `Accepted`, a stale or missing S01 boundary reference, or a changed boundary payload under unchanged ID/version invalidates all dependent rights decisions.
+3. Dimension-independence fixture: for each of access method, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement-path use, an `UNKNOWN` or unapproved value blocks that exact operation even when every other dimension is approved.
 4. Mode-isolation fixture: private/internal rights cannot authorize public or paid use.
 5. Evidence fixture: missing, changed, expired, or non-primary evidence blocks the affected operation.
 6. Limit fixture: an account-limit breach prevents the request and records a typed failure.
@@ -123,7 +139,8 @@ No source evidence or approval may be invented. Every non-delegated approval is 
 8. Consensus inclusion fixture: `NECESSARY` without full current licensing and typed approvals remains `UNRESOLVED` and excluded.
 9. Consensus exclusion fixture: `EXCLUDED_FROM_MVP` rejects consensus fields and provider calls at interfaces.
 10. Approval fixture: one human decision cannot satisfy two approval types or scopes.
-11. Audit fixture: changed provider terms create a superseding version and preserve prior decisions.
+11. Digest fixture: mutation of a boundary, usage inventory, rights record, or register digest preimage without the corresponding recomputed digest fails.
+12. Audit fixture: changed provider terms create a superseding version and preserve prior decisions.
 
 Verification evidence must contain schema-test output, boundary and denial fixtures, exact source/license content hashes, and the applicable typed human records. A fresh Sol xhigh reviewer must verify exact A-05/C-13 and T-4/R-3 coverage before delegated artifact approval can be recorded.
 

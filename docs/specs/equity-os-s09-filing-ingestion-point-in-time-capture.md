@@ -92,6 +92,23 @@ their taxonomy/version changes. A channel/format comparison is reported per
 company and quarter; no aggregate score may hide a missing statement, segment,
 note, ownership/share-count, or restatement case.
 
+### `AcquisitionAuthorization`
+
+Every acquisition/capture attempt binds one current authorization snapshot
+containing `authorization_id`, exact source/provider/use scope, access,
+automation, caching, retention, derived-output, and redistribution decisions,
+`rights_policy_ref`, `data_rights_approval_record_id`,
+`provider_authorization_applicability`,
+`provider_authorization_applicability_evidence_ref`, nullable
+`provider_authorization_record_id`, `evaluated_at`, and `valid_until`.
+`provider_authorization_applicability` is closed to `REQUIRED`,
+`NOT_REQUIRED`, or `UNKNOWN`. `REQUIRED` demands a current matching
+`PROVIDER_AUTHORIZATION`; `NOT_REQUIRED` demands current authoritative policy
+evidence for that exact scope and has a null provider record; `UNKNOWN`, a
+missing applicability field/basis, an inapplicable record shape, stale
+evidence, or expired authorization blocks acquisition. Absence never defaults
+to `NOT_REQUIRED`.
+
 ### `SourceDocument`
 
 | Field | Contract |
@@ -104,7 +121,7 @@ note, ownership/share-count, or restatement case.
 | `parser_name`, `parser_version`, `parse_attempt_id` | Exact parser identity per attempt; reparsing never overwrites the original. |
 | `extraction_warnings` | Structured warning codes and affected locations. |
 | `supersedes_document_id`, `revision_reason` | Optional explicit relationship; byte changes never silently replace prior bytes. |
-| `rights_policy_ref`, `capture_run_id` | Approved rights/source-policy reference and acquisition run provenance. |
+| `acquisition_authorization_id`, `capture_run_id` | Exact current `AcquisitionAuthorization` snapshot and acquisition run provenance. |
 
 Original bytes are immutable. Parsed renditions are derived, versioned
 objects and must retain byte offsets, pages, tables, timestamps, or equivalent
@@ -112,14 +129,24 @@ exact locations back to the original.
 
 ### `CaptureEvent`
 
-Required fields are `capture_event_id`, `job_id`, source/provider, capture
-kind (`MEMBERSHIP_SECURITY_CHANGE`, `PRICE`, `ANNOUNCEMENT`,
-`CORPORATE_ACTION`, or `SHAREHOLDING_CHANGE`), internal entity/security refs,
-source occurrence, payload/document hash, source published/valid time,
-retrieved time, first-seen time, outcome (`CAPTURED`, `NO_EVENT`, or `FAILED`),
-failure code/detail, attempt number, retry relation, rights-policy ref, and
-evidence refs. A `NO_EVENT` record is allowed only when the approved source was
-successfully checked; a failed fetch is `FAILED`, never `NO_EVENT`.
+Required fields are `capture_event_id`, `event_version`, nullable
+`supersedes_event_version`, `job_id`, source/provider, capture kind
+(`MEMBERSHIP_SECURITY_CHANGE`, `PRICE`, `ANNOUNCEMENT`, `CORPORATE_ACTION`, or
+`SHAREHOLDING_CHANGE`), source-subject identity and locator,
+`identity_resolution_state` (`RESOLVED`, `UNRESOLVED`, or `NOT_APPLICABLE`),
+nullable internal entity/security refs, nullable mapping version, source
+occurrence, payload/document hash, source published/valid time, retrieved time,
+first-seen time, outcome (`CAPTURED`, `NO_EVENT`, or `FAILED`), failure
+code/detail, attempt number, retry relation, `acquisition_authorization_id`,
+and evidence refs. `RESOLVED` requires every applicable internal ref plus
+mapping version; `UNRESOLVED` requires null internal refs, the unmodified
+source-native name/identifiers, exact source locator, and a reason;
+`NOT_APPLICABLE` requires a typed rationale and is the only state permitting a
+null source-subject identity. A later mapping appends a monotonic event version
+with the same point-in-time payload and explicit supersession; it does not
+rewrite capture time or raw identity. A `NO_EVENT` record is allowed only when
+the approved source was successfully checked; a failed fetch is `FAILED`,
+never `NO_EVENT`.
 
 ### `ParseAttempt`
 
@@ -140,7 +167,8 @@ evidence and never replace the original audio.
 ### Required interfaces
 
 - S02 supplies approved source, provider, caching, retention, automation, and
-  data-rights policy references; S09 does not infer them.
+  data-rights policy references, including the typed provider-authorization
+  applicability and its evidence; S09 does not infer them.
 - S05 supplies the discovery company and four-quarter source-package scope to
   A-06.
 - S07 supplies the failure taxonomy and prompt-injection/source-confusion
@@ -149,8 +177,10 @@ evidence and never replace the original audio.
   run manifests and cutoff enforcement.
 - S12 consumes source occurrences and parse attempts but owns fact identity,
   reconciliation, and schema evolution.
-- S17 supplies stable internal company/security identities and corporate-
-  action semantics; capture retains unresolved mappings rather than guessing.
+- S17 later supplies stable internal company/security identities and corporate-
+  action semantics. B-09 captures source-native identity before S17 when
+  necessary and appends a mapped event/version later; it never guesses or
+  makes S17 a capture prerequisite.
 
 ## Invariants and fail-closed behavior
 
@@ -165,34 +195,77 @@ evidence and never replace the original audio.
    distinct. Capture failures are persisted and visible to retry/coverage
    metrics.
 5. Only sources and uses approved under S02/A-05 may be automated, cached,
-   retained, or transformed. Missing or expired rights evidence blocks the
-   affected acquisition.
+   retained, or transformed. Missing or expired rights evidence, or missing,
+   `UNKNOWN`, stale, or unsatisfied provider-authorization applicability,
+   blocks the affected acquisition.
 6. Source content is data, never instructions. It cannot alter tools,
    permissions, cutoffs, prompts with control authority, promotion rules,
    credentials, external calls, or execution.
 7. Derived text retains exact provenance. Unsupported or ambiguous mappings
-   remain unresolved and enter reconciliation; the system does not guess.
+   retain raw source identity, remain `UNRESOLVED`, and enter reconciliation;
+   the system does not guess or block B-09 capture solely because S17 identity
+   is not yet available.
 8. Point-in-time jobs are idempotent by source occurrence/payload hash while
    preserving distinct attempts and failures.
 9. A-06 must measure filing channel and taxonomy/version changes plus mapping
    stability and reconciliation effort, not only nominal field coverage.
 10. C-14 remains dormant until every activation condition below passes. A
     dormant component cannot enter planned, implementing, or verified state.
+11. A consumer that requires an internal entity/security identity fails closed
+    on an `UNRESOLVED` capture event; that downstream restriction does not
+    rewrite, discard, or prevent the point-in-time event record.
 
 ## Deferred activation guard for C-14
 
 The component ledger must retain a non-null typed predicate named
-`AP-C14-OFFICIAL-AUDIO-NEEDED`. Its expression is a `COMPARE` leaf requiring
-the boolean metric `MTR-C14-OFFICIAL-AUDIO-REQUIRED` to equal `true`. The
-metric source is a current, component-local `EVIDENCE_JSON` gap assessment and
-its RFC 6901 pointer is `/official_audio_transcription_required`.
+`AP-C14-OFFICIAL-AUDIO-NEEDED`. Its closed expression is:
+
+```json
+{"op":"ALL","args":[
+  {"op":"COMPARE","metric_id":"MTR-C14-OFFICIAL-AUDIO-REQUIRED","comparator":"EQ","expected":true},
+  {"op":"COMPARE","metric_id":"MTR-C14-SOURCE-OFFICIAL","comparator":"EQ","expected":true},
+  {"op":"COMPARE","metric_id":"MTR-C14-RIGHTS-CURRENT","comparator":"EQ","expected":true}
+]}
+```
+
+All three metrics are Boolean `EVIDENCE_JSON` metrics in the same current,
+component-local gap assessment. Their respective RFC 6901 pointers are
+`/official_audio_transcription_required`, `/official_audio_source_confirmed`,
+and `/source_provider_rights_current`. The rights metric's `valid_until` equals
+the earliest non-null expiry across every applicable underlying source- and
+provider-rights record. It may be null only when every authoritative record
+explicitly has no expiry; a missing or unknown expiry evaluates the metric
+`UNKNOWN`. Explicitly non-official or invalid rights values evaluate their
+leaf `FALSE`; missing evidence evaluates the affected leaf `UNKNOWN`, while
+stale evidence or expired `valid_until` invalidates the current evaluation and
+blocks activation. Three-valued `ALL` evaluation governs resolved/current
+leaves.
 
 That gap assessment must identify company/event scope, the approved textual
 and filing sources checked, the material information need not satisfied by
 those sources, the official audio source, source/provider-rights references,
-and the evidence-backed boolean. Missing evidence, a false/unknown value,
+and all three evidence-backed booleans. Missing evidence, a false/unknown value,
 expired rights, a stale digest, or a non-official source evaluates the
 predicate as false or unknown and cannot activate C-14.
+
+For an evaluated predicate, `evaluation_sha256` is SHA-256 of the governing
+canonical JSON object with exactly `predicate_id`, `expression`, `metrics`,
+deterministically `resolved_values`, current source/evidence
+`digest_sources`, `result`, and `evaluated_at`. The validator recomputes every
+value, the three-valued result, and this preimage from live evidence. An
+unevaluated or `UNKNOWN` predicate has null `evaluated_at` and digest; copied
+values or a ledger-authored digest never establish truth.
+
+The C-14 `activation_record` contains `activation_record_id`,
+`decision=ACTIVATE_DEFERRED`, C-14 component/register IDs, exact scope,
+predicate ID and current `activation_predicate_sha256`, authority, actor, UTC
+timestamp, nonempty exact predicate/evidence refs, `approval_record_id`,
+`human_resolution_decision_id`, and `human_resolution_sha256`. The
+`PRODUCT_OWNER_DECISION` approval and activation record must carry the same
+canonical decision ID and `content_sha256` for one active immutable
+`ACTIVATE_DEFERRED` human resolution and must copy its actor, authority, scope,
+timestamp, purpose, and evidence exactly. Stale, revoked, superseded,
+wrong-purpose, differently scoped, or merely string-matching records fail.
 
 Activation additionally requires all of the following:
 
@@ -203,8 +276,17 @@ Activation additionally requires all of the following:
 4. the matching `PRODUCT_OWNER_DECISION` approval and activation record bind
    that resolution, predicate digest, evidence, actor, authority, scope, and
    timestamp; and
-5. the register status transition and authority reconciliation validate before
-   any C-14 planning or implementation begins.
+5. the legal register status transition and
+   `STATUS_SOURCE_RECONCILIATION` validate before any C-14 planning or
+   implementation begins. The reconciliation binds nonempty old/new source
+   evidence, occurs in the same global history as the legal `Deferred` to
+   `Open` or `In progress` `source_status` transition, and is followed by the
+   required status-only Sol review and refreshed content-bound reviews.
+
+`AUTHORITY_RECONCILIATION` is not used for that status-only activation. It is
+required only if source, ownership, or contract semantics also change, in
+which case the separate active `RECONCILE_AUTHORITY` resolution and updated
+approved contract must exist before dependent work resumes.
 
 Goal activation, this spec, a coordinator, an agent, availability of audio, or
 matching ledger-authored strings cannot supply activation authority. If C-14
@@ -217,7 +299,7 @@ path are required; dormancy is not rejection.
 |---|---|---|---|
 | Delegated spec approval | Fresh clean Sol xhigh review bound to exact S09 bytes and persisted evidence | `DELEGATED_ARTIFACT_APPROVAL` | S09 remains draft; no dependency treats it as approved. |
 | Filing-spike fitness | Complete four-quarter channel/taxonomy coverage matrix and reconciliation evidence | `DOMAIN_EXPERT_ACCEPTANCE` | A-06 remains unresolved. |
-| Source acquisition and storage | Current access, automation, caching, retention, derived-output, and redistribution evidence for exact use | `DATA_RIGHTS_APPROVAL` and, where applicable, `PROVIDER_AUTHORIZATION` | Fetch/store/parse/capture is blocked for the affected source. |
+| Source acquisition and storage | Current `AcquisitionAuthorization` for exact access, automation, caching, retention, derived-output, and redistribution use; `REQUIRED` provider applicability has a matching provider record and `NOT_REQUIRED` has authoritative applicability evidence | `DATA_RIGHTS_APPROVAL`; additionally `PROVIDER_AUTHORIZATION` iff applicability is `REQUIRED` | Missing/`UNKNOWN` applicability or required proof blocks fetch/store/parse/capture for the affected source. |
 | Capture-domain fitness | Approved capture kinds/sources, failure behavior, and point-in-time semantics | `DOMAIN_EXPERT_ACCEPTANCE` | B-09 remains unresolved. |
 | C-14 activation | Current true predicate plus exact active human activation resolution and bound record | `PRODUCT_OWNER_DECISION` | C-14 remains `Deferred`; no planning or implementation. |
 | Audio transcript analytical use, after activation | Original/audio/transcript provenance and explicit acceptance for scoped use | `ANALYST_ACCEPTANCE` | Transcript cannot support an approved claim or narrative. |
@@ -244,11 +326,18 @@ a Sol review supplies none of those authorities.
 - Parser upgrades append attempts and preserve prior outputs/warnings.
 - Every capture kind persists hash and first-seen time; failed fetches remain
   failures and are never converted to no-event.
+- A B-09 event captured before S17 retains exact raw source identity with
+  `identity_resolution_state=UNRESOLVED` and null internal refs; later mapping
+  appends a resolved version, while downstream identity-dependent use rejects
+  the unresolved event.
 - Late-arriving documents do not receive fabricated earlier knowledge time.
 - A hostile document cannot modify tool permissions, cutoff, promotion,
   credentials, external calls, or execution and is recorded under the S07
   taxonomy.
 - Unapproved/expired source rights block acquisition and transformation.
+- Provider applicability `REQUIRED`, `NOT_REQUIRED`, `UNKNOWN`, and missing are
+  tested: only `REQUIRED` with a matching current authorization or
+  `NOT_REQUIRED` with authoritative current basis can proceed.
 
 ### Deferred-scope tests
 
@@ -260,6 +349,15 @@ a Sol review supplies none of those authorities.
 - Only a current `TRUE` predicate plus bound human resolution, approval,
   activation record, dependency evidence, and legal register reconciliation
   can unlock the C-14 cone.
+- Predicate fixtures independently make the material-need, official-source,
+  and rights-current leaves false, unknown, stale, or expired; canonical digest
+  recomputation rejects any changed preimage or mismatched rights expiry.
+- Activation fixtures reject mismatched resolution ID/digest, actor, authority,
+  scope, timestamp, purpose, evidence, predicate digest, or approval binding.
+- Status-only activation rejects `AUTHORITY_RECONCILIATION` and accepts only a
+  legal `Deferred` transition with same-history `STATUS_SOURCE_RECONCILIATION`,
+  old/new source evidence, status-only review, and refreshed content-bound
+  reviews.
 - After valid activation, original audio, model/version, timestamps,
   confidence, and correction history are mandatory and append-only.
 
@@ -274,6 +372,8 @@ and execution time. Agent assertions are not proof.
 - A-06 depends exactly on A-02; the discovery company/four-quarter package is
   selected before the coverage spike.
 - B-09 depends exactly on A-05; approved rights/source scope precedes capture.
+  S17 is not a B-09 dependency: source-native identity is captured unresolved
+  until a later mapping can be appended.
 - C-02 depends exactly on A-05; immutable storage does not authorize source
   acquisition by itself.
 - C-14 depends exactly on C-02 and B-08 and additionally remains behind its
@@ -285,8 +385,9 @@ and execution time. Agent assertions are not proof.
 ## Amendment gate
 
 No mandatory evidence-derived amendment gate is assigned to S09 in the
-Exact 25-spec program. A later valid activation of C-14 requires register and
-ledger reconciliation plus fresh content-bound review; it does not silently
-amend this draft or authorize implementation. Any source-semantic, ownership,
-or activation-contract change requires explicit authority reconciliation and
-fresh Sol xhigh review.
+Exact 25-spec program. A status-only C-14 activation requires legal register
+transition, `STATUS_SOURCE_RECONCILIATION`, status-only review, and fresh
+content-bound review; it does not silently amend this draft or authorize
+implementation. Any source-semantic, ownership, or activation-contract change
+instead requires explicit `AUTHORITY_RECONCILIATION`, its canonical human
+resolution, an updated approved contract, and fresh Sol xhigh review.

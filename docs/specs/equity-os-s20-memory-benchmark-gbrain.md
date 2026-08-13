@@ -149,7 +149,15 @@ D-05 may decide only `ADOPT_CURRENT_SCALE`, `DO_NOT_ADOPT_CURRENT_SCALE`, or `NO
 
 `DO_NOT_ADOPT_CURRENT_SCALE` is valid when a simpler eligible arm is sufficient or GBrain's measured benefit does not exceed operational and upgrade burden. It is not `Rejected` forever and does not disable triggers. `NO_DECISION_INSUFFICIENT_EVIDENCE` is mandatory for parity failure, incomplete due diligence, missing primary outcomes, post-hoc thresholds, unresolved load-bearing findings, or stale evidence.
 
-The decision record contains manifest/result/due-diligence hashes, decision rule and evaluation, actor and authority, exact scope, timestamp, rationale, dissent/limitations, and active reevaluation triggers.
+The decision record contains exactly `outcome`, `manifest_sha256`, `benchmark_result_sha256`, `due_diligence_sha256`, `decision_rule_version`, `decision_rule_evaluation_sha256`, `actor`, `authority`, `decision_scope`, `candidate_revision`, `deployment_operating_scope`, `timestamp`, `rationale`, `dissent`, `limitations`, `reevaluation_triggers`, `approval_record_id`, `resolution_decision_id`, and `resolution_content_sha256`. The last three fields are null for `NO_DECISION_INSUFFICIENT_EVIDENCE` and required for a conclusive outcome. `decision_record_sha256` is lowercase SHA-256 of the goal-defined canonical JSON object containing exactly those fields and excluding `decision_record_sha256` itself. `decision_rule_evaluation_sha256` is computed before human decision from canonical JSON containing exactly `protocol_version`, `decision_rule_version`, `decision_scope`, `candidate_revision`, `manifest_sha256`, `benchmark_result_sha256`, `due_diligence_sha256`, `primary_outcomes`, `precommitted_thresholds`, `safety_bounds`, `measured_operations_upgrade_burden`, `unresolved_limitations`, and `candidate_outcome`.
+
+### Controlled source-status and reevaluation transitions
+
+After its own valid activation, D-05 evaluates evidence while `Open` or `In progress`. `ADOPT_CURRENT_SCALE` and `DO_NOT_ADOPT_CURRENT_SCALE` are both conclusive completion of the register instruction to decide adoption; either may support `In progress → Accepted` and delivery `VERIFIED` only after complete proof and one current exact-scope `PRODUCT_OWNER_DECISION`. The matching approval record must use `authority_source=HUMAN_RESOLUTION` and copy one active canonical `SATISFY_APPROVAL` resolution binding D-05, the chosen outcome, `decision_scope=CURRENT_SCALE_ONLY`, the candidate revision, the manifest/result/due-diligence hashes, the decision-rule evaluation digest, and the exact deployment/operating scope. The decision record's actor, authority, timestamp, approval-record ID, resolution decision ID, and resolution content digest must equal that approval/resolution chain. A positive outcome grants no separate installation, purchase, production, credential, service, legal, rights, budget, capacity, owner, or security authority.
+
+`NO_DECISION_INSUFFICIENT_EVIDENCE` is non-conclusive: it cannot support D-05 `Accepted`, delivery `VERIFIED`, or `gate_result=PASS`. D-05 retains its legal current active source/delivery state with an explicit blocker until new valid evidence is available; it does not skip or regress a source Status.
+
+A later D-02 rerun or D-05 reconsideration after that row is `Accepted` is blocked until a separate active canonical `REOPEN_ACCEPTED` human resolution for the exact row/scope is followed by source reconciliation of `Accepted → Open`. If both accepted rows must advance, each requires its own resolution and reconciliation. The trigger crossing and original evidence are inputs to that human decision; neither changes source Status, starts a run, nor invalidates the preserved original result. New scored work then uses a new manifest/protocol version and follows the ordinary activation/dependency/approval sequence from the reopened state.
 
 ## Invariants and fail-closed behavior
 
@@ -164,6 +172,8 @@ The decision record contains manifest/result/due-diligence hashes, decision rule
 9. A trigger crossing opens reevaluation consideration; it does not itself adopt, install, purchase, or activate GBrain.
 10. Results apply only to the measured current scale, workload, versions, and operating boundary.
 11. D-02, D-04, and D-05 implementation/delivery references remain absent while their individual Status is Deferred.
+12. Both conclusive D-05 outcomes require an exact-scope current product-owner resolution and complete D-05 as `Accepted`; insufficient evidence completes neither source acceptance nor delivery verification.
+13. Accepted D-02 or D-05 work cannot restart until that row has its own valid `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` source transition.
 
 ## Deferred activation guards
 
@@ -171,7 +181,7 @@ Each row has its own typed predicate and requires its own human resolution:
 
 | Row | Predicate contract | Required activation evidence |
 |---|---|---|
-| D-04 | `AP-D04-GBRAIN-DUE-DILIGENCE-NEED` reads boolean `/memory/gbrain_due_diligence_required` from current `EVIDENCE_JSON`. | S19 D-01 readiness; a named candidate requiring evaluation; intended use/deployment scope; due-diligence owner/capacity; current evidence hashes. |
+| D-04 | `AP-D04-GBRAIN-DUE-DILIGENCE-NEED` reads boolean `/memory/gbrain_due_diligence_required` from current `EVIDENCE_JSON`. | A named candidate requiring evaluation; intended use/deployment scope; due-diligence owner/capacity; current evidence hashes. D-04 has no D-01 or other register dependency. |
 | D-02 | `AP-D02-CURRENT-SCALE-BENCHMARK-READY` is `ALL` of accepted/current dependency states for C-05, D-01, and activated D-04 plus boolean `/memory/benchmark_ready`. | Frozen workload candidate; parity-feasible artifact set; benchmark budget/capacity; metric/threshold draft; D-04 evidence; current dependency evidence. |
 | D-05 | `AP-D05-GBRAIN-ADOPTION-DECISION-READY` is `ALL` of current completed D-02 and D-04 evidence plus boolean `/memory/adoption_decision_ready`. | Current benchmark and due-diligence packages, decision-rule evaluation, limitations, proposed deployment scope, and approval inventory. |
 
@@ -187,7 +197,8 @@ For every row, `FALSE`, `UNKNOWN`, expired evidence, stale digests, or unmet dep
 | Each Deferred activation | Current typed predicate/evidence and matching canonical resolution digest | A distinct `PRODUCT_OWNER_DECISION` for `ACTIVATE_DEFERRED` and exact row scope | That row remains dormant. |
 | D-04 acceptance | Complete due-diligence package, rerun tests, license/security/export evidence, and resolved load-bearing findings | `LEGAL_REVIEW`, `DATA_RIGHTS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, or `CREDENTIAL_ACCESS_APPROVAL` only when the evaluated posture crosses that boundary; any exception requires `SECURITY_EXCEPTION` | D-04 cannot be Accepted. |
 | D-02 execution | Frozen manifest and task/artifact parity; budget/capacity evidence; D-04 accepted | `BUDGET_APPROVAL`, `CAPACITY_COMMITMENT`, `PURCHASE_AUTHORIZATION`, `EXTERNAL_SERVICE_APPROVAL`, or `CREDENTIAL_ACCESS_APPROVAL` when the actual benchmark requires them | Benchmark cannot start or affected arm is invalid. |
-| D-05 adoption | Current D-02/D-04 evidence, precommitted rule evaluation, exact deployment/operations/exit plan | One `PRODUCT_OWNER_DECISION` for adoption plus all boundary-triggered legal, rights, budget, capacity, owner, service, credential, purchase, production, or security-exception approvals | Decision is `NO_DECISION_INSUFFICIENT_EVIDENCE`; no adoption. |
+| D-05 conclusive decision | Current D-02/D-04 evidence, precommitted rule evaluation, exact outcome, and exact deployment/operations/exit scope | One `PRODUCT_OWNER_DECISION` for the exact `ADOPT_CURRENT_SCALE` or `DO_NOT_ADOPT_CURRENT_SCALE` outcome plus all boundary-triggered approvals applicable to that outcome | Decision is `NO_DECISION_INSUFFICIENT_EVIDENCE`; D-05 cannot become Accepted or VERIFIED. |
+| Accepted-row reevaluation | Crossed-trigger evidence, original result/decision hashes, proposed new scope, and current source proof | One separate active `REOPEN_ACCEPTED` human resolution and source reconciliation for each accepted D-02 or D-05 row to be advanced | Consideration may be recorded, but rerun/reconsideration cannot start. |
 
 Conditional approval types are not presumed satisfied. The approval inventory must explicitly prove whether each boundary applies. Automated Sol review may approve the artifact under delegated authority and may provide technical/security-review evidence; it cannot grant product adoption, legal/rights sufficiency, budget, capacity, credentials, purchase, external-service operation, production use, or a security exception.
 
@@ -206,8 +217,11 @@ After valid activation of the applicable rows, verification must mechanically pr
 9. GBrain identity, license, revision, dependency, test, security, and export evidence hashes match the evaluated candidate.
 10. Export/restore reconstructs the required S19 logical records without a hidden GBrain-only dependency.
 11. The decision evaluator returns each of the three closed outcomes for positive, insufficient, and simpler-store-sufficient fixtures.
-12. A non-adoption fixture retains active trigger definitions; a crossed-trigger fixture opens reevaluation without changing adoption state.
-13. Structural checks prove no owned Deferred row has implementation references or an active delivery state before its own valid activation.
+12. Positive- and simpler-store-sufficient fixtures produce their respective conclusive outcome but cannot advance D-05 without a current exact-outcome `PRODUCT_OWNER_DECISION`; with the matching resolution/record and complete proof, each advances D-05 through `In progress → Accepted` and delivery `VERIFIED`.
+13. An insufficient-evidence fixture cannot produce D-05 `Accepted`, `VERIFIED`, or `PASS`, with or without a nearby, wrong-outcome, stale, expired, revoked, or digest-mismatched approval.
+14. A crossed-trigger fixture records consideration without changing adoption or source state; when D-02 or D-05 is already Accepted, rerun/reconsideration remains blocked until that exact row has a current `REOPEN_ACCEPTED` resolution and reconciled `Accepted → Open` transition.
+15. Decision-record validation recomputes the evaluation and record digest preimages and rejects any outcome, scope, evidence-hash, approval-record, resolution-ID, or resolution-digest mismatch.
+16. Structural checks prove no owned Deferred row has implementation references or an active delivery state before its own valid activation.
 
 Conversation summaries and agent reports are not proof. Each acceptance or decision must bind current command outputs, source/artifact hashes, typed approvals, and fresh content-bound reviews.
 

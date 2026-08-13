@@ -87,6 +87,7 @@ An `EvidencePackageManifest` contains at minimum:
 
 | Field | Contract |
 |---|---|
+| `manifest_schema_version`, `canonicalization_profile` | Exact manifest schema version and `eos-manifest-json-v1` byte profile |
 | `evidence_package_id`, `version` | Stable package identity and monotonically increasing immutable version |
 | `run_id`, `attempt_id` | Owning run and attempt from S11 |
 | `knowledge_cutoff` | UTC cutoff enforced by S11; never inferred from package creation time |
@@ -96,16 +97,53 @@ An `EvidencePackageManifest` contains at minimum:
 | `claim_refs` | Exact claim IDs and versions included as prior approved analytical state; drafted claims are separately marked |
 | `calculation_refs` | Exact trace IDs and code/runtime versions |
 | `policy_refs` | Materiality, metric/predicate registry, retention, and source-authority policy versions |
-| `parent_package_id` | Prior immutable package when this version is rework; null only for the first package |
+| `parent_package_ref` | Exact immediate predecessor `{evidence_package_id, version, manifest_sha256}`; null if and only if `version=1`; for `version=N>1`, it resolves to the same package ID at `version=N-1` and its stored manifest hash |
 | `change_set` | Typed added/removed/superseded references and invalidation reasons |
-| `manifest_sha256` | Hash of canonical manifest bytes excluding this field |
+| `manifest_sha256` | Lowercase hexadecimal SHA-256 of the domain-separated canonical preimage defined below |
+
+### Manifest canonical-byte profile
+
+`eos-manifest-json-v1` is the self-contained canonical byte contract for S10
+and for manifests that explicitly import it:
+
+1. The manifest is encoded as UTF-8 JSON with no BOM or insignificant
+   whitespace. Object names are unique after Unicode NFC normalization and are
+   ordered by unsigned lexicographic order of their normalized UTF-8 bytes.
+2. String names and values are NFC-normalized. `"`, `\`, and U+0000 through
+   U+001F are escaped as `\"`, `\\`, and lowercase `\u00xx`, respectively;
+   every other character is emitted as unescaped UTF-8, and invalid Unicode or
+   lone surrogates fail canonicalization.
+3. Arrays are ordered. In this profile every manifest collection is set-like:
+   its elements are sorted by their complete canonical JSON bytes before the
+   array is persisted and hashed. A future semantically ordered collection
+   requires a new schema/profile version that declares its ordering rule.
+4. UTC timestamps use exactly `YYYY-MM-DDTHH:mm:ss.ffffffZ`. Values not exactly
+   representable at microsecond precision are rejected rather than rounded.
+   Integers use base-10 JSON numbers with no leading plus, leading zero, or
+   negative zero. Non-integral quantities use decimal strings matching
+   `-?(0|[1-9][0-9]*)\.[0-9]*[1-9]`; exponent form, redundant leading or
+   trailing zeros, plus signs, negative zero, and non-finite values are
+   forbidden.
+5. Every field declared by `manifest_schema_version` is present. A nullable
+   field is encoded as JSON `null`; absent and null are not interchangeable.
+   Unknown fields, duplicate names, and omitted required or nullable fields
+   fail canonicalization.
+
+The hash input is the ASCII domain separator
+`EquityOS:EvidencePackageManifest:v1\n` followed by the canonical JSON object
+with `manifest_sha256` removed entirely, not set to null. The stored
+`manifest_sha256` equals the lowercase hexadecimal SHA-256 of exactly those
+bytes; `\n` denotes one LF byte (`0x0A`), not a backslash and `n`. A producer
+and verifier must reject a manifest whose stored collection
+order, profile/version, preimage, or digest does not match this contract.
 
 Package assembly is a transaction: resolve all authoritative references as of
 the cutoff, validate hashes and policy versions, persist the manifest, then
 seal it. Partial assembly is not a package. A downstream step consumes one
 sealed manifest hash and performs no new evidence retrieval. Changed evidence,
 human rejection, source correction, or recalculation creates a new manifest;
-the prior package remains reproducible and auditable.
+the prior package remains reproducible and auditable. Version `N>1` cannot seal
+until its exact `parent_package_ref` resolves and its predecessor hash verifies.
 
 ## Retention, correction, and deletion
 
@@ -136,6 +174,9 @@ the prior package remains reproducible and auditable.
 - A package cannot be edited after sealing. Hash mismatch, missing dependency,
   partial write, unregistered policy version, or cross-store disagreement
   invalidates it and blocks publication.
+- Non-canonical encoding, an invalid digest preimage, or a missing, mismatched,
+  or non-immediate parent reference blocks sealing; package-family parentage is
+  reconstructed only from exact ID/version/hash links.
 - Deletion never masquerades as correction; correction never destroys prior
   history; supersession never implies physical erasure.
 - A derivative index cannot perform promotion, correction, approval, or
@@ -148,7 +189,7 @@ the prior package remains reproducible and auditable.
 
 | Gate | Required evidence | Approval type and authority | Fail-closed result |
 |---|---|---|---|
-| S10 delegated artifact approval | Fresh clean Sol xhigh review bound to this file's current bytes, exact source rows, T-3/R-5 treatment, and review evidence | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
+| S10 delegated artifact approval | Fresh clean Sol xhigh review bound to this file's current bytes, exact source rows, T-3/R-5 treatment, declared interfaces and canonical preimage, parent-reference contract, fixture catalogue, and test specifications; no product execution result is required | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
 | B-03 matrix approval | Completed authority table, conflict tests, package fixture, and cross-spec interface evidence | `PRODUCT_OWNER_DECISION` by a competent human product/process owner for the exact matrix scope | B-03 cannot become Accepted; dependent authoritative stores remain blocked |
 | Retention/deletion policy | Versioned retention schedule plus dependency-impact and reconstruction analysis | `DATA_RIGHTS_APPROVAL` for source-rights constraints and `LEGAL_REVIEW` only where the intended retention/deletion mode requires it; distinct human resolutions | Affected data cannot be ingested, deleted, or represented as reconstructable |
 | Approved narrative/report retention | Exact bytes, content hash, package/run bindings, and review disposition | `ANALYST_ACCEPTANCE` by the responsible analyst; promotion, if requested, is a separate `MEMORY_PROMOTION` decision | Artifact remains a draft and cannot be published or canonical memory |
@@ -182,20 +223,31 @@ migration by itself.
 
 ## Acceptance tests and verification
 
-Before delegated S10 approval, fixtures or structural tests must prove:
+Initial delegated S10 approval reviews this contract, its declared fixture
+catalogue, and the test specifications below for completeness and internal
+consistency. It does not require a store, package assembler, index, deletion
+workflow, or resumable product workflow to exist or execute.
+
+Before B-03 or C-11 acceptance, and at the corresponding implementation phase
+gates, executable fixtures must prove:
 
 1. every matrix record class has exactly one authoritative write path and a
    declared retention rule;
-2. a sealed package reconstructs the exact manifest and all referenced hashes;
-3. missing, changed, post-cutoff, or unauthorized references block sealing;
-4. rework creates v(N+1), preserves v(N), and records a typed change set;
-5. a derivative-index-only citation and an attempted index canonical write are
+2. independent producers serialize the same logical manifest to identical
+   preimage bytes and digest across key-order, collection-order, timestamp,
+   Unicode, integer/decimal, null, and absent-field cases, while malformed or
+   non-canonical inputs fail;
+3. a sealed package reconstructs the exact manifest and all referenced hashes;
+4. missing, changed, post-cutoff, or unauthorized references block sealing;
+5. rework creates v(N+1), preserves v(N), records a typed change set, and binds
+   the exact same-family v(N) parent by ID, version, and verified hash;
+6. a derivative-index-only citation and an attempted index canonical write are
    rejected;
-6. correction appends while deletion uses a distinct approved/tombstoned path;
-7. raw scratchpad absence does not prevent resume, audit, or reconstruction;
-8. the storage-trigger record can recommend reconsideration but cannot perform
+7. correction appends while deletion uses a distinct approved/tombstoned path;
+8. raw scratchpad absence does not prevent resume, audit, or reconstruction;
+9. the storage-trigger record can recommend reconsideration but cannot perform
    or approve migration; and
-9. a source-to-spec audit finds B-03, C-11, T-3, and R-5 exactly once under S10
+10. a source-to-spec audit finds B-03, C-11, T-3, and R-5 exactly once under S10
    and no register row owned by another spec.
 
 Mechanical verification is necessary but not sufficient. B-03 acceptance also

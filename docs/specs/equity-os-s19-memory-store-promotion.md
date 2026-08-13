@@ -64,11 +64,14 @@ All identifiers are opaque, stable strings. An implementation must expose these 
 | `MemoryRevision` | `memory_id`, `revision_id`, `company_id`, `content_kind`, `content_bytes`, `content_sha256`, `epistemic_class`, `status`, `valid_time`, `knowledge_time`, `source_fact_ids`, `source_claim_ids`, `calculation_trace_ids`, `evidence_package_id`, `supersedes_revision_id`, `created_at`, `created_by` |
 | `StagedWrite` | `stage_id`, `idempotency_key`, `proposed_revision`, `validation_state`, `validation_errors`, `created_at`, `expires_at` |
 | `PromotionRequest` | `stage_id`, `expected_content_sha256`, `expected_prior_revision_id`, `approval_resolution_id`, `approval_resolution_sha256`, `idempotency_key` |
+| `DeletionStageRequest` | `memory_id`, `expected_prior_revision_id`, `reason`, `evidence_package_id`, `requested_by`, `idempotency_key` |
 | `CanonicalMemoryPointer` | `memory_id`, `canonical_revision_id`, `content_sha256`, `content_commit`, `sql_registration_id`, `promoted_at`, `promotion_approval_id` |
 | `ProvenanceEnvelope` | `source_ids`, `exact_source_locations`, `calculation_trace_ids`, `evidence_package_id`, `valid_time`, `knowledge_time`, `retrieved_at`, `cutoff` |
 | `ExportManifest` | `export_id`, `schema_version`, `cutoff`, `record_count`, ordered record digests, `manifest_sha256`, `created_at` |
 
 `content_kind` is a closed registry value. `epistemic_class` is exactly `observed`, `computed`, `inferred`, `forecast`, or `opinion`. `status` is exactly `STAGED`, `CANONICAL`, `SUPERSEDED`, or `DELETED`. Unknown registry values fail validation.
+
+Narrative `content_sha256` is lowercase SHA-256 of the exact immutable `content_bytes`. A deletion tombstone has no free-form narrative preimage: its `content_bytes` are the goal-defined canonical JSON bytes of exactly `operation="DELETE"`, `memory_id`, `expected_prior_revision_id`, `reason`, `evidence_package_id`, and `requested_by`; its `content_sha256` hashes those bytes. `stage_id`, `idempotency_key`, and timestamps are transport/audit metadata and are excluded from that content preimage. The request and any later promotion approval therefore bind one stable deletion intent rather than a retry instance.
 
 ### Port operations
 
@@ -76,9 +79,9 @@ All identifiers are opaque, stable strings. An implementation must expose these 
 |---|---|
 | `retrieve(query, cutoff, page_token)` | Returns only eligible canonical revisions with `knowledge_time <= cutoff`, deterministic ordering/page tokens, epistemic labels, and complete `ProvenanceEnvelope`s. It never performs a write. |
 | `stage_write(candidate, idempotency_key)` | Validates schemas, references, hashes, and cutoff; creates or returns the same non-canonical stage for a repeated key; never changes the canonical pointer. |
-| `promote(request)` | Validates the exact staged bytes, expected prior pointer, and a current typed `MEMORY_PROMOTION` human resolution. Under D-01 this is an abstract contract only; the D-03 implementation remains guarded. |
+| `promote(request)` | Validates the exact staged bytes, expected prior pointer, and a current typed `MEMORY_PROMOTION` human resolution. The matching approval record must use `authority_source=HUMAN_RESOLUTION` and copy one active canonical `SATISFY_APPROVAL` resolution whose decision ID/digest equal the request and whose exact scope names `memory_id`, `stage_id`, `revision_id`, `expected_content_sha256`, `expected_prior_revision_id`, and `evidence_package_id`. Under D-01 this is an abstract contract only; the D-03 implementation remains guarded. |
 | `correct(memory_id, correction, idempotency_key)` | Creates a new staged revision with an explicit reason and supersession link; never mutates an earlier revision. Promotion is a separate call and approval. |
-| `delete(memory_id, reason, idempotency_key)` | Creates a logical tombstone or withdrawal revision under the declared authorization policy; preserves prior revisions and audit evidence; physical retention behavior remains governed by the retention policy. |
+| `delete(request)` | Compares `expected_prior_revision_id` to the current SQL canonical pointer, then creates or returns the same `STAGED` tombstone for the same idempotency key and canonical deletion preimage. A mismatch returns `STALE_WRITE`. It never changes canonical status, pointer, or retrieval visibility. Making the tombstone effective requires a separate `promote` call and one distinct exact-scope `MEMORY_PROMOTION` resolution; physical retention remains governed by the retention policy. |
 | `export(scope, cutoff)` | Emits a complete, versioned, deterministic, hash-bound export sufficient to reconstruct records, revisions, tombstones, canonical pointers, provenance, and adapter-independent semantics. |
 
 Every operation returns one of the closed error classes `INVALID_REQUEST`, `UNKNOWN_REGISTRY_VALUE`, `CUTOFF_VIOLATION`, `PROVENANCE_INCOMPLETE`, `HASH_MISMATCH`, `STALE_WRITE`, `APPROVAL_REQUIRED`, `APPROVAL_INVALID`, `NOT_FOUND`, `ENGINE_UNAVAILABLE`, or `ATOMICITY_FAILURE`. Errors contain a safe code and correlation ID, not untrusted source text as control instructions.
@@ -92,16 +95,18 @@ If D-03 is validly activated, `promote` must atomically establish both:
 
 The only successful result is a committed pair whose hashes agree. A crash, timeout, retry, stale expected pointer, SQL failure, content-store failure, or approval change must leave either the prior canonical pair intact or a recoverable uncommitted record that retrieval cannot expose. Compensation may clean abandoned stages; it may never manufacture a canonical pointer. Reconciliation treats any one-sided write as a blocking integrity incident.
 
+Promotion of a tombstone uses that same transaction and compare-and-swap boundary. It atomically registers the tombstone revision as `DELETED`, supersedes the expected prior revision, and moves the SQL canonical pointer to the tombstone. Retrieval observes exactly one state: before commit the prior canonical revision remains visible; after commit the memory is logically absent and the tombstone remains available only to audit/export paths. It never observes the tombstone as staged, the prior revision as simultaneously live, or a one-sided content/SQL write. Two promotions naming the same expected prior revision cannot both commit; exactly one may succeed and every loser returns `STALE_WRITE` without changing visibility.
+
 ## Invariants and fail-closed behavior
 
 1. SQL remains authoritative for the canonical pointer and promotion approval; memory-engine state alone is never canonical.
 2. Original revisions, corrections, supersessions, and tombstones are append-only and auditable.
 3. Retrieval enforces `knowledge_time <= cutoff` in the adapter and rejects engines that cannot prove the filter.
 4. Every returned item carries its original epistemic class and provenance; ranking cannot promote interpretation into Fact.
-5. Canonical promotion requires exact-byte hash agreement, an expected-prior compare-and-swap, and a current typed human resolution.
+5. Canonical promotion, including canonical deletion, requires exact-byte hash agreement, an expected-prior compare-and-swap, and a current exact-scope typed human resolution whose canonical decision ID and content digest match the request.
 6. A staged write is never returned as canonical, used by a downstream approved thesis, or silently promoted.
 7. Retries with the same idempotency key are behaviorally identical; key reuse with different bytes fails.
-8. Correction and deletion cannot silently overwrite or physically erase the audit chain.
+8. Correction and deletion are staged first; neither can change effective memory state until a separate approved promotion commits, and neither can silently overwrite or physically erase the audit chain.
 9. Export is complete and engine-neutral; an engine without verified export cannot satisfy D-01.
 10. Document or retrieved text is data, never permission, tool control, approval, or an instruction to promote.
 11. Any missing cutoff, provenance, registry version, content digest, approval, or prior pointer fails closed.
@@ -109,9 +114,22 @@ The only successful result is a committed pair whose hashes agree. A crash, time
 
 ## Deferred activation guard for D-03
 
-D-03 needs a typed predicate such as `AP-D03-PROMOTION-TRANSACTION-NEED`, evaluated from current `EVIDENCE_JSON` rather than prose. Its evidence must contain a boolean at the predeclared JSON pointer `/memory_promotion/atomic_transaction_required` and the measurements supporting that conclusion, including observed promotion workflow, store boundaries, failure modes, and expected recovery behavior. Until current evidence resolves that value to `true`, the predicate is `FALSE` or `UNKNOWN` and cannot activate D-03.
+The D-03 predicate ID is exactly `AP-D03-PROMOTION-TRANSACTION-NEED`; it is not an example or renamable label. Its expression is exactly:
 
-Even a recomputed `TRUE` predicate does not activate D-03. Activation additionally requires a separate active canonical human resolution with decision `ACTIVATE_DEFERRED`, exact D-03 scope, competent product authority, current evidence digests, and a matching `PRODUCT_OWNER_DECISION` approval record. The activation record and human resolution must bind the same predicate digest. Goal activation, D-01 completion, a coordinator statement, or this draft is not activation authority.
+```json
+{"op":"ALL","args":[{"op":"COMPARE","metric_id":"MTR-D03-D01-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-D03-ATOMIC-TRANSACTION-REQUIRED","comparator":"EQ","expected":true}]}
+```
+
+The metrics use the goal's closed predicate schema:
+
+| Metric ID | Type/source | Stable evidence contract |
+|---|---|---|
+| `MTR-D03-D01-SOURCE-STATUS` | `STRING` / `EVIDENCE_JSON` | Current component-local `FILE_BYTES` evidence at `/memory_promotion/d01_source_status`; `register_ids=[]`. The evidence capture must also contain `register_id="D-01"`, the live register file SHA-256, exact D-01 row-span digest, and current acceptance-proof references. The producer and validator independently parse the live register and set the value to its exact current Status; copied ledger text is invalid. |
+| `MTR-D03-ATOMIC-TRANSACTION-REQUIRED` | `BOOLEAN` / `EVIDENCE_JSON` | The same current evidence object at `/memory_promotion/atomic_transaction_required`; `register_ids=[]`. Measurements cover the observed promotion workflow, store boundaries, failure modes, and expected recovery behavior. |
+
+Each metric names that current evidence reference (or `null` only before evidence exists) and its predeclared UTC expiry. `MTR-D03-D01-SOURCE-STATUS` can equal `Accepted` only from content-bound live authority evidence; `REGISTER_STATUS` is insufficient because it does not distinguish `Open`, `In progress`, and `Accepted`. The predicate is `FALSE` or `UNKNOWN` unless both leaves pass. Its `evaluation_sha256` is lowercase SHA-256 of the goal-defined canonical JSON object containing exactly `predicate_id`, `expression`, `metrics`, `resolved_values`, `digest_sources`, `result`, and `evaluated_at`; `expression` is the tree above, `metrics` retain their declared order, and the resolved/digest-source objects are keyed by metric ID.
+
+Even a recomputed `TRUE` predicate does not activate D-03. Activation additionally requires a separate active canonical human resolution with decision `ACTIVATE_DEFERRED`, exact D-03 scope, competent product authority, current evidence digests, and a matching `PRODUCT_OWNER_DECISION` approval record. The activation record and approval record must copy the same canonical resolution decision ID and content digest and bind the predicate ID plus its current `evaluation_sha256`. D-01 `Accepted` is necessary but not activation authority; goal activation, a coordinator statement, or this draft is not activation authority.
 
 ## Evidence and typed human-approval gates
 
@@ -119,7 +137,7 @@ Even a recomputed `TRUE` predicate does not activate D-03. Activation additional
 |---|---|---|---|
 | S19 artifact approval | Current file hash plus persisted clean fresh-context Sol xhigh review evidence | One `DELEGATED_ARTIFACT_APPROVAL` under delegated goal authority | Draft remains unapproved. This document records no such approval. |
 | D-01 interface acceptance | Interface/schema artifact; conformance results for every operation; cutoff, provenance, correction, deletion, export, idempotency, and engine-substitution tests | No invented domain approval; any source-derived approval inventory must be completed by fresh Sol xhigh review | D-01 cannot become Accepted or VERIFIED. |
-| Each canonical promotion | Staged and final byte hashes, prior pointer, evidence package, current human resolution, SQL registration, immutable content commit, and transaction result | One distinct `MEMORY_PROMOTION` by the competent analyst for the exact revision | No pointer changes and no canonical visibility. |
+| Each canonical promotion | Staged and final byte hashes, prior pointer, evidence package, current canonical human-resolution ID/digest, SQL registration, immutable content commit, and transaction result; tombstone promotions also bind the deletion preimage | One distinct `MEMORY_PROMOTION` by the competent analyst for the exact revision, expected prior, content hash, evidence package, and operation | No pointer changes and no canonical visibility change. |
 | D-03 activation | Current typed predicate evaluation and evidence; canonical human-resolution digest; activation record | One distinct `PRODUCT_OWNER_DECISION` authorizing `ACTIVATE_DEFERRED` | D-03 remains `CONDITIONAL_UNACTIVATED`. |
 | Security exception, if needed | Exact risk, affected boundary, compensating controls, expiry, and review evidence | One `SECURITY_EXCEPTION` from competent human authority | Exception path is unavailable. |
 
@@ -134,13 +152,17 @@ The implementing phase must turn these cases into mechanical tests with persiste
 3. Retrieval ordering and pagination are deterministic across repeat runs.
 4. Reusing an idempotency key with identical input returns the original result; changed input returns `HASH_MISMATCH` or `STALE_WRITE`.
 5. Correction creates a new staged revision and leaves the old canonical bytes unchanged until separately promoted.
-6. Deletion produces an auditable tombstone and export preserves the complete history.
+6. Deletion with a matching expected prior creates only a staged canonical-preimage tombstone; retrieval continues returning the prior canonical revision until separate promotion commits.
 7. Export round-trips into an independent conformance adapter with identical logical records and manifest digest.
 8. Engine-conformance tests operate only through the port; no product caller imports engine-specific types.
 9. A post-cutoff or provenance-incomplete record is rejected even when the underlying engine ranks it first.
 10. While D-03 is Deferred, structural validation proves there is no D-03 implementation reference and no active delivery state.
 11. After valid activation only, fault injection before and after each D-03 write boundary proves no split-brain canonical state can be read.
-12. Promotion tests reject absent, stale, wrong-scope, reused, revoked, or non-human `MEMORY_PROMOTION` approvals.
+12. Promotion tests reject absent, stale, wrong-scope, wrong-revision, wrong-content, wrong-prior, reused, expired, revoked, digest-mismatched, or non-human `MEMORY_PROMOTION` approvals, including every tombstone promotion.
+13. A stale deletion request or stale tombstone promotion returns `STALE_WRITE`, preserves the prior pointer and retrieval result, and creates no effective deletion.
+14. Two concurrent tombstone/promote attempts against the same prior revision permit exactly one commit; atomic reads observe the prior revision before commit or logical absence after commit, never a staged or split-brain state.
+15. Tombstone export preserves the canonical deletion preimage, approval/resolution binding, prior revision, and complete audit history; restore reproduces the same logical absence and digests.
+16. Predicate fixtures prove that D-03 remains dormant for D-01 `Open` or `In progress`, missing/stale acceptance evidence, or an atomicity metric other than current `true`; only exact live D-01 `Accepted` plus current `true` atomicity evidence can produce predicate `TRUE`, which still cannot activate without the matching resolution and approval record.
 
 Verification is not satisfied by prose or an agent report. D-01 acceptance requires current command outputs bound to current artifacts. D-03 verification is not applicable while dormant and must use fresh fault-injection evidence after valid activation.
 

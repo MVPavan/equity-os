@@ -61,16 +61,21 @@ Every executable calculation is declared before use:
 | `operator_id` / `operator_version` | Stable registry identity; behavior changes require a new version. |
 | `operator_kind` | Closed values `STATEMENT_TIE_OUT`, `DCF`, `SOTP`, `WACC`, `SENSITIVITY`, or `SECTOR_METRIC`. |
 | `input_schema_ref` / `output_schema_ref` | Immutable, versioned schemas with units, currency, period, scope, dimensions, epistemic class, and nullable rules. |
-| `definition_ref` | Versioned formula/method and, for sector metrics, a versioned sector-definition record. |
+| `definition_ref` | Exact `definition_id`, `definition_version`, and `definition_sha256` for a versioned formula/method and, for sector metrics, a separate versioned sector-definition record. |
+| `definition_approval_record_id` | Current `DOMAIN_EXPERT_ACCEPTANCE` record for the exact method definition/version/hash, operator kind, and use scope. It never substitutes for sector-definition or assumption approval. |
 | `replay_class` | Exactly `EXACT`, `TOLERANCE`, or `SEEDED_STOCHASTIC`. |
 | `tolerance_policy` | Required for `TOLERANCE`; metric, absolute/relative bound, rounding, and comparison order. Null otherwise. |
 | `seed_policy` | Required for `SEEDED_STOCHASTIC`; seed source and distribution test. Null otherwise. |
 | `missing_input_policy` | Must be `FAIL`; optional scenarios use explicitly modeled nullable branches, never hidden imputation. |
 | `code_artifact_sha256` / `runtime_manifest_sha256` | Bind code and execution environment. |
 
+A `CalculationMethodDefinition` contains exactly `definition_id`, `definition_version`, `operator_kind`, `method_graph`, `input_schema_refs`, `output_schema_refs`, `unit_rules`, `currency_rules`, `period_rules`, `scope_rules`, `rounding_policy`, `replay_policy`, `validation_rules`, `tie_out_rules`, `effective_from`, `effective_until`, `owner_id`, `source_ref_ids`, and `evidence_ref_ids`. Its `definition_sha256` is lowercase SHA-256 of the goal-defined canonical JSON object containing exactly those fields. A behavior change creates a new version and digest; a mutable pointer or same-version digest change fails closed.
+
+A known tie-out adjustment is a `TieOutAdjustment` containing exactly `adjustment_id`, `adjustment_version`, `company_id`, `statement_scope`, `period_scope`, `value`, `units`, `currency`, `sign`, `reason`, `source_fact_revision_ids`, `evidence_package_id`, `knowledge_cutoff`, `definition_id`, `definition_version`, `effective_from`, `effective_until`, and `owner_id`. Its `adjustment_sha256` hashes the goal-defined canonical JSON object containing exactly those fields. Transport IDs, approval fields, and execution timestamps are not part of either semantic preimage. Use additionally requires a separate current approval record whose canonical resolution binds the exact record ID/version/digest and use scope.
+
 ### Calculation request
 
-A request contains `calculation_id`, operator identity/version, run/evidence-package ID, knowledge cutoff, ordered input Fact IDs and revisions, input values and units, assumption-set ID/version, sector-definition ID/version where applicable, scenario ID, currency/FX policy, requested outputs, and idempotency key.
+A request contains `calculation_id`, operator identity/version, method-definition ID/version/digest, method-approval-record ID, run/evidence-package ID, knowledge cutoff, ordered input Fact IDs and revisions, input values and units, assumption-set ID/version, sector-definition ID/version where applicable, ordered tie-out-adjustment IDs/versions/digests and approval-record IDs where applicable, scenario ID, currency/FX policy, requested outputs, and idempotency key.
 
 Inputs are authoritative only when they resolve to cutoff-eligible Facts or separately labeled, approved assumptions. An inferred/forecast assumption never becomes an observed Fact. Every request validates dimensional compatibility, period alignment, consolidation/statement scope, currency basis, sign convention, and definition version before execution.
 
@@ -79,7 +84,7 @@ Inputs are authoritative only when they resolve to cutoff-eligible Facts or sepa
 The immutable trace contains:
 
 - request hash and all input Fact/revision/evidence references;
-- assumption and sector-definition versions plus their typed approvals;
+- method-definition, assumption, sector-definition, and tie-out-adjustment versions/digests plus their distinct typed approvals and canonical resolution IDs/digests;
 - operator/code/runtime versions and replay policy;
 - normalized inputs, conversions, intermediate nodes, formulas, outputs, rounding, tolerances, warnings, and validation checks;
 - tie-out residuals and materiality thresholds;
@@ -90,7 +95,7 @@ Outputs label each result `computed`; scenario and valuation outputs additionall
 
 ### Statement tie-out contract
 
-A statement/model can proceed only when declared equations reconcile within their registered exact or tolerance policy. At minimum, applicable models explicitly check balance-sheet balance, subtotal/total bridges, cash-flow movement, share-count/dilution consistency, segment-to-group reconciliation, and opening-to-closing period continuity. A waived residual is prohibited; a known accepted adjustment must be a versioned explicit input with provenance and approval.
+A statement/model can proceed only when declared equations reconcile within their registered exact or tolerance policy. At minimum, applicable models explicitly check balance-sheet balance, subtotal/total bridges, cash-flow movement, share-count/dilution consistency, segment-to-group reconciliation, and opening-to-closing period continuity. A waived residual is prohibited; a known accepted adjustment must be the exact versioned, hash-bound explicit input above with provenance and its own current exact-scope `DOMAIN_EXPERT_ACCEPTANCE`.
 
 ### DCF, SOTP, WACC, sensitivity, and sector definitions
 
@@ -114,19 +119,30 @@ A statement/model can proceed only when declared equations reconcile within thei
 10. Sensitivity results bind every axis value and assumption; no unlabeled base-case substitution is allowed.
 11. Computed valuation output remains `computed` and does not become a Fact, approved thesis, or distribution approval.
 12. A human approval cannot override a failed tie-out, missing evidence, cutoff violation, or stale trace.
+13. Every executed method definition and accepted tie-out adjustment has its own current exact-version `DOMAIN_EXPERT_ACCEPTANCE`; one approval cannot satisfy both or cover another version, hash, operator kind, company/period, or use scope.
 
 ## Deferred activation guard
 
-E-01 uses a typed predicate such as `AP-E01-MODEL-GRADE-COMPUTE-NEED`. Its expression is `ALL` of:
+The E-01 predicate ID is exactly `AP-E01-MODEL-GRADE-COMPUTE-NEED`; it is not an example or renamable label. Its expression is exactly:
 
-- C-08 is current and Accepted, derived from live register Status;
-- current `EVIDENCE_JSON` boolean `/model_grade_compute/activation_recommended` is true;
-- current `EVIDENCE_JSON` boolean `/model_grade_compute/inputs_and_owners_ready` is true; and
-- current `EVIDENCE_JSON` boolean `/model_grade_compute/capacity_and_budget_ready` is true.
+```json
+{"op":"ALL","args":[{"op":"COMPARE","metric_id":"MTR-E01-C08-SOURCE-STATUS","comparator":"EQ","expected":"Accepted"},{"op":"COMPARE","metric_id":"MTR-E01-ACTIVATION-RECOMMENDED","comparator":"EQ","expected":true},{"op":"COMPARE","metric_id":"MTR-E01-INPUTS-AND-OWNERS-READY","comparator":"EQ","expected":true},{"op":"COMPARE","metric_id":"MTR-E01-CAPACITY-AND-BUDGET-READY","comparator":"EQ","expected":true}]}
+```
 
-The evidence package must quantify the active workflow need that minimum compute cannot meet, name candidate calculations/sectors, demonstrate sufficient authoritative inputs and golden fixtures, identify competent definition/assumption owners, estimate analyst value and operating burden, and declare capacity/budget. `FALSE`, `UNKNOWN`, unmet C-08, expired evidence, or stale digests prevents activation.
+All four metrics use `EVIDENCE_JSON`, `register_ids=[]`, one current component-local `FILE_BYTES` activation-evidence object, and these stable pointers/types:
 
-A recomputed `TRUE` does not activate E-01. Activation also requires a current canonical human resolution with decision `ACTIVATE_DEFERRED`, exact E-01 scope, competent product authority, evidence and predicate digests, and one matching `PRODUCT_OWNER_DECISION`. This spec, goal activation, a coordinator statement, a valuation request, or C-08 acceptance cannot supply that authority.
+| Metric ID | Type | JSON pointer and binding |
+|---|---|---|
+| `MTR-E01-C08-SOURCE-STATUS` | `STRING` | `/model_grade_compute/c08_source_status`; the evidence also contains `register_id="C-08"`, live register file SHA-256, exact C-08 row-span digest, and current acceptance-proof refs. The producer and validator independently parse the live register and copy its exact Status; a ledger label is invalid. |
+| `MTR-E01-ACTIVATION-RECOMMENDED` | `BOOLEAN` | `/model_grade_compute/activation_recommended` |
+| `MTR-E01-INPUTS-AND-OWNERS-READY` | `BOOLEAN` | `/model_grade_compute/inputs_and_owners_ready` |
+| `MTR-E01-CAPACITY-AND-BUDGET-READY` | `BOOLEAN` | `/model_grade_compute/capacity_and_budget_ready` |
+
+Each metric names that current evidence reference (or `null` only before evidence exists) and its predeclared UTC expiry. Exact C-08 acceptance is therefore content-bound through a supported string metric; the goal's `REGISTER_STATUS` boolean is not used because it cannot distinguish `Open`, `In progress`, and `Accepted`. `FALSE`, `UNKNOWN`, any non-`Accepted` C-08 value, expired evidence, or stale digests prevents activation. The predicate `evaluation_sha256` is lowercase SHA-256 of the goal-defined canonical JSON object containing exactly `predicate_id`, `expression`, `metrics`, `resolved_values`, `digest_sources`, `result`, and `evaluated_at`; `expression` is the tree above, `metrics` retain their declared order, and the resolved/digest-source objects are keyed by metric ID.
+
+The evidence package must quantify the active workflow need that minimum compute cannot meet, name candidate calculations/sectors, demonstrate sufficient authoritative inputs and golden fixtures, identify competent method-definition, adjustment, sector-definition, and assumption owners, estimate analyst value and operating burden, and declare capacity/budget.
+
+A recomputed `TRUE` does not activate E-01. Activation also requires a current canonical human resolution with decision `ACTIVATE_DEFERRED`, exact E-01 scope, competent product authority, evidence and predicate digests, and one matching `PRODUCT_OWNER_DECISION`. The activation record and approval record must copy the same canonical resolution decision ID/content digest and bind the fixed predicate ID plus current `evaluation_sha256`. This spec, goal activation, a coordinator statement, a valuation request, or C-08 acceptance cannot supply that authority.
 
 ## Evidence and typed human-approval gates
 
@@ -134,31 +150,35 @@ A recomputed `TRUE` does not activate E-01. Activation also requires a current c
 |---|---|---|---|
 | S21 artifact approval | Current spec hash and persisted clean fresh-context Sol xhigh review | One `DELEGATED_ARTIFACT_APPROVAL` under delegated goal authority | Status remains draft. This file records no approval. |
 | E-01 activation | Current predicate evaluation, need/inputs/owner/capacity evidence, C-08 state, and canonical resolution digest | One `PRODUCT_OWNER_DECISION` authorizing `ACTIVATE_DEFERRED` for E-01 | E-01 stays dormant. |
+| Calculation-method use | Exact method-definition ID/version/hash, formulas/method graph, schemas, fixtures, replay/tie-out policy, sources, effective interval, and competent review evidence | One `DOMAIN_EXPERT_ACCEPTANCE` by a competent financial-method owner for the exact definition/version/hash, operator kind, and use scope | The operator is unavailable and the calculation fails closed. |
+| Accepted tie-out-adjustment use | Exact adjustment ID/version/hash, company/statement/period scope, value/units/currency/sign, provenance, cutoff, method version, effective interval, and competent review evidence | One separate `DOMAIN_EXPERT_ACCEPTANCE` by a competent financial-method owner for the exact adjustment/version/hash and use scope | The adjustment is unavailable; the unadjusted model must still tie out or fail closed. |
 | Sector-definition use | Versioned definition, sources, test fixtures, effective interval, and reviewer evidence | One `DOMAIN_EXPERT_ACCEPTANCE` by a competent owner for the exact definition/version | Dependent calculation fails closed. |
 | Assumption-set use in approved research | Versioned assumptions, sources/rationale, scenario scope, cutoff, sensitivity coverage, and trace refs | One `ANALYST_ACCEPTANCE` for the exact assumption set/version and use scope | Output cannot enter an approved thesis/report. |
 | Capacity/budget commitment | Measured cost/latency/review load and named operating scope | `BUDGET_APPROVAL`, `CAPACITY_COMMITMENT`, and `NAMED_OWNER_COMMITMENT` when implementation commits those resources | Implementation or production gate remains blocked. |
 | Security exception, if any | Exact exception, affected trace/evidence boundary, compensating controls, and expiry | One `SECURITY_EXCEPTION` by competent human authority | Exception is unavailable. |
 
-Delegated artifact approval applies only to the specification. It cannot grant activation, domain or analyst acceptance, budget/capacity/owner commitment, production approval, distribution approval, or an exception. Approval records are exact-scope and one-to-one; no nearby or reused approval passes.
+Delegated artifact approval applies only to the specification. It cannot grant activation, domain or analyst acceptance, budget/capacity/owner commitment, production approval, distribution approval, or an exception. Each method-definition and tie-out-adjustment requirement is satisfied one-to-one by a distinct approval record with `authority_source=HUMAN_RESOLUTION`; that record must copy one active canonical `SATISFY_APPROVAL` resolution's human actor, competent authority basis, exact ID/version/hash/use scope, timestamp, evidence, decision ID, and content digest. Missing, expired, revoked, superseded, wrong-version, wrong-hash, or matching-string-only records fail closed. No nearby or reused approval passes.
 
 ## Acceptance tests and verification
 
 After valid E-01 activation, mechanical verification must cover:
 
-1. Structural validation rejects unknown operators, missing schema/definition versions, and invalid replay policies.
+1. Structural validation rejects unknown operators, missing schema/definition versions or digests, same-version digest changes, and invalid replay policies.
 2. Golden statement fixtures pass exact tie-outs; injected imbalance, scope mismatch, and sign error fail closed.
 3. Missing, null, post-cutoff, stale, contradictory, wrong-unit, wrong-currency, wrong-period, and wrong-consolidation inputs each fail closed.
 4. DCF fixtures bind every assumption and reproduce under the declared replay class; changed assumptions create distinct traces/hashes.
 5. SOTP fixtures reconcile components, ownership, eliminations, and group scope; double counting is rejected.
 6. WACC fixtures prove source/cutoff, units, currency/country basis, capital weighting, and tax handling.
 7. Sensitivity fixtures recompute the model at every declared grid point and reject invalid/unlabeled combinations.
-8. Sector metrics cannot run with an unapproved, expired, wrong-sector, or wrong-version definition.
+8. No operator runs with an unapproved, expired, revoked, wrong-kind, wrong-version, wrong-hash, or wrong-scope calculation-method definition; sector metrics independently reject an unapproved, expired, wrong-sector, or wrong-version sector definition.
 9. Exact operators match byte-for-byte normalized numeric outputs; tolerance operators pass at the boundary and fail just outside it; seeded operators reproduce and pass distribution checks.
 10. A corrected Fact invalidates dependent current outputs, creates a new trace, and preserves the prior trace.
 11. Idempotent retry returns the same trace; changed input under the same key is rejected.
 12. Output labels remain `computed`; no path writes a valuation result into the Fact store as observed evidence.
 13. Human approvals cannot turn a `FAILED_CLOSED` trace into a successful one.
 14. While E-01 remains Deferred, owned-file/program structural validation proves there are no E-01 implementation refs and no `PLANNED`, `IMPLEMENTING`, or `VERIFIED` delivery state.
+15. Tie-out fixtures reject every unapproved, expired, revoked, wrong-company/period, wrong-version, wrong-hash, wrong-method, or wrong-scope adjustment and prove that approval cannot waive a residual or failed equation.
+16. Predicate fixtures prove C-08 `Open` or `In progress`, copied/stale/mismatched status evidence, or any non-true readiness leaf cannot produce `TRUE`; exact live C-08 `Accepted` plus all current true readiness leaves can produce `TRUE` but still cannot activate E-01 without the matching resolution and approval record.
 
 Fresh command outputs must bind the current code, schemas, definitions, fixtures, traces, approvals, and evidence. An agent statement, example calculation, spreadsheet screenshot, or clean spec review alone does not satisfy E-01.
 
