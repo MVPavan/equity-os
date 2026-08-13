@@ -24,11 +24,12 @@ S01 is a **mixed spec** at the pinned draft snapshot: A-01 and A-09 are active (
 
 ## 3. Scope
 
-S01 requires three versioned records:
+S01 requires four closed records; the boundary, identity decision, and change request are versioned, and the gate is content-addressed:
 
 1. `OperatingBoundary` states the initial intended user, private/internal-use posture, public and paid distribution posture, personalization posture, execution linkage, intended future boundary, unapproved working label, content-bound product-identity decision, exclusions, owner, effective time, and superseded version.
 2. `ProductIdentityDecision` records the names searched, jurisdictions and classes examined, search evidence, conflicts or uncertainties, decision on continued use of the Blueprint working title, the approved product name, decision authority, decision time, and superseded version.
-3. `DistributionBoundaryGate` records the exact proposed mode, current legal and regulatory evidence, mandatory disclosures, reviewer responsibilities, technical distribution controls, decision records, and gate result.
+3. `BoundaryChangeRequest` content-binds an exact current boundary to the proposed external, paid, personalized, or execution-connected mode change used by E-08's activation predicate.
+4. `DistributionBoundaryGate` binds the exact boundary, change request, and activation-predicate evidence to the proposed mode, current legal and regulatory evidence, mandatory disclosures, reviewer responsibilities, technical distribution controls, decision records, and gate result.
 
 The proposed initial posture is private/internal research. It records intent only: until a `PRODUCT_OWNER_DECISION` for the exact boundary ID, version, and digest is satisfied and A-01 legally transitions from `Open` to `Accepted`, **no private/internal or other product operation is authorized by S01**. After that transition, the accepted record supplies only the S01 boundary; every operation remains subject to all other applicable gates. The record must separately address:
 
@@ -68,6 +69,8 @@ The proposed initial posture is private/internal research. It records intent onl
 | `personalization` | same enum | Defaults to `PROHIBITED`. |
 | `execution_linkage` | same enum | Defaults to `PROHIBITED`. |
 | `future_boundary` | structured description | Intent only; never current authorization. |
+| `exclusions` | array of structured exclusions | Explicitly names excluded users, uses, and modes; an entry cannot grant authority. |
+| `owner` | stable human role or identity | Descriptive accountability only; supplies no approval or authorization. |
 | `legal_sufficiency_claimed` | boolean | Must be `false`. |
 | `effective_at`, `supersedes` | UTC timestamp, nullable ID | Preserve version history. |
 | `approval_record_ids` | array | Empty until competent human decisions exist. |
@@ -79,9 +82,22 @@ The closed record contains `decision_id`, `candidate_names`, `search_scope`, `se
 
 For both records, canonical JSON is UTF-8 JSON with sorted keys, no insignificant whitespace, Unicode emitted directly, JSON booleans/null, and arrays retained in declared order. `OperatingBoundary.content_sha256` is SHA-256 of the closed `OperatingBoundary` object with only `content_sha256` and `approval_record_ids` omitted. `ProductIdentityDecision.content_sha256` uses the same rule over its closed object. Omitting approval IDs avoids a digest/approval cycle; each approval record instead binds the applicable record ID, version where present, and recomputed digest. Unknown fields fail validation.
 
-### 5.3 `DistributionBoundaryGate`
+### 5.3 `BoundaryChangeRequest`
 
-The record contains `gate_id`, `boundary_version`, `intended_mode`, `legal_evidence_refs`, `regulatory_evidence_refs`, `required_disclosures`, `reviewer_responsibilities`, `distribution_controls`, `approval_record_ids`, `evaluated_at`, and `result`. `result` is `BLOCKED` unless every applicable evidence and approval gate below is current and satisfied.
+The closed request contains `request_id`, `version`, `boundary_ref`, `public_distribution`, `paid_distribution`, `personalization`, `execution_linkage`, `requested_by`, `requested_at`, `supersedes`, and `content_sha256`. `boundary_ref` is exactly `{boundary_id, boundary_version, boundary_content_sha256}` and must freshly resolve to one current `OperatingBoundary`. Each mode field is a closed object containing `state` (`UNCHANGED` or `PROPOSED`) and an exact nonempty `scope` when proposed. `requested_by` is descriptive and supplies no authority. At least one mode must be `PROPOSED`; a private/internal-only request cannot activate E-08.
+
+`content_sha256` is SHA-256 of canonical JSON for the closed request with only `content_sha256` omitted. Unknown fields fail validation. A boundary mutation, request mutation, stale digest, or mismatched ID/version invalidates the request rather than silently retargeting it.
+
+### 5.4 `DistributionBoundaryGate`
+
+The closed record contains `gate_id`, `boundary_ref`, `boundary_change_request_ref`, `activation_predicate_ref`, `intended_mode`, `legal_evidence_refs`, `regulatory_evidence_refs`, `required_disclosures`, `reviewer_responsibilities`, `distribution_controls`, `approval_record_ids`, `evaluated_at`, `result`, and `content_sha256`.
+
+- `boundary_ref` is the exact `{boundary_id, boundary_version, boundary_content_sha256}` accepted for A-01; it must freshly recompute and its exact `PRODUCT_OWNER_DECISION` approval/resolution binding must remain active.
+- `boundary_change_request_ref` is `{request_id, request_version, content_sha256}` and must resolve to a current request whose `boundary_ref` exactly equals the gate's reference and whose proposed scope contains `intended_mode`.
+- `activation_predicate_ref` is `{predicate_id, predicate_evidence_id, content_sha256}`. It must resolve to current content-hashed evidence for `AP-E08-INTENDED-DISTRIBUTION-MODE` that embeds the same boundary and request references and evaluated `TRUE` for that exact request.
+- `content_sha256` is SHA-256 of canonical JSON for the closed gate with `content_sha256`, `approval_record_ids`, and the derived `result` omitted. Applicable approval records bind the exact gate ID, recomputed digest, intended mode, boundary reference, and request reference.
+
+`result` is derived, never trusted, and is `BLOCKED` unless all three references are present, current, content-valid, and mutually consistent and every applicable evidence and approval gate below is current and satisfied. Excluding it and the approval IDs from the digest avoids a result/approval cycle without excluding any reviewed scope or evidence. Unknown fields fail validation.
 
 ## 6. Invariants and fail-closed behavior
 
@@ -104,18 +120,18 @@ The record contains `gate_id`, `boundary_version`, `intended_mode`, `legal_evide
 | A-01 boundary freeze | Complete versioned `OperatingBoundary` covering all six required dimensions and a recomputed content digest | `PRODUCT_OWNER_DECISION` approval record for the exact boundary ID, version, and digest, bound to an active canonical `SATISFY_APPROVAL` human resolution | A-01 remains unresolved and all product operation remains blocked under S01. |
 | A-09 name decision | Search record with scope, evidence, conflicts, explicit decision, and recomputed content digest | `PRODUCT_OWNER_DECISION` approval record for the exact identity-decision ID and digest, bound to an active canonical `SATISFY_APPROVAL` human resolution; `LEGAL_REVIEW` when legal/trademark clearance is represented | Only the unapproved working label may be shown; it is not represented as cleared or adopted. |
 | E-08 activation | Current, mechanically evaluated activation predicate plus an active canonical `ACTIVATE_DEFERRED` human resolution for E-08 | `PRODUCT_OWNER_DECISION` to activate evaluation; this is not distribution approval | E-08 remains dormant. |
-| E-08 intended-mode review | Current primary legal/regulatory evidence for the exact mode; obligations, disclosures, reviewer responsibilities, and controls | `LEGAL_REVIEW`, `REGULATORY_REVIEW`, and `DISTRIBUTION_APPROVAL`, each as a distinct human resolution | Intended mode remains prohibited. |
+| E-08 intended-mode review | Current content-valid gate, boundary, change-request, and predicate references plus primary legal/regulatory evidence for the exact mode; obligations, disclosures, reviewer responsibilities, and controls | `LEGAL_REVIEW`, `REGULATORY_REVIEW`, and `DISTRIBUTION_APPROVAL`, each as a distinct human resolution bound to the exact gate digest and mode | Intended mode remains prohibited. |
 | Delegated spec approval | Persisted clean fresh-context Sol xhigh review bound to this file and source hashes | `DELEGATED_ARTIFACT_APPROVAL` only | Spec remains draft; no other gate is affected. |
 
 No actor, timestamp, authority evidence, or canonical resolution may be inferred. One approval record satisfies at most one typed requirement. This draft contains no satisfied approval record.
 
 ## 8. Deferred activation guard for E-08
 
-`AP-E08-INTENDED-DISTRIBUTION-MODE` is a typed predicate over a versioned, content-hashed boundary-change request. It evaluates `TRUE` only when at least one of `public_distribution`, `paid_distribution`, `personalization`, or `execution_linkage` is explicitly `PROPOSED`; missing or stale evidence evaluates `UNKNOWN`, not `TRUE`. A true predicate is necessary but insufficient: activation also requires the canonical human `ACTIVATE_DEFERRED` resolution bound to E-08, the exact scope, and current predicate evidence. Until the register legally transitions from `Deferred`, E-08 remains `CONDITIONAL_UNACTIVATED`; no plan, implementation, or release work may treat it as active.
+`AP-E08-INTENDED-DISTRIBUTION-MODE` is a typed predicate over one exact versioned, content-hashed `BoundaryChangeRequest`. Its closed evidence contains `predicate_evidence_id`, `predicate_id` (exactly `AP-E08-INTENDED-DISTRIBUTION-MODE`), `boundary_ref`, `boundary_change_request_ref`, `result`, `evaluated_at`, and `content_sha256`; the digest is SHA-256 of canonical JSON for that object with only `content_sha256` omitted. It evaluates `TRUE` only when the request and boundary freshly recompute, their references match, and at least one of `public_distribution`, `paid_distribution`, `personalization`, or `execution_linkage` is explicitly `PROPOSED`; missing, mismatched, or stale evidence evaluates `UNKNOWN`, not `TRUE`. A true predicate is necessary but insufficient: activation also requires the canonical human `ACTIVATE_DEFERRED` resolution bound to E-08, the exact scope, and current predicate evidence. Until the register legally transitions from `Deferred`, E-08 remains `CONDITIONAL_UNACTIVATED`; no plan, implementation, or release work may treat it as active.
 
 ## 9. Acceptance tests and verification
 
-1. Structural test: all three record types reject absent required fields and unknown enum values.
+1. Structural test: all four record types reject absent required fields, unknown fields, and unknown enum values.
 2. Boundary-completeness fixture: omission of any of the six A-01 dimensions fails.
 3. Sufficiency fixture: `legal_sufficiency_claimed=true` fails.
 4. Pre-A-01 operation fixture: private/internal use marked `PROPOSED` or `APPROVED` still yields `BLOCKED` while A-01 is not `Accepted`, or when the exact boundary approval/resolution binding is missing or stale.
@@ -125,8 +141,9 @@ No actor, timestamp, authority evidence, or canonical resolution may be inferred
 8. Distribution fixture: even after activation, missing legal review, regulatory review, disclosures, reviewer responsibilities, controls, or distribution approval blocks release.
 9. Execution fixture: execution linkage remains blocked unless both E-08 and S04/E-09 gates pass.
 10. Identity-binding fixture: a working label, missing A-09 acceptance, missing approval resolution, wrong decision ID, or changed/superseded decision digest keeps `approved_product_name=null` and A-09 unresolved.
-11. Digest fixture: changing any field in either canonical digest preimage without recomputing the digest fails; changing an approval reference alone does not alter the semantic digest but is separately validated.
-12. Audit fixture: superseding a boundary preserves the prior immutable record.
+11. Digest fixture: changing any field in a canonical digest preimage without recomputing the digest fails; excluded approval references and derived results are separately validated and cannot change reviewed scope or evidence.
+12. Gate-binding fixture: changing the boundary payload under the same ID/version, changing the request payload, substituting either digest, or supplying predicate evidence bound to a different boundary/request makes the request or gate invalid and yields `BLOCKED`/`UNKNOWN`; recomputing a supplied digest cannot preserve an approval bound to the prior content.
+13. Audit fixture: superseding a boundary preserves the prior immutable record.
 
 Verification evidence must include schema-test output, fixture output, content hashes for the decision artifacts, and separate typed human records where required. A fresh Sol xhigh reviewer must verify exact authority coverage and return a clean review before delegated artifact approval can be recorded.
 

@@ -53,7 +53,7 @@ captured.
 |---|---|---|
 | `config_id` | stable identifier | Unique, immutable version. |
 | `spec_id` / `register_id` | enums | Exactly `S24` / `E-04`. |
-| `activation_binding` | content-bound reference object | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-04 activation record. |
+| `activation_binding` | content-bound activation envelope | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-04 activation record. It is attached after the body digest is computed and is outside that digest's preimage. |
 | `covered_entity_ids` | nonempty identifier array | Explicit, approved scope; no wildcard universe. |
 | `source_ids` | nonempty identifier array | Each resolves to rights and retention evidence. |
 | `event_type_versions` | nonempty map | Closed event vocabulary and schema versions. |
@@ -62,15 +62,30 @@ captured.
 | `budgets` | object | Requests, documents, storage, compute, analyst review, and delivery limits. |
 | `destinations` | array | Empty by default; each item fixes destination ID, boundary class, audience, purpose, content schema/version, and independent configuration-approval requirements. |
 | `kill_switch_owner` | human authority reference | Named competent operator, not an agent. |
-| `approval_bindings` | closed typed object | Exact content-bound references defined below for every source, credential, operations gate, ruleset, destination, and distribution boundary in this configuration. Per-alert delivery and promotion requirements bind later to the alert digest. |
-| `config_sha256` | lowercase SHA-256 | Digest defined below; it content-binds the complete configuration. |
+| `approval_bindings` | closed typed configuration envelope | Exact content-bound references defined below for every source, credential, operations gate, ruleset, destination, and distribution boundary in this configuration. It contains only concrete configuration-level requirements instantiated from `S24-G03` through `S24-G05`; per-alert `S24-G06` through `S24-G08` requirements bind later to the alert body digest. This envelope is outside the configuration-body digest's preimage. |
+| `config_body_sha256` | lowercase SHA-256 | Pre-activation body digest defined below. |
 
-`config_sha256` is SHA-256 of canonical JSON of every configuration field
-except `config_sha256`. Canonical JSON is UTF-8 with sorted keys, no
-insignificant whitespace, direct Unicode, JSON booleans/null, and arrays in
-declared order. Every approval requirement scope MUST name `config_id`,
-`config_sha256`, `S24`, and `E-04`; a requirement bound to another digest
-cannot pass.
+`config_body_sha256` is SHA-256 of canonical JSON of every configuration field
+except `activation_binding`, `approval_bindings`, and `config_body_sha256`.
+Canonical JSON is UTF-8 with sorted keys, no insignificant whitespace, direct
+Unicode, JSON booleans/null, and arrays in declared order. The body is frozen
+and hashed before the activation and configuration-approval envelopes are
+attached. Every activation or configuration approval requirement scope MUST
+name `config_id`, `config_body_sha256`, `S24`, and `E-04`; a requirement bound
+to another digest cannot pass. The validator recomputes the body projection
+exactly, validates each envelope independently, and rejects a missing field, an
+extra field in the digest preimage, or any body mutation not accompanied by a
+new digest and new scoped envelopes.
+
+`S24-G01-DELEGATED-ARTIFACT` is independent of every runtime configuration. Its
+scope MUST name `S24`, this repository-relative path, and the SHA-256 of the
+exact spec file bytes reviewed. Its record carries the clean review round,
+reviewer identity/session, source hashes, timestamp, and persisted evidence
+path. It MUST NOT depend on or name a future `config_id`,
+`config_body_sha256`, activation record, or E-04 runtime approval. Any edit to
+the spec bytes requires a new artifact review and record; a later configuration
+change neither supplies nor invalidates the artifact approval for unchanged
+spec bytes.
 
 `approval_bindings` contains: an exact source-ID map to separate
 `DATA_RIGHTS_APPROVAL` and, when applicable, `PROVIDER_AUTHORIZATION`,
@@ -80,10 +95,14 @@ IDs for `BUDGET_APPROVAL`, `CAPACITY_COMMITMENT`, and
 `DOMAIN_EXPERT_ACCEPTANCE`; and an exact destination-ID map to separate
 internal `ANALYST_ACCEPTANCE` and, for every distribution boundary,
 `DISTRIBUTION_APPROVAL`, `LEGAL_REVIEW`, and `REGULATORY_REVIEW` requirement
-IDs. Map key sets MUST equal the configured source and destination sets.
-Applicability is derived from current typed policy evidence before the
-configuration is frozen; `UNKNOWN`, a missing key, or a reference bound to a
-different configuration blocks the affected source or destination. These
+IDs. The destination requirements are instantiated from `S24-G05C` through
+`S24-G05F`; `S24-G06` through `S24-G08` are never configuration bindings. Map
+key sets MUST equal the configured source and destination sets. Applicability
+is derived from current typed policy evidence before the configuration is
+frozen; `UNKNOWN`, a missing key, or a reference bound to a different
+configuration blocks the affected source or destination. Each concrete
+requirement ID appears exactly once, while one gate template may produce
+multiple separately scoped source or destination requirements. These
 configuration approvals authorize only the configured route. They never
 satisfy the later per-alert delivery or promotion requirements.
 
@@ -99,21 +118,21 @@ resolution carry the same predicate ID/digest, exact scope, decision ID, and
 resolution digest. Missing, copied, stale, superseded, revoked, or
 content-mismatched values leave E-04 dormant.
 
-Each referenced approval requirement contains `approval_id`,
+Each referenced operational approval requirement contains `approval_id`,
 `approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
 `evidence_ref_ids`, and `matched_record_id`. Each record contains
 `approval_record_id`, `approval_type`, `authority`, `scope`, `decision`,
 `actor`, `timestamp`, `evidence_ref_ids`, `authority_source`, `human_review_id`,
-`resolution_decision_id`, and `resolution_content_sha256`. A non-delegated
+`resolution_decision_id`, and `resolution_content_sha256`. Every operational
 record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
 timestamp, evidence, canonical decision ID, and digest from one active immutable
 resolution. That resolution digest is SHA-256 of canonical JSON of the complete
 resolution object except `content_sha256`; its `entry_authority_sha256` is the
 same digest over the referenced human-review entry excluding `state`,
-`resolution_decision_ids`, and `content_sha256`. Only
-`DELEGATED_ARTIFACT_APPROVAL` may use `DELEGATED_AUTOMATED`, with null human
-resolution fields. Any absent field or mismatch leaves the requirement
-`UNRESOLVED`; only `SATISFIED` passes.
+`resolution_decision_ids`, and `content_sha256`. The separate `S24-G01`
+artifact record uses `DELEGATED_AUTOMATED` with null human-resolution fields.
+Any absent field or mismatch leaves the requirement `UNRESOLVED`; only
+`SATISFIED` passes.
 
 ### `CapturedEvent`
 
@@ -128,18 +147,36 @@ append and supersede; they never overwrite the prior occurrence.
 An alert contains the event ID, materiality rule and version, matched evidence,
 epistemic class, confidence, a nonempty `affected_targets` array, materiality
 (`MATERIAL` or `IMMATERIAL`), observable falsifier, knowledge cutoff, routing
-class, nullable `proposed_thesis_diff_id`, review state, and suppression or
-supersession links, plus `alert_sha256`. Every affected target contains exactly one `target_type`
-from `FACT`, `ASSUMPTION`, `CATALYST`, `PROMISE`, `FALSIFIER`, and
+class, nullable `proposed_thesis_diff_id`, derived review state, and suppression
+or supersession links, plus `alert_body_sha256`. Every affected target contains
+exactly one `target_type` from `FACT`, `ASSUMPTION`, `CATALYST`, `PROMISE`, `FALSIFIER`, and
 `THESIS_BREAKER`, its stable target ID, and the evidence-backed changed value or
 state. Allowed review states are `PENDING`, `APPROVED_INTERNAL`, `REJECTED`,
 `SUPERSEDED`, and `BLOCKED`. Detection does not equal approval.
 
-`alert_sha256` is SHA-256 of canonical JSON of every alert field except itself.
-Every per-alert `S24-G06`, `S24-G07`, or `S24-G08` requirement scope binds the
-exact alert ID and digest plus `config_id` and `config_sha256`. Those
-requirements are created only after the candidate exists and cannot be copied
-from a configuration-level destination approval.
+`alert_body_sha256` is SHA-256 of canonical JSON of every alert field except
+`review_state` and `alert_body_sha256`. `review_state` is a projection derived
+only from the immutable candidate body, active per-alert approval envelope, and
+supersession state; it is never an authority input and cannot change the body
+digest. Every per-alert `S24-G06`, `S24-G07`, or `S24-G08` requirement scope
+binds the exact alert ID and body digest plus `config_id` and
+`config_body_sha256`. Those requirements form a separate per-alert approval
+envelope created only after the candidate exists. They are not stored in
+`approval_bindings` and cannot be copied from a configuration-level destination
+approval.
+
+For each alert, the per-alert envelope contains one concrete `S24-G06`
+requirement per proposed internal delivery, one concrete requirement for each
+of `S24-G07A` through `S24-G07C` per proposed distribution-boundary delivery,
+and one `S24-G08` only when a material alert proposes a thesis diff. A gate
+template may therefore produce multiple destination-scoped requirement IDs;
+each concrete ID and matched record remains one-to-one.
+
+Every `S24-G06` and `S24-G07` scope also binds the exact destination, audience,
+purpose, and delivered-content digest. `S24-G08` additionally binds the non-null
+`proposed_thesis_diff_id`, promotion-transaction ID, and exact thesis-diff
+content digest. Changed alert, delivered, or thesis-diff bytes require a new
+scoped requirement and record.
 
 ### `MonitoringRunManifest`
 
@@ -150,11 +187,15 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 
 ## Invariants and fail-closed behavior
 
-1. Sequencing is fail closed: the activation binding and `config_sha256`
-   validate first; `S24-G01`, `S24-G02`, every applicable `S24-G03`, all
-   `S24-G04`, both `S24-G05`, and each configured-destination approval binding
-   are `SATISFIED` before the corresponding scheduler, source, rule, credential,
-   or route is enabled. A candidate then requires its own content-bound
+1. Sequencing is fail closed: the separately scoped spec-artifact gate controls
+   whether this contract may be implemented but is not a runtime configuration
+   requirement. At runtime, `config_body_sha256` validates before the
+   activation and configuration-approval envelopes;
+   `S24-G02`, every applicable `S24-G03`, all `S24-G04`, `S24-G05A` and
+   `S24-G05B`, and each applicable concrete destination requirement instantiated
+   from `S24-G05C` through `S24-G05F` are `SATISFIED` before the corresponding
+   scheduler, source, rule, credential, or route is enabled. A candidate then
+   requires its own content-bound
    `S24-G06` before internal delivery, all `S24-G07` requirements before crossing
    a distribution boundary, and `S24-G08` before promotion.
 2. Dormant mode has no active scheduler, webhook, queue consumer, credential,
@@ -183,7 +224,7 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 
 | Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
 |---|---|---|---|---|
-| `S24-G01-DELEGATED-ARTIFACT` | Fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
+| `S24-G01-DELEGATED-ARTIFACT` | Exact current spec-file SHA-256, fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
 | `S24-G02-ACTIVATION` | Current TRUE predicate digest, evidence, E-04 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-04 `ACTIVATE_DEFERRED` scope | Monitoring remains dormant. |
 | `S24-G03A-DATA-RIGHTS` | Per-source permitted use and retention | `DATA_RIGHTS_APPROVAL` | Competent data-rights authority | Source is disabled. |
 | `S24-G03B-PROVIDER` | Provider authorization is required for the exact source/use; included when the policy predicate is `TRUE` | `PROVIDER_AUTHORIZATION` | Competent provider authority | Source is disabled. |
@@ -194,18 +235,27 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 | `S24-G04C-OWNER` | Escalation path and named kill-switch/recovery owner | `NAMED_OWNER_COMMITMENT` | Competent named operator | Background execution remains disabled. |
 | `S24-G05A-RULESET-ANALYST` | Event vocabulary, materiality fixtures, false-positive results, and covered entities | `ANALYST_ACCEPTANCE` | Competent analyst | Detection/routing remains disabled. |
 | `S24-G05B-RULESET-DOMAIN` | Domain validity of event types, changed-target mappings, and materiality rules | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | Detection/routing remains disabled. |
+| `S24-G05C-INTERNAL-ROUTE-CONFIG` | Per-destination internal route, audience, purpose, and content schema/version | `ANALYST_ACCEPTANCE` | Competent analyst | Internal route remains disabled. |
+| `S24-G05D-DISTRIBUTION-ROUTE-CONFIG` | Per-destination distribution boundary, audience, purpose, and content schema/version | `DISTRIBUTION_APPROVAL` | Competent distribution authority | Distribution route remains disabled. |
+| `S24-G05E-DISTRIBUTION-LEGAL-CONFIG` | Legal decision for the configured distribution route and audience | `LEGAL_REVIEW` | Competent legal authority | Distribution route remains disabled. |
+| `S24-G05F-DISTRIBUTION-REGULATORY-CONFIG` | Regulatory decision for the configured distribution route and audience | `REGULATORY_REVIEW` | Competent regulatory authority | Distribution route remains disabled. |
 | `S24-G06-INTERNAL-ALERT` | Exact alert, evidence, recipient/purpose, and freshness | `ANALYST_ACCEPTANCE` | Competent analyst | Candidate is not delivered. |
 | `S24-G07A-DISTRIBUTION` | Exact content/version, audience, and purpose | `DISTRIBUTION_APPROVAL` | Competent distribution authority | External or personalized delivery is prohibited. |
 | `S24-G07B-DISTRIBUTION-LEGAL` | Legal decision for exact content/version and audience | `LEGAL_REVIEW` | Competent legal authority | External or personalized delivery is prohibited. |
 | `S24-G07C-DISTRIBUTION-REGULATORY` | Regulatory decision for exact content/version and audience | `REGULATORY_REVIEW` | Competent regulatory authority | External or personalized delivery is prohibited. |
 | `S24-G08-PROMOTION` | Approved thesis diff and reviewed supporting claims | `MEMORY_PROMOTION` | Competent memory-promotion authority | Canonical thesis is unchanged. |
 
-One approval record satisfies one requirement only. Every applicable gate ID
-above appears exactly once in `approval_bindings`; an applicability predicate
-that is `UNKNOWN` blocks the source or destination. Delegated artifact approval
-does not satisfy activation, rights, legal, provider, credential, operations,
-capacity, analyst, domain, regulatory, distribution, production, or promotion
-gates.
+`S24-G01` is not a runtime binding, `S24-G02` is represented only by
+`activation_binding`, and `S24-G06` through `S24-G08` are instantiated in the
+separate per-alert envelope. None may appear in `approval_bindings`. One
+approval record satisfies one concrete requirement only. Every applicable
+concrete requirement instantiated from `S24-G03` through `S24-G05` appears
+exactly once in `approval_bindings`; a template may appear many times through
+distinct per-source or per-destination requirement IDs. An applicability
+predicate that is `UNKNOWN` blocks the source or destination. Delegated
+artifact approval does not satisfy activation, rights, legal, provider,
+credential, operations, capacity, analyst, domain, regulatory, distribution,
+production, or promotion gates.
 
 ## Acceptance tests and verification
 
@@ -214,34 +264,51 @@ Before activation:
 1. Structural tests prove all schedules, webhooks, consumers, credentials,
    destinations, and provider routes are absent or disabled by default.
 2. Missing, false, unknown, expired, stale, or mismatched activation evidence;
-   changed predicate preimages; unresolved metrics; mismatched configuration or
-   resolution digests; superseded/revoked resolutions; reused approval records;
+   changed predicate preimages; unresolved metrics; mismatched configuration-body
+   or resolution digests; superseded/revoked resolutions; reused approval records;
    and incomplete approval-binding maps are rejected before any external or
    background operation.
+3. Negative binding fixtures mutate a configuration-body field without
+   replacing `config_body_sha256`, bind an activation or configuration approval
+   to a different body digest, and include either envelope in the canonical body
+   preimage; every fixture is rejected. Changing only an envelope leaves the
+   body digest stable but still fails unless the replacement envelope is
+   current, complete, and matches the frozen body scope exactly.
+4. Negative scope fixtures omit or alter the reviewed spec-file SHA-256, bind
+   `S24-G01` to a runtime configuration, place `S24-G01`, `S24-G02`, or any
+   `S24-G06` through `S24-G08` requirement in `approval_bindings`, reuse a
+   configuration approval for an alert, or collapse multiple per-source or
+   per-destination requirements into one template ID; every fixture is rejected
+   without affecting E-04's dormant state.
+5. Negative alert-binding fixtures include derived `review_state` in the alert
+   body preimage, change alert bytes after a per-alert approval, reuse one
+   alert's approval for another alert, or change delivered or thesis-diff bytes
+   without new approvals; every fixture is rejected.
 
 After activation:
 
-3. Authorized fixtures normalize covered events with exact source hash/location
+6. Authorized fixtures normalize covered events with exact source hash/location
    and distinct valid, knowledge, first-seen, and capture timestamps. Fixtures
    exercise all six affected-target types; an empty, unknown, or unresolvable
    affected target is `BLOCKED`.
-4. Duplicate, retry, correction, restatement, out-of-order, late, and replayed
+7. Duplicate, retry, correction, restatement, out-of-order, late, and replayed
    fixtures produce deterministic idempotent and revision-aware results.
-5. Unknown entities/types, ambiguous identity, rights denial, clock anomalies,
+8. Unknown entities/types, ambiguous identity, rights denial, clock anomalies,
    budget exhaustion, poison items, and unavailable destinations fail closed
    with visible `PARTIAL` or `BLOCKED` state.
-6. No candidate reaches an internal destination without `S24-G06`; no item
+9. No candidate reaches an internal destination without `S24-G06`; no item
    crosses the distribution boundary without all of `S24-G07A` through
    `S24-G07C`; neither action promotes a thesis without `S24-G08`. An
    `IMMATERIAL` fixture cannot carry a thesis diff or reach `S24-G08`, and the
    canonical thesis remains byte-identical.
-7. Kill-switch and recovery tests stop new work, preserve immutable evidence,
+10. Kill-switch and recovery tests stop new work, preserve immutable evidence,
    resume idempotently, and do not relabel replayed evidence as newly known.
-8. Coverage reports reconcile every configured entity/source/event type and do
+11. Coverage reports reconcile every configured entity/source/event type and do
    not call partial coverage complete. Binding key sets equal the configured
    source/destination sets, requirement and record IDs are one-to-one, and every
-   configuration scope matches the frozen `config_sha256`; per-alert scopes also
-   match the exact `alert_sha256` and cannot reuse configuration approvals.
+   configuration scope matches the frozen `config_body_sha256`; per-alert
+   scopes also match the exact `alert_body_sha256` and cannot reuse configuration
+   approvals.
 
 Verification evidence records exact commands, exit statuses, hashes, fixture
 IDs, validator outputs, timestamps, and reviewer identity. Conversation text

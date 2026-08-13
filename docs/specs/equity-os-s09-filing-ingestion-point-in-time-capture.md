@@ -118,42 +118,79 @@ to `NOT_REQUIRED`.
 | `original_content_sha256`, `byte_length`, `media_type` | File-byte identity; mismatch creates a new occurrence and a visible conflict. |
 | `source_published_at`, `retrieved_at`, `first_seen_at` | Separately defined timestamps; `first_seen_at` supplies knowledge-time evidence and is never backdated. |
 | `valid_time` | Applicable period/event interval when determinable; unknown remains explicit. |
-| `parser_name`, `parser_version`, `parse_attempt_id` | Exact parser identity per attempt; reparsing never overwrites the original. |
-| `extraction_warnings` | Structured warning codes and affected locations. |
 | `supersedes_document_id`, `revision_reason` | Optional explicit relationship; byte changes never silently replace prior bytes. |
 | `acquisition_authorization_id`, `capture_run_id` | Exact current `AcquisitionAuthorization` snapshot and acquisition run provenance. |
 
 Original bytes are immutable. Parsed renditions are derived, versioned
 objects and must retain byte offsets, pages, tables, timestamps, or equivalent
-exact locations back to the original.
+exact locations back to the original. `SourceDocument` stores neither parser
+identity nor a singular/current parse-attempt pointer; append-only
+`ParseAttempt` records link back to the immutable document.
+
+### `CaptureEvidenceValue`
+
+The `CaptureEvent` evidence fields `source_occurrence_ref`,
+`payload_or_document_sha256`, `source_published_at`, `source_valid_time`,
+`retrieved_at`, and `first_seen_at` are tagged values containing `state`,
+nullable `value`, `reason_code`, and evidence refs. `state` is closed to
+`PRESENT`, `UNAVAILABLE_DUE_TO_FAILURE`, `SOURCE_NOT_PROVIDED`, or
+`NOT_APPLICABLE`. `PRESENT` requires a non-null typed value and every other
+state requires a null value plus a typed reason. `UNAVAILABLE_DUE_TO_FAILURE`
+is legal only for a `FAILED` event whose recorded failure stage prevented the
+value from being observed. `SOURCE_NOT_PROVIDED` requires evidence that the
+source was successfully reached but omitted that field. `NOT_APPLICABLE` is
+legal only for source-published or valid time when the capture kind has no such
+semantic. Unknown or missing state is invalid; absence never implies any
+non-present state.
 
 ### `CaptureEvent`
 
 Required fields are `capture_event_id`, `event_version`, nullable
-`supersedes_event_version`, `job_id`, source/provider, capture kind
+`supersedes_event_version`, `capture_attempt_id`, `job_id`, exact target
+source/provider/locator, `attempted_at`, capture kind
 (`MEMBERSHIP_SECURITY_CHANGE`, `PRICE`, `ANNOUNCEMENT`, `CORPORATE_ACTION`, or
 `SHAREHOLDING_CHANGE`), source-subject identity and locator,
 `identity_resolution_state` (`RESOLVED`, `UNRESOLVED`, or `NOT_APPLICABLE`),
-nullable internal entity/security refs, nullable mapping version, source
-occurrence, payload/document hash, source published/valid time, retrieved time,
-first-seen time, outcome (`CAPTURED`, `NO_EVENT`, or `FAILED`), failure
-code/detail, attempt number, retry relation, `acquisition_authorization_id`,
-and evidence refs. `RESOLVED` requires every applicable internal ref plus
+nullable internal entity/security refs, nullable mapping version, one tagged
+`CaptureEvidenceValue` for every field above, outcome (`CAPTURED`, `NO_EVENT`,
+or `FAILED`), nullable failure stage/code/detail, attempt number, retry
+relation, `acquisition_authorization_id`, and evidence refs. `RESOLVED`
+requires every applicable internal ref plus
 mapping version; `UNRESOLVED` requires null internal refs, the unmodified
 source-native name/identifiers, exact source locator, and a reason;
 `NOT_APPLICABLE` requires a typed rationale and is the only state permitting a
 null source-subject identity. A later mapping appends a monotonic event version
 with the same point-in-time payload and explicit supersession; it does not
-rewrite capture time or raw identity. A `NO_EVENT` record is allowed only when
-the approved source was successfully checked; a failed fetch is `FAILED`,
-never `NO_EVENT`.
+rewrite capture time or raw identity.
+
+`CAPTURED` requires `PRESENT` source occurrence, payload/document hash,
+retrieved time, and first-seen time. `NO_EVENT` requires a `PRESENT` successful-
+check occurrence, response/query-result hash, retrieved time, and first-seen
+time; a failed fetch is `FAILED`, never `NO_EVENT`. `FAILED` requires a
+failure stage, code, and detail and preserves every value observed before the
+failure as `PRESENT`; any value that could not be observed is explicitly
+`UNAVAILABLE_DUE_TO_FAILURE`. Thus even a pre-response failure is persisted by
+its stable attempt identity, exact target, attempted time, authorization, and
+retry relation without fabricating source occurrence, hash, or source time.
 
 ### `ParseAttempt`
 
-Each parse/re-extraction attempt is append-only and records document hash,
-parser/model and version, configuration hash, timestamps, outputs, warnings,
-confidence where applicable, and failure state. A parser upgrade creates a
-new attempt; it cannot rewrite the source occurrence or erase prior warnings.
+Each parse/re-extraction attempt is append-only and records stable
+`parse_attempt_id`, `document_id`, matching document hash, monotonic
+`attempt_sequence` within the document, nullable
+`predecessor_parse_attempt_id`, nullable `retry_of_parse_attempt_id`, parse
+purpose/schema version, parser/model and version, configuration hash, start and
+completion timestamps, output refs and hashes, warnings, confidence where
+applicable, and status (`SUCCEEDED`, `PARTIAL`, or `FAILED`). Sequence one has
+no predecessor; every later attempt names the immediately preceding attempt,
+and a retry must name an earlier attempt for the same document. Unknown IDs,
+cross-document links, gaps, forks, or cycles invalidate the history.
+
+A parser upgrade or retry appends a new attempt and never mutates the document,
+prior attempt, output, or warning. Every parsed rendition and consumer stores
+the exact `parse_attempt_id` it uses; there is no implicit current attempt.
+Unknown, document/hash-mismatched, or non-`SUCCEEDED` attempts fail closed for
+consumers that require a complete parse.
 
 ### Dormant `OfficialAudioArtifact`
 
@@ -175,8 +212,8 @@ evidence and never replace the original audio.
   fixtures, including `DOCUMENT_AS_INSTRUCTION` behavior.
 - S11 consumes immutable document IDs/hashes and first-seen knowledge time for
   run manifests and cutoff enforcement.
-- S12 consumes source occurrences and parse attempts but owns fact identity,
-  reconciliation, and schema evolution.
+- S12 consumes source occurrences and exact parse-attempt IDs but owns fact
+  identity, reconciliation, and schema evolution.
 - S17 later supplies stable internal company/security identities and corporate-
   action semantics. B-09 captures source-native identity before S17 when
   necessary and appends a mapped event/version later; it never guesses or
@@ -186,14 +223,17 @@ evidence and never replace the original audio.
 
 1. Original bytes are immutable and content-addressed. Same URL plus changed
    bytes creates a new document occurrence; hash mismatch never overwrites.
-2. URLs, timestamps, hashes, parser versions, extraction warnings, and
-   first-seen times are mandatory for accepted C-02 evidence. Missing values
-   fail closed or remain explicitly unresolved.
+2. URLs, timestamps, hashes, and first-seen times are mandatory on accepted
+   source-document evidence. Parser/model versions, attempt identity, output
+   refs, and extraction warnings are mandatory on each parse-attempt record;
+   missing or implicit parse identity blocks use of the derived output.
 3. `first_seen_at` is acquisition evidence, not source publication time. It
    cannot be backdated to simulate point-in-time history.
 4. Unknown, unavailable, not applicable, failed, and no-event states are
-   distinct. Capture failures are persisted and visible to retry/coverage
-   metrics.
+   distinct. Every nullable capture-evidence value has an outcome-compatible
+   typed state and reason. Capture failures are persisted even when failure
+   prevented observing source occurrence, payload, or source time, and remain
+   visible to retry/coverage metrics.
 5. Only sources and uses approved under S02/A-05 may be automated, cached,
    retained, or transformed. Missing or expired rights evidence, or missing,
    `UNKNOWN`, stale, or unsatisfied provider-authorization applicability,
@@ -205,8 +245,9 @@ evidence and never replace the original audio.
    retain raw source identity, remain `UNRESOLVED`, and enter reconciliation;
    the system does not guess or block B-09 capture solely because S17 identity
    is not yet available.
-8. Point-in-time jobs are idempotent by source occurrence/payload hash while
-   preserving distinct attempts and failures.
+8. Point-in-time jobs are idempotent first by stable capture-attempt identity;
+   successful checks additionally deduplicate by source occurrence/payload
+   hash, while distinct retries and failures remain append-only.
 9. A-06 must measure filing channel and taxonomy/version changes plus mapping
    stability and reconciliation effort, not only nominal field coverage.
 10. C-14 remains dormant until every activation condition below passes. A
@@ -323,9 +364,17 @@ a Sol review supplies none of those authorities.
   taxonomy/version changes are distinguishable.
 - Same URL/same bytes deduplicates safely; same URL/changed bytes appends a new
   immutable occurrence; hash mismatch and missing original bytes fail.
-- Parser upgrades append attempts and preserve prior outputs/warnings.
-- Every capture kind persists hash and first-seen time; failed fetches remain
-  failures and are never converted to no-event.
+- A document remains immutable while parser retries/upgrades append stable,
+  monotonic attempt IDs; prior outputs/warnings remain addressable, every
+  derived rendition binds one exact successful attempt, and implicit-current,
+  unknown, cross-document, failed, forked, or cyclic references reject.
+- Every successfully captured kind persists hash and first-seen time; a
+  no-event outcome carries successful-check occurrence/hash evidence; neither
+  may use unavailable evidence states.
+- A fetch that fails before any response still persists a `FAILED` event with
+  stable attempt identity, target, attempted time, failure stage/code/detail,
+  and explicitly unavailable occurrence/hash/source-time values. Partial
+  failures preserve observed values and reject fabricated or untagged nulls.
 - A B-09 event captured before S17 retains exact raw source identity with
   `identity_resolution_state=UNRESOLVED` and null internal refs; later mapping
   appends a resolved version, while downstream identity-dependent use rejects
