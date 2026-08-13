@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Generate the canonical initial Equity-OS blueprint component ledger."""
+"""Generate bootstrap-only Equity-OS blueprint ledger candidate artifacts."""
 
 from __future__ import annotations
 
+import argparse
+import datetime
 import hashlib
 import json
+import os
 import re
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -16,8 +20,10 @@ DISPOSITION_PATH = "docs/blueprint/funda-third-order-review-disposition-report.m
 GOAL_PATH = "docs/goals/equity-os-blueprint-completion.md"
 LEDGER_PATH = ROOT / "docs/goals/equity-os-blueprint-component-ledger.jsonl"
 HUMAN_PATH = ROOT / "docs/goals/equity-os-blueprint-human-review-needed.md"
-SNAPSHOT_AT = "2026-08-13T02:49:11Z"
-ACTIVATION_AT = "2026-08-13T01:06:47Z"
+CANONICAL_OUTPUT_PATHS = frozenset((LEDGER_PATH.resolve(), HUMAN_PATH.resolve()))
+# This records the pinned authority activation cutoff, not this generator run.
+ACTIVATION_SOURCE_CUTOFF_AT = "2026-08-13T01:06:47Z"
+INVOCATION_AT: str | None = None
 
 AUTHORITY_RANK = {REGISTER_PATH: 2, DISPOSITION_PATH: 3}
 EXPECTED_HASH = {
@@ -66,35 +72,39 @@ PHASE_GATE_RELATED = {
     "1": [
         ["A-10", "C-04"], ["A-10", "C-04"], ["B-05", "C-03"], ["C-08"],
         ["C-15"], ["C-08", "C-16"], ["C-10"], ["B-04", "C-12"],
-        ["C-01", "C-18"], ["A-07", "A-13"], ["D-02", "E-03", "E-05", "E-09", "C-11"],
+        ["C-01", "C-18"], ["A-07", "A-13"], ["D-02", "D-05", "E-03", "E-05", "E-09"],
     ],
     "2": [
-        ["D-02", "D-05"], ["D-02"], ["D-03"], ["D-03"], ["D-05"], ["D-02", "D-05"],
+        ["D-02", "D-05"], ["D-02"], ["D-03"], ["D-01", "D-03"], ["D-05"], ["D-02", "D-05"],
     ],
 }
 
-DISPOSITION_SPEC = {
-    "G-1": "S06", "G-2": "S18", "G-3": "S18", "G-4": "S05", "G-5": "S06",
-    "M-1": "S05", "M-2": "S12", "M-3": "S13", "M-4": "S11", "M-5": "S14",
-    "M-6": "S07", "M-7": "S17", "M-8": "S08", "M-9": "S07",
-    "T-1": "S08", "T-2": "S08", "T-3": "S10", "T-4": "S01",
-    "R-1": "S20", "R-2": "S09", "R-3": "S02", "R-4": "S06", "R-5": "S10",
-    "6.1": "S18", "6.2": "S06", "6.3": "S17", "6.4": "S20", "6.5": "S25",
-    "6.6": "S07", "6.7": "S03", "6.8": "S05", "6.9": "S11",
+DISPOSITION_SPECS = {
+    "G-1": ["S06", "S11", "S16"], "G-2": ["S18"], "G-3": ["S18"],
+    "G-4": ["S05", "S18"], "G-5": ["S06", "S13"], "M-1": ["S05"],
+    "M-2": ["S12"], "M-3": ["S13"], "M-4": ["S11", "S25"],
+    "M-5": ["S14", "S15"], "M-6": ["S07", "S15"], "M-7": ["S17"],
+    "M-8": ["S08", "S18"], "M-9": ["S07", "S09"], "T-1": ["S08"],
+    "T-2": ["S08"], "T-3": ["S10"], "T-4": ["S01", "S02", "S04"],
+    "R-1": ["S19", "S20"], "R-2": ["S09"], "R-3": ["S02"],
+    "R-4": ["S06"], "R-5": ["S10", "S14"], "6.1": ["S18"],
+    "6.2": ["S06", "S13"], "6.3": ["S17"], "6.4": ["S19", "S20"],
+    "6.5": ["S25"], "6.6": ["S07", "S15"], "6.7": ["S03", "S04"],
+    "6.8": ["S05"], "6.9": ["S11", "S16"],
 }
 
 DISPOSITION_REGISTERS = {
-    "G-1": ["A-04", "C-09", "C-16"], "G-2": ["B-04"], "G-3": ["B-04", "C-12"],
-    "G-4": ["A-02", "A-03", "B-02"], "G-5": ["A-10", "C-04"],
+    "G-1": ["A-04", "C-09", "C-08", "C-16"], "G-2": ["B-04"], "G-3": ["B-04", "C-12"],
+    "G-4": ["A-02", "A-03", "B-02", "B-04", "B-13"], "G-5": ["A-10", "C-04"],
     "M-1": ["A-11"], "M-2": ["B-05", "B-11", "C-03"], "M-3": ["B-06", "B-12"],
     "M-4": ["C-15", "E-10"], "M-5": ["B-01", "B-14", "C-10"],
-    "M-6": ["A-08", "B-13"], "M-7": ["C-17"], "M-8": ["A-13", "C-18"],
+    "M-6": ["A-08", "B-13", "C-10"], "M-7": ["C-17"], "M-8": ["A-13", "C-18"],
     "M-9": ["A-08", "B-08"], "T-1": ["A-12"], "T-2": ["A-13"],
     "T-3": ["B-03"], "T-4": ["A-01", "E-08", "E-09"], "R-1": ["D-02"],
     "R-2": ["A-06"], "R-3": ["A-05"], "R-4": ["A-04"], "R-5": ["B-03", "B-01"],
     "6.1": ["B-04"], "6.2": ["A-10", "C-04"], "6.3": ["C-17"],
-    "6.4": ["D-02", "D-05"], "6.5": ["E-10"], "6.6": ["B-13"],
-    "6.7": ["E-06", "E-07", "E-09"], "6.8": ["A-02", "B-02"], "6.9": ["C-16"],
+    "6.4": ["D-02", "D-05"], "6.5": ["E-10"], "6.6": ["B-13", "C-10"],
+    "6.7": ["E-06", "E-07", "E-09"], "6.8": ["A-02", "B-02"], "6.9": ["C-16", "C-08"],
 }
 
 REGISTER_APPROVALS = {
@@ -103,6 +113,7 @@ REGISTER_APPROVALS = {
     "A-03": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "A-04": [("PRODUCT_OWNER_DECISION", "Product owner"), ("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "A-05": [("DATA_RIGHTS_APPROVAL", "Data-rights authority")],
+    "A-07": [("BUDGET_APPROVAL", "Budget owner")],
     "A-08": [("NAMED_OWNER_COMMITMENT", "Golden-set owner")],
     "A-09": [("LEGAL_REVIEW", "Competent trademark or legal reviewer")],
     "A-10": [("DOMAIN_EXPERT_ACCEPTANCE", "Equity-research domain expert")],
@@ -112,15 +123,23 @@ REGISTER_APPROVALS = {
     "B-02": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "B-03": [("DOMAIN_EXPERT_ACCEPTANCE", "Data-domain authority")],
     "B-07": [("DOMAIN_EXPERT_ACCEPTANCE", "Calculation-domain authority")],
+    "B-14": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "B-12": [("DOMAIN_EXPERT_ACCEPTANCE", "Vocabulary authority")],
     "C-01": [("CAPACITY_COMMITMENT", "Capacity owner")],
     "C-10": [("MEMORY_PROMOTION", "Responsible analyst")],
     "C-12": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "C-13": [("DATA_RIGHTS_APPROVAL", "Data-rights authority"), ("PRODUCT_OWNER_DECISION", "Product owner")],
+    "C-14": [("DATA_RIGHTS_APPROVAL", "Data-rights authority")],
+    "C-16": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
     "C-17": [("DOMAIN_EXPERT_ACCEPTANCE", "Entity-data authority")],
     "C-18": [("CAPACITY_COMMITMENT", "Capacity owner")],
     "D-04": [("LEGAL_REVIEW", "Competent dependency-license reviewer")],
     "D-05": [("PRODUCT_OWNER_DECISION", "Product owner for memory adoption")],
+    "E-01": [("BUDGET_APPROVAL", "Budget owner"), ("CAPACITY_COMMITMENT", "Capacity owner"), ("NAMED_OWNER_COMMITMENT", "Named operating owner")],
+    "E-02": [("CAPACITY_COMMITMENT", "Capacity owner")],
+    "E-03": [("PRODUCT_OWNER_DECISION", "Product owner for post-evaluation retention"), ("BUDGET_APPROVAL", "Budget owner")],
+    "E-04": [("DATA_RIGHTS_APPROVAL", "Data-rights authority"), ("BUDGET_APPROVAL", "Budget owner"), ("NAMED_OWNER_COMMITMENT", "Named operating owner")],
+    "E-05": [("BUDGET_APPROVAL", "Budget owner")],
     "E-06": [("LEGAL_REVIEW", "Competent dependency-license reviewer"), ("DATA_RIGHTS_APPROVAL", "Data-rights authority")],
     "E-07": [("LEGAL_REVIEW", "Competent dependency-license reviewer")],
     "E-08": [("LEGAL_REVIEW", "Competent legal reviewer"), ("REGULATORY_REVIEW", "Competent regulatory reviewer"), ("DISTRIBUTION_APPROVAL", "Distribution owner")],
@@ -135,12 +154,46 @@ HUMAN_EVIDENCE = {
     "CAPACITY_COMMITMENT": "CAPACITY", "NAMED_OWNER_COMMITMENT": "NAMED_OWNER",
     "PRODUCTION_APPROVAL": "PRODUCTION", "DISTRIBUTION_APPROVAL": "DISTRIBUTION",
     "SECURITY_EXCEPTION": "SECURITY", "EXTERNAL_COORDINATION_APPROVAL": "EXTERNAL_COORDINATION",
+    "PRODUCT_OWNER_DECISION": "ARTIFACT", "EXECUTION_TRUST_DOMAIN_APPROVAL": "ARTIFACT",
+}
+
+PHASE_GATE_APPROVALS = {
+    "PG-05-01": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+    "PG-05-02": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+    "PG-05-05": [("DOMAIN_EXPERT_ACCEPTANCE", "Data-domain authority")],
+    "PG-1-06": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+    "PG-1-09": [("CAPACITY_COMMITMENT", "Capacity owner")],
+    "PG-2-05": [("PRODUCT_OWNER_DECISION", "Product owner")],
+}
+
+DISPOSITION_APPROVALS = {
+    "G-1": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+    "M-1": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+    "M-5": [("ANALYST_ACCEPTANCE", "Responsible analyst")],
+}
+
+COMMAND_COMPONENTS = {
+    "REG-A-10", "REG-B-01", "REG-B-11", "REG-B-14", "REG-C-08", "REG-C-15", "REG-C-16", "REG-C-17", "REG-E-01", "REG-E-10",
+    "PG-05-08", "PG-1-04", "PG-1-05", "PG-1-06", "PG-2-03", "PG-2-04",
+    "DISP-G-1", "DISP-M-4", "DISP-M-5", "DISP-M-6", "DISP-M-7", "DISP-M-9", "DISP-6-6", "DISP-6-9", "SEQ-09",
 }
 
 
 def canonical_sha256(value: object) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def current_utc_timestamp() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
+
+
+def invocation_timestamp() -> str:
+    if INVOCATION_AT is None:
+        raise RuntimeError("generator invocation timestamp is not initialized")
+    return INVOCATION_AT
 
 
 def file_sha256(path: str) -> str:
@@ -163,6 +216,37 @@ def spec(spec_id: str | None) -> dict | None:
     return {"spec_id": spec_id, "title": title, "path": path}
 
 
+def assert_disposition_crosswalks(rows: list[dict]) -> None:
+    """Verify disposition spec ownership separately from semantic register links."""
+    source_crosswalk: dict[str, set[str]] = defaultdict(set)
+    for spec_id, (_, _, _, disposition_refs) in SPEC_CONTRACT.items():
+        for disposition_id in disposition_refs:
+            source_crosswalk[disposition_id].add(spec_id)
+    assert {item_id: set(spec_ids) for item_id, spec_ids in DISPOSITION_SPECS.items()} == source_crosswalk
+    assert set(DISPOSITION_REGISTERS) == set(DISPOSITION_SPECS)
+    assert DISPOSITION_REGISTERS["G-1"] == ["A-04", "C-09", "C-08", "C-16"]
+    assert DISPOSITION_REGISTERS["6.4"] == ["D-02", "D-05"]
+    assert {
+        item_id: DISPOSITION_REGISTERS[item_id]
+        for item_id in ("G-4", "M-9", "T-4", "R-1", "6.8")
+    } == {
+        "G-4": ["A-02", "A-03", "B-02", "B-04", "B-13"],
+        "M-9": ["A-08", "B-08"],
+        "T-4": ["A-01", "E-08", "E-09"],
+        "R-1": ["D-02"],
+        "6.8": ["A-02", "B-02"],
+    }
+
+    by_disposition = {
+        row["disposition_refs"][0]: row for row in rows
+        if row["kind"] == "disposition_item"
+    }
+    assert set(by_disposition) == set(DISPOSITION_SPECS)
+    for item_id, row in by_disposition.items():
+        assert row["primary_spec"] == spec(DISPOSITION_SPECS[item_id][0])
+        assert row["scope_derivation"]["related_register_ids"] == DISPOSITION_REGISTERS[item_id]
+
+
 def pending_review(review_type: str) -> dict:
     return {
         "review_type": review_type, "status": "PENDING", "reviewer": None,
@@ -182,7 +266,7 @@ def evidence_ref(component_id: str, suffix: str, path: str, scope: str, *, start
     return {
         "evidence_ref_id": ref_id, "path": path, "scope": scope,
         "digest_mode": digest_mode, "start_line": start, "end_line": end,
-        "content_sha256": digest, "captured_at": SNAPSHOT_AT,
+        "content_sha256": digest, "captured_at": invocation_timestamp(),
     }
 
 
@@ -201,6 +285,27 @@ def metric(metric_id: str, value_type: str, pointer: str) -> dict:
         "source_kind": "EVIDENCE_JSON", "evidence_ref_id": None,
         "json_pointer": pointer, "register_ids": [], "valid_until": None,
     }
+
+
+def phase_gate_metrics(component_id: str) -> list[dict]:
+    definitions = {
+        "PG-2-01": [("CURRENT-SCALE-OUTCOMES-IMPROVED", "/phase_gates/pg_2_01/current_scale_outcomes_improved")],
+        "PG-2-02": [("STALE-AND-CONTRADICTED-CONCLUSIONS-SURFACED", "/phase_gates/pg_2_02/stale_and_contradicted_conclusions_surfaced")],
+        "PG-2-03": [("PROMOTION-SQL-METADATA-CONSISTENT", "/phase_gates/pg_2_03/promotion_sql_metadata_consistent")],
+        "PG-2-04": [
+            ("CORRECTION-TESTED", "/phase_gates/pg_2_04/correction_tested"),
+            ("DELETION-TESTED", "/phase_gates/pg_2_04/deletion_tested"),
+            ("BACKUP-TESTED", "/phase_gates/pg_2_04/backup_tested"),
+            ("EXPORT-TESTED", "/phase_gates/pg_2_04/export_tested"),
+        ],
+        "PG-2-05": [("OPERATIONAL-BURDEN-ACCEPTABLE", "/phase_gates/pg_2_05/operational_burden_acceptable")],
+        "PG-2-06": [("REEVALUATION-TRIGGERS-RECORDED", "/phase_gates/pg_2_06/reevaluation_triggers_recorded")],
+    }
+    measurements = definitions.get(component_id, [("READY", f"/phase_gates/{component_id}/activation_ready")])
+    return [
+        metric(f"MTR-{component_id}-{suffix}", "BOOLEAN", pointer)
+        for suffix, pointer in measurements
+    ]
 
 
 def predicate(register_id: str, component_id: str) -> dict:
@@ -223,7 +328,7 @@ def predicate(register_id: str, component_id: str) -> dict:
     }
     if register_id.startswith("PG-"):
         predicate_id = "AP-" + re.sub(r"[^A-Z0-9]+", "-", component_id.upper()).strip("-")
-        metrics = [metric("MTR-" + re.sub(r"[^A-Z0-9]+", "-", component_id.upper()).strip("-") + "-READY", "BOOLEAN", f"/phase_gates/{component_id}/activation_ready")]
+        metrics = phase_gate_metrics(component_id)
     else:
         predicate_id, metrics = definitions[register_id]
     op = "ANY" if register_id == "E-08" else "ALL"
@@ -231,7 +336,7 @@ def predicate(register_id: str, component_id: str) -> dict:
     return {"predicate_id": predicate_id, "expression": expression, "metrics": metrics, "result": "UNKNOWN", "evaluated_at": None, "evaluation_sha256": None}
 
 
-def base_row(component_id: str, kind: str, source_path: str, anchor: str, start: int, end: int, title: str, acceptance: str, *, register_id: str | None = None, blueprint_phase: str | None = None, priority: str | None = None, activation_status: str | None = None, source_status: str | None = None, dependencies: list[str] | None = None, spec_id: str | None = None, disposition_refs: list[str] | None = None, scope_rule: str | None = None, related: list[str] | None = None, authority_effect: str | None = None, program_disposition: str = "REQUIRED_NOW", activation_predicate: dict | None = None, canonical_component_id: str | None = None) -> dict:
+def base_row(component_id: str, kind: str, source_path: str, anchor: str, start: int, end: int, title: str, acceptance: str, *, register_id: str | None = None, blueprint_phase: str | None = None, priority: str | None = None, activation_status: str | None = None, source_status: str | None = None, dependencies: list[str] | None = None, spec_id: str | None = None, disposition_refs: list[str] | None = None, scope_rule: str | None = None, related: list[str] | None = None, authority_effect: str | None = None, program_disposition: str = "REQUIRED_NOW", activation_predicate: dict | None = None, canonical_component_id: str | None = None, acceptance_evidence: str | None = None) -> dict:
     alias = kind == "derivative_alias"
     source_ev = evidence_ref(component_id, "source", source_path, f"Exact authoritative source occurrence for {component_id}", start=start, end=end)
     row = {
@@ -268,12 +373,55 @@ def base_row(component_id: str, kind: str, source_path: str, anchor: str, start:
     if not alias:
         row["required_evidence"].append({
             "evidence_id": f"REQ-{component_id.upper()}-ACCEPTANCE",
-            "description": f"Current proof satisfying: {acceptance}",
+            "description": acceptance_evidence or f"Current proof satisfying: {acceptance}",
             "scope": f"{component_id} acceptance and delivery scope",
             "evidence_type": "ARTIFACT", "proof_mode": "CONTENT_HASH",
             "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [],
         })
     return row
+
+
+def approval_scope(register_id: str, spec_id: str, title: str, authority: str) -> str:
+    if register_id == "D-05" and authority.startswith("Product owner authorized"):
+        return f"D-05 ACTIVATE_DEFERRED under {spec_id}: {title}"
+    if register_id == "D-05" and authority == "Product owner for memory adoption":
+        return f"D-05 ADOPT_MEMORY_APPROACH under {spec_id}: {title}"
+    if register_id == "E-03" and authority == "Product owner for post-evaluation retention":
+        return f"E-03 RETAIN_POST_EVALUATION under {spec_id}: {title}"
+    return f"{register_id} under {spec_id}: {title}"
+
+
+def add_approval(row: dict, approval_type: str, authority: str, scope: str) -> None:
+    index = len(row["required_approvals"]) + 1
+    requirement = required_approval(row["component_id"], index, approval_type, authority, scope)
+    row["required_approvals"].append(requirement)
+    if approval_type == "DELEGATED_ARTIFACT_APPROVAL":
+        row["required_evidence"].append({
+            "evidence_id": f"REQ-{row['component_id']}-SPEC-REVIEW", "description": "Persisted clean fresh Sol xhigh review of the current specification bytes", "scope": scope,
+            "evidence_type": "REVIEW", "proof_mode": "CONTENT_HASH", "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [],
+        })
+        return
+    evidence_type = HUMAN_EVIDENCE.get(approval_type, "ARTIFACT")
+    row["required_evidence"].append({
+        "evidence_id": f"REQ-{row['component_id']}-APPROVAL-{index:02d}", "description": f"Current {approval_type} evidence from {authority}", "scope": scope,
+        "evidence_type": evidence_type, "proof_mode": "TYPED_APPROVAL", "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [requirement["approval_id"]],
+    })
+
+
+def add_command_evidence(row: dict) -> None:
+    row["required_evidence"].append({
+        "evidence_id": f"REQ-{row['component_id']}-COMMAND", "description": f"Executable command proof for: {row['required_acceptance_text']}",
+        "scope": f"{row['component_id']} mechanically provable acceptance", "evidence_type": "COMMAND_RESULT", "proof_mode": "COMMAND",
+        "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [],
+    })
+
+
+def add_review_evidence(row: dict, description: str) -> None:
+    row["required_evidence"].append({
+        "evidence_id": f"REQ-{row['component_id']}-REVIEW", "description": description,
+        "scope": f"{row['component_id']} review boundary", "evidence_type": "REVIEW", "proof_mode": "CONTENT_HASH",
+        "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [],
+    })
 
 
 def controlled_state(row: dict) -> dict:
@@ -300,7 +448,7 @@ def transition(row: dict, field: str, new_value: object, transition_type: str) -
         "transition_id": f"TR-{row['component_id'].upper()}-{len(history):03d}",
         "sequence": len(history), "transition_type": transition_type, "field": field,
         "actor": {"actor_id": "codex-ledger-bootstrap", "actor_type": "AGENT", "role": "LEDGER_BOOTSTRAP_AUTHOR"},
-        "invoked_model": "gpt-5.6-sol", "timestamp": SNAPSHOT_AT,
+        "invoked_model": "gpt-5.6-sol", "timestamp": invocation_timestamp(),
         "old_value": old_value, "new_value": new_value,
         "evidence_ref_ids": [row["evidence_refs"][0]["evidence_ref_id"]],
         "human_resolution_decision_id": None, "human_resolution_sha256": None,
@@ -344,20 +492,8 @@ def register_rows() -> list[dict]:
         if deferred:
             approvals.insert(0, ("PRODUCT_OWNER_DECISION", "Product owner authorized to activate deferred blueprint scope"))
         approvals.insert(0, ("DELEGATED_ARTIFACT_APPROVAL", "Delegated fresh Sol xhigh specification reviewer"))
-        for index, (approval_type, authority) in enumerate(approvals, 1):
-            scope = f"{register_id} under {spec_id}: {cells[2]}"
-            requirement = required_approval(row["component_id"], index, approval_type, authority, scope)
-            row["required_approvals"].append(requirement)
-            if approval_type == "DELEGATED_ARTIFACT_APPROVAL":
-                row["required_evidence"].append({
-                    "evidence_id": f"REQ-{row['component_id']}-SPEC-REVIEW", "description": "Persisted clean fresh Sol xhigh review of the current specification bytes", "scope": scope,
-                    "evidence_type": "REVIEW", "proof_mode": "CONTENT_HASH", "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [],
-                })
-            elif approval_type in HUMAN_EVIDENCE:
-                row["required_evidence"].append({
-                    "evidence_id": f"REQ-{row['component_id']}-{approval_type}", "description": f"Current {approval_type} evidence from {authority}", "scope": scope,
-                    "evidence_type": HUMAN_EVIDENCE[approval_type], "proof_mode": "TYPED_APPROVAL", "status": "UNRESOLVED", "evidence_ref_ids": [], "approval_ids": [requirement["approval_id"]],
-                })
+        for approval_type, authority in approvals:
+            add_approval(row, approval_type, authority, approval_scope(register_id, spec_id, cells[2], authority))
         rows.append(row)
     assert len(rows) == 60
     return rows
@@ -384,6 +520,12 @@ def phase_gate_rows() -> list[dict]:
                 program_disposition="CONDITIONAL_UNACTIVATED" if conditional else "REQUIRED_NOW",
                 activation_predicate=predicate(f"PG-{phase}", component_id) if conditional else None,
             )
+            if component_id in PHASE_GATE_APPROVALS:
+                for approval_type, authority in PHASE_GATE_APPROVALS[component_id]:
+                    add_approval(row, approval_type, authority, f"{component_id} phase-gate acceptance")
+                add_review_evidence(row, "Current review of this phase-gate component and its source-required acceptance")
+            elif component_id == "PG-1-11":
+                add_review_evidence(row, "Current review of the separate-approval boundary for excluded GBrain, debate, backtesting, and execution scope")
             rows.append(row)
         elif phase and (line_number > 169 or (line.startswith("### ") and line_number not in headings)):
             phase = None
@@ -399,11 +541,20 @@ def bullet_rows(kind: str, start: int, end: int, prefix: str, specs: list[str | 
         if not line.startswith("- "):
             continue
         ordinal += 1
+        component_id = f"{prefix}-{ordinal:02d}"
+        spec_id = None if component_id == "DEF-12" else specs[ordinal - 1]
+        if kind == "first_release_deferral":
+            acceptance_evidence = f"Current no-implementation proof that this first-release deferral remains enforced: {line[2:].rstrip(';')}"
+        elif kind == "scale_trigger":
+            acceptance_evidence = f"Current proof that this operating re-evaluation trigger is recorded and enforced without requiring the trigger condition to occur: {line[2:].rstrip(';')}"
+        else:
+            acceptance_evidence = None
         rows.append(base_row(
-            f"{prefix}-{ordinal:02d}", kind, REGISTER_PATH, f"{prefix}-{ordinal:02d}",
+            component_id, kind, REGISTER_PATH, component_id,
             line_number, line_number, f"{prefix} clause {ordinal}", line[2:].rstrip(";."),
-            spec_id=specs[ordinal - 1], disposition_refs=disposition_refs,
+            spec_id=spec_id, disposition_refs=disposition_refs,
             scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL", program_disposition="REQUIRED_NOW",
+            acceptance_evidence=acceptance_evidence,
         ))
     return rows
 
@@ -431,12 +582,14 @@ def disposition_rows() -> list[dict]:
         rejected = item_id == "R-1"
         row = base_row(
             f"DISP-{item_id.replace('.', '-')}", "disposition_item", DISPOSITION_PATH, item_id,
-            start, end, title, "\n".join(text[start - 1:end]).strip(), spec_id=DISPOSITION_SPEC[item_id],
+            start, end, title, "\n".join(text[start - 1:end]).strip(), spec_id=DISPOSITION_SPECS[item_id][0],
             disposition_refs=[item_id], scope_rule="AUTHORITATIVE_OCCURRENCE",
             related=DISPOSITION_REGISTERS[item_id], authority_effect="REJECTED_PROPOSAL" if rejected else "ACTIVE_CONTROL",
             program_disposition="REJECTED_ACCOUNTED" if rejected else "REQUIRED_NOW",
         )
-        row["required_approvals"].append(required_approval(row["component_id"], 1, "DELEGATED_ARTIFACT_APPROVAL", "Delegated fresh Sol xhigh specification reviewer", f"{item_id} under {DISPOSITION_SPEC[item_id]}"))
+        add_approval(row, "DELEGATED_ARTIFACT_APPROVAL", "Delegated fresh Sol xhigh specification reviewer", f"{item_id} under {DISPOSITION_SPECS[item_id][0]}")
+        for approval_type, authority in DISPOSITION_APPROVALS.get(item_id, []):
+            add_approval(row, approval_type, authority, f"{item_id} disposition acceptance")
         rows.append(row)
     return rows
 
@@ -445,14 +598,34 @@ def other_canonical_rows() -> list[dict]:
     rows = [
         base_row("AUTH-REG-001", "authority_clause", REGISTER_PATH, "AUTHORITY-RULE-001", 23, 23, "Register authority rule", lines(REGISTER_PATH)[22], scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL"),
         base_row("AUTH-DISP-001", "authority_clause", DISPOSITION_PATH, "AUTHORITY-RULE-001", 41, 41, "Disposition authority rule", lines(DISPOSITION_PATH)[40], scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL"),
+        base_row("AUTH-REG-002", "authority_clause", REGISTER_PATH, "SCALE-OPERATING-NOTE", 193, 193, "Scale-trigger operating-note rule", lines(REGISTER_PATH)[192], scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL", acceptance_evidence="Current proof that scale triggers remain operating re-evaluation controls rather than Phase 0.5 blockers"),
+        base_row("AUTH-REG-003", "authority_clause", REGISTER_PATH, "SCALE-TECHNOLOGY-NEUTRALITY", 209, 209, "Scale-trigger technology-neutrality rule", lines(REGISTER_PATH)[208], scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL", acceptance_evidence="Current proof that no specific replacement technology is committed before observed need"),
     ]
+    compound_clauses = [
+        ("AUTH-DISP-002", 16, 18, "Executive-verdict qualification"),
+        ("AUTH-DISP-003", 34, 34, "Final-disposition gate-spec summary"),
+        ("AUTH-DISP-004", 35, 35, "Final-disposition missing-decisions summary"),
+        ("AUTH-DISP-005", 36, 36, "Final-disposition traceability summary"),
+        ("AUTH-DISP-006", 37, 37, "Final-disposition amendment summary"),
+        ("AUTH-DISP-007", 38, 38, "Final-disposition register-change summary"),
+        ("AUTH-DISP-008", 414, 414, "Accepted output-contract timing change"),
+        ("AUTH-DISP-009", 481, 481, "Final judgment accepted-corrections summary"),
+        ("AUTH-DISP-010", 487, 487, "Implementation posture"),
+    ]
+    for component_id, start, end, title in compound_clauses:
+        rows.append(base_row(
+            component_id, "authority_clause", DISPOSITION_PATH, component_id,
+            start, end, title, "\n".join(lines(DISPOSITION_PATH)[start - 1:end]).strip(),
+            scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL",
+        ))
     for ordinal, line_number in enumerate(range(451, 461), 1):
         line = lines(DISPOSITION_PATH)[line_number - 1]
-        register_ids = re.findall(r"[A-E]-\d{2}", line)
-        owner = None
-        if register_ids:
-            owner = next(spec_id for spec_id, (_, _, ids, _) in SPEC_CONTRACT.items() if register_ids[0] in ids)
-        rows.append(base_row(f"SEQ-{ordinal:02d}", "sequence_clause", DISPOSITION_PATH, f"SEQUENCE-{ordinal:02d}", line_number, line_number, f"Recommended sequence step {ordinal}", line, spec_id=owner, scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL"))
+        assert re.search(r"[A-E]-\d{2}", line)
+        rows.append(base_row(
+            f"SEQ-{ordinal:02d}", "sequence_clause", DISPOSITION_PATH, f"SEQUENCE-{ordinal:02d}",
+            line_number, line_number, f"Recommended sequence step {ordinal}", line,
+            scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL",
+        ))
     rows.append(base_row("SEQ-11", "sequence_clause", DISPOSITION_PATH, "SEQUENCE-RATIONALE", 462, 462, "Sequence rationale", lines(DISPOSITION_PATH)[461], scope_rule="PROGRAM_WIDE_ACTIVE_CONTROL"))
     doc_lines = [468, 470, 471, 472, 473, 475]
     for ordinal, line_number in enumerate(doc_lines, 1):
@@ -480,12 +653,19 @@ def aliases(canonical_by_id: dict[str, dict]) -> list[dict]:
     ]
     rows = []
     for ordinal, (start, end, target) in enumerate(alias_specs, 1):
+        if ordinal in {1, 11, 12, 13, 14, 15, 23, 41, 43}:
+            continue
         assert target in canonical_by_id
         rows.append(base_row(
             f"ALIAS-{ordinal:03d}", "derivative_alias", DISPOSITION_PATH, f"DERIVATIVE-ALIAS-{ordinal:03d}",
             start, end, f"Derivative restatement {ordinal}", "\n".join(lines(DISPOSITION_PATH)[start - 1:end]).strip(),
             program_disposition="DERIVATIVE_ALIAS", canonical_component_id=target,
         ))
+    rows.append(base_row(
+        "ALIAS-044", "derivative_alias", REGISTER_PATH, "DERIVATIVE-ALIAS-044",
+        9, 9, "Register purpose restatement", lines(REGISTER_PATH)[8],
+        program_disposition="DERIVATIVE_ALIAS", canonical_component_id="AUTH-REG-001",
+    ))
     return rows
 
 
@@ -497,19 +677,8 @@ def attach_spec_and_work_state(rows: list[dict]) -> None:
             path = row["primary_spec"]["path"]
             row["evidence_refs"].append(evidence_ref(row["component_id"], "spec-draft", path, f"Current draft specification bytes for {row['component_id']}"))
             if not any(item["approval_type"] == "DELEGATED_ARTIFACT_APPROVAL" for item in row["required_approvals"]):
-                index = len(row["required_approvals"]) + 1
                 scope = f"{row['component_id']} under {row['primary_spec']['spec_id']}"
-                row["required_approvals"].append(required_approval(
-                    row["component_id"], index, "DELEGATED_ARTIFACT_APPROVAL",
-                    "Delegated fresh Sol xhigh specification reviewer", scope,
-                ))
-                row["required_evidence"].append({
-                    "evidence_id": f"REQ-{row['component_id']}-SPEC-REVIEW",
-                    "description": "Persisted clean fresh Sol xhigh review of the current specification bytes",
-                    "scope": scope, "evidence_type": "REVIEW",
-                    "proof_mode": "CONTENT_HASH", "status": "UNRESOLVED",
-                    "evidence_ref_ids": [], "approval_ids": [],
-                })
+                add_approval(row, "DELEGATED_ARTIFACT_APPROVAL", "Delegated fresh Sol xhigh specification reviewer", scope)
 
     authority_owner = next(row for row in rows if row["component_id"] == "AUTH-REG-001")
     transition(authority_owner, "bead_ids", ["eqos-0xb"], "REFERENCE_APPEND")
@@ -545,6 +714,41 @@ def attach_gate_refs(rows: list[dict]) -> None:
             row["gate_refs"] = by_register[row["register_id"]]
 
 
+def assert_phase_gate_approval_boundaries(rows: list[dict]) -> None:
+    """Reject delegated approvals for gates without an eligible owned artifact."""
+    for row in rows:
+        if row["kind"] != "phase_gate_clause":
+            continue
+        assert row["primary_spec"] is None
+        assert row["roadmap_ref"] is None
+        assert row["plan_refs"] == []
+        assert not any(
+            approval["approval_type"] == "DELEGATED_ARTIFACT_APPROVAL"
+            for approval in row["required_approvals"]
+        )
+        assert not any(
+            evidence["evidence_id"].endswith("-SPEC-REVIEW")
+            for evidence in row["required_evidence"]
+        )
+        if row["component_id"] in PHASE_GATE_APPROVALS:
+            assert any(
+                evidence["evidence_type"] == "REVIEW"
+                and evidence["proof_mode"] == "CONTENT_HASH"
+                for evidence in row["required_evidence"]
+            )
+
+
+def assert_sequence_scope(rows: list[dict]) -> None:
+    """Keep recommended ordering as program-wide control, not spec ownership."""
+    sequence_rows = [row for row in rows if row["kind"] == "sequence_clause"]
+    assert len(sequence_rows) == 11
+    for row in sequence_rows:
+        assert row["primary_spec"] is None
+        assert row["scope_derivation"]["rule"] == "PROGRAM_WIDE_ACTIVE_CONTROL"
+        assert row["scope_derivation"]["related_register_ids"] == []
+        assert row["program_disposition"] == "REQUIRED_NOW"
+
+
 def attach_rejection_record(rows: list[dict]) -> None:
     row = next(item for item in rows if item["component_id"] == "DISP-R-1")
     spec_ev = next(item for item in row["evidence_refs"] if item["evidence_ref_id"].endswith("SPEC-DRAFT"))
@@ -553,19 +757,19 @@ def attach_rejection_record(rows: list[dict]) -> None:
         "rejection_record_id": "REJ-DISP-R-1", "component_id": row["component_id"],
         "register_id": None, "scope": "R-1 proposal to cancel D-02",
         "authority": "Pinned third-order disposition report", "actor": "pinned-blueprint-authority",
-        "timestamp": ACTIVATION_AT, "evidence_ref_ids": [source_ev["evidence_ref_id"], spec_ev["evidence_ref_id"]],
+        "timestamp": ACTIVATION_SOURCE_CUTOFF_AT, "evidence_ref_ids": [source_ev["evidence_ref_id"], spec_ev["evidence_ref_id"]],
         "rationale": "The authority rejects cancellation of D-02 and retains a current-scale benchmark with future reevaluation triggers.",
         "no_implementation_evidence_ref_ids": [spec_ev["evidence_ref_id"]],
         "approval_record_id": None, "human_resolution_decision_id": None,
         "human_resolution_sha256": None,
     }
-    row["required_evidence"] = [
+    row["required_evidence"].extend([
         {"evidence_id": "REQ-DISP-R-1-AUTHORITY", "description": "Pinned authority rejects the proposal to cancel D-02", "scope": "R-1 rejection authority", "evidence_type": "SOURCE", "proof_mode": "CONTENT_HASH", "status": "SATISFIED", "evidence_ref_ids": [source_ev["evidence_ref_id"]], "approval_ids": []},
         {"evidence_id": "REQ-DISP-R-1-NO-IMPLEMENTATION", "description": "Current S20 draft preserves D-02 as dormant and contains no implementation claim", "scope": "R-1 current no-implementation proof", "evidence_type": "ARTIFACT", "proof_mode": "CONTENT_HASH", "status": "SATISFIED", "evidence_ref_ids": [spec_ev["evidence_ref_id"]], "approval_ids": []},
-    ]
+    ])
 
 
-def generate() -> list[dict]:
+def generate_rows() -> list[dict]:
     for path, expected in EXPECTED_HASH.items():
         actual = file_sha256(path)
         if actual != expected:
@@ -578,14 +782,21 @@ def generate() -> list[dict]:
     rows += bullet_rows("first_release_deferral", 175, 187, "DEF", ["S05", "S20", "S14", "S23", "S24", "S21", "S02", "S25", "S25", "S04", "S04", "S20", "S10"])
     assert sum(row["kind"] == "first_release_deferral" for row in rows) == 13
     rows += bullet_rows("scale_trigger", 197, 200, "SCALE-SQLITE", ["S10"] * 4, disposition_refs=["R-5"])
-    rows += bullet_rows("scale_trigger", 204, 207, "SCALE-WORKFLOW", ["S14"] * 4, disposition_refs=["R-5"])
-    rows += disposition_rows() + other_canonical_rows()
+    rows += bullet_rows("scale_trigger", 204, 207, "SCALE-WORKFLOW", ["S14"] * 4, disposition_refs=["M-5"])
+    rows += disposition_rows()
+    assert_disposition_crosswalks(rows)
+    rows += other_canonical_rows()
     attach_gate_refs(rows)
     canonical_by_id = {row["component_id"]: row for row in rows}
     rows += aliases(canonical_by_id)
 
     attach_spec_and_work_state(rows)
+    assert_phase_gate_approval_boundaries(rows)
+    assert_sequence_scope(rows)
     attach_rejection_record(rows)
+    for row in rows:
+        if row["component_id"] in COMMAND_COMPONENTS:
+            add_command_evidence(row)
 
     for row in rows:
         initial = controlled_state(row)
@@ -619,26 +830,114 @@ def generate() -> list[dict]:
     assert counts["first_release_deferral"] == 13
     assert counts["scale_trigger"] == 8
     assert counts["disposition_item"] == 32
+    assert counts["authority_clause"] == 13
+    assert counts["derivative_alias"] == 35
+    assert len(rows) == 213
     return rows
 
 
-def main() -> int:
-    rows = generate()
-    LEDGER_PATH.write_text("".join(json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows), encoding="utf-8")
-    payload = {"schema_version": 1, "entries": [], "resolutions": []}
-    human = """# Equity-OS Blueprint Human Review Needed
+def generate() -> list[dict]:
+    global INVOCATION_AT
+    if INVOCATION_AT is not None:
+        raise RuntimeError("generator invocation is already in progress")
+    INVOCATION_AT = current_utc_timestamp()
+    try:
+        return generate_rows()
+    finally:
+        INVOCATION_AT = None
 
-This is the sole canonical human-review artifact for the activated blueprint goal.
+
+def resolve_new_output_path(value: str) -> Path:
+    """Resolve a requested bootstrap output path that cannot replace an artifact."""
+    requested_path = Path(value).expanduser()
+    resolved_path = requested_path.resolve()
+    if resolved_path in CANONICAL_OUTPUT_PATHS:
+        raise SystemExit(f"refusing canonical live output path: {resolved_path}")
+    if requested_path.is_symlink() or resolved_path.exists():
+        raise SystemExit(f"refusing existing output target: {requested_path}")
+    return resolved_path
+
+
+def prepare_new_output(path: Path, content: str) -> Path:
+    """Write one invocation-owned temporary bootstrap artifact."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path
+
+
+def publish_new_output(temporary_path: Path, path: Path) -> None:
+    """Atomically create a new output without replacing a concurrent target."""
+    try:
+        os.link(temporary_path, path)
+    except FileExistsError as error:
+        raise SystemExit(f"refusing existing output target: {path}") from error
+
+
+def write_new_outputs(outputs: tuple[tuple[Path, str], ...]) -> None:
+    """Prepare paired bootstrap candidates, preserving any partial publication."""
+    temporary_outputs: list[tuple[Path, Path, str]] = []
+    published_paths: list[Path] = []
+    try:
+        for path, content in outputs:
+            temporary_outputs.append((path, prepare_new_output(path, content), content))
+        for path, temporary_path, _ in temporary_outputs:
+            publish_new_output(temporary_path, path)
+            published_paths.append(path)
+    except BaseException as error:
+        if published_paths:
+            raise RuntimeError(
+                "bootstrap publication partially failed; preserving published output(s): "
+                + ", ".join(str(path) for path in published_paths)
+            ) from error
+        raise
+    finally:
+        for _, temporary_path, _ in temporary_outputs:
+            temporary_path.unlink(missing_ok=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ledger-path", required=True, help="new bootstrap ledger output path")
+    parser.add_argument("--human-review-path", required=True, help="new bootstrap human-review output path")
+    args = parser.parse_args()
+    ledger_path = resolve_new_output_path(args.ledger_path)
+    human_path = resolve_new_output_path(args.human_review_path)
+    if ledger_path == human_path:
+        raise SystemExit("ledger and human-review output paths must be distinct")
+    rows = generate()
+    ledger = "".join(
+        json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
+        for row in rows
+    )
+    payload = {"schema_version": 1, "entries": [], "resolutions": []}
+    human = """# Equity-OS Blueprint Bootstrap Human Review Candidate
+
+> **Bootstrap-only draft:** These paired artifacts are not the canonical live
+> ledger or human-review state, cannot authorize migration, and must never
+> replace activated artifacts. Approved schema reconciliation is required before
+> resolving the active-negative-control (`PG-1-11`), compound-alias, or Phase-2
+> measurable-predicate blockers.
+
 At ledger bootstrap, real delivery approvals remain explicitly unresolved in the
 ledger, but no human decision is yet actionable: the immediate blockers are the
-required fresh Sol xhigh content-bound inventory reviews. Canonical entries are
-added only when one answerable competent-human decision becomes actionable.
+required fresh Sol xhigh content-bound inventory reviews. Human-review entries
+are added only when one answerable competent-human decision becomes actionable.
 
 <!-- BEGIN CANONICAL HUMAN REVIEW JSON -->
 """ + json.dumps(payload, sort_keys=True, ensure_ascii=False, indent=2) + """
 <!-- END CANONICAL HUMAN REVIEW JSON -->
 """
-    HUMAN_PATH.write_text(human, encoding="utf-8")
+    write_new_outputs(((ledger_path, ledger), (human_path, human)))
     return 0
 
 
