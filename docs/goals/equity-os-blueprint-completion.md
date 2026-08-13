@@ -23,16 +23,19 @@ terminal conditions in this document. Approval is not activation. Activation
 must be recorded in [Activation record](#activation-record) through the goal
 tool before work begins.
 
-Every exploratory subtask runs in a separate Codex CLI subagent on
-`gpt-5.6-luna`: web research or search, source discovery, financial filing,
-document, quarterly-result, or earnings-material reading, provider or tool
-investigation, evidence gathering, and evidence extraction. Luna uses `high`
-by default and `xhigh` for dense, ambiguous, cross-document, or high-stakes
-exploration; `medium` is not permitted in this project lane. Luna output is
-candidate research or evidence, not authoritative product truth, financial
+Luna is limited to external web research that is not code-, repository-,
+schema-, tooling-, or implementation-related, plus reading heavy or numerous
+public-equity source documents such as filings, annual and quarterly results,
+earnings materials, investor presentations, transcripts, and exchange
+disclosures. Luna uses `high` by default and `xhigh` for dense, ambiguous,
+cross-document, or high-stakes reading; `medium` is not permitted in this lane.
+Sol xhigh performs every repository/codebase exploration and all blueprint,
+design, schema, spec, plan, technical-documentation, provider/tool, and
+implementation-related reading, however large. Luna output is candidate
+research or evidence, not authoritative product truth, financial
 interpretation, approval, or final synthesis. Before any spec, plan,
 implementation, ledger acceptance, or completion claim relies on it, a fresh
-`gpt-5.6-sol` `xhigh` Codex CLI subagent must review it. Sol xhigh remains
+`gpt-5.6-sol` `xhigh` Codex CLI subagent must review it. Sol xhigh also remains
 responsible for brainstorming, planning, document/code/security review, fix
 rounds, and final synthesis; Terra xhigh remains responsible for
 implementation. All subagents use Codex CLI invocations, and Agent Matrix
@@ -787,29 +790,32 @@ block a dependency cone but do not stop independent ready work.
 
 Every subagent is invoked through an explicit `codex exec`. Host-native
 subagent surfaces and Agent Matrix are prohibited. Invocation model and effort
-are explicit. Sol and Terra use `xhigh`. Luna exploration uses `high` by
-default and `xhigh` for dense, ambiguous, cross-document, or high-stakes work;
-`medium` is prohibited for that lane.
+are explicit. Sol and Terra use `xhigh`. Luna external-web and heavy public-
+equity document reading uses `high` by default and `xhigh` for dense,
+ambiguous, cross-document, or high-stakes work; `medium` is prohibited for that
+lane.
 
 | Role | Model and effort | Authorized work | Prohibited work |
 |---|---|---|---|
 | Coordinator | Current coordinating Codex session; orchestration only | Invoke agents; maintain Beads, ledger, register Status reconciliation, checkpoints, blockers, and human-review state; rerun verification; make narrow verified Git operations | Author or fix product code; substitute for a failed Sol/Terra dispatch; approve its own product artifacts |
-| Exploratory researcher | GPT-5.6 Luna high by default; xhigh for dense, ambiguous, cross-document, or high-stakes exploration; never medium | Web research/search; source discovery; financial filing, document, quarterly-result, and earnings-material reading; provider/tool investigation; evidence gathering and extraction | Authoritative product truth; financial interpretation; approval; final synthesis; any downstream reliance before fresh Sol xhigh review |
-| Author/planner/reviewer/adjudicator | GPT-5.6 Sol xhigh | Brainstorming; goal-following doc/spec/roadmap/JIT-plan authoring and documentation fixes; every spec, compliance, quality, security, integrated, and final review; review and fix rounds; final synthesis; post-cap adjudication; fresh review of Luna candidate research/evidence before downstream reliance | Product-code implementation or fixes; non-delegated analyst/domain/legal/rights/budget/regulatory/production approval |
+| External research reader | GPT-5.6 Luna high by default; xhigh for dense, ambiguous, cross-document, or high-stakes reading; never medium | Non-code external web research/search and source discovery; heavy or numerous public-equity filings, annual/quarterly results, earnings materials, investor presentations, transcripts, and exchange disclosures; candidate evidence extraction | Repository/codebase, blueprint, design, schema, spec, plan, technical-documentation, provider/tool, or implementation exploration; authoritative product truth; financial interpretation; approval; final synthesis; any downstream reliance before fresh Sol xhigh review |
+| Author/planner/reviewer/adjudicator | GPT-5.6 Sol xhigh | Every repository/codebase exploration and all blueprint, design, schema, spec, plan, technical-documentation, provider/tool, and implementation-related reading; brainstorming; goal-following doc/spec/roadmap/JIT-plan authoring and documentation fixes; every spec, compliance, quality, security, integrated, and final review; review and fix rounds; final synthesis; post-cap adjudication; fresh review of Luna candidate research/evidence before downstream reliance | Product-code implementation or fixes; non-delegated analyst/domain/legal/rights/budget/regulatory/production approval |
 | Product implementer/fixer | GPT-5.6 Terra xhigh | Product code, tests, migrations, product configuration, and fixes within one bounded task | Artifact approval; substitution for Sol review; coordinator/state authority |
 
 Use these explicit invocation classes:
 
 ```bash
-codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="high"' -s read-only --ephemeral '<bounded exploratory-research prompt>'
-codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="xhigh"' -s read-only --ephemeral '<dense, ambiguous, cross-document, or high-stakes exploratory-research prompt>'
+codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="high"' -s read-only --ephemeral '<bounded non-code web or public-equity source-reading prompt>'
+codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="xhigh"' -s read-only --ephemeral '<dense, ambiguous, cross-document, or high-stakes public-equity source-reading prompt>'
 codex exec -C . -m gpt-5.6-sol -c 'model_reasoning_effort="xhigh"' -s workspace-write --ephemeral '<bounded authoring prompt>'
 codex exec -C . -m gpt-5.6-sol -c 'model_reasoning_effort="xhigh"' -s read-only --ephemeral '<bounded review or adjudication prompt>'
 codex exec -C . -m gpt-5.6-terra -c 'model_reasoning_effort="xhigh"' -s workspace-write --ephemeral '<bounded implementation or fix prompt>'
 ```
 
 Project-approved efforts are limited to `medium`, `high`, and `xhigh`, but this
-goal uses only Luna `high` or `xhigh` and Sol/Terra `xhigh`. Every Luna result
+goal uses only Luna `high` or `xhigh` and Sol/Terra `xhigh`. Luna never reads or
+explores repository/codebase, blueprint, design, schema, spec, plan, technical-
+documentation, provider/tool, or implementation material. Every Luna result
 remains candidate research or evidence until a fresh Sol xhigh subagent reviews
 it; no spec, plan, implementation, ledger acceptance, or completion claim may
 rely on unreviewed Luna output. On capacity or authentication dispatch failure,
@@ -1148,17 +1154,18 @@ The coordinator runs this loop only while the control state is `RUNNING`:
    procedure before consuming their state.
 4. **Select work:** Determine active, dependency-satisfied work from Beads plus
    ledger state. Exclude dormant and blocked cones. Choose concurrent work only
-   under the disjointness rule. Classify web research/search, source discovery,
-   financial filing/document/quarterly-result/earnings-material reading,
-   provider/tool investigation, evidence gathering, and evidence extraction as
-   exploratory work.
-5. **Dispatch:** Invoke each exploratory subtask through a separate Luna Codex
-   CLI subagent at `high`, or `xhigh` when dense, ambiguous, cross-document, or
-   high-stakes; never use `medium` for this lane. Invoke Sol xhigh for
-   brainstorming, planning, document/code/security review, fix rounds, fresh
-   review of Luna candidate output, and final synthesis; invoke Terra xhigh for
-   implementation. Apply the one-retry rule without substitution. Agent Matrix
-   remains disabled.
+   under the disjointness rule. Classify only non-code external web research and
+   heavy or numerous public-equity source-document reading as the Luna lane.
+   Classify every repository/codebase, blueprint, design, schema, spec, plan,
+   technical-documentation, provider/tool, and implementation exploration as
+   the Sol lane.
+5. **Dispatch:** Invoke each Luna-lane subtask through a separate Luna Codex CLI
+   subagent at `high`, or `xhigh` when dense, ambiguous, cross-document, or
+   high-stakes; never use `medium` for this lane. Invoke Sol xhigh for all
+   repository and code-related exploration, brainstorming, planning,
+   document/code/security review, fix rounds, fresh review of Luna candidate
+   output, and final synthesis; invoke Terra xhigh for implementation. Apply
+   the one-retry rule without substitution. Agent Matrix remains disabled.
 6. **Review and prove:** Apply r0–r4 and adjudication where needed. The
    coordinator reruns the current repository verification commands and reads
    exit status/output. Treat Luna output only as candidate research or evidence;
@@ -4103,6 +4110,12 @@ Activation evidence keys used in every row:
   objective and this contract; no legal name is asserted.
 - `A0`: goal/thread `019ff786-f5dc-75b3-8670-502b0fe0a8f9`, activated by the
   goal tool at `2026-08-13T01:06:47Z`.
+- `U1`: the current authenticated chat user's post-activation routing
+  correction on 2026-08-13: Sol xhigh owns all codebase and code-related
+  document exploration; Luna is limited to non-code web research and heavy
+  stock/equity source-document reading. The two interrupted Luna blueprint-
+  reading sessions and all of their streamed output are discarded and
+  inadmissible.
 
 | Field | Activation value |
 |---|---|
@@ -4119,7 +4132,7 @@ Activation evidence keys used in every row:
 | Approved delegated artifact gates | Clean fresh-context Sol xhigh may approve a spec, roadmap, or JIT plan only under delegated goal authority; all named human/external approvals remain excluded (`C0`; `U0`; `A0`) |
 | Approved typed approval vocabulary and one-to-one proof rules | Closed approval vocabulary, purpose-matching non-revoked records, and unique one-to-one satisfaction rules in `C0` are approved (`U0`; `A0`) |
 | Approved derived-scope, activation/rejection, and typed evidence-proof rules | The closed schemas, content-bound records, predicates, transitions, and proof rules in `C0` are approved without alteration (`U0`; `A0`) |
-| Approved Luna exploratory routing, Sol/Terra routing, effort policy, fresh-Sol review boundary, and review cap | Luna `high`/`xhigh` exploration; Sol `xhigh` authoring/planning/review; Terra `xhigh` implementation; fresh Sol review before relying on Luna; `r0`–`r4` maximum then fresh Sol adjudication (`C0`; `U0`; `A0`) |
+| Approved Luna exploratory routing, Sol/Terra routing, effort policy, fresh-Sol review boundary, and review cap | Under controlling correction `U1`, Luna `high`/`xhigh` is limited to non-code web research and heavy stock/equity source documents; Sol `xhigh` owns repository/codebase and code-related document exploration plus authoring/planning/review; Terra `xhigh` implements; fresh Sol review remains required before relying on Luna; `r0`–`r4` maximum then fresh Sol adjudication (`C0`; `U0`; `A0`; `U1`) |
 | Approved workstream name | `equity-os-blueprint-completion` (`C0`; `U0`; `A0`) |
 | Approved repo-write, Beads, narrow-delete, commit, and push authority | Goal-scoped repo writes, Beads operations, narrowly proved deletions, explicit-path verified commits, and bounded pushes under the Git authority in `C0` (`U0`; `A0`) |
 | Approved default-deny Docker, web, and external-research authority | Only goal-scoped Docker, web, and external research necessary for an active contract, within the named default-deny boundaries and approval checkpoints in `C0` (`U0`; `A0`) |
