@@ -1,6 +1,6 @@
 # Equity-OS Blueprint Completion Goal
 
-**Status:** ACTIVE — `RUNNING`
+**Status:** ACTIVE — `PAUSED_BY_USER`
 
 **Activation:** ACTIVATED — 2026-08-13T01:06:47Z
 
