@@ -90,14 +90,43 @@ Every rights dimension is independent. An `APPROVED` record with an `UNKNOWN` di
 
 ### 5.4 `ConsensusDataDecision`
 
-The decision contains `decision_id`, `mvp_scope`, `necessity` (`NECESSARY` or `NOT_NECESSARY`), `necessity_rationale`, `provider_source_ids`, `license_evidence_refs`, `permitted_uses`, `excluded_uses`, `approval_record_ids`, `effective_at`, and `supersedes`.
+The closed decision contains `decision_id`, `version`, `mvp_scope`, `necessity`
+(`NECESSARY` or `NOT_NECESSARY`), `necessity_rationale`,
+`provider_source_ids`, `license_evidence_refs`, `permitted_uses`,
+`excluded_uses`, `dependent_interface_evidence_refs`, `effective_at`,
+`supersedes`, `content_sha256`, `approval_bindings`, and the derived
+`terminal_result`.
 
-Only two terminal outcomes are valid:
+`content_sha256` is SHA-256 of canonical JSON for exactly `{decision_id,
+version, mvp_scope, necessity, necessity_rationale, provider_source_ids,
+license_evidence_refs, permitted_uses, excluded_uses,
+dependent_interface_evidence_refs, effective_at, supersedes}`. Source IDs,
+evidence references, uses, and interface-evidence references are unique and
+sorted. `approval_bindings` and derived `terminal_result` are excluded from
+the preimage, so a decision can be approved without a digest cycle. Every
+binding names one requirement ID, approval-record ID, canonical human-resolution
+decision ID/digest, and the exact `decision_id`, `version`, and
+`content_sha256`; stale, revoked, reused, wrong-type, wrong-scope, or
+content-mismatched records do not satisfy a requirement.
 
-1. `INCLUDED_LICENSED_AND_NECESSARY`: necessity is `NECESSARY`, every provider record is current and approved for every actual mode and operation, and typed approvals are satisfied.
-2. `EXCLUDED_FROM_MVP`: necessity is `NOT_NECESSARY`, the product contract and dependent interfaces explicitly reject consensus inputs, and a competent product-owner decision is recorded.
+`terminal_result` is recomputed and never caller supplied. Only two terminal
+results are valid:
 
-Anything else is `UNRESOLVED` and behaves as excluded.
+1. `INCLUDED_LICENSED_AND_NECESSARY`: necessity is `NECESSARY`; provider and
+   permitted-use sets are nonempty; every provider record and license evidence
+   is current and approved for every actual mode and operation; excluded uses
+   do not overlap permitted uses; and distinct current
+   `PRODUCT_OWNER_DECISION`, `DATA_RIGHTS_APPROVAL`, and every applicable
+   `PROVIDER_AUTHORIZATION` or `LEGAL_REVIEW` requirement are satisfied against
+   this exact content digest.
+2. `EXCLUDED_FROM_MVP`: necessity is `NOT_NECESSARY`; provider, license, and
+   permitted-use sets are empty; excluded uses and dependent-interface
+   evidence prove that consensus inputs and provider calls are rejected; and a
+   current `PRODUCT_OWNER_DECISION` is satisfied against this exact digest.
+
+Every other state derives `UNRESOLVED` and behaves as excluded. A successor
+version is required for any body-field change; prior decisions and approvals
+remain immutable and auditable.
 
 ## 6. Invariants and fail-closed behavior
 
@@ -109,7 +138,7 @@ Anything else is `UNRESOLVED` and behaves as excluded.
 6. Terms, contracts, and approvals are time-bound where their source is time-bound; expiry blocks use.
 7. Account or volume limits are enforced upstream of access; exceeding a limit fails closed and records the failure.
 8. No credentials, purchase, provider contact, or external-service enrollment occurs without its distinct competent-human authorization.
-9. Consensus data is excluded unless the exact terminal outcome `INCLUDED_LICENSED_AND_NECESSARY` is proven.
+9. Consensus data is excluded unless the exact current content-bound terminal result `INCLUDED_LICENSED_AND_NECESSARY` is freshly derived.
 10. Replacement paths are evaluated independently; failure of a primary source does not authorize an unreviewed substitute.
 11. Delegated artifact approval proves only that the specification passed review; it grants no provider, rights, legal, purchase, credential, or external-service authority.
 12. Records are append-only by version; corrections supersede and never silently overwrite.
@@ -121,8 +150,8 @@ Anything else is `UNRESOLVED` and behaves as excluded.
 | Register completeness | Current independent `SourceUsageInventory`; exact `U == R`; one current content-valid `SourceRightsRecord` for each member; current accepted S01 boundary ID/version/digest; exact rights evidence | `DATA_RIGHTS_APPROVAL` for each source/scope; `LEGAL_REVIEW` when legal interpretation is required | A-05 remains unresolved and every source operation is prohibited. |
 | Provider access | Current primary provider terms/contract and exact access scope | `PROVIDER_AUTHORIZATION`; additionally `PURCHASE_AUTHORIZATION`, `CREDENTIAL_ACCESS_APPROVAL`, `EXTERNAL_SERVICE_APPROVAL`, or `EXTERNAL_COORDINATION_APPROVAL` when applicable | No access or enrollment. |
 | Operational mode | Evidence for every applicable A-05 dimension: access method, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement-path use | Separate applicable `DATA_RIGHTS_APPROVAL` records for the exact source, boundary, mode, and dimension | Any unknown, omitted, stale, or unapproved dimension denies that operation. |
-| Consensus inclusion | Necessity analysis plus current provider/license evidence covering actual inputs, retention, calculations, output, and distribution mode | `PRODUCT_OWNER_DECISION`, `DATA_RIGHTS_APPROVAL`, and applicable `PROVIDER_AUTHORIZATION`/`LEGAL_REVIEW` | Consensus excluded. |
-| Consensus exclusion | Explicit MVP exclusion and dependent-interface rejection test | `PRODUCT_OWNER_DECISION` | C-13 remains unresolved, with consensus still blocked. |
+| Consensus inclusion | Exact decision ID/version/content digest; necessity analysis plus current provider/license evidence covering actual inputs, retention, calculations, output, and distribution mode | Distinct records for `PRODUCT_OWNER_DECISION`, `DATA_RIGHTS_APPROVAL`, and each applicable `PROVIDER_AUTHORIZATION`/`LEGAL_REVIEW`, all bound to the exact decision digest | Consensus excluded. |
+| Consensus exclusion | Exact decision ID/version/content digest; explicit MVP exclusion and content-addressed dependent-interface rejection evidence | `PRODUCT_OWNER_DECISION` bound to the exact decision digest | C-13 remains unresolved, with consensus still blocked. |
 | Delegated spec approval | Persisted clean fresh-context Sol xhigh review bound to this file and source hashes | `DELEGATED_ARTIFACT_APPROVAL` only | Spec remains draft; no rights gate is affected. |
 
 No source evidence or approval may be invented. Every non-delegated approval is a distinct canonical human resolution with actor, authority, exact scope, timestamp, evidence, and decision. This draft contains no satisfied approval record.
@@ -136,11 +165,11 @@ No source evidence or approval may be invented. Every non-delegated approval is 
 5. Evidence fixture: missing, changed, expired, or non-primary evidence blocks the affected operation.
 6. Limit fixture: an account-limit breach prevents the request and records a typed failure.
 7. Replacement fixture: a primary-source failure does not switch to an unapproved replacement.
-8. Consensus inclusion fixture: `NECESSARY` without full current licensing and typed approvals remains `UNRESOLVED` and excluded.
-9. Consensus exclusion fixture: `EXCLUDED_FROM_MVP` rejects consensus fields and provider calls at interfaces.
+8. Consensus inclusion fixture: `NECESSARY` without full current licensing and distinct digest-bound typed approvals remains `UNRESOLVED` and excluded.
+9. Consensus exclusion fixture: only a content-valid `NOT_NECESSARY` decision with empty provider/permitted-use sets, current interface-rejection evidence, and a digest-bound product-owner decision derives `EXCLUDED_FROM_MVP`; consensus fields and provider calls are rejected at interfaces.
 10. Approval fixture: one human decision cannot satisfy two approval types or scopes.
-11. Digest fixture: mutation of a boundary, usage inventory, rights record, or register digest preimage without the corresponding recomputed digest fails.
-12. Audit fixture: changed provider terms create a superseding version and preserve prior decisions.
+11. Digest fixture: mutation of a boundary, usage inventory, rights record, register, or consensus-decision preimage without the corresponding recomputed digest fails. Recomputing a consensus digest without fresh exact-digest approvals derives `UNRESOLVED`; an approval for another version, content digest, type, or scope cannot be reused.
+12. Audit fixture: changed provider terms or any consensus-decision body field creates a superseding version and preserves prior decisions and approval bindings.
 
 Verification evidence must contain schema-test output, boundary and denial fixtures, exact source/license content hashes, and the applicable typed human records. A fresh Sol xhigh reviewer must verify exact A-05/C-13 and T-4/R-3 coverage before delegated artifact approval can be recorded.
 
