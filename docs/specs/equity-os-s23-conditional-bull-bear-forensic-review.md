@@ -53,28 +53,44 @@ It does not activate any other Deferred capability.
 | Field | Type | Contract |
 |---|---|---|
 | `protocol_id` | stable identifier | Immutable and unique. |
+| `supersedes_protocol_id` | nullable stable identifier | Names the immediately prior protocol version when this body replaces one; null for the first version. Prior bodies remain immutable. |
 | `spec_id` / `register_id` | enums | Exactly `S23` / `E-03`. |
-| `activation_binding` | content-bound activation envelope | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-03 activation record. It is attached after the body digest is computed and is outside that digest's preimage. |
+| `deferred_activation_envelope` | content-addressed one-time component envelope | Contains `envelope_id`, `spec_id=S23`, `component_id`, `register_id=E-03`, `activation_record_id`, `activation_record_sha256`, `activation_predicate_id`, `activation_predicate_sha256`, `activation_approval_record_id`, `human_resolution_decision_id`, `human_resolution_sha256`, and `content_sha256`. It identifies the single retained E-03 Deferred-transition record and MUST NOT contain `protocol_id`, `protocol_body_sha256`, or another runtime-body field. It is attached after the body digest is computed and is outside that digest's preimage. |
 | `senior_reviewer_baseline` | typed object | Exactly one stable senior-reviewer ID and one frozen baseline-method version, plus an exact `case_id -> baseline_run_id` map; every baseline run is that reviewer acting without the challenged method. |
 | `case_ids` | nonempty identifier array | Preselected, versioned evaluation cases. |
 | `evidence_package_id_by_case` | nonempty identifier map | Key set equals `case_ids` exactly; each case resolves to one frozen package shared byte-identically by its baseline reviewer and all challenge roles. Missing and extra keys fail validation. |
 | `role_contract_versions` | object | Exact bull, bear, forensic, rebuttal, and adjudication instruction versions. |
 | `retention_rule` | typed object | Fixed before outputs are viewed; defines valid-issue adjudication, minimum positive incremental valid-issue detection, the cost measure, and the maximum approved cost per incremental valid issue. |
 | `budgets` / `stop_rules` | objects | Turns, tokens, elapsed time, analyst minutes, safety, and evidence limits. |
-| `required_approval_ids` | nonempty typed reference array | Exact one-to-one pre-run requirements from `S23-G02` through `S23-G04`; boundary-conditioned requirements are resolved before protocol freeze. `S23-G01` is a separate spec-artifact gate, while `S23-G05` through `S23-G07` are instantiated after their result or downstream content exists. This pre-run approval envelope is outside the body digest's preimage. |
-| `protocol_body_sha256` | lowercase SHA-256 | Pre-activation body digest defined below. |
+| `operational_approval_envelope` | content-addressed replaceable body envelope | Contains `envelope_id`, nullable `supersedes_envelope_id`, `protocol_id`, `protocol_body_sha256`, `spec_id=S23`, `register_id=E-03`, ordered nonempty `required_approval_ids`, and `content_sha256`. The ID list contains exact one-to-one body-scoped pre-run requirements `S23-G02B` through `S23-G04`; boundary-conditioned requirements are resolved before protocol freeze. `S23-G01` is a separate spec-artifact gate, `S23-G02A` is represented only by `deferred_activation_envelope`, and `S23-G05` through `S23-G07` are instantiated after their result or downstream content exists. |
+| `protocol_body_sha256` | lowercase SHA-256 | Envelope-excluded body digest defined below. |
 
 `protocol_body_sha256` is SHA-256 of canonical JSON of every protocol field
-except `activation_binding`, `required_approval_ids`, and
+except `deferred_activation_envelope`, `operational_approval_envelope`, and
 `protocol_body_sha256`. Canonical JSON is UTF-8 with sorted keys, no
 insignificant whitespace, direct Unicode, JSON booleans/null, and arrays in
-declared order. The body is frozen and hashed before the activation and
+declared order. The body is frozen and hashed before the component-activation and
 operational-approval envelopes are attached. Every operational approval
 requirement scope MUST name `protocol_id`, `protocol_body_sha256`, `S23`, and
-`E-03`; a requirement bound to another digest cannot pass. The validator
+`E-03`; `S23-G02B` additionally states that it authorizes only operation of
+that exact body and uses an active `SATISFY_APPROVAL` resolution, never the
+`ACTIVATE_DEFERRED` resolution. A requirement bound to another digest cannot
+pass. The validator
 recomputes the body projection exactly, validates each envelope independently,
 and rejects a missing field, an extra field in the digest preimage, or any body
 mutation not accompanied by a new digest and new scoped envelopes.
+
+`operational_approval_envelope.content_sha256` is SHA-256 of canonical JSON of
+the complete operational envelope except `content_sha256`. Its body identifiers
+and digest MUST equal the recomputed immutable protocol body, and its ID list
+MUST resolve one-to-one to the complete current requirements and approval
+records for that body. The envelope and every referenced requirement/record are
+new for each body version; mutation creates a new envelope digest and never
+changes the Deferred activation envelope. `supersedes_envelope_id` is null only
+for V1 and otherwise names the immediately prior same-register envelope; forks,
+cycles, cross-register links, and skipped lineage fail. Only the unreplaced leaf
+is current for a new run. Supersession makes the prior envelope historical but
+does not alter its body, records, or completed-run evidence.
 
 `S23-G01-DELEGATED-ARTIFACT` is independent of every runtime protocol. Its
 scope MUST name `S23`, this repository-relative path, and the SHA-256 of the
@@ -86,17 +102,59 @@ to the spec bytes requires a new artifact review and record; a later protocol
 change neither supplies nor invalidates the artifact approval for unchanged
 spec bytes.
 
-The validator dereferences `activation_binding` rather than trusting copied
-values. It recomputes the governed activation predicate using three-valued
-logic and hashes canonical JSON with exactly these keys and values:
-`predicate_id`, `expression`, `metrics`, deterministically
-`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The binding
-passes only when that digest is current, the result is `TRUE`, all metrics are
-resolved and unexpired, and the activation record, approved
-`GOAL_OR_PROCESS_AUTHORIZATION` record, and active `ACTIVATE_DEFERRED` canonical human
-resolution carry the same predicate ID/digest, exact scope, decision ID, and
-resolution digest. Missing, copied, stale, superseded, revoked, or
-content-mismatched values leave E-03 dormant.
+`deferred_activation_envelope` is immutable and has exactly the twelve fields
+declared above. After dereferencing `activation_record_id`, the validator
+resolves the unique registered component named by
+`activation_record.component_id`. The envelope projection over the nine keys
+below MUST equal this canonical projection exactly:
+
+```text
+{
+  spec_id: registered_component.primary_spec.spec_id,
+  component_id: activation_record.component_id,
+  register_id: activation_record.register_id,
+  activation_record_id: activation_record.activation_record_id,
+  activation_predicate_id: activation_record.activation_predicate_id,
+  activation_predicate_sha256: activation_record.activation_predicate_sha256,
+  activation_approval_record_id: activation_record.approval_record_id,
+  human_resolution_decision_id: activation_record.human_resolution_decision_id,
+  human_resolution_sha256: activation_record.human_resolution_sha256
+}
+```
+
+Thus `spec_id` is derived from the registered component owner, not from an
+activation-record field. Component, register, activation-record, predicate,
+and resolution IDs/digests compare directly; only the approval reference uses
+the explicit name mapping above. The three envelope-only values have separate,
+acyclic rules: `activation_record_sha256` equals SHA-256 of canonical JSON of
+the complete dereferenced activation record; `envelope_id` equals lowercase
+SHA-256 of canonical JSON of the complete envelope excluding `envelope_id` and
+`content_sha256`; and `content_sha256` equals lowercase SHA-256 of canonical
+JSON of the complete envelope excluding only `content_sha256`, including the
+validated `envelope_id`. The validator recomputes each preimage independently.
+
+It accepts exactly one envelope for E-03 only when
+`activation_source_status=Deferred`, live source status is `Open`, `In
+progress`, or `Accepted`, every projection equality and digest rule above
+passes, and the record is the single activation record created on the legal
+`Deferred -> Open|In progress` transition. The activation record, its approved
+`GOAL_OR_PROCESS_AUTHORIZATION` record, and its active `ACTIVATE_DEFERRED`
+canonical human resolution MUST carry the same component, register, activation
+scope, predicate ID/digest, decision ID, and resolution digest. The activation
+scope is component-local and MUST NOT name or authorize a runtime protocol.
+
+For activation currentness, the validator recomputes the governed predicate
+using three-valued logic and hashes canonical JSON with exactly these keys and
+values: `predicate_id`, `expression`, `metrics`, deterministically
+`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The stored
+activation predicate digest MUST equal that current digest, the result MUST be
+`TRUE`, and all metrics MUST be resolved and unexpired. The referenced
+activation resolution and approval MUST remain active, purpose-matching,
+unsuperseded, and unrevoked. A later protocol reuses the same envelope ID and
+`content_sha256`; it obtains a new body digest and wholly new body-scoped
+operational approvals. A second activation envelope, activation record, or
+`Deferred` transition for E-03 is invalid. Missing, copied, stale, superseded,
+revoked, extra, or content-mismatched activation values leave E-03 dormant.
 
 Each referenced operational approval requirement contains `approval_id`,
 `approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
@@ -106,7 +164,10 @@ Each referenced operational approval requirement contains `approval_id`,
 `resolution_decision_id`, and `resolution_content_sha256`. Every operational
 record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
 timestamp, evidence, canonical decision ID, and digest from one active immutable
-resolution. That resolution digest is SHA-256 of canonical JSON of the complete
+`SATISFY_APPROVAL` resolution. It MUST remain current, unexpired,
+unsuperseded, and unrevoked and MUST bind the exact current protocol body. It
+MUST NOT use the component's `ACTIVATE_DEFERRED` decision or activation approval
+record. That resolution digest is SHA-256 of canonical JSON of the complete
 resolution object except `content_sha256`; its `entry_authority_sha256` is the
 same digest over the referenced human-review entry excluding `state`,
 `resolution_decision_ids`, and `content_sha256`. The separate `S23-G01`
@@ -151,10 +212,11 @@ Missing or blocked cases remain in the denominator.
 1. Sequencing is fail closed: the separately scoped spec-artifact gate controls
    whether this contract may be implemented but is not a runtime protocol
    requirement. At runtime, `protocol_body_sha256` validates before the
-   activation and approval envelopes; `S23-G02`, both `S23-G03` requirements,
-   and every applicable `S23-G04` requirement are `SATISFIED` before an
-   evaluation starts;
-   `S23-G05` may be satisfied only from complete results; and promotion or
+   one-time activation and replaceable approval envelopes. The immutable
+   `S23-G02A` component envelope MUST validate; `S23-G02B`, both `S23-G03`
+   requirements, and every applicable `S23-G04` requirement MUST be `SATISFIED`
+   before an evaluation starts. `S23-G05` may be satisfied only from complete
+   results; promotion or
    distribution requires its own later `S23-G06` or `S23-G07` records.
    `S23-G05` through `S23-G07` are absent from the frozen pre-run inventory and
    are instantiated in separate result/downstream envelopes only after the
@@ -187,7 +249,8 @@ Missing or blocked cases remain in the denominator.
 | Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
 |---|---|---|---|---|
 | `S23-G01-DELEGATED-ARTIFACT` | Exact current spec-file SHA-256 and fresh clean Sol xhigh review with source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. This document records no approval. |
-| `S23-G02-ACTIVATION` | Current TRUE predicate digest, evidence, E-03 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-03 `ACTIVATE_DEFERRED` scope | Capability remains dormant. |
+| `S23-G02A-COMPONENT-ACTIVATION` | Current TRUE predicate digest, component-local evidence, the single retained E-03 activation record and record digest, and matching canonical human-resolution digest; scope excludes every protocol/body identifier | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-03 `ACTIVATE_DEFERRED` component scope | Capability remains dormant. |
+| `S23-G02B-PROTOCOL-AUTHORIZATION` | Exact `protocol_id`, `protocol_body_sha256`, `S23`, `E-03`, purpose, budgets, stops, and current supporting evidence | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized to operate that exact protocol body through a distinct active `SATISFY_APPROVAL` resolution | That protocol body does not run. |
 | `S23-G03A-PROTOCOL-ANALYST` | Frozen cases, single-reviewer baseline, role contracts, metrics, denominator, retention rule, budgets, and stops | `ANALYST_ACCEPTANCE` | Competent analyst | Evaluation does not start. |
 | `S23-G03B-PROTOCOL-DOMAIN` | Valid-issue definition and case/forensic representativeness | `DOMAIN_EXPERT_ACCEPTANCE` | Competent domain expert | Evaluation does not start. |
 | `S23-G04A-FORENSIC-LEGAL` | Exact use crosses the legal/allegation boundary; requirement is included when that boundary predicate is `TRUE` | `LEGAL_REVIEW` | Competent legal authority | Forensic mode remains disabled. |
@@ -198,9 +261,12 @@ Missing or blocked cases remain in the denominator.
 | `S23-G07B-DISTRIBUTION-LEGAL` | Legal decision for the exact distributed content and audience | `LEGAL_REVIEW` | Competent legal authority | Output remains private/internal and undistributed. |
 | `S23-G07C-DISTRIBUTION-REGULATORY` | Regulatory decision for the exact distributed content and audience | `REGULATORY_REVIEW` | Competent regulatory authority | Output remains private/internal and undistributed. |
 
-`S23-G01` and `S23-G05` through `S23-G07` are not listed in
-`required_approval_ids`. G01 cannot satisfy a runtime requirement; G05 through
-G07 are separate result/downstream requirements. Each record satisfies at most
+`S23-G01`, `S23-G02A`, and `S23-G05` through `S23-G07` are not listed in
+`operational_approval_envelope.required_approval_ids`. G01 cannot satisfy a
+runtime requirement; G02A is the one-time component envelope; G05 through G07
+are separate result/downstream
+requirements. `S23-G02B` and every other operational requirement are newly
+instantiated for each body digest. Each record satisfies at most
 one requirement. An applicability predicate for `S23-G04A` or `S23-G04B` that
 is `UNKNOWN` disables forensic mode; it is never treated as false. Delegated
 artifact approval does not satisfy activation, analyst, domain, legal,
@@ -225,35 +291,52 @@ Before activation:
    superseded/revoked resolutions; reused approval records; and delegated
    approval alone are rejected before any run.
 3. Negative binding fixtures mutate a protocol-body field without replacing
-   `protocol_body_sha256`, bind an activation or operational approval to a
-   different body digest, and include either envelope in the canonical body
-   preimage; every fixture is rejected. Changing only an envelope leaves the
-   body digest stable but still fails unless the replacement envelope is
-   current and matches the frozen body scope exactly.
+   `protocol_body_sha256`, bind an operational approval to a different body
+   digest, put a protocol/body field in the component activation envelope, and
+   include either envelope in the canonical body preimage; every fixture is
+   rejected. Changing only an envelope leaves the body digest stable but still
+   fails unless the immutable activation envelope is current and the replacement
+   operational envelope is current and matches the frozen body scope exactly.
+   Component-envelope fixtures independently mutate each of the nine projected
+   fields listed above while recomputing envelope-only hashes, and independently
+   mutate `activation_record_sha256` with both envelope hashes recomputed,
+   `envelope_id` with `content_sha256` recomputed, and `content_sha256` alone;
+   every fixture is rejected by the rule whose preimage or equality it violates.
 4. Negative artifact-scope fixtures omit or alter the reviewed spec-file
-   SHA-256, bind `S23-G01` to a runtime protocol, place `S23-G01` or any
-   `S23-G05` through `S23-G07` requirement in `required_approval_ids`, pre-create
+   SHA-256, bind `S23-G01` to a runtime protocol, place `S23-G01`, `S23-G02A`,
+   or any `S23-G05` through `S23-G07` requirement in
+   `operational_approval_envelope.required_approval_ids`, pre-create
    a result/downstream requirement without its content digest, or use a runtime
    approval to satisfy G01; every fixture is rejected without affecting E-03's
    dormant state.
 
 After activation:
 
-5. The case-to-package map has exactly one entry per case, and the single senior
+5. Re-version fixtures approve body V1, then freeze a distinct protocol ID and
+   body V2 with explicit protocol/envelope supersession links. V2
+   reuses the exact V1 `deferred_activation_envelope` ID and digest and supplies
+   wholly new `S23-G02B` through `S23-G04` requirements and records bound to V2;
+   V2 passes without another E-03 Status transition. Reusing any V1 operational
+   record for V2, issuing a second activation record/envelope, or attempting a
+   second `Deferred -> Open|In progress` transition is rejected. Revocation or
+   staleness blocks the authority it actually governs: activation-envelope
+   invalidity blocks every body, while one body's approval invalidity blocks
+   only that body.
+6. The case-to-package map has exactly one entry per case, and the single senior
    reviewer and all challenge roles receive each case's byte-identical package
    and cutoff; missing/extra mappings, a second reviewer, an alternative
    baseline, evidence fetches, and package mutation fail closed.
-6. Unsupported, unlocated, or epistemically unlabeled material outputs are
+7. Unsupported, unlocated, or epistemically unlabeled material outputs are
    blocked and cannot enter adjudication or promotion.
-7. Contradictory fixtures retain both sides and unresolved state; a majority or
+8. Contradictory fixtures retain both sides and unresolved state; a majority or
    high-confidence unsupported output cannot become `SUPPORTED`.
-8. Forensic fixtures distinguish testable discrepancies from allegations and
+9. Forensic fixtures distinguish testable discrepancies from allegations and
    route boundary-crossing language to the typed human gate.
-9. Baseline-versus-challenge reports account for every case, failure,
+10. Baseline-versus-challenge reports account for every case, failure,
    correction, false positive, analyst minute, blocked result, and adjudicated
    incremental valid issue. Zero valid increment or cost above the frozen limit
    forces `DO_NOT_RETAIN` and prevents `PASS`.
-10. Replaying frozen deterministic validators yields the same result and binds
+11. Replaying frozen deterministic validators yields the same result and binds
    exact role-contract, source, and `protocol_body_sha256` values; requirement
    and approval-record IDs remain one-to-one. Negative fixtures change result
    bytes after `S23-G05`, reuse one adjudication for another result, and change

@@ -69,13 +69,14 @@ The following concepts are distinct even if an implementation co-locates them:
 
 | Concept | Stable identity and required meaning | Mutability rule |
 |---|---|---|
-| Source occurrence (`SourceOccurrence`) | `source_occurrence_id` identifies one immutable raw value occurrence at an exact location in one immutable source version; it preserves raw text/value and source coordinates | Never overwritten; corrected source bytes create a new source version and occurrence |
-| Extraction result | `extraction_result_id` identifies parser/model or actor-recorded manual extraction output for one `source_occurrence_id`, extractor identity/version, prompt/config where applicable, and extraction time | A parser/config upgrade or manual re-extraction appends a new result; it does not rewrite the occurrence or an earlier result |
-| Observation | `observation_id` identifies one typed, extracted, normalized, pre-reconciliation value derived from one extraction result and bound to its raw source occurrence; it retains raw and normalized value, units, currency, scope, dimensions, exact source location, and temporal fields | Append-only; a new extraction or normalization interpretation creates a new Observation and never rewrites the source occurrence, extraction result, or earlier Observation |
-| Measurement key | `measurement_key_id` identifies the economic slot composed from entity, metric definition/version, period, statement/consolidation scope, dimension set, and accounting/adjustment basis | Definition or dimensional meaning changes create a new key/version; aliases cannot merge incompatible slots |
-| Revision family | `revision_family_id` groups Observations believed, through explicit reconciliation, to represent the same measurement slot | Membership is append-only and reasoned; equality of a key alone does not auto-supersede |
-| Reconciled Fact revision | `fact_revision_id` records one reconciled use of a selected `observation_id` for a measurement key, its complete source/extraction lineage, quality/reconciliation state, temporal bounds, and reason | Append-only; a correction or restatement creates another revision and edge |
-| Canonical selection | `canonical_selection_id` records which fact revision is approved for a measurement key from one knowledge time, its exact predecessor, event class, policy, evidence, and approval bindings | Never updated in place; an atomic compare-and-append creates one successor, and the successor's start derives the predecessor's end |
+| Source occurrence (`SourceOccurrence`) | `source_occurrence_id` plus `source_occurrence_sha256` identifies one immutable raw value occurrence at an exact location in one immutable source version; it preserves raw text/value and source coordinates | Never overwritten; corrected source bytes create a new source version, occurrence ID, and digest |
+| Extraction result | `extraction_result_id` plus `extraction_result_sha256` identifies parser/model or actor-recorded manual extraction output for one exact source-occurrence ID/digest, extractor identity/version, prompt/config where applicable, and extraction time | A parser/config upgrade or manual re-extraction appends a new result and digest; it does not rewrite the occurrence or an earlier result |
+| Observation | `observation_id` plus `observation_sha256` identifies one typed, extracted, normalized, pre-reconciliation value derived from one exact extraction-result and source-occurrence ID/digest chain; it retains raw and normalized value, units, currency, scope, dimensions, exact source location, and temporal fields | Append-only; a new extraction or normalization interpretation creates a new Observation and digest and never rewrites the source occurrence, extraction result, or earlier Observation |
+| Measurement key | `measurement_key_id` plus `measurement_key_sha256` identifies the economic slot composed from entity, metric definition/version, period, statement/consolidation scope, dimension set, and accounting/adjustment basis | Definition or dimensional meaning changes create a new key/version/digest; aliases cannot merge incompatible slots |
+| Revision family | `revision_family_id`, immutable `revision_family_version`, and `revision_family_sha256` group the exact Observation ID/digest members believed, through explicit reconciliation, to represent the same measurement slot | Membership appends by creating a new immutable family version/digest with reasoned edges; equality of a key alone does not auto-supersede |
+| Reconciliation decision | `reconciliation_decision_id` plus `reconciliation_decision_sha256` records one immutable family/version decision over exact selected, rejected, and deferred Observation ID/digest candidates, policy/evidence, actor, and time | Never updated; changed candidates, policy, evidence, rationale, or disposition create a new decision ID/digest |
+| Reconciled Fact revision | `fact_revision_id` plus `fact_revision_sha256` records one reconciled use of an exact Observation ID/digest for a measurement key, its complete source/extraction lineage, quality/reconciliation state, temporal bounds, and reason | Append-only; a correction or restatement creates another revision ID/digest and edge |
+| Canonical selection | `canonical_selection_id` plus `canonical_selection_sha256` records which exact Fact-revision ID/digest is approved for a measurement key from one knowledge time, its exact predecessor ID/digest, event class, policy, evidence, and approval bindings | Never updated in place; an atomic compare-and-append creates one successor and digest, and the successor's start derives the predecessor's end |
 
 Repository glossary vocabulary controls these object names. `Observation` and
 `observation_id` are reserved exclusively for the typed, extracted, normalized,
@@ -110,76 +111,152 @@ fresh Sol xhigh review.
 
 ### `SourceOccurrence`
 
-- `source_occurrence_id`, immutable `document_id` and `document_version`;
+- `source_occurrence_id`, `record_schema_version`, immutable `document_id`,
+  `document_version`, and document byte hash;
 - exact `source_location` capable of deterministic source jump and line/page/
   table/cell or equivalent locator;
 - `raw_value` and raw unit/currency/scope tokens without normalization loss;
 - source valid-period signals and recorded `knowledge_time`/first-seen time;
-- content/location digest and creation audit metadata.
+- content/location digest, creation audit metadata, and
+  `source_occurrence_sha256` under the record-digest contract below.
 
 ### `ExtractionResult`
 
-- `extraction_result_id`, `source_occurrence_id`, extractor
+- `extraction_result_id`, `record_schema_version`, exact
+  `source_occurrence_id`/`source_occurrence_sha256`, extractor
   kind/version/config hash, prompt/config where applicable, extraction time,
   and recorded `knowledge_time`;
-- immutable parser/model or actor-recorded manual output or output reference,
+- immutable parser/model or actor-recorded manual output or content-addressed
+  output reference,
   candidate count, warnings, confidence, validation results, and output digest;
   and
 - zero or more Observations may immutably reference the result; extraction
-  success alone implies no Observation, canonical, or Fact status.
+  success alone implies no Observation, canonical, or Fact status; the complete
+  record carries `extraction_result_sha256`.
 
 ### `Observation`
 
-- `observation_id`, `extraction_result_id`, and `source_occurrence_id`, with
-  exactly one bound extraction result and its exact raw source occurrence;
+- `observation_id`, `record_schema_version`, exact
+  `extraction_result_id`/`extraction_result_sha256`, and exact
+  `source_occurrence_id`/`source_occurrence_sha256`, with exactly one bound
+  extraction result and its exact raw source occurrence;
 - losslessly bound `raw_value` plus typed normalized value, unit, currency,
   period, dimensions, scope, metric candidate, and exact `source_location`;
 - valid-time signals, recorded `knowledge_time`, normalization policy/version,
   validation/quality state, and immutable content digest; and
-- explicit pre-reconciliation status. One extraction result may emit zero or
+- explicit pre-reconciliation status and `observation_sha256`. One extraction
+  result may emit zero or
   more candidate Observations, but ambiguity remains explicit and no candidate
   is silently selected as a Fact.
 
 ### `MeasurementKey`
 
-- `measurement_key_id`, stable entity ID, registered metric definition and
+- `measurement_key_id`, `record_schema_version`, stable entity ID, registered metric definition and
   definition version;
 - period type/bounds, statement and consolidation scope, ordered canonical
   dimension set, and accounting/adjustment basis; and
-- canonical serialization/digest so ordering or formatting cannot create a
-  second identity for the same declared slot.
+- `measurement_key_sha256` so ordering or formatting cannot create a second
+  identity for the same declared slot.
 
 ### `RevisionFamily` and `ReconciliationDecision`
 
-- `revision_family_id`, `measurement_key_id`, typed member `observation_id`
-  refs with their `source_occurrence_id` and `extraction_result_id` lineage;
-- reconciliation status, conflict set, selected/rejected/deferred candidates,
-  rationale/evidence refs, actor and timestamp; and
+- `revision_family_id`, immutable `revision_family_version`,
+  `record_schema_version`, exact `measurement_key_id`/`measurement_key_sha256`,
+  typed member Observation ID/digest refs with their SourceOccurrence and
+  ExtractionResult ID/digest lineage, and `revision_family_sha256`;
+- immutable `reconciliation_decision_id`, `record_schema_version`, exact family
+  ID/version/digest, conflict set, selected/rejected/deferred Observation
+  ID/digest candidates, rationale/evidence/approval content refs, actor and
+  timestamp, and `reconciliation_decision_sha256`; and
 - distinct `revision_reason`: `ISSUER_RESTATEMENT`, `SOURCE_CORRECTION`,
   `PARSER_RE_EXTRACTION`, `MANUAL_CORRECTION`, or
   `NORMALIZATION_POLICY_CHANGE`.
 
 ### `FactRevision` and `CanonicalSelection`
 
-- stable `fact_id` plus immutable `fact_revision_id`, selected `observation_id`,
-  and its exact source-occurrence/extraction lineage;
+- stable `fact_id` plus immutable `fact_revision_id`, `record_schema_version`,
+  selected Observation ID/digest, exact measurement-key and reconciliation-
+  decision ID/digest refs, and its exact source-occurrence/extraction lineage;
 - raw and normalized value, unit, currency, dimensions, scope, metric
   definition version, source location, valid-time interval, knowledge-time
   evidence, quality status, and reconciliation status;
-- supersession/revision edge with typed reason and prior revision; and
+- supersession/revision edge with typed reason and prior Fact-revision ID/digest,
+  plus `fact_revision_sha256`; and
 - append-only canonical selection with `measurement_key_id`, selected
   `fact_revision_id`, `effective_from_knowledge_time`, transition sequence,
   exact predecessor ID, selection-event type, reconciliation-policy
   version and policy-approval binding, selector evidence, typed event-approval
-  requirement/record refs, and exact human-resolution bindings where a human
-  approval is required.
+  requirement/record refs, exact human-resolution bindings where a human
+  approval is required, and `canonical_selection_sha256` over the complete
+  immutable selection record.
+
+### Content-addressed record and dependency contract
+
+Every record above imports S10's `eos-manifest-json-v1` byte profile. Its
+digest preimage is the ASCII domain separator in the table followed by the
+canonical JSON of the complete immutable record with only its own digest field
+removed entirely. All other declared fields are present, including nullable
+fields, schema version, identity, temporal/audit fields, exact dependency
+ID/digest refs, and external content-addressed refs.
+
+| Record | Own digest field | Domain separator |
+|---|---|---|
+| `SourceOccurrence` | `source_occurrence_sha256` | `EquityOS:S12:SourceOccurrence:v1\n` |
+| `ExtractionResult` | `extraction_result_sha256` | `EquityOS:S12:ExtractionResult:v1\n` |
+| `Observation` | `observation_sha256` | `EquityOS:S12:Observation:v1\n` |
+| `MeasurementKey` | `measurement_key_sha256` | `EquityOS:S12:MeasurementKey:v1\n` |
+| `RevisionFamily` immutable version | `revision_family_sha256` | `EquityOS:S12:RevisionFamily:v1\n` |
+| `ReconciliationDecision` | `reconciliation_decision_sha256` | `EquityOS:S12:ReconciliationDecision:v1\n` |
+| `FactRevision` | `fact_revision_sha256` | `EquityOS:S12:FactRevision:v1\n` |
+| `CanonicalSelection` | `canonical_selection_sha256` | `EquityOS:S12:CanonicalSelection:v1\n` |
+
+The literal `\n` in each table value is one LF byte. Stored digests are
+lowercase hexadecimal SHA-256. Every S12 dependency is referenced by exact
+record type, ID, schema version, and digest: an ID alone, a mutable current
+pointer, or a copied digest without record-byte recomputation is invalid. A
+SourceOccurrence additionally binds the S09 document ID/version/byte hash. An
+ExtractionResult binds any out-of-row output/config/prompt artifact by exact
+content hash. Reconciliation decisions and canonical selections bind every
+external policy, evidence, approval-record, and human-resolution reference by
+exact immutable identity/version where defined and content digest.
+
+Dependencies always point to already immutable records: result to occurrence;
+Observation to result and occurrence; family version to measurement key and
+member Observations; reconciliation decision to family version, measurement
+key, and all candidate Observations; Fact revision to measurement key,
+selected Observation, reconciliation decision, and prior Fact revision when
+present; canonical selection to measurement key, selected Fact revision, and
+predecessor selection when present. This is an acyclic content-addressed graph.
+An attempted forward/self reference, cycle, type-confused edge, ID/digest
+substitution, or duplicate identity with different digest fails before append.
+
+The authoritative append surfaces are closed. S09 may invoke
+`append_source_occurrence` only with a verified immutable document/location;
+registered extractors and the actor-bound manual path may invoke
+`append_extraction_result`; the registered normalization/validation stage may
+invoke `append_observation`; and the reconciliation stage may invoke
+`append_revision_family_version`, `append_reconciliation_decision`, and
+`append_fact_revision` only after their declared lineage/policy checks pass.
+Canonical selection uses only `compare_and_append_canonical_selection` below.
+These interfaces append complete digest-valid records atomically. Direct
+updates, partial records, and reuse of an existing identity with changed bytes
+are denied. Appending an occurrence, result, or Observation is evidence
+recording only and grants no Fact, canonical, or approval status.
+
+S10's `S12LineageClosure` is the mandatory package projection of this graph.
+S12 owns the record identities, dependency edges, and digest preimages; S10
+owns deterministic traversal, closure hashing, retention pinning, and package
+reconstruction. Neither side may replace an intermediate SourceOccurrence or
+ExtractionResult with an Observation/Fact-only shortcut.
 
 No field may be silently null-filled or defaulted when its absence could alter
 identity, period, units, currency, scope, definition, cutoff eligibility, or
 canonical selection. Such a candidate remains unresolved.
 
-A Fact revision and canonical selection resolve immutably to the complete
-`source_occurrence_id` → `extraction_result_id` → `observation_id` lineage.
+A Fact revision and canonical selection resolve immutably by exact IDs and
+digests to the complete `source_occurrence_id` → `extraction_result_id` →
+`observation_id` lineage plus the measurement key, family/reconciliation, Fact-
+revision, and selection records required by S10's closure.
 Neither may become knowledge-eligible before every bound source occurrence,
 extraction result, Observation, reconciliation decision, policy, evidence item,
 and required approval is knowledge-eligible. At cutoff `t`, both the canonical-
@@ -204,8 +281,9 @@ evidence, and approval bindings. In one transaction it:
 
 1. verifies the fact belongs to the measurement key, the expected predecessor
    is the unique current head, the start time is monotonic, the selected Fact's
-   complete lineage is knowledge-eligible at that start time, and every
-   required approval binding is satisfied;
+   complete ID/digest lineage is valid and knowledge-eligible at that start
+   time, every record digest recomputes, and every required approval binding is
+   satisfied;
 2. enforces the root, successor, sequence, and start-time uniqueness
    constraints; and
 3. appends the new selection and commits without updating the predecessor.
@@ -321,6 +399,10 @@ evidence exists.
 - Source occurrence, extraction result, Observation, measurement key, revision
   family, Fact revision, and canonical selection have distinct IDs and
   lifecycles. `source_occurrence_id` and `observation_id` are never aliases.
+- Every immutable S12 record has the declared schema version, domain-separated
+  digest, and exact type/ID/schema-version/digest dependency refs. IDs without
+  matching recomputed digests and mutable latest pointers have no lineage
+  authority.
 - Every Observation binds exactly one extraction result and its exact source
   occurrence; every Fact revision binds a reconciled Observation and preserves
   that complete lineage.
@@ -344,6 +426,10 @@ evidence exists.
   post-cutoff or missing occurrence, result, Observation, reconciliation,
   policy, evidence, or approval binding fails closed even if the selection row
   alone satisfies the successor-derived time predicate.
+- Package use additionally requires S10 to recompute the complete
+  `S12LineageClosure`. A top-level Observation/Fact/selection ref cannot stand
+  in for an omitted SourceOccurrence, ExtractionResult, family/reconciliation
+  record, or external content-addressed leaf.
 - Unknown revision reason, incompatible dimension/definition, broken source
   digest, unsafe migration, or missing comparative handling fails closed.
 - Provisional envelopes cannot be represented as final B-05 or B-10 acceptance.
@@ -352,7 +438,7 @@ evidence exists.
 
 | Gate | Required evidence | Approval type and authority | Fail-closed result |
 |---|---|---|---|
-| Initial S12 delegated artifact approval | Fresh clean Sol xhigh review bound to current bytes, exact ownership, M-2, provisional posture, both amendment gates, declared identity/transition interfaces, S15 mapping delegation, fixture catalogue, and test specifications; no product execution result is required | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
+| Initial S12 delegated artifact approval | Fresh clean Sol xhigh review bound to current bytes, exact ownership, M-2, provisional posture, both amendment gates, declared identity/transition interfaces, record-digest/S10 lineage-closure contract, S15 mapping delegation, fixture catalogue, and test specifications; no product execution result is required | `DELEGATED_ARTIFACT_APPROVAL`; fresh Sol xhigh under delegated goal authority | Spec remains draft; no personal user approval is inferred |
 | Reconciliation/canonical-selection policy | Source hierarchy, fixtures, conflict outcomes, comparative tests, and audit fields | `DOMAIN_EXPERT_ACCEPTANCE` by a competent human for financial meaning and reconciliation policy | Conflicted candidate remains unresolved and cannot become canonical fact |
 | Canonical-selection event | Versioned closed S15 event mapping, exact event/scope evidence, and all resulting requirement, record, and resolution bindings | Each distinct typed approval returned by S15's mapping; one record satisfies one requirement and no nearby approval is inferred | Selection append is denied and the candidate remains unresolved |
 | Manual correction | Exact source/error evidence, affected dependency closure, reason, and new revision | `ANALYST_ACCEPTANCE` by the responsible analyst for the correction scope | Original remains; proposed correction is not canonical |
@@ -409,8 +495,9 @@ gates, and at the B-05/B-10 amendment gates where applicable, executable
 fixtures must prove:
 
 1. each identity layer is distinct, `source_occurrence_id` never aliases
-   `observation_id`, and every Observation and Fact retains its exact
-   source/version/extraction lineage;
+   `observation_id`, every record digest independently recomputes, and every
+   Observation and Fact retains its exact ID/digest source/version/extraction
+   lineage;
 2. a parser re-extraction appends a result and every emitted typed candidate as
    a new Observation without rewriting the source occurrence, prior result, or
    prior Observation or masquerading as issuer restatement;
@@ -439,6 +526,17 @@ fixtures must prove:
 12. a source-to-spec audit finds B-05, B-10, B-11, C-03, and M-2 exactly once
     under S12 and no register row owned by another spec.
 
+### Focused negative fixtures
+
+| Fixture | Mutation | Required result |
+|---|---|---|
+| `S12-ND-01-OCCURRENCE-BYTES` | Change raw value, source coordinates, document hash, or audit field under an existing `source_occurrence_id` | `source_occurrence_sha256` recomputation fails; the record cannot be read as the old occurrence |
+| `S12-ND-02-RESULT-SUBSTITUTION` | Replace an ExtractionResult's occurrence digest or output/config digest while retaining its ID | `extraction_result_sha256` and dependency verification fail; no Observation or package may consume it |
+| `S12-ND-03-OBSERVATION-SHORTCUT` | Point an Observation at a valid occurrence but omit or swap its ExtractionResult ID/digest | Observation digest/dependency verification fails; it cannot enter reconciliation or S10 closure |
+| `S12-ND-04-FACT-LINEAGE-GAP` | Omit a family/reconciliation/Observation dependency, swap a selected Observation digest, or add a cyclic/forward edge to a Fact revision | Append/reconstruction fails before canonical selection; an ID-only or latest-record fallback is forbidden |
+| `S12-ND-05-SELECTION-PREDECESSOR` | Keep a predecessor ID but change its digest, or bind a valid Fact-revision ID to another digest | Atomic append aborts without changing the prior chain; the selection digest cannot reproduce |
+| `S12-ND-06-CLOSURE-MUTATION` | After package freeze, replace any occurrence, result, Observation, reconciliation, Fact, or selection node with altered bytes under the same ID | The node digest, S10 closure digest, and package manifest hash cannot all verify; reconstruction fails closed |
+
 For B-05 amendment acceptance, rerun fixtures against the evidence-derived
 final schema and verify every final field has an evidence/contract trace. For
 B-10 amendment acceptance, verify all field dispositions and migration paths
@@ -454,9 +552,10 @@ cutoff reconstruction through S11.
   vocabulary versions used in measurement keys.
 - B-02/S14 supplies actual incremental-update evidence for the B-10 amendment.
 - B-06/S13 supplies the evidence-derived claim schema needed before final delta.
-- S10 consumes exact SourceOccurrence, Observation, and Fact-revision IDs and
-  their extraction lineage as the authoritative SQL/package closure;
-  `observation_id` never denotes a raw occurrence.
+- S10 consumes exact SourceOccurrence, ExtractionResult, Observation,
+  MeasurementKey, RevisionFamily, ReconciliationDecision, FactRevision, and
+  CanonicalSelection IDs/schema versions/digests as the authoritative
+  SQL/package closure; `observation_id` never denotes a raw occurrence.
 - S11 applies knowledge cutoffs to the complete source-occurrence, extraction,
   Observation, Fact-revision, and canonical-selection lineage, then uses the
   unchanged successor-derived selection predicate for historical replay.

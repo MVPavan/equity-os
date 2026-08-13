@@ -109,6 +109,76 @@ missing applicability field/basis, an inapplicable record shape, stale
 evidence, or expired authorization blocks acquisition. Absence never defaults
 to `NOT_REQUIRED`.
 
+### `TransformationAuthorization`
+
+Every parse or re-extraction request binds one immutable authorization
+snapshot that is current for the exact transformation. It contains
+`transformation_authorization_id`, `authorization_snapshot_sha256`,
+`document_id`, matching `original_content_sha256`, the historical
+`acquisition_authorization_id`, exact source/provider/use scope, operation
+(`PARSE` or `REEXTRACT`), parse purpose/schema version, permitted derived-output
+types and consumers/destinations, permitted retention class/destination and
+deadline, `rights_policy_ref`, `data_rights_approval_requirement_id`,
+`data_rights_approval_record_id`,
+`provider_authorization_applicability`,
+`provider_authorization_applicability_evidence_ref`, nullable
+`provider_authorization_requirement_id`, nullable
+`provider_authorization_record_id`, `authority_input_digests`, `evaluated_at`,
+`valid_from`, and `valid_until`. Every referenced policy, applicability,
+approval requirement, approval record, and provider requirement/record has its
+exact current content digest in
+`authority_input_digests`. That object has exactly the
+`rights_policy_ref`, `data_rights_approval_requirement_id`,
+`data_rights_approval_record_id`, and
+`provider_authorization_applicability_evidence_ref` keys, plus the
+`provider_authorization_requirement_id` and
+`provider_authorization_record_id` keys when applicability is `REQUIRED`;
+every value is the lowercase SHA-256 of the referenced current object's
+canonical content. `REQUIRED` provider applicability requires both provider
+requirement/record fields to be non-null; `NOT_REQUIRED` requires both to be
+null and retains the authoritative applicability evidence; `UNKNOWN` blocks
+authorization.
+`valid_until` is the earliest non-null expiry among the applicable
+transformation, derived-output, retention, rights, and provider authorities; it
+is null only when each authoritative input explicitly has no expiry. A missing
+or unknown expiry blocks authorization.
+
+`authorization_snapshot_sha256` is lowercase SHA-256 of canonical JSON for
+all snapshot fields listed above except that digest itself. Before parser
+invocation and again before any output becomes consumable, the validator
+recomputes the snapshot digest, resolves every authority input from its
+authoritative store, and requires matching live content digests, exact
+document/hash and operation/output/retention scope, and a current validity
+window. For each bound approval, the validator resolves the exact requirement
+ID and requires `status=SATISFIED`; its non-null `matched_record_id` must equal
+the bound record ID and identify one current record with `decision=APPROVED`.
+The requirement and record must match exactly on approval type, required
+authority/authority, scope, actor, timestamp, and evidence; the record's
+`authority_source` must be `HUMAN_RESOLUTION`. Each data-rights or provider
+record must in turn resolve, by its bound decision ID and content digest, to the
+current active immutable human resolution with
+`decision_type=SATISFY_APPROVAL`, the same scope and authority basis, and a
+competent human actor. Validation covers the complete approval inventory: one
+requirement matches exactly one record/resolution, and no approval record ID or
+resolution decision ID may match a second requirement. Missing or unmatched
+requirements, a non-`SATISFIED` status, a non-`APPROVED` record, a stale or
+wrong-purpose resolution, digest staleness, expiry, revocation, supersession,
+field mismatch, reuse, or scope mismatch rejects the request; a mid-attempt
+failure leaves the attempt `FAILED` and no output consumable. An
+acquisition-time authorization is historical provenance only and never
+substitutes for this current check.
+
+Renewal appends a new `TransformationAuthorization` with a new ID and digest,
+even when only an expiry changes. It never mutates or silently refreshes an old
+snapshot. A later parse/re-extraction must bind the renewed snapshot; prior
+attempt records, historical output hashes, and the `SourceDocument` acquisition
+authorization remain immutable audit evidence. Derived-output bytes remain
+subject to their bound retention policy. Continued retention or use after the
+bound authorization ceases to be current fails closed, and a renewal does not
+silently reauthorize the old attempt or output. This does not rewrite
+acquisition-time provenance or assert retention of original bytes beyond their
+separately authorized policy.
+
 ### `SourceDocument`
 
 | Field | Contract |
@@ -181,16 +251,34 @@ Each parse/re-extraction attempt is append-only and records stable
 `predecessor_parse_attempt_id`, nullable `retry_of_parse_attempt_id`, parse
 purpose/schema version, parser/model and version, configuration hash, start and
 completion timestamps, output refs and hashes, warnings, confidence where
-applicable, and status (`SUCCEEDED`, `PARTIAL`, or `FAILED`). Sequence one has
-no predecessor; every later attempt names the immediately preceding attempt,
-and a retry must name an earlier attempt for the same document. Unknown IDs,
-cross-document links, gaps, forks, or cycles invalidate the history.
+applicable, exact `transformation_authorization_id` and
+`authorization_snapshot_sha256`, `authorization_checked_at`,
+nullable `authorization_rechecked_at`, and status (`SUCCEEDED`, `PARTIAL`, or
+`FAILED`). The first timestamp is immediately before parser invocation; the
+second is immediately before output publication and is mandatory for any
+attempt with output refs. The first check and any second check must fall within
+the interval beginning at `valid_from` and ending at `valid_until` when that
+field is non-null. `evaluated_at <= authorization_checked_at`; when the second
+check exists, `authorization_checked_at <= authorization_rechecked_at`. Both
+checks must resolve the same snapshot ID/digest; no output-bearing attempt may
+omit the second check. Sequence one has no predecessor; every later attempt
+names the immediately preceding attempt, and a retry must name an earlier
+attempt for the same document. Unknown IDs, cross-document links, gaps, forks,
+cycles, authorization ID/digest mismatch, or authorization scope that does not
+cover the attempt and every output invalidate the history.
 
 A parser upgrade or retry appends a new attempt and never mutates the document,
 prior attempt, output, or warning. Every parsed rendition and consumer stores
 the exact `parse_attempt_id` it uses; there is no implicit current attempt.
 Unknown, document/hash-mismatched, or non-`SUCCEEDED` attempts fail closed for
-consumers that require a complete parse.
+consumers that require a complete parse. A request without a current valid
+`TransformationAuthorization` is rejected before parser invocation and cannot
+create derived output; rejected-request evidence must prove that the parser
+was not called. If final authorization revalidation fails, the append-only
+attempt is `FAILED`, any provisional output is non-consumable, and the original
+`SourceDocument` acquisition provenance and authorization history remain
+unchanged. Original-byte retention continues to follow its separately bound
+acquisition policy.
 
 ### Dormant `OfficialAudioArtifact`
 
@@ -205,7 +293,10 @@ evidence and never replace the original audio.
 
 - S02 supplies approved source, provider, caching, retention, automation, and
   data-rights policy references, including the typed provider-authorization
-  applicability and its evidence; S09 does not infer them.
+  applicability, exact approval requirement-to-record/resolution matches,
+  current requirement/record content digests, transformation/derived-output/
+  retention scope, renewal/revocation state, and evidence; S09 does not infer
+  them.
 - S05 supplies the discovery company and four-quarter source-package scope to
   A-06.
 - S07 supplies the failure taxonomy and prompt-injection/source-confusion
@@ -225,8 +316,10 @@ evidence and never replace the original audio.
    bytes creates a new document occurrence; hash mismatch never overwrites.
 2. URLs, timestamps, hashes, and first-seen times are mandatory on accepted
    source-document evidence. Parser/model versions, attempt identity, output
-   refs, and extraction warnings are mandatory on each parse-attempt record;
-   missing or implicit parse identity blocks use of the derived output.
+   refs, extraction warnings, and the exact current transformation-
+   authorization ID/digest are mandatory on each parse-attempt record; missing
+   or implicit parse or authorization identity blocks parser invocation and use
+   of the derived output.
 3. `first_seen_at` is acquisition evidence, not source publication time. It
    cannot be backdated to simulate point-in-time history.
 4. Unknown, unavailable, not applicable, failed, and no-event states are
@@ -235,9 +328,15 @@ evidence and never replace the original audio.
    prevented observing source occurrence, payload, or source time, and remain
    visible to retry/coverage metrics.
 5. Only sources and uses approved under S02/A-05 may be automated, cached,
-   retained, or transformed. Missing or expired rights evidence, or missing,
-   `UNKNOWN`, stale, or unsatisfied provider-authorization applicability,
-   blocks the affected acquisition.
+   retained, or transformed. Acquisition and transformation use distinct
+   immutable snapshots. Every transformation approval binds one exact
+   `SATISFIED` requirement to its unique current `APPROVED`, purpose-matching
+   record/resolution; record or resolution reuse across requirements fails.
+   Missing, denied, unresolved, unmatched, non-`SATISFIED`, expired, revoked,
+   superseded, stale, wrong-scope, reused, or digest-mismatched transformation/
+   derived-output/retention authority blocks parser invocation or output
+   consumption without rewriting acquisition-time evidence; renewal requires a
+   new exact snapshot.
 6. Source content is data, never instructions. It cannot alter tools,
    permissions, cutoffs, prompts with control authority, promotion rules,
    credentials, external calls, or execution.
@@ -340,7 +439,7 @@ path are required; dormancy is not rejection.
 |---|---|---|---|
 | Delegated spec approval | Fresh clean Sol xhigh review bound to exact S09 bytes and persisted evidence | `DELEGATED_ARTIFACT_APPROVAL` | S09 remains draft; no dependency treats it as approved. |
 | Filing-spike fitness | Complete four-quarter channel/taxonomy coverage matrix and reconciliation evidence | `DOMAIN_EXPERT_ACCEPTANCE` | A-06 remains unresolved. |
-| Source acquisition and storage | Current `AcquisitionAuthorization` for exact access, automation, caching, retention, derived-output, and redistribution use; `REQUIRED` provider applicability has a matching provider record and `NOT_REQUIRED` has authoritative applicability evidence | `DATA_RIGHTS_APPROVAL`; additionally `PROVIDER_AUTHORIZATION` iff applicability is `REQUIRED` | Missing/`UNKNOWN` applicability or required proof blocks fetch/store/parse/capture for the affected source. |
+| Source acquisition, storage, and transformation | Current `AcquisitionAuthorization` for exact acquisition/capture scope; every parse/re-extraction separately binds a digest-valid current `TransformationAuthorization` for the exact document/hash, operation, derived outputs, and retention, plus each exact `SATISFIED` approval requirement and its unique current `APPROVED`, purpose-matching record/resolution; `REQUIRED` provider applicability has a matching provider requirement/record and `NOT_REQUIRED` has authoritative applicability evidence | `DATA_RIGHTS_APPROVAL`; additionally `PROVIDER_AUTHORIZATION` iff applicability is `REQUIRED` | Missing/`UNKNOWN` applicability or missing, denied, unresolved, unmatched, non-`SATISFIED`, expired, revoked, stale, wrong-scope, superseded, reused, or digest-mismatched proof blocks the affected fetch/store/capture or parser invocation/output consumption. Acquisition-time evidence remains immutable and does not reauthorize transformation. |
 | Capture-domain fitness | Approved capture kinds/sources, failure behavior, and point-in-time semantics | `DOMAIN_EXPERT_ACCEPTANCE` | B-09 remains unresolved. |
 | C-14 activation | Current true predicate plus exact active human activation resolution and bound record | `PRODUCT_OWNER_DECISION` | C-14 remains `Deferred`; no planning or implementation. |
 | Audio transcript analytical use, after activation | Original/audio/transcript provenance and explicit acceptance for scoped use | `ANALYST_ACCEPTANCE` | Transcript cannot support an approved claim or narrative. |
@@ -366,8 +465,40 @@ a Sol review supplies none of those authorities.
   immutable occurrence; hash mismatch and missing original bytes fail.
 - A document remains immutable while parser retries/upgrades append stable,
   monotonic attempt IDs; prior outputs/warnings remain addressable, every
-  derived rendition binds one exact successful attempt, and implicit-current,
-  unknown, cross-document, failed, forked, or cyclic references reject.
+  derived rendition binds one exact successful attempt and that attempt's exact
+  current transformation-authorization ID/digest; implicit-current, unknown,
+  cross-document, failed, forked, cyclic, or authorization-mismatched
+  references reject.
+- Parse/re-extraction negative fixtures cover missing authorization; expired,
+  revoked, superseded, or stale authority inputs; wrong document/hash,
+  operation, derived-output type/consumer/destination, retention class/
+  destination/deadline, or provider scope; unknown expiry; and mutated snapshot
+  or authority-input digests. Each rejects before parser invocation, or fails
+  final revalidation with no consumable output, while leaving `SourceDocument`
+  acquisition provenance and acquisition-authorization history unchanged;
+  original-byte retention still follows the acquisition policy.
+- Approval-binding negative fixtures cover a missing or unknown requirement ID;
+  each non-`SATISFIED` requirement state (`UNRESOLVED`, `DENIED`, `REVOKED`,
+  and `EXPIRED`); a null, unknown, or different `matched_record_id`; a matched
+  record whose decision is not `APPROVED`; mismatched approval type, authority,
+  scope, actor, timestamp, evidence, authority source, requirement/record
+  content digest, resolution decision ID/content digest, or
+  `SATISFY_APPROVAL` purpose; a stale, superseded, or revoked resolution; and
+  the same approval record ID or resolution decision ID matched to two
+  requirements. Every fixture rejects before parser invocation or at final
+  revalidation with no consumable output.
+- A mid-attempt fixture expires, revokes, supersedes, or changes the scope or
+  content digest of one authority input after `authorization_checked_at` and
+  before `authorization_rechecked_at`; the attempt becomes `FAILED`, publishes
+  no consumable output, and preserves its immutable attempt and acquisition
+  evidence.
+- Renewal fixtures prove that an old snapshot cannot be treated as current or
+  have its expiry/digest edited in place. A new parse/re-extraction proceeds
+  only with the new authorization ID/digest; prior attempt/output hashes and
+  acquisition-time evidence remain byte-for-byte unchanged. A fixture also
+  rejects continued use or retention of an old derived output after its bound
+  authority ceases to be current; renewal permits a fresh output only through a
+  new parse/re-extraction bound to the renewed snapshot.
 - Every successfully captured kind persists hash and first-seen time; a
   no-event outcome carries successful-check occurrence/hash evidence; neither
   may use unavailable evidence states.
@@ -412,9 +543,11 @@ a Sol review supplies none of those authorities.
 
 The implementation plan must declare argv-style commands for schema and
 coverage validation, content-addressing/immutability tests, idempotent capture,
-failure persistence, adversarial-document controls, and dormant activation
-tests. Verification persists command/output hashes, exit status, scope hashes,
-and execution time. Agent assertions are not proof.
+failure persistence, transformation-authorization digest/scope/lifecycle
+and approval-binding/one-to-one fixtures, adversarial-document controls, and
+dormant activation tests.
+Verification persists command/output hashes, exit status, scope hashes, and
+execution time. Agent assertions are not proof.
 
 ## Dependencies and sequencing
 

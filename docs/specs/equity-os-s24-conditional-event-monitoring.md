@@ -52,8 +52,9 @@ captured.
 | Field | Type | Contract |
 |---|---|---|
 | `config_id` | stable identifier | Unique, immutable version. |
+| `supersedes_config_id` | nullable stable identifier | Names the immediately prior configuration version when this body replaces one; null for the first version. Prior bodies remain immutable. |
 | `spec_id` / `register_id` | enums | Exactly `S24` / `E-04`. |
-| `activation_binding` | content-bound activation envelope | Contains `activation_record_id`, `activation_predicate_id`, `activation_predicate_sha256`, `approval_record_id`, `human_resolution_decision_id`, and `human_resolution_sha256`; every value MUST match the same current E-04 activation record. It is attached after the body digest is computed and is outside that digest's preimage. |
+| `deferred_activation_envelope` | content-addressed one-time component envelope | Contains `envelope_id`, `spec_id=S24`, `component_id`, `register_id=E-04`, `activation_record_id`, `activation_record_sha256`, `activation_predicate_id`, `activation_predicate_sha256`, `activation_approval_record_id`, `human_resolution_decision_id`, `human_resolution_sha256`, and `content_sha256`. It identifies the single retained E-04 Deferred-transition record and MUST NOT contain `config_id`, `config_body_sha256`, or another runtime-body field. It is attached after the body digest is computed and is outside that digest's preimage. |
 | `covered_entity_ids` | nonempty identifier array | Explicit, approved scope; no wildcard universe. |
 | `source_ids` | nonempty identifier array | Each resolves to rights and retention evidence. |
 | `event_type_versions` | nonempty map | Closed event vocabulary and schema versions. |
@@ -62,20 +63,23 @@ captured.
 | `budgets` | object | Requests, documents, storage, compute, analyst review, and delivery limits. |
 | `destinations` | array | Empty by default; each item fixes destination ID, boundary class, audience, purpose, content schema/version, and independent configuration-approval requirements. |
 | `kill_switch_owner` | human authority reference | Named competent operator, not an agent. |
-| `approval_bindings` | closed typed configuration envelope | Exact content-bound references defined below for every source, credential, operations gate, ruleset, destination, and distribution boundary in this configuration. It contains only concrete configuration-level requirements instantiated from `S24-G03` through `S24-G05`; per-alert `S24-G06` through `S24-G08` requirements bind later to the alert body digest. This envelope is outside the configuration-body digest's preimage. |
-| `config_body_sha256` | lowercase SHA-256 | Pre-activation body digest defined below. |
+| `approval_bindings` | content-addressed closed replaceable configuration envelope | Contains `envelope_id`, nullable `supersedes_envelope_id`, `config_id`, `config_body_sha256`, `spec_id=S24`, `register_id=E-04`, the exact typed reference maps below, and `content_sha256`. It contains `S24-G02B` and concrete configuration-level requirements instantiated from `S24-G03` through `S24-G05`; per-alert `S24-G06` through `S24-G08` requirements bind later to the alert body digest. This envelope is outside the configuration-body digest's preimage. |
+| `config_body_sha256` | lowercase SHA-256 | Envelope-excluded body digest defined below. |
 
 `config_body_sha256` is SHA-256 of canonical JSON of every configuration field
-except `activation_binding`, `approval_bindings`, and `config_body_sha256`.
-Canonical JSON is UTF-8 with sorted keys, no insignificant whitespace, direct
-Unicode, JSON booleans/null, and arrays in declared order. The body is frozen
-and hashed before the activation and configuration-approval envelopes are
-attached. Every activation or configuration approval requirement scope MUST
-name `config_id`, `config_body_sha256`, `S24`, and `E-04`; a requirement bound
-to another digest cannot pass. The validator recomputes the body projection
-exactly, validates each envelope independently, and rejects a missing field, an
-extra field in the digest preimage, or any body mutation not accompanied by a
-new digest and new scoped envelopes.
+except `deferred_activation_envelope`, `approval_bindings`, and
+`config_body_sha256`. Canonical JSON is UTF-8 with sorted keys, no insignificant
+whitespace, direct Unicode, JSON booleans/null, and arrays in declared order.
+The body is frozen and hashed before the component-activation and
+configuration-approval envelopes are attached. Every configuration approval
+requirement scope MUST name `config_id`,
+`config_body_sha256`, `S24`, and `E-04`; `S24-G02B` additionally states that it
+authorizes only operation of that exact body and uses an active
+`SATISFY_APPROVAL` resolution, never the `ACTIVATE_DEFERRED` resolution. A
+requirement bound to another digest cannot pass. The validator recomputes the
+body projection exactly, validates each envelope independently, and rejects a
+missing field, an extra field in the digest preimage, or any body mutation not
+accompanied by a new digest and new scoped envelopes.
 
 `S24-G01-DELEGATED-ARTIFACT` is independent of every runtime configuration. Its
 scope MUST name `S24`, this repository-relative path, and the SHA-256 of the
@@ -87,7 +91,8 @@ the spec bytes requires a new artifact review and record; a later configuration
 change neither supplies nor invalidates the artifact approval for unchanged
 spec bytes.
 
-`approval_bindings` contains: an exact source-ID map to separate
+`approval_bindings` contains exactly one `S24-G02B` body-authorization ID; an
+exact source-ID map to separate
 `DATA_RIGHTS_APPROVAL` and, when applicable, `PROVIDER_AUTHORIZATION`,
 `LEGAL_REVIEW`, and `CREDENTIAL_ACCESS_APPROVAL` requirement IDs; operations
 IDs for `BUDGET_APPROVAL`, `CAPACITY_COMMITMENT`, and
@@ -106,17 +111,72 @@ multiple separately scoped source or destination requirements. These
 configuration approvals authorize only the configured route. They never
 satisfy the later per-alert delivery or promotion requirements.
 
-The validator dereferences `activation_binding` rather than trusting copied
-values. It recomputes the governed activation predicate using three-valued
-logic and hashes canonical JSON with exactly these keys and values:
-`predicate_id`, `expression`, `metrics`, deterministically
-`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The binding
-passes only when that digest is current, the result is `TRUE`, all metrics are
-resolved and unexpired, and the activation record, approved
-`GOAL_OR_PROCESS_AUTHORIZATION` record, and active `ACTIVATE_DEFERRED` canonical human
-resolution carry the same predicate ID/digest, exact scope, decision ID, and
-resolution digest. Missing, copied, stale, superseded, revoked, or
-content-mismatched values leave E-04 dormant.
+`approval_bindings.content_sha256` is SHA-256 of canonical JSON of the complete
+configuration-approval envelope except `content_sha256`. Its configuration
+identifiers and digest MUST equal the recomputed immutable configuration body,
+and every typed ID MUST resolve one-to-one to a complete current requirement and
+approval record for that body. The envelope and every referenced
+requirement/record are new for each configuration version; mutation creates a
+new envelope digest and never changes the Deferred activation envelope.
+`supersedes_envelope_id` is null only for V1 and otherwise names the immediately
+prior E-04 envelope; forks, cycles, cross-register links, and skipped lineage
+fail. Only the unreplaced leaf is current for new background work. Supersession
+makes the prior envelope historical but does not alter its configuration,
+records, or completed-delivery evidence.
+
+`deferred_activation_envelope` is immutable and has exactly the twelve fields
+declared above. After dereferencing `activation_record_id`, the validator
+resolves the unique registered component named by
+`activation_record.component_id`. The envelope projection over the nine keys
+below MUST equal this canonical projection exactly:
+
+```text
+{
+  spec_id: registered_component.primary_spec.spec_id,
+  component_id: activation_record.component_id,
+  register_id: activation_record.register_id,
+  activation_record_id: activation_record.activation_record_id,
+  activation_predicate_id: activation_record.activation_predicate_id,
+  activation_predicate_sha256: activation_record.activation_predicate_sha256,
+  activation_approval_record_id: activation_record.approval_record_id,
+  human_resolution_decision_id: activation_record.human_resolution_decision_id,
+  human_resolution_sha256: activation_record.human_resolution_sha256
+}
+```
+
+Thus `spec_id` is derived from the registered component owner, not from an
+activation-record field. Component, register, activation-record, predicate,
+and resolution IDs/digests compare directly; only the approval reference uses
+the explicit name mapping above. The three envelope-only values have separate,
+acyclic rules: `activation_record_sha256` equals SHA-256 of canonical JSON of
+the complete dereferenced activation record; `envelope_id` equals lowercase
+SHA-256 of canonical JSON of the complete envelope excluding `envelope_id` and
+`content_sha256`; and `content_sha256` equals lowercase SHA-256 of canonical
+JSON of the complete envelope excluding only `content_sha256`, including the
+validated `envelope_id`. The validator recomputes each preimage independently.
+
+It accepts exactly one envelope for E-04 only when
+`activation_source_status=Deferred`, live source status is `Open`, `In
+progress`, or `Accepted`, every projection equality and digest rule above
+passes, and the record is the single activation record created on the legal
+`Deferred -> Open|In progress` transition. The activation record, its approved
+`GOAL_OR_PROCESS_AUTHORIZATION` record, and its active `ACTIVATE_DEFERRED`
+canonical human resolution MUST carry the same component, register, activation
+scope, predicate ID/digest, decision ID, and resolution digest. The activation
+scope is component-local and MUST NOT name or authorize a runtime configuration.
+
+For activation currentness, the validator recomputes the governed predicate
+using three-valued logic and hashes canonical JSON with exactly these keys and
+values: `predicate_id`, `expression`, `metrics`, deterministically
+`resolved_values`, `digest_sources`, `result`, and `evaluated_at`. The stored
+activation predicate digest MUST equal that current digest, the result MUST be
+`TRUE`, and all metrics MUST be resolved and unexpired. The referenced
+activation resolution and approval MUST remain active, purpose-matching,
+unsuperseded, and unrevoked. A later configuration reuses the same envelope ID
+and `content_sha256`; it obtains a new body digest and wholly new body-scoped
+configuration approvals. A second activation envelope, activation record, or
+`Deferred` transition for E-04 is invalid. Missing, copied, stale, superseded,
+revoked, extra, or content-mismatched activation values leave E-04 dormant.
 
 Each referenced operational approval requirement contains `approval_id`,
 `approval_type`, `required_authority`, `scope`, `status`, `actor`, `timestamp`,
@@ -126,8 +186,12 @@ Each referenced operational approval requirement contains `approval_id`,
 `resolution_decision_id`, and `resolution_content_sha256`. Every operational
 record MUST use `HUMAN_RESOLUTION` and copy type, authority, scope, actor,
 timestamp, evidence, canonical decision ID, and digest from one active immutable
-resolution. That resolution digest is SHA-256 of canonical JSON of the complete
-resolution object except `content_sha256`; its `entry_authority_sha256` is the
+`SATISFY_APPROVAL` resolution. It MUST remain current, unexpired,
+unsuperseded, and unrevoked and MUST bind the exact current configuration body.
+It MUST NOT use the component's `ACTIVATE_DEFERRED` decision or activation
+approval record. That resolution digest is SHA-256 of canonical JSON of the
+complete resolution object except `content_sha256`; its
+`entry_authority_sha256` is the
 same digest over the referenced human-review entry excluding `state`,
 `resolution_decision_ids`, and `content_sha256`. The separate `S24-G01`
 artifact record uses `DELEGATED_AUTOMATED` with null human-resolution fields.
@@ -190,10 +254,11 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 1. Sequencing is fail closed: the separately scoped spec-artifact gate controls
    whether this contract may be implemented but is not a runtime configuration
    requirement. At runtime, `config_body_sha256` validates before the
-   activation and configuration-approval envelopes;
-   `S24-G02`, every applicable `S24-G03`, all `S24-G04`, `S24-G05A` and
-   `S24-G05B`, and each applicable concrete destination requirement instantiated
-   from `S24-G05C` through `S24-G05F` are `SATISFIED` before the corresponding
+   one-time activation and replaceable configuration-approval envelopes. The
+   immutable `S24-G02A` component envelope MUST validate; `S24-G02B`, every
+   applicable `S24-G03`, all `S24-G04`, `S24-G05A` and `S24-G05B`, and each
+   applicable concrete destination requirement instantiated from `S24-G05C`
+   through `S24-G05F` MUST be `SATISFIED` before the corresponding
    scheduler, source, rule, credential, or route is enabled. A candidate then
    requires its own content-bound
    `S24-G06` before internal delivery, all `S24-G07` requirements before crossing
@@ -225,7 +290,8 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 | Gate ID | Required evidence | Exact `approval_type` | Required authority | Fail-closed result |
 |---|---|---|---|---|
 | `S24-G01-DELEGATED-ARTIFACT` | Exact current spec-file SHA-256, fresh clean Sol xhigh review, source hashes, review round, timestamp, and persisted evidence path | `DELEGATED_ARTIFACT_APPROVAL` | Delegated authority under the activated goal | Draft remains unapproved. No approval is recorded here. |
-| `S24-G02-ACTIVATION` | Current TRUE predicate digest, evidence, E-04 activation record, and matching canonical human-resolution digest | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-04 `ACTIVATE_DEFERRED` scope | Monitoring remains dormant. |
+| `S24-G02A-COMPONENT-ACTIVATION` | Current TRUE predicate digest, component-local evidence, the single retained E-04 activation record and record digest, and matching canonical human-resolution digest; scope excludes every configuration/body identifier | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized for exact E-04 `ACTIVATE_DEFERRED` component scope | Monitoring remains dormant. |
+| `S24-G02B-CONFIGURATION-AUTHORIZATION` | Exact `config_id`, `config_body_sha256`, `S24`, `E-04`, configured purpose, budgets, stops, and current supporting evidence | `GOAL_OR_PROCESS_AUTHORIZATION` | Competent human authorized to operate that exact configuration body through a distinct active `SATISFY_APPROVAL` resolution | That configuration remains disabled. |
 | `S24-G03A-DATA-RIGHTS` | Per-source permitted use and retention | `DATA_RIGHTS_APPROVAL` | Competent data-rights authority | Source is disabled. |
 | `S24-G03B-PROVIDER` | Provider authorization is required for the exact source/use; included when the policy predicate is `TRUE` | `PROVIDER_AUTHORIZATION` | Competent provider authority | Source is disabled. |
 | `S24-G03C-LEGAL` | Legal adjudication is required for the exact source/use; included when the policy predicate is `TRUE` | `LEGAL_REVIEW` | Competent legal authority | Source is disabled. |
@@ -245,10 +311,12 @@ candidates, failures, approvals, and terminal `COMPLETE`, `PARTIAL`, or
 | `S24-G07C-DISTRIBUTION-REGULATORY` | Regulatory decision for exact content/version and audience | `REGULATORY_REVIEW` | Competent regulatory authority | External or personalized delivery is prohibited. |
 | `S24-G08-PROMOTION` | Approved thesis diff and reviewed supporting claims | `MEMORY_PROMOTION` | Competent memory-promotion authority | Canonical thesis is unchanged. |
 
-`S24-G01` is not a runtime binding, `S24-G02` is represented only by
-`activation_binding`, and `S24-G06` through `S24-G08` are instantiated in the
-separate per-alert envelope. None may appear in `approval_bindings`. One
-approval record satisfies one concrete requirement only. Every applicable
+`S24-G01` is not a runtime binding, `S24-G02A` is represented only by
+`deferred_activation_envelope`, and `S24-G06` through `S24-G08` are instantiated
+in the separate per-alert envelope. None may appear in `approval_bindings`;
+`S24-G02B` MUST appear exactly once and is newly instantiated for every
+configuration body. One approval record satisfies one concrete requirement
+only. Every applicable
 concrete requirement instantiated from `S24-G03` through `S24-G05` appears
 exactly once in `approval_bindings`; a template may appear many times through
 distinct per-source or per-destination requirement IDs. An applicability
@@ -269,13 +337,20 @@ Before activation:
    and incomplete approval-binding maps are rejected before any external or
    background operation.
 3. Negative binding fixtures mutate a configuration-body field without
-   replacing `config_body_sha256`, bind an activation or configuration approval
-   to a different body digest, and include either envelope in the canonical body
-   preimage; every fixture is rejected. Changing only an envelope leaves the
-   body digest stable but still fails unless the replacement envelope is
-   current, complete, and matches the frozen body scope exactly.
+   replacing `config_body_sha256`, bind a configuration approval to a different
+   body digest, put a configuration/body field in the component activation
+   envelope, and include either envelope in the canonical body preimage; every
+   fixture is rejected. Changing only an envelope leaves the body digest stable
+   but still fails unless the immutable activation envelope is current and the
+   replacement configuration envelope is current, complete, and matches the
+   frozen body scope exactly. Component-envelope fixtures independently mutate
+   each of the nine projected fields listed above while recomputing envelope-only
+   hashes, and independently mutate `activation_record_sha256` with both
+   envelope hashes recomputed, `envelope_id` with `content_sha256` recomputed,
+   and `content_sha256` alone; every fixture is rejected by the rule whose
+   preimage or equality it violates.
 4. Negative scope fixtures omit or alter the reviewed spec-file SHA-256, bind
-   `S24-G01` to a runtime configuration, place `S24-G01`, `S24-G02`, or any
+   `S24-G01` to a runtime configuration, place `S24-G01`, `S24-G02A`, or any
    `S24-G06` through `S24-G08` requirement in `approval_bindings`, reuse a
    configuration approval for an alert, or collapse multiple per-source or
    per-destination requirements into one template ID; every fixture is rejected
@@ -287,23 +362,34 @@ Before activation:
 
 After activation:
 
-6. Authorized fixtures normalize covered events with exact source hash/location
+6. Re-version fixtures approve configuration V1, then freeze a distinct
+   configuration ID and body V2 with explicit configuration/envelope
+   supersession links. V2 reuses the exact V1 `deferred_activation_envelope` ID
+   and digest and supplies a wholly new `approval_bindings` envelope—including
+   new `S24-G02B` and every applicable G03-G05 requirement—bound to V2; V2
+   passes without another E-04 Status transition. Reusing a V1 configuration
+   approval for V2, issuing a second activation record/envelope, or attempting a
+   second `Deferred -> Open|In progress` transition is rejected. Revocation or
+   staleness blocks the authority it actually governs: activation-envelope
+   invalidity blocks every configuration, while one configuration's approval
+   invalidity blocks only that configuration.
+7. Authorized fixtures normalize covered events with exact source hash/location
    and distinct valid, knowledge, first-seen, and capture timestamps. Fixtures
    exercise all six affected-target types; an empty, unknown, or unresolvable
    affected target is `BLOCKED`.
-7. Duplicate, retry, correction, restatement, out-of-order, late, and replayed
+8. Duplicate, retry, correction, restatement, out-of-order, late, and replayed
    fixtures produce deterministic idempotent and revision-aware results.
-8. Unknown entities/types, ambiguous identity, rights denial, clock anomalies,
+9. Unknown entities/types, ambiguous identity, rights denial, clock anomalies,
    budget exhaustion, poison items, and unavailable destinations fail closed
    with visible `PARTIAL` or `BLOCKED` state.
-9. No candidate reaches an internal destination without `S24-G06`; no item
+10. No candidate reaches an internal destination without `S24-G06`; no item
    crosses the distribution boundary without all of `S24-G07A` through
    `S24-G07C`; neither action promotes a thesis without `S24-G08`. An
    `IMMATERIAL` fixture cannot carry a thesis diff or reach `S24-G08`, and the
    canonical thesis remains byte-identical.
-10. Kill-switch and recovery tests stop new work, preserve immutable evidence,
+11. Kill-switch and recovery tests stop new work, preserve immutable evidence,
    resume idempotently, and do not relabel replayed evidence as newly known.
-11. Coverage reports reconcile every configured entity/source/event type and do
+12. Coverage reports reconcile every configured entity/source/event type and do
    not call partial coverage complete. Binding key sets equal the configured
    source/destination sets, requirement and record IDs are one-to-one, and every
    configuration scope matches the frozen `config_body_sha256`; per-alert
