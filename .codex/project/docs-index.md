@@ -8,6 +8,7 @@ Authoritative docs and when to read them.
 | `docs/blueprint/funda-blueprint-final-consolidated-review.md` | Product/architecture rationale — approved direction, doctrine, first-release contract (§7); narrative only, does **not** override the v2 register |
 | `docs/blueprint/funda-third-order-review-disposition-report.md` | Why v2 says what it says — disposition of the third-order audit (accepted/modified/rejected findings, document strategy) |
 | `docs/blueprint/funda-blueprint-implementation-decision-register.md` | Superseded v1 register — historical reference only; use v2 |
+| `docs/goals/equity-os-blueprint-completion.md` | Reviewing or activating the end-to-end blueprint-completion goal contract; apply it only after explicit activation |
 | `CONTEXT.md` | Naming anything — the domain glossary; use its terms, avoid its listed synonyms |
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.codex/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |

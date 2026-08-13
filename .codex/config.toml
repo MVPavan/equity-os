@@ -1,2 +1,8 @@
+[agents]
+enabled = true
+# Three spawned threads plus the primary thread matches the four-slot runtime.
+max_concurrent_threads_per_session = 3
+
 [features]
 hooks = true
+multi_agent = true
