@@ -27,11 +27,11 @@
 **Load-bearing:** Yes
 **Affected:** S10, S11, S12
 
-The goal prohibits product implementation until the specification program has clean delegated approval ([goal:645](/data/codes/equity-os/docs/goals/equity-os-blueprint-completion.md:645), [goal:673](/data/codes/equity-os/docs/goals/equity-os-blueprint-completion.md:673), [goal:730](/data/codes/equity-os/docs/goals/equity-os-blueprint-completion.md:730)). Each target nevertheless requires behavioral proof before its initial delegated artifact approval:
+The goal prohibits product implementation until the specification program has clean delegated approval ([goal:645](docs/goals/equity-os-blueprint-completion.md:645), [goal:673](docs/goals/equity-os-blueprint-completion.md:673), [goal:730](docs/goals/equity-os-blueprint-completion.md:730)). Each target nevertheless requires behavioral proof before its initial delegated artifact approval:
 
-- S10 requires sealed-package reconstruction, rejected writes, correction/deletion behavior, and workflow resumption proof ([S10:183](/data/codes/equity-os/docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:183)).
-- S11 requires executable adapter, retrieval, gateway, manifest, and replay behavior ([S11:200](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:200)).
-- S12 requires identity, migration, canonical-switch, and cutoff behavior to be proved ([S12:291](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:291)).
+- S10 requires sealed-package reconstruction, rejected writes, correction/deletion behavior, and workflow resumption proof ([S10:183](docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:183)).
+- S11 requires executable adapter, retrieval, gateway, manifest, and replay behavior ([S11:200](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:200)).
+- S12 requires identity, migration, canonical-switch, and cutoff behavior to be proved ([S12:291](docs/specs/equity-os-s12-observation-fact-identity-schema.md:291)).
 
 Those are substantially implementation acceptance tests, not merely tests that the specification structurally declares the required cases. As written, approval requires product behavior while product work requires approval.
 
@@ -46,8 +46,8 @@ The initial delegated-approval gates must require review of the declared contrac
 
 Both contracts make content hashes authoritative but define them only as hashes of “canonical manifest bytes”:
 
-- `EvidencePackageManifest.manifest_sha256` ([S10:86](/data/codes/equity-os/docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:86), [S10:101](/data/codes/equity-os/docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:101))
-- `RunManifest.manifest_sha256` ([S11:84](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:84), [S11:105](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:105))
+- `EvidencePackageManifest.manifest_sha256` ([S10:86](docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:86), [S10:101](docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:101))
+- `RunManifest.manifest_sha256` ([S11:84](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:84), [S11:105](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:105))
 
 Neither specification defines or explicitly imports an encoding contract covering key order, collection order, timestamp normalization, Unicode, numbers, nulls, and absent fields. Logically identical manifests can therefore produce different hashes. This undermines package reconstruction, artifact binding, and cross-store consistency.
 
@@ -56,27 +56,27 @@ Neither specification defines or explicitly imports an encoding contract coverin
 **Load-bearing:** Yes
 **Affected:** S10
 
-S10 defines `evidence_package_id` as stable across monotonically increasing versions, but `parent_package_id` names only an ID ([S10:90](/data/codes/equity-os/docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:90), [S10:99](/data/codes/equity-os/docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:99)). It therefore cannot identify which immutable version is the parent and may simply point back to the same version family.
+S10 defines `evidence_package_id` as stable across monotonically increasing versions, but `parent_package_id` names only an ID ([S10:90](docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:90), [S10:99](docs/specs/equity-os-s10-source-of-truth-evidence-retention.md:99)). It therefore cannot identify which immutable version is the parent and may simply point back to the same version family.
 
-This conflicts with S11’s exact package binding by ID, version, and hash ([S11:94](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:94)). Parentage needs an exact version/hash reference.
+This conflicts with S11’s exact package binding by ID, version, and hash ([S11:94](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:94)). Parentage needs an exact version/hash reference.
 
 #### F-04 — S11 permits an unprovable cutoff escape
 
 **Load-bearing:** Yes
 **Affected:** S11
 
-S11 permits `NOT_CUTOFF_CAPABLE` tools in current-period runs when policy and source rights allow them and their observation time is recorded ([S11:125](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:125)). Recording invocation observation time does not prove that returned content was known at or before the run cutoff.
+S11 permits `NOT_CUTOFF_CAPABLE` tools in current-period runs when policy and source rights allow them and their observation time is recorded ([S11:125](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:125)). Recording invocation observation time does not prove that returned content was known at or before the run cutoff.
 
-This contradicts S11’s own invariant that every retrieved record carry knowledge-time proof at or before cutoff ([S11:157](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:157)) and weakens C-15. Such output must be denied or quarantined from authoritative evidence unless every admitted record independently proves cutoff eligibility.
+This contradicts S11’s own invariant that every retrieved record carry knowledge-time proof at or before cutoff ([S11:157](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:157)) and weakens C-15. Such output must be denied or quarantined from authoritative evidence unless every admitted record independently proves cutoff eligibility.
 
 #### F-05 — Run, attempt, package, and late-bound artifact state are not coherently versioned
 
 **Load-bearing:** Yes
 **Affected:** S11; interface with S10
 
-A run can have multiple attempts ([S11:78](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:78)), but `RunManifest` contains a singular evidence-package binding described as belonging “to the attempt” ([S11:94](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:94)). `AttemptManifest` then adds package version again ([S11:107](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:107)).
+A run can have multiple attempts ([S11:78](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:78)), but `RunManifest` contains a singular evidence-package binding described as belonging “to the attempt” ([S11:94](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:94)). `AttemptManifest` then adds package version again ([S11:107](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:107)).
 
-Additionally, approval and published-artifact fields begin empty and are later populated ([S11:101](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:101)), while changing a manifest hash in place is forbidden ([S11:168](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:168)). The contract does not define immutable manifest versions or append-only events that resolve these transitions.
+Additionally, approval and published-artifact fields begin empty and are later populated ([S11:101](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:101)), while changing a manifest hash in place is forbidden ([S11:168](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:168)). The contract does not define immutable manifest versions or append-only events that resolve these transitions.
 
 Consequently, a multi-attempt run cannot be reconstructed unambiguously from the declared interface.
 
@@ -85,22 +85,22 @@ Consequently, a multi-attempt run cannot be reconstructed unambiguously from the
 **Load-bearing:** Yes
 **Affected:** S12; interface with S11
 
-S12 says a canonical selection is never updated in place, but instructs implementations to “close the prior knowledge interval” before appending the new selection ([S12:76](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:76)). No immutable closure event, successor-derived end bound, or transactional non-overlap constraint is defined.
+S12 says a canonical selection is never updated in place, but instructs implementations to “close the prior knowledge interval” before appending the new selection ([S12:76](docs/specs/equity-os-s12-observation-fact-identity-schema.md:76)). No immutable closure event, successor-derived end bound, or transactional non-overlap constraint is defined.
 
-S11 assumes exactly one selection whose interval contains a cutoff ([S11:134](/data/codes/equity-os/docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:134)). Concurrent or partial selection writes could therefore produce overlapping open intervals or require mutation of the prior record. The contract needs an explicit atomic, append-only transition model and a fail-closed uniqueness invariant.
+S11 assumes exactly one selection whose interval contains a cutoff ([S11:134](docs/specs/equity-os-s11-run-manifest-cutoff-reproducibility.md:134)). Concurrent or partial selection writes could therefore produce overlapping open intervals or require mutation of the prior record. The contract needs an explicit atomic, append-only transition model and a fail-closed uniqueness invariant.
 
 #### F-07 — Event-level canonical-selection approval authority is undefined
 
 **Load-bearing:** Yes
 **Affected:** S12
 
-S12 requires selector authority/evidence for canonical selections ([S12:136](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:136)) and says parser results cannot become facts or selections without required approval evidence ([S12:238](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:238)). Its approval table defines:
+S12 requires selector authority/evidence for canonical selections ([S12:136](docs/specs/equity-os-s12-observation-fact-identity-schema.md:136)) and says parser results cannot become facts or selections without required approval evidence ([S12:238](docs/specs/equity-os-s12-observation-fact-identity-schema.md:238)). Its approval table defines:
 
 - policy-level `DOMAIN_EXPERT_ACCEPTANCE`;
 - `ANALYST_ACCEPTANCE` for manual correction; and
 - amendment approvals.
 
-It does not define the typed requirement governing an initial selection, issuer restatement, source correction, parser-induced fact revision, or normalization-policy change ([S12:244](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:244)). The contract must either define the event-level mapping or explicitly delegate that closed mapping to S15. A vague selector-authority field cannot satisfy the goal’s typed, one-to-one approval model.
+It does not define the typed requirement governing an initial selection, issuer restatement, source correction, parser-induced fact revision, or normalization-policy change ([S12:244](docs/specs/equity-os-s12-observation-fact-identity-schema.md:244)). The contract must either define the event-level mapping or explicitly delegate that closed mapping to S15. A vague selector-authority field cannot satisfy the goal’s typed, one-to-one approval model.
 
 ### Minor
 
@@ -109,7 +109,7 @@ It does not define the typed requirement governing an initial selection, issuer 
 **Load-bearing:** No
 **Affected:** S12
 
-The scope promises separation of “source occurrence” and “observation” ([S12:43](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:43)), while the identity table merges them into one `Source occurrence / observation` concept and one `observation_id` ([S12:69](/data/codes/equity-os/docs/specs/equity-os-s12-observation-fact-identity-schema.md:69)). The terminology should consistently declare whether these are synonyms or separate lifecycle objects.
+The scope promises separation of “source occurrence” and “observation” ([S12:43](docs/specs/equity-os-s12-observation-fact-identity-schema.md:43)), while the identity table merges them into one `Source occurrence / observation` concept and one `observation_id` ([S12:69](docs/specs/equity-os-s12-observation-fact-identity-schema.md:69)). The terminology should consistently declare whether these are synonyms or separate lifecycle objects.
 
 ## Per-spec verdicts
 
