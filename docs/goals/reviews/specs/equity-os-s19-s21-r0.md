@@ -32,25 +32,25 @@ None.
 ## Important findings
 
 1. **S19 deletion can change effective memory state without a defined promotion, compare-and-swap, or typed-approval transition.**
-   **Location:** [docs/specs/equity-os-s19-memory-store-promotion.md:81](/data/codes/equity-os/docs/specs/equity-os-s19-memory-store-promotion.md:81)
+   **Location:** [docs/specs/equity-os-s19-memory-store-promotion.md:81](docs/specs/equity-os-s19-memory-store-promotion.md:81)
    **Load-bearing:** `yes`
 
    `delete` ambiguously “creates a logical tombstone or withdrawal revision,” but does not say whether that revision remains staged or immediately changes canonical visibility. Unlike `PromotionRequest`, it carries no expected-prior pointer, resolution digest, or approval identifier. The tests prove tombstone/export preservation but not approval rejection, stale-pointer handling, canonical invisibility before promotion, concurrency, or atomic retrieval behavior. An adapter could therefore satisfy the written interface while bypassing the canonical promotion boundary. Define the exact deletion state transition, authorization type, compare-and-swap behavior, and corresponding mechanical tests.
 
 2. **S19 does not freeze an exact D-03 predicate or mechanically enforce D-01 at the activation transition.**
-   **Location:** [docs/specs/equity-os-s19-memory-store-promotion.md:112](/data/codes/equity-os/docs/specs/equity-os-s19-memory-store-promotion.md:112)
+   **Location:** [docs/specs/equity-os-s19-memory-store-promotion.md:112](docs/specs/equity-os-s19-memory-store-promotion.md:112)
    **Load-bearing:** `yes`
 
-   The predicate ID is illustrative—“such as”—rather than a stable contract, and its expression tests only `/memory_promotion/atomic_transaction_required`. D-01 is an exact register dependency, but appears only later as a prose blocker at [line 150](/data/codes/equity-os/docs/specs/equity-os-s19-memory-store-promotion.md:150). Consequently, the specified predicate and human resolution could authorize the Deferred-to-active transition before D-01 acceptance. Freeze the predicate identity and encode a mechanically verifiable D-01 dependency condition supported by the goal’s closed predicate schema.
+   The predicate ID is illustrative—“such as”—rather than a stable contract, and its expression tests only `/memory_promotion/atomic_transaction_required`. D-01 is an exact register dependency, but appears only later as a prose blocker at [line 150](docs/specs/equity-os-s19-memory-store-promotion.md:150). Consequently, the specified predicate and human resolution could authorize the Deferred-to-active transition before D-01 acceptance. Freeze the predicate identity and encode a mechanically verifiable D-01 dependency condition supported by the goal’s closed predicate schema.
 
 3. **S20 introduces an unauthorized D-01 readiness dependency for D-04.**
-   **Location:** [docs/specs/equity-os-s20-memory-benchmark-gbrain.md:174](/data/codes/equity-os/docs/specs/equity-os-s20-memory-benchmark-gbrain.md:174)
+   **Location:** [docs/specs/equity-os-s20-memory-benchmark-gbrain.md:174](docs/specs/equity-os-s20-memory-benchmark-gbrain.md:174)
    **Load-bearing:** `yes`
 
-   D-04’s authoritative register dependency is `—`, and S20 itself confirms that at [line 216](/data/codes/equity-os/docs/specs/equity-os-s20-memory-benchmark-gbrain.md:216). Requiring “S19 D-01 readiness” as D-04 activation evidence creates a new blocking edge without authority reconciliation. Remove that condition or formally amend and reconcile the register dependency.
+   D-04’s authoritative register dependency is `—`, and S20 itself confirms that at [line 216](docs/specs/equity-os-s20-memory-benchmark-gbrain.md:216). Requiring “S19 D-01 readiness” as D-04 activation evidence creates a new blocking edge without authority reconciliation. Remove that condition or formally amend and reconcile the register dependency.
 
 4. **S20 does not map benchmark/adoption outcomes or reevaluation triggers onto the goal’s controlled source-status transitions.**
-   **Location:** [docs/specs/equity-os-s20-memory-benchmark-gbrain.md:140](/data/codes/equity-os/docs/specs/equity-os-s20-memory-benchmark-gbrain.md:140)
+   **Location:** [docs/specs/equity-os-s20-memory-benchmark-gbrain.md:140](docs/specs/equity-os-s20-memory-benchmark-gbrain.md:140)
    **Load-bearing:** `yes`
 
    The spec defines three D-05 outcomes and future trigger-driven reevaluation, but never states:
@@ -60,19 +60,19 @@ None.
    - that a later D-02 rerun or D-05 reconsideration after acceptance requires the goal-mandated `REOPEN_ACCEPTED` human resolution and source reconciliation;
    - whether the exact-scope `PRODUCT_OWNER_DECISION` is required for both conclusive decisions, rather than only positive adoption.
 
-   A crossed-trigger test currently opens consideration without validating the required controlled-state transition ([line 209](/data/codes/equity-os/docs/specs/equity-os-s20-memory-benchmark-gbrain.md:209)). This leaves the central R-1 reevaluation path non-executable.
+   A crossed-trigger test currently opens consideration without validating the required controlled-state transition ([line 209](docs/specs/equity-os-s20-memory-benchmark-gbrain.md:209)). This leaves the central R-1 reevaluation path non-executable.
 
 5. **S21’s C-08 acceptance predicate cannot be implemented using the goal’s declared `REGISTER_STATUS` metric semantics.**
-   **Location:** [docs/specs/equity-os-s21-conditional-model-grade-compute.md:120](/data/codes/equity-os/docs/specs/equity-os-s21-conditional-model-grade-compute.md:120)
+   **Location:** [docs/specs/equity-os-s21-conditional-model-grade-compute.md:120](docs/specs/equity-os-s21-conditional-model-grade-compute.md:120)
    **Load-bearing:** `yes`
 
-   The predicate ID is again illustrative—“such as”—and the first condition requires C-08 to be exactly `Accepted`, “derived from live register Status.” The goal’s closed `REGISTER_STATUS` metric is only a boolean that becomes true for any `Open`, `In progress`, or `Accepted` row ([goal line 289](/data/codes/equity-os/docs/goals/equity-os-blueprint-completion.md:289)); it cannot distinguish `Accepted`. Freeze the predicate identity and either bind exact acceptance through supported content-bound evidence or reconcile the goal predicate schema.
+   The predicate ID is again illustrative—“such as”—and the first condition requires C-08 to be exactly `Accepted`, “derived from live register Status.” The goal’s closed `REGISTER_STATUS` metric is only a boolean that becomes true for any `Open`, `In progress`, or `Accepted` row ([goal line 289](docs/goals/equity-os-blueprint-completion.md:289)); it cannot distinguish `Accepted`. Freeze the predicate identity and either bind exact acceptance through supported content-bound evidence or reconcile the goal predicate schema.
 
 6. **S21 lacks typed competent approval for the financial method definitions that control DCF, SOTP, WACC, and accepted tie-out adjustments.**
-   **Location:** [docs/specs/equity-os-s21-conditional-model-grade-compute.md:64](/data/codes/equity-os/docs/specs/equity-os-s21-conditional-model-grade-compute.md:64)
+   **Location:** [docs/specs/equity-os-s21-conditional-model-grade-compute.md:64](docs/specs/equity-os-s21-conditional-model-grade-compute.md:64)
    **Load-bearing:** `yes`
 
-   `definition_ref` governs formula/method behavior, and the trace records approvals only for assumptions and sector definitions. The typed gate table likewise requires `DOMAIN_EXPERT_ACCEPTANCE` only for sector definitions ([line 137](/data/codes/equity-os/docs/specs/equity-os-s21-conditional-model-grade-compute.md:137)). Thus a reproducible but financially incorrect DCF/SOTP/WACC method—or a known tie-out adjustment—can pass without exact-version competent acceptance. Mechanical reproducibility proves repeatability, not methodological validity. Add an exact-scope typed approval requirement and rejection tests for unapproved, expired, or wrong-version calculation-method definitions and accepted adjustments.
+   `definition_ref` governs formula/method behavior, and the trace records approvals only for assumptions and sector definitions. The typed gate table likewise requires `DOMAIN_EXPERT_ACCEPTANCE` only for sector definitions ([line 137](docs/specs/equity-os-s21-conditional-model-grade-compute.md:137)). Thus a reproducible but financially incorrect DCF/SOTP/WACC method—or a known tie-out adjustment—can pass without exact-version competent acceptance. Mechanical reproducibility proves repeatability, not methodological validity. Add an exact-scope typed approval requirement and rejection tests for unapproved, expired, or wrong-version calculation-method definitions and accepted adjustments.
 
 ## Minor findings
 
