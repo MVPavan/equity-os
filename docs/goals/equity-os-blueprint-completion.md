@@ -23,23 +23,20 @@ terminal conditions in this document. Approval is not activation. Activation
 must be recorded in [Activation record](#activation-record) through the goal
 tool before work begins.
 
-Luna is limited to external web research that is not code-, repository-,
-schema-, tooling-, or implementation-related, plus reading heavy or numerous
-public-equity source documents such as filings, annual and quarterly results,
-earnings materials, investor presentations, transcripts, and exchange
-disclosures. Luna uses `high` by default and `xhigh` for dense, ambiguous,
-cross-document, or high-stakes reading; `medium` is not permitted in this lane.
-Sol xhigh performs every repository/codebase exploration and all blueprint,
-design, schema, spec, plan, technical-documentation, provider/tool, and
-implementation-related reading, however large. Luna output is candidate
-research or evidence, not authoritative product truth, financial
-interpretation, approval, or final synthesis. Before any spec, plan,
-implementation, ledger acceptance, or completion claim relies on it, a fresh
-`gpt-5.6-sol` `xhigh` Codex CLI subagent must review it. Sol xhigh also remains
-responsible for brainstorming, planning, document/code/security review, fix
-rounds, and final synthesis; Terra xhigh remains responsible for
-implementation. All subagents use Codex CLI invocations, and Agent Matrix
-remains disabled.
+External research reading that is not code-, repository-, schema-, tooling-,
+or implementation-related, plus reading heavy or numerous public-equity source
+documents such as filings, annual and quarterly results, earnings materials,
+investor presentations, transcripts, and exchange disclosures, is dispatched as
+a bounded `IMPLEMENTER`-role research task. Its output is candidate research or
+evidence, not authoritative product truth, financial interpretation, approval,
+or final synthesis. Before any spec, plan, implementation, ledger acceptance,
+or completion claim relies on it, a fresh `REVIEWER`-role review must check it.
+The `IMPLEMENTER` role performs every repository/codebase exploration and all
+blueprint, design, schema, spec, plan, technical-documentation, provider/tool,
+and implementation-related reading, however large, and authors specs, plans,
+and product code. The `REVIEWER` role performs every review, fix-round verdict,
+adjudication, and final synthesis review. The `ORCHESTRATOR` role dispatches
+and holds state.
 
 ## Success boundary
 
@@ -113,14 +110,14 @@ checkpoint, before every phase gate, and before terminal evaluation.
    roadmap scope, plans, acceptance evidence, and blocked cones. Append every
    affected field change to `transition_history`.
 4. A goal-authorized, evidence-backed register transition of
-   `Open → In progress → Accepted` is expected drift. A fresh Sol xhigh review
-   must confirm that only Status cells and directly required traceability were
+   `Open → In progress → Accepted` is expected drift. A fresh `REVIEWER`-role
+   review must confirm that only Status cells and directly required traceability were
    changed before work resumes.
 5. Any changed decision wording, required evidence, dependency, phase gate,
    row inventory, Deferred activation, Rejected disposition, or disposition
    report content requires an active `RECONCILE_AUTHORITY` resolution in the
    canonical human-review artifact and explicit user approval of the reconciled
-   authority. A Sol review cannot grant that product authority.
+   authority. A `REVIEWER`-role review cannot grant that product authority.
 6. Record the canonical decision ID/digest, approving evidence, new hashes, and
    hash-chained `AUTHORITY_RECONCILIATION` transitions. Re-run the
    preimplementation coverage gate for affected specs before dependent product
@@ -145,10 +142,14 @@ JSONL and are never authoritative.
 | `first_release_deferral` | 13 | One object per bullet in v2 §G |
 | `scale_trigger` | 8 | Four SQLite triggers and four simple-state-table triggers in v2 §H |
 | `disposition_item` | 32 | G-1…G-5, M-1…M-9, T-1…T-4, R-1…R-5, and 6.1…6.9 |
-| `authority_clause` | Exhaustive | Authority rules from both authoritative sources |
-| `sequence_clause` | Exhaustive | Operational ordering in disposition §8 |
-| `document_strategy_clause` | Exhaustive | Document authority/strategy in disposition §9 |
-| `derivative_alias` | Exhaustive | One object for each repeated executive summary, accepted-change recap, or other non-canonical restatement; excluded from every canonical inventory count |
+| `authority_clause` | 4 | `AUTH-REG-001` (register line 23), `AUTH-DISP-001` (disposition line 41), `AUTH-REG-002` (register line 193, operating-note rule), and `AUTH-REG-003` (register line 209, technology-neutrality rule) |
+| `sequence_clause` | 11 | Operational ordering in disposition §8 |
+| `document_strategy_clause` | 6 | Document authority/strategy in disposition §9 |
+| `derivative_alias` | 44 | One object for each repeated executive summary, accepted-change recap, or other non-canonical restatement; excluded from every canonical inventory count |
+
+The exact inventory is 213 rows: 169 canonical and 44 aliases, with kind
+counts `60/35/13/8/32/4/11/6/44` in the order used above. The nine repeated
+summary passages remain aliases, not authority clauses.
 
 Repeated executive summaries and accepted-change recaps are
 `kind=derivative_alias` objects with `program_disposition=DERIVATIVE_ALIAS`;
@@ -158,10 +159,12 @@ disposition.
 
 A canonical object uses one of the first eight kinds in the table,
 `canonical_component_id=null`, and a non-alias `program_disposition`. An alias
-uses only `kind=derivative_alias`, has `primary_spec=null`, empty approval and
-work-reference collections, and points directly to one existing non-alias
-canonical object through `canonical_component_id`. An alias may not target
-itself or another alias. It retains its own `source_path`, `source_anchor`,
+uses only `kind=derivative_alias`, has `primary_spec=null`, and empty approval
+and work-reference collections. `canonical_component_id` is exactly one of:
+`null` for a canonical row; a canonical component-ID string for a simple
+alias; or a sorted unique array of at least two direct canonical component
+IDs for a compound alias. Every target must exist in the same post-state,
+must not be an alias, and must not be the source alias. It retains its own `source_path`, `source_anchor`,
 `source_start_line`, `source_end_line`, `source_hash`, and `text_digest`; it
 never inherits source proof from its target. Both (`source_path`,
 `source_anchor`) and (`source_path`, `source_start_line`, `source_end_line`) are
@@ -182,8 +185,8 @@ an invented placeholder.
 | Derived scope state | `scope_derivation`, `activation_record`, `rejection_record`, `program_disposition`, `delivery_status`, and `gate_result` follow the closed schemas and rules below. `primary_spec` never determines whether a component is active. |
 | Work traceability | `bead_ids`, `roadmap_ref`, `plan_refs`, and `implementation_refs` identify exact durable records or repository-relative paths; `tracked_work` is the typed, content-addressed closure inventory for every required Bead, roadmap, and plan reference and may be empty only before such work exists or for scope that requires none |
 | Proof | `required_evidence`, `evidence_refs`, `evidence_inventory_review`, `verification_command`, `verification_result`, and `verified_at` use the typed proof schema below. Initial unresolved values are valid; acceptance and terminal states are not. |
-| Approvals | `required_approvals` exhaustively declares the component's typed approval obligations; `approval_records` is append-only evidence of actual approval decisions; `approval_inventory_review` records whether a fresh Sol review has checked the component's source clauses for omitted approval types. These use the schema below. Empty `required_approvals` means a completed, evidenced determination that no approval is required, not an unknown inventory. One record satisfies at most one requirement; one approval never implies another. |
-| Review and blocking | `review_round`, `open_findings`, `human_review_id`, `security_exception_ids`, and `blocked_scope`; findings carry severity, load-bearing status, artifact, evidence, and disposition; human/security IDs resolve only through the one canonical human-review artifact |
+| Approvals | `required_approvals` exhaustively declares the component's typed approval obligations; `approval_records` is append-only evidence of actual approval decisions; `approval_inventory_review` records whether a fresh `REVIEWER`-role review has checked the component's source clauses for omitted approval types. These use the schema below. Empty `required_approvals` means a completed, evidenced determination that no approval is required, not an unknown inventory. One record satisfies at most one requirement; one approval never implies another. |
+| Review and blocking | `review_round`, `open_findings`, `human_review_id`, `security_exception_ids`, and `blocked_scope`; findings carry severity, load-bearing status, artifact, evidence, and disposition; human/security IDs resolve only through the one canonical human-review artifact. `human_review_id` is exactly one of `null`, one `HR-####` string, or a sorted unique array of at least two IDs; all validators normalize it to a set before forward and reverse-link checks, and transition replay permits only append-only link growth (`null -> string`, `null -> sorted array`, or an existing string or array -> a sorted array whose exact prefix-normalized set is the old set plus new IDs). Removing or replacing a prior HR ID fails. |
 | Audit history | `transition_history` is an append-only, hash-chained replay from the activation snapshot to current controlled state; `transition_history_sha256` binds the ordered entry hashes to the row |
 
 ### Status semantics
@@ -222,11 +225,18 @@ value below:
 
 Every non-register canonical component has a `scope_derivation` object with
 `rule`, `related_register_ids`, `authority_effect`,
-`derived_program_disposition`, and `semantic_review`. Rules are fixed by kind:
+`derived_program_disposition`, and `semantic_review`, plus an exact
+kind-specific key set and nothing else: a
+`disposition_item` adds `applicable_spec_ids`; a `sequence_clause` adds
+`source_register_ids` and `applicable_spec_ids`; every other kind rejects
+both keys. All such arrays
+are sorted and unique. `applicable_spec_ids` is artifact applicability and
+`related_register_ids` is source semantics; neither may be padded or
+inferred from the other. Rules are fixed by kind:
 
 | Canonical kind | Required derivation rule |
 |---|---|
-| `phase_gate_clause` | `RELATED_REGISTER_SCOPE` |
+| `phase_gate_clause` | `RELATED_REGISTER_SCOPE` or `ACTIVE_NEGATIVE_CONTROL` |
 | `first_release_deferral` | `PROGRAM_WIDE_ACTIVE_CONTROL` |
 | `scale_trigger` | `PROGRAM_WIDE_ACTIVE_CONTROL` |
 | `disposition_item` | `AUTHORITATIVE_OCCURRENCE` |
@@ -246,9 +256,24 @@ the same related-row aggregation respectively. This makes active program-wide
 controls terminal obligations even when `primary_spec=null`, while dormant
 feature scope remains dormant.
 
+`ACTIVE_NEGATIVE_CONTROL` is allowed only for `phase_gate_clause`. It
+requires nonempty exact `related_register_ids`, `authority_effect=null`,
+`derived_program_disposition=REQUIRED_NOW`, and `activation_predicate=null`.
+Its gate proof is invalidated by any related register state, activation,
+rejection, approval, or no-implementation-proof change. It activates no
+capability: it proves that named capabilities stay dormant or rejected.
+
+A phase-gate clause whose related register rows aggregate to `REQUIRED_NOW`
+is a now-required obligation, not a dormant one. Such an
+aggregated `REQUIRED_NOW` phase-gate clause carries no activation predicate;
+the
+observable conjunction that a predicate would have carried lives instead in
+the exact `scope` of that component's command-proof obligation, which is a
+proof obligation and advances no gate or delivery state.
+
 For each non-register canonical component, `semantic_review` uses the
 content-bound inventory-review schema defined below. It begins `PENDING`. It
-becomes `COMPLETE` only after a fresh `gpt-5.6-sol` `xhigh` review returns
+becomes `COMPLETE` only after a fresh `REVIEWER`-role review returns
 `CLEAN`, identifies the exact authoritative occurrence and owned
 register/gate/spec scope, and links nonempty evidence. `COMPLETE` is required
 before the preimplementation gate and terminal use of that component, but not
@@ -260,7 +285,13 @@ Every register component captured `Deferred`, and every non-register component
 derived `CONDITIONAL_UNACTIVATED` or `CONDITIONAL_ACTIVATED`, has a non-null
 `activation_predicate`; it is retained after later activation or rejection so
 history remains provable. Components that have never been conditional and all
-aliases use `null`. A predicate is data, not prose. It
+aliases use `null`. A component whose derived disposition is `REQUIRED_NOW` —
+including one that became `REQUIRED_NOW` by related-register aggregation —
+has `activation_predicate=null`. Only components currently derived
+`CONDITIONAL_UNACTIVATED` or `CONDITIONAL_ACTIVATED`, registers captured
+`Deferred`, and `REJECTED_ACCOUNTED` components may carry a predicate. No
+component-ID allowlist, phase-gate exemption, or kind exemption to this rule
+is authorized without its own reviewed design and approval. A predicate is data, not prose. It
 contains `predicate_id`, `expression`, `metrics`, `result`, `evaluated_at`, and
 `evaluation_sha256`. Predicate IDs match `AP-[A-Z0-9][A-Z0-9_-]{2,63}` and
 metric IDs match `MTR-[A-Z0-9][A-Z0-9_-]{2,63}`; IDs are unique within the
@@ -270,7 +301,12 @@ answer.
 `expression` is a closed recursive expression tree. A branch is
 `{"op":"ALL"|"ANY","args":[...]}` with at least one child, or
 `{"op":"NOT","arg":...}`. A leaf is
-`{"op":"COMPARE","metric_id":...,"comparator":...,"expected":...}`.
+`{"op":"COMPARE","metric_id":...,"comparator":...,"expected":...}` or
+`{"op":"COMPARE_METRICS","left_metric_id":...,"comparator":...,"right_metric_id":...}`.
+Both metrics referenced by a `COMPARE_METRICS` leaf must exist and share one
+value type; boolean and string operands allow only `EQ` and `NE`, and numeric
+operands additionally allow `GT`, `GTE`, `LT`, and `LTE`. An unresolved
+operand yields `UNKNOWN` under the three-valued rules below.
 The comparator set is `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, and `IN`.
 Boolean and string metrics permit only `EQ`, `NE`, and `IN`; numeric metrics
 permit all comparators. `IN` requires an array of expected values of the
@@ -342,8 +378,8 @@ record bound to the same active, content-digest-valid `REJECT_COMPONENT`
 human resolution. A non-register `REJECTED_PROPOSAL`, or a non-register component whose
 validated related scope consists only of rejected rows, uses
 `approval_record_id=null` and null human-resolution fields because the pinned
-occurrence and scope relation are the authority, but its Sol scope review,
-rationale, and current
+occurrence and scope relation are the authority, but its `REVIEWER`-role scope
+review, rationale, and current
 no-implementation proof remain mandatory. Every component not derived
 `REJECTED_ACCOUNTED` has `rejection_record=null`.
 
@@ -354,7 +390,24 @@ no-implementation proof remain mandatory. Every component not derived
 `EVIDENCE`, or `APPROVAL`), `status`, `reviewer`, `model`, `effort`, `verdict`,
 `timestamp`, `evidence_ref_ids`, `reviewed_input_sha256`, and
 `reviewed_inventory_sha256`. A `PENDING` review retains its fixed
-`review_type`; all other scalar fields are null and evidence is empty.
+`review_type`; all other scalar fields are null and evidence is empty, and it
+carries exactly those keys. A `COMPLETE` review carries exactly that key set
+plus `role`, `role_binding_path`, and `role_binding_sha256`, and must satisfy
+`role == "REVIEWER"` under the closed `ORCHESTRATOR`/`IMPLEMENTER`/`REVIEWER`
+vocabulary, `role_binding_path == "CONTEXT.md"`, and a lowercase 64-hex
+`role_binding_sha256` capturing that file's bytes at review time. `model` and
+`effort` record what was actually invoked, are checked for nonempty string
+shape only, and are never compared against a fixed constant.
+`role_binding_sha256` is deliberately not a declared evidence object and is
+never re-verified against current bytes: it is an immutable historical
+capture, so an unrelated `CONTEXT.md` edit cannot invalidate completed
+reviews.
+
+`reviewed_input_sha256` covers `scope_derivation` with only `semantic_review`
+removed, and the `SCOPE` inventory projection covers `scope_derivation` with
+only `semantic_review` removed. Both are exact whole-object projections, so
+every kind-specific key is digest-bound and any change to one invalidates a
+`COMPLETE` review. A key-subset projection is forbidden.
 
 Canonical JSON means UTF-8 JSON with keys sorted, no insignificant whitespace,
 Unicode emitted directly, JSON booleans/null, and arrays retained in declared
@@ -383,7 +436,8 @@ mutation can change an inventory judgment.
   `human_review_id`, and `security_exception_ids` collections.
 
 For `COMPLETE`, both digests must equal validator recomputation, the review
-must be clean Sol xhigh, evidence must be current and component-local, and the
+must be a clean `REVIEWER`-role review, evidence must be current and
+component-local, and the
 timestamp must not precede any review-evidence capture. A mutation to any
 covered source, component, artifact, inventory, human/security reference,
 blocker, or controlled transition makes all affected complete reviews stale.
@@ -403,6 +457,22 @@ UTF-8 line span after CRLF-to-LF normalization and surrounding ASCII-whitespace
 trimming. Evidence may not point to the ledger itself. A changed or missing
 target invalidates the reference.
 
+`rejection_record.no_implementation_evidence_ref_ids` is an immutable
+historical record of which references supported the rejection when it was
+recorded; membership never establishes current proof by itself. Structural
+validation owns the exact current no-implementation requirement map. A
+rejected component has current no-implementation proof only when every
+historical ref is covered by the union of `evidence_ref_ids` on its mapped
+requirements, every mapped requirement is currently `SATISFIED`, every
+referenced evidence object validates against current bytes, and
+`evidence_inventory_review` is a current content-bound `COMPLETE`/`CLEAN`
+review performed under role `REVIEWER`, whose evidence refs include every
+historical ref and whose timestamp is no earlier than their current captures,
+and whose reviewed-input and reviewed-inventory digests equal the validator's
+current projections. False is a valid structural state and an explicit
+preimplementation and terminal blocker; no description substring or refreshed
+content digest substitutes for this closed predicate.
+
 Each `required_evidence` object contains globally unique `evidence_id`,
 nonempty `description` and exact `scope`, `evidence_type`, `proof_mode`,
 `status`, `evidence_ref_ids`, and `approval_ids`. `evidence_type` uses the
@@ -420,7 +490,7 @@ evidence always uses `TYPED_APPROVAL` and the typed approval/human-review path,
 never a fabricated shell command.
 
 Each canonical `evidence_inventory_review` uses the content-bound review
-schema. A `COMPLETE` clean Sol xhigh
+schema. A `COMPLETE` clean `REVIEWER`-role
 review proves that every source-required acceptance item is represented and
 classified by proof mode; it does not satisfy an evidence item. An alias has
 `evidence_inventory_review=null`.
@@ -436,9 +506,11 @@ classified by proof mode; it does not satisfy an evidence item. An alias has
   SHA-256 of canonical JSON for all preceding command fields. Commands execute
   as argv, never through interpolated shell text.
 - `NOT_APPLICABLE` has no commands or results. Its review contains `status`,
-  `reviewer`, `model=gpt-5.6-sol`, `effort=xhigh`, `verdict=CLEAN`, UTC
-  `timestamp`, nonempty `reason` and `evidence_ref_ids`, and the current
-  `component_state_sha256`. It is valid only when a fresh evidenced Sol review
+  `reviewer`, `role=REVIEWER`, `role_binding_path=CONTEXT.md`,
+  `role_binding_sha256`, the `model` and `effort` actually invoked,
+  `verdict=CLEAN`, UTC `timestamp`, nonempty `reason` and `evidence_ref_ids`,
+  and the current `component_state_sha256`. It is valid only when a fresh
+  evidenced `REVIEWER`-role review
   confirms why no mechanical command can prove the component. It never waives
   required non-command evidence.
 
@@ -481,6 +553,36 @@ the vocabulary and affected requirements must be reconciled and explicitly
 approved before that row can advance; it may not be collapsed into a nearby
 type.
 
+**Closed required-authority vocabulary.** A satisfying approval record's
+`authority` must equal its requirement's `required_authority` byte for byte,
+so a second string for an authority that already has one is a permanent trap.
+Structural validation owns this exact map and rejects any `required_approvals`
+entry outside it:
+
+| `approval_type` | Exact allowed `required_authority` values |
+|---|---|
+| `ANALYST_ACCEPTANCE` | `Responsible analyst` |
+| `BUDGET_APPROVAL` | `Budget owner` |
+| `CAPACITY_COMMITMENT` | `Capacity owner` |
+| `DATA_RIGHTS_APPROVAL` | `Data-rights authority` |
+| `DISTRIBUTION_APPROVAL` | `Distribution owner` |
+| `DOMAIN_EXPERT_ACCEPTANCE` | `Calculation-domain authority`, `Data-domain authority`, `Entity-data authority`, `Equity-research domain expert`, `Vocabulary authority` |
+| `EXECUTION_TRUST_DOMAIN_APPROVAL` | `Execution-boundary owner` |
+| `LEGAL_REVIEW` | `Competent dependency-license reviewer`, `Competent legal reviewer`, `Competent trademark or legal reviewer` |
+| `MEMORY_PROMOTION` | `Responsible analyst` |
+| `NAMED_OWNER_COMMITMENT` | `Event-monitoring owner`, `Golden-set owner`, `Model-grade compute owner` |
+| `PRODUCT_OWNER_DECISION` | `Product owner`, `Product owner authorized to activate deferred blueprint scope`, `Product owner for memory adoption` |
+| `REGULATORY_REVIEW` | `Competent regulatory reviewer` |
+
+`DELEGATED_ARTIFACT_APPROVAL` is the only approval type whose authority is a
+process role rather than a named business authority. Its literal is
+deliberately not pinned here; structural validation instead asserts that every
+`DELEGATED_ARTIFACT_APPROVAL` requirement shares one identical nonempty
+`required_authority` value, so it can be migrated atomically with no schema
+change while the one-string-per-authority invariant holds before and after.
+An approval type absent from the table above has no obligation in this
+inventory and gains one only through a reconciled, reviewed, approved change.
+
 Each `required_approvals` object contains `approval_id`, `approval_type`,
 `required_authority`, `scope`, `status`, `actor`, `timestamp`,
 `evidence_ref_ids`, and `matched_record_id`. Allowed requirement states are `UNRESOLVED`,
@@ -494,7 +596,8 @@ Each `approval_records` object contains `approval_record_id`, `approval_type`,
 `resolution_content_sha256`. Allowed decisions are `APPROVED`, `DENIED`,
 `REVOKED`, and `EXPIRED`. `authority_source` is
 `DELEGATED_AUTOMATED` only for `DELEGATED_ARTIFACT_APPROVAL`; that record has
-null human-resolution fields and carries the persisted clean Sol review.
+null human-resolution fields and carries the persisted clean `REVIEWER`-role
+review.
 Every other record uses `HUMAN_RESOLUTION`, names one canonical human-review
 entry and one active immutable resolution, matches its content digest, and
 copies actor identity, authority type/basis, exact scope, timestamp, and
@@ -509,14 +612,17 @@ authority, scope, actor, timestamp, evidence, and authority source. Record IDs
 and resolution decision IDs are globally unique for matching purposes and may
 not satisfy two requirements. Where one real-world decision covers two
 approval types or scopes, record two explicit human resolutions, obligations,
-and records rather than infer coverage. Ordinary Sol evidence/inventory review
+and records rather than infer coverage. Ordinary `REVIEWER`-role
+evidence/inventory review
 remains automated review; it is never an authority-bearing human resolution.
 
 Each canonical component's `approval_inventory_review` uses the content-bound
-review schema. It becomes `COMPLETE` only when a fresh `gpt-5.6-sol` `xhigh` review checks the
+review schema. It becomes `COMPLETE` only when a fresh `REVIEWER`-role review
+checks the
 exact source acceptance text, dependencies, gates, and fail-closed boundaries,
 returns `CLEAN`, and links nonempty evidence. An alias has
-`approval_inventory_review=null`. Neither this completeness review nor a Sol
+`approval_inventory_review=null`. Neither this completeness review nor a
+`REVIEWER`-role
 approval grants any non-delegated authority.
 
 ### Typed tracked-work closure
@@ -568,6 +674,35 @@ blocker and human/security refs; and all typed work indexes. The initial entry
 may coexist with PENDING reviews and unresolved evidence/approvals, but it must
 carry actor, time, and current source evidence. Canonical and alias rows use the
 same projection, with their schema-required null/empty values.
+
+A genuinely omitted post-activation component
+may begin at sequence zero only with `transition_type=AUTHORITY_RECONCILIATION`,
+`field=CONTROLLED_STATE`,
+`old_value=null`, and its full controlled-state `new_value`, bound to an
+active `RECONCILE_AUTHORITY` resolution whose structured scope contains the
+row. It uses the transaction timestamp and current evidence. A synthetic or
+backdated `ACTIVATION_SNAPSHOT` is forbidden.
+
+`human_review_id` transitions are append-only link growth: `null -> string`,
+`null -> sorted array`, or an existing string or array -> a sorted array whose
+exact normalized set is the old set plus new IDs. Removing or replacing a
+prior human-review ID fails. Such a transition may be `REFERENCE_APPEND` or
+`AUTHORITY_RECONCILIATION`; the latter additionally requires an active
+`RECONCILE_AUTHORITY` resolution whose structured scope contains the row.
+
+The legal `program_disposition` transition pairs are
+`CONDITIONAL_UNACTIVATED -> CONDITIONAL_ACTIVATED`,
+`CONDITIONAL_UNACTIVATED -> REJECTED_ACCOUNTED`,
+`CONDITIONAL_ACTIVATED -> REJECTED_ACCOUNTED`,
+`REQUIRED_NOW -> REJECTED_ACCOUNTED`, and
+`CONDITIONAL_UNACTIVATED -> REQUIRED_NOW`. The last pair is admissible only
+when all five of the following hold: the row's `kind` is not `register_row`;
+the transition type is `AUTHORITY_RECONCILIATION` bound to an active
+`RECONCILE_AUTHORITY` resolution whose structured scope contains the row; the
+post-state `program_disposition` equals the value freshly derived from the
+post-state `scope_derivation`; the post-state `activation_predicate` is
+`null`; and the row has no `activation_record`. No other disposition pair
+exists, and no register row may change `program_disposition` at all.
 
 Every entry contains `transition_id`, consecutive integer `sequence`,
 `transition_type`, `field`, `actor` (`actor_id`, `actor_type`, and `role`),
@@ -629,7 +764,8 @@ Legal transitions are closed:
   by one or more legal register Status transitions use
   `STATUS_SOURCE_RECONCILIATION` and nonempty old/new source evidence; the
   validator permits that class only when the same global history contains a
-  legal `source_status` transition. The status-only Sol review and refreshed
+  legal `source_status` transition. The status-only `REVIEWER`-role review and
+  refreshed
   content-bound reviews must then pass before work resumes or any proof state
   advances.
 
@@ -651,7 +787,7 @@ written until all conditions pass:
   has valid independent source proof and a direct acyclic non-alias target, and
   duplicate component IDs or source anchors fail validation;
 - the three exhaustive canonical inventories and exhaustive alias inventory
-  have a clean Sol xhigh completeness review;
+  have a clean `REVIEWER`-role completeness review;
 - every one of the 60 register IDs has exactly one primary owner matching the
   25-spec table below, and its phase, priority, decision title, required
   acceptance text, dependencies, source coordinates, activation status, exact
@@ -749,84 +885,80 @@ block a dependency cone but do not stop independent ready work.
 1. **Ledger:** Pin hashes and initial dirty-tree baseline; build the normalized
    component ledger with unresolved evidence and approvals where real proof is
    not yet available, typed unevaluated predicates, and hash-chained activation
-   snapshots; run the structural validator; obtain clean content-bound Sol xhigh
+   snapshots; run the structural validator; obtain clean content-bound
+   `REVIEWER`-role
    inventory, scope-derivation, evidence-inventory, and approval-inventory
    reviews; then run the preimplementation validator. Product implementation
    remains forbidden until both validators pass in sequence.
 2. **Specification program:** Create the exact Beads epic and 25 direct child
-   tasks. Sol xhigh authors each spec; a fresh Sol xhigh session reviews it;
-   Sol xhigh fixes documentation findings. Close each child only with persisted
+   tasks. An `IMPLEMENTER`-role dispatch authors each spec; a fresh
+   `REVIEWER`-role dispatch reviews it; an `IMPLEMENTER`-role dispatch
+   fixes documentation findings. Close each child only with persisted
    clean-review evidence and delegated approval.
-3. **Cross-spec audit:** A fresh Sol xhigh session audits all specs for all 60
+3. **Cross-spec audit:** A fresh `REVIEWER`-role dispatch audits all specs for
+   all 60
    owners, 32 dispositions, interface consistency, authority conflicts,
    omissions, and accidental Deferred activation. Clear findings under the
    review policy before proceeding.
 4. **One workstream:** Create the one workstream named
-   `equity-os-blueprint-completion`. Sol xhigh authors and a fresh Sol xhigh
-   session reviews its single roadmap at
+   `equity-os-blueprint-completion`. An `IMPLEMENTER`-role dispatch authors and
+   a fresh `REVIEWER`-role dispatch
+   reviews its single roadmap at
    `docs/workstreams/equity-os-blueprint-completion/roadmap.md`. Active sequence
    is blueprint phase 0A → 0.5 → 1 → D-01 according to actual dependencies.
    Deferred Phase 2/3 capabilities remain in a dormant conditional annex.
-5. **Just-in-time planning:** Sol xhigh authors and a fresh Sol xhigh session
+5. **Just-in-time planning:** An `IMPLEMENTER`-role dispatch authors and a fresh
+   `REVIEWER`-role dispatch
    reviews only the next executable phase plan. Never batch-write later plans
    against a codebase that earlier phases will change.
 6. **Implementation:** Dispatch every bounded product implementation task to
-   Terra xhigh. Terra is the only product-code implementer and fixer.
-7. **Per-task reviews:** After every product task, run fresh Sol xhigh
-   spec-compliance and code-quality/security reviews. Terra performs all fixes.
+   the `IMPLEMENTER` role, which is the only product-code implementer and fixer.
+7. **Per-task reviews:** After every product task, run fresh `REVIEWER`-role
+   spec-compliance and code-quality/security reviews. The `IMPLEMENTER` role
+   performs all fixes.
    The coordinator reruns every verification command; agent reports are not
    proof.
-8. **Per-phase gates:** After each roadmap phase, a fresh Sol xhigh session
+8. **Per-phase gates:** After each roadmap phase, a fresh `REVIEWER`-role
+   dispatch
    performs integrated review. Evaluate the applicable v2 §F clauses one by
    one, then reconcile the ledger, register Status cells, roadmap, Beads,
    current predicate evaluations, content-bound review evidence, tracked-work
    closure, blockers, and canonical human/security-resolution state. `PASS`
    cannot survive any covered mutation without fresh proof and review digests.
-9. **Final audits:** Run fresh Sol xhigh blueprint-compliance and
+9. **Final audits:** Run fresh `REVIEWER`-role blueprint-compliance and
    code-quality/security audits across the whole active scope. Reconcile all
    nine SUCCESS conditions before declaring the terminal state.
 
 ## Agent routing and delegated authority
 
-Every subagent is invoked through an explicit `codex exec`. Host-native
-subagent surfaces and Agent Matrix are prohibited. Invocation model and effort
-are explicit. Sol and Terra use `xhigh`. Luna external-web and heavy public-
-equity document reading uses `high` by default and `xhigh` for dense,
-ambiguous, cross-document, or high-stakes work; `medium` is prohibited for that
-lane.
+Every subagent is invoked in one of the `ORCHESTRATOR`, `IMPLEMENTER`, or
+`REVIEWER` roles, and the role, model, and effort actually invoked are
+recorded explicitly for every dispatch. `CONTEXT.md` "Agent roles
+(harness-wide)" is the single binding table for routing and delegated
+authority; this goal states no invocation surface, tool, model name, or effort
+level of its own.
 
-| Role | Model and effort | Authorized work | Prohibited work |
-|---|---|---|---|
-| Coordinator | Current coordinating Codex session; orchestration only | Invoke agents; maintain Beads, ledger, register Status reconciliation, checkpoints, blockers, and human-review state; rerun verification; make narrow verified Git operations | Author or fix product code; substitute for a failed Sol/Terra dispatch; approve its own product artifacts |
-| External research reader | GPT-5.6 Luna high by default; xhigh for dense, ambiguous, cross-document, or high-stakes reading; never medium | Non-code external web research/search and source discovery; heavy or numerous public-equity filings, annual/quarterly results, earnings materials, investor presentations, transcripts, and exchange disclosures; candidate evidence extraction | Repository/codebase, blueprint, design, schema, spec, plan, technical-documentation, provider/tool, or implementation exploration; authoritative product truth; financial interpretation; approval; final synthesis; any downstream reliance before fresh Sol xhigh review |
-| Author/planner/reviewer/adjudicator | GPT-5.6 Sol xhigh | Every repository/codebase exploration and all blueprint, design, schema, spec, plan, technical-documentation, provider/tool, and implementation-related reading; brainstorming; goal-following doc/spec/roadmap/JIT-plan authoring and documentation fixes; every spec, compliance, quality, security, integrated, and final review; review and fix rounds; final synthesis; post-cap adjudication; fresh review of Luna candidate research/evidence before downstream reliance | Product-code implementation or fixes; non-delegated analyst/domain/legal/rights/budget/regulatory/production approval |
-| Product implementer/fixer | GPT-5.6 Terra xhigh | Product code, tests, migrations, product configuration, and fixes within one bounded task | Artifact approval; substitution for Sol review; coordinator/state authority |
+| Role | Authorized work | Prohibited work |
+|---|---|---|
+| `ORCHESTRATOR` | Dispatch every bounded task; maintain Beads, ledger, register Status reconciliation, checkpoints, blockers, and human-review state; rerun verification; make narrow verified Git operations | Author or fix product code; substitute for a failed dispatch; approve its own product artifacts |
+| `IMPLEMENTER` | Every repository/codebase exploration and all blueprint, design, schema, spec, plan, technical-documentation, provider/tool, and implementation-related reading; brainstorming; external research reading and candidate evidence extraction; goal-following doc/spec/roadmap/JIT-plan authoring and documentation fixes; product code, tests, migrations, and product configuration within one bounded task | Artifact approval; reviewing its own output; substitution for a `REVIEWER`-role review; coordinator/state authority; non-delegated analyst/domain/legal/rights/budget/regulatory/production approval |
+| `REVIEWER` | Every spec, compliance, quality, security, integrated, and final review; review and fix-round verdicts; post-cap adjudication; fresh review of candidate research or evidence before downstream reliance | Product-code implementation or fixes; non-delegated analyst/domain/legal/rights/budget/regulatory/production approval |
 
-Use these explicit invocation classes:
-
-```bash
-codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="high"' -s read-only --ephemeral '<bounded non-code web or public-equity source-reading prompt>'
-codex exec -C . -m gpt-5.6-luna -c 'model_reasoning_effort="xhigh"' -s read-only --ephemeral '<dense, ambiguous, cross-document, or high-stakes public-equity source-reading prompt>'
-codex exec -C . -m gpt-5.6-sol -c 'model_reasoning_effort="xhigh"' -s workspace-write --ephemeral '<bounded authoring prompt>'
-codex exec -C . -m gpt-5.6-sol -c 'model_reasoning_effort="xhigh"' -s read-only --ephemeral '<bounded review or adjudication prompt>'
-codex exec -C . -m gpt-5.6-terra -c 'model_reasoning_effort="xhigh"' -s workspace-write --ephemeral '<bounded implementation or fix prompt>'
-```
-
-Project-approved efforts are limited to `medium`, `high`, and `xhigh`, but this
-goal uses only Luna `high` or `xhigh` and Sol/Terra `xhigh`. Luna never reads or
-explores repository/codebase, blueprint, design, schema, spec, plan, technical-
-documentation, provider/tool, or implementation material. Every Luna result
-remains candidate research or evidence until a fresh Sol xhigh subagent reviews
-it; no spec, plan, implementation, ledger acceptance, or completion claim may
-rely on unreviewed Luna output. On capacity or authentication dispatch failure,
-retry the exact same model, effort, role, sandbox, and task once. After a second
+A `REVIEWER`-role dispatch is always a separate agent and context from the
+`IMPLEMENTER`-role dispatch whose output it reviews. Candidate research or
+evidence remains candidate until a fresh `REVIEWER`-role review checks it; no
+spec, plan, implementation, ledger acceptance, or completion claim may rely on
+unreviewed output. On capacity or authentication dispatch failure,
+retry the exact same role, task, and bounds once. After a second
 failure, record the failure and block the affected cone. Never silently
-substitute a model, role, effort, host-native route, or coordinator fallback.
+substitute a role, an effort, or a coordinator fallback for a required
+dispatch.
 
 ### Delegated artifact approval
 
 After the user approves and activates this exact goal, a clean,
-fresh-context Sol xhigh review may approve a spec, roadmap, or JIT plan under
+fresh-context `REVIEWER`-role review may approve a spec, roadmap, or JIT plan
+under
 delegated goal authority. The artifact records `approved under delegated goal
 authority`, reviewer identity/session, source hashes, review round, timestamp,
 and evidence path. It never records or implies personal user approval.
@@ -855,7 +987,7 @@ implementation artifacts.
 3. Persist every finding, severity, load-bearing classification, evidence,
    affected cone, fix, reviewer verdict, and round in review artifacts and the
    ledger. Conversation text is not evidence.
-4. After `r4`, dispatch a fresh Sol xhigh adjudicator. It may reject a
+4. After `r4`, dispatch a fresh `REVIEWER`-role adjudicator. It may reject a
    demonstrably incorrect or contestable finding only with source-grounded
    reasoning. It may park or defer a real non-load-bearing finding only when
    the governing acceptance criteria still hold and the ruling is explicit in
@@ -978,7 +1110,8 @@ A resolution is single-purpose. In particular, an `ACTIVATE_DEFERRED`
 decision cannot authorize rejection, and a later rejection requires a distinct
 `REJECT_COMPONENT` decision ID. Ledger activation/rejection records and their
 matching approval records carry both the canonical decision ID and digest.
-Ordinary automated evidence or Sol review never appears in `resolutions` and
+Ordinary automated evidence or `REVIEWER`-role review never appears in
+`resolutions` and
 never supplies human authority.
 
 For `OPEN_NONBLOCKING`, record the recommendation, apply only the documented
@@ -1154,23 +1287,20 @@ The coordinator runs this loop only while the control state is `RUNNING`:
    procedure before consuming their state.
 4. **Select work:** Determine active, dependency-satisfied work from Beads plus
    ledger state. Exclude dormant and blocked cones. Choose concurrent work only
-   under the disjointness rule. Classify only non-code external web research and
-   heavy or numerous public-equity source-document reading as the Luna lane.
-   Classify every repository/codebase, blueprint, design, schema, spec, plan,
+   under the disjointness rule. Classify external research reading and every
+   repository/codebase, blueprint, design, schema, spec, plan,
    technical-documentation, provider/tool, and implementation exploration as
-   the Sol lane.
-5. **Dispatch:** Invoke each Luna-lane subtask through a separate Luna Codex CLI
-   subagent at `high`, or `xhigh` when dense, ambiguous, cross-document, or
-   high-stakes; never use `medium` for this lane. Invoke Sol xhigh for all
-   repository and code-related exploration, brainstorming, planning,
-   document/code/security review, fix rounds, fresh review of Luna candidate
-   output, and final synthesis; invoke Terra xhigh for implementation. Apply
-   the one-retry rule without substitution. Agent Matrix remains disabled.
+   `IMPLEMENTER`-role work, and every review, verdict, and adjudication as
+   `REVIEWER`-role work.
+5. **Dispatch:** Invoke each subtask through a separate bounded dispatch in its
+   classified role, recording the role, model, and effort actually invoked.
+   Apply
+   the one-retry rule without substitution.
 6. **Review and prove:** Apply r0–r4 and adjudication where needed. The
    coordinator reruns the current repository verification commands and reads
-   exit status/output. Treat Luna output only as candidate research or evidence;
+   exit status/output. Treat research output only as candidate evidence;
    before a spec, plan, implementation, ledger acceptance, or completion claim
-   relies on it, obtain a fresh Sol xhigh review.
+   relies on it, obtain a fresh `REVIEWER`-role review.
 7. **Checkpoint serially:** Update Beads, ledger transitions, register Status
    cells when authorized, roadmap/plan state, review artifacts, verification
    evidence, and human-review entries. Record source hashes and Git state.
@@ -1225,6 +1355,7 @@ nonterminal states:
 
 ```bash
 python3 - <<'PY'
+import argparse
 import collections
 import datetime
 import hashlib
@@ -1232,11 +1363,41 @@ import json
 import math
 import re
 import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 
-root = Path(".").resolve()
+DEFAULT_LEDGER = "docs/goals/equity-os-blueprint-component-ledger.jsonl"
+DEFAULT_HUMAN_REVIEW = "docs/goals/equity-os-blueprint-human-review-needed.md"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--repo-root", required=True)
+parser.add_argument("--ledger-path")
+parser.add_argument("--human-review-path")
+parser.add_argument("--reconciliation-check", action="store_true")
+parser.add_argument("--reconciliation-baseline-ledger-path")
+parser.add_argument("--reconciliation-baseline-human-review-path")
+args = parser.parse_args()
+assert (args.ledger_path is None) == (args.human_review_path is None)
+baseline_arguments = (
+    args.reconciliation_baseline_ledger_path,
+    args.reconciliation_baseline_human_review_path,
+)
+if args.reconciliation_check:
+    assert all(baseline_arguments)
+else:
+    assert not any(baseline_arguments)
+
+root = Path(args.repo_root).resolve()
 validation_now = datetime.datetime.now(datetime.timezone.utc)
-ledger_path = Path("docs/goals/equity-os-blueprint-component-ledger.jsonl")
+
+def selected_path(value, default):
+    candidate = Path(value or default)
+    return candidate if candidate.is_absolute() else root / candidate
+
+ledger_path = selected_path(args.ledger_path, DEFAULT_LEDGER)
+human_review_path = selected_path(args.human_review_path, DEFAULT_HUMAN_REVIEW)
+assert ledger_path.is_file() and human_review_path.is_file()
+assert ledger_path.resolve() != human_review_path.resolve()
 lines = ledger_path.read_text(encoding="utf-8").splitlines()
 assert lines and all(line.strip() for line in lines)
 rows = [json.loads(line) for line in lines]
@@ -1376,6 +1537,26 @@ evidence_ref_fields = {
     "evidence_ref_id", "path", "scope", "digest_mode", "start_line",
     "end_line", "content_sha256", "captured_at",
 }
+UNRESOLVABLE_SPAN_DIAGNOSTIC = "UNRESOLVABLE_UTF8_LINE_SPAN"
+
+def resolve_utf8_line_span(evidence, target_lines, owner):
+    """Return the stripped span text, or exit 2 if the span is unresolvable.
+
+    r7 §6.3 item 2 / §8.1: an out-of-range `UTF8_LINE_SPAN` target is a
+    fail-closed diagnostic, never an uncaught traceback.
+    """
+    start, end = evidence["start_line"], evidence["end_line"]
+    if not 1 <= start <= end <= len(target_lines):
+        print(
+            f"{UNRESOLVABLE_SPAN_DIAGNOSTIC}: owner={owner} "
+            f"evidence_ref_id={evidence['evidence_ref_id']} "
+            f"path={evidence['path']} requested_span={start}-{end} "
+            f"target_line_count={len(target_lines)}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return "\n".join(target_lines[start - 1:end]).strip(" \t\n\r\f\v")
+
 evidence_by_id = {}
 local_evidence_ids = {}
 for row in rows:
@@ -1387,7 +1568,7 @@ for row in rows:
         assert isinstance(evidence_ref_id, str) and evidence_ref_id.strip()
         assert evidence_ref_id not in evidence_by_id
         target = repo_path(evidence["path"], must_exist=True)
-        assert target != (root / ledger_path).resolve()
+        assert target not in {ledger_path.resolve(), human_review_path.resolve()}
         assert isinstance(evidence["scope"], str) and evidence["scope"].strip()
         assert parse_utc_rfc3339(evidence["captured_at"]) <= validation_now
         if evidence["digest_mode"] == "FILE_BYTES":
@@ -1399,9 +1580,8 @@ for row in rows:
             assert isinstance(start, int) and not isinstance(start, bool)
             assert isinstance(end, int) and not isinstance(end, bool)
             target_lines = target.read_text(encoding="utf-8").splitlines()
-            assert 1 <= start <= end <= len(target_lines)
-            extracted = "\n".join(target_lines[start - 1:end]).strip(
-                " \t\n\r\f\v"
+            extracted = resolve_utf8_line_span(
+                evidence, target_lines, row["component_id"]
             )
             actual_digest = hashlib.sha256(extracted.encode("utf-8")).hexdigest()
         assert evidence["content_sha256"] == actual_digest
@@ -1414,6 +1594,26 @@ review_fields = {
     "timestamp", "evidence_ref_ids", "reviewed_input_sha256",
     "reviewed_inventory_sha256",
 }
+# r7 §3.8: `CONTEXT.md` "Agent roles (harness-wide)" is the single binding
+# table. The goal restates no model binding, and no validator asserts a vendor
+# model or effort constant anywhere.
+REVIEW_ROLES = {"IMPLEMENTER", "ORCHESTRATOR", "REVIEWER"}
+ROLE_BINDING_PATH = "CONTEXT.md"
+role_binding_fields = {"role", "role_binding_path", "role_binding_sha256"}
+
+def assert_reviewer_role_binding(review):
+    """r7 §3.8 closed role binding for a COMPLETE review.
+
+    `role_binding_sha256` is an immutable historical capture, deliberately not
+    a declared evidence object: re-verifying it against current bytes would let
+    an unrelated `CONTEXT.md` edit invalidate completed reviews.
+    """
+    assert review["role"] in REVIEW_ROLES
+    assert review["role"] == "REVIEWER"
+    assert review["role_binding_path"] == ROLE_BINDING_PATH
+    assert re.fullmatch(r"[0-9a-f]{64}", review["role_binding_sha256"])
+    assert isinstance(review["model"], str) and review["model"].strip()
+    assert isinstance(review["effort"], str) and review["effort"].strip()
 
 def review_input_projection(row):
     scope = row["scope_derivation"]
@@ -1438,6 +1638,9 @@ def review_input_projection(row):
     }
     projection = {field: row[field] for field in sorted(fields)}
     projection["scope_derivation"] = scope_without_review
+    projection["human_review_id"] = sorted(
+        normalized_human_review_id(row["human_review_id"])
+    )
     return projection
 
 def review_inventory_projection(row, review_type):
@@ -1464,12 +1667,18 @@ def review_inventory_projection(row, review_type):
     return {
         "required_approvals": row["required_approvals"],
         "approval_records": row["approval_records"],
-        "human_review_id": row["human_review_id"],
+        "human_review_id": sorted(normalized_human_review_id(row["human_review_id"])),
         "security_exception_ids": row["security_exception_ids"],
     }
 
 def validate_inventory_review(row, review, review_type):
-    assert isinstance(review, dict) and review_fields <= review.keys()
+    assert isinstance(review, dict)
+    # r7 §3.2 bullet 12: a PENDING review keeps exactly its existing key set;
+    # a COMPLETE review carries exactly that key set plus the role binding.
+    if review.get("status") == "COMPLETE":
+        assert set(review) == review_fields | role_binding_fields
+    else:
+        assert set(review) == review_fields
     assert review["review_type"] == review_type
     assert review["status"] in {"PENDING", "COMPLETE"}
     assert isinstance(review["evidence_ref_ids"], list)
@@ -1483,8 +1692,7 @@ def validate_inventory_review(row, review, review_type):
         assert review["evidence_ref_ids"] == []
     else:
         assert isinstance(review["reviewer"], str) and review["reviewer"].strip()
-        assert review["model"] == "gpt-5.6-sol"
-        assert review["effort"] == "xhigh"
+        assert_reviewer_role_binding(review)
         assert review["verdict"] == "CLEAN"
         timestamp = parse_utc_rfc3339(review["timestamp"])
         assert timestamp <= validation_now
@@ -1503,14 +1711,85 @@ def validate_inventory_review(row, review, review_type):
 canonical_rows = [row for row in rows if row["kind"] in canonical_kinds]
 aliases = [row for row in rows if row["kind"] == alias_kind]
 counts = collections.Counter(row["kind"] for row in canonical_rows)
-for kind, expected in {
+expected_kind_counts = {
     "register_row": 60,
     "phase_gate_clause": 35,
     "first_release_deferral": 13,
     "scale_trigger": 8,
     "disposition_item": 32,
-}.items():
+    "authority_clause": 4,
+    "sequence_clause": 11,
+    "document_strategy_clause": 6,
+}
+for kind, expected in expected_kind_counts.items():
     assert counts[kind] == expected, (kind, counts[kind])
+assert sum(expected_kind_counts.values()) == 169
+assert len(canonical_rows) == 169
+assert len(aliases) == 44
+assert len(rows) == 213
+
+expected_authority_clause_lines = {
+    "AUTH-REG-001": (
+        "docs/blueprint/funda-blueprint-implementation-decision-register-v2.md",
+        23,
+    ),
+    "AUTH-DISP-001": (
+        "docs/blueprint/funda-third-order-review-disposition-report.md",
+        41,
+    ),
+    "AUTH-REG-002": (
+        "docs/blueprint/funda-blueprint-implementation-decision-register-v2.md",
+        193,
+    ),
+    "AUTH-REG-003": (
+        "docs/blueprint/funda-blueprint-implementation-decision-register-v2.md",
+        209,
+    ),
+}
+authority_rows = {
+    row["component_id"]: row for row in canonical_rows
+    if row["kind"] == "authority_clause"
+}
+assert set(authority_rows) == set(expected_authority_clause_lines)
+for component_id, (path_value, line_number) in (
+    expected_authority_clause_lines.items()
+):
+    authority_row = authority_rows[component_id]
+    assert authority_row["source_path"] == path_value
+    assert authority_row["source_start_line"] == line_number
+    assert authority_row["source_end_line"] == line_number
+
+# r7 §3.5.2: the five Phase-2 gates that remain CONDITIONAL_UNACTIVATED and
+# therefore legitimately carry an activation predicate. PG-2-04 is deliberately
+# absent (r7 §3.5.1).
+PHASE2_CONDITIONAL_GATE_IDS = {
+    "PG-2-01", "PG-2-02", "PG-2-03", "PG-2-05", "PG-2-06",
+}
+
+
+def alias_targets(value):
+    """Closed r7 §3.2 alias-target representation."""
+    if isinstance(value, str):
+        assert value.strip()
+        return [value]
+    assert isinstance(value, list) and len(value) >= 2
+    assert all(isinstance(item, str) and item.strip() for item in value)
+    assert value == sorted(set(value))
+    return list(value)
+
+
+def normalized_human_review_id(value):
+    """Closed r7 §3.2 human-review-link representation, as a set."""
+    if value is None:
+        return frozenset()
+    if isinstance(value, str):
+        assert re.fullmatch(r"HR-\d{4}", value)
+        return frozenset({value})
+    assert isinstance(value, list) and len(value) >= 2
+    assert all(re.fullmatch(r"HR-\d{4}", item) for item in value)
+    assert value == sorted(set(value))
+    return frozenset(value)
+
 
 for row in canonical_rows:
     assert row["canonical_component_id"] is None
@@ -1553,21 +1832,26 @@ for row in aliases:
     assert row["human_review_id"] is None
     assert row["security_exception_ids"] == []
     assert row["blocked_scope"] == []
-    assert isinstance(target_id, str) and target_id in by_id
-    assert target_id != row["component_id"]
-    assert by_id[target_id]["kind"] in canonical_kinds
+    targets = alias_targets(target_id)
+    assert targets
+    assert row["component_id"] not in targets
+    assert all(item in by_id for item in targets)
+    assert all(by_id[item]["kind"] in canonical_kinds for item in targets)
 
 # Follow targets even though aliases must point directly to canonical objects;
 # this makes a future relaxation fail closed instead of admitting a cycle.
 for row in aliases:
     seen = {row["component_id"]}
-    current = row
-    while current["canonical_component_id"] is not None:
-        target_id = current["canonical_component_id"]
+    pending_targets = list(alias_targets(row["canonical_component_id"]))
+    while pending_targets:
+        target_id = pending_targets.pop()
         assert target_id in by_id and target_id not in seen
         seen.add(target_id)
-        current = by_id[target_id]
-    assert current["kind"] in canonical_kinds
+        follow = by_id[target_id]["canonical_component_id"]
+        if follow is not None:
+            pending_targets.extend(alias_targets(follow))
+        else:
+            assert by_id[target_id]["kind"] in canonical_kinds
 
 expected_ids = {
     *(f"A-{i:02d}" for i in range(1, 14)),
@@ -1869,8 +2153,8 @@ def validate_live_bead_id(bead_id):
 def normalize_human_scope(scope):
     direct_ids = set(scope["component_ids"])
     blocked_ids = set(scope["blocked_component_ids"])
-    assert direct_ids <= canonical_component_ids
-    assert blocked_ids <= canonical_component_ids
+    assert direct_ids <= set(by_id)
+    assert blocked_ids <= set(by_id)
     assert direct_ids.isdisjoint(blocked_ids)
 
     register_ids = set(scope["register_ids"])
@@ -1899,7 +2183,7 @@ def normalize_human_scope(scope):
     assert blocked_ids.isdisjoint(nonblocked_projection)
     projected = blocked_ids | nonblocked_projection
     assert projected
-    assert projected <= canonical_component_ids
+    assert projected <= set(by_id)
     return frozenset(projected)
 
 approval_types = {
@@ -1926,7 +2210,6 @@ approval_types = {
     "EXTERNAL_COORDINATION_APPROVAL",
 }
 
-human_review_path = Path("docs/goals/equity-os-blueprint-human-review-needed.md")
 human_entries = {}
 human_resolutions = {}
 active_human_resolutions = {}
@@ -1943,7 +2226,7 @@ def validate_human_evidence(items, globally_seen_ids):
         globally_seen_ids.add(evidence_id)
         target = repo_path(evidence["path"], must_exist=True)
         assert target not in {
-            (root / ledger_path).resolve(), (root / human_review_path).resolve()
+            ledger_path.resolve(), human_review_path.resolve()
         }
         assert isinstance(evidence["scope"], str) and evidence["scope"].strip()
         assert parse_utc_rfc3339(evidence["captured_at"]) <= validation_now
@@ -1956,16 +2239,15 @@ def validate_human_evidence(items, globally_seen_ids):
             assert isinstance(start, int) and not isinstance(start, bool)
             assert isinstance(end, int) and not isinstance(end, bool)
             target_lines = target.read_text(encoding="utf-8").splitlines()
-            assert 1 <= start <= end <= len(target_lines)
-            normalized = "\n".join(target_lines[start - 1:end]).strip(
-                " \t\n\r\f\v"
+            normalized = resolve_utf8_line_span(
+                evidence, target_lines, "HUMAN_REVIEW_PAYLOAD"
             )
             digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         assert evidence["content_sha256"] == digest
         result[evidence_id] = evidence
     return result
 
-if human_review_path.exists():
+if True:
     human_text = human_review_path.read_text(encoding="utf-8")
     begin_marker = "<!-- BEGIN CANONICAL HUMAN REVIEW JSON -->"
     end_marker = "<!-- END CANONICAL HUMAN REVIEW JSON -->"
@@ -2257,13 +2539,17 @@ for row in rows:
             assert record["timestamp"] == resolution["timestamp"]
         records_by_id[record_id] = record
 
+human_review_links = {
+    row["component_id"]: normalized_human_review_id(row["human_review_id"])
+    for row in rows
+}
 for row in rows:
-    if row["human_review_id"] is not None:
-        assert row["human_review_id"] in human_entries
-        assert human_entries[row["human_review_id"]]["entry_type"] == "DECISION"
-        assert row["component_id"] in human_scope_components[
-            row["human_review_id"]
-        ]
+    if row["kind"] == alias_kind:
+        assert row["human_review_id"] is None
+    for entry_id in human_review_links[row["component_id"]]:
+        assert entry_id in human_entries
+        assert human_entries[entry_id]["entry_type"] == "DECISION"
+        assert row["component_id"] in human_scope_components[entry_id]
     assert isinstance(row["security_exception_ids"], list)
     assert len(set(row["security_exception_ids"])) == len(row["security_exception_ids"])
     for entry_id in row["security_exception_ids"]:
@@ -2275,14 +2561,16 @@ for entry_id, entry in human_entries.items():
     scoped_component_ids = human_scope_components[entry_id]
     if entry["entry_type"] == "DECISION":
         assert all(
-            canonical_by_component_id[component_id]["human_review_id"] == entry_id
+            entry_id in human_review_links[component_id]
             for component_id in scoped_component_ids
+            if component_id in canonical_by_component_id
         )
     else:
         assert entry["entry_type"] == "SECURITY_EXCEPTION"
         assert all(
             entry_id in canonical_by_component_id[component_id]["security_exception_ids"]
             for component_id in scoped_component_ids
+            if component_id in canonical_by_component_id
         )
 
 requirements_by_id = {}
@@ -2463,6 +2751,26 @@ for row in canonical_rows:
             assert set(expression) == {"op", "arg"}
             value = evaluate(expression["arg"])
             return None if value is None else not value
+        if op == "COMPARE_METRICS":
+            assert set(expression) == {
+                "op", "left_metric_id", "comparator", "right_metric_id"
+            }
+            left_id = expression["left_metric_id"]
+            right_id = expression["right_metric_id"]
+            assert left_id in metric_values and right_id in metric_values
+            assert metric_types[left_id] == metric_types[right_id]
+            comparator = expression["comparator"]
+            if metric_types[left_id] in {"BOOLEAN", "STRING"}:
+                assert comparator in {"EQ", "NE"}
+            else:
+                assert comparator in {"EQ", "NE", "GT", "GTE", "LT", "LTE"}
+            left_value = metric_values[left_id]
+            right_value = metric_values[right_id]
+            if left_value is None or right_value is None:
+                return None
+            return compare_metric(
+                left_value, comparator, right_value, metric_types[left_id]
+            )
         assert op == "COMPARE" and set(expression) == {
             "op", "metric_id", "comparator", "expected"
         }
@@ -2544,6 +2852,11 @@ scope_fields = {
     "rule", "related_register_ids", "authority_effect",
     "derived_program_disposition", "semantic_review",
 }
+extra_scope_keys_by_kind = {
+    "disposition_item": {"applicable_spec_ids"},
+    "sequence_clause": {"source_register_ids", "applicable_spec_ids"},
+}
+spec_id_pattern = r"S(?:0[1-9]|1\d|2[0-5])"
 required_rule_by_kind = {
     "phase_gate_clause": "RELATED_REGISTER_SCOPE",
     "first_release_deferral": "PROGRAM_WIDE_ACTIVE_CONTROL",
@@ -2557,6 +2870,15 @@ derived_by_component_id = {}
 for row in canonical_rows:
     derivation = row["scope_derivation"]
     assert isinstance(derivation, dict) and scope_fields <= derivation.keys()
+    allowed_extra = extra_scope_keys_by_kind.get(row["kind"], set())
+    assert set(derivation) == scope_fields | allowed_extra
+    for key in allowed_extra:
+        values = derivation[key]
+        assert isinstance(values, list) and values == sorted(set(values))
+        if key == "applicable_spec_ids":
+            assert all(re.fullmatch(spec_id_pattern, item) for item in values)
+        else:
+            assert set(values) <= expected_ids
     if row["kind"] == "register_row":
         assert derivation["rule"] == "REGISTER_STATUS"
         assert derivation["related_register_ids"] == []
@@ -2564,10 +2886,19 @@ for row in canonical_rows:
         assert derivation["semantic_review"] is None
         derived = register_dispositions[row["register_id"]]
     else:
-        assert derivation["rule"] == required_rule_by_kind[row["kind"]]
+        if derivation["rule"] == "ACTIVE_NEGATIVE_CONTROL":
+            assert row["kind"] == "phase_gate_clause"
+        else:
+            assert derivation["rule"] == required_rule_by_kind[row["kind"]]
         validate_inventory_review(row, derivation["semantic_review"], "SCOPE")
         related = derivation["related_register_ids"]
-        if derivation["rule"] == "PROGRAM_WIDE_ACTIVE_CONTROL":
+        if derivation["rule"] == "ACTIVE_NEGATIVE_CONTROL":
+            assert related and len(set(related)) == len(related)
+            assert set(related) <= expected_ids
+            assert derivation["authority_effect"] is None
+            assert row["activation_predicate"] is None
+            derived = "REQUIRED_NOW"
+        elif derivation["rule"] == "PROGRAM_WIDE_ACTIVE_CONTROL":
             assert related == [] and derivation["authority_effect"] is None
             derived = "REQUIRED_NOW"
         elif derivation["rule"] == "RELATED_REGISTER_SCOPE":
@@ -2836,6 +3167,13 @@ def activation_snapshot_disposition(state):
     assert scope["authority_effect"] == "FOLLOW_RELATED_SCOPE"
     return activation_aggregate(scope["related_register_ids"])
 
+sequence_zero_reconciliation_ids = {
+    "AUTH-REG-002", "AUTH-REG-003", "ALIAS-044",
+}
+authorized_delivery_reset = ("DEF-12", "SPEC_DRAFT", "INVENTORIED")
+# r7 §7.2: an exact single-row manifest, not a kind-level or gate-level
+# allowance. Only this row may move program_disposition at all.
+disposition_exception_rows = {"PG-2-04"}
 transition_ids = set()
 source_status_transition_count = 0
 status_source_reconciliation_count = 0
@@ -2874,14 +3212,29 @@ for row in rows:
         assert entry["entry_sha256"] == canonical_sha256(entry_projection)
         previous_hash = entry["entry_sha256"]
         if sequence == 0:
-            assert entry["transition_type"] == "ACTIVATION_SNAPSHOT"
             assert entry["field"] == "CONTROLLED_STATE"
             assert entry["old_value"] is None
             assert isinstance(entry["new_value"], dict)
             assert set(entry["new_value"]) == controlled_fields
+            replay = entry["new_value"]
+            if entry["transition_type"] == "AUTHORITY_RECONCILIATION":
+                # r7 §3.2: a genuinely omitted post-activation component may
+                # begin at sequence zero only under an active HR reconciliation.
+                assert row["component_id"] in sequence_zero_reconciliation_ids
+                transition_resolution(entry, row, {"RECONCILE_AUTHORITY"})
+                assert replay["source_hash"] == current_source_hashes[
+                    replay["source_path"]
+                ]
+                assert replay["delivery_status"] == "INVENTORIED"
+                assert replay["gate_result"] == "NOT_EVALUATED"
+                assert replay["activation_record"] is None
+                assert replay["rejection_record"] is None
+                if replay["delivery_status"] not in blocked_delivery_states:
+                    last_nonblocked_delivery = replay["delivery_status"]
+                continue
+            assert entry["transition_type"] == "ACTIVATION_SNAPSHOT"
             assert entry["human_resolution_decision_id"] is None
             assert entry["human_resolution_sha256"] is None
-            replay = entry["new_value"]
             assert replay["source_hash"] == activation_authority_hashes[
                 replay["source_path"]
             ]
@@ -2915,11 +3268,13 @@ for row in rows:
         resolution_hash = entry["human_resolution_sha256"]
         assert (resolution_id is None) == (resolution_hash is None)
 
-        if field in {
-            "component_id", "canonical_component_id", "kind",
-            "activation_source_status",
-        }:
+        if field in {"component_id", "kind", "activation_source_status"}:
             raise AssertionError(f"immutable controlled field changed: {field}")
+        elif field == "canonical_component_id":
+            assert row["kind"] == alias_kind
+            assert alias_targets(old) and alias_targets(new)
+            assert entry["transition_type"] == "AUTHORITY_RECONCILIATION"
+            transition_resolution(entry, row, {"RECONCILE_AUTHORITY"})
         elif (
             field == "source_hash"
             and replay["source_path"]
@@ -2983,7 +3338,22 @@ for row in rows:
                 ("CONDITIONAL_ACTIVATED", "REJECTED_ACCOUNTED"),
                 ("REQUIRED_NOW", "REJECTED_ACCOUNTED"),
             }
-            assert (old, new) in legal
+            if (old, new) == ("CONDITIONAL_UNACTIVATED", "REQUIRED_NOW"):
+                # r7 §3.2 bullet 9, all five conditions. Widening obligation
+                # through a reconciled related-register scope: never available
+                # to a register row, so it can never activate a Deferred
+                # capability, and never compatible with a predicate or an
+                # activation record.
+                assert row["component_id"] in disposition_exception_rows
+                assert row["kind"] != "register_row"
+                assert entry["transition_type"] == "AUTHORITY_RECONCILIATION"
+                transition_resolution(entry, row, {"RECONCILE_AUTHORITY"})
+                assert row["program_disposition"] == new
+                assert derived_by_component_id[row["component_id"]] == new
+                assert row["activation_predicate"] is None
+                assert row["activation_record"] is None
+            else:
+                assert (old, new) in legal
             if new == "CONDITIONAL_ACTIVATED":
                 transition_resolution(entry, row, {"ACTIVATE_DEFERRED"})
             elif row["kind"] == "register_row":
@@ -2996,6 +3366,13 @@ for row in rows:
             elif old in blocked_delivery_states:
                 assert new == last_nonblocked_delivery
                 assert entry["transition_type"] == "UNBLOCK"
+            elif (
+                entry["transition_type"] == "AUTHORITY_RECONCILIATION"
+                and (row["component_id"], old, new) == authorized_delivery_reset
+            ):
+                # r7 §7.2: the only authorized backward delivery movement.
+                transition_resolution(entry, row, {"RECONCILE_AUTHORITY"})
+                last_nonblocked_delivery = new
             else:
                 old_index = delivery_progression.index(old)
                 new_index = delivery_progression.index(new)
@@ -3045,13 +3422,16 @@ for row in rows:
                 assert entry["transition_type"] == "STATE_TRANSITION"
         else:
             assert field == "human_review_id"
-            if old is None:
-                assert isinstance(new, str) and new in human_entries
-                assert entry["transition_type"] == "REFERENCE_APPEND"
-            else:
-                assert isinstance(new, str) and new in human_entries
-                assert entry["transition_type"] == "AUTHORITY_RECONCILIATION"
+            old_links = normalized_human_review_id(old)
+            new_links = normalized_human_review_id(new)
+            # r7 §3.2: append-only link growth; removal or replacement fails.
+            assert old_links < new_links
+            assert new_links <= set(human_entries)
+            if entry["transition_type"] == "AUTHORITY_RECONCILIATION":
                 transition_resolution(entry, row, {"RECONCILE_AUTHORITY"})
+            else:
+                assert old is None
+                assert entry["transition_type"] == "REFERENCE_APPEND"
         replay = {**replay, field: new}
 
     assert replay == controlled_state(row)
@@ -3137,7 +3517,7 @@ result_fields = {
 not_applicable_fields = {
     "status", "reviewer", "model", "effort", "verdict", "timestamp", "reason",
     "evidence_ref_ids", "component_state_sha256",
-}
+} | role_binding_fields
 state_fields = (
     required
     - {
@@ -3240,11 +3620,11 @@ for row in rows:
     else:
         assert policy["commands"] == [] and row["verification_result"] == []
         review = policy["not_applicable_review"]
-        assert isinstance(review, dict) and not_applicable_fields <= review.keys()
+        assert isinstance(review, dict) and set(review) == not_applicable_fields
         assert review["status"] == "COMPLETE"
         assert isinstance(review["reviewer"], str) and review["reviewer"].strip()
-        assert review["model"] == "gpt-5.6-sol"
-        assert review["effort"] == "xhigh" and review["verdict"] == "CLEAN"
+        assert_reviewer_role_binding(review)
+        assert review["verdict"] == "CLEAN"
         assert parse_utc_rfc3339(review["timestamp"]) <= validation_now
         assert isinstance(review["reason"], str) and review["reason"].strip()
         assert isinstance(review["evidence_ref_ids"], list)
@@ -3322,6 +3702,900 @@ for row in canonical_rows:
         or row["gate_result"] == "PASS"
     ):
         assert_complete_proof(row)
+
+# ---------------------------------------------------------------------------
+# r7 §8.1 validator-owned manifests. None of these import generator constants;
+# each value is transcribed from the reviewed r7 design.
+# ---------------------------------------------------------------------------
+EXPECTED_ALIAS_TARGETS = {
+    "ALIAS-001": [
+        "DISP-G-1", "DISP-G-2", "DISP-G-3", "DISP-G-4", "DISP-G-5",
+        "DISP-M-1", "DISP-M-2", "DISP-M-3", "DISP-M-4", "DISP-M-5",
+        "DISP-M-6", "DISP-M-7", "DISP-M-8", "DISP-M-9",
+    ],
+    "ALIAS-002": "DISP-G-1",
+    "ALIAS-003": "DISP-6-1",
+    "ALIAS-004": "DISP-G-5",
+    "ALIAS-005": "DISP-6-3",
+    "ALIAS-006": "DISP-6-6",
+    "ALIAS-007": "DISP-6-5",
+    "ALIAS-008": "DISP-R-1",
+    "ALIAS-009": "DISP-6-7",
+    "ALIAS-010": "DISP-6-8",
+    "ALIAS-011": ["DISP-G-1", "DISP-G-2", "DISP-G-3", "DISP-G-4", "DISP-G-5"],
+    "ALIAS-012": [
+        "DISP-M-1", "DISP-M-2", "DISP-M-3", "DISP-M-4", "DISP-M-5",
+        "DISP-M-6", "DISP-M-7", "DISP-M-8", "DISP-M-9",
+    ],
+    "ALIAS-013": ["DISP-T-1", "DISP-T-2", "DISP-T-3", "DISP-T-4"],
+    "ALIAS-014": ["DISP-R-1", "DISP-R-2", "DISP-R-3", "DISP-R-4", "DISP-R-5"],
+    "ALIAS-015": [
+        "DISP-G-1", "DISP-G-2", "DISP-G-3", "DISP-G-4", "DISP-G-5",
+        "DISP-M-1", "DISP-M-2", "DISP-M-3", "DISP-M-4", "DISP-M-5",
+        "DISP-M-6", "DISP-M-7", "DISP-M-8", "DISP-M-9",
+        "DISP-R-1", "DISP-R-2", "DISP-R-3", "DISP-R-4", "DISP-R-5",
+        "DISP-T-1", "DISP-T-2", "DISP-T-3", "DISP-T-4",
+    ],
+    "ALIAS-016": "DISP-R-1",
+    "ALIAS-017": "DISP-G-5",
+    "ALIAS-018": "DISP-M-1",
+    "ALIAS-019": "DISP-T-1",
+    "ALIAS-020": "DISP-T-2",
+    "ALIAS-021": "DISP-R-3",
+    "ALIAS-022": "DISP-R-2",
+    "ALIAS-023": "REG-A-04",
+    "ALIAS-024": "DISP-G-4",
+    "ALIAS-025": "DISP-M-2",
+    "ALIAS-026": "DISP-M-3",
+    "ALIAS-027": "DISP-M-6",
+    "ALIAS-028": "DISP-M-5",
+    "ALIAS-029": "DISP-G-2",
+    "ALIAS-030": "DISP-M-4",
+    "ALIAS-031": "DISP-G-1",
+    "ALIAS-032": "DISP-M-7",
+    "ALIAS-033": "DISP-M-8",
+    "ALIAS-034": "DISP-G-5",
+    "ALIAS-035": "DISP-G-3",
+    "ALIAS-036": "DISP-R-1",
+    "ALIAS-037": "DISP-6-4",
+    "ALIAS-038": "DISP-R-1",
+    "ALIAS-039": "DISP-6-5",
+    "ALIAS-040": "DISP-M-4",
+    "ALIAS-041": [
+        "DISP-G-5", "DISP-M-1", "DISP-M-2", "DISP-M-4", "DISP-M-5",
+        "DISP-M-6", "DISP-T-2",
+    ],
+    "ALIAS-042": "DISP-R-1",
+    "ALIAS-043": [
+        "DISP-6-4", "DISP-G-4", "DISP-M-1", "DISP-M-2", "DISP-M-4",
+        "DISP-M-5", "DISP-R-1", "DISP-T-2", "DOC-02", "DOC-03",
+    ],
+    "ALIAS-044": "AUTH-REG-001",
+}
+assert {row["component_id"] for row in aliases} == set(EXPECTED_ALIAS_TARGETS)
+for row in aliases:
+    assert row["canonical_component_id"] == EXPECTED_ALIAS_TARGETS[
+        row["component_id"]
+    ]
+
+EXPECTED_DISPOSITION_CROSSWALK = {
+    "DISP-G-1": (["S06", "S11", "S16"], ["A-04", "C-08", "C-09", "C-16"]),
+    "DISP-G-2": (["S18"], ["B-04"]),
+    "DISP-G-3": (["S18"], ["B-04", "C-12"]),
+    "DISP-G-4": (["S05", "S18"], ["A-02", "A-03", "B-02", "B-04", "B-13"]),
+    "DISP-G-5": (["S06", "S13"], ["A-10", "C-04"]),
+    "DISP-M-1": (["S05"], ["A-11"]),
+    "DISP-M-2": (["S12"], ["B-05", "B-11", "C-03"]),
+    "DISP-M-3": (["S13"], ["B-06", "B-12"]),
+    "DISP-M-4": (["S11", "S25"], ["C-15", "E-10"]),
+    "DISP-M-5": (["S14", "S15"], ["B-01", "B-14", "C-10"]),
+    "DISP-M-6": (["S07", "S15"], ["A-08", "B-13", "C-10"]),
+    "DISP-M-7": (["S17"], ["C-17"]),
+    "DISP-M-8": (["S08", "S18"], ["A-13", "C-18"]),
+    "DISP-M-9": (["S07", "S09"], ["A-08", "B-08"]),
+    "DISP-T-1": (["S08"], ["A-12"]),
+    "DISP-T-2": (["S08"], ["A-13"]),
+    "DISP-T-3": (["S10"], ["B-03"]),
+    "DISP-T-4": (["S01", "S02", "S04"], ["A-01", "E-08", "E-09"]),
+    "DISP-R-1": (["S19", "S20"], ["D-02"]),
+    "DISP-R-2": (["S09"], ["A-06"]),
+    "DISP-R-3": (["S02"], ["A-05"]),
+    "DISP-R-4": (["S06"], ["A-04"]),
+    "DISP-R-5": (["S10", "S14"], ["B-01", "B-03"]),
+    "DISP-6-1": (["S18"], ["B-04"]),
+    "DISP-6-2": (["S06", "S13"], ["A-10", "C-04"]),
+    "DISP-6-3": (["S17"], ["C-17"]),
+    "DISP-6-4": (["S19", "S20"], ["D-02", "D-05"]),
+    "DISP-6-5": (["S25"], ["E-10"]),
+    "DISP-6-6": (["S07", "S15"], ["B-13", "C-10"]),
+    "DISP-6-7": (["S03", "S04"], ["E-06", "E-07", "E-09"]),
+    "DISP-6-8": (["S05"], ["A-02", "B-02"]),
+    "DISP-6-9": (["S11", "S16"], ["C-08", "C-16"]),
+}
+disposition_rows = {
+    row["component_id"]: row for row in canonical_rows
+    if row["kind"] == "disposition_item"
+}
+assert set(disposition_rows) == set(EXPECTED_DISPOSITION_CROSSWALK)
+for component_id, (spec_ids, register_ids) in (
+    EXPECTED_DISPOSITION_CROSSWALK.items()
+):
+    disposition_row = disposition_rows[component_id]
+    derivation = disposition_row["scope_derivation"]
+    assert derivation["applicable_spec_ids"] == sorted(spec_ids)
+    assert derivation["related_register_ids"] == register_ids
+    if len(spec_ids) == 1:
+        assert disposition_row["primary_spec"] is not None
+        assert disposition_row["primary_spec"]["spec_id"] == spec_ids[0]
+    else:
+        assert disposition_row["primary_spec"] is None
+
+EXPECTED_SEQUENCE_CROSSWALK = {
+    "SEQ-01": (["A-01"], ["S01"]),
+    "SEQ-02": (["A-05", "A-09"], ["S01", "S02"]),
+    "SEQ-03": (["A-02", "A-06"], ["S05", "S09"]),
+    "SEQ-04": (["A-10", "A-13"], ["S06", "S08"]),
+    "SEQ-05": (["A-04"], ["S06"]),
+    "SEQ-06": (["A-03", "A-11"], ["S05"]),
+    "SEQ-07": (["A-04"], ["S06"]),
+    "SEQ-08": (["B-11", "B-12"], ["S12", "S13"]),
+    "SEQ-09": (["B-01", "B-14"], ["S14"]),
+    "SEQ-10": (["B-02"], ["S14"]),
+    "SEQ-11": ([], []),
+}
+sequence_rows = {
+    row["component_id"]: row for row in canonical_rows
+    if row["kind"] == "sequence_clause"
+}
+assert set(sequence_rows) == set(EXPECTED_SEQUENCE_CROSSWALK)
+for component_id, (source_ids, spec_ids) in EXPECTED_SEQUENCE_CROSSWALK.items():
+    sequence_row = sequence_rows[component_id]
+    derivation = sequence_row["scope_derivation"]
+    assert derivation["rule"] == "PROGRAM_WIDE_ACTIVE_CONTROL"
+    assert derivation["related_register_ids"] == []
+    assert derivation["authority_effect"] is None
+    assert derivation["source_register_ids"] == sorted(source_ids)
+    assert derivation["applicable_spec_ids"] == sorted(spec_ids)
+    assert sequence_row["primary_spec"] is None
+    assert sequence_row["program_disposition"] == "REQUIRED_NOW"
+
+negative_control = by_id["PG-1-11"]
+negative_derivation = negative_control["scope_derivation"]
+assert negative_derivation["rule"] == "ACTIVE_NEGATIVE_CONTROL"
+assert negative_derivation["related_register_ids"] == [
+    "D-02", "D-05", "E-03", "E-05", "E-09"
+]
+assert negative_derivation["authority_effect"] is None
+assert negative_derivation["derived_program_disposition"] == "REQUIRED_NOW"
+assert negative_control["program_disposition"] == "REQUIRED_NOW"
+assert negative_control["primary_spec"] is None
+assert negative_control["activation_predicate"] is None
+assert negative_control["source_start_line"] == 160
+assert {
+    row["component_id"] for row in canonical_rows
+    if row["scope_derivation"]["rule"] == "ACTIVE_NEGATIVE_CONTROL"
+} == {"PG-1-11"}
+
+EXPECTED_PHASE2_POINTER_PREFIX = {
+    gate_id: "/phase_gates/" + gate_id.lower().replace("-", "_")
+    for gate_id in sorted(PHASE2_CONDITIONAL_GATE_IDS)
+}
+FORBIDDEN_PHASE2_FIELD_SUFFIXES = ("_ready", "_improved", "_acceptable")
+for gate_id, pointer_prefix in EXPECTED_PHASE2_POINTER_PREFIX.items():
+    gate_row = by_id[gate_id]
+    predicate = gate_row["activation_predicate"]
+    assert predicate is not None
+    assert gate_row["program_disposition"] == "CONDITIONAL_UNACTIVATED"
+    assert predicate["predicate_id"] == "AP-" + gate_id
+    assert predicate["expression"]["op"] == "ALL"
+    for metric in predicate["metrics"]:
+        pointer = metric["json_pointer"]
+        assert pointer.startswith(pointer_prefix + "/")
+        field_name = pointer[len(pointer_prefix) + 1:]
+        assert "/" not in field_name
+        assert not field_name.endswith(FORBIDDEN_PHASE2_FIELD_SUFFIXES)
+        assert metric["metric_id"] == (
+            "MTR-" + gate_id + "-" + field_name.replace("_", "-").upper()
+        )
+    assert any(
+        leaf["op"] == "COMPARE_METRICS"
+        for leaf in predicate["expression"]["args"]
+    ) or gate_id == "PG-2-03"
+
+# r7 §3.5.1/§7.2: the single-row PG-2-04 outcome, owned here as an exact
+# manifest rather than a kind-level or gate-level allowance.
+PG_2_04_COMMAND_PROOF_SCOPE = (
+    'PG-2-04 command proof: correction_test_result_id != "" and '
+    "correction_cases_executed > 0 and correction_failure_count == 0 and "
+    'deletion_test_result_id != "" and deletion_cases_executed > 0 and '
+    "deletion_failure_count == 0 and "
+    'backup_test_result_id != "" and backup_cases_executed > 0 and '
+    "backup_failure_count == 0 and "
+    'export_test_result_id != "" and export_cases_executed > 0 and '
+    "export_failure_count == 0"
+)
+pg_2_04 = by_id["PG-2-04"]
+pg_2_04_derivation = pg_2_04["scope_derivation"]
+assert pg_2_04_derivation["rule"] == "RELATED_REGISTER_SCOPE"
+assert pg_2_04_derivation["related_register_ids"] == ["D-01", "D-03"]
+assert pg_2_04_derivation["authority_effect"] is None
+assert pg_2_04_derivation["derived_program_disposition"] == "REQUIRED_NOW"
+assert pg_2_04["program_disposition"] == "REQUIRED_NOW"
+assert pg_2_04["primary_spec"] is None
+assert pg_2_04["activation_predicate"] is None
+assert pg_2_04["activation_record"] is None
+assert pg_2_04["gate_result"] == "NOT_EVALUATED"
+pg_2_04_command_proof = [
+    item for item in pg_2_04["required_evidence"]
+    if item["evidence_id"] == "REQ-PG-2-04-COMMAND-PROOF"
+]
+assert len(pg_2_04_command_proof) == 1
+assert pg_2_04_command_proof[0]["scope"] == PG_2_04_COMMAND_PROOF_SCOPE
+assert pg_2_04_command_proof[0]["status"] == "UNRESOLVED"
+assert pg_2_04_command_proof[0]["evidence_ref_ids"] == []
+
+# r7 §3.7 closed required-authority vocabulary. Introducing a second string for
+# an authority that already has one is a permanent trap, so the map is owned
+# here and every entry outside it is rejected.
+REQUIRED_AUTHORITY_VOCABULARY = {
+    "ANALYST_ACCEPTANCE": {"Responsible analyst"},
+    "BUDGET_APPROVAL": {"Budget owner"},
+    "CAPACITY_COMMITMENT": {"Capacity owner"},
+    "DATA_RIGHTS_APPROVAL": {"Data-rights authority"},
+    "DISTRIBUTION_APPROVAL": {"Distribution owner"},
+    "DOMAIN_EXPERT_ACCEPTANCE": {
+        "Calculation-domain authority", "Data-domain authority",
+        "Entity-data authority", "Equity-research domain expert",
+        "Vocabulary authority",
+    },
+    "EXECUTION_TRUST_DOMAIN_APPROVAL": {"Execution-boundary owner"},
+    "LEGAL_REVIEW": {
+        "Competent dependency-license reviewer", "Competent legal reviewer",
+        "Competent trademark or legal reviewer",
+    },
+    "MEMORY_PROMOTION": {"Responsible analyst"},
+    "NAMED_OWNER_COMMITMENT": {
+        "Event-monitoring owner", "Golden-set owner",
+        "Model-grade compute owner",
+    },
+    "PRODUCT_OWNER_DECISION": {
+        "Product owner",
+        "Product owner authorized to activate deferred blueprint scope",
+        "Product owner for memory adoption",
+    },
+    "REGULATORY_REVIEW": {"Competent regulatory reviewer"},
+}
+AUTHORIZED_AUTHORITY_ADDITIONS = {
+    ("NAMED_OWNER_COMMITMENT", "Event-monitoring owner"),
+    ("NAMED_OWNER_COMMITMENT", "Model-grade compute owner"),
+}
+delegated_artifact_authorities = set()
+for row in rows:
+    for approval in row["required_approvals"]:
+        approval_type = approval["approval_type"]
+        authority = approval["required_authority"]
+        if approval_type == "DELEGATED_ARTIFACT_APPROVAL":
+            # The only process-role authority; its literal is deliberately not
+            # pinned, but it must be one identical nonempty string everywhere.
+            assert isinstance(authority, str) and authority.strip()
+            delegated_artifact_authorities.add(authority)
+            continue
+        assert approval_type in REQUIRED_AUTHORITY_VOCABULARY, approval_type
+        assert authority in REQUIRED_AUTHORITY_VOCABULARY[approval_type], (
+            approval_type, authority
+        )
+assert len(delegated_artifact_authorities) == 1
+
+EXPECTED_COMMAND_PROOF_COMPONENTS = {
+    "REG-A-10", "REG-B-01", "REG-B-11", "REG-B-14", "REG-C-08",
+    "REG-C-15", "REG-C-16", "REG-C-17", "REG-E-01", "REG-E-10",
+    "PG-05-08", "PG-1-04", "PG-1-05", "PG-1-06", "PG-2-03", "PG-2-04",
+    "DISP-G-1", "DISP-M-4", "DISP-M-5", "DISP-M-6", "DISP-M-7",
+    "DISP-M-9", "DISP-6-6", "DISP-6-9", "SEQ-09",
+}
+actual_command_proof_components = {
+    row["component_id"] for row in rows
+    if any(
+        item["evidence_type"] == "COMMAND_RESULT"
+        for item in row["required_evidence"]
+    )
+}
+assert actual_command_proof_components == EXPECTED_COMMAND_PROOF_COMPONENTS
+
+for index in range(1, 5):
+    assert by_id[f"SCALE-WORKFLOW-{index:02d}"]["disposition_refs"] == ["M-5"]
+    assert by_id[f"SCALE-SQLITE-{index:02d}"]["disposition_refs"] == ["R-5"]
+assert by_id["DEF-12"]["primary_spec"] is None
+assert by_id["PG-2-04"]["scope_derivation"]["related_register_ids"] == [
+    "D-01", "D-03"
+]
+
+gate_map = collections.defaultdict(set)
+for row in canonical_rows:
+    if row["kind"] == "phase_gate_clause":
+        for register_id in row["scope_derivation"]["related_register_ids"]:
+            gate_map[register_id].add(row["component_id"])
+for row in register_rows:
+    assert len(set(row["gate_refs"])) == len(row["gate_refs"])
+    assert set(row["gate_refs"]) == gate_map.get(row["register_id"], set())
+
+# ---------------------------------------------------------------------------
+# r7 §3.2/§3.6 closed current no-implementation-proof predicate.
+# ---------------------------------------------------------------------------
+NO_IMPLEMENTATION_REQUIREMENT_MAP = {
+    "DISP-R-1": ["REQ-DISP-R-1-NO-IMPLEMENTATION"],
+}
+EXPECTED_DISP_R1_REQUIREMENT = {
+    "approval_ids": [],
+    "description": (
+        "Current S20 draft preserves D-02 as dormant and contains no "
+        "implementation claim"
+    ),
+    "evidence_id": "REQ-DISP-R-1-NO-IMPLEMENTATION",
+    "evidence_ref_ids": [],
+    "evidence_type": "ARTIFACT",
+    "proof_mode": "CONTENT_HASH",
+    "scope": "R-1 current no-implementation proof",
+    "status": "UNRESOLVED",
+}
+
+def current_no_implementation_proof(row):
+    """r7 §3.2 closed predicate. False is a valid structural state."""
+    record = row["rejection_record"]
+    if record is None:
+        return True, []
+    historical = list(record["no_implementation_evidence_ref_ids"])
+    requirement_ids = NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+        row["component_id"], []
+    )
+    if not requirement_ids:
+        return True, []
+    requirements = {
+        item["evidence_id"]: item for item in row["required_evidence"]
+    }
+    assert set(requirement_ids) <= set(requirements)
+    reasons = []
+    mapped = [requirements[item_id] for item_id in requirement_ids]
+    covered = set()
+    for item in mapped:
+        covered |= set(item["evidence_ref_ids"])
+    if not set(historical) <= covered:
+        reasons.append("HISTORICAL_REFS_UNCOVERED")
+    if any(item["status"] != "SATISFIED" for item in mapped):
+        reasons.append("REQUIREMENT_UNRESOLVED")
+    review = row["evidence_inventory_review"]
+    review_ok = (
+        isinstance(review, dict)
+        and review["status"] == "COMPLETE"
+        and review["verdict"] == "CLEAN"
+        and review.get("role") == "REVIEWER"
+        and review.get("role_binding_path") == ROLE_BINDING_PATH
+        and set(historical) <= set(review["evidence_ref_ids"])
+    )
+    if review_ok:
+        review_time = parse_utc_rfc3339(review["timestamp"])
+        review_ok = all(
+            review_time >= parse_utc_rfc3339(
+                evidence_by_id[ref_id]["captured_at"]
+            )
+            for ref_id in historical
+        )
+    if not review_ok:
+        reasons.append("CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING")
+    return not reasons, sorted(set(reasons))
+
+unmet_no_implementation_proof = []
+for row in canonical_rows:
+    if row["program_disposition"] != "REJECTED_ACCOUNTED":
+        continue
+    proven, reasons = current_no_implementation_proof(row)
+    if proven:
+        continue
+    for requirement_id in NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+        row["component_id"], []
+    ):
+        unmet_no_implementation_proof.append({
+            "component_id": row["component_id"],
+            "requirement_id": requirement_id,
+            "historical_evidence_ref_ids": sorted(
+                row["rejection_record"]["no_implementation_evidence_ref_ids"]
+            ),
+            "reason_codes": reasons,
+        })
+
+disp_r1 = by_id["DISP-R-1"]
+assert disp_r1["rejection_record"]["no_implementation_evidence_ref_ids"] == [
+    "EV-DISP-R-1-SPEC-DRAFT"
+]
+assert EXPECTED_DISP_R1_REQUIREMENT in disp_r1["required_evidence"]
+disp_r1_proven, disp_r1_reasons = current_no_implementation_proof(disp_r1)
+# r7 §3.6 requires this post-state to be explicitly unproven, and r7 §8.1 fixes
+# the two reason codes that a digest refresh alone can never remove.
+assert disp_r1_proven is False
+assert {
+    "REQUIREMENT_UNRESOLVED", "CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING"
+} <= set(disp_r1_reasons)
+assert any(
+    item["component_id"] == "DISP-R-1"
+    and item["requirement_id"] == "REQ-DISP-R-1-NO-IMPLEMENTATION"
+    for item in unmet_no_implementation_proof
+)
+
+# ---------------------------------------------------------------------------
+# r7 §4 exact HR-0004 structured scope and reverse links.
+# ---------------------------------------------------------------------------
+EXPECTED_HR0004_SCOPE_DIGEST = (
+    "bf6fee00d0f4510316b42b50ec13f74148df9ed44e472f2ad8be114ee3add894"
+)
+EXPECTED_PRIOR_HR_LINKS = {
+    "HR-0001": {
+        "DISP-6-2", "DISP-G-1", "DISP-G-5", "DISP-R-4", "REG-A-04",
+        "REG-A-10", "SEQ-04", "SEQ-05", "SEQ-07",
+    },
+    "HR-0002": {"DISP-R-2", "REG-A-06", "REG-B-09", "REG-C-02", "REG-C-14"},
+    "HR-0003": {
+        "DEF-13", "DISP-R-5", "DISP-T-3", "REG-B-03", "REG-C-11",
+        "SCALE-SQLITE-01", "SCALE-SQLITE-02", "SCALE-SQLITE-03",
+        "SCALE-SQLITE-04",
+    },
+}
+if "HR-0004" in human_entries:
+    hr0004 = human_entries["HR-0004"]
+    scope_ids = hr0004["scope"]["component_ids"]
+    assert scope_ids == sorted(set(scope_ids))
+    assert len(scope_ids) == 144
+    assert canonical_sha256(scope_ids) == EXPECTED_HR0004_SCOPE_DIGEST
+    assert hr0004["scope"]["register_ids"] == []
+    assert hr0004["scope"]["spec_ids"] == []
+    assert hr0004["scope"]["bead_ids"] == []
+    assert hr0004["scope"]["blocked_component_ids"] == []
+    assert hr0004["scope"]["scope_text"].strip()
+    scope_set = set(scope_ids)
+    scoped_aliases = {
+        component_id for component_id in scope_set
+        if by_id[component_id]["kind"] == alias_kind
+    }
+    assert len(scoped_aliases) == 10
+    scoped_canonical = scope_set - scoped_aliases
+    assert len(scoped_canonical) == 134
+    for component_id in scoped_canonical:
+        assert "HR-0004" in human_review_links[component_id]
+    for component_id, links in human_review_links.items():
+        if "HR-0004" in links:
+            assert component_id in scoped_canonical
+    for entry_id, expected_components in EXPECTED_PRIOR_HR_LINKS.items():
+        for component_id in expected_components:
+            assert human_review_links[component_id] == frozenset(
+                {entry_id, "HR-0004"}
+            )
+    overlapping = {
+        component_id for component_id, links in human_review_links.items()
+        if len(links) > 1
+    }
+    assert overlapping == set().union(*EXPECTED_PRIOR_HR_LINKS.values())
+    assert len(overlapping) == 23
+    for entry_id in ("HR-0001", "HR-0002", "HR-0003"):
+        assert human_entries[entry_id]["state"] == "OPEN_BLOCKING"
+        assert human_entries[entry_id]["resolution_decision_ids"] == []
+    hr0004_resolutions = [
+        resolution for resolution in human_resolutions.values()
+        if resolution["human_review_id"] == "HR-0004"
+    ]
+    assert len(hr0004_resolutions) == 1
+    assert hr0004_resolutions[0]["decision_type"] == "RECONCILE_AUTHORITY"
+    assert hr0004_resolutions[0]["decision_id"] in active_human_resolutions
+    assert hr0004_resolutions[0]["actor"]["actor_type"] == "HUMAN"
+    assert hr0004_resolutions[0]["actor"]["role"] == "CURRENT_USER"
+    assert hr0004["decision_authority"]["approval_type"] == (
+        "GOAL_OR_PROCESS_AUTHORIZATION"
+    )
+    assert hr0004_resolutions[0]["authority_basis"]["approval_type"] == (
+        "GOAL_OR_PROCESS_AUTHORIZATION"
+    )
+
+# ---------------------------------------------------------------------------
+# r7 §8.1 permanent baseline transition-prefix manifest.
+# ---------------------------------------------------------------------------
+BASELINE_PREFIX_DIGEST = (
+    "d4ce9646438d388bf26c8faa82d689209296726af2c29d1e56942218c613d9b1"
+)
+BASELINE_PREFIX_LENGTHS = {
+    "ALIAS-001": 1, "ALIAS-002": 1, "ALIAS-003": 1, "ALIAS-004": 1,
+    "ALIAS-005": 1, "ALIAS-006": 1, "ALIAS-007": 1, "ALIAS-008": 1,
+    "ALIAS-009": 1, "ALIAS-010": 1, "ALIAS-011": 1, "ALIAS-012": 1,
+    "ALIAS-013": 1, "ALIAS-014": 1, "ALIAS-015": 1, "ALIAS-016": 1,
+    "ALIAS-017": 1, "ALIAS-018": 1, "ALIAS-019": 1, "ALIAS-020": 1,
+    "ALIAS-021": 1, "ALIAS-022": 1, "ALIAS-023": 1, "ALIAS-024": 1,
+    "ALIAS-025": 1, "ALIAS-026": 1, "ALIAS-027": 1, "ALIAS-028": 1,
+    "ALIAS-029": 1, "ALIAS-030": 1, "ALIAS-031": 1, "ALIAS-032": 1,
+    "ALIAS-033": 1, "ALIAS-034": 1, "ALIAS-035": 1, "ALIAS-036": 1,
+    "ALIAS-037": 1, "ALIAS-038": 1, "ALIAS-039": 1, "ALIAS-040": 1,
+    "ALIAS-041": 1, "ALIAS-042": 1, "ALIAS-043": 1, "AUTH-DISP-001": 1,
+    "AUTH-REG-001": 3, "DEF-01": 2, "DEF-02": 2, "DEF-03": 2, "DEF-04": 2,
+    "DEF-05": 2, "DEF-06": 2, "DEF-07": 2, "DEF-08": 2, "DEF-09": 2,
+    "DEF-10": 2, "DEF-11": 2, "DEF-12": 2, "DEF-13": 5, "DISP-6-1": 2,
+    "DISP-6-2": 5, "DISP-6-3": 2, "DISP-6-4": 2, "DISP-6-5": 2, "DISP-6-6": 2,
+    "DISP-6-7": 2, "DISP-6-8": 2, "DISP-6-9": 2, "DISP-G-1": 5, "DISP-G-2": 2,
+    "DISP-G-3": 2, "DISP-G-4": 2, "DISP-G-5": 5, "DISP-M-1": 2, "DISP-M-2": 2,
+    "DISP-M-3": 2, "DISP-M-4": 2, "DISP-M-5": 2, "DISP-M-6": 2, "DISP-M-7": 2,
+    "DISP-M-8": 2, "DISP-M-9": 2, "DISP-R-1": 2, "DISP-R-2": 5, "DISP-R-3": 2,
+    "DISP-R-4": 5, "DISP-R-5": 5, "DISP-T-1": 2, "DISP-T-2": 2, "DISP-T-3": 5,
+    "DISP-T-4": 2, "DOC-01": 1, "DOC-02": 1, "DOC-03": 1, "DOC-04": 1,
+    "DOC-05": 1, "DOC-06": 1, "PG-05-01": 1, "PG-05-02": 1, "PG-05-03": 1,
+    "PG-05-04": 1, "PG-05-05": 1, "PG-05-06": 1, "PG-05-07": 1, "PG-05-08": 1,
+    "PG-05-09": 1, "PG-05-10": 1, "PG-0A-01": 1, "PG-0A-02": 1, "PG-0A-03": 1,
+    "PG-0A-04": 1, "PG-0A-05": 1, "PG-0A-06": 1, "PG-0A-07": 1, "PG-0A-08": 1,
+    "PG-1-01": 1, "PG-1-02": 1, "PG-1-03": 1, "PG-1-04": 1, "PG-1-05": 1,
+    "PG-1-06": 1, "PG-1-07": 1, "PG-1-08": 1, "PG-1-09": 1, "PG-1-10": 1,
+    "PG-1-11": 1, "PG-2-01": 1, "PG-2-02": 1, "PG-2-03": 1, "PG-2-04": 1,
+    "PG-2-05": 1, "PG-2-06": 1, "REG-A-01": 4, "REG-A-02": 4, "REG-A-03": 2,
+    "REG-A-04": 7, "REG-A-05": 4, "REG-A-06": 7, "REG-A-07": 4, "REG-A-08": 4,
+    "REG-A-09": 2, "REG-A-10": 5, "REG-A-11": 2, "REG-A-12": 2, "REG-A-13": 2,
+    "REG-B-01": 4, "REG-B-02": 2, "REG-B-03": 7, "REG-B-04": 4, "REG-B-05": 4,
+    "REG-B-06": 4, "REG-B-07": 4, "REG-B-08": 2, "REG-B-09": 5, "REG-B-10": 2,
+    "REG-B-11": 2, "REG-B-12": 2, "REG-B-13": 2, "REG-B-14": 2, "REG-C-01": 2,
+    "REG-C-02": 5, "REG-C-03": 2, "REG-C-04": 2, "REG-C-05": 4, "REG-C-06": 4,
+    "REG-C-07": 2, "REG-C-08": 2, "REG-C-09": 4, "REG-C-10": 2, "REG-C-11": 5,
+    "REG-C-12": 2, "REG-C-13": 2, "REG-C-14": 5, "REG-C-15": 2, "REG-C-16": 2,
+    "REG-C-17": 2, "REG-C-18": 2, "REG-D-01": 4, "REG-D-02": 4, "REG-D-03": 2,
+    "REG-D-04": 2, "REG-D-05": 2, "REG-E-01": 4, "REG-E-02": 4, "REG-E-03": 4,
+    "REG-E-04": 4, "REG-E-05": 4, "REG-E-06": 4, "REG-E-07": 2, "REG-E-08": 2,
+    "REG-E-09": 4, "REG-E-10": 2, "SCALE-SQLITE-01": 5, "SCALE-SQLITE-02": 5,
+    "SCALE-SQLITE-03": 5, "SCALE-SQLITE-04": 5, "SCALE-WORKFLOW-01": 2,
+    "SCALE-WORKFLOW-02": 2, "SCALE-WORKFLOW-03": 2, "SCALE-WORKFLOW-04": 2,
+    "SEQ-01": 2, "SEQ-02": 2, "SEQ-03": 2, "SEQ-04": 5, "SEQ-05": 5,
+    "SEQ-06": 2, "SEQ-07": 5, "SEQ-08": 2, "SEQ-09": 2, "SEQ-10": 2,
+    "SEQ-11": 1,
+}
+assert len(BASELINE_PREFIX_LENGTHS) == 210
+assert sum(BASELINE_PREFIX_LENGTHS.values()) == 454
+assert set(BASELINE_PREFIX_LENGTHS) <= set(by_id)
+assert set(by_id) - set(BASELINE_PREFIX_LENGTHS) == {
+    "ALIAS-044", "AUTH-REG-002", "AUTH-REG-003"
+}
+baseline_prefix_projection = {}
+for component_id, length in BASELINE_PREFIX_LENGTHS.items():
+    history = by_id[component_id]["transition_history"]
+    assert len(history) >= length
+    baseline_prefix_projection[component_id] = history[:length]
+assert canonical_sha256(baseline_prefix_projection) == BASELINE_PREFIX_DIGEST
+
+# ---------------------------------------------------------------------------
+# r7 §6.2/§8.1 transaction-only reconciliation mode.
+# ---------------------------------------------------------------------------
+if args.reconciliation_check:
+    baseline_ledger_path = Path(args.reconciliation_baseline_ledger_path)
+    baseline_human_path = Path(
+        args.reconciliation_baseline_human_review_path
+    )
+    if not baseline_ledger_path.is_absolute():
+        baseline_ledger_path = root / baseline_ledger_path
+    if not baseline_human_path.is_absolute():
+        baseline_human_path = root / baseline_human_path
+    baseline_ledger_bytes = baseline_ledger_path.read_bytes()
+    baseline_human_bytes = baseline_human_path.read_bytes()
+    assert hashlib.sha256(baseline_ledger_bytes).hexdigest() == (
+        "51091042dae87d2f41fbbf02d77ab1619c6a1008a022baec4233c44a0e295e13"
+    )
+    assert hashlib.sha256(baseline_human_bytes).hexdigest() == (
+        "54c1e183def8e0b1b91504effbf20c233b3d1352fd65d4910e89c2b913ee5702"
+    )
+    baseline_rows = [
+        json.loads(line)
+        for line in baseline_ledger_bytes.decode("utf-8").splitlines()
+    ]
+    baseline_by_id = {row["component_id"]: row for row in baseline_rows}
+    assert len(baseline_by_id) == 210
+    assert set(baseline_by_id) < set(by_id)
+    assert set(by_id) - set(baseline_by_id) == {
+        "ALIAS-044", "AUTH-REG-002", "AUTH-REG-003"
+    }
+
+    prefix_manifest = {
+        component_id: len(row["transition_history"])
+        for component_id, row in baseline_by_id.items()
+    }
+    assert prefix_manifest == BASELINE_PREFIX_LENGTHS
+    baseline_projection = {
+        component_id: row["transition_history"]
+        for component_id, row in baseline_by_id.items()
+    }
+    assert canonical_sha256(baseline_projection) == BASELINE_PREFIX_DIGEST
+
+    immutable_fields = (
+        "source_path", "source_anchor", "source_start_line", "source_end_line",
+        "authority_rank", "register_id", "source_title",
+        "required_acceptance_text", "blueprint_phase", "priority",
+        "dependencies", "activation_source_status", "source_status",
+        "activation_record", "rejection_record", "gate_result",
+        "verification_command", "verification_result", "verified_at",
+        "open_findings", "blocked_scope", "security_exception_ids",
+        "approval_records", "bead_ids", "roadmap_ref", "plan_refs",
+        "implementation_refs", "tracked_work", "review_round",
+    )
+    evidence_only_targets = {
+        "REG-A-01", "REG-A-02", "REG-A-03", "REG-A-04", "REG-A-05", "REG-A-06",
+        "REG-A-08", "REG-A-09", "REG-A-11",
+        "REG-B-02", "REG-B-03", "REG-B-04", "REG-B-05", "REG-B-07", "REG-B-08",
+        "REG-B-09", "REG-B-10", "REG-B-13",
+        "REG-C-01", "REG-C-02", "REG-C-03", "REG-C-05", "REG-C-06", "REG-C-07",
+        "REG-C-10", "REG-C-12", "REG-C-13", "REG-C-18",
+        "REG-D-02", "REG-D-04",
+        "REG-E-06", "REG-E-07", "REG-E-08", "REG-E-09",
+    }
+    assert len(evidence_only_targets) == 34
+    delivery_ordinal = {
+        state: index for index, state in enumerate(delivery_progression)
+    }
+    for component_id, baseline_row in baseline_by_id.items():
+        current_row = by_id[component_id]
+        for field in immutable_fields:
+            assert current_row[field] == baseline_row[field], (
+                component_id, field
+            )
+        assert current_row["source_hash"] == baseline_row["source_hash"]
+        assert current_row["text_digest"] == baseline_row["text_digest"]
+        assert normalized_human_review_id(
+            baseline_row["human_review_id"]
+        ) <= human_review_links[component_id]
+        if component_id in evidence_only_targets:
+            for field in (
+                "primary_spec", "disposition_refs", "gate_refs",
+                "activation_predicate", "canonical_component_id",
+                "required_approvals", "required_evidence", "delivery_status",
+                "program_disposition",
+            ):
+                assert current_row[field] == baseline_row[field], (
+                    component_id, field
+                )
+            assert current_row["scope_derivation"] == baseline_row[
+                "scope_derivation"
+            ]
+        if component_id == "DEF-12":
+            assert baseline_row["delivery_status"] == "SPEC_DRAFT"
+            assert current_row["delivery_status"] == "INVENTORIED"
+        else:
+            baseline_state = baseline_row["delivery_status"]
+            current_state = current_row["delivery_status"]
+            if (
+                baseline_state in delivery_ordinal
+                and current_state in delivery_ordinal
+            ):
+                assert (
+                    delivery_ordinal[current_state]
+                    <= delivery_ordinal[baseline_state]
+                ), component_id
+            else:
+                assert current_state == baseline_state, component_id
+
+    baseline_human_text = baseline_human_bytes.decode("utf-8")
+    baseline_payload_text = baseline_human_text.split(
+        begin_marker, 1
+    )[1].split(end_marker, 1)[0].strip()
+    if baseline_payload_text.startswith("```json"):
+        baseline_payload_text = baseline_payload_text[
+            len("```json"): -len("```")
+        ].strip()
+    baseline_human_payload = json.loads(baseline_payload_text)
+    baseline_entries = {
+        entry["human_review_id"]: entry
+        for entry in baseline_human_payload["entries"]
+    }
+    assert set(baseline_entries) == {"HR-0001", "HR-0002", "HR-0003"}
+    assert baseline_human_payload["resolutions"] == []
+    for entry_id, baseline_entry in baseline_entries.items():
+        assert human_entries[entry_id] == baseline_entry
+    assert set(human_entries) == set(baseline_entries) | {"HR-0004"}
+    assert len(human_payload["resolutions"]) == 1
+
+    register_state_counts = collections.Counter(
+        row["source_status"] for row in register_rows
+    )
+    assert register_state_counts["Open"] == 45
+    assert register_state_counts["Deferred"] == 15
+    assert all(row["activation_record"] is None for row in rows)
+    assert all(row["gate_result"] == "NOT_EVALUATED" for row in rows)
+    assert all(row["verified_at"] is None for row in rows)
+    assert all(row["verification_result"] == [] for row in rows)
+    assert not matched_record_ids
+    assert all(
+        requirement["status"] == "UNRESOLVED"
+        for row in rows
+        for requirement in row["required_approvals"]
+    )
+
+    # r7 §3.2 bullet 11 / §8.1: every post-state (approval_type,
+    # required_authority) pair must exist in the baseline ledger or be one of
+    # §3.7's two authorized additions.
+    baseline_authority_pairs = {
+        (approval["approval_type"], approval["required_authority"])
+        for row in baseline_rows
+        for approval in row["required_approvals"]
+    }
+    for row in rows:
+        for approval in row["required_approvals"]:
+            pair = (approval["approval_type"], approval["required_authority"])
+            assert (
+                pair in baseline_authority_pairs
+                or pair in AUTHORIZED_AUTHORITY_ADDITIONS
+            ), pair
+
+    # r7 §3.8: this transaction changes no ledger row for the role vocabulary,
+    # so every inventory review is still PENDING and no review carries the
+    # COMPLETE-only role keys.
+    for row in rows:
+        reviews = [
+            row["approval_inventory_review"], row["evidence_inventory_review"]
+        ]
+        if isinstance(row["scope_derivation"], dict):
+            reviews.append(row["scope_derivation"]["semantic_review"])
+        for review in reviews:
+            if review is None:
+                continue
+            assert review["status"] == "PENDING"
+            assert not (role_binding_fields & set(review))
+        assert row["verification_command"]["mode"] == "UNRESOLVED"
+        assert row["verification_command"]["not_applicable_review"] is None
+
+    # ---------------------------------------------------------------------
+    # r7 §5.3/§8.1 structural reconciliation of the design/review bindings.
+    # The question binds the review by digest; the reviewer model, effort, and
+    # role-binding digest are compared between the review artifact and the
+    # goal record only, because §5.2 cannot carry them.
+    # ---------------------------------------------------------------------
+    R7_DESIGN_RELPATH = (
+        "docs/goals/reviews/ledger/"
+        "equity-os-blueprint-ledger-remediation-design-r7.md"
+    )
+    R7_REVIEW_RELPATH = (
+        "docs/goals/reviews/ledger/"
+        "equity-os-blueprint-ledger-remediation-design-r7-review-r0.md"
+    )
+    GOAL_RELPATH = "docs/goals/equity-os-blueprint-completion.md"
+    APPROVAL_HEADING = "## HR-0004 authority-reconciliation approval record"
+
+    design_bytes = (root / R7_DESIGN_RELPATH).read_bytes()
+    review_bytes = (root / R7_REVIEW_RELPATH).read_bytes()
+    actual_design_sha256 = hashlib.sha256(design_bytes).hexdigest()
+    actual_review_sha256 = hashlib.sha256(review_bytes).hexdigest()
+    review_text = review_bytes.decode("utf-8")
+
+    def unique_binding(text, pattern):
+        found = re.findall(pattern, text, flags=re.MULTILINE)
+        assert len(found) == 1, pattern
+        return found[0]
+
+    review_binding = {
+        "design_path": unique_binding(
+            review_text, r"^\| Reviewed design path \| `([^`]+)` \|$"
+        ),
+        "reviewed_input_sha256": unique_binding(
+            review_text, r"^\| Reviewed-input SHA-256 \| `([0-9a-f]{64})` \|$"
+        ),
+        "role": unique_binding(
+            review_text, r"^\| Reviewer role \| `([A-Z]+)` \|$"
+        ),
+        "model": unique_binding(
+            review_text,
+            r"^\| Reviewer model \(actually invoked\) \| `([^`]+)` \|$",
+        ),
+        "effort": unique_binding(
+            review_text,
+            r"^\| Reviewer effort \(actually invoked\) \| `([^`]+)` \|$",
+        ),
+        "role_binding_path": unique_binding(
+            review_text, r"^\| `role_binding_path` \| `([^`]+)` \|$"
+        ),
+        "role_binding_sha256": unique_binding(
+            review_text, r"^\| `role_binding_sha256` \| `([0-9a-f]{64})` \|$"
+        ),
+        "verdict": unique_binding(review_text, r"^Verdict: ([A-Z]+)$"),
+    }
+    assert review_binding["design_path"] == R7_DESIGN_RELPATH
+    assert review_binding["reviewed_input_sha256"] == actual_design_sha256
+    assert review_binding["verdict"] == "CLEAN"
+    assert review_binding["role"] == "REVIEWER"
+    assert review_binding["role_binding_path"] == ROLE_BINDING_PATH
+
+    goal_text = (root / GOAL_RELPATH).read_text(encoding="utf-8")
+    # Match the heading line itself; the same literal also appears inside this
+    # embedded program, which the goal carries verbatim.
+    heading_matches = list(re.finditer(
+        "^" + re.escape(APPROVAL_HEADING) + "$", goal_text, flags=re.MULTILINE
+    ))
+    assert len(heading_matches) == 1
+    # The record is followed by the preserved §"Activation record" section
+    # (M-1: it is inserted before that heading, not appended at EOF), so the
+    # record body ends at the next top-level heading.
+    record_tail = goal_text[heading_matches[0].end():]
+    next_heading = re.search(r"^## ", record_tail, flags=re.MULTILINE)
+    record_text = (
+        record_tail[:next_heading.start()] if next_heading else record_tail
+    )
+    record_fields = dict(
+        re.findall(r"^\| ([^|]+?) \| `([^`]*)` \|$", record_text,
+                   flags=re.MULTILINE)
+    )
+    question_blocks = re.findall(
+        r"Exact completed decision question bytes as presented to the user:"
+        r"\n\n```text\n(.*?)\n```",
+        record_text,
+        flags=re.DOTALL,
+    )
+    assert len(question_blocks) == 1
+    question_text = question_blocks[0]
+
+    assert record_fields["r7 design path"] == R7_DESIGN_RELPATH
+    assert record_fields["r7 design SHA-256"] == actual_design_sha256
+    assert record_fields["Independent review path"] == R7_REVIEW_RELPATH
+    assert record_fields["Independent review SHA-256"] == actual_review_sha256
+    assert record_fields["Review verdict"] == review_binding["verdict"]
+    assert record_fields["Review reviewed-input SHA-256"] == (
+        review_binding["reviewed_input_sha256"]
+    )
+    assert record_fields["Reviewer role"] == review_binding["role"]
+    # Compared between the review artifact and the goal record only.
+    assert record_fields["Reviewer model"] == review_binding["model"]
+    assert record_fields["Reviewer effort"] == review_binding["effort"]
+    assert record_fields["Reviewer role-binding path"] == (
+        review_binding["role_binding_path"]
+    )
+    assert record_fields["Reviewer role-binding SHA-256"] == (
+        review_binding["role_binding_sha256"]
+    )
+    assert record_fields["Exact 144-ID scope digest"] == (
+        EXPECTED_HR0004_SCOPE_DIGEST
+    )
+    # r7 §5.1: "Byte-verbatim rendering is mandatory." The recorded question must
+    # equal §5.2 rendered with exactly the two authorized substitutions and zero
+    # other byte changes. Membership of the bound values is not that test: it
+    # accepts appended, reordered, or reflowed bytes.
+    R7_QUESTION_HEADING = "### 5.2 Exact decision question"
+    design_text = design_bytes.decode("utf-8")
+    assert design_text.count(R7_QUESTION_HEADING) == 1
+    quoted_question_lines = []
+    for quoted_line in design_text.split(
+        R7_QUESTION_HEADING, 1
+    )[1].splitlines():
+        if quoted_line.startswith("> "):
+            quoted_question_lines.append(quoted_line[2:])
+        elif quoted_question_lines:
+            break
+    assert quoted_question_lines
+    question_template = "\n".join(quoted_question_lines).strip()
+    assert "<R7_SHA256>" in question_template
+    assert "<R7_REVIEW_SHA256>" in question_template
+    expected_question = question_template.replace(
+        "<R7_SHA256>", actual_design_sha256
+    ).replace("<R7_REVIEW_SHA256>", actual_review_sha256)
+    assert "<R7_" not in expected_question
+    assert question_text == expected_question, (
+        "recorded question is not r7 5.2 rendered with exactly the two "
+        "authorized substitutions"
+    )
+    # The five bound review values are carried by that exact rendering; they are
+    # reasserted so a template edit that dropped one fails here too.
+    for bound_value in (
+        R7_DESIGN_RELPATH, actual_design_sha256, R7_REVIEW_RELPATH,
+        actual_review_sha256, review_binding["verdict"], review_binding["role"],
+        EXPECTED_HR0004_SCOPE_DIGEST,
+    ):
+        assert bound_value in question_text, bound_value
+
+    # The recorded response bytes are exactly one block and are never empty.
+    # Affirmativeness itself is decided by the migrator before any canonical
+    # write (r7 §5.1): r7 §5.3 lists the reconciliation's compared fields and
+    # the response is not among them, and the r7 §6.2 pre-approval rehearsal
+    # necessarily builds a candidate from a provisional non-approval capture, so
+    # asserting affirmativeness here would make that mandate unsatisfiable.
+    response_blocks = re.findall(
+        r"Exact user response bytes, verbatim and complete:\n\n"
+        r"```text\n(.*?)\n```",
+        record_text,
+        flags=re.DOTALL,
+    )
+    assert len(response_blocks) == 1
+    assert response_blocks[0].strip()
 PY
 ```
 
@@ -3332,14 +4606,50 @@ unresolved delivery evidence and approvals:
 
 ```bash
 python3 - <<'PY'
+import argparse
+import datetime
 import hashlib
 import json
+import re
+import sys
 from pathlib import Path
 
-path = Path("docs/goals/equity-os-blueprint-component-ledger.jsonl")
+DEFAULT_LEDGER = "docs/goals/equity-os-blueprint-component-ledger.jsonl"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--repo-root", required=True)
+parser.add_argument("--ledger-path")
+parser.add_argument("--report-blockers", action="store_true")
+args = parser.parse_args()
+root = Path(args.repo_root).resolve()
+path = Path(args.ledger_path or DEFAULT_LEDGER)
+if not path.is_absolute():
+    path = root / path
 rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 canonical = [row for row in rows if row["kind"] != "derivative_alias"]
 assert canonical
+by_id = {row["component_id"]: row for row in rows}
+assert len(by_id) == len(rows)
+validation_now = datetime.datetime.now(datetime.timezone.utc)
+
+def parse_utc(value):
+    assert isinstance(value, str)
+    assert re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value
+    )
+    return datetime.datetime.fromisoformat(value[:-1] + "+00:00")
+
+def normalized_human_review_id(value):
+    """Closed r7 §3.2 human-review-link representation, as a sorted list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        assert re.fullmatch(r"HR-\d{4}", value)
+        return [value]
+    assert isinstance(value, list) and len(value) >= 2
+    assert all(re.fullmatch(r"HR-\d{4}", item) for item in value)
+    assert value == sorted(set(value))
+    return list(value)
 
 def digest(value):
     encoded = json.dumps(
@@ -3368,6 +4678,9 @@ def input_projection(row):
     }
     projection = {field: row[field] for field in sorted(fields)}
     projection["scope_derivation"] = scope_without_review
+    projection["human_review_id"] = normalized_human_review_id(
+        row["human_review_id"]
+    )
     return projection
 
 def inventory_projection(row, review_type):
@@ -3393,23 +4706,161 @@ def inventory_projection(row, review_type):
     return {
         "required_approvals": row["required_approvals"],
         "approval_records": row["approval_records"],
-        "human_review_id": row["human_review_id"],
+        "human_review_id": normalized_human_review_id(row["human_review_id"]),
         "security_exception_ids": row["security_exception_ids"],
     }
 
-def current_complete(row, review, review_type):
+def review_state(row, review, review_type):
+    """Return "COMPLETE", "PENDING", or "STALE" without ever waiving."""
     assert review["review_type"] == review_type
+    if review["status"] == "PENDING":
+        return "PENDING"
     assert review["status"] == "COMPLETE"
-    assert review["reviewed_input_sha256"] == digest(input_projection(row))
-    assert review["reviewed_inventory_sha256"] == digest(
+    if review["reviewed_input_sha256"] != digest(input_projection(row)):
+        return "STALE"
+    if review["reviewed_inventory_sha256"] != digest(
         inventory_projection(row, review_type)
+    ):
+        return "STALE"
+    return "COMPLETE"
+
+def current_complete(row, review, review_type):
+    assert review_state(row, review, review_type) == "COMPLETE"
+
+# r7 §3.2/§3.6 closed current no-implementation-proof predicate. Membership in
+# rejection_record.no_implementation_evidence_ref_ids never establishes current
+# proof by itself.
+NO_IMPLEMENTATION_REQUIREMENT_MAP = {
+    "DISP-R-1": ["REQ-DISP-R-1-NO-IMPLEMENTATION"],
+}
+
+def current_no_implementation_proof(row):
+    record = row["rejection_record"]
+    requirement_ids = NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+        row["component_id"], []
     )
+    if record is None or not requirement_ids:
+        return True, []
+    historical = list(record["no_implementation_evidence_ref_ids"])
+    requirements = {
+        item["evidence_id"]: item for item in row["required_evidence"]
+    }
+    assert set(requirement_ids) <= set(requirements)
+    mapped = [requirements[item_id] for item_id in requirement_ids]
+    evidence_by_id = {
+        item["evidence_ref_id"]: item for item in row["evidence_refs"]
+    }
+    reasons = []
+    covered = set()
+    for item in mapped:
+        covered |= set(item["evidence_ref_ids"])
+    if not set(historical) <= covered:
+        reasons.append("HISTORICAL_REFS_UNCOVERED")
+    if any(item["status"] != "SATISFIED" for item in mapped):
+        reasons.append("REQUIREMENT_UNRESOLVED")
+    for ref_id in historical:
+        reference = evidence_by_id.get(ref_id)
+        if reference is None:
+            reasons.append("HISTORICAL_REF_MISSING")
+            continue
+        target = root / reference["path"]
+        if reference["digest_mode"] == "FILE_BYTES":
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        else:
+            target_lines = target.read_text(encoding="utf-8").splitlines()
+            actual = hashlib.sha256(
+                "\n".join(
+                    target_lines[reference["start_line"] - 1:
+                                 reference["end_line"]]
+                ).strip(" \t\n\r\f\v").encode("utf-8")
+            ).hexdigest()
+        if actual != reference["content_sha256"]:
+            reasons.append("HISTORICAL_REF_STALE")
+    review = row["evidence_inventory_review"]
+    review_ok = (
+        isinstance(review, dict)
+        and review["status"] == "COMPLETE"
+        and review["verdict"] == "CLEAN"
+        and review.get("role") == "REVIEWER"
+        and review.get("role_binding_path") == "CONTEXT.md"
+        and isinstance(review.get("model"), str) and review["model"].strip()
+        and isinstance(review.get("effort"), str) and review["effort"].strip()
+        and set(historical) <= set(review["evidence_ref_ids"])
+        and review_state(row, review, "EVIDENCE") == "COMPLETE"
+    )
+    if review_ok:
+        review_time = parse_utc(review["timestamp"])
+        review_ok = all(
+            review_time >= parse_utc(evidence_by_id[ref_id]["captured_at"])
+            for ref_id in historical
+        )
+    if not review_ok:
+        reasons.append("CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING")
+    return not reasons, sorted(set(reasons))
+
+pending_reviews = []
+stale_reviews = []
+for row in canonical:
+    checks = [
+        ("APPROVAL", row["approval_inventory_review"]),
+        ("EVIDENCE", row["evidence_inventory_review"]),
+    ]
+    if row["kind"] != "register_row":
+        checks.append(("SCOPE", row["scope_derivation"]["semantic_review"]))
+    for review_type, review in checks:
+        state = review_state(row, review, review_type)
+        record = {
+            "component_id": row["component_id"],
+            "review_type": review_type,
+            "review_id": row["component_id"] + "::" + review_type,
+        }
+        if state == "PENDING":
+            pending_reviews.append(record)
+        elif state == "STALE":
+            stale_reviews.append(record)
+
+unmet_no_implementation_proof = []
+for row in canonical:
+    if row["program_disposition"] != "REJECTED_ACCOUNTED":
+        continue
+    proven, reasons = current_no_implementation_proof(row)
+    if proven:
+        continue
+    for requirement_id in NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+        row["component_id"], []
+    ):
+        unmet_no_implementation_proof.append({
+            "component_id": row["component_id"],
+            "requirement_id": requirement_id,
+            "historical_evidence_ref_ids": sorted(
+                row["rejection_record"]["no_implementation_evidence_ref_ids"]
+            ),
+            "reason_codes": reasons,
+        })
+
+if args.report_blockers:
+    ready = not (
+        pending_reviews or stale_reviews or unmet_no_implementation_proof
+    )
+    report = {
+        "gate": "preimplementation",
+        "ready": ready,
+        "ledger_path": str(path),
+        "pending_reviews": pending_reviews,
+        "stale_reviews": stale_reviews,
+        "unmet_no_implementation_proof": unmet_no_implementation_proof,
+    }
+    json.dump(report, sys.stdout, indent=2, sort_keys=True)
+    sys.stdout.write("\n")
+    raise SystemExit(0 if ready else 2)
 
 for row in canonical:
     current_complete(row, row["approval_inventory_review"], "APPROVAL")
     current_complete(row, row["evidence_inventory_review"], "EVIDENCE")
     if row["kind"] != "register_row":
         current_complete(row, row["scope_derivation"]["semantic_review"], "SCOPE")
+    proven, reasons = current_no_implementation_proof(row)
+    assert proven, (row["component_id"], reasons)
 PY
 ```
 
@@ -3421,15 +4872,49 @@ active canonical component:
 
 ```bash
 python3 - <<'PY'
+import argparse
 import datetime
 import hashlib
 import json
 import math
 import re
 import subprocess
+import sys
 from pathlib import Path
 
-path = Path("docs/goals/equity-os-blueprint-component-ledger.jsonl")
+DEFAULT_LEDGER = "docs/goals/equity-os-blueprint-component-ledger.jsonl"
+DEFAULT_HUMAN_REVIEW = "docs/goals/equity-os-blueprint-human-review-needed.md"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--repo-root", required=True)
+parser.add_argument("--ledger-path")
+parser.add_argument("--human-review-path")
+parser.add_argument("--report-blockers", action="store_true")
+args = parser.parse_args()
+assert (args.ledger_path is None) == (args.human_review_path is None)
+root = Path(args.repo_root).resolve()
+
+def selected_path(value, default):
+    candidate = Path(value or default)
+    return candidate if candidate.is_absolute() else root / candidate
+
+path = selected_path(args.ledger_path, DEFAULT_LEDGER)
+human_path = selected_path(args.human_review_path, DEFAULT_HUMAN_REVIEW)
+assert path.is_file() and human_path.is_file()
+assert path.resolve() != human_path.resolve()
+
+def normalized_human_review_id(value):
+    """Closed r7 §3.2 human-review-link representation, as a sorted list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        assert re.fullmatch(r"HR-\d{4}", value)
+        return [value]
+    assert isinstance(value, list) and len(value) >= 2
+    assert all(re.fullmatch(r"HR-\d{4}", item) for item in value)
+    assert value == sorted(set(value))
+    return list(value)
+
 rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 canonical = [row for row in rows if row["kind"] != "derivative_alias"]
 aliases = [row for row in rows if row["kind"] == "derivative_alias"]
@@ -3470,6 +4955,9 @@ def review_input(row):
     }
     projection = {field: row[field] for field in sorted(fields)}
     projection["scope_derivation"] = scope_without_review
+    projection["human_review_id"] = normalized_human_review_id(
+        row["human_review_id"]
+    )
     return projection
 
 def review_inventory(row, review_type):
@@ -3495,7 +4983,7 @@ def review_inventory(row, review_type):
     return {
         "required_approvals": row["required_approvals"],
         "approval_records": row["approval_records"],
-        "human_review_id": row["human_review_id"],
+        "human_review_id": normalized_human_review_id(row["human_review_id"]),
         "security_exception_ids": row["security_exception_ids"],
     }
 
@@ -3507,7 +4995,7 @@ def current_review(row, review, review_type):
         review_inventory(row, review_type)
     )
 
-register_path = Path(
+register_path = root / (
     "docs/blueprint/funda-blueprint-implementation-decision-register-v2.md"
 )
 register_status = {}
@@ -3583,7 +5071,7 @@ def evaluate_predicate(row):
             assert isinstance(ref_id, str) and ref_id in evidence
             ref = evidence[ref_id]
             assert ref["digest_mode"] == "FILE_BYTES"
-            target = Path(ref["path"])
+            target = root / ref["path"]
             assert hashlib.sha256(target.read_bytes()).hexdigest() == ref["content_sha256"]
             document = json.loads(target.read_text(encoding="utf-8"))
             values[metric_id] = typed(
@@ -3599,6 +5087,14 @@ def evaluate_predicate(row):
             return all(results) if op == "ALL" else any(results)
         if op == "NOT":
             return not evaluate(expression["arg"])
+        if op == "COMPARE_METRICS":
+            left_id = expression["left_metric_id"]
+            right_id = expression["right_metric_id"]
+            assert types[left_id] == types[right_id]
+            return comparison(
+                values[left_id], expression["comparator"], values[right_id],
+                types[left_id],
+            )
         assert op == "COMPARE"
         metric_id = expression["metric_id"]
         return comparison(
@@ -3650,11 +5146,13 @@ for row in canonical:
         if work["work_type"] == "BEAD":
             bead_component_ids.setdefault(work["source_ref"], set()).add(component_id)
 
+all_component_ids = {row["component_id"] for row in rows}
+
 def normalize_human_scope(scope):
     direct_ids = set(scope["component_ids"])
     blocked_ids = set(scope["blocked_component_ids"])
-    assert direct_ids <= canonical_component_ids
-    assert blocked_ids <= canonical_component_ids
+    assert direct_ids <= all_component_ids
+    assert blocked_ids <= all_component_ids
     assert direct_ids.isdisjoint(blocked_ids)
 
     register_ids = set(scope["register_ids"])
@@ -3681,11 +5179,9 @@ def normalize_human_scope(scope):
     assert blocked_ids.isdisjoint(nonblocked_projection)
     projected = blocked_ids | nonblocked_projection
     assert projected
-    assert projected <= canonical_component_ids
+    assert projected <= all_component_ids
     return frozenset(projected)
 
-human_path = Path("docs/goals/equity-os-blueprint-human-review-needed.md")
-assert human_path.is_file()
 human_text = human_path.read_text(encoding="utf-8")
 begin = "<!-- BEGIN CANONICAL HUMAN REVIEW JSON -->"
 end = "<!-- END CANONICAL HUMAN REVIEW JSON -->"
@@ -3699,9 +5195,12 @@ entry_scope_components = {
     entry_id: normalize_human_scope(entry["scope"])
     for entry_id, entry in entries.items()
 }
+human_review_links = {
+    row["component_id"]: set(normalized_human_review_id(row["human_review_id"]))
+    for row in rows
+}
 for row in canonical:
-    if row["human_review_id"] is not None:
-        entry_id = row["human_review_id"]
+    for entry_id in human_review_links[row["component_id"]]:
         assert entry_id in entries
         assert entries[entry_id]["entry_type"] == "DECISION"
         assert row["component_id"] in entry_scope_components[entry_id]
@@ -3717,14 +5216,16 @@ for entry_id, entry in entries.items():
     scoped_component_ids = entry_scope_components[entry_id]
     if entry["entry_type"] == "DECISION":
         assert all(
-            canonical_by_component_id[component_id]["human_review_id"] == entry_id
+            entry_id in human_review_links[component_id]
             for component_id in scoped_component_ids
+            if component_id in canonical_by_component_id
         )
     else:
         assert entry["entry_type"] == "SECURITY_EXCEPTION"
         assert all(
             entry_id in canonical_by_component_id[component_id]["security_exception_ids"]
             for component_id in scoped_component_ids
+            if component_id in canonical_by_component_id
         )
 active_resolution_ids = set()
 active_by_entry = {entry_id: set() for entry_id in entries}
@@ -3819,6 +5320,12 @@ for row in canonical:
         value = "REQUIRED_NOW"
     elif rule == "RELATED_REGISTER_SCOPE":
         value = aggregate(scope["related_register_ids"])
+    elif rule == "ACTIVE_NEGATIVE_CONTROL":
+        assert row["kind"] == "phase_gate_clause"
+        assert scope["related_register_ids"]
+        assert scope["authority_effect"] is None
+        assert row["activation_predicate"] is None
+        value = "REQUIRED_NOW"
     else:
         assert rule == "AUTHORITATIVE_OCCURRENCE"
         effect = scope["authority_effect"]
@@ -3831,6 +5338,185 @@ for row in canonical:
             value = aggregate(scope["related_register_ids"])
     assert row["program_disposition"] == value
     derived[row["component_id"]] = value
+
+NO_IMPLEMENTATION_REQUIREMENT_MAP = {
+    "DISP-R-1": ["REQ-DISP-R-1-NO-IMPLEMENTATION"],
+}
+
+def current_no_implementation_proof(row):
+    """r7 §3.2 closed predicate; rejected state never waives it."""
+    record = row["rejection_record"]
+    requirement_ids = NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+        row["component_id"], []
+    )
+    if record is None or not requirement_ids:
+        return True, []
+    historical = list(record["no_implementation_evidence_ref_ids"])
+    requirements = {
+        item["evidence_id"]: item for item in row["required_evidence"]
+    }
+    assert set(requirement_ids) <= set(requirements)
+    mapped = [requirements[item_id] for item_id in requirement_ids]
+    evidence = {item["evidence_ref_id"]: item for item in row["evidence_refs"]}
+    reasons = []
+    covered = set()
+    for item in mapped:
+        covered |= set(item["evidence_ref_ids"])
+    if not set(historical) <= covered:
+        reasons.append("HISTORICAL_REFS_UNCOVERED")
+    if any(item["status"] != "SATISFIED" for item in mapped):
+        reasons.append("REQUIREMENT_UNRESOLVED")
+    for ref_id in historical:
+        reference = evidence.get(ref_id)
+        if reference is None:
+            reasons.append("HISTORICAL_REF_MISSING")
+            continue
+        target = root / reference["path"]
+        if reference["digest_mode"] == "FILE_BYTES":
+            actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        else:
+            target_lines = target.read_text(encoding="utf-8").splitlines()
+            actual = hashlib.sha256(
+                "\n".join(
+                    target_lines[reference["start_line"] - 1:
+                                 reference["end_line"]]
+                ).strip(" \t\n\r\f\v").encode("utf-8")
+            ).hexdigest()
+        if actual != reference["content_sha256"]:
+            reasons.append("HISTORICAL_REF_STALE")
+    review = row["evidence_inventory_review"]
+    review_ok = (
+        isinstance(review, dict)
+        and review["status"] == "COMPLETE"
+        and review["verdict"] == "CLEAN"
+        and review.get("role") == "REVIEWER"
+        and review.get("role_binding_path") == "CONTEXT.md"
+        and isinstance(review.get("model"), str) and review["model"].strip()
+        and isinstance(review.get("effort"), str) and review["effort"].strip()
+        and set(historical) <= set(review["evidence_ref_ids"])
+        and review["reviewed_input_sha256"] == digest(review_input(row))
+        and review["reviewed_inventory_sha256"] == digest(
+            review_inventory(row, "EVIDENCE")
+        )
+    )
+    if review_ok:
+        review_time = parse_utc(review["timestamp"])
+        review_ok = all(
+            review_time >= parse_utc(evidence[ref_id]["captured_at"])
+            for ref_id in historical
+        )
+    if not review_ok:
+        reasons.append("CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING")
+    return not reasons, sorted(set(reasons))
+
+if args.report_blockers:
+    active_ids = sorted(
+        row["component_id"] for row in canonical
+        if derived[row["component_id"]] in {
+            "REQUIRED_NOW", "CONDITIONAL_ACTIVATED"
+        }
+    )
+    dormant_ids = sorted(
+        row["component_id"] for row in canonical
+        if derived[row["component_id"]] == "CONDITIONAL_UNACTIVATED"
+    )
+    rejected_ids = sorted(
+        row["component_id"] for row in canonical
+        if derived[row["component_id"]] == "REJECTED_ACCOUNTED"
+    )
+    active_rows = [canonical_by_component_id[item] for item in active_ids]
+    unmet = {
+        "delivery_not_verified": sorted(
+            row["component_id"] for row in active_rows
+            if row["delivery_status"] != "VERIFIED"
+        ),
+        "register_not_accepted": sorted(
+            row["component_id"] for row in active_rows
+            if row["kind"] == "register_row"
+            and row["source_status"] != "Accepted"
+        ),
+        "inventory_reviews_not_complete": sorted({
+            row["component_id"] for row in active_rows
+            if row["approval_inventory_review"]["status"] != "COMPLETE"
+            or row["evidence_inventory_review"]["status"] != "COMPLETE"
+            or (
+                row["kind"] != "register_row"
+                and row["scope_derivation"]["semantic_review"]["status"]
+                != "COMPLETE"
+            )
+        }),
+        "approvals_unsatisfied": sorted({
+            row["component_id"] for row in active_rows
+            if any(
+                requirement["status"] != "SATISFIED"
+                for requirement in row["required_approvals"]
+            )
+        }),
+        "evidence_unsatisfied": sorted({
+            row["component_id"] for row in active_rows
+            if any(
+                requirement["status"] != "SATISFIED"
+                for requirement in row["required_evidence"]
+            )
+        }),
+        "not_verified_at": sorted(
+            row["component_id"] for row in active_rows
+            if row["verified_at"] is None
+        ),
+        "open_findings": sorted(
+            row["component_id"] for row in canonical if row["open_findings"]
+        ),
+        "blocked_scope": sorted(
+            row["component_id"] for row in canonical if row["blocked_scope"]
+        ),
+        "unresolved_human_review": sorted(
+            entry_id for entry_id, entry in entries.items()
+            if entry["state"] != "RESOLVED"
+        ),
+        "gates_not_passed": sorted(
+            row["component_id"] for row in active_rows
+            if row["kind"] == "phase_gate_clause"
+            and row["gate_result"] != "PASS"
+        ),
+    }
+    unmet_no_implementation_proof = []
+    for row in canonical:
+        if derived[row["component_id"]] != "REJECTED_ACCOUNTED":
+            continue
+        proven, reasons = current_no_implementation_proof(row)
+        if proven:
+            continue
+        for requirement_id in NO_IMPLEMENTATION_REQUIREMENT_MAP.get(
+            row["component_id"], []
+        ):
+            unmet_no_implementation_proof.append({
+                "component_id": row["component_id"],
+                "requirement_id": requirement_id,
+                "historical_evidence_ref_ids": sorted(
+                    row["rejection_record"]["no_implementation_evidence_ref_ids"]
+                ),
+                "reason_codes": reasons,
+            })
+    unmet_conditions = {
+        name: values for name, values in unmet.items() if values
+    }
+    success = not unmet_conditions and not unmet_no_implementation_proof
+    report = {
+        "gate": "terminal",
+        "success": success,
+        "ledger_path": str(path),
+        "human_review_path": str(human_path),
+        "derived_state": {
+            "active": active_ids,
+            "dormant": dormant_ids,
+            "rejected": rejected_ids,
+        },
+        "unmet_success_conditions": unmet_conditions,
+        "unmet_no_implementation_proof": unmet_no_implementation_proof,
+    }
+    json.dump(report, sys.stdout, indent=2, sort_keys=True)
+    sys.stdout.write("\n")
+    raise SystemExit(0 if success else 2)
 
 active = [
     row for row in canonical
@@ -3869,8 +5555,8 @@ assert all(
 assert all(row["verified_at"] is not None for row in active)
 for row in active:
     assert row["blocked_scope"] == []
-    if row["human_review_id"] is not None:
-        assert entries[row["human_review_id"]]["state"] == "RESOLVED"
+    for entry_id in human_review_links[row["component_id"]]:
+        assert entries[entry_id]["state"] == "RESOLVED"
     assert all(entries[entry_id]["state"] == "RESOLVED" for entry_id in row["security_exception_ids"])
     if derived[row["component_id"]] == "CONDITIONAL_ACTIVATED":
         assert evaluate_predicate(row) == "TRUE"
@@ -3914,6 +5600,8 @@ for row in dormant:
     assert row["implementation_refs"] == []
     assert row["gate_result"] in {"NOT_EVALUATED", "NOT_APPLICABLE_DORMANT"}
 for row in rejected:
+    proven, reasons = current_no_implementation_proof(row)
+    assert proven, (row["component_id"], reasons)
     assert row["rejection_record"] is not None
     assert row["implementation_refs"] == []
     assert row["delivery_status"] not in {"PLANNED", "IMPLEMENTING", "VERIFIED"}
@@ -3978,7 +5666,7 @@ for work in required_work:
                     "[25 specs] Equity-OS blueprint specification program"
                 )
         else:
-            target = Path(work["source_ref"])
+            target = root / work["source_ref"]
             assert hashlib.sha256(target.read_bytes()).hexdigest() == work["content_sha256"]
             markers = re.findall(
                 r"^<!-- equity-os-work-state: (\{.*\}) -->$",
@@ -4073,7 +5761,8 @@ completion, or partial success.
    active canonical component, including every program-wide control, is
    `VERIFIED`; its evidence and approval inventories are complete; every
    required evidence item is linked; every command has a current successful
-   state/hash-bound result or a current evidenced Sol `NOT_APPLICABLE` review;
+   state/hash-bound result or a current evidenced `REVIEWER`-role
+   `NOT_APPLICABLE` review;
    `verified_at` is current; every required approval is `SATISFIED` one-to-one;
    `blocked_scope` is empty; every component-linked human-review and security
    entry, and every human-review or security entry whose normalized direct,
@@ -4086,7 +5775,8 @@ completion, or partial success.
    Critical/Important finding or blocking human-review or security exception
    entry remains. Aliases remain outside active delivery proof but retain their
    independently validated source occurrence.
-8. A final Sol xhigh blueprint-compliance audit and a final Sol xhigh
+8. A final `REVIEWER`-role blueprint-compliance audit and a final
+   `REVIEWER`-role
    code-quality/security audit are clean.
 9. `git status` is reconciled against the activation baseline; no unrelated or
    unauthorized files are claimed.
@@ -4097,6 +5787,64 @@ goal ends truthfully in `HALT_AWAITING_HUMAN` or `BLOCKED_FAILURE`, never false
 `SUCCESS`. A paused goal remains `PAUSED_BY_USER`; a cancelled or authority-
 revoked goal ends in `CANCELLED_OR_AUTHORITY_REVOKED` and requires new explicit
 approval plus a new or explicitly resumed goal activation before restart.
+
+## HR-0004 authority-reconciliation approval record
+
+This section is the r7 §5.3 approval-evidence record for the single
+`RECONCILE_AUTHORITY` transaction that produced the current contract, ledger,
+validator, and human-review bytes. It records the actual exchange; it invents
+no legal name, URL, message identifier, transcript, or citation. It contains no
+human-review entry digest, resolution digest, or ledger digest, so it creates
+no digest cycle with the artifacts that reference it. The completed question
+binds the independent review by digest; the reviewer model, effort, and
+role-binding digest are recorded here and in the immutable review artifact, and
+are deliberately not carried as literal question text.
+
+| Field | Recorded value |
+|---|---|
+| Recorded at (UTC) | `2026-08-15T07:12:12Z` |
+| Conversation / goal-tool identifier | `983bf756-836e-4b67-9f50-0966359e4006` |
+| Authenticated current user (runtime-supplied) | `mvpavan42@gmail.com` |
+| Approving actor | `actor_type=HUMAN`, role `CURRENT_USER` |
+| Transaction timestamp (UTC) | `2026-08-15T07:13:28Z` |
+| r7 design path | `docs/goals/reviews/ledger/equity-os-blueprint-ledger-remediation-design-r7.md` |
+| r7 design SHA-256 | `4b604e006d1ab727a27b980011f223debca60b1febd738a4c46d21e67574bedf` |
+| Independent review path | `docs/goals/reviews/ledger/equity-os-blueprint-ledger-remediation-design-r7-review-r0.md` |
+| Independent review SHA-256 | `4b7b1482cec48c41b8feaa6948f51c50a53879907798efdff85eed7bc3eba804` |
+| Review verdict | `CLEAN` |
+| Review reviewed-input SHA-256 | `4b604e006d1ab727a27b980011f223debca60b1febd738a4c46d21e67574bedf` |
+| Reviewer role | `REVIEWER` |
+| Reviewer model | `claude-opus-5` |
+| Reviewer effort | `high` |
+| Reviewer role-binding path | `CONTEXT.md` |
+| Reviewer role-binding SHA-256 | `8f2795af93ba6bf5303cf13227b8ce9e96295269887673a3a8b97d920b3198ce` |
+| Active-goal pre-state SHA-256 | `dabad7bfe3d2765a5ac9687376029d8587b4b2ac95bc03494155a974e5ddc67f` |
+| Ledger pre-state SHA-256 | `51091042dae87d2f41fbbf02d77ab1619c6a1008a022baec4233c44a0e295e13` |
+| Human-review pre-state SHA-256 | `54c1e183def8e0b1b91504effbf20c233b3d1352fd65d4910e89c2b913ee5702` |
+| v2-register SHA-256 | `26d51b313688cb340ec57ef5e952f5497b7ca212add610b803a0033d5fad7164` |
+| Disposition-report SHA-256 | `a9021c154c3e84bd70b64a9dae99c29f760c2b3356b522f089a7b1a314322738` |
+| Exact 144-ID scope digest | `bf6fee00d0f4510316b42b50ec13f74148df9ed44e472f2ad8be114ee3add894` |
+
+Exact completed decision question bytes as presented to the user:
+
+```text
+Do you approve one `RECONCILE_AUTHORITY` transaction bound to independently reviewed `docs/goals/reviews/ledger/equity-os-blueprint-ledger-remediation-design-r7.md` SHA-256 `4b604e006d1ab727a27b980011f223debca60b1febd738a4c46d21e67574bedf` and predetermined independent review `docs/goals/reviews/ledger/equity-os-blueprint-ledger-remediation-design-r7-review-r0.md` SHA-256 `4b7b1482cec48c41b8feaa6948f51c50a53879907798efdff85eed7bc3eba804`, whose explicit verdict is `CLEAN`, whose explicit reviewed-input SHA-256 is `4b604e006d1ab727a27b980011f223debca60b1febd738a4c46d21e67574bedf` equal to that r7 design SHA-256, and whose reviewer role is `REVIEWER` under the `CONTEXT.md` "Agent roles" binding with its actual invoked model and effort recorded in the review, superseding and voiding the earlier approval bound to r4 SHA-256 `c1ab125880ec1895a344b57f7aaef8d372836fa0ded9c900a1aae9284b295e00`; active-goal pre-state SHA-256 `dabad7bfe3d2765a5ac9687376029d8587b4b2ac95bc03494155a974e5ddc67f`, ledger pre-state SHA-256 `51091042dae87d2f41fbbf02d77ab1619c6a1008a022baec4233c44a0e295e13`, human-review pre-state SHA-256 `54c1e183def8e0b1b91504effbf20c233b3d1352fd65d4910e89c2b913ee5702`, v2-register SHA-256 `26d51b313688cb340ec57ef5e952f5497b7ca212add610b803a0033d5fad7164`, disposition-report SHA-256 `a9021c154c3e84bd70b64a9dae99c29f760c2b3356b522f089a7b1a314322738`, and exact 144-ID scope digest `bf6fee00d0f4510316b42b50ec13f74148df9ed44e472f2ad8be114ee3add894`, authorizing only one atomic change to the goal, its three validator surfaces plus extractor interface, the canonical ledger, and canonical human-review artifact that records and resolves HR-0004 over that exact full structured scope, including current-digest repair for every freshly enumerated stale declared evidence object while resetting `REQ-DISP-R-1-NO-IMPLEMENTATION` to `UNRESOLVED` with empty evidence refs and treating its unchanged rejection-record refs as historical rather than current proof; sets `PG-2-04.related_register_ids` to `["D-01","D-03"]` so that exactly one row moves `CONDITIONAL_UNACTIVATED` to `REQUIRED_NOW` with its activation predicate removed and no activation record created, without relaxing the rule that a required component may not carry an activation predicate; closes the required-authority vocabulary and replaces every vendor model lane in the validator-checked review schema and reason codes with the `ORCHESTRATOR`/`IMPLEMENTER`/`REVIEWER` role vocabulary bound to `CONTEXT.md`, changing no ledger row for that purpose and rewriting no historical model record; produces exactly 213 ledger rows = 169 canonical + 44 aliases; preserves all 454 existing transition objects as exact prefixes and preserves HR-0001..3 open and unresolved; changes no pinned blueprint bytes or register Status cells; activates no Deferred component; advances no delivery or gate state; and aborts without canonical change on any design hash, review path/hash/verdict/reviewed-input/role binding, scope, validation, or replacement failure?
+```
+
+Rendering of the r7 §5.2 template: Rendered from the r7 §5.2 template with exactly two substitutions and
+zero other byte changes.
+
+Exact user response bytes, verbatim and complete:
+
+```text
+I approve
+```
+
+Only the bytes above are evidence; conversation memory and agent-authored
+paraphrase are inadmissible. This approval supersedes and voids the earlier
+approval bound to r4 SHA-256
+`c1ab125880ec1895a344b57f7aaef8d372836fa0ded9c900a1aae9284b295e00`, authorizes
+exactly one bounded transaction, and grants no further authority.
 
 ## Activation record
 

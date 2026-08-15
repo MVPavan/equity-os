@@ -7,12 +7,67 @@ R3-F-01 (HR-0003).
 The JSON payload is authoritative; no prose outside it grants authority.
 
 <!-- BEGIN CANONICAL HUMAN REVIEW JSON -->
+
+```json
 {
   "entries": [
     {
-      "human_review_id": "HR-0001",
+      "blocking": true,
+      "content_sha256": "5ac2a213372a369d64bd53c9dae847a1bbb4905f8cdb93a6fdce3ce67ab003b8",
+      "continuable_work": [
+        "Independent specification and review work whose files and dependency cone do not intersect S06-I7."
+      ],
+      "decision_authority": {
+        "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
+        "authority": "Explicit rank-1 current-user authority over the active goal process",
+        "competent_roles": [
+          "CURRENT_USER"
+        ]
+      },
       "entry_type": "DECISION",
+      "evidence": [
+        {
+          "captured_at": "2026-08-13T04:19:57Z",
+          "content_sha256": "9b14f5f327a9ff623cb41c823ab3eeec2d14f2f3ee05b8506313fbb28e83f458",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0001-S06",
+          "path": "docs/specs/equity-os-s06-output-materiality-falsifiers.md",
+          "scope": "VERIFIED FACT: exact current S06 bytes containing the adjudicated digest contracts.",
+          "start_line": null
+        },
+        {
+          "captured_at": "2026-08-13T04:19:57Z",
+          "content_sha256": "61d74f4b8b9248a75ff48e4508b1b58fb79b884acbbc859328111bb3814f2113",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0001-R4",
+          "path": "docs/goals/reviews/specs/equity-os-s04-s06-r4.md",
+          "scope": "VERIFIED FACT: r4 reports load-bearing Important S06-I7 and forbids an ordinary r5.",
+          "start_line": null
+        },
+        {
+          "captured_at": "2026-08-13T04:19:57Z",
+          "content_sha256": "da3ef87f32646fdb3e0f576086aba5070eee0aee3b115f53cb6b40579999e26a",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0001-ADJUDICATION",
+          "path": "docs/goals/reviews/specs/equity-os-s04-s06-adjudication.md",
+          "scope": "VERIFIED FACT: fresh adjudication upholds S06-I7, fixes the exact cone, and states the nonbinding recommendation and rank-1 authority boundary.",
+          "start_line": null
+        }
+      ],
+      "human_review_id": "HR-0001",
+      "question": "Does the current user authorize a post-cap S06-I7 mechanism limited to one acyclic documentation remediation by a future Sol xhigh session and a separate fresh Sol xhigh exact-byte review, outside the forbidden ordinary r5 path?",
+      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding minimal architecture is candidate snapshot digest -> materiality decision digest -> disposition transition digest -> final inventory-closure digest -> artifact digest -> human approval, with any upstream mutation staling every downstream commitment.",
+      "research_date": "2026-08-13",
+      "resolution_decision_ids": [],
+      "safe_default": "Do not remediate S06 and do not run a fresh review; keep S06, eqos-0xb.6, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the cone continues.",
       "scope": {
+        "bead_ids": [
+          "eqos-0xb.6"
+        ],
+        "blocked_component_ids": [],
         "component_ids": [
           "DISP-6-2",
           "DISP-G-1",
@@ -25,52 +80,18 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "SEQ-07"
         ],
         "register_ids": [],
-        "spec_ids": [],
-        "bead_ids": [
-          "eqos-0xb.6"
-        ],
-        "blocked_component_ids": [],
-        "scope_text": "S06-I7 on S06 direct components DISP-6-2, DISP-G-1, DISP-G-5, DISP-R-4, REG-A-04, REG-A-10, SEQ-04, SEQ-05, SEQ-07; active blocked register cone A-03, A-04, A-10, A-11, B-01, B-02, B-04, B-05, B-06, B-07, B-10, B-11, B-12, B-13, B-14, C-03, C-04, C-05, C-08, C-09, C-10, C-12, C-15, C-16, D-01; conditional or dormant descendants D-02, D-03, D-05, E-01, E-03, E-04, E-05, E-10; Bead eqos-0xb.6 is blocked; all product implementation is blocked; independent specification and review work outside the S06-I7 dependency cone may continue."
+        "scope_text": "S06-I7 on S06 direct components DISP-6-2, DISP-G-1, DISP-G-5, DISP-R-4, REG-A-04, REG-A-10, SEQ-04, SEQ-05, SEQ-07; active blocked register cone A-03, A-04, A-10, A-11, B-01, B-02, B-04, B-05, B-06, B-07, B-10, B-11, B-12, B-13, B-14, C-03, C-04, C-05, C-08, C-09, C-10, C-12, C-15, C-16, D-01; conditional or dormant descendants D-02, D-03, D-05, E-01, E-03, E-04, E-05, E-10; Bead eqos-0xb.6 is blocked; all product implementation is blocked; independent specification and review work outside the S06-I7 dependency cone may continue.",
+        "spec_ids": []
       },
-      "question": "Does the current user authorize a post-cap S06-I7 mechanism limited to one acyclic documentation remediation by a future Sol xhigh session and a separate fresh Sol xhigh exact-byte review, outside the forbidden ordinary r5 path?",
-      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap remediation or fresh-review exception; only explicit rank-1 current-user authority can authorize that mechanism.",
-      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding minimal architecture is candidate snapshot digest -> materiality decision digest -> disposition transition digest -> final inventory-closure digest -> artifact digest -> human approval, with any upstream mutation staling every downstream commitment.",
-      "safe_default": "Do not remediate S06 and do not run a fresh review; keep S06, eqos-0xb.6, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the cone continues.",
-      "evidence": [
-        {
-          "evidence_ref_id": "HR-EV-0001-S06",
-          "path": "docs/specs/equity-os-s06-output-materiality-falsifiers.md",
-          "scope": "VERIFIED FACT: exact current S06 bytes containing the adjudicated digest contracts.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "9b14f5f327a9ff623cb41c823ab3eeec2d14f2f3ee05b8506313fbb28e83f458",
-          "captured_at": "2026-08-13T04:19:57Z"
-        },
-        {
-          "evidence_ref_id": "HR-EV-0001-R4",
-          "path": "docs/goals/reviews/specs/equity-os-s04-s06-r4.md",
-          "scope": "VERIFIED FACT: r4 reports load-bearing Important S06-I7 and forbids an ordinary r5.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "61d74f4b8b9248a75ff48e4508b1b58fb79b884acbbc859328111bb3814f2113",
-          "captured_at": "2026-08-13T04:19:57Z"
-        },
-        {
-          "evidence_ref_id": "HR-EV-0001-ADJUDICATION",
-          "path": "docs/goals/reviews/specs/equity-os-s04-s06-adjudication.md",
-          "scope": "VERIFIED FACT: fresh adjudication upholds S06-I7, fixes the exact cone, and states the nonbinding recommendation and rank-1 authority boundary.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "da3ef87f32646fdb3e0f576086aba5070eee0aee3b115f53cb6b40579999e26a",
-          "captured_at": "2026-08-13T04:19:57Z"
-        }
-      ],
-      "research_date": "2026-08-13",
+      "security_exception_detail": null,
+      "state": "OPEN_BLOCKING",
+      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap remediation or fresh-review exception; only explicit rank-1 current-user authority can authorize that mechanism."
+    },
+    {
+      "blocking": true,
+      "content_sha256": "ae9da6ee3c59b6c4d7592c6e743ef5de22b2a6eb4ed78141aee5c6f3d8f1a73f",
       "continuable_work": [
-        "Independent specification and review work whose files and dependency cone do not intersect S06-I7."
+        "Independent specification and review work whose files and dependency cone do not intersect S09-r3-N1."
       ],
       "decision_authority": {
         "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
@@ -79,35 +100,7 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "CURRENT_USER"
         ]
       },
-      "security_exception_detail": null,
-      "blocking": true,
-      "state": "OPEN_BLOCKING",
-      "resolution_decision_ids": [],
-      "content_sha256": "5ac2a213372a369d64bd53c9dae847a1bbb4905f8cdb93a6fdce3ce67ab003b8"
-    },
-    {
-      "human_review_id": "HR-0002",
       "entry_type": "DECISION",
-      "scope": {
-        "component_ids": [
-          "DISP-R-2",
-          "REG-A-06",
-          "REG-B-09",
-          "REG-C-02",
-          "REG-C-14"
-        ],
-        "register_ids": [],
-        "spec_ids": [],
-        "bead_ids": [
-          "eqos-0xb.9"
-        ],
-        "blocked_component_ids": [],
-        "scope_text": "S09-r3-N1 on S09 direct components REG-A-06, REG-B-09, REG-C-02, REG-C-14, DISP-R-2; active blocked register cone A-06, B-02, B-05, B-06, B-09, B-10, B-11, B-12, B-14, C-02, C-03, C-04, C-05, C-06, C-07, C-10, C-15, C-17, D-01; conditional or dormant descendants C-14, D-02, D-03, D-05, E-03, E-04, E-05, E-10; affected specs S09, S11, S12, S13, S14, S15, S17, S19, S20, S23, S24, S25; Bead eqos-0xb.9 is blocked; all product implementation is blocked; independent specification and review work outside the S09-r3-N1 dependency cone may continue."
-      },
-      "question": "Does the current user authorize a post-cap S09-r3-N1 mechanism limited to one targeted equality-and-fixture documentation amendment by a future Sol xhigh session and a separate fresh Sol xhigh exact-byte amendment review, outside the forbidden ordinary r5 path?",
-      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap remediation or fresh amendment-review exception; only explicit rank-1 current-user authority can authorize that mechanism.",
-      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding amendment should require record.human_review_id == resolution.human_review_id, record.actor == resolution.actor.identity_id, and record.timestamp == resolution.timestamp, then add separate rejecting record-to-resolution fixtures for mismatched human_review_id, actor identity, and timestamp.",
-      "safe_default": "Do not amend S09 and do not run a fresh amendment review; keep S09, eqos-0xb.9, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the cone continues.",
       "evidence": [
         {
           "captured_at": "2026-08-13T04:29:50Z",
@@ -140,9 +133,37 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "start_line": null
         }
       ],
+      "human_review_id": "HR-0002",
+      "question": "Does the current user authorize a post-cap S09-r3-N1 mechanism limited to one targeted equality-and-fixture documentation amendment by a future Sol xhigh session and a separate fresh Sol xhigh exact-byte amendment review, outside the forbidden ordinary r5 path?",
+      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding amendment should require record.human_review_id == resolution.human_review_id, record.actor == resolution.actor.identity_id, and record.timestamp == resolution.timestamp, then add separate rejecting record-to-resolution fixtures for mismatched human_review_id, actor identity, and timestamp.",
       "research_date": "2026-08-13",
+      "resolution_decision_ids": [],
+      "safe_default": "Do not amend S09 and do not run a fresh amendment review; keep S09, eqos-0xb.9, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the cone continues.",
+      "scope": {
+        "bead_ids": [
+          "eqos-0xb.9"
+        ],
+        "blocked_component_ids": [],
+        "component_ids": [
+          "DISP-R-2",
+          "REG-A-06",
+          "REG-B-09",
+          "REG-C-02",
+          "REG-C-14"
+        ],
+        "register_ids": [],
+        "scope_text": "S09-r3-N1 on S09 direct components REG-A-06, REG-B-09, REG-C-02, REG-C-14, DISP-R-2; active blocked register cone A-06, B-02, B-05, B-06, B-09, B-10, B-11, B-12, B-14, C-02, C-03, C-04, C-05, C-06, C-07, C-10, C-15, C-17, D-01; conditional or dormant descendants C-14, D-02, D-03, D-05, E-03, E-04, E-05, E-10; affected specs S09, S11, S12, S13, S14, S15, S17, S19, S20, S23, S24, S25; Bead eqos-0xb.9 is blocked; all product implementation is blocked; independent specification and review work outside the S09-r3-N1 dependency cone may continue.",
+        "spec_ids": []
+      },
+      "security_exception_detail": null,
+      "state": "OPEN_BLOCKING",
+      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap remediation or fresh amendment-review exception; only explicit rank-1 current-user authority can authorize that mechanism."
+    },
+    {
+      "blocking": true,
+      "content_sha256": "811d1e85937146b20b71054203859f34628e23c2c0faf826f7f9adb8ea0b8caa",
       "continuable_work": [
-        "Independent specification and review work whose files and dependency cone do not intersect S09-r3-N1."
+        "Independent specification and review work outside the affected cone may continue."
       ],
       "decision_authority": {
         "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
@@ -151,16 +172,50 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "CURRENT_USER"
         ]
       },
-      "security_exception_detail": null,
-      "blocking": true,
-      "state": "OPEN_BLOCKING",
-      "resolution_decision_ids": [],
-      "content_sha256": "ae9da6ee3c59b6c4d7592c6e743ef5de22b2a6eb4ed78141aee5c6f3d8f1a73f"
-    },
-    {
-      "human_review_id": "HR-0003",
       "entry_type": "DECISION",
+      "evidence": [
+        {
+          "captured_at": "2026-08-13T04:40:45Z",
+          "content_sha256": "22c0c777ab8fa7f6ebdb311bd8cfc04d2f45af692cf7990b8be81bb71ccb2c6e",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0003-S10",
+          "path": "docs/specs/equity-os-s10-source-of-truth-evidence-retention.md",
+          "scope": "VERIFIED FACT: exact current S10 bytes containing the upheld incomplete approval-import and correction-ancestry contracts.",
+          "start_line": null
+        },
+        {
+          "captured_at": "2026-08-13T04:40:45Z",
+          "content_sha256": "a0623b845aca13408a1e21f82c59720784e76eff2518e5f3e2adf758b31bead9",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0003-R4",
+          "path": "docs/goals/reviews/specs/equity-os-s10-s12-r4.md",
+          "scope": "VERIFIED FACT: r4 retains load-bearing Important R3-F-01 and forbids an ordinary r5.",
+          "start_line": null
+        },
+        {
+          "captured_at": "2026-08-13T04:40:45Z",
+          "content_sha256": "49c78b451ef307de08ebffcc4d8cebbe8271c6b0567a780973322eeab83f6420",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0003-ADJUDICATION",
+          "path": "docs/goals/reviews/specs/equity-os-s10-s12-adjudication.md",
+          "scope": "VERIFIED FACT: fresh adjudication upholds R3-F-01, fixes the exact cone, and states the narrow nonbinding remediation and rank-1 authority boundary.",
+          "start_line": null
+        }
+      ],
+      "human_review_id": "HR-0003",
+      "question": "Does the current user authorize a targeted post-cap S10 amendment limited to the complete approval-import and correction-ancestry remediation adjudicated for R3-F-01, plus a separate fresh Sol xhigh exact-byte amendment review, outside the prohibited ordinary r5 path?",
+      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding amendment should import the complete governing approval requirement and record projections, resolve and validate canonical human resolutions with one-to-one uniqueness, enforce the full same-scope acyclic unforked MetricObservation correction chain to its unique current leaf, and add the adjudicated digest-valid negative fixtures.",
+      "research_date": "2026-08-13",
+      "resolution_decision_ids": [],
+      "safe_default": "Do not amend S10 and do not run a fresh amendment review; keep S10, eqos-0xb.10, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the affected cone continues.",
       "scope": {
+        "bead_ids": [
+          "eqos-0xb.10"
+        ],
+        "blocked_component_ids": [],
         "component_ids": [
           "DEF-13",
           "DISP-R-5",
@@ -173,53 +228,17 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "SCALE-SQLITE-04"
         ],
         "register_ids": [],
-        "spec_ids": [],
-        "bead_ids": [
-          "eqos-0xb.10"
-        ],
-        "blocked_component_ids": [],
-        "scope_text": "R3-F-01 on S10 direct components REG-B-03, REG-C-11, DEF-13, SCALE-SQLITE-01, SCALE-SQLITE-02, SCALE-SQLITE-03, SCALE-SQLITE-04, DISP-T-3, DISP-R-5; active blocked register cone B-02, B-03, B-10, C-09, C-10, C-11, C-15, C-16, D-01; conditional or dormant descendants D-02, D-03, D-05, E-05, E-10; Bead eqos-0xb.10 is blocked; all product implementation is blocked; independent specification and review work outside the affected cone may continue."
+        "scope_text": "R3-F-01 on S10 direct components REG-B-03, REG-C-11, DEF-13, SCALE-SQLITE-01, SCALE-SQLITE-02, SCALE-SQLITE-03, SCALE-SQLITE-04, DISP-T-3, DISP-R-5; active blocked register cone B-02, B-03, B-10, C-09, C-10, C-11, C-15, C-16, D-01; conditional or dormant descendants D-02, D-03, D-05, E-05, E-10; Bead eqos-0xb.10 is blocked; all product implementation is blocked; independent specification and review work outside the affected cone may continue.",
+        "spec_ids": []
       },
-      "question": "Does the current user authorize a targeted post-cap S10 amendment limited to the complete approval-import and correction-ancestry remediation adjudicated for R3-F-01, plus a separate fresh Sol xhigh exact-byte amendment review, outside the prohibited ordinary r5 path?",
-      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap S10 amendment or separate fresh amendment-review exception; only explicit rank-1 current-user authority can authorize that mechanism.",
-      "recommendation": "Authorize only the narrow post-cap mechanism. The nonbinding amendment should import the complete governing approval requirement and record projections, resolve and validate canonical human resolutions with one-to-one uniqueness, enforce the full same-scope acyclic unforked MetricObservation correction chain to its unique current leaf, and add the adjudicated digest-valid negative fixtures.",
-      "safe_default": "Do not amend S10 and do not run a fresh amendment review; keep S10, eqos-0xb.10, the exact register dependency cone, and all product implementation blocked while independent specification and review work outside the affected cone continues.",
-      "evidence": [
-        {
-          "evidence_ref_id": "HR-EV-0003-S10",
-          "path": "docs/specs/equity-os-s10-source-of-truth-evidence-retention.md",
-          "scope": "VERIFIED FACT: exact current S10 bytes containing the upheld incomplete approval-import and correction-ancestry contracts.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "22c0c777ab8fa7f6ebdb311bd8cfc04d2f45af692cf7990b8be81bb71ccb2c6e",
-          "captured_at": "2026-08-13T04:40:45Z"
-        },
-        {
-          "evidence_ref_id": "HR-EV-0003-R4",
-          "path": "docs/goals/reviews/specs/equity-os-s10-s12-r4.md",
-          "scope": "VERIFIED FACT: r4 retains load-bearing Important R3-F-01 and forbids an ordinary r5.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "a0623b845aca13408a1e21f82c59720784e76eff2518e5f3e2adf758b31bead9",
-          "captured_at": "2026-08-13T04:40:45Z"
-        },
-        {
-          "evidence_ref_id": "HR-EV-0003-ADJUDICATION",
-          "path": "docs/goals/reviews/specs/equity-os-s10-s12-adjudication.md",
-          "scope": "VERIFIED FACT: fresh adjudication upholds R3-F-01, fixes the exact cone, and states the narrow nonbinding remediation and rank-1 authority boundary.",
-          "digest_mode": "FILE_BYTES",
-          "start_line": null,
-          "end_line": null,
-          "content_sha256": "49c78b451ef307de08ebffcc4d8cebbe8271c6b0567a780973322eeab83f6420",
-          "captured_at": "2026-08-13T04:40:45Z"
-        }
-      ],
-      "research_date": "2026-08-13",
-      "continuable_work": [
-        "Independent specification and review work outside the affected cone may continue."
-      ],
+      "security_exception_detail": null,
+      "state": "OPEN_BLOCKING",
+      "why_human_external": "The active goal caps ordinary review at r4 and grants no agent authority to create a post-cap S10 amendment or separate fresh amendment-review exception; only explicit rank-1 current-user authority can authorize that mechanism."
+    },
+    {
+      "blocking": true,
+      "content_sha256": "2da2173ed4fb37e4cf8e5a781c3337a7d1f55336dc8e2c6eefa3a6f335a43a98",
+      "continuable_work": [],
       "decision_authority": {
         "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
         "authority": "Explicit rank-1 current-user authority over the active goal process",
@@ -227,14 +246,369 @@ The JSON payload is authoritative; no prose outside it grants authority.
           "CURRENT_USER"
         ]
       },
+      "entry_type": "DECISION",
+      "evidence": [
+        {
+          "captured_at": "2026-08-15T07:13:28Z",
+          "content_sha256": "1647f803ac50eb03ab9d702822cc724c16b26e31f75d444ead8e0cee36d4df30",
+          "digest_mode": "UTF8_LINE_SPAN",
+          "end_line": 5847,
+          "evidence_ref_id": "HR-EV-0004-APPROVAL-RECORD",
+          "path": "docs/goals/equity-os-blueprint-completion.md",
+          "scope": "Post-transaction goal span recording the exact completed decision question bytes, the exact user response bytes, the runtime UTC timestamp, the conversation/goal-tool identifier, and every bound r7, review, pre-state, and scope digest",
+          "start_line": 5791
+        }
+      ],
+      "human_review_id": "HR-0004",
+      "question": "Do you approve one RECONCILE_AUTHORITY transaction over the exact 144-ID structured scope recorded here, bound to the independently reviewed r7 remediation design and its predetermined clean independent review, that amends the active goal contract and its three embedded validator surfaces plus the extractor interface, repairs the canonical ledger to 213 rows (169 canonical and 44 aliases) with current-digest repair for every freshly enumerated stale declared evidence object, resets REQ-DISP-R-1-NO-IMPLEMENTATION to UNRESOLVED with empty evidence refs while treating its unchanged rejection-record refs as historical rather than current proof, and records and resolves HR-0004 over that exact scope?",
+      "recommendation": "Approve only the exact hash-bound package: the reviewed r7 design, its predetermined clean independent review, the five immutable pre-state hashes, and the exact 144-ID scope digest bf6fee00d0f4510316b42b50ec13f74148df9ed44e472f2ad8be114ee3add894.",
+      "resolution_decision_ids": [
+        "HRD-0004-001"
+      ],
+      "safe_default": "Do not create HR-0004 and leave every canonical byte unchanged; product implementation stays blocked.",
+      "scope": {
+        "bead_ids": [],
+        "blocked_component_ids": [],
+        "component_ids": [
+          "ALIAS-001",
+          "ALIAS-011",
+          "ALIAS-012",
+          "ALIAS-013",
+          "ALIAS-014",
+          "ALIAS-015",
+          "ALIAS-023",
+          "ALIAS-041",
+          "ALIAS-043",
+          "ALIAS-044",
+          "AUTH-REG-002",
+          "AUTH-REG-003",
+          "DEF-01",
+          "DEF-02",
+          "DEF-03",
+          "DEF-04",
+          "DEF-05",
+          "DEF-06",
+          "DEF-07",
+          "DEF-08",
+          "DEF-09",
+          "DEF-10",
+          "DEF-11",
+          "DEF-12",
+          "DEF-13",
+          "DISP-6-1",
+          "DISP-6-2",
+          "DISP-6-3",
+          "DISP-6-4",
+          "DISP-6-5",
+          "DISP-6-6",
+          "DISP-6-7",
+          "DISP-6-8",
+          "DISP-6-9",
+          "DISP-G-1",
+          "DISP-G-2",
+          "DISP-G-3",
+          "DISP-G-4",
+          "DISP-G-5",
+          "DISP-M-1",
+          "DISP-M-2",
+          "DISP-M-3",
+          "DISP-M-4",
+          "DISP-M-5",
+          "DISP-M-6",
+          "DISP-M-7",
+          "DISP-M-8",
+          "DISP-M-9",
+          "DISP-R-1",
+          "DISP-R-2",
+          "DISP-R-3",
+          "DISP-R-4",
+          "DISP-R-5",
+          "DISP-T-1",
+          "DISP-T-2",
+          "DISP-T-3",
+          "DISP-T-4",
+          "PG-05-01",
+          "PG-05-02",
+          "PG-05-05",
+          "PG-05-08",
+          "PG-1-04",
+          "PG-1-05",
+          "PG-1-06",
+          "PG-1-09",
+          "PG-1-11",
+          "PG-2-01",
+          "PG-2-02",
+          "PG-2-03",
+          "PG-2-04",
+          "PG-2-05",
+          "PG-2-06",
+          "REG-A-01",
+          "REG-A-02",
+          "REG-A-03",
+          "REG-A-04",
+          "REG-A-05",
+          "REG-A-06",
+          "REG-A-07",
+          "REG-A-08",
+          "REG-A-09",
+          "REG-A-10",
+          "REG-A-11",
+          "REG-B-01",
+          "REG-B-02",
+          "REG-B-03",
+          "REG-B-04",
+          "REG-B-05",
+          "REG-B-07",
+          "REG-B-08",
+          "REG-B-09",
+          "REG-B-10",
+          "REG-B-11",
+          "REG-B-13",
+          "REG-B-14",
+          "REG-C-01",
+          "REG-C-02",
+          "REG-C-03",
+          "REG-C-05",
+          "REG-C-06",
+          "REG-C-07",
+          "REG-C-08",
+          "REG-C-10",
+          "REG-C-11",
+          "REG-C-12",
+          "REG-C-13",
+          "REG-C-14",
+          "REG-C-15",
+          "REG-C-16",
+          "REG-C-17",
+          "REG-C-18",
+          "REG-D-01",
+          "REG-D-02",
+          "REG-D-04",
+          "REG-D-05",
+          "REG-E-01",
+          "REG-E-02",
+          "REG-E-03",
+          "REG-E-04",
+          "REG-E-05",
+          "REG-E-06",
+          "REG-E-07",
+          "REG-E-08",
+          "REG-E-09",
+          "REG-E-10",
+          "SCALE-SQLITE-01",
+          "SCALE-SQLITE-02",
+          "SCALE-SQLITE-03",
+          "SCALE-SQLITE-04",
+          "SCALE-WORKFLOW-01",
+          "SCALE-WORKFLOW-02",
+          "SCALE-WORKFLOW-03",
+          "SCALE-WORKFLOW-04",
+          "SEQ-01",
+          "SEQ-02",
+          "SEQ-03",
+          "SEQ-04",
+          "SEQ-05",
+          "SEQ-06",
+          "SEQ-07",
+          "SEQ-08",
+          "SEQ-09",
+          "SEQ-10",
+          "SEQ-11"
+        ],
+        "register_ids": [],
+        "scope_text": "Exact 144-ID goal, schema, validator, evidence-maintenance, and append-only ledger-reconciliation scope: 141 pre-state component IDs plus the three new IDs AUTH-REG-002, AUTH-REG-003, and ALIAS-044. The decision changes no pinned blueprint authority bytes and no register Status cell, activates no Deferred component, advances no delivery or gate state, preserves all 454 pre-state transition objects as exact prefixes, and preserves HR-0001, HR-0002, and HR-0003 open, blocking, and unresolved.",
+        "spec_ids": []
+      },
       "security_exception_detail": null,
-      "blocking": true,
-      "state": "OPEN_BLOCKING",
-      "resolution_decision_ids": [],
-      "content_sha256": "811d1e85937146b20b71054203859f34628e23c2c0faf826f7f9adb8ea0b8caa"
+      "state": "RESOLVED",
+      "why_human_external": "Reconciling recorded authority, schema, and evidence state across the canonical goal, validators, ledger, and human-review artifact is a rank-1 process decision. No agent, reviewer, generator, migrator, or validator may grant it, and no delegated artifact approval covers it."
     }
   ],
-  "resolutions": [],
+  "resolutions": [
+    {
+      "actor": {
+        "actor_type": "HUMAN",
+        "display_name": "Current authenticated chat user",
+        "identity_id": "mvpavan42@gmail.com",
+        "role": "CURRENT_USER"
+      },
+      "authority_basis": {
+        "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
+        "authority": "Explicit rank-1 current-user authority over the active goal process",
+        "evidence_ids": [
+          "HR-EV-0004-APPROVAL-RECORD"
+        ],
+        "role": "CURRENT_USER"
+      },
+      "content_sha256": "f263f2dabc91ad1186a813564c485b2edec5c83720624c2e7a49e6d43d3f9dc7",
+      "decision_id": "HRD-0004-001",
+      "decision_type": "RECONCILE_AUTHORITY",
+      "entry_authority_sha256": "59d50e58dae5270d2e375c693c6c10352251a0a87574d22e060a4019de50521d",
+      "evidence": [],
+      "human_review_id": "HR-0004",
+      "previous_resolution_sha256": null,
+      "record_type": "DECISION",
+      "revokes_decision_id": null,
+      "scope": {
+        "bead_ids": [],
+        "blocked_component_ids": [],
+        "component_ids": [
+          "ALIAS-001",
+          "ALIAS-011",
+          "ALIAS-012",
+          "ALIAS-013",
+          "ALIAS-014",
+          "ALIAS-015",
+          "ALIAS-023",
+          "ALIAS-041",
+          "ALIAS-043",
+          "ALIAS-044",
+          "AUTH-REG-002",
+          "AUTH-REG-003",
+          "DEF-01",
+          "DEF-02",
+          "DEF-03",
+          "DEF-04",
+          "DEF-05",
+          "DEF-06",
+          "DEF-07",
+          "DEF-08",
+          "DEF-09",
+          "DEF-10",
+          "DEF-11",
+          "DEF-12",
+          "DEF-13",
+          "DISP-6-1",
+          "DISP-6-2",
+          "DISP-6-3",
+          "DISP-6-4",
+          "DISP-6-5",
+          "DISP-6-6",
+          "DISP-6-7",
+          "DISP-6-8",
+          "DISP-6-9",
+          "DISP-G-1",
+          "DISP-G-2",
+          "DISP-G-3",
+          "DISP-G-4",
+          "DISP-G-5",
+          "DISP-M-1",
+          "DISP-M-2",
+          "DISP-M-3",
+          "DISP-M-4",
+          "DISP-M-5",
+          "DISP-M-6",
+          "DISP-M-7",
+          "DISP-M-8",
+          "DISP-M-9",
+          "DISP-R-1",
+          "DISP-R-2",
+          "DISP-R-3",
+          "DISP-R-4",
+          "DISP-R-5",
+          "DISP-T-1",
+          "DISP-T-2",
+          "DISP-T-3",
+          "DISP-T-4",
+          "PG-05-01",
+          "PG-05-02",
+          "PG-05-05",
+          "PG-05-08",
+          "PG-1-04",
+          "PG-1-05",
+          "PG-1-06",
+          "PG-1-09",
+          "PG-1-11",
+          "PG-2-01",
+          "PG-2-02",
+          "PG-2-03",
+          "PG-2-04",
+          "PG-2-05",
+          "PG-2-06",
+          "REG-A-01",
+          "REG-A-02",
+          "REG-A-03",
+          "REG-A-04",
+          "REG-A-05",
+          "REG-A-06",
+          "REG-A-07",
+          "REG-A-08",
+          "REG-A-09",
+          "REG-A-10",
+          "REG-A-11",
+          "REG-B-01",
+          "REG-B-02",
+          "REG-B-03",
+          "REG-B-04",
+          "REG-B-05",
+          "REG-B-07",
+          "REG-B-08",
+          "REG-B-09",
+          "REG-B-10",
+          "REG-B-11",
+          "REG-B-13",
+          "REG-B-14",
+          "REG-C-01",
+          "REG-C-02",
+          "REG-C-03",
+          "REG-C-05",
+          "REG-C-06",
+          "REG-C-07",
+          "REG-C-08",
+          "REG-C-10",
+          "REG-C-11",
+          "REG-C-12",
+          "REG-C-13",
+          "REG-C-14",
+          "REG-C-15",
+          "REG-C-16",
+          "REG-C-17",
+          "REG-C-18",
+          "REG-D-01",
+          "REG-D-02",
+          "REG-D-04",
+          "REG-D-05",
+          "REG-E-01",
+          "REG-E-02",
+          "REG-E-03",
+          "REG-E-04",
+          "REG-E-05",
+          "REG-E-06",
+          "REG-E-07",
+          "REG-E-08",
+          "REG-E-09",
+          "REG-E-10",
+          "SCALE-SQLITE-01",
+          "SCALE-SQLITE-02",
+          "SCALE-SQLITE-03",
+          "SCALE-SQLITE-04",
+          "SCALE-WORKFLOW-01",
+          "SCALE-WORKFLOW-02",
+          "SCALE-WORKFLOW-03",
+          "SCALE-WORKFLOW-04",
+          "SEQ-01",
+          "SEQ-02",
+          "SEQ-03",
+          "SEQ-04",
+          "SEQ-05",
+          "SEQ-06",
+          "SEQ-07",
+          "SEQ-08",
+          "SEQ-09",
+          "SEQ-10",
+          "SEQ-11"
+        ],
+        "register_ids": [],
+        "scope_text": "Exact 144-ID goal, schema, validator, evidence-maintenance, and append-only ledger-reconciliation scope: 141 pre-state component IDs plus the three new IDs AUTH-REG-002, AUTH-REG-003, and ALIAS-044. The decision changes no pinned blueprint authority bytes and no register Status cell, activates no Deferred component, advances no delivery or gate state, preserves all 454 pre-state transition objects as exact prefixes, and preserves HR-0001, HR-0002, and HR-0003 open, blocking, and unresolved.",
+        "spec_ids": []
+      },
+      "sequence": 0,
+      "supersedes_decision_id": null,
+      "timestamp": "2026-08-15T07:13:28Z"
+    }
+  ],
   "schema_version": 1
 }
+```
+
 <!-- END CANONICAL HUMAN REVIEW JSON -->
