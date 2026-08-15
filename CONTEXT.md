@@ -123,3 +123,25 @@ _Avoid_: ticket, todo
 **Ready-for-agent**:
 Specified enough for autonomous execution — the intake gate in `.beads/beads.md`. Distinct from `bd ready` (merely unblocked).
 _Avoid_: ready (unqualified)
+
+### Agent roles (harness-wide)
+
+**Orchestrator**:
+The main session model. Owns scope classification, planning, context curation, dispatch, review routing, approval handling, and final synthesis. Never implements and reviews the same artifact itself.
+_Avoid_: coordinator (in role-binding contexts), named model lanes
+
+**Implementer**:
+An independent subagent that writes or edits artifacts (code, docs, migrations) inside a bounded scope handed to it by the orchestrator.
+_Avoid_: worker (in role-binding contexts), named model lanes
+
+**Reviewer**:
+An independent subagent that reviews an implementer's output. Always a separate agent and context from the implementer of the same artifact — never the same agent on both sides.
+_Avoid_: named model lanes
+
+Docs, goals, prompts, rules, and beads must reference these role names, never hard-coded model or vendor names. The current model bindings live only in the table below; when they change, change them here and nowhere else.
+
+| Role | Current binding |
+|---|---|
+| Orchestrator | Claude Fable, session default effort |
+| Implementer | Claude Opus 5, medium effort |
+| Reviewer | Claude Opus 5, high effort |
