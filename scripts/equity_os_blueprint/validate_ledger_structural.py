@@ -2671,19 +2671,19 @@ for row in register_rows:
 NO_IMPLEMENTATION_REQUIREMENT_MAP = {
     "DISP-R-1": ["REQ-DISP-R-1-NO-IMPLEMENTATION"],
 }
-EXPECTED_DISP_R1_REQUIREMENT = {
+# Immutable identity of the mapped DISP-R-1 proof requirement (A12).
+EXPECTED_DISP_R1_REQUIREMENT_IDENTITY = {
     "approval_ids": [],
     "description": (
         "Current S20 draft preserves D-02 as dormant and contains no "
         "implementation claim"
     ),
     "evidence_id": "REQ-DISP-R-1-NO-IMPLEMENTATION",
-    "evidence_ref_ids": [],
     "evidence_type": "ARTIFACT",
     "proof_mode": "CONTENT_HASH",
     "scope": "R-1 current no-implementation proof",
-    "status": "UNRESOLVED",
 }
+DISP_R1_MUTABLE_FIELDS = {"status", "evidence_ref_ids"}  # move only together
 
 def current_no_implementation_proof(row):
     """r7 §3.2 closed predicate. False is a valid structural state."""
@@ -2753,19 +2753,19 @@ disp_r1 = by_id["DISP-R-1"]
 assert disp_r1["rejection_record"]["no_implementation_evidence_ref_ids"] == [
     "EV-DISP-R-1-SPEC-DRAFT"
 ]
-assert EXPECTED_DISP_R1_REQUIREMENT in disp_r1["required_evidence"]
+# A12 closed two-state rule. r7 §3.6/§8.1 kept this post-state explicitly
+# unproven with reason codes a digest refresh can never remove; that stays the
+# only alternative to a fully evidenced current proof, and no third state exists.
+disp_r1_requirement = next(item for item in disp_r1["required_evidence"] if item["evidence_id"] == "REQ-DISP-R-1-NO-IMPLEMENTATION")
+assert {key: value for key, value in disp_r1_requirement.items() if key not in DISP_R1_MUTABLE_FIELDS} == EXPECTED_DISP_R1_REQUIREMENT_IDENTITY
 disp_r1_proven, disp_r1_reasons = current_no_implementation_proof(disp_r1)
-# r7 §3.6 requires this post-state to be explicitly unproven, and r7 §8.1 fixes
-# the two reason codes that a digest refresh alone can never remove.
-assert disp_r1_proven is False
-assert {
-    "REQUIREMENT_UNRESOLVED", "CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING"
-} <= set(disp_r1_reasons)
-assert any(
-    item["component_id"] == "DISP-R-1"
-    and item["requirement_id"] == "REQ-DISP-R-1-NO-IMPLEMENTATION"
-    for item in unmet_no_implementation_proof
-)
+disp_r1_unmet = [item for item in unmet_no_implementation_proof if item["component_id"] == "DISP-R-1"]
+if disp_r1_requirement["status"] == "UNRESOLVED":
+    assert disp_r1_proven is False and {"REQUIREMENT_UNRESOLVED", "CURRENT_REVIEWER_ROLE_EVIDENCE_REVIEW_MISSING"} <= set(disp_r1_reasons)
+    assert any(item["requirement_id"] == "REQ-DISP-R-1-NO-IMPLEMENTATION" for item in disp_r1_unmet)
+else:
+    assert disp_r1_requirement["status"] == "SATISFIED" and disp_r1_proven is True and disp_r1_reasons == [] and not disp_r1_unmet
+    assert set(disp_r1_requirement["evidence_ref_ids"]) >= set(disp_r1["rejection_record"]["no_implementation_evidence_ref_ids"])
 
 # ---------------------------------------------------------------------------
 # r7 §4 exact HR-0004 structured scope and reverse links.
@@ -2814,12 +2814,12 @@ if "HR-0004" in human_entries:
             assert human_review_links[component_id] == frozenset(
                 {entry_id, "HR-0004"}
             )
-    overlapping = {
-        component_id for component_id, links in human_review_links.items()
-        if len(links) > 1
-    }
-    assert overlapping == set().union(*EXPECTED_PRIOR_HR_LINKS.values())
-    assert len(overlapping) == 23
+    overlapping = {c for c, links in human_review_links.items() if len(links) > 1}
+    hr0005 = human_entries.get("HR-0005")  # A12: the sole admissible addition
+    amendment_overlap = {"DISP-R-1"} if hr0005 else set()
+    assert overlapping == set().union(*EXPECTED_PRIOR_HR_LINKS.values()) | amendment_overlap
+    assert len(overlapping) == 23 + len(amendment_overlap)
+    assert not hr0005 or (len(hr0005["resolution_decision_ids"]) == 1 and human_scope_components["HR-0005"] == frozenset({"DISP-R-1"}) and human_review_links["DISP-R-1"] == frozenset({"HR-0004", "HR-0005"}) and hr0005["entry_type"] == "DECISION" and hr0005["decision_authority"]["approval_type"] == "GOAL_OR_PROCESS_AUTHORIZATION" and [r["decision_id"] for r in human_resolutions.values() if r["human_review_id"] == "HR-0005"] == [r["decision_id"] for r in active_human_resolutions.values() if r["human_review_id"] == "HR-0005" and r["decision_type"] == "RECONCILE_AUTHORITY" and r["actor"]["actor_type"] == "HUMAN" and r["actor"]["role"] == "CURRENT_USER" and r["authority_basis"]["approval_type"] == "GOAL_OR_PROCESS_AUTHORIZATION"])
     for entry_id in ("HR-0001", "HR-0002", "HR-0003"):
         assert human_entries[entry_id]["state"] == "OPEN_BLOCKING"
         assert human_entries[entry_id]["resolution_decision_ids"] == []
