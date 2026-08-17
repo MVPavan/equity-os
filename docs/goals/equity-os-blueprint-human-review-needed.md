@@ -422,6 +422,61 @@ The JSON payload is authoritative; no prose outside it grants authority.
       "security_exception_detail": null,
       "state": "RESOLVED",
       "why_human_external": "Reconciling recorded authority, schema, and evidence state across the canonical goal, validators, ledger, and human-review artifact is a rank-1 process decision. No agent, reviewer, generator, migrator, or validator may grant it, and no delegated artifact approval covers it."
+    },
+    {
+      "blocking": true,
+      "content_sha256": "c29ee42e11491bf95ff9c3ce83906485590d42ed1daafabf1f0491e6276cc1fb",
+      "continuable_work": [],
+      "decision_authority": {
+        "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
+        "authority": "Explicit rank-1 current-user authority over the active goal process",
+        "competent_roles": [
+          "CURRENT_USER"
+        ]
+      },
+      "entry_type": "DECISION",
+      "evidence": [
+        {
+          "captured_at": "2026-08-17T14:55:44Z",
+          "content_sha256": "4755b62b8367b1dfa1ce6da5f40d79a069e7f2f43814b8a32fc82ad4b0a473dc",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0005-DESIGN",
+          "path": "docs/goals/reviews/ledger/equity-os-blueprint-disp-r1-amendment-design-r3.md",
+          "scope": "Independently reviewed DISP-R-1 amendment design r3 bytes",
+          "start_line": null
+        },
+        {
+          "captured_at": "2026-08-17T14:55:44Z",
+          "content_sha256": "6aaafbc0562ef390cc680f740fa7e2ff03d01bed31e40c6b9e0e3fe6d30a8e1f",
+          "digest_mode": "FILE_BYTES",
+          "end_line": null,
+          "evidence_ref_id": "HR-EV-0005-REVIEW",
+          "path": "docs/goals/reviews/ledger/equity-os-blueprint-disp-r1-amendment-design-r3-review-r0.md",
+          "scope": "Predetermined independent REVIEWER-role review of the r3 design",
+          "start_line": null
+        }
+      ],
+      "human_review_id": "HR-0005",
+      "question": "Do you approve one `RECONCILE_AUTHORITY` goal-contract amendment transaction, recorded as human-review entry `HR-0005` with resolution `HRD-0005-001`, bound to independently reviewed `docs/goals/reviews/ledger/equity-os-blueprint-disp-r1-amendment-design-r3.md` SHA-256 `4755b62b8367b1dfa1ce6da5f40d79a069e7f2f43814b8a32fc82ad4b0a473dc` and predetermined independent review `docs/goals/reviews/ledger/equity-os-blueprint-disp-r1-amendment-design-r3-review-r0.md` SHA-256 `6aaafbc0562ef390cc680f740fa7e2ff03d01bed31e40c6b9e0e3fe6d30a8e1f`, whose explicit verdict is `CLEAN`, whose explicit reviewed-input SHA-256 is `4755b62b8367b1dfa1ce6da5f40d79a069e7f2f43814b8a32fc82ad4b0a473dc` equal to that design SHA-256, and whose reviewer role is `REVIEWER` under the `CONTEXT.md` \"Agent roles\" binding with its actual invoked model and effort recorded in the review; active-goal pre-state SHA-256 `f15f7ab5a4e425dec3877ab7f1f7594687979060e4dbcd49390a8a8d5fedb85f`, structural-validator pre-state SHA-256 `731d0d8b208b577967c92e3992e7ec1a4333cdecbf89f6951c32d2ec469436f9`, ledger pre-state SHA-256 `de236d7e8dcf02e307ec58797f5722ae2f85d1d8cdba57d4ecc07df5383c9c97`, human-review pre-state SHA-256 `094fcdfab74a3f4c6fdb82b1520fc4d13b636ac0e9ed10194e5d607aed2ce9af`, preimplementation-validator pre-state SHA-256 `f7a225a1f99cb85c92cde3094505a92a746552280eb45dae0253a71ab9048013`, extractor pre-state SHA-256 `5d20d796666d1154fb3c84ba4fa7407ee82819510a5ac06254f7f4a3126c6f2a`, and role-binding `CONTEXT.md` SHA-256 `8f2795af93ba6bf5303cf13227b8ce9e96295269887673a3a8b97d920b3198ce`, authorizing only one atomic change to exactly four files — the active goal to post-state SHA-256 `b77ea73d90fb6f7499a7fcf74f50c471bb03dd5a6f1bf0c71f510af917d0b0c9`, its extracted `scripts/equity_os_blueprint/validate_ledger_structural.py` to post-state SHA-256 `77faeaf3dee13d5d2bfb50c255b054cde94ef0118751b247e23248e343964fff`, `docs/goals/equity-os-blueprint-human-review-needed.md` to rehearsal-journaled post-state SHA-256 `<HUMAN_REVIEW_POST_SHA256>`, and `docs/goals/equity-os-blueprint-component-ledger.jsonl` to rehearsal-journaled post-state SHA-256 `<LEDGER_POST_SHA256>` — that replaces the permanently pinned `EXPECTED_DISP_R1_REQUIREMENT` whole-object literal and its unconditional `assert disp_r1_proven is False` with a pinned requirement-identity object plus a closed two-state rule under which `REQ-DISP-R-1-NO-IMPLEMENTATION` is either `UNRESOLVED` with the existing false-proof reason codes exactly as today, or `SATISFIED` only when its evidence refs cover every historical rejection-record ref and the closed current no-implementation-proof predicate is independently true with no reason codes; relaxes the pinned 23-row `overlapping` human-review-link assertion by exactly one admissible member, `DISP-R-1`, and only while a conforming `HR-0005` exists that projects no other component, links `DISP-R-1` only alongside `HR-0004`, and carries exactly one active `RECONCILE_AUTHORITY` resolution by a human actor under `GOAL_OR_PROCESS_AUTHORIZATION`, leaving the assertion byte-equivalent to today whenever `HR-0005` is absent; keeps the requirement's `description`, `scope`, `evidence_id`, `evidence_type`, `proof_mode`, and `approval_ids` pinned byte-for-byte so no weakened wording can be substituted; preserves the rule that a digest refresh alone, the historical `rejection_record` refs alone, or any state lacking a current content-bound `COMPLETE`/`CLEAN` `REVIEWER`-role evidence review can never establish proof; preserves the line count and numbering of goal lines 1-5847 so that the `HR-0004` approval-record evidence span `5791-5847` keeps digest `1647f803ac50eb03ab9d702822cc724c16b26e31f75d444ead8e0cee36d4df30`, appending all new goal prose below line 5847; changes exactly one ledger row, `DISP-R-1`, and on it exactly three fields — `human_review_id` from `\"HR-0004\"` to `[\"HR-0004\",\"HR-0005\"]`, one appended `AUTHORITY_RECONCILIATION` transition object `TR-DISP-R-1-004` at sequence 4, and the recomputed `transition_history_sha256` — leaving the other 212 rows, every requirement status, every approval record, and all 447 `PENDING` inventory reviews byte-unchanged; records no S20 evidence, performs no S20 review, and satisfies no requirement, leaving `REQ-DISP-R-1-NO-IMPLEMENTATION` `UNRESOLVED` with empty evidence refs and the preimplementation gate `ready=false` with all 447 pending reviews, 0 stale reviews, and the identical `DISP-R-1` blocker with its three unchanged reason codes; changes no preimplementation-validator byte, no extractor byte, no `CONTEXT.md` byte, no spec, and no blueprint byte; preserves the pinned 454-entry baseline transition **prefix** manifest unchanged while the live transition-object count grows from 648 to 649 by that single append; creates no Beads or Git mutation; and aborts without canonical change on any design hash, review path/hash/verdict/reviewed-input/role binding, pre-state hash, goal line-span digest, rehearsal, extraction, validation, postcondition, or replacement failure?",
+      "recommendation": "Approve only the exact hash-bound four-file package.",
+      "resolution_decision_ids": [
+        "HRD-0005-001"
+      ],
+      "safe_default": "Change no canonical byte.",
+      "scope": {
+        "bead_ids": [],
+        "blocked_component_ids": [],
+        "component_ids": [
+          "DISP-R-1"
+        ],
+        "register_ids": [],
+        "scope_text": "DISP-R-1 closed two-state no-implementation proof rule: amendment of the active goal contract and its extracted structural validator, plus the HR-0005 human-review link on DISP-R-1.",
+        "spec_ids": []
+      },
+      "security_exception_detail": null,
+      "state": "RESOLVED",
+      "why_human_external": "Amending the active goal contract and its extracted structural validator is a rank-1 process decision no agent may grant."
     }
   ],
   "resolutions": [
@@ -605,6 +660,45 @@ The JSON payload is authoritative; no prose outside it grants authority.
       "sequence": 0,
       "supersedes_decision_id": null,
       "timestamp": "2026-08-15T07:13:28Z"
+    },
+    {
+      "actor": {
+        "actor_type": "HUMAN",
+        "display_name": "Current authenticated chat user",
+        "identity_id": "mvpavan42@gmail.com",
+        "role": "CURRENT_USER"
+      },
+      "authority_basis": {
+        "approval_type": "GOAL_OR_PROCESS_AUTHORIZATION",
+        "authority": "Explicit rank-1 current-user authority over the active goal process",
+        "evidence_ids": [
+          "HR-EV-0005-DESIGN",
+          "HR-EV-0005-REVIEW"
+        ],
+        "role": "CURRENT_USER"
+      },
+      "content_sha256": "a1d2766b9e3ab35f57988edf51cdcde6d638bb887e73d302a8a1a958e2eaa569",
+      "decision_id": "HRD-0005-001",
+      "decision_type": "RECONCILE_AUTHORITY",
+      "entry_authority_sha256": "a9f4f1172e25f53e1140c5652a23a3e8a735056394a3781b92c6a85db9855e0e",
+      "evidence": [],
+      "human_review_id": "HR-0005",
+      "previous_resolution_sha256": "f263f2dabc91ad1186a813564c485b2edec5c83720624c2e7a49e6d43d3f9dc7",
+      "record_type": "DECISION",
+      "revokes_decision_id": null,
+      "scope": {
+        "bead_ids": [],
+        "blocked_component_ids": [],
+        "component_ids": [
+          "DISP-R-1"
+        ],
+        "register_ids": [],
+        "scope_text": "DISP-R-1 closed two-state no-implementation proof rule: amendment of the active goal contract and its extracted structural validator, plus the HR-0005 human-review link on DISP-R-1.",
+        "spec_ids": []
+      },
+      "sequence": 1,
+      "supersedes_decision_id": null,
+      "timestamp": "2026-08-17T15:01:42Z"
     }
   ],
   "schema_version": 1
