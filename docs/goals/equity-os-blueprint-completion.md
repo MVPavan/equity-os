@@ -16,6 +16,20 @@ The authority hierarchy is:
 
 All product scope governed by v2 remains intact, including the first-release work and later conditional capabilities. No Deferred or Rejected item is active merely because another dependency is satisfied: it requires v2 and every required human authority to activate it explicitly. This contract neither changes provider, tool, runtime, nor model bindings.
 
+## Standing unattended-execution contract
+
+On 2026-08-19, the current user approved the [Phase 0A evidence program plan](../plans/2026-08-19-phase-0a-evidence-program.md), SHA-256 `530f6a20c2e6252706fc478f4fd49a7ad998ae8ee17f05a20dce6a66d044fc6d`, tracked by epic `eqos-3ps`.
+
+Until this goal completes, that approval authorizes execution of the approved goal and plan without routine or intermediate permission prompts, including repository-scoped reads, writes, edits, and deletes; Beads updates and Beads/Dolt synchronization via `bd dolt push`; required reviews and validation; Docker work; public web research; and explicit-path Git commits and pushes. Continue through tasks, stages, and phases, making bounded plan-aligned corrections without re-asking; the repository remains the mutation boundary except for Docker work and public web research. This authority remains in force through final issue and epic closure, Beads synchronization, Git push, and final status verification; goal completion occurs only after those closeout actions, so the authority cannot expire before them.
+
+The main session is the Orchestrator. Use Codex CLI only: substantive planning, brainstorming, and review use `gpt-5.6-sol` at `high`; implementation uses `gpt-5.6-terra` at `high`; small nontrivial review may use `gpt-5.6-terra` at `xhigh`; trivial work receives self-check only; and `gpt-5.6-luna` at `high` or `xhigh` is reserved solely for external non-code web research and public-equity document reading, never repository, code, or technical exploration. Agent Matrix remains disabled.
+
+Apply the [Review policy](#review-policy) and the approved plan exactly: perform only their risk-based reviews, including one integrated final review where specified, and do not create a review treadmill. Trivial work receives no independent review.
+
+This standing operational approval is not an analyst suitability attestation, source/use-rights decision, legal/trademark assessment, domain/evaluation/vocabulary acceptance, production authority, or any other competent authority kept distinct by v2. Missing external or competent authority remains `BLOCKED` or `UNKNOWN` for the affected acceptance; record that state durably and continue every independent eligible task. Never fabricate or infer such authority, and never weaken v2 or Architecture v2.
+
+If a material plan correction would change approved Architecture v2 boundaries, its trust model, its CAN/CANNOT contract, its first-release/later split, a v2 phase gate, or activate Deferred scope, this operational approval does not supply the distinct substantive authority. Preserve fail-closed behavior and record the required decision before making or activating that change.
+
 ## Current-phase index
 
 | Field | Content |
