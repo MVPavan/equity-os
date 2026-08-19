@@ -1,0 +1,633 @@
+<title>Equity-OS Architecture of Record</title>
+<style>
+:root{
+  --bg:#F6F7F4; --surface:#FFFFFF; --surface-2:#EEF1EC; --line:#D5DAD3;
+  --ink:#1A222B; --ink-2:#4A5461; --muted:#7A8390;
+  --accent:#1E6E76; --accent-soft:#DDEDEE; --accent-ink:#0F4B51;
+  --gate:#B4781E; --gate-soft:#F6EBD3; --gate-ink:#6E4708;
+  --defer:#6C7383; --defer-soft:#E7E9EE;
+  --cond:#7A5C9E; --cond-soft:#ECE6F3;
+  --no:#A23B3B; --no-soft:#F4E0E0;
+  --code-bg:#EEF1EC;
+  --shadow:0 1px 0 rgba(26,34,43,.06),0 8px 24px -16px rgba(26,34,43,.25);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1519; --surface:#161D23; --surface-2:#1C252C; --line:#2A353D;
+    --ink:#E4E8E5; --ink-2:#B7BFC4; --muted:#8792A0;
+    --accent:#5FC3CB; --accent-soft:#143137; --accent-ink:#9EDDE2;
+    --gate:#E2AA43; --gate-soft:#3A2B10; --gate-ink:#F0CB84;
+    --defer:#9AA3B2; --defer-soft:#222A33;
+    --cond:#B79AD8; --cond-soft:#2A2136;
+    --no:#E07C7C; --no-soft:#3A1E1E;
+    --code-bg:#1C252C;
+    --shadow:0 1px 0 rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1519; --surface:#161D23; --surface-2:#1C252C; --line:#2A353D;
+  --ink:#E4E8E5; --ink-2:#B7BFC4; --muted:#8792A0;
+  --accent:#5FC3CB; --accent-soft:#143137; --accent-ink:#9EDDE2;
+  --gate:#E2AA43; --gate-soft:#3A2B10; --gate-ink:#F0CB84;
+  --defer:#9AA3B2; --defer-soft:#222A33;
+  --cond:#B79AD8; --cond-soft:#2A2136;
+  --no:#E07C7C; --no-soft:#3A1E1E;
+  --code-bg:#1C252C;
+  --shadow:0 1px 0 rgba(0,0,0,.4),0 8px 24px -16px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:Charter,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  font-weight:600;letter-spacing:-.005em;text-wrap:balance;margin:0}
+h1{font-size:2.35rem;line-height:1.12}
+h2{font-size:1.6rem;line-height:1.2;margin-top:.2rem}
+h3{font-size:1.15rem;line-height:1.3}
+h4{font-size:1rem}
+p{margin:0}
+a{color:var(--accent-ink);text-decoration-color:var(--line);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--accent)}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:.86em}
+code{background:var(--code-bg);padding:.08em .35em;border-radius:3px;color:var(--ink)}
+.eyebrow{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.lede{font-size:1.12rem;color:var(--ink-2);max-width:68ch}
+.wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:0;max-width:1240px;margin:0 auto}
+nav.rail{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 18px 28px 22px;border-right:1px solid var(--line)}
+nav.rail .brand{font-family:Charter,Georgia,serif;font-weight:600;font-size:1.02rem;margin-bottom:14px}
+nav.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+nav.rail a{display:block;padding:5px 8px;border-radius:5px;color:var(--ink-2);text-decoration:none;font-size:.86rem;line-height:1.3}
+nav.rail a:hover,nav.rail a:focus-visible{background:var(--surface-2);color:var(--ink);outline:none}
+nav.rail a:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+nav.rail .sec{margin-top:10px}
+main{padding:36px 40px 96px;min-width:0}
+section{margin-top:64px;scroll-margin-top:24px}
+section:first-of-type{margin-top:0}
+.sec-head{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
+.prose{max-width:72ch;display:flex;flex-direction:column;gap:12px}
+.prose p{color:var(--ink)}
+.prose ul,.prose ol{margin:0;padding-left:1.25rem;display:flex;flex-direction:column;gap:6px}
+.status{border:1px solid var(--gate);background:var(--gate-soft);color:var(--gate-ink);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;max-width:72ch}
+.status .dot{width:10px;height:10px;border-radius:50%;background:var(--gate);margin-top:7px}
+.status strong{color:var(--gate-ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;letter-spacing:.04em;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.chip.now{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
+.chip.mixed{background:var(--accent-soft);color:var(--accent-ink);border-style:dashed;border-color:var(--accent)}
+.chip.defer{background:var(--defer-soft);color:var(--defer)}
+.chip.cond{background:var(--cond-soft);color:var(--cond)}
+.chip.gate{background:var(--gate-soft);color:var(--gate-ink)}
+.chip.no{background:var(--no-soft);color:var(--no)}
+.chip.spec{background:var(--surface-2);color:var(--ink-2);font-family:ui-monospace,Menlo,monospace;letter-spacing:0}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.82rem;color:var(--ink-2);align-items:center}
+.legend .k{display:inline-flex;align-items:center;gap:6px}
+.legend .sw{width:14px;height:14px;border-radius:3px;border:1px solid var(--line)}
+/* Layer diagram */
+.band{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px 22px 18px;box-shadow:var(--shadow);overflow-x:auto}
+.layers{display:grid;grid-template-columns:150px 1fr;gap:10px 16px;min-width:820px}
+.layers .lbl{align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:12px;border-right:2px solid var(--line)}
+.layers .lbl b{font-family:Charter,Georgia,serif;font-size:.98rem;font-weight:600}
+.layers .lbl span{font-size:.74rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.layers .row{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:10px}
+.box{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;min-height:74px;position:relative}
+.box b{font-size:.92rem;font-weight:600;line-height:1.25}
+.box small{font-size:.76rem;color:var(--ink-2);line-height:1.35}
+.box .tag{position:absolute;top:8px;right:8px;font-family:ui-monospace,Menlo,monospace;font-size:.68rem;color:var(--muted)}
+.box.store{border-left:4px solid var(--accent)}
+.box.gate{border-left:4px solid var(--gate)}
+.box.human{background:var(--gate-soft);border-color:var(--gate)}
+.box.human b{color:var(--gate-ink)}
+.box.human small{color:var(--gate-ink)}
+.box.dormant{border-style:dashed;background:transparent}
+.box.dormant b{color:var(--defer)}
+.box.dormant small{color:var(--muted)}
+.arrow-row{grid-column:1/-1;display:flex;justify-content:center;color:var(--muted);font-size:.8rem;gap:8px;align-items:center;padding:0}
+.arrow-row::before,.arrow-row::after{content:"";height:1px;flex:1;background:var(--line)}
+.arrow-row.sep::before,.arrow-row.sep::after{background:transparent;border-top:2px dashed var(--no)}
+.arrow-row.sep{color:var(--no)}
+/* Cards */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--shadow)}
+.card header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.card h4{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:650;font-size:.98rem;line-height:1.3}
+.card p{font-size:.9rem;color:var(--ink-2)}
+.card .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:.82rem}
+.card .kv dt{color:var(--muted)}
+.card .kv dd{margin:0;color:var(--ink)}
+.card blockquote{margin:0;padding:8px 10px;border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-size:.84rem;border-radius:0 6px 6px 0}
+.group{margin-top:26px;display:flex;flex-direction:column;gap:12px}
+.group>h3{display:flex;align-items:baseline;gap:10px}
+.group>h3 small{font-family:ui-sans-serif,sans-serif;font-weight:500;color:var(--muted);font-size:.82rem}
+/* Tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+th{font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--surface-2)}
+tr:last-child td{border-bottom:none}
+td.n{font-family:ui-monospace,Menlo,monospace;color:var(--muted);width:2.5rem;font-variant-numeric:tabular-nums}
+td.spec{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;color:var(--ink-2);white-space:nowrap}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.two .tbl h3{padding:12px 12px 0}
+.tbl.can th{background:var(--accent-soft);color:var(--accent-ink)}
+.tbl.cannot th{background:var(--no-soft);color:var(--no)}
+/* Mermaid */
+pre.mermaid{background:transparent;margin:0;overflow-x:auto;display:flex;justify-content:center}
+.fig{display:flex;flex-direction:column;gap:10px}
+.fig figcaption{font-size:.84rem;color:var(--ink-2);max-width:72ch}
+/* Gates list */
+.gates{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.gate-item{border:1px solid var(--gate);background:var(--gate-soft);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.gate-item b{color:var(--gate-ink)}
+.gate-item span{font-size:.85rem;color:var(--gate-ink)}
+.gate-item .who{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--gate)}
+/* Open decisions */
+.decision{border:1px solid var(--line);border-left:4px solid var(--cond);background:var(--surface);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.decision b{font-family:Charter,Georgia,serif;font-size:1.02rem}
+.decision p{font-size:.92rem;color:var(--ink-2)}
+.stack{display:flex;flex-direction:column;gap:12px;max-width:80ch}
+/* Approval box */
+.approve{border:2px solid var(--accent);border-radius:12px;padding:20px 22px;background:var(--surface);display:flex;flex-direction:column;gap:12px;max-width:80ch;box-shadow:var(--shadow)}
+.approve h3{color:var(--accent-ink)}
+.approve ol{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
+dl.gloss{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;max-width:80ch;font-size:.92rem}
+dl.gloss dt{font-weight:600;white-space:nowrap}
+dl.gloss dd{margin:0;color:var(--ink-2)}
+.foot{margin-top:70px;padding-top:18px;border-top:1px solid var(--line);font-size:.8rem;color:var(--muted);max-width:80ch;display:flex;flex-direction:column;gap:4px}
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr}
+  nav.rail{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+  nav.rail ol{flex-direction:row;flex-wrap:wrap}
+  main{padding:24px 18px 72px}
+  .two{grid-template-columns:1fr}
+  h1{font-size:1.9rem}
+}
+</style>
+
+<div class="wrap">
+<nav class="rail" aria-label="Contents">
+  <div class="brand">Equity-OS</div>
+  <ol>
+    <li><a href="#status">Read this first</a></li>
+    <li><a href="#purpose">1 · What it is</a></li>
+    <li><a href="#map">2 · System map</a></li>
+    <li><a href="#lineage">3 · Evidence lineage</a></li>
+    <li><a href="#workflow">4 · The workflow</a></li>
+    <li><a href="#humans">5 · Where humans decide</a></li>
+    <li><a href="#components">6 · Components</a></li>
+    <li><a href="#can">7 · Can / Cannot</a></li>
+    <li><a href="#release">8 · Now vs later</a></li>
+    <li><a href="#deps">9 · Outside dependencies</a></li>
+    <li><a href="#open">10 · Open decisions</a></li>
+    <li><a href="#glossary">11 · Glossary</a></li>
+    <li class="sec"><a href="#approve">Approval</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="status">
+  <div class="sec-head">
+    <span class="eyebrow">Architecture of record · for approval</span>
+    <h1>Equity-OS Architecture of Record</h1>
+    <p class="lede">The system we intend to build, drawn only from the 25 written specifications (S01–S25), the v2 decision register, and the component ledger. Every claim below traces to a spec. Nothing is invented; where the specs deliberately leave something open, this page says so.</p>
+  </div>
+  <div class="status" role="note">
+    <div class="dot" aria-hidden="true"></div>
+    <div>
+      <strong>Nothing here exists yet, and nothing here is approved yet.</strong> All 25 specs are drafts awaiting their final independent review; three human decisions (<a href="#open">HR-0001/0002/0003</a>) are open and block all product code. Your approval of this page approves the <em>architecture</em> — the shape, the boundaries, and the can/cannot lines — not the specs' wording, which stays under its own review process.
+    </div>
+  </div>
+</section>
+
+<section id="purpose">
+  <div class="sec-head"><span class="eyebrow">1</span><h2>What it is, in one breath</h2></div>
+  <div class="prose">
+    <p><strong>Equity-OS is a persistent, evidence-governed equity-research system for Indian listed companies — not an autonomous stock-picking chatbot.</strong> Its operating doctrine (S01, CONTEXT.md):</p>
+    <blockquote style="margin:0;padding:10px 14px;border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--accent-ink);border-radius:0 6px 6px 0">SQL records what happened. Curated memory preserves what was learned. Deterministic code calculates implications. Agents investigate, challenge, and explain. Execution remains separately controlled.</blockquote>
+    <p><strong>Who uses it:</strong> a small internal research team — a solo builder plus an accountable analyst / product-owner role. Posture is <em>private/internal research only</em>; every other mode (public, paid, personalized, execution-connected) is <em>prohibited by default</em> (S01).</p>
+    <p><strong>The first product deliverable</strong> is a fixed earnings-review workflow (S14): given a company's new quarterly results and an approved prior thesis, produce a reviewable, source-backed update showing what changed in facts, management commitments, calculations, uncertainties, and thesis — every material statement traceable to a source, a calculation trace, or a fact.</p>
+    <p><strong>How it will be proven out:</strong> one discovery company across four consecutive quarters (S05) — quarter 0 done manually as a baseline, quarters 1–3 done with the system — measured on <em>analyst review economics</em>: minutes per approved update, corrections needed, time to locate sources (S18, S08).</p>
+  </div>
+</section>
+
+<section id="map">
+  <div class="sec-head"><span class="eyebrow">2</span><h2>System map</h2>
+    <p class="lede">Data flows top-to-bottom. Solid-bordered boxes are first release. Dashed boxes are dormant until a typed human activation. Amber marks a human decision.</p></div>
+  <div class="legend" style="margin-bottom:12px">
+    <span class="k"><span class="sw" style="background:var(--surface-2);border-left:4px solid var(--accent)"></span> authoritative store</span>
+    <span class="k"><span class="sw" style="background:var(--gate-soft);border-color:var(--gate)"></span> human decision</span>
+    <span class="k"><span class="sw" style="border-style:dashed"></span> dormant / conditional</span>
+    <span class="k"><span class="mono" style="color:var(--muted)">S09</span> primary spec</span>
+  </div>
+  <div class="band">
+  <div class="layers">
+    <div class="lbl"><b>Sources</b><span>outside the system</span></div>
+    <div class="row">
+      <div class="box"><span class="tag">S02</span><b>Approved sources only</b><small>Every source has a rights record across 10 dimensions (access, caching, retention, redistribution…). Missing or ambiguous → <code>UNKNOWN</code> → denied.</small></div>
+      <div class="box"><span class="tag">S09</span><b>Official filings, prices, announcements, corporate actions, shareholding</b><small>Point-in-time captured daily / on event, with hashes and first-seen times.</small></div>
+      <div class="box dormant"><span class="tag">S03</span><b>External tools (OpenBB etc.)</b><small>Dormant. Due diligence ≠ adoption. Would run out-of-process behind an adapter.</small></div>
+      <div class="box dormant"><span class="tag">S02 · C-13</span><b>Consensus estimates</b><small>Excluded unless proven licensed <em>and</em> necessary.</small></div>
+    </div>
+
+    <div class="arrow-row">source content is data, never instructions</div>
+
+    <div class="lbl"><b>Ingest &amp; keep</b><span>immutable, append-only</span></div>
+    <div class="row">
+      <div class="box store"><span class="tag">S09</span><b>Immutable document store</b><small>Original bytes, content-addressed. Same URL + changed bytes = new document. Hash mismatch never overwrites.</small></div>
+      <div class="box store"><span class="tag">S12</span><b>Observations → Facts</b><small>Seven-layer identity: source occurrence → extraction → observation → measurement key → revision family → fact revision → canonical selection. Restatements supersede; nothing is silently overwritten.</small></div>
+      <div class="box store"><span class="tag">S17</span><b>Entity &amp; security master</b><small>Stable opaque internal IDs. ISIN/symbol/CIN/LEI are versioned mappings, never the primary key. Bitemporal relationships and corporate actions.</small></div>
+      <div class="box store"><span class="tag">S10 · S11</span><b>Evidence packages &amp; run manifests</b><small>One frozen evidence package per run under one immutable knowledge cutoff. Any input change → new version. Reproducible by ID + hash.</small></div>
+    </div>
+
+    <div class="arrow-row">every query carries <code>knowledge_time ≤ cutoff</code></div>
+
+    <div class="lbl"><b>Compute &amp; draft</b><span>who is allowed to say what</span></div>
+    <div class="row">
+      <div class="box store"><span class="tag">S16</span><b>Deterministic compute — the only calculator</b><small>Registered operators (growth, margin, cash conversion, leverage, dilution, guidance comparison, reconciliation). Every number has a trace. Missing input → fail closed. The LLM never supplies the authoritative result.</small></div>
+      <div class="box"><span class="tag">S13 · S06</span><b>Agents draft typed claims</b><small>Each claim labeled observed / computed / inferred / forecast / opinion, with materiality. Material claims must resolve to a fact, a trace, or an exact source location — else <code>FAIL</code>.</small></div>
+      <div class="box"><span class="tag">S06</span><b>Earnings-review output (v0)</b><small>Facts, changes, drivers, management ledger, thesis impact with ≥1 observable falsifier, open questions, calculations, memory draft.</small></div>
+      <div class="box dormant"><span class="tag">S21–S24</span><b>Model-grade valuation · stress companies · bull/bear · event monitoring</b><small>Conditional; each needs its dependency <em>and</em> a human activation.</small></div>
+    </div>
+
+    <div class="arrow-row">nothing reaches the thesis or the outside without a person</div>
+
+    <div class="lbl"><b>Human review</b><span>the control point</span></div>
+    <div class="row">
+      <div class="box human"><span class="tag">S15 · S14</span><b>Analyst reviews each claim</b><small>Accept / reject / edit / defer with source-jump and calculation inspection. Reject or edit reruns only the affected work and requires re-approval.</small></div>
+      <div class="box human"><span class="tag">S15 · S19</span><b>Separate promotion decision</b><small>Accepting a report ≠ updating the thesis. Promotion is a distinct typed human decision, applied all-or-nothing.</small></div>
+      <div class="box"><span class="tag">S07 · S08</span><b>Controls &amp; measurement</b><small>≥20-case golden set, failure taxonomy, seeded-error drills (never promotable), review telemetry, metric catalog and budgets — with no numeric targets set in-spec.</small></div>
+      <div class="box store"><span class="tag">S19</span><b>Curated memory (thesis)</b><small>Engine-neutral store; SQL holds the canonical pointer. Retrieval respects the cutoff and never turns interpretation into fact.</small></div>
+    </div>
+
+    <div class="arrow-row">private / internal target only while E-08 is deferred</div>
+
+    <div class="lbl"><b>Out</b><span>and what is walled off</span></div>
+    <div class="row">
+      <div class="box"><span class="tag">S14</span><b>Published update — private/internal</b><small>Approved narrative bytes are content-hashed and immutable. Public, paid, personalized targets fail closed.</small></div>
+      <div class="box dormant"><span class="tag">S01 · E-08</span><b>Distribution boundary gate</b><small>Dormant. Opening any external mode needs legal review, regulatory review, and distribution approval — three distinct human records.</small></div>
+      <div class="box dormant" style="grid-column:span 2"><span class="tag">S04 · E-09</span><b>Execution trust domain — a separate service, never in-process</b><small>Dormant. Research runtime can only emit an inert intent with no credentials or submission path. No paper or live trading. Kill switch defaults to <code>BLOCKED</code>.</small></div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<section id="lineage">
+  <div class="sec-head"><span class="eyebrow">3</span><h2>Evidence lineage — how a number earns the right to be shown</h2>
+    <p class="lede">The chain is append-only and content-addressed. Each arrow is a stored reference; nothing downstream can exist without its upstream (S12, S13, S16, S10).</p></div>
+  <div class="band fig">
+<pre class="mermaid">
+flowchart LR
+  SD["Source document<br/>(immutable bytes, hash)"] --> SO["Source occurrence<br/>exact location in one version"]
+  SO --> ER["Extraction result<br/>parser/model/manual + version"]
+  ER --> OB["Observation<br/>typed, normalized, pre-reconciliation"]
+  OB --> RF["Revision family +<br/>reconciliation decision"]
+  RF --> FR["Fact revision"]
+  FR --> CS["Canonical selection<br/>as-of a knowledge time"]
+  MK["Measurement key<br/>entity + metric version + period + scope + basis"] -.roots.-> RF
+  CS --> CT["Calculation trace<br/>S16 · deterministic, replayable"]
+  CS --> TC["Typed claim<br/>S13 · observed / computed / inferred / forecast / opinion"]
+  CT --> TC
+  TC --> OUT["Earnings-review output<br/>S06 · every thesis impact has a falsifier"]
+  OUT --> EP["Evidence package v(N)<br/>S10 · frozen per run"]
+  EP --> RM["Run manifest<br/>S11 · one immutable cutoff"]
+  classDef store fill:#DDEDEE,stroke:#1E6E76,color:#0F4B51;
+  class SD,OB,FR,CS,CT,EP,RM store;
+</pre>
+    <figcaption>Two rules make this chain honest: <strong>"newest" is not a valid selection policy</strong> — a fact is chosen as-of the run's cutoff from an immutable linear chain — and <strong>a later restatement, correction, or parser upgrade never rewrites a historical run</strong>; it appends a new revision or a new evidence-package version.</figcaption>
+  </div>
+</section>
+
+<section id="workflow">
+  <div class="sec-head"><span class="eyebrow">4</span><h2>The workflow — a fixed state machine, not a planner</h2>
+    <p class="lede">S14 defines the first product workflow as a resumable state machine with human outcomes. Rework routes back to the earliest affected step, creates a new evidence-package version, and reruns only what changed.</p></div>
+  <div class="band fig">
+<pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> REGISTERED: run + cutoff fixed<br/>before any retrieval
+  REGISTERED --> INGESTED
+  INGESTED --> EXTRACTED
+  EXTRACTED --> RECONCILED
+  RECONCILED --> CALCULATED: S16 traces,<br/>fail closed
+  CALCULATED --> DRAFTED: typed claims,<br/>materiality, falsifiers
+  DRAFTED --> HUMAN_REVIEW
+  HUMAN_REVIEW --> APPROVED: ACCEPT
+  HUMAN_REVIEW --> EXTRACTED: REJECT / EDIT<br/>→ evidence package v(N+1)
+  HUMAN_REVIEW --> HUMAN_REVIEW: DEFER
+  APPROVED --> PUBLISHED: private/internal<br/>target only
+  PUBLISHED --> EXTRACTED: post-publication<br/>correction
+  PUBLISHED --> [*]
+</pre>
+    <figcaption>Autonomous planning and agent-selected transitions are explicit non-goals (S14, DEF-03). Publication eligibility is derived, never trusted: while the distribution gate E-08 is deferred, any public, paid, personalized, or execution-linked target fails closed.</figcaption>
+  </div>
+</section>
+
+<section id="humans">
+  <div class="sec-head"><span class="eyebrow">5</span><h2>Where humans decide</h2>
+    <p class="lede">Every one of these is a typed, recorded decision bound to exact artifact bytes. An agent draft never becomes an approved artifact by itself.</p></div>
+  <div class="gates">
+    <div class="gate-item"><span class="who">Product owner</span><b>Choose the discovery company + four quarters</b><span>S05 · A-02. The whole vertical slice depends on it.</span></div>
+    <div class="gate-item"><span class="who">Analyst</span><b>Accept the manual Q0 baseline</b><span>S05 · A-03. Instrumented, every fact source-backed at the cutoff.</span></div>
+    <div class="gate-item"><span class="who">Analyst</span><b>Author &amp; approve the bootstrap thesis</b><span>S05 · A-11. Must exist before Q1. Versioned, with falsifiers.</span></div>
+    <div class="gate-item"><span class="who">Analyst</span><b>Accept / reject / edit / defer each claim</b><span>S15 · S14. Rejects trigger the rework cascade.</span></div>
+    <div class="gate-item"><span class="who">Analyst</span><b>Promote a memory draft to the thesis</b><span>S15 · S19. Separate from report acceptance. All-or-nothing.</span></div>
+    <div class="gate-item"><span class="who">Analyst</span><b>Approve the materiality policy</b><span>S06 · A-10. Concrete rules are approved, not in-spec.</span></div>
+    <div class="gate-item"><span class="who">Authority</span><b>Set numeric targets, budgets, capacity</b><span>S08 · A-07/A-12/A-13. Specs deliberately set no numbers.</span></div>
+    <div class="gate-item"><span class="who">Authority</span><b>Delete data (tombstone)</b><span>S10. Distinct data-rights / legal gate. Never masquerades as correction.</span></div>
+    <div class="gate-item"><span class="who">Authority</span><b>Activate any deferred capability</b><span>Typed <code>ACTIVATE_DEFERRED</code> + register transition. Dependency ready ≠ authority.</span></div>
+    <div class="gate-item"><span class="who">Legal · regulatory · product</span><b>Open any external distribution mode</b><span>S01 · E-08. Three distinct resolutions.</span></div>
+    <div class="gate-item"><span class="who">Authority</span><b>Adopt an external tool or memory engine</b><span>S03, S20. Due diligence is not adoption.</span></div>
+    <div class="gate-item"><span class="who">Authority</span><b>Migrate storage / workflow engine</b><span>SCALE-* triggers are measured; the decision is human.</span></div>
+  </div>
+</section>
+
+<section id="components">
+  <div class="sec-head"><span class="eyebrow">6</span><h2>Component inventory</h2>
+    <p class="lede">Every subsystem the specs define, what it owns, and its release status. <span class="chip now">first release</span> <span class="chip mixed">mixed</span> <span class="chip cond">conditional / dormant</span></p></div>
+
+  <div class="group"><h3>Boundary &amp; governance</h3><div class="grid">
+    <div class="card"><header><h4>Product, operating &amp; distribution boundary</h4><span class="chip mixed">mixed</span></header>
+      <p>Owns the initial boundary, product-name decision, and the fail-closed gate for any later external use. Six modes; every non-private mode defaults to prohibited.</p>
+      <blockquote>"Missing, stale, ambiguous, or conflicting mode data resolves to the more restrictive boundary."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S01 · A-01, A-09, E-08</dd><dt>Note</dt><dd>"Equity-OS" is a working label, never product-name approval; "Funda" is unverified.</dd></dl></div>
+    <div class="card"><header><h4>Execution trust domain</h4><span class="chip cond">dormant</span></header>
+      <p>The wall between research and any execution system. When ever activated: separate service, execution-only credentials, deterministic pre-trade limits, human approvals bound to immutable requests, kill switch defaulting to blocked.</p>
+      <blockquote>"Does not enable paper or live trading, and does not permit research agents to invoke execution."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S04 · E-09</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Sources, rights &amp; ingestion</h3><div class="grid">
+    <div class="card"><header><h4>Source rights &amp; consensus policy</h4><span class="chip now">first release</span></header>
+      <p>One rights record per source across ten independent dimensions; register completeness is exact set equality with actual usage. Consensus data excluded unless licensed and necessary.</p>
+      <blockquote>"Permission to access does not imply automation, caching, retention, commercial use, derived-output, or redistribution permission."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S02 · A-05, C-13</dd><dt>Never</dt><dd>agents purchasing, contacting providers, or holding credentials</dd></dl></div>
+    <div class="card"><header><h4>External-tool due diligence</h4><span class="chip cond">dormant</span></header>
+      <p>Structural gates for evaluating OpenBB and similar. No cloning, install, network or provider contact in this draft.</p>
+      <blockquote>"External-tool outputs never become authoritative facts merely because a tool produced them."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S03 · E-06, E-07</dd></dl></div>
+    <div class="card"><header><h4>Filing ingestion &amp; point-in-time capture</h4><span class="chip mixed">mixed</span></header>
+      <p>XBRL-vs-PDF coverage spike, immutable document registry, append-only parse attempts, daily/event capture of prices, announcements, corporate actions, shareholding, membership. Official-audio transcription is conditional.</p>
+      <blockquote>"<code>first_seen_at</code> is acquisition evidence … cannot be backdated to simulate point-in-time history."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S09 · A-06, B-09, C-02 (C-14 audio deferred)</dd><dt>Stores</dt><dd>object store + append-only SQL</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Data &amp; evidence stores</h3><div class="grid">
+    <div class="card"><header><h4>Source-of-truth matrix, evidence packages, retention</h4><span class="chip now">first release</span></header>
+      <p>Which store is authoritative per record class (no split-brain); the frozen evidence-package contract; retention pinning and typed deletion.</p>
+      <blockquote>"Deletion never masquerades as correction; correction never destroys prior history."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S10 · B-03, C-11</dd><dt>Default</dt><dd>SQLite for Phase 0.5; raw model scratchpads are never a product dependency</dd></dl></div>
+    <div class="card"><header><h4>Run manifest, knowledge cutoff, reproducibility</h4><span class="chip now">first release</span></header>
+      <p>Run registered before any evidence access; one immutable UTC cutoff propagated to every store and tool; layered replay (exact / tolerance / stochastic).</p>
+      <blockquote>"Regenerated prose is a new artifact requiring review, not proof of reproduction."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S11 · C-09, C-15, C-16</dd><dt>Tools</dt><dd>each call declared cutoff-native, archived-only, or not-cutoff-capable (denied for replay)</dd></dl></div>
+    <div class="card"><header><h4>Observation / fact identity &amp; revision</h4><span class="chip now">first release</span></header>
+      <p>The seven-layer identity model; append-only revision families with typed reasons (issuer restatement, source correction, parser re-extraction, manual correction, policy change).</p>
+      <blockquote>"'Newest' is not a valid selection policy."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S12 · B-05, B-10, B-11, C-03</dd><dt>Status</dt><dd>minimum schema is provisional — derived from vertical-slice evidence, not guessed</dd></dl></div>
+    <div class="card"><header><h4>Claim schema &amp; vocabulary registries</h4><span class="chip now">first release</span></header>
+      <p>Typed claims with epistemic class, confidence, materiality, evidence links, assumptions, uncertainty, supersession. Versioned metric and predicate registries.</p>
+      <blockquote>"Material observed claims require direct exact-source support. Material computed claims require a registered calculation trace. Missing support is FAIL, not a warning."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S13 · B-06, B-12, C-04</dd><dt>Status</dt><dd>schema provisional until derived from real use</dd></dl></div>
+    <div class="card"><header><h4>Entity &amp; security master</h4><span class="chip now">first release</span></header>
+      <p>Stable opaque internal IDs; versioned ISIN/symbol/CIN/LEI mappings; bitemporal relationships (parent, subsidiary, management role, ownership, cross-holding); versioned corporate actions.</p>
+      <blockquote>"ISIN is an external identifier … not the authority for Equity-OS object identity."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S17 · C-06, C-07, C-17</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Deterministic compute</h3><div class="grid">
+    <div class="card"><header><h4>Minimum deterministic compute — the only authoritative calculator</h4><span class="chip now">first release</span></header>
+      <p>Approved operator registry, typed calculation requests, immutable traces. Families: growth, margin, cash conversion, leverage, dilution/share count, guidance comparison, reconciliation.</p>
+      <blockquote>"No implicit unit conversion, currency conversion, annualization, sign flip, denominator choice, scope coercion, or restatement selection is allowed."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S16 · B-07, C-08</dd><dt>Not here</dt><dd>DCF / SOTP / WACC — that is S21, deferred</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Workflow, output &amp; review</h3><div class="grid">
+    <div class="card"><header><h4>Discovery-company vertical slice</h4><span class="chip now">first release</span></header>
+      <p>One company × four quarters: instrumented manual Q0 baseline, source-conflict dispositions, approved bootstrap thesis, then three assisted updates.</p>
+      <blockquote>"Approval applies to exact canonical artifact bytes … an agent draft never becomes the approved thesis."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S05 · A-02, A-03, A-11</dd></dl></div>
+    <div class="card"><header><h4>Output, materiality &amp; falsifier contract</h4><span class="chip now">first release</span></header>
+      <p>The output envelope, versioned materiality policy (always-material categories cannot be downgraded by a threshold), and the observable-falsifier rule.</p>
+      <blockquote>"Every thesis impact contains at least one observable falsifier; generic risks and a no-falsifier approval or waiver do not satisfy the requirement."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S06 · A-04, A-10</dd><dt>Status</dt><dd>PROVISIONAL_V0; final V1 only after the baseline and thesis exist</dd></dl></div>
+    <div class="card"><header><h4>Fixed earnings-review workflow &amp; rework</h4><span class="chip now">first release</span></header>
+      <p>The state machine in §4. Rework creates evidence package v(N+1), keeps the prior immutable, reruns only the affected closure, requires fresh approval.</p>
+      <blockquote>"While E-08 remains deferred, public, paid, personalized, and execution-linked targets fail closed."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S14 · B-01, B-02, B-14</dd></dl></div>
+    <div class="card"><header><h4>Human claim review, correction, promotion</h4><span class="chip now">first release</span></header>
+      <p>Claim-level review with source-jump, calculation inspection, diff-only review, provenance; correction and supersession records; the separate promotion transaction; shadow / golden artifact modes that can never be promoted or published.</p>
+      <blockquote>"Claim/report acceptance and memory promotion are separate typed human decisions. Neither implies the other."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S15 · C-05, C-10</dd></dl></div>
+    <div class="card"><header><h4>Universe, review economics &amp; throughput</h4><span class="chip now">first release</span></header>
+      <p>Measure analyst minutes, dispositions, source-locate and calc-check time; then select exactly two or three core non-financial companies for Phase 1; economics gate; peak-season capacity.</p>
+      <blockquote>"Human acceptance cannot turn a mechanical threshold failure into PASS."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S18 · B-04, C-01, C-12, C-18</dd><dt>Note</dt><dd>no report-level percentiles from three updates</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Controls &amp; measurement</h3><div class="grid">
+    <div class="card"><header><h4>Golden set, failure taxonomy, reviewer-bias controls</h4><span class="chip now">first release</span></header>
+      <p>≥20 expert-labeled cases including prompt-injection and source confusion; twelve failure codes; seeded-error drills isolated in shadow/golden modes with promotion and publication fixed <code>false</code> — enforced in storage, not just the UI.</p>
+      <blockquote>"Source content is data, never control text."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S07 · A-08, B-08, B-13</dd></dl></div>
+    <div class="card"><header><h4>Success metrics, budgets, capacity</h4><span class="chip now">first release</span></header>
+      <p>One versioned metric catalog (accuracy, citation correctness, traceability, unsupported-claim rate, analyst minutes, latency, cost…), per-workflow budgets, capacity plan.</p>
+      <blockquote>"Quality controls do not trade off … favorable cost, latency, acceptance rate, or throughput cannot override unsupported claims, bad citations, missing traces, or required approvals."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S08 · A-07, A-12, A-13</dd><dt>Numbers</dt><dd>deliberately none in-spec; evidence-derived and human-approved</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Memory</h3><div class="grid">
+    <div class="card"><header><h4>MemoryStore interface</h4><span class="chip mixed">mixed</span></header>
+      <p>Engine-neutral port: retrieve, stage_write, promote, correct, delete, export. Staged writes are non-canonical; SQL holds the canonical pointer. The atomic promotion transaction (D-03) is deferred.</p>
+      <blockquote>"Memory-engine state alone is never canonical."</blockquote>
+      <dl class="kv"><dt>Spec</dt><dd>S19 · D-01 (D-03 deferred)</dd><dt>Note</dt><dd>does not choose GBrain or any engine</dd></dl></div>
+    <div class="card"><header><h4>Memory benchmark &amp; adoption</h4><span class="chip cond">dormant</span></header>
+      <p>Fair three-arm benchmark (manual context · git+markdown+SQL · GBrain), due diligence, and a current-scale-only adoption decision.</p>
+      <dl class="kv"><dt>Spec</dt><dd>S20 · D-02, D-04, D-05</dd></dl></div>
+  </div></div>
+
+  <div class="group"><h3>Conditional capabilities <small>all dormant; each needs its dependency accepted <em>and</em> a human activation</small></h3><div class="grid">
+    <div class="card"><header><h4>Model-grade financial compute</h4><span class="chip cond">conditional</span></header><p>DCF, SOTP, WACC, sensitivities, statement tie-outs, sector definitions — after S16. Missing input must fail; the LLM never calculates; outputs stay "computed", never fact or thesis.</p><dl class="kv"><dt>Spec</dt><dd>S21 · E-01</dd></dl></div>
+    <div class="card"><header><h4>Stress-test companies</h4><span class="chip cond">conditional</span></header><p>Do the contracts generalize to a bank/NBFC, a conglomerate, a difficult-disclosure case? Bounded evaluation, no bulk onboarding.</p><dl class="kv"><dt>Spec</dt><dd>S22 · E-02</dd></dl></div>
+    <div class="card"><header><h4>Bull/bear &amp; forensic review</h4><span class="chip cond">conditional</span></header><p>Challenge methods measured against one senior reviewer; kept only if incremental issue detection justifies cost. Forensic flags are testable discrepancies, never misconduct allegations. No personas, ratings, or recommendations.</p><dl class="kv"><dt>Spec</dt><dd>S23 · E-03</dd></dl></div>
+    <div class="card"><header><h4>Event monitoring</h4><span class="chip cond">conditional</span></header><p>Detect, normalize, dedupe, route events for covered companies; alerts name what changed (fact, assumption, catalyst, promise, falsifier, thesis-breaker). Detection ≠ approval; immaterial events never touch the thesis.</p><dl class="kv"><dt>Spec</dt><dd>S24 · E-04</dd></dl></div>
+    <div class="card"><header><h4>Quant validation &amp; leakage policy</h4><span class="chip cond">conditional</span></header><p>Pre-registered, bounded validation disclosing leakage, revisions, fees, liquidity, benchmark. Two leakage classes: store/tool (tested) vs model-weight (disclosed, cannot be eliminated).</p><dl class="kv"><dt>Spec</dt><dd>S25 · E-05, E-10</dd></dl></div>
+  </div></div>
+</section>
+
+<section id="can">
+  <div class="sec-head"><span class="eyebrow">7</span><h2>What it can and cannot do</h2>
+    <p class="lede">"Can" is intended first-release behavior once specs are approved and built. "Cannot" includes things one might reasonably assume — and the specs exclude or defer.</p></div>
+  <div class="two">
+    <div class="tbl can"><table>
+      <thead><tr><th style="width:2.5rem">#</th><th>The system can</th><th>Spec</th></tr></thead><tbody>
+      <tr><td class="n">1</td><td>Ingest official filings and keep original bytes immutably with hashes, URLs, timestamps, first-seen times</td><td class="spec">S09</td></tr>
+      <tr><td class="n">2</td><td>Capture prices, announcements, corporate actions, shareholding and membership changes daily / on event — including capture failures</td><td class="spec">S09</td></tr>
+      <tr><td class="n">3</td><td>Run a filing-channel-aware XBRL-vs-PDF coverage spike over four quarters</td><td class="spec">S09</td></tr>
+      <tr><td class="n">4</td><td>Produce a fixed, resumable earnings-review update from a new quarter plus the approved prior thesis</td><td class="spec">S14</td></tr>
+      <tr><td class="n">5</td><td>Compute growth, margins, cash conversion, leverage, dilution, guidance comparison and reconciliation as registered, fail-closed traces</td><td class="spec">S16</td></tr>
+      <tr><td class="n">6</td><td>Emit typed claims labeled observed / computed / inferred / forecast / opinion; every material one resolves to a fact, trace, or source location</td><td class="spec">S13 · S06</td></tr>
+      <tr><td class="n">7</td><td>Enforce one knowledge cutoff per run across SQL, documents and memory; select facts as-of that cutoff</td><td class="spec">S11</td></tr>
+      <tr><td class="n">8</td><td>Preserve restatements and conflicting observations append-only with typed reasons and a single current leaf</td><td class="spec">S12</td></tr>
+      <tr><td class="n">9</td><td>Let an analyst accept / reject / edit / defer each claim with source-jump, calculation inspection, and diff-only review</td><td class="spec">S15</td></tr>
+      <tr><td class="n">10</td><td>Run the rework cascade: invalidate the affected closure, create evidence package v(N+1), rerun only what changed, re-approve</td><td class="spec">S14</td></tr>
+      <tr><td class="n">11</td><td>Track management commitments (new / modified / due / outcome) in a management ledger</td><td class="spec">S06</td></tr>
+      <tr><td class="n">12</td><td>Attach at least one observable falsifier to every thesis impact</td><td class="spec">S06</td></tr>
+      <tr><td class="n">13</td><td>Reproduce a run's evidence package exactly and bind approved narrative bytes to a content hash</td><td class="spec">S11</td></tr>
+      <tr><td class="n">14</td><td>Keep stable internal company / security IDs with versioned identifier mappings, bitemporal relationships and corporate actions</td><td class="spec">S17</td></tr>
+      <tr><td class="n">15</td><td>Measure analyst review economics without invalid percentiles</td><td class="spec">S18</td></tr>
+      <tr><td class="n">16</td><td>Detect prompt-injection / document-as-instruction attempts and record them without acting on them</td><td class="spec">S07 · S09</td></tr>
+      <tr><td class="n">17</td><td>Stage a memory draft and, on a separate human decision, update the canonical thesis atomically</td><td class="spec">S15 · S19</td></tr>
+      <tr><td class="n">18</td><td>Keep a versioned metric catalog, per-workflow budgets and a capacity plan</td><td class="spec">S08</td></tr>
+      <tr><td class="n">19</td><td>Publish an approved update to a private / internal target</td><td class="spec">S14</td></tr>
+      </tbody></table></div>
+    <div class="tbl cannot"><table>
+      <thead><tr><th style="width:2.5rem">#</th><th>The system cannot (excluded or deferred)</th><th>Basis</th></tr></thead><tbody>
+      <tr><td class="n">1</td><td>Distribute, sell, or personalize research; serve any public, paid, or personalized output</td><td class="spec">S01 · E-08</td></tr>
+      <tr><td class="n">2</td><td>Place trades, paper-trade, or connect to any execution or broker system</td><td class="spec">S04 · DEF-10/11</td></tr>
+      <tr><td class="n">3</td><td>Let the LLM be the authoritative calculator or supply a hidden numeric input</td><td class="spec">S16</td></tr>
+      <tr><td class="n">4</td><td>Treat model output, retrieved text, or a document as instructions (change tools, cutoffs, permissions, promotion, secrets, execution)</td><td class="spec">S04 · S07 · S09 · S15</td></tr>
+      <tr><td class="n">5</td><td>Auto-promote a draft to the thesis, or treat report acceptance as promotion</td><td class="spec">S06 · S15</td></tr>
+      <tr><td class="n">6</td><td>Recommend a stock, issue a rating, or give investment or trading advice</td><td class="spec">S23 · S25</td></tr>
+      <tr><td class="n">7</td><td>Construct or manage a portfolio</td><td class="spec">DEF-08 · S25</td></tr>
+      <tr><td class="n">8</td><td>Claim historical LLM alpha, or present a backtest as clean alpha or causal proof</td><td class="spec">DEF-09 · S25</td></tr>
+      <tr><td class="n">9</td><td>Run model-grade valuation (DCF / SOTP / WACC) or a broad sector-pack library</td><td class="spec">S21 · DEF-06</td></tr>
+      <tr><td class="n">10</td><td>Do full-universe daily research or event monitoring</td><td class="spec">S24 · DEF-05</td></tr>
+      <tr><td class="n">11</td><td>Auto-rewrite the thesis on an immaterial event</td><td class="spec">S24</td></tr>
+      <tr><td class="n">12</td><td>Run a multi-agent investment committee or an autonomous planner</td><td class="spec">DEF-03/04 · S14</td></tr>
+      <tr><td class="n">13</td><td>Automate full company initiation</td><td class="spec">DEF-01 · S05</td></tr>
+      <tr><td class="n">14</td><td>Use consensus estimates unless proven licensed and necessary</td><td class="spec">S02 · DEF-07</td></tr>
+      <tr><td class="n">15</td><td>Use ISIN, symbol, CIN, LEI or name as the internal primary key, or merge entities by name similarity</td><td class="spec">S17</td></tr>
+      <tr><td class="n">16</td><td>Pick a fact by "newest" or largest value, or silently overwrite or delete history</td><td class="spec">S12 · S10</td></tr>
+      <tr><td class="n">17</td><td>Adopt GBrain (or any memory engine) by default or as a mandatory dependency</td><td class="spec">S19 · S20 · DEF-02</td></tr>
+      <tr><td class="n">18</td><td>Recreate point-in-time history that was never captured</td><td class="spec">S09</td></tr>
+      <tr><td class="n">19</td><td>Claim reproducibility after retained bytes were deleted, or regenerate narrative bit-identically</td><td class="spec">S10 · S11</td></tr>
+      <tr><td class="n">20</td><td>Migrate off SQLite or to a distributed workflow engine before a measured trigger and a human decision</td><td class="spec">DEF-13 · SCALE-*</td></tr>
+      <tr><td class="n">21</td><td>Let cost, latency or throughput compensate for factual, citation, traceability or approval failures</td><td class="spec">S08</td></tr>
+      <tr><td class="n">22</td><td>Compute a report-level P90 or claim significance from the three-update pilot</td><td class="spec">S08 · S18</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+
+<section id="release">
+  <div class="sec-head"><span class="eyebrow">8</span><h2>Now versus later</h2>
+    <p class="lede">45 register rows are required now. Thirteen deferrals are binding governance today about capabilities that are <em>out</em> of the first release. Conditional capabilities need their dependency accepted <em>plus</em> a typed human activation — "a dependency becoming ready is necessary, not sufficient, authority."</p></div>
+  <div class="tbl" style="margin-bottom:16px"><table>
+    <thead><tr><th>Phase</th><th>First release scope (required now)</th><th>Specs</th></tr></thead><tbody>
+    <tr><td><b>0A</b><br><small>product, sources, measurement, boundary</small></td><td>Operating boundary; discovery slice, manual baseline, bootstrap thesis; v0 output contract and materiality; provider rights and consensus decision; filing coverage spike; budgets, capacity, metrics; golden-set owner; product-name check</td><td class="spec">S01 S05 S06 S02 S09 S08 S07</td></tr>
+    <tr><td><b>0.5</b><br><small>one company × four quarters</small></td><td>Fixed workflow, three assisted updates, rework; source-of-truth matrix; review economics; fact identity and schema; claim schema and registries; minimum compute; failure taxonomy and reviewer controls; point-in-time capture</td><td class="spec">S14 S10 S18 S12 S13 S16 S07 S09</td></tr>
+    <tr><td><b>1</b><br><small>evidence-grounded MVP</small></td><td>Two-or-three-company universe, economics gate, throughput; document registry and append-only observations; claim validation; review, correction, promotion; entity master; deterministic calcs; run manifest, cutoff, reproducibility</td><td class="spec">S18 S09 S12 S13 S15 S17 S16 S11</td></tr>
+    <tr><td><b>2</b><br><small>active piece only</small></td><td>Engine-neutral MemoryStore interface</td><td class="spec">S19</td></tr>
+    </tbody></table></div>
+  <p class="lede" style="font-size:.95rem;margin-bottom:16px"><strong>Provisional-until-amended (still first release, content derived from evidence):</strong> the final output contract (S06), the minimum fact/observation schema (S12), the minimum claim schema (S13).</p>
+
+  <div class="two">
+    <div class="tbl"><table>
+      <thead><tr><th>Deferred</th><th>Capability</th><th>Comes back only if</th></tr></thead><tbody>
+      <tr><td class="spec">DEF-01</td><td>Full automated company initiation</td><td>Separate later phase</td></tr>
+      <tr><td class="spec">DEF-02</td><td>GBrain as a mandatory dependency</td><td>Benchmark shows benefit + human adoption</td></tr>
+      <tr><td class="spec">DEF-03</td><td>Generalized autonomous planning</td><td>Not scheduled</td></tr>
+      <tr><td class="spec">DEF-04</td><td>Multi-agent investment committee</td><td>Bull/bear evaluation justifies cost</td></tr>
+      <tr><td class="spec">DEF-05</td><td>Full-universe daily research</td><td>Event monitoring activated</td></tr>
+      <tr><td class="spec">DEF-06</td><td>Broad sector-pack library</td><td>Model-grade compute activated</td></tr>
+      <tr><td class="spec">DEF-07</td><td>Licensed consensus estimates</td><td>Proven licensed and necessary</td></tr>
+      <tr><td class="spec">DEF-08</td><td>Portfolio construction</td><td>Not scheduled</td></tr>
+      <tr><td class="spec">DEF-09</td><td>Historical LLM alpha claims</td><td>Never as clean alpha</td></tr>
+      <tr><td class="spec">DEF-10</td><td>Paper trading</td><td>Execution domain activated</td></tr>
+      <tr><td class="spec">DEF-11</td><td>Live execution</td><td>Distribution + execution gates activated</td></tr>
+      <tr><td class="spec">DEF-12</td><td>Local-model optimization</td><td>An Equity-OS-specific benchmark exists</td></tr>
+      <tr><td class="spec">DEF-13</td><td>Distributed workflow engine / PostgreSQL</td><td>Measured SCALE trigger + human decision</td></tr>
+      </tbody></table></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Conditional</th><th>Capability</th><th>Needs (plus human activation)</th></tr></thead><tbody>
+      <tr><td class="spec">E-01</td><td>Model-grade compute</td><td>Deterministic calcs accepted + need/inputs/owners evidence</td></tr>
+      <tr><td class="spec">E-02</td><td>Stress-test companies</td><td>Phase-1 universe accepted</td></tr>
+      <tr><td class="spec">E-03</td><td>Bull/bear + forensic review</td><td>Claim validation + review accepted</td></tr>
+      <tr><td class="spec">E-04</td><td>Event monitoring</td><td>Claim validation accepted</td></tr>
+      <tr><td class="spec">E-05 / E-10</td><td>Quant validation / leakage policy</td><td>Point-in-time capture and cutoff enforcement accepted</td></tr>
+      <tr><td class="spec">E-06 / E-07</td><td>OpenBB / other tool due diligence</td><td>Provider rights accepted</td></tr>
+      <tr><td class="spec">E-08</td><td>External distribution gate</td><td>Boundary accepted + current legal and regulatory review</td></tr>
+      <tr><td class="spec">E-09</td><td>Execution trust domain</td><td>E-08 accepted</td></tr>
+      <tr><td class="spec">D-02 – D-05</td><td>Memory benchmark, GBrain diligence, adoption</td><td>Review + MemoryStore interface accepted</td></tr>
+      <tr><td class="spec">D-03</td><td>Atomic memory promotion transaction</td><td>MemoryStore interface accepted</td></tr>
+      <tr><td class="spec">C-14</td><td>Official-audio transcription</td><td>Document registry + failure taxonomy + audio need</td></tr>
+      <tr><td class="spec">SCALE-*</td><td>Storage / workflow migration</td><td>Measured writer-lock, multi-user, availability, or workflow-complexity triggers</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+
+<section id="deps">
+  <div class="sec-head"><span class="eyebrow">9</span><h2>Outside dependencies and model rules</h2></div>
+  <div class="prose">
+    <p><strong>Data providers.</strong> Each source needs a rights record across ten independent dimensions; access permission never implies caching, retention, commercial use, derived outputs, or redistribution. Private permission never implies public. Consensus estimates are excluded by default (S02).</p>
+    <p><strong>External tools.</strong> OpenBB and similar are dormant evaluation gates only. If ever adopted, they run out-of-process behind an Equity-OS adapter and still pass the rights gates; their outputs never become authoritative facts because a tool produced them (S03).</p>
+    <p><strong>Where the LLM is — and is not — allowed.</strong> Agents may extract, classify, draft claims and narrative, select and explain an operator. They may not compute an authoritative number, convert one epistemic class into another, promote memory, or act on instructions found in source content (S16, S06, S12, S19, S07). Model and vendor bindings live in the project's role table, not in the specs.</p>
+    <p><strong>Infrastructure.</strong> SQLite and simple state tables are the Phase-0.5 default. No workflow engine, database migration, or hosting platform is an architecture fact; each is reconsidered only on a measured trigger and a human decision (S10, DEF-13, SCALE-*).</p>
+  </div>
+</section>
+
+<section id="open">
+  <div class="sec-head"><span class="eyebrow">10</span><h2>Open decisions that touch the architecture</h2>
+    <p class="lede">Three human decisions block all product code. They do not change the component set — each hardens the same pillar: hash-bound integrity of the evidence and approval chain.</p></div>
+  <div class="stack">
+    <div class="decision"><b>HR-0001 — Output-approval evidence chain (S06)</b><p>Authorize one narrow documentation fix plus one fresh independent review so the earnings-output approval chain is cryptographically bound end-to-end — candidate output → materiality decision → disposition → inventory closure → published artifact → human approval — such that any upstream change invalidates every downstream commitment.</p></div>
+    <div class="decision"><b>HR-0002 — Resolution-record integrity (S09)</b><p>Authorize a targeted fix plus fresh review so a recorded human resolution's identifiers must exactly equal the resolution it claims to come from — same review, same actor, same timestamp — with tests rejecting each mismatch.</p></div>
+    <div class="decision"><b>HR-0003 — Approval import and correction ancestry (S10)</b><p>Authorize a targeted fix plus fresh review so approval records import completely and every correction chain is enforced as one unforked line back to a single current leaf, with digest-valid negative fixtures.</p></div>
+  </div>
+  <div class="prose" style="margin-top:18px">
+    <p><strong>Also open by design (the specs leave these to evidence or to you):</strong></p>
+    <ul>
+      <li>Which discovery company and which four quarters (A-02).</li>
+      <li>The final output contract, the minimum fact/observation schema, the minimum claim schema — derived from the vertical slice, then amended into the specs.</li>
+      <li>The concrete materiality rules and every numeric success / budget / capacity threshold — human-approved, deliberately not in-spec.</li>
+      <li>The entity-source authority hierarchy (proposed, awaiting product-owner approval).</li>
+      <li>Memory engine choice; product name; any storage / workflow engine change.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="glossary">
+  <div class="sec-head"><span class="eyebrow">11</span><h2>Glossary</h2></div>
+  <dl class="gloss">
+    <dt>Observation</dt><dd>A typed, extracted, normalized value <em>before</em> reconciliation, with its exact source location.</dd>
+    <dt>Fact</dt><dd>A reconciled observation in the append-only, revision-aware store; restatements supersede.</dd>
+    <dt>Claim</dt><dd>A typed assertion (subject, predicate, object, scope, horizon, epistemic class, confidence); prose is display only.</dd>
+    <dt>Epistemic class</dt><dd>The mandatory label: observed / computed / inferred / forecast / opinion.</dd>
+    <dt>Evidence package</dt><dd>The frozen set of documents, facts and calculations a run works from; downstream steps fetch nothing new.</dd>
+    <dt>Knowledge cutoff</dt><dd>The latest knowledge time a run may observe; fixed before any retrieval; every query respects it.</dd>
+    <dt>Valid time / knowledge time</dt><dd>When a fact applies vs when the system could have known it — stored independently.</dd>
+    <dt>Point-in-time capture</dt><dd>Daily / event persistence with hashes and first-seen times; prevents future loss, never recreates the past.</dd>
+    <dt>Deterministic compute</dt><dd>Registered, traceable calculation code — the only authoritative calculator.</dd>
+    <dt>Calculation trace</dt><dd>Inputs, assumptions, operator version, replay class and output behind every computed number.</dd>
+    <dt>Thesis</dt><dd>The current approved analytical view of a company; versioned narrative; never a recommendation.</dd>
+    <dt>Management ledger</dt><dd>Tracked management promises: new / modified / due / outcome.</dd>
+    <dt>Observable falsifier</dt><dd>A named event, metric or outcome that would materially weaken or reverse a thesis impact.</dd>
+    <dt>Memory promotion</dt><dd>The separate human decision that lets a draft change the canonical thesis. Agents draft; only the analyst promotes.</dd>
+    <dt>Golden set</dt><dd>Owned, expert-labeled evaluation fixtures (≥20 to start), grown from observed failures.</dd>
+    <dt>Review economics</dt><dd>The headline metric: analyst minutes per approved update, corrections, source-location time.</dd>
+    <dt>Distribution boundary</dt><dd>The hard gate between private research and any public / paid / personalized output.</dd>
+    <dt>Vertical slice</dt><dd>One discovery company across four consecutive quarters: Q0 manual baseline, Q1–Q3 assisted.</dd>
+  </dl>
+</section>
+
+<section id="approve">
+  <div class="approve">
+    <span class="eyebrow">Your decision</span>
+    <h3>What approving this page means</h3>
+    <ol>
+      <li>You accept the <strong>shape</strong>: the layered system in §2, the lineage in §3, the fixed workflow in §4, and the human decision points in §5.</li>
+      <li>You accept the <strong>lines</strong>: the can / cannot table in §7 and the now / later split in §8 as the architecture of record for the first release.</li>
+      <li>You are <strong>not</strong> approving spec wording (each spec keeps its own review), the three open HR decisions (asked separately), or any vendor, model, database or hosting choice — none of those is fixed here.</li>
+      <li>Implementation still waits for the ledger's own gate (all reviews recorded, HR-0001/2/3 resolved) — this approval removes the <em>architecture</em> gate only.</li>
+    </ol>
+    <p style="color:var(--ink-2);font-size:.92rem">If anything in the can / cannot lines or the human decision points is not what you want, say so — those are the choices this page exists to surface. Everything else is derived from them.</p>
+  </div>
+  <div class="foot">
+    <span>Sources: docs/specs S01–S25 · funda-blueprint-implementation-decision-register-v2 · funda-third-order-review-disposition-report · equity-os-blueprint-component-ledger (169 canonical rows) · CONTEXT.md.</span>
+    <span>Quoted lines are spec text. Where the specs set no number, this page sets none.</span>
+  </div>
+</section>
+
+</main>
+</div>

@@ -21,3 +21,4 @@ Not yet present, expected later: `docs/specs/` (brainstorming output),
 implementation artifacts the review recommends (§10: `MVP-001-earnings-review.md`,
 `ADR-001-system-of-record.md`, `data-contracts-v0.md`, `evaluation-plan.md`,
 `provider-rights-register.md`, `dependency-due-diligence.md`).
+- [Session handoff 2026-08-19](../../docs/goals/handoff/HANDOFF-2026-08-19.md) — authoritative resume point for the blueprint-completion goal (state, pending work, user decisions); architecture artifact source in docs/goals/architecture/
