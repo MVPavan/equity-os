@@ -1,0 +1,162 @@
+{
+  "artifact_type": "SourcePackageInventory",
+  "artifact_version": "1.0.0",
+  "status": "METADATA_ONLY_BLOCKED_FOR_SOURCE_RIGHTS",
+  "recorded_at": "2026-08-19T20:28:25Z",
+  "scope": {
+    "company": "Infosys Ltd (INFY)",
+    "issuer_quarters": ["Q1 FY25", "Q2 FY25", "Q3 FY25", "Q4 FY25"],
+    "program_quarters": ["Q0", "Q1", "Q2", "Q3"],
+    "boundary": "private/internal-only; this inventory confers no source rights"
+  },
+  "record_digest_convention": {
+    "algorithm": "SHA-256",
+    "encoding": "UTF-8",
+    "canonicalization": "Recursively sort object keys; preserve array order; serialize without whitespace or byte-order mark.",
+    "excluded_fields": ["record_digest"],
+    "non_self_referential": true,
+    "source_content_excluded": true
+  },
+  "provenance": {
+    "reference_record": "docs/research/phase-0a-discovery-company-shortlist.md",
+    "reference_record_status": "non-authoritative A-02 discovery evidence; nonbinding shortlist",
+    "reference_record_retrieval_date": "2026-08-19",
+    "reference_cutoff": "2026-08-19",
+    "acquisition": "No source bytes fetched, acquired, retained, or hashed by this task; URLs are already-recorded references only."
+  },
+  "quarter_packages": [
+    {
+      "program_quarter": "Q0",
+      "issuer_quarter": "Q1 FY25",
+      "role": "manual baseline/bootstrap thesis",
+      "sources": [
+        {
+          "source_id": "INFY-FY25-Q1-results-auditors",
+          "source_type": "issuer financial results and auditors reports PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q1/documents/q1-fy25-financial-results-auditorsreports.pdf",
+          "document_date_period": "2024-07-18; quarter ended 2024-06-30",
+          "intended_operations": ["manual reading", "source-location capture", "manual baseline observation extraction"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:143e96fa18aabc0295473c97bb1f87e4c7dc6cc51bfd7c510af32ae7c75d19f3"
+        },
+        {
+          "source_id": "INFY-FY25-Q1-management-transcript",
+          "source_type": "issuer management press-conference transcript PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q1/documents/transcripts/press-conference.pdf",
+          "document_date_period": "Q1 FY25; source date not recorded in shortlist",
+          "intended_operations": ["manual reading", "source-location capture", "management-guidance ledger extraction"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:37cb6286f22b475be68ae87fe1b489a1ac43a9636d252b13eac42f58f32dda3a"
+        }
+      ]
+    },
+    {
+      "program_quarter": "Q1",
+      "issuer_quarter": "Q2 FY25",
+      "role": "assisted incremental update",
+      "sources": [
+        {
+          "source_id": "INFY-FY25-Q2-results-auditors",
+          "source_type": "issuer financial results and auditors reports PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q2/documents/q2-and-h1-fy25-financial-results-auditorsreports.pdf",
+          "document_date_period": "2024-10-17; quarter and half-year ended 2024-09-30",
+          "intended_operations": ["assisted update input", "source-location capture", "reconciliation against Q0"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:f924c0438bd87fa930dfa79077cb4fc1af721ab473d52311766b950b2c7a7c6c"
+        },
+        {
+          "source_id": "INFY-FY25-Q2-management-transcript",
+          "source_type": "issuer management press-conference transcript PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q2/documents/transcripts/press-conference.pdf",
+          "document_date_period": "Q2 FY25; source date not recorded in shortlist",
+          "intended_operations": ["assisted update input", "source-location capture", "management-guidance revision extraction"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:007df77b6d3d7f46a98b3975b4a8a2a3bba184e390f6adaa7a93a05adbe0f22a"
+        }
+      ]
+    },
+    {
+      "program_quarter": "Q2",
+      "issuer_quarter": "Q3 FY25",
+      "role": "assisted incremental update",
+      "sources": [
+        {
+          "source_id": "INFY-FY25-Q3-results-auditors",
+          "source_type": "issuer financial results and auditors reports PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q3/documents/q3-and-9m-fy25-financial-results-auditorsreports.pdf",
+          "document_date_period": "2025-01-16; quarter and nine months ended 2024-12-31",
+          "intended_operations": ["assisted update input", "source-location capture", "reconciliation against prior quarters"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:93382329129544b5b40dc6766bad85ded704ddbd0357c277a6db0558d271998e"
+        },
+        {
+          "source_id": "INFY-FY25-Q3-management-transcript",
+          "source_type": "issuer earnings-call transcript PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q3/documents/transcripts/earningscall.pdf",
+          "document_date_period": "Q3 FY25; source date not recorded in shortlist",
+          "intended_operations": ["assisted update input", "source-location capture", "management-guidance revision extraction"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:cb930a7181fe75d7b5134efafa06820de0cd9393e428b63b1c523362861b460f"
+        }
+      ]
+    },
+    {
+      "program_quarter": "Q3",
+      "issuer_quarter": "Q4 FY25",
+      "role": "assisted incremental update",
+      "sources": [
+        {
+          "source_id": "INFY-FY25-Q4-results-auditors",
+          "source_type": "issuer financial results and auditors reports PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q4/documents/q4-and-12m-fy25-financial-results-auditorsreports.pdf",
+          "document_date_period": "2025-04-17; quarter and year ended 2025-03-31",
+          "intended_operations": ["assisted update input", "source-location capture", "reconciliation against prior quarters"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:34568028358ef318af2ebcfabb1a56175fe76082d968a234b32a3d20c04186f5"
+        },
+        {
+          "source_id": "INFY-FY25-Q4-ifrs-press-release",
+          "source_type": "issuer IFRS USD press release PDF",
+          "official_reference_url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q4/documents/ifrs-usd-press-release.pdf",
+          "document_date_period": "Q4 FY25; source date not recorded in shortlist",
+          "intended_operations": ["assisted update input", "source-location capture", "guidance-outcome comparison"],
+          "provenance_cutoff": "Recorded in the shortlist retrieved 2026-08-19; no live retrieval in this task.",
+          "source_content_digest_state": "UNKNOWN",
+          "source_bytes_held": false,
+          "record_digest": "sha256:0cb8a3b2d0b210b55e9257895fbfaf0654f46cd8a0a6554e9c944ebf5bc4209c"
+        }
+      ]
+    }
+  ],
+  "cross_period_management_commitment": {
+    "topic": "FY25 constant-currency revenue-growth and operating-margin guidance, including revisions and outcome",
+    "epistemic_class": "FACT as recorded in the non-authoritative shortlist",
+    "source_ids": ["INFY-FY25-Q1-management-transcript", "INFY-FY25-Q2-management-transcript", "INFY-FY25-Q3-management-transcript", "INFY-FY25-Q4-ifrs-press-release"],
+    "recorded_chain": [
+      "Q1: 3%-4% constant-currency revenue growth; 20%-22% operating margin.",
+      "Q2: 3.75%-4.5% revenue growth; 20%-22% operating margin retained.",
+      "Q3: 4.5%-5% revenue growth; operating-margin guidance unchanged.",
+      "Q4: FY25 constant-currency growth reported as 4.2%; FY26 guidance set at 0%-3% revenue growth and 20%-22% operating margin."
+    ]
+  },
+  "known_gaps": [
+    "Direct per-quarter XBRL file links were not captured.",
+    "Structured-data availability, guidance field coverage, and exchange-file retention for these exact quarters were not proven.",
+    "Public access does not establish source-use rights for automation, caching, retention, derived outputs, or redistribution."
+  ],
+  "record_digest": "sha256:87b8a2689f606f86e15d53d2a42fba0df83033fbc934d4133932669cb33b15f4"
+}
