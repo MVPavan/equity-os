@@ -1,7 +1,7 @@
 # Phase 0A Evidence Program
 
-Status: draft
-Approved by: None
+Status: approved
+Approved by: Current user on 2026-08-19, bound to pre-approval SHA-256 `5e8bfb585fcb0891e9b04f0a9088b9f2374c7390523316f2fcbc3a080f3b7040`.
 
 ## Problem Statement
 
@@ -293,6 +293,8 @@ the check semantics above remain implementation-independent.
 None.
 
 ## Further Notes
+
+This approval accepts the evidence-program spec only and does not itself decide A-01 boundary, A-02 company/quarters, source rights, legal conclusions, budgets, materiality, metrics, product identity, or Phase 0.5 entry.
 
 Architecture v2 approval is recorded by `eqos-jce`. The three-tier sourcing
 decision is recorded by `eqos-9x8`; therefore, the Architecture v2 brief's
