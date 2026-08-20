@@ -67,6 +67,129 @@ NSE endpoints `A05-DECISION-001` holds as ToS-prohibited. Closing it in producti
 
 ---
 
+## Thorough NSE+BSE capability matrix (round 2)
+
+Round 1 focused on NSE and left BSE thin (bsedata quote only). Round 2 enumerated
+each library's **actual installed public API** (read from source/docstrings in the
+per-library venvs) and live-tested the fundamentals-relevant surface for **both**
+exchanges, INFY-scoped. Same bounds (`A05-DECISION-002`): isolated venvs, ≤15 live
+calls/lib, ≥2.5s apart, stop-on-block, small samples. **No calls were blocked this
+round** — every NSE and BSE endpoint tested returned data (note: round 1's
+`nsepython.nse_eq` block was endpoint-specific; the financials endpoints below use
+different paths that worked). Evidence: `scratchpad/lib-eval/result-r2-*.json`.
+
+### Consolidated matrix — library × capability
+
+Legend: **XBRL** = parses/returns Ind AS XBRL; **struct** = structured numeric P&L
+(no XBRL parse); **link** = returns a filing/XBRL URL only; **filings** = filing
+announcements + PDF/attachment URLs; **✔** = works; **≈** = works but market-wide
+(client-side INFY filter needed); **✗ n/s** = not supported by the API;
+**✗ blocked** = endpoint returned empty/blocked; **—** = exchange not covered.
+
+| Library | NSE structured financials | NSE XBRL | BSE structured financials | BSE XBRL | Announcements / filings | Shareholding | Corp actions / board mtgs | Price / OHLCV |
+|---|---|---|---|---|---|---|---|---|
+| **nselib** (NSE-only) | ✔ struct (via master) | **✔ XBRL** (parses 65 fields) | — | — | ✔ filings (results master) | ✗ n/s | ≈ actions + event calendar | ✔ |
+| **nse / NseIndiaApi** | **✔ struct** (`results_comparison`, 5 qtrs) | ✔ **link** (`financial_results`) | — | — | ✔ (symbol-filtered) | **✔ promoter/public/empTrust + XBRL link** | ✔ actions, board mtgs, annual reports | ✔ (quote) |
+| **nsepython** | **✔ struct** (`nse_past_results`, 5 qtrs) | ✔ **link** (`nse_results` master) | ✗ n/s | ✗ n/s | ✔ (`nsefetch` corp-announcements) | ✗ n/s | ≈ `nse_events` (market-wide) | ✗ blocked (`nse_eq`) |
+| **jugaad-data** | ✗ n/s | ✗ n/s | ✗ **struct** — **filings only** | ✗ (PDF attachments, no XBRL) | ✔ **BSE** filings + PDF URLs (incl. "Result"/"Board Meeting" categories) | ✗ n/s | ✗ (only via BSE announcement categories) | ✔ NSE OHLCV; BSE = no price method |
+| **bsedata** (BSE-only) | ✗ n/s | ✗ n/s | ✗ n/s | ✗ n/s | ✗ n/s | ✗ n/s | ✗ n/s | ✔ **BSE quote** (adds mkt cap, face value, 52wk, depth) |
+
+nselib also exposes `pe_ratio(trade_date)` → per-symbol P/E for ~1,547 stocks
+(INFY filterable) — a valuation datum, not a statement.
+
+### Per-library round-2 findings (new vs round 1)
+
+- **nse / NseIndiaApi — biggest gains.** Beyond round 1's `results_comparison` +
+  `financial_results`, the installed API also has, all **symbol-filtered and all
+  verified live**: **`shareholding("INFY")`** → 21 quarters of promoter+group
+  (13.82%), public (85.97%), employee-trust (0.21%) holdings, each with a
+  **shareholding-pattern XBRL link** (`SHP_*.xml`); `actions()` (20 corporate
+  actions incl. "Dividend – Rs 25 Per Share"); `boardMeetings()` (8, incl. the
+  Q3 FY25 results-meeting intimation with an XBRL attachment); `annual_reports()`
+  (17 years of AR PDF links); and `announcements(symbol=…)`. This is by far the
+  richest first-party NSE surface. Evidence: `result-r2-nseindiaapi.json`.
+- **nselib — round-1 correction.** `corporate_actions_for_equity`,
+  `event_calendar_for_equity`, and `pe_ratio` take **no symbol arg** — they return
+  market-wide tables (178 / 807 / 1,547 rows) that must be filtered to INFY
+  client-side. `event_calendar` surfaced INFY's Q3 FY25 "Financial Results" board
+  meeting (16-Jan-2025). Still NSE-only; no shareholding, no BSE. Evidence:
+  `result-r2-nselib.json`.
+- **nsepython — round-1 correction.** Not announcements-only: **`nse_past_results("INFY")`
+  returns 5 quarters of structured P&L** (Q3 FY25 Oct–Dec 2024 consolidated net
+  profit `635800` Lakh = ₹6,358 Cr, basic EPS 15.31, current/deferred tax,
+  depreciation, face value) — the **same NSE `results-comparision` endpoint** as
+  NseIndiaApi, so a third route to the *same* data, not a new source. `nse_results`
+  gives the filing master with XBRL links. `nse_eq` quote still blocked. **No BSE
+  helpers exist** in the installed API. Evidence: `result-r2-nsepython.json`.
+- **jugaad-data — real BSE coverage found.** The `jugaad_data.bse.BSELive` module
+  (missed in round 1) live-returns **BSE corporate announcements for scrip 500209**
+  with PDF **attachment URLs**, across categories `Board Meeting`, `Company Update`,
+  `Others`, `Result` (22 rows in the FY25 Q1 window). This is the only tested route
+  into BSE *filings* — but it is **announcement metadata + PDF links, NOT structured
+  financials and NOT parsed XBRL** (the default `category="Result"` args are treated
+  as "no filter" by the library, a quirk to note). No BSE live-price method exists in
+  this module. Evidence: `result-r2-jugaad-bse.json`.
+- **bsedata — fuller quote, still quote-only.** `getQuote("500209")` returns 24
+  fields — round 1 undersold it: it includes **`marketCapFull` (₹4,58,641 Cr),
+  `marketCapFreeFloat`, faceValue, 52-wk, weightedAvgPrice, 2-wk avg qty, and 5-level
+  buy/sell depth**. But the whole API is `getQuote / getBhavCopyData / getIndices /
+  topGainers / topLosers / getScripCodes / verifyScripCode` — **no financials, no
+  announcements, no shareholding**. The task-mentioned `getPeriodTrend` does **not
+  exist** in this installed version. `verifyScripCode` needs a locally-downloaded
+  scrip master (`stk.json`) and errors without it (a local-cache gap, not a block).
+  Evidence: `result-r2-bsedata.json`.
+
+### Updated answers to the three key questions
+
+1. **Does any lib add a NEW route to quarter-grain structured financials or XBRL —
+   especially for BSE?**
+   - **NSE:** `nsepython.nse_past_results` is a third route to structured 5-quarter
+     P&L, but it hits the **same** NSE `results-comparision` endpoint as
+     NseIndiaApi — a new *function*, not a new *source*. Also newly surfaced: an
+     **NSE shareholding-pattern XBRL** (`SHP_*.xml`) via `NseIndiaApi.shareholding`
+     (a shareholding XBRL, not a P&L one).
+   - **BSE:** **No.** No tested library returns structured BSE financials or parsed
+     BSE XBRL. The only real BSE route (`jugaad-data` `BSELive`) yields **filing
+     announcements + PDF attachment links** (incl. the "Result" category), and
+     `bsedata` is quote-only. **BSE fundamentals remain PDF-filing-level at best** —
+     no wrapper closes the BSE structured-financials/XBRL gap.
+2. **Which libs expose shareholding / promoter-pledge data (§16.2, no source today)?**
+   - **Shareholding: only `NseIndiaApi.shareholding("INFY")`** — promoter+group,
+     public, and employee-trust percentages per quarter (21 quarters), each with a
+     shareholding-pattern XBRL link. It is the sole tested source for the §16.2
+     shareholding capture kind (NSE, first-party). No other tested lib exposes it.
+   - **Promoter pledge: no source found.** The shareholding pattern gives promoter
+     *holding %*, not *encumbered/pledged %*; promoter-pledge disclosure is a separate
+     filing that **none** of the tested wrappers surface. The pledge half of §16.2
+     stays unsourced.
+3. **Consolidated capability matrix:** see the table above (lib × {NSE financials,
+   NSE XBRL, BSE financials, BSE XBRL, announcements, shareholding, corp actions,
+   price}, each marked works / market-wide / blocked / not-supported).
+
+**Rights caveat unchanged.** Every working route above is an NSE or BSE endpoint that
+`A05-DECISION-001` holds ToS-**denied** for automated/production use (NSE
+scraping-prohibited; BSE all-operations denied). Round 2 widens *what is technically
+reachable* (NSE shareholding especially) but changes nothing about rights: adoption is
+a rights decision, not a capability gap. BSE structured financials/XBRL are **not even
+technically reachable** through these wrappers — only PDF filings are.
+
+### Live calls this round (per library)
+
+| Library | Live calls (round 2) | Notes |
+|---|---|---|
+| nse / NseIndiaApi | 6 | shareholding, actions, boardMeetings, annual_reports, announcements, + 1 shareholding re-fetch |
+| nselib | 4 | corporate_actions, event_calendar (×1 after a client-side param retry), pe_ratio (×2) |
+| jugaad-data (BSE) | 2 | BSE result-announcements, BSE all-announcements |
+| nsepython | 2 | nse_past_results, nse_events |
+| bsedata | 1 | getQuote (verifyScripCode failed locally, no network call) |
+
+All ≤15/lib, ≥2.5s apart, INFY/500209-scoped, no blocks.
+
+Round-2 harnesses: `eval_r2_nselib.py`, `eval_r2_nseindiaapi.py`, `eval_r2_nsepython.py`,
+`eval_r2_jugaad_bse.py`, `eval_r2_bsedata.py` (session scratchpad, not committed).
+
+---
+
 ## Per-library detail
 
 ### nselib — `RuchiTanmay/nselib` (inventory §6 row 6) — Fit H

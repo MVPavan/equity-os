@@ -202,3 +202,78 @@ venv with a real headless browser. HTTP statuses, rendered content, and XBRL fac
 are captured in the saved samples. Financial figures cross-checked against Infosys'
 published FY25 results for plausibility; not independently audited. No evasion tooling
 used; evaluation stopped at the NSE hard block as instructed and recorded it.
+
+---
+
+## Advanced-legitimate NSE retry (round 2)
+
+**Authorized by:** `A05-DECISION-003` (same digest as above), no-evasion limit binding
+and non-negotiable. **Date:** 2026-08-20. **Goal:** re-test NSE with crawl4AI's
+*advanced-but-legitimate* real-browser rendering — patient rendering, not evasion — to
+see whether the Akamai `ACS-GOTO` JS challenge that killed round 1 can be waited out to
+reach INFY FY25 financials / Ind AS XBRL.
+
+### Techniques used (all legitimate real-Chromium rendering; config verbatim)
+
+Harness: `scratchpad/crawl4ai-eval/crawl_nse_r2.py` (+ `crawl_nse_r2b.py`), crawl4AI
+0.9.2, headless Chromium 151, one `AsyncWebCrawler` / one `BrowserContext`.
+
+- **Two-step session warmup** — first load `https://www.nseindia.com/` home to acquire
+  Akamai cookies, then navigate to the INFY targets **reusing the same context** via
+  `session_id="nse-session"` (`js_only=True` for the in-page XHR steps so they run in the
+  already-warmed tab, no fresh navigation).
+- **Patient rendering** — `page_timeout=90000–100000`, `wait_until="networkidle"`,
+  `delay_before_return_html=8–10s` (time for the ACS-GOTO challenge to resolve in the real
+  browser), `wait_for="js:() => document.body.innerText.length > 500"`.
+- **Lazy-content handling** — `scan_full_page=True`, `scroll_delay=0.5–0.6`.
+- **Natural header/referer chain** — standard current Chrome UA (Chrome/128), real
+  `Accept`/`Accept-Language`/`Sec-Fetch-*`/`Upgrade-Insecure-Requests` headers; the
+  referer chain builds naturally from the home→target navigation in one session.
+- **`js_code`** — click the "Financial Results" tab on the listing page; and a
+  same-origin, `credentials:"include"` in-page `fetch()` of the results API (the exact
+  mechanism that made BSE's in-page XHR succeed).
+- **NOT used (forbidden tier, never set):** `magic`, `simulate_user`,
+  `override_navigator`, any stealth/undetected plugin, WebDriver-flag hiding, fingerprint
+  spoofing, proxy rotation, CAPTCHA solving.
+
+### Per-fetch results — 7 NSE fetches total (≤10, sequential, ≥3.2s apart)
+
+| # | Target | HTTP | Challenge resolved? | Real content / XBRL? | Verdict |
+|---|---|---|---|---|---|
+| 1 | `https://www.nseindia.com/` (WARMUP) | **200** | **Yes** | Home fully rendered (169KB, 376 links); cookies acquired. No INFY data (not a data page). | **Warmup works** — the *unguarded* home route renders fine |
+| 2 | `/get-quotes/equity?symbol=INFY` (warmed session) | **fail (None)** | **No** | 0 bytes | **Hard block** — `net::ERR_HTTP2_PROTOCOL_ERROR` raised *inside* crawl4AI's own `ACS-GOTO` navigation handler; Akamai actively reset the connection on the guarded route despite the warmed cookies. Worse than a passive shell |
+| 3 | `/companies-listing/corporate-filings-financial-results` (warmed + tab click) | 200 | Partial (shell only) | **None** — 334KB rendered but grep: 0 `Infosys`/`INFY`, 0 real filing/XBRL links (7 "xbrl" hrefs are all static nav like `/companies-listing/xbrl-information`), 0 data rows | **Empty grid** — SPA chrome rendered; the XHR-driven results grid never populated |
+| 4 | `/api/corporate-financial-results?...&period=Quarterly` (top-level nav) | 404 | n/a | None | Reached the app → application `"Resource not found"` (param shape), not an Akamai wall at nav; but yields no data |
+| 5 | in-page XHR of results API (from warmed quote tab) | — | n/a | None | `TypeError: Failed to fetch` — same-origin credentialed XHR **network-blocked** |
+| 6 | `https://www.nseindia.com/` (WARMUP, run 2b) | **200** | **Yes** | Home rendered (169KB) | Warmup works again |
+| 7 | in-page XHR of results API **with full correct params** (`index/symbol/period/from_date/to_date`), from warmed home tab | — | n/a | **None** | **`TypeError: Failed to fetch`** — even the best-case same-origin, credentialed, correctly-parametered XHR from a freshly-warmed real home page is network-blocked. This is the decisive result |
+
+Samples: `scratchpad/crawl4ai-eval/nse-r2-fetch{1..5}.{html,md}`, `nse-r2-api-xhr.txt`.
+
+### Verdict — does patient legitimate rendering beat NSE's challenge?
+
+**NO.** Advanced-but-legitimate rendering does **not** crack NSE. The findings are
+consistent and decisive:
+
+- The **unguarded** home route renders fine and cookies are acquired — so the warmup
+  itself works; NSE does not block *everything*.
+- But **every data-bearing surface stays blocked** even from inside a warmed,
+  same-origin, credentialed real-browser session: the guarded quote route hard-fails with
+  an active HTTP/2 connection reset at the `ACS-GOTO` challenge; the results-listing grid
+  XHR never populates; and the financial-results **API XHR returns `Failed to fetch`
+  regardless of params** (tested with minimal and with full correct `from_date/to_date`).
+- This is the **opposite of BSE**, where the identical in-page same-origin XHR mechanism
+  *succeeded* and returned real data. On NSE the same mechanism is network-blocked. So the
+  round-1 conclusion holds and is now stronger: **no INFY FY25 financials and no XBRL were
+  obtained from NSE**, and the warmup-cookie hypothesis is falsified.
+
+**Going further would require the forbidden evasion tier** — Akamai `sensor_data`
+forgery, fingerprint/`navigator` spoofing, stealth/undetected browser plugins, or
+proxy/IP rotation. Those are explicitly forbidden under `A05-DECISION-003`, so I **did not
+attempt them and stopped at the hard block**, as instructed. A hard block is the reported
+result.
+
+> **Rights reminder (unchanged, non-negotiable).** Regardless of technical outcome,
+> **production, standing, scheduled, or bulk NSE use remains HELD/DENY under
+> `A05-DECISION-001` (CHN-01)**. This round-2 retry was a private, bounded technical
+> evaluation only and authorizes nothing for production. No evasion tooling was used.
