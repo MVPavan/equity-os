@@ -1,0 +1,221 @@
+company,program_quarter,issuer_quarter,quarter_ended,channel,dimension,dimension_name,state,cell_text,source_record
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Results-and-auditors'-reports PDF dated 2024-07-18 and press-conference transcript PDF are recorded at issuer URLs in the S1 inventory. Not re-verified live (HTTP 403).,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Financial Results search channel exists. Presence of the specific INFY Q1 FY25 filing on it: `UNKNOWN` — no automated retrieval attempted.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Company results endpoint for code 500209 exists. Presence of the specific filing: `UNKNOWN` — no automated retrieval attempted.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D1,filing_channel_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` 6-K submitted 2024-07-18, accession `0001067491-24-000024`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D1,filing_channel_availability,NOT_APPLICABLE,`NOT_APPLICABLE` — annual form; no quarter-level submission exists for this quarter.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — no XBRL artifact on the issuer site was established; the shortlist records this as a data gap and no document was retrieved.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — pre-Integrated-Filing quarter; whether an Ind AS XBRL results file for INFY exists and is retrievable here was **not** verified (no automated retrieval).,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D2,structured_xbrl_availability,UNKNOWN,"`UNKNOWN` — the endpoint exposes standalone/consolidated XBRL columns `[repo-recorded]`, but whether a file exists for this quarter was **not** verified.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D2,structured_xbrl_availability,ABSENT,"`ABSENT` — `[verified 2026-08-20]` the EDGAR listing shows only `Documents` for this 6-K row, with no `Interactive Data`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D2,structured_xbrl_availability,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN` — dependent on D2.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN` — taxonomy family and version not established.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN` — taxonomy family and version not established.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE` — no structured artifact present.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D4,statement_level_coverage,UNKNOWN,`UNKNOWN` — document not opened (no rights disposition).,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D4,statement_level_coverage,UNKNOWN,`UNKNOWN` — filing documents not retrieved; only the index listing was read.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D4,statement_level_coverage,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D5,segment_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D6,notes_and_accompanying_disclosures,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN` — shareholding-pattern filings are a separate LODR channel; not examined.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN` — same.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D7,ownership_share_count_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D8,restatement_and_revision_behavior,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE` — Q0 is the first quarter in the slice; there is no prior quarter inside scope.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN` — no retention or URL-stability commitment established; live access to the host was denied to automated clients on 2026-08-20.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN` — `[repo-recorded]` no stable per-company per-quarter XBRL file URL was established.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN` — same.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D10,point_in_time_retention_and_stable_link,UNKNOWN,"`UNKNOWN` — EDGAR accession numbers are recorded above, but no retention statement was retrieved.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D10,point_in_time_retention_and_stable_link,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-ISSUER,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-NSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-BSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-6K,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q0,Infosys Q1 FY25,2024-06-30,CH-SEC-20F,D11,estimated_reconciliation_effort,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Q2-and-H1 results-and-auditors'-reports PDF dated 2024-10-17 and press-conference transcript PDF recorded at issuer URLs. Not re-verified live.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` channel exists; specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` endpoint exists; specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D1,filing_channel_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` 6-K submitted 2024-10-17, accession `0001067491-24-000032`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D1,filing_channel_availability,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — as Q0.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — pre-Integrated-Filing quarter; Ind AS XBRL availability for INFY **not confirmed**.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — **not confirmed**.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D2,structured_xbrl_availability,ABSENT,`ABSENT` — `[verified 2026-08-20]` no `Interactive Data` on this 6-K row.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D2,structured_xbrl_availability,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D4,statement_level_coverage,UNKNOWN,"`UNKNOWN` — half-year statements are expected in a Q2 filing under LODR 33(3)(f), but this was not verified against the document.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D4,statement_level_coverage,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D5,segment_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D6,notes_and_accompanying_disclosures,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D7,ownership_share_count_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D8,restatement_and_revision_behavior,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D9,mapping_stability_vs_prior_quarter,UNKNOWN,"`UNKNOWN` — document-naming continuity across quarters is recorded in the shortlist as an **inference**, not a verified mapping-stability fact.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,*cited fact* `[verified 2026-08-20]` No exchange filing-framework change applies to this quarter: the Integrated Filing regime begins with the quarter ending 2024-12-31 (SEBI circular 185). Field-level mapping stability remains `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,*cited fact* — same regulatory position as `CH-NSE`; field-level mapping stability `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN` — 6-K content not examined.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D10,point_in_time_retention_and_stable_link,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-ISSUER,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-NSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-BSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-6K,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q1,Infosys Q2 FY25,2024-09-30,CH-SEC-20F,D11,estimated_reconciliation_effort,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Q3-and-9M results-and-auditors'-reports PDF dated 2025-01-16 and earnings-call transcript PDF recorded at issuer URLs. Not re-verified live.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` channel exists; **`[verified 2026-08-20]`** this is the first quarter for which Integrated Filing (Financial) applies. Specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D1,filing_channel_availability,CITED_FACT,*cited fact* — same as `CH-NSE`; specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D1,filing_channel_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` 6-K submitted 2025-01-16, accession `0001067491-25-000002`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D1,filing_channel_availability,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D2,structured_xbrl_availability,UNKNOWN,"`UNKNOWN` — the Integrated Filing regime applies from this quarter and NSE's 2025-04-02 circular `[repo-recorded]` states Integrated Filing–Financial is submitted in XBRL, but **whether an Ind AS XBRL artifact for INFY for this quarter exists and is retrievable was not verified.**",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — same.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D2,structured_xbrl_availability,ABSENT,`ABSENT` — `[verified 2026-08-20]` no `Interactive Data` on this 6-K row.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D2,structured_xbrl_availability,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D3,taxonomy_and_version,UNKNOWN,"`UNKNOWN` — the SEBI circular text contains **no** occurrence of ""XBRL"" `[verified 2026-08-20]`; taxonomy family and version are established by neither this circular nor any page retrieved in this pass.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D4,statement_level_coverage,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D5,segment_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D6,notes_and_accompanying_disclosures,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D7,ownership_share_count_data,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D8,restatement_and_revision_behavior,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,"*cited fact* `[verified 2026-08-20]` **Framework discontinuity inside the slice.** SEBI circular 185 introduces Integrated Filing ""applicable for the filings to be done for the quarter ending 31st December 2024 and thereafter"", with LODR 33(3) financial results inside Integrated Filing (Financial) and a 45-day timeline. Field-level mapping impact on INFY's filings is `UNKNOWN`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,*cited fact* — same discontinuity; field-level impact `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D9,mapping_stability_vs_prior_quarter,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D10,point_in_time_retention_and_stable_link,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-ISSUER,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-NSE,D11,estimated_reconciliation_effort,UNKNOWN,"`UNKNOWN` — a regime change mid-slice is a recognized reconciliation risk, but no effort figure is supplied by the recording agent.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-BSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-6K,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q2,Infosys Q3 FY25,2024-12-31,CH-SEC-20F,D11,estimated_reconciliation_effort,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` Q4-and-12M results-and-auditors'-reports PDF dated 2025-04-17 and IFRS USD press-release PDF recorded at issuer URLs. Not re-verified live.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D1,filing_channel_availability,CITED_FACT,*cited fact* `[repo-recorded]` channel exists; **`[verified 2026-08-20]`** last-quarter/full-year Integrated Filing (Financial) applies on a 60-day timeline. Specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D1,filing_channel_availability,CITED_FACT,*cited fact* — same; specific filing presence `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D1,filing_channel_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` 6-K submitted 2025-04-17, accession `0001067491-25-000008`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D1,filing_channel_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` Annual report on Form 20-F for the fiscal year ended 2025-03-31 filed 2025-07-01, accession `0000950170-25-091925`.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — **not confirmed** for this quarter.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D2,structured_xbrl_availability,UNKNOWN,`UNKNOWN` — **not confirmed** for this quarter.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D2,structured_xbrl_availability,ABSENT,`ABSENT` — `[verified 2026-08-20]` no `Interactive Data` on this 6-K row.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D2,structured_xbrl_availability,CITED_FACT,"*cited fact* `[verified 2026-08-20]` The EDGAR listing shows `Interactive Data` for this 20-F, i.e. a structured XBRL exhibit is present. **Scope caveat:** annual, not quarter-level.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D3,taxonomy_and_version,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D3,taxonomy_and_version,NOT_APPLICABLE,`NOT_APPLICABLE`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D3,taxonomy_and_version,UNKNOWN,"`UNKNOWN` — the presence of Interactive Data was observed from the index listing; the taxonomy family (IFRS vs. other) and version were **not** established, because no filing document or XBRL instance was retrieved.",docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D4,statement_level_coverage,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D4,statement_level_coverage,UNKNOWN,`UNKNOWN` — annual statements are expected in a 20-F but were not verified; quarter-level (Jan–Mar 2025) isolation from an annual filing is `NOT_APPLICABLE` by construction.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D5,segment_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D6,notes_and_accompanying_disclosures,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D7,ownership_share_count_data,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D8,restatement_and_revision_behavior,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,*cited fact* `[verified 2026-08-20]` Second framework transition inside the slice: the last quarter and financial year move to the 60-day Integrated Filing (Financial) timeline. Field-level mapping impact `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D9,mapping_stability_vs_prior_quarter,CITED_FACT,*cited fact* — same; field-level impact `UNKNOWN`.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D9,mapping_stability_vs_prior_quarter,UNKNOWN,`UNKNOWN` — comparability between an Indian-GAAP-family quarterly filing and an IFRS annual 20-F is a known reconciliation question and was not examined.,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D10,point_in_time_retention_and_stable_link,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-ISSUER,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-NSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-BSE,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-6K,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
+Infosys Ltd,Q3,Infosys Q4 FY25,2025-03-31,CH-SEC-20F,D11,estimated_reconciliation_effort,UNKNOWN,`UNKNOWN`,docs/evidence/phase-0a/a-06-filing-coverage-spike.md
