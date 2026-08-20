@@ -1,10 +1,11 @@
 # A-05 Source Rights Package
 
-**Record version:** 1.1.0
-**Status:** PREPARED — evidence collected and decision form opened; **no rights decision is made or implied by this record**
-**Recorded at:** 2026-08-20 (v1.0.0); amended 2026-08-20 (v1.1.0 — conformed to the approved plan file map; machine form added)
+**Record version:** 1.2.0
+**Status:** PARTIALLY_DECIDED_REMAINDER_PENDING — the product owner's source-rights decision `A05-DECISION-001` (2026-08-20) is **transcribed** here; every cell it does not cover remains `UNKNOWN (denied by default)`
+**Recorded at:** 2026-08-20 (v1.0.0); amended 2026-08-20 (v1.1.0 — conformed to the approved plan file map; machine form added); amended 2026-08-20 (v1.2.0 — `A05-DECISION-001` recorded)
 **Author:** bounded implementer (recording agent, not the decision maker)
 **Stage / bead:** S2 `eqos-3ps.2`, plan Task 2 (`docs/plans/2026-08-19-phase-0a-evidence-program.md`)
+**Decision record:** `docs/evidence/phase-0a/a-05-rights-decision-record.md` — `A05-DECISION-001`
 
 ## Artifact pair
 
@@ -24,20 +25,23 @@ digest is bound into this record's digest payload below.
 
 This record collects **published terms, policy, and access observations** for every source in the
 S1 metadata-only inventory (`docs/evidence/phase-0a/source-package-inventory.json`) and for the
-official filing channels recorded alongside it, and opens a decision form for the competent
-source-rights authority.
+official filing channels recorded alongside it, and **transcribes** the source-rights decision the
+competent authority made against that evidence.
 
-It is **not** a rights decision, a permission, a legal review, a legal opinion, an interpretation
-of any quoted term, or a finding of legal sufficiency. **Every disposition cell in this record is
-`UNKNOWN (denied by default)`.** Nothing here states or implies that any access, retrieval,
-retention, transformation, or distribution operation is permitted. Public reachability of a URL,
-the presence of a document in the S1 inventory, the A-01 boundary decision, and the A-02 slice
-selection each establish **no** right.
+It is **not itself** a rights decision, a legal review, a legal opinion, an interpretation of any
+quoted term, or a finding of legal sufficiency. It **grants** nothing. Every `ALLOWED` cell below
+is a transcription of `A05-DECISION-001`
+(`docs/evidence/phase-0a/a-05-rights-decision-record.md`), made by the product owner on 2026-08-20
+on a self-assumed mandate **with no legal credential claimed and no legal review performed**;
+permission flows from that decision, never from this file. Public reachability of a URL, the
+presence of a document in the S1 inventory, the A-01 boundary decision, and the A-02 slice
+selection each still establish **no** right.
 
 Per the approved plan, unknown or unapproved operations are **denied**: acquisition,
-transformation, and use remain denied except for operations that a competent authority
-independently marks `ALLOWED` in a successor version of this record. A source-level decision may
-never widen an operation that is independently denied or unknown.
+transformation, and use remain denied except for operations the authority independently marked
+`ALLOWED`, which are exactly the cells cited to `A05-DECISION-001` below. A source-level decision
+may never widen an operation that is independently denied or unknown; no source-level access
+decision exists, so none does.
 
 The A-01 boundary (`docs/evidence/phase-0a/a-01-initial-boundary-decision.md`) independently
 prohibits public, paid, personalized, and execution-linked modes. That prohibition is **separate
@@ -46,10 +50,16 @@ permitted.
 
 ## Method and limits of the evidence
 
-- Only terms of use, website policy, disclaimer, `robots.txt`, and regulator/legal pages were
-  requested. **No source-package content was fetched, downloaded, parsed, or hashed.** No
-  quarterly results PDF, transcript PDF, press release, or XBRL file was retrieved. Source-content
-  digests therefore remain `UNKNOWN` exactly as recorded in S1.
+- During evidence collection (versions 1.0.0 and 1.1.0) only terms of use, website policy,
+  disclaimer, `robots.txt`, and regulator/legal pages were requested; **no source-package content
+  was fetched, downloaded, parsed, or hashed** at that stage.
+- **Subsequently, under `A05-DECISION-001` (2026-08-20), the eight enumerated Infosys IR documents
+  were retrieved** in a one-time, human-directed, agent-assisted fetch — 8 URLs requested, 8/8
+  `OK`, per-file SHA-256 recorded in
+  `docs/evidence/phase-0a/a-05-retrieval-manifest-infy-fy25.json`. The retrieved PDFs live under a
+  gitignored path and **must never be committed**; the manifest carries URLs, byte counts, and
+  digests only. The per-source `source_content_digest_state` fields in the companion JSON continue
+  to mirror the S1 inventory, which this record does not amend.
 - Access date for every observation in this record: **2026-08-20**.
 - Where a live publisher page could not be retrieved, the failure is recorded as a fact and the
   terms content is marked `NOT_RETRIEVED`; where an Internet Archive snapshot was used instead,
@@ -99,7 +109,7 @@ is invented.
 | OP-01 | Human interactive access and reading | A person opening the document in a browser and reading it. |
 | OP-02 | Programmatic / automated retrieval | Any scripted, batched, scheduled, crawled, or tool-driven fetch. |
 | OP-03 | Retention of source bytes | Keeping the retrieved file beyond transient display, in any store. |
-| OP-04 | Caching | Any intermediate, proxy, or reuse cache of the source or its bytes. |
+| OP-04 | Caching | Any *additional* intermediate, proxy, CDN, or shared reuse cache of live-fetched source content. Clarification, not a new permission: a single retained local copy already covered by `OP-03`, re-read by the same principal, is `OP-03` and not `OP-04`. |
 | OP-05 | Source-location capture | Recording URL, document identity, page/section anchors as citations. |
 | OP-06 | Fact and figure extraction into internal records | Copying values, statements, or guidance text into program artifacts. |
 | OP-07 | Transformation and derived outputs | Computations, reconciliations, summaries, memos derived from the source. |
@@ -109,35 +119,73 @@ is invented.
 | OP-11 | Commercial use | Any revenue-linked, paid, or commercial application. |
 | OP-12 | Hashing / content digesting of source bytes | Computing a content digest, which requires holding the bytes. |
 
-`OP-10` and `OP-11` are **additionally prohibited by A-01** irrespective of rights; their rights
-disposition below is nevertheless recorded as unknown, because A-01 is a product-owner boundary
-and not a rights decision.
+`OP-10` and `OP-11` are **additionally prohibited by A-01** irrespective of rights. That
+prohibition is separate from the rights dispositions below: `OP-10` is now `DENIED` on rights
+grounds for every source as well, while `OP-11` is `DENIED` for CHN-01 and CHN-02 and remains
+`UNKNOWN` for the other nine sources because `A05-DECISION-001` did not address commercial use
+there — and stays denied either way.
 
-## Disposition table — every cell `UNKNOWN (denied by default)`
+## Disposition table — as decided by `A05-DECISION-001`
 
-**Legend:** `U/D` = `UNKNOWN (denied by default)`. There is no other value in this table and no
-cell may be read as a permission. **11 sources × 12 operations = 132 disposition cells, all
-`UNKNOWN (denied by default)`.**
+**Legend:** `A` = `ALLOWED`, `D` = `DENIED`, `U/D` = `UNKNOWN (denied by default)`.
+**11 sources × 12 operations = 132 disposition cells: 66 `ALLOWED`, 41 `DENIED`, 25
+`UNKNOWN (denied by default)`.** Every `A` and every `D` cell cites `decision_ref`
+`A05-DECISION-001` and carries `authority_envelope` `A05-DECISION-001` in the companion JSON;
+every `U/D` cell carries `NOT_COVERED_BY_A05-DECISION-001` and remains denied.
 
 | Ref | OP-01 | OP-02 | OP-03 | OP-04 | OP-05 | OP-06 | OP-07 | OP-08 | OP-09 | OP-10 | OP-11 | OP-12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| SRC-01 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-02 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-03 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-04 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-05 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-06 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-07 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| SRC-08 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| CHN-01 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| CHN-02 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
-| CHN-03 | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D | U/D |
+| SRC-01 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-02 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-03 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-04 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-05 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-06 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-07 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| SRC-08 | A | A | A | U/D | A | A | A | A | D | D | U/D | A |
+| CHN-01 | U/D | D | D | D | D | D | D | D | D | D | D | D |
+| CHN-02 | D | D | D | D | D | D | D | D | D | D | D | D |
+| CHN-03 | A | A | U/D | U/D | U/D | U/D | U/D | U/D | D | D | U/D | U/D |
+
+### Decision bases
+
+Each cell above cites one of these bases, carried verbatim in the companion JSON's
+`decision_bases` object with its rationale, the exact term relied on, conditions and limits, scope
+boundary, and the events that invalidate it.
+
+| Basis | Cells | Disposition | Short form |
+|---|---|---|---|
+| `DB-01-INFY-INTERNAL-ALLOW` | SRC-01 … SRC-08 × OP-01, 02, 03, 05, 06, 07, 08, 12 | `ALLOWED` | Human-directed retrieval — including the one-time agent-assisted Python-requests fetch of the eight enumerated URLs executed 2026-08-20 — plus internal retention, internal AI processing, and internal derived facts and claims for private research. `OP-05` (source-location capture) and `OP-12` (content digesting) are recorded `ALLOWED` as **direct entailments of that instructed retrieval and of the manifest digests the decider was shown, not as separately spoken permissions**. `OP-02` is limited to that one-time fetch; standing, scheduled, recurring, or crawling retrieval stays `UNKNOWN`. |
+| `DB-02-INFY-REDIST-DENY` | SRC-01 … SRC-08 × OP-09, OP-10 | `DENIED` | No redistribution, publication, or public output of source bytes or substantial excerpts. The decider did not separately distinguish internal from external redistribution, so the deny is applied to both fail-closed. |
+| `DB-04-SEC-FAIR-ACCESS-ALLOW` | CHN-03 × OP-01, OP-02 **only** | `ALLOWED` | Access within the SEC's published fair-access limits — max 10 requests/second, declared descriptive user agent, efficient scripting — and entry into the source list. **Authorizes access only**; nothing may yet be retained, extracted, transformed, machine-processed, captured, or hashed from CHN-03. |
+| `DB-05-SEC-REDIST-DENY` | CHN-03 × OP-09, OP-10 | `DENIED` | Same internal-only output boundary as `DB-02`. |
+| `DB-06-NSE-DENY` | CHN-01 × OP-02 … OP-12 | `DENIED` | All automated collection denied; the NSE terms expressly prohibit systematic or automated data collection. |
+| `DB-08-NSE-HUMAN-BROWSING-OUT-OF-SCOPE` | CHN-01 × OP-01 | `UNKNOWN (denied by default)` | Human browsing was declared **out of scope of the system, not decided**. Out of scope is not denied, so the cell stays `UNKNOWN` and denied by default; no artifact in this program may rest on it. |
+| `DB-07-BSE-DENY` | CHN-02 × all twelve operations | `DENIED` | All operations denied; the operative `www.bseindia.com` terms were not retrievable, so there is nothing to rely on. |
+| `DB-03-NOT-COVERED-UNKNOWN` | SRC-01 … SRC-08 × OP-04, OP-11; CHN-03 × OP-03, 04, 05, 06, 07, 08, 11, 12 | `UNKNOWN (denied by default)` | The decision is silent on these operations. Silence is `UNKNOWN` and therefore denied; **nothing is inferred from the operations that were decided** — including for CHN-03, where the decider spoke to access only and the remaining operations are deliberately **not** carried over from the Infosys allowance. `OP-11` is additionally prohibited by A-01. |
 
 Supporting per-pair fields required by the plan — access method, automation, caching, retention,
 commercial use, transformation/derived output, redistribution, account limits, point-in-time
-availability, replacement path, and authority envelope — are all `UNKNOWN` for all 132 pairs.
-There is currently **no** source-rights authority record of any kind attached to this package, so
-the authority envelope for every cell is `NO_AUTHORITY_RECORD_PRESENT`.
+availability, and replacement path — carry the decided envelope on every **decided** cell, and are
+**neutral `UNKNOWN` on all 25 undecided cells**: a source's decided envelope says nothing about an
+operation nobody decided, so an undecided cell never displays an `ALLOWED`-looking string next to
+its `UNKNOWN` disposition. **Account limits, point-in-time availability, and replacement path
+remain `UNKNOWN` on every cell of every source**: they are unanswered facts, not dispositions, and
+decision items D-3 and D-4 are still open. `authority_envelope` is `A05-DECISION-001` on decided
+cells and `NOT_COVERED_BY_A05-DECISION-001` elsewhere.
+
+### Held, not decided
+
+Screener.in, Tijori, and **exactly the eleven ⛔-marked rows** of
+`docs/research/external-tools-and-repos-inventory.md` §6 — rows 3, 4, 5, 6, 7, 8, 9, 11, 12, 13,
+and 14 (`nsepython`, `NseIndiaApi`, `BseIndiaApi`, `nselib`, `tijori-finance-mcp`, `jugaad-data`,
+`screener-scraper-pro`, `fii-dii-data`, `nse-bse-indian-stock-market-data-mcp`, `NSEDownload`,
+`fii-dii-analysis`) — are **HELD — denied for now**, to be revisited after program Q0 (manual
+baseline) shows what data is actually missing. §6 rows 1 (`FinceptTerminal`), 2
+(`machine-learning-for-trading`), and 10 (`openscreener`) have no source access of their own, are
+**not** held, and remain CANDIDATE-UNDECIDED. None of these are sources in this register and none
+carries a cell in the grid; the hold is recorded in the companion JSON under
+`held_pending_q0_review` so it stays discoverable.
 
 ## Publisher terms evidence
 
@@ -269,9 +317,12 @@ Verbatim:
 > disproportionately large load on the Website / Mobile Application's infrastructure."
 
 **Effect on this task's own method (fact).** Because these terms address automated collection and
-caching directly and because no rights disposition exists, **no automated retrieval of NSE filing,
-results, or XBRL data was attempted for A-05 or A-06.** Every NSE coverage cell in A-06 that would
-have required such retrieval is `UNKNOWN`.
+caching directly and because no rights disposition existed at the time, **no automated retrieval of
+NSE filing, results, or XBRL data was attempted for A-05 or A-06.** Every NSE coverage cell in A-06
+that would have required such retrieval is `UNKNOWN`. `A05-DECISION-001` has since made CHN-01 a
+**decided deny across `OP-02` … `OP-12`**, so no such retrieval may be attempted at all; `OP-01`
+(a person reading a public NSE page) was declared out of scope rather than decided and stays
+`UNKNOWN`.
 
 **Not established for this publisher:** whether registration/account status changes any of the
 above, rate or volume limits, retention/point-in-time availability of per-quarter filings, and any
@@ -408,14 +459,28 @@ is `UNKNOWN`.
 
 ## Decision form for the source-rights authority
 
-Nothing in this form is answered. The Implementer may not answer any of it. Each answer must be
-made by the competent source-rights authority (with legal review where that authority requires
-it), must be independently scoped per operation, must name the decider and decision date, and must
-cite the exact evidence version it was made against (this record, version 1.0.0, digest below). A
-missing, ambiguous, stale, wrong-authority, or broader-than-evidence answer is recorded as
-`UNKNOWN` and stays denied.
+The Implementer may not answer any of this form. Each answer must be made by the competent
+source-rights authority (with legal review where that authority requires it), must be
+independently scoped per operation, must name the decider and decision date, and must cite the
+exact evidence version it was made against. A missing, ambiguous, stale, wrong-authority, or
+broader-than-evidence answer is recorded as `UNKNOWN` and stays denied.
 
-### D-1 — Per source, per operation (132 decisions)
+**Status after `A05-DECISION-001`** (product owner, 2026-08-20, decided against
+`a-05-source-rights-package.json@1.0.0`
+`sha256:b6881bca7167b7ff4a5ffdcaf31a3a7871f2baa0997289ca3ac55a70844579e2` and
+`a-05-source-rights-package.md@1.1.0` record digest
+`sha256:161196a3c4258b0311fad97320a903365bad7159a3e6d83b184afca7d55e483d`):
+
+| Item | Status | What was decided |
+|---|---|---|
+| D-1 | **partially answered** | 107 of 132 cells carry `ALLOWED` or `DENIED` with rationale, term relied on, conditions, scope boundary, and invalidating events via `decision_bases`. The remaining 25 stay `UNKNOWN`: `OP-04` and `OP-11` for SRC-01 … SRC-08; `OP-03 … OP-08`, `OP-11`, and `OP-12` for CHN-03, where the decider spoke to access only; and `OP-01` for CHN-01, declared out of scope rather than decided. |
+| D-2 | **partially answered** | Answered: terms currency — the decider expressly accepted the 2026-06-06 Wayback snapshot of the Infosys terms as the decision basis with the risk stated; automated access for every publisher; and, **for P1 Infosys only**, retention, derived outputs, and machine and LLM processing; redistribution for P1 and P4. Not answered: retention, derived outputs, and machine processing for **P4 SEC**, where the decider spoke to access only; caching; commercial use; accounts and credentials; and whether the unretrieved instruments must be obtained before any wider disposition. |
+| D-3 | **not answered** | No point-in-time availability commitment, archival-copy designation, or replacement path. A local retained copy with SHA-256 digests now exists per the authorized retrieval manifest, but that is a fact, not a commitment. |
+| D-4 | **not answered** | The content-digest gate was neither confirmed nor rejected. Its precondition is now satisfied for SRC-01 … SRC-08, since `OP-01`, `OP-02`, and `OP-03` are `ALLOWED` there and digests are recorded in the manifest. |
+| D-5 | **answered** | CHN-03 (SEC EDGAR) is **added** to the source list, with automated access allowed inside SEC fair-access limits and the same internal-only output boundary. **Access only (`OP-01`/`OP-02`)**: retention, processing, and the other operations (`OP-03 … OP-08`, `OP-11`, `OP-12`) remain `UNKNOWN`, and redistribution (`OP-09`, `OP-10`) is `DENIED`. |
+| D-6 | **answered** | The source-rights authority is the product owner, **PavanMV (mvpavan42@gmail.com), self-assumed**. No legal credential is claimed and **no legal review was performed or obtained**. No review cadence was set; each basis states the events that invalidate it. |
+
+### D-1 — Per source, per operation (132 decisions) — *partially answered*
 
 For **each** of `SRC-01 … SRC-08`, `CHN-01`, `CHN-02`, `CHN-03` and **each** of `OP-01 … OP-12`,
 supply exactly one of `ALLOWED`, `DENIED`, or `UNKNOWN`, plus:
@@ -425,7 +490,7 @@ supply exactly one of `ALLOWED`, `DENIED`, or `UNKNOWN`, plus:
 3. The scope boundary: does the answer cover only the A-01 private/internal mode?
 4. Expiry or review date, and what event invalidates it.
 
-### D-2 — Per publisher (P1 Infosys, P2 NSE, P3 BSE, P4 SEC)
+### D-2 — Per publisher (P1 Infosys, P2 NSE, P3 BSE, P4 SEC) — *partially answered*
 
 1. **Terms currency.** Is the terms text quoted above the operative version? For P1 and P3 the
    quotations come from Internet Archive snapshots because live retrieval failed — does the
@@ -452,39 +517,56 @@ supply exactly one of `ALLOWED`, `DENIED`, or `UNKNOWN`, plus:
 8. **Accounts and credentials.** Do any of these channels require registration, and does registered
    status change any answer? (No account, credential, or provider is selected by this record.)
 
-### D-3 — Point-in-time availability and replacement path
+### D-3 — Point-in-time availability and replacement path — *not answered*
 
 For each of `SRC-01 … SRC-08`: is the exact document URL committed to remain available, is there
 an authoritative archival copy, and what is the replacement path if it moves or is withdrawn?
 All currently `UNKNOWN`.
 
-### D-4 — Content digest gate
+### D-4 — Content digest gate — *not answered*
 
 `OP-12` requires holding source bytes. Until `OP-01`/`OP-02` **and** `OP-03` are independently
 `ALLOWED` for a given source, the S1 `source_content_digest_state` for that source stays `UNKNOWN`.
 Confirm or reject this gate.
 
-### D-5 — CHN-03 scope question
+### D-5 — CHN-03 scope question — *answered*
 
 `CHN-03` (SEC EDGAR) is **not** in the S1 inventory. Decide explicitly whether it is added to the
-selected source package, kept out of scope, or deferred. Until that decision exists, its presence
-in A-06 is channel research only and confers nothing.
+selected source package, kept out of scope, or deferred.
 
-### D-6 — Authority identification
+**Answered by `A05-DECISION-001` (2026-08-20):** CHN-03 is **added** to the source list, with
+access allowed inside the SEC's published fair-access limits (`OP-01`, `OP-02`) and the same
+internal-only output boundary. The decider spoke to **access only**, so `OP-03`, `OP-04`, `OP-05`,
+`OP-06`, `OP-07`, `OP-08`, `OP-11`, and `OP-12` are **not** inferred and stay `UNKNOWN`.
+
+### D-6 — Authority identification — *answered*
 
 Name the source-rights authority (role and identifiable individual), state whether legal review is
-required for these decisions, and state the review cadence. **No such authority record exists in
-this repository as of 2026-08-20.**
+required for these decisions, and state the review cadence.
+
+**Answered by `A05-DECISION-001` (2026-08-20):** the source-rights authority is **the product
+owner, PavanMV (mvpavan42@gmail.com), self-assumed**. **No legal credential is claimed or recorded
+and no legal review was performed or obtained.** No review cadence was set; each entry in
+`decision_bases` states the events that invalidate it.
 
 ## Downstream effect while this record stands
 
-- Plan Task 3 (A-06) may consume only operations marked `ALLOWED`. Because there are none, A-06
-  (`docs/evidence/phase-0a/a-06-filing-coverage-spike.md` and
-  `docs/evidence/phase-0a/a-06-filing-coverage-matrix.csv`) is built from publicly retrievable
-  **channel metadata and regulatory documents only**, and every coverage cell that would require a
-  source-package operation is `UNKNOWN`.
-- Plan Task 5 (Q0 manual baseline) cannot begin against these sources.
-- S1 source-content digests remain `UNKNOWN`, unchanged by this record.
+- A-06 (`docs/evidence/phase-0a/a-06-filing-coverage-spike.md` and
+  `docs/evidence/phase-0a/a-06-filing-coverage-matrix.csv`) was produced **before**
+  `A05-DECISION-001`, when no operation was `ALLOWED`. It is therefore built from publicly
+  retrievable **channel metadata and regulatory documents only**, and every coverage cell that
+  would have required a source-package operation is `UNKNOWN`. This record does not amend it.
+- Plan Task 5 (Q0 manual baseline) **may now proceed against SRC-01 … SRC-08**, within
+  `DB-01-INFY-INTERNAL-ALLOW` and its limits. Re-reading the already-retained local copies under
+  `data/raw/infy-fy25/` is `OP-03` retention plus internal processing, **not** `OP-04` caching.
+  CHN-03 is **access-only** under `DB-04-SEC-FAIR-ACCESS-ALLOW`: nothing retrieved from SEC EDGAR
+  may yet be retained, extracted, transformed, machine-processed, captured, or hashed. Nothing may
+  be produced for public output.
+- Nothing here authorizes Phase 0.5 execution, external modes, paid modes, personalized modes, or
+  execution-linked modes; A-01 independently prohibits those.
+- S1 source-content digests in `source-package-inventory.json` remain `UNKNOWN`, unchanged by this
+  record; the digests of the retrieved bytes are recorded separately in
+  `docs/evidence/phase-0a/a-05-retrieval-manifest-infy-fy25.json`.
 
 ## Record digest convention and payload
 
@@ -496,11 +578,12 @@ The companion machine artifact is bound by its own file digest inside the payloa
 the JSON invalidates this record digest.
 
 ```json
-{"artifact_id":"A-05","author_role":"bounded implementer (recording agent, not the decision maker)","boundary_ref":"docs/evidence/phase-0a/a-01-initial-boundary-decision.md","decision_form_open":true,"disposition_cells_total":132,"disposition_value_set":["UNKNOWN (denied by default)"],"document_version":"1.1.0","evidence_access_date":"2026-08-20","inventory_ref":"docs/evidence/phase-0a/source-package-inventory.json","inventory_source_use_pairs":24,"operations":["OP-01","OP-02","OP-03","OP-04","OP-05","OP-06","OP-07","OP-08","OP-09","OP-10","OP-11","OP-12"],"rights_authority_record":"NO_AUTHORITY_RECORD_PRESENT","rights_package_json_path":"docs/evidence/phase-0a/a-05-source-rights-package.json","rights_package_json_sha256":"b6881bca7167b7ff4a5ffdcaf31a3a7871f2baa0997289ca3ac55a70844579e2","source_content_fetched":false,"source_content_digest_state":"UNKNOWN","sources":["SRC-01","SRC-02","SRC-03","SRC-04","SRC-05","SRC-06","SRC-07","SRC-08","CHN-01","CHN-02","CHN-03"],"status":"PREPARED_DECISION_PENDING","terms_retrieval_status":{"bseindia.com":"PARTIAL_ARCHIVE_SNAPSHOT_20260110_DISCLAIMER_ONLY","infosys.com":"ARCHIVE_SNAPSHOT_20260606_LIVE_403","nseindia.com":"LIVE_20260820","sec.gov":"LIVE_20260820"}}
+{"artifact_id":"A-05","author_role":"bounded implementer (recording agent, not the decision maker)","boundary_ref":"docs/evidence/phase-0a/a-01-initial-boundary-decision.md","cells_allowed":66,"cells_denied":41,"cells_unknown_denied_by_default":25,"decision_form_open":true,"decision_items_answered":{"D-1":"partial","D-2":"partial","D-3":"no","D-4":"no","D-5":"yes","D-6":"yes"},"disposition_cells_total":132,"disposition_value_set":["ALLOWED","DENIED","UNKNOWN (denied by default)"],"document_version":"1.2.0","evidence_access_date":"2026-08-20","held_pending_q0_review":["Screener.in","Tijori","aeron7/nsepython","BennyThadikaran/NseIndiaApi","BennyThadikaran/BseIndiaApi","RuchiTanmay/nselib","LaZZy0v0/tijori-finance-mcp","jugaad-py/jugaad-data","VishwaGauravIn/screener-scraper-pro","MrChartist/fii-dii-data","Tapetide-hq/nse-bse-indian-stock-market-data-mcp","NSEDownload/NSEDownload","thisisamu/fii-dii-analysis"],"inventory_ref":"docs/evidence/phase-0a/source-package-inventory.json","inventory_source_use_pairs":24,"not_held_still_candidate_undecided":["Fincept-Corporation/FinceptTerminal","stefan-jansen/machine-learning-for-trading","Na1neeth/openscreener"],"operations":["OP-01","OP-02","OP-03","OP-04","OP-05","OP-06","OP-07","OP-08","OP-09","OP-10","OP-11","OP-12"],"retrieval_manifest_path":"docs/evidence/phase-0a/a-05-retrieval-manifest-infy-fy25.json","retrieval_manifest_sha256":"0394c9ab53b7bde341ad38200ea0cf30565888fe700fcfd84d7840751b966d28","rights_authority_record":"A05-DECISION-001 — docs/evidence/phase-0a/a-05-rights-decision-record.md; source-rights authority is the product owner PavanMV (mvpavan42@gmail.com), self-assumed; no legal credential claimed and no legal review performed","rights_decision_record_digest":"sha256:3f71a7c0dee75f33d5f9fb132803795b3a88cb2a0873dc9e69b7a38f57deb816","rights_decision_record_id":"A05-DECISION-001","rights_decision_record_path":"docs/evidence/phase-0a/a-05-rights-decision-record.md","rights_package_json_path":"docs/evidence/phase-0a/a-05-source-rights-package.json","rights_package_json_sha256":"43f6aca5a35c79fc4bbc3a02c7e997944971fc4d880ac066f26ed95efcd1a246","source_bytes_committed_to_repository":false,"source_bytes_held_SRC-01_to_SRC-08":true,"source_content_digest_state":"UNKNOWN in the unamended S1 inventory; digests of the retrieved bytes are recorded in the authorized retrieval manifest","source_content_fetched":true,"sources":["SRC-01","SRC-02","SRC-03","SRC-04","SRC-05","SRC-06","SRC-07","SRC-08","CHN-01","CHN-02","CHN-03"],"status":"PARTIALLY_DECIDED_REMAINDER_PENDING","terms_retrieval_status":{"bseindia.com":"PARTIAL_ARCHIVE_SNAPSHOT_20260110_DISCLAIMER_ONLY","infosys.com":"ARCHIVE_SNAPSHOT_20260606_LIVE_403","nseindia.com":"LIVE_20260820","sec.gov":"LIVE_20260820"}}
 ```
 
-**Record digest:** `sha256:161196a3c4258b0311fad97320a903365bad7159a3e6d83b184afca7d55e483d`
-(v1.0.0 digest, preserved:
+**Record digest:** `sha256:9fa1b5b6d6c399f8d8730a0f819510146c6f85ed7006d9461a2d2ecc4076fe63`
+(v1.1.0 digest, preserved:
+`sha256:161196a3c4258b0311fad97320a903365bad7159a3e6d83b184afca7d55e483d`; v1.0.0 digest, preserved:
 `sha256:6880c2a1be13a80390c45567d78eb25707cfc61281f0b76f1e09a556346c975e`)
 
 ## Authorities and references
@@ -508,6 +591,9 @@ the JSON invalidates this record digest.
 - `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md` — A-05 clause and Phase 0A gate.
 - `docs/plans/2026-08-19-phase-0a-evidence-program.md` — Task 2 scope, fail-closed semantics.
 - `docs/evidence/phase-0a/a-05-source-rights-package.json` — the machine form of this record (24 exact inventory source/use pairs plus the 132-cell normalized grid).
+- `docs/evidence/phase-0a/a-05-rights-decision-record.md` — `A05-DECISION-001`, the product-owner source-rights decision transcribed into this record.
+- `docs/evidence/phase-0a/a-05-retrieval-manifest-infy-fy25.json` — URLs, byte counts, and SHA-256 digests of the eight documents retrieved under that decision on 2026-08-20.
+- `docs/research/external-tools-and-repos-inventory.md` — section 6 lists the candidate wrapper libraries held and denied by that decision.
 - `docs/evidence/phase-0a/source-package-inventory.json` — the exact source list bound here.
 - `docs/evidence/phase-0a/a-01-initial-boundary-decision.md` — private/internal boundary; not a rights decision.
 - `docs/evidence/phase-0a/a-02-discovery-slice-selection.md` — selected slice and recorded exchange channels.
