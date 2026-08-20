@@ -1,0 +1,80 @@
+{
+  "retrieved_at_utc_date": "2026-08-20",
+  "authorized_by": "PavanMV (mvpavan42@gmail.com), product owner",
+  "authorization": "Verbatim in-session 2026-08-20: 'I approve' (rights decision, manual-first recommendation) + explicit instruction to attempt Python-requests retrieval because the user is phone-remote. Human-directed, one-time, 8 enumerated URLs, private/internal only.",
+  "method": "python-requests, sequential, 3s delay, browser-equivalent headers",
+  "results": [
+    {
+      "source_id": "INFY-FY25-Q1-results-auditors",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q1/documents/q1-fy25-financial-results-auditorsreports.pdf",
+      "status": 200,
+      "bytes": 818858,
+      "sha256": "a07c12effe6cbffb6024e8462250e7f5e96b22fb4ec30c163827cc729b372695",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q1-results-auditors.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q1-management-transcript",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q1/documents/transcripts/press-conference.pdf",
+      "status": 200,
+      "bytes": 192759,
+      "sha256": "5039acfe6588789c028bb7d95fa1b5481f6dad1d763db16f34ebc2bb8eb023a6",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q1-management-transcript.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q2-results-auditors",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q2/documents/q2-and-h1-fy25-financial-results-auditorsreports.pdf",
+      "status": 200,
+      "bytes": 1026625,
+      "sha256": "cc42762f64e93805e125174b2936ce19df727e21238c26c52ecf82bef3418309",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q2-results-auditors.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q2-management-transcript",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q2/documents/transcripts/press-conference.pdf",
+      "status": 200,
+      "bytes": 256837,
+      "sha256": "b70702df7ee3b2e8d4be976988b68f5dd13577079753275286cce03301089df2",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q2-management-transcript.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q3-results-auditors",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q3/documents/q3-and-9m-fy25-financial-results-auditorsreports.pdf",
+      "status": 200,
+      "bytes": 1127353,
+      "sha256": "a189ed5ed8b3c1c9dcd43f387bb13b6e416e04f53b9dbb404e474cacff52347c",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q3-results-auditors.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q3-management-transcript",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q3/documents/transcripts/earningscall.pdf",
+      "status": 200,
+      "bytes": 233106,
+      "sha256": "8fbae2ae5a30506b42a7bc0ea024d92d38ef1e7e4b013b883fbc50b046656707",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q3-management-transcript.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q4-results-auditors",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q4/documents/q4-and-12m-fy25-financial-results-auditorsreports.pdf",
+      "status": 200,
+      "bytes": 1237065,
+      "sha256": "9eb3cedc8ba987491bf39e96ae2c6145c583a92658f0c34ac98d48a97922fb73",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q4-results-auditors.pdf",
+      "outcome": "OK"
+    },
+    {
+      "source_id": "INFY-FY25-Q4-ifrs-press-release",
+      "url": "https://www.infosys.com/investors/reports-filings/quarterly-results/2024-2025/q4/documents/ifrs-usd-press-release.pdf",
+      "status": 200,
+      "bytes": 404047,
+      "sha256": "de414c98cf3bb31a89f6e63b2307e00ff3f055a49e499dea4b5d21e6e465c02c",
+      "saved_to": "/data/codes/equity-os/data/raw/infy-fy25/INFY-FY25-Q4-ifrs-press-release.pdf",
+      "outcome": "OK"
+    }
+  ]
+}

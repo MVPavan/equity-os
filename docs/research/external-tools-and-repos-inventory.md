@@ -9,14 +9,18 @@ Listing an item here is **not** adoption, permission, or a rights decision.
 1. Original blueprint enumeration — `docs/blueprint/org/funda-agentic-stock-research-blueprint.md` (~76 named items), as extracted by the independent drift review `scratchpad/blueprint-drift/original-blueprint-drift-review-r0.md` §4.
 2. User-supplied candidate repository list, 2026-08-20 (20 repos; 6 were duplicates of existing entries and are merged in place, 14 added as new entries in §6).
 
-**Standing rights rule (applies to every row):** all source-rights dispositions
-are fail-closed (`docs/evidence/phase-0a/a-05-source-rights-package.json`:
-132/132 cells `UNKNOWN (denied by default)`). A library, MCP server, or scraper
-that accesses NSE, BSE, Screener.in, Tijori, or issuer sites **does not confer
-rights** — it hits the same endpoints the publishers' terms govern. NSE's live
-terms expressly prohibit systematic/automated data collection including
-scraping. Using any wrapper below against those endpoints is denied until an
-A-05 disposition says otherwise.
+**Standing rights rule (applies to every row):** source-rights dispositions
+are fail-closed (`docs/evidence/phase-0a/a-05-source-rights-package.json`;
+as of `A05-DECISION-001`, 2026-08-20: 66 ALLOWED / 41 DENIED / 25 UNKNOWN of
+132 cells — Infosys internal-only operations and SEC EDGAR access allowed;
+NSE automated collection decided-DENY (human browsing `OP-01` left UNKNOWN,
+out of scope); BSE all operations decided-DENY; every UNKNOWN cell remains denied
+by default). A library, MCP server, or scraper that accesses NSE, BSE,
+Screener.in, Tijori, or issuer sites **does not confer rights** — it hits the
+same endpoints the publishers' terms govern. NSE's live terms expressly
+prohibit systematic/automated data collection including scraping. Using any
+wrapper below against those endpoints is denied unless an A-05 disposition
+says otherwise.
 
 **Status vocabulary**
 
@@ -67,17 +71,17 @@ The function is covered by a register/DEF row; the blueprint's named tool is abs
 | 6 | **Local models / Ollama / FinGPT-style** | Optional local NLP | DEF-12 (generic) |
 | 7 | **Shareholding / promoter-pledge sources** | §16.2 source | B-09 `SHAREHOLDING_CHANGE` capture kind exists; no source named |
 
-## 4. In evidence only — all operations currently denied (7)
+## 4. In evidence, dispositions per `A05-DECISION-001` (2026-08-20) (7)
 
-| # | Item | Evidence ref | Note |
+| # | Item | Evidence ref | Disposition |
 |---:|---|---|---|
-| 1 | **NSE** (announcements, results, XBRL) | A-05 `CHN-01` | All 12 operations `UNKNOWN (denied)`; ToU prohibits systematic/automated collection incl. scraping |
-| 2 | **BSE** | A-05 `CHN-02` | All 12 operations denied; live terms unretrievable (SPA shell) |
-| 3 | **Infosys investor-relations pages** | A-05 `SRC-01…08` | Live host 403 (Akamai); terms via 2026-06-06 archive snapshot only |
-| 4 | **Issuer annual/quarterly results PDFs** | A-05 `SRC-*` | Same denial |
-| 5 | **Earnings-call transcripts (text)** | A-05 `SRC-02/04/06` | Same denial |
+| 1 | **NSE** (announcements, results, XBRL) | A-05 `CHN-01` | Automated collection decided-DENY (ToU prohibits it); human browsing declared out of scope, not decided |
+| 2 | **BSE** | A-05 `CHN-02` | All operations decided-DENY; live terms unretrievable (SPA shell) |
+| 3 | **Infosys investor-relations pages** | A-05 `SRC-01…08` | Human-directed retrieval, internal retention/processing/derived facts ALLOWED (internal-only); redistribution/public output DENIED; caching and commercial use remain UNKNOWN. Retrieval (`OP-02`) is limited to the one-time human-directed fetch of the 8 enumerated URLs on 2026-08-20; standing/scheduled/recurring/crawling retrieval stays UNKNOWN |
+| 4 | **Issuer annual/quarterly results PDFs** | A-05 `SRC-*` | Same as #3; 8 FY25 PDFs retrieved 2026-08-20 (`a-05-retrieval-manifest-infy-fy25.json`) |
+| 5 | **Earnings-call transcripts (text)** | A-05 `SRC-02/04/06` | Same as #3 |
 | 6 | **SEBI circulars/regulations** | A-06 | Used as regulatory reference; never registered as a product source |
-| 7 | **SEC EDGAR** | A-05 `CHN-03`, A-06 | NEW vs. blueprint; explicitly allows automated fair access (10 req/s, declared UA); D-5 asks whether it enters scope |
+| 7 | **SEC EDGAR** | A-05 `CHN-03`, A-06 | Enters source list (D-5 answered); automated access within SEC fair-access limits ALLOWED (`OP-01`/`OP-02` only); `OP-09`/`OP-10` redistribution DENIED; retention/processing and all other operations remain UNKNOWN |
 
 ## 5. Never decided — named in the original blueprint, absent from all current authority docs (52)
 
@@ -164,11 +168,20 @@ repos were duplicates of existing entries and are merged in place above:
 `AI4Finance-Foundation/FinRobot` (§3 #1), `Open-Finance-Lab/AgenticTrading`
 (§3 #5), `OpenBB-finance/OpenBB` (§2 #2), `HKUDS/Vibe-Trading` (§2 #4).
 
-All entries below are **CANDIDATE-UNDECIDED**. Descriptions marked *(unverified)*
-are inferred from the repository name and general knowledge; the repos have not
-been fetched or audited. **Rows marked ⛔ wrap or scrape NSE, BSE, Screener.in,
-or Tijori endpoints — using them is a rights-denied operation under the current
-A-05 fail-closed dispositions, regardless of the library's license.**
+**Decision status (updated 2026-08-20).** The eleven rows marked ⛔ below —
+rows 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14 — together with the Screener.in and
+Tijori services themselves, are now **HELD — denied for now** by
+`A05-DECISION-001`
+(`docs/evidence/phase-0a/a-05-rights-decision-record.md`), to be revisited after
+program Q0 (manual baseline) shows what data is actually missing. Rows 1, 2, and
+10 have no source access of their own, are **not** held, and remain
+**CANDIDATE-UNDECIDED**; that decision says nothing about them.
+
+Descriptions marked *(unverified)* are inferred from the repository name and
+general knowledge; the repos have not been fetched or audited. **Rows marked ⛔
+wrap or scrape NSE, BSE, Screener.in, or Tijori endpoints — using them is a
+rights-denied operation under the A-05 dispositions, regardless of the library's
+license.**
 
 | # | Repository | What it is | Rights note |
 |---:|---|---|---|
@@ -189,9 +202,12 @@ A-05 fail-closed dispositions, regardless of the library's license.**
 
 ## 7. Triage state
 
-No item in §5 or §6 has a recorded decision. The original blueprint's Phase 0
+No item in §5 has a recorded decision. In §6, the eleven ⛔-marked rows are
+**HELD — denied for now** by `A05-DECISION-001` (2026-08-20,
+`docs/evidence/phase-0a/a-05-rights-decision-record.md`); every other §5 and §6
+row remains **CANDIDATE-UNDECIDED**. The original blueprint's Phase 0
 deliverable was "a decision log recording license and provider constraints"
 (L1733); this inventory is the raw material for that log, not the log itself.
 Next step (pending product-owner go-ahead): a bulk-defer register entry that
-converts every §5/§6 row from silent to deliberately-deferred, with individual
-activation gates for anything later wanted.
+converts every still-undecided §5/§6 row from silent to deliberately-deferred,
+with individual activation gates for anything later wanted.
