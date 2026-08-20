@@ -6,3 +6,5 @@
 .beads/proxieddb/
 *.pyc
 scratchpad/
+# Retained source content — internal-only rights, never commit/redistribute
+data/
