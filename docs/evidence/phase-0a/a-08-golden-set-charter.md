@@ -1,15 +1,16 @@
-# A-08 Golden Set Charter (prepared, pending approval)
+# A-08 Golden Set Charter (approved)
 
-Case-set version: `0.3.0-prepared`. Supersedes `0.2.0-prepared` (32 cases, independent
-re-review r1) and `0.1.0-prepared` (20 cases), both preserved in git history and
+Case-set version: `1.0.0-approved`. Supersedes `0.3.0-prepared` (content-identical
+cases, labels promoted on approval), `0.2.0-prepared` (32 cases, independent
+re-review r1) and `0.1.0-prepared` (20 cases), all preserved in git history and
 withdrawn from use.
 
 ## Status
 
-`PREPARED_PENDING_APPROVAL`. This charter and its fixtures are non-production
-preparation only. They do not yet satisfy A-08 acceptance, and no prepared expected
-disposition is an expert label or a production approval until the approval record
-named below exists.
+`APPROVED` under `A08-APPROVAL-001`
+(`docs/evidence/phase-0a/a-08-approval-record.md`, 2026-08-20). All 32
+dispositions were individually adjudicated and are expert labels under the
+mandate basis stated in that record.
 
 ## Purpose and repository location
 
@@ -20,7 +21,7 @@ location is:
 
 - charter: `docs/evidence/phase-0a/a-08-golden-set-charter.md`
 - cases: `docs/evidence/phase-0a/a-08-golden-set.jsonl`
-- approval record: `docs/evidence/phase-0a/a-08-approval-record.md` (**does not yet exist**)
+- approval record: `docs/evidence/phase-0a/a-08-approval-record.md` (`A08-APPROVAL-001`)
 
 All cases are synthetic, non-production fixtures. They contain no company fact, no
 external document, no attributable source, and no rights-dependent material. Every
@@ -32,18 +33,16 @@ of the synthetic package and denotes nothing outside it.
 
 No authority field is asserted here, and none is fabricated. Each required field is
 filled by reference to the approval record at
-`docs/evidence/phase-0a/a-08-approval-record.md`, which the product owner creates on
-approval. **Until that file exists, every field below is `PENDING` and A-08 is not
-met.**
+`docs/evidence/phase-0a/a-08-approval-record.md` (`A08-APPROVAL-001`, 2026-08-20).
 
 | Required field | Value | State |
 | --- | --- | --- |
-| accountable owner role | as recorded in the approval record | `PENDING` |
-| accountable individual name | as recorded in the approval record | `PENDING` |
-| label authority name | as recorded in the approval record | `PENDING` |
-| label authority qualification/mandate basis | as recorded in the approval record | `PENDING` |
-| label approval record ID | as recorded in the approval record | `PENDING` |
-| adopted review cadence | as recorded in the approval record | `PENDING` |
+| accountable owner role | product owner | `APPROVED` |
+| accountable individual name | PavanMV (`mvpavan42@gmail.com`) | `APPROVED` |
+| label authority name | PavanMV (`mvpavan42@gmail.com`) | `APPROVED` |
+| label authority qualification/mandate basis | product-owner mandate, personally assumed; no professional credential claimed (see approval record) | `APPROVED` |
+| label approval record ID | `A08-APPROVAL-001` | `APPROVED` |
+| adopted review cadence | on corpus release; after a material observed failure; at least every 90 days | `APPROVED` |
 
 The approval record must, to discharge these fields:
 
@@ -62,11 +61,11 @@ The approval record must, to discharge these fields:
 5. Carry an approval record ID. On promotion, each case's `label` block replaces its
    `pending_authority_fields` list with the approved values and cites that ID.
 
-Every case currently carries `label.state = PREPARED_PENDING_APPROVAL`,
-`label.authority_state = PENDING`, `label.label_authority = null`, and
-`label.approval_record` pointing at the path above. These dispositions are preparation
-hypotheses. They must not be represented as expert labels, accepted golden-set results,
-or an A-08 acceptance result.
+Every case now carries `label.state = APPROVED_EXPERT_LABEL`,
+`label.authority_state = APPROVED`, the named label authority, and an
+`approved_authority_fields` block citing `A08-APPROVAL-001`. The prior
+`PREPARED_PENDING_APPROVAL` states are preserved in git history at
+`0.3.0-prepared`.
 
 ## Disposition taxonomy
 
@@ -257,7 +256,10 @@ File-level integrity, so that a silently added or dropped record is detectable f
 `docs/` alone:
 
 - `a-08-golden-set.jsonl` — 32 lines — SHA-256
-  `e0d0d947e711c960346f4587fad459dc845c397caa482c5eea8334c6fcbeb306`
+  `7ce02a93e21ff285be670e8397c31fc6e7e83661c704d4de46d4d89f83a73221`
+  (version `1.0.0-approved`; the adjudicated pre-promotion bytes at
+  `0.3.0-prepared` were
+  `e0d0d947e711c960346f4587fad459dc845c397caa482c5eea8334c6fcbeb306`)
 
 ## Promotion and change control
 
@@ -267,8 +269,9 @@ this corpus.
 
 Any change must: create a new case-set version (all records carry it), preserve the prior
 record in git history, recompute every affected per-record digest, update the case count
-and file SHA-256 above, and record the authority approval. Until the approval record
-exists, all records remain `PREPARED_PENDING_APPROVAL`.
+and file SHA-256 above, and record the authority approval. The approval record
+`A08-APPROVAL-001` exists; any post-approval change requires a fresh approval
+record entry from the label authority.
 
 ## Scope
 
