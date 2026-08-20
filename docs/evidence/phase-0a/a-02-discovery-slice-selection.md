@@ -1,8 +1,8 @@
 # A-02 Discovery Slice Selection
 
-**Record version:** 1.0.0
-**Status:** BLOCKED — product-owner selection is recorded, but no current identifiable analyst-suitability attestation has been found
-**Recorded at:** 2026-08-19T20:28:25Z
+**Record version:** 1.1.0
+**Status:** RECORDED — product-owner selection recorded; analyst-suitability attestation supplied by `A02-ATTEST-001` (`docs/evidence/phase-0a/a-02-analyst-attestation.md`, 2026-08-20)
+**Recorded at:** 2026-08-19T20:28:25Z (v1.0.0); amended 2026-08-20 (v1.1.0, attestation gate discharged)
 **Author:** bounded implementer (recording agent, not the decision maker)
 
 ## Binding approval event
@@ -44,9 +44,14 @@ The selected discovery company is **Infosys Ltd (INFY)**. The mapping follows th
 
 ## Analyst-suitability fail-closed gate
 
-**A-02 status: BLOCKED. Stage S1 (`eqos-3ps.1`) status: BLOCKED for acceptance.** No current, identifiable analyst-suitability attestation for this exact Infosys Q1–Q4 FY25 / program Q0–Q3 slice was found in the bounded authority evidence.
+**A-02 status: RECORDED (gate discharged 2026-08-20).** The required attestation
+is supplied by `A02-ATTEST-001`
+(`docs/evidence/phase-0a/a-02-analyst-attestation.md`, record digest
+`sha256:daf8dd55e7ac455d2cbd1d4410488562f94730042ae6ad1810a60d7970875189`):
+attester PavanMV (`mvpavan42@gmail.com`), scope-matched to this exact
+Infosys Q1–Q4 FY25 / program Q0–Q3 slice, private/internal boundary only.
 
-The missing decision record must supply all of:
+The gate originally required, and the attestation record supplies, all of:
 
 1. Attesting analyst's identifiable name and role.
 2. Attestation timestamp and current-validity basis.
@@ -54,17 +59,19 @@ The missing decision record must supply all of:
 4. Suitability conclusion, including competence/authority for the intended private/internal workflow.
 5. Attributable evidence reference and any limits, conflicts, or required supervision.
 
-Until that record is supplied and scope-matched, this artifact is not accepted and must not be used to claim A-02 or S1 completion.
+That record is now supplied and scope-matched (`A02-ATTEST-001`, 2026-08-20). If the attestation is withdrawn or the scope changes, this artifact reverts to BLOCKED.
 
 ## Record digest convention and payload
 
 This record uses the non-self-referential SHA-256 convention stated in A-01: UTF-8 canonical JSON with recursively sorted keys, preserved array order, no whitespace/BOM, and every `record_digest` field excluded from its input. It does not digest or fetch source content.
 
 ```json
-{"artifact_id":"A-02","authority_event_ref":"eqos-3ps notes:BINDING USER DECISION 2026-08-19","company":"Infosys Ltd (INFY)","document_version":"1.0.0","issuer_to_program_mapping":["Q1 FY25->Q0 manual baseline/bootstrap thesis","Q2 FY25->Q1 assisted incremental update","Q3 FY25->Q2 assisted incremental update","Q4 FY25->Q3 assisted incremental update"],"recorded_at":"2026-08-19T20:28:25Z","status":"BLOCKED","suitability_attestation":"MISSING: current identifiable, scope-matched analyst attestation","scope":"Infosys issuer Q1-Q4 FY25 selected for program Q0-Q3; private/internal boundary only."}
+{"amended_at":"2026-08-20","artifact_id":"A-02","authority_event_ref":"eqos-3ps notes:BINDING USER DECISION 2026-08-19","company":"Infosys Ltd (INFY)","document_version":"1.1.0","issuer_to_program_mapping":["Q1 FY25->Q0 manual baseline/bootstrap thesis","Q2 FY25->Q1 assisted incremental update","Q3 FY25->Q2 assisted incremental update","Q4 FY25->Q3 assisted incremental update"],"recorded_at":"2026-08-19T20:28:25Z","scope":"Infosys issuer Q1-Q4 FY25 selected for program Q0-Q3; private/internal boundary only.","status":"RECORDED","suitability_attestation":"SUPPLIED: A02-ATTEST-001 (docs/evidence/phase-0a/a-02-analyst-attestation.md, record digest sha256:daf8dd55e7ac455d2cbd1d4410488562f94730042ae6ad1810a60d7970875189)"}
 ```
 
-**Record digest:** `sha256:f48d3b9303ce8e16a5f45a751519899096d5d4d10bba33ae843309d5c614bce3`
+**Record digest:** `sha256:edf5652e856751305f9b304e00d98ae3dab6d7a79f2d367159387039b26dc1e3`
+(v1.0.0 digest, preserved:
+`sha256:f48d3b9303ce8e16a5f45a751519899096d5d4d10bba33ae843309d5c614bce3`)
 
 ## Authorities
 
