@@ -9,7 +9,7 @@
 | Evidence-version identifier | `A-09-EVIDENCE-FUNDAMENTALS-V1` |
 | Content-digest algorithm | SHA-256 |
 
-Content-Digest: 19a2a4b5c92019177224d09089c8de387b14acf5bb837b9a1b42259a2153a3d0
+Content-Digest: b9a9cc3bed5b0b4df6a7bf770c8aef2b7edebb1454d5a1af7a8f0a03b49f9728
 
 ## Authority envelope
 
@@ -74,6 +74,31 @@ state.
    `Fundamentals` is within this packet's authority envelope, is an exercise of
    product-owner selection authority only, and does not represent legal advice
    or any form of trademark/legal clearance.
+
+## Phase 0A gate-basis decision (product-owner governance)
+
+Separately from the identity selection above, the product owner records the
+governance decision that gates Phase 0A on the `Fundamentals` name.
+
+- **Decision:** For this PRIVATE/PERSONAL project's Phase 0A gate, the
+  descriptive-name basis for `Fundamentals` (recorded in field 4 and in the
+  companion `TRADEMARK_LEGAL_ASSESSMENT` packet's non-legal acknowledgment) is
+  **SUFFICIENT for the private Phase 0A gate**. Formal competent trademark
+  clearance is **DEFERRED** to any future public or commercial launch and
+  remains required before it.
+- **Nature and limits:** this is a product-owner acceptance of the recorded
+  non-legal basis for a private gate only. It is NOT legal advice, is NOT a
+  trademark search, and confers NO legal clearance. It does not create, infer,
+  or fabricate a competent legal assessment; the companion assessment packet
+  keeps its honest `NO_COMPETENT_ASSESSMENT_SUPPLIED` status.
+- **Decider:** PavanMV (mvpavan42@gmail.com), authorized product owner. For this
+  single-principal private project the evaluation-authority role is expressly
+  self-assumed on the same basis already used for `A02-ATTEST-001` and the A-08
+  approval (`A08-APPROVAL-001`).
+- **Decision date:** 2026-08-21.
+- **Verbatim instruction (2026-08-21):** "Approve all with defaults." — given in
+  direct reply to a plain-language explanation of the four items and their
+  recommended defaults, including this gate-basis default.
 
 ## Separation from the trademark/legal assessment
 
