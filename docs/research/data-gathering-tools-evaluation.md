@@ -311,3 +311,158 @@ scraping-prohibited API, and is worth scoping before any production adoption.
 venvs). GitHub repo rows are **unverified** static reads of public README pages — feature
 claims are the authors', not tested here. Figures cross-checked against Infosys' published
 Q1 FY25 results for plausibility; not independently audited.
+
+---
+
+## Round 3: BseIndiaApi + Screener/Tijori aggregators
+
+Round 2 left four inventory §6 candidates un-live-tested. Round 3 closes them under
+the same bounds (`A05-DECISION-002`): isolated venvs, ≤15 polite calls/lib ≥2.5s
+apart, INFY/500209-scoped, stop-on-block, no auth/paid keys/credential fabrication,
+no anti-bot evasion. Product-owner prompt: aggregators "usually have all the info" —
+so verify whether they actually deliver INFY quarterly fundamentals credential-free.
+Evidence JSONs cited per tool; harnesses `eval_r3_bse.py`, `run_screener_pro.mjs`,
+`run_openscreener.py` (session scratchpad, not committed).
+
+> **Aggregator-data caveat (applies to all Screener/Tijori rows).** These are
+> **derived secondary sources**: an aggregator's own *normalized restatement* of the
+> issuer's filings, mapped into the aggregator's line-item schema — **not** issuer
+> PDFs and **not** exchange Ind AS XBRL. No provenance to a first-party filing, own
+> accuracy profile (standalone-vs-consolidated, schema drift), and each carries its
+> own ToS. Treat them as a convenience cross-check, not a source of record.
+
+### Per-tool outcomes
+
+- **`bse` — BennyThadikaran/BseIndiaApi (inventory §6 row 5) — installs YES, WORKS.**
+  This is a **different library from the already-tested `bsedata`** (different author,
+  richer API). `pip install bse` → `bse==3.3.1` (deps `requests`, `mthrottle`), import
+  `from bse import BSE`. API is far wider than bsedata: `resultsSnapshot`,
+  `resultCalendar`, `announcements` (category/subcategory + scripcode), `actions`
+  (corp actions), `circulars`, `equityMetaInfo`, `equityPriceVolumeT12M`,
+  `getScripTradingStats`, `quote`, `quoteWeeklyHL`, indices/bhavcopy/gainers/losers.
+  **7 live calls, INFY 500209, none blocked.** Evidence: `result-r3-bse.json`.
+  - **`resultsSnapshot("500209")` — the BSE gap test — returns STRUCTURED quarterly
+    financials** from BSE's own `TabResults_PAR` endpoint: `currency_unit "in Cr."`,
+    periods `[Jun-26, Mar-26, FY25-26]`, and rows **Revenue** (39,957 / 38,641 /
+    1,48,819), **Net Profit** (7,249 / 7,975 / 29,211), **EPS** (17.87 / 19.67 /
+    70.87), **Cash EPS**, **OPM %**, **NPM %** — latest quarter, prior quarter, and
+    latest FY, plus `period_links` to BSE `results.aspx` pages. This is the **first
+    tested BSE route to structured numeric financials** (bsedata = quote only; jugaad
+    `BSELive` = PDF announcements only).
+  - **Limits:** only ~6 summary line items (not a full P&L taxonomy); only the latest
+    ~2 quarters + current FY (cannot pull an arbitrary historical quarter such as FY25
+    Q1 specifically — today it yields Jun-26/Mar-26/FY25-26); and **no financial XBRL**
+    — the only XML exposed is the SEBI reg-30 **announcement** XBRL (`XML_NAME` =
+    `ANN_500209_…`), not Ind AS financial-statement XBRL. `resultCalendar` returned
+    `[]` (no forthcoming result — not a block).
+  - **Also strong for BSE filings/actions:** `announcements(scripcode=…)` = 50
+    INFY-scoped rows/page with PDF `ATTACHMENTNAME` links, categories, quarter ids,
+    investor-presentation flags; `actions(scripcode=…)` = structured corporate actions
+    (e.g. "Final Dividend - Rs. - 20.0000" with ex/record dates); `equityMetaInfo` =
+    ISIN, face value, industry, EPS/PE/OPM/NPM/PB/ROE incl. consolidated variants;
+    `quote` = OHLC+LTP (thinner than bsedata's 24-field quote). **Rights profile: BSE
+    first-party endpoints — the same BSE ToS `A05-DECISION-001` holds
+    denied/unretrievable.**
+
+- **`tijori-finance-mcp` — LaZZy0v0 (inventory §6 row 7) — inspected, NOT run: needs
+  credentials → STOPPED.** Source read only (no server stand-up). `.env.example` =
+  `TIJORI_EMAIL` / `TIJORI_PASSWORD`; `src/auth.js` requires an `output/session.json`
+  with a `sessionid` Django cookie produced by `discover.js` opening a **Playwright
+  browser for manual Tijori login**; `getAuthHeaders()` attaches that cookie to every
+  `/api/v1/ind/...` call. `docs/ARCHITECTURE.md` is explicit: *"There is no public API.
+  Everything works by impersonating a logged-in browser."* README: free account has
+  data limits, **Pro recommended**; `$… + Tijori subscription`. **No anonymous path
+  exists.** Per bounds (no login, no credential fabrication) this is the finding:
+  **rights-blocked behind a Tijori account.** 0 live calls.
+
+- **`screener-scraper-pro` — VishwaGauravIn (inventory §6 row 9) — installs YES,
+  WORKS, no credentials.** Node/TypeScript; `npm install` (cheerio) + `npm run build`.
+  `ScreenerScraperPro(url)` does a **single public `fetch()`** of a Screener.in page +
+  cheerio parse. **1 live call**, `https://www.screener.in/company/INFY/` (standalone
+  default). Evidence: `result-r3-screener-pro.json`. Returned credential-free:
+  **`quarters`** = 13 quarters (Jun 2023→Jun 2026) of Sales, Expenses, Operating
+  Profit, OPM, Other Income, Interest, Depreciation, PBT, Tax, Net Profit, EPS;
+  **`profitLoss`** = annual Mar 2015→Mar 2026 + TTM; **`balanceSheet`**, **`cashFlow`**,
+  **`ratios`** (11-yr), **`shareholding`** (Promoters/FIIs/DIIs % per quarter),
+  **`documents`** (announcement/annual-report PDF links, several pointing to bseindia.com
+  PDFs), **`CAGRs`** (sales/profit/price/ROE). **Standalone view** by default
+  (Sales Mar 2025 = ₹1,36,592 Cr). Screener-normalized, no XBRL.
+
+- **`openscreener` — Na1neeth (inventory §6 row 10) — installs YES, WORKS, no
+  credentials.** Python; `uv pip install ./openscreener` (playwright, rich) + a
+  ~115 MB Chromium. `Stock("INFY", consolidated=True)` drives headless Playwright to
+  Screener.in. **1 live call** (consolidated — the URL variant the task named; no login
+  needed). Evidence: `result-r3-openscreener.json`. Cleaner typed schema than
+  screener-pro: `metadata` (**`source: screener.in`**, currency INR, units crores,
+  consolidated flag), `quarterly_results` = 13 quarters × typed fields (sales,
+  expenses, operating_profit, operating_margin_percent, other_income, interest,
+  depreciation, profit_before_tax, tax_percent, net_profit, eps), `profit_loss` (13 +
+  TTM: TTM sales ₹1,84,582 Cr, net_profit 30,325, EPS 74.25 — **consolidated** scale,
+  vs screener-pro's standalone), `balance_sheet`, `cash_flow`, `ratios`,
+  `shareholding` (promoters/fiis/diis/government/public/others + shareholder count).
+  Same Screener.in source, no XBRL.
+
+### Key-question answers
+
+1. **Does BseIndiaApi (`bse`) close the BSE structured-financials/XBRL gap?**
+   **Partially — it narrows it, but does not close the XBRL gap.** For the first time
+   in this evaluation a BSE tool returns **structured numeric quarterly financials**
+   (`resultsSnapshot`: Revenue/Net Profit/EPS/Cash EPS/OPM%/NPM%, latest quarter +
+   prior quarter + FY) directly from BSE, plus the richest BSE announcements/actions
+   surface tested. **But** it is summary-level (~6 line items, not a full P&L taxonomy),
+   limited to the latest ~2 quarters + current FY (no arbitrary historical quarter),
+   and delivers **no Ind AS financial XBRL** (only SEBI reg-30 announcement XBRL). So
+   BSE structured *summaries* are now reachable; BSE *XBRL / full statements* remain
+   PDF-filing-level at best. Evidence: `result-r3-bse.json`.
+
+2. **Do the Screener/Tijori tools deliver INFY quarterly fundamentals without
+   credentials, and at what quality/rights cost?**
+   - **Tijori: NO** — hard-gated behind a Tijori account login (Playwright session
+     cookie on every call); free tier limited, Pro for full data. Stopped per bounds.
+   - **Screener (both tools): YES, credential-free** — a single public page fetch
+     yields 13 quarters of P&L plus annual P&L/BS/CF/ratios/shareholding
+     (openscreener adds a clean consolidated typed schema + shareholder counts).
+   - **Cost:** these are **derived aggregator restatements, not first-party filings
+     and not XBRL** — Screener's own normalized line-items, standalone-vs-consolidated
+     divergence, no filing provenance, and scraped under **Screener.in's own
+     (unreviewed) ToS**. Fine as a human cross-check; weak as a source of record.
+
+3. **Do ANY of the four add a route worth a production rights decision the first-party
+   PDF/XBRL pipeline doesn't already cover better?**
+   - **Aggregators (Screener ×2, Tijori): No.** They provide *derived* numbers, never
+     XBRL, with no provenance advantage over the issuer/exchange filing; Tijori also
+     needs a paid login. The first-party NSE XBRL pipeline (nselib / NseIndiaApi)
+     already gives richer, provenanced, fully-structured Ind AS quarter-grain data.
+   - **`bse` (BseIndiaApi): Yes, narrowly, on the BSE side.** It is by far the best
+     tested BSE tool — the only one with structured BSE quarterly financials and the
+     richest BSE announcements/actions — so it belongs on the **BSE** rights-decision
+     table if first-party BSE coverage is wanted. But it is summary-level, no XBRL, and
+     sits behind the same BSE ToS barrier; it does not beat first-party exchange XBRL
+     where that exists.
+
+### Verdict — do aggregators change the recommendation?
+
+**No.** The product-owner hypothesis ("aggregators usually have all the info") is
+**half-true and rights-costly**: the Screener tools *do* return comprehensive INFY
+fundamentals credential-free, but as **secondary, normalized, XBRL-less data scraped
+under Screener's ToS**, and Tijori is paywalled. None of them beats the first-party
+NSE XBRL route on data quality, structure, or provenance. The one genuinely additive
+finding is **`bse`**: it upgrades the BSE side from "quote/PDF-only" to "structured
+quarterly summary + rich announcements/actions," and is the BSE tool worth naming in a
+future BSE rights decision — while leaving the core conclusion unchanged: the
+quarter-grain structured/XBRL value lives in **first-party exchange filings**, and
+adopting any of these in production is a **rights decision, not a capability gap**.
+
+### Live calls this round (per tool)
+
+| Tool | Live calls | Target host | Result |
+|---|---|---|---|
+| `bse` (BseIndiaApi) | 7 | api.bseindia.com | WORKS (no block) |
+| `screener-scraper-pro` | 1 | screener.in | WORKS (no creds) |
+| `openscreener` | 1 | screener.in | WORKS (no creds) |
+| `tijori-finance-mcp` | 0 | — | STOPPED (needs Tijori login) |
+
+Evidence: `scratchpad/lib-eval/result-r3-bse.json`, `result-r3-screener-pro.json`,
+`result-r3-openscreener.json`. Harnesses: `eval_r3_bse.py`, `run_screener_pro.mjs`,
+`run_openscreener.py`. All ≤15/tool, ≥2.5s apart, INFY/500209-scoped, no anti-bot
+evasion, no credentials.
