@@ -4,7 +4,12 @@ version = "0.0.0"
 description = "Source-backed earnings-review product (Phase 0.5 INFY pilot)."
 requires-python = ">=3.12"
 dependencies = [
+    "edgartools>=5.51.0",
+    "lxml>=6.1.2",
+    "nse>=3.2.1",
+    "nselib>=2.5.1",
     "pydantic>=2.7",
+    "pymupdf>=1.28.2",
 ]
 
 [dependency-groups]
