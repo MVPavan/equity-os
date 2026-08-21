@@ -15,17 +15,21 @@ health gate is **structural** — do not invent commands.
 4. **Beads** — `bd ready` / `bd list` run without error after task changes.
 5. **Doc links** — repo-relative paths referenced in changed docs actually exist.
 
-## Once first-party Python code lands
+## Fundamentals product (`pyproject.toml` at repo root)
 
-The intended stack is Python 3.12+ / `uv` (see `brief.md`). When
-`pyproject.toml` exists, replace this gate with the real commands — expected
-shape, to be pinned then, not assumed now:
+The `fundamentals` uv project (Python 3.12+) landed with Slice 0. Its gate:
 
-- `uv run ruff format --check .` and `uv run ruff check .`
-- `uv run mypy --strict <package>`
-- `uv run pytest`
+- `uv sync`
+- `uv run ruff check src tests/fundamentals` and
+  `uv run ruff format --check src tests/fundamentals`
+- `uv run mypy --strict src`
+- `uv run pytest tests/fundamentals`
 
-Update this file in the same change that introduces `pyproject.toml`.
+Scope ruff/pytest to owned paths: a bare `uv run ruff check` / `uv run pytest`
+also scans pre-existing non-`fundamentals` files (`.codex/`, `scripts/`, and
+the `equity_os_blueprint` ledger tests, which have a known content hash-drift
+failure) that are outside this product's scope. The structural gate above still
+applies to non-Python and non-`fundamentals` changes.
 
 No completion claim without fresh evidence: run the command, read the output
 and exit status, report the actual result.
