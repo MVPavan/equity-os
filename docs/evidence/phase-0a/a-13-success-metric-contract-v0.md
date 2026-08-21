@@ -1,7 +1,7 @@
 # A-13 Success Metric Contract v0 (Method Only)
 
-**Record version:** 0.0.0-v0-pending-approval
-**Status:** DRAFT — pre-baseline metric method definitions only; NO targets; analyst method acceptance, evaluation-authority method acceptance, and product-owner targets PENDING
+**Record version:** 1.0.0-approved-method-only
+**Status:** APPROVED (METHOD ONLY) — pre-baseline metric method definitions accepted; NO targets set; analyst method acceptance and evaluation-authority method acceptance RECORDED; product-owner targets remain PENDING_BASELINE
 **Prepared at:** 2026-08-21
 **Author:** bounded implementer (drafting agent, not a decision maker)
 
@@ -18,8 +18,9 @@ decisions that require the measured Q0 baseline and are recorded later in
 Collection is defined against the shared
 `docs/evidence/phase-0a/instrumentation-vocabulary.json`, used symmetrically in
 the manual and assisted lanes. Changing a definition creates a successor version
-and does not rewrite earlier results. No approval is recorded here; analyst and
-evaluation-authority acceptance of the method are **PENDING**.
+and does not rewrite earlier results. Analyst and evaluation-authority
+acceptance of the **method** are now **RECORDED** (see method acceptance below);
+product-owner **targets** remain **PENDING_BASELINE** and are not set here.
 
 ## Global method rules
 
@@ -52,13 +53,26 @@ evaluation-authority acceptance of the method are **PENDING**.
 
 All ten register-named metrics are defined. No target value appears in any row.
 
-## Method acceptance — fail-closed
+## Method acceptance
 
 | Acceptance | Authority | State |
 |---|---|---|
-| Collection method (definitions/units/scopes) | Analyst | **PENDING** |
-| Collection method (evaluation seam) | Evaluation authority | **PENDING** |
+| Collection method (definitions/units/scopes) | Analyst | **APPROVED** |
+| Collection method (evaluation seam) | Evaluation authority | **APPROVED** |
 | Metric targets | Product owner | **PENDING_BASELINE** — not set before baseline evidence exists |
+
+- **Decider:** PavanMV (mvpavan42@gmail.com), acting as analyst and, for this
+  single-principal private project, expressly self-assuming the
+  evaluation-authority role on the same basis already used for `A02-ATTEST-001`
+  and the A-08 approval (`A08-APPROVAL-001`).
+- **Decision date:** 2026-08-21.
+- **Verbatim instruction (2026-08-21):** "Approve all with defaults." — given in
+  direct reply to a plain-language explanation of the four items and their
+  recommended defaults.
+- **Scope of this approval:** the measurement **method only** (units, scopes,
+  collection methods, phase applicability, correction rules, instrumentation
+  overhead). It sets **no targets**; product-owner targets follow the measured
+  Q0 baseline and are recorded later.
 
 ## Record digest convention and payload
 
@@ -67,14 +81,14 @@ recursively sorted keys, preserved array order, no whitespace/BOM, every
 `record_digest` field excluded). No source content is digested.
 
 ```json
-{"approval":{"analyst_method_acceptance":"PENDING","evaluation_authority_method_acceptance":"PENDING","product_owner_targets":"PENDING_BASELINE"},"artifact_id":"A-13","contract_kind":"SUCCESS_METRIC_CONTRACT_V0_METHOD_ONLY","document_version":"0.0.0-v0-pending-approval","instrumentation_vocabulary_ref":"docs/evidence/phase-0a/instrumentation-vocabulary.json","method_fields":["unit","scope","collection_method","phase_applicability","correction_rules","instrumentation_overhead"],"metrics":["factual_accuracy","citation_correctness","numerical_traceability","unsupported_claims","analyst_minutes","per_claim_verification_time","coverage_capacity","latency","cost","failure_retry_rate"],"prepared_at":"2026-08-21","scope":"Pre-baseline metric method definitions only: unit, scope, collection method, phase applicability, correction rules, and instrumentation overhead. No evidence-derived product-owner targets are set in v0.","target_decisions_present":false}
+{"approval":{"analyst_method_acceptance":"APPROVED","evaluation_authority_method_acceptance":"APPROVED","product_owner_targets":"PENDING_BASELINE"},"artifact_id":"A-13","contract_kind":"SUCCESS_METRIC_CONTRACT_V0_METHOD_ONLY","decider":"PavanMV (mvpavan42@gmail.com), product owner and analyst; for this single-principal private project the evaluation-authority role is expressly self-assumed on the same basis as A02-ATTEST-001 and A-08 (A08-APPROVAL-001)","decision_date":"2026-08-21","document_version":"1.0.0-approved-method-only","instrumentation_vocabulary_ref":"docs/evidence/phase-0a/instrumentation-vocabulary.json","method_fields":["unit","scope","collection_method","phase_applicability","correction_rules","instrumentation_overhead"],"metrics":["factual_accuracy","citation_correctness","numerical_traceability","unsupported_claims","analyst_minutes","per_claim_verification_time","coverage_capacity","latency","cost","failure_retry_rate"],"prepared_at":"2026-08-21","scope":"Pre-baseline metric method definitions only: unit, scope, collection method, phase applicability, correction rules, and instrumentation overhead. No evidence-derived product-owner targets are set in v0; targets remain PENDING_BASELINE.","target_decisions_present":false,"verbatim_instruction":"Approve all with defaults. (2026-08-21)"}
 ```
 
-**Record digest:** `sha256:b65984b7f8236ef924935470b60bc4aca98bd4050a0826e48f47009f6b8b99cf`
+**Record digest:** `sha256:3d5932842a80ece20890d9a6f721f337faf54b863e421d92d1398c1d60f38dc6`
 
 ## Authorities
 
 - `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md` — A-13 clause (metric definitions and measurement methods).
 - `docs/specs/2026-08-19-phase-0a-evidence-program.md` — A-13 primary-ownership boundary; targets are product-owner decisions after baseline.
 - `docs/evidence/phase-0a/instrumentation-vocabulary.json` — shared collection method.
-- Analyst and evaluation authority (method) and product owner (targets): decisions **PENDING**, not recorded here.
+- Analyst and evaluation authority (method): decisions **APPROVED** 2026-08-21 by PavanMV (see method acceptance above). Product owner (targets): **PENDING_BASELINE**, not set here.

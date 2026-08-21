@@ -9,7 +9,7 @@
 | Evidence-version identifier | `A-09-EVIDENCE-FUNDAMENTALS-V1` |
 | Content-digest algorithm | SHA-256 |
 
-Content-Digest: 99578073fda6fe65aa673383ff8493da0e79b85e07705b0f5497bebd825bb413
+Content-Digest: 508dc9e9c046e41ff0f578c14aa73b81d9f26abf144b3ec2681fc1fe2dea4581
 
 ## Authority envelope
 
@@ -72,6 +72,32 @@ and confers no legal clearance.
   a trademark search, and confers NO legal clearance.
 - A competent trademark/legal clearance remains outstanding and is required
   before any public or commercial launch.
+
+## Product-owner Phase 0A gate-basis decision (NOT a legal assessment)
+
+This subsection is a product-owner governance decision, not a competent
+trademark/legal assessment. It does not satisfy any required missing field
+above, is not legal advice, conducts no search, and confers NO legal clearance.
+The `NO_COMPETENT_ASSESSMENT_SUPPLIED` status above stands unchanged.
+
+- **Decision:** For this PRIVATE/PERSONAL project's Phase 0A gate, the product
+  owner decides that the descriptive-name basis for `Fundamentals` recorded
+  above (a common, descriptive English term deliberately chosen for low
+  infringement exposure, private/internal boundary) is **SUFFICIENT for the
+  private Phase 0A gate**. Formal competent trademark clearance is **DEFERRED**
+  to any future public or commercial launch and remains required before it.
+- **Basis and limits:** this is a product-owner acceptance of the recorded
+  non-legal basis for a private gate only. It does not create, infer, or
+  fabricate a competent legal assessment; the required missing fields above
+  remain missing.
+- **Decider:** PavanMV (mvpavan42@gmail.com), authorized product owner. For this
+  single-principal private project the evaluation-authority role is expressly
+  self-assumed on the same basis already used for `A02-ATTEST-001` and the A-08
+  approval (`A08-APPROVAL-001`).
+- **Decision date:** 2026-08-21.
+- **Verbatim instruction (2026-08-21):** "Approve all with defaults." — given in
+  direct reply to a plain-language explanation of the four items and their
+  recommended defaults, including this gate-basis default.
 
 ## Separation from the product-owner decision
 
