@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Record type | `PRODUCT_OWNER_DECISION` |
-| Record status | `BLOCKED` |
+| Record status | `SELECTED` |
 | Decision subject | Selection or rejection of the candidate identity identified below |
-| Normalized candidate identity | `Funda` |
-| Evidence-version identifier | `A-09-EVIDENCE-FUNDA-BLOCKED-V1` |
+| Normalized candidate identity | `Fundamentals` |
+| Evidence-version identifier | `A-09-EVIDENCE-FUNDAMENTALS-V1` |
 | Content-digest algorithm | SHA-256 |
 
-Content-Digest: bff5af6c1863f7cd0afb0a81fd5f2c2e21ce77025c6b8409f89f76f56537f6c6
+Content-Digest: 19a2a4b5c92019177224d09089c8de387b14acf5bb837b9a1b42259a2153a3d0
 
 ## Authority envelope
 
@@ -17,43 +17,71 @@ This packet can only record an attributable selection or rejection by the
 authorized product owner. It does not assess trademark risk, conduct or
 interpret a trademark search, or supply trademark/legal authority.
 
-The current candidate identity is recorded exactly as `Funda`. This packet
-does not turn that identity record or this blocked packet into a product-owner
-selection or rejection.
+The current candidate identity is recorded exactly as `Fundamentals`. This
+packet records an authorized product-owner selection of that identity; it does
+not create, borrow, or imply any trademark/legal conclusion.
 
 ## Decision state
 
-No authorized product-owner identity decision has been supplied. No competent
-trademark/legal assessment has been supplied as an input either. Accordingly,
-A-09 remains `BLOCKED` and the identity `Funda` is neither selected nor
-rejected.
+The authorized product owner has supplied an attributable `SELECT` decision for
+the normalized candidate identity `Fundamentals`. This selection supersedes the
+prior blocked `Funda` candidate. The product owner has authority to select the
+product identity; this packet records that selection. No competent
+trademark/legal assessment was supplied as an input, and the product owner
+selected on a stated non-legal basis while accepting that limitation (see field
+5 below).
 
-## Required missing decision and evidence fields
+Status token: this packet uses `SELECTED` to denote a completed product-owner
+`SELECT` outcome. The packet did not previously enumerate an allowed set of
+completed-state tokens; `SELECTED` is adopted here as the accurate completed
+state.
 
-1. Authorized product-owner identity: full name, organization, accountable
-   role, and authority to select or reject the product identity.
-2. Decision time: decision date, time, timezone, and approval/signature or
-   equivalent attributable authorization.
-3. Decision outcome: explicit `SELECT` or `REJECT` for the exact normalized
-   candidate identity `Funda`; a conditional outcome must state all conditions
-   and is not a completed selection or rejection.
-4. Decision rationale: product, audience, brand, operating-boundary, and
-   implementation considerations relied upon by the product owner.
-5. Legal-assessment input: the completed `TRADEMARK_LEGAL_ASSESSMENT` record's
-   evidence-version identifier, content digest, assessor identity, assessment
-   time, scope, conclusion, and any conditions or limitations.
-6. Evidence reconciliation: confirmation that the completed legal-assessment
-   input and this decision use the same normalized candidate identity and the
-   same reviewed evidence-version identifier, or an explicit mismatch that
-   keeps the identity undecided.
-7. Product-owner attestation that the selection or rejection is within this
-   packet's authority envelope and does not represent legal advice.
+## Decision record and evidence fields
+
+1. Authorized product-owner identity: PavanMV (mvpavan42@gmail.com), acting as
+   the accountable product owner for this program, holding authority to select
+   or reject the product identity.
+2. Decision time: 2026-08-21. Attributable authorization is the product owner's
+   own verbatim instruction recorded in field 3, issued directly to this
+   program by the authorized product owner.
+3. Decision outcome: `SELECT` the exact normalized candidate identity
+   `Fundamentals`. Verbatim product-owner instruction (2026-08-21):
+   "Fundamentals is finalised." This is an unconditional selection.
+4. Decision rationale: `Fundamentals` is a common, descriptive English term
+   chosen deliberately over the prior `Funda` and `Intrinsic` candidates. The
+   product owner accepts that a descriptive term carries weak trademark
+   protection but assesses near-zero infringement exposure, which fits the
+   project's current private/internal operating boundary. This selection
+   supersedes the prior `Funda` candidate.
+5. Legal-assessment input: NONE SUPPLIED. No completed
+   `TRADEMARK_LEGAL_ASSESSMENT` record with a competent-authority conclusion
+   exists to cite; there is no assessor identity, assessment time, scope,
+   conclusion, or digest of a competent assessment to reference. The product
+   owner made this selection on a stated non-legal basis, expressly accepting
+   the absence of a competent trademark/legal clearance. This field records
+   that absence honestly and does not import, infer, or fabricate any legal
+   conclusion. The companion `TRADEMARK_LEGAL_ASSESSMENT` packet remains without
+   competent-authority sign-off and carries only a product-owner non-legal risk
+   acknowledgment.
+6. Evidence reconciliation: this decision and the companion
+   `TRADEMARK_LEGAL_ASSESSMENT` packet use the same normalized candidate
+   identity `Fundamentals` and the same evidence-version identifier
+   `A-09-EVIDENCE-FUNDAMENTALS-V1`. Because no completed competent legal
+   assessment exists, there is no competent-assessment conclusion to reconcile;
+   the selection nonetheless stands within this packet's product-owner authority
+   envelope.
+7. Product-owner attestation: the product owner attests that this selection of
+   `Fundamentals` is within this packet's authority envelope, is an exercise of
+   product-owner selection authority only, and does not represent legal advice
+   or any form of trademark/legal clearance.
 
 ## Separation from the trademark/legal assessment
 
 `TRADEMARK_LEGAL_ASSESSMENT` is a separate required record type. This packet
 does not borrow, infer, or create a legal conclusion from the other packet,
-architecture, governance, or rights material.
+architecture, governance, or rights material. A competent trademark/legal
+clearance remains outstanding and required before any public or commercial
+launch.
 
 ## Digest convention
 
