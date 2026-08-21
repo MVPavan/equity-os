@@ -217,9 +217,7 @@ def test_q3_selects_quarter_6822_and_rejects_ytd_and_prior_year() -> None:
     assert quarter.period_start == Q3_START
     assert quarter.period_end == Q3_END
 
-    ytd = _select_quarter(
-        observations, PROFIT_LOSS_FOR_PERIOD, NINE_MONTH_START, NINE_MONTH_END
-    )
+    ytd = _select_quarter(observations, PROFIT_LOSS_FOR_PERIOD, NINE_MONTH_START, NINE_MONTH_END)
     prior_year = _select_quarter(
         observations, PROFIT_LOSS_FOR_PERIOD, PRIOR_YEAR_Q3_START, PRIOR_YEAR_Q3_END
     )

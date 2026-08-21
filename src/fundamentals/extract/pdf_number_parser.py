@@ -133,9 +133,7 @@ def _leftmost_value(row: list[PageWord]) -> PageWord | None:
     the oracle; a bare ``-`` nil cell is not a value.
     """
     numeric = [
-        word
-        for word in row
-        if word.x0 >= VALUE_MIN_X0_PT and _NUMERIC_TOKEN.match(word.text)
+        word for word in row if word.x0 >= VALUE_MIN_X0_PT and _NUMERIC_TOKEN.match(word.text)
     ]
     numeric.sort(key=lambda w: w.x0)
     return numeric[0] if numeric else None
@@ -154,9 +152,7 @@ def _find_statement_page(pdf: LoadedPdf) -> PdfPage:
     for page in pdf.pages:
         if _STATEMENT_MARKER in page.text and _ANCHOR_LABEL in page.text:
             return page
-    raise NumberParseError(
-        f"consolidated statement page not found in {pdf.source_id}"
-    )
+    raise NumberParseError(f"consolidated statement page not found in {pdf.source_id}")
 
 
 def _observation_for(

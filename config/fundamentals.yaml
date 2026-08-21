@@ -1,0 +1,56 @@
+# Fundamentals pipeline — non-secret composition-root configuration.
+#
+# Loaded only at the composition root (src/fundamentals/api/cli.py); no
+# business-logic module reads this file or the environment directly. Secrets are
+# NOT stored here. Source bytes stay in gitignored data/raw/ (A05-DECISION-004);
+# the NSE Ind AS XBRL is owner-authorized private use only.
+#
+# xbrl.local_path points at the committed synthetic instance that reproduces the
+# STRUCTURE of the held NSE filing (the real bytes are gitignored, never
+# committed), so `fundamentals run` is reproducible end-to-end without live
+# network. Set xbrl.mode: live (or pass --xbrl-mode live) to fetch the real
+# filing politely via NseIndiaApi.
+
+issuer:
+  name: "Infosys Limited"
+  nse_symbol: "INFY"
+  entity_scheme: "nse-symbol"
+
+quarter:
+  issuer_quarter: "FY25_Q1"
+  program_quarter: "QUARTER_1"
+  label: "Q1 FY25 (quarter ended 2024-06-30)"
+  period_start: "2024-04-01"
+  period_end: "2024-06-30"
+  knowledge_cutoff: "2024-07-18T00:00:00Z"
+
+raw_dir: "data/raw/infy-fy25"
+store_db: ":memory:"
+
+results_pdf:
+  source_id: "infy-q1-fy25-results-pdf"
+  filename: "INFY-FY25-Q1-results-auditors.pdf"
+  sha256: "a07c12effe6cbffb6024e8462250e7f5e96b22fb4ec30c163827cc729b372695"
+
+transcript_pdf:
+  source_id: "infy-q1-fy25-management-transcript"
+  filename: "INFY-FY25-Q1-management-transcript.pdf"
+  sha256: "5039acfe6588789c028bb7d95fa1b5481f6dad1d763db16f34ebc2bb8eb023a6"
+
+xbrl:
+  source_id: "nse-indas-xbrl-consolidated"
+  mode: "local"
+  local_path: "tests/fundamentals/fixtures/synthetic_q1_fy25_consolidated.xml"
+  symbol: "INFY"
+  timeout_seconds: 15
+  max_retries: 3
+  retry_backoff_seconds: 2.0
+  entity_scheme_aliases:
+    "http://www.nseindia.com/NSESymbol": "nse-symbol"
+
+sec:
+  enabled: false
+  user_agent: "EquityOS Research (mvpavan42@gmail.com)"
+  cik: 1067491
+  request_timeout_seconds: 30.0
+  max_retries: 3

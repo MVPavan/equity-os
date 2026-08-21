@@ -186,9 +186,7 @@ class SecAnnualSource:
     def _companyfacts_sha256(self) -> str:
         """Fetch the company-facts JSON politely and return its sha256 digest."""
         url = COMPANYFACTS_URL_TEMPLATE.format(cik=self._config.cik)
-        request = urllib.request.Request(
-            url, headers={USER_AGENT_HEADER: self._config.user_agent}
-        )
+        request = urllib.request.Request(url, headers={USER_AGENT_HEADER: self._config.user_agent})
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
             try:

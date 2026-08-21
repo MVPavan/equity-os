@@ -40,9 +40,7 @@ _RAW_DIR = _REPO_ROOT / "data" / "raw" / "infy-fy25"
 _RESULTS_PDF = _RAW_DIR / "INFY-FY25-Q1-results-auditors.pdf"
 _TRANSCRIPT_PDF = _RAW_DIR / "INFY-FY25-Q1-management-transcript.pdf"
 
-_MANIFEST_PATH = (
-    Path(__file__).resolve().parent / "fixtures" / "infy_q1_fy25_manifest.json"
-)
+_MANIFEST_PATH = Path(__file__).resolve().parent / "fixtures" / "infy_q1_fy25_manifest.json"
 
 _RESULTS_SOURCE_ID = "infy-q1-fy25-results-pdf"
 _RESULTS_SHA256 = "a07c12effe6cbffb6024e8462250e7f5e96b22fb4ec30c163827cc729b372695"
