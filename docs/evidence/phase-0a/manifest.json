@@ -1,16 +1,17 @@
 {
   "artifact_type": "Phase0AEvidenceManifest",
   "artifact_id": "manifest",
-  "artifact_version": "0.1.0-scaffold",
-  "status": "SCAFFOLD_NOT_ACCEPTING",
+  "artifact_version": "0.2.0-reconciled",
+  "status": "RECONCILED_PARTIAL_ACCEPTING",
   "recorded_at": "2026-08-21",
   "author": "bounded implementer (non-product validation tooling; records no human decision)",
-  "scope": "Primary-ownership index for register items A-01..A-13. This is a scaffold: acceptance reflects the current recorded state of each artifact and is not a status mirror of the v2 register. Rows whose evidence is not yet accepted are marked INCOMPLETE or PENDING and are never faked as ACCEPTED.",
+  "scope": "Primary-ownership index for register items A-01..A-13. Acceptance reflects the genuine current recorded state of each artifact and is not a status mirror of the v2 register. Rows whose evidence is genuinely complete and digest-bound are ACCEPTED; A-09 is accepted only via a recorded product-owner private-gate waiver (no competent trademark assessment) and says so honestly; A-07, A-12, and A-13 remain INCOMPLETE pending the outstanding product-owner ceiling/capacity/target decisions and are never faked as ACCEPTED.",
   "acceptance_vocabulary": {
     "ACCEPTED": "The row's evidence is complete and carries its required current human decision and digest.",
     "PENDING": "The artifact exists but a required human decision or acceptance is still open.",
     "INCOMPLETE": "A required artifact for this row has not been produced yet."
   },
+  "acceptance_basis_note": "A row may carry an optional acceptance_basis field. PRIVATE_GATE_WAIVER_NOT_COMPETENT_ASSESSMENT (A-09) means the row is accepted for the private Phase 0A gate on a recorded product-owner non-legal basis, not on a competent trademark/legal assessment; formal clearance stays deferred and required before any public/commercial launch.",
   "digest_convention": "Per-record digests use sha256 of compact sorted UTF-8 JSON excluding the digest field (see a-01 and source-package-inventory conventions). Manifest artifact digest fields carry the value recorded inside each artifact, or null while pending; the validator does not treat a null digest as acceptance.",
   "ownership_note": "The register_item set must equal A-01..A-13 exactly once with no duplicate primary owner.",
   "entries": [
@@ -34,18 +35,18 @@
       "register_item": "A-02",
       "primary_owner": "Discovery Slice Selection",
       "stage": "eqos-3ps.1",
-      "acceptance": "PENDING",
-      "acceptance_reason": "Selection recorded; separate identifiable analyst suitability attestation not independently re-verified as current in this scaffold.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Product-owner selection recorded (v1.1.0) and the identifiable analyst-suitability attestation A02-ATTEST-001 supplied 2026-08-20; both records are digest-bound and the source-package inventory is present.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-02-discovery-slice-selection.md",
-          "version": "1.0.0",
-          "digest": null
+          "version": "1.1.0",
+          "digest": "sha256:edf5652e856751305f9b304e00d98ae3dab6d7a79f2d367159387039b26dc1e3"
         },
         {
           "path": "docs/evidence/phase-0a/a-02-analyst-attestation.md",
-          "version": "1.0.0",
-          "digest": null
+          "version": null,
+          "digest": "sha256:daf8dd55e7ac455d2cbd1d4410488562f94730042ae6ad1810a60d7970875189"
         },
         {
           "path": "docs/evidence/phase-0a/source-package-inventory.json",
@@ -60,50 +61,45 @@
       "register_item": "A-03",
       "primary_owner": "Manual Baseline Package",
       "stage": "eqos-3ps.3",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Q0 manual baseline not executed; a-03-manual-baseline-package.md and instrumentation-events.jsonl are not produced. Baseline is not run in Phase 0A tooling.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Measured Q0 baseline CONFIRMED by the product owner 2026-08-21 (Infosys Q1 FY25 consolidated), content-digest-bound and cross-verified 19/19 across two first-party extraction paths. Per the recorded multi-model + human-adjudication methodology decision, the pure-manual baseline (a-03-manual-baseline-package.md, instrumentation-events.jsonl) is superseded and not produced.",
       "artifacts": [
         {
-          "path": "docs/evidence/phase-0a/a-03-manual-baseline-package.md",
+          "path": "docs/evidence/phase-0a/a-03-measured-baseline.md",
           "version": null,
-          "digest": null
-        },
-        {
-          "path": "docs/evidence/phase-0a/instrumentation-events.jsonl",
-          "version": null,
-          "digest": null
+          "digest": "sha256:e5971fa9de5d60b6a86821374e91b400d4e0b1032d520542d7c238378814b940"
         }
       ],
-      "decision_refs": [],
-      "source_refs": []
+      "decision_refs": ["A-03 product-owner confirmation 2026-08-21 (verbatim: Approved)"],
+      "source_refs": ["docs/research/infy-q1-cross-source-comparison.md"]
     },
     {
       "register_item": "A-04",
       "primary_owner": "Output Contract",
       "stage": "eqos-3ps.3",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Provisional v0 exists; the evidence-derived final output contract depends on the unrun Q0 baseline and is not produced.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Evidence-derived final output contract produced: the frozen v0 11-section shape populated with the approved A-03 baseline facts (each anchored) and the approved A-11 thesis content, introducing no new analysis. Analyst usability acceptance and product-owner scope approval recorded 2026-08-21; the record is digest-bound.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-04-output-contract-v0.md",
-          "version": "0.1.0",
-          "digest": null
+          "version": "1.0.0-approved",
+          "digest": "sha256:136277b6ac362af0b00d89751c7fc085f77230fe307c2035e5e79a81f42478d5"
         },
         {
           "path": "docs/evidence/phase-0a/a-04-output-contract-final.md",
-          "version": null,
-          "digest": null
+          "version": "1.0.0",
+          "digest": "sha256:c23dd1c301f7110d7349253f1d65e4c3313076f7ce493d2600c87abf763edf20"
         }
       ],
-      "decision_refs": [],
-      "source_refs": []
+      "decision_refs": ["A-04 analyst usability acceptance + product-owner scope approval 2026-08-21 (verbatim: Approved)"],
+      "source_refs": ["docs/evidence/phase-0a/a-03-measured-baseline.md", "docs/evidence/phase-0a/a-11-investment-thesis.md"]
     },
     {
       "register_item": "A-05",
       "primary_owner": "Source Rights Package",
       "stage": "eqos-3ps.2",
-      "acceptance": "PENDING",
-      "acceptance_reason": "Recorded status is PARTIALLY_DECIDED_REMAINDER_PENDING; open source/use decisions remain with the source-rights authority.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Product-owner source-rights decision A05-DECISION-001 (2026-08-20) gives every in-scope source/use pair a fail-closed disposition (unknown = denied by default); the validator's rights set-equality and no-widening checks pass and every source carries cutoff/provenance. The deliberately deferred remainder (aggregators held, D-3/D-4 unanswered) stays DENIED-by-default and is not hidden.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-05-source-rights-package.json",
@@ -123,13 +119,13 @@
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-06-filing-coverage-matrix.csv",
-          "version": "1.0.0",
-          "digest": null
+          "version": "1.1.0",
+          "digest": "sha256:7a93bb319e64941315ff152993974537f6b1b886f887d661aa39cf1104e14b43"
         },
         {
           "path": "docs/evidence/phase-0a/a-06-filing-coverage-spike.md",
-          "version": "1.0.0",
-          "digest": null
+          "version": "1.1.0",
+          "digest": "sha256:e9de787214bb7906b27522d2e502cdfbe4cec4112d69a48cc4990f94400d3a92"
         }
       ],
       "decision_refs": [],
@@ -171,7 +167,7 @@
         {
           "path": "docs/evidence/phase-0a/a-08-approval-record.md",
           "version": "1.0.0",
-          "digest": null
+          "digest": "sha256:8ea379e801eff8b46dea08a7535f9407894f19c91d46fb22dbfe34fe53fa2ee9"
         }
       ],
       "decision_refs": ["A08-APPROVAL-001"],
@@ -181,59 +177,60 @@
       "register_item": "A-09",
       "primary_owner": "Product Identity Decision Pair",
       "stage": "eqos-3ps.4",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Trademark/legal assessment status is NO_COMPETENT_ASSESSMENT_SUPPLIED; identity remains undecided and the product-owner selection cannot supply that authority.",
+      "acceptance": "ACCEPTED",
+      "acceptance_basis": "PRIVATE_GATE_WAIVER_NOT_COMPETENT_ASSESSMENT",
+      "acceptance_reason": "Accepted via a recorded product-owner PRIVATE-GATE waiver, NOT via a competent legal assessment: the trademark/legal assessment status stays NO_COMPETENT_ASSESSMENT_SUPPLIED, and the product owner recorded a private-gate gate-basis decision (2026-08-21) accepting the non-legal descriptive-name basis as sufficient for the private Phase 0A gate, with formal competent trademark clearance DEFERRED to any public/commercial launch and still required before it. The validator emits a visible A09_ACCEPTED_VIA_PRIVATE_GATE_WAIVER note.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-09-trademark-legal-assessment.md",
           "version": "1.0.0",
-          "digest": "sha256:99578073fda6fe65aa673383ff8493da0e79b85e07705b0f5497bebd825bb413"
+          "digest": "sha256:508dc9e9c046e41ff0f578c14aa73b81d9f26abf144b3ec2681fc1fe2dea4581"
         },
         {
           "path": "docs/evidence/phase-0a/a-09-product-owner-decision.md",
           "version": "1.0.0",
-          "digest": "sha256:19a2a4b5c92019177224d09089c8de387b14acf5bb837b9a1b42259a2153a3d0"
+          "digest": "sha256:b9a9cc3bed5b0b4df6a7bf770c8aef2b7edebb1454d5a1af7a8f0a03b49f9728"
         }
       ],
-      "decision_refs": ["A-09-EVIDENCE-FUNDAMENTALS-V1"],
+      "decision_refs": ["A-09-EVIDENCE-FUNDAMENTALS-V1", "A-09 product-owner private-gate gate-basis decision 2026-08-21"],
       "source_refs": []
     },
     {
       "register_item": "A-10",
       "primary_owner": "Materiality Policy and Validator Set",
       "stage": "eqos-3ps.3",
-      "acceptance": "PENDING",
-      "acceptance_reason": "Policy version is draft pending analyst approval; validator cases carry PENDING authority approval_state.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Concrete materiality policy APPROVED (v1.0.0-approved) with analyst policy and validator-set approval recorded 2026-08-21; every validator case carries an APPROVED label authority_state and its per-record digest, and the validator's deterministic materiality outcomes match on all VALID fixtures.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-10-materiality-policy.md",
-          "version": "0.0.0-draft-pending-approval",
-          "digest": null
+          "version": "1.0.0-approved",
+          "digest": "sha256:8792ecee0bf9a184453ac9565582794453051deb0e2ebe3d227ad776043d78fe"
         },
         {
           "path": "docs/evidence/phase-0a/a-10-validator-cases.jsonl",
-          "version": "0.0.0-draft-pending-approval",
+          "version": "1.0.0-approved",
           "digest": null
         }
       ],
-      "decision_refs": [],
+      "decision_refs": ["A-10 analyst policy + validator-set approval 2026-08-21 (verbatim: Approve all with defaults.)"],
       "source_refs": []
     },
     {
       "register_item": "A-11",
       "primary_owner": "Approved Bootstrap Thesis",
       "stage": "eqos-3ps.3",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Analyst-authored bootstrap thesis depends on the accepted Q0 baseline; not produced.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "Analyst-approved Q0 bootstrap investment thesis v1.0.0 (Infosys Q1 FY25), content-digest-bound, resting on the accepted A-03 measured baseline; approved by the analyst/product owner 2026-08-21. Program Q1 stays blocked until this exact version+digest is the referenced Q0 thesis.",
       "artifacts": [
         {
-          "path": "docs/evidence/phase-0a/a-11-bootstrap-thesis.md",
-          "version": null,
-          "digest": null
+          "path": "docs/evidence/phase-0a/a-11-investment-thesis.md",
+          "version": "1.0.0",
+          "digest": "sha256:7529443eed227c6fcad083b2027893ac6e922d40902d23daceb381f5922c7ae9"
         }
       ],
-      "decision_refs": [],
-      "source_refs": []
+      "decision_refs": ["A-11 analyst thesis approval 2026-08-21 (verbatim: Approved)"],
+      "source_refs": ["docs/evidence/phase-0a/a-03-measured-baseline.md"]
     },
     {
       "register_item": "A-12",

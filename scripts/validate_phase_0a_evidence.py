@@ -497,9 +497,122 @@ def check_materiality_case(case: dict[str, Any]) -> list[str]:
 # A-09 identity pair
 # --------------------------------------------------------------------------- #
 
+# Statuses that mean no competent trademark/legal assessment was supplied.
+A09_NO_ASSESSMENT_STATUSES = frozenset(
+    {"", "NO_COMPETENT_ASSESSMENT_SUPPLIED", "PENDING", "ABSENT"}
+)
+
+# Markers that identify a recorded product-owner private-gate gate-basis decision.
+GATE_BASIS_HEADING_MARKER = "gate-basis"
+GATE_BASIS_SUFFICIENT_MARKER = "sufficient for the private phase 0a gate"
+
+# Visible, informational note emitted when A-09 passes via the private-gate
+# waiver rather than a competent assessment. It is not a silent pass: the
+# exception stays visible in the validator output.
+A09_WAIVER_NOTE = (
+    "A09_ACCEPTED_VIA_PRIVATE_GATE_WAIVER: no competent trademark assessment; "
+    "product-owner accepted the non-legal basis for the private gate; "
+    "formal clearance deferred to public/commercial launch."
+)
+
+
+def _split_bold_bullet(line: str) -> tuple[str | None, str | None]:
+    """Split a `- **Label:** value` markdown bullet into its label and value."""
+    body = line.strip()
+    if body.startswith("- "):
+        body = body[2:]
+    if not body.startswith("**"):
+        return None, None
+    end = body.find("**", 2)
+    if end == -1:
+        return None, None
+    label = body[2:end].strip().rstrip(":").strip()
+    value = body[end + 2 :].strip()
+    return label, value
+
+
+def parse_gate_basis_section(text: str) -> dict[str, Any] | None:
+    """Extract a recorded product-owner private-gate gate-basis decision, if any.
+
+    Reads the recorded decision fields (a gate-basis heading, an explicit
+    "sufficient for the private Phase 0A gate" decision, a deferred formal
+    clearance, and a named decider/date/verbatim instruction). Returns None when
+    no gate-basis section is present. Detection is field-based, never guessed.
+    """
+    section_lines: list[str] = []
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("#"):
+            in_section = GATE_BASIS_HEADING_MARKER in line.lower()
+            continue
+        if in_section:
+            section_lines.append(line)
+    if not section_lines:
+        return None
+    # Collapse whitespace so a marker wrapped across lines still matches.
+    blob = " ".join("\n".join(section_lines).lower().split())
+    gate: dict[str, Any] = {
+        "sufficient_for_private_gate": GATE_BASIS_SUFFICIENT_MARKER in blob,
+        "deferred": "deferred" in blob,
+    }
+    for line in section_lines:
+        label, value = _split_bold_bullet(line)
+        if not label or not value:
+            continue
+        low = label.lower()
+        if low.startswith("decider"):
+            gate["decider"] = value
+        elif low.startswith("decision date"):
+            gate["decision_date"] = value
+        elif low.startswith("verbatim instruction"):
+            gate["verbatim_instruction"] = value
+    return gate
+
+
+def _record_gate_waiver(record: dict[str, Any]) -> bool:
+    """A record carries a complete product-owner private-gate waiver decision."""
+    gate = record.get("gate_basis") or {}
+    return bool(
+        gate.get("sufficient_for_private_gate")
+        and gate.get("deferred")
+        and gate.get("decider")
+        and gate.get("decision_date")
+        and gate.get("verbatim_instruction")
+    )
+
+
+def a09_private_gate_waiver_present(
+    assessment: dict[str, Any], decision: dict[str, Any]
+) -> bool:
+    """Both A-09 records carry the recorded product-owner private-gate waiver."""
+    return _record_gate_waiver(assessment) and _record_gate_waiver(decision)
+
+
+def _a09_no_competent_assessment(assessment: dict[str, Any]) -> bool:
+    """True when the assessment record supplies no competent trademark/legal work."""
+    return str(assessment.get("status", "")).upper() in A09_NO_ASSESSMENT_STATUSES
+
+
+def a09_private_gate_note(
+    assessment: dict[str, Any], decision: dict[str, Any]
+) -> list[str]:
+    """Emit the visible waiver note when A-09 passes via the private-gate waiver."""
+    if _a09_no_competent_assessment(assessment) and a09_private_gate_waiver_present(
+        assessment, decision
+    ):
+        return [A09_WAIVER_NOTE]
+    return []
+
 
 def check_a09_pair(assessment: dict[str, Any], decision: dict[str, Any]) -> list[str]:
-    """Both A-09 records must cover the same identity/evidence yet stay distinct decisions."""
+    """Both A-09 records must cover the same identity/evidence yet stay distinct decisions.
+
+    The identity remains decided (no A09_UNDECIDED) when EITHER a competent
+    trademark/legal assessment exists OR both records carry a recorded
+    product-owner private-gate gate-basis decision (the non-legal basis accepted
+    for the private gate, formal clearance deferred). Passing via the waiver
+    emits a visible note (see `a09_private_gate_note`); it is never a silent pass.
+    """
     findings: list[str] = []
     if assessment.get("normalized_candidate_identity") != decision.get(
         "normalized_candidate_identity"
@@ -509,8 +622,9 @@ def check_a09_pair(assessment: dict[str, Any], decision: dict[str, Any]) -> list
         findings.append("A09_EVIDENCE_MISMATCH: reviewed evidence versions differ")
     if assessment.get("record_type") == decision.get("record_type"):
         findings.append("A09_DECISION_TYPE_NOT_DISTINCT: both records share a decision type")
-    assessment_status = str(assessment.get("status", "")).upper()
-    if assessment_status in {"", "NO_COMPETENT_ASSESSMENT_SUPPLIED", "PENDING", "ABSENT"}:
+    if _a09_no_competent_assessment(assessment) and not a09_private_gate_waiver_present(
+        assessment, decision
+    ):
         findings.append(
             "A09_UNDECIDED: no competent trademark/legal assessment; identity remains undecided"
         )
@@ -549,9 +663,13 @@ class Phase0AEvidenceValidator:
         self.root = root
         self.beads_records = beads_records
         self.findings: list[str] = []
+        self.notes: list[str] = []
 
     def _add(self, findings: list[str]) -> None:
         self.findings.extend(findings)
+
+    def _add_note(self, notes: list[str]) -> None:
+        self.notes.extend(notes)
 
     def _read_text(self, name: str) -> str | None:
         path = self.root / name
@@ -686,6 +804,7 @@ class Phase0AEvidenceValidator:
             self._add(["A09_ABSENT: an A-09 record is missing"])
             return
         self._add(check_a09_pair(assessment, decision))
+        self._add_note(a09_private_gate_note(assessment, decision))
 
     def _parse_a09_markdown(self, name: str) -> dict[str, Any] | None:
         text = self._read_text(name)
@@ -705,6 +824,7 @@ class Phase0AEvidenceValidator:
                         fields["normalized_candidate_identity"] = value
                     elif key == "Evidence-version identifier":
                         fields["evidence_version"] = value
+        fields["gate_basis"] = parse_gate_basis_section(text)
         return fields
 
     def _validate_instrumentation(self) -> None:
@@ -749,6 +869,8 @@ def main(argv: list[str] | None = None) -> int:
     print("Phase 0A Evidence Validation Report")
     print(f"  root: {args.root}")
     print(f"  {summarize_beads_graph(beads_records)}")
+    for note in validator.notes:
+        print(f"  NOTE: {note}")
     if not findings:
         print("  RESULT: PASS - package validates.")
         return 0
