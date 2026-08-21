@@ -1,0 +1,234 @@
+{
+  "artifact_id": "instrumentation-vocabulary",
+  "vocabulary_version": "0.0.0-draft-pending-acceptance",
+  "status": "DRAFT_PENDING_METHOD_ACCEPTANCE",
+  "prepared_at": "2026-08-21",
+  "scope": "Shared event vocabulary applied symmetrically to the Q0 manual baseline and later assisted-shaped reviews; frozen in shape before any Q0 data collection.",
+  "approval": {
+    "analyst_method_acceptance": "PENDING",
+    "evaluation_authority_method_acceptance": "PENDING"
+  },
+  "digest_convention": "sha256 of compact sorted UTF-8 JSON of this object excluding the record_digest field; non-self-referential; no source-content bytes are digested.",
+  "actors": {
+    "ANALYST": "Human analyst performing or reviewing the workflow in the manual lane.",
+    "ASSISTED_AGENT_UNDER_ANALYST_REVIEW": "Assisted-lane actor whose events carry identical semantics and remain under analyst review; not an authoritative calculator or approver."
+  },
+  "symmetry_rule": "Every event definition applies to both lanes with identical start/end semantics, scope, unit, and exclusions. The measurement method never changes between the manual and assisted lanes.",
+  "successor_version_semantics": {
+    "rule": "Changing any event definition creates a successor vocabulary_version. Earlier emitted event results are never rewritten and remain bound to the vocabulary_version under which they were collected.",
+    "supersedes_version": null,
+    "superseded_by_version": null
+  },
+  "overhead_rule": "instrumentation_overhead time is recorded separately and excluded from analytic-work metrics; a workflow whose instrumentation overhead is not measurable invalidates the affected comparison.",
+  "events": [
+    {
+      "event_id": "reading",
+      "description": "Reading an in-scope source document for the workflow.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "First open/attention on the source document for this workflow step.",
+      "end_semantics": "Attention leaves the document or the read is marked complete.",
+      "scope": "One source document within one workflow step.",
+      "unit": "seconds",
+      "exclusions": [
+        "idle time away from the workstation",
+        "reading of out-of-scope material"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "source_location_capture",
+      "description": "Recording the exact source location for an observed result.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin recording the exact location (document, page/section, table/line).",
+      "end_semantics": "Exact location recorded and attached to the observation.",
+      "scope": "One observed result to one exact source location.",
+      "unit": "seconds",
+      "exclusions": [
+        "locating out-of-scope material"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "verification",
+      "description": "Verifying an observed result against its source location.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin comparing the observation to its captured source location.",
+      "end_semantics": "Verification outcome (matches / mismatch) recorded.",
+      "scope": "One observation verified against one source location.",
+      "unit": "seconds",
+      "exclusions": [
+        "re-reading unrelated content"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "calculation",
+      "description": "Performing a deterministic or manual calculation with a recorded trace.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin the calculation with declared inputs.",
+      "end_semantics": "Result and its calculation trace recorded; the LLM is never the authoritative calculator.",
+      "scope": "One computed result with one recorded trace.",
+      "unit": "seconds",
+      "exclusions": [
+        "exploratory arithmetic not entering the output"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "drafting",
+      "description": "Drafting output-contract content from verified observations and traces.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin drafting a contract section from supported inputs.",
+      "end_semantics": "Draft section content recorded.",
+      "scope": "One output-contract section draft.",
+      "unit": "seconds",
+      "exclusions": [
+        "drafting of non-output notes"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "review",
+      "description": "Reviewing drafted content for support, materiality, and correctness.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin review of a drafted section.",
+      "end_semantics": "Review disposition (accept/edit/reject/defer) recorded.",
+      "scope": "One drafted section reviewed.",
+      "unit": "seconds",
+      "exclusions": [
+        "review of already-accepted unchanged content"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "correction",
+      "description": "Applying a correction to a prior observation, calculation, or draft.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin applying a correction that references the corrected event.",
+      "end_semantics": "Correction applied with visible lineage to the corrected event.",
+      "scope": "One correction to one prior event.",
+      "unit": "seconds",
+      "exclusions": [
+        "stylistic edits with no factual or numeric change"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "approval",
+      "description": "Recording a human approval or its explicit absence for a step or artifact.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin recording the approval decision.",
+      "end_semantics": "Approval decision and deciding authority recorded, or its explicit PENDING absence.",
+      "scope": "One approval decision for one step or artifact.",
+      "unit": "seconds",
+      "exclusions": [
+        "inferring approval from another decision"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "COUNTED_AS_ANALYTIC_WORK_TIME"
+    },
+    {
+      "event_id": "instrumentation_overhead",
+      "description": "Time spent operating the instrumentation itself rather than doing analytic work.",
+      "actor_applicability": {
+        "manual_lane_actor": "ANALYST",
+        "assisted_lane_actor": "ASSISTED_AGENT_UNDER_ANALYST_REVIEW",
+        "symmetric": true,
+        "note": "Identical timing, scope, unit, and exclusion semantics in both lanes; lane differs only by actor."
+      },
+      "start_semantics": "Begin instrumentation bookkeeping (starting/stopping timers, logging events).",
+      "end_semantics": "Instrumentation bookkeeping for the step complete.",
+      "scope": "Instrumentation activity within one workflow step.",
+      "unit": "seconds",
+      "exclusions": [
+        "analytic reading, calculation, drafting, or review time"
+      ],
+      "correction_lineage": {
+        "supersedes_event_id": null,
+        "superseded_by_event_id": null,
+        "correction_note": "A correction emits a new event referencing the corrected event_id via supersedes_event_id; earlier emitted events are never rewritten."
+      },
+      "overhead_treatment": "MEASURED_AS_INSTRUMENTATION_OVERHEAD_NOT_ANALYTIC_WORK"
+    }
+  ],
+  "record_digest": "sha256:ac4f73e43f234a8371c6a605614372dbd516457eee03ed7851b3ac087a71eecf"
+}
