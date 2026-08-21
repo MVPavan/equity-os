@@ -1,0 +1,2 @@
+dirty line with trailing space   
+no final newline here
