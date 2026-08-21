@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic Infosys Q1 FY25 CONSOLIDATED Ind AS instance.
+
+  Hand-built fixture that reproduces the STRUCTURE of the real NSE
+  in-bse-fin XBRL (context-per-segment, file-level scope declared by
+  NatureOfReportStandaloneConsolidated, iso4217:INR monetary units in full
+  rupees) without redistributing NSE's copyrighted source bytes. The numeric
+  values are the frozen Q1 FY25 oracle values (see infy_q1_fy25_manifest.json).
+-->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+
+  <xbrli:context id="OneD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-04-01</xbrli:startDate>
+      <xbrli:endDate>2024-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="OneI">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:instant>2024-06-30</xbrli:instant>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="OneReportableSegmentRevenue01D">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+      <xbrli:segment>
+        <xbrldi:explicitMember dimension="in-bse-fin:ReportableSegmentsAxis">in-bse-fin:FinancialServicesSegmentMember</xbrldi:explicitMember>
+      </xbrli:segment>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-04-01</xbrli:startDate>
+      <xbrli:endDate>2024-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="INR">
+    <xbrli:measure>iso4217:INR</xbrli:measure>
+  </xbrli:unit>
+  <xbrli:unit id="INRPerShare">
+    <xbrli:divide>
+      <xbrli:unitNumerator>
+        <xbrli:measure>iso4217:INR</xbrli:measure>
+      </xbrli:unitNumerator>
+      <xbrli:unitDenominator>
+        <xbrli:measure>xbrli:shares</xbrli:measure>
+      </xbrli:unitDenominator>
+    </xbrli:divide>
+  </xbrli:unit>
+
+  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+
+  <in-bse-fin:RevenueFromOperations contextRef="OneD" unitRef="INR" decimals="-7">393150000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:Income contextRef="OneD" unitRef="INR" decimals="-7">401530000000.00</in-bse-fin:Income>
+  <in-bse-fin:Expenses contextRef="OneD" unitRef="INR" decimals="-7">311320000000.00</in-bse-fin:Expenses>
+  <in-bse-fin:ProfitBeforeTax contextRef="OneD" unitRef="INR" decimals="-7">90210000000.00</in-bse-fin:ProfitBeforeTax>
+  <in-bse-fin:ProfitLossForPeriod contextRef="OneD" unitRef="INR" decimals="-7">63740000000.00</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="OneD" unitRef="INR" decimals="-7">63680000000.00</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+  <in-bse-fin:ProfitOrLossAttributableToNonControllingInterests contextRef="OneD" unitRef="INR" decimals="-7">60000000.00</in-bse-fin:ProfitOrLossAttributableToNonControllingInterests>
+  <in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="OneD" unitRef="INRPerShare" decimals="2">15.38</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+
+  <in-bse-fin:PaidUpValueOfEquityShareCapital contextRef="OneI" unitRef="INR" decimals="-7">2960000000.00</in-bse-fin:PaidUpValueOfEquityShareCapital>
+
+  <!-- Segment-dimensioned occurrence of the SAME element under a segment context.
+       A naive first-value read of RevenueFromOperations could return 1,316 Cr. -->
+  <in-bse-fin:RevenueFromOperations contextRef="OneReportableSegmentRevenue01D" unitRef="INR" decimals="-7">13160000000.00</in-bse-fin:RevenueFromOperations>
+
+</xbrli:xbrl>

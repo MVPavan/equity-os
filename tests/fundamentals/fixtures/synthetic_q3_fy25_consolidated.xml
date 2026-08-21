@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic Infosys Q3 FY25 CONSOLIDATED Ind AS instance.
+
+  This fixture exercises the real Gotcha-1 trap that Q1 cannot: within one
+  consolidated file, ProfitLossForPeriod appears under THREE duration contexts —
+  the reporting quarter (Oct-Dec 2024), the nine-month year-to-date, and the
+  prior-year quarter (Oct-Dec 2023). A label-and-plausible-value read cannot
+  tell them apart; only the full period key can. It also carries the
+  attributable-to-owners concept (6,358 Cr) to prove QName disambiguation.
+
+  Structure mirrors the real NSE in-bse-fin XBRL; bytes are hand-built, not
+  redistributed. The quarter PAT 6,822 Cr matches the printed Q3 statement.
+-->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+
+  <xbrli:context id="ThreeD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-10-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="NineMonthD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-04-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="PriorYearThreeD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">INFY</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2023-10-01</xbrli:startDate>
+      <xbrli:endDate>2023-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="INR">
+    <xbrli:measure>iso4217:INR</xbrli:measure>
+  </xbrli:unit>
+
+  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="ThreeD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+
+  <!-- Reporting quarter (Oct-Dec 2024): the value we must select. -->
+  <in-bse-fin:RevenueFromOperations contextRef="ThreeD" unitRef="INR" decimals="-7">417640000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:ProfitLossForPeriod contextRef="ThreeD" unitRef="INR" decimals="-7">68220000000.00</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:ProfitOrLossAttributableToOwnersOfParent contextRef="ThreeD" unitRef="INR" decimals="-7">63580000000.00</in-bse-fin:ProfitOrLossAttributableToOwnersOfParent>
+
+  <!-- Nine-month year-to-date (Apr-Dec 2024): a distractor for the quarter. -->
+  <in-bse-fin:RevenueFromOperations contextRef="NineMonthD" unitRef="INR" decimals="-7">1240730000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:ProfitLossForPeriod contextRef="NineMonthD" unitRef="INR" decimals="-7">199730000000.00</in-bse-fin:ProfitLossForPeriod>
+
+  <!-- Prior-year quarter (Oct-Dec 2023): a distractor for the quarter. -->
+  <in-bse-fin:RevenueFromOperations contextRef="PriorYearThreeD" unitRef="INR" decimals="-7">385210000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:ProfitLossForPeriod contextRef="PriorYearThreeD" unitRef="INR" decimals="-7">61060000000.00</in-bse-fin:ProfitLossForPeriod>
+
+</xbrli:xbrl>

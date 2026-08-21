@@ -28,9 +28,9 @@
     {
       "source_id": "nse-indas-xbrl-consolidated",
       "kind": "xbrl",
-      "file": "INDAS_109110_*.xml",
-      "sha256": null,
-      "sha256_note": "NSE Ind AS consolidated XBRL. The extracted file lived in the session scratchpad (not committed) and was cleaned; re-pin this sha256 in Slice 1 when the file is re-fetched by the live ingestion test.",
+      "file": "INDAS_109110_1192961_18072024074507.xml",
+      "sha256": "ef270eb3c5513fd033008c67d28310f325da95eec1d445923b924b6125c62419",
+      "sha256_note": "NSE Ind AS consolidated XBRL, re-pinned in Slice 1 (finding 8) by re-fetching via NseIndiaApi from https://nsearchives.nseindia.com/corporate/xbrl/INDAS_109110_1192961_18072024074507.xml on 2026-08-21. The source bytes are held gitignored (not committed); the synthetic tests/fundamentals/fixtures/synthetic_q1_fy25_*.xml reproduce its structure without redistributing NSE's bytes.",
       "context_note": "Consolidated current-quarter durations bind to context OneD (2024-04-01 -> 2024-06-30, segment-free); instants bind to OneI (30-Jun-2024). This quarterly file carries only current-quarter contexts (no prior-period columns), so the period-context trap does not arise here; the segment-dimension trap does (see distractors)."
     },
     {
