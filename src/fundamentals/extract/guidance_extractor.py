@@ -95,9 +95,7 @@ def _claim_for(
                 epistemic_class=EpistemicClass.FORECAST,
                 provenance=provenance,
             )
-    raise GuidanceExtractionError(
-        f"guidance for {rule.metric!r} not found in {pdf.source_id}"
-    )
+    raise GuidanceExtractionError(f"guidance for {rule.metric!r} not found in {pdf.source_id}")
 
 
 def extract_guidance_claims(

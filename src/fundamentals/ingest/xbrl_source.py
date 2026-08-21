@@ -120,9 +120,7 @@ class NseXbrlSource:
             f"{description} failed after {self._max_retries} attempts: {last_error}"
         ) from last_error
 
-    def _find_filing(
-        self, client: Any, *, from_date: date, to_date: date
-    ) -> dict[str, Any]:
+    def _find_filing(self, client: Any, *, from_date: date, to_date: date) -> dict[str, Any]:
         """Return the single consolidated Ind AS filing row for the quarter."""
         rows: list[dict[str, Any]] = self._retry(
             "financial_results listing",
@@ -176,13 +174,9 @@ class NseXbrlSource:
                 continue
             if ((start.text or "").strip(), (end.text or "").strip()) == wanted:
                 return
-        raise XbrlFetchError(
-            f"downloaded XBRL carries no {from_date}..{to_date} duration context"
-        )
+        raise XbrlFetchError(f"downloaded XBRL carries no {from_date}..{to_date} duration context")
 
-    def fetch_consolidated_quarter(
-        self, *, from_date: date, to_date: date
-    ) -> XbrlRetrieval:
+    def fetch_consolidated_quarter(self, *, from_date: date, to_date: date) -> XbrlRetrieval:
         """Fetch, verify and stamp the consolidated Ind AS XBRL for one quarter.
 
         Raises :class:`XbrlFetchError` (producing no record) on any network

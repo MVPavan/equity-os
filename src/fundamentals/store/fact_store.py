@@ -63,18 +63,12 @@ _CREATE_UNIQUE_INDEX = (
     f"ON {_TABLE} (content_identity, value_hash)"
 )
 
-_SELECT_BY_IDENTITY = (
-    "SELECT * FROM facts WHERE content_identity = ? ORDER BY revision_ordinal ASC"
-)
-_SELECT_BY_IDENTITY_VALUE = (
-    "SELECT * FROM facts WHERE content_identity = ? AND value_hash = ?"
-)
+_SELECT_BY_IDENTITY = "SELECT * FROM facts WHERE content_identity = ? ORDER BY revision_ordinal ASC"
+_SELECT_BY_IDENTITY_VALUE = "SELECT * FROM facts WHERE content_identity = ? AND value_hash = ?"
 _SELECT_CANONICAL_FOR_IDENTITY = (
     "SELECT * FROM facts WHERE content_identity = ? AND canonical_status = ?"
 )
-_SELECT_ALL_CANONICAL = (
-    "SELECT * FROM facts WHERE canonical_status = ? ORDER BY row_id ASC"
-)
+_SELECT_ALL_CANONICAL = "SELECT * FROM facts WHERE canonical_status = ? ORDER BY row_id ASC"
 _SELECT_BY_ROW_ID = "SELECT * FROM facts WHERE row_id = ?"
 _SELECT_MAX_ORDINAL = (
     "SELECT MAX(revision_ordinal) AS max_ordinal FROM facts WHERE content_identity = ?"
@@ -152,9 +146,7 @@ def _content_identity(observation: Observation) -> str:
     key = {
         "concept_qname": observation.concept_qname,
         "period_type": str(observation.period_type),
-        "period_start": observation.period_start.isoformat()
-        if observation.period_start
-        else None,
+        "period_start": observation.period_start.isoformat() if observation.period_start else None,
         "period_end": observation.period_end.isoformat() if observation.period_end else None,
         "period_instant": observation.period_instant.isoformat()
         if observation.period_instant
@@ -233,9 +225,7 @@ class FactStore:
             return self._row_to_revision(existing)
 
         siblings = self._conn.execute(_SELECT_BY_IDENTITY, (content_identity,)).fetchall()
-        revision_family = (
-            siblings[0]["revision_family"] if siblings else fact.revision_family
-        )
+        revision_family = siblings[0]["revision_family"] if siblings else fact.revision_family
         next_ordinal = self._next_ordinal(content_identity)
 
         prov = observation.provenance
@@ -353,9 +343,7 @@ class FactStore:
             revision_family=row["revision_family"],
             revision_ordinal=int(row["revision_ordinal"]),
             canonical_status=status,
-            canonical_selected_at=datetime.fromisoformat(selected_raw)
-            if selected_raw
-            else None,
+            canonical_selected_at=datetime.fromisoformat(selected_raw) if selected_raw else None,
             canonical_reason=row["canonical_reason"],
             fact=fact,
         )
