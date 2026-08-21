@@ -1,11 +1,11 @@
 {
   "artifact_type": "Phase0AEvidenceManifest",
   "artifact_id": "manifest",
-  "artifact_version": "0.2.0-reconciled",
-  "status": "RECONCILED_PARTIAL_ACCEPTING",
+  "artifact_version": "0.3.0-reconciled",
+  "status": "RECONCILED_ALL_ACCEPTING",
   "recorded_at": "2026-08-21",
   "author": "bounded implementer (non-product validation tooling; records no human decision)",
-  "scope": "Primary-ownership index for register items A-01..A-13. Acceptance reflects the genuine current recorded state of each artifact and is not a status mirror of the v2 register. Rows whose evidence is genuinely complete and digest-bound are ACCEPTED; A-09 is accepted only via a recorded product-owner private-gate waiver (no competent trademark assessment) and says so honestly; A-07, A-12, and A-13 remain INCOMPLETE pending the outstanding product-owner ceiling/capacity/target decisions and are never faked as ACCEPTED.",
+  "scope": "Primary-ownership index for register items A-01..A-13. Acceptance reflects the genuine current recorded state of each artifact and is not a status mirror of the v2 register. Rows whose evidence is genuinely complete and digest-bound are ACCEPTED; A-09 is accepted only via a recorded product-owner private-gate waiver (no competent trademark assessment) and says so honestly; A-07, A-12, and A-13 are now ACCEPTED on the product owner's 2026-08-21 ceiling/capacity/target approvals, recorded honestly as FORWARD PRODUCT-OWNER ESTIMATES (Q0 ran via the multi-model method, not a timed manual pass) and never as observed-manual measurements.",
   "acceptance_vocabulary": {
     "ACCEPTED": "The row's evidence is complete and carries its required current human decision and digest.",
     "PENDING": "The artifact exists but a required human decision or acceptance is still open.",
@@ -135,16 +135,16 @@
       "register_item": "A-07",
       "primary_owner": "Workflow Budget Contract",
       "stage": "eqos-3ps.5",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Depends on accepted Q0 measurement evidence; contract not produced.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "WorkflowBudgetContract produced and approved by the product owner 2026-08-21 (verbatim: Accept all the defaults). All six per-report dimensions (model cost ₹50, tool calls 60, latency 15 min, document volume 10 docs, retries 3, analyst minutes 20 min) are approved CEILINGs; none is unlimited. Recorded honestly as FORWARD PRODUCT-OWNER ESTIMATES, not observed-manual-Q0 minutes (Q0 ran via the multi-model method). Record digest-bound.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-07-workflow-budget-contract.md",
-          "version": null,
-          "digest": null
+          "version": "1.0.0-final",
+          "digest": "sha256:0c2864ebeec61e7bc43c20d2b83c3bcaaeb53dfc7ccbd222be43afb5fa330c95"
         }
       ],
-      "decision_refs": [],
+      "decision_refs": ["A-07 product-owner ceiling approval 2026-08-21 (verbatim: Accept all the defaults.)"],
       "source_refs": []
     },
     {
@@ -236,38 +236,38 @@
       "register_item": "A-12",
       "primary_owner": "Operating Capacity Contract",
       "stage": "eqos-3ps.5",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "Depends on accepted Q0 measurement and product-owner approval; contract not produced.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "OperatingCapacityContract produced and approved by the product owner 2026-08-21 (verbatim: Accept all the defaults). Records weekly builder capacity 5 hrs/wk, weekly analyst capacity 2 hrs/wk, pilot target (Infosys Q1 output within the current build cycle), monthly model/infra CEILING ₹2,000/month, maintenance allowance 1 hr/wk, and expected coverage (start 1 Infosys scaling toward 5-10); each value is an approved CEILING or defined MEASUREMENT_RULE, none unlimited. Recorded honestly as FORWARD PRODUCT-OWNER ESTIMATES traceable to product-owner approval and the single-principal personnel fact, not to observed-manual-Q0 minutes. Record digest-bound.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-12-operating-capacity-contract.md",
-          "version": null,
-          "digest": null
+          "version": "1.0.0-final",
+          "digest": "sha256:a762b685c3225fee143adb400f1e280d20b669b0ebdb7283aa1f7efb7619fbe3"
         }
       ],
-      "decision_refs": [],
+      "decision_refs": ["A-12 product-owner capacity approval 2026-08-21 (verbatim: Accept all the defaults.)"],
       "source_refs": []
     },
     {
       "register_item": "A-13",
       "primary_owner": "Success Metric Contract",
       "stage": "eqos-3ps.3",
-      "acceptance": "INCOMPLETE",
-      "acceptance_reason": "v0 measurement method exists; the post-baseline final contract with product-owner targets depends on the unrun baseline and is not produced.",
+      "acceptance": "ACCEPTED",
+      "acceptance_reason": "SuccessMetricContractFinal produced 2026-08-21: it preserves the accepted A-13 v0 measurement method (units/scopes/collection, method digest 3d593284…) verbatim and adds product-owner targets approved by the product owner 2026-08-21 (verbatim: Accept all the defaults) — factual_accuracy/citation_correctness ≥0.99, numerical_traceability 100% and unsupported_claims 0 (hard rules), analyst_minutes ≤20 min, coverage_capacity ≥5 companies/wk, latency ≤15 min, cost ≤₹50/report, per_claim_verification_time and failure_retry_rate as MEASUREMENT_RULEs (flag if >20%). Recorded honestly as FORWARD PRODUCT-OWNER TARGETS, not observed-manual-Q0 values (Q0 ran via the multi-model method). Record digest-bound.",
       "artifacts": [
         {
           "path": "docs/evidence/phase-0a/a-13-success-metric-contract-v0.md",
-          "version": "0.1.0",
-          "digest": null
+          "version": "1.0.0-approved-method-only",
+          "digest": "sha256:3d5932842a80ece20890d9a6f721f337faf54b863e421d92d1398c1d60f38dc6"
         },
         {
           "path": "docs/evidence/phase-0a/a-13-success-metric-contract-final.md",
-          "version": null,
-          "digest": null
+          "version": "1.0.0-final",
+          "digest": "sha256:9f02bed95afcd8a0a5fd1c2d1497543ecd0f531cfcd074ab03c302a49129fbc1"
         }
       ],
-      "decision_refs": [],
-      "source_refs": []
+      "decision_refs": ["A-13 product-owner target approval 2026-08-21 (verbatim: Accept all the defaults.)"],
+      "source_refs": ["docs/evidence/phase-0a/a-13-success-metric-contract-v0.md"]
     }
   ]
 }
