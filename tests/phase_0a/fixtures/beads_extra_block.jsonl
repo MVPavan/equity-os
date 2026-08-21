@@ -1,0 +1,6 @@
+{"id": "eqos-3ps", "issue_type": "epic", "dependencies": []}
+{"id": "eqos-3ps.1", "issue_type": "task", "dependencies": [{"issue_id": "eqos-3ps.1", "depends_on_id": "eqos-3ps", "type": "parent-child"}]}
+{"id": "eqos-3ps.2", "issue_type": "task", "dependencies": [{"issue_id": "eqos-3ps.2", "depends_on_id": "eqos-3ps", "type": "parent-child"}, {"issue_id": "eqos-3ps.2", "depends_on_id": "eqos-3ps.1", "type": "blocks"}]}
+{"id": "eqos-3ps.3", "issue_type": "task", "dependencies": [{"issue_id": "eqos-3ps.3", "depends_on_id": "eqos-3ps", "type": "parent-child"}, {"issue_id": "eqos-3ps.3", "depends_on_id": "eqos-3ps.2", "type": "blocks"}]}
+{"id": "eqos-3ps.4", "issue_type": "task", "dependencies": [{"issue_id": "eqos-3ps.4", "depends_on_id": "eqos-3ps", "type": "parent-child"}, {"issue_id": "eqos-3ps.4", "depends_on_id": "eqos-3ps.1", "type": "blocks"}]}
+{"id": "eqos-3ps.5", "issue_type": "task", "dependencies": [{"issue_id": "eqos-3ps.5", "depends_on_id": "eqos-3ps", "type": "parent-child"}, {"issue_id": "eqos-3ps.5", "depends_on_id": "eqos-3ps.3", "type": "blocks"}, {"issue_id": "eqos-3ps.5", "depends_on_id": "eqos-3ps.4", "type": "blocks"}]}
