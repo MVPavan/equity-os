@@ -475,6 +475,43 @@ class A09Tests(unittest.TestCase):
         findings = validator.check_a09_pair(assessment, decision)
         self.assertTrue(any("A09_UNDECIDED" in f for f in findings))
 
+    def _gate_basis(self) -> dict:
+        return {
+            "sufficient_for_private_gate": True,
+            "deferred": True,
+            "decider": "named product owner",
+            "decision_date": "2026-08-21",
+            "verbatim_instruction": "Approve all with defaults.",
+        }
+
+    def test_private_gate_waiver_passes_with_visible_note(self) -> None:
+        assessment, decision = self._pair()
+        assessment["status"] = "NO_COMPETENT_ASSESSMENT_SUPPLIED"
+        assessment["gate_basis"] = self._gate_basis()
+        decision["gate_basis"] = self._gate_basis()
+        # No competent assessment, but a recorded waiver -> no A09_UNDECIDED.
+        findings = validator.check_a09_pair(assessment, decision)
+        self.assertFalse(any("A09_UNDECIDED" in f for f in findings))
+        # The exception stays visible as an informational note.
+        notes = validator.a09_private_gate_note(assessment, decision)
+        self.assertTrue(any("A09_ACCEPTED_VIA_PRIVATE_GATE_WAIVER" in n for n in notes))
+
+    def test_incomplete_waiver_still_undecided(self) -> None:
+        assessment, decision = self._pair()
+        assessment["status"] = "NO_COMPETENT_ASSESSMENT_SUPPLIED"
+        gate = self._gate_basis()
+        gate["deferred"] = False  # formal clearance not deferred -> incomplete waiver
+        assessment["gate_basis"] = gate
+        decision["gate_basis"] = gate
+        findings = validator.check_a09_pair(assessment, decision)
+        self.assertTrue(any("A09_UNDECIDED" in f for f in findings))
+        self.assertEqual(validator.a09_private_gate_note(assessment, decision), [])
+
+    def test_competent_assessment_needs_no_note(self) -> None:
+        assessment, decision = self._pair()  # status ASSESSED -> competent
+        self.assertEqual(validator.check_a09_pair(assessment, decision), [])
+        self.assertEqual(validator.a09_private_gate_note(assessment, decision), [])
+
 
 # --------------------------------------------------------------------------- #
 # Whitespace
