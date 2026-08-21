@@ -59,7 +59,7 @@
       "raw_value": "393150000000",
       "normalized_value": "39315",
       "normalized_unit": "INR crore",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     },
     {
       "label": "Total income",
@@ -78,7 +78,7 @@
       "raw_value": "401530000000",
       "normalized_value": "40153",
       "normalized_unit": "INR crore",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     },
     {
       "label": "Total expenses",
@@ -97,7 +97,7 @@
       "raw_value": "311320000000",
       "normalized_value": "31132",
       "normalized_unit": "INR crore",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     },
     {
       "label": "Profit before tax",
@@ -116,7 +116,7 @@
       "raw_value": "90210000000",
       "normalized_value": "9021",
       "normalized_unit": "INR crore",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     },
     {
       "label": "Profit for the period",
@@ -135,7 +135,7 @@
       "raw_value": "63740000000",
       "normalized_value": "6374",
       "normalized_unit": "INR crore",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     },
     {
       "label": "Basic EPS",
@@ -154,7 +154,7 @@
       "raw_value": "15.38",
       "normalized_value": "15.38",
       "normalized_unit": "INR per share",
-      "provenance": { "pdf_page": 11, "xbrl_context_ref": "OneD" }
+      "provenance": { "page": 11, "context_ref": "OneD" }
     }
   ],
   "distractors": [
@@ -233,7 +233,12 @@
   "cross_foot_identities": [
     { "identity": "Total income = Revenue from operations + Other income", "expected": "40153 = 39315 + 838" },
     { "identity": "PBT = Total income - Total expenses", "expected": "9021 = 40153 - 31132" },
-    { "identity": "Profit for the period = PBT - net tax expense", "expected": "6374 = 9021 - 2647" }
+    { "identity": "Profit for the period = PBT - net tax expense", "expected": "6374 = 9021 - 2647" },
+    {
+      "identity": "Profit for the period = attributable to owners of parent + non-controlling interests",
+      "expected": "6374 = 6368 + 6",
+      "source_note": "Attributable-to-owners 6,368 and non-controlling interests 6 both confirmed all-agree across the NSE Ind AS XBRL and the issuer results PDF (docs/research/infy-q1-cross-source-comparison.md, rows 'attributable to owners' and 'non-controlling interests'). 6368 + 6 = 6374."
+    }
   ],
   "notes": [
     "Q1's year-to-date period EQUALS the quarter (Apr-Jun 2024 is both the first quarter and the first-quarter YTD), so the quarter-vs-YTD context-selection trap CANNOT be exercised on Q1. A separate Q3 FY25 fixture (Slice 1) tests quarter-vs-YTD-vs-prior-year selection: ProfitLossForPeriod quarter-duration (Oct-Dec 2024) = 6,822 vs the nine-month YTD, and disambiguates it from the attributable-to-owners 6,358.",

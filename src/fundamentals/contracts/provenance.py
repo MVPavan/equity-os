@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class SourceAnchorType(StrEnum):
@@ -44,3 +44,14 @@ class Provenance(BaseModel):
     filed_at: datetime | None = None
     published_at: datetime | None = None
     first_seen_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _check_anchor_consistency(self) -> Provenance:
+        """Require the typed anchor fields the declared ``anchor_type`` needs."""
+        if self.anchor_type is SourceAnchorType.PDF_SPAN:
+            if self.page is None or self.block is None or self.span is None:
+                raise ValueError("PDF_SPAN anchor requires page, block, and span to be set")
+        elif self.anchor_type is SourceAnchorType.XBRL_CONTEXT:
+            if self.context_ref is None:
+                raise ValueError("XBRL_CONTEXT anchor requires context_ref to be set")
+        return self

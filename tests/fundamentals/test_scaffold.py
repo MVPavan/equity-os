@@ -11,11 +11,13 @@ import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from fundamentals.contracts import (
+    AccountingFramework,
     CanonicalStatus,
     EpistemicClass,
     Fact,
@@ -181,3 +183,138 @@ def test_manifest_carries_standalone_distractors() -> None:
 
     traps = {dist["trap"] for dist in distractors}
     assert {"standalone-vs-consolidated", "segment-dimension", "concept-mismatch"} <= traps
+
+
+def test_provenance_pdf_span_requires_page_block_span() -> None:
+    with pytest.raises(ValidationError):
+        Provenance(
+            source_id="infy-q1-fy25-results-pdf",
+            file_sha256="a" * 64,
+            anchor_type=SourceAnchorType.PDF_SPAN,
+            page=11,  # block and span missing
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_xbrl_context_requires_context_ref() -> None:
+    with pytest.raises(ValidationError):
+        Provenance(
+            source_id="nse-indas-xbrl-consolidated",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.XBRL_CONTEXT,
+            context_ref=None,
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_valid_anchors_construct() -> None:
+    pdf = Provenance(
+        source_id="infy-q1-fy25-results-pdf",
+        file_sha256="a" * 64,
+        anchor_type=SourceAnchorType.PDF_SPAN,
+        page=11,
+        block=3,
+        span="12:44",
+        retrieved_at=_RETRIEVED_AT,
+    )
+    assert pdf.anchor_type is SourceAnchorType.PDF_SPAN
+
+    xbrl = _xbrl_provenance()
+    assert xbrl.context_ref == "OneD"
+
+
+def _opt_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
+
+
+def _provenance_for(entry: dict[str, Any]) -> Provenance:
+    """Build an XBRL-anchored Provenance from a manifest fact/distractor entry."""
+    provenance = entry.get("provenance", {})
+    return Provenance(
+        source_id=entry.get("source_id", "nse-indas-xbrl-consolidated"),
+        file_sha256="0" * 64,
+        anchor_type=SourceAnchorType.XBRL_CONTEXT,
+        page=provenance.get("page"),
+        context_ref=entry["context_ref"],
+        retrieved_at=_RETRIEVED_AT,
+    )
+
+
+def _observation_for(entry: dict[str, Any], payload: dict[str, Any]) -> Observation:
+    """Map a manifest fact/distractor onto the Observation contract vocabulary."""
+    taxonomy = payload["taxonomy"]
+    issuer = payload["issuer"]
+    dimensions = tuple((axis, member) for axis, member in entry.get("dimensions", []))
+    return Observation(
+        concept_qname=entry["concept_qname"],
+        taxonomy_namespace=taxonomy["namespace"],
+        registry_version=f"{taxonomy['registry']}/{taxonomy['version']}",
+        raw_value=entry["raw_value"],
+        normalized_value=Decimal(entry["normalized_value"]),
+        normalized_unit=entry["normalized_unit"],
+        context_ref=entry["context_ref"],
+        entity_scheme="nse-symbol",
+        entity_id=issuer["nse_symbol"],
+        scope=Scope(entry["scope"]),
+        accounting_basis=AccountingFramework.IND_AS,
+        period_type=PeriodType(entry["period_type"]),
+        period_start=_opt_date(entry.get("period_start")),
+        period_end=_opt_date(entry.get("period_end")),
+        period_instant=_opt_date(entry.get("period_instant")),
+        unit_ref=entry.get("unit_ref"),
+        currency=entry.get("currency", payload["reporting_currency"]),
+        scale=entry["scale"],
+        decimals=entry["decimals"],
+        dimensions=dimensions,
+        provenance=_provenance_for(entry),
+    )
+
+
+def test_every_oracle_fact_maps_onto_observation_contract() -> None:
+    payload = json.loads(MANIFEST_PATH.read_text())
+    facts = payload["facts"]
+
+    observations = {fact["label"]: _observation_for(fact, payload) for fact in facts}
+    assert len(observations) == 6
+
+    profit = observations["Profit for the period"]
+    assert profit.concept_qname == "in-bse-fin:ProfitLossForPeriod"
+    assert profit.normalized_value == Decimal("6374")
+    assert profit.scope is Scope.CONSOLIDATED
+    assert profit.accounting_basis is AccountingFramework.IND_AS
+    assert profit.provenance.anchor_type is SourceAnchorType.XBRL_CONTEXT
+    assert profit.provenance.context_ref == "OneD"
+    assert profit.provenance.page == 11
+
+
+def test_valued_distractors_construct_and_are_marked_reject() -> None:
+    payload = json.loads(MANIFEST_PATH.read_text())
+    distractors = payload["distractors"]
+
+    for dist in distractors:
+        assert dist["trap"]  # every distractor carries an explicit reject marker
+        assert dist["reason"]
+        if "raw_value" in dist:
+            obs = _observation_for(dist, payload)
+            assert obs.concept_qname == dist["concept_qname"]
+            assert obs.scope is Scope(dist["scope"])
+
+    valued = [dist for dist in distractors if "raw_value" in dist]
+    assert len(valued) == 3
+
+    # The segment-dimension trap is a value-free structural distractor: it carries
+    # a dimension shape rather than a (fabricated) segment number.
+    segment = [dist for dist in distractors if dist["trap"] == "segment-dimension"]
+    assert len(segment) == 1
+    assert segment[0]["dimensions"]
+    assert "raw_value" not in segment[0]
+
+
+def test_fourth_cross_foot_identity_is_encoded_and_holds() -> None:
+    payload = json.loads(MANIFEST_PATH.read_text())
+    identities = payload["cross_foot_identities"]
+
+    assert len(identities) == 4
+    nci_identity = identities[3]
+    assert nci_identity["expected"] == "6374 = 6368 + 6"
+    assert 6368 + 6 == 6374
