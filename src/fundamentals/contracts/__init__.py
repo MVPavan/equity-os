@@ -6,11 +6,17 @@ from fundamentals.contracts.fact import (
     ReconciliationStatus,
 )
 from fundamentals.contracts.guidance_claim import EpistemicClass, GuidanceClaim
-from fundamentals.contracts.observation import Observation, PeriodType, Scope
+from fundamentals.contracts.observation import (
+    AccountingFramework,
+    Observation,
+    PeriodType,
+    Scope,
+)
 from fundamentals.contracts.period import IssuerQuarter, ProgramQuarter
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 
 __all__ = [
+    "AccountingFramework",
     "CanonicalStatus",
     "EpistemicClass",
     "Fact",
