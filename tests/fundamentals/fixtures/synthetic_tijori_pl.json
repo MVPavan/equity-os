@@ -1,0 +1,21 @@
+{
+  "slug": "infosys-limited",
+  "company_id": 149,
+  "symbol": "INFY",
+  "url": "https://tijorifinance.com/company/infosys-limited/",
+  "statement": "pl",
+  "currency": "INR",
+  "unit": "cr",
+  "periods": [
+    {"label": "Mar'25", "type": "annual"},
+    {"label": "Mar'26", "type": "quarter"},
+    {"label": "Jun'26", "type": "quarter"}
+  ],
+  "rows": [
+    {"label": "Sales", "values": ["1,62,990", "47,000", "48,500"]},
+    {"label": "Operating Profit", "values": ["43,000", "12,500", "13,000"]},
+    {"label": "Other Income", "values": ["3,100", "820", "-"]},
+    {"label": "Net Profit", "values": ["34,000", "9,800", "10,200"]},
+    {"label": "EPS", "values": ["82.0", "23.5", "24.6"]}
+  ]
+}
