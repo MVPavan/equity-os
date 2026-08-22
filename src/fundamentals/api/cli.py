@@ -17,6 +17,7 @@ import hashlib
 import os
 import sys
 import tempfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -44,17 +45,31 @@ from fundamentals.api.watchlist_config import (
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
-from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
+from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, gold_file_path
 from fundamentals.store.fact_store import FactStore
+from fundamentals.thesis import (
+    ClaudeOpusClient,
+    CodexSolClient,
+    ThesisConfig,
+    ThesisDocument,
+    ThesisDocumentStatus,
+    ThesisModelClient,
+    build_thesis,
+    from_gold_file,
+    load_thesis_config,
+    render_thesis_document,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
+_DEFAULT_THESIS_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "thesis"
 _CACHED_RAW_DIR = "data/raw/watchlist"
 _COMMAND_RUN = "run"
 _COMMAND_VALIDATE = "validate"
 _COMMAND_REPORT = "report"
+_COMMAND_THESIS = "thesis"
 _QUARTER_LATEST = "latest"
 # The cached report reconciles the two first-party sources whose raw bytes are
 # held on disk (NSE Ind AS XBRL + BSE issuer results PDF); no live fetch.
@@ -366,6 +381,93 @@ def report_command(args: argparse.Namespace) -> list[str]:
     return written
 
 
+def _resolve_thesis_out_dir(args: argparse.Namespace) -> Path:
+    """Resolve the directory the rendered thesis markdown is written to."""
+    return Path(args.out_dir) if args.out_dir else _DEFAULT_THESIS_DIR
+
+
+def _build_thesis_clients(config: ThesisConfig) -> tuple[ThesisModelClient, ...]:
+    """Construct the two real, independent thesis model clients from config."""
+    codex: ThesisModelClient = CodexSolClient(config.codex)
+    claude: ThesisModelClient = ClaudeOpusClient(config.claude)
+    return (codex, claude)
+
+
+def _stock_name_domain(watchlist: WatchlistConfig, symbol: str) -> tuple[str, str]:
+    """Resolve a symbol's display name and domain from the watchlist (best-effort)."""
+    try:
+        stock = watchlist.stock(symbol)
+    except ValueError:
+        return "", ""
+    return stock.name, stock.domain
+
+
+def _thesis_exit_code(docs: Sequence[ThesisDocument]) -> int:
+    """Non-zero when any thesis is BLOCKED (no usable model draft was produced)."""
+    return 1 if any(doc.status is ThesisDocumentStatus.BLOCKED for doc in docs) else 0
+
+
+def thesis_command(
+    args: argparse.Namespace, *, clients: Sequence[ThesisModelClient] | None = None
+) -> list[ThesisDocument]:
+    """Draft the non-authoritative, cross-verified thesis from validated gold facts.
+
+    Loads each requested stock's gold file (written by ``validate``), runs two
+    independent models over the SAME facts, cross-verifies, and writes the sourced
+    markdown to ``<out-dir>/<SYM>-<QUARTER>.md``. It never re-fetches or recomputes a
+    number: a missing gold file fails closed (run ``validate`` first). The document
+    still emits with the recorded gap when one model is unreachable (PARTIAL); when
+    both fail (BLOCKED) it emits the facts only and the caller exits non-zero. Model
+    clients are injectable so a unit test can pass fakes; the default path builds the
+    two real clients (Codex Sol + Claude Opus) from config.
+    """
+    if not args.watchlist and not args.symbol:
+        raise SystemExit("thesis requires either --watchlist or --symbol <X>")
+
+    config_path = Path(args.config).resolve()
+    watchlist: WatchlistConfig = load_watchlist_config(config_path)
+    gold_dir = Path(args.gold_dir) if args.gold_dir else DEFAULT_GOLD_DIR
+    out_dir = _resolve_thesis_out_dir(args)
+    thesis_config = (
+        load_thesis_config(Path(args.thesis_config)) if args.thesis_config else ThesisConfig()
+    )
+    if clients is None:
+        model_clients: list[ThesisModelClient] = list(_build_thesis_clients(thesis_config))
+    else:
+        model_clients = list(clients)
+
+    symbols = [args.symbol] if args.symbol else [stock.symbol for stock in watchlist.stocks]
+    logger = structlog.get_logger("fundamentals.thesis")
+    generated_at = datetime.now(UTC)
+    docs: list[ThesisDocument] = []
+    for symbol in symbols:
+        gold_path = gold_file_path(symbol, args.quarter, gold_dir)
+        if not gold_path.is_file():
+            if args.symbol:
+                raise SystemExit(
+                    f"gold file not found: {gold_path}. Run "
+                    f"`fundamentals validate --symbol {symbol} --quarter {args.quarter}` first."
+                )
+            logger.warning("thesis_skipped_no_gold", symbol=symbol, path=str(gold_path))
+            continue
+        name, domain = _stock_name_domain(watchlist, symbol)
+        fact_set = from_gold_file(gold_path, name=name, domain=domain)
+        doc = build_thesis(fact_set, model_clients, max_workers=thesis_config.max_workers)
+        markdown = render_thesis_document(doc, generated_at=generated_at)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{symbol}-{args.quarter}.md"
+        out_path.write_text(markdown, encoding="utf-8")
+        docs.append(doc)
+        logger.info(
+            "thesis_written",
+            symbol=symbol,
+            path=str(out_path),
+            status=doc.status.value,
+            usable_drafts=doc.usable_draft_count,
+        )
+    return docs
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``fundamentals`` argument parser."""
     parser = argparse.ArgumentParser(prog="fundamentals", description=__doc__)
@@ -452,6 +554,43 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="override the scratch gold directory the cached reconcile writes to",
     )
+
+    thesis = subparsers.add_parser(
+        _COMMAND_THESIS,
+        help="draft the non-authoritative cross-verified thesis from validated gold facts",
+    )
+    thesis_scope = thesis.add_mutually_exclusive_group()
+    thesis_scope.add_argument(
+        "--watchlist", action="store_true", help="draft a thesis for every watchlist stock"
+    )
+    thesis_scope.add_argument(
+        "--symbol", default=None, help="draft a thesis for a single stock, e.g. MTARTECH"
+    )
+    thesis.add_argument(
+        "--quarter",
+        required=True,
+        help="the reviewed quarter label, e.g. Q3FY25 (keys the gold file)",
+    )
+    thesis.add_argument(
+        "--config",
+        default=str(_DEFAULT_WATCHLIST_PATH),
+        help="path to watchlist.yaml (default: repo config/watchlist.yaml); resolves name/domain",
+    )
+    thesis.add_argument(
+        "--thesis-config",
+        default=None,
+        help="path to non-secret thesis model settings YAML (default: built-in settings)",
+    )
+    thesis.add_argument(
+        "--gold-dir",
+        default=None,
+        help="directory of <SYM>-<QUARTER>.json gold files (default: data/gold)",
+    )
+    thesis.add_argument(
+        "--out-dir",
+        default=None,
+        help="directory for rendered thesis .md (default: docs/research/validation/thesis)",
+    )
     return parser
 
 
@@ -496,6 +635,26 @@ def main(argv: list[str] | None = None) -> int:
         for path in written:
             sys.stdout.write(path + "\n")
         return 0
+
+    if args.command == _COMMAND_THESIS:
+        logger.info(
+            "thesis_invoked",
+            watchlist=args.watchlist,
+            symbol=args.symbol,
+            quarter=args.quarter,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        docs = thesis_command(args)
+        out_dir = _resolve_thesis_out_dir(args)
+        for doc in docs:
+            logger.info(
+                "thesis_summary",
+                symbol=doc.fact_set.symbol,
+                status=doc.status.value,
+                usable_drafts=doc.usable_draft_count,
+            )
+            sys.stdout.write(str(out_dir / f"{doc.fact_set.symbol}-{args.quarter}.md") + "\n")
+        return _thesis_exit_code(docs)
 
     logger.info(
         "run_invoked",

@@ -219,6 +219,12 @@ stocks:
       us_listed: false
       needs_verification:
         - "tijori_slug"
+      # Pre-rename as-filed NSE symbol: the Q3FY25 XBRL was filed as Zomato Ltd
+      # (context entity NSESymbol="ZOMATO") before the ZOMATO -> ETERNAL rename
+      # (2025-04-09, ISIN INE758T01015 unchanged). Accepted by the NSE issuer
+      # guard so the pre-rename filing verifies. See wave-2-rollup.md gap #2.
+      accepted_entity_ids:
+        - "ZOMATO"
     quarter:
       label: "Q3FY25"
       period_start: "2024-10-01"

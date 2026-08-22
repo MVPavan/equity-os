@@ -41,6 +41,19 @@ INDAS_MARKER = "Ind-AS"
 CONSOLIDATED_ROW_VALUE = "Consolidated"
 CONSOLIDATED_SOURCE_ID = "nse-indas-xbrl-consolidated"
 
+# Rename-stable issuer-identity registry. A company's ISIN never changes across a
+# symbol/name rename, but a filing made *before* the rename still carries the OLD
+# NSE symbol in its XBRL context entity, while ``financial_results`` now keys the
+# row (and its ``isin``) under the NEW symbol. This maps the stable ISIN to the
+# as-filed entity identifiers that legitimately belong to that issuer, so a
+# pre-rename filing verifies without weakening the guard against a genuinely
+# different company. Curated + auditable; keyed by ISIN so it survives future
+# renames. (Zomato Limited -> Eternal Limited; symbol ZOMATO -> ETERNAL, effective
+# 2025-04-09; ISIN INE758T01015 unchanged.)
+_ACCEPTED_ENTITY_IDS_BY_ISIN: dict[str, frozenset[str]] = {
+    "INE758T01015": frozenset({"ZOMATO"}),
+}
+
 # Markers that classify a provider response as a TERMINAL hard block — never
 # retried, surfaced immediately. Only timeouts and transient statuses are retried.
 _TERMINAL_HTTP_CODES = frozenset({401, 403, 407, 451})
@@ -127,12 +140,18 @@ class NseXbrlSource:
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
+        accepted_entity_ids: tuple[str, ...] = (),
     ) -> None:
         self._download_folder = download_folder
         self._symbol = symbol.upper()
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
+        # Caller-injected as-filed entity identifiers accepted as this issuer
+        # (e.g. a pre-rename NSE symbol), stored normalized for comparison.
+        self._accepted_entity_ids = frozenset(
+            alias.strip().upper() for alias in accepted_entity_ids if alias.strip()
+        )
 
     def _retry(self, description: str, action: Any) -> Any:
         """Run ``action`` with bounded retries and linear backoff, failing closed.
@@ -190,8 +209,15 @@ class NseXbrlSource:
             raise XbrlFetchError(f"download did not yield a file: {xbrl_url}")
         return local_path
 
-    def _verify(self, xml_bytes: bytes, *, from_date: date, to_date: date) -> None:
-        """Reject a download whose scope or period does not match the request."""
+    def _verify(
+        self, xml_bytes: bytes, *, from_date: date, to_date: date, isin: str | None = None
+    ) -> None:
+        """Reject a download whose scope, issuer, or period does not match the request.
+
+        ``isin`` is the filing row's rename-stable ISIN (when known); it widens the
+        set of accepted context entity identifiers so a filing made before an issuer
+        rename still verifies. It never relaxes the scope or period checks.
+        """
         try:
             root = etree.fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
@@ -201,7 +227,7 @@ class NseXbrlSource:
         if nature is None or (nature.text or "").strip() != CONSOLIDATED_TEXT:
             raise XbrlFetchError("downloaded XBRL is not a consolidated filing")
 
-        self._verify_issuer(root)
+        self._verify_issuer(root, isin=isin)
 
         wanted = (from_date.isoformat(), to_date.isoformat())
         for context in root.findall(f"{_XBRLI}context"):
@@ -213,21 +239,37 @@ class NseXbrlSource:
                 return
         raise XbrlFetchError(f"downloaded XBRL carries no {from_date}..{to_date} duration context")
 
-    def _verify_issuer(self, root: Any) -> None:
+    def _accepted_entity_ids_for(self, isin: str | None) -> frozenset[str]:
+        """Entity identifiers accepted as the requested issuer for this filing.
+
+        The requested symbol always qualifies. A renamed issuer's *as-filed* XBRL
+        still carries its OLD NSE symbol, so two rename-stable sources widen the
+        set: caller-injected aliases, and the built-in registry keyed by the
+        filing row's ISIN (which never changes across a symbol/name rename).
+        """
+        accepted = {self._symbol} | self._accepted_entity_ids
+        if isin:
+            accepted |= _ACCEPTED_ENTITY_IDS_BY_ISIN.get(isin.strip().upper(), frozenset())
+        return frozenset(accepted)
+
+    def _verify_issuer(self, root: Any, *, isin: str | None = None) -> None:
         """Reject a download whose context entity is not the requested issuer.
 
-        A response pointing at another company's filing for the same dates must
-        not pass ingestion verification: at least one context entity identifier
-        must equal the requested symbol.
+        A response pointing at another company's filing for the same dates must not
+        pass ingestion verification: at least one context entity identifier must be
+        the requested issuer — its current symbol, a rename-stable ISIN alias, or a
+        configured alias. A filing for a genuinely different company is rejected.
         """
         identifiers = {
             (identifier.text or "").strip().upper()
             for identifier in root.findall(f"{_XBRLI}context/{_XBRLI}entity/{_XBRLI}identifier")
         }
-        if self._symbol not in identifiers:
+        accepted = self._accepted_entity_ids_for(isin)
+        if identifiers.isdisjoint(accepted):
+            aliases = sorted(accepted - {self._symbol})
             raise XbrlFetchError(
                 f"downloaded XBRL entity {sorted(identifiers)} does not match requested "
-                f"issuer {self._symbol!r}"
+                f"issuer {self._symbol!r} (accepted aliases: {aliases or 'none'})"
             )
 
     def fetch_consolidated_quarter(self, *, from_date: date, to_date: date) -> XbrlRetrieval:
@@ -243,6 +285,7 @@ class NseXbrlSource:
             with NSE(self._download_folder, timeout=self._timeout_seconds) as client:
                 row = self._find_filing(client, from_date=from_date, to_date=to_date)
                 xbrl_url = row["xbrl"].strip()
+                isin = (row.get("isin") or "").strip() or None
                 local_path = self._download(client, xbrl_url)
         except XbrlFetchError:
             raise
@@ -250,7 +293,7 @@ class NseXbrlSource:
             raise XbrlFetchError(f"NSE fetch failed: {exc}") from exc
 
         xml_bytes = local_path.read_bytes()
-        self._verify(xml_bytes, from_date=from_date, to_date=to_date)
+        self._verify(xml_bytes, from_date=from_date, to_date=to_date, isin=isin)
         file_sha256 = hashlib.sha256(xml_bytes).hexdigest()
 
         return XbrlRetrieval(

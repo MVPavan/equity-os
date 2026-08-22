@@ -48,6 +48,12 @@ class SourceIdentifiers(BaseModel):
     ``needs_verification`` names any identifier (e.g. ``"tijori_slug"``) whose
     value is a best-known guess not yet confirmed against a live filing, so the
     runner surfaces it rather than silently trusting it.
+
+    ``accepted_entity_ids`` names as-filed XBRL context entity identifiers (e.g. a
+    pre-rename NSE symbol such as ``"ZOMATO"``) that legitimately belong to this
+    issuer. A filing made before a symbol rename still carries the OLD symbol, so
+    this lets the NSE issuer guard accept it without weakening its rejection of a
+    genuinely different company. Empty for the common (never-renamed) case.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -58,6 +64,7 @@ class SourceIdentifiers(BaseModel):
     tijori_slug: str
     us_listed: bool = False
     needs_verification: tuple[str, ...] = ()
+    accepted_entity_ids: tuple[str, ...] = ()
 
 
 class StockQuarter(BaseModel):

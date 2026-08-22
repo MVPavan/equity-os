@@ -36,6 +36,7 @@ from fundamentals.extract.xbrl_parser import (
     parse_observations,
     select_observation,
 )
+from fundamentals.ingest.xbrl_source import NseXbrlSource, XbrlFetchError
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 Q1_CONSOLIDATED = FIXTURES / "synthetic_q1_fy25_consolidated.xml"
@@ -418,3 +419,151 @@ def test_live_fetch_matches_pinned_sha(tmp_path: Path) -> None:
     observations = _parse(retrieval.local_path, retrieval.source_id)
     profit = _select_quarter(observations, PROFIT_LOSS_FOR_PERIOD, Q1_START, Q1_END)
     assert profit.normalized_value == Decimal("6374")
+
+
+# --------------------------------------------------------------------------- #
+# Issuer-rename verification (ETERNAL / fmr ZOMATO): ISIN-anchored + alias      #
+# --------------------------------------------------------------------------- #
+#
+# The Q3 FY25 NSE XBRL for Eternal was filed (Jan-2025) while the company was
+# still Zomato, so its context entity identifier is NSESymbol="ZOMATO"; but
+# ``financial_results`` now keys the row under the current symbol "ETERNAL",
+# carrying the rename-stable ``isin`` INE758T01015 (the old symbol returns 0
+# rows). The guard must accept the renamed issuer via the stable ISIN (or a
+# configured alias) yet still reject a filing that genuinely belongs to a
+# different company.
+
+_FIN_NS = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"
+_ETERNAL_ISIN = "INE758T01015"
+
+
+def _entity_instance(symbol: str, start: date, end: date) -> bytes:
+    """A minimal consolidated Ind AS instance whose context entity is ``symbol``."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"\n'
+        f'    xmlns:in-bse-fin="{_FIN_NS}">\n'
+        '  <xbrli:context id="OneD">\n'
+        "    <xbrli:entity><xbrli:identifier "
+        f'scheme="http://www.nseindia.com/NSESymbol">{symbol}</xbrli:identifier></xbrli:entity>\n'
+        f"    <xbrli:period><xbrli:startDate>{start.isoformat()}</xbrli:startDate>"
+        f"<xbrli:endDate>{end.isoformat()}</xbrli:endDate></xbrli:period>\n"
+        "  </xbrli:context>\n"
+        '  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">'
+        "Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>\n"
+        "</xbrli:xbrl>\n"
+    ).encode()
+
+
+def test_issuer_rename_verifies_via_isin_registry(tmp_path: Path) -> None:
+    # As-filed entity is ZOMATO; the rename-stable ISIN from the row authorises it.
+    source = NseXbrlSource(tmp_path, symbol="ETERNAL", retry_backoff_seconds=0.0)
+    source._verify(
+        _entity_instance("ZOMATO", Q3_START, Q3_END),
+        from_date=Q3_START,
+        to_date=Q3_END,
+        isin=_ETERNAL_ISIN,
+    )
+
+
+def test_issuer_rename_verifies_via_injected_alias(tmp_path: Path) -> None:
+    # A caller-injected alias set accepts the as-filed symbol (case-insensitive),
+    # independent of the ISIN registry.
+    source = NseXbrlSource(
+        tmp_path, symbol="ETERNAL", accepted_entity_ids=("zomato",), retry_backoff_seconds=0.0
+    )
+    source._verify(
+        _entity_instance("ZOMATO", Q3_START, Q3_END),
+        from_date=Q3_START,
+        to_date=Q3_END,
+        isin=None,
+    )
+
+
+def test_wrong_company_rejected_even_with_known_isin(tmp_path: Path) -> None:
+    # The ISIN authorises only ZOMATO, never a genuinely different company.
+    source = NseXbrlSource(tmp_path, symbol="ETERNAL", retry_backoff_seconds=0.0)
+    with pytest.raises(XbrlFetchError, match="does not match requested issuer"):
+        source._verify(
+            _entity_instance("RELIANCE", Q3_START, Q3_END),
+            from_date=Q3_START,
+            to_date=Q3_END,
+            isin=_ETERNAL_ISIN,
+        )
+
+
+def test_unknown_isin_and_symbol_mismatch_fails_closed(tmp_path: Path) -> None:
+    # An unrecognised ISIN with no configured alias must fail closed (no silent pass).
+    source = NseXbrlSource(tmp_path, symbol="ETERNAL", retry_backoff_seconds=0.0)
+    with pytest.raises(XbrlFetchError, match="does not match requested issuer"):
+        source._verify(
+            _entity_instance("ZOMATO", Q3_START, Q3_END),
+            from_date=Q3_START,
+            to_date=Q3_END,
+            isin="INE000000000",
+        )
+
+
+class _FakeNseClient:
+    """A context-manager NSE stand-in returning a canned row + downloaded file."""
+
+    def __init__(self, rows: list[dict[str, str]], file_bytes: bytes) -> None:
+        self._rows = rows
+        self._file_bytes = file_bytes
+
+    def __enter__(self) -> _FakeNseClient:
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+    def financial_results(self, **_kwargs: object) -> list[dict[str, str]]:
+        return self._rows
+
+    def download_document(self, url: str, folder: Path) -> str:
+        path = Path(folder) / "filing.xml"
+        path.write_bytes(self._file_bytes)
+        return str(path)
+
+
+def _consolidated_row(isin: str) -> dict[str, str]:
+    """A financial_results row shaped like NSE's, keyed under the current symbol."""
+    return {
+        "fromDate": "01-Oct-2024",
+        "toDate": "31-Dec-2024",
+        "consolidated": "Consolidated",
+        "indAs": "Ind-AS New",
+        "xbrl": "https://nsearchives.example/filing.xml",
+        "isin": isin,
+        "relatingTo": "Third Quarter",
+        "broadCastDate": "20-Jan-2025 18:28:59",
+    }
+
+
+def test_fetch_verifies_renamed_issuer_via_row_isin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end: request ETERNAL, NSE returns the row (isin INE758T01015) whose
+    # XBRL was filed as ZOMATO — the fetch verifies and stamps the retrieval.
+    fake = _FakeNseClient(
+        [_consolidated_row(_ETERNAL_ISIN)], _entity_instance("ZOMATO", Q3_START, Q3_END)
+    )
+    monkeypatch.setattr("fundamentals.ingest.xbrl_source.NSE", lambda *_a, **_k: fake)
+    source = NseXbrlSource(tmp_path, symbol="ETERNAL")
+    retrieval = source.fetch_consolidated_quarter(from_date=Q3_START, to_date=Q3_END)
+    assert retrieval.symbol == "ETERNAL"
+    assert retrieval.consolidated is True
+
+
+def test_fetch_rejects_wrong_company_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end: the row is ETERNAL's, but the downloaded XBRL belongs to another
+    # company — the fetch must fail closed rather than build facts from it.
+    fake = _FakeNseClient(
+        [_consolidated_row(_ETERNAL_ISIN)], _entity_instance("RELIANCE", Q3_START, Q3_END)
+    )
+    monkeypatch.setattr("fundamentals.ingest.xbrl_source.NSE", lambda *_a, **_k: fake)
+    source = NseXbrlSource(tmp_path, symbol="ETERNAL")
+    with pytest.raises(XbrlFetchError, match="does not match requested issuer"):
+        source.fetch_consolidated_quarter(from_date=Q3_START, to_date=Q3_END)
