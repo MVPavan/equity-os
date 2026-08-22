@@ -16,11 +16,13 @@ rejected — a mis-read that breaks a computable identity is caught here. A cell
 participates in a holding identity is thus cross-checked; a cell no identity
 references (e.g. EPS) rests on the confidence floor alone.
 
-This module reuses the text lane's geometry engine (band rows, header/date-column
-detection, unit detection, line extraction) by importing its helpers, so both lanes
-honour one fail-closed contract and one summation logic. It depends only downward:
-on :mod:`fundamentals.extract.pdf_number_parser` (the text lane) and the ingest
-layer (:mod:`fundamentals.ingest.pdf_source`, :mod:`fundamentals.ingest.ocr_engine`).
+This module reuses the shared geometry engine in
+:mod:`fundamentals.extract.pdf_column_geometry` (band rows, header/date-column
+detection, unit detection, tolerant label/value lookup) plus the text lane's
+:func:`~fundamentals.extract.pdf_number_parser._extract_lines`, so both lanes honour
+one fail-closed contract and one summation/derivation logic. It depends only
+downward: on the extract layer's geometry and text lane and the ingest layer
+(:mod:`fundamentals.ingest.pdf_source`, :mod:`fundamentals.ingest.ocr_engine`).
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ import pymupdf
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.observation import Observation
-from fundamentals.extract.pdf_number_parser import (
+from fundamentals.extract.pdf_column_geometry import (
     _NUMERIC_TOKEN,
     ConsolidatedStatementNotFoundError,
     LabelMatch,
@@ -43,17 +45,16 @@ from fundamentals.extract.pdf_number_parser import (
     PdfParseSpec,
     _alternate_scope_word,
     _band_rows,
-    _column_value,
     _current_column_center,
     _detect_unit_factor,
-    _extract_lines,
     _find_statement_page,
     _first_index,
-    _label_has_any,
+    _labelled_value_word,
     _parse_date_token,
     _parse_number_or_none,
     _row_label,
 )
+from fundamentals.extract.pdf_number_parser import _extract_lines
 from fundamentals.ingest.ocr_engine import OcrEngine, OcrToken
 from fundamentals.ingest.pdf_source import LoadedPdf, PageWord, PdfPage
 
@@ -226,15 +227,8 @@ def _row_value_by_label(
     match_mode: LabelMatch,
 ) -> Decimal | None:
     """First current-quarter value on a row matching any of ``labels``, else ``None``."""
-    for row in rows:
-        if not _label_has_any(_row_label(row), labels, match_mode):
-            continue
-        value_word = _column_value(row, center, spec.column_x_tolerance_pt)
-        if value_word is not None:
-            parsed = _parse_number_or_none(value_word.text)
-            if parsed is not None:
-                return parsed
-    return None
+    value_word = _labelled_value_word(rows, labels, center, spec, match_mode)
+    return None if value_word is None else _parse_number_or_none(value_word.text)
 
 
 def _ocr_self_consistent(
