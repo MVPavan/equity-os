@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -921,14 +921,14 @@ def _bse_available_periods(
         return None
 
 
-def _latest_completed_quarter(periods: Sequence[str], stock: StockConfig) -> StockQuarter | None:
-    """Pick the most recent completed quarter column, or ``None`` if there is none.
+def _completed_quarters(periods: Sequence[str], stock: StockConfig) -> list[StockQuarter]:
+    """The completed quarter columns BSE publishes, newest period-end first.
 
-    Fiscal-year columns are ignored; only "Mon-YY" quarter columns are eligible,
-    and the one with the latest period end wins. Reuses the BSE period resolver so
-    the bounds match what the summary source stamps on its observations.
+    Fiscal-year columns are ignored; only "Mon-YY" quarter columns are eligible.
+    Reuses the BSE period resolver so the bounds match what the summary source
+    stamps on its observations.
     """
-    best: StockQuarter | None = None
+    quarters: list[StockQuarter] = []
     for label in periods:
         try:
             start, end = _period_bounds(label)
@@ -936,15 +936,51 @@ def _latest_completed_quarter(periods: Sequence[str], stock: StockConfig) -> Sto
             continue
         if (end - start).days >= _MAX_QUARTER_SPAN_DAYS:
             continue
-        if best is None or end > best.period_end:
-            best = StockQuarter(
+        quarters.append(
+            StockQuarter(
                 label=label,
                 period_start=start,
                 period_end=end,
                 knowledge_cutoff=stock.quarter.knowledge_cutoff,
                 filing_taxonomy=stock.quarter.filing_taxonomy,
             )
-    return best
+        )
+    quarters.sort(key=lambda quarter: quarter.period_end, reverse=True)
+    return quarters
+
+
+def _nse_available_quarters(stock: StockConfig, repo_root: Path) -> frozenset[tuple[date, date]]:
+    """Probe the NSE listing for the quarters it currently carries (LIVE latest mode)."""
+    download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "nse"
+    source = NseXbrlSource(download_folder, symbol=stock.identifiers.nse_symbol)
+    return source.available_consolidated_quarters()
+
+
+def _select_aligned_quarter(
+    stock: StockConfig,
+    mode: RunMode,
+    repo_root: Path,
+    kinds: frozenset[SourceKind],
+    candidates: Sequence[StockQuarter],
+) -> StockQuarter | None:
+    """Pick the newest BSE completed quarter NSE also carries (LIVE), else BSE-newest.
+
+    In FIXTURE mode, or when NSE is not selected, the newest BSE candidate is used
+    unchanged. In LIVE mode with NSE selected, the NSE listing is probed and the
+    newest candidate present on both hosts wins; a probe failure falls back to
+    BSE-newest so a transient hiccup never strands the stock. Returns ``None`` only
+    when both hosts were consulted and share no completed quarter.
+    """
+    if mode is RunMode.FIXTURE or SourceKind.NSE not in kinds:
+        return candidates[0]
+    try:
+        nse_quarters = _nse_available_quarters(stock, repo_root)
+    except XbrlFetchError:
+        return candidates[0]
+    for candidate in candidates:
+        if (candidate.period_start, candidate.period_end) in nse_quarters:
+            return candidate
+    return None
 
 
 def _resolve_latest_stock(
@@ -954,9 +990,16 @@ def _resolve_latest_stock(
     periods = _bse_available_periods(stock, mode, repo_root, kinds)
     if periods is None:
         return None, "cannot align latest quarter: BSE resultsSnapshot unavailable"
-    quarter = _latest_completed_quarter(periods, stock)
-    if quarter is None:
+    candidates = _completed_quarters(periods, stock)
+    if not candidates:
         return None, f"cannot align latest quarter: no completed quarter column in {list(periods)}"
+    quarter = _select_aligned_quarter(stock, mode, repo_root, kinds, candidates)
+    if quarter is None:
+        bse_labels = [candidate.label for candidate in candidates]
+        return None, (
+            f"cannot align latest quarter: no quarter common to BSE and NSE "
+            f"(BSE={bse_labels}, NSE lags)"
+        )
     return stock.model_copy(update={"quarter": quarter}), ""
 
 

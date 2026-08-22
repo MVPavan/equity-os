@@ -170,9 +170,7 @@ class NseXbrlSource:
             for row in rows
             if _row_date(row.get("fromDate")) == from_date
             and _row_date(row.get("toDate")) == to_date
-            and (row.get("consolidated") or "") == CONSOLIDATED_ROW_VALUE
-            and INDAS_MARKER in (row.get("indAs") or "")
-            and (row.get("xbrl") or "").strip()
+            and _is_consolidated_indas_xbrl_row(row)
         ]
         if len(candidates) != 1:
             raise XbrlFetchError(
@@ -268,6 +266,51 @@ class NseXbrlSource:
             retrieved_at=retrieved_at,
             filed_at=_parse_broadcast(row.get("broadCastDate")),
         )
+
+    def available_consolidated_quarters(self) -> frozenset[tuple[date, date]]:
+        """Return the quarters NSE lists a consolidated Ind AS XBRL filing for.
+
+        Reads the same quarterly ``financial_results`` listing as
+        :meth:`fetch_consolidated_quarter` and returns the ``(from_date, to_date)``
+        span of every row that qualifies as a consolidated Ind AS filing carrying
+        an XBRL url; rows whose dates do not parse are skipped. Used to intersect
+        with BSE's published quarters so latest-quarter resolution only targets a
+        quarter both first-party hosts carry. Fails closed with
+        :class:`XbrlFetchError` on any network failure.
+        """
+        self._download_folder.mkdir(parents=True, exist_ok=True)
+        try:
+            with NSE(self._download_folder, timeout=self._timeout_seconds) as client:
+                rows: list[dict[str, Any]] = self._retry(
+                    "financial_results listing",
+                    lambda: client.financial_results(
+                        segment="equities", period="quarterly", symbol=self._symbol
+                    ),
+                )
+        except XbrlFetchError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - normalise to a typed failure
+            raise XbrlFetchError(f"NSE listing failed: {exc}") from exc
+
+        quarters: set[tuple[date, date]] = set()
+        for row in rows:
+            if not _is_consolidated_indas_xbrl_row(row):
+                continue
+            from_date = _row_date(row.get("fromDate"))
+            to_date = _row_date(row.get("toDate"))
+            if from_date is None or to_date is None:
+                continue
+            quarters.add((from_date, to_date))
+        return frozenset(quarters)
+
+
+def _is_consolidated_indas_xbrl_row(row: dict[str, Any]) -> bool:
+    """Whether an NSE listing row is a consolidated Ind AS filing carrying an XBRL url."""
+    return (
+        (row.get("consolidated") or "") == CONSOLIDATED_ROW_VALUE
+        and INDAS_MARKER in (row.get("indAs") or "")
+        and bool((row.get("xbrl") or "").strip())
+    )
 
 
 def _row_date(raw: str | None) -> date | None:

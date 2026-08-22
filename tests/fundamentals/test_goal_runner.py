@@ -244,6 +244,62 @@ def test_latest_quarter_mode_blocks_when_bse_cannot_align(tmp_path: Path) -> Non
     assert any("latest quarter" in blocker for blocker in report.blockers)
 
 
+def test_latest_live_mode_picks_common_quarter_when_nse_lags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # LIVE latest: BSE's newest column (Jun-26) is not yet indexed by NSE, but the
+    # prior quarter (Mar-26) is on both hosts -> resolve to the latest COMMON quarter.
+    from fundamentals.api import goal_runner
+    from fundamentals.ingest.xbrl_source import NseXbrlSource
+
+    stock = _summary_stock()
+    kinds = frozenset({SourceKind.NSE, SourceKind.BSE})
+
+    monkeypatch.setattr(
+        goal_runner,
+        "_bse_available_periods",
+        lambda *_args, **_kwargs: ("Jun-26", "Mar-26", "FY25-26"),
+    )
+    monkeypatch.setattr(
+        NseXbrlSource,
+        "available_consolidated_quarters",
+        lambda self: frozenset({(date(2026, 1, 1), date(2026, 3, 31))}),
+    )
+
+    resolved, reason = goal_runner._resolve_latest_stock(stock, RunMode.LIVE, _REPO_ROOT, kinds)
+
+    assert reason == ""
+    assert resolved is not None
+    assert resolved.quarter.label == "Mar-26"
+
+
+def test_latest_live_mode_blocks_when_no_common_quarter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # LIVE latest: BSE and NSE share no completed quarter -> fail closed with reason.
+    from fundamentals.api import goal_runner
+    from fundamentals.ingest.xbrl_source import NseXbrlSource
+
+    stock = _summary_stock()
+    kinds = frozenset({SourceKind.NSE, SourceKind.BSE})
+
+    monkeypatch.setattr(
+        goal_runner,
+        "_bse_available_periods",
+        lambda *_args, **_kwargs: ("Jun-26", "Mar-26"),
+    )
+    monkeypatch.setattr(
+        NseXbrlSource,
+        "available_consolidated_quarters",
+        lambda self: frozenset(),
+    )
+
+    resolved, reason = goal_runner._resolve_latest_stock(stock, RunMode.LIVE, _REPO_ROOT, kinds)
+
+    assert resolved is None
+    assert "no quarter common to BSE and NSE" in reason
+
+
 def test_historical_quarter_records_bse_summary_skipped(tmp_path: Path) -> None:
     # A quarter BSE no longer publishes: the summary source SKIPS with a note
     # (skippable fail-closed) rather than crashing or blocking the stock.
