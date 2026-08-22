@@ -433,7 +433,7 @@ class BseSource:
     def _load_bse_client_class(self) -> Any:
         """Lazily import the ``bse`` client class, failing closed if unavailable."""
         try:
-            from bse import BSE  # type: ignore[import-not-found, import-untyped]
+            from bse import BSE  # type: ignore[import-untyped]
         except ImportError as exc:
             raise BseFetchError(
                 "the 'bse' library is required to resolve the filing index; "
