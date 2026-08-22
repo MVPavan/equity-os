@@ -31,10 +31,12 @@ Design invariants:
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -44,7 +46,7 @@ from fundamentals.api.config import (
     IdentityConfig,
     PdfParseConfig,
 )
-from fundamentals.api.watchlist_config import StockConfig, WatchlistConfig
+from fundamentals.api.watchlist_config import StockConfig, StockQuarter, WatchlistConfig
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -62,9 +64,15 @@ from fundamentals.extract.xbrl_parser import (
     select_observation,
 )
 from fundamentals.ingest.bse_source import (
+    BSE_RESULTS_URL_TEMPLATE,
     BSE_TAXONOMIES,
+    SUMMARY_SOURCE_ID,
     BseFetchError,
     BseSource,
+    _period_bounds,
+)
+from fundamentals.ingest.bse_source import (
+    SOURCE_ID as BSE_XBRL_SOURCE_ID,
 )
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
 from fundamentals.ingest.screener_source import (
@@ -121,6 +129,32 @@ class RunMode(StrEnum):
 
     LIVE = "live"
     FIXTURE = "fixture"
+
+
+class QuarterMode(StrEnum):
+    """How the reviewed quarter is chosen for a run.
+
+    ``PINNED`` uses each stock's configured quarter unchanged. ``LATEST`` asks BSE
+    which quarters it currently publishes and retargets every source onto the most
+    recent completed quarter they can share — so the first-party summary source
+    (which only carries the latest quarters) can reach cross-source AGREE.
+    """
+
+    PINNED = "pinned"
+    LATEST = "latest"
+
+
+# resultsSnapshot exposes only the latest quarters BSE publishes; a placeholder
+# label is passed purely to read back the available period columns before the
+# target quarter is known (LATEST mode). It is never matched as a real column.
+_LATEST_PROBE_LABEL = "__latest__"
+
+# A "Mon-YY" BSE column is a quarter (not the fiscal-year column) when its resolved
+# span is under this many days; fiscal-year columns span ~365 days.
+_MAX_QUARTER_SPAN_DAYS = 100
+
+# BSE column labels are "Mon-YY"; %b-%y yields exactly that in the default C locale.
+_BSE_PERIOD_LABEL_FORMAT = "%b-%y"
 
 
 class SourceKind(StrEnum):
@@ -309,22 +343,26 @@ def _canonicalise(
     """Project an observation onto the canonical cross-host comparison column.
 
     Every source is re-homed to ``(nse-symbol, <symbol>)`` so the same issuer's
-    values compare. For a derived observation ``canonical_concept`` also rewrites
-    the concept, scope, accounting basis and taxonomy identity onto the
-    first-party column it corroborates; the ``source_id`` is untouched, so the
-    classifier still marks it derived and never counts it as first-party.
+    values compare, and its taxonomy identity is dropped so the column is
+    taxonomy-agnostic: the NSE XBRL (which carries a taxonomy) and the BSE
+    resultsSnapshot summary (which carries none) then land in one comparison
+    column. Semantic drift is still caught by ``concept_qname``, which encodes the
+    taxonomy prefix. For a derived observation ``canonical_concept`` also rewrites
+    the concept, scope and accounting basis onto the first-party column it
+    corroborates; the ``source_id`` is untouched, so the classifier still marks it
+    derived and never counts it as first-party.
     """
     updates: dict[str, object] = {
         "entity_scheme": CANONICAL_ENTITY_SCHEME,
         "entity_id": symbol,
+        "taxonomy_namespace": None,
+        "registry_version": None,
     }
     if canonical_concept is not None:
         updates.update(
             concept_qname=canonical_concept,
             scope=Scope.CONSOLIDATED,
             accounting_basis=AccountingFramework.IND_AS,
-            taxonomy_namespace=None,
-            registry_version=None,
         )
     return obs.model_copy(update=updates)
 
@@ -687,28 +725,69 @@ def _fetch_nse_live(stock: StockConfig, repo_root: Path) -> tuple[Observation, .
     )
 
 
+def _bse_period_label(stock: StockConfig) -> str:
+    """The BSE "Mon-YY" column label for the stock's reviewed quarter end."""
+    return stock.quarter.period_end.strftime(_BSE_PERIOD_LABEL_FORMAT)
+
+
 def _collect_bse(
     stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
 ) -> CollectedSource:
-    """Pull the BSE Ind AS XBRL (first-party second host)."""
-    source_id = "bse-xbrl"
+    """Pull the BSE resultsSnapshot summary for the reviewed quarter (second host).
+
+    BSE's ``resultsSnapshot`` is a first-party (BSE-hosted) *summary* source that
+    exposes only the latest quarters it publishes. A quarter it no longer carries
+    is recorded ``SKIPPED`` with the structured note (skippable fail-closed), not a
+    hard block. A committed ``.xml`` fixture is still parsed as a full XBRL instance
+    for the deterministic two-host test; a ``.json`` fixture is a resultsSnapshot.
+    """
+    source_id = SUMMARY_SOURCE_ID
+    period_label = _bse_period_label(stock)
     try:
         if mode is RunMode.FIXTURE:
-            if stock.fixtures.bse is None:
-                return _skip(SourceKind.BSE, source_id, "no BSE fixture configured")
-            xml = (repo_root / stock.fixtures.bse).read_bytes()
-            observations = BseSource.parse(xml, file_sha256=_sha256(xml), retrieved_at=retrieved_at)
-        else:
-            download_folder = (
-                repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse"
-            )
-            source = BseSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
-            observations = source.fetch_observations(
-                from_date=stock.quarter.period_start, to_date=stock.quarter.period_end
-            )
+            return _collect_bse_fixture(stock, repo_root, retrieved_at, period_label)
+        download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse"
+        source = BseSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
+        result = source.fetch_summary(period_label=period_label)
     except (BseFetchError, XbrlParseError, OSError) as error:
         return _blocked(SourceKind.BSE, source_id, str(error))
-    return _ok(SourceKind.BSE, source_id, observations)
+    if not result.observations:
+        return _skip(SourceKind.BSE, source_id, result.note or "no BSE summary observations")
+    return _ok(SourceKind.BSE, source_id, result.observations)
+
+
+def _collect_bse_fixture(
+    stock: StockConfig, repo_root: Path, retrieved_at: datetime, period_label: str
+) -> CollectedSource:
+    """Read a committed BSE fixture: a resultsSnapshot ``.json`` or an XBRL ``.xml``."""
+    if stock.fixtures.bse is None:
+        return _skip(SourceKind.BSE, SUMMARY_SOURCE_ID, "no BSE fixture configured")
+    path = repo_root / stock.fixtures.bse
+    if path.suffix == ".json":
+        snapshot = _load_bse_snapshot(path)
+        result = BseSource.parse_summary(
+            snapshot,
+            period_label=period_label,
+            scrip_code=stock.identifiers.bse_scrip,
+            results_url=BSE_RESULTS_URL_TEMPLATE.format(scrip=stock.identifiers.bse_scrip),
+            retrieved_at=retrieved_at,
+        )
+        if not result.observations:
+            return _skip(
+                SourceKind.BSE, SUMMARY_SOURCE_ID, result.note or "no BSE summary observations"
+            )
+        return _ok(SourceKind.BSE, SUMMARY_SOURCE_ID, result.observations)
+    xml = path.read_bytes()
+    observations = BseSource.parse(xml, file_sha256=_sha256(xml), retrieved_at=retrieved_at)
+    return _ok(SourceKind.BSE, BSE_XBRL_SOURCE_ID, observations)
+
+
+def _load_bse_snapshot(path: Path) -> dict[str, Any]:
+    """Load a committed BSE resultsSnapshot JSON fixture, failing closed if malformed."""
+    parsed: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise BseFetchError(f"BSE snapshot fixture {path} is not a JSON object")
+    return parsed
 
 
 def _collect_screener(
@@ -815,6 +894,72 @@ def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+# --- latest-quarter resolution ------------------------------------------------
+
+
+def _bse_available_periods(
+    stock: StockConfig, mode: RunMode, repo_root: Path, kinds: frozenset[SourceKind]
+) -> tuple[str, ...] | None:
+    """The period columns BSE currently publishes, or ``None`` if unresolvable.
+
+    ``None`` (not an empty tuple) signals that BSE could not be consulted at all —
+    not selected, no fixture, an XBRL-only fixture, or a live failure — so the
+    caller fails closed rather than fabricating a quarter.
+    """
+    if SourceKind.BSE not in kinds:
+        return None
+    if mode is RunMode.FIXTURE:
+        if stock.fixtures.bse is None or not stock.fixtures.bse.endswith(".json"):
+            return None
+        snapshot = _load_bse_snapshot(repo_root / stock.fixtures.bse)
+        return tuple(str(period) for period in snapshot.get("periods", []))
+    download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse"
+    source = BseSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
+    try:
+        return source.fetch_summary(period_label=_LATEST_PROBE_LABEL).available_periods
+    except (BseFetchError, OSError):
+        return None
+
+
+def _latest_completed_quarter(periods: Sequence[str], stock: StockConfig) -> StockQuarter | None:
+    """Pick the most recent completed quarter column, or ``None`` if there is none.
+
+    Fiscal-year columns are ignored; only "Mon-YY" quarter columns are eligible,
+    and the one with the latest period end wins. Reuses the BSE period resolver so
+    the bounds match what the summary source stamps on its observations.
+    """
+    best: StockQuarter | None = None
+    for label in periods:
+        try:
+            start, end = _period_bounds(label)
+        except ValueError:
+            continue
+        if (end - start).days >= _MAX_QUARTER_SPAN_DAYS:
+            continue
+        if best is None or end > best.period_end:
+            best = StockQuarter(
+                label=label,
+                period_start=start,
+                period_end=end,
+                knowledge_cutoff=stock.quarter.knowledge_cutoff,
+                filing_taxonomy=stock.quarter.filing_taxonomy,
+            )
+    return best
+
+
+def _resolve_latest_stock(
+    stock: StockConfig, mode: RunMode, repo_root: Path, kinds: frozenset[SourceKind]
+) -> tuple[StockConfig | None, str]:
+    """Retarget a stock onto the latest quarter its sources can share, or explain why not."""
+    periods = _bse_available_periods(stock, mode, repo_root, kinds)
+    if periods is None:
+        return None, "cannot align latest quarter: BSE resultsSnapshot unavailable"
+    quarter = _latest_completed_quarter(periods, stock)
+    if quarter is None:
+        return None, f"cannot align latest quarter: no completed quarter column in {list(periods)}"
+    return stock.model_copy(update={"quarter": quarter}), ""
+
+
 # --- orchestration ------------------------------------------------------------
 
 
@@ -826,8 +971,21 @@ def run_stock(
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
     out_dir: Path = DEFAULT_GOLD_DIR,
+    quarter_mode: QuarterMode = QuarterMode.PINNED,
 ) -> StockReport:
-    """Collect every source for one stock, then reconcile and score it."""
+    """Collect every source for one stock, then reconcile and score it.
+
+    In ``LATEST`` quarter mode the stock is first retargeted onto the newest
+    quarter its first-party sources can share; if they cannot be aligned the stock
+    is reported ``BLOCKED`` with the reason rather than run on a fabricated period.
+    """
+    if quarter_mode is QuarterMode.LATEST:
+        resolved, reason = _resolve_latest_stock(stock, mode, repo_root, kinds)
+        if resolved is None:
+            return reconcile_stock(
+                stock, [_blocked(SourceKind.BSE, SUMMARY_SOURCE_ID, reason)], out_dir=out_dir
+            )
+        stock = resolved
     sources = collect_sources(
         stock,
         mode=mode,
@@ -846,6 +1004,7 @@ def run_wave(
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
     out_dir: Path = DEFAULT_GOLD_DIR,
+    quarter_mode: QuarterMode = QuarterMode.PINNED,
 ) -> WaveReport:
     """Run every watchlist stock and assemble the wave roll-up."""
     reports = [
@@ -856,10 +1015,11 @@ def run_wave(
             kinds=kinds,
             tijori_credentials=tijori_credentials,
             out_dir=out_dir,
+            quarter_mode=quarter_mode,
         )
         for stock in config.stocks
     ]
-    quarter_labels = tuple(sorted({stock.quarter.label for stock in config.stocks}))
+    quarter_labels = tuple(sorted({report.quarter for report in reports}))
     _LOGGER.info(
         "wave_complete",
         wave=config.wave,

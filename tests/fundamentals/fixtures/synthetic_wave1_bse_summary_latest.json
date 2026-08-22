@@ -1,0 +1,12 @@
+{
+  "periods": ["Dec-24", "Sep-24", "FY24-25"],
+  "currency_unit": "Rs. in Crores",
+  "results_in_crores": {
+    "fields": ["Particulars", "Dec-24", "Sep-24", "FY24-25"],
+    "data": [
+      ["Revenue", "1000.00", "950.00", "3800.00"],
+      ["Net Profit", "150.00", "140.00", "560.00"],
+      ["EPS", "5.00", "4.70", "18.80"]
+    ]
+  }
+}

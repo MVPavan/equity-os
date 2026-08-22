@@ -24,6 +24,7 @@ import structlog
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
     ALL_SOURCE_KINDS,
+    QuarterMode,
     RunMode,
     SourceKind,
     StockReport,
@@ -43,6 +44,7 @@ _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _COMMAND_RUN = "run"
 _COMMAND_VALIDATE = "validate"
+_QUARTER_LATEST = "latest"
 
 _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
@@ -207,10 +209,12 @@ def validate_command(args: argparse.Namespace) -> WaveReport:
     kinds = _parse_source_kinds(args.sources)
     out_dir = Path(args.gold_dir) if args.gold_dir else DEFAULT_GOLD_DIR
     credentials = _tijori_credentials_from_env() if mode is RunMode.LIVE else None
+    latest = bool(args.quarter) and args.quarter.strip().lower() == _QUARTER_LATEST
+    quarter_mode = QuarterMode.LATEST if latest else QuarterMode.PINNED
 
     if args.symbol:
         stock = config.stock(args.symbol)
-        if args.quarter and args.quarter.upper() != stock.quarter.label.upper():
+        if not latest and args.quarter and args.quarter.upper() != stock.quarter.label.upper():
             raise SystemExit(
                 f"quarter {args.quarter!r} does not match configured quarter "
                 f"{stock.quarter.label!r} for {stock.symbol}"
@@ -222,8 +226,9 @@ def validate_command(args: argparse.Namespace) -> WaveReport:
             kinds=kinds,
             tijori_credentials=credentials,
             out_dir=out_dir,
+            quarter_mode=quarter_mode,
         )
-        wave = WaveReport(wave=config.wave, quarter_labels=(stock.quarter.label,), stocks=(report,))
+        wave = WaveReport(wave=config.wave, quarter_labels=(report.quarter,), stocks=(report,))
     else:
         wave = run_wave(
             config,
@@ -232,6 +237,7 @@ def validate_command(args: argparse.Namespace) -> WaveReport:
             kinds=kinds,
             tijori_credentials=credentials,
             out_dir=out_dir,
+            quarter_mode=quarter_mode,
         )
 
     if args.report_dir:
@@ -276,7 +282,12 @@ def _build_parser() -> argparse.ArgumentParser:
     scope.add_argument("--watchlist", action="store_true", help="validate every Wave-1 stock")
     scope.add_argument("--symbol", default=None, help="validate a single stock, e.g. TITAN")
     validate.add_argument(
-        "--quarter", default=None, help="assert the reviewed quarter label, e.g. Q3FY25"
+        "--quarter",
+        default=None,
+        help=(
+            "assert the reviewed quarter label, e.g. Q3FY25; or 'latest' to target the "
+            "newest completed quarter BSE publishes and align NSE/Screener to it"
+        ),
     )
     validate.add_argument(
         "--sources",

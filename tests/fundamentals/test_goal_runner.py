@@ -21,8 +21,10 @@ from pathlib import Path
 
 import pytest
 
+from fundamentals.api.config import ConceptsConfig
 from fundamentals.api.goal_runner import (
     CollectedSource,
+    QuarterMode,
     RunMode,
     SourceKind,
     SourceStatus,
@@ -49,6 +51,7 @@ from fundamentals.reconcile.agreement import AgreementStatus
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _NSE_FIXTURE = "tests/fundamentals/fixtures/synthetic_wave1_nse_q3fy25_consolidated.xml"
 _BSE_FIXTURE = "tests/fundamentals/fixtures/synthetic_wave1_bse_q3fy25_consolidated.xml"
+_BSE_SUMMARY_FIXTURE = "tests/fundamentals/fixtures/synthetic_wave1_bse_summary_latest.json"
 
 _PERIOD_START = date(2024, 10, 1)
 _PERIOD_END = date(2024, 12, 31)
@@ -56,9 +59,11 @@ _KNOWLEDGE_CUTOFF = datetime(2025, 2, 15, tzinfo=UTC)
 
 REVENUE = "in-bse-fin:RevenueFromOperations"
 PAT = "in-bse-fin:ProfitLossForPeriod"
+EPS = "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
 
 NSE_SOURCE_ID = "nse-indas-xbrl-consolidated"
 BSE_SOURCE_ID = "bse-xbrl"
+BSE_SUMMARY_SOURCE_ID = "bse-summary"
 SCREENER_SOURCE_ID = "screener"
 
 
@@ -82,6 +87,37 @@ def _stock(*, fixtures: FixturePaths | None = None) -> StockConfig:
         fixtures=fixtures
         if fixtures is not None
         else FixturePaths(nse=_NSE_FIXTURE, bse=_BSE_FIXTURE),
+    )
+
+
+def _summary_stock(
+    *, quarter: StockQuarter | None = None, bse_fixture: str | None = _BSE_SUMMARY_FIXTURE
+) -> StockConfig:
+    """A stock cross-checked by NSE XBRL + the BSE resultsSnapshot summary source.
+
+    BSE summary only carries Revenue / Net Profit / EPS, so the cross-check set is
+    scoped to those three shared material facts (the identities remain default so
+    NSE-only cross-footing still runs).
+    """
+    return StockConfig(
+        name="Synthetic Summary Corp",
+        domain="Test",
+        identifiers=SourceIdentifiers(
+            nse_symbol="SYNTH",
+            bse_scrip="999999",
+            screener_slug="SYNTH",
+            tijori_slug="synthetic-summary-corp",
+        ),
+        quarter=quarter
+        if quarter is not None
+        else StockQuarter(
+            label="Q3FY25",
+            period_start=_PERIOD_START,
+            period_end=_PERIOD_END,
+            knowledge_cutoff=_KNOWLEDGE_CUTOFF,
+        ),
+        fixtures=FixturePaths(nse=_NSE_FIXTURE, bse=bse_fixture),
+        concepts=ConceptsConfig(cross_check=(REVENUE, PAT, EPS)),
     )
 
 
@@ -141,6 +177,95 @@ def test_fixture_run_is_deterministic(tmp_path: Path) -> None:
     gold_second = (tmp_path / "SYNTH-Q3FY25.json").read_bytes()
     assert gold_first == gold_second
     assert first.model_dump() == second.model_dump()
+
+
+# --- BSE resultsSnapshot summary as the second first-party source --------------
+
+
+def test_nse_and_bse_summary_reconcile_to_agree(tmp_path: Path) -> None:
+    # NSE Ind AS XBRL + BSE resultsSnapshot summary for the SAME quarter: two
+    # independent first-party sources must reconcile Revenue/NetProfit/EPS to AGREE.
+    stock = _summary_stock()
+    report = run_stock(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.NSE, SourceKind.BSE}),
+        out_dir=tmp_path,
+    )
+
+    assert set(report.available_sources) == {NSE_SOURCE_ID, BSE_SUMMARY_SOURCE_ID}
+    assert {fact.concept_qname for fact in report.facts} == {REVENUE, PAT, EPS}
+    for fact in report.facts:
+        assert fact.status is AgreementStatus.AGREE, fact.concept_qname
+        assert fact.first_party_source_count == 2
+        assert set(fact.agreed_sources) == {NSE_SOURCE_ID, BSE_SUMMARY_SOURCE_ID}
+
+    revenue = next(fact for fact in report.facts if fact.concept_qname == REVENUE)
+    assert revenue.agreed_value == "1000.00"
+
+    assert report.dod.material_facts_agreed is True
+    assert report.dod.met is True
+    assert report.outcome is StockOutcome.DONE
+
+
+def test_latest_quarter_mode_aligns_nse_and_bse_summary(tmp_path: Path) -> None:
+    # --quarter latest: resolve the newest completed quarter BSE publishes (Dec-24),
+    # then cross-check NSE and the BSE summary on that same aligned quarter.
+    stock = _summary_stock()
+    report = run_stock(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.NSE, SourceKind.BSE}),
+        out_dir=tmp_path,
+        quarter_mode=QuarterMode.LATEST,
+    )
+
+    assert report.quarter == "Dec-24"
+    assert set(report.available_sources) == {NSE_SOURCE_ID, BSE_SUMMARY_SOURCE_ID}
+    assert all(fact.status is AgreementStatus.AGREE for fact in report.facts)
+    assert report.dod.material_facts_agreed is True
+    assert report.outcome is StockOutcome.DONE
+
+
+def test_latest_quarter_mode_blocks_when_bse_cannot_align(tmp_path: Path) -> None:
+    # No BSE source to resolve the latest quarter from -> fail closed (never fabricate).
+    stock = _summary_stock(bse_fixture=None)
+    report = run_stock(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.NSE, SourceKind.BSE}),
+        out_dir=tmp_path,
+        quarter_mode=QuarterMode.LATEST,
+    )
+    assert report.outcome is StockOutcome.BLOCKED
+    assert any("latest quarter" in blocker for blocker in report.blockers)
+
+
+def test_historical_quarter_records_bse_summary_skipped(tmp_path: Path) -> None:
+    # A quarter BSE no longer publishes: the summary source SKIPS with a note
+    # (skippable fail-closed) rather than crashing or blocking the stock.
+    historical = StockQuarter(
+        label="Q1FY25",
+        period_start=date(2024, 4, 1),
+        period_end=date(2024, 6, 30),
+        knowledge_cutoff=_KNOWLEDGE_CUTOFF,
+    )
+    stock = _summary_stock(quarter=historical)
+    report = run_stock(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.NSE, SourceKind.BSE}),
+        out_dir=tmp_path,
+    )
+
+    bse = next(src for src in report.sources if src.kind is SourceKind.BSE)
+    assert bse.status is SourceStatus.SKIPPED
+    assert bse.source_id == BSE_SUMMARY_SOURCE_ID
+    assert "not available" in bse.note
 
 
 # --- conflict + derived corroboration ------------------------------------------
