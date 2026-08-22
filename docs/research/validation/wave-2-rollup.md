@@ -167,3 +167,35 @@ and reports).
 - **A BLOCKED stock with a derived-only source still writes a gold file** (ETERNAL: Screener-only,
   all facts fp=0). Minor: consider not writing a gold reference when a stock has zero first-party
   facts.
+
+---
+
+## Re-validation update (2026-08-22, after the OCR + scope + rename fixes)
+
+Re-ran all 5 Wave-2 stocks live once the consolidated-column confinement, local-OCR
+lane, and ISIN-anchored issuer-rename verification landed on main.
+
+**Wave-2 AGREE: 4/25 → 8/25.** Whole net gain is HFCL.
+
+| Stock | Before | After | What changed |
+|---|---|---|---|
+| CGPOWER | 4/5 | 4/5 | control — reproduced exactly |
+| HFCL | 0/5 (PDF read standalone → all conflict) | **4/5** | PDF now reads the CONSOLIDATED column (Rev 1011.95, Income 1031.99, EPS 0.51) — matches NSE |
+| ETERNAL | 0/5 · **BLOCKED** | 0/5 · needs_adjudication | rename fix unblocked NSE (entity ZOMATO via ISIN); PDF still skipped |
+| NETWEB | 0/5 · BLOCKED | 0/5 · needs_adjudication | standalone-only filer; NSE has no consolidated filing |
+| POLYCAB | 0/5 | 0/5 | OCR reached the page, stalled at current-quarter-column resolver |
+
+No stock is BLOCKED anymore (was 2). No wrong/unsourced value was ever confirmed.
+
+### Open OCR follow-ups (recorded, not yet fixed)
+
+1. **NETWEB standalone-as-consolidated (contained bug):** NETWEB filed standalone only; the OCR
+   fallback picked its standalone P&L and stamped `scope=consolidated` because the spec forces
+   consolidated scope. Values stayed single-first-party (never confirmed), so nothing false was
+   published, but the provenance is wrong. Fix: page-scope check before OCR extraction; fail-closed
+   for standalone-only filers.
+2. **OCR current-quarter-column resolver (highest leverage):** fails when a statement has both a
+   3-month and a 9-month column sharing the same period-end and/or multi-line date headers
+   (`Quarter ended` / `December 31,` / `2024`). This alone blocks ETERNAL (clean consolidated page
+   already located) and POLYCAB (plus a Greek-glyph header). Multi-line-date assembly + 3-vs-9-month
+   disambiguation would unblock both.
