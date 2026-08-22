@@ -8,3 +8,6 @@
 scratchpad/
 # Retained source content — internal-only rights, never commit/redistribute
 data/
+
+# Fundamentals validation machine reports (large, regeneratable; keep .md rollups)
+docs/research/validation/*.json

@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -54,6 +54,8 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.extract.pdf_number_parser import (
+    ConsolidatedStatementNotFoundError,
+    NumberParseError,
     PdfParseSpec,
     extract_consolidated_pl,
 )
@@ -62,6 +64,13 @@ from fundamentals.extract.xbrl_parser import (
     XbrlParseError,
     parse_observations,
     select_observation,
+)
+from fundamentals.ingest.bse_pdf_source import (
+    SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID,
+)
+from fundamentals.ingest.bse_pdf_source import (
+    BsePdfFetchError,
+    BseResultsPdfSource,
 )
 from fundamentals.ingest.bse_source import (
     BSE_RESULTS_URL_TEMPLATE,
@@ -155,6 +164,10 @@ _MAX_QUARTER_SPAN_DAYS = 100
 
 # BSE column labels are "Mon-YY"; %b-%y yields exactly that in the default C locale.
 _BSE_PERIOD_LABEL_FORMAT = "%b-%y"
+
+# Results are broadcast ~1-1.5 months after quarter end; search announcements from
+# the quarter end through this many days after to locate the filing.
+_PDF_ANNOUNCEMENT_WINDOW_DAYS = 60
 
 
 class SourceKind(StrEnum):
@@ -662,7 +675,7 @@ def collect_sources(
     if SourceKind.TIJORI in kinds:
         collected.append(_collect_tijori(stock, mode, repo_root, tijori_credentials))
     if SourceKind.PDF in kinds:
-        collected.append(_collect_pdf(stock, repo_root, retrieved_at))
+        collected.append(_collect_pdf(stock, mode, repo_root, retrieved_at))
     if SourceKind.SEC in kinds:
         collected.append(_collect_sec(stock))
     return collected
@@ -842,19 +855,75 @@ def _collect_tijori(
     return _ok(SourceKind.TIJORI, source_id, observations)
 
 
-def _collect_pdf(stock: StockConfig, repo_root: Path, retrieved_at: datetime) -> CollectedSource:
-    """Parse the issuer results PDF when configured, else skip with a note."""
+def _collect_pdf(
+    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
+) -> CollectedSource:
+    """Ingest the BSE-hosted issuer results PDF as the second first-party source.
+
+    Live mode fetches+downloads+verifies the PDF from BSE announcements and parses
+    it; fixture mode parses a committed PDF for the offline deterministic tests.
+    Either way the parse is per-concept partial (``require_all=False``): the
+    material facts that are printed as clean total lines are emitted, and a concept
+    a filer splits or whose cell is OCR-corrupted is skipped, never fabricated.
+    Fail-closed: a fetch/download/parse failure is BLOCKED with the reason; a
+    consolidated statement that cannot be located is SKIPPED with a note.
+    """
+    if mode is RunMode.LIVE:
+        return _collect_pdf_live(stock, repo_root)
+    return _collect_pdf_fixture(stock, repo_root, retrieved_at)
+
+
+def _collect_pdf_live(stock: StockConfig, repo_root: Path) -> CollectedSource:
+    """Fetch, download, verify and parse the live BSE results PDF for the quarter."""
+    download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse_pdf"
+    source = BseResultsPdfSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
+    try:
+        retrieval = source.fetch_results_pdf(
+            from_date=stock.quarter.period_end,
+            to_date=stock.quarter.period_end + timedelta(days=_PDF_ANNOUNCEMENT_WINDOW_DAYS),
+        )
+        loaded = load_pdf(
+            source_id=retrieval.source_id,
+            path=retrieval.local_path,
+            expected_sha256=retrieval.file_sha256,
+        )
+        observations = extract_consolidated_pl(
+            loaded, spec=_pdf_spec(stock), retrieved_at=retrieval.retrieved_at, require_all=False
+        )
+    except ConsolidatedStatementNotFoundError as error:
+        return _skip(
+            SourceKind.PDF, BSE_RESULTS_PDF_SOURCE_ID, f"consolidated statement absent: {error}"
+        )
+    except (BsePdfFetchError, NumberParseError, PdfIntegrityError, OSError) as error:
+        return _blocked(SourceKind.PDF, BSE_RESULTS_PDF_SOURCE_ID, str(error))
+    if not observations:
+        return _skip(
+            SourceKind.PDF,
+            BSE_RESULTS_PDF_SOURCE_ID,
+            "no material concept extractable from the consolidated results PDF",
+        )
+    return _ok(SourceKind.PDF, BSE_RESULTS_PDF_SOURCE_ID, observations)
+
+
+def _collect_pdf_fixture(
+    stock: StockConfig, repo_root: Path, retrieved_at: datetime
+) -> CollectedSource:
+    """Parse a committed results-PDF fixture (offline deterministic path)."""
     if stock.results_pdf is None or stock.fixtures.results_pdf is None:
-        return _skip(SourceKind.PDF, "results-pdf", "no results-PDF configured")
+        return _skip(SourceKind.PDF, BSE_RESULTS_PDF_SOURCE_ID, "no results-PDF fixture configured")
     source_id = stock.results_pdf.source_id
     try:
         path = repo_root / stock.fixtures.results_pdf
         loaded = load_pdf(source_id=source_id, path=path, expected_sha256=stock.results_pdf.sha256)
         observations = extract_consolidated_pl(
-            loaded, spec=_pdf_spec(stock), retrieved_at=retrieved_at
+            loaded, spec=_pdf_spec(stock), retrieved_at=retrieved_at, require_all=False
         )
-    except (PdfIntegrityError, OSError) as error:
+    except ConsolidatedStatementNotFoundError as error:
+        return _skip(SourceKind.PDF, source_id, f"consolidated statement absent: {error}")
+    except (NumberParseError, PdfIntegrityError, OSError) as error:
         return _blocked(SourceKind.PDF, source_id, str(error))
+    if not observations:
+        return _skip(SourceKind.PDF, source_id, "no material concept extractable from results PDF")
     return _ok(SourceKind.PDF, source_id, observations)
 
 
@@ -862,7 +931,8 @@ def _pdf_spec(stock: StockConfig) -> PdfParseSpec:
     """Assemble a PDF-parse spec from the shared defaults and the stock identity."""
     defaults = PdfParseConfig()
     return PdfParseSpec(
-        statement_markers=defaults.statement_markers,
+        scope_marker=defaults.scope_marker,
+        statement_confirmations=defaults.statement_confirmations,
         anchor_label=defaults.anchor_label,
         target_lines=defaults.target_lines,
         entity_scheme=stock.entity_scheme,

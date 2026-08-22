@@ -173,7 +173,8 @@ def _select_optional(
 def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
     """Assemble the PDF-parse spec from per-issuer config + run identity."""
     return PdfParseSpec(
-        statement_markers=config.pdf_parse.statement_markers,
+        scope_marker=config.pdf_parse.scope_marker,
+        statement_confirmations=config.pdf_parse.statement_confirmations,
         anchor_label=config.pdf_parse.anchor_label,
         target_lines=config.pdf_parse.target_lines,
         entity_scheme=config.issuer.entity_scheme,

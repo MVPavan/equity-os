@@ -643,6 +643,7 @@ def _write_zero_pbt_pdf(path: Path) -> str:
         "Statement of Consolidated Unaudited Results of ZeroCorp Limited "
         "for the quarter ended June 30, 2024",
     )
+    put(60, 105, "(₹ in crore)")
     put(60, 120, "Particulars")
     put(400, 140, "June 30, 2024")
     put(400, 160, "Unaudited")

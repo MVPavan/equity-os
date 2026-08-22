@@ -15,6 +15,7 @@ Authoritative docs and when to read them.
 | `.claude/rules/python/` | Writing any first-party Python (style, safety, testing) |
 | `.claude/commands/use-codex.md` | Any Codex invocation — authoritative rules and roles |
 | `.claude/docs/` | Harness-shipped background (codex usage guide, beads/mlflow adoption notes) — reference only, not project facts |
+| `docs/research/pdf-extraction-bakeoff.md` | Building or changing document extraction — measured verdicts on PageIndex, the scanned-page vision lane, deterministic table extraction, and XBRL/EDGAR tooling, plus the proposed pipeline contract |
 
 Not yet present, expected later: `docs/specs/` (brainstorming output),
 `docs/workstreams/<name>/roadmap.md` (phase plans), and the smaller

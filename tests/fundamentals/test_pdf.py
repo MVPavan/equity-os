@@ -57,7 +57,8 @@ def _infy_spec() -> PdfParseSpec:
     """Build the INFY Q1 FY25 parse spec from the default per-issuer config."""
     parse_config = PdfParseConfig()
     return PdfParseSpec(
-        statement_markers=parse_config.statement_markers,
+        scope_marker=parse_config.scope_marker,
+        statement_confirmations=parse_config.statement_confirmations,
         anchor_label=parse_config.anchor_label,
         target_lines=parse_config.target_lines,
         entity_scheme="nse-symbol",

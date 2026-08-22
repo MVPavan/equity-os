@@ -22,6 +22,7 @@ from fundamentals.extract.pdf_number_parser import (
     DEFAULT_COLUMN_X_TOLERANCE_PT,
     DEFAULT_MONTH_NAMES,
     DEFAULT_ROW_BAND_TOLERANCE_PT,
+    PdfLineUnit,
     PdfTargetLine,
 )
 from fundamentals.output.earnings_update import FactRole
@@ -107,17 +108,20 @@ _INR_UNIT_REF = "INR"
 _CRORE_SCALE = 10_000_000
 _CRORE_DECIMALS = -7
 
-_DEFAULT_STATEMENT_MARKERS: tuple[str, ...] = (
-    "Statement of Consolidated Audited Results",
-    "Statement of Consolidated Unaudited Results",
-    "Statement of Unaudited Consolidated Results",
-    "Statement of Consolidated Financial Results",
-    "Consolidated Financial Results",
-)
+# The consolidated-vs-standalone discriminator plus the P&L structural markers.
+# Matched case-insensitively as substrings by the parser; together with the anchor
+# they identify the consolidated P&L (not a standalone / balance-sheet / cash-flow
+# / segment page) across the varied SEBI Reg-33 title wordings seen in the wild.
+_DEFAULT_SCOPE_MARKER = "Consolidated"
+_DEFAULT_STATEMENT_CONFIRMATIONS: tuple[str, ...] = ("Total income",)
 
+# Accepted printed label variants per concept. Matching is contiguous-subsequence
+# on normalized tokens, so a leading enumerator ("III. Total income (I+II)") and
+# trailing wording are tolerated; only the SEBI-standard variants that differ in
+# wording (not enumerator/suffix) need listing here.
 _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
     PdfTargetLine(
-        labels=("Revenue from operations",),
+        labels=("Total revenue from operations", "Revenue from operations"),
         concept_qname="in-bse-fin:RevenueFromOperations",
         normalized_unit=_INR_CRORE_UNIT,
         unit_ref=_INR_UNIT_REF,
@@ -125,7 +129,7 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         decimals=_CRORE_DECIMALS,
     ),
     PdfTargetLine(
-        labels=("Total Income", "Total income"),
+        labels=("Total income",),
         concept_qname="in-bse-fin:Income",
         normalized_unit=_INR_CRORE_UNIT,
         unit_ref=_INR_UNIT_REF,
@@ -133,7 +137,7 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         decimals=_CRORE_DECIMALS,
     ),
     PdfTargetLine(
-        labels=("Profit before tax", "Profit / (loss) before tax"),
+        labels=("Profit before tax", "Profit/(loss) before tax", "Profit before taxation"),
         concept_qname="in-bse-fin:ProfitBeforeTax",
         normalized_unit=_INR_CRORE_UNIT,
         unit_ref=_INR_UNIT_REF,
@@ -141,7 +145,11 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         decimals=_CRORE_DECIMALS,
     ),
     PdfTargetLine(
-        labels=("Profit for the period", "Profit / (loss) for the period"),
+        labels=(
+            "Net profit for the period",
+            "Profit for the period",
+            "Profit/(loss) for the period",
+        ),
         concept_qname="in-bse-fin:ProfitLossForPeriod",
         normalized_unit=_INR_CRORE_UNIT,
         unit_ref=_INR_UNIT_REF,
@@ -149,12 +157,13 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         decimals=_CRORE_DECIMALS,
     ),
     PdfTargetLine(
-        labels=("Basic (in ₹ per share)", "Basic (in Rs. per share)"),
+        labels=("Basic earnings per share", "Basic (in", "Basic"),
         concept_qname="in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
         normalized_unit="INR per share",
         unit_ref="INR_per_share",
         scale=1,
         decimals=2,
+        line_unit=PdfLineUnit.PER_SHARE,
     ),
 )
 
@@ -164,7 +173,10 @@ class PdfParseConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    statement_markers: tuple[str, ...] = Field(default_factory=lambda: _DEFAULT_STATEMENT_MARKERS)
+    scope_marker: str = _DEFAULT_SCOPE_MARKER
+    statement_confirmations: tuple[str, ...] = Field(
+        default_factory=lambda: _DEFAULT_STATEMENT_CONFIRMATIONS
+    )
     anchor_label: str = "Revenue from operations"
     target_lines: tuple[PdfTargetLine, ...] = Field(
         default_factory=lambda: _DEFAULT_PDF_TARGET_LINES

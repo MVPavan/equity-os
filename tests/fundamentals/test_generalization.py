@@ -112,6 +112,7 @@ def _write_results_pdf(path: Path) -> str:
         "Statement of Consolidated Unaudited Results of GenFiler Limited "
         "for the quarter ended June 30, 2024",
     )
+    put(60, 105, "(₹ in crore)")
     put(60, 120, "Particulars")
     # Column order: prior-year | CURRENT QUARTER | prior-quarter.
     put(300, 140, "June 30, 2023")
