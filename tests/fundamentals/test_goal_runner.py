@@ -478,10 +478,12 @@ def test_empty_source_list_reconciles_to_blocked(tmp_path: Path) -> None:
 # --- watchlist config ----------------------------------------------------------
 
 
-def test_watchlist_config_loads_five_wave1_stocks() -> None:
+def test_watchlist_config_loads_wave1_stocks() -> None:
     config = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
     symbols = {stock.identifiers.nse_symbol for stock in config.stocks}
-    assert symbols == {"LAURUSLABS", "MTARTECH", "SONACOMS", "THERMAX", "TITAN"}
+    # Wave-1 stocks must remain present; the watchlist also carries the Wave-2
+    # expansion, so this is a subset check rather than an exact-set assertion.
+    assert {"LAURUSLABS", "MTARTECH", "SONACOMS", "THERMAX", "TITAN"} <= symbols
     # Uncertain identifiers are marked for verification, never silently trusted.
     titan = config.stock("TITAN")
     assert "tijori_slug" in titan.identifiers.needs_verification

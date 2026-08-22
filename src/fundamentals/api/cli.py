@@ -16,12 +16,13 @@ import argparse
 import hashlib
 import os
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
 
-from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
+from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
     ALL_SOURCE_KINDS,
     QuarterMode,
@@ -33,7 +34,14 @@ from fundamentals.api.goal_runner import (
     run_wave,
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
-from fundamentals.api.watchlist_config import WatchlistConfig, load_watchlist_config
+from fundamentals.api.report_builder import ReportBuildError, render_report
+from fundamentals.api.watchlist_config import (
+    FixturePaths,
+    StockConfig,
+    WatchlistConfig,
+    load_watchlist_config,
+)
+from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
@@ -42,9 +50,15 @@ from fundamentals.store.fact_store import FactStore
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
+_DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
+_CACHED_RAW_DIR = "data/raw/watchlist"
 _COMMAND_RUN = "run"
 _COMMAND_VALIDATE = "validate"
+_COMMAND_REPORT = "report"
 _QUARTER_LATEST = "latest"
+# The cached report reconciles the two first-party sources whose raw bytes are
+# held on disk (NSE Ind AS XBRL + BSE issuer results PDF); no live fetch.
+_REPORT_SOURCE_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceKind.PDF})
 
 _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
@@ -254,6 +268,104 @@ def _stock_summary_line(report: StockReport) -> str:
     )
 
 
+def _sha256_file(path: Path) -> str:
+    """Return the hex sha256 of a file's bytes (self-verifying provenance stamp)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _cached_stock(stock: StockConfig, repo_root: Path) -> StockConfig:
+    """Point a stock at its already-downloaded raw NSE XBRL + BSE results PDF.
+
+    Wave-1 stocks carry no committed fixtures; the report command reconciles from
+    the raw bytes a prior live run left under ``data/raw/watchlist/<symbol>/`` so it
+    never touches the network. A missing raw file leaves that source unconfigured
+    (skipped), so the reconcile fails closed rather than fabricating a value.
+    """
+    lower = stock.symbol.lower()
+    nse_dir = repo_root / _CACHED_RAW_DIR / lower / "nse"
+    pdf_dir = repo_root / _CACHED_RAW_DIR / lower / "bse_pdf"
+    nse = next(iter(sorted(nse_dir.glob("*.xml"))), None) if nse_dir.is_dir() else None
+    pdf = next(iter(sorted(pdf_dir.glob("*.pdf"))), None) if pdf_dir.is_dir() else None
+    fixtures = FixturePaths(
+        nse=str(nse.relative_to(repo_root)) if nse is not None else None,
+        results_pdf=str(pdf.relative_to(repo_root)) if pdf is not None else None,
+    )
+    results_pdf = (
+        SourceFileConfig(
+            source_id=BSE_RESULTS_PDF_SOURCE_ID, filename=pdf.name, sha256=_sha256_file(pdf)
+        )
+        if pdf is not None
+        else None
+    )
+    return stock.model_copy(update={"fixtures": fixtures, "results_pdf": results_pdf})
+
+
+def report_command(args: argparse.Namespace) -> list[str]:
+    """Render the per-stock source-verified earnings updates from CACHED data.
+
+    Reconciles each stock's held raw first-party sources offline, bridges the
+    reconciled report into the frozen 11-section renderer, and writes
+    ``<report_dir>/<SYM>-<QUARTER>.md``. A stock with no cached source, or one that
+    cannot resolve every required role, is surfaced and skipped (never written
+    half-sourced).
+    """
+    if not args.watchlist and not args.symbol:
+        raise SystemExit("report requires either --watchlist or --symbol <X>")
+
+    config_path = Path(args.config).resolve()
+    config: WatchlistConfig = load_watchlist_config(config_path)
+    repo_root = config.repo_root(config_path)
+    report_dir = Path(args.out_dir) if args.out_dir else _DEFAULT_REPORT_DIR
+    report_dir.mkdir(parents=True, exist_ok=True)
+    # The cached reconcile writes a gold file as a side effect; route it to a
+    # scratch dir so a report run never clobbers the committed data/gold set.
+    gold_dir = (
+        Path(args.gold_dir)
+        if args.gold_dir
+        else Path(tempfile.mkdtemp(prefix="fundamentals-report-gold-"))
+    )
+
+    stocks = [config.stock(args.symbol)] if args.symbol else list(config.stocks)
+    logger = structlog.get_logger("fundamentals.report")
+    written: list[str] = []
+    for stock in stocks:
+        if args.symbol and args.quarter and args.quarter.upper() != stock.quarter.label.upper():
+            raise SystemExit(
+                f"quarter {args.quarter!r} does not match configured quarter "
+                f"{stock.quarter.label!r} for {stock.symbol}"
+            )
+        cached = _cached_stock(stock, repo_root)
+        if cached.fixtures.nse is None:
+            logger.warning(
+                "report_skipped_no_cached_source",
+                symbol=stock.symbol,
+                reason=f"no cached NSE XBRL under {_CACHED_RAW_DIR}/{stock.symbol.lower()}",
+            )
+            continue
+        stock_report = run_stock(
+            cached,
+            mode=RunMode.FIXTURE,
+            repo_root=repo_root,
+            kinds=_REPORT_SOURCE_KINDS,
+            out_dir=gold_dir,
+        )
+        try:
+            markdown = render_report(stock_report, cached)
+        except ReportBuildError as error:
+            logger.warning("report_failed_closed", symbol=stock.symbol, reason=str(error))
+            continue
+        out_path = report_dir / f"{stock.symbol}-{stock.quarter.label}.md"
+        out_path.write_text(markdown, encoding="utf-8")
+        written.append(str(out_path))
+        logger.info(
+            "report_written",
+            symbol=stock.symbol,
+            path=str(out_path),
+            sources=list(stock_report.available_sources),
+        )
+    return written
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``fundamentals`` argument parser."""
     parser = argparse.ArgumentParser(prog="fundamentals", description=__doc__)
@@ -314,6 +426,32 @@ def _build_parser() -> argparse.ArgumentParser:
     validate.add_argument(
         "--gold-dir", default=None, help="override the gold-file output directory"
     )
+
+    report = subparsers.add_parser(
+        _COMMAND_REPORT,
+        help="render the per-stock source-verified earnings update from CACHED data",
+    )
+    report_scope = report.add_mutually_exclusive_group()
+    report_scope.add_argument("--watchlist", action="store_true", help="render every Wave-1 stock")
+    report_scope.add_argument("--symbol", default=None, help="render a single stock, e.g. MTARTECH")
+    report.add_argument(
+        "--quarter", default=None, help="assert the reviewed quarter label, e.g. Q3FY25"
+    )
+    report.add_argument(
+        "--config",
+        default=str(_DEFAULT_WATCHLIST_PATH),
+        help="path to watchlist.yaml (default: repo config/watchlist.yaml)",
+    )
+    report.add_argument(
+        "--out-dir",
+        default=None,
+        help="directory for rendered .md reports (default: docs/research/validation/reports)",
+    )
+    report.add_argument(
+        "--gold-dir",
+        default=None,
+        help="override the scratch gold directory the cached reconcile writes to",
+    )
     return parser
 
 
@@ -344,6 +482,19 @@ def main(argv: list[str] | None = None) -> int:
             all_done=wave.all_done,
         )
         sys.stdout.write(wave.model_dump_json(indent=2) + "\n")
+        return 0
+
+    if args.command == _COMMAND_REPORT:
+        logger.info(
+            "report_invoked",
+            watchlist=args.watchlist,
+            symbol=args.symbol,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        written = report_command(args)
+        logger.info("report_summary", reports=len(written))
+        for path in written:
+            sys.stdout.write(path + "\n")
         return 0
 
     logger.info(
