@@ -23,6 +23,13 @@ from fundamentals.verify.comparison_key import ComparisonKey
 _HALF = Decimal("0.5")
 _TEN = Decimal(10)
 
+# Materiality ceiling on the derived reconciliation tolerance. The decimals-based
+# half-ULP is correct for well-formed facts, but a coarse/malformed precision can
+# manufacture an enormous tolerance that would auto-pass unrelated values. When
+# the derived tolerance exceeds this ceiling the fact is flagged for review and
+# the tolerance is capped, so an overly coarse fact cannot silently pass.
+DEFAULT_MAX_TOLERANCE = Decimal("100")
+
 
 class MissingRequiredFactError(Exception):
     """An identity references a concept for which no observation was supplied."""
@@ -62,7 +69,13 @@ class Identity(BaseModel):
 
 
 class CrossFootResult(BaseModel):
-    """Pass/fail of one identity with its residual and derived tolerance."""
+    """Pass/fail of one identity with its residual and (capped) tolerance.
+
+    ``tolerance`` is the effective tolerance actually applied — the derived
+    half-ULP sum, capped at the materiality ceiling. ``derived_tolerance`` keeps
+    the raw sum, and ``flagged_for_review`` is set when the derived tolerance
+    exceeded the ceiling (an overly coarse fact that must not auto-pass).
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -70,6 +83,8 @@ class CrossFootResult(BaseModel):
     passed: bool
     residual: Decimal
     tolerance: Decimal
+    derived_tolerance: Decimal = Decimal(0)
+    flagged_for_review: bool = False
 
 
 def _resolve(concept: str, observations: Mapping[str, Observation]) -> Observation:
@@ -93,8 +108,18 @@ def _require_common_footing(observations: Sequence[Observation]) -> None:
             )
 
 
-def check_identity(identity: Identity, observations: Mapping[str, Observation]) -> CrossFootResult:
-    """Check one accounting identity; tolerance is derived from XBRL decimals."""
+def check_identity(
+    identity: Identity,
+    observations: Mapping[str, Observation],
+    *,
+    max_tolerance: Decimal = DEFAULT_MAX_TOLERANCE,
+) -> CrossFootResult:
+    """Check one accounting identity; tolerance is derived from XBRL decimals.
+
+    The derived half-ULP sum is capped at ``max_tolerance``: if it exceeds the
+    ceiling the result is flagged for review and the capped tolerance is applied,
+    so an overly coarse fact cannot auto-pass on an inflated tolerance.
+    """
     lhs = _resolve(identity.lhs_concept, observations)
     involved: list[Observation] = [lhs]
     rhs_total = Decimal(0)
@@ -106,13 +131,18 @@ def check_identity(identity: Identity, observations: Mapping[str, Observation]) 
     _require_common_footing(involved)
 
     residual = lhs.normalized_value - rhs_total
-    tolerance = Decimal(0)
+    derived_tolerance = Decimal(0)
     for obs in involved:
-        tolerance += observation_half_ulp(obs)
+        derived_tolerance += observation_half_ulp(obs)
+
+    flagged = derived_tolerance > max_tolerance
+    tolerance = max_tolerance if flagged else derived_tolerance
 
     return CrossFootResult(
         identity=identity.name,
         passed=abs(residual) <= tolerance,
         residual=residual,
         tolerance=tolerance,
+        derived_tolerance=derived_tolerance,
+        flagged_for_review=flagged,
     )

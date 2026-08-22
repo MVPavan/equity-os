@@ -22,6 +22,7 @@ from fundamentals.contracts.observation import (
 )
 
 FIELD_ENTITY = "entity"
+FIELD_TAXONOMY = "taxonomy"
 FIELD_CONCEPT = "concept"
 FIELD_PERIOD = "period"
 FIELD_SCOPE = "scope"
@@ -54,6 +55,8 @@ class ComparisonKey(BaseModel):
     entity_scheme: str
     entity_id: str
     concept_qname: str
+    taxonomy_namespace: str | None = None
+    registry_version: str | None = None
     period_type: PeriodType
     period_start: date | None = None
     period_end: date | None = None
@@ -72,6 +75,8 @@ class ComparisonKey(BaseModel):
             entity_scheme=obs.entity_scheme,
             entity_id=obs.entity_id,
             concept_qname=obs.concept_qname,
+            taxonomy_namespace=obs.taxonomy_namespace,
+            registry_version=obs.registry_version,
             period_type=obs.period_type,
             period_start=obs.period_start,
             period_end=obs.period_end,
@@ -97,6 +102,7 @@ class ComparisonKey(BaseModel):
             (self.entity_scheme, self.entity_id),
             (other.entity_scheme, other.entity_id),
         )
+        self._add_taxonomy_diff(other, reasons)
         if include_concept:
             add(FIELD_CONCEPT, self.concept_qname, other.concept_qname)
         add(
@@ -111,6 +117,22 @@ class ComparisonKey(BaseModel):
         add(FIELD_SCALE, self.scale, other.scale)
         add(FIELD_DIMENSIONS, self.dimensions, other.dimensions)
         return tuple(reasons)
+
+    def _add_taxonomy_diff(self, other: ComparisonKey, reasons: list[str]) -> None:
+        """Flag a taxonomy-identity mismatch when both sides declare one.
+
+        A source without a taxonomy (e.g. a PDF-read observation) cannot
+        contradict one, so an absent identity on either side is treated as
+        compatible; but two XBRL observations that reuse the same lexical QName
+        under different taxonomy namespaces or registry versions — a silent
+        semantic drift — are rejected as not comparable.
+        """
+        own = (self.taxonomy_namespace, self.registry_version)
+        their = (other.taxonomy_namespace, other.registry_version)
+        if None in own or None in their:
+            return
+        if own != their:
+            reasons.append(f"{FIELD_TAXONOMY} mismatch: {own!r} != {their!r}")
 
     def compatibility(self, other: ComparisonKey) -> ComparabilityResult:
         """Full-key comparability (concept included) for cross-source comparison."""

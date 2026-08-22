@@ -10,8 +10,10 @@ The pipeline wires the five completed modules into one fail-closed increment:
 5. cross-check the headline XBRL figures against the independent PDF read using
    the full comparison key;
 6. quote-anchor each management-guidance claim to an exact page/block/span;
-7. persist every fact append-only and select the XBRL revision canonical;
-8. render the 11-section sourced markdown.
+7. render the 11-section sourced markdown;
+8. only after every gate AND the render succeed, persist every fact append-only
+   and select the XBRL revision canonical — so a failed run leaves no partial
+   canonical state.
 
 SEC 20-F is an optional retrospective *annual* cross-check only. It is excluded
 from the Q1 evidence package by ``knowledge_time > cutoff`` and is never
@@ -21,6 +23,7 @@ Q1 fact aborts the render — no un-sourced number is ever emitted.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -39,6 +42,7 @@ from fundamentals.contracts.observation import (
 )
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.extract.guidance_extractor import (
+    GuidanceExtractionError,
     GuidanceRule,
     extract_guidance_claims,
     resolve_span,
@@ -57,6 +61,7 @@ from fundamentals.output.earnings_update import (
     RenderedCalculation,
     RenderedFact,
     RenderedGuidance,
+    VerificationOutcome,
     render_earnings_update,
 )
 from fundamentals.store.fact_store import FactStore, StoredRevision
@@ -86,6 +91,15 @@ _PAT_ROLE = FactRole.PROFIT_FOR_PERIOD
 
 class PipelineError(RuntimeError):
     """Raised when a material fact cannot be verified — the pipeline fails closed."""
+
+
+class _PlannedWrite(BaseModel):
+    """A store write deferred until all gates and the render succeed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    fact: Fact
+    make_canonical: bool
 
 
 class XbrlInput(BaseModel):
@@ -191,6 +205,7 @@ def _build_fact(
     role_family: str,
     reconciliation_status: ReconciliationStatus,
     config: FundamentalsConfig,
+    run_id: str,
 ) -> Fact:
     """Wrap an observation as an append-only, revision-aware Fact."""
     return Fact(
@@ -198,10 +213,37 @@ def _build_fact(
         reconciliation_status=reconciliation_status,
         canonical_status=CanonicalStatus.CANDIDATE,
         revision_family=role_family,
+        run_id=run_id,
         valid_time_start=config.quarter.period_start,
         valid_time_end=config.quarter.period_end,
         knowledge_time=config.quarter.knowledge_cutoff,
         first_seen_time=config.quarter.knowledge_cutoff,
+    )
+
+
+def _required_concepts(config: FundamentalsConfig) -> frozenset[str]:
+    """The concept set the XBRL parse must prove present (per-statement completeness)."""
+    required: set[str] = {role.concept_qname for role in config.concepts.roles if role.required}
+    required.update(aux.concept_qname for aux in config.concepts.aux if aux.required)
+    required.update(config.concepts.cross_check)
+    return frozenset(required)
+
+
+def _guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool:
+    """Verify the anchored span still carries the claim captured at extraction.
+
+    The resolved span must equal the ``source_quote`` stored at extraction (so a
+    re-pointed provenance fails), and the claim's numeric bounds must be
+    represented in that quote (so mutating 3–4% to 8–10% while keeping the old
+    provenance fails).
+    """
+    if claim.source_quote is None:
+        return False
+    if resolved_span_text != claim.source_quote:
+        return False
+    return (
+        f"{claim.lower_bound}%" in claim.source_quote
+        and f"{claim.upper_bound}%" in claim.source_quote
     )
 
 
@@ -253,7 +295,10 @@ def run_pipeline(
     store: FactStore,
 ) -> PipelineResult:
     """Run the full Q1 FY25 increment end to end, failing closed on any gap."""
-    log = _LOGGER.bind(issuer=config.issuer.nse_symbol, quarter=config.quarter.issuer_quarter)
+    run_id = uuid.uuid4().hex
+    log = _LOGGER.bind(
+        issuer=config.issuer.nse_symbol, quarter=config.quarter.issuer_quarter, run_id=run_id
+    )
     log.info("pipeline_start", xbrl_mode=config.xbrl.mode.value)
 
     # 1. Load hash-verified held PDFs.
@@ -281,6 +326,7 @@ def run_pipeline(
             source_id=xbrl_input.source_id,
             file_sha256=xbrl_input.file_sha256,
             retrieved_at=xbrl_input.retrieved_at,
+            required_concepts=_required_concepts(config),
         )
     )
     pdf_obs = extract_consolidated_pl(
@@ -363,7 +409,20 @@ def run_pipeline(
     source_document = _source_document(transcript_pdf)
     rendered_guidance: list[RenderedGuidance] = []
     for claim in guidance_claims:
-        quote = resolve_span(transcript_pdf, claim.provenance)
+        try:
+            quote = resolve_span(transcript_pdf, claim.provenance)
+        except GuidanceExtractionError as error:
+            raise PipelineError(
+                f"guidance span for {claim.metric!r} no longer resolves: {error}"
+            ) from error
+        # The resolved span must still equal the quote captured at extraction and
+        # represent the claim's numeric bounds, so re-pointing provenance or
+        # mutating the range (e.g. 3–4% to 8–10%) fails closed.
+        if not _guidance_quote_holds(claim, quote):
+            raise PipelineError(
+                f"guidance quote-anchor failed for {claim.metric!r}: the anchored span no "
+                "longer carries the claim captured at extraction"
+            )
         # Verify against the claim's OWN asserted range (not a re-read of the same
         # span), so a span that does not actually contain the claim fails closed.
         anchor = verify_quote_anchor(claim, _claim_range_quote(claim), source_document)
@@ -385,8 +444,10 @@ def run_pipeline(
         )
     log.info("guidance_anchored", claims=len(rendered_guidance))
 
-    # 7. Persist every fact append-only; select the XBRL revision canonical.
-    stored_revisions: list[StoredRevision] = []
+    # 7. Assemble the render inputs and the planned store writes WITHOUT touching
+    #    the store yet: canonical promotion happens only after every gate AND the
+    #    render succeed, so a later failure never leaves partial canonical facts.
+    planned_writes: list[_PlannedWrite] = []
     rendered_facts: list[RenderedFact] = []
     for role_concept in config.concepts.roles:
         role = role_concept.role
@@ -400,31 +461,34 @@ def run_pipeline(
             if concept in confirmed_concepts
             else ReconciliationStatus.CROSS_FOOT_PASS
         )
-        xbrl_revision = store.put(
-            _build_fact(
-                xbrl_fact_obs,
-                role_family=family,
-                reconciliation_status=status,
-                config=config,
+        planned_writes.append(
+            _PlannedWrite(
+                fact=_build_fact(
+                    xbrl_fact_obs,
+                    role_family=family,
+                    reconciliation_status=status,
+                    config=config,
+                    run_id=run_id,
+                ),
+                make_canonical=True,
             )
         )
-        canonical = store.select_canonical(
-            xbrl_revision.row_id, reason="XBRL context-bound canonical for Q1 evidence"
-        )
-        stored_revisions.append(canonical)
 
         sources: list[Provenance] = [xbrl_fact_obs.provenance]
         pdf_confirm = pdf_by_concept.get(concept)
         if pdf_confirm is not None:
-            pdf_revision = store.put(
-                _build_fact(
-                    pdf_confirm,
-                    role_family=family,
-                    reconciliation_status=ReconciliationStatus.CROSS_SOURCE_CONFIRMED,
-                    config=config,
+            planned_writes.append(
+                _PlannedWrite(
+                    fact=_build_fact(
+                        pdf_confirm,
+                        role_family=family,
+                        reconciliation_status=ReconciliationStatus.CROSS_SOURCE_CONFIRMED,
+                        config=config,
+                        run_id=run_id,
+                    ),
+                    make_canonical=False,
                 )
             )
-            stored_revisions.append(pdf_revision)
             sources.append(pdf_confirm.provenance)
 
         rendered_facts.append(
@@ -433,16 +497,16 @@ def run_pipeline(
                 concept_qname=concept,
                 value=xbrl_fact_obs.normalized_value,
                 unit=xbrl_fact_obs.normalized_unit,
-                reconciliation_status=status.value,
+                reconciliation_status=status,
                 sources=tuple(sources),
             )
         )
-    log.info("facts_stored", revisions=len(stored_revisions))
 
     # 8. Optional SEC retrospective annual cross-check (never footed against Q1).
     sec_note = _run_sec_cross_check(config)
 
-    # 9. Render the sourced 11-section update (fail closed on missing required fact).
+    # 9. Build the derived calculations and render the sourced 11-section update.
+    #    Both must succeed before anything is committed (fail-closed transaction).
     calculations = _build_calculations(role_obs)
     update = EarningsUpdate(
         issuer_name=config.issuer.name,
@@ -454,16 +518,29 @@ def run_pipeline(
         facts=tuple(rendered_facts),
         guidance=tuple(rendered_guidance),
         calculations=calculations,
-        cross_check_summary=(
-            f"PASS — {len(cross_check_results)}/{len(cross_check_results)} headline figures "
-            "agree within decimals-derived tolerance"
+        cross_check=VerificationOutcome(
+            passed_count=sum(1 for check in cross_check_results if check.matched),
+            total_count=len(cross_check_results),
         ),
-        cross_foot_summary=(
-            f"PASS — {len(cross_foot_results)}/{len(cross_foot_results)} identities hold at ±0"
+        cross_foot=VerificationOutcome(
+            passed_count=sum(1 for identity in cross_foot_results if identity.passed),
+            total_count=len(cross_foot_results),
         ),
         sec_cross_check_note=sec_note,
     )
     markdown = render_earnings_update(update)
+
+    # 10. All gates and the render passed — now commit. Canonical promotion is a
+    #     separate auditable step; nothing was persisted on a failed run.
+    stored_revisions: list[StoredRevision] = []
+    for planned in planned_writes:
+        revision = store.put(planned.fact)
+        if planned.make_canonical:
+            revision = store.select_canonical(
+                revision.row_id, reason="XBRL context-bound canonical for Q1 evidence"
+            )
+        stored_revisions.append(revision)
+    log.info("facts_stored", revisions=len(stored_revisions))
     log.info("pipeline_complete", markdown_bytes=len(markdown))
 
     return PipelineResult(
@@ -483,6 +560,11 @@ def _build_calculations(
     revenue = role_obs[_REVENUE_ROLE].normalized_value
     pbt = role_obs[_PBT_ROLE].normalized_value
     pat = role_obs[_PAT_ROLE].normalized_value
+
+    if pbt == 0:
+        raise PipelineError(
+            "cannot derive the effective tax rate: profit before tax is zero (division guard)"
+        )
 
     other_income = total_income - revenue
     net_tax = pbt - pat

@@ -85,6 +85,7 @@ def _claim_for(
                 continue
             constant_currency = _CONSTANT_CURRENCY_MARKER in block.text.lower()
             qualifiers = (CONSTANT_CURRENCY_QUALIFIER,) if constant_currency else ()
+            source_quote = block.text[match.start() : match.end()]
             provenance = Provenance(
                 source_id=pdf.source_id,
                 file_sha256=pdf.file_sha256,
@@ -104,6 +105,7 @@ def _claim_for(
                 scope=Scope.CONSOLIDATED,
                 qualifiers=qualifiers,
                 epistemic_class=EpistemicClass.FORECAST,
+                source_quote=source_quote,
                 provenance=provenance,
             )
     return None

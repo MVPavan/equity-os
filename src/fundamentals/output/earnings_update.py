@@ -21,6 +21,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.fact import ReconciliationStatus
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 
 _CRORE_UNIT = "INR crore"
@@ -72,6 +73,33 @@ def anchor_label(provenance: Provenance) -> str:
     return f"{provenance.source_id}: {location} (file sha256 {sha}…)"
 
 
+class VerificationState(StrEnum):
+    """The only accepted rendered verification states — never a caller string."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+
+class VerificationOutcome(BaseModel):
+    """A verification gate's result, derived from real pass/total counts.
+
+    The rendered ``state`` is computed from the counts, so a caller cannot make
+    the artifact claim ``PASS`` by supplying an arbitrary summary string.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    passed_count: int
+    total_count: int
+
+    @property
+    def state(self) -> VerificationState:
+        """PASS only when every counted gate actually passed (and at least one ran)."""
+        if self.total_count > 0 and self.passed_count == self.total_count:
+            return VerificationState.PASS
+        return VerificationState.FAIL
+
+
 class RenderedFact(BaseModel):
     """One P&L fact ready to render, with every backing source anchor."""
 
@@ -81,7 +109,7 @@ class RenderedFact(BaseModel):
     concept_qname: str
     value: Decimal
     unit: str
-    reconciliation_status: str
+    reconciliation_status: ReconciliationStatus
     sources: tuple[Provenance, ...]
 
 
@@ -124,17 +152,19 @@ class EarningsUpdate(BaseModel):
     facts: tuple[RenderedFact, ...]
     guidance: tuple[RenderedGuidance, ...]
     calculations: tuple[RenderedCalculation, ...]
-    cross_check_summary: str
-    cross_foot_summary: str
+    cross_check: VerificationOutcome
+    cross_foot: VerificationOutcome
     sec_cross_check_note: str
 
 
 def _format_value(value: Decimal, unit: str) -> str:
-    """Format a crore integer with grouping, or a per-share value to 2 dp."""
+    """Format a crore value with grouping (preserving decimals), or EPS to 2 dp."""
     if unit == _PER_SHARE_UNIT:
         return f"{value:.2f}"
     if unit == _CRORE_UNIT:
-        return f"{int(value):,}"
+        if value == value.to_integral_value():
+            return f"{value.to_integral_value():,}"
+        return f"{value.normalize():,}"
     return str(value)
 
 
@@ -164,13 +194,23 @@ class _Footnotes:
 
 
 def _require_all_roles(facts: Sequence[RenderedFact]) -> dict[FactRole, RenderedFact]:
-    """Index facts by role, failing closed if any required role is absent."""
+    """Index facts by role, failing closed if any required role is absent.
+
+    A required fact with no backing source anchor is also rejected: an un-sourced
+    number must never render.
+    """
     by_role = {fact.role: fact for fact in facts}
     missing = [role.value for role in REQUIRED_ROLES if role not in by_role]
     if missing:
         raise RenderError(
             f"cannot render Q1 update: required facts missing {sorted(missing)} "
             "(fail-closed — no un-sourced output is produced)"
+        )
+    unsourced = [role.value for role in REQUIRED_ROLES if not by_role[role].sources]
+    if unsourced:
+        raise RenderError(
+            f"cannot render Q1 update: facts with no source anchor {sorted(unsourced)} "
+            "(fail-closed — no un-sourced number may render)"
         )
     return by_role
 
@@ -296,8 +336,17 @@ def render_earnings_update(update: EarningsUpdate) -> str:
     lines.append("")
     lines.append("| Verification gate | State |")
     lines.append("| --- | --- |")
-    lines.append(f"| XBRL ↔ PDF cross-check (headline figures) | {update.cross_check_summary} |")
-    lines.append(f"| Cross-foot accounting identities | {update.cross_foot_summary} |")
+    cross_check = update.cross_check
+    cross_foot = update.cross_foot
+    lines.append(
+        f"| XBRL ↔ PDF cross-check (headline figures) | {cross_check.state} — "
+        f"{cross_check.passed_count}/{cross_check.total_count} headline figures agree "
+        "within decimals-derived tolerance |"
+    )
+    lines.append(
+        f"| Cross-foot accounting identities | {cross_foot.state} — "
+        f"{cross_foot.passed_count}/{cross_foot.total_count} identities hold at ±0 |"
+    )
     lines.append(f"| SEC 20-F annual cross-check | {update.sec_cross_check_note} |")
     lines.append("")
 

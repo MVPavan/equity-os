@@ -21,9 +21,16 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from fundamentals.contracts.provenance import Provenance
+
+# Precision bounds guard the half-ULP tolerance from blowing up: an absurd
+# ``decimals`` (e.g. ``-99``) would otherwise make the reconciliation tolerance
+# enormous and let unrelated values match. The upper bound admits the finite
+# marker the parser uses for XBRL ``decimals="INF"`` (see xbrl_parser.INF_DECIMALS).
+MIN_DECIMALS = -12
+MAX_DECIMALS = 18
 
 
 class Scope(StrEnum):
@@ -92,3 +99,21 @@ class Observation(BaseModel):
     dimensions: tuple[tuple[str, str], ...] = ()
 
     provenance: Provenance
+
+    @field_validator("scale")
+    @classmethod
+    def _scale_must_be_positive(cls, value: int) -> int:
+        """Reject a non-positive scale — it would corrupt the half-ULP tolerance."""
+        if value <= 0:
+            raise ValueError(f"scale must be positive, got {value}")
+        return value
+
+    @field_validator("decimals")
+    @classmethod
+    def _decimals_must_be_plausible(cls, value: int) -> int:
+        """Reject an implausible precision that would blow up the tolerance."""
+        if not MIN_DECIMALS <= value <= MAX_DECIMALS:
+            raise ValueError(
+                f"decimals must be within [{MIN_DECIMALS}, {MAX_DECIMALS}], got {value}"
+            )
+        return value

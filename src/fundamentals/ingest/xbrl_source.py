@@ -41,9 +41,37 @@ INDAS_MARKER = "Ind-AS"
 CONSOLIDATED_ROW_VALUE = "Consolidated"
 CONSOLIDATED_SOURCE_ID = "nse-indas-xbrl-consolidated"
 
+# Markers that classify a provider response as a TERMINAL hard block — never
+# retried, surfaced immediately. Only timeouts and transient statuses are retried.
+_TERMINAL_HTTP_CODES = frozenset({401, 403, 407, 451})
+_TERMINAL_MARKERS: tuple[str, ...] = (
+    "403",
+    "401",
+    "forbidden",
+    "unauthorized",
+    "unauthorised",
+    "captcha",
+    "access denied",
+    "blocked",
+    "authentication",
+)
+
 
 class XbrlFetchError(Exception):
     """Typed, resumable failure: the fetch produced no trustworthy filing."""
+
+
+class XbrlHardBlockError(XbrlFetchError):
+    """A terminal provider block (403/auth/CAPTCHA): stop immediately, do not retry."""
+
+
+def _is_terminal_error(exc: Exception) -> bool:
+    """Classify whether an exception represents a terminal hard block."""
+    code = getattr(exc, "code", None) or getattr(exc, "status", None)
+    if isinstance(code, int) and code in _TERMINAL_HTTP_CODES:
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _TERMINAL_MARKERS)
 
 
 class XbrlRetrieval(BaseModel):
@@ -107,12 +135,21 @@ class NseXbrlSource:
         self._retry_backoff_seconds = retry_backoff_seconds
 
     def _retry(self, description: str, action: Any) -> Any:
-        """Run ``action`` with bounded retries and linear backoff, failing closed."""
+        """Run ``action`` with bounded retries and linear backoff, failing closed.
+
+        A terminal hard block (403/auth/CAPTCHA/explicit block) stops immediately
+        and is surfaced as :class:`XbrlHardBlockError`; only timeouts and other
+        transient failures are retried.
+        """
         last_error: Exception | None = None
         for attempt in range(self._max_retries):
             try:
                 return action()
             except Exception as exc:  # noqa: BLE001 - re-raised as typed failure below
+                if _is_terminal_error(exc):
+                    raise XbrlHardBlockError(
+                        f"{description} hit a terminal block; not retrying: {exc}"
+                    ) from exc
                 last_error = exc
                 if attempt + 1 < self._max_retries:
                     time.sleep(self._retry_backoff_seconds * (attempt + 1))
@@ -166,6 +203,8 @@ class NseXbrlSource:
         if nature is None or (nature.text or "").strip() != CONSOLIDATED_TEXT:
             raise XbrlFetchError("downloaded XBRL is not a consolidated filing")
 
+        self._verify_issuer(root)
+
         wanted = (from_date.isoformat(), to_date.isoformat())
         for context in root.findall(f"{_XBRLI}context"):
             start = context.find(f"{_XBRLI}period/{_XBRLI}startDate")
@@ -175,6 +214,23 @@ class NseXbrlSource:
             if ((start.text or "").strip(), (end.text or "").strip()) == wanted:
                 return
         raise XbrlFetchError(f"downloaded XBRL carries no {from_date}..{to_date} duration context")
+
+    def _verify_issuer(self, root: Any) -> None:
+        """Reject a download whose context entity is not the requested issuer.
+
+        A response pointing at another company's filing for the same dates must
+        not pass ingestion verification: at least one context entity identifier
+        must equal the requested symbol.
+        """
+        identifiers = {
+            (identifier.text or "").strip().upper()
+            for identifier in root.findall(f"{_XBRLI}context/{_XBRLI}entity/{_XBRLI}identifier")
+        }
+        if self._symbol not in identifiers:
+            raise XbrlFetchError(
+                f"downloaded XBRL entity {sorted(identifiers)} does not match requested "
+                f"issuer {self._symbol!r}"
+            )
 
     def fetch_consolidated_quarter(self, *, from_date: date, to_date: date) -> XbrlRetrieval:
         """Fetch, verify and stamp the consolidated Ind AS XBRL for one quarter.
