@@ -313,9 +313,7 @@ class TijoriSource:
         return cls.parse_pl(payload, content_sha256=content_sha256)
 
     @classmethod
-    def parse_pl(
-        cls, payload: TijoriPlPayload, *, content_sha256: str
-    ) -> tuple[Observation, ...]:
+    def parse_pl(cls, payload: TijoriPlPayload, *, content_sha256: str) -> tuple[Observation, ...]:
         """Map quarterly rows of a validated P&L payload to observations.
 
         Annual columns are skipped: Tijori uses the same ``Mon'YY`` label for a

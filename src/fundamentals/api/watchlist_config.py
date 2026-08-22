@@ -1,0 +1,140 @@
+"""Composition-root configuration for the multi-stock validation watchlist.
+
+The Wave-1 validation universe (``docs/goals/fundamentals-multistock-validation-goal.md``)
+is a set of structurally-different stocks, each cross-checked across every source
+that carries it. This module loads the non-secret watchlist YAML into frozen
+pydantic models at the composition root only — no business-logic module reads the
+environment or filesystem for configuration (repo rule ``python/safety.md``).
+
+Per stock it pins the resolvable source identifiers (NSE symbol, BSE scrip,
+Screener slug, Tijori slug), the reviewed quarter, and the concept map (defaulting
+to the shared Ind-AS ``in-bse-fin`` concepts from :mod:`fundamentals.api.config`).
+Identifiers that could not be confirmed against a live filing are listed in
+``needs_verification`` so the runner surfaces them instead of trusting a guess;
+the runner still fails closed per stock rather than fabricating a value.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
+
+from fundamentals.api.config import ConceptsConfig, SourceFileConfig
+
+DEFAULT_ENTITY_SCHEME = "nse-symbol"
+
+
+class FilingTaxonomy(StrEnum):
+    """The XBRL taxonomy a stock's reviewed quarter was filed under.
+
+    BSE (and NSE) served results XBRL under ``in-bse-fin`` through FY25 Q3 and
+    under the SEBI ``in-capmkt`` Integrated Filing format from Mar-2025 (FY25 Q4)
+    onward. The runner parses with the superset of both taxonomies, so this field
+    is a recorded expectation, not a dispatch switch.
+    """
+
+    IN_BSE_FIN = "in-bse-fin"
+    IN_CAPMKT = "in-capmkt"
+
+
+class SourceIdentifiers(BaseModel):
+    """Resolvable per-stock source identifiers across every host.
+
+    ``needs_verification`` names any identifier (e.g. ``"tijori_slug"``) whose
+    value is a best-known guess not yet confirmed against a live filing, so the
+    runner surfaces it rather than silently trusting it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    nse_symbol: str
+    bse_scrip: str
+    screener_slug: str
+    tijori_slug: str
+    us_listed: bool = False
+    needs_verification: tuple[str, ...] = ()
+
+
+class StockQuarter(BaseModel):
+    """The reviewed quarter for one stock and its period anchors."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str
+    period_start: date
+    period_end: date
+    knowledge_cutoff: datetime
+    filing_taxonomy: FilingTaxonomy = FilingTaxonomy.IN_BSE_FIN
+
+
+class FixturePaths(BaseModel):
+    """Optional repo-relative fixture instances for deterministic ``--fixture`` runs.
+
+    Real Wave-1 stocks carry no committed fixtures (their source bytes are
+    gitignored, private-use only); a missing path means the source is skipped in
+    fixture mode. Live mode ignores these and fetches politely.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    nse: str | None = None
+    bse: str | None = None
+    screener: str | None = None
+    tijori: str | None = None
+    results_pdf: str | None = None
+
+
+class StockConfig(BaseModel):
+    """One watchlist stock: identity, reviewed quarter, and its concept map."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    domain: str
+    identifiers: SourceIdentifiers
+    quarter: StockQuarter
+    entity_scheme: str = DEFAULT_ENTITY_SCHEME
+    results_pdf: SourceFileConfig | None = None
+    results_pdf_url: str | None = None
+    fixtures: FixturePaths = Field(default_factory=FixturePaths)
+    concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
+    notes: tuple[str, ...] = ()
+
+    @property
+    def symbol(self) -> str:
+        """The canonical NSE symbol used as the gold-file / report key."""
+        return self.identifiers.nse_symbol
+
+
+class WatchlistConfig(BaseModel):
+    """The resolved multi-stock validation configuration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    wave: str
+    raw_dir: str
+    stocks: tuple[StockConfig, ...]
+
+    def repo_root(self, config_path: Path) -> Path:
+        """Return the repository root given the loaded config file's path."""
+        return config_path.resolve().parent.parent
+
+    def stock(self, symbol: str) -> StockConfig:
+        """Return the stock config for an NSE symbol, or fail closed."""
+        wanted = symbol.upper()
+        for stock in self.stocks:
+            if stock.identifiers.nse_symbol.upper() == wanted:
+                return stock
+        known = ", ".join(stock.identifiers.nse_symbol for stock in self.stocks)
+        raise ValueError(f"symbol {symbol!r} is not in the watchlist (known: {known})")
+
+
+def load_watchlist_config(config_path: Path) -> WatchlistConfig:
+    """Load and validate the non-secret watchlist YAML configuration."""
+    data: Any = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    return WatchlistConfig.model_validate(data)

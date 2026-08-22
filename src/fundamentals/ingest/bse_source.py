@@ -242,9 +242,7 @@ class BseSource:
         self._validate_xbrl_url(resolved_url)
 
         xml_bytes = self._download(resolved_url)
-        self._verify(
-            xml_bytes, from_date=from_date, to_date=to_date, consolidated=consolidated
-        )
+        self._verify(xml_bytes, from_date=from_date, to_date=to_date, consolidated=consolidated)
         local_path = self._persist(xml_bytes, resolved_url)
         file_sha256 = hashlib.sha256(xml_bytes).hexdigest()
 
@@ -319,9 +317,7 @@ class BseSource:
 
     def _download(self, xbrl_url: str) -> bytes:
         """Download the static XBRL instance over plain HTTP, failing closed."""
-        request = urllib.request.Request(
-            xbrl_url, headers={USER_AGENT_HEADER: self._user_agent}
-        )
+        request = urllib.request.Request(xbrl_url, headers={USER_AGENT_HEADER: self._user_agent})
         return self._retry("BSE XBRL download", lambda: self._http_get(request))
 
     def _http_get(self, request: urllib.request.Request) -> bytes:
@@ -398,9 +394,7 @@ class BseSource:
         """Reject a download whose context entity is not the requested scrip."""
         identifiers = {
             (identifier.text or "").strip()
-            for identifier in root.findall(
-                f"{_XBRLI}context/{_XBRLI}entity/{_XBRLI}identifier"
-            )
+            for identifier in root.findall(f"{_XBRLI}context/{_XBRLI}entity/{_XBRLI}identifier")
         }
         if self._scrip_code not in identifiers:
             raise BseFetchError(
@@ -418,13 +412,9 @@ class BseSource:
                 continue
             if ((start.text or "").strip(), (end.text or "").strip()) == wanted:
                 return
-        raise BseFetchError(
-            f"downloaded XBRL carries no {from_date}..{to_date} duration context"
-        )
+        raise BseFetchError(f"downloaded XBRL carries no {from_date}..{to_date} duration context")
 
-    def _resolve_xbrl_url(
-        self, *, from_date: date, to_date: date, consolidated: bool
-    ) -> str:
+    def _resolve_xbrl_url(self, *, from_date: date, to_date: date, consolidated: bool) -> str:
         """Resolve the static XBRL link from the filing index via the ``bse`` library.
 
         Opt-in convenience for the live path only. The ``bse`` client is imported

@@ -361,9 +361,7 @@ class ScreenerSource:
 
     def _fetch_page(self, url: str) -> bytes:
         """GET the public page politely, classifying 403/429/451 as terminal blocks."""
-        request = urllib.request.Request(
-            url, headers={USER_AGENT_HEADER: self._config.user_agent}
-        )
+        request = urllib.request.Request(url, headers={USER_AGENT_HEADER: self._config.user_agent})
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
             try:

@@ -174,9 +174,7 @@ def test_fetch_quarter_success_returns_stamped_retrieval(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = BSE_FIN_Q2.read_bytes()
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body))
     source = BseSource(tmp_path, scrip_code=SCRIP_INFY)
 
     retrieval = source.fetch_quarter(
@@ -204,9 +202,7 @@ def test_fetch_quarter_scope_mismatch_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = BSE_FIN_Q2.read_bytes()  # a CONSOLIDATED instance
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body))
     source = BseSource(tmp_path, scrip_code=SCRIP_INFY)
     with pytest.raises(BseFetchError, match="scope"):
         source.fetch_quarter(
@@ -221,9 +217,7 @@ def test_fetch_quarter_wrong_scrip_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body = BSE_FIN_Q2.read_bytes()
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body)
-    )
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse(body))
     source = BseSource(tmp_path, scrip_code="999999")
     with pytest.raises(BseFetchError, match="scrip"):
         source.fetch_quarter(
@@ -251,9 +245,7 @@ def test_fetch_quarter_rejects_non_https_url(tmp_path: Path) -> None:
         )
 
 
-def test_terminal_block_not_retried(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_terminal_block_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[int] = []
 
     def _forbidden(*_a: Any, **_k: Any) -> _FakeResponse:
@@ -264,9 +256,7 @@ def test_terminal_block_not_retried(
     source = BseSource(tmp_path, scrip_code=SCRIP_INFY, max_retries=3, retry_backoff_seconds=0.0)
 
     with pytest.raises(BseHardBlockError):
-        source.fetch_quarter(
-            from_date=Q2_START, to_date=Q2_END, xbrl_url=VALID_XBRL_URL
-        )
+        source.fetch_quarter(from_date=Q2_START, to_date=Q2_END, xbrl_url=VALID_XBRL_URL)
     assert calls == [1]  # hard block surfaced on first attempt, never retried
 
 
@@ -283,9 +273,7 @@ def test_transient_error_retries_then_fails_closed(
     source = BseSource(tmp_path, scrip_code=SCRIP_INFY, max_retries=3, retry_backoff_seconds=0.0)
 
     with pytest.raises(BseFetchError):
-        source.fetch_quarter(
-            from_date=Q2_START, to_date=Q2_END, xbrl_url=VALID_XBRL_URL
-        )
+        source.fetch_quarter(from_date=Q2_START, to_date=Q2_END, xbrl_url=VALID_XBRL_URL)
     assert len(calls) == 3  # exhausted bounded retries
 
 

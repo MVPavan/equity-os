@@ -1,0 +1,124 @@
+# Multi-stock validation watchlist — non-secret composition-root configuration.
+#
+# Loaded only at the composition root (src/fundamentals/api/cli.py) by
+# load_watchlist_config; no business-logic module reads this file or the
+# environment directly. Secrets (e.g. Tijori credentials) are NOT stored here —
+# they are injected from the environment at the composition root. Source bytes
+# stay in gitignored data/ (A05-DECISION-004 + bd preapproval-goal-multistock-
+# validation-2026-08-21); NSE/BSE are owner-authorized private use, Screener and
+# Tijori are DERIVED cross-check only (never source-of-record).
+#
+# Wave 1 = five maximally-different domains (docs/research/watchlist.md). The
+# reviewed quarter is pinned to Q3 FY25 (quarter ended 2024-12-31), which is an
+# in-bse-fin filing so the shared Ind-AS concept map applies unchanged. The
+# in-capmkt "Integrated Filing" taxonomy applies to Mar-2025+ (FY25 Q4 onward)
+# filings; when the orchestrator advances the pinned quarter past that boundary,
+# set quarter.filing_taxonomy: in-capmkt and revisit the concept map. The runner
+# already parses with the superset of both taxonomies.
+#
+# needs_verification lists any identifier that is a best-known value not yet
+# confirmed against a live filing; the runner surfaces these rather than trusting
+# them, and fails closed per stock (never fabricates a scrip/slug).
+
+wave: "Wave-1"
+raw_dir: "data/raw/watchlist"
+
+stocks:
+  - name: "Laurus Labs Limited"
+    domain: "CDMO / Pharma"
+    identifiers:
+      nse_symbol: "LAURUSLABS"
+      bse_scrip: "540222"
+      screener_slug: "LAURUSLABS"
+      tijori_slug: "laurus-labs"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "R&D capitalization + complex inventory; segment mix stresses concept selection."
+
+  - name: "MTAR Technologies Limited"
+    domain: "Precision Engineering"
+    identifiers:
+      nse_symbol: "MTARTECH"
+      bse_scrip: "543270"
+      screener_slug: "MTARTECH"
+      tijori_slug: "mtar-technologies"
+      us_listed: false
+      needs_verification:
+        - "bse_scrip"
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Small-cap; order-book / project-linked revenue recognition."
+      - "Recent listing (2021); confirm BSE scrip against a live filing index."
+
+  - name: "Sona BLW Precision Forgings Limited"
+    domain: "Auto Ancillary"
+    identifiers:
+      nse_symbol: "SONACOMS"
+      bse_scrip: "543300"
+      screener_slug: "SONACOMS"
+      tijori_slug: "sona-blw-precision-forgings"
+      us_listed: false
+      needs_verification:
+        - "bse_scrip"
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "EV components, export mix; margin structure differs from peers."
+      - "Recent listing (2021); confirm BSE scrip against a live filing index."
+
+  - name: "Thermax Limited"
+    domain: "Power Infrastructure"
+    identifiers:
+      nse_symbol: "THERMAX"
+      bse_scrip: "500411"
+      screener_slug: "THERMAX"
+      tijori_slug: "thermax"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Long-cycle project + product mix; order backlog."
+
+  - name: "Titan Company Limited"
+    domain: "Jewellery / Retail"
+    identifiers:
+      nse_symbol: "TITAN"
+      bse_scrip: "500114"
+      screener_slug: "TITAN"
+      tijori_slug: "titan-company"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Retail, inventory-heavy, gold-hedging; non-banking financial subsidiary."

@@ -65,11 +65,7 @@ def observations() -> tuple[Observation, ...]:
 
 
 def _jun_2025(observations: tuple[Observation, ...]) -> dict[str, Observation]:
-    return {
-        obs.concept_qname: obs
-        for obs in observations
-        if obs.period_end == _JUN_2025_END
-    }
+    return {obs.concept_qname: obs for obs in observations if obs.period_end == _JUN_2025_END}
 
 
 def test_parses_four_headline_concepts_per_quarter(
