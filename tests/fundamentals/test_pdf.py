@@ -15,12 +15,13 @@ transmit their bytes.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
+from fundamentals.api.config import PdfParseConfig
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -32,7 +33,7 @@ from fundamentals.extract.guidance_extractor import (
     extract_guidance_claims,
     resolve_span,
 )
-from fundamentals.extract.pdf_number_parser import extract_consolidated_pl
+from fundamentals.extract.pdf_number_parser import PdfParseSpec, extract_consolidated_pl
 from fundamentals.ingest.pdf_source import LoadedPdf, load_pdf
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,6 +51,23 @@ _TRANSCRIPT_SHA256 = "5039acfe6588789c028bb7d95fa1b5481f6dad1d763db16f34ebc2bb8e
 _RETRIEVED_AT = datetime(2024, 7, 18, tzinfo=UTC)
 
 _STATEMENT_PAGE = 11
+
+
+def _infy_spec() -> PdfParseSpec:
+    """Build the INFY Q1 FY25 parse spec from the default per-issuer config."""
+    parse_config = PdfParseConfig()
+    return PdfParseSpec(
+        statement_markers=parse_config.statement_markers,
+        anchor_label=parse_config.anchor_label,
+        target_lines=parse_config.target_lines,
+        entity_scheme="nse-symbol",
+        entity_id="INFY",
+        currency="INR",
+        scope=Scope.CONSOLIDATED,
+        accounting_basis=AccountingFramework.IND_AS,
+        period_start=date(2024, 4, 1),
+        period_end=date(2024, 6, 30),
+    )
 
 
 def _load_oracle() -> dict[str, dict[str, object]]:
@@ -81,7 +99,9 @@ def _by_concept(observations: list[Observation]) -> dict[str, Observation]:
 
 
 def test_pl_numbers_match_oracle_with_page_anchors(results_pdf: LoadedPdf) -> None:
-    observations = extract_consolidated_pl(results_pdf, retrieved_at=_RETRIEVED_AT)
+    observations = extract_consolidated_pl(
+        results_pdf, spec=_infy_spec(), retrieved_at=_RETRIEVED_AT
+    )
     by_concept = _by_concept(observations)
     oracle = _load_oracle()
 
@@ -114,7 +134,9 @@ def test_pl_numbers_match_oracle_with_page_anchors(results_pdf: LoadedPdf) -> No
 
 
 def test_revenue_raw_value_is_the_printed_token(results_pdf: LoadedPdf) -> None:
-    observations = extract_consolidated_pl(results_pdf, retrieved_at=_RETRIEVED_AT)
+    observations = extract_consolidated_pl(
+        results_pdf, spec=_infy_spec(), retrieved_at=_RETRIEVED_AT
+    )
     revenue = _by_concept(observations)["in-bse-fin:RevenueFromOperations"]
     assert revenue.raw_value == "39,315"
     assert revenue.normalized_unit == "INR crore"
@@ -181,5 +203,7 @@ def test_number_parser_emits_no_bytes_beyond_local_models(results_pdf: LoadedPdf
     # The loaded document is a pure in-memory pydantic model; extraction reads
     # only these local fields and returns typed facts, never any file handle or
     # network resource. A frozen model round-trips to JSON with no side effects.
-    observations = extract_consolidated_pl(results_pdf, retrieved_at=_RETRIEVED_AT)
+    observations = extract_consolidated_pl(
+        results_pdf, spec=_infy_spec(), retrieved_at=_RETRIEVED_AT
+    )
     assert all(obs.model_dump_json() for obs in observations)
