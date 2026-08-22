@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic CONSOLIDATED Ind AS instance reproducing the real NSE in-bse-fin
+  YTD period-labelling defect observed across ALL five Wave-1 filings
+  (LAURUSLABS, MTARTECH, SONACOMS, THERMAX, TITAN) for Q3 FY25.
+
+  The defect: the year-to-date context (FourD) carries the *cumulative* nine-month
+  value but its <xbrli:period> is stamped with the QUARTER's own dates
+  (2024-10-01..2024-12-31) — identical to the quarter context (OneD). Selecting by
+  <xbrli:period> alone therefore matches BOTH the quarter and the YTD figure and
+  fails closed for every material concept.
+
+  The taxonomy still declares each context's true reporting period via
+  DateOfStartOfReportingPeriod / DateOfEndOfReportingPeriod (OneD: 2024-10-01,
+  FourD: 2024-04-01). The parser must honour that authoritative declaration so the
+  quarter fact is selected and the YTD fact is re-periodised and rejected.
+
+  Bytes are hand-built, not redistributed. Symbol is a placeholder ("GENQTR").
+-->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+
+  <!-- Quarter context: xbrli:period is the reviewed quarter. -->
+  <xbrli:context id="OneD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">GENQTR</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-10-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <!-- YTD context: xbrli:period is DEFECTIVE (stamped with the quarter dates),
+       identical to OneD. Only the declared reporting period identifies it. -->
+  <xbrli:context id="FourD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">GENQTR</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-10-01</xbrli:startDate>
+      <xbrli:endDate>2024-12-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="INR">
+    <xbrli:measure>iso4217:INR</xbrli:measure>
+  </xbrli:unit>
+  <xbrli:unit id="INRPerShare">
+    <xbrli:divide>
+      <xbrli:unitNumerator><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unitNumerator>
+      <xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator>
+    </xbrli:divide>
+  </xbrli:unit>
+
+  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+
+  <!-- Authoritative period declaration per context (date-valued, no unitRef). -->
+  <in-bse-fin:DateOfStartOfReportingPeriod contextRef="OneD">2024-10-01</in-bse-fin:DateOfStartOfReportingPeriod>
+  <in-bse-fin:DateOfEndOfReportingPeriod contextRef="OneD">2024-12-31</in-bse-fin:DateOfEndOfReportingPeriod>
+  <in-bse-fin:DateOfStartOfReportingPeriod contextRef="FourD">2024-04-01</in-bse-fin:DateOfStartOfReportingPeriod>
+  <in-bse-fin:DateOfEndOfReportingPeriod contextRef="FourD">2024-12-31</in-bse-fin:DateOfEndOfReportingPeriod>
+
+  <!-- Reviewed quarter (Oct-Dec 2024): the values that must be selected. -->
+  <in-bse-fin:RevenueFromOperations contextRef="OneD" unitRef="INR" decimals="-7">177400000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:ProfitLossForPeriod contextRef="OneD" unitRef="INR" decimals="-7">10470000000.00</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="OneD" unitRef="INRPerShare" decimals="2">11.80</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+
+  <!-- Nine-month YTD (Apr-Dec 2024): larger cumulative distractor, same xbrli:period. -->
+  <in-bse-fin:RevenueFromOperations contextRef="FourD" unitRef="INR" decimals="-7">455400000000.00</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:ProfitLossForPeriod contextRef="FourD" unitRef="INR" decimals="-7">24660000000.00</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="FourD" unitRef="INRPerShare" decimals="2">27.80</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+
+</xbrli:xbrl>

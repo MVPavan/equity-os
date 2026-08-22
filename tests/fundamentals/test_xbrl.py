@@ -241,6 +241,60 @@ def test_q3_attributable_to_owners_6358_not_confused_with_profit_6822() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# YTD period-labelling defect (multi-stock generalization, Q3 FY25)           #
+# --------------------------------------------------------------------------- #
+#
+# All five Wave-1 NSE in-bse-fin filings (LAURUSLABS, MTARTECH, SONACOMS,
+# THERMAX, TITAN) stamp the year-to-date context's <xbrli:period> with the
+# QUARTER's own dates, identical to the quarter context — so selecting by
+# <xbrli:period> alone matched BOTH the quarter and the cumulative YTD figure and
+# failed closed for every material concept. The taxonomy still declares each
+# context's true reporting period via DateOf{Start,End}OfReportingPeriod, which
+# the parser honours to disambiguate them.
+
+YTD_DEFECT = FIXTURES / "synthetic_ytd_period_defect_q3fy25_consolidated.xml"
+BASIC_EPS_CONTINUING = "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
+
+
+def test_ytd_defect_reperiodises_the_ytd_context_from_the_declared_period() -> None:
+    observations = _parse(YTD_DEFECT, "nse-indas-xbrl-consolidated")
+    revenue_obs = [obs for obs in observations if obs.concept_qname == REVENUE]
+    periods = {(obs.period_start, obs.period_end): obs.normalized_value for obs in revenue_obs}
+
+    # The quarter keeps its period; the YTD is corrected from the declared period
+    # (2024-04-01..2024-12-31), so the two no longer collide on the quarter key.
+    assert periods[(Q3_START, Q3_END)] == Decimal("17740")
+    assert periods[(NINE_MONTH_START, NINE_MONTH_END)] == Decimal("45540")
+
+
+def test_ytd_defect_selects_the_quarter_and_rejects_the_ytd_distractor() -> None:
+    observations = _parse(YTD_DEFECT, "nse-indas-xbrl-consolidated")
+
+    revenue = _select_quarter(observations, REVENUE, Q3_START, Q3_END)
+    profit = _select_quarter(observations, PROFIT_LOSS_FOR_PERIOD, Q3_START, Q3_END)
+    eps = _select_quarter(observations, BASIC_EPS_CONTINUING, Q3_START, Q3_END)
+
+    assert revenue.normalized_value == Decimal("17740")  # not the YTD 45,540
+    assert revenue.context_ref == "OneD"
+    assert profit.normalized_value == Decimal("1047")  # not the YTD 2,466
+    assert eps.normalized_value == Decimal("11.80")  # not the YTD 27.80
+
+    # The YTD figure is still available at its true (declared) nine-month period.
+    ytd_revenue = _select_quarter(observations, REVENUE, NINE_MONTH_START, NINE_MONTH_END)
+    assert ytd_revenue.normalized_value == Decimal("45540")
+    assert ytd_revenue.context_ref == "FourD"
+
+
+def test_ytd_defect_every_material_concept_resolves_to_one_quarter_match() -> None:
+    observations = _parse(YTD_DEFECT, "nse-indas-xbrl-consolidated")
+    for concept in (REVENUE, PROFIT_LOSS_FOR_PERIOD, BASIC_EPS_CONTINUING):
+        # Exactly one quarter match: no FactSelectionError, no YTD ambiguity.
+        selected = _select_quarter(observations, concept, Q3_START, Q3_END)
+        assert selected.period_start == Q3_START
+        assert selected.period_end == Q3_END
+
+
+# --------------------------------------------------------------------------- #
 # Fail-closed selection                                                       #
 # --------------------------------------------------------------------------- #
 

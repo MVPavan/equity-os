@@ -111,7 +111,7 @@ class ComparisonKey(BaseModel):
             (other.period_type, other.period_start, other.period_end, other.period_instant),
         )
         add(FIELD_SCOPE, self.scope, other.scope)
-        add(FIELD_ACCOUNTING_BASIS, self.accounting_basis, other.accounting_basis)
+        self._add_accounting_basis_diff(other, reasons)
         add(FIELD_CURRENCY, self.currency, other.currency)
         add(FIELD_UNIT, self.unit, other.unit)
         add(FIELD_SCALE, self.scale, other.scale)
@@ -133,6 +133,26 @@ class ComparisonKey(BaseModel):
             return
         if own != their:
             reasons.append(f"{FIELD_TAXONOMY} mismatch: {own!r} != {their!r}")
+
+    def _add_accounting_basis_diff(self, other: ComparisonKey, reasons: list[str]) -> None:
+        """Flag an accounting-basis mismatch only when both sides declare a framework.
+
+        A derived source (e.g. Screener) restates across standalone/consolidated
+        and its own schema, so it declares :attr:`AccountingFramework.UNKNOWN` — no
+        framework at all. Mirroring the taxonomy None-handling, ``UNKNOWN`` on
+        either side is a wildcard that cannot *contradict* a declared framework, so
+        such a source may still corroborate a first-party Ind AS value once every
+        other key field matches. Two *different declared* frameworks (e.g. IFRS vs
+        Ind AS) remain a category mismatch and are rejected — the guard against
+        footing an SEC IFRS value against an Ind AS one is not weakened.
+        """
+        if AccountingFramework.UNKNOWN in (self.accounting_basis, other.accounting_basis):
+            return
+        if self.accounting_basis != other.accounting_basis:
+            reasons.append(
+                f"{FIELD_ACCOUNTING_BASIS} mismatch: "
+                f"{self.accounting_basis!r} != {other.accounting_basis!r}"
+            )
 
     def compatibility(self, other: ComparisonKey) -> ComparabilityResult:
         """Full-key comparability (concept included) for cross-source comparison."""

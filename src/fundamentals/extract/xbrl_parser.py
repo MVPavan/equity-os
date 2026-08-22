@@ -53,6 +53,14 @@ SCOPE_CONCEPT = "NatureOfReportStandaloneConsolidated"
 SCOPE_CONSOLIDATED_TEXT = "Consolidated"
 SCOPE_STANDALONE_TEXT = "Standalone"
 
+# The taxonomy declares each context's true reporting period via these date-valued
+# facts. NSE in-bse-fin filings stamp the cumulative year-to-date context's
+# ``xbrli:period`` with the *quarter's* own dates — a systematic defect seen across
+# every observed filer — so the quarter and the YTD figure would otherwise share one
+# comparison key. These concepts carry the authoritative period and disambiguate them.
+REPORTING_PERIOD_START_CONCEPT = "DateOfStartOfReportingPeriod"
+REPORTING_PERIOD_END_CONCEPT = "DateOfEndOfReportingPeriod"
+
 
 class TaxonomySpec(BaseModel):
     """A supported taxonomy: its namespace, prefix, registry version, and scope tag.
@@ -72,6 +80,8 @@ class TaxonomySpec(BaseModel):
     scope_concept: str = SCOPE_CONCEPT
     consolidated_text: str = SCOPE_CONSOLIDATED_TEXT
     standalone_text: str = SCOPE_STANDALONE_TEXT
+    reporting_period_start_concept: str = REPORTING_PERIOD_START_CONCEPT
+    reporting_period_end_concept: str = REPORTING_PERIOD_END_CONCEPT
 
 
 DEFAULT_TAXONOMIES: tuple[TaxonomySpec, ...] = (
@@ -209,6 +219,56 @@ def _parse_contexts(root: Any) -> dict[str, _XbrlContext]:
             dimensions=tuple(dimensions),
         )
     return contexts
+
+
+def _reporting_dates(root: Any, tag: str) -> dict[str, date]:
+    """Read a per-context date-valued fact into a ``context_id -> date`` map."""
+    dates: dict[str, date] = {}
+    for element in root.findall(tag):
+        context_id = element.get("contextRef")
+        if context_id is None:
+            continue
+        try:
+            dates[context_id] = date.fromisoformat((element.text or "").strip())
+        except ValueError:
+            continue
+    return dates
+
+
+def _declared_reporting_periods(root: Any, spec: TaxonomySpec) -> dict[str, tuple[date, date]]:
+    """Map each context to the reporting period the filing explicitly declares.
+
+    The ``DateOfStartOfReportingPeriod`` / ``DateOfEndOfReportingPeriod`` facts
+    authoritatively state the period each context measures. They are honoured over
+    the raw ``xbrli:period`` because the cumulative year-to-date context's
+    ``xbrli:period`` is stamped with the quarter's own dates across every observed
+    filer — a defect that would otherwise make the quarter and the YTD figure share
+    one comparison key. Only contexts that declare BOTH a parseable start and end
+    are returned; all others fall back to their ``xbrli:period`` unchanged.
+    """
+    starts = _reporting_dates(root, f"{{{spec.namespace}}}{spec.reporting_period_start_concept}")
+    ends = _reporting_dates(root, f"{{{spec.namespace}}}{spec.reporting_period_end_concept}")
+    return {ctx: (starts[ctx], ends[ctx]) for ctx in starts.keys() & ends.keys()}
+
+
+def _apply_declared_periods(
+    contexts: dict[str, _XbrlContext], declared: dict[str, tuple[date, date]]
+) -> dict[str, _XbrlContext]:
+    """Re-periodise duration contexts from the filing's declared reporting period.
+
+    Instant contexts and contexts without a declared period are left untouched, so
+    the correction is inert on filings that do not carry the declaration.
+    """
+    corrected: dict[str, _XbrlContext] = {}
+    for context_id, context in contexts.items():
+        period = declared.get(context_id)
+        if period is not None and context.period_type is PeriodType.DURATION:
+            corrected[context_id] = context.model_copy(
+                update={"period_start": period[0], "period_end": period[1]}
+            )
+        else:
+            corrected[context_id] = context
+    return corrected
 
 
 def _parse_units(root: Any) -> dict[str, str]:
@@ -367,7 +427,9 @@ def parse_instance(
         raise XbrlParseError(f"instance is not well-formed XML: {exc}") from exc
 
     spec = _detect_taxonomy(root, taxonomies)
-    contexts = _parse_contexts(root)
+    contexts = _apply_declared_periods(
+        _parse_contexts(root), _declared_reporting_periods(root, spec)
+    )
     units = _parse_units(root)
     scope = _file_scope(root, spec)
 

@@ -288,6 +288,42 @@ def test_cross_check_rejects_value_mismatch_even_with_matching_keys() -> None:
     assert result.residual == Decimal(74)
 
 
+# --- accounting-basis wildcard (a derived source declares no framework) --------
+
+
+def test_unknown_accounting_basis_is_compatible_with_a_declared_framework() -> None:
+    # A derived source (e.g. Screener) declares UNKNOWN basis; it must be able to
+    # corroborate a first-party Ind AS value when every other key field matches.
+    first_party = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.IND_AS)
+    derived = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.UNKNOWN)
+
+    result = cross_check(first_party, derived)
+    assert result.keys_compatible is True
+    assert result.matched is True
+
+    # Wildcard is symmetric and surfaces no basis reason from either direction.
+    assert explain_comparability(first_party, derived).comparable is True
+    assert explain_comparability(derived, first_party).comparable is True
+
+
+def test_two_different_declared_frameworks_still_do_not_compare() -> None:
+    # The IFRS-vs-IndAS guard must NOT be weakened: two declared frameworks that
+    # differ remain a category mismatch even when the numbers coincide.
+    ind_as = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.IND_AS)
+    ifrs = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.IFRS)
+
+    result = explain_comparability(ind_as, ifrs)
+    assert result.comparable is False
+    assert any("accounting_basis" in reason for reason in result.reasons)
+
+
+def test_two_unknown_bases_are_compatible() -> None:
+    left = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.UNKNOWN)
+    right = _crore_observation(PAT, Decimal(6374), basis=AccountingFramework.UNKNOWN)
+
+    assert explain_comparability(left, right).comparable is True
+
+
 # --- quote_anchor --------------------------------------------------------------
 
 _GUIDANCE_TEXT = (
