@@ -34,6 +34,7 @@ from fundamentals.output.earnings_update import (
     FactRole,
     RenderedFact,
     RenderError,
+    VerificationOutcome,
     render_earnings_update,
 )
 from fundamentals.store.fact_store import FactStore
@@ -196,8 +197,8 @@ def test_render_fails_closed_when_a_required_fact_is_missing(store: FactStore) -
         facts=facts,
         guidance=(),
         calculations=(),
-        cross_check_summary="PASS",
-        cross_foot_summary="PASS",
+        cross_check=VerificationOutcome(passed_count=5, total_count=5),
+        cross_foot=VerificationOutcome(passed_count=2, total_count=2),
         sec_cross_check_note="n/a",
     )
     with pytest.raises(RenderError):

@@ -44,6 +44,10 @@ class Fact(BaseModel):
     reconciliation_status: ReconciliationStatus
     canonical_status: CanonicalStatus
     revision_family: str
+    # Identifies the pipeline run that produced this revision, so a stored fact
+    # can be associated with the run/state that committed it. Not part of the
+    # content or value identity — the same fact across runs stays idempotent.
+    run_id: str | None = None
 
     valid_time_start: date
     valid_time_end: date | None = None

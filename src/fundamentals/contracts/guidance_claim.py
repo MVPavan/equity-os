@@ -43,4 +43,10 @@ class GuidanceClaim(BaseModel):
     qualifiers: tuple[str, ...] = ()
     epistemic_class: EpistemicClass = EpistemicClass.FORECAST
 
+    # The exact source span text captured at extraction. The quote-anchor gate
+    # re-resolves the provenance span and requires it to still equal this stored
+    # quote AND to represent the claim's numeric bounds — so mutating a claim's
+    # range while keeping (or re-pointing) its provenance fails closed.
+    source_quote: str | None = None
+
     provenance: Provenance
