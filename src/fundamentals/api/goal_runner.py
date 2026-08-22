@@ -736,7 +736,11 @@ def _collect_nse(
 def _fetch_nse_live(stock: StockConfig, repo_root: Path) -> tuple[Observation, ...]:
     """Fetch and parse the live NSE Ind AS XBRL for the reviewed quarter."""
     download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "nse"
-    source = NseXbrlSource(download_folder, symbol=stock.identifiers.nse_symbol)
+    source = NseXbrlSource(
+        download_folder,
+        symbol=stock.identifiers.nse_symbol,
+        accepted_entity_ids=stock.identifiers.accepted_entity_ids,
+    )
     retrieval = source.fetch_consolidated_quarter(
         from_date=stock.quarter.period_start, to_date=stock.quarter.period_end
     )
