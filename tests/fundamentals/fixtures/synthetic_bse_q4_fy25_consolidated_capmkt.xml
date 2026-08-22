@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic Infosys (BSE scrip 500209) Q4 FY25 (Jan-Mar 2025) CONSOLIDATED
+  Ind AS instance under the in-capmkt "Integrated Filing" taxonomy.
+
+  Hand-built fixture reproducing the STRUCTURE of a real BSE
+  IFIndasUploadDocument/Integrated_Finance_Ind_As_*.xml instance without
+  redistributing BSE's copyrighted source bytes. It proves the parser's taxonomy
+  registry handles the second BSE namespace (in-capmkt) additively.
+
+  NOTE: the in-capmkt namespace URI here mirrors bse_source.IN_CAPMKT_NAMESPACE so
+  the deterministic test is self-consistent; the production URI must be confirmed
+  against a real Integrated Filing instance. Numeric values are the
+  plausibility-checked Q4 FY25 figures recorded in
+  docs/research/crawl4ai-nse-bse-evaluation.md (Revenue 40,925 / PBT 9,663 /
+  PAT 7,038 Cr) — not independently audited.
+-->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/2023-03-31/in-capmkt">
+
+  <xbrli:context id="OneD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.bseindia.com/xbrl/scrip">500209</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2025-01-01</xbrli:startDate>
+      <xbrli:endDate>2025-03-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:context id="FourD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.bseindia.com/xbrl/scrip">500209</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-04-01</xbrli:startDate>
+      <xbrli:endDate>2025-03-31</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="INR">
+    <xbrli:measure>iso4217:INR</xbrli:measure>
+  </xbrli:unit>
+
+  <in-capmkt:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-capmkt:NatureOfReportStandaloneConsolidated>
+
+  <in-capmkt:RevenueFromOperations contextRef="OneD" unitRef="INR" decimals="-7">409250000000.00</in-capmkt:RevenueFromOperations>
+  <in-capmkt:ProfitBeforeTax contextRef="OneD" unitRef="INR" decimals="-7">96630000000.00</in-capmkt:ProfitBeforeTax>
+  <in-capmkt:ProfitLossForPeriod contextRef="OneD" unitRef="INR" decimals="-7">70380000000.00</in-capmkt:ProfitLossForPeriod>
+
+  <in-capmkt:RevenueFromOperations contextRef="FourD" unitRef="INR" decimals="-7">1629900000000.00</in-capmkt:RevenueFromOperations>
+
+</xbrli:xbrl>
