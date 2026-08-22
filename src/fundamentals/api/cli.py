@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
+from pydantic import TypeAdapter
 
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
@@ -40,6 +41,7 @@ from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
     WatchlistConfig,
+    Wave,
     load_watchlist_config,
 )
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
@@ -78,6 +80,11 @@ _REPORT_SOURCE_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceK
 _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
+
+# The valid ``--wave`` tokens, derived from the enum so the two never drift.
+_WAVE_CHOICES: tuple[str, ...] = tuple(wave.value for wave in Wave)
+# Serializes a per-wave roll-up sequence to a single JSON array for stdout.
+_WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
 
 
 class _LazyStderrLoggerFactory:
@@ -226,10 +233,28 @@ def _write_reports(report_dir: Path, wave: WaveReport) -> None:
     rollup.write_text(wave.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
 
-def validate_command(args: argparse.Namespace) -> WaveReport:
-    """Execute the ``validate`` subcommand and return the wave roll-up."""
-    if not args.watchlist and not args.symbol:
-        raise SystemExit("validate requires either --watchlist or --symbol <X>")
+def _selected_wave(args: argparse.Namespace) -> Wave | None:
+    """Resolve the ``--wave`` filter to a :class:`Wave`, or ``None`` when unset."""
+    return Wave(args.wave) if args.wave else None
+
+
+def _require_symbol_in_wave(stock: StockConfig, wave: Wave | None) -> None:
+    """Fail closed when an explicit ``--wave`` contradicts the ``--symbol``'s own wave."""
+    if wave is not None and stock.wave is not wave:
+        raise SystemExit(f"symbol {stock.symbol} is in {stock.wave.value}, not {wave.value}")
+
+
+def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
+    """Execute the ``validate`` subcommand and return one roll-up per wave run.
+
+    ``--symbol`` returns that stock's own-wave roll-up; ``--wave`` scopes the run to
+    one wave (on its own, or narrowing ``--watchlist``); a plain ``--watchlist`` runs
+    every wave and returns one roll-up each, so their ``<wave>-rollup.json`` files
+    never collide.
+    """
+    selected_wave = _selected_wave(args)
+    if not args.watchlist and not args.symbol and selected_wave is None:
+        raise SystemExit("validate requires --watchlist, --symbol <X>, or --wave <Wave-1|Wave-2>")
 
     config_path = Path(args.config).resolve()
     config: WatchlistConfig = load_watchlist_config(config_path)
@@ -243,6 +268,7 @@ def validate_command(args: argparse.Namespace) -> WaveReport:
 
     if args.symbol:
         stock = config.stock(args.symbol)
+        _require_symbol_in_wave(stock, selected_wave)
         if not latest and args.quarter and args.quarter.upper() != stock.quarter.label.upper():
             raise SystemExit(
                 f"quarter {args.quarter!r} does not match configured quarter "
@@ -257,21 +283,30 @@ def validate_command(args: argparse.Namespace) -> WaveReport:
             out_dir=out_dir,
             quarter_mode=quarter_mode,
         )
-        wave = WaveReport(wave=config.wave, quarter_labels=(report.quarter,), stocks=(report,))
+        waves: tuple[WaveReport, ...] = (
+            WaveReport(wave=stock.wave, quarter_labels=(report.quarter,), stocks=(report,)),
+        )
     else:
-        wave = run_wave(
-            config,
-            mode=mode,
-            repo_root=repo_root,
-            kinds=kinds,
-            tijori_credentials=credentials,
-            out_dir=out_dir,
-            quarter_mode=quarter_mode,
+        target_waves = (selected_wave,) if selected_wave is not None else config.waves()
+        waves = tuple(
+            run_wave(
+                config,
+                wave=wave,
+                mode=mode,
+                repo_root=repo_root,
+                kinds=kinds,
+                tijori_credentials=credentials,
+                out_dir=out_dir,
+                quarter_mode=quarter_mode,
+            )
+            for wave in target_waves
         )
 
     if args.report_dir:
-        _write_reports(Path(args.report_dir), wave)
-    return wave
+        report_dir = Path(args.report_dir)
+        for wave_report in waves:
+            _write_reports(report_dir, wave_report)
+    return waves
 
 
 def _stock_summary_line(report: StockReport) -> str:
@@ -340,7 +375,15 @@ def report_command(args: argparse.Namespace) -> list[str]:
         else Path(tempfile.mkdtemp(prefix="fundamentals-report-gold-"))
     )
 
-    stocks = [config.stock(args.symbol)] if args.symbol else list(config.stocks)
+    selected_wave = _selected_wave(args)
+    if args.symbol:
+        stock = config.stock(args.symbol)
+        _require_symbol_in_wave(stock, selected_wave)
+        stocks = [stock]
+    elif selected_wave is not None:
+        stocks = list(config.stocks_for_wave(selected_wave))
+    else:
+        stocks = list(config.stocks)
     logger = structlog.get_logger("fundamentals.report")
     written: list[str] = []
     for stock in stocks:
@@ -436,7 +479,18 @@ def thesis_command(
     else:
         model_clients = list(clients)
 
-    symbols = [args.symbol] if args.symbol else [stock.symbol for stock in watchlist.stocks]
+    selected_wave = _selected_wave(args)
+    if args.symbol:
+        if selected_wave is not None:
+            _require_symbol_in_wave(watchlist.stock(args.symbol), selected_wave)
+        symbols = [args.symbol]
+    else:
+        scoped = (
+            watchlist.stocks_for_wave(selected_wave)
+            if selected_wave is not None
+            else watchlist.stocks
+        )
+        symbols = [stock.symbol for stock in scoped]
     logger = structlog.get_logger("fundamentals.thesis")
     generated_at = datetime.now(UTC)
     docs: list[ThesisDocument] = []
@@ -468,6 +522,16 @@ def thesis_command(
     return docs
 
 
+def _add_wave_arg(subparser: argparse.ArgumentParser) -> None:
+    """Add the shared ``--wave`` filter that restricts a ``--watchlist`` run to one wave."""
+    subparser.add_argument(
+        "--wave",
+        choices=_WAVE_CHOICES,
+        default=None,
+        help="scope a run to one wave, e.g. Wave-1 (per-wave roll-ups never collide)",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the ``fundamentals`` argument parser."""
     parser = argparse.ArgumentParser(prog="fundamentals", description=__doc__)
@@ -493,8 +557,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="cross-check the watchlist across every available source (gold loop)",
     )
     scope = validate.add_mutually_exclusive_group()
-    scope.add_argument("--watchlist", action="store_true", help="validate every Wave-1 stock")
+    scope.add_argument(
+        "--watchlist",
+        action="store_true",
+        help="validate every stock, rolling each wave up under its own <wave>-rollup.json",
+    )
     scope.add_argument("--symbol", default=None, help="validate a single stock, e.g. TITAN")
+    _add_wave_arg(validate)
     validate.add_argument(
         "--quarter",
         default=None,
@@ -534,8 +603,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="render the per-stock source-verified earnings update from CACHED data",
     )
     report_scope = report.add_mutually_exclusive_group()
-    report_scope.add_argument("--watchlist", action="store_true", help="render every Wave-1 stock")
+    report_scope.add_argument(
+        "--watchlist",
+        action="store_true",
+        help="render every watchlist stock (optionally one --wave)",
+    )
     report_scope.add_argument("--symbol", default=None, help="render a single stock, e.g. MTARTECH")
+    _add_wave_arg(report)
     report.add_argument(
         "--quarter", default=None, help="assert the reviewed quarter label, e.g. Q3FY25"
     )
@@ -566,6 +640,7 @@ def _build_parser() -> argparse.ArgumentParser:
     thesis_scope.add_argument(
         "--symbol", default=None, help="draft a thesis for a single stock, e.g. MTARTECH"
     )
+    _add_wave_arg(thesis)
     thesis.add_argument(
         "--quarter",
         required=True,
@@ -607,20 +682,22 @@ def main(argv: list[str] | None = None) -> int:
             "validate_invoked",
             watchlist=args.watchlist,
             symbol=args.symbol,
+            wave=args.wave,
             live=args.live,
             started_at=datetime.now(UTC).isoformat(),
         )
-        wave = validate_command(args)
-        for stock in wave.stocks:
-            logger.info("stock_summary", summary=_stock_summary_line(stock))
-        logger.info(
-            "wave_summary",
-            wave=wave.wave,
-            done=wave.done_count,
-            blocked=wave.blocked_count,
-            all_done=wave.all_done,
-        )
-        sys.stdout.write(wave.model_dump_json(indent=2) + "\n")
+        waves = validate_command(args)
+        for wave_report in waves:
+            for stock in wave_report.stocks:
+                logger.info("stock_summary", summary=_stock_summary_line(stock))
+            logger.info(
+                "wave_summary",
+                wave=wave_report.wave.value,
+                done=wave_report.done_count,
+                blocked=wave_report.blocked_count,
+                all_done=wave_report.all_done,
+            )
+        sys.stdout.write(_WAVE_REPORTS_ADAPTER.dump_json(waves, indent=2).decode() + "\n")
         return 0
 
     if args.command == _COMMAND_REPORT:

@@ -46,7 +46,7 @@ from fundamentals.api.config import (
     IdentityConfig,
     PdfParseConfig,
 )
-from fundamentals.api.watchlist_config import StockConfig, StockQuarter, WatchlistConfig
+from fundamentals.api.watchlist_config import StockConfig, StockQuarter, WatchlistConfig, Wave
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -311,11 +311,16 @@ class StockReport(BaseModel):
 
 
 class WaveReport(BaseModel):
-    """Roll-up across a wave: per-stock verdicts and coverage."""
+    """Roll-up across a single wave: per-stock verdicts and coverage.
+
+    ``wave`` labels which wave this roll-up covers, so its persisted filename
+    (``<wave>-rollup.json``) is distinct per wave and a cross-wave run never
+    overwrites another wave's roll-up.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    wave: str
+    wave: Wave
     quarter_labels: tuple[str, ...]
     stocks: tuple[StockReport, ...]
 
@@ -1192,6 +1197,7 @@ def run_stock(
 def run_wave(
     config: WatchlistConfig,
     *,
+    wave: Wave,
     mode: RunMode,
     repo_root: Path,
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
@@ -1200,7 +1206,12 @@ def run_wave(
     quarter_mode: QuarterMode = QuarterMode.PINNED,
     ocr_engine: OcrEngine | None = None,
 ) -> WaveReport:
-    """Run every watchlist stock and assemble the wave roll-up."""
+    """Run every stock in ``wave`` and assemble that wave's roll-up.
+
+    Only the requested wave's stocks are run and the roll-up is labelled with
+    ``wave``, so running another wave writes a distinct roll-up rather than
+    clobbering this one.
+    """
     reports = [
         run_stock(
             stock,
@@ -1212,14 +1223,14 @@ def run_wave(
             quarter_mode=quarter_mode,
             ocr_engine=ocr_engine,
         )
-        for stock in config.stocks
+        for stock in config.stocks_for_wave(wave)
     ]
     quarter_labels = tuple(sorted({report.quarter for report in reports}))
     _LOGGER.info(
         "wave_complete",
-        wave=config.wave,
+        wave=wave.value,
         stocks=len(reports),
         done=sum(1 for r in reports if r.outcome is StockOutcome.DONE),
         blocked=sum(1 for r in reports if r.outcome is StockOutcome.BLOCKED),
     )
-    return WaveReport(wave=config.wave, quarter_labels=quarter_labels, stocks=tuple(reports))
+    return WaveReport(wave=wave, quarter_labels=quarter_labels, stocks=tuple(reports))

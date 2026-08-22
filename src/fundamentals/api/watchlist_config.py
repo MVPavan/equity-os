@@ -29,6 +29,19 @@ from fundamentals.api.config import ConceptsConfig, SourceFileConfig
 DEFAULT_ENTITY_SCHEME = "nse-symbol"
 
 
+class Wave(StrEnum):
+    """The validation wave a stock belongs to.
+
+    Waves partition the watchlist into independently-run cohorts. Each stock carries
+    its own wave so ``validate --watchlist`` rolls each wave up under its own
+    (per-wave) roll-up file: a run of one wave never clobbers another wave's roll-up,
+    and a run can be scoped to a single wave via ``--wave``.
+    """
+
+    WAVE_1 = "Wave-1"
+    WAVE_2 = "Wave-2"
+
+
 class FilingTaxonomy(StrEnum):
     """The XBRL taxonomy a stock's reviewed quarter was filed under.
 
@@ -103,6 +116,7 @@ class StockConfig(BaseModel):
 
     name: str
     domain: str
+    wave: Wave = Wave.WAVE_1
     identifiers: SourceIdentifiers
     quarter: StockQuarter
     entity_scheme: str = DEFAULT_ENTITY_SCHEME
@@ -119,17 +133,30 @@ class StockConfig(BaseModel):
 
 
 class WatchlistConfig(BaseModel):
-    """The resolved multi-stock validation configuration."""
+    """The resolved multi-stock validation configuration.
+
+    The wave is a per-stock property (:attr:`StockConfig.wave`), not a single
+    top-level label, so a watchlist that spans multiple waves rolls each wave up
+    independently rather than mixing them under one label.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    wave: str
     raw_dir: str
     stocks: tuple[StockConfig, ...]
 
     def repo_root(self, config_path: Path) -> Path:
         """Return the repository root given the loaded config file's path."""
         return config_path.resolve().parent.parent
+
+    def waves(self) -> tuple[Wave, ...]:
+        """The distinct waves present, in canonical :class:`Wave` order."""
+        present = {stock.wave for stock in self.stocks}
+        return tuple(wave for wave in Wave if wave in present)
+
+    def stocks_for_wave(self, wave: Wave) -> tuple[StockConfig, ...]:
+        """Return the stocks tagged with ``wave`` (empty when none)."""
+        return tuple(stock for stock in self.stocks if stock.wave is wave)
 
     def stock(self, symbol: str) -> StockConfig:
         """Return the stock config for an NSE symbol, or fail closed."""

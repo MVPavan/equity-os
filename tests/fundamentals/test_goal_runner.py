@@ -31,15 +31,19 @@ from fundamentals.api.goal_runner import (
     SourceKind,
     SourceStatus,
     StockOutcome,
+    WaveReport,
     _collect_pdf,
     reconcile_stock,
     run_stock,
+    run_wave,
 )
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     SourceIdentifiers,
     StockConfig,
     StockQuarter,
+    WatchlistConfig,
+    Wave,
     load_watchlist_config,
 )
 from fundamentals.contracts.observation import (
@@ -483,15 +487,98 @@ def test_empty_source_list_reconciles_to_blocked(tmp_path: Path) -> None:
 # --- watchlist config ----------------------------------------------------------
 
 
+_WAVE1_SYMBOLS = {"LAURUSLABS", "MTARTECH", "SONACOMS", "THERMAX", "TITAN"}
+_WAVE2_SYMBOLS = {"NETWEB", "HFCL", "POLYCAB", "CGPOWER", "ETERNAL"}
+
+
 def test_watchlist_config_loads_wave1_stocks() -> None:
     config = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
     symbols = {stock.identifiers.nse_symbol for stock in config.stocks}
     # Wave-1 stocks must remain present; the watchlist also carries the Wave-2
     # expansion, so this is a subset check rather than an exact-set assertion.
-    assert {"LAURUSLABS", "MTARTECH", "SONACOMS", "THERMAX", "TITAN"} <= symbols
+    assert _WAVE1_SYMBOLS <= symbols
     # Uncertain identifiers are marked for verification, never silently trusted.
     titan = config.stock("TITAN")
     assert "tijori_slug" in titan.identifiers.needs_verification
+
+
+def test_watchlist_config_tags_each_stock_with_its_wave() -> None:
+    # Every stock carries its own wave so `validate --watchlist` rolls up per wave
+    # and a cross-wave run never clobbers another wave's roll-up.
+    config = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
+    for symbol in _WAVE1_SYMBOLS:
+        assert config.stock(symbol).wave is Wave.WAVE_1, symbol
+    for symbol in _WAVE2_SYMBOLS:
+        assert config.stock(symbol).wave is Wave.WAVE_2, symbol
+
+
+def test_watchlist_config_wave_helpers_partition_the_stocks() -> None:
+    config = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
+    # Waves are returned in canonical enum order regardless of stock ordering.
+    assert config.waves() == (Wave.WAVE_1, Wave.WAVE_2)
+    assert {s.symbol for s in config.stocks_for_wave(Wave.WAVE_1)} == _WAVE1_SYMBOLS
+    assert {s.symbol for s in config.stocks_for_wave(Wave.WAVE_2)} == _WAVE2_SYMBOLS
+
+
+# --- per-wave roll-up (no cross-wave clobber) ----------------------------------
+
+
+def _wave_stock(symbol: str, wave: Wave) -> StockConfig:
+    """A synthetic stock in ``wave`` reading the committed NSE+BSE fixtures under ``symbol``."""
+    base = _stock()
+    return base.model_copy(
+        update={
+            "wave": wave,
+            "identifiers": base.identifiers.model_copy(update={"nse_symbol": symbol}),
+        }
+    )
+
+
+def _two_wave_config() -> WatchlistConfig:
+    """A synthetic watchlist spanning two waves over the deterministic fixtures."""
+    return WatchlistConfig(
+        raw_dir="data/raw/watchlist",
+        stocks=(
+            _wave_stock("W1AAA", Wave.WAVE_1),
+            _wave_stock("W1BBB", Wave.WAVE_1),
+            _wave_stock("W2CCC", Wave.WAVE_2),
+        ),
+    )
+
+
+def test_run_wave_filters_to_one_wave_and_labels_the_rollup(tmp_path: Path) -> None:
+    # run_wave runs only the requested wave's stocks and labels the roll-up with that
+    # wave, so running the other wave writes a distinct roll-up rather than clobbering.
+    config = _two_wave_config()
+    kinds = frozenset({SourceKind.NSE, SourceKind.BSE})
+
+    wave1 = run_wave(
+        config,
+        wave=Wave.WAVE_1,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=kinds,
+        out_dir=tmp_path,
+    )
+    wave2 = run_wave(
+        config,
+        wave=Wave.WAVE_2,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=kinds,
+        out_dir=tmp_path,
+    )
+
+    assert isinstance(wave1, WaveReport)
+    assert wave1.wave is Wave.WAVE_1
+    assert {stock.symbol for stock in wave1.stocks} == {"W1AAA", "W1BBB"}
+    assert wave2.wave is Wave.WAVE_2
+    assert {stock.symbol for stock in wave2.stocks} == {"W2CCC"}
+    # Distinct labels are what keep the two roll-up filenames from colliding.
+    assert wave1.wave is not wave2.wave
+    # The filtered wave still fully validates (two agreeing first-party fixtures).
+    assert wave1.all_done
+    assert wave2.all_done
 
 
 # --- opt-in live variant -------------------------------------------------------

@@ -20,12 +20,16 @@
 # confirmed against a live filing; the runner surfaces these rather than trusting
 # them, and fails closed per stock (never fabricates a scrip/slug).
 
-wave: "Wave-1"
+# Each stock carries its own `wave` (Wave-1 / Wave-2). `validate --watchlist` rolls
+# each wave up under its own <wave>-rollup.json, and `--wave <Wave-1|Wave-2>` scopes a
+# run to one wave, so a cross-wave run never clobbers another wave's roll-up. There is
+# no top-level wave label.
 raw_dir: "data/raw/watchlist"
 
 stocks:
   - name: "Laurus Labs Limited"
     domain: "CDMO / Pharma"
+    wave: "Wave-1"
     identifiers:
       nse_symbol: "LAURUSLABS"
       bse_scrip: "540222"
@@ -45,6 +49,7 @@ stocks:
 
   - name: "MTAR Technologies Limited"
     domain: "Precision Engineering"
+    wave: "Wave-1"
     identifiers:
       nse_symbol: "MTARTECH"
       bse_scrip: "543270"
@@ -66,6 +71,7 @@ stocks:
 
   - name: "Sona BLW Precision Forgings Limited"
     domain: "Auto Ancillary"
+    wave: "Wave-1"
     identifiers:
       nse_symbol: "SONACOMS"
       bse_scrip: "543300"
@@ -87,6 +93,7 @@ stocks:
 
   - name: "Thermax Limited"
     domain: "Power Infrastructure"
+    wave: "Wave-1"
     identifiers:
       nse_symbol: "THERMAX"
       bse_scrip: "500411"
@@ -106,6 +113,7 @@ stocks:
 
   - name: "Titan Company Limited"
     domain: "Jewellery / Retail"
+    wave: "Wave-1"
     identifiers:
       nse_symbol: "TITAN"
       bse_scrip: "500114"
@@ -124,16 +132,16 @@ stocks:
       - "Retail, inventory-heavy, gold-hedging; non-banking financial subsidiary."
 
   # --- Wave 2 (one per remaining domain; docs/research/watchlist.md) -----------
-  # Appended for Wave-2 expansion. The config model carries a single top-level
-  # `wave` label (above) and no per-stock wave field, so Wave-2 is validated
-  # per-symbol (`validate --symbol <SYM>`), NOT via `--watchlist` (which would run
-  # all ten stocks under the one "Wave-1" label). All identifiers below were
+  # Each stock below is tagged `wave: "Wave-2"`, so `validate --watchlist` rolls
+  # Wave-2 up under its own Wave-2-rollup.json (never mixed into Wave-1) and
+  # `--wave Wave-2` scopes a run to just these five. All identifiers below were
   # resolved and confirmed against live NSE `financial_results` + BSE
   # `getScripName`/`announcements` on 2026-08-22. See
   # docs/research/validation/wave-2-rollup.md.
 
   - name: "Netweb Technologies India Limited"
     domain: "GPUs / Supercomputers"
+    wave: "Wave-2"
     identifiers:
       nse_symbol: "NETWEB"
       bse_scrip: "543945"
@@ -154,6 +162,7 @@ stocks:
 
   - name: "HFCL Limited"
     domain: "Electrical Connectivity"
+    wave: "Wave-2"
     identifiers:
       nse_symbol: "HFCL"
       bse_scrip: "500183"
@@ -173,6 +182,7 @@ stocks:
 
   - name: "Polycab India Limited"
     domain: "Cables"
+    wave: "Wave-2"
     identifiers:
       nse_symbol: "POLYCAB"
       bse_scrip: "542652"
@@ -192,6 +202,7 @@ stocks:
 
   - name: "CG Power and Industrial Solutions Limited"
     domain: "Power Infrastructure"
+    wave: "Wave-2"
     identifiers:
       nse_symbol: "CGPOWER"
       bse_scrip: "500093"
@@ -211,6 +222,7 @@ stocks:
 
   - name: "Eternal Limited"
     domain: "Others"
+    wave: "Wave-2"
     identifiers:
       nse_symbol: "ETERNAL"
       bse_scrip: "543320"
