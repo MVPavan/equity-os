@@ -122,3 +122,109 @@ stocks:
       filing_taxonomy: "in-bse-fin"
     notes:
       - "Retail, inventory-heavy, gold-hedging; non-banking financial subsidiary."
+
+  # --- Wave 2 (one per remaining domain; docs/research/watchlist.md) -----------
+  # Appended for Wave-2 expansion. The config model carries a single top-level
+  # `wave` label (above) and no per-stock wave field, so Wave-2 is validated
+  # per-symbol (`validate --symbol <SYM>`), NOT via `--watchlist` (which would run
+  # all ten stocks under the one "Wave-1" label). All identifiers below were
+  # resolved and confirmed against live NSE `financial_results` + BSE
+  # `getScripName`/`announcements` on 2026-08-22. See
+  # docs/research/validation/wave-2-rollup.md.
+
+  - name: "Netweb Technologies India Limited"
+    domain: "GPUs / Supercomputers"
+    identifiers:
+      nse_symbol: "NETWEB"
+      bse_scrip: "543945"
+      screener_slug: "NETWEB"
+      tijori_slug: "netweb-technologies-india"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "GPUs / AI supercomputers; recent listing (Jul-2023). BSE scrip 543945 (543946 is wrong)."
+      - "NSE lists ONLY Non-Consolidated (standalone) Ind-AS quarterly filings for Q3FY25 — no consolidated quarterly XBRL exists (verified live 2026-08-22); expected fail-closed for the consolidated pipeline."
+
+  - name: "HFCL Limited"
+    domain: "Electrical Connectivity"
+    identifiers:
+      nse_symbol: "HFCL"
+      bse_scrip: "500183"
+      screener_slug: "HFCL"
+      tijori_slug: "hfcl"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Optical fibre / telecom equipment; project + product mix, long receivables."
+
+  - name: "Polycab India Limited"
+    domain: "Cables"
+    identifiers:
+      nse_symbol: "POLYCAB"
+      bse_scrip: "542652"
+      screener_slug: "POLYCAB"
+      tijori_slug: "polycab-india"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Wires & cables + FMEG; large-cap, distribution-led, working-capital heavy."
+
+  - name: "CG Power and Industrial Solutions Limited"
+    domain: "Power Infrastructure"
+    identifiers:
+      nse_symbol: "CGPOWER"
+      bse_scrip: "500093"
+      screener_slug: "CGPOWER"
+      tijori_slug: "cg-power-industrial-solutions"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Power / industrial systems; discontinued-operations split stresses PBT/profit lines."
+
+  - name: "Eternal Limited"
+    domain: "Others"
+    identifiers:
+      nse_symbol: "ETERNAL"
+      bse_scrip: "543320"
+      screener_slug: "ETERNAL"
+      tijori_slug: "eternal"
+      us_listed: false
+      needs_verification:
+        - "tijori_slug"
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+      filing_taxonomy: "in-bse-fin"
+    notes:
+      - "Formerly Zomato Limited; renamed to Eternal, symbol ZOMATO -> ETERNAL effective 2025-04-09."
+      - "ISSUER-RENAME EDGE CASE: the Q3FY25 NSE XBRL (filed Jan-2025) carries Symbol/NSESymbol='ZOMATO', but `financial_results` now keys the row under 'ETERNAL' and the old 'ZOMATO' symbol returns 0 rows (both verified live 2026-08-22). No single nse_symbol satisfies both listing lookup and issuer verification; NSE ingestion expected fail-closed. See wave-2-rollup.md."
