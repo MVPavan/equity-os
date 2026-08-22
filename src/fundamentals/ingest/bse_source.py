@@ -1,39 +1,46 @@
-"""Fetch and hold the BSE Ind AS XBRL for a requested issuer quarter.
+"""Fetch BSE first-party quarterly results for cross-checking the NSE Ind AS filing.
 
-BSE is the *second* first-party host for the same issuer Ind AS filing already
-ingested from NSE (see :mod:`fundamentals.ingest.xbrl_source`): two independent
-first-party sources of the identical ``in-bse-fin`` / ``in-capmkt`` XBRL give the
-Fundamentals reconciliation a built-in cross-check.
+BSE is the *second* first-party host for the same issuer results already ingested
+from NSE (see :mod:`fundamentals.ingest.xbrl_source`): a second independent
+first-party source gives the Fundamentals reconciliation a built-in cross-check.
+
+There are two ways in, in priority order:
+
+* **``resultsSnapshot`` (default).** The installed ``bse`` library (v3.3.1) exposes
+  a real ``resultsSnapshot(scripcode)`` endpoint that returns BSE's own results
+  summary — Revenue, Net Profit, EPS, Cash EPS, OPM %, NPM % — for the *latest*
+  ~2 quarters plus the current fiscal year. This is a first-party (BSE-hosted),
+  *summary-level* source (not the full XBRL line items). It cannot serve arbitrary
+  historical quarters: it only exposes whatever columns BSE currently publishes.
+* **Static ``/XBRLFILES/*.xml`` (secondary).** If an explicit ``xbrl_url`` is
+  passed, the full Ind AS XBRL instance is pulled with a plain HTTP client and
+  parsed by the shared context-aware parser. There is no filing-index resolver:
+  the ``bse`` library has no XBRL-index API, so the URL must be supplied.
 
 Rights posture: BSE access here is owner-authorized private, non-commercial use
 (``A05-DECISION-004`` + bd memory ``preapproval-goal-multistock-validation-2026-08-21``)
 — polite, low-volume, no anti-bot evasion, no redistribution, no external upload.
-Per ``docs/research/crawl4ai-nse-bse-evaluation.md`` the static ``/XBRLFILES/*.xml``
-instances are NOT Akamai-gated and can be pulled with a plain HTTP client once the
-link is known, so that is the primary path here; resolving the link from the filing
-index via the ``bse`` library is an opt-in convenience used only on the live path.
 
-This adapter reuses the context-aware parser in
-:mod:`fundamentals.extract.xbrl_parser` (it does NOT re-implement XBRL parsing):
-it fetches at most one filing per call, verifies scope, period and issuer *before*
-returning, and fails closed — on any network failure, ambiguity, malformed
-download, or scope/period mismatch it raises a typed :class:`BseFetchError` and
-produces no retrieval record, so no observation can be built from an unverified
-download. A terminal hard block (403/auth/CAPTCHA) is classified and never retried
-(the M10 pattern from ``xbrl_source``).
-
-The downloaded bytes are held under a caller-supplied (gitignored) folder and
-sha256-stamped; the source bytes are never committed or redistributed.
+Both paths fail closed. The summary path is *skippable* fail-closed: a request for
+a quarter BSE no longer publishes returns zero observations plus a structured note
+rather than raising or fabricating. The XBRL path is *hard* fail-closed: any
+network failure, malformed download, or scope/period/issuer mismatch raises a
+typed :class:`BseFetchError` and produces no record. A terminal hard block
+(403/auth/CAPTCHA) is classified and never retried (the M10 pattern).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import urlsplit
@@ -42,7 +49,12 @@ import structlog
 from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.contracts.observation import Observation
+from fundamentals.contracts.observation import (
+    AccountingFramework,
+    Observation,
+    PeriodType,
+    Scope,
+)
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.extract.xbrl_parser import (
     DEFAULT_TAXONOMIES,
@@ -57,9 +69,16 @@ _T = TypeVar("_T")
 # --- Source identity ----------------------------------------------------------
 
 SOURCE_ID = "bse-xbrl"
+SUMMARY_SOURCE_ID = "bse-summary"
 ENTITY_SCHEME = "bse-scrip"
 DEFAULT_USER_AGENT = "EquityOS Research (mvpavan42@gmail.com)"
 USER_AGENT_HEADER = "User-Agent"
+
+# The results summary is read from BSE's own results endpoint (the same host the
+# ``bse`` library queries); this is recorded as the retrieval URL for provenance.
+BSE_RESULTS_URL_TEMPLATE = (
+    "https://api.bseindia.com/BseIndiaAPI/api/TabResults_PAR/w?scripcode={scrip}&tabtype=RESULTS"
+)
 
 # BSE served the results XBRL under two taxonomies across FY25: ``in-bse-fin``
 # through Q3 FY25 and ``in-capmkt`` (the "Integrated Filing" format) from Q4 FY25
@@ -81,6 +100,105 @@ BSE_TAXONOMIES: tuple[TaxonomySpec, ...] = (
         registry_version=IN_CAPMKT_REGISTRY_VERSION,
     ),
 )
+
+# --- Summary concept mapping (BSE row title -> canonical concept) --------------
+# The three cross-checkable rows use the *exact* concept QNames the NSE parser and
+# reconciler config use (see fundamentals.api.config), so the reconciler compares
+# them column-for-column. The remaining rows are BSE-only summary extras carried
+# under descriptive QNames; they have no NSE counterpart and simply add coverage.
+
+CONCEPT_REVENUE = "in-bse-fin:RevenueFromOperations"
+CONCEPT_NET_PROFIT = "in-bse-fin:ProfitLossForPeriod"
+CONCEPT_EPS = "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
+CONCEPT_CASH_EPS = "in-bse-fin:CashEarningsLossPerShare"
+CONCEPT_OPM = "in-bse-fin:OperatingProfitMarginPercent"
+CONCEPT_NPM = "in-bse-fin:NetProfitMarginPercent"
+
+
+class SummaryUnit(StrEnum):
+    """The unit family a summary row carries, driving its normalization."""
+
+    MONETARY_CRORE = "monetary_crore"
+    PER_SHARE = "per_share"
+    PERCENT = "percent"
+
+
+class SummaryConcept(BaseModel):
+    """A canonical concept plus the unit family for one BSE summary row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    concept_qname: str
+    unit: SummaryUnit
+
+
+# Keyed by the normalized (lower-cased, stripped) BSE row title.
+_BSE_ROW_CONCEPTS: dict[str, SummaryConcept] = {
+    "revenue": SummaryConcept(concept_qname=CONCEPT_REVENUE, unit=SummaryUnit.MONETARY_CRORE),
+    "net profit": SummaryConcept(concept_qname=CONCEPT_NET_PROFIT, unit=SummaryUnit.MONETARY_CRORE),
+    "eps": SummaryConcept(concept_qname=CONCEPT_EPS, unit=SummaryUnit.PER_SHARE),
+    "cash eps": SummaryConcept(concept_qname=CONCEPT_CASH_EPS, unit=SummaryUnit.PER_SHARE),
+    "opm %": SummaryConcept(concept_qname=CONCEPT_OPM, unit=SummaryUnit.PERCENT),
+    "npm %": SummaryConcept(concept_qname=CONCEPT_NPM, unit=SummaryUnit.PERCENT),
+}
+
+_CURRENCY_INR = "INR"
+_CRORE_UNIT = "INR crore"
+_CRORE_SCALE = 10_000_000
+_CRORE_DECIMALS = -7
+_PER_SHARE_UNIT = "INR per share"
+_PER_SHARE_SCALE = 1
+_PER_SHARE_DECIMALS = 2
+_PERCENT_UNIT = "percent"
+_PERCENT_SCALE = 1
+_PERCENT_DECIMALS = 2
+
+# (currency, normalized_unit, scale, decimals) per unit family. Monetary rows keep
+# scale 10**7 / decimals -7 so an "INR crore" value cross-checks against the NSE
+# XBRL crore value under the same comparison key (see verify.comparison_key).
+_SUMMARY_UNIT_SPEC: dict[SummaryUnit, tuple[str | None, str, int, int]] = {
+    SummaryUnit.MONETARY_CRORE: (_CURRENCY_INR, _CRORE_UNIT, _CRORE_SCALE, _CRORE_DECIMALS),
+    SummaryUnit.PER_SHARE: (_CURRENCY_INR, _PER_SHARE_UNIT, _PER_SHARE_SCALE, _PER_SHARE_DECIMALS),
+    SummaryUnit.PERCENT: (None, _PERCENT_UNIT, _PERCENT_SCALE, _PERCENT_DECIMALS),
+}
+
+_RESULTS_IN_CRORES_KEY = "results_in_crores"
+_FIELDS_KEY = "fields"
+_DATA_KEY = "data"
+_PERIODS_KEY = "periods"
+_CURRENCY_UNIT_KEY = "currency_unit"
+
+_MISSING_MARKERS = frozenset({"", "-", "—", "na", "n/a", "null", "nil"})
+
+# --- Period-label parsing -----------------------------------------------------
+# BSE columns are "Mon-YY" quarter labels (e.g. "Jun-26" = the quarter ending
+# June 2026) or "FYaa-bb" fiscal-year labels (e.g. "FY25-26" = Apr 2025..Mar 2026).
+
+_QUARTER_LABEL_RE = re.compile(r"^([A-Za-z]{3})-(\d{2})$")
+_FY_LABEL_RE = re.compile(r"^FY(\d{2})-(\d{2})$")
+_CENTURY = 2000
+
+_MONTH_ABBREV: dict[str, int] = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+# Quarter-end month -> (start month, start day, end month, end day) within one year.
+_QUARTER_BOUNDS: dict[int, tuple[int, int, int, int]] = {
+    3: (1, 1, 3, 31),
+    6: (4, 1, 6, 30),
+    9: (7, 1, 9, 30),
+    12: (10, 1, 12, 31),
+}
 
 # --- Fetch tunables -----------------------------------------------------------
 
@@ -115,11 +233,6 @@ _TERMINAL_MARKERS: tuple[str, ...] = (
     "authentication",
 )
 
-# Candidate result-listing method names on the ``bse`` client. The library is a
-# sibling of ``nse`` (used in xbrl_source); its exact result API is unverified in
-# this environment, so discovery probes these names and fails closed if none exist.
-_BSE_RESULT_METHODS: tuple[str, ...] = ("financial_results", "results", "result")
-
 
 class BseFetchError(Exception):
     """Typed, resumable failure: the fetch produced no trustworthy filing."""
@@ -136,6 +249,80 @@ def _is_terminal_error(exc: Exception) -> bool:
         return True
     message = str(exc).lower()
     return any(marker in message for marker in _TERMINAL_MARKERS)
+
+
+def _snapshot_sha256(snapshot: dict[str, Any]) -> str:
+    """Stable content hash of a resultsSnapshot dict for provenance."""
+    canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _parse_indian_decimal(raw: str) -> Decimal | None:
+    """Parse an Indian-grouped numeric cell to Decimal; ``None`` if it is empty.
+
+    Commas and spaces are stripped and a parenthesised value (BSE's negative
+    notation) is negated. A missing marker returns ``None`` so the row is skipped
+    rather than fabricated.
+    """
+    text = raw.strip()
+    if text.lower() in _MISSING_MARKERS:
+        return None
+    negative = text.startswith("(") and text.endswith(")")
+    if negative:
+        text = text[1:-1]
+    text = text.replace(",", "").replace(" ", "")
+    if not text or text.lower() in _MISSING_MARKERS:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    return -value if negative else value
+
+
+def _period_bounds(label: str) -> tuple[date, date]:
+    """Resolve a BSE column label to its ``(period_start, period_end)`` dates.
+
+    Handles a "Mon-YY" quarter label and a "FYaa-bb" fiscal-year label; raises
+    :class:`ValueError` for any other shape so an unrecognised column fails closed.
+    """
+    quarter = _QUARTER_LABEL_RE.match(label)
+    if quarter is not None:
+        month = _MONTH_ABBREV.get(quarter.group(1).lower())
+        if month is None or month not in _QUARTER_BOUNDS:
+            raise ValueError(f"not a quarter-end month: {label!r}")
+        year = _CENTURY + int(quarter.group(2))
+        start_month, start_day, end_month, end_day = _QUARTER_BOUNDS[month]
+        return date(year, start_month, start_day), date(year, end_month, end_day)
+    fiscal = _FY_LABEL_RE.match(label)
+    if fiscal is not None:
+        start_year = _CENTURY + int(fiscal.group(1))
+        end_year = _CENTURY + int(fiscal.group(2))
+        return date(start_year, 4, 1), date(end_year, 3, 31)
+    raise ValueError(f"unrecognised BSE period label: {label!r}")
+
+
+class BseSummaryResult(BaseModel):
+    """Outcome of one ``resultsSnapshot`` read for a requested period column.
+
+    ``observations`` is empty and ``note`` is set (never both raising and
+    fabricating) when the requested period is not among the exposed columns or the
+    label cannot be resolved — the skippable fail-closed contract for the summary
+    source.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str
+    scrip_code: str
+    results_url: str
+    snapshot_sha256: str
+    currency_unit: str
+    requested_period: str
+    available_periods: tuple[str, ...]
+    observations: tuple[Observation, ...]
+    retrieved_at: datetime
+    note: str | None = None
 
 
 class BseRetrieval(BaseModel):
@@ -167,11 +354,12 @@ class BseRetrieval(BaseModel):
 
 
 class BseSource:
-    """Polite, fail-closed fetcher for BSE Ind AS quarterly XBRL filings.
+    """Polite, fail-closed BSE results reader (summary default, XBRL secondary).
 
-    Parsing is delegated to :func:`fundamentals.extract.xbrl_parser.parse_observations`
-    with :data:`BSE_TAXONOMIES` (``in-bse-fin`` + ``in-capmkt``); this class owns
-    only fetch, verification, provenance stamping, and the parse hand-off.
+    ``fetch_summary`` reads BSE's own ``resultsSnapshot`` summary and is the
+    default path. ``fetch_quarter`` / ``fetch_observations`` pull and verify a full
+    Ind AS XBRL instance from an explicit ``/XBRLFILES/*.xml`` link, delegating the
+    parse to :func:`fundamentals.extract.xbrl_parser.parse_observations`.
     """
 
     def __init__(
@@ -191,7 +379,118 @@ class BseSource:
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
 
-    # -- Public parse hand-off (deterministic, no network) --------------------
+    # -- Summary path (resultsSnapshot; default) ------------------------------
+
+    def fetch_summary(self, *, period_label: str) -> BseSummaryResult:
+        """Read BSE's results summary and map the requested period column.
+
+        Calls the ``bse`` library's ``resultsSnapshot`` (bounded retries, terminal
+        block classified and not retried, session always closed), then maps the
+        ``results_in_crores`` rows for ``period_label`` to observations. If BSE no
+        longer exposes that quarter the result carries zero observations and a
+        structured note — skippable fail-closed, never fabricated.
+        """
+        self._download_folder.mkdir(parents=True, exist_ok=True)
+        retrieved_at = datetime.now(UTC)
+        snapshot = self._retry("BSE resultsSnapshot", self._fetch_snapshot)
+        return self.parse_summary(
+            snapshot,
+            period_label=period_label,
+            scrip_code=self._scrip_code,
+            results_url=self._results_url(),
+            retrieved_at=retrieved_at,
+        )
+
+    def _fetch_snapshot(self) -> dict[str, Any]:
+        """Call ``resultsSnapshot`` on a fresh ``bse`` client, closing it always."""
+        bse_client_cls = self._load_bse_client_class()
+        client = bse_client_cls(download_folder=self._download_folder)
+        try:
+            snapshot = client.resultsSnapshot(self._scrip_code)
+        finally:
+            client.exit()
+        if not isinstance(snapshot, dict):
+            kind = type(snapshot).__name__
+            raise BseFetchError(f"resultsSnapshot returned {kind}, expected dict")
+        return dict(snapshot)
+
+    def _results_url(self) -> str:
+        """The BSE results endpoint URL recorded in provenance for this scrip."""
+        return BSE_RESULTS_URL_TEMPLATE.format(scrip=self._scrip_code)
+
+    @staticmethod
+    def parse_summary(
+        snapshot: dict[str, Any],
+        *,
+        period_label: str,
+        scrip_code: str,
+        results_url: str,
+        retrieved_at: datetime,
+    ) -> BseSummaryResult:
+        """Map a ``resultsSnapshot`` dict's requested column to observations.
+
+        Deterministic and network-free: selects the ``period_label`` column of
+        ``results_in_crores`` and builds one observation per mapped row. Returns a
+        zero-observation result with a structured note when the period is not
+        exposed or its label cannot be resolved.
+        """
+        periods = tuple(str(period) for period in snapshot.get(_PERIODS_KEY, []))
+        currency_unit = str(snapshot.get(_CURRENCY_UNIT_KEY, ""))
+        snapshot_sha256 = _snapshot_sha256(snapshot)
+
+        def _empty(note: str) -> BseSummaryResult:
+            return BseSummaryResult(
+                source_id=SUMMARY_SOURCE_ID,
+                scrip_code=scrip_code,
+                results_url=results_url,
+                snapshot_sha256=snapshot_sha256,
+                currency_unit=currency_unit,
+                requested_period=period_label,
+                available_periods=periods,
+                observations=(),
+                retrieved_at=retrieved_at,
+                note=note,
+            )
+
+        table = snapshot.get(_RESULTS_IN_CRORES_KEY, {})
+        fields = [str(field) for field in table.get(_FIELDS_KEY, [])]
+        if period_label not in periods or period_label not in fields:
+            return _empty(
+                "bse resultsSnapshot only exposes latest quarters; "
+                f"{period_label} not available (available: {list(periods)})"
+            )
+        try:
+            period_start, period_end = _period_bounds(period_label)
+        except ValueError as error:
+            return _empty(f"bse resultsSnapshot period column unresolved: {error}")
+
+        column = fields.index(period_label)
+        context_prefix = f"{results_url}#results/{period_label}"
+        observations = _map_rows(
+            table.get(_DATA_KEY, []),
+            column=column,
+            scrip_code=scrip_code,
+            period_start=period_start,
+            period_end=period_end,
+            snapshot_sha256=snapshot_sha256,
+            context_prefix=context_prefix,
+            retrieved_at=retrieved_at,
+        )
+        note = None if observations else "bse resultsSnapshot exposed no mapped summary rows"
+        return BseSummaryResult(
+            source_id=SUMMARY_SOURCE_ID,
+            scrip_code=scrip_code,
+            results_url=results_url,
+            snapshot_sha256=snapshot_sha256,
+            currency_unit=currency_unit,
+            requested_period=period_label,
+            available_periods=periods,
+            observations=observations,
+            retrieved_at=retrieved_at,
+            note=note,
+        )
+
+    # -- Public XBRL parse hand-off (deterministic, no network) ---------------
 
     @staticmethod
     def parse(
@@ -215,7 +514,7 @@ class BseSource:
             taxonomies=BSE_TAXONOMIES,
         )
 
-    # -- Fetch + verify + parse (live) ----------------------------------------
+    # -- XBRL fetch + verify + parse (secondary; explicit url) ----------------
 
     def fetch_quarter(
         self,
@@ -227,23 +526,25 @@ class BseSource:
     ) -> BseRetrieval:
         """Fetch, verify and stamp the BSE Ind AS XBRL for one quarter.
 
-        The static ``/XBRLFILES/*.xml`` instance is pulled with a plain HTTP client
-        once ``xbrl_url`` is known; when it is omitted the link is resolved from the
-        filing index via the ``bse`` library. Raises :class:`BseFetchError`
-        (producing no record) on any network failure, ambiguous filing match,
-        malformed download, or scope/period/issuer mismatch.
+        ``xbrl_url`` (a static ``/XBRLFILES/*.xml`` link) is required: the ``bse``
+        library exposes no XBRL filing index, so there is nothing to resolve from.
+        Raises :class:`BseFetchError` (producing no record) when the URL is absent
+        or on any network failure, malformed download, or scope/period/issuer
+        mismatch. Use :meth:`fetch_summary` for the default resultsSnapshot path.
         """
+        if xbrl_url is None:
+            raise BseFetchError(
+                "fetch_quarter requires an explicit xbrl_url (a static /XBRLFILES/*.xml "
+                "link); the bse library has no XBRL index — use fetch_summary() for the "
+                "resultsSnapshot path"
+            )
         self._download_folder.mkdir(parents=True, exist_ok=True)
         retrieved_at = datetime.now(UTC)
 
-        resolved_url = xbrl_url or self._resolve_xbrl_url(
-            from_date=from_date, to_date=to_date, consolidated=consolidated
-        )
-        self._validate_xbrl_url(resolved_url)
-
-        xml_bytes = self._download(resolved_url)
+        self._validate_xbrl_url(xbrl_url)
+        xml_bytes = self._download(xbrl_url)
         self._verify(xml_bytes, from_date=from_date, to_date=to_date, consolidated=consolidated)
-        local_path = self._persist(xml_bytes, resolved_url)
+        local_path = self._persist(xml_bytes, xbrl_url)
         file_sha256 = hashlib.sha256(xml_bytes).hexdigest()
 
         _LOGGER.info(
@@ -258,7 +559,7 @@ class BseSource:
             source_id=SOURCE_ID,
             local_path=local_path,
             file_sha256=file_sha256,
-            xbrl_url=resolved_url,
+            xbrl_url=xbrl_url,
             scrip_code=self._scrip_code,
             from_date=from_date,
             to_date=to_date,
@@ -274,7 +575,7 @@ class BseSource:
         consolidated: bool = True,
         xbrl_url: str | None = None,
     ) -> tuple[Observation, ...]:
-        """Fetch one quarter and return its parsed, provenance-stamped observations."""
+        """Fetch one quarter's XBRL (explicit ``xbrl_url``) and return observations."""
         retrieval = self.fetch_quarter(
             from_date=from_date,
             to_date=to_date,
@@ -314,6 +615,16 @@ class BseSource:
         raise BseFetchError(
             f"{description} failed after {self._max_retries} attempts: {last_error}"
         ) from last_error
+
+    def _load_bse_client_class(self) -> Any:
+        """Lazily import the ``bse`` client class, failing closed if unavailable."""
+        try:
+            from bse import BSE  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise BseFetchError(
+                "the 'bse' library is required for the resultsSnapshot path; install it"
+            ) from exc
+        return BSE
 
     def _download(self, xbrl_url: str) -> bytes:
         """Download the static XBRL instance over plain HTTP, failing closed."""
@@ -414,83 +725,90 @@ class BseSource:
                 return
         raise BseFetchError(f"downloaded XBRL carries no {from_date}..{to_date} duration context")
 
-    def _resolve_xbrl_url(self, *, from_date: date, to_date: date, consolidated: bool) -> str:
-        """Resolve the static XBRL link from the filing index via the ``bse`` library.
 
-        Opt-in convenience for the live path only. The ``bse`` client is imported
-        lazily (it is not a hard dependency of this package); its exact result API
-        is probed defensively and any absence/mismatch fails closed.
-        """
-        bse_client_cls = self._load_bse_client_class()
-        rows = self._retry(
-            "BSE results listing",
-            lambda: self._list_results(bse_client_cls),
-        )
-        return self._select_xbrl_link(
-            rows, from_date=from_date, to_date=to_date, consolidated=consolidated
-        )
-
-    def _load_bse_client_class(self) -> Any:
-        """Lazily import the ``bse`` client class, failing closed if unavailable."""
-        try:
-            from bse import BSE  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise BseFetchError(
-                "the 'bse' library is required to resolve the filing index; "
-                "install it or pass xbrl_url explicitly"
-            ) from exc
-        return BSE
-
-    def _list_results(self, bse_client_cls: Any) -> list[dict[str, Any]]:
-        """Fetch the raw results listing rows via the ``bse`` client."""
-        with bse_client_cls(self._download_folder) as client:
-            for method_name in _BSE_RESULT_METHODS:
-                method = getattr(client, method_name, None)
-                if callable(method):
-                    rows: Any = method(scripcode=self._scrip_code)
-                    return list(rows)
-        raise BseFetchError(
-            f"'bse' client exposes none of the expected result methods: {_BSE_RESULT_METHODS}"
-        )
-
-    def _select_xbrl_link(
-        self,
-        rows: list[dict[str, Any]],
-        *,
-        from_date: date,
-        to_date: date,
-        consolidated: bool,
-    ) -> str:
-        """Pick the single matching quarter's static XBRL link, failing closed."""
-        wanted_end = to_date.isoformat()
-        candidates: list[str] = []
-        for row in rows:
-            link = self._row_xbrl_link(row)
-            if link is None:
-                continue
-            if self._row_matches(row, wanted_end=wanted_end, consolidated=consolidated):
-                candidates.append(link)
-        unique = sorted(set(candidates))
-        if len(unique) != 1:
-            raise BseFetchError(
-                f"expected exactly 1 {'consolidated' if consolidated else 'standalone'} "
-                f"XBRL link for scrip {self._scrip_code} {from_date}..{to_date}, "
-                f"found {len(unique)}"
+def _map_rows(
+    rows: list[Any],
+    *,
+    column: int,
+    scrip_code: str,
+    period_start: date,
+    period_end: date,
+    snapshot_sha256: str,
+    context_prefix: str,
+    retrieved_at: datetime,
+) -> tuple[Observation, ...]:
+    """Build one observation per mapped summary row for the selected column."""
+    observations: list[Observation] = []
+    for row in rows:
+        cells = list(row)
+        if not cells or column >= len(cells):
+            continue
+        concept = _BSE_ROW_CONCEPTS.get(str(cells[0]).strip().lower())
+        if concept is None:
+            continue
+        raw_value = str(cells[column])
+        value = _parse_indian_decimal(raw_value)
+        if value is None:
+            continue
+        observations.append(
+            _build_observation(
+                concept=concept,
+                raw_value=raw_value.strip(),
+                value=value,
+                scrip_code=scrip_code,
+                period_start=period_start,
+                period_end=period_end,
+                snapshot_sha256=snapshot_sha256,
+                context_prefix=context_prefix,
+                retrieved_at=retrieved_at,
             )
-        return unique[0]
+        )
+    return tuple(observations)
 
-    @staticmethod
-    def _row_xbrl_link(row: dict[str, Any]) -> str | None:
-        """Extract a static ``.xml`` XBRL link from a results-listing row, if any."""
-        for value in row.values():
-            if isinstance(value, str) and value.strip().lower().endswith(XBRL_LINK_SUFFIX):
-                return value.strip()
-        return None
 
-    @staticmethod
-    def _row_matches(row: dict[str, Any], *, wanted_end: str, consolidated: bool) -> bool:
-        """True when a listing row is the requested quarter and consolidation scope."""
-        blob = " ".join(str(value) for value in row.values()).lower()
-        if wanted_end not in blob:
-            return False
-        return ("consolidated" in blob) == consolidated
+def _build_observation(
+    *,
+    concept: SummaryConcept,
+    raw_value: str,
+    value: Decimal,
+    scrip_code: str,
+    period_start: date,
+    period_end: date,
+    snapshot_sha256: str,
+    context_prefix: str,
+    retrieved_at: datetime,
+) -> Observation:
+    """Assemble one summary observation with BSE-summary provenance.
+
+    ``taxonomy_namespace`` / ``registry_version`` are left ``None``: a summary
+    figure is not read from a specific XBRL taxonomy, so it must not contradict the
+    NSE taxonomy identity during reconciliation (see verify.comparison_key).
+    """
+    currency, normalized_unit, scale, decimals = _SUMMARY_UNIT_SPEC[concept.unit]
+    context_ref = f"{context_prefix}/{concept.concept_qname}"
+    provenance = Provenance(
+        source_id=SUMMARY_SOURCE_ID,
+        file_sha256=snapshot_sha256,
+        anchor_type=SourceAnchorType.XBRL_CONTEXT,
+        context_ref=context_ref,
+        retrieved_at=retrieved_at,
+        first_seen_at=retrieved_at,
+    )
+    return Observation(
+        concept_qname=concept.concept_qname,
+        raw_value=raw_value,
+        normalized_value=value,
+        normalized_unit=normalized_unit,
+        context_ref=context_ref,
+        entity_scheme=ENTITY_SCHEME,
+        entity_id=scrip_code,
+        scope=Scope.CONSOLIDATED,
+        accounting_basis=AccountingFramework.IND_AS,
+        period_type=PeriodType.DURATION,
+        period_start=period_start,
+        period_end=period_end,
+        currency=currency,
+        scale=scale,
+        decimals=decimals,
+        provenance=provenance,
+    )
