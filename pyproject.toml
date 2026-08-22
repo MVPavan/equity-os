@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Source-backed earnings-review product (Phase 0.5 INFY pilot)."
 requires-python = ">=3.12"
 dependencies = [
+    "bse>=3.3.1",
     "edgartools>=5.51.0",
     "lxml>=6.1.2",
     "nse>=3.2.1",

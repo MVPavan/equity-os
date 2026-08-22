@@ -122,6 +122,19 @@ wheels = [
 ]
 
 [[package]]
+name = "bse"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mthrottle" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/0e/e3e926ec3d33696ebf612e8830e8cdcf8f6fbd4dbc42f643b5cf0431cfa2/bse-3.3.1.tar.gz", hash = "sha256:981306108df71e5132f2a2fe1a04fcf5c26d6d064a7775663c317f50086093b7", size = 29780, upload-time = "2026-08-19T14:07:53.717Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/fc/e2a0bd1e1c2bd78bab03e079acba44fa7989834af12c719dade696c87115/bse-3.3.1-py3-none-any.whl", hash = "sha256:5bc27b7a2c4f126e43a324855fe317606ecfa06f032620cf3fb118fe31491e60", size = 29043, upload-time = "2026-08-19T14:07:52.342Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -333,6 +346,7 @@ name = "fundamentals"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "bse" },
     { name = "edgartools" },
     { name = "lxml" },
     { name = "nse" },
@@ -353,6 +367,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bse", specifier = ">=3.3.1" },
     { name = "edgartools", specifier = ">=5.51.0" },
     { name = "lxml", specifier = ">=6.1.2" },
     { name = "nse", specifier = ">=3.2.1" },
