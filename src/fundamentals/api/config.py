@@ -12,10 +12,19 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+from fundamentals.extract.guidance_extractor import DEFAULT_GUIDANCE_RULES
+from fundamentals.extract.pdf_number_parser import (
+    DEFAULT_COLUMN_X_TOLERANCE_PT,
+    DEFAULT_MONTH_NAMES,
+    DEFAULT_ROW_BAND_TOLERANCE_PT,
+    PdfTargetLine,
+)
+from fundamentals.output.earnings_update import FactRole
 
 _DEFAULT_XBRL_ALIASES: dict[str, str] = {
     "http://www.nseindia.com/NSESymbol": "nse-symbol",
@@ -91,6 +100,240 @@ class SecConfig(BaseModel):
     max_retries: int = 3
 
 
+# --- general Ind-AS (in-bse-fin) defaults; a different filer overrides in YAML --
+
+_INR_CRORE_UNIT = "INR crore"
+_INR_UNIT_REF = "INR"
+_CRORE_SCALE = 10_000_000
+_CRORE_DECIMALS = -7
+
+_DEFAULT_STATEMENT_MARKERS: tuple[str, ...] = (
+    "Statement of Consolidated Audited Results",
+    "Statement of Consolidated Unaudited Results",
+    "Statement of Unaudited Consolidated Results",
+    "Statement of Consolidated Financial Results",
+    "Consolidated Financial Results",
+)
+
+_DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
+    PdfTargetLine(
+        labels=("Revenue from operations",),
+        concept_qname="in-bse-fin:RevenueFromOperations",
+        normalized_unit=_INR_CRORE_UNIT,
+        unit_ref=_INR_UNIT_REF,
+        scale=_CRORE_SCALE,
+        decimals=_CRORE_DECIMALS,
+    ),
+    PdfTargetLine(
+        labels=("Total Income", "Total income"),
+        concept_qname="in-bse-fin:Income",
+        normalized_unit=_INR_CRORE_UNIT,
+        unit_ref=_INR_UNIT_REF,
+        scale=_CRORE_SCALE,
+        decimals=_CRORE_DECIMALS,
+    ),
+    PdfTargetLine(
+        labels=("Profit before tax", "Profit / (loss) before tax"),
+        concept_qname="in-bse-fin:ProfitBeforeTax",
+        normalized_unit=_INR_CRORE_UNIT,
+        unit_ref=_INR_UNIT_REF,
+        scale=_CRORE_SCALE,
+        decimals=_CRORE_DECIMALS,
+    ),
+    PdfTargetLine(
+        labels=("Profit for the period", "Profit / (loss) for the period"),
+        concept_qname="in-bse-fin:ProfitLossForPeriod",
+        normalized_unit=_INR_CRORE_UNIT,
+        unit_ref=_INR_UNIT_REF,
+        scale=_CRORE_SCALE,
+        decimals=_CRORE_DECIMALS,
+    ),
+    PdfTargetLine(
+        labels=("Basic (in ₹ per share)", "Basic (in Rs. per share)"),
+        concept_qname="in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        normalized_unit="INR per share",
+        unit_ref="INR_per_share",
+        scale=1,
+        decimals=2,
+    ),
+)
+
+
+class PdfParseConfig(BaseModel):
+    """Per-issuer PDF-parse settings; defaults suit an Ind-AS in-bse-fin filer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    statement_markers: tuple[str, ...] = Field(default_factory=lambda: _DEFAULT_STATEMENT_MARKERS)
+    anchor_label: str = "Revenue from operations"
+    target_lines: tuple[PdfTargetLine, ...] = Field(
+        default_factory=lambda: _DEFAULT_PDF_TARGET_LINES
+    )
+    currency: str = "INR"
+    row_band_tolerance_pt: float = DEFAULT_ROW_BAND_TOLERANCE_PT
+    column_x_tolerance_pt: float = DEFAULT_COLUMN_X_TOLERANCE_PT
+    month_names: tuple[str, ...] = Field(default_factory=lambda: DEFAULT_MONTH_NAMES)
+
+
+class RoleConceptConfig(BaseModel):
+    """Maps a render P&L role to its taxonomy concept QName; may be optional."""
+
+    model_config = ConfigDict(frozen=True)
+
+    role: FactRole
+    concept_qname: str
+    required: bool = True
+
+
+class AuxConceptConfig(BaseModel):
+    """An auxiliary concept needed only to close identities; may be optional.
+
+    Non-controlling interest is the canonical optional case: a filer with no
+    minority interest simply omits the tag, and the dependent identity is skipped
+    rather than failing closed.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    concept_qname: str
+    required: bool = True
+
+
+class IdentityTermConfig(BaseModel):
+    """One signed right-hand term of a configured accounting identity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sign: Literal[-1, 1]
+    concept_qname: str
+
+
+class IdentityConfig(BaseModel):
+    """An accounting identity ``lhs_concept == sum(sign * term)``.
+
+    An identity is skipped (not failed) when any referenced concept is an
+    optional concept that the filing does not carry.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    lhs_concept: str
+    terms: tuple[IdentityTermConfig, ...]
+
+
+class GuidanceRuleConfig(BaseModel):
+    """A guidance regex rule plus its render label."""
+
+    model_config = ConfigDict(frozen=True)
+
+    metric: str
+    label: str
+    pattern: str
+    horizon: str
+
+
+def _default_role_concepts() -> tuple[RoleConceptConfig, ...]:
+    return (
+        RoleConceptConfig(role=FactRole.REVENUE, concept_qname="in-bse-fin:RevenueFromOperations"),
+        RoleConceptConfig(role=FactRole.TOTAL_INCOME, concept_qname="in-bse-fin:Income"),
+        RoleConceptConfig(role=FactRole.TOTAL_EXPENSES, concept_qname="in-bse-fin:Expenses"),
+        RoleConceptConfig(
+            role=FactRole.PROFIT_BEFORE_TAX, concept_qname="in-bse-fin:ProfitBeforeTax"
+        ),
+        RoleConceptConfig(
+            role=FactRole.PROFIT_FOR_PERIOD, concept_qname="in-bse-fin:ProfitLossForPeriod"
+        ),
+        RoleConceptConfig(
+            role=FactRole.BASIC_EPS,
+            concept_qname=(
+                "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
+            ),
+        ),
+    )
+
+
+def _default_aux_concepts() -> tuple[AuxConceptConfig, ...]:
+    return (
+        AuxConceptConfig(concept_qname="in-bse-fin:ProfitOrLossAttributableToOwnersOfParent"),
+        AuxConceptConfig(
+            concept_qname="in-bse-fin:ProfitOrLossAttributableToNonControllingInterests",
+            required=False,
+        ),
+    )
+
+
+def _default_cross_check_concepts() -> tuple[str, ...]:
+    return (
+        "in-bse-fin:RevenueFromOperations",
+        "in-bse-fin:Income",
+        "in-bse-fin:ProfitBeforeTax",
+        "in-bse-fin:ProfitLossForPeriod",
+        "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+    )
+
+
+def _default_identities() -> tuple[IdentityConfig, ...]:
+    return (
+        IdentityConfig(
+            name="Profit before tax = Total income − Total expenses",
+            lhs_concept="in-bse-fin:ProfitBeforeTax",
+            terms=(
+                IdentityTermConfig(sign=1, concept_qname="in-bse-fin:Income"),
+                IdentityTermConfig(sign=-1, concept_qname="in-bse-fin:Expenses"),
+            ),
+        ),
+        IdentityConfig(
+            name="Profit for the period = Attributable to owners + Non-controlling interests",
+            lhs_concept="in-bse-fin:ProfitLossForPeriod",
+            terms=(
+                IdentityTermConfig(
+                    sign=1, concept_qname="in-bse-fin:ProfitOrLossAttributableToOwnersOfParent"
+                ),
+                IdentityTermConfig(
+                    sign=1,
+                    concept_qname="in-bse-fin:ProfitOrLossAttributableToNonControllingInterests",
+                ),
+            ),
+        ),
+    )
+
+
+class ConceptsConfig(BaseModel):
+    """Per-issuer concept map: roles, aux concepts, cross-checks, and identities."""
+
+    model_config = ConfigDict(frozen=True)
+
+    roles: tuple[RoleConceptConfig, ...] = Field(default_factory=_default_role_concepts)
+    aux: tuple[AuxConceptConfig, ...] = Field(default_factory=_default_aux_concepts)
+    cross_check: tuple[str, ...] = Field(default_factory=_default_cross_check_concepts)
+    identities: tuple[IdentityConfig, ...] = Field(default_factory=_default_identities)
+
+
+def _default_guidance_rules() -> tuple[GuidanceRuleConfig, ...]:
+    labels = {
+        "revenue_growth": "Revenue growth guidance",
+        "operating_margin": "Operating margin guidance",
+    }
+    return tuple(
+        GuidanceRuleConfig(
+            metric=rule.metric,
+            label=labels.get(rule.metric, rule.metric),
+            pattern=rule.pattern,
+            horizon=rule.horizon,
+        )
+        for rule in DEFAULT_GUIDANCE_RULES
+    )
+
+
+class GuidanceConfig(BaseModel):
+    """Per-issuer guidance rules; empty is valid (no numeric guidance disclosed)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rules: tuple[GuidanceRuleConfig, ...] = Field(default_factory=_default_guidance_rules)
+
+
 class FundamentalsConfig(BaseModel):
     """The full, resolved composition-root configuration."""
 
@@ -104,6 +347,9 @@ class FundamentalsConfig(BaseModel):
     transcript_pdf: SourceFileConfig
     xbrl: XbrlConfig
     sec: SecConfig = Field(default_factory=SecConfig)
+    pdf_parse: PdfParseConfig = Field(default_factory=PdfParseConfig)
+    concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
+    guidance: GuidanceConfig = Field(default_factory=GuidanceConfig)
 
     def repo_root(self, config_path: Path) -> Path:
         """Return the repository root given the loaded config file's path."""

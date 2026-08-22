@@ -1,10 +1,16 @@
 """Local rule-based extraction of management guidance ranges.
 
-Management guidance for Infosys Q1 FY25 is stated in the held earnings
-transcript (revenue growth 3%–4% constant currency; operating margin 20%–22%
-for the financial year). This module extracts those ranges deterministically
-from PyMuPDF block text using anchored regular expressions and binds each claim
-to an exact page/block/span quote via :class:`Provenance`.
+Management guidance (e.g. revenue growth 3%–4% constant currency; operating
+margin 20%–22% for the financial year) is stated in a held earnings transcript.
+This module extracts such ranges deterministically from PyMuPDF block text using
+anchored regular expressions and binds each claim to an exact page/block/span
+quote via :class:`Provenance`.
+
+The regex rules are **injected** (per-issuer config, with a general default set),
+never hard-coded here, and extraction is **non-fatal**: a rule that matches no
+block is simply skipped, so an issuer that discloses no numeric guidance yields
+an empty list rather than aborting the pipeline. The renderer surfaces the empty
+case as "no numeric guidance disclosed".
 
 The extraction is entirely local: no model calls, no network, no external
 transmission of any bytes. :func:`resolve_span` re-reads the exact block text at
@@ -32,10 +38,10 @@ _CONSTANT_CURRENCY_MARKER = "constant"
 
 
 class GuidanceExtractionError(RuntimeError):
-    """Raised when an expected guidance range cannot be located in the PDF."""
+    """Raised when a claim's recorded span cannot be resolved for verification."""
 
 
-class _GuidanceRule(BaseModel):
+class GuidanceRule(BaseModel):
     """A deterministic rule mapping a guidance sentence to a typed claim."""
 
     model_config = ConfigDict(frozen=True)
@@ -45,13 +51,15 @@ class _GuidanceRule(BaseModel):
     horizon: str
 
 
-GUIDANCE_RULES: tuple[_GuidanceRule, ...] = (
-    _GuidanceRule(
+# General default rule set (issuer config may override or extend it). These are
+# generic guidance phrasings, not any one filer's literal wording.
+DEFAULT_GUIDANCE_RULES: tuple[GuidanceRule, ...] = (
+    GuidanceRule(
         metric="revenue_growth",
         pattern=r"revenue growth guidance.*?(\d+)% to (\d+)%",
         horizon=FINANCIAL_YEAR_HORIZON,
     ),
-    _GuidanceRule(
+    GuidanceRule(
         metric="operating_margin",
         pattern=r"operating margin guidance.*?(\d+)% to (\d+)%",
         horizon=FINANCIAL_YEAR_HORIZON,
@@ -60,12 +68,15 @@ GUIDANCE_RULES: tuple[_GuidanceRule, ...] = (
 
 
 def _claim_for(
-    rule: _GuidanceRule,
+    rule: GuidanceRule,
     pdf: LoadedPdf,
     *,
     retrieved_at: datetime,
-) -> GuidanceClaim:
-    """Find the first block matching ``rule`` and build an anchored claim."""
+) -> GuidanceClaim | None:
+    """Find the first block matching ``rule`` and build an anchored claim.
+
+    Returns ``None`` when no block matches — guidance extraction is non-fatal.
+    """
     matcher = re.compile(rule.pattern, re.IGNORECASE)
     for page in pdf.pages:
         for block in page.blocks:
@@ -95,20 +106,27 @@ def _claim_for(
                 epistemic_class=EpistemicClass.FORECAST,
                 provenance=provenance,
             )
-    raise GuidanceExtractionError(f"guidance for {rule.metric!r} not found in {pdf.source_id}")
+    return None
 
 
 def extract_guidance_claims(
     pdf: LoadedPdf,
     *,
+    rules: tuple[GuidanceRule, ...] = DEFAULT_GUIDANCE_RULES,
     retrieved_at: datetime,
 ) -> list[GuidanceClaim]:
-    """Extract all configured management-guidance ranges as typed claims.
+    """Extract the configured management-guidance ranges as typed claims.
 
-    Raises :class:`GuidanceExtractionError` if any configured range is missing,
-    so the pipeline fails closed rather than emitting a partial guidance set.
+    Extraction is **non-fatal**: rules that match no block are skipped and, when
+    no rule matches, an empty list is returned. A filer that discloses no numeric
+    guidance therefore does not abort the pipeline.
     """
-    return [_claim_for(rule, pdf, retrieved_at=retrieved_at) for rule in GUIDANCE_RULES]
+    claims: list[GuidanceClaim] = []
+    for rule in rules:
+        claim = _claim_for(rule, pdf, retrieved_at=retrieved_at)
+        if claim is not None:
+            claims.append(claim)
+    return claims
 
 
 def resolve_span(pdf: LoadedPdf, provenance: Provenance) -> str:

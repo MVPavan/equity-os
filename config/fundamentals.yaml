@@ -54,3 +54,17 @@ sec:
   cik: 1067491
   request_timeout_seconds: 30.0
   max_retries: 3
+
+# Per-issuer overrides. Omitted sections fall back to the general Ind-AS
+# (in-bse-fin) defaults defined in src/fundamentals/api/config.py, so Infosys is
+# now one config among many rather than the only supported issuer:
+#   - pdf_parse: statement markers (audited/unaudited/limited-review consolidated),
+#     accepted label variants per line, current-quarter column detected by its
+#     printed header date (not a fixed x-coordinate).
+#   - concepts: role->concept map, auxiliary concepts (non-controlling interest is
+#     OPTIONAL), cross-check concepts, and cross-foot identities (an identity that
+#     references an absent optional concept is skipped, not failed).
+#   - guidance: regex rules for management guidance ranges; a filer that discloses
+#     no numeric guidance simply yields an empty set (non-fatal).
+# A different filer (e.g. a BSE in-capmkt taxonomy) overrides these here without
+# any code change. Infosys uses the defaults, so no override block is required.

@@ -30,11 +30,25 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.api.config import FundamentalsConfig
 from fundamentals.contracts.fact import CanonicalStatus, Fact, ReconciliationStatus
-from fundamentals.contracts.observation import Observation, PeriodType, Scope
+from fundamentals.contracts.guidance_claim import GuidanceClaim
+from fundamentals.contracts.observation import (
+    AccountingFramework,
+    Observation,
+    PeriodType,
+    Scope,
+)
 from fundamentals.contracts.provenance import Provenance
-from fundamentals.extract.guidance_extractor import extract_guidance_claims, resolve_span
-from fundamentals.extract.pdf_number_parser import extract_consolidated_pl
-from fundamentals.extract.xbrl_parser import parse_observations, select_observation
+from fundamentals.extract.guidance_extractor import (
+    GuidanceRule,
+    extract_guidance_claims,
+    resolve_span,
+)
+from fundamentals.extract.pdf_number_parser import PdfParseSpec, extract_consolidated_pl
+from fundamentals.extract.xbrl_parser import (
+    FactSelectionError,
+    parse_observations,
+    select_observation,
+)
 from fundamentals.ingest.pdf_source import LoadedPdf, load_pdf
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
 from fundamentals.output.earnings_update import (
@@ -61,64 +75,13 @@ from fundamentals.verify.quote_anchor import (
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
 
-# --- concept vocabulary (the frozen Q1 oracle) --------------------------------
-
-REVENUE = "in-bse-fin:RevenueFromOperations"
-TOTAL_INCOME = "in-bse-fin:Income"
-TOTAL_EXPENSES = "in-bse-fin:Expenses"
-PROFIT_BEFORE_TAX = "in-bse-fin:ProfitBeforeTax"
-PROFIT_FOR_PERIOD = "in-bse-fin:ProfitLossForPeriod"
-BASIC_EPS = "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
-ATTRIBUTABLE = "in-bse-fin:ProfitOrLossAttributableToOwnersOfParent"
-NCI = "in-bse-fin:ProfitOrLossAttributableToNonControllingInterests"
-
-# The six P&L roles the render requires, mapped to their concept QName.
-_ROLE_CONCEPTS: tuple[tuple[FactRole, str], ...] = (
-    (FactRole.REVENUE, REVENUE),
-    (FactRole.TOTAL_INCOME, TOTAL_INCOME),
-    (FactRole.TOTAL_EXPENSES, TOTAL_EXPENSES),
-    (FactRole.PROFIT_BEFORE_TAX, PROFIT_BEFORE_TAX),
-    (FactRole.PROFIT_FOR_PERIOD, PROFIT_FOR_PERIOD),
-    (FactRole.BASIC_EPS, BASIC_EPS),
-)
-
-# Auxiliary consolidated facts required only to close the cross-foot identities.
-_AUX_CONCEPTS: tuple[str, ...] = (ATTRIBUTABLE, NCI)
-
-# Headline figures independently read from BOTH the XBRL and the results PDF.
-_CROSS_CHECK_CONCEPTS: tuple[str, ...] = (
-    REVENUE,
-    TOTAL_INCOME,
-    PROFIT_BEFORE_TAX,
-    PROFIT_FOR_PERIOD,
-    BASIC_EPS,
-)
-
-# Accounting identities satisfiable from the on-hand consolidated observations.
-_IDENTITIES: tuple[Identity, ...] = (
-    Identity(
-        name="Profit before tax = Total income − Total expenses",
-        lhs_concept=PROFIT_BEFORE_TAX,
-        terms=(
-            SignedTerm(sign=1, concept_qname=TOTAL_INCOME),
-            SignedTerm(sign=-1, concept_qname=TOTAL_EXPENSES),
-        ),
-    ),
-    Identity(
-        name="Profit for the period = Attributable to owners + Non-controlling interests",
-        lhs_concept=PROFIT_FOR_PERIOD,
-        terms=(
-            SignedTerm(sign=1, concept_qname=ATTRIBUTABLE),
-            SignedTerm(sign=1, concept_qname=NCI),
-        ),
-    ),
-)
-
-_GUIDANCE_LABELS: dict[str, str] = {
-    "revenue_growth": "Revenue growth guidance",
-    "operating_margin": "Operating margin guidance",
-}
 _PERCENT_UNIT = "%"
+
+# Render roles whose sourced value the calculations section derives from.
+_REVENUE_ROLE = FactRole.REVENUE
+_TOTAL_INCOME_ROLE = FactRole.TOTAL_INCOME
+_PBT_ROLE = FactRole.PROFIT_BEFORE_TAX
+_PAT_ROLE = FactRole.PROFIT_FOR_PERIOD
 
 
 class PipelineError(RuntimeError):
@@ -170,6 +133,56 @@ def _select_consolidated_quarter(
         period_start=config.quarter.period_start,
         period_end=config.quarter.period_end,
     )
+
+
+def _select_optional(
+    observations: tuple[Observation, ...],
+    concept: str,
+    config: FundamentalsConfig,
+    *,
+    required: bool,
+) -> Observation | None:
+    """Select a consolidated-quarter observation, or ``None`` if optional/absent.
+
+    Required concepts still fail closed on a zero/ambiguous match; only optional
+    concepts (e.g. non-controlling interest for a filer without minority
+    interest) may be missing without aborting the run.
+    """
+    try:
+        return _select_consolidated_quarter(observations, concept, config)
+    except FactSelectionError:
+        if required:
+            raise
+        return None
+
+
+def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
+    """Assemble the PDF-parse spec from per-issuer config + run identity."""
+    return PdfParseSpec(
+        statement_markers=config.pdf_parse.statement_markers,
+        anchor_label=config.pdf_parse.anchor_label,
+        target_lines=config.pdf_parse.target_lines,
+        entity_scheme=config.issuer.entity_scheme,
+        entity_id=config.issuer.nse_symbol,
+        currency=config.pdf_parse.currency,
+        scope=Scope.CONSOLIDATED,
+        accounting_basis=AccountingFramework.IND_AS,
+        period_start=config.quarter.period_start,
+        period_end=config.quarter.period_end,
+        row_band_tolerance_pt=config.pdf_parse.row_band_tolerance_pt,
+        column_x_tolerance_pt=config.pdf_parse.column_x_tolerance_pt,
+        month_names=config.pdf_parse.month_names,
+    )
+
+
+def _claim_range_quote(claim: GuidanceClaim) -> str:
+    """Independent expected quote: the claim's own asserted percentage range.
+
+    Used to actually test the quote anchor — the recorded span must contain the
+    claim's asserted range, so a mis-anchored span fails rather than tautologically
+    re-reading itself.
+    """
+    return f"{claim.lower_bound}% to {claim.upper_bound}%"
 
 
 def _build_fact(
@@ -270,23 +283,45 @@ def run_pipeline(
             retrieved_at=xbrl_input.retrieved_at,
         )
     )
-    pdf_obs = extract_consolidated_pl(results_pdf, retrieved_at=config.quarter.knowledge_cutoff)
+    pdf_obs = extract_consolidated_pl(
+        results_pdf, spec=_pdf_parse_spec(config), retrieved_at=config.quarter.knowledge_cutoff
+    )
     pdf_by_concept = {obs.concept_qname: obs for obs in pdf_obs}
     log.info("sources_parsed", xbrl_observations=len(xbrl_obs), pdf_observations=len(pdf_obs))
 
-    # 3. Select the canonical consolidated-quarter facts (fail closed).
+    # 3. Select the consolidated-quarter facts. Required concepts fail closed;
+    #    optional concepts (e.g. non-controlling interest) may be absent.
     role_obs: dict[FactRole, Observation] = {}
     concept_obs: dict[str, Observation] = {}
-    for role, concept in _ROLE_CONCEPTS:
-        obs = _select_consolidated_quarter(xbrl_obs, concept, config)
-        role_obs[role] = obs
-        concept_obs[concept] = obs
-    for concept in _AUX_CONCEPTS:
-        concept_obs[concept] = _select_consolidated_quarter(xbrl_obs, concept, config)
+    for role_concept in config.concepts.roles:
+        obs = _select_optional(
+            xbrl_obs, role_concept.concept_qname, config, required=role_concept.required
+        )
+        if obs is None:
+            continue
+        role_obs[role_concept.role] = obs
+        concept_obs[role_concept.concept_qname] = obs
+    for aux in config.concepts.aux:
+        obs = _select_optional(xbrl_obs, aux.concept_qname, config, required=aux.required)
+        if obs is not None:
+            concept_obs[aux.concept_qname] = obs
 
-    # 4. Cross-foot the accounting identities (fail closed on any residual).
+    # 4. Cross-foot the accounting identities. An identity that references an
+    #    optional concept the filing omits is skipped, not failed.
     cross_foot_results: list[CrossFootResult] = []
-    for identity in _IDENTITIES:
+    for identity_cfg in config.concepts.identities:
+        referenced = {identity_cfg.lhs_concept, *(t.concept_qname for t in identity_cfg.terms)}
+        if not referenced <= concept_obs.keys():
+            log.info("identity_skipped_optional_absent", identity=identity_cfg.name)
+            continue
+        identity = Identity(
+            name=identity_cfg.name,
+            lhs_concept=identity_cfg.lhs_concept,
+            terms=tuple(
+                SignedTerm(sign=term.sign, concept_qname=term.concept_qname)
+                for term in identity_cfg.terms
+            ),
+        )
         foot_result = check_identity(identity, concept_obs)
         cross_foot_results.append(foot_result)
         if not foot_result.passed:
@@ -299,11 +334,14 @@ def run_pipeline(
     # 5. Cross-check the headline figures against the independent PDF read.
     cross_check_results: list[CrossCheckResult] = []
     confirmed_concepts: set[str] = set()
-    for concept in _CROSS_CHECK_CONCEPTS:
+    for concept in config.concepts.cross_check:
+        xbrl_headline = concept_obs.get(concept)
+        if xbrl_headline is None:
+            continue
         pdf_headline = pdf_by_concept.get(concept)
         if pdf_headline is None:
             raise PipelineError(f"headline concept {concept!r} absent from the results PDF")
-        check_result = cross_check(concept_obs[concept], pdf_headline)
+        check_result = cross_check(xbrl_headline, pdf_headline)
         cross_check_results.append(check_result)
         if not check_result.matched:
             raise PipelineError(
@@ -312,22 +350,30 @@ def run_pipeline(
         confirmed_concepts.add(concept)
     log.info("cross_check_passed", headline_concepts=len(cross_check_results))
 
-    # 6. Extract and quote-anchor management guidance (fail closed).
+    # 6. Extract and quote-anchor management guidance. Extraction is non-fatal
+    #    (no guidance -> empty), but any extracted claim must anchor or fail closed.
+    guidance_rules = tuple(
+        GuidanceRule(metric=rule.metric, pattern=rule.pattern, horizon=rule.horizon)
+        for rule in config.guidance.rules
+    )
+    guidance_labels = {rule.metric: rule.label for rule in config.guidance.rules}
     guidance_claims = extract_guidance_claims(
-        transcript_pdf, retrieved_at=config.quarter.knowledge_cutoff
+        transcript_pdf, rules=guidance_rules, retrieved_at=config.quarter.knowledge_cutoff
     )
     source_document = _source_document(transcript_pdf)
     rendered_guidance: list[RenderedGuidance] = []
     for claim in guidance_claims:
         quote = resolve_span(transcript_pdf, claim.provenance)
-        anchor = verify_quote_anchor(claim, quote, source_document)
+        # Verify against the claim's OWN asserted range (not a re-read of the same
+        # span), so a span that does not actually contain the claim fails closed.
+        anchor = verify_quote_anchor(claim, _claim_range_quote(claim), source_document)
         if not anchor.anchored:
             raise PipelineError(
                 f"guidance quote-anchor failed for {claim.metric!r}: {anchor.reason}"
             )
         rendered_guidance.append(
             RenderedGuidance(
-                metric_label=_GUIDANCE_LABELS.get(claim.metric, claim.metric),
+                metric_label=guidance_labels.get(claim.metric, claim.metric),
                 lower_bound=claim.lower_bound,
                 upper_bound=claim.upper_bound,
                 unit=_PERCENT_UNIT,
@@ -342,7 +388,11 @@ def run_pipeline(
     # 7. Persist every fact append-only; select the XBRL revision canonical.
     stored_revisions: list[StoredRevision] = []
     rendered_facts: list[RenderedFact] = []
-    for role, concept in _ROLE_CONCEPTS:
+    for role_concept in config.concepts.roles:
+        role = role_concept.role
+        concept = role_concept.concept_qname
+        if role not in role_obs:
+            continue
         family = f"{config.quarter.issuer_quarter}:{role.value}"
         xbrl_fact_obs = role_obs[role]
         status = (
@@ -393,7 +443,7 @@ def run_pipeline(
     sec_note = _run_sec_cross_check(config)
 
     # 9. Render the sourced 11-section update (fail closed on missing required fact).
-    calculations = _build_calculations(concept_obs)
+    calculations = _build_calculations(role_obs)
     update = EarningsUpdate(
         issuer_name=config.issuer.name,
         nse_symbol=config.issuer.nse_symbol,
@@ -426,13 +476,13 @@ def run_pipeline(
 
 
 def _build_calculations(
-    concept_obs: dict[str, Observation],
+    role_obs: dict[FactRole, Observation],
 ) -> tuple[RenderedCalculation, ...]:
     """Derive sourced calculations, each traced over stored consolidated facts."""
-    total_income = concept_obs[TOTAL_INCOME].normalized_value
-    revenue = concept_obs[REVENUE].normalized_value
-    pbt = concept_obs[PROFIT_BEFORE_TAX].normalized_value
-    pat = concept_obs[PROFIT_FOR_PERIOD].normalized_value
+    total_income = role_obs[_TOTAL_INCOME_ROLE].normalized_value
+    revenue = role_obs[_REVENUE_ROLE].normalized_value
+    pbt = role_obs[_PBT_ROLE].normalized_value
+    pat = role_obs[_PAT_ROLE].normalized_value
 
     other_income = total_income - revenue
     net_tax = pbt - pat
