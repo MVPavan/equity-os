@@ -82,13 +82,19 @@ DEFAULT_TAXONOMIES: tuple[TaxonomySpec, ...] = (
     ),
 )
 
-CURRENCY_INR = "INR"
 CRORE_SCALE = 10_000_000
 PER_SHARE_SCALE = 1
+DIMENSIONLESS_SCALE = 1
 UNIT_CRORE = "INR crore"
 UNIT_PER_SHARE = "INR per share"
+UNIT_PURE = "pure"
+UNIT_SHARES = "shares"
 
+ISO4217_PREFIX = "iso4217:"
 SHARES_MEASURE_MARKER = "shares"
+PURE_MEASURE = "xbrli:pure"
+SHARES_MEASURE = "xbrli:shares"
+DIVIDE_SEPARATOR = "/"
 # XBRL allows decimals="INF"; represent it with a large finite precision marker.
 INF_DECIMALS = 15
 
@@ -275,16 +281,29 @@ def _file_scope(root: Any, spec: TaxonomySpec) -> Scope:
     raise XbrlParseError(f"unrecognised report nature {text!r}")
 
 
-def _measure_to_unit(measure: str) -> tuple[str, str, int]:
+def _measure_to_unit(measure: str) -> tuple[str | None, str, int]:
     """Map an XBRL unit measure to ``(currency, normalized_unit, scale)``.
 
     Monetary INR amounts are reported in full rupees and normalized to crore;
-    per-share amounts are left at scale 1.
+    a monetary-per-share divide unit (e.g. ``iso4217:INR/xbrli:shares``, EPS in
+    currency terms) is left at scale 1 with the numerator currency. ``xbrli:pure``
+    (dimensionless ratios, per-share EPS reported as a plain ratio, percentages)
+    and a bare ``xbrli:shares`` (share counts) carry no currency and stay at scale
+    1. An unrecognised measure raises so the caller can degrade that single fact to
+    a rejection rather than aborting the whole instance.
     """
-    if SHARES_MEASURE_MARKER in measure:
-        return CURRENCY_INR, UNIT_PER_SHARE, PER_SHARE_SCALE
-    if measure.startswith("iso4217:"):
-        currency = measure.split(":", 1)[1].split("/", 1)[0]
+    if DIVIDE_SEPARATOR in measure:
+        numerator, denominator = measure.split(DIVIDE_SEPARATOR, 1)
+        if numerator.startswith(ISO4217_PREFIX) and SHARES_MEASURE_MARKER in denominator:
+            currency = numerator.split(":", 1)[1]
+            return currency, UNIT_PER_SHARE, PER_SHARE_SCALE
+        raise XbrlParseError(f"unsupported unit measure {measure!r}")
+    if measure == PURE_MEASURE:
+        return None, UNIT_PURE, DIMENSIONLESS_SCALE
+    if measure == SHARES_MEASURE:
+        return None, UNIT_SHARES, DIMENSIONLESS_SCALE
+    if measure.startswith(ISO4217_PREFIX):
+        currency = measure.split(":", 1)[1]
         return currency, UNIT_CRORE, CRORE_SCALE
     raise XbrlParseError(f"unsupported unit measure {measure!r}")
 
@@ -388,7 +407,17 @@ def parse_instance(
 
         measure = units.get(unit_ref)
         if measure is None:
-            raise XbrlParseError(f"fact references unknown unit {unit_ref!r}")
+            # An undefined unit id is a per-fact defect: degrade it (fail closed
+            # only for a required concept) so one bad unitRef never blocks the
+            # whole instance.
+            _reject_or_abort(
+                concept_qname,
+                context_ref,
+                f"references undefined unit {unit_ref!r}",
+                required_concepts,
+                rejections,
+            )
+            continue
 
         raw_value = (element.text or "").strip()
         try:
@@ -403,7 +432,21 @@ def parse_instance(
             )
             continue
 
-        currency, normalized_unit, scale = _measure_to_unit(measure)
+        try:
+            currency, normalized_unit, scale = _measure_to_unit(measure)
+        except XbrlParseError as exc:
+            # An unrecognised unit degrades that single fact to a rejection
+            # (a required concept still fails closed), so one odd unit — e.g. a
+            # never-before-seen measure on a minor line item — cannot abort the
+            # entire instance and drop every other fact with it.
+            _reject_or_abort(
+                concept_qname,
+                context_ref,
+                str(exc),
+                required_concepts,
+                rejections,
+            )
+            continue
         normalized_value = raw_decimal / Decimal(scale)
         context = contexts[context_ref]
 

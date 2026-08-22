@@ -67,7 +67,9 @@ class Observation(BaseModel):
     ``dimensions`` holds explicit XBRL axis/member pairs (empty for the
     segment-free primary context); ``raw_value`` is the lexical value exactly as
     it appeared, and ``normalized_value`` is its decimal reading in
-    ``normalized_unit`` after applying ``scale``.
+    ``normalized_unit`` after applying ``scale``. ``currency`` is ``None`` for a
+    dimensionless value (an ``xbrli:pure`` ratio or an ``xbrli:shares`` count),
+    which then compares only against another currency-free observation.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -92,7 +94,7 @@ class Observation(BaseModel):
     period_instant: date | None = None
 
     unit_ref: str | None = None
-    currency: str
+    currency: str | None = None
     scale: int
     decimals: int
 

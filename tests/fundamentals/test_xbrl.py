@@ -30,6 +30,9 @@ from fundamentals.contracts.observation import Observation, PeriodType, Scope
 from fundamentals.contracts.provenance import SourceAnchorType
 from fundamentals.extract.xbrl_parser import (
     FactSelectionError,
+    ParseResult,
+    XbrlParseError,
+    parse_instance,
     parse_observations,
     select_observation,
 )
@@ -258,6 +261,86 @@ def test_selection_fails_closed_when_period_omitted_is_ambiguous() -> None:
             scope=Scope.CONSOLIDATED,
             period_type=PeriodType.DURATION,
         )
+
+
+# --------------------------------------------------------------------------- #
+# Dimensionless units and per-fact degradation                                #
+# --------------------------------------------------------------------------- #
+#
+# The live 5-stock run surfaced this: Laurus Labs and Titan report EPS/ratio
+# facts under ``xbrli:pure``. The parser used to raise on any non-monetary,
+# non-per-share measure, so a single ``pure`` fact aborted the whole instance
+# and blocked every other fact. These suites pin that ``pure`` and ``shares``
+# now parse, and that an unknown unit degrades to a rejection rather than an
+# abort (still failing closed for a required concept).
+
+DIMENSIONLESS_UNITS = FIXTURES / "synthetic_dimensionless_units.xml"
+
+BASIC_EPS = "in-bse-fin:BasicEPS"
+SHARE_COUNT = "in-bse-fin:NumberOfShares"
+ODD_RATIO = "in-bse-fin:CurrentRatio"
+
+
+def _parse_dimensionless(required_concepts: frozenset[str] = frozenset()) -> ParseResult:
+    xml_bytes = DIMENSIONLESS_UNITS.read_bytes()
+    return parse_instance(
+        xml_bytes,
+        source_id="nse-indas-xbrl-consolidated",
+        file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
+        retrieved_at=_RETRIEVED_AT,
+        required_concepts=required_concepts,
+    )
+
+
+def test_pure_unit_eps_parses_as_dimensionless_ratio() -> None:
+    result = _parse_dimensionless()
+    eps = next(obs for obs in result.observations if obs.concept_qname == BASIC_EPS)
+    assert eps.normalized_value == Decimal("9.28")
+    assert eps.normalized_unit == "pure"
+    assert eps.currency is None  # a pure ratio is not INR crore
+    assert eps.scale == 1
+
+
+def test_shares_unit_parses_as_dimensionless_count() -> None:
+    result = _parse_dimensionless()
+    shares = next(obs for obs in result.observations if obs.concept_qname == SHARE_COUNT)
+    assert shares.normalized_value == Decimal("538900000")
+    assert shares.normalized_unit == "shares"
+    assert shares.currency is None
+    assert shares.scale == 1
+
+
+def test_one_odd_unit_does_not_abort_the_whole_instance() -> None:
+    result = _parse_dimensionless()
+    # The monetary, pure and shares facts all survive despite the odd unit.
+    concepts = {obs.concept_qname for obs in result.observations}
+    assert PROFIT_LOSS_FOR_PERIOD in concepts
+    assert BASIC_EPS in concepts
+    assert SHARE_COUNT in concepts
+    # The odd unit degrades to a single recorded rejection, not an abort.
+    assert ODD_RATIO not in concepts
+    odd_rejections = [rej for rej in result.rejections if rej.concept_qname == ODD_RATIO]
+    assert len(odd_rejections) == 1
+    assert "xbrli:widget" in odd_rejections[0].reason
+
+
+def test_required_concept_with_unparseable_unit_fails_closed() -> None:
+    with pytest.raises(XbrlParseError):
+        _parse_dimensionless(frozenset({ODD_RATIO}))
+
+
+def test_infy_eps_still_parses_as_inr_per_share() -> None:
+    observations = _parse(Q1_CONSOLIDATED, "nse-indas-xbrl-consolidated")
+    eps = _select_quarter(
+        observations,
+        "in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        Q1_START,
+        Q1_END,
+    )
+    assert eps.normalized_value == Decimal("15.38")
+    assert eps.normalized_unit == "INR per share"
+    assert eps.currency == "INR"
+    assert eps.scale == 1
 
 
 # --------------------------------------------------------------------------- #

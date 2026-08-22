@@ -63,7 +63,7 @@ class ComparisonKey(BaseModel):
     period_instant: date | None = None
     scope: Scope
     accounting_basis: AccountingFramework
-    currency: str
+    currency: str | None = None
     unit: str
     scale: int
     dimensions: tuple[tuple[str, str], ...] = ()

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic Ind AS instance exercising dimensionless and unknown units.
+
+  Reproduces the STRUCTURE the live 5-stock run hit: filers such as Laurus Labs
+  and Titan report EPS/ratio facts under xbrli:pure (dimensionless), and small
+  filers report share counts under xbrli:shares. The odd CurrentRatio unit
+  (xbrli:widget) proves an unrecognised unit degrades to a single per-fact
+  rejection instead of aborting the whole instance. Values are illustrative, not
+  real filing figures.
+-->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+
+  <xbrli:context id="OneD">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">LAURUSLABS</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-04-01</xbrli:startDate>
+      <xbrli:endDate>2024-06-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+
+  <xbrli:unit id="INR"><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unit>
+  <xbrli:unit id="PURE"><xbrli:measure>xbrli:pure</xbrli:measure></xbrli:unit>
+  <xbrli:unit id="SHARES"><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unit>
+  <xbrli:unit id="ODD"><xbrli:measure>xbrli:widget</xbrli:measure></xbrli:unit>
+
+  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+
+  <in-bse-fin:ProfitLossForPeriod contextRef="OneD" unitRef="INR" decimals="-7">5000000000.00</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:BasicEPS contextRef="OneD" unitRef="PURE" decimals="2">9.28</in-bse-fin:BasicEPS>
+  <in-bse-fin:NumberOfShares contextRef="OneD" unitRef="SHARES" decimals="0">538900000</in-bse-fin:NumberOfShares>
+  <in-bse-fin:CurrentRatio contextRef="OneD" unitRef="ODD" decimals="2">1.42</in-bse-fin:CurrentRatio>
+</xbrli:xbrl>
