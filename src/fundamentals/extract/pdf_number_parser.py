@@ -25,7 +25,12 @@ issuers plus Infosys:
   (``December 31, 2024`` / two-line ``31st December`` + ``2024``) — never a fixed
   x-coordinate, and the **leftmost** column whose date equals ``period_end`` is
   chosen, so the three-months-ended quarter column is taken rather than the
-  nine-months-ended year-to-date column that shares the same end date.
+  nine-months-ended year-to-date column that shares the same end date. On a combined
+  standalone-and-consolidated table the eligible columns are first confined to the
+  requested scope's block (each date column assigned to the nearer scope
+  super-header), so the leftmost period-end column is the requested scope's quarter,
+  never the other scope's — a filer that prints both side by side no longer yields a
+  standalone value stamped consolidated.
 * The printed monetary unit (``crore`` / ``lakh`` / ``million``) is detected from
   the statement header, glyph-independent (the ``₹`` symbol is frequently mangled
   to ``z`` / ``~`` / ``(`` in the text layer), and every monetary value is scaled
@@ -38,31 +43,24 @@ skip); any other missing page, column, unit marker, or line item raises
 :class:`NumberParseError`. A partial extraction never silently drops a fact.
 
 The primary (text-layer) lane makes no model calls and no network I/O: values are
-reproducible byte-for-byte. A second, optional **OCR lane**
-(:func:`extract_consolidated_pl_via_ocr`) recovers a statement whose text layer is
-glyph-garbled or has a corrupt cell: it renders the page to an image, runs an
-*injected local* :class:`OcrEngine` (nothing is transmitted — no hosted model, no
-upload), rebuilds word geometry from the recognized tokens, and re-runs this same
-extractor with OCR-tolerant label matching. Its two fail-closed guards act at
-different granularities: **per cell**, a recovered token below the OCR confidence
-floor is dropped, so that line fails closed; **per page**, the recovered statement
-must satisfy its own cross-foot identities or the whole page is rejected (a mis-read
-that breaks a computable identity is caught here). A cell that participates in a
-holding identity is thus cross-checked; a cell no identity references (e.g. EPS)
-rests on the confidence floor alone.
+reproducible byte-for-byte. An optional **OCR recovery lane** — for a statement
+whose text layer is glyph-garbled or has a corrupt cell — lives in
+:mod:`fundamentals.extract.pdf_ocr_recovery`: it renders the page, runs an injected
+LOCAL OCR engine (nothing is transmitted), rebuilds word geometry from the
+recognized tokens, and re-runs the geometry/label/column helpers defined here with
+OCR-tolerant matching, failing closed against the statement's own cross-foot
+identities. That module reuses this one's helpers, so both lanes share one
+fail-closed contract.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from pathlib import Path
-from typing import Any, Literal, Protocol
 
-import pymupdf
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.observation import (
@@ -82,18 +80,6 @@ DEFAULT_SUBCOMPONENT_MARKERS: tuple[str, ...] = ("-", "–", "—", "•")
 # Intra-statement residual allowed when validating a summed sub-component total
 # against the statement's own reconciliation identity (crore units).
 DEFAULT_SUMMATION_TOLERANCE = Decimal("0.5")
-# OCR-lane tunables. 300 DPI renders numerals crisply for a local OCR engine; a
-# recovered cell is trusted only above the confidence floor, and the recovered
-# statement must satisfy at least this many of its own cross-foot identities.
-DEFAULT_OCR_DPI = 300
-DEFAULT_OCR_MIN_CONFIDENCE = 0.80
-# At least this many of the statement's own cross-foot identities must be
-# *computable and hold* (and every computable identity must hold — a broken one
-# rejects the page). One holding identity proves the OCR read a coherent statement
-# rather than noise; a fully OCR'd statement typically exercises three.
-DEFAULT_OCR_MIN_IDENTITIES = 1
-DEFAULT_OCR_CROSSFOOT_TOLERANCE = Decimal("0.75")
-_PDF_POINTS_PER_INCH = 72.0
 DEFAULT_MONTH_NAMES: tuple[str, ...] = (
     "January",
     "February",
@@ -125,6 +111,10 @@ _ABBREV_DATE = re.compile(r"^(\d{1,2})[-./]([A-Za-z]{3,})[-./](\d{2,4})$")
 # An OCR text layer drops the spaces of a month-name date ("Dec 31, 2024" ->
 # "Dec31,2024"); the same day/month/year is recovered from the merged token.
 _MERGED_MONTH_DATE = re.compile(r"^([A-Za-z]{3,})\.?(\d{1,2})[,.]?(\d{4})$")
+# A day and year printed as one token beneath a month word ("31,2024" / "31, 2024"),
+# as some filers render the year-row cell for a "December" column; split into the two
+# integers so a month-name column whose day/year merged is still reassembled.
+_DAY_YEAR_TOKEN = re.compile(r"^(\d{1,2})[,.\s]+(\d{4})$")
 _YEAR_MIN = 2000
 _CENTURY = 2000
 _MAX_DAY = 31
@@ -304,106 +294,6 @@ class PdfParseSpec(BaseModel):
     row_band_tolerance_pt: float = DEFAULT_ROW_BAND_TOLERANCE_PT
     column_x_tolerance_pt: float = DEFAULT_COLUMN_X_TOLERANCE_PT
     month_names: tuple[str, ...] = DEFAULT_MONTH_NAMES
-
-
-class OcrToken(BaseModel):
-    """One recognized text region from a local OCR engine: text, box, confidence.
-
-    The box is the axis-aligned bounding box in image pixels; ``confidence`` is the
-    engine's per-region score in ``[0, 1]``. Engine-agnostic so Tesseract (word
-    boxes) or an ONNX PP-OCR engine (line/cell boxes) both map onto it.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    text: str
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-    confidence: float
-
-
-class OcrEngine(Protocol):
-    """A LOCAL, deterministic OCR engine: page-image bytes -> recognized tokens.
-
-    Implementations must run entirely on this machine and transmit nothing — the
-    hard constraint of this lane is that a rendered statement image is never sent to
-    a hosted/remote model. ``recognize`` takes PNG bytes and returns every detected
-    region with its box (image pixels) and confidence.
-    """
-
-    def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:
-        """Recognize text regions in a rendered page image (PNG bytes)."""
-        ...
-
-
-class OcrCrossFootTerm(BaseModel):
-    """One signed addend of an OCR self-consistency identity, matched by label."""
-
-    model_config = ConfigDict(frozen=True)
-
-    sign: Literal[-1, 1]
-    labels: tuple[str, ...]
-
-
-class OcrCrossFootIdentity(BaseModel):
-    """An intra-statement identity ``lhs == sum(sign * term)`` used to gate OCR.
-
-    Labels are matched on the OCR'd rows with the OCR-tolerant (concatenated) mode;
-    an identity is *computable* only when its lhs and every term resolve to a
-    current-quarter value, and it *holds* when the residual is within tolerance.
-    Acceptance requires enough computable identities to hold — see
-    :func:`extract_consolidated_pl_via_ocr`.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    lhs_labels: tuple[str, ...]
-    terms: tuple[OcrCrossFootTerm, ...]
-
-
-# Universal SEBI Ind-AS consolidated identities that survive the associate /
-# exceptional-item structural variation (unlike a rigid "income-expenses=PBT=PAT"
-# chain). Each is checked only when every label resolves on the OCR'd page.
-DEFAULT_OCR_CROSSFOOT: tuple[OcrCrossFootIdentity, ...] = (
-    OcrCrossFootIdentity(
-        name="Total income = Revenue from operations + Other income",
-        lhs_labels=("Total income",),
-        terms=(
-            OcrCrossFootTerm(sign=1, labels=("Revenue from operations",)),
-            OcrCrossFootTerm(sign=1, labels=("Other income",)),
-        ),
-    ),
-    OcrCrossFootIdentity(
-        # The first "Profit before ..." line after expenses is always income minus
-        # expenses (before any associate/exceptional item), whatever its exact
-        # wording — so this holds across layouts that differ only in that middle.
-        name="First profit subtotal = Total income - Total expenses",
-        lhs_labels=("Profit before",),
-        terms=(
-            OcrCrossFootTerm(sign=1, labels=("Total income",)),
-            OcrCrossFootTerm(sign=-1, labels=("Total expenses",)),
-        ),
-    ),
-    OcrCrossFootIdentity(
-        name="Total comprehensive income = Net profit for the period + Total OCI",
-        lhs_labels=("Total comprehensive income for the period", "Total comprehensive income"),
-        terms=(
-            OcrCrossFootTerm(sign=1, labels=("Net profit for the period", "Profit for the period")),
-            OcrCrossFootTerm(sign=1, labels=("Total other comprehensive income",)),
-        ),
-    ),
-    OcrCrossFootIdentity(
-        name="Net profit = attributable to owners + non-controlling interests",
-        lhs_labels=("Net profit for the period", "Profit for the period"),
-        terms=(
-            OcrCrossFootTerm(sign=1, labels=("Equity holders", "Owners of the")),
-            OcrCrossFootTerm(sign=1, labels=("Non-controlling interests", "controlling interests")),
-        ),
-    ),
-)
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -618,12 +508,16 @@ def _is_header_date_band(band: list[PageWord], month_names: tuple[str, ...]) -> 
 def _header_date_columns(
     header_words: tuple[PageWord, ...], spec: PdfParseSpec
 ) -> list[tuple[float, date]]:
-    """Return ``(x0, date)`` for every column-date cell in the header region.
+    """Return ``(x_center, date)`` for every column-date cell in the header region.
 
-    Single-token dates are read directly; multi-token and two-line month-name
-    dates (``December 31, 2024`` / ``31st December`` above ``2024``) are
-    reassembled by gathering the day and year within the column tolerance of the
-    month token. Prose title bands are excluded so a title date is not counted.
+    The x is the date cell's horizontal **centre** (not its left edge): financial
+    tables right-align figures, so matching a value cell's centre to the column's
+    date centre keeps cells of different widths (a wide ``1,011.95`` and a short
+    ``0.51`` in the same column) bound to the right column. Single-token dates are
+    read directly; multi-token and two-line month-name dates (``December 31, 2024``
+    / ``31st December`` above ``2024``) are reassembled by gathering the day and year
+    within the column tolerance of the month token. Prose title bands are excluded so
+    a title date is not counted.
     """
     bands = [
         band
@@ -635,26 +529,45 @@ def _header_date_columns(
     for word in eligible:
         parsed = _parse_date_token(word.text, spec.month_names)
         if parsed is not None:
-            columns.append((word.x0, parsed))
+            columns.append(((word.x0 + word.x1) / 2, parsed))
     columns.extend(_month_name_columns(eligible, spec))
     return columns
+
+
+def _header_integers(eligible: tuple[PageWord, ...]) -> list[tuple[float, int]]:
+    """Return ``(x0, value)`` for every integer usable as a date's day or year.
+
+    A plain integer token contributes itself; a token that merges the day and year
+    of one column into ``"31,2024"`` (as some filers render the year row) contributes
+    both integers at that x, so a month-name column whose day/year merged is still
+    reassembled by :func:`_month_name_columns`.
+    """
+    integers: list[tuple[float, int]] = []
+    for word in eligible:
+        text = _strip_ordinals(word.text.strip().strip(","))
+        if text.isdigit():
+            integers.append((word.x0, int(text)))
+            continue
+        merged = _DAY_YEAR_TOKEN.match(word.text.strip())
+        if merged is not None:
+            integers.append((word.x0, int(merged[1])))
+            integers.append((word.x0, int(merged[2])))
+    return integers
 
 
 def _month_name_columns(
     eligible: tuple[PageWord, ...], spec: PdfParseSpec
 ) -> list[tuple[float, date]]:
-    """Reassemble multi-token / multi-line month-name dates into ``(x0, date)``.
+    """Reassemble multi-token / multi-line month-name dates into ``(x_center, date)``.
 
     Within one column the month, day, and year share an x even when they print on
     different header lines (``June 30,`` above ``2024``, or a ``Particulars`` row
     between them), so the day and year for a month token are the integer tokens
-    nearest it in x within the column tolerance — never matched across columns.
+    nearest it in x within the column tolerance — never matched across columns. The
+    returned x is the month word's centre (see :func:`_header_date_columns`), which
+    tracks the value column better than its left edge.
     """
-    integers = [
-        (word.x0, int(_strip_ordinals(word.text.strip().strip(","))))
-        for word in eligible
-        if _strip_ordinals(word.text.strip().strip(",")).isdigit()
-    ]
+    integers = _header_integers(eligible)
     columns: list[tuple[float, date]] = []
     for anchor in eligible:
         month = _month_index(anchor.text.strip().strip(","), spec.month_names)
@@ -670,8 +583,72 @@ def _month_name_columns(
         if day is not None and year is not None:
             built = _safe_date(year, month, day)
             if built is not None:
-                columns.append((anchor.x0, built))
+                columns.append(((anchor.x0 + anchor.x1) / 2, built))
     return columns
+
+
+def _alternate_scope_word(spec: PdfParseSpec) -> str:
+    """The scope word that marks the *other* scope's section on a combined page."""
+    return "standalone" if spec.scope is Scope.CONSOLIDATED else "consolidated"
+
+
+def _band_has_title_marker(band: list[PageWord]) -> bool:
+    """Whether a band carries a statement-title word (so it is a title, not a header)."""
+    return any(
+        token in _TITLE_MARKER_WORDS for word in band for token in _normalize_tokens(word.text)
+    )
+
+
+def _scope_header_centers(
+    header_words: tuple[PageWord, ...], spec: PdfParseSpec
+) -> tuple[list[float], list[float]]:
+    """Return (requested-scope, alternate-scope) super-header x-centres.
+
+    On a combined page the two scope words print as spread-out super-headers, each
+    centred over its column group, in a band that carries no statement-title words.
+    The title sentence (which also names both scopes) is excluded via the title
+    markers, so only the true super-header positions are returned. Two empty lists
+    mean the page is single-scope (one scope word, or none outside the title) — the
+    signal the caller uses to leave column selection unconfined.
+    """
+    requested = spec.scope_marker.lower()
+    alternate = _alternate_scope_word(spec)
+    requested_centers: list[float] = []
+    alternate_centers: list[float] = []
+    for band in _band_rows(header_words, spec.row_band_tolerance_pt):
+        if _band_has_title_marker(band):
+            continue
+        for word in band:
+            lowered = word.text.lower()
+            center = (word.x0 + word.x1) / 2.0
+            if requested in lowered:
+                requested_centers.append(center)
+            elif alternate in lowered:
+                alternate_centers.append(center)
+    return requested_centers, alternate_centers
+
+
+def _confine_to_scope_block(
+    columns: list[tuple[float, date]], header_words: tuple[PageWord, ...], spec: PdfParseSpec
+) -> list[tuple[float, date]]:
+    """Restrict date columns to the requested scope's block on a combined table.
+
+    A combined statement prints a standalone and a consolidated column group side by
+    side under spread-out scope super-headers. Keeping every period-end match would
+    let the leftmost (standalone) column win for a consolidated request; instead each
+    date column is assigned to whichever scope super-header is horizontally nearer,
+    and only the requested scope's columns are kept. A single-scope page (no
+    alternate-scope super-header) is returned unchanged. Fails closed (empty) when a
+    combined table is detected but no column lands in the requested block.
+    """
+    requested_centers, alternate_centers = _scope_header_centers(header_words, spec)
+    if not requested_centers or not alternate_centers:
+        return columns
+    requested_center = sum(requested_centers) / len(requested_centers)
+    alternate_center = sum(alternate_centers) / len(alternate_centers)
+    return [
+        (x, when) for x, when in columns if abs(x - requested_center) <= abs(x - alternate_center)
+    ]
 
 
 def _current_column_center(header_words: tuple[PageWord, ...], spec: PdfParseSpec) -> float:
@@ -679,13 +656,14 @@ def _current_column_center(header_words: tuple[PageWord, ...], spec: PdfParseSpe
 
     The current quarter is a three-month period ending at ``period_end``; that end
     date is printed both for the quarter column and, again, for the nine-months
-    year-to-date column. The **leftmost** column whose header date equals
-    ``period_end`` is the three-months-ended quarter column (SEBI orders the
-    quarter block before the year-to-date block). Fails closed when no header date
-    resolves to ``period_end``.
+    year-to-date column. On a combined standalone-and-consolidated table the eligible
+    columns are first confined to the requested scope's block, then the **leftmost**
+    column whose header date equals ``period_end`` is the three-months-ended quarter
+    column (SEBI orders the quarter block before the year-to-date block). Fails closed
+    when no header date in the requested scope resolves to ``period_end``.
     """
-    columns = _header_date_columns(header_words, spec)
-    matching = [x0 for x0, when in columns if when == spec.period_end]
+    columns = _confine_to_scope_block(_header_date_columns(header_words, spec), header_words, spec)
+    matching = [x for x, when in columns if when == spec.period_end]
     if not matching:
         raise NumberParseError(
             f"current-quarter column (period end {spec.period_end.isoformat()}) "
@@ -695,11 +673,18 @@ def _current_column_center(header_words: tuple[PageWord, ...], spec: PdfParseSpe
 
 
 def _column_value(row: list[PageWord], center: float, tolerance_pt: float) -> PageWord | None:
-    """Return the numeric cell of a row aligned under ``center`` (or ``None``)."""
+    """Return the numeric cell whose horizontal centre is nearest ``center`` (or ``None``).
+
+    Matching on the cell **centre** rather than its left edge tracks a right-aligned
+    money column correctly: a narrow cell (an EPS ``0.51``) and a wide cell
+    (``1,011.95``) in the same column share a centre near the column's header-date
+    centre, so a short cell no longer drifts to a neighbouring column's value. The
+    nearest qualifying cell within ``tolerance_pt`` wins.
+    """
     candidates = [
-        (abs(word.x0 - center), word)
+        (abs((word.x0 + word.x1) / 2 - center), word)
         for word in _numeric_cells(row)
-        if abs(word.x0 - center) <= tolerance_pt
+        if abs((word.x0 + word.x1) / 2 - center) <= tolerance_pt
     ]
     if not candidates:
         return None
@@ -1120,257 +1105,3 @@ def _parse_number_or_none(token: str) -> Decimal | None:
         return _parse_number(token)
     except InvalidOperation:
         return None
-
-
-# --- OCR lane: recover a garbled/OCR-only consolidated statement ----------------
-#
-# When a filer's consolidated P&L text layer is glyph-garbled (labels and/or
-# values unreadable) or a single cell is corrupt, the deterministic text lane
-# fails closed. This lane renders the identified statement page to an image,
-# runs a LOCAL OCR engine, rebuilds word geometry from the recognized tokens, and
-# re-runs the SAME band-row/label/column extractor over them. It never uploads the
-# image anywhere, and it accepts a recovered value only when (1) the OCR token
-# clears a confidence floor and (2) the recovered statement satisfies its own
-# cross-foot identities — so a mis-read digit fails closed rather than passing.
-
-
-def render_page_image(pdf_path: Path, page_number: int, *, dpi: int = DEFAULT_OCR_DPI) -> bytes:
-    """Render one 1-based page of a held PDF to PNG bytes, entirely locally."""
-    document: Any = pymupdf.open(str(pdf_path))  # type: ignore[no-untyped-call]
-    try:
-        page = document[page_number - 1]
-        pixmap = page.get_pixmap(dpi=dpi)
-        payload: bytes = pixmap.tobytes("png")
-    finally:
-        document.close()
-    return payload
-
-
-def _ocr_words_from_tokens(
-    tokens: Sequence[OcrToken], *, dpi: int, confidence_threshold: float
-) -> tuple[PageWord, ...]:
-    """Convert confident OCR tokens into PDF-point word geometry for the extractor.
-
-    Sub-threshold tokens are dropped (an unreadable cell then fails closed rather
-    than contributing a guess), and pixel boxes are scaled back to PDF points so
-    the existing point tolerances apply unchanged.
-    """
-    scale = dpi / _PDF_POINTS_PER_INCH
-    words: list[PageWord] = []
-    for index, token in enumerate(tokens):
-        if token.confidence < confidence_threshold:
-            continue
-        text = token.text.strip()
-        if not text:
-            continue
-        words.append(
-            PageWord(
-                x0=token.x0 / scale,
-                y0=token.y0 / scale,
-                x1=token.x1 / scale,
-                y1=token.y1 / scale,
-                text=text,
-                block=0,
-                line=0,
-                word_no=index,
-            )
-        )
-    return tuple(words)
-
-
-def _scope_bounded_rows(rows: list[list[PageWord]], spec: PdfParseSpec) -> list[list[PageWord]]:
-    """Trim rows at the alternate-scope section so a combined page stays in scope.
-
-    A single page often prints the consolidated statement above the standalone one;
-    cutting at the first alternate-scope marker ("standalone" for a consolidated
-    request) keeps extraction (which takes the first matching row) inside the
-    requested scope. This handles the common consolidated-first layout; a
-    standalone-first page would be trimmed to nothing and recover no consolidated
-    line — a fail-closed miss, never a wrong-scope value.
-    """
-    other_word = "standalone" if spec.scope is Scope.CONSOLIDATED else "consolidated"
-    end = _first_index(rows, lambda row: other_word in _row_label(row).lower())
-    return rows if end is None else rows[:end]
-
-
-def _ocr_header_words(
-    words: tuple[PageWord, ...], rows: list[list[PageWord]], spec: PdfParseSpec
-) -> tuple[PageWord, ...]:
-    """Return the words above (and including) the column-date band as the header.
-
-    The OCR text layer lacks a clean anchor label, so the header/value boundary is
-    the first row carrying two or more parseable column dates; unit detection and
-    current-column location then run over the header just as on the text lane.
-    """
-    split_y: float | None = None
-    for row in rows:
-        dated = sum(1 for word in row if _parse_date_token(word.text, spec.month_names) is not None)
-        if dated >= 2:
-            split_y = max(word.y1 for word in row)
-            break
-    if split_y is None:
-        return words
-    return tuple(word for word in words if word.y0 <= split_y)
-
-
-def _row_value_by_label(
-    rows: list[list[PageWord]],
-    labels: tuple[str, ...],
-    center: float,
-    spec: PdfParseSpec,
-    match_mode: LabelMatch,
-) -> Decimal | None:
-    """First current-quarter value on a row matching any of ``labels``, else ``None``."""
-    for row in rows:
-        if not _label_has_any(_row_label(row), labels, match_mode):
-            continue
-        value_word = _column_value(row, center, spec.column_x_tolerance_pt)
-        if value_word is not None:
-            parsed = _parse_number_or_none(value_word.text)
-            if parsed is not None:
-                return parsed
-    return None
-
-
-def _ocr_self_consistent(
-    rows: list[list[PageWord]],
-    *,
-    center: float,
-    unit_factor: Decimal,
-    spec: PdfParseSpec,
-    identities: tuple[OcrCrossFootIdentity, ...],
-    tolerance: Decimal,
-    min_identities: int,
-) -> bool:
-    """Whether the OCR'd current-quarter column satisfies enough of its own identities.
-
-    Each identity is evaluated only when its lhs and all terms resolve to a
-    current-quarter value. A computable identity whose residual exceeds tolerance
-    rejects the whole page (a mis-read digit shows up as a broken identity);
-    acceptance needs at least ``min_identities`` computable identities to hold, so a
-    page that cannot be self-validated fails closed.
-    """
-    holding = 0
-    for identity in identities:
-        lhs = _row_value_by_label(rows, identity.lhs_labels, center, spec, LabelMatch.CONCATENATED)
-        if lhs is None:
-            continue
-        rhs = Decimal(0)
-        resolved = True
-        for term in identity.terms:
-            value = _row_value_by_label(rows, term.labels, center, spec, LabelMatch.CONCATENATED)
-            if value is None:
-                resolved = False
-                break
-            rhs += Decimal(term.sign) * value
-        if not resolved:
-            continue
-        if abs((lhs - rhs) * unit_factor) > tolerance:
-            return False
-        holding += 1
-    return holding >= min_identities
-
-
-def _locate_ocr_page(pdf: LoadedPdf, spec: PdfParseSpec) -> int | None:
-    """Pick the page to OCR: the clean text-layer match, else the detailed P&L page.
-
-    When the text layer is clean enough, its located statement page is reused. When
-    it is too garbled for :func:`_find_statement_page` (the case this lane exists
-    for), the fallback is the numeric-densest page that prints both an income and an
-    expenses section — the detailed P&L — regardless of the garble in its labels.
-    """
-    try:
-        return _find_statement_page(pdf, spec).page_number
-    except ConsolidatedStatementNotFoundError:
-        pass
-    best_page: int | None = None
-    best_numeric = 0
-    for page in pdf.pages:
-        lowered = page.text.lower()
-        if "expens" not in lowered or "income" not in lowered:
-            continue
-        numeric = sum(1 for word in page.words if _NUMERIC_TOKEN.match(word.text))
-        if numeric > best_numeric:
-            best_numeric = numeric
-            best_page = page.page_number
-    return best_page
-
-
-def extract_consolidated_pl_via_ocr(
-    pdf: LoadedPdf,
-    pdf_path: Path,
-    *,
-    spec: PdfParseSpec,
-    ocr_engine: OcrEngine,
-    retrieved_at: datetime,
-    dpi: int = DEFAULT_OCR_DPI,
-    min_confidence: float = DEFAULT_OCR_MIN_CONFIDENCE,
-    crossfoot_identities: tuple[OcrCrossFootIdentity, ...] = DEFAULT_OCR_CROSSFOOT,
-    min_identities: int = DEFAULT_OCR_MIN_IDENTITIES,
-    crossfoot_tolerance: Decimal = DEFAULT_OCR_CROSSFOOT_TOLERANCE,
-    require_all: bool = False,
-) -> list[Observation]:
-    """Recover a garbled consolidated P&L by local OCR, or fail closed.
-
-    Renders the identified statement page, runs the injected LOCAL ``ocr_engine``,
-    rebuilds word geometry from the confident tokens, and re-runs the deterministic
-    extractor with OCR-tolerant (concatenated) label matching. Returns ``[]``
-    (fail closed) when the page cannot be located/OCR'd, when the header (unit or
-    current-quarter column) is unrecoverable, or when the recovered statement does
-    not satisfy enough of its own cross-foot identities. Nothing is transmitted:
-    the rendered image never leaves this process.
-
-    The gates act at two granularities (see the module docstring): sub-confidence
-    cells are dropped per cell, and the cross-foot check validates the page as a
-    whole — a monetary cell not referenced by any holding identity (and EPS, which
-    no identity references) is trusted on the confidence floor, not cross-footed.
-    """
-    page_number = _locate_ocr_page(pdf, spec)
-    if page_number is None:
-        return []
-    image_png = render_page_image(pdf_path, page_number, dpi=dpi)
-    tokens = ocr_engine.recognize(image_png)
-    words = _ocr_words_from_tokens(tokens, dpi=dpi, confidence_threshold=min_confidence)
-    if not words:
-        return []
-
-    synthetic_page = PdfPage(
-        page_number=page_number,
-        text=" ".join(word.text for word in words),
-        words=words,
-        blocks=(),
-    )
-    synthetic_pdf = LoadedPdf(
-        source_id=pdf.source_id,
-        file_sha256=pdf.file_sha256,
-        page_count=pdf.page_count,
-        pages=(synthetic_page,),
-    )
-    rows = _scope_bounded_rows(_band_rows(words, spec.row_band_tolerance_pt), spec)
-    header_words = _ocr_header_words(words, rows, spec)
-    try:
-        unit_factor = _detect_unit_factor(header_words)
-        center = _current_column_center(header_words, spec)
-    except NumberParseError:
-        return []
-    if not _ocr_self_consistent(
-        rows,
-        center=center,
-        unit_factor=unit_factor,
-        spec=spec,
-        identities=crossfoot_identities,
-        tolerance=crossfoot_tolerance,
-        min_identities=min_identities,
-    ):
-        return []
-    return _extract_lines(
-        rows,
-        center=center,
-        unit_factor=unit_factor,
-        page=synthetic_page,
-        pdf=synthetic_pdf,
-        spec=spec,
-        retrieved_at=retrieved_at,
-        require_all=require_all,
-        match_mode=LabelMatch.CONCATENATED,
-    )

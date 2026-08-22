@@ -14,14 +14,16 @@ so the default suite stays offline and deterministic.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pymupdf
 import pytest
 
-from fundamentals.api.config import ConceptsConfig
+from fundamentals.api.config import ConceptsConfig, SourceFileConfig
 from fundamentals.api.goal_runner import (
     CollectedSource,
     QuarterMode,
@@ -29,6 +31,7 @@ from fundamentals.api.goal_runner import (
     SourceKind,
     SourceStatus,
     StockOutcome,
+    _collect_pdf,
     reconcile_stock,
     run_stock,
 )
@@ -46,6 +49,8 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.extract.pdf_ocr_recovery import DEFAULT_OCR_DPI
+from fundamentals.ingest.ocr_engine import OcrEngineUnavailableError, OcrToken
 from fundamentals.reconcile.agreement import AgreementStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -508,3 +513,263 @@ def test_live_single_stock_validation(tmp_path: Path) -> None:  # pragma: no cov
     )
     assert report.symbol == stock.symbol
     assert report.outcome in set(StockOutcome)
+
+
+# --- PDF OCR recovery wired into the goal runner (Task 2) -----------------------
+#
+# The deterministic tests drive the PDF collection with a FAKE local OCR engine (no
+# engine dependency, no bytes leaving the process): a garbled statement recovers, a
+# missing concept is filled while the text lane wins on concepts it already read, an
+# unavailable extra fails closed, and a complete text lane never invokes OCR.
+
+INCOME = "in-bse-fin:Income"
+PBT = "in-bse-fin:ProfitBeforeTax"
+
+_OCR_SCALE = DEFAULT_OCR_DPI / 72.0
+
+
+def _tok(
+    text: str, x_pt: float, y_pt: float, *, conf: float = 0.97, w_pt: float = 40.0
+) -> OcrToken:
+    """One OCR token at a point position, converted to the image pixels the lane expects."""
+    return OcrToken(
+        text=text,
+        x0=x_pt * _OCR_SCALE,
+        y0=y_pt * _OCR_SCALE,
+        x1=(x_pt + w_pt) * _OCR_SCALE,
+        y1=(y_pt + 8.0) * _OCR_SCALE,
+        confidence=conf,
+    )
+
+
+def _self_consistent_tokens(*, total_income: str = "1050.00") -> tuple[OcrToken, ...]:
+    """Tokens for a self-consistent consolidated statement (cross-foot identities hold)."""
+    tokens: list[OcrToken] = [
+        _tok("(Rs. in Crore)", 60.0, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Dec31,2024", 240.0, 90.0),
+        _tok("Dec31,2023", 340.0, 90.0),
+    ]
+    body: tuple[tuple[str, str], ...] = (
+        ("Revenue from operations", "1000.00"),
+        ("Other income", "50.00"),
+        ("Total income", total_income),
+        ("Total expenses", "800.00"),
+        ("Profit before tax", "250.00"),
+        ("Total tax expense", "60.00"),
+        ("Net profit for the period", "190.00"),
+        ("Total other comprehensive income", "10.00"),
+        ("Total comprehensive income for the period", "200.00"),
+        ("Basic", "5.00"),
+    )
+    y = 120.0
+    for label, value in body:
+        tokens.append(_tok(label, 60.0, y, w_pt=len(label) * 4.0))
+        tokens.append(_tok(value, 240.0, y))
+        tokens.append(_tok("0.00", 340.0, y))
+        y += 15.0
+    return tuple(tokens)
+
+
+class _FakeOcrEngine:
+    """Deterministic OCR engine that returns fixed tokens, ignoring the image bytes."""
+
+    def __init__(self, tokens: tuple[OcrToken, ...]) -> None:
+        self._tokens = tokens
+
+    def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:  # noqa: ARG002 - fixed tokens
+        return self._tokens
+
+
+class _UnavailableOcrEngine:
+    """Simulates a missing ``ocr`` extra: fails closed when the lane actually uses it."""
+
+    def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:  # noqa: ARG002 - always raises
+        raise OcrEngineUnavailableError("ocr extra not installed")
+
+
+class _SpyOcrEngine:
+    """Records invocations so a complete text lane can be proven never to render/OCR."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:  # noqa: ARG002 - counted
+        self.calls += 1
+        return ()
+
+
+def _write_pl_pdf(path: Path, *, split_revenue: bool = False) -> str:
+    """Write a clean SEBI consolidated statement PDF; ``split_revenue`` drops the total."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text(
+        (60, 80),
+        "STATEMENT OF CONSOLIDATED UNAUDITED FINANCIAL RESULTS "
+        "FOR THE QUARTER ENDED 31 DECEMBER 2024",
+        fontsize=9,
+    )
+    page.insert_text((60, 100), "(Rs. in crore)", fontsize=9)
+    page.insert_text((250, 140), "31-12-2024", fontsize=9)
+    page.insert_text((320, 140), "31-12-2023", fontsize=9)
+
+    def row(y: float, label: str, value: str | None) -> None:
+        page.insert_text((60, y), label, fontsize=9)
+        if value is not None:
+            page.insert_text((250, y), value, fontsize=9)
+            page.insert_text((320, y), "0", fontsize=9)
+
+    if split_revenue:
+        row(170, "Revenue from operations", None)
+        row(185, "- Sale of products", "960")
+    else:
+        row(170, "Revenue from operations", "1000")
+    row(205, "Total income", "1010")
+    row(225, "Profit before tax", "200")
+    row(245, "Profit for the period", "150")
+    row(275, "Basic", "5.00")
+    doc.save(str(path))
+    doc.close()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_garbled_pdf(path: Path) -> str:
+    """Write a P&L-shaped page whose consolidated text layer is too garbled to parse."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((60, 60), "Statement of unaudited financial results", fontsize=9)
+    page.insert_text((60, 75), "Consolidut<-d", fontsize=9)
+    page.insert_text((60, 95), "1 Income:", fontsize=9)
+    page.insert_text((60, 110), "Rc,·cnue from opcrations 999.00", fontsize=9)
+    page.insert_text((60, 125), "2 Expenses:", fontsize=9)
+    page.insert_text((60, 140), "Total expcrucs 888.00", fontsize=9)
+    doc.save(str(path))
+    doc.close()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _pdf_ocr_stock(path: Path, sha: str) -> StockConfig:
+    """A stock whose only source is a results PDF at ``path`` for the reviewed quarter."""
+    return StockConfig(
+        name="Synthetic OCR Corp",
+        domain="Test",
+        identifiers=SourceIdentifiers(
+            nse_symbol="SYNTH",
+            bse_scrip="999999",
+            screener_slug="SYNTH",
+            tijori_slug="synthetic-ocr-corp",
+        ),
+        quarter=StockQuarter(
+            label="Q3FY25",
+            period_start=_PERIOD_START,
+            period_end=_PERIOD_END,
+            knowledge_cutoff=_KNOWLEDGE_CUTOFF,
+        ),
+        results_pdf=SourceFileConfig(
+            source_id="bse-results-pdf", filename="results.pdf", sha256=sha
+        ),
+        fixtures=FixturePaths(results_pdf=str(path)),
+    )
+
+
+def _collect(path: Path, sha: str, engine: object) -> CollectedSource:
+    """Collect the PDF source through the goal runner's fixture path with an injected engine."""
+    return _collect_pdf(
+        _pdf_ocr_stock(path, sha),
+        RunMode.FIXTURE,
+        _REPO_ROOT,
+        _KNOWLEDGE_CUTOFF,
+        ocr_engine=engine,  # type: ignore[arg-type]
+    )
+
+
+def _obs_by_concept(source: CollectedSource) -> dict[str, Decimal]:
+    return {obs.concept_qname: obs.normalized_value for obs in source.observations}
+
+
+def test_pdf_ocr_recovers_garbled_statement_via_injected_engine(tmp_path: Path) -> None:
+    # THERMAX-like garbled text layer fails the deterministic lane closed; the injected
+    # (fake) local OCR engine recovers a self-consistent statement, so the PDF source is OK.
+    pdf = tmp_path / "results.pdf"
+    sha = _write_garbled_pdf(pdf)
+    source = _collect(pdf, sha, _FakeOcrEngine(_self_consistent_tokens()))
+    assert source.status is SourceStatus.OK
+    got = _obs_by_concept(source)
+    assert got[REVENUE] == Decimal("1000.00")
+    assert got[INCOME] == Decimal("1050.00")
+    assert got[PAT] == Decimal("190.00")
+    assert got[EPS] == Decimal("5.00")
+
+
+def test_pdf_ocr_fills_only_missing_concepts_text_lane_wins(tmp_path: Path) -> None:
+    # Text lane reads income/PBT/PFP/EPS but not the split revenue; OCR fills revenue.
+    # The OCR total-income (1050) must NOT overwrite the text-lane total-income (1010).
+    pdf = tmp_path / "results.pdf"
+    sha = _write_pl_pdf(pdf, split_revenue=True)
+    source = _collect(pdf, sha, _FakeOcrEngine(_self_consistent_tokens(total_income="1050.00")))
+    assert source.status is SourceStatus.OK
+    got = _obs_by_concept(source)
+    assert got[REVENUE] == Decimal("1000.00")  # filled from OCR (text lane lacked it)
+    assert got[INCOME] == Decimal("1010")  # text lane wins on a concept it already read
+    assert got[PBT] == Decimal("200")
+
+
+def test_pdf_ocr_unavailable_keeps_text_lane_fail_closed(tmp_path: Path) -> None:
+    # The ``ocr`` extra is absent: the coverage gap is left unfilled rather than
+    # fabricated, and the text-lane facts still stand (source OK, revenue simply absent).
+    pdf = tmp_path / "results.pdf"
+    sha = _write_pl_pdf(pdf, split_revenue=True)
+    source = _collect(pdf, sha, _UnavailableOcrEngine())
+    assert source.status is SourceStatus.OK
+    got = _obs_by_concept(source)
+    assert REVENUE not in got
+    assert got[INCOME] == Decimal("1010")
+
+
+def test_complete_text_lane_never_invokes_ocr(tmp_path: Path) -> None:
+    # When the text lane already covers every target concept, OCR is never rendered or
+    # recognized (no needless work, no regression risk).
+    pdf = tmp_path / "results.pdf"
+    sha = _write_pl_pdf(pdf)
+    spy = _SpyOcrEngine()
+    source = _collect(pdf, sha, spy)
+    assert source.status is SourceStatus.OK
+    assert spy.calls == 0
+    assert set(_obs_by_concept(source)) == {REVENUE, INCOME, PBT, PAT, EPS}
+
+
+def test_fixture_mode_without_engine_runs_no_ocr(tmp_path: Path) -> None:
+    # Default fixture collection (no injected engine) stays deterministic: a split
+    # revenue with no OCR simply remains missing, never fabricated.
+    pdf = tmp_path / "results.pdf"
+    sha = _write_pl_pdf(pdf, split_revenue=True)
+    source = _collect(pdf, sha, None)
+    assert source.status is SourceStatus.OK
+    assert REVENUE not in _obs_by_concept(source)
+
+
+def _thermax_results_pdf() -> Path | None:
+    matches = sorted(Path("data/raw/watchlist/thermax/bse_pdf").glob("*.pdf"))
+    return matches[0] if matches else None
+
+
+def test_collect_pdf_recovers_thermax_with_real_local_engine() -> None:
+    # End-to-end goal-runner PDF wiring with the REAL local engine on the real garbled
+    # THERMAX filing (both gitignored/optional, so skipped in a minimal checkout): the
+    # text lane fails closed and OCR recovers the consolidated figures through _collect_pdf.
+    pytest.importorskip("rapidocr_onnxruntime")
+    pdf_path = _thermax_results_pdf()
+    if pdf_path is None:
+        pytest.skip("THERMAX results PDF not present (gitignored)")
+    from fundamentals.ingest.ocr_engine import RapidOcrEngine
+    from fundamentals.ingest.pdf_source import compute_file_sha256
+
+    stock = _pdf_ocr_stock(pdf_path, compute_file_sha256(pdf_path))
+    source = _collect_pdf(
+        stock, RunMode.FIXTURE, _REPO_ROOT, _KNOWLEDGE_CUTOFF, ocr_engine=RapidOcrEngine()
+    )
+    assert source.status is SourceStatus.OK
+    got = _obs_by_concept(source)
+    assert got[INCOME] == Decimal("2539.27")
+    assert got[PAT] == Decimal("113.73")
+    assert got[EPS] == Decimal("10.29")

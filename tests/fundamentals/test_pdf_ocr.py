@@ -12,7 +12,6 @@ engine end-to-end when one is installed, and is skipped otherwise.
 from __future__ import annotations
 
 import hashlib
-import tempfile
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -23,12 +22,12 @@ import pytest
 from fundamentals.api.config import PdfParseConfig
 from fundamentals.contracts.observation import AccountingFramework, Observation, Scope
 from fundamentals.contracts.provenance import SourceAnchorType
-from fundamentals.extract.pdf_number_parser import (
+from fundamentals.extract.pdf_number_parser import PdfParseSpec
+from fundamentals.extract.pdf_ocr_recovery import (
     DEFAULT_OCR_DPI,
-    OcrToken,
-    PdfParseSpec,
     extract_consolidated_pl_via_ocr,
 )
+from fundamentals.ingest.ocr_engine import OcrToken, RapidOcrEngine
 from fundamentals.ingest.pdf_source import compute_file_sha256, load_pdf
 
 _PERIOD_START = date(2024, 10, 1)
@@ -137,45 +136,6 @@ class _MockOcrEngine:
 
     def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:  # noqa: ARG002 - fixed tokens
         return self._tokens
-
-
-class _RapidOcrEngine:
-    """Local RapidOCR (ONNX, on-CPU) adapter, used only in the real-engine test.
-
-    Kept in the test rather than shipped in ``src`` so the optional heavy dependency
-    never burdens the strict type/lint gate or a minimal install; the src OCR lane
-    accepts any engine satisfying the ``OcrEngine`` protocol. To wire OCR into the
-    live pipeline, place an equivalent adapter in the ingest layer (it transmits
-    nothing — the rendered image is OCR'd entirely on-CPU in this process).
-    """
-
-    def __init__(self) -> None:
-        from rapidocr_onnxruntime import RapidOCR
-
-        self._engine = RapidOCR()
-
-    def recognize(self, image_png: bytes) -> tuple[OcrToken, ...]:
-        with tempfile.NamedTemporaryFile(suffix=".png") as handle:
-            handle.write(image_png)
-            handle.flush()
-            result, _elapsed = self._engine(handle.name)
-        if not result:
-            return ()
-        tokens: list[OcrToken] = []
-        for box, text, score in result:
-            xs = [float(point[0]) for point in box]
-            ys = [float(point[1]) for point in box]
-            tokens.append(
-                OcrToken(
-                    text=str(text),
-                    x0=min(xs),
-                    y0=min(ys),
-                    x1=max(xs),
-                    y1=max(ys),
-                    confidence=float(score),
-                )
-            )
-        return tuple(tokens)
 
 
 def _write_garbled_pdf(path: Path) -> str:
@@ -302,7 +262,7 @@ def test_real_local_ocr_recovers_thermax_when_available() -> None:
             loaded,
             pdf_path,
             spec=_spec(),
-            ocr_engine=_RapidOcrEngine(),
+            ocr_engine=RapidOcrEngine(),
             retrieved_at=_RETRIEVED_AT,
         )
     )

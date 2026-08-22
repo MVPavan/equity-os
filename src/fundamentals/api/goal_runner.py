@@ -59,6 +59,7 @@ from fundamentals.extract.pdf_number_parser import (
     PdfParseSpec,
     extract_consolidated_pl,
 )
+from fundamentals.extract.pdf_ocr_recovery import extract_consolidated_pl_via_ocr
 from fundamentals.extract.xbrl_parser import (
     FactSelectionError,
     XbrlParseError,
@@ -83,7 +84,12 @@ from fundamentals.ingest.bse_source import (
 from fundamentals.ingest.bse_source import (
     SOURCE_ID as BSE_XBRL_SOURCE_ID,
 )
-from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
+from fundamentals.ingest.ocr_engine import (
+    OcrEngine,
+    OcrEngineUnavailableError,
+    RapidOcrEngine,
+)
+from fundamentals.ingest.pdf_source import LoadedPdf, PdfIntegrityError, load_pdf
 from fundamentals.ingest.screener_source import (
     ScreenerFetchError,
     ScreenerSource,
@@ -656,6 +662,7 @@ def collect_sources(
     repo_root: Path,
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
+    ocr_engine: OcrEngine | None = None,
 ) -> list[CollectedSource]:
     """Pull every requested source for one stock, recording status per source.
 
@@ -663,6 +670,10 @@ def collect_sources(
     source is recorded (SKIPPED/BLOCKED) and never aborts the stock. NSE is always
     attempted; SEC is skipped unless the stock is US-listed; Tijori is skipped
     without injected credentials; PDF is skipped without a configured document.
+
+    ``ocr_engine`` is the local OCR engine the PDF lane uses to recover a garbled or
+    split consolidated statement; when ``None`` a live run defaults to the on-CPU
+    :class:`RapidOcrEngine` and a fixture run runs no OCR (tests inject a fake).
     """
     retrieved_at = stock.quarter.knowledge_cutoff
     collected: list[CollectedSource] = []
@@ -675,7 +686,7 @@ def collect_sources(
     if SourceKind.TIJORI in kinds:
         collected.append(_collect_tijori(stock, mode, repo_root, tijori_credentials))
     if SourceKind.PDF in kinds:
-        collected.append(_collect_pdf(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_pdf(stock, mode, repo_root, retrieved_at, ocr_engine=ocr_engine))
     if SourceKind.SEC in kinds:
         collected.append(_collect_sec(stock))
     return collected
@@ -855,25 +866,83 @@ def _collect_tijori(
     return _ok(SourceKind.TIJORI, source_id, observations)
 
 
+def _pdf_observations(
+    loaded: LoadedPdf,
+    pdf_path: Path,
+    *,
+    spec: PdfParseSpec,
+    retrieved_at: datetime,
+    ocr_engine: OcrEngine | None,
+) -> list[Observation]:
+    """Read the results PDF via the text lane, then OCR-recover only the missed concepts.
+
+    The deterministic text lane runs first (``require_all=False``: it emits the clean
+    total lines and skips a split or corrupt one). If it already covers every target
+    concept, or no OCR engine is available, its result stands unchanged and no image
+    is ever rendered. Otherwise the LOCAL OCR recovery lane is invoked and its
+    recovered observations are MERGED for concepts the text lane lacks — the text lane
+    always wins on a concept it already read.
+
+    Fail-closed at every edge: with no engine the text lane's own errors propagate (a
+    genuinely absent consolidated statement stays the caller's skip); with an engine a
+    garbled statement (``ConsolidatedStatementNotFoundError``) pivots to OCR while any
+    other document-level parse error still propagates to BLOCK; and when the OCR extra
+    is not installed the text-lane result is kept — never a fabricated number.
+    """
+    if ocr_engine is None:
+        return list(
+            extract_consolidated_pl(loaded, spec=spec, retrieved_at=retrieved_at, require_all=False)
+        )
+    try:
+        observations = list(
+            extract_consolidated_pl(loaded, spec=spec, retrieved_at=retrieved_at, require_all=False)
+        )
+    except ConsolidatedStatementNotFoundError:
+        observations = []
+    have = {obs.concept_qname for obs in observations}
+    needed = {target.concept_qname for target in spec.target_lines}
+    if have == needed:
+        return observations
+    try:
+        recovered = extract_consolidated_pl_via_ocr(
+            loaded, pdf_path, spec=spec, ocr_engine=ocr_engine, retrieved_at=retrieved_at
+        )
+    except OcrEngineUnavailableError:
+        return observations
+    observations.extend(obs for obs in recovered if obs.concept_qname not in have)
+    return observations
+
+
 def _collect_pdf(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
+    stock: StockConfig,
+    mode: RunMode,
+    repo_root: Path,
+    retrieved_at: datetime,
+    *,
+    ocr_engine: OcrEngine | None = None,
 ) -> CollectedSource:
     """Ingest the BSE-hosted issuer results PDF as the second first-party source.
 
     Live mode fetches+downloads+verifies the PDF from BSE announcements and parses
     it; fixture mode parses a committed PDF for the offline deterministic tests.
-    Either way the parse is per-concept partial (``require_all=False``): the
-    material facts that are printed as clean total lines are emitted, and a concept
-    a filer splits or whose cell is OCR-corrupted is skipped, never fabricated.
-    Fail-closed: a fetch/download/parse failure is BLOCKED with the reason; a
-    consolidated statement that cannot be located is SKIPPED with a note.
+    Either way the parse is per-concept partial (``require_all=False``): the material
+    facts printed as clean total lines are emitted, and a concept a filer splits or
+    whose cell is garbled is recovered by the LOCAL OCR lane when possible (else
+    skipped, never fabricated). Live runs default to the on-CPU
+    :class:`RapidOcrEngine`; fixture runs use only an explicitly injected engine, so
+    the offline suite stays deterministic. Fail-closed: a fetch/download/parse failure
+    is BLOCKED with the reason; a consolidated statement that cannot be located or
+    recovered is SKIPPED with a note.
     """
     if mode is RunMode.LIVE:
-        return _collect_pdf_live(stock, repo_root)
-    return _collect_pdf_fixture(stock, repo_root, retrieved_at)
+        engine = ocr_engine if ocr_engine is not None else RapidOcrEngine()
+        return _collect_pdf_live(stock, repo_root, ocr_engine=engine)
+    return _collect_pdf_fixture(stock, repo_root, retrieved_at, ocr_engine=ocr_engine)
 
 
-def _collect_pdf_live(stock: StockConfig, repo_root: Path) -> CollectedSource:
+def _collect_pdf_live(
+    stock: StockConfig, repo_root: Path, *, ocr_engine: OcrEngine | None
+) -> CollectedSource:
     """Fetch, download, verify and parse the live BSE results PDF for the quarter."""
     download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse_pdf"
     source = BseResultsPdfSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
@@ -887,8 +956,12 @@ def _collect_pdf_live(stock: StockConfig, repo_root: Path) -> CollectedSource:
             path=retrieval.local_path,
             expected_sha256=retrieval.file_sha256,
         )
-        observations = extract_consolidated_pl(
-            loaded, spec=_pdf_spec(stock), retrieved_at=retrieval.retrieved_at, require_all=False
+        observations = _pdf_observations(
+            loaded,
+            retrieval.local_path,
+            spec=_pdf_spec(stock),
+            retrieved_at=retrieval.retrieved_at,
+            ocr_engine=ocr_engine,
         )
     except ConsolidatedStatementNotFoundError as error:
         return _skip(
@@ -906,7 +979,7 @@ def _collect_pdf_live(stock: StockConfig, repo_root: Path) -> CollectedSource:
 
 
 def _collect_pdf_fixture(
-    stock: StockConfig, repo_root: Path, retrieved_at: datetime
+    stock: StockConfig, repo_root: Path, retrieved_at: datetime, *, ocr_engine: OcrEngine | None
 ) -> CollectedSource:
     """Parse a committed results-PDF fixture (offline deterministic path)."""
     if stock.results_pdf is None or stock.fixtures.results_pdf is None:
@@ -915,8 +988,8 @@ def _collect_pdf_fixture(
     try:
         path = repo_root / stock.fixtures.results_pdf
         loaded = load_pdf(source_id=source_id, path=path, expected_sha256=stock.results_pdf.sha256)
-        observations = extract_consolidated_pl(
-            loaded, spec=_pdf_spec(stock), retrieved_at=retrieved_at, require_all=False
+        observations = _pdf_observations(
+            loaded, path, spec=_pdf_spec(stock), retrieved_at=retrieved_at, ocr_engine=ocr_engine
         )
     except ConsolidatedStatementNotFoundError as error:
         return _skip(SourceKind.PDF, source_id, f"consolidated statement absent: {error}")
@@ -1085,12 +1158,14 @@ def run_stock(
     tijori_credentials: TijoriCredentials | None = None,
     out_dir: Path = DEFAULT_GOLD_DIR,
     quarter_mode: QuarterMode = QuarterMode.PINNED,
+    ocr_engine: OcrEngine | None = None,
 ) -> StockReport:
     """Collect every source for one stock, then reconcile and score it.
 
     In ``LATEST`` quarter mode the stock is first retargeted onto the newest
     quarter its first-party sources can share; if they cannot be aligned the stock
     is reported ``BLOCKED`` with the reason rather than run on a fabricated period.
+    ``ocr_engine`` is forwarded to the PDF lane (see :func:`collect_sources`).
     """
     if quarter_mode is QuarterMode.LATEST:
         resolved, reason = _resolve_latest_stock(stock, mode, repo_root, kinds)
@@ -1105,6 +1180,7 @@ def run_stock(
         repo_root=repo_root,
         kinds=kinds,
         tijori_credentials=tijori_credentials,
+        ocr_engine=ocr_engine,
     )
     return reconcile_stock(stock, sources, out_dir=out_dir)
 
@@ -1118,6 +1194,7 @@ def run_wave(
     tijori_credentials: TijoriCredentials | None = None,
     out_dir: Path = DEFAULT_GOLD_DIR,
     quarter_mode: QuarterMode = QuarterMode.PINNED,
+    ocr_engine: OcrEngine | None = None,
 ) -> WaveReport:
     """Run every watchlist stock and assemble the wave roll-up."""
     reports = [
@@ -1129,6 +1206,7 @@ def run_wave(
             tijori_credentials=tijori_credentials,
             out_dir=out_dir,
             quarter_mode=quarter_mode,
+            ocr_engine=ocr_engine,
         )
         for stock in config.stocks
     ]
