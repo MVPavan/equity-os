@@ -10,12 +10,12 @@ Event under review: Titan Company Limited Q3FY25 consolidated results (issuer re
 
 | P&L line | Value | XBRL concept | Reconciliation | Source |
 | --- | ---: | --- | --- | --- |
-| Revenue from operations | 17,740 | `in-bse-fin:RevenueFromOperations` | unreconciled | [^1] |
-| Total income | 17,868 | `in-bse-fin:Income` | cross_source_confirmed | [^2][^1] |
-| Total expenses | 16,472 | `in-bse-fin:Expenses` | unreconciled | [^1] |
-| Profit before tax | 1,396 | `in-bse-fin:ProfitBeforeTax` | cross_source_confirmed | [^3][^1] |
-| Profit for the period (PAT) | 1,047 | `in-bse-fin:ProfitLossForPeriod` | cross_source_confirmed | [^4][^1] |
-| EPS basic (₹) | 11.80 | `in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations` | unreconciled | [^1] |
+| Revenue from operations | 17,740 | `in-bse-fin:RevenueFromOperations` | cross_source_confirmed | [^1][^2] |
+| Total income | 17,868 | `in-bse-fin:Income` | cross_source_confirmed | [^3][^2] |
+| Total expenses | 16,472 | `in-bse-fin:Expenses` | unreconciled | [^2] |
+| Profit before tax | 1,396 | `in-bse-fin:ProfitBeforeTax` | cross_source_confirmed | [^4][^2] |
+| Profit for the period (PAT) | 1,047 | `in-bse-fin:ProfitLossForPeriod` | cross_source_confirmed | [^5][^2] |
+| EPS basic (₹) | 11.80 | `in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations` | unreconciled | [^2] |
 
 ## 3. changes
 
@@ -55,7 +55,7 @@ Open analytical questions are maintained by the analyst layer; the pipeline surf
 
 | Verification gate | State |
 | --- | --- |
-| XBRL ↔ PDF cross-check (headline figures) | FAIL — 3/5 headline figures agree within decimals-derived tolerance |
+| XBRL ↔ PDF cross-check (headline figures) | FAIL — 4/5 headline figures agree within decimals-derived tolerance |
 | Cross-foot accounting identities | PASS — 2/2 identities hold at ±0 |
 | SEC 20-F annual cross-check | not applicable — issuer not US-listed (no SEC 20-F annual filing) |
 
@@ -63,7 +63,8 @@ Open analytical questions are maintained by the analyst layer; the pipeline surf
 
 ### Sources
 
-[^1]: nse-indas-xbrl-consolidated: context OneD (file sha256 09dbeb46c6ed…)
-[^2]: bse-results-pdf: page 12, block 10, span 262.9,172.0,278.7,179.7 (file sha256 7248bdacf5f4…)
-[^3]: bse-results-pdf: page 12, block 24, span 266.5,335.9,279.2,343.7 (file sha256 7248bdacf5f4…)
-[^4]: bse-results-pdf: page 12, block 28, span 266.8,387.5,279.7,395.3 (file sha256 7248bdacf5f4…)
+[^1]: bse-results-pdf: page 12, block 8, span sum(17,550@262.8,140.2,278.6,148.1; 190@269.8,150.7,278.4,158.6) (file sha256 7248bdacf5f4…)
+[^2]: nse-indas-xbrl-consolidated: context OneD (file sha256 09dbeb46c6ed…)
+[^3]: bse-results-pdf: page 12, block 10, span 262.9,172.0,278.7,179.7 (file sha256 7248bdacf5f4…)
+[^4]: bse-results-pdf: page 12, block 24, span 266.5,335.9,279.2,343.7 (file sha256 7248bdacf5f4…)
+[^5]: bse-results-pdf: page 12, block 28, span 266.8,387.5,279.7,395.3 (file sha256 7248bdacf5f4…)
