@@ -28,13 +28,13 @@ statement). Screener is a derived aggregator — cross-check only, never source-
 | **MTARTECH** | Precision Eng. | **5 / 5** | **DONE** | full cross-source agreement |
 | **LAURUSLABS** | CDMO / Pharma | **5 / 5** | **DONE** | PFP recovered via a conditional post-associate label |
 | **TITAN** | Jewellery / Retail | **5 / 5** | **DONE** | Revenue recovered via arithmetic-validated sub-component sum; EPS (`ll.80`) recovered via local OCR |
+| **THERMAX** | Power Infra | **5 / 5** | **DONE** | garbled consolidated P&L recovered via local OCR (Income/PBT/PFP/EPS); Revenue derived from the statement's own identity (Total income − Other income = 2507.76) when its label was OCR-corrupt |
 | **SONACOMS** | Auto Ancillary | **5 / 5** | needs_adjudication | all facts AGREE; held only by a pre-existing NSE cross-foot residual (associate/exceptional items), not the PDF |
-| **THERMAX** | Power Infra | 4 / 5 | needs_adjudication | garbled consolidated P&L recovered via local OCR (Income/PBT/PFP/EPS); Revenue label OCR'd as `Revenuc` → fail-closed (no fuzzy label match) |
 
-**24 / 25 material concepts** reached two-first-party AGREE (up from 17/25 before the recovery
-lanes). The one remaining gap (THERMAX Revenue) is a *reported fail-closed* — the OCR label was
-corrupt and we refuse to fuzzy-match a concept — never a fabricated or silently-dropped number.
-Three stocks are fully DONE; the other two are AGREE on every PDF-covered fact.
+**25 / 25 material concepts** reached two-first-party AGREE (up from 17/25 before the recovery
+lanes). Every value is cross-verified across two independent first-party hosts — no fabricated
+or silently-dropped number. **Four stocks are fully DONE**; SONACOMS is AGREE on all five facts
+and needs adjudication only for a pre-existing NSE cross-foot residual.
 
 ## Per-concept matrix (NSE-XBRL vs BSE-PDF vs Screener)
 
@@ -55,7 +55,7 @@ Three stocks are fully DONE; the other two are AGREE on every PDF-covered fact.
 | SONACOMS | ProfitBeforeTax | AGREE | 203.001 | 203.001 | — |
 | SONACOMS | ProfitLossForPeriod | AGREE | 150.713 | 150.713 | 151 |
 | SONACOMS | BasicEPS | AGREE | 2.43 | 2.43 | 2.43 |
-| THERMAX | RevenueFromOperations | single | 2507.76 | — | 2529 |
+| THERMAX | RevenueFromOperations | AGREE (derived) | 2507.76 | 2507.76 | 2529 |
 | THERMAX | Income | AGREE (OCR) | 2539.27 | 2539.27 | — |
 | THERMAX | ProfitBeforeTax | AGREE (OCR) | 156.77 | 156.77 | — |
 | THERMAX | ProfitLossForPeriod | AGREE (OCR) | 113.73 | 113.73 | 114 |
@@ -94,12 +94,13 @@ Validating beyond Infosys surfaced and fixed real single-stock-bias defects:
   when the statement's own arithmetic validates (sum + other income == total income).
 - **TITAN EPS, THERMAX Income/PBT/PFP/EPS** — recovered via the local OCR lane (per-cell 0.80
   confidence floor + page-level self-cross-foot gate; never gated on the NSE value).
+- **THERMAX Revenue** — its label OCR'd as `Revenuc` (unmatchable), so the value is DERIVED from
+  the statement's own identity: Total income − Other income = 2539.27 − 31.51 = 2507.76, carrying
+  a computed trace and both contributing anchors. Fires only when the revenue label is entirely
+  unreadable; a present-but-non-reconciling split still fails closed.
 
 ## Residual (still open, correctly fail-closed)
 
-- **THERMAX Revenue** — the OCR read the value (2507.76) but the label OCR'd as `Revenuc`; we
-  refuse to fuzzy-match a concept label, so it stays single-source rather than risk a wrong
-  binding. (It is derivable as Total income − Other income; a safe future enhancement.)
 - **SONACOMS** cross-foot residual (−5.70 cr) is a pre-existing NSE identity limitation
   (associate/exceptional items), independent of the PDF lane; all 5 SONACOMS facts AGREE.
 - Screener values for a few lines genuinely differ (line-item restatement, diluted-vs-basic

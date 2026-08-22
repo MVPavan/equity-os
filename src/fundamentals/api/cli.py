@@ -45,6 +45,7 @@ from fundamentals.api.watchlist_config import (
     load_watchlist_config,
 )
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
+from fundamentals.ingest.ocr_engine import RapidOcrEngine
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, gold_file_path
@@ -406,6 +407,10 @@ def report_command(args: argparse.Namespace) -> list[str]:
             repo_root=repo_root,
             kinds=_REPORT_SOURCE_KINDS,
             out_dir=gold_dir,
+            # Recover OCR-dependent facts (e.g. THERMAX's garbled revenue) so the
+            # report matches the validated gold; lazy engine, fail-closed if the
+            # optional 'ocr' extra is absent.
+            ocr_engine=RapidOcrEngine(),
         )
         try:
             markdown = render_report(stock_report, cached)

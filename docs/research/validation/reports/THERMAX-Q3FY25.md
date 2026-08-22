@@ -10,12 +10,12 @@ Event under review: Thermax Limited Q3FY25 consolidated results (issuer results 
 
 | P&L line | Value | XBRL concept | Reconciliation | Source |
 | --- | ---: | --- | --- | --- |
-| Revenue from operations | 2,507.76 | `in-bse-fin:RevenueFromOperations` | unreconciled | [^1] |
-| Total income | 2,539.27 | `in-bse-fin:Income` | unreconciled | [^1] |
-| Total expenses | 2,382.5 | `in-bse-fin:Expenses` | unreconciled | [^1] |
-| Profit before tax | 156.77 | `in-bse-fin:ProfitBeforeTax` | unreconciled | [^1] |
-| Profit for the period (PAT) | 113.73 | `in-bse-fin:ProfitLossForPeriod` | unreconciled | [^1] |
-| EPS basic (₹) | 10.29 | `in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations` | unreconciled | [^1] |
+| Revenue from operations | 2,507.76 | `in-bse-fin:RevenueFromOperations` | cross_source_confirmed | [^1][^2] |
+| Total income | 2,539.27 | `in-bse-fin:Income` | cross_source_confirmed | [^3][^2] |
+| Total expenses | 2,382.5 | `in-bse-fin:Expenses` | unreconciled | [^2] |
+| Profit before tax | 156.77 | `in-bse-fin:ProfitBeforeTax` | cross_source_confirmed | [^4][^2] |
+| Profit for the period (PAT) | 113.73 | `in-bse-fin:ProfitLossForPeriod` | cross_source_confirmed | [^5][^2] |
+| EPS basic (₹) | 10.29 | `in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations` | cross_source_confirmed | [^6][^2] |
 
 ## 3. changes
 
@@ -55,7 +55,7 @@ Open analytical questions are maintained by the analyst layer; the pipeline surf
 
 | Verification gate | State |
 | --- | --- |
-| XBRL ↔ PDF cross-check (headline figures) | FAIL — 0/5 headline figures agree within decimals-derived tolerance |
+| XBRL ↔ PDF cross-check (headline figures) | PASS — 5/5 headline figures agree within decimals-derived tolerance |
 | Cross-foot accounting identities | PASS — 2/2 identities hold at ±0 |
 | SEC 20-F annual cross-check | not applicable — issuer not US-listed (no SEC 20-F annual filing) |
 
@@ -63,4 +63,9 @@ Open analytical questions are maintained by the analyst layer; the pipeline surf
 
 ### Sources
 
-[^1]: nse-indas-xbrl-consolidated: context OneD (file sha256 36d79235f8ab…)
+[^1]: bse-results-pdf: page 8, block 0, span derive(2,539.27@302.6,96.8,323.2,103.9; 31.51@308.2,89.6,323.2,97.2) (file sha256 9554c06ceb43…)
+[^2]: nse-indas-xbrl-consolidated: context OneD (file sha256 36d79235f8ab…)
+[^3]: bse-results-pdf: page 8, block 0, span 302.6,96.8,323.2,103.9 (file sha256 9554c06ceb43…)
+[^4]: bse-results-pdf: page 8, block 0, span 306.6,167.1,323.2,174.3 (file sha256 9554c06ceb43…)
+[^5]: bse-results-pdf: page 8, block 0, span 306.2,234.3,323.2,241.5 (file sha256 9554c06ceb43…)
+[^6]: bse-results-pdf: page 8, block 0, span 309.3,395.8,323.2,403.4 (file sha256 9554c06ceb43…)
