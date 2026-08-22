@@ -22,8 +22,10 @@ from fundamentals.extract.pdf_number_parser import (
     DEFAULT_COLUMN_X_TOLERANCE_PT,
     DEFAULT_MONTH_NAMES,
     DEFAULT_ROW_BAND_TOLERANCE_PT,
+    ConditionalLabel,
     PdfLineUnit,
     PdfTargetLine,
+    SubcomponentSummation,
 )
 from fundamentals.output.earnings_update import FactRole
 
@@ -127,6 +129,11 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         unit_ref=_INR_UNIT_REF,
         scale=_CRORE_SCALE,
         decimals=_CRORE_DECIMALS,
+        # A filer may print no single revenue total, only sub-components under a
+        # value-less header (e.g. TITAN). Reconstruct by summation, accepted only
+        # when sub-components + other income == total income (the Income line below,
+        # marked is_reconciliation_total). Intra-statement check; never NSE-gated.
+        subcomponent_summation=SubcomponentSummation(other_labels=("Other income",)),
     ),
     PdfTargetLine(
         labels=("Total income",),
@@ -135,6 +142,7 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         unit_ref=_INR_UNIT_REF,
         scale=_CRORE_SCALE,
         decimals=_CRORE_DECIMALS,
+        is_reconciliation_total=True,
     ),
     PdfTargetLine(
         labels=("Profit before tax", "Profit/(loss) before tax", "Profit before taxation"),
@@ -155,6 +163,14 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
         unit_ref=_INR_UNIT_REF,
         scale=_CRORE_SCALE,
         decimals=_CRORE_DECIMALS,
+        # A consolidated filer with associates below tax (e.g. LAURUSLABS) prints the
+        # profit for the period as "Net profit after tax(es) and share of ...
+        # associates". Requiring both the "Net profit after" head AND "associates"
+        # binds that line while never matching the pre-associate "Net Profit after
+        # tax" (which lacks "associates"); it takes precedence over the plain labels.
+        conditional_labels=(
+            ConditionalLabel(heads=("Net profit after",), also_contains=("associates",)),
+        ),
     ),
     PdfTargetLine(
         labels=("Basic earnings per share", "Basic (in", "Basic"),

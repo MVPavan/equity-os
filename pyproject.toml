@@ -26,6 +26,11 @@ dev = [
 [project.scripts]
 fundamentals = "fundamentals.api.cli:main"
 
+[project.optional-dependencies]
+ocr = [
+    "rapidocr-onnxruntime>=1.4.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

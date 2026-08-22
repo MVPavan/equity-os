@@ -204,6 +204,127 @@ def _write_statement(
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _write_associate_statement(
+    path: Path,
+    *,
+    post_associate_label: str = (
+        "Net profit after taxes and share of profit of associates and joint ventures"
+    ),
+    pre_value: str = "90.61",
+    share_value: str = "2.33",
+    post_value: str = "92.94",
+    include_post_line: bool = True,
+) -> str:
+    """Write a synthetic consolidated statement with pre- and post-associate profit lines.
+
+    Reproduces the LAURUSLABS layout (associates *below* tax): a pre-associate
+    ``Net Profit after tax`` line, a ``Share of ... associates`` line, and the
+    post-associate ``Net profit ... and share of ... associates`` line that equals
+    the group's profit for the period (the value NSE tags ``ProfitLossForPeriod``).
+    ``post_associate_label`` is overridable to reproduce the real filing's
+    text-layer glyph garble; ``include_post_line=False`` omits it (a filer with no
+    associates, whose sole net-profit line is the profit for the period).
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text(
+        (_LABEL_X, 80),
+        "STATEMENT OF CONSOLIDATED UNAUDITED FINANCIAL RESULTS "
+        "FOR THE QUARTER AND NINE MONTHS ENDED 31 DECEMBER 2024",
+        fontsize=9,
+    )
+    page.insert_text((_LABEL_X, 100), "(₹ in crore)", fontsize=9)
+    page.insert_text((_COL_X["q_current"], 120), "3 months ended", fontsize=9)
+    page.insert_text((_COL_X["ytd_current"], 120), "9 months ended", fontsize=9)
+    dates = {
+        "q_current": "31-12-2024",
+        "q_prev": "30-09-2024",
+        "q_prior_year": "31-12-2023",
+        "ytd_current": "31-12-2024",
+        "ytd_prior": "31-12-2023",
+        "year": "31-03-2024",
+    }
+    for column, text in dates.items():
+        page.insert_text((_COL_X[column], 140), text, fontsize=9)
+    _put_row(page, 170, serial="1", label="Revenue from operations", values=_six("1,415.05"))
+    _put_row(page, 190, serial="2", label="III. Total income", values=_six("1,424.47"))
+    _put_row(page, 210, serial="3", label="Profit before tax (1-2)", values=_six("130.68"))
+    _put_row(page, 230, serial="5", label="Net Profit after tax", values=_six(pre_value))
+    _put_row(
+        page,
+        250,
+        serial="6",
+        label="Share of (loss)/profit from associates and joint venture, net of tax",
+        values=_six(share_value),
+    )
+    if include_post_line:
+        _put_row(page, 270, serial="7", label=post_associate_label, values=_six(post_value))
+    _put_row(page, 300, serial=None, label="Profit for the period attributable to:", values={})
+    _put_row(page, 330, serial="10", label="Basic (not annualised)", values=_six("1.71"))
+    doc.save(str(path))
+    doc.close()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_split_revenue_income_statement(
+    path: Path,
+    *,
+    sale: str = "17,550",
+    other_operating: str = "190",
+    other_income: str | None = "128",
+    total_income: str = "17,868",
+) -> str:
+    """Write a TITAN-style statement: revenue printed only as split sub-components.
+
+    ``I. Revenue from operations`` is a value-less section header above two dashed
+    sub-components (``- Sale of products/ services``, ``- Other operating
+    revenues``); there is no single revenue total line. ``II. Other income`` and
+    ``III. Total income (I+II)`` follow. The parser may reconstruct revenue by
+    summation only when ``sub-components + other income == total income``; the
+    parameters let a test break that identity (or drop other income) to prove the
+    reconstruction fails closed.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text(
+        (_LABEL_X, 80),
+        "STATEMENT OF CONSOLIDATED UNAUDITED FINANCIAL RESULTS "
+        "FOR THE QUARTER AND NINE MONTHS ENDED 31 DECEMBER 2024",
+        fontsize=9,
+    )
+    page.insert_text((_LABEL_X, 100), "(₹ in crore)", fontsize=9)
+    page.insert_text((_COL_X["q_current"], 120), "3 months ended", fontsize=9)
+    page.insert_text((_COL_X["ytd_current"], 120), "9 months ended", fontsize=9)
+    dates = {
+        "q_current": "31-12-2024",
+        "q_prev": "30-09-2024",
+        "q_prior_year": "31-12-2023",
+        "ytd_current": "31-12-2024",
+        "ytd_prior": "31-12-2023",
+        "year": "31-03-2024",
+    }
+    for column, text in dates.items():
+        page.insert_text((_COL_X[column], 140), text, fontsize=9)
+    _put_row(page, 170, serial="1", label="I. Revenue from operations", values={})
+    _put_row(page, 185, serial=None, label="- Sale of products/ services", values=_six(sale))
+    _put_row(
+        page,
+        200,
+        serial=None,
+        label="- Other operating revenues (refer note 4)",
+        values=_six(other_operating),
+    )
+    if other_income is not None:
+        _put_row(page, 215, serial="2", label="II. Other income", values=_six(other_income))
+    _put_row(page, 230, serial="3", label="III. Total income (I+II)", values=_six(total_income))
+    _put_row(page, 250, serial="4", label="V. Profit before tax (1-2)", values=_six("1,396"))
+    _put_row(page, 270, serial="5", label="IX. Profit for the period", values=_six("1,047"))
+    _put_row(page, 300, serial="6", label="Basic (not annualised)", values=_six("11.80"))
+    doc.save(str(path))
+    doc.close()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _load(path: Path) -> object:
     return load_pdf(source_id="synth", path=path, expected_sha256=compute_file_sha256(path))
 
@@ -344,6 +465,126 @@ def test_split_revenue_skipped_but_other_facts_emitted_when_partial(tmp_path: Pa
     # The same PDF fails closed as a whole under the default require_all=True.
     with pytest.raises(NumberParseError):
         extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+
+
+# --- parser: pre/post-associate profit-for-the-period disambiguation ------------
+
+
+def test_pfp_binds_post_associate_profit_line_not_pre_associate(tmp_path: Path) -> None:
+    # A consolidated statement prints BOTH a pre-associate "Net Profit after tax"
+    # (90.61) and the post-associate "Net profit ... and share of ... associates"
+    # (92.94). The profit for the period is the post-associate line (= NSE's
+    # ProfitLossForPeriod); the parser must bind it, never the pre-associate line.
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_associate_statement(pdf_path)
+    got = _by_concept(
+        extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+    )
+    assert got[PFP] == Decimal("92.94")
+    assert got[REVENUE] == Decimal("1415.05")
+    assert got[PBT] == Decimal("130.68")
+
+
+def test_pfp_post_associate_survives_glyph_garbled_label(tmp_path: Path) -> None:
+    # The real LAURUSLABS text layer garbles the post-associate label
+    # ("taxes"->"laxes", "share"->"shue"); binding must rely on the clean tokens
+    # ("Net profit after" head + "associates"), so the value 92.94 is still bound.
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_associate_statement(
+        pdf_path,
+        post_associate_label=(
+            "Net Profit after laxes and shue of (loss)/profit from associates and joint"
+        ),
+    )
+    got = _by_concept(
+        extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+    )
+    assert got[PFP] == Decimal("92.94")
+
+
+def test_pfp_post_associate_worded_without_associates_binds_via_primary(tmp_path: Path) -> None:
+    # A filer with associates below tax whose profit-for-the-period line is worded
+    # plainly ("Profit for the period", no "associates"): the plain label must bind
+    # that line (92.94), and the pre-associate "Net Profit after tax" (90.61) must
+    # never win — guarding against the greedy-label regression the reviewer caught.
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_associate_statement(pdf_path, post_associate_label="Profit for the period")
+    got = _by_concept(
+        extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+    )
+    assert got[PFP] == Decimal("92.94")
+
+
+def test_pfp_pre_associate_line_alone_fails_closed(tmp_path: Path) -> None:
+    # A lone "Net Profit after tax" (no post-associate line, no plain
+    # profit-for-the-period line) is NOT treated as the profit for the period: it is
+    # the pre-associate figure, so PFP fails closed rather than emitting 90.61.
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_associate_statement(pdf_path, include_post_line=False)
+    got = _by_concept(
+        extract_consolidated_pl(
+            _load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT, require_all=False
+        )
+    )
+    assert PFP not in got
+
+
+def test_pfp_plain_profit_for_the_period_line_unaffected(tmp_path: Path) -> None:
+    # The default single-line "Profit for the period" statement is unchanged by the
+    # added post-associate handling (no regression for MTAR/SONA/TITAN-style layouts).
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_statement(pdf_path)
+    got = _by_concept(
+        extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+    )
+    assert got[PFP] == Decimal("150")
+
+
+# --- parser: split revenue reconstructed by validated sub-component summation ----
+
+
+def test_revenue_summed_from_subcomponents_when_self_consistent(tmp_path: Path) -> None:
+    # Revenue printed only as split sub-components (no total line). The parser sums
+    # them (17,550 + 190 = 17,740) and accepts it because the statement's own
+    # arithmetic validates it: 17,740 + 128 (other income) = 17,868 (total income).
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_split_revenue_income_statement(pdf_path)
+    obs = extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
+    got = _by_concept(obs)
+    assert got[REVENUE] == Decimal("17740")
+    assert got[INCOME] == Decimal("17868")
+    revenue = next(o for o in obs if o.concept_qname == REVENUE)
+    # The value carries a computed trace (the summed components) and a PDF anchor.
+    assert "+" in revenue.raw_value
+    assert revenue.provenance.anchor_type is SourceAnchorType.PDF_SPAN
+    assert revenue.provenance.page == 1 and revenue.provenance.span
+
+
+def test_revenue_summation_fails_closed_when_not_reconciling(tmp_path: Path) -> None:
+    # If the sub-components + other income do not equal the printed total income,
+    # the split is not trustworthy: revenue stays fail-closed (never guessed).
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_split_revenue_income_statement(pdf_path, total_income="99,999")
+    got = _by_concept(
+        extract_consolidated_pl(
+            _load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT, require_all=False
+        )
+    )
+    assert REVENUE not in got
+    assert got[INCOME] == Decimal("99999")
+
+
+def test_revenue_summation_fails_closed_without_other_income(tmp_path: Path) -> None:
+    # Without an other-income line the sub-component sum cannot be validated against
+    # total income, so revenue is not reconstructed (fail closed).
+    pdf_path = tmp_path / "stmt.pdf"
+    _write_split_revenue_income_statement(pdf_path, other_income=None)
+    got = _by_concept(
+        extract_consolidated_pl(
+            _load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT, require_all=False
+        )
+    )
+    assert REVENUE not in got
 
 
 # --- fetch: announcement row selection -----------------------------------------
