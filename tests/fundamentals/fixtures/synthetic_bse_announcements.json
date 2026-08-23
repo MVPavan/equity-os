@@ -1,0 +1,17 @@
+{
+  "Table": [
+    {
+      "CATEGORYNAME": "Result",
+      "SUBCATNAME": "Financial Results",
+      "HEADLINE": "Titan announces quarterly results",
+      "NEWS_DT": "2026-08-22T10:30:00",
+      "ATTACHMENTNAME": "titan-results.pdf",
+      "NEWSID": "bse-result-42"
+    }
+  ],
+  "Table1": [
+    {
+      "ROWCNT": 1
+    }
+  ]
+}

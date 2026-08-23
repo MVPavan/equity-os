@@ -44,6 +44,12 @@ from fundamentals.api.goal_runner import (
     run_stock,
     run_wave,
 )
+from fundamentals.api.news_cli import (
+    NEWS_COMMAND,
+    add_news_parser,
+    render_news_table,
+    run_news_command,
+)
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
 from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
@@ -739,6 +745,7 @@ def _build_parser() -> argparse.ArgumentParser:
         command=_COMMAND_THESIS,
         default_watchlist_path=_DEFAULT_WATCHLIST_PATH,
     )
+    add_news_parser(subparsers)
     add_adjudication_parser(subparsers)
     return parser
 
@@ -750,6 +757,29 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logger = structlog.get_logger("fundamentals.cli")
+
+    if args.command == NEWS_COMMAND:
+        news_result = run_news_command(args)
+        for source in news_result.sources:
+            logger.info(
+                "news_source_summary",
+                source=source.source_id,
+                observations=len(source.observations),
+                quarantined=len(source.quarantined),
+                raw_count=source.raw_count,
+                dropped_count=source.dropped_count,
+            )
+        for warning in news_result.warnings:
+            logger.warning(
+                "news_source_health",
+                source=warning.source_id,
+                kind=warning.kind.value,
+                detail=warning.message,
+            )
+        sys.stdout.write(
+            render_news_table(news_result, show_quarantine=args.show_quarantine) + "\n"
+        )
+        return 0
 
     if args.command == ADJUDICATE_COMMAND:
         queue_path = _DEFAULT_THESIS_DIR / _ADJUDICATION_QUEUE_FILENAME

@@ -73,11 +73,13 @@ class SourceIdentifiers(BaseModel):
 
     nse_symbol: str
     bse_scrip: str
+    isin: str | None = None
     screener_slug: str
     tijori_slug: str
     us_listed: bool = False
     needs_verification: tuple[str, ...] = ()
     accepted_entity_ids: tuple[str, ...] = ()
+    news_aliases: tuple[str, ...] = ()
 
 
 class StockQuarter(BaseModel):

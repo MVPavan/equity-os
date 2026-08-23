@@ -36,6 +36,8 @@ stocks:
       screener_slug: "LAURUSLABS"
       tijori_slug: "laurus-labs"
       us_listed: false
+      news_aliases:
+        - "Laurus Labs Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -56,6 +58,8 @@ stocks:
       screener_slug: "MTARTECH"
       tijori_slug: "mtar-technologies"
       us_listed: false
+      news_aliases:
+        - "MTAR Technologies Limited"
       needs_verification:
         - "bse_scrip"
         - "tijori_slug"
@@ -78,6 +82,8 @@ stocks:
       screener_slug: "SONACOMS"
       tijori_slug: "sona-blw-precision-forgings"
       us_listed: false
+      news_aliases:
+        - "Sona BLW Precision Forgings Limited"
       needs_verification:
         - "bse_scrip"
         - "tijori_slug"
@@ -100,6 +106,8 @@ stocks:
       screener_slug: "THERMAX"
       tijori_slug: "thermax"
       us_listed: false
+      news_aliases:
+        - "Thermax Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -120,6 +128,8 @@ stocks:
       screener_slug: "TITAN"
       tijori_slug: "titan-company"
       us_listed: false
+      news_aliases:
+        - "Titan Company Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -148,6 +158,8 @@ stocks:
       screener_slug: "NETWEB"
       tijori_slug: "netweb-technologies-india"
       us_listed: false
+      news_aliases:
+        - "Netweb Technologies India Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -169,6 +181,8 @@ stocks:
       screener_slug: "HFCL"
       tijori_slug: "hfcl"
       us_listed: false
+      news_aliases:
+        - "HFCL Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -189,6 +203,8 @@ stocks:
       screener_slug: "POLYCAB"
       tijori_slug: "polycab-india"
       us_listed: false
+      news_aliases:
+        - "Polycab India Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -209,6 +225,8 @@ stocks:
       screener_slug: "CGPOWER"
       tijori_slug: "cg-power-industrial-solutions"
       us_listed: false
+      news_aliases:
+        - "CG Power and Industrial Solutions Limited"
       needs_verification:
         - "tijori_slug"
     quarter:
@@ -229,6 +247,8 @@ stocks:
       screener_slug: "ETERNAL"
       tijori_slug: "eternal"
       us_listed: false
+      news_aliases:
+        - "Eternal Limited"
       needs_verification:
         - "tijori_slug"
       # Pre-rename as-filed NSE symbol: the Q3FY25 XBRL was filed as Zomato Ltd

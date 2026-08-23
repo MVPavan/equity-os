@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ET Markets synthetic fixture</title>
+    <item>
+      <title>Titan announces quarterly results</title>
+      <link>https://economictimes.example/markets/titan-results</link>
+      <guid>et-result-42</guid>
+      <pubDate>Sat, 22 Aug 2026 10:32:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Titan Company Limited opens a new store</title>
+      <link>https://economictimes.example/markets/titan-store</link>
+      <guid>et-store-43</guid>
+      <pubDate>Sat, 22 Aug 2026 11:30:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
