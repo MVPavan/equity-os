@@ -8,7 +8,7 @@ render, honouring the product's fail-closed doctrine (roadmap §12).
 
 This module renders; it does not verify. The pipeline is responsible for having
 already cross-checked and cross-footed every fact it hands in. The interpretive
-sections (§3, §4, §6, §7, §8, §10) carry no pipeline-sourced numbers: the
+sections (§4, §6, §7, §8, §10) carry no pipeline-sourced numbers: the
 deterministic pipeline does not synthesise analyst narrative, so those numeric
 claims stay out of scope rather than being fabricated here.
 """
@@ -16,32 +16,31 @@ claims stay out of scope rather than being fabricated here.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from decimal import Decimal
+from datetime import date
+from decimal import Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.comparative import (
+    PERCENT_CONTEXT_PRECISION,
+    ComparativeChange,
+    ConceptComparative,
+)
 from fundamentals.contracts.fact import ReconciliationStatus
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.role import FactRole as FactRole
 
 _CRORE_UNIT = "INR crore"
 _PER_SHARE_UNIT = "INR per share"
+_PERCENT_UNIT: Final = "percent"
 _SHA_PREFIX_LEN = 12
+_PERCENT_QUANTUM = Decimal("0.1")
 
 
 class RenderError(RuntimeError):
     """Raised when a required fact is absent — the render fails closed."""
-
-
-class FactRole(StrEnum):
-    """The six consolidated P&L roles the Q1 update must always carry."""
-
-    REVENUE = "revenue"
-    TOTAL_INCOME = "total_income"
-    TOTAL_EXPENSES = "total_expenses"
-    PROFIT_BEFORE_TAX = "profit_before_tax"
-    PROFIT_FOR_PERIOD = "profit_for_period"
-    BASIC_EPS = "basic_eps"
 
 
 REQUIRED_ROLES: tuple[FactRole, ...] = (
@@ -150,6 +149,8 @@ class EarningsUpdate(BaseModel):
     period_end: str
     knowledge_cutoff: str
     facts: tuple[RenderedFact, ...]
+    comparatives: tuple[ConceptComparative, ...] = ()
+    comparatives_attempted: bool = False
     guidance: tuple[RenderedGuidance, ...]
     calculations: tuple[RenderedCalculation, ...]
     cross_check: VerificationOutcome
@@ -166,6 +167,27 @@ def _format_value(value: Decimal, unit: str) -> str:
             return f"{value.to_integral_value():,}"
         return f"{value.normalize():,}"
     return str(value)
+
+
+def _format_signed(value: Decimal, unit: str) -> str:
+    """Format a change with an explicit sign and the concept's presentation unit."""
+    sign = "+" if value > 0 else ""
+    return f"{sign}{_format_value(value, unit)}"
+
+
+def _escape_markdown_cell(value: str) -> str:
+    """Keep dynamic text inside one Markdown table cell."""
+    return " ".join(value.splitlines()).replace("|", r"\|")
+
+
+def _comparator_period_label(period_start: date, period_end: date) -> str:
+    """Render an Indian fiscal-quarter label plus the comparator's exact dates."""
+    quarter = ((period_end.month - 4) % 12) // 3 + 1
+    fiscal_year_end = period_end.year + 1 if period_end.month >= 4 else period_end.year
+    return (
+        f"Q{quarter}FY{fiscal_year_end % 100:02d} "
+        f"{period_start.isoformat()}..{period_end.isoformat()}"
+    )
 
 
 class _Footnotes:
@@ -191,6 +213,96 @@ class _Footnotes:
         """Render the collected footnote definitions, in first-seen order."""
         lines = [f"[^{number}]: {label}" for number, label in enumerate(self._order, start=1)]
         return "\n".join(lines)
+
+
+def _render_change(
+    comparative: ConceptComparative,
+    change: ComparativeChange,
+    notes: _Footnotes,
+) -> tuple[str, str | None]:
+    """Render one prior value and its traced changes, or its explicit failure reason."""
+    period = _comparator_period_label(change.period_start, change.period_end)
+    if not change.available:
+        return f"not available ({period}; {change.unavailable_reason})", None
+    assert comparative.current_value is not None
+    assert comparative.unit is not None
+    assert change.prior_value is not None
+    assert change.absolute_change is not None
+    assert change.prior_source is not None
+
+    current_markers = notes.markers(comparative.current_sources)
+    prior_marker = notes.marker(change.prior_source)
+    endpoint_markers = f"{current_markers}{prior_marker}"
+    prior = _format_value(change.prior_value, comparative.unit)
+    delta = _format_signed(change.absolute_change, comparative.unit)
+    if change.percent_change is None:
+        percent = f"n/a ({change.percent_unavailable_reason})"
+        percent_trace = ""
+    else:
+        try:
+            with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
+                rounded_percent = change.percent_change.quantize(_PERCENT_QUANTUM)
+                formatted_percent = _format_signed(rounded_percent, _PERCENT_UNIT)
+        except DecimalException:
+            percent = "n/a (percent cannot be represented safely)"
+            percent_trace = ""
+        else:
+            percent = f"{formatted_percent}%{endpoint_markers}"
+            percent_trace = (
+                f"; % trace: ({comparative.current_value}{current_markers} − "
+                f"{change.prior_value}{prior_marker}) / "
+                f"{change.prior_value}{prior_marker} × 100"
+            )
+    absolute_trace = (
+        f"trace: {comparative.current_value}{current_markers} − {change.prior_value}{prior_marker}"
+    )
+    return (
+        f"{prior}{prior_marker} ({period}); Δ {delta}{endpoint_markers}; {percent}",
+        f"{change.kind.value} {absolute_trace}{percent_trace}",
+    )
+
+
+def _render_comparatives(
+    comparatives: Sequence[ConceptComparative],
+    facts: Sequence[RenderedFact],
+    notes: _Footnotes,
+    *,
+    attempted: bool,
+) -> list[str]:
+    """Render the section-3 table over every configured material concept."""
+    if not comparatives:
+        if attempted:
+            return ["No prior-period comparator filings were available for this report."]
+        return [
+            "Prior-period comparatives were not attempted for this single-issuer pipeline path."
+        ]
+    labels = {fact.concept_qname: _ROLE_LABELS[fact.role] for fact in facts}
+    lines = [
+        "| P&L line | Current | QoQ prior / change | YoY prior / change |",
+        "| --- | ---: | --- | --- |",
+    ]
+    traces: list[str] = []
+    for comparative in comparatives:
+        label = _escape_markdown_cell(
+            labels.get(comparative.concept_qname, f"`{comparative.concept_qname}`")
+        )
+        if comparative.current_value is None or comparative.unit is None:
+            current = f"not available ({comparative.current_unavailable_reason})"
+        else:
+            current = (
+                f"{_format_value(comparative.current_value, comparative.unit)}"
+                f"{notes.markers(comparative.current_sources)}"
+            )
+        qoq_cell, qoq_trace = _render_change(comparative, comparative.qoq, notes)
+        yoy_cell, yoy_trace = _render_change(comparative, comparative.yoy, notes)
+        lines.append(
+            f"| {label} | {_escape_markdown_cell(current)} | "
+            f"{_escape_markdown_cell(qoq_cell)} | {_escape_markdown_cell(yoy_cell)} |"
+        )
+        traces.extend(f"- {label} {trace}" for trace in (qoq_trace, yoy_trace) if trace is not None)
+    if traces:
+        lines.extend(("", "Computed traces:", "", *traces))
+    return lines
 
 
 def _require_all_roles(facts: Sequence[RenderedFact]) -> dict[FactRole, RenderedFact]:
@@ -255,9 +367,13 @@ def render_earnings_update(update: EarningsUpdate) -> str:
 
     lines.append("## 3. changes")
     lines.append("")
-    lines.append(
-        "Prior-period comparatives (QoQ / YoY) require prior-quarter facts that are not part of "
-        "this quarter's evidence package; the deterministic pipeline does not compute them here."
+    lines.extend(
+        _render_comparatives(
+            update.comparatives,
+            update.facts,
+            notes,
+            attempted=update.comparatives_attempted,
+        )
     )
     lines.append("")
 

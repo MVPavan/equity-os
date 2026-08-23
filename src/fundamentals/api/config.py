@@ -17,6 +17,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from fundamentals.contracts.role import FactRole
 from fundamentals.extract.guidance_extractor import DEFAULT_GUIDANCE_RULES
 from fundamentals.extract.pdf_number_parser import (
     DEFAULT_COLUMN_X_TOLERANCE_PT,
@@ -27,7 +28,6 @@ from fundamentals.extract.pdf_number_parser import (
     PdfTargetLine,
     SubcomponentSummation,
 )
-from fundamentals.output.earnings_update import FactRole
 
 _DEFAULT_XBRL_ALIASES: dict[str, str] = {
     "http://www.nseindia.com/NSESymbol": "nse-symbol",

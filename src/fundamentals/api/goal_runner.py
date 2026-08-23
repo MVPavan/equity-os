@@ -41,6 +41,7 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.api.comparatives import collect_comparatives
 from fundamentals.api.config import (
     ConceptsConfig,
     IdentityConfig,
@@ -50,7 +51,6 @@ from fundamentals.api.watchlist_config import StockConfig, StockQuarter, Watchli
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
-    PeriodType,
     Scope,
 )
 from fundamentals.extract.pdf_number_parser import (
@@ -60,12 +60,8 @@ from fundamentals.extract.pdf_number_parser import (
     extract_consolidated_pl,
 )
 from fundamentals.extract.pdf_ocr_recovery import extract_consolidated_pl_via_ocr
-from fundamentals.extract.xbrl_parser import (
-    FactSelectionError,
-    XbrlParseError,
-    parse_observations,
-    select_observation,
-)
+from fundamentals.extract.xbrl_parser import XbrlParseError, parse_observations
+from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.bse_pdf_source import (
     SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID,
 )
@@ -75,7 +71,6 @@ from fundamentals.ingest.bse_pdf_source import (
 )
 from fundamentals.ingest.bse_source import (
     BSE_RESULTS_URL_TEMPLATE,
-    BSE_TAXONOMIES,
     SUMMARY_SOURCE_ID,
     BseFetchError,
     BseSource,
@@ -107,14 +102,48 @@ from fundamentals.ingest.xbrl_source import (
     NseXbrlSource,
     XbrlFetchError,
 )
-from fundamentals.output.earnings_update import FactRole
 from fundamentals.reconcile.agreement import (
     AgreementResult,
     AgreementStatus,
-    SourceClass,
     classify_agreement,
 )
+from fundamentals.reconcile.fact_view import (
+    canonicalise as _canonicalise,
+)
+from fundamentals.reconcile.fact_view import (
+    derived_concept_map as _derived_concept_map,
+)
+from fundamentals.reconcile.fact_view import (
+    gather_fact_observations as _gather_fact_observations,
+)
+from fundamentals.reconcile.fact_view import (
+    select_first_party as _select_first_party,
+)
 from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, write_gold_file
+from fundamentals.reconcile.report import (
+    ALL_SOURCE_KINDS as ALL_SOURCE_KINDS,
+)
+from fundamentals.reconcile.report import (
+    FIRST_PARTY_SOURCE_KINDS as _FIRST_PARTY_KINDS,
+)
+from fundamentals.reconcile.report import (
+    XBRL_SOURCE_KINDS as _XBRL_SELECT_KINDS,
+)
+from fundamentals.reconcile.report import (
+    CollectedSource,
+    CrossFootOutcome,
+    DodEvaluation,
+    FactOutcome,
+    SourceReading,
+    SourceStatus,
+    StockOutcome,
+)
+from fundamentals.reconcile.report import (
+    SourceKind as SourceKind,
+)
+from fundamentals.reconcile.report import (
+    StockReport as StockReport,
+)
 from fundamentals.verify.crossfoot import (
     CrossFootResult,
     Identity,
@@ -123,20 +152,6 @@ from fundamentals.verify.crossfoot import (
 )
 
 _LOGGER = structlog.get_logger("fundamentals.goal_runner")
-
-CANONICAL_ENTITY_SCHEME = "nse-symbol"
-
-# Parse both first-party XBRL hosts with the superset of supported taxonomies
-# (in-bse-fin + in-capmkt); the parser fails closed if an instance matches none.
-_ALL_TAXONOMIES = BSE_TAXONOMIES
-
-# Screener / Tijori derived concepts that map onto a first-party render role, so a
-# derived value can corroborate the role's canonical concept.
-_DERIVED_ROLE_ALIASES: dict[FactRole, tuple[str, ...]] = {
-    FactRole.REVENUE: ("screener:Sales", "tijori:sales"),
-    FactRole.PROFIT_FOR_PERIOD: ("screener:NetProfit", "tijori:net_profit"),
-    FactRole.BASIC_EPS: ("screener:EPS", "tijori:eps"),
-}
 
 
 class RunMode(StrEnum):
@@ -176,140 +191,6 @@ _BSE_PERIOD_LABEL_FORMAT = "%b-%y"
 _PDF_ANNOUNCEMENT_WINDOW_DAYS = 60
 
 
-class SourceKind(StrEnum):
-    """The sources the runner can cross-check per stock."""
-
-    NSE = "nse"
-    BSE = "bse"
-    SCREENER = "screener"
-    TIJORI = "tijori"
-    PDF = "pdf"
-    SEC = "sec"
-
-
-ALL_SOURCE_KINDS: frozenset[SourceKind] = frozenset(SourceKind)
-_FIRST_PARTY_KINDS: frozenset[SourceKind] = frozenset(
-    {SourceKind.NSE, SourceKind.BSE, SourceKind.PDF}
-)
-_XBRL_SELECT_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceKind.BSE})
-
-
-class SourceStatus(StrEnum):
-    """Outcome of pulling one source for one stock."""
-
-    OK = "ok"
-    SKIPPED = "skipped"
-    BLOCKED = "blocked"
-
-
-class StockOutcome(StrEnum):
-    """The per-stock verdict against the goal's Definition of Done."""
-
-    DONE = "done"
-    NEEDS_ADJUDICATION = "needs_adjudication"
-    BLOCKED = "blocked"
-
-
-class CollectedSource(BaseModel):
-    """One source's pulled observations plus its status and any note."""
-
-    model_config = ConfigDict(frozen=True)
-
-    kind: SourceKind
-    source_id: str
-    status: SourceStatus
-    observations: tuple[Observation, ...] = ()
-    note: str = ""
-
-
-class SourceReading(BaseModel):
-    """One source's reported value for a reconciled fact."""
-
-    model_config = ConfigDict(frozen=True)
-
-    source_id: str
-    source_class: SourceClass
-    value: str
-    normalized_unit: str
-
-
-class FactOutcome(BaseModel):
-    """The cross-source reconciliation of one material fact."""
-
-    model_config = ConfigDict(frozen=True)
-
-    concept_qname: str
-    status: AgreementStatus
-    agreed_value: str | None
-    agreed_sources: tuple[str, ...]
-    corroborating_sources: tuple[str, ...]
-    incompatible_sources: tuple[str, ...]
-    first_party_source_count: int
-    needs_human_review: bool
-    readings: tuple[SourceReading, ...]
-
-
-class CrossFootOutcome(BaseModel):
-    """One evaluated accounting identity's result, projected for the report."""
-
-    model_config = ConfigDict(frozen=True)
-
-    identity: str
-    passed: bool
-    residual: str
-    tolerance: str
-    flagged_for_review: bool
-
-
-class DodEvaluation(BaseModel):
-    """The goal's Definition of Done, evaluated per stock."""
-
-    model_config = ConfigDict(frozen=True)
-
-    material_facts_agreed: bool
-    cross_foot_holds: bool
-    gold_file_written: bool
-    no_unsourced_number: bool
-    no_missing_material_concepts: bool
-
-    @property
-    def met(self) -> bool:
-        """Whether every Definition-of-Done clause holds for this stock."""
-        return (
-            self.material_facts_agreed
-            and self.cross_foot_holds
-            and self.gold_file_written
-            and self.no_unsourced_number
-            and self.no_missing_material_concepts
-        )
-
-
-class StockReport(BaseModel):
-    """Per-stock validation report: coverage, facts, discrepancies, and verdict."""
-
-    model_config = ConfigDict(frozen=True)
-
-    symbol: str
-    name: str
-    domain: str
-    quarter: str
-    outcome: StockOutcome
-    sources: tuple[CollectedSource, ...]
-    facts: tuple[FactOutcome, ...]
-    discrepancies: tuple[FactOutcome, ...]
-    missing_material_concepts: tuple[str, ...]
-    cross_foot: tuple[CrossFootOutcome, ...]
-    gold_file_path: str | None
-    dod: DodEvaluation
-    blockers: tuple[str, ...]
-    identifiers_to_verify: tuple[str, ...]
-
-    @property
-    def available_sources(self) -> tuple[str, ...]:
-        """Source ids that returned observations for this stock."""
-        return tuple(src.source_id for src in self.sources if src.status is SourceStatus.OK)
-
-
 class WaveReport(BaseModel):
     """Roll-up across a single wave: per-stock verdicts and coverage.
 
@@ -338,126 +219,6 @@ class WaveReport(BaseModel):
     def blocked_count(self) -> int:
         """Number of stocks recorded BLOCKED."""
         return sum(1 for s in self.stocks if s.outcome is StockOutcome.BLOCKED)
-
-
-# --- entity / concept canonicalisation ----------------------------------------
-
-
-def _role_concept_map(concepts: ConceptsConfig) -> dict[FactRole, str]:
-    """Map each configured render role to its canonical concept QName."""
-    return {role.role: role.concept_qname for role in concepts.roles}
-
-
-def _derived_concept_map(concepts: ConceptsConfig) -> dict[str, str]:
-    """Build the derived-concept -> canonical-concept map from the role map."""
-    role_map = _role_concept_map(concepts)
-    mapping: dict[str, str] = {}
-    for role, aliases in _DERIVED_ROLE_ALIASES.items():
-        canonical = role_map.get(role)
-        if canonical is None:
-            continue
-        for alias in aliases:
-            mapping[alias] = canonical
-    return mapping
-
-
-def _canonicalise(
-    obs: Observation, symbol: str, *, canonical_concept: str | None = None
-) -> Observation:
-    """Project an observation onto the canonical cross-host comparison column.
-
-    Every source is re-homed to ``(nse-symbol, <symbol>)`` so the same issuer's
-    values compare, and its taxonomy identity is dropped so the column is
-    taxonomy-agnostic: the NSE XBRL (which carries a taxonomy) and the BSE
-    resultsSnapshot summary (which carries none) then land in one comparison
-    column. Semantic drift is still caught by ``concept_qname``, which encodes the
-    taxonomy prefix. For a derived observation ``canonical_concept`` also rewrites
-    the concept, scope and accounting basis onto the first-party column it
-    corroborates; the ``source_id`` is untouched, so the classifier still marks it
-    derived and never counts it as first-party.
-    """
-    updates: dict[str, object] = {
-        "entity_scheme": CANONICAL_ENTITY_SCHEME,
-        "entity_id": symbol,
-        "taxonomy_namespace": None,
-        "registry_version": None,
-    }
-    if canonical_concept is not None:
-        updates.update(
-            concept_qname=canonical_concept,
-            scope=Scope.CONSOLIDATED,
-            accounting_basis=AccountingFramework.IND_AS,
-        )
-    return obs.model_copy(update=updates)
-
-
-def _select_first_party(
-    observations: Sequence[Observation],
-    concept: str,
-    stock: StockConfig,
-) -> Observation | None:
-    """Select the segment-free consolidated-quarter observation, or ``None``.
-
-    Reuses :func:`select_observation`; a zero-or-ambiguous match means this source
-    does not cleanly carry the concept, so it is skipped for that fact (fail
-    closed — never guessed).
-    """
-    try:
-        return select_observation(
-            tuple(observations),
-            concept_qname=concept,
-            scope=Scope.CONSOLIDATED,
-            period_type=PeriodType.DURATION,
-            period_start=stock.quarter.period_start,
-            period_end=stock.quarter.period_end,
-        )
-    except FactSelectionError:
-        return None
-
-
-def _gather_fact_observations(
-    concept: str,
-    sources: Sequence[CollectedSource],
-    stock: StockConfig,
-    derived_map: dict[str, str],
-) -> list[Observation]:
-    """Collect every source's observation for one canonical concept, canonicalised."""
-    gathered: list[Observation] = []
-    for src in sources:
-        if src.status is not SourceStatus.OK:
-            continue
-        if src.kind in _XBRL_SELECT_KINDS:
-            picked = _select_first_party(src.observations, concept, stock)
-            if picked is not None:
-                gathered.append(_canonicalise(picked, stock.symbol))
-        elif src.kind in _FIRST_PARTY_KINDS:  # PDF: already quarter-bound
-            gathered.extend(
-                _canonicalise(obs, stock.symbol)
-                for obs in src.observations
-                if obs.concept_qname == concept
-            )
-        else:  # derived aggregator (Screener / Tijori)
-            gathered.extend(_derived_for_concept(concept, src, stock, derived_map))
-    return gathered
-
-
-def _derived_for_concept(
-    concept: str,
-    src: CollectedSource,
-    stock: StockConfig,
-    derived_map: dict[str, str],
-) -> list[Observation]:
-    """Re-express a derived source's target-quarter observations onto ``concept``."""
-    result: list[Observation] = []
-    for obs in src.observations:
-        if derived_map.get(obs.concept_qname) != concept:
-            continue
-        if obs.period_type is not PeriodType.DURATION:
-            continue
-        if obs.period_end != stock.quarter.period_end:
-            continue
-        result.append(_canonicalise(obs, stock.symbol, canonical_concept=concept))
-    return result
 
 
 # --- reconciliation -----------------------------------------------------------
@@ -492,7 +253,12 @@ def _first_party_concept_obs(
     """Select every needed concept from one first-party XBRL source, canonicalised."""
     resolved: dict[str, Observation] = {}
     for concept in needed:
-        picked = _select_first_party(src.observations, concept, stock)
+        picked = _select_first_party(
+            src.observations,
+            concept,
+            period_start=stock.quarter.period_start,
+            period_end=stock.quarter.period_end,
+        )
         if picked is not None:
             resolved[concept] = _canonicalise(picked, stock.symbol)
     return resolved
@@ -547,13 +313,20 @@ def reconcile_stock(
     reference), and evaluates the goal's Definition of Done.
     """
     concepts = stock.concepts
-    derived_map = _derived_concept_map(concepts)
+    derived_map = _derived_concept_map(concepts.roles)
 
     results: list[AgreementResult] = []
     facts: list[FactOutcome] = []
     missing: list[str] = []
     for concept in concepts.cross_check:
-        gathered = _gather_fact_observations(concept, sources, stock, derived_map)
+        gathered = _gather_fact_observations(
+            concept,
+            sources,
+            symbol=stock.symbol,
+            period_start=stock.quarter.period_start,
+            period_end=stock.quarter.period_end,
+            derived_map=derived_map,
+        )
         if not gathered:
             missing.append(concept)
             continue
@@ -1191,7 +964,25 @@ def run_stock(
         tijori_credentials=tijori_credentials,
         ocr_engine=ocr_engine,
     )
-    return reconcile_stock(stock, sources, out_dir=out_dir)
+    report = reconcile_stock(stock, sources, out_dir=out_dir)
+    nse_source = next((source for source in sources if source.kind is SourceKind.NSE), None)
+    try:
+        comparatives = collect_comparatives(
+            report,
+            stock,
+            live=mode is RunMode.LIVE,
+            nse_source=nse_source,
+            repo_root=repo_root,
+        )
+    except Exception as error:  # noqa: BLE001 - last-resort optional-comparator boundary
+        _LOGGER.error(
+            "comparative_collection_failed",
+            symbol=stock.symbol,
+            error_type=type(error).__name__,
+            reason=str(error),
+        )
+        return report
+    return report.model_copy(update={"comparatives": comparatives})
 
 
 def run_wave(

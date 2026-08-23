@@ -56,11 +56,8 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
-from fundamentals.extract.xbrl_parser import (
-    DEFAULT_TAXONOMIES,
-    TaxonomySpec,
-    parse_observations,
-)
+from fundamentals.extract.xbrl_parser import TaxonomySpec, parse_observations
+from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -88,19 +85,6 @@ BSE_RESULTS_URL_TEMPLATE = (
 # against a real Integrated Filing instance; the committed fixture declares the
 # same value so the deterministic test is self-consistent, but live parsing of a
 # real ``in-capmkt`` instance requires the confirmed production URI.
-IN_CAPMKT_NAMESPACE = "http://www.sebi.gov.in/xbrl/2023-03-31/in-capmkt"
-IN_CAPMKT_PREFIX = "in-capmkt"
-IN_CAPMKT_REGISTRY_VERSION = "in-capmkt/2023-03-31"
-
-BSE_TAXONOMIES: tuple[TaxonomySpec, ...] = (
-    *DEFAULT_TAXONOMIES,
-    TaxonomySpec(
-        namespace=IN_CAPMKT_NAMESPACE,
-        prefix=IN_CAPMKT_PREFIX,
-        registry_version=IN_CAPMKT_REGISTRY_VERSION,
-    ),
-)
-
 # --- Summary concept mapping (BSE row title -> canonical concept) --------------
 # The three cross-checkable rows use the *exact* concept QNames the NSE parser and
 # reconciler config use (see fundamentals.api.config), so the reconciler compares
@@ -502,7 +486,7 @@ class BseSource:
         """Parse held BSE XBRL bytes into observations via the shared parser.
 
         Stamps every observation's provenance with ``source_id="bse-xbrl"`` and
-        dispatches concept resolution through :data:`BSE_TAXONOMIES`, so a filing
+        dispatches concept resolution through :data:`_ALL_TAXONOMIES`, so a filing
         under either the ``in-bse-fin`` or ``in-capmkt`` taxonomy is handled and an
         instance under neither fails closed (never yields an empty result).
         """
@@ -511,7 +495,7 @@ class BseSource:
             source_id=SOURCE_ID,
             file_sha256=file_sha256,
             retrieved_at=retrieved_at,
-            taxonomies=BSE_TAXONOMIES,
+            taxonomies=_ALL_TAXONOMIES,
         )
 
     # -- XBRL fetch + verify + parse (secondary; explicit url) ----------------
@@ -680,11 +664,11 @@ class BseSource:
         """Return the single BSE taxonomy whose scope concept the instance declares."""
         matched = [
             spec
-            for spec in BSE_TAXONOMIES
+            for spec in _ALL_TAXONOMIES
             if root.find(f"{{{spec.namespace}}}{spec.scope_concept}") is not None
         ]
         if len(matched) != 1:
-            supported = ", ".join(spec.registry_version for spec in BSE_TAXONOMIES)
+            supported = ", ".join(spec.registry_version for spec in _ALL_TAXONOMIES)
             raise BseFetchError(
                 f"downloaded XBRL matches {len(matched)} supported taxonomies "
                 f"(expected 1 of: {supported})"

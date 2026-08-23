@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic prior-quarter consolidated filing for comparator tests. -->
+<xbrli:xbrl
+    xmlns:xbrli="http://www.xbrl.org/2003/instance"
+    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+    xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin">
+  <xbrli:context id="QoQ">
+    <xbrli:entity>
+      <xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">SYNTH</xbrli:identifier>
+    </xbrli:entity>
+    <xbrli:period>
+      <xbrli:startDate>2024-07-01</xbrli:startDate>
+      <xbrli:endDate>2024-09-30</xbrli:endDate>
+    </xbrli:period>
+  </xbrli:context>
+  <xbrli:unit id="INR"><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unit>
+  <xbrli:unit id="INRPerShare">
+    <xbrli:divide>
+      <xbrli:unitNumerator><xbrli:measure>iso4217:INR</xbrli:measure></xbrli:unitNumerator>
+      <xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unitDenominator>
+    </xbrli:divide>
+  </xbrli:unit>
+  <in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="QoQ">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+  <in-bse-fin:RevenueFromOperations contextRef="QoQ" unitRef="INR" decimals="-7">8000000000</in-bse-fin:RevenueFromOperations>
+  <in-bse-fin:Income contextRef="QoQ" unitRef="INR" decimals="-7">8200000000</in-bse-fin:Income>
+  <in-bse-fin:Expenses contextRef="QoQ" unitRef="INR" decimals="-7">6600000000</in-bse-fin:Expenses>
+  <in-bse-fin:ProfitBeforeTax contextRef="QoQ" unitRef="INR" decimals="-7">1600000000</in-bse-fin:ProfitBeforeTax>
+  <in-bse-fin:ProfitLossForPeriod contextRef="QoQ" unitRef="INR" decimals="-7">0</in-bse-fin:ProfitLossForPeriod>
+  <in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations contextRef="QoQ" unitRef="INRPerShare" decimals="2">4.00</in-bse-fin:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations>
+</xbrli:xbrl>

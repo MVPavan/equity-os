@@ -122,6 +122,17 @@ def test_pipeline_produces_headline_figures(store: FactStore) -> None:
         assert headline in result.markdown, headline
 
 
+def test_single_issuer_pipeline_says_comparatives_were_not_attempted(store: FactStore) -> None:
+    """The legacy single-issuer path must not imply that it searched for comparators."""
+    result = _run_deterministic(store)
+
+    assert (
+        "Prior-period comparatives were not attempted for this single-issuer pipeline path."
+        in result.markdown
+    )
+    assert "No prior-period comparator filings were collected" not in result.markdown
+
+
 def test_every_facts_table_number_resolves_to_a_stored_fact(store: FactStore) -> None:
     result = _run_deterministic(store)
     stored_values = _stored_value_strings(store)

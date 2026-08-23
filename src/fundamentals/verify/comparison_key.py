@@ -89,7 +89,13 @@ class ComparisonKey(BaseModel):
             dimensions=tuple(sorted(obs.dimensions)),
         )
 
-    def _diffs(self, other: ComparisonKey, *, include_concept: bool) -> tuple[str, ...]:
+    def _diffs(
+        self,
+        other: ComparisonKey,
+        *,
+        include_concept: bool,
+        include_period: bool = True,
+    ) -> tuple[str, ...]:
         """List human-readable mismatch reasons between two keys."""
         reasons: list[str] = []
 
@@ -105,11 +111,14 @@ class ComparisonKey(BaseModel):
         self._add_taxonomy_diff(other, reasons)
         if include_concept:
             add(FIELD_CONCEPT, self.concept_qname, other.concept_qname)
-        add(
-            FIELD_PERIOD,
-            (self.period_type, self.period_start, self.period_end, self.period_instant),
-            (other.period_type, other.period_start, other.period_end, other.period_instant),
-        )
+        if include_period:
+            add(
+                FIELD_PERIOD,
+                (self.period_type, self.period_start, self.period_end, self.period_instant),
+                (other.period_type, other.period_start, other.period_end, other.period_instant),
+            )
+        else:
+            add(FIELD_PERIOD, self.period_type, other.period_type)
         add(FIELD_SCOPE, self.scope, other.scope)
         self._add_accounting_basis_diff(other, reasons)
         add(FIELD_CURRENCY, self.currency, other.currency)
@@ -167,6 +176,15 @@ class ComparisonKey(BaseModel):
         """
         reasons = self._diffs(other, include_concept=False)
         return ComparabilityResult(comparable=not reasons, reasons=reasons)
+
+    def comparative_compatibility(self, other: ComparisonKey) -> ComparabilityResult:
+        """Comparability for the same concept in a different reporting quarter."""
+        reasons = list(self._diffs(other, include_concept=True, include_period=False))
+        own_period = (self.period_start, self.period_end, self.period_instant)
+        other_period = (other.period_start, other.period_end, other.period_instant)
+        if own_period == other_period:
+            reasons.append(f"{FIELD_PERIOD} must differ for a comparative")
+        return ComparabilityResult(comparable=not reasons, reasons=tuple(reasons))
 
 
 def explain_comparability(left: Observation, right: Observation) -> ComparabilityResult:

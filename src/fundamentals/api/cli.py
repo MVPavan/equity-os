@@ -24,6 +24,7 @@ from pathlib import Path
 import structlog
 from pydantic import TypeAdapter
 
+from fundamentals.api.comparatives import derive_comparator_periods
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
     ALL_SOURCE_KINDS,
@@ -44,7 +45,9 @@ from fundamentals.api.watchlist_config import (
     Wave,
     load_watchlist_config,
 )
+from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
+from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_comparator_path
 from fundamentals.ingest.ocr_engine import RapidOcrEngine
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
@@ -68,7 +71,6 @@ _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
 _DEFAULT_THESIS_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "thesis"
-_CACHED_RAW_DIR = "data/raw/watchlist"
 _COMMAND_RUN = "run"
 _COMMAND_VALIDATE = "validate"
 _COMMAND_REPORT = "report"
@@ -333,12 +335,25 @@ def _cached_stock(stock: StockConfig, repo_root: Path) -> StockConfig:
     (skipped), so the reconcile fails closed rather than fabricating a value.
     """
     lower = stock.symbol.lower()
-    nse_dir = repo_root / _CACHED_RAW_DIR / lower / "nse"
-    pdf_dir = repo_root / _CACHED_RAW_DIR / lower / "bse_pdf"
+    nse_dir = repo_root / RAW_WATCHLIST_DIR / lower / "nse"
+    pdf_dir = repo_root / RAW_WATCHLIST_DIR / lower / "bse_pdf"
     nse = next(iter(sorted(nse_dir.glob("*.xml"))), None) if nse_dir.is_dir() else None
+    periods = derive_comparator_periods(stock.quarter.period_start, stock.quarter.period_end)
+    qoq_start, qoq_end = periods[ComparatorKind.QOQ]
+    yoy_start, yoy_end = periods[ComparatorKind.YOY]
+    nse_qoq = cached_comparator_path(
+        repo_root, stock.symbol, ComparatorKind.QOQ, qoq_start, qoq_end
+    )
+    nse_yoy = cached_comparator_path(
+        repo_root, stock.symbol, ComparatorKind.YOY, yoy_start, yoy_end
+    )
     pdf = next(iter(sorted(pdf_dir.glob("*.pdf"))), None) if pdf_dir.is_dir() else None
     fixtures = FixturePaths(
         nse=str(nse.relative_to(repo_root)) if nse is not None else None,
+        nse_qoq=(str(nse_qoq.path.relative_to(repo_root)) if nse_qoq.path is not None else None),
+        nse_qoq_unavailable_reason=nse_qoq.unavailable_reason,
+        nse_yoy=(str(nse_yoy.path.relative_to(repo_root)) if nse_yoy.path is not None else None),
+        nse_yoy_unavailable_reason=nse_yoy.unavailable_reason,
         results_pdf=str(pdf.relative_to(repo_root)) if pdf is not None else None,
     )
     results_pdf = (
@@ -398,7 +413,10 @@ def report_command(args: argparse.Namespace) -> list[str]:
             logger.warning(
                 "report_skipped_no_cached_source",
                 symbol=stock.symbol,
-                reason=f"no cached NSE XBRL under {_CACHED_RAW_DIR}/{stock.symbol.lower()}",
+                reason=(
+                    "no cached NSE XBRL under "
+                    f"{RAW_WATCHLIST_DIR.as_posix()}/{stock.symbol.lower()}"
+                ),
             )
             continue
         stock_report = run_stock(

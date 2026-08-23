@@ -35,18 +35,8 @@ from decimal import Decimal
 import structlog
 from pydantic import BaseModel, ConfigDict
 
-# Reuse — never re-implement — the goal runner's per-fact gather (which
-# canonicalises every source onto one comparison column before comparison) and
-# its derived-concept map, so the bridge's agreement matches the reconciliation
-# byte-for-byte instead of re-deriving a subtly different column.
-from fundamentals.api.goal_runner import (
-    StockReport,
-    _derived_concept_map,
-    _gather_fact_observations,
-)
 from fundamentals.api.watchlist_config import StockConfig
 from fundamentals.contracts.fact import ReconciliationStatus
-from fundamentals.contracts.provenance import Provenance
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
     FactRole,
@@ -58,8 +48,13 @@ from fundamentals.output.earnings_update import (
 from fundamentals.reconcile.agreement import (
     AgreementResult,
     AgreementStatus,
-    classify_agreement,
 )
+from fundamentals.reconcile.fact_view import (
+    derived_concept_map,
+    role_agreement,
+    winning_anchors,
+)
+from fundamentals.reconcile.report import StockReport
 
 _LOGGER = structlog.get_logger("fundamentals.report_builder")
 
@@ -112,36 +107,6 @@ class ReportBuild(BaseModel):
         return not self.unresolved
 
 
-def _role_agreement(
-    concept: str,
-    report: StockReport,
-    stock: StockConfig,
-    derived_map: dict[str, str],
-) -> AgreementResult | None:
-    """Classify cross-source agreement for one concept over the report's sources.
-
-    Returns ``None`` when no source carries the concept (so the caller fails closed
-    on a missing required role rather than fabricating a value).
-    """
-    gathered = _gather_fact_observations(concept, report.sources, stock, derived_map)
-    if not gathered:
-        return None
-    return classify_agreement(gathered)
-
-
-def _winning_anchors(result: AgreementResult) -> tuple[Provenance, ...]:
-    """The provenance of every first-party source whose value was retained.
-
-    Two anchors for a cross-source-confirmed fact (e.g. NSE XBRL context + BSE
-    results-PDF span), one for a single-source fact.
-    """
-    return tuple(
-        value.provenance
-        for value in result.source_values
-        if value.source_id in result.agreed_sources
-    )
-
-
 def _rendered_fact(role: FactRole, concept: str, result: AgreementResult) -> RenderedFact:
     """Build the render-ready fact for a role from its retained agreement result."""
     assert result.agreed_value is not None  # guarded by the caller
@@ -151,7 +116,7 @@ def _rendered_fact(role: FactRole, concept: str, result: AgreementResult) -> Ren
         value=result.agreed_value,
         unit=result.normalized_unit,
         reconciliation_status=_STATUS_MAP[result.status],
-        sources=_winning_anchors(result),
+        sources=winning_anchors(result),
     )
 
 
@@ -254,13 +219,21 @@ def build_report(report: StockReport, stock: StockConfig) -> ReportBuild:
     the caller can fail closed with a reason.
     """
     concepts = stock.concepts
-    derived_map = _derived_concept_map(concepts)
+    derived_map = derived_concept_map(concepts.roles)
 
     needed: dict[str, None] = {role.concept_qname: None for role in concepts.roles}
     for concept in concepts.cross_check:
         needed.setdefault(concept, None)
     results: dict[str, AgreementResult | None] = {
-        concept: _role_agreement(concept, report, stock, derived_map) for concept in needed
+        concept: role_agreement(
+            concept,
+            report.sources,
+            symbol=stock.symbol,
+            period_start=stock.quarter.period_start,
+            period_end=stock.quarter.period_end,
+            derived_map=derived_map,
+        )
+        for concept in needed
     }
 
     rendered_facts: list[RenderedFact] = []
@@ -295,6 +268,8 @@ def build_report(report: StockReport, stock: StockConfig) -> ReportBuild:
         period_end=stock.quarter.period_end.isoformat(),
         knowledge_cutoff=stock.quarter.knowledge_cutoff.date().isoformat(),
         facts=tuple(rendered_facts),
+        comparatives=report.comparatives,
+        comparatives_attempted=True,
         guidance=(),
         calculations=_calculations(role_values),
         cross_check=_cross_check_outcome(concepts.cross_check, results),

@@ -24,6 +24,10 @@ from nse import NSE  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.xbrl_identity import (
+    NseEntityIdentityError,
+    validate_nse_entity_identities,
+)
 
 NS_XBRLI = "http://www.xbrl.org/2003/instance"
 FIN_NAMESPACE = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"
@@ -260,17 +264,17 @@ class NseXbrlSource:
         the requested issuer — its current symbol, a rename-stable ISIN alias, or a
         configured alias. A filing for a genuinely different company is rejected.
         """
-        identifiers = {
-            (identifier.text or "").strip().upper()
+        identities = {
+            (identifier.get("scheme") or "", identifier.text or "")
             for identifier in root.findall(f"{_XBRLI}context/{_XBRLI}entity/{_XBRLI}identifier")
         }
         accepted = self._accepted_entity_ids_for(isin)
-        if identifiers.isdisjoint(accepted):
-            aliases = sorted(accepted - {self._symbol})
+        try:
+            validate_nse_entity_identities(identities, accepted)
+        except NseEntityIdentityError as error:
             raise XbrlFetchError(
-                f"downloaded XBRL entity {sorted(identifiers)} does not match requested "
-                f"issuer {self._symbol!r} (accepted aliases: {aliases or 'none'})"
-            )
+                f"downloaded XBRL does not match requested issuer {self._symbol!r}: {error}"
+            ) from error
 
     def fetch_consolidated_quarter(self, *, from_date: date, to_date: date) -> XbrlRetrieval:
         """Fetch, verify and stamp the consolidated Ind AS XBRL for one quarter.

@@ -103,6 +103,10 @@ class FixturePaths(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     nse: str | None = None
+    nse_qoq: str | None = None
+    nse_qoq_unavailable_reason: str | None = None
+    nse_yoy: str | None = None
+    nse_yoy_unavailable_reason: str | None = None
     bse: str | None = None
     screener: str | None = None
     tijori: str | None = None
