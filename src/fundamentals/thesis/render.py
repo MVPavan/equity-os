@@ -9,10 +9,18 @@ thesis is non-authoritative until a human adjudicates the queue (invariant 11).
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from datetime import datetime
 
+from fundamentals.thesis.adjudication import (
+    AdjudicationEntry,
+    AdjudicationStatus,
+    normalize_queue_key,
+)
 from fundamentals.thesis.contracts import (
     CrossVerification,
+    Discrepancy,
     JudgmentSection,
     ThesisDocument,
     ThesisDocumentStatus,
@@ -39,11 +47,64 @@ _STATUS_BANNER: dict[ThesisDocumentStatus, str] = {
         "BLOCKED — no model draft was produced. No thesis judgment is available."
     ),
 }
+_ADJUDICATION_FLAG_PREFIX = "- Human adjudication required: **"
+_ADJUDICATION_MANIFEST_PREFIX = "<!-- thesis-adjudication-manifest: "
+_ADJUDICATION_MANIFEST_SUFFIX = " -->"
+_UNSOURCED_HEADING = "### 4a. Unsourced-number flags"
+_PERSISTED_QUEUE_HEADING = "### 4b. Discrepancy / adjudication queue"
+_ADJUDICATED_HEADING = "### 4c. Adjudicated"
+_SUPERSEDED_HEADING = "### 4d. Superseded"
+_RUN_LOG_HEADING = "## 5. Model-run log"
+_UNADJUDICATED_FOOTER = (
+    "_This document is a machine-generated draft. The numbers are cross-verified facts; "
+    "the thesis is un-adjudicated model opinion. Do not treat any model-emitted number as "
+    "authoritative — the deterministic pipeline is the only calculator._"
+)
+_ADJUDICATED_FOOTER = (
+    "_This document is a machine-generated draft. The numbers are cross-verified facts; "
+    "the thesis includes recorded human adjudications but remains non-authoritative until "
+    "separately promoted. The deterministic pipeline remains the only calculator._"
+)
 
 
-def _cell(text: str) -> str:
+def _adjudication_manifest_line(cross: CrossVerification, *, stock: str, quarter: str) -> str:
+    """Render machine-readable review state needed by the later apply command."""
+    payload = json.dumps(
+        {
+            "quarter": normalize_queue_key(quarter),
+            "stock": normalize_queue_key(stock),
+            "unsourced_claims": bool(cross.unsourced_claims),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"{_ADJUDICATION_MANIFEST_PREFIX}{payload}{_ADJUDICATION_MANIFEST_SUFFIX}"
+
+
+def _adjudication_manifest(lines: Sequence[str]) -> tuple[str, str, bool]:
+    """Parse the unique apply manifest, failing closed on missing or invalid state."""
+    matches = [line for line in lines if line.startswith(_ADJUDICATION_MANIFEST_PREFIX)]
+    if len(matches) != 1 or not matches[0].endswith(_ADJUDICATION_MANIFEST_SUFFIX):
+        raise ValueError("thesis document must contain exactly one valid adjudication manifest")
+    encoded = matches[0][len(_ADJUDICATION_MANIFEST_PREFIX) : -len(_ADJUDICATION_MANIFEST_SUFFIX)]
+    try:
+        payload = json.loads(encoded)
+    except json.JSONDecodeError as error:
+        raise ValueError("thesis document contains an invalid adjudication manifest") from error
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"quarter", "stock", "unsourced_claims"}
+        or not isinstance(payload["quarter"], str)
+        or not isinstance(payload["stock"], str)
+        or not isinstance(payload["unsourced_claims"], bool)
+    ):
+        raise ValueError("thesis document contains an invalid adjudication manifest")
+    return payload["stock"], payload["quarter"], payload["unsourced_claims"]
+
+
+def markdown_table_cell(text: str) -> str:
     """Make text safe to place inside a markdown table cell."""
-    return text.replace("|", r"\|").replace("\n", " ").strip()
+    return " ".join(text.split()).replace("|", r"\|")
 
 
 def _facts_table(fact_set: ValidatedFactSet) -> list[str]:
@@ -56,9 +117,10 @@ def _facts_table(fact_set: ValidatedFactSet) -> list[str]:
         flag = " ⚠ single-source" if fact.single_sourced else ""
         corroborated = ", ".join(fact.corroborating_sources) or "—"
         lines.append(
-            f"| {_cell(fact.label)} | {_cell(fact.value)} | {_cell(fact.unit)} | "
-            f"{_cell(fact.status)}{flag} | {_cell(', '.join(fact.agreed_sources))} | "
-            f"{_cell(corroborated)} |"
+            f"| {markdown_table_cell(fact.label)} | {markdown_table_cell(fact.value)} | "
+            f"{markdown_table_cell(fact.unit)} | {markdown_table_cell(fact.status)}{flag} | "
+            f"{markdown_table_cell(', '.join(fact.agreed_sources))} | "
+            f"{markdown_table_cell(corroborated)} |"
         )
     return lines
 
@@ -124,7 +186,7 @@ def _model_drafts(doc: ThesisDocument) -> list[str]:
 
 def _unsourced_section(cross: CrossVerification) -> list[str]:
     """Render the unsourced-number flags."""
-    lines = ["### 4a. Unsourced-number flags", ""]
+    lines = [_UNSOURCED_HEADING, ""]
     if not cross.unsourced_claims:
         lines.append("None detected — no model introduced a number outside the validated fact set.")
         return lines
@@ -134,15 +196,28 @@ def _unsourced_section(cross: CrossVerification) -> list[str]:
     lines.append("| --- | --- | --- | --- |")
     for claim in cross.unsourced_claims:
         lines.append(
-            f"| {_cell(claim.model_label)} | {_cell(claim.number)} | {_cell(claim.section)} | "
-            f"{_cell(claim.snippet)} |"
+            f"| {markdown_table_cell(claim.model_label)} | "
+            f"{markdown_table_cell(claim.number)} | {markdown_table_cell(claim.section)} | "
+            f"{markdown_table_cell(claim.snippet)} |"
         )
+    return lines
+
+
+def _discrepancy_positions(discrepancy: Discrepancy) -> list[str]:
+    """Render both original model positions for one discrepancy."""
+    lines: list[str] = []
+    if discrepancy.model_a_points:
+        lines.append(f"- {discrepancy.model_a_label}:")
+        lines.extend(f"  - {point}" for point in discrepancy.model_a_points)
+    if discrepancy.model_b_points:
+        lines.append(f"- {discrepancy.model_b_label}:")
+        lines.extend(f"  - {point}" for point in discrepancy.model_b_points)
     return lines
 
 
 def _adjudication_section(cross: CrossVerification) -> list[str]:
     """Render the discrepancy / human-adjudication queue."""
-    lines = ["### 4b. Discrepancy / adjudication queue", ""]
+    lines = [_PERSISTED_QUEUE_HEADING, ""]
     if not cross.discrepancies:
         lines.append(
             "No material divergences detected by the deterministic diff. "
@@ -153,20 +228,166 @@ def _adjudication_section(cross: CrossVerification) -> list[str]:
         lines.append(
             f"**{index}. [{discrepancy.kind.value}] {discrepancy.section}** — {discrepancy.detail}"
         )
-        if discrepancy.model_a_points:
-            lines.append(f"- {discrepancy.model_a_label}:")
-            lines.extend(f"  - {point}" for point in discrepancy.model_a_points)
-        if discrepancy.model_b_points:
-            lines.append(f"- {discrepancy.model_b_label}:")
-            lines.extend(f"  - {point}" for point in discrepancy.model_b_points)
+        lines.extend(_discrepancy_positions(discrepancy))
         lines.append("")
     return lines
+
+
+def _open_adjudications(entries: Sequence[AdjudicationEntry]) -> list[str]:
+    """Render the durable OPEN queue entries for one stock-quarter."""
+    lines = [_PERSISTED_QUEUE_HEADING, ""]
+    open_entries = [entry for entry in entries if entry.status is AdjudicationStatus.OPEN]
+    if not open_entries:
+        lines.append("No OPEN discrepancies remain for this stock-quarter.")
+        return lines
+    for index, entry in enumerate(open_entries, start=1):
+        discrepancy = entry.discrepancy
+        lines.append(
+            f"**{index}. `{entry.id}` [{discrepancy.kind.value}] "
+            f"{discrepancy.section}** — {discrepancy.detail}"
+        )
+        lines.extend(_discrepancy_positions(discrepancy))
+        lines.append("")
+    return lines
+
+
+def _accepted_position(entry: AdjudicationEntry) -> list[str]:
+    """Render the position selected by a human resolution."""
+    discrepancy = entry.discrepancy
+    if entry.status is AdjudicationStatus.ACCEPTED_A:
+        lines = [f"- Accepted {discrepancy.model_a_label}:"]
+        return lines + [f"  - {point}" for point in discrepancy.model_a_points]
+    if entry.status is AdjudicationStatus.ACCEPTED_B:
+        lines = [f"- Accepted {discrepancy.model_b_label}:"]
+        return lines + [f"  - {point}" for point in discrepancy.model_b_points]
+    if entry.status is AdjudicationStatus.MERGED:
+        return ["- Accepted merged position:", *_discrepancy_positions(discrepancy)]
+    return ["- Accepted position: none — both model positions were rejected."]
+
+
+def _resolved_adjudications(entries: Sequence[AdjudicationEntry]) -> list[str]:
+    """Render resolved entries without hiding their original discrepancy payload."""
+    lines = [_ADJUDICATED_HEADING, ""]
+    resolved = [
+        entry
+        for entry in entries
+        if entry.status is not AdjudicationStatus.OPEN and not entry.superseded
+    ]
+    if not resolved:
+        lines.append("None yet.")
+        return lines
+    for entry in resolved:
+        discrepancy = entry.discrepancy
+        lines.append(
+            f"**`{entry.id}` [{discrepancy.kind.value}] {discrepancy.section}** — "
+            f"{discrepancy.detail}"
+        )
+        lines.append(f"- Status: {entry.status.value}")
+        lines.extend(_accepted_position(entry))
+        if entry.status is AdjudicationStatus.REJECTED:
+            lines.append("- Rejected positions retained for audit:")
+            lines.extend(f"  {line}" for line in _discrepancy_positions(discrepancy))
+        if entry.note is not None:
+            lines.append(f"- Human note: {entry.note}")
+        lines.append("")
+    return lines
+
+
+def _superseded_adjudications(entries: Sequence[AdjudicationEntry]) -> list[str]:
+    """Render historical decisions over divergences absent from the current build."""
+    lines = [_SUPERSEDED_HEADING, ""]
+    superseded = [
+        entry
+        for entry in entries
+        if entry.status is not AdjudicationStatus.OPEN and entry.superseded
+    ]
+    if not superseded:
+        lines.append("None.")
+        return lines
+    lines.append(
+        "These decisions remain in the audit trail but do not adjudicate the current build."
+    )
+    lines.append("")
+    for entry in superseded:
+        discrepancy = entry.discrepancy
+        lines.append(
+            f"**`{entry.id}` [{discrepancy.kind.value}] {discrepancy.section}** — "
+            f"{discrepancy.detail}"
+        )
+        lines.append(f"- Historical status: {entry.status.value}")
+        lines.extend(_accepted_position(entry))
+        if entry.note is not None:
+            lines.append(f"- Human note: {entry.note}")
+        lines.append("")
+    return lines
+
+
+def _has_current_resolution(entries: Sequence[AdjudicationEntry]) -> bool:
+    """Return whether a resolution adjudicates a divergence in the current build."""
+    return any(
+        entry.status is not AdjudicationStatus.OPEN and not entry.superseded for entry in entries
+    )
+
+
+def render_persisted_adjudication_sections(entries: Sequence[AdjudicationEntry]) -> str:
+    """Render the OPEN and resolved sections from durable queue entries."""
+    return "\n".join(
+        [
+            *_open_adjudications(entries),
+            "",
+            *_resolved_adjudications(entries),
+            "",
+            *_superseded_adjudications(entries),
+        ]
+    )
+
+
+def _unique_line_index(lines: Sequence[str], marker: str, *, prefix: bool = False) -> int:
+    """Return one structural marker index or fail closed on missing/duplicate anchors."""
+    indexes = [
+        index
+        for index, line in enumerate(lines)
+        if (line.startswith(marker) if prefix else line == marker)
+    ]
+    if len(indexes) != 1:
+        raise ValueError(f"thesis document must contain exactly one {marker!r} marker")
+    return indexes[0]
+
+
+def apply_adjudications_to_markdown(markdown: str, entries: Sequence[AdjudicationEntry]) -> str:
+    """Replace a rendered thesis's review sections without touching facts or drafts."""
+    if not entries:
+        raise ValueError("no adjudication entries match the requested stock-quarter")
+    lines = markdown.splitlines()
+    manifest_stock, manifest_quarter, has_unsourced_claims = _adjudication_manifest(lines)
+    entry_keys = {
+        (normalize_queue_key(entry.stock), normalize_queue_key(entry.quarter)) for entry in entries
+    }
+    if entry_keys != {(manifest_stock, manifest_quarter)}:
+        raise ValueError("adjudication queue entries do not match the thesis document manifest")
+    flag_index = _unique_line_index(lines, _ADJUDICATION_FLAG_PREFIX, prefix=True)
+    queue_index = _unique_line_index(lines, _PERSISTED_QUEUE_HEADING)
+    run_log_index = _unique_line_index(lines, _RUN_LOG_HEADING)
+    if not flag_index < queue_index < run_log_index:
+        raise ValueError("thesis document adjudication markers are out of order")
+
+    required = (
+        any(entry.status is AdjudicationStatus.OPEN for entry in entries) or has_unsourced_claims
+    )
+    lines[flag_index] = f"{_ADJUDICATION_FLAG_PREFIX}{'YES' if required else 'NO'}**"
+    replacement = render_persisted_adjudication_sections(entries).splitlines()
+    updated = [*lines[:queue_index], *replacement, "", *lines[run_log_index:]]
+    terminal_newline = "\n" if markdown.endswith("\n") else ""
+    rendered = "\n".join(updated) + terminal_newline
+    if _has_current_resolution(entries) and not required:
+        return rendered.replace(_UNADJUDICATED_FOOTER, _ADJUDICATED_FOOTER)
+    return rendered
 
 
 def _run_log(doc: ThesisDocument) -> list[str]:
     """Render the per-model run log, including recorded gaps."""
     lines = [
-        "## 5. Model-run log",
+        _RUN_LOG_HEADING,
         "",
         "| Model | Client | Status | Duration (s) | Note |",
         "| --- | --- | --- | ---: | --- |",
@@ -174,18 +395,30 @@ def _run_log(doc: ThesisDocument) -> list[str]:
     for draft in doc.drafts:
         note = draft.error or ("parsed JSON" if draft.parsed else "output present, unstructured")
         lines.append(
-            f"| {_cell(draft.model_label)} | {_cell(draft.client_name)} | {draft.status.value} | "
-            f"{draft.duration_seconds:.1f} | {_cell(note)} |"
+            f"| {markdown_table_cell(draft.model_label)} | "
+            f"{markdown_table_cell(draft.client_name)} | {draft.status.value} | "
+            f"{draft.duration_seconds:.1f} | {markdown_table_cell(note)} |"
         )
     return lines
 
 
-def render_thesis_document(doc: ThesisDocument, *, generated_at: datetime | None = None) -> str:
+def render_thesis_document(
+    doc: ThesisDocument,
+    *,
+    generated_at: datetime | None = None,
+    adjudications: Sequence[AdjudicationEntry] | None = None,
+) -> str:
     """Render the full non-authoritative thesis markdown for one stock-quarter."""
     fact_set = doc.fact_set
     cross = doc.cross_verification
     heading_name = fact_set.name or fact_set.symbol
-    adjudication = "YES" if cross.adjudication_required else "NO"
+    adjudication_required = (
+        cross.adjudication_required
+        if adjudications is None
+        else any(entry.status is AdjudicationStatus.OPEN for entry in adjudications)
+        or bool(cross.unsourced_claims)
+    )
+    adjudication = "YES" if adjudication_required else "NO"
     generated = generated_at.isoformat() if generated_at is not None else "(not recorded)"
 
     lines: list[str] = [
@@ -202,6 +435,13 @@ def render_thesis_document(doc: ThesisDocument, *, generated_at: datetime | None
         lines.append(f"- Reporting period: {fact_set.period_start} → {fact_set.period_end}")
     lines.append(f"- Models run: {', '.join(draft.model_label for draft in doc.drafts) or 'none'}")
     lines.append(f"- Human adjudication required: **{adjudication}**")
+    lines.append(
+        _adjudication_manifest_line(
+            cross,
+            stock=fact_set.symbol,
+            quarter=fact_set.quarter,
+        )
+    )
     lines.append(f"- Generated at: {generated}")
     lines.append("")
 
@@ -222,15 +462,23 @@ def render_thesis_document(doc: ThesisDocument, *, generated_at: datetime | None
     lines.append("")
     lines.extend(_unsourced_section(cross))
     lines.append("")
-    lines.extend(_adjudication_section(cross))
+    if adjudications is None:
+        lines.extend(_adjudication_section(cross))
+    else:
+        lines.extend(_open_adjudications(adjudications))
+        lines.append("")
+        lines.extend(_resolved_adjudications(adjudications))
+        lines.append("")
+        lines.extend(_superseded_adjudications(adjudications))
     lines.append("")
 
     lines.extend(_run_log(doc))
     lines.append("")
     lines.append("---")
-    lines.append(
-        "_This document is a machine-generated draft. The numbers are cross-verified facts; "
-        "the thesis is un-adjudicated model opinion. Do not treat any model-emitted number as "
-        "authoritative — the deterministic pipeline is the only calculator._"
+    footer = (
+        _ADJUDICATED_FOOTER
+        if adjudications and _has_current_resolution(adjudications) and not adjudication_required
+        else _UNADJUDICATED_FOOTER
     )
+    lines.append(footer)
     return "\n".join(lines)

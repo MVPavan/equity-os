@@ -24,6 +24,14 @@ from pathlib import Path
 import structlog
 from pydantic import SecretStr, TypeAdapter
 
+from fundamentals.api.adjudication_cli import (
+    ADJUDICATE_COMMAND,
+    add_adjudication_parser,
+    dispatch_adjudication_command,
+    load_adjudication_queue_or_exit,
+    normalize_stock_quarter,
+    resolve_beneath,
+)
 from fundamentals.api.comparatives import derive_comparator_periods
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
@@ -38,6 +46,7 @@ from fundamentals.api.goal_runner import (
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
+from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -51,7 +60,7 @@ from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_compa
 from fundamentals.ingest.ocr_engine import RapidOcrEngine
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
-from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, gold_file_path
+from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
 from fundamentals.store.fact_store import FactStore
 from fundamentals.thesis import (
     ClaudeOpusClient,
@@ -65,17 +74,24 @@ from fundamentals.thesis import (
     load_thesis_config,
     render_thesis_document,
 )
+from fundamentals.thesis.adjudication import (
+    entries_for_stock_quarter,
+    normalize_queue_key,
+    upsert_discrepancies,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
 _DEFAULT_THESIS_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "thesis"
+_ADJUDICATION_QUEUE_FILENAME = "adjudication-queue.json"
 _COMMAND_RUN = "run"
 _COMMAND_VALIDATE = "validate"
 _COMMAND_REPORT = "report"
 _COMMAND_THESIS = "thesis"
 _QUARTER_LATEST = "latest"
+_MISSING_GOLD_REASON = "gold file does not exist"
 # The cached report reconciles the two first-party sources whose raw bytes are
 # held on disk (NSE Ind AS XBRL + BSE issuer results PDF); no live fetch.
 _REPORT_SOURCE_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceKind.PDF})
@@ -85,8 +101,6 @@ _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
 
-# The valid ``--wave`` tokens, derived from the enum so the two never drift.
-_WAVE_CHOICES: tuple[str, ...] = tuple(wave.value for wave in Wave)
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
 
@@ -476,7 +490,10 @@ def _thesis_exit_code(docs: Sequence[ThesisDocument]) -> int:
 
 
 def thesis_command(
-    args: argparse.Namespace, *, clients: Sequence[ThesisModelClient] | None = None
+    args: argparse.Namespace,
+    *,
+    clients: Sequence[ThesisModelClient] | None = None,
+    queue_path: Path | None = None,
 ) -> list[ThesisDocument]:
     """Draft the non-authoritative, cross-verified thesis from validated gold facts.
 
@@ -491,11 +508,62 @@ def thesis_command(
     """
     if not args.watchlist and not args.symbol:
         raise SystemExit("thesis requires either --watchlist or --symbol <X>")
+    if args.done_only and not args.watchlist:
+        raise SystemExit("--done-only requires --watchlist")
+
+    try:
+        _, quarter = normalize_stock_quarter("THESIS", args.quarter)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     config_path = Path(args.config).resolve()
     watchlist: WatchlistConfig = load_watchlist_config(config_path)
     gold_dir = Path(args.gold_dir) if args.gold_dir else DEFAULT_GOLD_DIR
     out_dir = _resolve_thesis_out_dir(args)
+    adjudication_queue_path = (
+        queue_path if queue_path is not None else out_dir / _ADJUDICATION_QUEUE_FILENAME
+    )
+    load_adjudication_queue_or_exit(adjudication_queue_path)
+
+    selected_wave = _selected_wave(args)
+    if args.symbol:
+        try:
+            symbol, _ = normalize_stock_quarter(args.symbol, quarter)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+        if selected_wave is not None:
+            _require_symbol_in_wave(watchlist.stock(symbol), selected_wave)
+        symbols = [symbol]
+    else:
+        scoped = (
+            watchlist.stocks_for_wave(selected_wave)
+            if selected_wave is not None
+            else watchlist.stocks
+        )
+        try:
+            symbols = [normalize_stock_quarter(stock.symbol, quarter)[0] for stock in scoped]
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+
+    try:
+        gold_paths = {
+            symbol: resolve_beneath(gold_dir, f"{symbol}-{quarter}.json") for symbol in symbols
+        }
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    missing_symbols = [symbol for symbol in symbols if not gold_paths[symbol].is_file()]
+    if args.symbol and missing_symbols:
+        symbol = missing_symbols[0]
+        raise SystemExit(
+            f"gold file not found: {gold_paths[symbol]}. Run "
+            f"`fundamentals validate --symbol {symbol} --quarter {quarter}` first."
+        )
+    if missing_symbols and not args.done_only:
+        raise SystemExit(
+            "gold files missing for watchlist symbols: "
+            f"{', '.join(missing_symbols)}; rerun with --done-only to skip them"
+        )
+
     thesis_config = (
         load_thesis_config(Path(args.thesis_config)) if args.thesis_config else ThesisConfig()
     )
@@ -503,38 +571,55 @@ def thesis_command(
         model_clients: list[ThesisModelClient] = list(_build_thesis_clients(thesis_config))
     else:
         model_clients = list(clients)
-
-    selected_wave = _selected_wave(args)
-    if args.symbol:
-        if selected_wave is not None:
-            _require_symbol_in_wave(watchlist.stock(args.symbol), selected_wave)
-        symbols = [args.symbol]
-    else:
-        scoped = (
-            watchlist.stocks_for_wave(selected_wave)
-            if selected_wave is not None
-            else watchlist.stocks
-        )
-        symbols = [stock.symbol for stock in scoped]
     logger = structlog.get_logger("fundamentals.thesis")
     generated_at = datetime.now(UTC)
     docs: list[ThesisDocument] = []
     for symbol in symbols:
-        gold_path = gold_file_path(symbol, args.quarter, gold_dir)
+        gold_path = gold_paths[symbol]
         if not gold_path.is_file():
-            if args.symbol:
-                raise SystemExit(
-                    f"gold file not found: {gold_path}. Run "
-                    f"`fundamentals validate --symbol {symbol} --quarter {args.quarter}` first."
-                )
-            logger.warning("thesis_skipped_no_gold", symbol=symbol, path=str(gold_path))
+            logger.warning(
+                "thesis_skipped_no_gold",
+                symbol=symbol,
+                path=str(gold_path),
+                reason=_MISSING_GOLD_REASON,
+            )
             continue
         name, domain = _stock_name_domain(watchlist, symbol)
         fact_set = from_gold_file(gold_path, name=name, domain=domain)
+        fact_key = (
+            normalize_queue_key(fact_set.symbol),
+            normalize_queue_key(fact_set.quarter),
+        )
+        if fact_key != (symbol, quarter):
+            raise SystemExit(
+                f"gold file identity {fact_set.symbol} {fact_set.quarter} does not match "
+                f"requested stock-quarter {symbol} {quarter}"
+            )
         doc = build_thesis(fact_set, model_clients, max_workers=thesis_config.max_workers)
-        markdown = render_thesis_document(doc, generated_at=generated_at)
+        try:
+            queue = upsert_discrepancies(
+                adjudication_queue_path,
+                stock=symbol,
+                quarter=quarter,
+                discrepancies=doc.cross_verification.discrepancies,
+                update_supersession=doc.status is ThesisDocumentStatus.OK,
+                now=generated_at,
+            )
+        except (OSError, ValueError) as error:
+            raise SystemExit(
+                f"invalid adjudication queue {adjudication_queue_path}: {error}"
+            ) from error
+        adjudications = entries_for_stock_quarter(queue, stock=symbol, quarter=quarter)
+        markdown = render_thesis_document(
+            doc,
+            generated_at=generated_at,
+            adjudications=adjudications,
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{symbol}-{args.quarter}.md"
+        try:
+            out_path = resolve_beneath(out_dir, f"{symbol}-{quarter}.md")
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
         out_path.write_text(markdown, encoding="utf-8")
         docs.append(doc)
         logger.info(
@@ -545,16 +630,6 @@ def thesis_command(
             usable_drafts=doc.usable_draft_count,
         )
     return docs
-
-
-def _add_wave_arg(subparser: argparse.ArgumentParser) -> None:
-    """Add the shared ``--wave`` filter that restricts a ``--watchlist`` run to one wave."""
-    subparser.add_argument(
-        "--wave",
-        choices=_WAVE_CHOICES,
-        default=None,
-        help="scope a run to one wave, e.g. Wave-1 (per-wave roll-ups never collide)",
-    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -588,7 +663,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="validate every stock, rolling each wave up under its own <wave>-rollup.json",
     )
     scope.add_argument("--symbol", default=None, help="validate a single stock, e.g. TITAN")
-    _add_wave_arg(validate)
+    add_wave_arg(validate)
     validate.add_argument(
         "--quarter",
         default=None,
@@ -639,7 +714,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="render every watchlist stock (optionally one --wave)",
     )
     report_scope.add_argument("--symbol", default=None, help="render a single stock, e.g. MTARTECH")
-    _add_wave_arg(report)
+    add_wave_arg(report)
     report.add_argument(
         "--quarter", default=None, help="assert the reviewed quarter label, e.g. Q3FY25"
     )
@@ -659,43 +734,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override the scratch gold directory the cached reconcile writes to",
     )
 
-    thesis = subparsers.add_parser(
-        _COMMAND_THESIS,
-        help="draft the non-authoritative cross-verified thesis from validated gold facts",
+    add_thesis_parser(
+        subparsers,
+        command=_COMMAND_THESIS,
+        default_watchlist_path=_DEFAULT_WATCHLIST_PATH,
     )
-    thesis_scope = thesis.add_mutually_exclusive_group()
-    thesis_scope.add_argument(
-        "--watchlist", action="store_true", help="draft a thesis for every watchlist stock"
-    )
-    thesis_scope.add_argument(
-        "--symbol", default=None, help="draft a thesis for a single stock, e.g. MTARTECH"
-    )
-    _add_wave_arg(thesis)
-    thesis.add_argument(
-        "--quarter",
-        required=True,
-        help="the reviewed quarter label, e.g. Q3FY25 (keys the gold file)",
-    )
-    thesis.add_argument(
-        "--config",
-        default=str(_DEFAULT_WATCHLIST_PATH),
-        help="path to watchlist.yaml (default: repo config/watchlist.yaml); resolves name/domain",
-    )
-    thesis.add_argument(
-        "--thesis-config",
-        default=None,
-        help="path to non-secret thesis model settings YAML (default: built-in settings)",
-    )
-    thesis.add_argument(
-        "--gold-dir",
-        default=None,
-        help="directory of <SYM>-<QUARTER>.json gold files (default: data/gold)",
-    )
-    thesis.add_argument(
-        "--out-dir",
-        default=None,
-        help="directory for rendered thesis .md (default: docs/research/validation/thesis)",
-    )
+    add_adjudication_parser(subparsers)
     return parser
 
 
@@ -706,6 +750,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logger = structlog.get_logger("fundamentals.cli")
+
+    if args.command == ADJUDICATE_COMMAND:
+        queue_path = _DEFAULT_THESIS_DIR / _ADJUDICATION_QUEUE_FILENAME
+        output = dispatch_adjudication_command(
+            args, queue_path=queue_path, thesis_dir=_DEFAULT_THESIS_DIR
+        )
+        sys.stdout.write(output + "\n")
+        return 0
 
     if args.command == _COMMAND_VALIDATE:
         logger.info(

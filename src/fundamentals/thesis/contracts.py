@@ -201,7 +201,7 @@ class UnsourcedClaim(BaseModel):
 class Discrepancy(BaseModel):
     """One divergence between the two drafts, queued for human adjudication."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     section: str
     kind: DiscrepancyKind

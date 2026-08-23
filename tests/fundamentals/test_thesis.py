@@ -44,6 +44,7 @@ from fundamentals.thesis import (
     UnknownReason,
     ValidatedFact,
     ValidatedFactSet,
+    apply_adjudications_to_markdown,
     build_prompt,
     build_thesis,
     cross_verify,
@@ -52,6 +53,11 @@ from fundamentals.thesis import (
     from_stock_report,
     known_numbers,
     render_thesis_document,
+)
+from fundamentals.thesis.adjudication import (
+    AdjudicationStatus,
+    resolve_adjudication,
+    upsert_discrepancies,
 )
 from fundamentals.thesis.subprocess_runner import run_with_watchdog
 from fundamentals.verify.comparison_key import ComparisonKey
@@ -695,3 +701,126 @@ def test_render_blocked_document() -> None:
     markdown = render_thesis_document(doc)
     assert doc.status is ThesisDocumentStatus.BLOCKED
     assert "BLOCKED" in markdown
+
+
+def test_unsourced_only_thesis_requires_adjudication_with_or_without_queue(
+    tmp_path: Path,
+) -> None:
+    """Supplying a durable queue must not hide an unsourced model number."""
+    doc = build_thesis(
+        _fact_set(),
+        [
+            _FakeClient(
+                "model-a",
+                "client-a",
+                text='{"stance":"constructive","drivers":["margin reaches 12.1%"]}',
+            ),
+            _FakeClient(
+                "model-b",
+                "client-b",
+                text='{"stance":"constructive","drivers":["margin reaches 12.1%"]}',
+            ),
+        ],
+    )
+    assert doc.cross_verification.unsourced_claims
+    assert not doc.cross_verification.discrepancies
+
+    historical_doc = build_thesis(
+        _fact_set(),
+        [
+            _FakeClient(
+                "model-a",
+                "client-a",
+                text='{"stance":"constructive","drivers":["demand is durable"]}',
+            ),
+            _FakeClient(
+                "model-b",
+                "client-b",
+                text='{"stance":"cautious","drivers":["demand is fragile"]}',
+            ),
+        ],
+    )
+    queue_path = tmp_path / "adjudication-queue.json"
+    queue = upsert_discrepancies(
+        queue_path,
+        stock="MTARTECH",
+        quarter="Q3FY25",
+        discrepancies=historical_doc.cross_verification.discrepancies,
+    )
+    for entry in queue.entries:
+        queue = resolve_adjudication(
+            queue_path,
+            entry_id=entry.id,
+            status=AdjudicationStatus.REJECTED,
+        )
+
+    assert "Human adjudication required: **YES**" in render_thesis_document(doc)
+    rendered = render_thesis_document(doc, adjudications=queue.entries)
+    assert "Human adjudication required: **YES**" in rendered
+    assert "Human adjudication required: **YES**" in apply_adjudications_to_markdown(
+        rendered, queue.entries
+    )
+
+
+def test_render_folds_resolutions_and_requires_adjudication_until_zero_open(
+    tmp_path: Path,
+) -> None:
+    """Resolved positions render separately while any remaining OPEN item keeps the flag on."""
+    doc = build_thesis(
+        _fact_set(),
+        [
+            _FakeClient(
+                "model-a",
+                "client-a",
+                text=(
+                    '{"stance":"constructive","key_risks":["customer concentration in defence"]}'
+                ),
+            ),
+            _FakeClient(
+                "model-b",
+                "client-b",
+                text='{"stance":"cautious","key_risks":["currency swings on exports"]}',
+            ),
+        ],
+    )
+    queue_path = tmp_path / "adjudication-queue.json"
+    queue = upsert_discrepancies(
+        queue_path,
+        stock="MTARTECH",
+        quarter="Q3FY25",
+        discrepancies=doc.cross_verification.discrepancies,
+        now=datetime(2026, 8, 23, 12, tzinfo=UTC),
+    )
+    queue = resolve_adjudication(
+        queue_path,
+        entry_id=queue.entries[0].id,
+        status=AdjudicationStatus.ACCEPTED_A,
+        note="Primary evidence supports this position.",
+        now=datetime(2026, 8, 23, 13, tzinfo=UTC),
+    )
+
+    with_one_open = render_thesis_document(doc, adjudications=queue.entries)
+
+    assert "Human adjudication required: **YES**" in with_one_open
+    assert "### 4c. Adjudicated" in with_one_open
+    assert "Accepted model-a" in with_one_open
+    assert "Primary evidence supports this position." in with_one_open
+    assert queue.entries[1].id in with_one_open
+
+    queue = resolve_adjudication(
+        queue_path,
+        entry_id=queue.entries[1].id,
+        status=AdjudicationStatus.REJECTED,
+        note="Neither position is supported strongly enough.",
+        now=datetime(2026, 8, 23, 14, tzinfo=UTC),
+    )
+    with_zero_open = render_thesis_document(doc, adjudications=queue.entries)
+
+    assert "Human adjudication required: **NO**" in with_zero_open
+    assert "Status: REJECTED" in with_zero_open
+    assert "Rejected positions retained for audit" in with_zero_open
+    assert "customer concentration in defence" in with_zero_open
+    assert "currency swings on exports" in with_zero_open
+    assert "Neither position is supported strongly enough." in with_zero_open
+    assert "includes recorded human adjudications" in with_zero_open
+    assert "un-adjudicated model opinion" not in with_zero_open

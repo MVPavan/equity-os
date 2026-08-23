@@ -273,6 +273,7 @@ def _thesis_args(gold_dir: Path, out_dir: Path, wave: str) -> object:
             str(gold_dir),
             "--out-dir",
             str(out_dir),
+            "--done-only",
         ]
     )
 

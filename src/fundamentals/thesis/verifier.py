@@ -282,21 +282,19 @@ def _divergences(draft_a: ThesisDraft, draft_b: ThesisDraft) -> list[Discrepancy
         return _unstructured_discrepancies(draft_a, draft_b)
 
     discrepancies: list[Discrepancy] = []
-    if (
-        draft_a.stance.strip()
-        and draft_b.stance.strip()
-        and draft_a.stance.strip().lower() != draft_b.stance.strip().lower()
-    ):
+    stance_a = " ".join(draft_a.stance.split())
+    stance_b = " ".join(draft_b.stance.split())
+    if stance_a and stance_b and stance_a.casefold() != stance_b.casefold():
         discrepancies.append(
             _discrepancy(
                 _STANCE_LABEL,
                 DiscrepancyKind.STANCE_DIVERGENCE,
                 draft_a,
                 draft_b,
-                (draft_a.stance,),
-                (draft_b.stance,),
-                f"overall stance differs: {draft_a.model_label}={draft_a.stance!r} vs "
-                f"{draft_b.model_label}={draft_b.stance!r}",
+                (stance_a,),
+                (stance_b,),
+                f"overall stance differs: {draft_a.model_label}={stance_a!r} vs "
+                f"{draft_b.model_label}={stance_b!r}",
             )
         )
 
