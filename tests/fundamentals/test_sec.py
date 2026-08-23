@@ -34,7 +34,7 @@ from fundamentals.ingest.sec_source import (
     is_excluded_from_q1,
 )
 
-TEST_USER_AGENT = "EquityOS Research (mvpavan42@gmail.com)"
+TEST_USER_AGENT = "EquityOS Research"
 FY25_ACCESSION = "0000950170-25-091925"
 FILING_DATE = datetime(2025, 7, 1, tzinfo=UTC)
 

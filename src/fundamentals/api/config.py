@@ -97,7 +97,7 @@ class SecConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
-    user_agent: str = "EquityOS Research (mvpavan42@gmail.com)"
+    user_agent: str = "EquityOS Research"
     cik: int = 1067491
     request_timeout_seconds: float = 30.0
     max_retries: int = 3

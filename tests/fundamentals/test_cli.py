@@ -21,6 +21,7 @@ import pytest
 
 from fundamentals.api.cli import (
     _build_parser,
+    _tijori_credentials_from_env,
     main,
     thesis_command,
     validate_command,
@@ -118,6 +119,37 @@ def test_validate_symbol_wave_mismatch_fails_closed(tmp_path: Path) -> None:
     # NETWEB is Wave-2; asserting --wave Wave-1 is contradictory -> fail closed.
     with pytest.raises(SystemExit, match="Wave-2"):
         validate_command(_validate_args(tmp_path, symbol="NETWEB", wave="Wave-1"))
+
+
+def test_tijori_session_cookie_is_sufficient_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pre-minted session cookie can be injected without email/password."""
+    monkeypatch.delenv("TIJORI_EMAIL", raising=False)
+    monkeypatch.delenv("TIJORI_PASSWORD", raising=False)
+    monkeypatch.setenv("TIJORI_SESSION_COOKIE", "session-token")
+
+    credentials = _tijori_credentials_from_env()
+
+    assert credentials is not None
+    assert "session-token" not in repr(credentials)
+    assert credentials.session_cookie is not None
+    assert credentials.email is None
+    assert credentials.password is None
+
+
+def test_tijori_email_password_without_cookie_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI cannot imply a login flow that the adapter does not implement."""
+    monkeypatch.setenv("TIJORI_EMAIL", "owner@example.invalid")
+    monkeypatch.setenv("TIJORI_PASSWORD", "password-secret")
+    monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
+
+    with pytest.raises(
+        SystemExit, match="set TIJORI_SESSION_COOKIE; automated login not yet implemented"
+    ):
+        _tijori_credentials_from_env()
 
 
 def test_validate_main_emits_json_array_of_wave_rollups(

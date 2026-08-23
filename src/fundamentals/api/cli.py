@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from pydantic import TypeAdapter
+from pydantic import SecretStr, TypeAdapter
 
 from fundamentals.api.comparatives import derive_comparator_periods
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
@@ -83,6 +83,7 @@ _REPORT_SOURCE_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceK
 _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
+_TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
 
 # The valid ``--wave`` tokens, derived from the enum so the two never drift.
 _WAVE_CHOICES: tuple[str, ...] = tuple(wave.value for wave in Wave)
@@ -210,20 +211,19 @@ def _parse_source_kinds(raw: str | None) -> frozenset[SourceKind]:
 
 
 def _tijori_credentials_from_env() -> TijoriCredentials | None:
-    """Read Tijori owner-account credentials from the environment (composition root only).
+    """Read a pre-minted Tijori session cookie from the environment.
 
-    Returns ``None`` when no credentials are present, so the runner skips Tijori
-    cleanly rather than hard-failing. This is the only place credentials are read.
+    Returns ``None`` when no auth material is present, so the runner skips Tijori
+    cleanly. Email/password-only input fails because this round does not automate login.
     """
     email = os.environ.get(_TIJORI_EMAIL_ENV)
     password = os.environ.get(_TIJORI_PASSWORD_ENV)
-    if email is None or password is None:
+    session_cookie = os.environ.get(_TIJORI_SESSION_ENV)
+    if session_cookie is None:
+        if email is not None or password is not None:
+            raise SystemExit(_TIJORI_LOGIN_UNIMPLEMENTED)
         return None
-    return TijoriCredentials(
-        email=email,
-        password=password,
-        session_cookie=os.environ.get(_TIJORI_SESSION_ENV),
-    )
+    return TijoriCredentials(session_cookie=SecretStr(session_cookie))
 
 
 def _write_reports(report_dir: Path, wave: WaveReport) -> None:
@@ -283,6 +283,7 @@ def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
             repo_root=repo_root,
             kinds=kinds,
             tijori_credentials=credentials,
+            tijori_live_dom_verified=args.tijori_live_dom_verified,
             out_dir=out_dir,
             quarter_mode=quarter_mode,
         )
@@ -299,6 +300,7 @@ def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
                 repo_root=repo_root,
                 kinds=kinds,
                 tijori_credentials=credentials,
+                tijori_live_dom_verified=args.tijori_live_dom_verified,
                 out_dir=out_dir,
                 quarter_mode=quarter_mode,
             )
@@ -599,6 +601,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sources",
         default=None,
         help="comma-separated sources to pull (default: all): nse,bse,screener,tijori,pdf,sec",
+    )
+    validate.add_argument(
+        "--tijori-live-dom-verified",
+        action="store_true",
+        help="enable selected live Tijori parsing only after a verified DOM capture",
     )
     fetch = validate.add_mutually_exclusive_group()
     fetch.add_argument(

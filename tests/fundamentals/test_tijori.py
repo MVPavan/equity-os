@@ -11,8 +11,11 @@ credentials are present in the environment.
 from __future__ import annotations
 
 import os
+import urllib.error
+import urllib.request
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -24,12 +27,15 @@ from fundamentals.ingest.tijori_source import (
     TijoriConcept,
     TijoriCredentials,
     TijoriCredentialsError,
+    TijoriFetchError,
+    TijoriParseError,
     TijoriSource,
     TijoriSourceConfig,
     is_tijori_derived,
 )
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_pl.json"
+_HTML_FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_financials.html"
 
 # Two quarterly columns (Mar'26, Jun'26) x four mapped headline concepts.
 _EXPECTED_QUARTER_COUNT = 8
@@ -106,9 +112,88 @@ def test_observations_use_consolidated_scope(observations: tuple) -> None:
         assert obs.entity_id == "infosys-limited"
 
 
+def test_response_slug_mismatch_fails_closed_before_emitting_observations() -> None:
+    """A TITAN-shaped response cannot be canonicalised onto an ETERNAL request."""
+    with pytest.raises(TijoriParseError, match="identity mismatch"):
+        TijoriSource.parse_pl_bytes(
+            _HTML_FIXTURE.read_bytes(),
+            slug="eternal-ltd",
+            source_url="https://www.tijorifinance.com/company/eternal-ltd/financials/",
+        )
+
+
+def test_credentials_and_config_repr_redact_all_secret_values() -> None:
+    """Credentials never leak through Pydantic's repr or string conversion."""
+    credentials = TijoriCredentials(
+        email="owner@example.invalid",
+        password="password-secret",
+        session_cookie="cookie-secret",
+    )
+    config = TijoriSourceConfig(credentials=credentials)
+
+    rendered = f"{credentials!r} {credentials} {config!r} {config}"
+
+    for secret in ("owner@example.invalid", "password-secret", "cookie-secret"):
+        assert secret not in rendered
+
+
 def test_missing_credentials_raises_skippable_error() -> None:
     source = TijoriSource(TijoriSourceConfig())  # no credentials injected
     with pytest.raises(TijoriCredentialsError, match="credentials not provided"):
+        source.fetch_pl("infosys-limited")
+
+
+def test_malformed_payload_fails_with_typed_parse_error() -> None:
+    """Schema-invalid source bytes stay on the caller's fail-closed skip path."""
+    with pytest.raises(TijoriParseError, match="schema"):
+        TijoriSource.parse_pl_bytes(b"{}")
+
+
+@pytest.mark.parametrize("raw", (b"<html", b"<!doctype html>"))
+def test_malformed_html_fails_with_typed_parse_error(raw: bytes) -> None:
+    """Broken HTML cannot leak an lxml exception past the source boundary."""
+    with pytest.raises(TijoriParseError, match="not valid HTML"):
+        TijoriSource.parse_pl_bytes(raw)
+
+
+def test_slug_404_fails_closed_as_unverified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A guessed slug returning 404 is surfaced as unverified, not retried."""
+    source = TijoriSource(
+        TijoriSourceConfig(
+            credentials=TijoriCredentials(session_cookie="session-token"),
+            live_dom_verified=True,
+        )
+    )
+
+    def not_found(*args: object, **kwargs: object) -> None:
+        raise urllib.error.HTTPError("https://example.invalid", 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", not_found)
+
+    with pytest.raises(TijoriFetchError, match="slug unverified"):
+        source.fetch_pl("guessed-slug")
+
+
+def test_fetch_rejects_an_oversized_authenticated_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Authenticated page reads stop at the injected byte limit before parsing."""
+    source = TijoriSource(
+        TijoriSourceConfig(
+            credentials=TijoriCredentials(session_cookie="session-token"),
+            live_dom_verified=True,
+            max_response_bytes=4,
+        )
+    )
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: BytesIO(b"12345"),
+    )
+
+    with pytest.raises(TijoriFetchError, match="exceeded maximum"):
         source.fetch_pl("infosys-limited")
 
 
@@ -120,20 +205,94 @@ def test_missing_cell_is_skipped_not_emitted() -> None:
     assert len(observations) == _EXPECTED_QUARTER_COUNT
 
 
+def test_parses_rendered_quarterly_financials_html_as_derived() -> None:
+    """The live page's quarterly table shape maps only Sales/PAT/EPS as derived."""
+    observations = TijoriSource.parse_pl_bytes(_HTML_FIXTURE.read_bytes())
+    by_key = {(obs.concept_qname, obs.period_end): obs for obs in observations}
+
+    assert set(by_key) == {
+        (TijoriConcept.SALES.value, date(2024, 12, 31)),
+        (TijoriConcept.NET_PROFIT.value, date(2024, 12, 31)),
+        (TijoriConcept.EPS.value, date(2024, 12, 31)),
+        (TijoriConcept.SALES.value, date(2025, 3, 31)),
+        (TijoriConcept.NET_PROFIT.value, date(2025, 3, 31)),
+        (TijoriConcept.EPS.value, date(2025, 3, 31)),
+    }
+    assert by_key[(TijoriConcept.SALES.value, date(2024, 12, 31))].normalized_value == Decimal(
+        "17550"
+    )
+    assert all(is_tijori_derived(observation) for observation in observations)
+
+
+def test_html_parser_rejects_multiple_tables_under_the_quarterly_wrapper() -> None:
+    """A fallback content div cannot merge a quarterly and annual table."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b"</section>", b"<table><thead><tr><th>Annual</th></tr></thead></table></section>"
+    )
+
+    with pytest.raises(TijoriParseError, match="exactly one table"):
+        TijoriSource.parse_pl_bytes(raw)
+
+
+def test_html_parser_deduplicates_sales_and_revenue_for_one_period() -> None:
+    """Sales and Revenue aliases cannot emit two observations for the same fact key."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b"</tbody>",
+        b"""
+          <tr data-id=\"Revenue\">
+            <td class=\"firstcol\">Revenue</td>
+            <td class=\"knowledge numericvalue\">17,550</td>
+            <td class=\"knowledge numericvalue\">14,916</td>
+          </tr>
+        </tbody>""",
+    )
+
+    observations = TijoriSource.parse_pl_bytes(raw)
+    sales = [
+        observation for observation in observations if observation.concept_qname == "tijori:sales"
+    ]
+
+    assert len(sales) == 2
+    assert len({observation.period_end for observation in sales}) == 2
+
+
+def test_fetch_does_not_sleep_after_its_last_failed_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal failed request is logged and raised without needless backoff."""
+    source = TijoriSource(
+        TijoriSourceConfig(
+            credentials=TijoriCredentials(session_cookie="session-token"),
+            live_dom_verified=True,
+            max_retries=1,
+        )
+    )
+    sleeps: list[float] = []
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(urllib.request, "urlopen", unavailable)
+    monkeypatch.setattr("fundamentals.ingest.tijori_source.time.sleep", sleeps.append)
+
+    with pytest.raises(TijoriFetchError, match="fetch failed"):
+        source.fetch_pl("infosys-limited")
+
+    assert sleeps == []
+
+
 @pytest.mark.skipif(
-    os.environ.get("RUN_TIJORI_LIVE") != "1"
-    or not os.environ.get("TIJORI_EMAIL")
-    or not os.environ.get("TIJORI_PASSWORD"),
-    reason="live Tijori fetch is opt-in: set RUN_TIJORI_LIVE=1 + TIJORI_EMAIL/TIJORI_PASSWORD",
+    os.environ.get("RUN_TIJORI_LIVE") != "1" or not os.environ.get("TIJORI_SESSION_COOKIE"),
+    reason="live Tijori fetch is opt-in: set RUN_TIJORI_LIVE=1 + TIJORI_SESSION_COOKIE",
 )
 def test_live_fetch_returns_derived_observations() -> None:
     # Composition root reads env; the adapter itself never touches os.environ.
     credentials = TijoriCredentials(
-        email=os.environ["TIJORI_EMAIL"],
-        password=os.environ["TIJORI_PASSWORD"],
+        email=os.environ.get("TIJORI_EMAIL"),
+        password=os.environ.get("TIJORI_PASSWORD"),
         session_cookie=os.environ.get("TIJORI_SESSION_COOKIE"),
     )
-    source = TijoriSource(TijoriSourceConfig(credentials=credentials))
+    source = TijoriSource(TijoriSourceConfig(credentials=credentials, live_dom_verified=True))
     observations = source.fetch_pl("infosys-limited")
     assert observations
     for obs in observations:

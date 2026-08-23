@@ -68,7 +68,7 @@ _T = TypeVar("_T")
 SOURCE_ID = "bse-xbrl"
 SUMMARY_SOURCE_ID = "bse-summary"
 ENTITY_SCHEME = "bse-scrip"
-DEFAULT_USER_AGENT = "EquityOS Research (mvpavan42@gmail.com)"
+DEFAULT_USER_AGENT = "EquityOS Research"
 USER_AGENT_HEADER = "User-Agent"
 
 # The results summary is read from BSE's own results endpoint (the same host the

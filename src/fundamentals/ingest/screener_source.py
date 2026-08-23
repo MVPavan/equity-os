@@ -62,7 +62,7 @@ SOURCE_ID = "screener"
 
 ENTITY_SCHEME = "screener-slug"
 USER_AGENT_HEADER = "User-Agent"
-DEFAULT_USER_AGENT = "EquityOS Research (mvpavan42@gmail.com)"
+DEFAULT_USER_AGENT = "EquityOS Research"
 
 # Credential-free public company page. ``consolidated`` appends the /consolidated/
 # path variant Screener exposes without a login.

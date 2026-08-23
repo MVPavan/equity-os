@@ -93,6 +93,8 @@ def _statement_tokens(
     total_income_conf: float = 0.97,
     net_profit_conf: float = 0.97,
     eps_conf: float = 0.97,
+    current_x: float = _CUR_X,
+    comparison_x: float = _CMP_X,
 ) -> tuple[OcrToken, ...]:
     """Tokens for a self-consistent consolidated statement (identities hold by default).
 
@@ -102,9 +104,13 @@ def _statement_tokens(
     """
     tokens: list[OcrToken] = [
         _tok("(Rs. in Crore)", _LBL_X, 40.0),
-        _tok("Consolidated", 200.0, 52.0),
-        _tok("Dec31,2024", _CUR_X, 90.0),
-        _tok("Dec31,2023", _CMP_X, 90.0),
+        _tok(
+            "CONSOLIDATEDFINANCIALRESULTSFORTHEQUARTERANDNINEMONTHSENDED31DECEMBER2024",
+            200.0,
+            52.0,
+        ),
+        _tok("Dec31,2024", current_x, 90.0),
+        _tok("Dec31,2023", comparison_x, 90.0),
     ]
     body: tuple[tuple[str, str, float], ...] = (
         ("Revenue from operations", revenue, 0.95),
@@ -122,8 +128,8 @@ def _statement_tokens(
     y = 120.0
     for label, value, conf in body:
         tokens.append(_tok(label, _LBL_X, y, w_pt=len(label) * 4.0))
-        tokens.append(_tok(value, _CUR_X, y, conf=conf))
-        tokens.append(_tok("0.00", _CMP_X, y))
+        tokens.append(_tok(value, current_x, y, conf=conf))
+        tokens.append(_tok("0.00", comparison_x, y))
         y += 15.0
     return tuple(tokens)
 
@@ -191,6 +197,255 @@ def test_ocr_recovers_all_targets_when_self_consistent(tmp_path: Path) -> None:
     assert anchor.provenance.page == 1
 
 
+def test_ocr_assembles_multiline_header_date_fragments(tmp_path: Path) -> None:
+    """A date split as ``December 31,`` then ``2024`` still binds its column."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = _statement_tokens()[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Quarter ended", _CUR_X, 65.0, w_pt=55.0),
+        _tok("Nine months ended", _CMP_X, 65.0, w_pt=70.0),
+        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
+        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
+        _tok("2024", _CUR_X, 95.0),
+        _tok("2024", _CMP_X, 95.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_parses_compact_day_month_header_date(tmp_path: Path) -> None:
+    """Rendered OCR commonly joins a short day-month-year date as ``31Dec24``."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = _statement_tokens()[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Quarterended", _CUR_X, 65.0, w_pt=55.0),
+        _tok("31Dec24", _CUR_X, 90.0),
+        _tok("31Dec23", _CMP_X, 90.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_rejects_nine_month_column_even_when_it_is_leftmost(tmp_path: Path) -> None:
+    """A readable nine-month marker can never win over the quarter marker."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = _statement_tokens(current_x=_CMP_X, comparison_x=_CUR_X)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Nine months ended", _CUR_X, 65.0, w_pt=70.0),
+        _tok("Quarter ended", _CMP_X, 65.0, w_pt=55.0),
+        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
+        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
+        _tok("2024", _CUR_X, 95.0),
+        _tok("2024", _CMP_X, 95.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_rejects_six_month_column_even_when_it_is_leftmost(tmp_path: Path) -> None:
+    """A readable half-year marker can never win over the quarter marker."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = _statement_tokens(current_x=_CMP_X, comparison_x=_CUR_X)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Six months ended", _CUR_X, 65.0, w_pt=70.0),
+        _tok("Quarter ended", _CMP_X, 65.0, w_pt=55.0),
+        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
+        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
+        _tok("2024", _CUR_X, 95.0),
+        _tok("2024", _CMP_X, 95.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_does_not_assemble_date_fragments_across_adjacent_columns(tmp_path: Path) -> None:
+    """A marker between narrow columns cannot bridge one column's date to another's year."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    current_x = 240.0
+    prior_x = 275.0
+    prior_year_x = 310.0
+    body = _statement_tokens(current_x=current_x, comparison_x=prior_x)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Quarter ended", prior_x - 20.0, 65.0, w_pt=40.0),
+        _tok("December 31,", current_x, 80.0, w_pt=10.0),
+        _tok("September 30,", prior_x, 80.0, w_pt=10.0),
+        _tok("December 31,", prior_year_x, 80.0, w_pt=10.0),
+        _tok("2024", current_x, 95.0, w_pt=10.0),
+        _tok("2024", prior_x, 95.0, w_pt=10.0),
+        _tok("2023", prior_year_x, 95.0, w_pt=10.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_rejects_inline_date_fragments_from_adjacent_column(tmp_path: Path) -> None:
+    """An incomplete date cannot borrow a merged day-year from another column."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = _statement_tokens()[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 180.0, 52.0, w_pt=80.0),
+        _tok("Quarter ended", 220.0, 65.0, w_pt=50.0),
+        _tok("December", 225.0, 80.0, w_pt=40.0),
+        _tok("31, 2024", 275.0, 80.0, w_pt=10.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert got == []
+
+
+def test_ocr_rejects_date_when_year_is_only_in_adjacent_ytd_column(tmp_path: Path) -> None:
+    """A corrupt quarter-year cell cannot borrow the adjacent YTD column's year."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    current_x = 240.0
+    ytd_x = 275.0
+    prior_year_x = 310.0
+    body = _statement_tokens(current_x=current_x, comparison_x=ytd_x)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Quarter ended", current_x, 65.0, w_pt=40.0),
+        _tok("Nine months ended", ytd_x, 65.0, w_pt=40.0),
+        _tok("December 31,", current_x, 80.0, w_pt=10.0),
+        _tok("December 31,", ytd_x, 80.0, w_pt=10.0),
+        _tok("December 31,", prior_year_x, 80.0, w_pt=10.0),
+        _tok("2024", ytd_x, 95.0, w_pt=10.0),
+        _tok("2023", prior_year_x, 95.0, w_pt=10.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert got == []
+
+
+def test_ocr_rejects_ambiguous_same_band_date_fragment_cluster(tmp_path: Path) -> None:
+    """Two day fragments in one row band cannot fabricate a physical column."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    current_x = 240.0
+    adjacent_x = 255.0
+    body = _statement_tokens(current_x=current_x, comparison_x=340.0)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("Consolidated", 200.0, 52.0),
+        _tok("Quarter ended", current_x, 65.0),
+        _tok("December", current_x, 80.0, w_pt=10.0),
+        _tok("31", current_x, 95.0, w_pt=10.0),
+        _tok("30", adjacent_x, 95.0, w_pt=10.0),
+        _tok("2024", current_x, 110.0, w_pt=10.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert got == []
+
+
+def test_ocr_confines_joined_scope_super_headers_to_consolidated_columns(tmp_path: Path) -> None:
+    """Joined scope labels still select the consolidated, not leftmost standalone, column."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    standalone_x = 210.0
+    consolidated_x = 410.0
+    body = _statement_tokens(current_x=consolidated_x, comparison_x=standalone_x)[4:]
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("StandaloneResults", standalone_x - 20.0, 52.0, w_pt=80.0),
+        _tok("ConsolidatedResults", consolidated_x - 20.0, 52.0, w_pt=80.0),
+        _tok("Dec31,2024", standalone_x, 90.0),
+        _tok("Dec31,2024", consolidated_x, 90.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
+
+
+def test_ocr_rejects_scope_word_found_only_in_a_body_footer(tmp_path: Path) -> None:
+    """A footer cannot turn an otherwise unscoped OCR recovery into a valid statement."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    tokens = list(_statement_tokens())
+    tokens[1] = tokens[1].model_copy(update={"text": "garbled"})
+    tokens.append(_tok("consolidated results not applicable", _LBL_X, 400.0, w_pt=120.0))
+
+    got = _recover(pdf, sha, _MockOcrEngine(tuple(tokens)))
+
+    assert got == []
+
+
+def test_ocr_rejects_footer_scope_when_dates_are_split_across_rows(tmp_path: Path) -> None:
+    """A multiline date header still ends before a footer-only scope phrase."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    header = (
+        _tok("(Rs. in Crore)", _LBL_X, 40.0),
+        _tok("garbled", 200.0, 52.0),
+        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
+        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
+        _tok("2024", _CUR_X, 95.0),
+        _tok("2023", _CMP_X, 95.0),
+    )
+    footer = _tok("consolidated financial results", _LBL_X, 400.0, w_pt=120.0)
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *_statement_tokens()[4:], footer)))
+
+    assert got == []
+
+
+def test_ocr_normalizes_homoglyphs_only_for_header_keywords(tmp_path: Path) -> None:
+    """Header homoglyphs resolve the quarter; a corrupt concept label stays unreadable."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    body = tuple(
+        token.model_copy(update={"text": "BasΙc"}) if token.text == "Basic" else token
+        for token in _statement_tokens(current_x=_CMP_X, comparison_x=_CUR_X)[4:]
+    )
+    header = (
+        _tok("(f in Crore)", _LBL_X, 40.0),
+        _tok("CONSOLIDATED", 200.0, 52.0),
+        _tok("ΝΙΝΕmonthsended", _CUR_X, 65.0, w_pt=70.0),
+        _tok("QUARΤΕRended", _CMP_X, 65.0, w_pt=55.0),
+        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
+        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
+        _tok("2024", _CUR_X, 95.0),
+        _tok("2024", _CMP_X, 95.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
+    values = _by_concept(got)
+
+    assert values[REVENUE] == Decimal("1000.00")
+    assert EPS not in values
+
+
 def test_ocr_fails_closed_when_crossfoot_residual_exceeds_tolerance(tmp_path: Path) -> None:
     # A mis-read digit breaks the statement's own arithmetic (total income no longer
     # equals revenue + other income, nor income - expenses = subtotal): the whole
@@ -199,6 +454,29 @@ def test_ocr_fails_closed_when_crossfoot_residual_exceeds_tolerance(tmp_path: Pa
     sha = _write_garbled_pdf(pdf)
     got = _recover(pdf, sha, _MockOcrEngine(_statement_tokens(total_income="1080.00")))
     assert got == []
+
+
+def test_ocr_crossfoot_prefers_specific_grand_total_expenses(tmp_path: Path) -> None:
+    """A material-cost subtotal must not shadow the later grand-total expenses row."""
+    pdf = tmp_path / "stmt.pdf"
+    sha = _write_garbled_pdf(pdf)
+    tokens = tuple(
+        token.model_copy(update={"text": "Total expenses other than material cost"})
+        if token.text == "Total expenses"
+        else token.model_copy(update={"text": "100.00"})
+        if token.text == "800.00"
+        else token
+        for token in _statement_tokens()
+    )
+    grand_total = (
+        _tok("Total expenses (A+B)", _LBL_X, 172.0, w_pt=100.0),
+        _tok("800.00", _CUR_X, 172.0),
+        _tok("0.00", _CMP_X, 172.0),
+    )
+
+    got = _recover(pdf, sha, _MockOcrEngine((*tokens, *grand_total)))
+
+    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
 
 
 def test_ocr_skips_low_confidence_cell_but_recovers_consistent_rest(tmp_path: Path) -> None:

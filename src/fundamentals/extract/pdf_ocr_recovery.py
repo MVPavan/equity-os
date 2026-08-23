@@ -44,6 +44,7 @@ from fundamentals.extract.pdf_column_geometry import (
     NumberParseError,
     PdfParseSpec,
     _alternate_scope_word,
+    _anchor_row_top,
     _band_rows,
     _current_column_center,
     _detect_unit_factor,
@@ -54,6 +55,7 @@ from fundamentals.extract.pdf_column_geometry import (
     _parse_number_or_none,
     _row_label,
 )
+from fundamentals.extract.pdf_header_text import normalize_header_tokens
 from fundamentals.extract.pdf_number_parser import _extract_lines
 from fundamentals.ingest.ocr_engine import OcrEngine, OcrToken
 from fundamentals.ingest.pdf_source import LoadedPdf, PageWord, PdfPage
@@ -118,7 +120,7 @@ DEFAULT_OCR_CROSSFOOT: tuple[OcrCrossFootIdentity, ...] = (
         lhs_labels=("Profit before",),
         terms=(
             OcrCrossFootTerm(sign=1, labels=("Total income",)),
-            OcrCrossFootTerm(sign=-1, labels=("Total expenses",)),
+            OcrCrossFootTerm(sign=-1, labels=("Total expenses (A+B)",)),
         ),
     ),
     OcrCrossFootIdentity(
@@ -195,8 +197,36 @@ def _scope_bounded_rows(rows: list[list[PageWord]], spec: PdfParseSpec) -> list[
     line — a fail-closed miss, never a wrong-scope value.
     """
     other_word = _alternate_scope_word(spec)
-    end = _first_index(rows, lambda row: other_word in _row_label(row).lower())
+    end = _first_index(rows, lambda row: other_word in normalize_header_tokens(_row_label(row)))
     return rows if end is None else rows[:end]
+
+
+def _verify_ocr_scope(
+    words: tuple[PageWord, ...], rows: list[list[PageWord]], spec: PdfParseSpec
+) -> bool | None:
+    """Return requested, alternate, or unverified scope from OCR header/title words."""
+    header_tokens = [
+        token
+        for word in _ocr_header_words(words, rows, spec)
+        for token in normalize_header_tokens(word.text)
+    ]
+    requested = spec.scope_marker.lower()
+    alternate = _alternate_scope_word(spec)
+    if _scope_keyword_present(header_tokens, requested):
+        return True
+    if _scope_keyword_present(header_tokens, alternate):
+        return False
+    return None
+
+
+def _scope_keyword_present(tokens: list[str], scope: str) -> bool:
+    """Match a scope token, including a rendered title OCR joined into one token."""
+    title_words = ("financial", "result", "statement")
+    return any(
+        token == scope
+        or (scope in token and any(title_word in token for title_word in title_words))
+        for token in tokens
+    )
 
 
 def _ocr_header_words(
@@ -205,8 +235,11 @@ def _ocr_header_words(
     """Return the words above (and including) the column-date band as the header.
 
     The OCR text layer lacks a clean anchor label, so the header/value boundary is
-    the first row carrying two or more parseable column dates; unit detection and
-    current-column location then run over the header just as on the text lane.
+    the first row carrying two or more directly parseable column dates; unit
+    detection and current-column location then run over the header just as on the
+    text lane. For multi-line dates, the first anchor-label row is the safe fallback
+    boundary: it keeps date fragments while excluding body/footer scope phrases.
+    Without either boundary, header classification fails closed.
     """
     split_y: float | None = None
     for row in rows:
@@ -215,7 +248,11 @@ def _ocr_header_words(
             split_y = max(word.y1 for word in row)
             break
     if split_y is None:
-        return words
+        try:
+            split_y = _anchor_row_top(rows, spec)
+        except NumberParseError:
+            return ()
+        return tuple(word for word in words if word.y0 < split_y)
     return tuple(word for word in words if word.y0 <= split_y)
 
 
@@ -308,16 +345,18 @@ def extract_consolidated_pl_via_ocr(
     min_identities: int = DEFAULT_OCR_MIN_IDENTITIES,
     crossfoot_tolerance: Decimal = DEFAULT_OCR_CROSSFOOT_TOLERANCE,
     require_all: bool = False,
+    raise_on_standalone: bool = False,
 ) -> list[Observation]:
     """Recover a garbled consolidated P&L by local OCR, or fail closed.
 
     Renders the identified statement page, runs the injected LOCAL ``ocr_engine``,
     rebuilds word geometry from the confident tokens, and re-runs the deterministic
     extractor with OCR-tolerant (concatenated) label matching. Returns ``[]``
-    (fail closed) when the page cannot be located/OCR'd, when the header (unit or
-    current-quarter column) is unrecoverable, or when the recovered statement does
-    not satisfy enough of its own cross-foot identities. Nothing is transmitted:
-    the rendered image never leaves this process.
+    (fail closed) when the page cannot be located/OCR'd, cannot prove requested scope,
+    has an unrecoverable header (unit or current-quarter column), or does not satisfy
+    enough of its own cross-foot identities. ``raise_on_standalone`` preserves the
+    document-level standalone signal only when no text-lane observation can survive.
+    Nothing is transmitted: the rendered image never leaves this process.
 
     The gates act at two granularities (see the module docstring): sub-confidence
     cells are dropped per cell, and the cross-foot check validates the page as a
@@ -332,6 +371,16 @@ def extract_consolidated_pl_via_ocr(
     words = _ocr_words_from_tokens(tokens, dpi=dpi, confidence_threshold=min_confidence)
     if not words:
         return []
+    rows = _band_rows(words, spec.row_band_tolerance_pt)
+    scope_verified = _verify_ocr_scope(words, rows, spec)
+    if scope_verified is not True:
+        if scope_verified is False and raise_on_standalone:
+            requested = spec.scope_marker.lower()
+            alternate = _alternate_scope_word(spec)
+            raise ConsolidatedStatementNotFoundError(
+                f"only a {alternate} statement found; {requested} required"
+            )
+        return []
 
     synthetic_page = PdfPage(
         page_number=page_number,
@@ -345,7 +394,7 @@ def extract_consolidated_pl_via_ocr(
         page_count=pdf.page_count,
         pages=(synthetic_page,),
     )
-    rows = _scope_bounded_rows(_band_rows(words, spec.row_band_tolerance_pt), spec)
+    rows = _scope_bounded_rows(rows, spec)
     header_words = _ocr_header_words(words, rows, spec)
     try:
         unit_factor = _detect_unit_factor(header_words)

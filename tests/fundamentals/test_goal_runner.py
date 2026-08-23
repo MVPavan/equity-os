@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import urllib.request
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -33,6 +34,7 @@ from fundamentals.api.goal_runner import (
     StockOutcome,
     WaveReport,
     _collect_pdf,
+    collect_sources,
     reconcile_stock,
     run_stock,
     run_wave,
@@ -55,6 +57,7 @@ from fundamentals.contracts.observation import (
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.extract.pdf_ocr_recovery import DEFAULT_OCR_DPI
 from fundamentals.ingest.ocr_engine import OcrEngineUnavailableError, OcrToken
+from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.reconcile.agreement import AgreementStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -484,6 +487,90 @@ def test_empty_source_list_reconciles_to_blocked(tmp_path: Path) -> None:
     assert report.dod.met is False
 
 
+def test_tijori_fixture_records_the_consolidated_scope_assumption() -> None:
+    """Tijori observations remain explicitly marked as scope-assumed in the source record."""
+    stock = _stock(
+        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
+    ).model_copy(
+        update={
+            "identifiers": _stock().identifiers.model_copy(
+                update={"nse_symbol": "INFY", "tijori_slug": "infosys-limited"}
+            )
+        }
+    )
+
+    sources = collect_sources(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.TIJORI}),
+    )
+
+    assert sources[0].status is SourceStatus.OK
+    assert "scope_assumed=True" in sources[0].note
+
+
+def test_tijori_fixture_wrong_issuer_is_skipped_before_canonicalisation() -> None:
+    """Fixture collection cannot stamp an Infosys response onto the configured stock."""
+    stock = _stock(
+        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
+    )
+
+    sources = collect_sources(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.TIJORI}),
+    )
+
+    assert sources[0].status is SourceStatus.SKIPPED
+    assert "identity mismatch" in sources[0].note
+
+
+def test_tijori_unverified_slug_is_skipped_even_for_a_fixture() -> None:
+    """A guessed Tijori slug cannot be accepted merely because fixture bytes parse."""
+    stock = _stock(
+        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
+    ).model_copy(
+        update={
+            "identifiers": _stock().identifiers.model_copy(
+                update={"needs_verification": ("tijori_slug",)}
+            )
+        }
+    )
+
+    sources = collect_sources(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.TIJORI}),
+    )
+
+    assert sources[0].status is SourceStatus.SKIPPED
+    assert "needs verification" in sources[0].note
+
+
+def test_live_tijori_is_skipped_before_network_without_dom_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live adapter stays off until one real DOM capture verifies its parser."""
+
+    def unexpected_request(*args: object, **kwargs: object) -> None:
+        pytest.fail("unverified Tijori parser made an HTTP request")
+
+    monkeypatch.setattr(urllib.request, "urlopen", unexpected_request)
+    sources = collect_sources(
+        _stock(),
+        mode=RunMode.LIVE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.TIJORI}),
+        tijori_credentials=TijoriCredentials(session_cookie="session-token"),
+    )
+
+    assert sources[0].status is SourceStatus.SKIPPED
+    assert sources[0].note == "tijori parser unverified against live DOM"
+
+
 # --- watchlist config ----------------------------------------------------------
 
 
@@ -629,11 +716,13 @@ def _tok(
     )
 
 
-def _self_consistent_tokens(*, total_income: str = "1050.00") -> tuple[OcrToken, ...]:
+def _self_consistent_tokens(
+    *, total_income: str = "1050.00", scope_label: str = "Consolidated"
+) -> tuple[OcrToken, ...]:
     """Tokens for a self-consistent consolidated statement (cross-foot identities hold)."""
     tokens: list[OcrToken] = [
         _tok("(Rs. in Crore)", 60.0, 40.0),
-        _tok("Consolidated", 200.0, 52.0),
+        _tok(scope_label, 200.0, 52.0),
         _tok("Dec31,2024", 240.0, 90.0),
         _tok("Dec31,2023", 340.0, 90.0),
     ]
@@ -786,6 +875,38 @@ def test_pdf_ocr_recovers_garbled_statement_via_injected_engine(tmp_path: Path) 
     assert got[INCOME] == Decimal("1050.00")
     assert got[PAT] == Decimal("190.00")
     assert got[EPS] == Decimal("5.00")
+
+
+def test_pdf_ocr_skips_standalone_only_statement_for_consolidated_request(
+    tmp_path: Path,
+) -> None:
+    """A standalone OCR page is skipped and never stamped as consolidated."""
+    pdf = tmp_path / "results.pdf"
+    sha = _write_garbled_pdf(pdf)
+
+    source = _collect(
+        pdf,
+        sha,
+        _FakeOcrEngine(_self_consistent_tokens(scope_label="STANDALONEFINANCIALRESULTS")),
+    )
+
+    assert source.status is SourceStatus.SKIPPED
+    assert source.observations == ()
+    assert "only a standalone statement found; consolidated required" in source.note
+
+
+def test_pdf_ocr_unscoped_page_keeps_verified_text_lane_observations(tmp_path: Path) -> None:
+    """An unscoped OCR fallback cannot discard facts already read from the text lane."""
+    pdf = tmp_path / "results.pdf"
+    sha = _write_pl_pdf(pdf, split_revenue=True)
+
+    source = _collect(pdf, sha, _FakeOcrEngine(_self_consistent_tokens(scope_label="garbled")))
+
+    assert source.status is SourceStatus.OK
+    got = _obs_by_concept(source)
+    assert REVENUE not in got
+    assert got[INCOME] == Decimal("1010")
+    assert got[PBT] == Decimal("200")
 
 
 def test_pdf_ocr_fills_only_missing_concepts_text_lane_wins(tmp_path: Path) -> None:

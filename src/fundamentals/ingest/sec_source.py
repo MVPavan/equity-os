@@ -60,7 +60,7 @@ FY25_PERIOD_END = date(2025, 3, 31)
 # is excluded from the Q1 evidence package when its knowledge time is after this.
 Q1_UPDATE_CUTOFF = datetime(2024, 7, 18, tzinfo=UTC)
 
-DEFAULT_USER_AGENT = "EquityOS Research (mvpavan42@gmail.com)"
+DEFAULT_USER_AGENT = "EquityOS Research"
 USER_AGENT_HEADER = "User-Agent"
 COMPANYFACTS_URL_TEMPLATE = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 

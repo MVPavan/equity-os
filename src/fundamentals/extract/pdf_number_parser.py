@@ -575,16 +575,7 @@ def _match_target_value(
     conditional = _conditional_value(rows, target, center, spec, match_mode)
     if conditional is not None:
         return conditional
-    return next(
-        (
-            value_word
-            for row in rows
-            if _label_matches(_row_label(row), target, match_mode)
-            for value_word in (_column_value(row, center, spec.column_x_tolerance_pt),)
-            if value_word is not None and _parse_number_or_none(value_word.text) is not None
-        ),
-        None,
-    )
+    return _labelled_value_word(rows, target.labels, center, spec, match_mode)
 
 
 def _conditional_value(

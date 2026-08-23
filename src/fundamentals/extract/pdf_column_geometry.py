@@ -1,31 +1,4 @@
-"""Parse spec plus the deterministic column/date/scope geometry engine.
-
-This is the lower layer shared by both PDF extraction lanes (the deterministic
-text lane :mod:`fundamentals.extract.pdf_number_parser` and the OCR recovery lane
-:mod:`fundamentals.extract.pdf_ocr_recovery`). It holds two cohesive things:
-
-* the **injected parse spec** (:class:`PdfParseSpec` and the per-line typing it
-  carries — :class:`PdfTargetLine`, :class:`ConditionalLabel`,
-  :class:`SubcomponentSummation`, :class:`PdfLineUnit`, :class:`LabelMatch`) that
-  tells the engine *what* to locate and read, and
-* the **"where is the current-quarter consolidated column" machinery** — word
-  banding, tolerant label/row matching, date-token parsing (numeric, abbreviated,
-  full and OCR-merged month-name forms), merged day-year reassembly, header/title
-  band discrimination, scope-block confinement on a combined standalone-and-
-  consolidated table, printed-unit detection, and column-centre value matching.
-
-Nothing about a specific issuer is hard-coded: the scope marker, statement
-confirmations, accepted label variants, tolerances, month names, and the reporting
-period all arrive through :class:`PdfParseSpec`. The design is SEBI-format-general
-(see :mod:`fundamentals.extract.pdf_number_parser` for the extraction-layer notes).
-
-The fail-closed contract lives here too: a missing consolidated statement page
-raises :class:`ConsolidatedStatementNotFoundError` (a caller may treat that as a
-skip); a missing column, unit marker, or anchor raises :class:`NumberParseError`.
-
-Dependency flows strictly downward: this module imports only the contracts and the
-ingest layer, never the extraction lanes that build on it.
-"""
+"""Shared fail-closed PDF statement geometry for the text and OCR lanes."""
 
 from __future__ import annotations
 
@@ -38,12 +11,17 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.observation import AccountingFramework, Scope
+from fundamentals.extract.pdf_header_text import (
+    NON_QUARTER_HEADER_MARKERS,
+    QUARTER_HEADER_MARKERS,
+    normalize_header_tokens,
+    normalize_text_tokens,
+)
 from fundamentals.ingest.pdf_source import LoadedPdf, PageWord, PdfPage
 
 DEFAULT_ROW_BAND_TOLERANCE_PT = 4.0
 DEFAULT_COLUMN_X_TOLERANCE_PT = 40.0
-# Bullet glyphs that mark a printed sub-component row (ASCII hyphen, en/em dash,
-# bullet). A statement that prints a line only as sub-components leads each with one.
+# Bullet glyphs marking printed sub-component rows (hyphen, en/em dash, or bullet).
 DEFAULT_SUBCOMPONENT_MARKERS: tuple[str, ...] = ("-", "–", "—", "•")
 # Intra-statement residual allowed when validating a summed sub-component total
 # against the statement's own reconciliation identity (crore units).
@@ -63,8 +41,7 @@ DEFAULT_MONTH_NAMES: tuple[str, ...] = (
     "December",
 )
 
-# One crore = 100 lakh = 10 million. A monetary value printed in a coarser unit is
-# rescaled to crore so it shares the XBRL side's comparison key.
+# Monetary values are normalized to crore so they share the XBRL comparison key.
 _CRORE_PER_UNIT: dict[str, Decimal] = {
     "crore": Decimal(1),
     "lakh": Decimal("0.01"),
@@ -72,24 +49,20 @@ _CRORE_PER_UNIT: dict[str, Decimal] = {
 }
 
 _NUMERIC_TOKEN = re.compile(r"^\(-?[\d,]+(?:\.\d+)?\)$|^-?[\d,]+(?:\.\d+)?$")
-_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 _ORDINAL = re.compile(r"(\d)(st|nd|rd|th)\b", re.IGNORECASE)
 _NUMERIC_DATE = re.compile(r"^(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})$")
 _ABBREV_DATE = re.compile(r"^(\d{1,2})[-./]([A-Za-z]{3,})[-./](\d{2,4})$")
-# An OCR text layer drops the spaces of a month-name date ("Dec 31, 2024" ->
-# "Dec31,2024"); the same day/month/year is recovered from the merged token.
+# OCR may drop spaces from a month-name date ("Dec 31, 2024" -> "Dec31,2024").
 _MERGED_MONTH_DATE = re.compile(r"^([A-Za-z]{3,})\.?(\d{1,2})[,.]?(\d{4})$")
-# A day and year printed as one token beneath a month word ("31,2024" / "31, 2024"),
-# as some filers render the year-row cell for a "December" column; split into the two
-# integers so a month-name column whose day/year merged is still reassembled.
+_MERGED_DAY_MONTH_DATE = re.compile(r"^(\d{1,2})([A-Za-z]{3,})\.?[,]?(\d{2,4})$")
+_MONTH_DAY_YEAR = re.compile(r"^([A-Za-z]{3,})\.?\s+(\d{1,2})[,.]?\s+(\d{4})$")
+_DAY_MONTH_YEAR = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3,})\.?[,]?\s+(\d{4})$")
 _DAY_YEAR_TOKEN = re.compile(r"^(\d{1,2})[,.\s]+(\d{4})$")
 _YEAR_MIN = 2000
 _CENTURY = 2000
 _MAX_DAY = 31
+_FRAGMENT_COLUMN_FRACTION = 0.5
 
-# Words allowed in a column-header band besides dates/numbers. A band with more
-# than this many other ("prose") words is a title sentence, not a column-date row,
-# and is excluded so a date in the title cannot be mistaken for a value column.
 _HEADER_KEYWORDS = frozenset(
     {
         "quarter",
@@ -123,9 +96,6 @@ _HEADER_KEYWORDS = frozenset(
 )
 _MAX_PROSE_WORDS_IN_HEADER_BAND = 3
 
-# Words that only ever appear in a statement title / section heading, never in a
-# column-date row. A band carrying any of them is a title, so its printed date is
-# excluded and cannot be mistaken for a value-column header.
 _TITLE_MARKER_WORDS = frozenset({"statement", "results", "financial", "profit", "loss"})
 
 
@@ -266,7 +236,7 @@ class PdfParseSpec(BaseModel):
 
 def _normalize_tokens(text: str) -> list[str]:
     """Normalize text to lowercase alphanumeric tokens for tolerant matching."""
-    return _NON_ALNUM.sub(" ", text.lower()).split()
+    return normalize_text_tokens(text)
 
 
 def _is_subsequence(needle: list[str], haystack: list[str]) -> bool:
@@ -468,6 +438,21 @@ def _parse_date_token(token: str, month_names: tuple[str, ...]) -> date | None:
         month = _month_index(merged[1], month_names) or 0
         if month:
             return _safe_date(int(merged[3]), month, int(merged[2]))
+    merged_day_first = _MERGED_DAY_MONTH_DATE.match(text)
+    if merged_day_first is not None:
+        month = _month_index(merged_day_first[2], month_names) or 0
+        if month:
+            return _safe_date(int(merged_day_first[3]), month, int(merged_day_first[1]))
+    month_first = _MONTH_DAY_YEAR.match(text)
+    if month_first is not None:
+        month = _month_index(month_first[1], month_names) or 0
+        if month:
+            return _safe_date(int(month_first[3]), month, int(month_first[2]))
+    day_first = _DAY_MONTH_YEAR.match(text)
+    if day_first is not None:
+        month = _month_index(day_first[2], month_names) or 0
+        if month:
+            return _safe_date(int(day_first[3]), month, int(day_first[1]))
     return None
 
 
@@ -488,8 +473,8 @@ def _is_header_date_band(band: list[PageWord], month_names: tuple[str, ...]) -> 
         text = _strip_ordinals(word.text.strip().strip(","))
         if _NUMERIC_TOKEN.match(text) or _parse_date_token(text, month_names) is not None:
             continue
-        for token in _normalize_tokens(text):
-            if token in _TITLE_MARKER_WORDS:
+        for token in normalize_header_tokens(text):
+            if any(marker in token for marker in _TITLE_MARKER_WORDS):
                 return False
             if token.isdigit() or token in _HEADER_KEYWORDS:
                 continue
@@ -502,17 +487,7 @@ def _is_header_date_band(band: list[PageWord], month_names: tuple[str, ...]) -> 
 def _header_date_columns(
     header_words: tuple[PageWord, ...], spec: PdfParseSpec
 ) -> list[tuple[float, date]]:
-    """Return ``(x_center, date)`` for every column-date cell in the header region.
-
-    The x is the date cell's horizontal **centre** (not its left edge): financial
-    tables right-align figures, so matching a value cell's centre to the column's
-    date centre keeps cells of different widths (a wide ``1,011.95`` and a short
-    ``0.51`` in the same column) bound to the right column. Single-token dates are
-    read directly; multi-token and two-line month-name dates (``December 31, 2024``
-    / ``31st December`` above ``2024``) are reassembled by gathering the day and year
-    within the column tolerance of the month token. Prose title bands are excluded so
-    a title date is not counted.
-    """
+    """Return each header date at its centre, excluding prose-title dates."""
     bands = [
         band
         for band in _band_rows(header_words, spec.row_band_tolerance_pt)
@@ -524,60 +499,127 @@ def _header_date_columns(
         parsed = _parse_date_token(word.text, spec.month_names)
         if parsed is not None:
             columns.append(((word.x0 + word.x1) / 2, parsed))
+    columns.extend(_inline_fragment_columns(bands, spec))
+    columns.extend(_stacked_fragment_columns(eligible, spec))
     columns.extend(_month_name_columns(eligible, spec))
     return columns
 
 
-def _header_integers(eligible: tuple[PageWord, ...]) -> list[tuple[float, int]]:
-    """Return ``(x0, value)`` for every integer usable as a date's day or year.
+def _inline_fragment_columns(
+    bands: list[list[PageWord]], spec: PdfParseSpec
+) -> list[tuple[float, date]]:
+    """Assemble tightly adjacent horizontal date fragments without crossing columns."""
+    columns: list[tuple[float, date]] = []
+    maximum_spread = spec.column_x_tolerance_pt * _FRAGMENT_COLUMN_FRACTION
+    for band in bands:
+        for start in range(len(band)):
+            for size in (2, 3):
+                fragments = band[start : start + size]
+                if len(fragments) != size or any(
+                    abs(_word_center(right) - _word_center(left)) > maximum_spread
+                    for left, right in zip(fragments, fragments[1:], strict=False)
+                ):
+                    continue
+                parsed = _parse_date_token(
+                    " ".join(word.text for word in fragments), spec.month_names
+                )
+                if parsed is not None:
+                    columns.append((_word_center(fragments[0]), parsed))
+    return columns
 
-    A plain integer token contributes itself; a token that merges the day and year
-    of one column into ``"31,2024"`` (as some filers render the year row) contributes
-    both integers at that x, so a month-name column whose day/year merged is still
-    reassembled by :func:`_month_name_columns`.
-    """
+
+def _stacked_fragment_columns(
+    eligible: tuple[PageWord, ...], spec: PdfParseSpec
+) -> list[tuple[float, date]]:
+    """Assemble vertically stacked date fragments from one physical column only."""
+    columns: list[tuple[float, date]] = []
+    for column in _header_fragment_columns(eligible, spec):
+        for start in range(len(column)):
+            for size in (2, 3):
+                fragments = column[start : start + size]
+                if len(fragments) != size:
+                    continue
+                parsed = _parse_date_token(
+                    " ".join(fragment.text for fragment in fragments), spec.month_names
+                )
+                if parsed is None:
+                    continue
+                columns.append((_word_center(fragments[0]), parsed))
+    return columns
+
+
+def _header_fragment_columns(
+    eligible: tuple[PageWord, ...], spec: PdfParseSpec, *, require_unique_bands: bool = True
+) -> list[list[PageWord]]:
+    """Partition header fragments into narrow, unambiguous physical columns."""
+    maximum_spread = spec.column_x_tolerance_pt * _FRAGMENT_COLUMN_FRACTION
+    columns: list[list[PageWord]] = []
+    for word in sorted(eligible, key=_word_center):
+        if not columns or _word_center(word) - _word_center(columns[-1][0]) > maximum_spread:
+            columns.append([word])
+        else:
+            columns[-1].append(word)
+    if require_unique_bands:
+        columns = [
+            column
+            for column in columns
+            if all(len(band) == 1 for band in _band_rows(tuple(column), spec.row_band_tolerance_pt))
+        ]
+    return [sorted(column, key=lambda word: (word.y0, word.x0)) for column in columns]
+
+
+def _word_center(word: PageWord) -> float:
+    """Return the horizontal centre of one PDF word box."""
+    return (word.x0 + word.x1) / 2
+
+
+def _header_integers(eligible: tuple[PageWord, ...]) -> list[tuple[float, int]]:
+    """Return every standalone or merged day/year integer with its word centre."""
     integers: list[tuple[float, int]] = []
     for word in eligible:
         text = _strip_ordinals(word.text.strip().strip(","))
         if text.isdigit():
-            integers.append((word.x0, int(text)))
+            integers.append((_word_center(word), int(text)))
             continue
         merged = _DAY_YEAR_TOKEN.match(word.text.strip())
         if merged is not None:
-            integers.append((word.x0, int(merged[1])))
-            integers.append((word.x0, int(merged[2])))
+            integers.append((_word_center(word), int(merged[1])))
+            integers.append((_word_center(word), int(merged[2])))
     return integers
 
 
 def _month_name_columns(
     eligible: tuple[PageWord, ...], spec: PdfParseSpec
 ) -> list[tuple[float, date]]:
-    """Reassemble multi-token / multi-line month-name dates into ``(x_center, date)``.
-
-    Within one column the month, day, and year share an x even when they print on
-    different header lines (``June 30,`` above ``2024``, or a ``Particulars`` row
-    between them), so the day and year for a month token are the integer tokens
-    nearest it in x within the column tolerance — never matched across columns. The
-    returned x is the month word's centre (see :func:`_header_date_columns`), which
-    tracks the value column better than its left edge.
-    """
-    integers = _header_integers(eligible)
+    """Reassemble vertically separated month-name dates inside a physical column."""
     columns: list[tuple[float, date]] = []
-    for anchor in eligible:
-        month = _month_index(anchor.text.strip().strip(","), spec.month_names)
-        if month is None:
+    for column in _header_fragment_columns(eligible, spec, require_unique_bands=False):
+        if any(
+            len(band) > 1
+            and not (
+                len(band) == 2
+                and sum(
+                    _month_index(word.text.strip().strip(","), spec.month_names) is not None
+                    for word in band
+                )
+                == 1
+                and len(_header_integers(tuple(band))) == 1
+            )
+            for band in _band_rows(tuple(column), spec.row_band_tolerance_pt)
+        ):
             continue
-        near = sorted(
-            ((abs(x0 - anchor.x0), value) for x0, value in integers),
-            key=lambda item: item[0],
-        )
-        within = [value for distance, value in near if distance <= spec.column_x_tolerance_pt]
-        day = next((value for value in within if 1 <= value <= _MAX_DAY), None)
-        year = next((value for value in within if value >= _YEAR_MIN), None)
-        if day is not None and year is not None:
-            built = _safe_date(year, month, day)
+        integers = _header_integers(tuple(column))
+        for anchor in column:
+            month = _month_index(anchor.text.strip().strip(","), spec.month_names)
+            if month is None:
+                continue
+            days = [value for _, value in integers if 1 <= value <= _MAX_DAY]
+            years = [value for _, value in integers if value >= _YEAR_MIN]
+            if len(days) != 1 or len(years) != 1:
+                continue
+            built = _safe_date(years[0], month, days[0])
             if built is not None:
-                columns.append(((anchor.x0 + anchor.x1) / 2, built))
+                columns.append((_word_center(anchor), built))
     return columns
 
 
@@ -589,7 +631,9 @@ def _alternate_scope_word(spec: PdfParseSpec) -> str:
 def _band_has_title_marker(band: list[PageWord]) -> bool:
     """Whether a band carries a statement-title word (so it is a title, not a header)."""
     return any(
-        token in _TITLE_MARKER_WORDS for word in band for token in _normalize_tokens(word.text)
+        token in _TITLE_MARKER_WORDS
+        for word in band
+        for token in normalize_header_tokens(word.text)
     )
 
 
@@ -613,7 +657,7 @@ def _scope_header_centers(
         if _band_has_title_marker(band):
             continue
         for word in band:
-            lowered = word.text.lower()
+            lowered = " ".join(normalize_header_tokens(word.text))
             center = (word.x0 + word.x1) / 2.0
             if requested in lowered:
                 requested_centers.append(center)
@@ -649,21 +693,67 @@ def _current_column_center(header_words: tuple[PageWord, ...], spec: PdfParseSpe
     """Locate the current-quarter value column's x-position from its printed date.
 
     The current quarter is a three-month period ending at ``period_end``; that end
-    date is printed both for the quarter column and, again, for the nine-months
-    year-to-date column. On a combined standalone-and-consolidated table the eligible
-    columns are first confined to the requested scope's block, then the **leftmost**
-    column whose header date equals ``period_end`` is the three-months-ended quarter
-    column (SEBI orders the quarter block before the year-to-date block). Fails closed
-    when no header date in the requested scope resolves to ``period_end``.
+    date may also label a nine-month year-to-date column. Nearby aliases for one
+    physical column are coalesced and combined tables are confined to the requested
+    scope. Readable markers must select exactly one quarter and always exclude
+    nine-month/year-ended columns; with no readable marker, the existing leftmost
+    equal-period-end rule applies. Missing or ambiguous columns fail closed.
     """
     columns = _confine_to_scope_block(_header_date_columns(header_words, spec), header_words, spec)
-    matching = [x for x, when in columns if when == spec.period_end]
+    matching: list[float] = []
+    for center in sorted({round(x, 3) for x, when in columns if when == spec.period_end}):
+        if not matching or center - matching[-1] > spec.column_x_tolerance_pt / 2:
+            matching.append(center)
     if not matching:
         raise NumberParseError(
             f"current-quarter column (period end {spec.period_end.isoformat()}) "
             "not found on statement page"
         )
-    return min(matching)
+    eligible: list[tuple[float, list[str]]] = []
+    for center in matching:
+        tokens = _column_header_tokens(center, header_words, spec)
+        if _has_header_marker(tokens, NON_QUARTER_HEADER_MARKERS):
+            continue
+        eligible.append((center, tokens))
+    quarter_marked = [
+        center for center, tokens in eligible if _has_header_marker(tokens, QUARTER_HEADER_MARKERS)
+    ]
+    if len(quarter_marked) == 1:
+        return quarter_marked[0]
+    if len(quarter_marked) > 1:
+        raise NumberParseError(
+            f"current-quarter column (period end {spec.period_end.isoformat()}) "
+            "is ambiguous across multiple quarter-marked columns"
+        )
+    if not eligible:
+        raise NumberParseError(
+            f"current-quarter column (period end {spec.period_end.isoformat()}) "
+            "has only year-to-date or year-ended headers"
+        )
+    return min(center for center, _ in eligible)
+
+
+def _column_header_tokens(
+    center: float, header_words: tuple[PageWord, ...], spec: PdfParseSpec
+) -> list[str]:
+    """Return keyword tokens geometrically belonging to one date column."""
+    tokens: list[str] = []
+    for band in _band_rows(header_words, spec.row_band_tolerance_pt):
+        if not _is_header_date_band(band, spec.month_names):
+            continue
+        for word in band:
+            word_center = (word.x0 + word.x1) / 2
+            if abs(word_center - center) <= spec.column_x_tolerance_pt:
+                tokens.extend(normalize_header_tokens(word.text))
+    return tokens
+
+
+def _has_header_marker(tokens: list[str], markers: tuple[tuple[str, ...], ...]) -> bool:
+    """Whether a normalized column-header group contains a marker phrase."""
+    joined = "".join(tokens)
+    return any(
+        _is_subsequence(list(marker), tokens) or "".join(marker) in joined for marker in markers
+    )
 
 
 def _column_value(row: list[PageWord], center: float, tolerance_pt: float) -> PageWord | None:
