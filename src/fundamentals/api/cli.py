@@ -26,12 +26,21 @@ from pydantic import SecretStr, TypeAdapter
 
 from fundamentals.api.adjudication_cli import (
     ADJUDICATE_COMMAND,
-    add_adjudication_parser,
     dispatch_adjudication_command,
     load_adjudication_queue_or_exit,
     normalize_stock_quarter,
     resolve_beneath,
 )
+from fundamentals.api.cli_parser import (
+    REPORT_COMMAND as _COMMAND_REPORT,
+)
+from fundamentals.api.cli_parser import (
+    THESIS_COMMAND as _COMMAND_THESIS,
+)
+from fundamentals.api.cli_parser import (
+    VALIDATE_COMMAND as _COMMAND_VALIDATE,
+)
+from fundamentals.api.cli_parser import build_parser as _build_parser
 from fundamentals.api.comparatives import derive_comparator_periods
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
 from fundamentals.api.goal_runner import (
@@ -46,13 +55,16 @@ from fundamentals.api.goal_runner import (
 )
 from fundamentals.api.news_cli import (
     NEWS_COMMAND,
-    add_news_parser,
     render_news_table,
     run_news_command,
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
-from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
+from fundamentals.api.tijori_tables_cli import (
+    TIJORI_TABLES_COMMAND,
+    render_tijori_tables_summary,
+    run_tijori_tables_command,
+)
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -87,15 +99,9 @@ from fundamentals.thesis.adjudication import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
-_DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
 _DEFAULT_THESIS_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "thesis"
 _ADJUDICATION_QUEUE_FILENAME = "adjudication-queue.json"
-_COMMAND_RUN = "run"
-_COMMAND_VALIDATE = "validate"
-_COMMAND_REPORT = "report"
-_COMMAND_THESIS = "thesis"
 _QUARTER_LATEST = "latest"
 _MISSING_GOLD_REASON = "gold file does not exist"
 # The cached report reconciles the two first-party sources whose raw bytes are
@@ -106,6 +112,7 @@ _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
+_TIJORI_SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for tijori-tables"
 
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
@@ -636,113 +643,6 @@ def thesis_command(
     return docs
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the ``fundamentals`` argument parser."""
-    parser = argparse.ArgumentParser(prog="fundamentals", description=__doc__)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    run = subparsers.add_parser(_COMMAND_RUN, help="run the source-verified earnings update")
-    run.add_argument("--issuer", required=True, help="issuer symbol, e.g. INFY")
-    run.add_argument("--quarter", required=True, help="issuer quarter, e.g. Q1-FY25")
-    run.add_argument(
-        "--config",
-        default=str(_DEFAULT_CONFIG_PATH),
-        help="path to fundamentals.yaml (default: repo config/fundamentals.yaml)",
-    )
-    run.add_argument(
-        "--xbrl-mode",
-        choices=[mode.value for mode in XbrlMode],
-        default=None,
-        help="override the configured XBRL retrieval mode (local | live)",
-    )
-    run.add_argument("--out", default=None, help="write the markdown to a file instead of stdout")
-
-    validate = subparsers.add_parser(
-        _COMMAND_VALIDATE,
-        help="cross-check the watchlist across every available source (gold loop)",
-    )
-    scope = validate.add_mutually_exclusive_group()
-    scope.add_argument(
-        "--watchlist",
-        action="store_true",
-        help="validate every stock, rolling each wave up under its own <wave>-rollup.json",
-    )
-    scope.add_argument("--symbol", default=None, help="validate a single stock, e.g. TITAN")
-    add_wave_arg(validate)
-    validate.add_argument(
-        "--quarter",
-        default=None,
-        help=(
-            "assert the reviewed quarter label, e.g. Q3FY25; or 'latest' to target the "
-            "newest completed quarter BSE publishes and align NSE/Screener to it"
-        ),
-    )
-    validate.add_argument(
-        "--sources",
-        default=None,
-        help="comma-separated sources to pull (default: all): nse,bse,screener,tijori,pdf,sec",
-    )
-    fetch = validate.add_mutually_exclusive_group()
-    fetch.add_argument(
-        "--live", action="store_true", help="fetch sources live (polite, owner-authorized)"
-    )
-    fetch.add_argument(
-        "--fixture",
-        action="store_true",
-        help="read committed/local fixtures instead of the network (default)",
-    )
-    validate.add_argument(
-        "--config",
-        default=str(_DEFAULT_WATCHLIST_PATH),
-        help="path to watchlist.yaml (default: repo config/watchlist.yaml)",
-    )
-    validate.add_argument(
-        "--report-dir", default=None, help="write per-stock + roll-up JSON reports here"
-    )
-    validate.add_argument(
-        "--gold-dir", default=None, help="override the gold-file output directory"
-    )
-
-    report = subparsers.add_parser(
-        _COMMAND_REPORT,
-        help="render the per-stock source-verified earnings update from CACHED data",
-    )
-    report_scope = report.add_mutually_exclusive_group()
-    report_scope.add_argument(
-        "--watchlist",
-        action="store_true",
-        help="render every watchlist stock (optionally one --wave)",
-    )
-    report_scope.add_argument("--symbol", default=None, help="render a single stock, e.g. MTARTECH")
-    add_wave_arg(report)
-    report.add_argument(
-        "--quarter", default=None, help="assert the reviewed quarter label, e.g. Q3FY25"
-    )
-    report.add_argument(
-        "--config",
-        default=str(_DEFAULT_WATCHLIST_PATH),
-        help="path to watchlist.yaml (default: repo config/watchlist.yaml)",
-    )
-    report.add_argument(
-        "--out-dir",
-        default=None,
-        help="directory for rendered .md reports (default: docs/research/validation/reports)",
-    )
-    report.add_argument(
-        "--gold-dir",
-        default=None,
-        help="override the scratch gold directory the cached reconcile writes to",
-    )
-
-    add_thesis_parser(
-        subparsers,
-        command=_COMMAND_THESIS,
-        default_watchlist_path=_DEFAULT_WATCHLIST_PATH,
-    )
-    add_news_parser(subparsers)
-    add_adjudication_parser(subparsers)
-    return parser
-
-
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns a process exit code."""
     _configure_logging()
@@ -750,6 +650,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logger = structlog.get_logger("fundamentals.cli")
+
+    if args.command == TIJORI_TABLES_COMMAND:
+        credentials = _tijori_credentials_from_env()
+        if credentials is None:
+            raise SystemExit(_TIJORI_SESSION_REQUIRED)
+        logger.info(
+            "tijori_tables_invoked",
+            stock=args.stock,
+            table=args.table,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        tables = run_tijori_tables_command(args, credentials=credentials)
+        sys.stdout.write(render_tijori_tables_summary(tables) + "\n")
+        return 0
 
     if args.command == NEWS_COMMAND:
         news_result = run_news_command(args)

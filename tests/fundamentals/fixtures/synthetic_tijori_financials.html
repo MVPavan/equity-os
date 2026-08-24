@@ -18,8 +18,89 @@
             {"formula":"","index":1,"name":"Quarterly Ratios","name_span":"","sub_section":[{"name":"EPS","field":"adj_eps_abs","value":[10.1,11.764,10.7]}],"value":[null,null,null],"value_yoy":[],"value_perc":[],"field":"ratios","source":"derived","fs_name":"pl","op_id":4}
           ]
         },
-        "qt_s": {"report_dates": [], "data": []}
+        "qt_s": {
+          "report_dates": ["Sep 2024", "Dec 2024"],
+          "report_dates_yoy": ["Sep 2023", "Dec 2023"],
+          "skip_report_dates": ["Mar 2023"],
+          "data": [
+            {"name":"Net Sales","field":"net_sales","value":[15000.25,16500.75]},
+            {"name":"Net Profit","field":"net_profit","value":[850.5,null]}
+          ]
+        },
+        "pl_c_s": {
+          "report_dates": ["Mar 2023", "Mar 2024"],
+          "skip_report_dates": [],
+          "table_footer": {"note": "Consolidated figures in INR crore"},
+          "data": [
+            {"name":"Revenue","field":"revenue","value":[40000.125,51000.875]},
+            {"name":"Profit After Tax","field":"pat","value":[3200.25,4100.5]},
+            {"name":"Raw Material","field":"NA","value":[null,null],"sub_section":[
+              {"name":"Steel","field":"NA","fs_name":"rm","source":"derived","value":[120.5],"sub_section":""},
+              {"name":"Gems & Jewellery","field":"NA","fs_name":"rm","source":"derived","value":[80.25,90.75,100.0],"sub_section":""}
+            ]}
+          ]
+        },
+        "bs_c_s": {
+          "report_dates": ["Mar 2023", "Mar 2024"],
+          "skip_report_dates": [],
+          "data": [
+            {"name":"Assets","field":"assets","value":[30000.0,34000.0]},
+            {"name":"Liabilities","field":"liabilities","value":[18000.0,19500.0]}
+          ]
+        },
+        "bs_c_d": {
+          "report_dates": ["Mar 2023", "Mar 2024"],
+          "skip_report_dates": [],
+          "data": [
+            {"name":"Assets","field":"NA","value":[30000.0,34000.0],"sub_section":[
+              {"name":"Fixed Assets","field":"NA","value":[12000.0,13000.0],"sub_section":""},
+              {"name":"Current Assets","field":"NA","value":[18000.0,21000.0],"sub_section":""}
+            ]},
+            {"name":"Liabilities","field":"","value":[18000.0,19500.0],"sub_section":""}
+          ]
+        },
+        "cf_c": {
+          "report_dates": ["Mar 2023", "Mar 2024"],
+          "skip_report_dates": [],
+          "data": [
+            {"name":"Cash from Operating Activity","field":"cfo","value":[2500.0,3100.0]},
+            {"name":"Net Capex (est)","field":"net_capex","value":[-900.0,-1200.0]}
+          ]
+        },
+        "fr_c": {
+          "report_dates": ["Mar 2023", "Mar 2024"],
+          "data": [
+            {"name":"Operational Ratios","field":"operational_ratios","value":[],"sub_section":[
+              {"name":"Return on Equity","field":"roe_operational","value":[22.125,24.375]},
+              {"name":"Debt to Equity","field":"debt_to_equity","value":[0.75,0.625]},
+              {"name":"Interest Coverage Ratio","field":"ebit","value":[8.5,9.25]}
+            ]},
+            {"name":"Profitability Ratios","field":"profitability_ratios","value":[null,null],"sub_section":[
+              {"name":"Return on Equity","field":"roe_profitability","value":["12.5%","-"]},
+              {"name":"Working Capital","value":["1,234","2,468.5"]},
+              {"name":"ROCE (%)","field":"ebit","value":[19.5,21.75]}
+            ]}
+          ]
+        },
+        "growth": {
+          "report_dates": ["1yr", "2yr"],
+          "data": [
+            {"name":"Share Price CAGR","field":"share_price_cagr","value":[18.5,21.25]},
+            {"name":"TTM EPS CAGR","field":"ttm_eps_cagr","value":[12.0,15.75]}
+          ]
+        },
+        "cf_s": null,
+        "fundflow_c": {
+          "report_dates": ["Mar 2024"],
+          "data": [{"name":"Sources of Funds","field":"sources","value":[100.0]}]
+        }
       }
+    </script>
+    <script id="financials_locks" type="application/json">
+      {"rdcf":{"editable":false},"growth":{"compare":false},"ratios":{"compare":false},"cashflow":{"compare":false},"fundflow":{"compare":false},"bs_snapshot":{"chart":false,"compare":false},"price_chart":{"compare":false},"profit_loss":{"compare":false},"qtly_results":{"compare":false},"balance_sheet":{"compare":false},"cash_flow_table":{"compare":false}}
+    </script>
+    <script id="plan_details" type="application/json">
+      {"id":38,"name":"free","plan_tier":"free","payment_type":"one_time","ind_company":{"financials":{"growth":{"compare":false},"qtly_results":{"compare":false}}}}
     </script>
   </body>
 </html>

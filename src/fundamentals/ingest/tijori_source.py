@@ -29,10 +29,33 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.tijori_tables import (
+    FINANCIALS_ISLAND_ID,
+    FINANCIALS_LOCKS_ISLAND_ID,
+    PLAN_DETAILS_ISLAND_ID,
+    TIJORI_SOURCE_ID,
+    TijoriTable,
+    TijoriUnparseableIsland,
+    build_all_tijori_tables,
+    build_tijori_table,
+    parse_table_key,
+)
+from fundamentals.ingest.tijori_tables import (
+    TijoriCredentialsError as TijoriCredentialsError,
+)
+from fundamentals.ingest.tijori_tables import (
+    TijoriError as TijoriError,
+)
+from fundamentals.ingest.tijori_tables import (
+    TijoriFetchError as TijoriFetchError,
+)
+from fundamentals.ingest.tijori_tables import (
+    TijoriParseError as TijoriParseError,
+)
 
 _LOGGER = structlog.get_logger(__name__)
 
-SOURCE_ID = "tijori"
+SOURCE_ID = TIJORI_SOURCE_ID
 ENTITY_SCHEME = "tijori-slug"
 DEFAULT_BASE_URL = "https://www.tijorifinance.com"
 DEFAULT_PL_URL_TEMPLATE = "{base}/company/{slug}/financials/"
@@ -44,8 +67,13 @@ _CURRENCY_INR = "INR"
 _INR_CRORE_UNIT = "INR crore"
 _CRORE_SCALE = 10_000_000
 _CRORE_DECIMALS = -7
-_FINANCIALS_ISLAND = "fin_tables_data"
+_FINANCIALS_ISLAND = FINANCIALS_ISLAND_ID
 _REQUIRED_ISLANDS = (_FINANCIALS_ISLAND, "company_details", "is_auth")
+_TABLE_ISLANDS = _REQUIRED_ISLANDS
+# Plan and capability islands are metadata: their absence must never block a
+# table whose raw data is present on the page.
+_TABLE_OPTIONAL_ISLANDS = (FINANCIALS_LOCKS_ISLAND_ID, PLAN_DETAILS_ISLAND_ID)
+_COLLECTED_ISLANDS = _TABLE_ISLANDS + _TABLE_OPTIONAL_ISLANDS
 _QUARTERLY_CONSOLIDATED_TABLE = "qt_c"
 _MONTH_LABELS = (
     "Jan",
@@ -67,22 +95,6 @@ _QUARTER_BOUNDS: dict[int, tuple[int, int]] = {
     9: (7, 30),
     12: (10, 31),
 }
-
-
-class TijoriError(Exception):
-    """Base class for Tijori adapter failures."""
-
-
-class TijoriCredentialsError(TijoriError):
-    """No credentials injected — skippable so the pipeline never hard-fails."""
-
-
-class TijoriFetchError(TijoriError):
-    """Terminal fetch/transport failure (never a partial result)."""
-
-
-class TijoriParseError(TijoriError):
-    """The Tijori page was malformed or internally inconsistent."""
 
 
 class TijoriConcept(StrEnum):
@@ -167,7 +179,7 @@ class _JsonScriptCollector(HTMLParser):
         attributes = dict(attrs)
         island_id = attributes.get("id")
         content_type = attributes.get("type")
-        if island_id not in _REQUIRED_ISLANDS or content_type is None:
+        if island_id not in _COLLECTED_ISLANDS or content_type is None:
             return
         if content_type.strip().lower() != "application/json":
             return
@@ -272,6 +284,42 @@ class TijoriSource:
             period_end=period_end,
         )
 
+    def fetch_table(self, key: str, *, slug: str, expected_symbol: str) -> TijoriTable:
+        """Fetch one typed raw financial table from an authenticated page."""
+        parse_table_key(key)
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori table acquisition"
+            )
+        raw = self._fetch_pl_bytes(slug, credentials)
+        source_url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
+        return self.parse_table_bytes(
+            raw,
+            key=key,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=self._config.expected_company_id,
+            source_url=source_url,
+        )
+
+    def fetch_all_tables(self, *, slug: str, expected_symbol: str) -> tuple[TijoriTable, ...]:
+        """Fetch every supported raw financial table with one authenticated GET."""
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori table acquisition"
+            )
+        raw = self._fetch_pl_bytes(slug, credentials)
+        source_url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
+        return self.parse_all_tables_bytes(
+            raw,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=self._config.expected_company_id,
+            source_url=source_url,
+        )
+
     def _fetch_pl_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
         """Fetch one complete authenticated financials page without redirects."""
         session_cookie = credentials.session_cookie
@@ -374,6 +422,83 @@ class TijoriSource:
         return cls.parse_pl(payload, content_sha256=content_sha256)
 
     @classmethod
+    def parse_table_bytes(
+        cls,
+        raw: bytes,
+        *,
+        key: str,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int | None = None,
+        source_url: str | None = None,
+    ) -> TijoriTable:
+        """Parse one typed raw table from a verified financials page."""
+        if not slug.strip():
+            raise TijoriParseError("tijori requested slug is empty")
+        if not expected_symbol.strip():
+            raise TijoriParseError("tijori expected symbol is empty")
+        parse_table_key(key)
+        islands, company_id, response_symbol = cls._verified_page_islands(
+            raw,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            required_islands=_TABLE_ISLANDS,
+            optional_islands=_TABLE_OPTIONAL_ISLANDS,
+        )
+        resolved_url = source_url or DEFAULT_PL_URL_TEMPLATE.format(
+            base=DEFAULT_BASE_URL, slug=slug
+        )
+        return build_tijori_table(
+            financials=islands[_FINANCIALS_ISLAND],
+            financials_locks=islands.get(FINANCIALS_LOCKS_ISLAND_ID),
+            plan_details=islands.get(PLAN_DETAILS_ISLAND_ID),
+            key=key,
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            source_url=resolved_url,
+            retrieved_at=datetime.now(tz=UTC),
+            slug=slug,
+            symbol=response_symbol,
+            company_id=company_id,
+        )
+
+    @classmethod
+    def parse_all_tables_bytes(
+        cls,
+        raw: bytes,
+        *,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int | None = None,
+        source_url: str | None = None,
+    ) -> tuple[TijoriTable, ...]:
+        """Parse every typed raw table from a verified financials page."""
+        if not slug.strip():
+            raise TijoriParseError("tijori requested slug is empty")
+        if not expected_symbol.strip():
+            raise TijoriParseError("tijori expected symbol is empty")
+        islands, company_id, response_symbol = cls._verified_page_islands(
+            raw,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            required_islands=_TABLE_ISLANDS,
+            optional_islands=_TABLE_OPTIONAL_ISLANDS,
+        )
+        resolved_url = source_url or DEFAULT_PL_URL_TEMPLATE.format(
+            base=DEFAULT_BASE_URL, slug=slug
+        )
+        return build_all_tijori_tables(
+            financials=islands[_FINANCIALS_ISLAND],
+            financials_locks=islands.get(FINANCIALS_LOCKS_ISLAND_ID),
+            plan_details=islands.get(PLAN_DETAILS_ISLAND_ID),
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            source_url=resolved_url,
+            retrieved_at=datetime.now(tz=UTC),
+            slug=slug,
+            symbol=response_symbol,
+            company_id=company_id,
+        )
+
+    @classmethod
     def _parse_pl_html(
         cls,
         raw: bytes,
@@ -385,36 +510,13 @@ class TijoriSource:
         source_url: str | None,
     ) -> TijoriPlPayload:
         """Extract, validate, and select the verified Tijori JSON-island shape."""
-        try:
-            document = raw.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise TijoriParseError("tijori financials page is not UTF-8 HTML") from error
-        collector = _JsonScriptCollector()
-        collector.feed(document)
-        collector.close()
-        islands = cls._load_required_islands(collector)
+        islands, company_id, response_symbol = cls._verified_page_islands(
+            raw,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            required_islands=_REQUIRED_ISLANDS,
+        )
         financials = _as_object(islands[_FINANCIALS_ISLAND], _FINANCIALS_ISLAND)
-        company_details = _as_object(islands["company_details"], "company_details")
-        if islands["is_auth"] is not True:
-            raise TijoriParseError("tijori response is not authenticated")
-
-        response_symbol = company_details.get("symbol")
-        if not isinstance(response_symbol, str) or not response_symbol.strip():
-            raise TijoriParseError("tijori company_details symbol is missing or invalid")
-        if response_symbol.strip() != expected_symbol.strip():
-            raise TijoriParseError(
-                "tijori response identity mismatch: "
-                f"requested symbol {expected_symbol.strip()!r}, "
-                f"response symbol {response_symbol.strip()!r}"
-            )
-        company_id = company_details.get("company_id")
-        if not isinstance(company_id, int) or isinstance(company_id, bool):
-            raise TijoriParseError("tijori company_details company_id is missing or invalid")
-        if expected_company_id is not None and company_id != expected_company_id:
-            raise TijoriParseError(
-                "tijori response identity mismatch: "
-                f"requested company ID {expected_company_id}, response company ID {company_id}"
-            )
 
         table = _as_object(financials.get(_QUARTERLY_CONSOLIDATED_TABLE), "qt_c")
         report_dates = _as_string_list(table.get("report_dates"), "qt_c.report_dates")
@@ -443,7 +545,7 @@ class TijoriSource:
         return TijoriPlPayload(
             slug=slug,
             company_id=company_id,
-            symbol=response_symbol.strip(),
+            symbol=response_symbol,
             url=resolved_url,
             period_label=expected_label,
             period_start=_quarter_start(period_end),
@@ -451,19 +553,82 @@ class TijoriSource:
             rows=rows,
         )
 
+    @classmethod
+    def _verified_page_islands(
+        cls,
+        raw: bytes,
+        *,
+        expected_symbol: str,
+        expected_company_id: int | None,
+        required_islands: tuple[str, ...],
+        optional_islands: tuple[str, ...] = (),
+    ) -> tuple[dict[str, Any], int, str]:
+        """Validate page encoding, authentication, identity, and named JSON islands."""
+        try:
+            document = raw.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise TijoriParseError("tijori financials page is not UTF-8 HTML") from error
+        collector = _JsonScriptCollector()
+        collector.feed(document)
+        collector.close()
+        islands = cls._load_islands(collector, required_islands, optional_islands)
+        company_details = _as_object(islands["company_details"], "company_details")
+        if islands["is_auth"] is not True:
+            raise TijoriParseError("tijori response is not authenticated")
+
+        response_symbol = company_details.get("symbol")
+        if not isinstance(response_symbol, str) or not response_symbol.strip():
+            raise TijoriParseError("tijori company_details symbol is missing or invalid")
+        if response_symbol.strip() != expected_symbol.strip():
+            raise TijoriParseError(
+                "tijori response identity mismatch: "
+                f"requested symbol {expected_symbol.strip()!r}, "
+                f"response symbol {response_symbol.strip()!r}"
+            )
+        company_id = company_details.get("company_id")
+        if not isinstance(company_id, int) or isinstance(company_id, bool):
+            raise TijoriParseError("tijori company_details company_id is missing or invalid")
+        if expected_company_id is not None and company_id != expected_company_id:
+            raise TijoriParseError(
+                "tijori response identity mismatch: "
+                f"requested company ID {expected_company_id}, response company ID {company_id}"
+            )
+        return islands, company_id, response_symbol.strip()
+
     @staticmethod
-    def _load_required_islands(collector: _JsonScriptCollector) -> dict[str, Any]:
-        """Deserialize every required JSON island with isolated failure reasons."""
+    def _load_islands(
+        collector: _JsonScriptCollector,
+        required_islands: tuple[str, ...],
+        optional_islands: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """Deserialize named JSON islands with isolated failure reasons."""
         decoded: dict[str, Any] = {}
-        for island_id in _REQUIRED_ISLANDS:
+        for island_id in required_islands + optional_islands:
+            optional = island_id in optional_islands
             if island_id in collector.duplicates:
                 raise TijoriParseError(f"tijori JSON island {island_id!r} appears multiple times")
             raw_island = collector.islands.get(island_id)
             if raw_island is None:
+                if optional:
+                    _LOGGER.warning("tijori_optional_island_missing", island=island_id)
+                    continue
                 raise TijoriParseError(f"tijori JSON island {island_id!r} is missing")
             try:
                 decoded[island_id] = json.loads(raw_island, parse_float=Decimal)
             except json.JSONDecodeError as error:
+                if optional:
+                    _LOGGER.warning(
+                        "tijori_optional_island_unparseable",
+                        island=island_id,
+                        error=error.msg,
+                        pos=error.pos,
+                        lineno=error.lineno,
+                        colno=error.colno,
+                    )
+                    decoded[island_id] = TijoriUnparseableIsland(
+                        island_id=island_id, error=str(error)
+                    )
+                    continue
                 raise TijoriParseError(
                     f"tijori JSON island {island_id!r} is unparseable"
                 ) from error
