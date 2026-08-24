@@ -11,3 +11,10 @@ data/
 
 # Fundamentals validation machine reports (large, regeneratable; keep .md rollups)
 docs/research/validation/*.json
+docs/research/validation/**/*.lock
+
+# Python bytecode caches
+__pycache__/
+
+# Codex CLI session artifacts
+:memory:*.ses
