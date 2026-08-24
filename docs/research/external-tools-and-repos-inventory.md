@@ -173,7 +173,13 @@ rows 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14 — together with the Screener.in and
 Tijori services themselves, are now **HELD — denied for now** by
 `A05-DECISION-001`
 (`docs/evidence/phase-0a/a-05-rights-decision-record.md`), to be revisited after
-program Q0 (manual baseline) shows what data is actually missing. Rows 1, 2, and
+program Q0 (manual baseline) shows what data is actually missing.
+**Amendment 2026-08-24:** `A05-DECISION-005`
+(`docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md`) lifts
+the HOLD for **Screener.in, Tijori, row 7 (tijori-finance-mcp), and row 9
+(screener-scraper-pro)** — private, personal, subscriber-account use only. The
+NSE/BSE rows are unaffected here (see `A05-DECISION-004` for their private-use
+carve-out). Rows 1, 2, and
 10 have no source access of their own, are **not** held, and remain
 **CANDIDATE-UNDECIDED**; that decision says nothing about them.
 
