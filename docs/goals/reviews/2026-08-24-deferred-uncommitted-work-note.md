@@ -31,9 +31,17 @@ work or an abandoned draft was not established. Committing unreviewed
 deliverables would misrepresent them as accepted. The files remain in the
 working tree untouched.
 
+## Gitignored (2026-08-24, same day, follow-up)
+
+Every path above is now listed explicitly in the root `.gitignore` (one entry
+per folder/file, under the "Deferred uncommitted blueprint-reconciliation
+cluster" block) so the cluster no longer clutters `git status`. The files
+remain on disk, untouched.
+
 ## To resolve later
 
 Review the cluster (start with the r1 design + r2 spec review and the
 reconciliation script's tests), then either commit it as its own dedicated
-commit(s) or delete it. Whichever happens, reference this note in that
-commit message so the history closes the loop.
+commit(s) or delete it. Whichever happens, remove the cluster's block from
+`.gitignore` and reference this note in that commit message so the history
+closes the loop.
