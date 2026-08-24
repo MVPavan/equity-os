@@ -77,17 +77,32 @@ company search page (`/in/search/`), plus the surfaces catalogued in
 tijori-finance-mcp's ARCHITECTURE.md (KPIs, revenue mix, fund flow,
 market intel, screens). To be mapped one capability at a time in Phase 4.
 
-## Screener.in — PENDING owner capture
+## Screener.in — first pass (owner HAR + headless capture, 2026-08-24)
 
-Needed before Phase 2 starts (gates it):
-
-1. Owner browses Screener logged in with DevTools → Network recording:
-   a company page, custom metrics/columns, the core watchlist, one saved
-   screen, documents; export HAR.
-2. From the HAR we will record here: the logged-in marker (the per-response
-   assertion string), routes for each subscriber surface, HTTP-reachable
-   vs JS-gated verdict, and whether any sanctioned API/export exists
-   (flip condition in the plan of record).
+- Auth: single `sessionid` cookie. Logged-in marker candidates observed in
+  page HTML: `logout` / `account` strings present when authenticated (exact
+  fail-closed assertion string to be pinned in Phase 2 from anonymous-vs-auth
+  diff).
+- **Everything observed so far is server-rendered plain HTTP** — the
+  logged-in dashboard, watchlist, screens, and ratio pages issued no data
+  XHRs at all (only analytics beacons to `rybbit.screener.in`). No JS wall.
+- From the owner HAR (company page flow): `GET /company/<SYM>/consolidated/`
+  (main document); XHR-ish fragments `GET /api/company/<id>/quick_ratios/`,
+  `/api/company/<id>/peers/` (HTML fragments), `/api/company/<id>/chart/?q=…`
+  (JSON), `/api/company/search/?q=…&v=5&fts=1` (JSON); announcements pages
+  `/announcements/{important,recent,search}/<id>/`. NOTE: two distinct
+  numeric id namespaces appeared (chart/announcements id ≠ quick_ratios/peers
+  id) — resolve the mapping in Phase 2 before trusting either.
+- From the headless dashboard capture, subscriber surfaces (all `GET`,
+  server-rendered): core watchlist `/watchlist/` + `/watchlist/<id>/` +
+  `/watchlist/add/`; custom-ratio builder `/ratios/` → `/ratios/new/`
+  (`/columns/` is 404); screens `/screens/`, `/screen/new/`, saved screen
+  pages `/screens/<id>/<slug>/`; alerts `/alerts/`; notebook `/notebook/`;
+  filings `/filings/`; latest results `/results/latest/`; people `/people/`;
+  ratings `/ratings/`; insider trades `/trades/insider-summary-<id>/`;
+  account `/user/account/`; premium status `/premium/member/`.
+- No sanctioned bulk API/export surface observed yet (the flip condition);
+  the `/api/` namespace looks page-support-oriented, not a public API.
 
 Cookie handling for both sites: owner-supplied session cookies live in
 `~/.secrets/` (0600), injected at composition root via environment
