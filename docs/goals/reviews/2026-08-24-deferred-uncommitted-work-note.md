@@ -31,12 +31,17 @@ work or an abandoned draft was not established. Committing unreviewed
 deliverables would misrepresent them as accepted. The files remain in the
 working tree untouched.
 
-## Gitignored (2026-08-24, same day, follow-up)
+## Gitignored (2026-08-24, same day, follow-up; scope corrected by owner)
 
-Every path above is now listed explicitly in the root `.gitignore` (one entry
-per folder/file, under the "Deferred uncommitted blueprint-reconciliation
-cluster" block) so the cluster no longer clutters `git status`. The files
-remain on disk, untouched.
+The **ledger review artifacts only** (the rc1/rc234 docs, manifests, and the
+untracked `inventory/` folders) are listed explicitly in the root
+`.gitignore` (one entry per folder/file, under the "Deferred uncommitted
+blueprint-reconciliation cluster" block) so they no longer clutter
+`git status`. Per the owner's correction, the four non-ledger paths —
+`docs/blueprint/org/`, the 2026-08-19 spec, the reconciliation script, and
+`tests/equity_os_blueprint/` — are **deliberately NOT ignored**: they stay
+visible as untracked (entries commented out in the block) until they are
+reviewed and committed or deleted. All files remain on disk, untouched.
 
 ## To resolve later
 

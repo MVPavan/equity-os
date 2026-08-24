@@ -22,7 +22,7 @@ __pycache__/
 # Deferred uncommitted blueprint-reconciliation cluster — one entry per folder/file.
 # See docs/goals/reviews/2026-08-24-deferred-uncommitted-work-note.md; remove this
 # block when the cluster is reviewed and committed or deleted.
-docs/blueprint/org/
+# docs/blueprint/org/
 docs/goals/reviews/ledger/equity-os-blueprint-rc1-forensic-audit-r0.md
 docs/goals/reviews/ledger/equity-os-blueprint-rc234-reconciliation-design-r0-review-r0.md
 docs/goals/reviews/ledger/equity-os-blueprint-rc234-reconciliation-design-r0.md
@@ -70,6 +70,6 @@ docs/goals/reviews/ledger/inventory/SEQ-02/
 docs/goals/reviews/ledger/inventory/SEQ-03/
 docs/goals/reviews/ledger/inventory/SEQ-04/
 docs/goals/reviews/ledger/inventory/SEQ-08/
-docs/specs/2026-08-19-ledger-approval-contract-reconciliation.md
-scripts/equity_os_blueprint/reconcile_ledger_approval_contracts.py
-tests/equity_os_blueprint/
+# docs/specs/2026-08-19-ledger-approval-contract-reconciliation.md
+# scripts/equity_os_blueprint/reconcile_ledger_approval_contracts.py
+# tests/equity_os_blueprint/
