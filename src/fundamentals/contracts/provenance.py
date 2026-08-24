@@ -1,9 +1,9 @@
 """Provenance: where a measured value came from and how to find it again.
 
 Every observation and guidance claim must carry non-null provenance binding it
-to a source file (by sha256) and a typed anchor — either a PDF page/block/span
-or an XBRL context reference — plus the bitemporal timestamps needed to reason
-about when the value could have been known.
+to a source file (by sha256) and a typed anchor — a PDF page/block/span, an XBRL
+context reference, or a JSON island location — plus the bitemporal timestamps
+needed to reason about when the value could have been known.
 """
 
 from __future__ import annotations
@@ -19,14 +19,16 @@ class SourceAnchorType(StrEnum):
 
     PDF_SPAN = "PDF_SPAN"
     XBRL_CONTEXT = "XBRL_CONTEXT"
+    JSON_ISLAND = "JSON_ISLAND"
 
 
 class Provenance(BaseModel):
     """Immutable binding of a value to its source location and known-times.
 
     A PDF anchor uses ``page``/``block``/``span``; an XBRL anchor uses
-    ``context_ref``. The typed anchor fields not relevant to ``anchor_type``
-    are left ``None``.
+    ``context_ref``; a JSON island anchor uses ``island_id``/``table_key``/
+    ``row_label``/``column_label``. Typed fields not relevant to
+    ``anchor_type`` are left ``None``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -39,6 +41,10 @@ class Provenance(BaseModel):
     block: int | None = None
     span: str | None = None
     context_ref: str | None = None
+    island_id: str | None = None
+    table_key: str | None = None
+    row_label: str | None = None
+    column_label: str | None = None
 
     retrieved_at: datetime
     filed_at: datetime | None = None
@@ -54,4 +60,16 @@ class Provenance(BaseModel):
         elif self.anchor_type is SourceAnchorType.XBRL_CONTEXT:
             if self.context_ref is None:
                 raise ValueError("XBRL_CONTEXT anchor requires context_ref to be set")
+        elif self.anchor_type is SourceAnchorType.JSON_ISLAND:
+            location_fields = (
+                self.island_id,
+                self.table_key,
+                self.row_label,
+                self.column_label,
+            )
+            if any(value is None or not value.strip() for value in location_fields):
+                raise ValueError(
+                    "JSON_ISLAND anchor requires island_id, table_key, row_label, "
+                    "and column_label to be set"
+                )
         return self

@@ -207,6 +207,17 @@ def test_provenance_xbrl_context_requires_context_ref() -> None:
         )
 
 
+def test_provenance_json_island_requires_typed_location_fields() -> None:
+    with pytest.raises(ValidationError, match="JSON_ISLAND anchor requires"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.JSON_ISLAND,
+            context_ref="https://example.invalid/#fin_tables_data/qt_c/Dec 2024/tijori:sales",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
 def test_provenance_valid_anchors_construct() -> None:
     pdf = Provenance(
         source_id="infy-q1-fy25-results-pdf",

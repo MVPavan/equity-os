@@ -90,6 +90,13 @@ def _run(stock: StockConfig, tmp_path: Path, *, repo_root: Path = _REPO_ROOT) ->
     )
 
 
+def test_derived_concept_map_canonicalises_tijori_pbt() -> None:
+    """Tijori's derived PBT participates in the configured canonical cross-check."""
+    derived = derived_concept_map(_stock().concepts.roles)
+
+    assert derived["tijori:pbt"] == "in-bse-fin:ProfitBeforeTax"
+
+
 def _cached_qoq_stock(tmp_path: Path, xml: str) -> tuple[StockConfig, Path]:
     """Place one comparator in the real cache layout and point other fixtures at held files."""
     cache_dir = tmp_path / "data/raw/watchlist/synth/nse/comparatives/qoq/2024-07-01_2024-09-30"

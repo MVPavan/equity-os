@@ -1,30 +1,22 @@
-"""Tijori adapter — DERIVED quarterly P&L cross-check.
-
-Deterministic tests parse a committed synthetic Tijori-shaped JSON fixture and
-assert the resulting observations are flagged derived (``source_id="tijori"``,
-``accounting_basis`` UNKNOWN, ``tijori:`` concept prefix), that annual columns
-are excluded, and that missing credentials raise a *skippable* typed error. An
-opt-in ``RUN_TIJORI_LIVE`` test exercises the real authenticated fetch only when
-credentials are present in the environment.
-"""
+"""Tests for the fail-closed Tijori JSON-island adapter."""
 
 from __future__ import annotations
 
-import os
 import urllib.error
 import urllib.request
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from fundamentals.contracts.observation import AccountingFramework, PeriodType, Scope
+from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.contracts.observation import AccountingFramework, Scope
 from fundamentals.contracts.provenance import SourceAnchorType
 from fundamentals.ingest.tijori_source import (
     SOURCE_ID,
-    TijoriConcept,
     TijoriCredentials,
     TijoriCredentialsError,
     TijoriFetchError,
@@ -34,266 +26,398 @@ from fundamentals.ingest.tijori_source import (
     is_tijori_derived,
 )
 
-_FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_pl.json"
-_HTML_FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_financials.html"
-
-# Two quarterly columns (Mar'26, Jun'26) x four mapped headline concepts.
-_EXPECTED_QUARTER_COUNT = 8
-
-
-@pytest.fixture(scope="module")
-def observations() -> tuple:
-    return TijoriSource.parse_pl_bytes(_FIXTURE.read_bytes())
+_FIXTURES = Path(__file__).parent / "fixtures"
+_HTML_FIXTURE = _FIXTURES / "synthetic_tijori_financials.html"
+_WRONG_IDENTITY_FIXTURE = _FIXTURES / "synthetic_tijori_wrong_identity.html"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_TITAN_SLUG = "titan-company-limited"
+_TITAN_SYMBOL = "TITAN"
+_TITAN_PERIOD_END = date(2024, 12, 31)
+_TITAN_URL = "https://www.tijorifinance.com/company/titan-company-limited/financials/"
 
 
-def test_parses_only_quarterly_headline_observations(observations: tuple) -> None:
-    assert len(observations) == _EXPECTED_QUARTER_COUNT
-    # The annual Mar'25 column is excluded, so no full-year period appears.
-    for obs in observations:
-        assert obs.period_type is PeriodType.DURATION
-        assert obs.period_start is not None and obs.period_end is not None
-        assert (obs.period_end - obs.period_start).days < 100
+def _parse_titan(raw: bytes) -> tuple:
+    """Parse one raw fixture through the adapter's public identity seam."""
+    return TijoriSource.parse_pl_bytes(
+        raw,
+        slug=_TITAN_SLUG,
+        expected_symbol=_TITAN_SYMBOL,
+        period_end=_TITAN_PERIOD_END,
+        source_url=_TITAN_URL,
+    )
 
 
-def test_every_observation_is_flagged_derived(observations: tuple) -> None:
-    for obs in observations:
-        assert obs.provenance.source_id == SOURCE_ID
-        assert obs.accounting_basis is AccountingFramework.UNKNOWN
-        assert obs.concept_qname.startswith("tijori:")
-        assert is_tijori_derived(obs) is True
+class _Response(BytesIO):
+    """Controllable HTTP response that records the bounded read requested."""
+
+    def __init__(
+        self, payload: bytes, *, status: int = 200, content_length: str | None = None
+    ) -> None:
+        super().__init__(payload)
+        self._status = status
+        self.headers: dict[str, str] = {}
+        if content_length is not None:
+            self.headers["Content-Length"] = content_length
+        self.read_sizes: list[int] = []
+
+    def getcode(self) -> int:
+        """Return the configured HTTP status code."""
+        return self._status
+
+    def read(self, size: int = -1) -> bytes:
+        """Record and perform one bounded body read."""
+        self.read_sizes.append(size)
+        return super().read(size)
 
 
-def test_concepts_and_periods_are_the_two_quarters(observations: tuple) -> None:
-    by_key = {(obs.concept_qname, obs.period_end): obs for obs in observations}
-    expected_concepts = {c.value for c in TijoriConcept}
-    got_concepts = {concept for concept, _ in by_key}
-    assert got_concepts == expected_concepts
-    expected_ends = {date(2026, 3, 31), date(2026, 6, 30)}
-    assert {end for _, end in by_key} == expected_ends
-    # Mar'26 quarter runs Jan-Mar 2026.
-    sales_q4 = by_key[(TijoriConcept.SALES.value, date(2026, 3, 31))]
-    assert sales_q4.period_start == date(2026, 1, 1)
+class _Opener:
+    """Injectable urllib opener that records outbound requests."""
+
+    def __init__(self, outcome: _Response | Exception) -> None:
+        self._outcome = outcome
+        self.calls: list[tuple[urllib.request.Request, float]] = []
+
+    def open(self, request: urllib.request.Request, timeout: float) -> _Response:
+        """Record the one outbound request and return or raise the configured outcome."""
+        self.calls.append((request, timeout))
+        if isinstance(self._outcome, Exception):
+            raise self._outcome
+        return self._outcome
 
 
-def test_monetary_and_per_share_normalization(observations: tuple) -> None:
-    by_key = {(obs.concept_qname, obs.period_end): obs for obs in observations}
-    sales = by_key[(TijoriConcept.SALES.value, date(2026, 6, 30))]
-    assert sales.raw_value == "48,500"
-    assert sales.normalized_value == Decimal("48500")
-    assert sales.normalized_unit == "INR crore"
-    assert sales.currency == "INR"
-    assert sales.scale == 10_000_000
-
-    eps = by_key[(TijoriConcept.EPS.value, date(2026, 6, 30))]
-    assert eps.normalized_value == Decimal("24.6")
-    assert eps.normalized_unit == "INR"
-    assert eps.scale == 1
-    assert eps.decimals == 2
+def _source(**config: Any) -> TijoriSource:
+    """Build a live source with a synthetic, redacted session cookie."""
+    return TijoriSource(
+        TijoriSourceConfig(
+            credentials=TijoriCredentials(session_cookie="session-token"),
+            **config,
+        )
+    )
 
 
-def test_provenance_binds_url_period_and_content_hash(observations: tuple) -> None:
-    for obs in observations:
-        prov = obs.provenance
-        assert prov.anchor_type is SourceAnchorType.XBRL_CONTEXT
-        assert prov.context_ref is not None
-        assert "tijorifinance.com/company/infosys-limited" in prov.context_ref
-        assert obs.concept_qname in prov.context_ref
-        assert prov.filed_at is None  # derived aggregator: no filing-level anchor
-        assert len(prov.file_sha256) == 64
-        assert all(ch in "0123456789abcdef" for ch in prov.file_sha256)
-    # One shared content hash for the whole payload.
-    assert len({obs.provenance.file_sha256 for obs in observations}) == 1
+def _install_opener(
+    monkeypatch: pytest.MonkeyPatch, opener: _Opener
+) -> list[urllib.request.HTTPRedirectHandler]:
+    """Patch opener construction and capture the supplied redirect policy."""
+    handlers: list[urllib.request.HTTPRedirectHandler] = []
+
+    def build_opener(handler: urllib.request.HTTPRedirectHandler) -> _Opener:
+        handlers.append(handler)
+        return opener
+
+    monkeypatch.setattr(urllib.request, "build_opener", build_opener)
+    return handlers
 
 
-def test_observations_use_consolidated_scope(observations: tuple) -> None:
-    for obs in observations:
-        assert obs.scope is Scope.CONSOLIDATED
-        assert obs.entity_scheme == "tijori-slug"
-        assert obs.entity_id == "infosys-limited"
+def test_json_islands_emit_only_three_consolidated_pnl_observations() -> None:
+    """The live DOM's exact quarter maps Net Sales, PBT, and Net Profit only."""
+    observations = _parse_titan(_HTML_FIXTURE.read_bytes())
+    by_concept = {observation.concept_qname: observation for observation in observations}
+
+    assert set(by_concept) == {
+        "tijori:sales",
+        "tijori:pbt",
+        "tijori:net_profit",
+    }
+    assert by_concept["tijori:sales"].normalized_value == Decimal("17740.0")
+    assert by_concept["tijori:pbt"].normalized_value == Decimal("1396.0")
+    assert by_concept["tijori:net_profit"].normalized_value == Decimal("1047.0")
+    assert all(observation.raw_value.endswith(".0") for observation in observations)
+    assert all(observation.normalized_unit == "INR crore" for observation in observations)
+    assert all(observation.scope is Scope.CONSOLIDATED for observation in observations)
+    assert {observation.accounting_basis for observation in observations} == {
+        AccountingFramework.UNKNOWN
+    }
+    assert all(is_tijori_derived(observation) for observation in observations)
 
 
-def test_response_slug_mismatch_fails_closed_before_emitting_observations() -> None:
-    """A TITAN-shaped response cannot be canonicalised onto an ETERNAL request."""
-    with pytest.raises(TijoriParseError, match="identity mismatch"):
-        TijoriSource.parse_pl_bytes(
-            _HTML_FIXTURE.read_bytes(),
-            slug="eternal-ltd",
-            source_url="https://www.tijorifinance.com/company/eternal-ltd/financials/",
+def test_identity_substitution_fails_closed_naming_both_symbols() -> None:
+    """A valid JSON page for another issuer must not become a TITAN observation."""
+    with pytest.raises(TijoriParseError, match="requested symbol 'TITAN', response symbol 'OTHER'"):
+        _parse_titan(_WRONG_IDENTITY_FIXTURE.read_bytes())
+
+
+def test_missing_financials_island_fails_closed() -> None:
+    """A page missing its financials island cannot be treated as an empty statement."""
+    raw = _HTML_FIXTURE.read_bytes().replace(b'id="fin_tables_data"', b'id="other_data"')
+
+    with pytest.raises(TijoriParseError, match="'fin_tables_data' is missing"):
+        _parse_titan(raw)
+
+
+def test_unparseable_required_island_fails_closed_with_its_name() -> None:
+    """A broken JSON island has a reason distinct from a missing island."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b'<script id="is_auth" type="application/json">true</script>',
+        b'<script id="is_auth" type="application/json">{</script>',
+    )
+
+    with pytest.raises(TijoriParseError, match="'is_auth' is unparseable"):
+        _parse_titan(raw)
+
+
+def test_unauthenticated_page_fails_closed() -> None:
+    """Anonymous page rendering does not satisfy the authenticated data contract."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b'<script id="is_auth" type="application/json">true</script>',
+        b'<script id="is_auth" type="application/json">false</script>',
+    )
+
+    with pytest.raises(TijoriParseError, match="not authenticated"):
+        _parse_titan(raw)
+
+
+def test_missing_requested_quarter_lists_available_labels() -> None:
+    """The adapter selects the configured label, never a positional neighbour."""
+    raw = _HTML_FIXTURE.read_bytes().replace(b'"Dec 2024"', b'"Dec 2025"', 1)
+
+    with pytest.raises(TijoriParseError, match="available labels: Sep 2024, Dec 2025, Mar 2025"):
+        _parse_titan(raw)
+
+
+def test_non_numeric_requested_value_fails_closed() -> None:
+    """Stringly JSON values cannot bypass the numeric boundary."""
+    raw = _HTML_FIXTURE.read_bytes().replace(b"[1200.0,1396.0,1300.0]", b'[1200.0,"1396",1300.0]')
+
+    with pytest.raises(TijoriParseError, match="Profit Before Tax.*non-numeric"):
+        _parse_titan(raw)
+
+
+def test_unhashable_row_name_fails_closed() -> None:
+    """A malformed row name must not escape as a dictionary-key TypeError."""
+    raw = _HTML_FIXTURE.read_bytes().replace(b'"name":"Net Sales"', b'"name":[]', 1)
+
+    with pytest.raises(TijoriParseError, match="row name must be a string"):
+        _parse_titan(raw)
+
+
+def test_json_fraction_preserves_its_exact_wire_lexeme() -> None:
+    """A long JSON fraction must never round-trip through binary float."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b"[1200.0,1396.0,1300.0]",
+        b"[1200.0,0.1000000000000000000000001,1300.0]",
+    )
+
+    observations = _parse_titan(raw)
+
+    pbt = next(
+        observation for observation in observations if observation.concept_qname == "tijori:pbt"
+    )
+    assert pbt.normalized_value == Decimal("0.1000000000000000000000001")
+
+
+def test_json_integer_is_accepted_without_float_conversion() -> None:
+    """An integer beyond binary-float precision remains exact."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b"[1200.0,1396.0,1300.0]",
+        b"[1200.0,9007199254740993,1300.0]",
+    )
+
+    observations = _parse_titan(raw)
+
+    pbt = next(
+        observation for observation in observations if observation.concept_qname == "tijori:pbt"
+    )
+    assert pbt.normalized_value == Decimal("9007199254740993")
+
+
+def test_duplicate_requested_quarter_label_fails_closed() -> None:
+    """Two requested-quarter columns must not silently select the first value."""
+    raw = _HTML_FIXTURE.read_bytes().replace(
+        b'["Sep 2024", "Dec 2024", "Mar 2025"]',
+        b'["Sep 2024", "Dec 2024", "Dec 2024", "Mar 2025"]',
+    )
+    raw = raw.replace(b"[16000.0,17740.0,17000.0]", b"[16000.0,17740.0,1.0,17000.0]")
+    raw = raw.replace(b"[1200.0,1396.0,1300.0]", b"[1200.0,1396.0,1.0,1300.0]")
+    raw = raw.replace(b"[900.0,1047.0,950.0]", b"[900.0,1047.0,1.0,950.0]")
+
+    with pytest.raises(TijoriParseError, match="requested quarter 'Dec 2024' is ambiguous"):
+        _parse_titan(raw)
+
+
+def test_whitespace_altered_requested_label_fails_exact_match() -> None:
+    """Whitespace in an untrusted source label must not alter quarter identity."""
+    raw = _HTML_FIXTURE.read_bytes().replace(b'"Dec 2024"', b'" Dec 2024 "', 1)
+
+    with pytest.raises(TijoriParseError) as error:
+        _parse_titan(raw)
+
+    assert str(error.value) == (
+        "tijori requested quarter 'Dec 2024' is absent; "
+        "available labels: Sep 2024,  Dec 2024 , Mar 2025"
+    )
+
+
+def test_fetch_uses_one_get_with_a_complete_bounded_read_and_identity_constraints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live seam makes one secret-safe GET and forwards all parse constraints."""
+    response = _Response(_HTML_FIXTURE.read_bytes())
+    opener = _Opener(response)
+    handlers = _install_opener(monkeypatch, opener)
+
+    observations = _source(max_response_bytes=4 * 1024 * 1024).fetch_pl(
+        _TITAN_SLUG,
+        expected_symbol=_TITAN_SYMBOL,
+        period_end=_TITAN_PERIOD_END,
+    )
+
+    assert len(observations) == 3
+    assert len(opener.calls) == 1
+    request, timeout = opener.calls[0]
+    assert request.full_url == _TITAN_URL
+    assert request.get_method() == "GET"
+    assert request.get_header("Cookie") == "sessionid=session-token"
+    assert request.get_header("User-agent") == "EquityOS Research"
+    assert timeout == 30.0
+    assert response.read_sizes == [4 * 1024 * 1024 + 1]
+    assert len(handlers) == 1
+    assert handlers[0].redirect_request(request, None, 302, "Found", {}, "/") is None
+
+
+def test_fetch_rejects_a_configured_company_id_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An optional stable Tijori company ID adds a second identity constraint."""
+    opener = _Opener(_Response(_HTML_FIXTURE.read_bytes()))
+    _install_opener(monkeypatch, opener)
+
+    with pytest.raises(
+        TijoriParseError,
+        match="requested company ID 82, response company ID 81",
+    ):
+        _source(expected_company_id=82).fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
+        )
+
+    assert len(opener.calls) == 1
+
+
+def test_redirect_response_is_a_slug_not_found_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown-slug redirects are rejected before the home page can be parsed."""
+    redirect = _Response(b"", status=302)
+    redirect.headers["Location"] = "/"
+    opener = _Opener(redirect)
+    _install_opener(monkeypatch, opener)
+
+    with pytest.raises(TijoriFetchError, match="slug not found: redirect"):
+        _source().fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
+        )
+
+    assert len(opener.calls) == 1
+
+
+def test_oversized_response_fails_closed_before_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The byte cap reads one sentinel byte beyond its limit and rejects it."""
+    response = _Response(b"12345")
+    opener = _Opener(response)
+    _install_opener(monkeypatch, opener)
+
+    with pytest.raises(TijoriFetchError, match="exceeded maximum 4 bytes"):
+        _source(max_response_bytes=4).fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
+        )
+
+    assert response.read_sizes == [5]
+
+
+def test_truncated_response_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A response shorter than its advertised body is not parsed as complete."""
+    opener = _Opener(_Response(b"1234", content_length="5"))
+    _install_opener(monkeypatch, opener)
+
+    with pytest.raises(TijoriFetchError, match="body was truncated"):
+        _source().fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
         )
 
 
+def test_fetch_retries_network_failure_without_sleeping_after_the_last_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transient transport failures retain bounded retries and no terminal backoff."""
+    opener = _Opener(urllib.error.URLError("offline"))
+    _install_opener(monkeypatch, opener)
+    sleeps: list[float] = []
+    monkeypatch.setattr("fundamentals.ingest.tijori_source.time.sleep", sleeps.append)
+
+    with pytest.raises(TijoriFetchError, match="fetch failed after 2 attempts"):
+        _source(max_retries=2).fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
+        )
+
+    assert len(opener.calls) == 2
+    assert sleeps == [1.0]
+
+
 def test_credentials_and_config_repr_redact_all_secret_values() -> None:
-    """Credentials never leak through Pydantic's repr or string conversion."""
+    """Credentials never leak through Pydantic representations."""
     credentials = TijoriCredentials(
         email="owner@example.invalid",
         password="password-secret",
         session_cookie="cookie-secret",
     )
     config = TijoriSourceConfig(credentials=credentials)
-
     rendered = f"{credentials!r} {credentials} {config!r} {config}"
 
     for secret in ("owner@example.invalid", "password-secret", "cookie-secret"):
         assert secret not in rendered
 
 
-def test_missing_credentials_raises_skippable_error() -> None:
-    source = TijoriSource(TijoriSourceConfig())  # no credentials injected
+def test_missing_credentials_is_a_skippable_error() -> None:
+    """The optional derived source remains non-blocking without injected credentials."""
     with pytest.raises(TijoriCredentialsError, match="credentials not provided"):
-        source.fetch_pl("infosys-limited")
-
-
-def test_malformed_payload_fails_with_typed_parse_error() -> None:
-    """Schema-invalid source bytes stay on the caller's fail-closed skip path."""
-    with pytest.raises(TijoriParseError, match="schema"):
-        TijoriSource.parse_pl_bytes(b"{}")
-
-
-@pytest.mark.parametrize("raw", (b"<html", b"<!doctype html>"))
-def test_malformed_html_fails_with_typed_parse_error(raw: bytes) -> None:
-    """Broken HTML cannot leak an lxml exception past the source boundary."""
-    with pytest.raises(TijoriParseError, match="not valid HTML"):
-        TijoriSource.parse_pl_bytes(raw)
-
-
-def test_slug_404_fails_closed_as_unverified(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A guessed slug returning 404 is surfaced as unverified, not retried."""
-    source = TijoriSource(
-        TijoriSourceConfig(
-            credentials=TijoriCredentials(session_cookie="session-token"),
-            live_dom_verified=True,
+        TijoriSource().fetch_pl(
+            _TITAN_SLUG,
+            expected_symbol=_TITAN_SYMBOL,
+            period_end=_TITAN_PERIOD_END,
         )
-    )
-
-    def not_found(*args: object, **kwargs: object) -> None:
-        raise urllib.error.HTTPError("https://example.invalid", 404, "Not Found", {}, None)
-
-    monkeypatch.setattr(urllib.request, "urlopen", not_found)
-
-    with pytest.raises(TijoriFetchError, match="slug unverified"):
-        source.fetch_pl("guessed-slug")
 
 
-def test_fetch_rejects_an_oversized_authenticated_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Authenticated page reads stop at the injected byte limit before parsing."""
-    source = TijoriSource(
-        TijoriSourceConfig(
-            credentials=TijoriCredentials(session_cookie="session-token"),
-            live_dom_verified=True,
-            max_response_bytes=4,
-        )
-    )
-    monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda *args, **kwargs: BytesIO(b"12345"),
-    )
+def test_watchlist_accepts_verified_titan_slug_but_keeps_other_guesses_gated() -> None:
+    """Only TITAN's captured legal-name slug exits the configuration gate."""
+    watchlist = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
+    titan = watchlist.stock(_TITAN_SYMBOL)
+    others = [stock for stock in watchlist.stocks if stock.symbol != _TITAN_SYMBOL]
 
-    with pytest.raises(TijoriFetchError, match="exceeded maximum"):
-        source.fetch_pl("infosys-limited")
+    assert titan.identifiers.tijori_slug == _TITAN_SLUG
+    assert "tijori_slug" not in titan.identifiers.needs_verification
+    assert all("tijori_slug" in stock.identifiers.needs_verification for stock in others)
 
 
-def test_missing_cell_is_skipped_not_emitted() -> None:
-    # "Other Income" is unmapped and one cell is "-"; neither yields an
-    # observation, so the count is unaffected by the missing marker.
-    observations = TijoriSource.parse_pl_bytes(_FIXTURE.read_bytes())
-    assert all("other_income" not in obs.concept_qname for obs in observations)
-    assert len(observations) == _EXPECTED_QUARTER_COUNT
-
-
-def test_parses_rendered_quarterly_financials_html_as_derived() -> None:
-    """The live page's quarterly table shape maps only Sales/PAT/EPS as derived."""
-    observations = TijoriSource.parse_pl_bytes(_HTML_FIXTURE.read_bytes())
-    by_key = {(obs.concept_qname, obs.period_end): obs for obs in observations}
-
-    assert set(by_key) == {
-        (TijoriConcept.SALES.value, date(2024, 12, 31)),
-        (TijoriConcept.NET_PROFIT.value, date(2024, 12, 31)),
-        (TijoriConcept.EPS.value, date(2024, 12, 31)),
-        (TijoriConcept.SALES.value, date(2025, 3, 31)),
-        (TijoriConcept.NET_PROFIT.value, date(2025, 3, 31)),
-        (TijoriConcept.EPS.value, date(2025, 3, 31)),
+def test_observation_provenance_binds_the_json_island_location() -> None:
+    """Each result remains visibly derived and locatable in the source page."""
+    observations = _parse_titan(_HTML_FIXTURE.read_bytes())
+    expected_rows = {
+        "tijori:sales": "Net Sales",
+        "tijori:pbt": "Profit Before Tax",
+        "tijori:net_profit": "Net Profit",
     }
-    assert by_key[(TijoriConcept.SALES.value, date(2024, 12, 31))].normalized_value == Decimal(
-        "17550"
-    )
-    assert all(is_tijori_derived(observation) for observation in observations)
 
-
-def test_html_parser_rejects_multiple_tables_under_the_quarterly_wrapper() -> None:
-    """A fallback content div cannot merge a quarterly and annual table."""
-    raw = _HTML_FIXTURE.read_bytes().replace(
-        b"</section>", b"<table><thead><tr><th>Annual</th></tr></thead></table></section>"
-    )
-
-    with pytest.raises(TijoriParseError, match="exactly one table"):
-        TijoriSource.parse_pl_bytes(raw)
-
-
-def test_html_parser_deduplicates_sales_and_revenue_for_one_period() -> None:
-    """Sales and Revenue aliases cannot emit two observations for the same fact key."""
-    raw = _HTML_FIXTURE.read_bytes().replace(
-        b"</tbody>",
-        b"""
-          <tr data-id=\"Revenue\">
-            <td class=\"firstcol\">Revenue</td>
-            <td class=\"knowledge numericvalue\">17,550</td>
-            <td class=\"knowledge numericvalue\">14,916</td>
-          </tr>
-        </tbody>""",
-    )
-
-    observations = TijoriSource.parse_pl_bytes(raw)
-    sales = [
-        observation for observation in observations if observation.concept_qname == "tijori:sales"
-    ]
-
-    assert len(sales) == 2
-    assert len({observation.period_end for observation in sales}) == 2
-
-
-def test_fetch_does_not_sleep_after_its_last_failed_attempt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A terminal failed request is logged and raised without needless backoff."""
-    source = TijoriSource(
-        TijoriSourceConfig(
-            credentials=TijoriCredentials(session_cookie="session-token"),
-            live_dom_verified=True,
-            max_retries=1,
-        )
-    )
-    sleeps: list[float] = []
-
-    def unavailable(*args: object, **kwargs: object) -> None:
-        raise urllib.error.URLError("offline")
-
-    monkeypatch.setattr(urllib.request, "urlopen", unavailable)
-    monkeypatch.setattr("fundamentals.ingest.tijori_source.time.sleep", sleeps.append)
-
-    with pytest.raises(TijoriFetchError, match="fetch failed"):
-        source.fetch_pl("infosys-limited")
-
-    assert sleeps == []
-
-
-@pytest.mark.skipif(
-    os.environ.get("RUN_TIJORI_LIVE") != "1" or not os.environ.get("TIJORI_SESSION_COOKIE"),
-    reason="live Tijori fetch is opt-in: set RUN_TIJORI_LIVE=1 + TIJORI_SESSION_COOKIE",
-)
-def test_live_fetch_returns_derived_observations() -> None:
-    # Composition root reads env; the adapter itself never touches os.environ.
-    credentials = TijoriCredentials(
-        email=os.environ.get("TIJORI_EMAIL"),
-        password=os.environ.get("TIJORI_PASSWORD"),
-        session_cookie=os.environ.get("TIJORI_SESSION_COOKIE"),
-    )
-    source = TijoriSource(TijoriSourceConfig(credentials=credentials, live_dom_verified=True))
-    observations = source.fetch_pl("infosys-limited")
-    assert observations
-    for obs in observations:
-        assert is_tijori_derived(obs)
+    for observation in observations:
+        assert observation.provenance.source_id == SOURCE_ID
+        assert observation.provenance.anchor_type is SourceAnchorType.JSON_ISLAND
+        assert observation.provenance.context_ref is not None
+        assert observation.provenance.island_id == "fin_tables_data"
+        assert observation.provenance.table_key == "qt_c"
+        assert observation.provenance.row_label == expected_rows[observation.concept_qname]
+        assert observation.provenance.column_label == "Dec 2024"
+        assert "#fin_tables_data/qt_c/Dec 2024/" in observation.provenance.context_ref
+        assert len(observation.provenance.file_sha256) == 64

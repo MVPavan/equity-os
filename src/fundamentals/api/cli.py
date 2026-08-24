@@ -303,7 +303,6 @@ def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
             repo_root=repo_root,
             kinds=kinds,
             tijori_credentials=credentials,
-            tijori_live_dom_verified=args.tijori_live_dom_verified,
             out_dir=out_dir,
             quarter_mode=quarter_mode,
         )
@@ -320,7 +319,6 @@ def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
                 repo_root=repo_root,
                 kinds=kinds,
                 tijori_credentials=credentials,
-                tijori_live_dom_verified=args.tijori_live_dom_verified,
                 out_dir=out_dir,
                 quarter_mode=quarter_mode,
             )
@@ -682,11 +680,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sources",
         default=None,
         help="comma-separated sources to pull (default: all): nse,bse,screener,tijori,pdf,sec",
-    )
-    validate.add_argument(
-        "--tijori-live-dom-verified",
-        action="store_true",
-        help="enable selected live Tijori parsing only after a verified DOM capture",
     )
     fetch = validate.add_mutually_exclusive_group()
     fetch.add_argument(

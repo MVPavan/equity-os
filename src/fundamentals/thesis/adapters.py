@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, assert_never
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.reconcile.agreement import AgreementStatus
@@ -75,8 +75,15 @@ def _anchor_description(provenance: Provenance) -> str:
     sha = provenance.file_sha256[:_SHA_PREFIX_LEN]
     if provenance.anchor_type is SourceAnchorType.PDF_SPAN:
         location = f"page {provenance.page}, block {provenance.block}, span {provenance.span}"
-    else:
+    elif provenance.anchor_type is SourceAnchorType.XBRL_CONTEXT:
         location = f"context {provenance.context_ref}"
+    elif provenance.anchor_type is SourceAnchorType.JSON_ISLAND:
+        location = (
+            f"JSON island {provenance.island_id}, table {provenance.table_key}, "
+            f"row {provenance.row_label}, column {provenance.column_label}"
+        )
+    else:
+        assert_never(provenance.anchor_type)
     return f"{location} (sha {sha}…)"
 
 

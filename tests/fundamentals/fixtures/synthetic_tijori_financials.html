@@ -1,46 +1,25 @@
 <!doctype html>
 <html lang="en">
   <body>
-    <section
-      id="company_table_innertab_quarterly_results_content"
-      data-company-id="922"
-      data-symbol="TITAN"
-      data-slug="titan-company"
-      data-currency="INR"
-      data-unit="cr"
-      data-url="https://www.tijorifinance.com/company/titan-company/financials/"
-    >
-      <table class="dataTable">
-        <thead>
-          <tr>
-            <th class="firstcol">Metric</th>
-            <th class="headerItem">Dec'24</th>
-            <th class="headerItem">Mar'25</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr data-id="Sales">
-            <td class="firstcol">Sales</td>
-            <td class="knowledge numericvalue">17,550</td>
-            <td class="knowledge numericvalue">14,916</td>
-          </tr>
-          <tr data-id="Net Profit">
-            <td class="firstcol">Net Profit</td>
-            <td class="knowledge numericvalue">1,047</td>
-            <td class="knowledge numericvalue">871</td>
-          </tr>
-          <tr data-id="EPS">
-            <td class="firstcol">EPS</td>
-            <td class="knowledge numericvalue">11.79</td>
-            <td class="knowledge numericvalue">9.81</td>
-          </tr>
-          <tr data-id="Other Income">
-            <td class="firstcol">Other Income</td>
-            <td class="knowledge numericvalue">122</td>
-            <td class="knowledge numericvalue">98</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
+    <script id="company_details" type="application/json">
+      {"company":"Titan Company Ltd.","company_id":81,"symbol":"TITAN"}
+    </script>
+    <script id="is_auth" type="application/json">true</script>
+    <script id="fin_tables_data" type="application/json">
+      {
+        "qt_c": {
+          "report_dates": ["Sep 2024", "Dec 2024", "Mar 2025"],
+          "skip_report_dates": [],
+          "report_dates_yoy": [],
+          "data": [
+            {"formula":"","index":1,"name":"Net Sales","name_span":"","sub_section":[],"value":[16000.0,17740.0,17000.0],"value_yoy":[],"value_perc":[],"field":"net_sales","source":"accord","fs_name":"pl","op_id":1},
+            {"formula":"","index":1,"name":"Profit Before Tax","name_span":"","sub_section":[],"value":[1200.0,1396.0,1300.0],"value_yoy":[],"value_perc":[],"field":"pbt","source":"accord","fs_name":"pl","op_id":2},
+            {"formula":"","index":1,"name":"Net Profit","name_span":"","sub_section":[],"value":[900.0,1047.0,950.0],"value_yoy":[],"value_perc":[],"field":"net_profit","source":"accord","fs_name":"pl","op_id":3},
+            {"formula":"","index":1,"name":"Quarterly Ratios","name_span":"","sub_section":[{"name":"EPS","field":"adj_eps_abs","value":[10.1,11.764,10.7]}],"value":[null,null,null],"value_yoy":[],"value_perc":[],"field":"ratios","source":"derived","fs_name":"pl","op_id":4}
+          ]
+        },
+        "qt_s": {"report_dates": [], "data": []}
+      }
+    </script>
   </body>
 </html>

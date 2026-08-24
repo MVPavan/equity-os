@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import urllib.request
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -57,7 +56,6 @@ from fundamentals.contracts.observation import (
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.extract.pdf_ocr_recovery import DEFAULT_OCR_DPI
 from fundamentals.ingest.ocr_engine import OcrEngineUnavailableError, OcrToken
-from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.reconcile.agreement import AgreementStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -490,11 +488,11 @@ def test_empty_source_list_reconciles_to_blocked(tmp_path: Path) -> None:
 def test_tijori_fixture_records_the_consolidated_scope_assumption() -> None:
     """Tijori observations remain explicitly marked as scope-assumed in the source record."""
     stock = _stock(
-        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
+        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_financials.html")
     ).model_copy(
         update={
             "identifiers": _stock().identifiers.model_copy(
-                update={"nse_symbol": "INFY", "tijori_slug": "infosys-limited"}
+                update={"nse_symbol": "TITAN", "tijori_slug": "titan-company-limited"}
             )
         }
     )
@@ -511,9 +509,17 @@ def test_tijori_fixture_records_the_consolidated_scope_assumption() -> None:
 
 
 def test_tijori_fixture_wrong_issuer_is_skipped_before_canonicalisation() -> None:
-    """Fixture collection cannot stamp an Infosys response onto the configured stock."""
+    """Fixture collection cannot stamp another issuer onto the configured TITAN stock."""
     stock = _stock(
-        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
+        fixtures=FixturePaths(
+            tijori="tests/fundamentals/fixtures/synthetic_tijori_wrong_identity.html"
+        )
+    ).model_copy(
+        update={
+            "identifiers": _stock().identifiers.model_copy(
+                update={"nse_symbol": "TITAN", "tijori_slug": "titan-company-limited"}
+            )
+        }
     )
 
     sources = collect_sources(
@@ -550,27 +556,6 @@ def test_tijori_unverified_slug_is_skipped_even_for_a_fixture() -> None:
     assert "needs verification" in sources[0].note
 
 
-def test_live_tijori_is_skipped_before_network_without_dom_verification(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The live adapter stays off until one real DOM capture verifies its parser."""
-
-    def unexpected_request(*args: object, **kwargs: object) -> None:
-        pytest.fail("unverified Tijori parser made an HTTP request")
-
-    monkeypatch.setattr(urllib.request, "urlopen", unexpected_request)
-    sources = collect_sources(
-        _stock(),
-        mode=RunMode.LIVE,
-        repo_root=_REPO_ROOT,
-        kinds=frozenset({SourceKind.TIJORI}),
-        tijori_credentials=TijoriCredentials(session_cookie="session-token"),
-    )
-
-    assert sources[0].status is SourceStatus.SKIPPED
-    assert sources[0].note == "tijori parser unverified against live DOM"
-
-
 # --- watchlist config ----------------------------------------------------------
 
 
@@ -584,9 +569,9 @@ def test_watchlist_config_loads_wave1_stocks() -> None:
     # Wave-1 stocks must remain present; the watchlist also carries the Wave-2
     # expansion, so this is a subset check rather than an exact-set assertion.
     assert _WAVE1_SYMBOLS <= symbols
-    # Uncertain identifiers are marked for verification, never silently trusted.
+    # TITAN's legal-name slug is verified against the authenticated live DOM.
     titan = config.stock("TITAN")
-    assert "tijori_slug" in titan.identifiers.needs_verification
+    assert "tijori_slug" not in titan.identifiers.needs_verification
 
 
 def test_watchlist_config_tags_each_stock_with_its_wave() -> None:

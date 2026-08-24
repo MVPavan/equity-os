@@ -92,6 +92,7 @@ from fundamentals.ingest.screener_source import (
     parse_quarterly_pnl,
 )
 from fundamentals.ingest.tijori_source import (
+    SCOPE_ASSUMED_NOTE,
     TijoriCredentials,
     TijoriError,
     TijoriSource,
@@ -189,8 +190,6 @@ _BSE_PERIOD_LABEL_FORMAT = "%b-%y"
 # Results are broadcast ~1-1.5 months after quarter end; search announcements from
 # the quarter end through this many days after to locate the filing.
 _PDF_ANNOUNCEMENT_WINDOW_DAYS = 60
-_TIJORI_DOM_UNVERIFIED_NOTE = "tijori parser unverified against live DOM"
-_TIJORI_SCOPE_ASSUMED_NOTE = "scope_assumed=True; Tijori does not disclose statement scope"
 
 
 class WaveReport(BaseModel):
@@ -442,7 +441,6 @@ def collect_sources(
     repo_root: Path,
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
-    tijori_live_dom_verified: bool = False,
     ocr_engine: OcrEngine | None = None,
 ) -> list[CollectedSource]:
     """Pull every requested source for one stock, recording status per source.
@@ -465,9 +463,7 @@ def collect_sources(
     if SourceKind.SCREENER in kinds:
         collected.append(_collect_screener(stock, mode, repo_root, retrieved_at))
     if SourceKind.TIJORI in kinds:
-        collected.append(
-            _collect_tijori(stock, mode, repo_root, tijori_credentials, tijori_live_dom_verified)
-        )
+        collected.append(_collect_tijori(stock, mode, repo_root, tijori_credentials))
     if SourceKind.PDF in kinds:
         collected.append(_collect_pdf(stock, mode, repo_root, retrieved_at, ocr_engine=ocr_engine))
     if SourceKind.SEC in kinds:
@@ -640,7 +636,6 @@ def _collect_tijori(
     mode: RunMode,
     repo_root: Path,
     credentials: TijoriCredentials | None,
-    live_dom_verified: bool,
 ) -> CollectedSource:
     """Pull the Tijori derived P&L; skip cleanly without credentials/fixture."""
     source_id = "tijori"
@@ -655,21 +650,20 @@ def _collect_tijori(
                 raw,
                 slug=stock.identifiers.tijori_slug,
                 expected_symbol=stock.identifiers.nse_symbol,
+                period_end=stock.quarter.period_end,
             )
         else:
             if credentials is None:
                 return _skip(SourceKind.TIJORI, source_id, "no Tijori credentials injected")
-            if not live_dom_verified:
-                return _skip(SourceKind.TIJORI, source_id, _TIJORI_DOM_UNVERIFIED_NOTE)
-            source = TijoriSource(
-                TijoriSourceConfig(credentials=credentials, live_dom_verified=live_dom_verified)
-            )
+            source = TijoriSource(TijoriSourceConfig(credentials=credentials))
             observations = source.fetch_pl(
-                stock.identifiers.tijori_slug, expected_symbol=stock.identifiers.nse_symbol
+                stock.identifiers.tijori_slug,
+                expected_symbol=stock.identifiers.nse_symbol,
+                period_end=stock.quarter.period_end,
             )
     except (TijoriError, OSError) as error:
         return _skip(SourceKind.TIJORI, source_id, f"unavailable: {error}")
-    return _ok(SourceKind.TIJORI, source_id, observations, note=_TIJORI_SCOPE_ASSUMED_NOTE)
+    return _ok(SourceKind.TIJORI, source_id, observations, note=SCOPE_ASSUMED_NOTE)
 
 
 def _pdf_observations(
@@ -967,7 +961,6 @@ def run_stock(
     repo_root: Path,
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
-    tijori_live_dom_verified: bool = False,
     out_dir: Path = DEFAULT_GOLD_DIR,
     quarter_mode: QuarterMode = QuarterMode.PINNED,
     ocr_engine: OcrEngine | None = None,
@@ -992,7 +985,6 @@ def run_stock(
         repo_root=repo_root,
         kinds=kinds,
         tijori_credentials=tijori_credentials,
-        tijori_live_dom_verified=tijori_live_dom_verified,
         ocr_engine=ocr_engine,
     )
     report = reconcile_stock(stock, sources, out_dir=out_dir)
@@ -1024,7 +1016,6 @@ def run_wave(
     repo_root: Path,
     kinds: frozenset[SourceKind] = ALL_SOURCE_KINDS,
     tijori_credentials: TijoriCredentials | None = None,
-    tijori_live_dom_verified: bool = False,
     out_dir: Path = DEFAULT_GOLD_DIR,
     quarter_mode: QuarterMode = QuarterMode.PINNED,
     ocr_engine: OcrEngine | None = None,
@@ -1042,7 +1033,6 @@ def run_wave(
             repo_root=repo_root,
             kinds=kinds,
             tijori_credentials=tijori_credentials,
-            tijori_live_dom_verified=tijori_live_dom_verified,
             out_dir=out_dir,
             quarter_mode=quarter_mode,
             ocr_engine=ocr_engine,

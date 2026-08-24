@@ -1,37 +1,9 @@
-"""Tijori adapter — DERIVED quarterly P&L headline numbers for cross-check ONLY.
+"""Tijori adapter — derived quarterly P&L headline numbers for cross-check only.
 
-Tijori (``tijorifinance.com``) is an aggregator that *restates* company
-financials behind the owner's authenticated login. Its numbers are therefore
-**derived**, never source-of-record: first-party Ind AS XBRL / PDF remain the
-spine, and Tijori is a private convenience/cross-check layer (see
-``docs/research/tijori-mcp-evaluation.md``). Rights: bounded personal-account
-use only (bd memory ``rights-tijori-eval-2026-08-21`` +
-``preapproval-goal-multistock-validation-2026-08-21``) — no redistribution.
-
-Every observation this adapter emits is flagged derived: its provenance
-``source_id`` is :data:`SOURCE_ID` (``"tijori"``), its ``accounting_basis`` is
-``UNKNOWN`` (Tijori discloses no framework and gives no filing-level anchor),
-and its ``concept_qname`` carries a ``tijori:`` prefix so a reconciliation layer
-never collapses a Tijori restatement onto a first-party fact by label alone —
-the fact-identity-collapse the ``Observation`` contract guards against.
-
-Credential handling (STRICT):
-    * This module NEVER reads ``os.environ`` and NEVER hard-codes a credential.
-      Credentials are injected via :class:`TijoriSourceConfig` at construction;
-      the composition root is the only place allowed to read
-      ``TIJORI_EMAIL`` / ``TIJORI_PASSWORD`` (and an optional session cookie)
-      from the environment and pass them in.
-    * If no credentials are injected, :meth:`TijoriSource.fetch_pl` fails closed
-      with :class:`TijoriCredentialsError` — a *skippable* typed error the caller
-      catches to skip Tijori without hard-failing the pipeline.
-    * No credential or session token is ever written to a file by this module.
-
-Provenance anchor limitation (surfaced, not hidden): the frozen ``Provenance``
-contract offers only ``PDF_SPAN`` and ``XBRL_CONTEXT`` anchor types — neither
-models a scraped web page. This adapter uses ``XBRL_CONTEXT`` with a synthetic
-``context_ref`` that embeds the Tijori URL + period + concept locator. That is a
-best-fit compromise, not a claim of XBRL provenance; a future ``WEB`` anchor
-type would be the correct fix.
+Tijori is a private authenticated convenience source, never a source of record.
+This adapter accepts only the verified Django ``json_script`` page shape and
+rejects identity, authentication, schema, and transport ambiguity before it can
+produce an observation.
 """
 
 from __future__ import annotations
@@ -42,14 +14,13 @@ import time
 import urllib.error
 import urllib.request
 from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from enum import StrEnum
+from html.parser import HTMLParser
 from typing import Any
 
 import structlog
-from lxml import etree  # type: ignore[import-untyped]
-from lxml import html as lxml_html
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from fundamentals.contracts.observation import (
     AccountingFramework,
@@ -66,41 +37,35 @@ ENTITY_SCHEME = "tijori-slug"
 DEFAULT_BASE_URL = "https://www.tijorifinance.com"
 DEFAULT_PL_URL_TEMPLATE = "{base}/company/{slug}/financials/"
 DEFAULT_USER_AGENT = "EquityOS Research"
-DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
-_QUARTERLY_WRAPPER_ID = "quarterly_results_table_wrapper"
-_QUARTERLY_CONTENT_ID = "company_table_innertab_quarterly_results_content"
-_LIVE_DOM_UNVERIFIED_NOTE = "tijori parser unverified against live DOM"
-_SCOPE_ASSUMED_NOTE = "scope_assumed=True; Tijori does not disclose statement scope"
+DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+SCOPE_ASSUMED_NOTE = "scope_assumed=True; Tijori does not disclose statement scope"
 
 _CURRENCY_INR = "INR"
-# Tijori reports monetary lines in ₹ crore (1 crore = 10,000,000).
 _INR_CRORE_UNIT = "INR crore"
 _CRORE_SCALE = 10_000_000
 _CRORE_DECIMALS = -7
-_EPS_SCALE = 1
-_EPS_DECIMALS = 2
-_MISSING_MARKERS = frozenset({"", "-", "—", "na", "n/a", "null"})
-
-# Indian fiscal quarter-end months -> (start month, end month, end day).
-_QUARTER_BY_END_MONTH: dict[int, tuple[int, int, int]] = {
-    3: (1, 3, 31),
-    6: (4, 6, 30),
-    9: (7, 9, 30),
-    12: (10, 12, 31),
-}
-_MONTH_ABBREV: dict[str, int] = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
+_FINANCIALS_ISLAND = "fin_tables_data"
+_REQUIRED_ISLANDS = (_FINANCIALS_ISLAND, "company_details", "is_auth")
+_QUARTERLY_CONSOLIDATED_TABLE = "qt_c"
+_MONTH_LABELS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
+_QUARTER_BOUNDS: dict[int, tuple[int, int]] = {
+    3: (1, 31),
+    6: (4, 30),
+    9: (7, 30),
+    12: (10, 31),
 }
 
 
@@ -113,52 +78,30 @@ class TijoriCredentialsError(TijoriError):
 
 
 class TijoriFetchError(TijoriError):
-    """Terminal fetch/transport failure (never a partial, unverified result)."""
+    """Terminal fetch/transport failure (never a partial result)."""
 
 
 class TijoriParseError(TijoriError):
-    """The Tijori payload was malformed or internally inconsistent."""
-
-
-class TijoriPeriodType(StrEnum):
-    """Whether a Tijori column is a full fiscal year or a single quarter."""
-
-    ANNUAL = "annual"
-    QUARTER = "quarter"
+    """The Tijori page was malformed or internally inconsistent."""
 
 
 class TijoriConcept(StrEnum):
-    """The P&L headline lines this adapter maps, keyed by canonical qname.
-
-    The ``tijori:`` prefix marks these as Tijori's *derived* restatement so a
-    reconciliation layer must explicitly map them onto first-party concepts
-    rather than matching on a shared label.
-    """
+    """The derived P&L concepts supported by the verified Tijori DOM."""
 
     SALES = "tijori:sales"
-    OPERATING_PROFIT = "tijori:operating_profit"
+    PBT = "tijori:pbt"
     NET_PROFIT = "tijori:net_profit"
-    EPS = "tijori:eps"
 
 
-# Tijori's scraped row labels -> canonical Tijori concept.
-_LABEL_TO_CONCEPT: dict[str, TijoriConcept] = {
-    "sales": TijoriConcept.SALES,
-    "revenue": TijoriConcept.SALES,
-    "operating profit": TijoriConcept.OPERATING_PROFIT,
-    "net profit": TijoriConcept.NET_PROFIT,
-    "eps": TijoriConcept.EPS,
+_ROW_TO_CONCEPT: dict[str, TijoriConcept] = {
+    "Net Sales": TijoriConcept.SALES,
+    "Profit Before Tax": TijoriConcept.PBT,
+    "Net Profit": TijoriConcept.NET_PROFIT,
 }
-_PER_SHARE_CONCEPTS = frozenset({TijoriConcept.EPS})
 
 
 class TijoriCredentials(BaseModel):
-    """Owner-account auth material, injected at the composition root only.
-
-    ``session_cookie`` (a ``sessionid`` minted by a prior authenticated login)
-    is the only credential used by this adapter. No automated login exists; all
-    fields stay redacted outside the outbound HTTP request boundary.
-    """
+    """Owner-account auth material, injected at the composition root only."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -180,29 +123,20 @@ class TijoriSourceConfig(BaseModel):
     max_retries: int = 3
     retry_backoff_seconds: float = 1.0
     max_response_bytes: int = Field(default=DEFAULT_MAX_RESPONSE_BYTES, gt=0)
-    live_dom_verified: bool = False
-
-
-class TijoriPeriod(BaseModel):
-    """One column header from a Tijori financials table."""
-
-    model_config = ConfigDict(frozen=True)
-
-    label: str
-    type: TijoriPeriodType
+    expected_company_id: int | None = Field(default=None, gt=0)
 
 
 class TijoriRow(BaseModel):
-    """One line item; ``values`` align positionally with the payload periods."""
+    """One selected P&L value in the requested quarterly consolidated table."""
 
     model_config = ConfigDict(frozen=True)
 
     label: str
-    values: tuple[str | None, ...]
+    value: Decimal | int
 
 
 class TijoriPlPayload(BaseModel):
-    """Parsed shape of a Tijori P&L (`pl`) financials response."""
+    """Validated selected quarterly P&L data from the JSON islands."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -210,10 +144,67 @@ class TijoriPlPayload(BaseModel):
     company_id: int
     symbol: str
     url: str
-    currency: str
-    unit: str
-    periods: tuple[TijoriPeriod, ...]
+    period_label: str
+    period_start: date
+    period_end: date
     rows: tuple[TijoriRow, ...]
+
+
+class _JsonScriptCollector(HTMLParser):
+    """Collect required Django JSON islands without interpreting their payloads."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.islands: dict[str, str] = {}
+        self.duplicates: set[str] = set()
+        self._active_island: str | None = None
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Start collecting a required application/json script body."""
+        if tag != "script":
+            return
+        attributes = dict(attrs)
+        island_id = attributes.get("id")
+        content_type = attributes.get("type")
+        if island_id not in _REQUIRED_ISLANDS or content_type is None:
+            return
+        if content_type.strip().lower() != "application/json":
+            return
+        if island_id in self.islands:
+            self.duplicates.add(island_id)
+            return
+        self._active_island = island_id
+        self._chunks = []
+
+    def handle_data(self, data: str) -> None:
+        """Append a script body fragment for the active JSON island."""
+        if self._active_island is not None:
+            self._chunks.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        """Finish collecting the active JSON island."""
+        if tag == "script" and self._active_island is not None:
+            self.islands[self._active_island] = "".join(self._chunks)
+            self._active_island = None
+            self._chunks = []
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Turn every HTTP redirect into a terminal response error."""
+
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        """Refuse redirects so an unknown slug cannot become the home page."""
+        del request, fp, code, msg, headers, newurl
+        return None
 
 
 def is_tijori_derived(observation: Observation) -> bool:
@@ -224,70 +215,52 @@ def is_tijori_derived(observation: Observation) -> bool:
     )
 
 
-def _parse_quarter_label(label: str) -> tuple[date, date]:
-    """Map a ``Mon'YY`` quarter label to its (period_start, period_end) dates."""
-    cleaned = label.strip().lower().replace("’", "'")
-    parts = cleaned.split("'")
-    if len(parts) != 2:
-        raise TijoriParseError(f"unrecognized quarter label: {label!r}")
-    month_key, year_key = parts[0][:3], parts[1]
-    end_month = _MONTH_ABBREV.get(month_key)
-    if end_month is None or end_month not in _QUARTER_BY_END_MONTH:
-        raise TijoriParseError(f"label is not a fiscal quarter end: {label!r}")
-    try:
-        end_year = 2000 + int(year_key)
-    except ValueError as error:
-        raise TijoriParseError(f"unparseable year in label {label!r}") from error
-    start_month, _, end_day = _QUARTER_BY_END_MONTH[end_month]
-    start_year = end_year if start_month <= end_month else end_year - 1
-    return date(start_year, start_month, 1), date(end_year, end_month, end_day)
+def _expected_label(period_end: date) -> str:
+    """Return the verified ``Mon YYYY`` DOM label for a configured quarter end."""
+    quarter = _QUARTER_BOUNDS.get(period_end.month)
+    if quarter is None or period_end.day != quarter[1]:
+        raise TijoriParseError(f"configured period end is not a fiscal quarter end: {period_end}")
+    return f"{_MONTH_LABELS[period_end.month - 1]} {period_end.year}"
 
 
-def _normalize_decimal(raw_value: str) -> Decimal:
-    """Parse an Indian-formatted numeric string (commas stripped) to Decimal."""
-    stripped = raw_value.replace(",", "").strip()
-    try:
-        return Decimal(stripped)
-    except InvalidOperation as error:
-        raise TijoriParseError(f"non-numeric Tijori value: {raw_value!r}") from error
+def _quarter_start(period_end: date) -> date:
+    """Return the start date of the configured Indian fiscal quarter."""
+    start_month, _ = _QUARTER_BOUNDS[period_end.month]
+    start_year = period_end.year if start_month <= period_end.month else period_end.year - 1
+    return date(start_year, start_month, 1)
 
 
-def _is_missing(cell: str | None) -> bool:
-    """True when a cell carries no reportable value."""
-    return cell is None or cell.strip().lower() in _MISSING_MARKERS
+def _as_object(value: Any, label: str) -> dict[str, Any]:
+    """Require an untrusted JSON object with a named failure reason."""
+    if not isinstance(value, dict):
+        raise TijoriParseError(f"tijori JSON island {label!r} must contain an object")
+    return value
 
 
-def _cell_text(cell: Any) -> str:
-    """Flatten one rendered table cell to normalized visible text."""
-    return " ".join("".join(cell.itertext()).split())
-
-
-def _html_cell_value(cell: Any) -> str | None:
-    """Return a rendered numeric cell, normalizing Tijori's missing markers."""
-    text = _cell_text(cell)
-    return None if _is_missing(text) else text
+def _as_string_list(value: Any, label: str) -> tuple[str, ...]:
+    """Require non-empty source labels without normalizing their exact text."""
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise TijoriParseError(f"tijori {label} must be a list of non-empty strings")
+    return tuple(value)
 
 
 class TijoriSource:
-    """Fetches Tijori quarterly P&L headline numbers as derived observations."""
+    """Fetches verified Tijori JSON-island P&L values as derived observations."""
 
     def __init__(self, config: TijoriSourceConfig | None = None) -> None:
         self._config = config or TijoriSourceConfig()
 
-    def fetch_pl(self, slug: str, *, expected_symbol: str | None = None) -> tuple[Observation, ...]:
-        """Fetch and parse a company's quarterly P&L into derived observations.
-
-        Fails closed with :class:`TijoriCredentialsError` (skippable) when no
-        credentials are injected, so a caller can drop Tijori without failing
-        the pipeline. Transport problems raise :class:`TijoriFetchError`.
-        """
+    def fetch_pl(
+        self, slug: str, *, expected_symbol: str, period_end: date
+    ) -> tuple[Observation, ...]:
+        """Fetch one stock's configured quarter as derived P&L observations."""
         credentials = self._config.credentials
         if credentials is None:
             raise TijoriCredentialsError(
                 "tijori credentials not provided; skipping Tijori cross-check"
             )
-        if not self._config.live_dom_verified:
-            raise TijoriFetchError(_LIVE_DOM_UNVERIFIED_NOTE)
         raw = self._fetch_pl_bytes(slug, credentials)
         source_url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
         return self.parse_pl_bytes(
@@ -295,10 +268,12 @@ class TijoriSource:
             slug=slug,
             source_url=source_url,
             expected_symbol=expected_symbol,
+            expected_company_id=self._config.expected_company_id,
+            period_end=period_end,
         )
 
     def _fetch_pl_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
-        """Fetch the rendered financials page over an authenticated HTTP session."""
+        """Fetch one complete authenticated financials page without redirects."""
         session_cookie = credentials.session_cookie
         if session_cookie is None:
             raise TijoriFetchError(
@@ -312,25 +287,30 @@ class TijoriSource:
                 "Cookie": f"sessionid={session_cookie.get_secret_value()}",
                 "User-Agent": self._config.user_agent,
             },
+            method="GET",
         )
+        opener = urllib.request.build_opener(_NoRedirectHandler())
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
             try:
-                with urllib.request.urlopen(
-                    request, timeout=self._config.request_timeout_seconds
-                ) as response:
-                    payload = bytes(response.read(self._config.max_response_bytes + 1))
+                with opener.open(request, timeout=self._config.request_timeout_seconds) as response:
+                    status = response.getcode()
+                    if status is not None and 300 <= status < 400:
+                        raise TijoriFetchError("tijori slug not found: redirect response")
+                    payload = response.read(self._config.max_response_bytes + 1)
+                    if not isinstance(payload, bytes):
+                        raise TijoriFetchError("tijori response body is not bytes")
                 if len(payload) > self._config.max_response_bytes:
                     raise TijoriFetchError(
                         f"tijori response exceeded maximum {self._config.max_response_bytes} bytes"
                     )
+                self._verify_complete_response(response, payload)
                 return payload
+            except TijoriFetchError:
+                raise
             except urllib.error.HTTPError as error:
-                # 4xx is terminal (auth/slug problem); do not retry blindly.
-                if error.code == 404:
-                    raise TijoriFetchError(
-                        f"tijori slug unverified: {slug!r} returned HTTP 404"
-                    ) from error
+                if 300 <= error.code < 400:
+                    raise TijoriFetchError("tijori slug not found: redirect response") from error
                 if 400 <= error.code < 500:
                     raise TijoriFetchError(
                         f"tijori returned HTTP {error.code} for {slug!r}"
@@ -352,218 +332,251 @@ class TijoriSource:
             f"tijori pl fetch failed after {self._config.max_retries} attempts"
         ) from last_error
 
+    @staticmethod
+    def _verify_complete_response(response: Any, payload: bytes) -> None:
+        """Reject an HTTP response whose declared body was not fully read."""
+        headers = getattr(response, "headers", None)
+        content_length = None if headers is None else headers.get("Content-Length")
+        if content_length is None:
+            return
+        try:
+            expected_length = int(content_length)
+        except (TypeError, ValueError) as error:
+            raise TijoriFetchError("tijori response has invalid Content-Length") from error
+        if expected_length != len(payload):
+            raise TijoriFetchError("tijori response body was truncated")
+
     @classmethod
     def parse_pl_bytes(
         cls,
         raw: bytes,
         *,
-        slug: str | None = None,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int | None = None,
+        period_end: date,
         source_url: str | None = None,
-        expected_symbol: str | None = None,
     ) -> tuple[Observation, ...]:
-        """Hash + validate JSON or rendered HTML, then parse derived observations."""
+        """Parse the verified JSON-island DOM for one configured issuer and quarter."""
+        if not slug.strip():
+            raise TijoriParseError("tijori requested slug is empty")
+        if not expected_symbol.strip():
+            raise TijoriParseError("tijori expected symbol is empty")
         content_sha256 = hashlib.sha256(raw).hexdigest()
-        if raw.lstrip().startswith(b"<"):
-            try:
-                payload = cls._parse_pl_html(raw, slug=slug, source_url=source_url)
-            except ValidationError as error:
-                raise TijoriParseError("tijori HTML payload has an invalid schema") from error
-            cls._verify_response_identity(payload, slug=slug, expected_symbol=expected_symbol)
-            return cls.parse_pl(payload, content_sha256=content_sha256)
-        try:
-            document = json.loads(raw)
-        except json.JSONDecodeError as error:
-            raise TijoriParseError("tijori payload is not valid JSON") from error
-        try:
-            payload = TijoriPlPayload.model_validate(document)
-        except ValidationError as error:
-            raise TijoriParseError("tijori JSON payload has an invalid schema") from error
-        cls._verify_response_identity(payload, slug=slug, expected_symbol=expected_symbol)
+        payload = cls._parse_pl_html(
+            raw,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            period_end=period_end,
+            source_url=source_url,
+        )
         return cls.parse_pl(payload, content_sha256=content_sha256)
 
-    @staticmethod
-    def _verify_response_identity(
-        payload: TijoriPlPayload, *, slug: str | None, expected_symbol: str | None
-    ) -> None:
-        """Reject a response whose own identity differs from the requested stock."""
-        if slug is not None and payload.slug.casefold() != slug.casefold():
-            raise TijoriParseError("tijori response identity mismatch: slug differs from request")
-        if expected_symbol is not None and payload.symbol.casefold() != expected_symbol.casefold():
-            raise TijoriParseError("tijori response identity mismatch: symbol differs from request")
+    @classmethod
+    def _parse_pl_html(
+        cls,
+        raw: bytes,
+        *,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int | None,
+        period_end: date,
+        source_url: str | None,
+    ) -> TijoriPlPayload:
+        """Extract, validate, and select the verified Tijori JSON-island shape."""
+        try:
+            document = raw.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise TijoriParseError("tijori financials page is not UTF-8 HTML") from error
+        collector = _JsonScriptCollector()
+        collector.feed(document)
+        collector.close()
+        islands = cls._load_required_islands(collector)
+        financials = _as_object(islands[_FINANCIALS_ISLAND], _FINANCIALS_ISLAND)
+        company_details = _as_object(islands["company_details"], "company_details")
+        if islands["is_auth"] is not True:
+            raise TijoriParseError("tijori response is not authenticated")
+
+        response_symbol = company_details.get("symbol")
+        if not isinstance(response_symbol, str) or not response_symbol.strip():
+            raise TijoriParseError("tijori company_details symbol is missing or invalid")
+        if response_symbol.strip() != expected_symbol.strip():
+            raise TijoriParseError(
+                "tijori response identity mismatch: "
+                f"requested symbol {expected_symbol.strip()!r}, "
+                f"response symbol {response_symbol.strip()!r}"
+            )
+        company_id = company_details.get("company_id")
+        if not isinstance(company_id, int) or isinstance(company_id, bool):
+            raise TijoriParseError("tijori company_details company_id is missing or invalid")
+        if expected_company_id is not None and company_id != expected_company_id:
+            raise TijoriParseError(
+                "tijori response identity mismatch: "
+                f"requested company ID {expected_company_id}, response company ID {company_id}"
+            )
+
+        table = _as_object(financials.get(_QUARTERLY_CONSOLIDATED_TABLE), "qt_c")
+        report_dates = _as_string_list(table.get("report_dates"), "qt_c.report_dates")
+        expected_label = _expected_label(period_end)
+        matching_columns = tuple(
+            index for index, label in enumerate(report_dates) if label == expected_label
+        )
+        if not matching_columns:
+            available = ", ".join(report_dates)
+            raise TijoriParseError(
+                f"tijori requested quarter {expected_label!r} is absent; "
+                f"available labels: {available}"
+            )
+        if len(matching_columns) > 1:
+            available = ", ".join(report_dates)
+            raise TijoriParseError(
+                f"tijori requested quarter {expected_label!r} is ambiguous; "
+                f"available labels: {available}"
+            )
+        column = matching_columns[0]
+
+        rows = cls._selected_rows(table, report_dates, column)
+        resolved_url = source_url or DEFAULT_PL_URL_TEMPLATE.format(
+            base=DEFAULT_BASE_URL, slug=slug
+        )
+        return TijoriPlPayload(
+            slug=slug,
+            company_id=company_id,
+            symbol=response_symbol.strip(),
+            url=resolved_url,
+            period_label=expected_label,
+            period_start=_quarter_start(period_end),
+            period_end=period_end,
+            rows=rows,
+        )
 
     @staticmethod
-    def _parse_pl_html(raw: bytes, *, slug: str | None, source_url: str | None) -> TijoriPlPayload:
-        """Parse Tijori's rendered quarterly-results DataTable into a payload."""
-        try:
-            root = lxml_html.fromstring(raw)
-        except (etree.ParserError, UnicodeDecodeError, ValueError) as error:
-            raise TijoriParseError("tijori financials page is not valid HTML") from error
-        wrappers = root.xpath(f"//*[@id='{_QUARTERLY_WRAPPER_ID}']")
-        if not wrappers:
-            wrappers = root.xpath(f"//*[@id='{_QUARTERLY_CONTENT_ID}']")
-        if not wrappers:
-            raise TijoriParseError(
-                "tijori quarterly table not present in returned HTML; page may require rendering"
-            )
-        wrapper: Any = wrappers[0]
-        tables = wrapper.xpath(".//table")
-        heads = wrapper.xpath(".//thead")
-        if len(tables) != 1 or len(heads) != 1:
-            raise TijoriParseError(
-                "tijori quarterly wrapper must contain exactly one table and thead"
-            )
-        table: Any = tables[0]
-        header_cells = table.xpath(
-            ".//thead//th[contains(concat(' ', normalize-space(@class), ' '), ' headerItem ')]"
-        )
-        periods = tuple(
-            TijoriPeriod(label=_cell_text(cell), type=TijoriPeriodType.QUARTER)
-            for cell in header_cells
-            if _cell_text(cell)
-        )
-        if not periods:
-            raise TijoriParseError("tijori quarterly table has no period columns")
-        rows: list[TijoriRow] = []
-        for table_row in table.xpath(".//tbody//tr"):
-            label = str(table_row.get("data-id") or "").strip()
-            if not label:
-                first_cells = table_row.xpath(
-                    "./td[contains(concat(' ', normalize-space(@class), ' '), ' firstcol ')]"
-                )
-                label = _cell_text(first_cells[0]) if first_cells else ""
-            if not label:
-                continue
-            value_cells = table_row.xpath(
-                "./td[contains(concat(' ', normalize-space(@class), ' '), ' knowledge ') "
-                "and contains(concat(' ', normalize-space(@class), ' '), ' numericvalue ')]"
-            )
-            values = tuple(_html_cell_value(cell) for cell in value_cells)
-            if len(values) != len(periods):
+    def _load_required_islands(collector: _JsonScriptCollector) -> dict[str, Any]:
+        """Deserialize every required JSON island with isolated failure reasons."""
+        decoded: dict[str, Any] = {}
+        for island_id in _REQUIRED_ISLANDS:
+            if island_id in collector.duplicates:
+                raise TijoriParseError(f"tijori JSON island {island_id!r} appears multiple times")
+            raw_island = collector.islands.get(island_id)
+            if raw_island is None:
+                raise TijoriParseError(f"tijori JSON island {island_id!r} is missing")
+            try:
+                decoded[island_id] = json.loads(raw_island, parse_float=Decimal)
+            except json.JSONDecodeError as error:
                 raise TijoriParseError(
-                    f"tijori row {label!r} has {len(values)} values for {len(periods)} periods"
+                    f"tijori JSON island {island_id!r} is unparseable"
+                ) from error
+        return decoded
+
+    @staticmethod
+    def _selected_rows(
+        table: dict[str, Any], report_dates: tuple[str, ...], column: int
+    ) -> tuple[TijoriRow, ...]:
+        """Select and validate the three required P&L rows at one exact column."""
+        raw_rows = table.get("data")
+        if not isinstance(raw_rows, list):
+            raise TijoriParseError("tijori qt_c.data must be a list")
+        selected: dict[str, TijoriRow] = {}
+        for raw_row in raw_rows:
+            if not isinstance(raw_row, dict):
+                raise TijoriParseError("tijori qt_c.data contains a non-object row")
+            label = raw_row.get("name")
+            if not isinstance(label, str):
+                raise TijoriParseError("tijori qt_c.data row name must be a string")
+            if label not in _ROW_TO_CONCEPT:
+                continue
+            if label in selected:
+                raise TijoriParseError(f"tijori qt_c.data contains duplicate row {label!r}")
+            values = raw_row.get("value")
+            if not isinstance(values, list) or len(values) != len(report_dates):
+                raise TijoriParseError(
+                    f"tijori row {label!r} has invalid values for {len(report_dates)} columns"
                 )
-            rows.append(TijoriRow(label=label, values=values))
-        resolved_slug = str(wrapper.get("data-slug") or "").strip()
-        resolved_url = str(wrapper.get("data-url") or source_url or "").strip()
-        if not resolved_slug or not resolved_url:
-            raise TijoriParseError("tijori HTML payload is missing slug or source URL context")
-        raw_company_id = str(wrapper.get("data-company-id") or "0")
-        try:
-            company_id = int(raw_company_id)
-        except ValueError as error:
-            raise TijoriParseError("tijori HTML payload has an invalid company id") from error
-        return TijoriPlPayload(
-            slug=resolved_slug,
-            company_id=company_id,
-            symbol=str(wrapper.get("data-symbol") or "").strip(),
-            url=resolved_url,
-            currency=str(wrapper.get("data-currency") or _CURRENCY_INR).strip(),
-            unit=str(wrapper.get("data-unit") or "cr").strip(),
-            periods=periods,
-            rows=tuple(rows),
-        )
+            raw_value = values[column]
+            if (
+                isinstance(raw_value, bool)
+                or not isinstance(raw_value, (Decimal, int))
+                or isinstance(raw_value, Decimal)
+                and not raw_value.is_finite()
+            ):
+                raise TijoriParseError(
+                    f"tijori row {label!r} has a non-numeric value for the requested quarter"
+                )
+            selected[label] = TijoriRow(label=label, value=raw_value)
+        missing = tuple(label for label in _ROW_TO_CONCEPT if label not in selected)
+        if missing:
+            raise TijoriParseError(
+                f"tijori qt_c.data is missing required rows: {', '.join(missing)}"
+            )
+        return tuple(selected[label] for label in _ROW_TO_CONCEPT)
 
     @classmethod
     def parse_pl(cls, payload: TijoriPlPayload, *, content_sha256: str) -> tuple[Observation, ...]:
-        """Map quarterly rows of a validated P&L payload to observations.
-
-        Annual columns are skipped: Tijori uses the same ``Mon'YY`` label for a
-        fiscal-year and a quarter, and conflating them is exactly the
-        fact-identity collapse the contract forbids.
-        """
+        """Map the selected consolidated P&L rows to derived observations."""
         retrieved_at = datetime.now(tz=UTC)
-        observations: list[Observation] = []
-        emitted: set[tuple[TijoriConcept, date]] = set()
-        for column, period in enumerate(payload.periods):
-            if period.type is not TijoriPeriodType.QUARTER:
-                continue
-            period_start, period_end = _parse_quarter_label(period.label)
-            for row in payload.rows:
-                concept = _LABEL_TO_CONCEPT.get(row.label.strip().lower())
-                if concept is None:
-                    continue
-                fact_key = (concept, period_end)
-                if fact_key in emitted:
-                    continue
-                cell = cls._cell(row, column, payload.slug)
-                if _is_missing(cell):
-                    continue
-                assert cell is not None  # narrowed by _is_missing
-                observations.append(
-                    cls._to_observation(
-                        payload=payload,
-                        concept=concept,
-                        period=period,
-                        period_start=period_start,
-                        period_end=period_end,
-                        raw_value=cell,
-                        content_sha256=content_sha256,
-                        retrieved_at=retrieved_at,
-                    )
-                )
-                emitted.add(fact_key)
+        observations = tuple(
+            cls._to_observation(
+                payload=payload,
+                concept=_ROW_TO_CONCEPT[row.label],
+                row_label=row.label,
+                raw_value=row.value,
+                content_sha256=content_sha256,
+                retrieved_at=retrieved_at,
+            )
+            for row in payload.rows
+        )
         _LOGGER.info(
             "tijori_quarterly_observations_parsed",
             count=len(observations),
             slug=payload.slug,
         )
-        return tuple(observations)
-
-    @staticmethod
-    def _cell(row: TijoriRow, column: int, slug: str) -> str | None:
-        """Return the row's value in ``column``, failing loud on misalignment."""
-        if column >= len(row.values):
-            raise TijoriParseError(
-                f"tijori row {row.label!r} for {slug!r} has fewer values than periods"
-            )
-        return row.values[column]
+        return observations
 
     @staticmethod
     def _to_observation(
         *,
         payload: TijoriPlPayload,
         concept: TijoriConcept,
-        period: TijoriPeriod,
-        period_start: date,
-        period_end: date,
-        raw_value: str,
+        row_label: str,
+        raw_value: Decimal | int,
         content_sha256: str,
         retrieved_at: datetime,
     ) -> Observation:
-        """Build one DERIVED observation from a single Tijori quarterly cell."""
-        normalized_value = _normalize_decimal(raw_value)
-        if concept in _PER_SHARE_CONCEPTS:
-            normalized_unit = payload.currency
-            scale = _EPS_SCALE
-            decimals = _EPS_DECIMALS
-        else:
-            normalized_unit = _INR_CRORE_UNIT
-            scale = _CRORE_SCALE
-            decimals = _CRORE_DECIMALS
-        context_ref = f"{payload.url}#pl/{period.label}/{concept.value}"
+        """Build one derived observation from a verified JSON numeric value."""
+        # Tijori's only EPS is adjusted EPS (adj_eps_abs), so it is deliberately unmapped.
+        normalized_value = raw_value if isinstance(raw_value, Decimal) else Decimal(raw_value)
+        context_ref = (
+            f"{payload.url}#{_FINANCIALS_ISLAND}/{_QUARTERLY_CONSOLIDATED_TABLE}/"
+            f"{payload.period_label}/{concept.value}"
+        )
         provenance = Provenance(
             source_id=SOURCE_ID,
             file_sha256=content_sha256,
-            anchor_type=SourceAnchorType.XBRL_CONTEXT,
+            anchor_type=SourceAnchorType.JSON_ISLAND,
             context_ref=context_ref,
+            island_id=_FINANCIALS_ISLAND,
+            table_key=_QUARTERLY_CONSOLIDATED_TABLE,
+            row_label=row_label,
+            column_label=payload.period_label,
             retrieved_at=retrieved_at,
             first_seen_at=retrieved_at,
         )
         return Observation(
             concept_qname=concept.value,
-            raw_value=raw_value,
+            raw_value=str(raw_value),
             normalized_value=normalized_value,
-            normalized_unit=normalized_unit,
+            normalized_unit=_INR_CRORE_UNIT,
             context_ref=context_ref,
             entity_scheme=ENTITY_SCHEME,
             entity_id=payload.slug,
             scope=Scope.CONSOLIDATED,
             accounting_basis=AccountingFramework.UNKNOWN,
             period_type=PeriodType.DURATION,
-            period_start=period_start,
-            period_end=period_end,
-            currency=payload.currency,
-            scale=scale,
-            decimals=decimals,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            currency=_CURRENCY_INR,
+            scale=_CRORE_SCALE,
+            decimals=_CRORE_DECIMALS,
             provenance=provenance,
         )

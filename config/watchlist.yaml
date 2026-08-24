@@ -126,12 +126,11 @@ stocks:
       nse_symbol: "TITAN"
       bse_scrip: "500114"
       screener_slug: "TITAN"
-      tijori_slug: "titan-company"
+      tijori_slug: "titan-company-limited"
       us_listed: false
       news_aliases:
         - "Titan Company Limited"
-      needs_verification:
-        - "tijori_slug"
+      needs_verification: []
     quarter:
       label: "Q3FY25"
       period_start: "2024-10-01"
