@@ -391,15 +391,16 @@ def test_missing_credentials_is_a_skippable_error() -> None:
         )
 
 
-def test_watchlist_accepts_verified_titan_slug_but_keeps_other_guesses_gated() -> None:
-    """Only TITAN's captured legal-name slug exits the configuration gate."""
+def test_watchlist_carries_verified_tijori_slugs_for_every_stock() -> None:
+    """Every live-verified legal-name slug exits only the Tijori configuration gate."""
     watchlist = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
     titan = watchlist.stock(_TITAN_SYMBOL)
-    others = [stock for stock in watchlist.stocks if stock.symbol != _TITAN_SYMBOL]
 
     assert titan.identifiers.tijori_slug == _TITAN_SLUG
-    assert "tijori_slug" not in titan.identifiers.needs_verification
-    assert all("tijori_slug" in stock.identifiers.needs_verification for stock in others)
+    assert all(stock.identifiers.tijori_slug for stock in watchlist.stocks)
+    assert all(
+        "tijori_slug" not in stock.identifiers.needs_verification for stock in watchlist.stocks
+    )
 
 
 def test_observation_provenance_binds_the_json_island_location() -> None:
