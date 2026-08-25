@@ -27,6 +27,11 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.tijori_overview import build_tijori_overview
+from fundamentals.ingest.tijori_overview_models import (
+    TijoriOverviewSection,
+    TijoriOverviewSectionBase,
+)
 from fundamentals.ingest.tijori_page import JsonScriptCollector, decode_document, load_islands
 from fundamentals.ingest.tijori_shareholding import (
     TijoriShareholding,
@@ -62,6 +67,7 @@ ENTITY_SCHEME = "tijori-slug"
 DEFAULT_BASE_URL = "https://www.tijorifinance.com"
 DEFAULT_PL_URL_TEMPLATE = "{base}/company/{slug}/financials/"
 DEFAULT_SHAREHOLDING_URL_TEMPLATE = "{base}/company/{slug}/shareholding/"
+DEFAULT_OVERVIEW_URL_TEMPLATE = "{base}/company/{slug}/"
 DEFAULT_USER_AGENT = "EquityOS Research"
 DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SCOPE_ASSUMED_NOTE = "scope_assumed=True; Tijori does not disclose statement scope"
@@ -79,6 +85,7 @@ _TABLE_OPTIONAL_ISLANDS = (FINANCIALS_LOCKS_ISLAND_ID, PLAN_DETAILS_ISLAND_ID)
 _FINANCIALS_PAGE_LABEL = "financials"
 _PL_FETCH_FAILED_EVENT = "tijori_pl_fetch_failed"
 _SHAREHOLDING_FETCH_FAILED_EVENT = "tijori_shareholding_fetch_failed"
+_OVERVIEW_FETCH_FAILED_EVENT = "tijori_overview_fetch_failed"
 _QUARTERLY_CONSOLIDATED_TABLE = "qt_c"
 _MONTH_LABELS = (
     "Jan",
@@ -136,6 +143,7 @@ class TijoriSourceConfig(BaseModel):
     base_url: str = DEFAULT_BASE_URL
     pl_url_template: str = DEFAULT_PL_URL_TEMPLATE
     shareholding_url_template: str = DEFAULT_SHAREHOLDING_URL_TEMPLATE
+    overview_url_template: str = DEFAULT_OVERVIEW_URL_TEMPLATE
     user_agent: str = DEFAULT_USER_AGENT
     request_timeout_seconds: float = 30.0
     max_retries: int = 3
@@ -312,6 +320,53 @@ class TijoriSource:
             source_url=source_url,
         )
 
+    def fetch_overview(
+        self,
+        *,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int,
+        section: TijoriOverviewSection | None = None,
+    ) -> tuple[TijoriOverviewSectionBase, ...]:
+        """Fetch the overview sections, binding the response to the caller's identity."""
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori overview acquisition"
+            )
+        return self.parse_overview_bytes(
+            self._fetch_overview_bytes(slug, credentials),
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            source_url=self._config.overview_url_template.format(
+                base=self._config.base_url, slug=slug
+            ),
+            section=section,
+        )
+
+    @staticmethod
+    def parse_overview_bytes(
+        raw: bytes,
+        *,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int,
+        source_url: str | None = None,
+        section: TijoriOverviewSection | None = None,
+    ) -> tuple[TijoriOverviewSectionBase, ...]:
+        """Parse the typed data sections from a verified overview page."""
+        return build_tijori_overview(
+            raw,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            source_url=source_url
+            or DEFAULT_OVERVIEW_URL_TEMPLATE.format(base=DEFAULT_BASE_URL, slug=slug),
+            retrieved_at=datetime.now(tz=UTC),
+            section=section,
+        )
+
     @staticmethod
     def parse_shareholding_bytes(
         raw: bytes,
@@ -350,6 +405,13 @@ class TijoriSource:
         url = self._config.shareholding_url_template.format(base=self._config.base_url, slug=slug)
         return self._fetch_page_bytes(
             url, slug=slug, credentials=credentials, fetch_event=_SHAREHOLDING_FETCH_FAILED_EVENT
+        )
+
+    def _fetch_overview_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
+        """Fetch one complete authenticated overview page without redirects."""
+        url = self._config.overview_url_template.format(base=self._config.base_url, slug=slug)
+        return self._fetch_page_bytes(
+            url, slug=slug, credentials=credentials, fetch_event=_OVERVIEW_FETCH_FAILED_EVENT
         )
 
     def _fetch_page_bytes(

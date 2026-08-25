@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <script id="is_auth" type="application/json">true</script>
+    <script id="is_landing_page" type="application/json">""</script>
+    <script id="company_status" type="application/json">"Active"</script>
+    <script id="is_banking" type="application/json">false</script>
+    <script id="companyId" type="application/json">81</script>
+    <script id="alerts_limit_exceeded" type="application/json">false</script>
+    <script id="pagesremain" type="application/json">""</script>
+    <script id="timestamp" type="application/json">""</script>
+    <script id="user_prefs" type="application/json">{}</script>
+    <!-- UI island: a chart-metric catalogue, carrying no company identity. -->
+    <script id="metrics" type="application/json">
+      [{"id":"value","name":"Value"},{"id":"ltp","name":"LTP"}]
+    </script>
+    <script id="plan_details" type="application/json">
+      {"name":"free","plan_tier":"free","ind_company":{"overview":{"rev_mix":{"source":false}}}}
+    </script>
+    <script id="overview_locks" type="application/json">
+      {"rev_mix":{"source":false,"historic":false},
+       "timeline":{"load_more":false},
+       "custom_financials":{"sub_rows":2}}
+    </script>
+
+    <!-- Identity island: the overview page publishes symbol AND company_id.
+         quick_look mirrors the LIVE shape parsed from TITAN on 2026-08-25: an
+         object of count / data / table_data, where data holds named categories
+         whose 'factories' are the flags. table_data's content is unknown, so the
+         fixture carries a blob for it and the parser keeps it verbatim. One flag
+         also carries a drifted extra key. -->
+    <script id="company_details_data" type="application/json">
+      {"company":"Titan Company Ltd.","company_id":81,"symbol":"TITAN",
+       "shortname":"Titan Company","slug":"titan-company-limited","ind_code":35,
+       "is_banking":false,"mcap":"₹4,49,713","mcap_raw":449713.0,"pe":78.08,
+       "has_peg":true,"peg":3.67,
+       "quick_look":{
+         "count":{"green":14,"red":2,"neutral":1,"gray":0,"total":17},
+         "data":[
+           {"name":"Accounting & Shareholding",
+            "factories":[
+              {"name":"Receivable Days","sentence":"Receivable days rose to 41 from 28.",
+               "explanation":"A sustained rise can signal channel stuffing.","flag":"AMBER"},
+              {"name":"Auditor Change","sentence":"Statutory auditor changed mid-term.",
+               "explanation":"Mid-term auditor exits warrant a look at the exit letter.",
+               "flag":"RED","severity_rank":2}
+            ]},
+           {"name":"Growth & Returns",
+            "factories":[
+              {"name":"ROCE Trend","sentence":"ROCE held above 35% for eight quarters.",
+               "explanation":"Sustained high ROCE indicates pricing power.","flag":"GREEN"}
+            ]}
+         ],
+         "table_data":{"rows":[{"metric":"Receivable Days","fy24":28,"fy25":41}],
+                       "note":"shape not yet modeled"}
+       }}
+    </script>
+
+    <script id="corporate_actions" type="application/json">
+      {"Bonus":[],
+       "Dividend":[
+         {"ex_date":"2026-07-09","event_details":"Dividend of Rs.15 per share",
+          "event_date":"2026-07-09T00:00:00Z"},
+         {"ex_date":"2025-07-08","event_details":"Dividend of Rs.11 per share",
+          "event_date":"2025-07-08T00:00:00Z","record_date":"2025-07-09"}
+       ],
+       "Rights":[],
+       "Split":[
+         {"ex_date":"2011-09-05","event_details":"Split from Rs.10 to Rs.1",
+          "event_date":"2011-09-05T00:00:00Z"},
+         {"ex_date":"not-a-date","event_details":"Split (unparsed source date)",
+          "event_date":""}
+       ]}
+    </script>
+
+    <script id="ratios_table" type="application/json">
+      [{"name":"mcap","short_name":"Market cap","display_name":"Market Capital",
+        "unit":"Cr","value":"449713.00","id":2022},
+       {"name":"pe","short_name":"PE","display_name":"PE","unit":"","value":"78.08","id":1},
+       {"name":"div_yield","short_name":"Div Yield","display_name":"Dividend Yield",
+        "unit":"%","value":"-","id":9}]
+    </script>
+
+    <script id="custom_fin_table" type="application/json">
+      [{"data":{"sub_rows":[
+          {"name":"Stores","value":[2200,2450]},
+          {"name":"Retail Sq Ft","value":[3100000,3400000]}]},
+        "column":"bs_s_d","report_dates":["Mar 2017","Mar 2018"]},
+       {"data":{"sub_rows":[
+          {"name":"Stores","value":[2200]},
+          {"name":"Gold Rate","value":["1,234","5,678"],"unit":"INR/gm"}]},
+        "column":"bs_c_d","report_dates":["Mar 2017","Mar 2018"]}]
+    </script>
+
+    <script id="ms-charts" type="application/json">
+      [{"name":"Jewellery  Segment Market Share","id":574,"sample_size":null,
+        "methodology":null,
+        "data":[[1519862400000.0,6.1],[1551398400000.0,7.2],[1582934400000.0,8.5]],
+        "latest_value":8.5,"unit":"%","latest_date":"Jun 26",
+        "source":"https://files.tijorifinance.com/india/ma"},
+       {"name":"Watches Segment Market Share","id":1165,"sample_size":null,
+        "methodology":null,
+        "data":[[1519862400000.0,25.0],[1551398400000.0,27.0]],
+        "latest_value":27.0,"unit":"%","latest_date":"Jun 26",
+        "source":"https://files.tijorifinance.com/india/ma"}]
+    </script>
+
+    <script id="peers_table_data" type="application/json">
+      [{"columns":[{"name":"Latest Price","unit":"","short_name":"Latest Price"},
+                   {"name":"PE","unit":"","short_name":"PE"},
+                   {"name":"Market Capital","unit":"Cr","short_name":"Mcap"}]},
+       {"data":[
+          {"Latest Price":5079.0,"PE":78.08,"Market Capital":449713.0,
+           "name":"Titan Company","slug":"titan-company-limited"},
+          {"Latest Price":612.5,"PE":41.2,"Market Capital":63120.0,
+           "name":"Kalyan Jewell.India","slug":"kalyan-jewellers-india-limited",
+           "Promoter":60.6},
+          {"Latest Price":88.4,"Market Capital":9100.0,
+           "name":"Synthetic Peer Three","slug":"synthetic-peer-three"}]}]
+    </script>
+
+    <script id="price_returns" type="application/json">
+      {"1d":-0.14,"1m":8.6,"6m":17.43,"ytd":25.43,"1y":39.1,"max":12255.41}
+    </script>
+
+    <!-- The last point is malformed: retained with null readings, never dropped. -->
+    <script id="price_chart" type="application/json">
+      [[1223577000000,41.1075],[1223836200000,47.305],[1223922600000,46.9],
+       [1224009000000,45.25],[1224095400000,44.8],[1224181800000]]
+    </script>
+
+    <!-- Absent by design: this fixture's issuer publishes no intraday tick
+         island, so the 'intraday_price' section must record a typed ABSENT
+         outcome in a breadth run and refuse an explicit --section request. -->
+
+    <script id="price_chart_peers" type="application/json">
+      [{"name":"Titan Company","id":81,"type":"company"},
+       {"name":"Kalyan Jewell.India","id":43282,"type":"company","symbol":"KALYANKJIL"},
+       {"name":"Nifty 50","id":9001,"type":"index"}]
+    </script>
+
+    <!-- Decoy: a sample-report modal that repeats island-shaped JSON inside
+         markup. It is NOT a <script type="application/json"> island, so the
+         island collector never sees it. -->
+    <div class="modal sample-report">
+      <pre class="peg-sample__json">
+        {"price_returns": {"1d": 999.9, "max": 999.9},
+         "company_details_data": {"company_id": 4242, "symbol": "DECOY"}}
+      </pre>
+      <script id="sample_report_preview" type="application/json">
+        {"corporate_actions":{"Bonus":[{"ex_date":"1999-01-01",
+          "event_details":"Decoy bonus","event_date":"1999-01-01T00:00:00Z"}]}}
+      </script>
+    </div>
+
+    <!-- Live shape (verified 2026-08-25): the overview template renders the
+         auth island a second time in the footer layout context, with a
+         byte-identical body. Identical repeats collapse to one. -->
+    <script id="is_auth" type="application/json">true</script>
+  </body>
+</html>

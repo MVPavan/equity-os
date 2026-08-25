@@ -9,6 +9,7 @@ plumbing so each surface adapter only models its own payload. Transport lives in
 from __future__ import annotations
 
 import json
+from collections import Counter
 from decimal import Decimal
 from html.parser import HTMLParser
 from typing import Any
@@ -33,6 +34,11 @@ class JsonScriptCollector(HTMLParser):
 
     Entity conversion stays off: an island body is JSON source text, so decoding
     character references inside it would corrupt the payload.
+
+    Every occurrence of a requested id is collected, not just the first, because
+    whether a repeated island is safe depends on what the repeats say.
+    ``duplicates`` names ids the page rendered more than once;
+    ``divergent_duplicates`` names the subset whose bodies actually disagree.
     """
 
     def __init__(self, island_ids: tuple[str, ...]) -> None:
@@ -40,6 +46,8 @@ class JsonScriptCollector(HTMLParser):
         self._island_ids = frozenset(island_ids)
         self.islands: dict[str, str] = {}
         self.duplicates: set[str] = set()
+        self.divergent_duplicates: set[str] = set()
+        self.occurrences: Counter[str] = Counter()
         self._active_island: str | None = None
         self._chunks: list[str] = []
 
@@ -54,9 +62,6 @@ class JsonScriptCollector(HTMLParser):
             return
         if content_type.strip().lower() != _ISLAND_CONTENT_TYPE:
             return
-        if island_id in self.islands:
-            self.duplicates.add(island_id)
-            return
         self._active_island = island_id
         self._chunks = []
 
@@ -66,11 +71,21 @@ class JsonScriptCollector(HTMLParser):
             self._chunks.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        """Finish collecting the active JSON island."""
-        if tag == _SCRIPT_TAG and self._active_island is not None:
-            self.islands[self._active_island] = "".join(self._chunks)
-            self._active_island = None
-            self._chunks = []
+        """Finish the active JSON island, classifying a repeat by its content."""
+        if tag != _SCRIPT_TAG or self._active_island is None:
+            return
+        island_id = self._active_island
+        body = "".join(self._chunks)
+        self.occurrences[island_id] += 1
+        first_body = self.islands.get(island_id)
+        if first_body is None:
+            self.islands[island_id] = body
+        else:
+            self.duplicates.add(island_id)
+            if first_body.strip() != body.strip():
+                self.divergent_duplicates.add(island_id)
+        self._active_island = None
+        self._chunks = []
 
 
 def decode_document(raw: bytes, *, page_label: str) -> str:
@@ -103,8 +118,20 @@ def load_islands(
     decoded: dict[str, Any] = {}
     for island_id in required_islands + optional_islands:
         optional = island_id in optional_islands
+        if island_id in collector.divergent_duplicates:
+            raise TijoriParseError(
+                f"tijori JSON island {island_id!r} appears multiple times with differing content"
+            )
         if island_id in collector.duplicates:
-            raise TijoriParseError(f"tijori JSON island {island_id!r} appears multiple times")
+            # FACT (live overview page, 2026-08-25): the template renders both
+            # ``is_auth`` and ``plan_details`` in two layout contexts with
+            # byte-identical bodies. Identical repeats carry no ambiguity, so
+            # they collapse to one; only disagreeing repeats are unresolvable.
+            _LOGGER.info(
+                "tijori_identical_island_duplicate_collapsed",
+                island=island_id,
+                occurrences=collector.occurrences[island_id],
+            )
         raw_island = collector.islands.get(island_id)
         if raw_island is None:
             if optional:

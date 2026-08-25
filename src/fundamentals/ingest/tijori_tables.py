@@ -351,7 +351,7 @@ def _field_id(raw_field_id: Any) -> str | None:
     return raw_field_id
 
 
-def _raw_json(value: Any) -> str:
+def raw_json(value: Any) -> str:
     """Render an unmodeled JSON fragment as stable text for verbatim retention."""
     return json.dumps(value, sort_keys=True, default=str)
 
@@ -385,7 +385,7 @@ def _optional_labels(value: Any, *, key: TijoriTableKey, field: str) -> tuple[st
             "tijori_table_optional_labels_unmodeled",
             table=key.value,
             field=field,
-            raw=_raw_json(value),
+            raw=raw_json(value),
         )
         return ()
     return tuple(value)
@@ -396,12 +396,12 @@ def _feature_locks(value: Any) -> tuple[TijoriFeatureLock, ...]:
     if value is None:
         return ()
     if not isinstance(value, dict):
-        _LOGGER.warning("tijori_financials_locks_unmodeled", raw=_raw_json(value))
+        _LOGGER.warning("tijori_financials_locks_unmodeled", raw=raw_json(value))
         return ()
     locks: list[TijoriFeatureLock] = []
     for feature, raw_flags in value.items():
         if not isinstance(feature, str):
-            _LOGGER.warning("tijori_financials_locks_non_string_feature", raw=_raw_json(feature))
+            _LOGGER.warning("tijori_financials_locks_non_string_feature", raw=raw_json(feature))
             continue
         if isinstance(raw_flags, dict) and all(
             isinstance(flag, str) and isinstance(enabled, bool)
@@ -420,9 +420,9 @@ def _feature_locks(value: Any) -> tuple[TijoriFeatureLock, ...]:
         _LOGGER.warning(
             "tijori_financials_locks_feature_unmodeled",
             feature=feature,
-            raw=_raw_json(raw_flags),
+            raw=raw_json(raw_flags),
         )
-        locks.append(TijoriFeatureLock(feature=feature, raw_value_json=_raw_json(raw_flags)))
+        locks.append(TijoriFeatureLock(feature=feature, raw_value_json=raw_json(raw_flags)))
     return tuple(locks)
 
 
@@ -432,7 +432,7 @@ def _plan_string(plan: dict[str, Any], field: str) -> str | None:
     if raw is None:
         return None
     if not isinstance(raw, str) or not raw.strip():
-        _LOGGER.warning("tijori_plan_details_field_unmodeled", field=field, raw=_raw_json(raw))
+        _LOGGER.warning("tijori_plan_details_field_unmodeled", field=field, raw=raw_json(raw))
         return None
     return raw
 
@@ -446,12 +446,14 @@ def _island_state(island: Any) -> tuple[TijoriIslandStatus, str | None]:
     return TijoriIslandStatus.PRESENT, None
 
 
-def build_page_access(*, financials_locks: Any, plan_details: Any) -> TijoriTableAccessMetadata:
-    """Parse the plan and capability islands once per page."""
+def build_page_access(
+    *, financials_locks: Any, plan_details: Any, locks_island_id: str = FINANCIALS_LOCKS_ISLAND_ID
+) -> TijoriTableAccessMetadata:
+    """Parse the plan and capability islands once per page, naming the locks island."""
     locks_status, locks_error = _island_state(financials_locks)
     plan_status, plan_error = _island_state(plan_details)
     if plan_status is TijoriIslandStatus.PRESENT and not isinstance(plan_details, dict):
-        _LOGGER.warning("tijori_plan_details_unmodeled", raw=_raw_json(plan_details))
+        _LOGGER.warning("tijori_plan_details_unmodeled", raw=raw_json(plan_details))
         plan: dict[str, Any] = {}
     elif plan_status is TijoriIslandStatus.PRESENT:
         plan = plan_details
@@ -467,9 +469,7 @@ def build_page_access(*, financials_locks: Any, plan_details: Any) -> TijoriTabl
         plan_details_status=plan_status,
         financials_locks_error=locks_error,
         plan_details_error=plan_error,
-        locks_island_id=(
-            FINANCIALS_LOCKS_ISLAND_ID if locks_status is TijoriIslandStatus.PRESENT else None
-        ),
+        locks_island_id=(locks_island_id if locks_status is TijoriIslandStatus.PRESENT else None),
         plan_island_id=(
             PLAN_DETAILS_ISLAND_ID if plan_status is TijoriIslandStatus.PRESENT else None
         ),
@@ -493,19 +493,19 @@ def decimal_from_text(text: str) -> Decimal | None:
     return parsed if parsed.is_finite() else None
 
 
-def _cell_reading(raw_value: Any) -> tuple[Decimal | None, str]:
+def cell_reading(raw_value: Any) -> tuple[Decimal | None, str]:
     """Return one cell's numeric reading and its preserved source lexeme."""
     if raw_value is None:
         return None, _NULL_CELL_TEXT
     if isinstance(raw_value, bool):
-        return None, _raw_json(raw_value)
+        return None, raw_json(raw_value)
     if isinstance(raw_value, Decimal):
         return (raw_value if raw_value.is_finite() else None), str(raw_value)
     if isinstance(raw_value, int):
         return Decimal(raw_value), str(raw_value)
     if isinstance(raw_value, str):
         return decimal_from_text(raw_value), raw_value
-    return None, _raw_json(raw_value)
+    return None, raw_json(raw_value)
 
 
 def _row_payload(
@@ -525,7 +525,7 @@ def _row_payload(
     if not raw_values:
         return (), ()
     if len(raw_values) != len(context.column_labels):
-        unaligned = tuple(_cell_reading(raw_value)[1] for raw_value in raw_values)
+        unaligned = tuple(cell_reading(raw_value)[1] for raw_value in raw_values)
         _LOGGER.warning(
             "tijori_row_cardinality_mismatch",
             table=context.key.value,
@@ -538,7 +538,7 @@ def _row_payload(
     for column_index, (column_label, raw_value) in enumerate(
         zip(context.column_labels, raw_values, strict=True)
     ):
-        value, raw_text = _cell_reading(raw_value)
+        value, raw_text = cell_reading(raw_value)
         cells.append(
             TijoriTableCell(
                 value=value,
@@ -714,7 +714,7 @@ def _build_table(
         skipped_period_labels=_optional_labels(
             table.get(_SKIP_REPORT_DATES_FIELD), key=table_key, field=_SKIP_REPORT_DATES_FIELD
         ),
-        table_footer_json=None if raw_footer is None else _raw_json(raw_footer),
+        table_footer_json=None if raw_footer is None else raw_json(raw_footer),
         rows=rows,
         cardinality_mismatch_rows=tuple(row.row_key for row in rows if row.unaligned_raw_values),
         metadata=metadata,

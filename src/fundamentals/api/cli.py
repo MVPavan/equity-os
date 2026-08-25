@@ -60,16 +60,7 @@ from fundamentals.api.news_cli import (
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
-from fundamentals.api.tijori_shareholding_cli import (
-    TIJORI_SHAREHOLDING_COMMAND,
-    render_tijori_shareholding_summary,
-    run_tijori_shareholding_command,
-)
-from fundamentals.api.tijori_tables_cli import (
-    TIJORI_TABLES_COMMAND,
-    render_tijori_tables_summary,
-    run_tijori_tables_command,
-)
+from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -117,8 +108,6 @@ _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
-_TIJORI_SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for tijori-tables"
-_TIJORI_SHAREHOLDING_SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for tijori-shareholding"
 
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
@@ -657,32 +646,11 @@ def main(argv: list[str] | None = None) -> int:
 
     logger = structlog.get_logger("fundamentals.cli")
 
-    if args.command == TIJORI_TABLES_COMMAND:
-        credentials = _tijori_credentials_from_env()
-        if credentials is None:
-            raise SystemExit(_TIJORI_SESSION_REQUIRED)
-        logger.info(
-            "tijori_tables_invoked",
-            stock=args.stock,
-            table=args.table,
-            started_at=datetime.now(UTC).isoformat(),
-        )
-        tables = run_tijori_tables_command(args, credentials=credentials)
-        sys.stdout.write(render_tijori_tables_summary(tables) + "\n")
-        return 0
-
-    if args.command == TIJORI_SHAREHOLDING_COMMAND:
-        credentials = _tijori_credentials_from_env()
-        if credentials is None:
-            raise SystemExit(_TIJORI_SHAREHOLDING_SESSION_REQUIRED)
-        logger.info(
-            "tijori_shareholding_invoked",
-            stock=args.stock,
-            started_at=datetime.now(UTC).isoformat(),
-        )
-        shareholding = run_tijori_shareholding_command(args, credentials=credentials)
-        sys.stdout.write(render_tijori_shareholding_summary(shareholding) + "\n")
-        return 0
+    tijori_exit_code = dispatch_tijori_command(
+        args, credentials_factory=_tijori_credentials_from_env
+    )
+    if tijori_exit_code is not None:
+        return tijori_exit_code
 
     if args.command == NEWS_COMMAND:
         news_result = run_news_command(args)
