@@ -23,3 +23,7 @@ implementation artifacts the review recommends (§10: `MVP-001-earnings-review.m
 `ADR-001-system-of-record.md`, `data-contracts-v0.md`, `evaluation-plan.md`,
 `provider-rights-register.md`, `dependency-due-diligence.md`).
 - [Session handoff 2026-08-19](../../docs/goals/handoff/HANDOFF-2026-08-19.md) — authoritative resume point for the blueprint-completion goal (state, pending work, user decisions); architecture artifact source in docs/goals/architecture/
+
+## Learnings
+
+- [Financial-site scraper patterns](../../docs/learnings/financial-site-scraper-patterns.md) — earned patterns from the Tijori breadth build (2026-08-25); read before building any new source adapter (esp. Screener Phase 2).
