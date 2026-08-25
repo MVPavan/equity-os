@@ -20,6 +20,12 @@ from fundamentals.contracts.provenance import SourceAnchorType
 from fundamentals.ingest.tijori_overview import build_tijori_overview
 from fundamentals.ingest.tijori_overview_common import reject_duplicate_anchors
 from fundamentals.ingest.tijori_overview_models import (
+    DOM_SECTION_ELEMENT_IDS,
+    PRICE_RETURNS_SEMANTICS,
+    REVENUE_MIX_ELEMENT_ID,
+    REVERSE_DCF_EXCLUSION,
+    SECTION_ISLAND_IDS,
+    SECTION_SOURCE_IDS,
     TijoriCompanyDetailsSection,
     TijoriCorporateActionsSection,
     TijoriCustomFinancialsSection,
@@ -30,11 +36,13 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSectionAbsentError,
     TijoriOverviewSectionBase,
     TijoriOverviewSectionsAbsentError,
+    TijoriOverviewSourceKind,
     TijoriPeersSection,
     TijoriPriceChartPeersSection,
     TijoriPriceReturnsSection,
     TijoriPriceSeriesSection,
     TijoriRatiosSection,
+    TijoriRevenueMixSection,
     parse_section,
 )
 from fundamentals.ingest.tijori_tables import TijoriIslandStatus, TijoriParseError
@@ -105,6 +113,7 @@ def test_breadth_run_builds_every_published_section() -> None:
         "price_chart",
         "price_chart_peers",
         "company_details",
+        "revenue_mix",
     ]
 
 
@@ -222,6 +231,9 @@ def test_a_page_with_only_its_identity_header_is_not_an_acquisition() -> None:
             stripped,
             flags=re.DOTALL,
         )
+    # The revenue mix is a data section too, so stripping only the islands would
+    # leave one behind and the page would no longer be header-only.
+    stripped = re.sub(r'<section id="revenuemix">.*?</section>', "", stripped, flags=re.DOTALL)
 
     with pytest.raises(TijoriOverviewSectionsAbsentError, match="no modeled data section"):
         _build(stripped.encode("utf-8"))
@@ -367,6 +379,34 @@ def test_price_returns_are_addressed_by_window() -> None:
     assert by_window["1d"].value == Decimal("-0.14")
     assert by_window["max"].value == Decimal("12255.41")
     assert by_window["1d"].provenance.row_label == "1d"
+
+
+def test_price_returns_artifact_states_its_as_of_retrieval_semantics() -> None:
+    """The note ships in the artifact because that is where a reader compares it.
+
+    These island values are server-computed and frozen at retrieval, while the
+    page header recomputes its own percentage from the live tick — so a header
+    comparison that looks like a mismatch usually is not one.
+    """
+    section = _one(TijoriOverviewSection.PRICE_RETURNS)
+    assert isinstance(section, TijoriPriceReturnsSection)
+
+    assert section.semantics_note == PRICE_RETURNS_SEMANTICS
+    assert "retrieved_at" in section.semantics_note
+    assert '"semantics_note"' in section.model_dump_json()
+
+
+def test_reverse_dcf_is_a_documented_exclusion_not_a_missing_section() -> None:
+    """Its numbers are computed in the browser, so there is nothing to acquire.
+
+    Pinning the exclusion in a test keeps a future reader from "fixing" the gap
+    by scraping the rendered widget, which would record a viewer's slider
+    positions as an issuer fact.
+    """
+    assert not any("dcf" in section.value for section in TijoriOverviewSection)
+    assert not any("dcf" in island_id for island_id in SECTION_ISLAND_IDS.values())
+    assert "reverse-dcf.js" in REVERSE_DCF_EXCLUSION
+    assert "client-side" in REVERSE_DCF_EXCLUSION
 
 
 def test_price_series_keeps_a_malformed_point_instead_of_dropping_it() -> None:
@@ -646,21 +686,35 @@ def test_quick_look_of_an_unmodeled_shape_is_preserved_not_fatal() -> None:
 
 
 def test_every_anchor_names_the_island_and_the_section_it_came_from() -> None:
-    """No dishonest anchors: island_id is the island, table_key is the section."""
+    """No dishonest anchors: island_id is the island, table_key is the section.
+
+    A rendered-HTML section is held to the matching honesty rule for ITS
+    retrieval procedure — an HTML_TABLE anchor naming a DOM location — rather
+    than being exempted from the check.
+    """
     for section in _build():
         anchors = _anchors(section)
         assert anchors, f"{section.section.value} exposed no anchor"
+        html_backed = section.source_kind is TijoriOverviewSourceKind.RENDERED_HTML
         for anchor in anchors:
+            assert anchor["file_sha256"] == section.metadata.file_sha256
+            assert anchor["retrieved_at"] == _RETRIEVED_AT
+            assert anchor["row_label"]
+            assert anchor["column_label"]
+            if html_backed:
+                # An island id here would misdescribe how to re-find the value.
+                assert anchor["anchor_type"] is SourceAnchorType.HTML_TABLE
+                assert anchor["island_id"] is None
+                assert anchor["table_key"] is None
+                assert anchor["table_id"]
+                assert anchor["context_ref"].startswith(f"{_SOURCE_URL}#{anchor['table_id']}/")
+                continue
             assert anchor["anchor_type"] is SourceAnchorType.JSON_ISLAND
             assert anchor["island_id"] == section.island_id
             assert anchor["table_key"] == section.section.value
-            assert anchor["row_label"]
-            assert anchor["column_label"]
             assert anchor["context_ref"].startswith(
                 f"{_SOURCE_URL}#{section.island_id}/{section.section.value}/"
             )
-            assert anchor["file_sha256"] == section.metadata.file_sha256
-            assert anchor["retrieved_at"] == _RETRIEVED_AT
 
 
 def _anchors(section: TijoriOverviewSectionBase) -> list[dict[str, Any]]:
@@ -684,6 +738,166 @@ def _walk(node: Any, found: list[dict[str, Any]]) -> None:
 
 
 def test_parse_section_rejects_an_unsupported_name() -> None:
-    """A section name outside the modeled set is refused with the supported list."""
+    """A section name outside the modeled set is refused with the supported list.
+
+    ``reverse_dcf`` is the pointed example: it is a real widget on the page and
+    a deliberate non-section here, so asking for it must be refused rather than
+    quietly acquired from somewhere.
+    """
     with pytest.raises(TijoriOverviewSectionAbsentError, match="unsupported Tijori overview"):
-        parse_section("revenue_mix")
+        parse_section("reverse_dcf")
+
+
+def _revenue_mix(raw: bytes | None = None) -> TijoriRevenueMixSection:
+    """Build the revenue-mix section on its own."""
+    section = _one(TijoriOverviewSection.REVENUE_MIX, raw)
+    assert isinstance(section, TijoriRevenueMixSection)
+    return section
+
+
+def _without_revenue_mix() -> bytes:
+    """Return the fixture with the whole revenue-mix section removed."""
+    stripped = re.sub(
+        r'<section id="revenuemix">.*?</section>',
+        "",
+        _page().decode("utf-8"),
+        flags=re.DOTALL,
+    )
+    assert "revenuemix" not in stripped
+    return stripped.encode("utf-8")
+
+
+def test_revenue_mix_is_read_from_rendered_markup_not_an_island() -> None:
+    """Its data lives in an entity-encoded attribute, so it needs a DOM reader."""
+    section = _revenue_mix()
+
+    assert section.source_kind is TijoriOverviewSourceKind.RENDERED_HTML
+    assert section.island_id == REVENUE_MIX_ELEMENT_ID
+    assert '"revenuemix"' not in _page().decode("utf-8").split("<section")[0]
+    product = section.break_ups[0]
+    assert product.title == "Product Wise Break-Up"
+    assert product.status is TijoriIslandStatus.PRESENT
+    assert [(entry.label, entry.value) for entry in product.entries] == [
+        ("Jewelry", Decimal("88.37")),
+        ("Watches", Decimal("8.12")),
+        ("Others", Decimal("3.51")),
+    ]
+
+
+def test_every_declared_break_up_is_acquired_in_rendered_order() -> None:
+    """A page publishes several break-ups; reading only the first would lose data."""
+    section = _revenue_mix()
+
+    assert [break_up.title for break_up in section.break_ups] == [
+        "Product Wise Break-Up",
+        "Location Wise Break-Up",
+        "Operating Profit Break-Up (Historic)",
+        "Asset Break-Up",
+    ]
+    assert section.element_count == 5
+
+
+def test_revenue_mix_slices_anchor_to_their_chart_element() -> None:
+    """The retrieval procedure is 'read this attribute of this element', so HTML_TABLE."""
+    location = _revenue_mix().break_ups[1]
+
+    assert location.table_id == "rmix:4281"
+    first = location.entries[0].provenance
+    assert first.anchor_type is SourceAnchorType.HTML_TABLE
+    assert first.table_id == "rmix:4281"
+    assert first.column_label == "value"
+    assert first.column_index == 0
+    assert first.island_id is None
+    assert first.table_key is None
+    # The block position leads the address: two break-ups may share a label.
+    assert [entry.provenance.row_path for entry in location.entries] == [
+        "1/0/India",
+        "1/1/Overseas",
+    ]
+
+
+def test_a_block_with_no_chart_data_at_all_is_retained_with_a_status() -> None:
+    """Historic wrappers sit beside the current blocks; dropping one hides drift.
+
+    A block carrying no ``chart-data`` has nothing to read, so it gets a typed
+    status and full retention rather than being silently skipped — including
+    the chart id it declared elsewhere and its misnamed company-id attribute.
+    """
+    historic = _revenue_mix().break_ups[2]
+
+    assert historic.status is TijoriIslandStatus.UNPARSEABLE
+    assert historic.entries == ()
+    assert historic.detail == "the block carries no chart-data attribute"
+    assert historic.company_id_attribute == "4282"
+    assert historic.raw_block_json is not None
+    assert "4282" in historic.raw_block_json
+
+
+def test_a_drifted_chart_attribute_is_refused_whole() -> None:
+    """A break-up is a split of one total, so a partial read would not add up."""
+    asset = _revenue_mix().break_ups[3]
+
+    assert asset.status is TijoriIslandStatus.UNPARSEABLE
+    assert asset.entries == ()
+    assert asset.detail is not None
+    assert "not a 2-element pair" in asset.detail
+
+
+def test_the_block_company_id_attribute_is_never_treated_as_identity() -> None:
+    """LIVE FACT: ``company-id`` duplicates ``chart-id`` and is NOT the issuer.
+
+    On the real page every block declares company-id 4280/4281/... while the
+    page itself is verified as company 81. Checking that attribute against the
+    page identity refused every live break-up, which is exactly the regression
+    this test exists to prevent. Identity is proven once by the island gate;
+    this attribute is source data with a misleading name, nothing more.
+    """
+    section = _revenue_mix()
+    product = section.break_ups[0]
+
+    assert section.metadata.company_id == _COMPANY_ID
+    assert product.company_id_attribute == "4280"
+    assert product.company_id_attribute != str(_COMPANY_ID)
+    # It duplicates the chart id — that is what it actually is.
+    assert product.company_id_attribute == product.chart_id
+    # And it changes nothing about whether the block parses.
+    assert product.status is TijoriIslandStatus.PRESENT
+    assert product.entries
+    assert all(break_up.company_id_attribute != str(_COMPANY_ID) for break_up in section.break_ups)
+
+
+def test_an_absent_revenue_mix_section_is_typed_absence_not_failure() -> None:
+    """Some companies publish no revenue mix; that is data about the company."""
+    raw = _without_revenue_mix()
+    outcomes = {outcome.section: outcome for outcome in _build(raw)[0].metadata.section_outcomes}
+
+    revenue_mix = outcomes[TijoriOverviewSection.REVENUE_MIX]
+    assert revenue_mix.status is TijoriIslandStatus.ABSENT
+    assert revenue_mix.source_kind is TijoriOverviewSourceKind.RENDERED_HTML
+    assert revenue_mix.island_id == REVENUE_MIX_ELEMENT_ID
+    assert revenue_mix.detail == "no element with this id is rendered on the page"
+    with pytest.raises(TijoriOverviewSectionAbsentError, match="absent"):
+        _build(raw, section=TijoriOverviewSection.REVENUE_MIX)
+
+
+def test_a_rendered_but_unreadable_revenue_mix_is_drift_not_absence() -> None:
+    """An empty section and a missing one are different facts about the page."""
+    raw = (
+        _page()
+        .decode("utf-8")
+        .replace('<div class="rmix_graph_block', '<div class="rmix_other_block')
+    )
+    outcomes = {
+        outcome.section: outcome
+        for outcome in _build(raw.encode("utf-8"))[0].metadata.section_outcomes
+    }
+
+    revenue_mix = outcomes[TijoriOverviewSection.REVENUE_MIX]
+    assert revenue_mix.status is TijoriIslandStatus.UNPARSEABLE
+    assert revenue_mix.detail == "the element is rendered but carries no recognizable block"
+
+
+def test_every_section_declares_exactly_one_page_source() -> None:
+    """A section read from neither an island nor a DOM element could not be built."""
+    assert set(SECTION_SOURCE_IDS) == set(TijoriOverviewSection)
+    assert not set(SECTION_ISLAND_IDS) & set(DOM_SECTION_ELEMENT_IDS)

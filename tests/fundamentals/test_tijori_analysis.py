@@ -252,7 +252,53 @@ def test_a_published_value_is_distinguishable_from_an_omitted_one() -> None:
     """``amount_published`` exists so a null reading never hides which case it was."""
     window = _waterfall().windows[0]
 
-    assert [item.amount_published for item in window.items] == [True, True, False, True]
+    assert [item.amount_published for item in window.items] == [
+        True,
+        True,
+        False,
+        True,
+        False,
+    ]
+
+
+def test_waterfall_totals_are_derived_from_every_prior_non_sum_item() -> None:
+    """The verified rule is cumulative from the window start, not since the last total.
+
+    A second total that summed only the items after the first one would read
+    -1500 here instead of 5827, so this test is what pins the rule down.
+    """
+    window = _waterfall().windows[0]
+    ocf, fcff = window.items[2], window.items[4]
+
+    assert (ocf.name, ocf.derived_value) == ("OCF", Decimal("7327.0"))
+    assert (fcff.name, fcff.derived_value) == ("FCFF", Decimal("5827.0"))
+    assert ocf.derivation == "cumulative_sum_of_prior_items"
+    assert fcff.derivation == "cumulative_sum_of_prior_items"
+    assert (ocf.amount.value, ocf.amount_published) == (None, False)
+
+
+def test_a_derived_total_is_never_a_partial_sum() -> None:
+    """One unreadable prior item makes the whole total unknown, not smaller."""
+    window = _waterfall().windows[2]
+    total = window.items[2]
+
+    assert window.window == "5yr"
+    assert window.items[1].amount.value is None
+    assert total.is_sum is True
+    assert total.derived_value is None
+    assert total.derivation == "cumulative_sum_of_prior_items"
+
+
+def test_ordinary_items_and_unverified_sections_derive_nothing() -> None:
+    """Derivation is scoped to where it was verified; everywhere else stays untouched."""
+    published = _waterfall().windows[0].items[0]
+    fund_flow_items = [
+        item for group in _fund_flow().groups for window in group.windows for item in window.items
+    ]
+
+    assert (published.derived_value, published.derivation) == (None, "none")
+    assert all(item.derivation == "none" for item in fund_flow_items)
+    assert all(item.derived_value is None for item in fund_flow_items)
 
 
 def test_a_modeled_key_published_unreadably_is_retained_not_coerced() -> None:

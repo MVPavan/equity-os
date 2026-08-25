@@ -27,6 +27,7 @@ _ALL_SECTION_FILES = [
     "price_chart_peers.json",
     "price_returns.json",
     "ratios.json",
+    "revenue_mix.json",
 ]
 
 
@@ -179,6 +180,9 @@ def test_overview_cli_fails_when_the_page_carries_no_data_section(
             stripped,
             flags=re.DOTALL,
         )
+    # The revenue mix is rendered markup rather than an island, so stripping the
+    # islands alone would leave a data section standing.
+    stripped = re.sub(r'<section id="revenuemix">.*?</section>', "", stripped, flags=re.DOTALL)
 
     def fetch_stripped(source: TijoriSource, slug: str, credentials: TijoriCredentials) -> bytes:
         del source, slug, credentials

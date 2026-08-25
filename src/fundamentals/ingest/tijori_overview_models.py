@@ -5,7 +5,10 @@ The overview surface (``/company/<slug>/``) is one Django template carrying ~22
 strip, the custom-financial (operational KPI) blocks, market-share charts, the
 peer table, price returns, the intraday tick series, the daily price series, the
 price-chart peer list, and the company-details header. The rest are UI or plan
-metadata and are handled as metadata, never as data.
+metadata and are handled as metadata, never as data. The reverse-DCF widget is
+deliberately not among them: its numbers are computed in the browser rather than
+published, so it is documented as an exclusion in ``REVERSE_DCF_EXCLUSION``
+instead of being modeled.
 
 Schema authority is the owner's structure-only capture of TITAN's live overview
 page (2026-08-25). That capture is depth-capped in places — notably inside
@@ -71,11 +74,31 @@ class TijoriOverviewSection(StrEnum):
     PRICE_CHART = "price_chart"
     PRICE_CHART_PEERS = "price_chart_peers"
     COMPANY_DETAILS = "company_details"
+    REVENUE_MIX = "revenue_mix"
+
+
+class TijoriOverviewSourceKind(StrEnum):
+    """Where on the page a section's payload was read from.
+
+    Nearly every overview section is a ``json_script`` island, but the
+    revenue-mix break-ups are server-rendered markup carrying their data in an
+    element attribute. The two are re-found by different procedures, so a
+    consumer reading ``island_id`` needs to know which kind of location that
+    string names — an island id or a DOM element id.
+    """
+
+    JSON_ISLAND = "json_island"
+    RENDERED_HTML = "rendered_html"
 
 
 # Islands deliberately excluded: ``metrics`` (a stock-independent chart-metric
 # catalogue), ``user_prefs``, ``pagesremain``, ``timestamp``, ``is_landing_page``
 # and ``alerts_limit_exceeded`` are UI configuration carrying no issuer data.
+#
+# The reverse-DCF section is excluded on different grounds — see
+# REVERSE_DCF_EXCLUSION below. It is not absent from the page and not unmodeled
+# drift: its numbers are computed in the browser, so there is nothing on this
+# surface to acquire.
 SECTION_ISLAND_IDS: dict[TijoriOverviewSection, str] = {
     TijoriOverviewSection.CORPORATE_ACTIONS: "corporate_actions",
     TijoriOverviewSection.RATIOS: "ratios_table",
@@ -88,6 +111,33 @@ SECTION_ISLAND_IDS: dict[TijoriOverviewSection, str] = {
     TijoriOverviewSection.PRICE_CHART_PEERS: "price_chart_peers",
     TijoriOverviewSection.COMPANY_DETAILS: COMPANY_DETAILS_DATA_ISLAND_ID,
 }
+
+REVENUE_MIX_ELEMENT_ID = "revenuemix"
+
+# Sections read from rendered markup rather than from a JSON island. The value
+# is the DOM element id that locates the payload, which is what the section's
+# ``island_id`` records — see :class:`TijoriOverviewSourceKind`.
+DOM_SECTION_ELEMENT_IDS: dict[TijoriOverviewSection, str] = {
+    TijoriOverviewSection.REVENUE_MIX: REVENUE_MIX_ELEMENT_ID,
+}
+
+SECTION_SOURCE_IDS: dict[TijoriOverviewSection, str] = {
+    **SECTION_ISLAND_IDS,
+    **DOM_SECTION_ELEMENT_IDS,
+}
+
+
+REVERSE_DCF_EXCLUSION = (
+    "The reverse-DCF widget is NOT an acquisition surface. VERIFIED (owner "
+    "capture, 2026-08-25): its figures are computed client-side by the static "
+    "asset /static/javascript/reverse-dcf.js, which derives earnings as "
+    "mcap/PE and the implied growth rate from user-adjustable discount and "
+    "terminal-value inputs. The page carries no reverse-DCF data island and no "
+    "API backs it, so every number it displays is arithmetic over inputs the "
+    "viewer chose — including the implied-growth percentages an audit may read "
+    "off the rendered page. Acquiring them would record a reader's slider "
+    "positions as an issuer fact."
+)
 
 
 class TijoriOverviewIdentityError(TijoriParseError):
@@ -140,6 +190,7 @@ class TijoriOverviewSectionOutcome(BaseModel):
     island_id: str
     status: TijoriIslandStatus
     detail: str | None = None
+    source_kind: TijoriOverviewSourceKind = TijoriOverviewSourceKind.JSON_ISLAND
 
 
 class TijoriOverviewMetadata(BaseModel):
@@ -171,12 +222,17 @@ class TijoriOverviewSectionBase(BaseModel):
 
     ``unmodeled_fields_json`` preserves verbatim any key the island published
     that this contract does not model, so drift is recorded rather than lost.
+
+    ``island_id`` names the page location the section was read from, and
+    ``source_kind`` says what kind of location that is: a ``json_script`` id for
+    an island section, a DOM element id for a rendered-HTML one.
     """
 
     model_config = ConfigDict(frozen=True)
 
     section: TijoriOverviewSection
     island_id: str
+    source_kind: TijoriOverviewSourceKind = TijoriOverviewSourceKind.JSON_ISLAND
     unmodeled_fields_json: str | None = None
     metadata: TijoriOverviewMetadata
 
@@ -375,8 +431,24 @@ class TijoriPeersSection(TijoriOverviewSectionBase):
         return len(self.rows)
 
 
+PRICE_RETURNS_SEMANTICS = (
+    "Server-computed as of retrieval: these are the values the price_returns "
+    "island carried in the fetched response, fixed at metadata.retrieved_at. "
+    "The percentage in the page's own quote header is a DIFFERENT number — the "
+    "browser recomputes it from the live tick — so it drifts from this one "
+    "through the session and can even carry the opposite sign intraday. A "
+    "comparison against a rendered header is therefore not a check on this "
+    "value unless both were read at the same instant."
+)
+
+
 class TijoriPriceReturn(BaseModel):
-    """One trailing-window price return, keyed by Tijori's window label."""
+    """One trailing-window price return, keyed by Tijori's window label.
+
+    VERIFIED (same-response capture, 2026-08-25): the island's readings match
+    this adapter's artifact exactly. See :data:`PRICE_RETURNS_SEMANTICS` for why
+    the page header's percentage may not.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -385,9 +457,15 @@ class TijoriPriceReturn(BaseModel):
 
 
 class TijoriPriceReturnsSection(TijoriOverviewSectionBase):
-    """Trailing price returns in published window order."""
+    """Trailing price returns in published window order.
+
+    ``semantics_note`` travels with the artifact rather than living only in this
+    docstring, because the consumer most likely to mis-compare these values
+    against a live page header is reading the written JSON, not this module.
+    """
 
     returns: tuple[TijoriPriceReturn, ...]
+    semantics_note: str = PRICE_RETURNS_SEMANTICS
 
     @property
     def element_count(self) -> int:
@@ -435,6 +513,75 @@ class TijoriPriceChartPeersSection(TijoriOverviewSectionBase):
     def element_count(self) -> int:
         """Number of published price-chart peers."""
         return len(self.peers)
+
+
+class TijoriRevenueMixEntry(BaseModel):
+    """One slice of a revenue-mix break-up: its label and its published share."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str
+    value: Decimal
+    raw_text: str
+    provenance: Provenance
+
+
+class TijoriRevenueMixBreakUp(BaseModel):
+    """One break-up chart of the revenue-mix section, addressed by its chart id.
+
+    LIVE FACT (owner capture, 2026-08-25): the section renders one
+    ``div.rmix_graph_block`` per break-up — product-wise, location-wise,
+    operating-profit, asset — each carrying its title in an ``h4`` and its data
+    in a ``chart-data`` attribute holding an HTML-entity-encoded JSON array of
+    ``[label, number]`` pairs. This is attribute-embedded tabular data: the
+    values are re-found by fetching the page and reading a named attribute of a
+    named element, so slices anchor as ``HTML_TABLE`` against
+    ``table_id="rmix:<chart-id>"``.
+
+    ``status`` is ``PRESENT`` only for a block that satisfied that whole shape.
+    A block shaped differently — a historic wrapper beside the current ones, a
+    drifted attribute — is kept with ``UNPARSEABLE``, a ``detail`` naming why,
+    and its attributes retained verbatim in ``raw_block_json``.
+
+    ``company_id_attribute`` is the block's ``company-id`` attribute, retained
+    as source data under a name that records a MISNOMER. LIVE FACT (TITAN,
+    company 81, 2026-08-25): it duplicates the block's ``chart-id`` — both read
+    ``4280`` — and is not the issuer at all. It must never be read as identity
+    or checked against the page's company id; the island gate established
+    identity before this section was built.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str | None
+    chart_id: str | None
+    table_id: str | None
+    status: TijoriIslandStatus
+    entries: tuple[TijoriRevenueMixEntry, ...] = ()
+    detail: str | None = None
+    company_id_attribute: str | None = None
+    raw_block_json: str | None = None
+
+    @property
+    def entry_count(self) -> int:
+        """Number of readable slices this break-up carries."""
+        return len(self.entries)
+
+
+class TijoriRevenueMixSection(TijoriOverviewSectionBase):
+    """The revenue-mix break-ups in rendered order.
+
+    ``element_count`` counts readable slices rather than blocks, so a section of
+    four break-ups that this adapter could not read never reports as if it had
+    acquired four things.
+    """
+
+    break_ups: tuple[TijoriRevenueMixBreakUp, ...]
+
+    @property
+    def element_count(self) -> int:
+        """Number of readable slices across every published break-up."""
+        return sum(break_up.entry_count for break_up in self.break_ups)
 
 
 class TijoriQuickLookFlag(BaseModel):

@@ -22,6 +22,7 @@ from fundamentals.ingest.tijori_source import (
     TijoriSourceConfig,
 )
 from fundamentals.ingest.tijori_tables import (
+    LEFT_ANCHOR_EVIDENCED_TABLES,
     MAX_SUB_SECTION_DEPTH,
     TijoriCapabilityFlag,
     TijoriIslandStatus,
@@ -352,8 +353,13 @@ def test_non_numeric_cells_survive_as_raw_text_without_killing_the_table() -> No
     assert len(table.rows) == 8
 
 
-def test_short_and_long_rows_are_quarantined_not_fatal() -> None:
-    """A row whose value count disagrees with the columns must not kill the table."""
+def test_long_rows_are_quarantined_and_short_rows_are_left_anchored() -> None:
+    """A row whose value count disagrees with the columns must not kill the table.
+
+    The two disagreements are NOT symmetric, and conflating them would either
+    discard evidenced data or fabricate an alignment: a short row has rendered
+    evidence for left-anchoring (see ``_row_payload``), a long row has none.
+    """
     table = TijoriSource.parse_table_bytes(
         _HTML_FIXTURE.read_bytes(),
         key="pl_c_s",
@@ -366,14 +372,81 @@ def test_short_and_long_rows_are_quarantined_not_fatal() -> None:
     assert len(table.rows) == 5
     assert table.row("revenue").cells[1].value == Decimal("51000.875")
     assert table.row("pat").cells[0].value == Decimal("3200.25")
-    assert short.cells == ()
-    assert short.unaligned_raw_values == ("120.5",)
+    assert short.alignment == "left_anchored_trailing_missing"
+    assert (short.cells[0].value, short.cells[0].published) == (Decimal("120.5"), True)
+    assert (short.cells[1].value, short.cells[1].published) == (None, False)
+    assert short.unaligned_raw_values == ()
+    assert long_row.alignment == "exact"
     assert long_row.cells == ()
     assert long_row.unaligned_raw_values == ("80.25", "90.75", "100.0")
-    assert table.cardinality_mismatch_rows == (
-        "Raw Material/Steel",
-        "Raw Material/Gems & Jewellery",
+    assert table.cardinality_mismatch_rows == ("Raw Material/Gems & Jewellery",)
+    assert table.left_anchored_rows == ("Raw Material/Steel",)
+
+
+def test_a_short_row_outside_the_pl_family_is_still_quarantined() -> None:
+    """The left-anchor rule is P&L-scoped evidence, not a rule about Tijori tables.
+
+    The rendered proof covers the P&L family only. A balance-sheet short row has
+    no such observation, so inferring which periods its values belong to would
+    fabricate period assignments — it keeps the original quarantine instead.
+    """
+    balance_sheet = TijoriSource.parse_table_bytes(
+        _HTML_FIXTURE.read_bytes(),
+        key="bs_c_s",
+        slug=_TITAN_SLUG,
+        expected_symbol=_TITAN_SYMBOL,
     )
+    short = balance_sheet.row("Short Balance Row")
+
+    assert TijoriTableKey.BALANCE_SHEET_CONSOLIDATED_SUMMARY not in LEFT_ANCHOR_EVIDENCED_TABLES
+    assert short.alignment == "exact"
+    assert short.cells == ()
+    assert short.unaligned_raw_values == ("7500.0",)
+    assert balance_sheet.cardinality_mismatch_rows == ("Short Balance Row",)
+    assert balance_sheet.left_anchored_rows == ()
+
+
+def test_the_left_anchor_rule_is_scoped_to_the_evidenced_pl_tables() -> None:
+    """Only the four P&L keys carry the rendered evidence for left-anchoring."""
+    assert LEFT_ANCHOR_EVIDENCED_TABLES == {
+        TijoriTableKey.PROFIT_LOSS_CONSOLIDATED_DETAILED,
+        TijoriTableKey.PROFIT_LOSS_CONSOLIDATED_SUMMARY,
+        TijoriTableKey.PROFIT_LOSS_STANDALONE_DETAILED,
+        TijoriTableKey.PROFIT_LOSS_STANDALONE_SUMMARY,
+    }
+    assert all(key.value.startswith("pl_") for key in LEFT_ANCHOR_EVIDENCED_TABLES)
+
+
+def test_left_anchored_row_fills_the_first_columns_in_source_order() -> None:
+    """The evidenced rule is positional: values land in the FIRST columns, in order.
+
+    This is the NETWEB ``pl_s_s`` 'Others' shape — fewer values than columns,
+    rendered on the site as its values followed by em-dashes — so the test
+    fails if a future change ever right-anchors or reorders them.
+    """
+    table = TijoriSource.parse_table_bytes(
+        _HTML_FIXTURE.read_bytes(),
+        key="pl_s_s",
+        slug=_TITAN_SLUG,
+        expected_symbol=_TITAN_SYMBOL,
+    )
+    others = table.row("Others")
+
+    assert table.column_period_labels == ("Mar 2021", "Mar 2022", "Mar 2023", "Mar 2024")
+    assert tuple(cell.value for cell in others.cells) == (
+        Decimal("325.24"),
+        Decimal("563.812"),
+        None,
+        None,
+    )
+    assert tuple(cell.published for cell in others.cells) == (True, True, False, False)
+    assert tuple(cell.provenance.column_label for cell in others.cells) == (
+        table.column_period_labels
+    )
+    assert tuple(cell.raw_text for cell in others.cells[2:]) == ("", "")
+    assert table.row("revenue").alignment == "exact"
+    assert table.cardinality_mismatch_rows == ()
+    assert table.left_anchored_rows == ("Others",)
 
 
 def test_zero_length_value_row_is_a_header_not_a_quarantine() -> None:
@@ -614,6 +687,7 @@ def test_fetch_all_tables_covers_every_present_published_key() -> None:
         "fr_c",
         "growth",
         "pl_c_s",
+        "pl_s_s",
         "qt_c",
         "qt_s",
     )

@@ -57,9 +57,20 @@ def test_shareholding_cli_writes_structured_json_and_summary(
     assert fund["depth"] == 2
     assert fund["source_depth"] == 3
     assert fund["cells"][0]["provenance"]["anchor_type"] == "HTML_TABLE"
+    assert payload["breakups"][0]["table_id"] == "chartData:overview"
     summary = capsys.readouterr().out.splitlines()
-    assert summary[0].split("\t") == ["stock", "rows", "columns", "quarantined", "comp_id"]
-    assert summary[1].split("\t") == ["TITAN", "14", "3", "1", "81"]
+    assert summary[0].split("\t") == [
+        "stock",
+        "rows",
+        "columns",
+        "quarantined",
+        "breakups",
+        "unreadable",
+        "comp_id",
+    ]
+    # Two readable charts and the one drifted chart the fixture also carries, so
+    # a chart the page published but this adapter could not read stays visible.
+    assert summary[1].split("\t") == ["TITAN", "14", "3", "1", "2", "1", "81"]
 
 
 def test_shareholding_cli_refuses_to_overwrite_an_existing_artifact(

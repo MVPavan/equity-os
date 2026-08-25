@@ -149,6 +149,7 @@ def test_tijori_tables_cli_writes_every_present_table(
         "fr_c.json",
         "growth.json",
         "pl_c_s.json",
+        "pl_s_s.json",
         "qt_c.json",
         "qt_s.json",
     ]

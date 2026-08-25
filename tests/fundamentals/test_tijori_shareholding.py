@@ -9,6 +9,7 @@ island.
 
 from __future__ import annotations
 
+import re
 import urllib.request
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -21,6 +22,7 @@ import pytest
 from pydantic import ValidationError
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.tijori_common import TijoriIslandStatus
 from fundamentals.ingest.tijori_shareholding import (
     IDENTITY_ISLAND_IDS,
     MAX_SHAREHOLDING_DEPTH,
@@ -33,6 +35,7 @@ from fundamentals.ingest.tijori_shareholding import (
     TijoriShareholdingRowSelectionError,
     TijoriShareholdingSchemaError,
 )
+from fundamentals.ingest.tijori_shareholding_breakup import MAX_LITERAL_CHARS
 from fundamentals.ingest.tijori_source import (
     TijoriCredentials,
     TijoriFetchError,
@@ -514,3 +517,165 @@ def test_the_anchor_renderer_describes_the_html_table_location() -> None:
     assert "HTML table detailed_shareholding" in rendered
     assert "row Promoter" in rendered
     assert "column 0 (Mar'24)" in rendered
+
+
+def _breakup(subcategory: str, shareholding: TijoriShareholding | None = None) -> Any:
+    """Select one break-up chart by the subcategory its script declared."""
+    built = shareholding if shareholding is not None else _parse()
+    return next(entry for entry in built.breakups if entry.subcategory == subcategory)
+
+
+def test_breakup_charts_are_read_from_the_inline_script_literal() -> None:
+    """The aggregate charts are JS array literals, not JSON islands or table rows."""
+    overview = _breakup("overview")
+
+    assert overview.status is TijoriIslandStatus.PRESENT
+    assert overview.table_id == "chartData:overview"
+    assert [(entry.label, entry.value) for entry in overview.entries] == [
+        ("Promoter", Decimal("52.9")),
+        ("Mutual Funds", Decimal("8.73")),
+        ("Foreign Institutions", Decimal("17.42")),
+        ("Others", Decimal("20.95")),
+    ]
+
+
+def test_breakup_slices_are_anchored_by_position_in_their_chart() -> None:
+    """Nothing guarantees unique slice labels, so the index leads the address."""
+    entries = _breakup("overview").entries
+
+    first = entries[0].provenance
+    assert first.anchor_type is SourceAnchorType.HTML_TABLE
+    assert first.table_id == "chartData:overview"
+    assert first.row_path == "0/Promoter"
+    assert first.column_index == 0
+    assert first.column_label == "value"
+    assert first.island_id is None
+    assert [entry.provenance.column_index for entry in entries] == [0, 1, 2, 3]
+
+
+def test_every_declared_subcategory_is_acquired() -> None:
+    """The page declares more than one chart; acquiring only the first would lose data."""
+    trend = _breakup("trend")
+
+    assert trend.table_id == "chartData:trend"
+    assert [entry.label for entry in trend.entries] == ["Promoter", "Institutions"]
+
+
+def test_an_identical_repeat_of_one_chart_collapses_to_a_single_breakup() -> None:
+    """The template renders one chart in two layout slots; that is not two charts."""
+    built = _parse()
+
+    assert [entry.subcategory for entry in built.breakups] == [
+        "overview",
+        "trend",
+        "category",
+    ]
+
+
+def test_disagreeing_charts_are_refused_without_killing_the_detailed_table() -> None:
+    """A self-contradicting chart script is a fact about that chart, not the page.
+
+    Neither literal can be read as the subcategory's chart, so both are retained
+    and the break-up is refused — but the detailed shareholding table is this
+    page's authoritative payload and must survive it intact.
+    """
+    raw = _mutated("['Promoter', 52.9], ['Institutions', 26.15]", "['Promoter', 99.9]").replace(
+        b'var subcategory = "trend";', b'var subcategory = "overview";'
+    )
+    built = _parse(raw)
+    overview = _breakup("overview", built)
+
+    # The table is untouched by the conflict beside it.
+    assert built.row("Promoter").cells[0].value == Decimal("52.9")
+    assert len(built.rows) == 14
+    assert built.column_period_labels == ("Mar'24", "Jun'24", "Sep'24")
+
+    assert overview.status is TijoriIslandStatus.UNPARSEABLE
+    assert overview.entries == ()
+    assert overview.detail is not None
+    assert "disagreeing chartData" in overview.detail
+    # BOTH competing literals survive, so the conflict can be inspected rather
+    # than one of them being silently promoted to the truth.
+    assert len(overview.raw_literals) == 2
+    assert any("52.9], ['Mutual Funds'" in literal for literal in overview.raw_literals)
+    assert any("['Promoter', 99.9]" in literal for literal in overview.raw_literals)
+
+
+def test_a_drifted_chart_literal_is_retained_not_partially_read() -> None:
+    """A chart is a split of one total; reading the rows that parse would misstate it."""
+    category = _breakup("category")
+
+    assert category.status is TijoriIslandStatus.UNPARSEABLE
+    assert category.entries == ()
+    assert category.detail is not None
+    assert "not a 2-element pair" in category.detail
+    assert len(category.raw_literals) == 1
+    assert "'Promoter', 52.9, 'extra'" in category.raw_literals[0]
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected_detail"),
+    [
+        ("__import__('os').system('id')", "not a readable"),
+        ("{'Promoter': 52.9}", "not a non-empty list"),
+        ("[[52.9, 'Promoter']]", "no readable label"),
+        ("[['Promoter', [1, 2]]]", "value is not a number"),
+        ("[['Promoter', True]]", "value is not a number"),
+        ("[['Promoter', 52.9]", "not a readable"),
+    ],
+)
+def test_hostile_chart_literals_are_refused_by_the_shape_gate(
+    literal: str, expected_detail: str
+) -> None:
+    """Page content is untrusted: only a list of [label, number] pairs is accepted."""
+    raw = _mutated(
+        "[['Promoter', 52.9], ['Institutions', 26.15]]",
+        literal,
+    )
+    built = _parse(raw)
+    trend = _breakup("trend", built)
+
+    assert trend.status is TijoriIslandStatus.UNPARSEABLE
+    assert trend.detail is not None
+    assert expected_detail in trend.detail
+    assert built.row("Promoter").cells[0].value == Decimal("52.9")
+
+
+def test_a_deeply_nested_chart_literal_never_takes_the_page_down() -> None:
+    """Nesting is a resource-exhaustion vector, so its failure mode is a refusal.
+
+    Which exception CPython raises at depth is a version detail; that the table
+    still parses and the chart is marked unreadable is the contract.
+    """
+    built = _parse(_mutated("[['Promoter', 52.9], ['Institutions', 26.15]]", "[" * 400 + "]" * 400))
+    trend = _breakup("trend", built)
+
+    assert trend.status is TijoriIslandStatus.UNPARSEABLE
+    assert trend.entries == ()
+    assert built.row("Promoter").cells[0].value == Decimal("52.9")
+
+
+def test_an_oversized_chart_literal_is_refused_unparsed() -> None:
+    """A literal above the parse limit is never handed to literal_eval at all."""
+    oversized = "[" + ", ".join(f"['Slice {index}', 1.0]" for index in range(20000)) + "]"
+    assert len(oversized) > MAX_LITERAL_CHARS
+    built = _parse(_mutated("[['Promoter', 52.9], ['Institutions', 26.15]]", oversized))
+    trend = _breakup("trend", built)
+
+    assert trend.status is TijoriIslandStatus.UNPARSEABLE
+    assert trend.detail is not None
+    assert "above the" in trend.detail
+
+
+def test_a_page_with_no_chart_scripts_still_yields_the_detailed_table() -> None:
+    """The charts are additive; a page without them is not a degraded acquisition."""
+    stripped = re.sub(
+        r"<section id=\"(overview|trend|overview-mobile|category)\">.*?</section>",
+        "",
+        _FIXTURE_TEXT,
+        flags=re.DOTALL,
+    )
+    built = _parse(stripped.encode("utf-8"))
+
+    assert built.breakups == ()
+    assert built.row("Promoter").cells[0].value == Decimal("52.9")

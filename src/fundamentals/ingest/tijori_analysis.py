@@ -16,7 +16,10 @@ Four rules hold across every builder, matching the page-island families:
   never dropped, and a modeled key published unreadably is retained separately;
 * a numeric lexeme reads through the shared Tijori cell rule, so the source text
   survives beside its ``Decimal | None`` reading — and an omitted value stays
-  omitted rather than being computed.
+  omitted in ``amount`` rather than being computed. Where a total's derivation
+  is rendered-verified it is computed into the separate ``derived_value`` slot,
+  labelled with the rule that produced it, so a derived number is never mistaken
+  for a published one.
 """
 
 from __future__ import annotations
@@ -55,6 +58,7 @@ from fundamentals.ingest.tijori_analysis_models import (
     TijoriOpMetricsSection,
     TijoriSnapshotEntry,
     TijoriSnapshotSide,
+    TijoriSumDerivation,
 )
 from fundamentals.ingest.tijori_series import read_series
 from fundamentals.ingest.tijori_tables import TIJORI_SOURCE_ID, cell_reading, raw_json
@@ -291,17 +295,74 @@ def _flow_item(
     )
 
 
+def _window_items(
+    raw_items: Any,
+    context: AnalysisContext,
+    *,
+    label: str,
+    window: str,
+    prefix: str,
+    derive_sums: bool,
+) -> tuple[TijoriFlowItem, ...]:
+    """Build one window's items, deriving its total rows when the rule is evidenced.
+
+    RENDERED VERIFICATION (TITAN cash-flow waterfall, owner capture 2026-08-25):
+    every ``isSum`` row the page displays equals the cumulative sum of ALL prior
+    non-sum items in the same window — prior sum rows are never re-added. On the
+    1yr window that rule reproduces each displayed total exactly: CFO 5590,
+    FCFF 4688, FCFE 1056, Core 80, Net Cash 497.
+
+    The derivation is applied only where it was verified (``derive_sums``), never
+    to a section whose totals were not checked against a rendering. It is never
+    partial: if any prior item in the window carries a null reading — the source
+    omitted or published it unreadably — the sum cannot be completed and
+    ``derived_value`` stays None rather than silently reporting the total of the
+    items that happened to parse. A sum row with no prior items derives nothing,
+    because the sum of nothing is an assumption, not an observation.
+    """
+    items: list[TijoriFlowItem] = []
+    running_total: Decimal | None = Decimal(0)
+    prior_items = 0
+    for index, raw_item in enumerate(_as_list(raw_items, f"{label} {window}")):
+        item = _flow_item(raw_item, context, table_key=window, prefix=prefix, index=index)
+        if item.is_sum:
+            if derive_sums:
+                item = item.model_copy(
+                    update={
+                        "derived_value": running_total if prior_items else None,
+                        "derivation": TijoriSumDerivation.CUMULATIVE_SUM_OF_PRIOR_ITEMS,
+                    }
+                )
+        else:
+            prior_items += 1
+            value = item.amount.value
+            running_total = (
+                None if running_total is None or value is None else running_total + value
+            )
+        items.append(item)
+    return tuple(items)
+
+
 def _windows(
-    raw_windows: Any, context: AnalysisContext, *, label: str, prefix: str = ""
+    raw_windows: Any,
+    context: AnalysisContext,
+    *,
+    label: str,
+    prefix: str = "",
+    derive_sums: bool = False,
 ) -> tuple[tuple[TijoriAnalysisWindow, ...], tuple[str, ...]]:
     """Build every published window, keeping its source key exactly as given."""
     windows = _as_object(raw_windows, label)
     built = tuple(
         TijoriAnalysisWindow(
             window=window,
-            items=tuple(
-                _flow_item(raw_item, context, table_key=window, prefix=prefix, index=index)
-                for index, raw_item in enumerate(_as_list(raw_items, f"{label} {window}"))
+            items=_window_items(
+                raw_items,
+                context,
+                label=label,
+                window=window,
+                prefix=prefix,
+                derive_sums=derive_sums,
             ),
         )
         for window, raw_items in windows.items()
@@ -410,9 +471,16 @@ def build_balance_sheet_snapshot(
 def build_cash_flow_waterfall(
     document: dict[str, Any], context: AnalysisContext
 ) -> TijoriCashFlowWaterfallSection:
-    """Build the cash-flow waterfall steps for every published window."""
+    """Build the cash-flow waterfall steps for every published window.
+
+    This is the one section whose ``isSum`` derivation is rendered-verified, so
+    it is the only one that asks for derived totals; see :func:`_window_items`.
+    """
     windows, unknown = _windows(
-        _required_data(document, context), context, label=f"{context.document_id} data"
+        _required_data(document, context),
+        context,
+        label=f"{context.document_id} data",
+        derive_sums=True,
     )
     return TijoriCashFlowWaterfallSection(
         section=context.section,

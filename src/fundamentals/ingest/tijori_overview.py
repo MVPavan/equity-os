@@ -9,6 +9,13 @@ header and its forensic checklist,
 :mod:`fundamentals.ingest.tijori_overview_company`; their shared element helpers
 in :mod:`fundamentals.ingest.tijori_overview_common`.
 
+Not every section is an island. The revenue-mix break-ups are server-rendered
+markup carrying their data in an element attribute, collected by
+:mod:`fundamentals.ingest.tijori_overview_revenue_mix`. Such a section is
+classified from what the page rendered rather than from the island map, and its
+outcome records ``source_kind`` so a consumer knows whether ``island_id`` names
+a ``json_script`` id or a DOM element id.
+
 Identity FACT (owner capture, 2026-08-25): unlike the shareholding page, the
 overview page DOES publish an identity island — ``company_details_data`` carries
 both ``company_id`` and ``symbol`` — and it separately publishes the bare
@@ -39,6 +46,7 @@ from fundamentals.ingest.tijori_overview_models import (
     COMPANY_DETAILS_DATA_ISLAND_ID,
     COMPANY_ID_ISLAND_ID,
     COMPANY_STATUS_ISLAND_ID,
+    DOM_SECTION_ELEMENT_IDS,
     IS_AUTH_ISLAND_ID,
     IS_BANKING_ISLAND_ID,
     OVERVIEW_LOCKS_ISLAND_ID,
@@ -51,7 +59,9 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSectionBase,
     TijoriOverviewSectionOutcome,
     TijoriOverviewSectionsAbsentError,
+    TijoriOverviewSourceKind,
 )
+from fundamentals.ingest.tijori_overview_revenue_mix import collect_revenue_mix_blocks
 from fundamentals.ingest.tijori_overview_sections import SECTION_BUILDERS
 from fundamentals.ingest.tijori_page import collect_islands, decode_document
 from fundamentals.ingest.tijori_tables import (
@@ -91,6 +101,8 @@ _DATA_SECTIONS = frozenset(
 
 _NULL_ISLAND_DETAIL = "island published as JSON null"
 _MISSING_ISLAND_DETAIL = "island not present on the page"
+_MISSING_ELEMENT_DETAIL = "no element with this id is rendered on the page"
+_EMPTY_ELEMENT_DETAIL = "the element is rendered but carries no recognizable block"
 
 
 def _verified_identity(
@@ -143,6 +155,32 @@ def _verified_identity(
             )
         matched.append(COMPANY_ID_ISLAND_ID)
     return symbol.strip(), company_id, tuple(matched)
+
+
+def _dom_section_outcome(
+    section: TijoriOverviewSection, payload: tuple[Any, ...] | None
+) -> TijoriOverviewSectionOutcome:
+    """Classify one rendered-markup section from what the page actually rendered.
+
+    A page with no such element published nothing, which is data about the
+    company. An element that rendered but carried no recognizable block is
+    different — the section exists and this adapter could not read any of it —
+    so it is recorded as drift rather than as an ordinary absence.
+    """
+    element_id = DOM_SECTION_ELEMENT_IDS[section]
+    if payload is None:
+        status, detail = TijoriIslandStatus.ABSENT, _MISSING_ELEMENT_DETAIL
+    elif not payload:
+        status, detail = TijoriIslandStatus.UNPARSEABLE, _EMPTY_ELEMENT_DETAIL
+    else:
+        status, detail = TijoriIslandStatus.PRESENT, None
+    return TijoriOverviewSectionOutcome(
+        section=section,
+        island_id=element_id,
+        status=status,
+        detail=detail,
+        source_kind=TijoriOverviewSourceKind.RENDERED_HTML,
+    )
 
 
 def _section_outcome(
@@ -262,7 +300,15 @@ def build_tijori_overview(
     symbol, company_id, identity_island_ids = _verified_identity(
         islands, expected_symbol=expected_symbol, expected_company_id=expected_company_id
     )
-    outcomes = tuple(_section_outcome(known, islands) for known in TijoriOverviewSection)
+    dom_payloads: dict[TijoriOverviewSection, tuple[Any, ...] | None] = {
+        TijoriOverviewSection.REVENUE_MIX: collect_revenue_mix_blocks(document)
+    }
+    outcomes = tuple(
+        _dom_section_outcome(known, dom_payloads[known])
+        if known in DOM_SECTION_ELEMENT_IDS
+        else _section_outcome(known, islands)
+        for known in TijoriOverviewSection
+    )
     metadata = _build_metadata(
         islands,
         outcomes,
@@ -294,10 +340,13 @@ def build_tijori_overview(
             )
     sections = tuple(
         SECTION_BUILDERS[outcome.section](
-            islands[outcome.island_id],
+            dom_payloads[outcome.section]
+            if outcome.section in DOM_SECTION_ELEMENT_IDS
+            else islands[outcome.island_id],
             SectionContext(
                 section=outcome.section,
                 island_id=outcome.island_id,
+                source_kind=outcome.source_kind,
                 source_url=source_url,
                 content_sha256=metadata.file_sha256,
                 retrieved_at=retrieved_at,

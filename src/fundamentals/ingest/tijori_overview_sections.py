@@ -73,6 +73,7 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriRatio,
     TijoriRatiosSection,
 )
+from fundamentals.ingest.tijori_overview_revenue_mix import build_revenue_mix
 from fundamentals.ingest.tijori_tables import cell_reading, raw_json
 
 _LOGGER = structlog.get_logger(__name__)
@@ -568,4 +569,7 @@ SECTION_BUILDERS: dict[
     TijoriOverviewSection.PRICE_CHART: build_price_series,
     TijoriOverviewSection.PRICE_CHART_PEERS: build_price_chart_peers,
     TijoriOverviewSection.COMPANY_DETAILS: build_company_details,
+    # The one builder whose payload is collected off the rendered markup rather
+    # than decoded from a JSON island; it takes the same (payload, context) pair.
+    TijoriOverviewSection.REVENUE_MIX: build_revenue_mix,
 }

@@ -24,6 +24,7 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewNumber,
     TijoriOverviewSchemaError,
     TijoriOverviewSection,
+    TijoriOverviewSourceKind,
     TijoriSeriesPoint,
 )
 from fundamentals.ingest.tijori_series import read_series
@@ -44,12 +45,18 @@ _UTC_OFFSET = "+00:00"
 
 
 class SectionContext(BaseModel):
-    """Invariant inputs shared by every element built for one section."""
+    """Invariant inputs shared by every element built for one section.
+
+    ``island_id`` is the page location the section is read from and
+    ``source_kind`` says what kind of location that is — a JSON island for
+    almost every section, rendered markup for the revenue mix.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     section: TijoriOverviewSection
     island_id: str
+    source_kind: TijoriOverviewSourceKind = TijoriOverviewSourceKind.JSON_ISLAND
     source_url: str
     content_sha256: str
     retrieved_at: datetime

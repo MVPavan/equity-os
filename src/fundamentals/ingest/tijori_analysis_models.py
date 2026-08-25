@@ -227,13 +227,33 @@ class TijoriAnalysisFetch(BaseModel):
     raw_body: bytes
 
 
+class TijoriSumDerivation(StrEnum):
+    """How a total row's ``derived_value`` was arrived at, if at all.
+
+    ``NONE`` is every ordinary item: nothing was derived and ``derived_value``
+    is null. ``CUMULATIVE_SUM_OF_PRIOR_ITEMS`` is the one evidenced derivation —
+    see :func:`fundamentals.ingest.tijori_analysis._window_items` for the
+    rendered verification behind it and for the sections it is applied to.
+    """
+
+    NONE = "none"
+    CUMULATIVE_SUM_OF_PRIOR_ITEMS = "cumulative_sum_of_prior_items"
+
+
 class TijoriFlowItem(BaseModel):
     """One item of a fund-flow group window or a cash-flow waterfall window.
 
     ``amount_published`` is False when the document omitted ``y`` entirely,
-    which the waterfall does for its derived total rows. Those rows keep a null
-    reading rather than a fabricated sum: this adapter never computes a value
-    the source declined to state.
+    which the waterfall does for its derived total rows. ``amount`` keeps a null
+    reading for those rows rather than a fabricated sum: this adapter never
+    presents a computed number as something the source stated.
+
+    ``derived_value`` is the separate, explicitly-labelled slot for a number
+    this adapter computed itself. It is populated only for ``is_sum`` rows of a
+    section whose derivation rule is rendered-verified, and ``derivation`` names
+    the rule that produced it. A consumer that wants only source-stated numbers
+    reads ``amount``; one that wants the total the page displays reads
+    ``derived_value`` and can see exactly how it was obtained.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -242,6 +262,8 @@ class TijoriFlowItem(BaseModel):
     amount: TijoriAnalysisAmount
     amount_published: bool
     is_sum: bool
+    derived_value: Decimal | None = None
+    derivation: TijoriSumDerivation = TijoriSumDerivation.NONE
     unmodeled_fields_json: str | None = None
     invalid_fields_json: str | None = None
 

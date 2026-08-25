@@ -9,6 +9,7 @@ import structlog
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
 from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.ingest.tijori_common import TijoriIslandStatus
 from fundamentals.ingest.tijori_shareholding import TijoriShareholding
 from fundamentals.ingest.tijori_source import (
     TijoriCredentials,
@@ -22,7 +23,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_OUT_ROOT = _REPO_ROOT / "data" / "raw" / "watchlist" / "tijori-shareholding"
 _ARTIFACT_FILENAME = "shareholding.json"
-_SUMMARY_HEADER = "stock\trows\tcolumns\tquarantined\tcomp_id"
+# ``unreadable`` is reported beside ``breakups`` so a chart script the page
+# published but this adapter could not read is visible in the run output, rather
+# than being indistinguishable from a page that published no chart at all.
+_SUMMARY_HEADER = "stock\trows\tcolumns\tquarantined\tbreakups\tunreadable\tcomp_id"
 
 
 def add_tijori_shareholding_parser(
@@ -82,6 +86,7 @@ def run_tijori_shareholding_command(
         rows=len(shareholding.rows),
         columns=len(shareholding.column_period_labels),
         quarantined_rows=shareholding.cardinality_mismatch_rows,
+        breakups=[breakup.subcategory for breakup in shareholding.breakups],
         identity_islands=shareholding.metadata.identity_island_ids,
         path=str(out_path),
     )
@@ -89,13 +94,20 @@ def run_tijori_shareholding_command(
 
 
 def render_tijori_shareholding_summary(shareholding: TijoriShareholding) -> str:
-    """Render deterministic row and column counts plus the verified company id."""
+    """Render deterministic row, column, and break-up counts plus the company id."""
+    unreadable = tuple(
+        breakup
+        for breakup in shareholding.breakups
+        if breakup.status is not TijoriIslandStatus.PRESENT
+    )
     row = "\t".join(
         (
             shareholding.metadata.symbol,
             str(len(shareholding.rows)),
             str(len(shareholding.column_period_labels)),
             str(len(shareholding.cardinality_mismatch_rows)),
+            str(len(shareholding.breakups) - len(unreadable)),
+            str(len(unreadable)),
             str(shareholding.metadata.company_id),
         )
     )

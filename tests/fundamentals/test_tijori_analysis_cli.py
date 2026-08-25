@@ -483,7 +483,7 @@ def test_the_analysis_request_carries_the_session_cookie_and_no_body(
         section=TijoriAnalysisSection.CASH_FLOW_WATERFALL,
     )
 
-    assert fetch.document.element_count == 7
+    assert fetch.document.element_count == 11
     assert fetch.raw_body == body
     request = opener.calls[0]
     assert request.get_method() == "GET"

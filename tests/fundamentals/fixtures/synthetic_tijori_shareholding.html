@@ -67,6 +67,35 @@
     <!-- The page renders its company heading a second time. -->
     <h1 comp_id="81">Titan Company Ltd.</h1>
 
+    <!-- Aggregate break-up charts: JS array literals, not JSON islands. -->
+    <section id="overview">
+      <script>
+        var subcategory = "overview";
+        var chartData= [['Promoter', 52.9], ['Mutual Funds', 8.73], ['Foreign Institutions', 17.42], ['Others', 20.95]];
+        renderPie(chartData, subcategory);
+      </script>
+    </section>
+    <section id="trend">
+      <script>
+        var subcategory = "trend";
+        var chartData= [['Promoter', 52.9], ['Institutions', 26.15]];
+      </script>
+    </section>
+    <!-- The overview chart repeats byte-identically in a second layout slot. -->
+    <section id="overview-mobile">
+      <script>
+        var subcategory = "overview";
+        var chartData= [['Promoter', 52.9], ['Mutual Funds', 8.73], ['Foreign Institutions', 17.42], ['Others', 20.95]];
+      </script>
+    </section>
+    <!-- Drift: a chart whose literal is not a list of [label, number] pairs. -->
+    <section id="category">
+      <script>
+        var subcategory = "category";
+        var chartData= [['Promoter', 52.9, 'extra'], ['Public', 47.1]];
+      </script>
+    </section>
+
     <!-- The detailed shareholding table, in its real section wrapper. -->
     <section id="detailed" subpart="detailed-shareholding" mainpart="shareholding">
     <table id="company_detailed" class="display optables dataTable no-footer company_table sticky_last">

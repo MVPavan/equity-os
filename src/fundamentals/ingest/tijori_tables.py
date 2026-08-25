@@ -4,15 +4,18 @@ Acquisition contract: a table is parsed whenever its raw data exists in the
 ``fin_tables_data`` island. Plan and capability state (``financials_locks``,
 ``plan_details``) is metadata carried beside the table — it never decides whether
 data is parsed, and it is never interpreted as a table key.
+
+The cross-surface primitives this module is built on — the numeric-lexeme rule,
+verbatim retention, and the plan/capability contract — live in
+:mod:`fundamentals.ingest.tijori_common` and are re-exported here so every
+existing importer of this module reaches them unchanged.
 """
 
 from __future__ import annotations
 
-import json
-import re
 from collections import Counter
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -20,13 +23,46 @@ import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.tijori_common import (
+    FINANCIALS_LOCKS_ISLAND_ID as FINANCIALS_LOCKS_ISLAND_ID,
+)
+from fundamentals.ingest.tijori_common import (
+    PLAN_DETAILS_ISLAND_ID as PLAN_DETAILS_ISLAND_ID,
+)
+from fundamentals.ingest.tijori_common import (
+    TIJORI_SOURCE_ID as TIJORI_SOURCE_ID,
+)
+from fundamentals.ingest.tijori_common import (
+    TijoriCapabilityFlag as TijoriCapabilityFlag,
+)
+from fundamentals.ingest.tijori_common import (
+    TijoriFeatureLock as TijoriFeatureLock,
+)
+from fundamentals.ingest.tijori_common import (
+    TijoriIslandStatus as TijoriIslandStatus,
+)
+from fundamentals.ingest.tijori_common import (
+    TijoriTableAccessMetadata as TijoriTableAccessMetadata,
+)
+from fundamentals.ingest.tijori_common import (
+    TijoriUnparseableIsland as TijoriUnparseableIsland,
+)
+from fundamentals.ingest.tijori_common import (
+    build_page_access as build_page_access,
+)
+from fundamentals.ingest.tijori_common import (
+    cell_reading as cell_reading,
+)
+from fundamentals.ingest.tijori_common import (
+    decimal_from_text as decimal_from_text,
+)
+from fundamentals.ingest.tijori_common import (
+    raw_json as raw_json,
+)
 
 _LOGGER = structlog.get_logger(__name__)
 
-TIJORI_SOURCE_ID = "tijori"
 FINANCIALS_ISLAND_ID = "fin_tables_data"
-FINANCIALS_LOCKS_ISLAND_ID = "financials_locks"
-PLAN_DETAILS_ISLAND_ID = "plan_details"
 
 MAX_SUB_SECTION_DEPTH = 8
 ROW_KEY_SEPARATOR = "/"
@@ -43,8 +79,6 @@ _ROW_LABEL_FIELD = "name"
 _ROW_VALUES_FIELD = "value"
 _ROW_FIELD_ID_FIELD = "field"
 _SUB_SECTION_FIELD = "sub_section"
-_PLAN_NAME_FIELD = "name"
-_PLAN_TIER_FIELD = "plan_tier"
 
 _KNOWN_TABLE_FIELDS = frozenset(
     {
@@ -61,10 +95,6 @@ _KNOWN_TABLE_FIELDS = frozenset(
 _ABSENT_FIELD_IDS = frozenset({"", "NA"})
 # Leaf rows report no children as either an empty list or an empty string.
 _LEAF_SUB_SECTIONS: tuple[Any, ...] = ("", [])
-
-_THOUSANDS_SEPARATOR = ","
-_PLAIN_DECIMAL = re.compile(r"^[+-]?\d+(\.\d+)?$")
-_NULL_CELL_TEXT = ""
 
 
 class TijoriError(Exception):
@@ -159,75 +189,62 @@ _TABLE_SCOPES: dict[TijoriTableKey, TijoriTableScope] = {
 }
 
 
-class TijoriCapabilityFlag(BaseModel):
-    """One boolean capability flag Tijori reports for a page feature."""
+# Table keys where the left-anchor rule for a short row is EVIDENCED, and
+# therefore the only keys it is applied to.
+#
+# Evidence scope (owner captures, 2026-08-25): the rendered proof is the P&L
+# family and nothing else. ``pl_s_s`` is DOM-verified directly — NETWEB's
+# 'Others' row publishes 6 values against 10 columns and the site renders them
+# in the FIRST six columns with em-dashes after. The other three P&L keys carry
+# the identical ``fs_name='rm'`` derived sub-rows, observed live across the
+# 10-stock smokes: same row source, same structure, so the same rule holds.
+#
+# Every other family — balance sheet, cash flow, ratios, growth, quarterly — has
+# NO such observation, so a short row there keeps the original quarantine. A
+# short row is only alignable where something actually showed which end is
+# missing; extending this set needs new rendered evidence, not the assumption
+# that one family's layout generalizes.
+LEFT_ANCHOR_EVIDENCED_TABLES = frozenset(
+    {
+        TijoriTableKey.PROFIT_LOSS_CONSOLIDATED_DETAILED,
+        TijoriTableKey.PROFIT_LOSS_CONSOLIDATED_SUMMARY,
+        TijoriTableKey.PROFIT_LOSS_STANDALONE_DETAILED,
+        TijoriTableKey.PROFIT_LOSS_STANDALONE_SUMMARY,
+    }
+)
 
-    model_config = ConfigDict(frozen=True)
 
-    name: str
-    enabled: bool
+class TijoriRowAlignment(StrEnum):
+    """How one row's published values were mapped onto the table's columns.
 
-
-class TijoriFeatureLock(BaseModel):
-    """Capability flags for one page feature (``rdcf``, ``qtly_results``, ...).
-
-    Feature names are a UI capability namespace, not table keys. An unrecognized
-    value shape is preserved verbatim in ``raw_value_json`` instead of failing.
+    ``EXACT`` is the ordinary case: the row published one value per column.
+    ``LEFT_ANCHORED_TRAILING_MISSING`` is the evidenced rule for a row that
+    published FEWER values than the table has columns, and applies only to the
+    tables in :data:`LEFT_ANCHOR_EVIDENCED_TABLES` — see :func:`_row_payload`
+    for the rendered evidence and its scope.
     """
 
-    model_config = ConfigDict(frozen=True)
-
-    feature: str
-    flags: tuple[TijoriCapabilityFlag, ...] = ()
-    raw_value_json: str | None = None
-
-
-class TijoriIslandStatus(StrEnum):
-    """Acquisition state of one optional metadata island."""
-
-    PRESENT = "present"
-    ABSENT = "absent"
-    UNPARSEABLE = "unparseable"
-
-
-class TijoriUnparseableIsland(BaseModel):
-    """An optional island that was on the page but could not be decoded."""
-
-    model_config = ConfigDict(frozen=True)
-
-    island_id: str
-    error: str
-
-
-class TijoriTableAccessMetadata(BaseModel):
-    """Plan and capability state observed on the page; never gates parsing.
-
-    Each optional island carries its own status so an absent island, an
-    undecodable one, and a genuinely empty one never serialize alike. An island
-    id is recorded only when that island was actually present.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    plan_name: str | None = None
-    plan_tier: str | None = None
-    feature_locks: tuple[TijoriFeatureLock, ...] = ()
-    financials_locks_status: TijoriIslandStatus = TijoriIslandStatus.ABSENT
-    plan_details_status: TijoriIslandStatus = TijoriIslandStatus.ABSENT
-    financials_locks_error: str | None = None
-    plan_details_error: str | None = None
-    locks_island_id: str | None = None
-    plan_island_id: str | None = None
+    EXACT = "exact"
+    LEFT_ANCHORED_TRAILING_MISSING = "left_anchored_trailing_missing"
 
 
 class TijoriTableCell(BaseModel):
-    """One raw table cell: the source lexeme plus its numeric reading, if any."""
+    """One raw table cell: the source lexeme plus its numeric reading, if any.
+
+    ``published`` is False for a trailing cell the row did not publish at all,
+    which only happens under
+    :attr:`TijoriRowAlignment.LEFT_ANCHORED_TRAILING_MISSING`. Such a cell reads
+    the same as a published null (``value`` None, empty ``raw_text``), so the
+    flag is what keeps "the source stated nothing here" from serializing
+    identically to "the source stated null here".
+    """
 
     model_config = ConfigDict(frozen=True)
 
     value: Decimal | None
     raw_text: str
     provenance: Provenance
+    published: bool = True
 
 
 class TijoriTableRow(BaseModel):
@@ -237,7 +254,9 @@ class TijoriTableRow(BaseModel):
     table-unique: ``fr_c`` publishes ``ebit`` under two derivation contexts.
     ``field_id`` is therefore source metadata, never the address.
 
-    A row whose value count disagrees with the table's column count is
+    A row with FEWER values than columns is aligned left onto the report dates
+    by the evidenced rule in :func:`_row_payload` and marked
+    ``LEFT_ANCHORED_TRAILING_MISSING``. A row with MORE values than columns is
     quarantined: ``cells`` is empty and the raw lexemes survive in
     ``unaligned_raw_values``. An empty ``cells`` with no unaligned values is the
     ordinary section-header case.
@@ -250,6 +269,7 @@ class TijoriTableRow(BaseModel):
     field_id: str | None
     parent_labels: tuple[str, ...]
     depth: int
+    alignment: TijoriRowAlignment = TijoriRowAlignment.EXACT
     cells: tuple[TijoriTableCell, ...]
     unaligned_raw_values: tuple[str, ...] = ()
 
@@ -272,7 +292,15 @@ class TijoriTableMetadata(BaseModel):
 
 
 class TijoriTable(BaseModel):
-    """One immutable raw Tijori financial table in source row order."""
+    """One immutable raw Tijori financial table in source row order.
+
+    The two row-level exception lists never overlap and must not be read alike:
+    ``cardinality_mismatch_rows`` names rows that could not be aligned at all
+    and hold no cells, while ``left_anchored_rows`` names rows that WERE aligned
+    — by the evidenced left-anchor rule, not by the source's own cardinality —
+    and do hold cells. A consumer that treats an inferred alignment as a
+    published one needs the second list to tell them apart.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -284,6 +312,7 @@ class TijoriTable(BaseModel):
     table_footer_json: str | None = None
     rows: tuple[TijoriTableRow, ...]
     cardinality_mismatch_rows: tuple[str, ...] = ()
+    left_anchored_rows: tuple[str, ...] = ()
     metadata: TijoriTableMetadata
 
     def row(self, selector: str) -> TijoriTableRow:
@@ -351,11 +380,6 @@ def _field_id(raw_field_id: Any) -> str | None:
     return raw_field_id
 
 
-def raw_json(value: Any) -> str:
-    """Render an unmodeled JSON fragment as stable text for verbatim retention."""
-    return json.dumps(value, sort_keys=True, default=str)
-
-
 def _period_labels(value: Any, key: TijoriTableKey) -> tuple[str, ...]:
     """Validate column labels while preserving their exact source text."""
     if (
@@ -391,158 +415,81 @@ def _optional_labels(value: Any, *, key: TijoriTableKey, field: str) -> tuple[st
     return tuple(value)
 
 
-def _feature_locks(value: Any) -> tuple[TijoriFeatureLock, ...]:
-    """Model ``financials_locks`` as a feature-capability map, never as table keys."""
-    if value is None:
-        return ()
-    if not isinstance(value, dict):
-        _LOGGER.warning("tijori_financials_locks_unmodeled", raw=raw_json(value))
-        return ()
-    locks: list[TijoriFeatureLock] = []
-    for feature, raw_flags in value.items():
-        if not isinstance(feature, str):
-            _LOGGER.warning("tijori_financials_locks_non_string_feature", raw=raw_json(feature))
-            continue
-        if isinstance(raw_flags, dict) and all(
-            isinstance(flag, str) and isinstance(enabled, bool)
-            for flag, enabled in raw_flags.items()
-        ):
-            locks.append(
-                TijoriFeatureLock(
-                    feature=feature,
-                    flags=tuple(
-                        TijoriCapabilityFlag(name=flag, enabled=enabled)
-                        for flag, enabled in sorted(raw_flags.items())
-                    ),
-                )
-            )
-            continue
-        _LOGGER.warning(
-            "tijori_financials_locks_feature_unmodeled",
-            feature=feature,
-            raw=raw_json(raw_flags),
-        )
-        locks.append(TijoriFeatureLock(feature=feature, raw_value_json=raw_json(raw_flags)))
-    return tuple(locks)
-
-
-def _plan_string(plan: dict[str, Any], field: str) -> str | None:
-    """Read one optional plan-details string without failing on drift."""
-    raw = plan.get(field)
-    if raw is None:
-        return None
-    if not isinstance(raw, str) or not raw.strip():
-        _LOGGER.warning("tijori_plan_details_field_unmodeled", field=field, raw=raw_json(raw))
-        return None
-    return raw
-
-
-def _island_state(island: Any) -> tuple[TijoriIslandStatus, str | None]:
-    """Classify one optional island as present, absent, or undecodable."""
-    if island is None:
-        return TijoriIslandStatus.ABSENT, None
-    if isinstance(island, TijoriUnparseableIsland):
-        return TijoriIslandStatus.UNPARSEABLE, island.error
-    return TijoriIslandStatus.PRESENT, None
-
-
-def build_page_access(
-    *, financials_locks: Any, plan_details: Any, locks_island_id: str = FINANCIALS_LOCKS_ISLAND_ID
-) -> TijoriTableAccessMetadata:
-    """Parse the plan and capability islands once per page, naming the locks island."""
-    locks_status, locks_error = _island_state(financials_locks)
-    plan_status, plan_error = _island_state(plan_details)
-    if plan_status is TijoriIslandStatus.PRESENT and not isinstance(plan_details, dict):
-        _LOGGER.warning("tijori_plan_details_unmodeled", raw=raw_json(plan_details))
-        plan: dict[str, Any] = {}
-    elif plan_status is TijoriIslandStatus.PRESENT:
-        plan = plan_details
-    else:
-        plan = {}
-    return TijoriTableAccessMetadata(
-        plan_name=_plan_string(plan, _PLAN_NAME_FIELD),
-        plan_tier=_plan_string(plan, _PLAN_TIER_FIELD),
-        feature_locks=(
-            _feature_locks(financials_locks) if locks_status is TijoriIslandStatus.PRESENT else ()
-        ),
-        financials_locks_status=locks_status,
-        plan_details_status=plan_status,
-        financials_locks_error=locks_error,
-        plan_details_error=plan_error,
-        locks_island_id=(locks_island_id if locks_status is TijoriIslandStatus.PRESENT else None),
-        plan_island_id=(
-            PLAN_DETAILS_ISLAND_ID if plan_status is TijoriIslandStatus.PRESENT else None
-        ),
-    )
-
-
-def decimal_from_text(text: str) -> Decimal | None:
-    """Read a plain decimal lexeme, tolerating thousands commas only.
-
-    ``"1,234"`` reads as ``Decimal("1234")``. Percent signs, currency symbols,
-    placeholders such as ``"-"``, and every other decoration read as ``None``;
-    the lexeme itself always survives in ``TijoriTableCell.raw_text``.
-    """
-    candidate = text.strip().replace(_THOUSANDS_SEPARATOR, "")
-    if not _PLAIN_DECIMAL.match(candidate):
-        return None
-    try:
-        parsed = Decimal(candidate)
-    except InvalidOperation:
-        return None
-    return parsed if parsed.is_finite() else None
-
-
-def cell_reading(raw_value: Any) -> tuple[Decimal | None, str]:
-    """Return one cell's numeric reading and its preserved source lexeme."""
-    if raw_value is None:
-        return None, _NULL_CELL_TEXT
-    if isinstance(raw_value, bool):
-        return None, raw_json(raw_value)
-    if isinstance(raw_value, Decimal):
-        return (raw_value if raw_value.is_finite() else None), str(raw_value)
-    if isinstance(raw_value, int):
-        return Decimal(raw_value), str(raw_value)
-    if isinstance(raw_value, str):
-        return decimal_from_text(raw_value), raw_value
-    return None, raw_json(raw_value)
-
-
 def _row_payload(
     *, raw_values: Any, context: _RowBuildContext, row_key: str, label: str
-) -> tuple[tuple[TijoriTableCell, ...], tuple[str, ...]]:
-    """Build one row's cells, or quarantine it when its cardinality disagrees.
+) -> tuple[tuple[TijoriTableCell, ...], tuple[str, ...], TijoriRowAlignment]:
+    """Build one row's cells, aligning a short row and quarantining a long one.
 
-    Returns ``(cells, unaligned_raw_values)``. A row whose value count differs
-    from the column count cannot be aligned to periods — which end is missing is
-    not determinable from the data — so it yields no cells and keeps its raw
-    lexemes instead. Alignment is never guessed and the table never dies.
+    Returns ``(cells, unaligned_raw_values, alignment)``.
+
+    A row with FEWER values than columns is left-anchored onto
+    ``report_dates``: its values fill the first columns in order and the
+    trailing periods are the missing ones. That is an evidenced rule, not a
+    guess. RENDERED EVIDENCE (NETWEB ``pl_s_s``, owner capture 2026-08-25): the
+    'Others' row publishes 6 values against 10 columns, and the site renders
+    them as 325 | 564 | 912 | — | — | — | — — the values in the FIRST columns
+    with em-dashes for the trailing periods. The artifact raws 325.24 /
+    563.812 / 911.784 sit at columns 4-6, with the first three columns among
+    the ones the page skips. Trailing cells are emitted with
+    ``published=False`` so an inferred absence never reads as a published null,
+    and the row is marked ``LEFT_ANCHORED_TRAILING_MISSING``.
+
+    That rule is applied ONLY to the tables in
+    :data:`LEFT_ANCHOR_EVIDENCED_TABLES`, which is where it was actually
+    observed. A short row in any other family is quarantined exactly as before:
+    one family's rendered layout is not evidence about another's, and inferring
+    period assignments from an unobserved layout would fabricate the very thing
+    this rule exists to avoid.
+
+    A row with MORE values than columns is quarantined everywhere, including in
+    the evidenced tables: nothing observed says which end the surplus belongs
+    to, so it yields no cells and keeps its raw lexemes instead. Alignment is
+    never guessed and the table never dies.
     """
     if not isinstance(raw_values, list):
         raise TijoriTableSchemaError(
             f"tijori table {context.key.value!r} row {row_key!r} value must be a list"
         )
     if not raw_values:
-        return (), ()
-    if len(raw_values) != len(context.column_labels):
+        return (), (), TijoriRowAlignment.EXACT
+    column_count = len(context.column_labels)
+    published_count = len(raw_values)
+    left_anchorable = context.key in LEFT_ANCHOR_EVIDENCED_TABLES
+    if published_count > column_count or (published_count < column_count and not left_anchorable):
         unaligned = tuple(cell_reading(raw_value)[1] for raw_value in raw_values)
         _LOGGER.warning(
             "tijori_row_cardinality_mismatch",
             table=context.key.value,
             row_key=row_key,
-            got=len(raw_values),
-            expected=len(context.column_labels),
+            got=published_count,
+            expected=column_count,
+            left_anchor_evidenced=left_anchorable,
         )
-        return (), unaligned
+        return (), unaligned, TijoriRowAlignment.EXACT
+    alignment = (
+        TijoriRowAlignment.EXACT
+        if published_count == column_count
+        else TijoriRowAlignment.LEFT_ANCHORED_TRAILING_MISSING
+    )
+    if alignment is TijoriRowAlignment.LEFT_ANCHORED_TRAILING_MISSING:
+        _LOGGER.info(
+            "tijori_row_left_anchored",
+            table=context.key.value,
+            row_key=row_key,
+            published=published_count,
+            columns=column_count,
+        )
+    padded: list[Any] = [*raw_values, *([None] * (column_count - published_count))]
     cells: list[TijoriTableCell] = []
     for column_index, (column_label, raw_value) in enumerate(
-        zip(context.column_labels, raw_values, strict=True)
+        zip(context.column_labels, padded, strict=True)
     ):
         value, raw_text = cell_reading(raw_value)
         cells.append(
             TijoriTableCell(
                 value=value,
                 raw_text=raw_text,
+                published=column_index < published_count,
                 provenance=Provenance(
                     source_id=TIJORI_SOURCE_ID,
                     file_sha256=context.content_sha256,
@@ -560,7 +507,7 @@ def _row_payload(
                 ),
             )
         )
-    return tuple(cells), ()
+    return tuple(cells), (), alignment
 
 
 def _rows(
@@ -593,7 +540,7 @@ def _rows(
             )
         field_id = _field_id(raw_row.get(_ROW_FIELD_ID_FIELD))
         row_key = ROW_KEY_SEPARATOR.join((*parent_labels, label))
-        cells, unaligned_raw_values = _row_payload(
+        cells, unaligned_raw_values, alignment = _row_payload(
             raw_values=raw_row.get(_ROW_VALUES_FIELD),
             context=context,
             row_key=row_key,
@@ -606,6 +553,7 @@ def _rows(
                 field_id=field_id,
                 parent_labels=parent_labels,
                 depth=depth,
+                alignment=alignment,
                 cells=cells,
                 unaligned_raw_values=unaligned_raw_values,
             )
@@ -717,6 +665,11 @@ def _build_table(
         table_footer_json=None if raw_footer is None else raw_json(raw_footer),
         rows=rows,
         cardinality_mismatch_rows=tuple(row.row_key for row in rows if row.unaligned_raw_values),
+        left_anchored_rows=tuple(
+            row.row_key
+            for row in rows
+            if row.alignment is TijoriRowAlignment.LEFT_ANCHORED_TRAILING_MISSING
+        ),
         metadata=metadata,
     )
 

@@ -5,6 +5,13 @@ server-rendered HTML rather than a JSON island, so its cells anchor as
 ``SourceAnchorType.HTML_TABLE``. The page still carries Django JSON islands for
 authentication and identity, and those gates run before any row is parsed.
 
+The page carries a second, differently-shaped payload beside the table: the
+aggregate break-up charts, declared as JavaScript array literals in inline
+scripts. Their reader lives in
+:mod:`fundamentals.ingest.tijori_shareholding_breakup` and they reach the
+artifact as an additive ``breakups`` field, so a drifted chart script can never
+degrade the detailed table.
+
 Identity FACT (owner capture, 2026-08-25): the shareholding page publishes NO
 identity island. Its islands are ``is_landing_page``, ``peersList``,
 ``alerts_limit_exceeded``, ``metrics``, ``plan_details``, ``pagesremain`` and
@@ -34,6 +41,18 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ingest.tijori_page import collect_islands, decode_document
+from fundamentals.ingest.tijori_shareholding_breakup import (
+    TijoriShareholdingBreakup as TijoriShareholdingBreakup,
+)
+from fundamentals.ingest.tijori_shareholding_breakup import (
+    TijoriShareholdingBreakupEntry as TijoriShareholdingBreakupEntry,
+)
+from fundamentals.ingest.tijori_shareholding_breakup import (
+    TijoriShareholdingBreakupError as TijoriShareholdingBreakupError,
+)
+from fundamentals.ingest.tijori_shareholding_breakup import (
+    build_shareholding_breakups,
+)
 from fundamentals.ingest.tijori_shareholding_table import (
     SHAREHOLDING_TABLE_ELEMENT_ID as SHAREHOLDING_TABLE_ELEMENT_ID,
 )
@@ -174,7 +193,15 @@ class TijoriShareholdingMetadata(BaseModel):
 
 
 class TijoriShareholding(BaseModel):
-    """The immutable detailed shareholding table in source row order."""
+    """The immutable detailed shareholding table in source row order.
+
+    ``breakups`` carries the page's aggregate break-up charts, which the
+    template renders as inline scripts rather than as table rows. They are a
+    different acquisition from the table beside them — a different location, a
+    different reader, and their own per-chart outcome — so they are an additive
+    field here rather than rows folded into ``rows``, and an unreadable chart
+    never affects the table.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -182,6 +209,7 @@ class TijoriShareholding(BaseModel):
     column_period_labels: tuple[str, ...]
     rows: tuple[TijoriShareholdingRow, ...]
     cardinality_mismatch_rows: tuple[str, ...] = ()
+    breakups: tuple[TijoriShareholdingBreakup, ...] = ()
     metadata: TijoriShareholdingMetadata
 
     def row(self, selector: str) -> TijoriShareholdingRow:
@@ -530,12 +558,19 @@ def build_tijori_shareholding(
             f"tijori shareholding table carries no aligned cells across {len(rows)} rows "
             f"and {len(table.column_labels)} columns; that is page drift, not data"
         )
+    breakups = build_shareholding_breakups(
+        document,
+        content_sha256=context.content_sha256,
+        source_url=source_url,
+        retrieved_at=retrieved_at,
+    )
     _LOGGER.info(
         "tijori_shareholding_parsed",
         slug=slug,
         company_id=company_id,
         rows=len(rows),
         columns=len(table.column_labels),
+        breakups=len(breakups),
         identity_islands=identity_island_ids,
     )
     return TijoriShareholding(
@@ -543,6 +578,7 @@ def build_tijori_shareholding(
         column_period_labels=table.column_labels,
         rows=rows,
         cardinality_mismatch_rows=tuple(row.row_key for row in rows if row.unaligned_raw_values),
+        breakups=breakups,
         metadata=TijoriShareholdingMetadata(
             slug=slug,
             symbol=symbol,

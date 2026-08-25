@@ -153,6 +153,39 @@
       </script>
     </div>
 
+    <!-- The revenue mix is server-rendered markup, not a JSON island: each
+         break-up carries its data in an entity-encoded chart-data attribute.
+
+         LIVE SHAPE (TITAN, company 81, verified 2026-08-25): the company-id
+         attribute DUPLICATES the block's chart-id and is NOT the issuer — both
+         read 4280 on the Product Wise block while the page is company 81. It is
+         a misnamed chart identifier, mirrored here exactly so that any future
+         attempt to read it as identity fails these tests immediately. -->
+    <section id="revenuemix">
+      <div class="rmix_graph_block col-md-6" company-id="4280">
+        <h4>Product Wise Break-Up</h4>
+        <div class="rmix_chart" chart-id="4280"
+             chart-data="[[&quot;Jewelry&quot;, 88.37], [&quot;Watches&quot;, 8.12], [&quot;Others&quot;, 3.51]]"></div>
+      </div>
+      <div class="rmix_graph_block col-md-6" company-id="4281">
+        <h4>Location Wise Break-Up</h4>
+        <div class="rmix_chart" chart-id="4281"
+             chart-data="[[&quot;India&quot;, 94.6], [&quot;Overseas&quot;, 5.4]]"></div>
+      </div>
+      <!-- A historic wrapper shaped differently: retained, never guessed at. -->
+      <div class="rmix_graph_block rmix_historic" company-id="4282">
+        <h4>Operating Profit Break-Up (Historic)</h4>
+        <div class="rmix_chart_legacy" chart-id="4282"
+             chart-series="{&quot;Jewelry&quot;: 91.2}"></div>
+      </div>
+      <!-- A block whose chart-data is not a list of [label, number] pairs. -->
+      <div class="rmix_graph_block" company-id="4283">
+        <h4>Asset Break-Up</h4>
+        <div class="rmix_chart" chart-id="4283"
+             chart-data="[[&quot;Fixed Assets&quot;, 41.2, &quot;pct&quot;]]"></div>
+      </div>
+    </section>
+
     <!-- Live shape (verified 2026-08-25): the overview template renders the
          auth island a second time in the footer layout context, with a
          byte-identical body. Identical repeats collapse to one. -->
