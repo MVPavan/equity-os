@@ -21,6 +21,11 @@ from fundamentals.api.tijori_analysis_cli import (
     render_tijori_analysis_summary,
     run_tijori_analysis_command,
 )
+from fundamentals.api.tijori_events_cli import (
+    TIJORI_EVENTS_COMMAND,
+    render_tijori_events_summary,
+    run_tijori_events_command,
+)
 from fundamentals.api.tijori_overview_cli import (
     TIJORI_OVERVIEW_COMMAND,
     render_tijori_overview_summary,
@@ -43,6 +48,7 @@ TIJORI_COMMANDS = (
     TIJORI_SHAREHOLDING_COMMAND,
     TIJORI_OVERVIEW_COMMAND,
     TIJORI_ANALYSIS_COMMAND,
+    TIJORI_EVENTS_COMMAND,
 )
 
 _CLI_LOGGER_NAME = "fundamentals.cli"
@@ -102,13 +108,24 @@ def dispatch_tijori_command(
         sys.stdout.write(render_tijori_overview_summary(sections) + "\n")
         return 0
 
+    if args.command == TIJORI_ANALYSIS_COMMAND:
+        logger.info(
+            "tijori_analysis_invoked",
+            stock=args.stock,
+            section=args.section,
+            metric_ids=args.metric_ids,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        run = run_tijori_analysis_command(args, credentials=credentials)
+        sys.stdout.write(render_tijori_analysis_summary(run) + "\n")
+        return 0
+
     logger.info(
-        "tijori_analysis_invoked",
+        "tijori_events_invoked",
         stock=args.stock,
-        section=args.section,
-        metric_ids=args.metric_ids,
+        surface=args.surface,
         started_at=datetime.now(UTC).isoformat(),
     )
-    run = run_tijori_analysis_command(args, credentials=credentials)
-    sys.stdout.write(render_tijori_analysis_summary(run) + "\n")
+    events_run = run_tijori_events_command(args, credentials=credentials)
+    sys.stdout.write(render_tijori_events_summary(events_run) + "\n")
     return 0

@@ -9,8 +9,9 @@ authentication, schema, and transport ambiguity before it can produce a value.
 Surface-specific parsing lives beside it: the derived quarterly P&L in
 :mod:`fundamentals.ingest.tijori_pl`, the raw financial tables in
 :mod:`fundamentals.ingest.tijori_tables`, shareholding in
-:mod:`fundamentals.ingest.tijori_shareholding`, and the overview sections in
-:mod:`fundamentals.ingest.tijori_overview`.
+:mod:`fundamentals.ingest.tijori_shareholding`, the overview sections in
+:mod:`fundamentals.ingest.tijori_overview`, and the site-level and timeline event
+surfaces in :mod:`fundamentals.ingest.tijori_events`.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import hashlib
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -34,6 +36,17 @@ from fundamentals.ingest.tijori_analysis_models import (
     TijoriAnalysisFetch,
     TijoriAnalysisMetricIdError,
     TijoriAnalysisSection,
+)
+from fundamentals.ingest.tijori_events import build_tijori_events
+from fundamentals.ingest.tijori_events_models import (
+    COMPANY_SURFACES,
+    COMPANY_TIMELINE_NEEDS_STOCK,
+    CONCALL_NOT_STATIC_REASON,
+    NOT_STATIC_SURFACES,
+    SURFACE_PATHS,
+    TijoriEventsFetch,
+    TijoriEventsSurface,
+    TijoriEventsSurfaceError,
 )
 from fundamentals.ingest.tijori_overview import build_tijori_overview
 from fundamentals.ingest.tijori_overview_models import (
@@ -114,6 +127,9 @@ _PL_FETCH_FAILED_EVENT = "tijori_pl_fetch_failed"
 _SHAREHOLDING_FETCH_FAILED_EVENT = "tijori_shareholding_fetch_failed"
 _OVERVIEW_FETCH_FAILED_EVENT = "tijori_overview_fetch_failed"
 _ANALYSIS_FETCH_FAILED_EVENT = "tijori_analysis_fetch_failed"
+_EVENTS_FETCH_FAILED_EVENT = "tijori_events_fetch_failed"
+# A market-wide listing has no slug; the fetch log still needs a subject.
+_MARKET_WIDE_FETCH_SUBJECT = "market-wide"
 
 
 class TijoriCredentials(BaseModel):
@@ -316,6 +332,65 @@ class TijoriSource:
             ),
             raw_body=raw,
         )
+
+    def fetch_events(
+        self,
+        *,
+        surface: TijoriEventsSurface,
+        watchlist_slugs: Mapping[str, str] | None = None,
+        slug: str | None = None,
+        symbol: str | None = None,
+        company_id: int | None = None,
+    ) -> TijoriEventsFetch:
+        """Fetch and build one event surface, market-wide or for one issuer.
+
+        The market-wide surfaces take no identity at all: ``watchlist_slugs``
+        only lets the builder record which listed companies this repo tracks.
+        The company timeline is addressed by ``company_id`` exactly as the
+        analysis APIs are, so its slug and symbol are carried into the artifact
+        as the CONFIGURED identity, never as something the response asserted.
+        """
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori events acquisition"
+            )
+        if surface in NOT_STATIC_SURFACES:
+            raise TijoriEventsSurfaceError(
+                f"tijori surface {surface.value!r} is not acquirable: {CONCALL_NOT_STATIC_REASON}"
+            )
+        if surface in COMPANY_SURFACES and (company_id is None or slug is None or symbol is None):
+            raise TijoriEventsSurfaceError(COMPANY_TIMELINE_NEEDS_STOCK)
+        url = self.events_url(surface, company_id=company_id)
+        raw = self._fetch_page_bytes(
+            url,
+            slug=slug or _MARKET_WIDE_FETCH_SUBJECT,
+            credentials=credentials,
+            fetch_event=_EVENTS_FETCH_FAILED_EVENT,
+        )
+        return TijoriEventsFetch(
+            artifact=build_tijori_events(
+                raw,
+                surface=surface,
+                source_url=url,
+                content_sha256=hashlib.sha256(raw).hexdigest(),
+                retrieved_at=datetime.now(tz=UTC),
+                watchlist_slugs=watchlist_slugs,
+                slug=slug,
+                symbol=symbol,
+                company_id=company_id,
+            ),
+            raw_body=raw,
+        )
+
+    def events_url(self, surface: TijoriEventsSurface, *, company_id: int | None = None) -> str:
+        """Build one event-surface URL, keeping the path exactly as captured."""
+        path = SURFACE_PATHS[surface]
+        if surface in COMPANY_SURFACES:
+            if company_id is None:
+                raise TijoriEventsSurfaceError(COMPANY_TIMELINE_NEEDS_STOCK)
+            path = path.format(company_id=company_id)
+        return f"{self._config.base_url}{path}"
 
     def analysis_url(
         self, section: TijoriAnalysisSection, *, company_id: int, metric_id: int | None = None
