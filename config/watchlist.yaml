@@ -19,6 +19,13 @@
 # needs_verification lists any identifier that is a best-known value not yet
 # confirmed against a live filing; the runner surfaces these rather than trusting
 # them, and fails closed per stock (never fabricates a scrip/slug).
+#
+# tijori_company_id is Tijori's numeric company id for the slug. All ten were
+# live-verified 2026-08-24 by matching the financials-page company_details island
+# symbol to the NSE symbol (see docs/research/screener-tijori-endpoint-inventory.md
+# "Verified watchlist identity map"), so none carries a needs_verification flag.
+# It is required: the shareholding page publishes no identity island, and its only
+# deterministic marker is the heading comp_id attribute matched against this id.
 
 # Each stock carries its own `wave` (Wave-1 / Wave-2). `validate --watchlist` rolls
 # each wave up under its own <wave>-rollup.json, and `--wave <Wave-1|Wave-2>` scopes a
@@ -35,6 +42,7 @@ stocks:
       bse_scrip: "540222"
       screener_slug: "LAURUSLABS"
       tijori_slug: "laurus-labs"
+      tijori_company_id: 19736
       us_listed: false
       news_aliases:
         - "Laurus Labs Limited"
@@ -56,6 +64,7 @@ stocks:
       bse_scrip: "543270"
       screener_slug: "MTARTECH"
       tijori_slug: "mtar-technologies-ltd"
+      tijori_company_id: 42101
       us_listed: false
       news_aliases:
         - "MTAR Technologies Limited"
@@ -79,6 +88,7 @@ stocks:
       bse_scrip: "543300"
       screener_slug: "SONACOMS"
       tijori_slug: "sona-blw-precision-forgings-ltd"
+      tijori_company_id: 43328
       us_listed: false
       news_aliases:
         - "Sona BLW Precision Forgings Limited"
@@ -102,6 +112,7 @@ stocks:
       bse_scrip: "500411"
       screener_slug: "THERMAX"
       tijori_slug: "thermax-limited"
+      tijori_company_id: 301
       us_listed: false
       news_aliases:
         - "Thermax Limited"
@@ -123,6 +134,7 @@ stocks:
       bse_scrip: "500114"
       screener_slug: "TITAN"
       tijori_slug: "titan-company-limited"
+      tijori_company_id: 81
       us_listed: false
       news_aliases:
         - "Titan Company Limited"
@@ -152,6 +164,7 @@ stocks:
       bse_scrip: "543945"
       screener_slug: "NETWEB"
       tijori_slug: "netweb-technologies-india-ltd"
+      tijori_company_id: 55416
       us_listed: false
       news_aliases:
         - "Netweb Technologies India Limited"
@@ -174,6 +187,7 @@ stocks:
       bse_scrip: "500183"
       screener_slug: "HFCL"
       tijori_slug: "himachal-futuristic-communications-limited"
+      tijori_company_id: 131
       us_listed: false
       news_aliases:
         - "HFCL Limited"
@@ -195,6 +209,7 @@ stocks:
       bse_scrip: "542652"
       screener_slug: "POLYCAB"
       tijori_slug: "polycab-india-ltd"
+      tijori_company_id: 5794
       us_listed: false
       news_aliases:
         - "Polycab India Limited"
@@ -216,6 +231,7 @@ stocks:
       bse_scrip: "500093"
       screener_slug: "CGPOWER"
       tijori_slug: "crompton-greaves-limited"
+      tijori_company_id: 63
       us_listed: false
       news_aliases:
         - "CG Power and Industrial Solutions Limited"
@@ -237,6 +253,7 @@ stocks:
       bse_scrip: "543320"
       screener_slug: "ETERNAL"
       tijori_slug: "zomato-ltd"
+      tijori_company_id: 43813
       us_listed: false
       news_aliases:
         - "Eternal Limited"

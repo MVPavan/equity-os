@@ -9,14 +9,12 @@ produce an observation.
 from __future__ import annotations
 
 import hashlib
-import json
 import time
 import urllib.error
 import urllib.request
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from html.parser import HTMLParser
 from typing import Any
 
 import structlog
@@ -29,13 +27,17 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.tijori_page import JsonScriptCollector, decode_document, load_islands
+from fundamentals.ingest.tijori_shareholding import (
+    TijoriShareholding,
+    build_tijori_shareholding,
+)
 from fundamentals.ingest.tijori_tables import (
     FINANCIALS_ISLAND_ID,
     FINANCIALS_LOCKS_ISLAND_ID,
     PLAN_DETAILS_ISLAND_ID,
     TIJORI_SOURCE_ID,
     TijoriTable,
-    TijoriUnparseableIsland,
     build_all_tijori_tables,
     build_tijori_table,
     parse_table_key,
@@ -59,6 +61,7 @@ SOURCE_ID = TIJORI_SOURCE_ID
 ENTITY_SCHEME = "tijori-slug"
 DEFAULT_BASE_URL = "https://www.tijorifinance.com"
 DEFAULT_PL_URL_TEMPLATE = "{base}/company/{slug}/financials/"
+DEFAULT_SHAREHOLDING_URL_TEMPLATE = "{base}/company/{slug}/shareholding/"
 DEFAULT_USER_AGENT = "EquityOS Research"
 DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SCOPE_ASSUMED_NOTE = "scope_assumed=True; Tijori does not disclose statement scope"
@@ -73,7 +76,9 @@ _TABLE_ISLANDS = _REQUIRED_ISLANDS
 # Plan and capability islands are metadata: their absence must never block a
 # table whose raw data is present on the page.
 _TABLE_OPTIONAL_ISLANDS = (FINANCIALS_LOCKS_ISLAND_ID, PLAN_DETAILS_ISLAND_ID)
-_COLLECTED_ISLANDS = _TABLE_ISLANDS + _TABLE_OPTIONAL_ISLANDS
+_FINANCIALS_PAGE_LABEL = "financials"
+_PL_FETCH_FAILED_EVENT = "tijori_pl_fetch_failed"
+_SHAREHOLDING_FETCH_FAILED_EVENT = "tijori_shareholding_fetch_failed"
 _QUARTERLY_CONSOLIDATED_TABLE = "qt_c"
 _MONTH_LABELS = (
     "Jan",
@@ -130,6 +135,7 @@ class TijoriSourceConfig(BaseModel):
     credentials: TijoriCredentials | None = None
     base_url: str = DEFAULT_BASE_URL
     pl_url_template: str = DEFAULT_PL_URL_TEMPLATE
+    shareholding_url_template: str = DEFAULT_SHAREHOLDING_URL_TEMPLATE
     user_agent: str = DEFAULT_USER_AGENT
     request_timeout_seconds: float = 30.0
     max_retries: int = 3
@@ -160,46 +166,6 @@ class TijoriPlPayload(BaseModel):
     period_start: date
     period_end: date
     rows: tuple[TijoriRow, ...]
-
-
-class _JsonScriptCollector(HTMLParser):
-    """Collect required Django JSON islands without interpreting their payloads."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=False)
-        self.islands: dict[str, str] = {}
-        self.duplicates: set[str] = set()
-        self._active_island: str | None = None
-        self._chunks: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        """Start collecting a required application/json script body."""
-        if tag != "script":
-            return
-        attributes = dict(attrs)
-        island_id = attributes.get("id")
-        content_type = attributes.get("type")
-        if island_id not in _COLLECTED_ISLANDS or content_type is None:
-            return
-        if content_type.strip().lower() != "application/json":
-            return
-        if island_id in self.islands:
-            self.duplicates.add(island_id)
-            return
-        self._active_island = island_id
-        self._chunks = []
-
-    def handle_data(self, data: str) -> None:
-        """Append a script body fragment for the active JSON island."""
-        if self._active_island is not None:
-            self._chunks.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        """Finish collecting the active JSON island."""
-        if tag == "script" and self._active_island is not None:
-            self.islands[self._active_island] = "".join(self._chunks)
-            self._active_island = None
-            self._chunks = []
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -320,15 +286,82 @@ class TijoriSource:
             source_url=source_url,
         )
 
+    def fetch_shareholding(
+        self, *, slug: str, expected_symbol: str, expected_company_id: int
+    ) -> TijoriShareholding:
+        """Fetch the detailed shareholding table from an authenticated page.
+
+        ``expected_company_id`` is required, not read from config: the page's only
+        identity marker is its heading ``comp_id``, which proves nothing without a
+        configured id to match it against.
+        """
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori shareholding acquisition"
+            )
+        raw = self._fetch_shareholding_bytes(slug, credentials)
+        source_url = self._config.shareholding_url_template.format(
+            base=self._config.base_url, slug=slug
+        )
+        return self.parse_shareholding_bytes(
+            raw,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            source_url=source_url,
+        )
+
+    @staticmethod
+    def parse_shareholding_bytes(
+        raw: bytes,
+        *,
+        slug: str,
+        expected_symbol: str,
+        expected_company_id: int,
+        source_url: str | None = None,
+    ) -> TijoriShareholding:
+        """Parse the detailed shareholding table from a verified shareholding page."""
+        if not slug.strip():
+            raise TijoriParseError("tijori requested slug is empty")
+        if not expected_symbol.strip():
+            raise TijoriParseError("tijori expected symbol is empty")
+        resolved_url = source_url or DEFAULT_SHAREHOLDING_URL_TEMPLATE.format(
+            base=DEFAULT_BASE_URL, slug=slug
+        )
+        return build_tijori_shareholding(
+            raw,
+            slug=slug,
+            expected_symbol=expected_symbol,
+            expected_company_id=expected_company_id,
+            source_url=resolved_url,
+            retrieved_at=datetime.now(tz=UTC),
+        )
+
     def _fetch_pl_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
         """Fetch one complete authenticated financials page without redirects."""
+        url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
+        return self._fetch_page_bytes(
+            url, slug=slug, credentials=credentials, fetch_event=_PL_FETCH_FAILED_EVENT
+        )
+
+    def _fetch_shareholding_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
+        """Fetch one complete authenticated shareholding page without redirects."""
+        url = self._config.shareholding_url_template.format(base=self._config.base_url, slug=slug)
+        return self._fetch_page_bytes(
+            url, slug=slug, credentials=credentials, fetch_event=_SHAREHOLDING_FETCH_FAILED_EVENT
+        )
+
+    def _fetch_page_bytes(
+        self, url: str, *, slug: str, credentials: TijoriCredentials, fetch_event: str
+    ) -> bytes:
+        """Fetch one complete authenticated Tijori page without following redirects."""
         session_cookie = credentials.session_cookie
         if session_cookie is None:
             raise TijoriFetchError(
                 "tijori session cookie required for HTTP fetch; mint one via an "
                 "authenticated login and inject it as credentials.session_cookie"
             )
-        url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
         request = urllib.request.Request(
             url,
             headers={
@@ -368,7 +401,7 @@ class TijoriSource:
                 last_error = error
             if last_error is not None:
                 _LOGGER.warning(
-                    "tijori_pl_fetch_failed",
+                    fetch_event,
                     attempt=attempt,
                     slug=slug,
                     error_type=type(last_error).__name__,
@@ -377,7 +410,7 @@ class TijoriSource:
             if attempt < self._config.max_retries:
                 time.sleep(self._config.retry_backoff_seconds * attempt)
         raise TijoriFetchError(
-            f"tijori pl fetch failed after {self._config.max_retries} attempts"
+            f"tijori page fetch failed after {self._config.max_retries} attempts"
         ) from last_error
 
     @staticmethod
@@ -564,14 +597,11 @@ class TijoriSource:
         optional_islands: tuple[str, ...] = (),
     ) -> tuple[dict[str, Any], int, str]:
         """Validate page encoding, authentication, identity, and named JSON islands."""
-        try:
-            document = raw.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise TijoriParseError("tijori financials page is not UTF-8 HTML") from error
-        collector = _JsonScriptCollector()
+        document = decode_document(raw, page_label=_FINANCIALS_PAGE_LABEL)
+        collector = JsonScriptCollector(required_islands + optional_islands)
         collector.feed(document)
         collector.close()
-        islands = cls._load_islands(collector, required_islands, optional_islands)
+        islands = load_islands(collector, required_islands, optional_islands)
         company_details = _as_object(islands["company_details"], "company_details")
         if islands["is_auth"] is not True:
             raise TijoriParseError("tijori response is not authenticated")
@@ -594,45 +624,6 @@ class TijoriSource:
                 f"requested company ID {expected_company_id}, response company ID {company_id}"
             )
         return islands, company_id, response_symbol.strip()
-
-    @staticmethod
-    def _load_islands(
-        collector: _JsonScriptCollector,
-        required_islands: tuple[str, ...],
-        optional_islands: tuple[str, ...] = (),
-    ) -> dict[str, Any]:
-        """Deserialize named JSON islands with isolated failure reasons."""
-        decoded: dict[str, Any] = {}
-        for island_id in required_islands + optional_islands:
-            optional = island_id in optional_islands
-            if island_id in collector.duplicates:
-                raise TijoriParseError(f"tijori JSON island {island_id!r} appears multiple times")
-            raw_island = collector.islands.get(island_id)
-            if raw_island is None:
-                if optional:
-                    _LOGGER.warning("tijori_optional_island_missing", island=island_id)
-                    continue
-                raise TijoriParseError(f"tijori JSON island {island_id!r} is missing")
-            try:
-                decoded[island_id] = json.loads(raw_island, parse_float=Decimal)
-            except json.JSONDecodeError as error:
-                if optional:
-                    _LOGGER.warning(
-                        "tijori_optional_island_unparseable",
-                        island=island_id,
-                        error=error.msg,
-                        pos=error.pos,
-                        lineno=error.lineno,
-                        colno=error.colno,
-                    )
-                    decoded[island_id] = TijoriUnparseableIsland(
-                        island_id=island_id, error=str(error)
-                    )
-                    continue
-                raise TijoriParseError(
-                    f"tijori JSON island {island_id!r} is unparseable"
-                ) from error
-        return decoded
 
     @staticmethod
     def _selected_rows(

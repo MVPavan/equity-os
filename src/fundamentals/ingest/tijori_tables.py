@@ -476,7 +476,7 @@ def build_page_access(*, financials_locks: Any, plan_details: Any) -> TijoriTabl
     )
 
 
-def _decimal_from_text(text: str) -> Decimal | None:
+def decimal_from_text(text: str) -> Decimal | None:
     """Read a plain decimal lexeme, tolerating thousands commas only.
 
     ``"1,234"`` reads as ``Decimal("1234")``. Percent signs, currency symbols,
@@ -504,7 +504,7 @@ def _cell_reading(raw_value: Any) -> tuple[Decimal | None, str]:
     if isinstance(raw_value, int):
         return Decimal(raw_value), str(raw_value)
     if isinstance(raw_value, str):
-        return _decimal_from_text(raw_value), raw_value
+        return decimal_from_text(raw_value), raw_value
     return None, _raw_json(raw_value)
 
 

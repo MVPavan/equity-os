@@ -16,17 +16,21 @@ the runner still fails closed per stock rather than fabricating a value.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fundamentals.api.config import ConceptsConfig, SourceFileConfig
 
 DEFAULT_ENTITY_SCHEME = "nse-symbol"
+TIJORI_SLUG_FIELD = "tijori_slug"
+TIJORI_COMPANY_ID_FIELD = "tijori_company_id"
+TIJORI_IDENTIFIER_FIELDS = (TIJORI_SLUG_FIELD, TIJORI_COMPANY_ID_FIELD)
 
 
 class Wave(StrEnum):
@@ -67,6 +71,11 @@ class SourceIdentifiers(BaseModel):
     issuer. A filing made before a symbol rename still carries the OLD symbol, so
     this lets the NSE issuer guard accept it without weakening its rejection of a
     genuinely different company. Empty for the common (never-renamed) case.
+
+    ``tijori_company_id`` is Tijori's numeric company id for the slug. It is
+    required because Tijori's shareholding page publishes no identity island —
+    its only deterministic marker is the ``comp_id`` attribute on the page
+    heading, which is meaningless without a configured id to match it against.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -76,10 +85,21 @@ class SourceIdentifiers(BaseModel):
     isin: str | None = None
     screener_slug: str
     tijori_slug: str
+    tijori_company_id: int = Field(gt=0)
     us_listed: bool = False
     needs_verification: tuple[str, ...] = ()
     accepted_entity_ids: tuple[str, ...] = ()
     news_aliases: tuple[str, ...] = ()
+
+    def unverified_tijori_fields(self) -> tuple[str, ...]:
+        """Tijori identifiers flagged as unconfirmed, in declaration order.
+
+        Every Tijori acquisition path binds a response to the issuer through
+        both the slug and the company id, so an unconfirmed value in either one
+        must stop the run rather than be trusted.
+        """
+        flagged = set(self.needs_verification)
+        return tuple(field for field in TIJORI_IDENTIFIER_FIELDS if field in flagged)
 
 
 class StockQuarter(BaseModel):
@@ -150,6 +170,25 @@ class WatchlistConfig(BaseModel):
 
     raw_dir: str
     stocks: tuple[StockConfig, ...]
+
+    @model_validator(mode="after")
+    def _check_tijori_company_ids_are_unique(self) -> WatchlistConfig:
+        """Reject a config that binds two stocks to one Tijori company.
+
+        The Tijori company id is an identity constraint, so a duplicate would
+        silently let one issuer's page satisfy another issuer's request.
+        """
+        collisions = sorted(
+            company_id
+            for company_id, count in Counter(
+                stock.identifiers.tijori_company_id for stock in self.stocks
+            ).items()
+            if count > 1
+        )
+        if collisions:
+            shared = ", ".join(str(company_id) for company_id in collisions)
+            raise ValueError(f"watchlist reuses {TIJORI_COMPANY_ID_FIELD} across stocks: {shared}")
+        return self
 
     def repo_root(self, config_path: Path) -> Path:
         """Return the repository root given the loaded config file's path."""

@@ -160,3 +160,76 @@ def test_query_returns_canonical_revision(store: FactStore) -> None:
     all_canonical = store.query_canonical()
     assert len(all_canonical) == 1
     assert all_canonical[0].row_id == restated.row_id
+
+
+def _html_table_provenance(*, row_path: str, column_index: int) -> Provenance:
+    """An HTML table anchor differing only in where the value was read from."""
+    return Provenance(
+        source_id="tijori",
+        file_sha256="0" * 64,
+        anchor_type=SourceAnchorType.HTML_TABLE,
+        context_ref="https://example.test/shareholding/#detailed_shareholding",
+        table_id="detailed_shareholding",
+        row_path=row_path,
+        row_label=row_path.rsplit("/", 1)[-1],
+        column_index=column_index,
+        column_label="Mar'24",
+        retrieved_at=_RETRIEVED_AT,
+    )
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        (
+            _html_table_provenance(row_path="Promoter", column_index=0),
+            _html_table_provenance(row_path="Public Shareholding", column_index=0),
+        ),
+        (
+            _html_table_provenance(row_path="Promoter", column_index=0),
+            _html_table_provenance(row_path="Promoter", column_index=1),
+        ),
+    ],
+)
+def test_anchor_location_fields_participate_in_the_value_hash(
+    left: Provenance, right: Provenance
+) -> None:
+    """Two values read from different cells are different values, not one.
+
+    The same number legitimately appears in many shareholding cells, so if the
+    hash ignored row_path or column_index the store would treat distinct
+    observations as one revision and silently drop all but the first.
+    """
+    store = FactStore(":memory:")
+    try:
+        first = store.put(_fact(_observation(provenance=left)))
+        second = store.put(_fact(_observation(provenance=right)))
+        assert first.value_hash != second.value_hash
+        assert first.row_id != second.row_id
+    finally:
+        store.close()
+
+
+def test_json_island_anchor_location_fields_participate_in_the_value_hash() -> None:
+    """The same omission would have collapsed two Tijori island cells onto one row."""
+
+    def island(row_label: str) -> Provenance:
+        return Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.JSON_ISLAND,
+            context_ref="https://example.test/financials/#fin_tables_data",
+            island_id="fin_tables_data",
+            table_key="qt_c",
+            row_label=row_label,
+            column_label="Dec 2024",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+    store = FactStore(":memory:")
+    try:
+        first = store.put(_fact(_observation(provenance=island("Net Sales"))))
+        second = store.put(_fact(_observation(provenance=island("Net Profit"))))
+        assert first.value_hash != second.value_hash
+    finally:
+        store.close()

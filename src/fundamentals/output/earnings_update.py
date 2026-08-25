@@ -74,6 +74,11 @@ def anchor_label(provenance: Provenance) -> str:
             f"JSON island {provenance.island_id}, table {provenance.table_key}, "
             f"row {provenance.row_label}, column {provenance.column_label}"
         )
+    elif provenance.anchor_type is SourceAnchorType.HTML_TABLE:
+        location = (
+            f"HTML table {provenance.table_id}, row {provenance.row_path}, "
+            f"column {provenance.column_index} ({provenance.column_label})"
+        )
     else:
         assert_never(provenance.anchor_type)
     return f"{provenance.source_id}: {location} (file sha256 {sha}…)"

@@ -9,6 +9,7 @@ from fundamentals.api.adjudication_cli import add_adjudication_parser
 from fundamentals.api.config import XbrlMode
 from fundamentals.api.news_cli import add_news_parser
 from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
+from fundamentals.api.tijori_shareholding_cli import add_tijori_shareholding_parser
 from fundamentals.api.tijori_tables_cli import add_tijori_tables_parser
 
 RUN_COMMAND = "run"
@@ -127,4 +128,5 @@ def build_parser() -> argparse.ArgumentParser:
     add_news_parser(subparsers)
     add_adjudication_parser(subparsers)
     add_tijori_tables_parser(subparsers)
+    add_tijori_shareholding_parser(subparsers)
     return parser

@@ -640,8 +640,13 @@ def _collect_tijori(
     """Pull the Tijori derived P&L; skip cleanly without credentials/fixture."""
     source_id = "tijori"
     try:
-        if "tijori_slug" in stock.identifiers.needs_verification:
-            return _skip(SourceKind.TIJORI, source_id, "tijori slug needs verification")
+        unverified = stock.identifiers.unverified_tijori_fields()
+        if unverified:
+            return _skip(
+                SourceKind.TIJORI,
+                source_id,
+                f"tijori identifier needs verification: {', '.join(unverified)}",
+            )
         if mode is RunMode.FIXTURE:
             if stock.fixtures.tijori is None:
                 return _skip(SourceKind.TIJORI, source_id, "no Tijori fixture configured")
@@ -650,12 +655,18 @@ def _collect_tijori(
                 raw,
                 slug=stock.identifiers.tijori_slug,
                 expected_symbol=stock.identifiers.nse_symbol,
+                expected_company_id=stock.identifiers.tijori_company_id,
                 period_end=stock.quarter.period_end,
             )
         else:
             if credentials is None:
                 return _skip(SourceKind.TIJORI, source_id, "no Tijori credentials injected")
-            source = TijoriSource(TijoriSourceConfig(credentials=credentials))
+            source = TijoriSource(
+                TijoriSourceConfig(
+                    credentials=credentials,
+                    expected_company_id=stock.identifiers.tijori_company_id,
+                )
+            )
             observations = source.fetch_pl(
                 stock.identifiers.tijori_slug,
                 expected_symbol=stock.identifiers.nse_symbol,

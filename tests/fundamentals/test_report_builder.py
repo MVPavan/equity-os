@@ -145,6 +145,7 @@ def _stock() -> StockConfig:
             bse_scrip="999999",
             screener_slug="SYNTH",
             tijori_slug="synthetic-test-corp",
+            tijori_company_id=81,
         ),
         quarter=StockQuarter(
             label="Q3FY25",

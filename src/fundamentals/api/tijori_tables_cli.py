@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import os
-import tempfile
 from pathlib import Path
 
 import structlog
 
+from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.ingest.tijori_source import (
     TijoriCredentials,
@@ -22,39 +21,8 @@ TIJORI_TABLES_COMMAND = "tijori-tables"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_OUT_ROOT = _REPO_ROOT / "data" / "raw" / "watchlist" / "tijori-tables"
-_TIJORI_SLUG_FIELD = "tijori_slug"
 _SUMMARY_HEADER = "table\trows\tcolumns\tplan_tier"
 _UNKNOWN_PLAN_TIER = "unknown"
-_REFUSE_OVERWRITE = "refusing to overwrite existing table artifact"
-
-
-def _preflight_out_paths(out_paths: tuple[Path, ...]) -> None:
-    """Refuse the whole write when any target path already exists."""
-    colliding = tuple(str(path) for path in out_paths if os.path.lexists(path))
-    if colliding:
-        raise SystemExit(f"{_REFUSE_OVERWRITE}s: {', '.join(colliding)}")
-
-
-def _write_json_no_clobber(out_path: Path, payload: str) -> None:
-    """Atomically create one table artifact without following or replacing a target."""
-    file_descriptor, temp_name = tempfile.mkstemp(
-        dir=out_path.parent,
-        prefix=f".{out_path.stem}-",
-        suffix=".tmp",
-        text=True,
-    )
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        try:
-            os.link(temp_path, out_path, follow_symlinks=False)
-        except FileExistsError as error:
-            raise SystemExit(f"{_REFUSE_OVERWRITE}: {out_path}") from error
-    finally:
-        temp_path.unlink(missing_ok=True)
 
 
 def add_tijori_tables_parser(
@@ -96,10 +64,20 @@ def run_tijori_tables_command(
         stock = watchlist.stock(args.stock)
     except ValueError as error:
         raise SystemExit(str(error)) from error
-    if _TIJORI_SLUG_FIELD in stock.identifiers.needs_verification:
-        raise SystemExit(f"Tijori slug for {stock.symbol} is not verified")
+    unverified = stock.identifiers.unverified_tijori_fields()
+    if unverified:
+        raise SystemExit(
+            f"Tijori identifiers for {stock.symbol} are not verified: {', '.join(unverified)}"
+        )
 
-    source = TijoriSource(TijoriSourceConfig(credentials=credentials))
+    # The financials page already publishes company_details.company_id; asserting
+    # it equals the configured id is an extra conjunctive identity constraint.
+    source = TijoriSource(
+        TijoriSourceConfig(
+            credentials=credentials,
+            expected_company_id=stock.identifiers.tijori_company_id,
+        )
+    )
     if args.table is None:
         tables = source.fetch_all_tables(
             slug=stock.identifiers.tijori_slug,
@@ -117,10 +95,10 @@ def run_tijori_tables_command(
     out_dir = Path(args.out).resolve() if args.out else _DEFAULT_OUT_ROOT / stock.symbol
     out_dir.mkdir(parents=True, exist_ok=True)
     out_paths = tuple(out_dir / f"{table.key.value}.json" for table in tables)
-    _preflight_out_paths(out_paths)
+    preflight_out_paths(out_paths)
     logger = structlog.get_logger("fundamentals.tijori_tables")
     for table, out_path in zip(tables, out_paths, strict=True):
-        _write_json_no_clobber(out_path, table.model_dump_json(indent=2) + "\n")
+        write_json_no_clobber(out_path, table.model_dump_json(indent=2) + "\n")
         logger.info(
             "tijori_table_written",
             stock=stock.symbol,

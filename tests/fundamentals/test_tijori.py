@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.contracts.observation import AccountingFramework, Scope
@@ -400,6 +401,62 @@ def test_watchlist_carries_verified_tijori_slugs_for_every_stock() -> None:
     assert all(stock.identifiers.tijori_slug for stock in watchlist.stocks)
     assert all(
         "tijori_slug" not in stock.identifiers.needs_verification for stock in watchlist.stocks
+    )
+
+
+def test_a_watchlist_reusing_one_tijori_company_id_is_rejected(tmp_path: Path) -> None:
+    """A duplicate id would let one issuer's page satisfy another issuer's request."""
+    config = tmp_path / "watchlist.yaml"
+    config.write_text(
+        """
+raw_dir: "data/raw/watchlist"
+stocks:
+  - name: "Alpha Ltd"
+    domain: "Test"
+    identifiers:
+      nse_symbol: "ALPHA"
+      bse_scrip: "1"
+      screener_slug: "ALPHA"
+      tijori_slug: "alpha"
+      tijori_company_id: 4242
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+  - name: "Beta Ltd"
+    domain: "Test"
+    identifiers:
+      nse_symbol: "BETA"
+      bse_scrip: "2"
+      screener_slug: "BETA"
+      tijori_slug: "beta"
+      tijori_company_id: 4242
+    quarter:
+      label: "Q3FY25"
+      period_start: "2024-10-01"
+      period_end: "2024-12-31"
+      knowledge_cutoff: "2025-02-15T00:00:00Z"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="reuses tijori_company_id across stocks: 4242"):
+        load_watchlist_config(config)
+
+
+def test_watchlist_carries_a_verified_tijori_company_id_for_every_stock() -> None:
+    """The shareholding heading gate is inert without a configured id, so all ten carry one."""
+    watchlist = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
+
+    assert watchlist.stock(_TITAN_SYMBOL).identifiers.tijori_company_id == 81
+    company_ids = [stock.identifiers.tijori_company_id for stock in watchlist.stocks]
+    assert all(company_id > 0 for company_id in company_ids)
+    # A duplicated id would silently bind two stocks to one Tijori company.
+    assert len(set(company_ids)) == len(company_ids)
+    assert all(
+        "tijori_company_id" not in stock.identifiers.needs_verification
+        for stock in watchlist.stocks
     )
 
 

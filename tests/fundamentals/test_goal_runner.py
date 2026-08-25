@@ -87,6 +87,7 @@ def _stock(*, fixtures: FixturePaths | None = None) -> StockConfig:
             bse_scrip="999999",
             screener_slug="SYNTH",
             tijori_slug="synthetic-test-corp",
+            tijori_company_id=81,
         ),
         quarter=StockQuarter(
             label="Q3FY25",
@@ -117,6 +118,7 @@ def _summary_stock(
             bse_scrip="999999",
             screener_slug="SYNTH",
             tijori_slug="synthetic-summary-corp",
+            tijori_company_id=81,
         ),
         quarter=quarter
         if quarter is not None
@@ -508,6 +510,33 @@ def test_tijori_fixture_records_the_consolidated_scope_assumption() -> None:
     assert "scope_assumed=True" in sources[0].note
 
 
+def test_tijori_fixture_company_id_mismatch_is_skipped_before_canonicalisation() -> None:
+    """The configured tijori_company_id is an extra conjunctive check on the P&L page."""
+    stock = _stock(
+        fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_financials.html")
+    ).model_copy(
+        update={
+            "identifiers": _stock().identifiers.model_copy(
+                update={
+                    "nse_symbol": "TITAN",
+                    "tijori_slug": "titan-company-limited",
+                    "tijori_company_id": 999,
+                }
+            )
+        }
+    )
+
+    sources = collect_sources(
+        stock,
+        mode=RunMode.FIXTURE,
+        repo_root=_REPO_ROOT,
+        kinds=frozenset({SourceKind.TIJORI}),
+    )
+
+    assert sources[0].status is SourceStatus.SKIPPED
+    assert "requested company ID 999" in sources[0].note
+
+
 def test_tijori_fixture_wrong_issuer_is_skipped_before_canonicalisation() -> None:
     """Fixture collection cannot stamp another issuer onto the configured TITAN stock."""
     stock = _stock(
@@ -533,14 +562,15 @@ def test_tijori_fixture_wrong_issuer_is_skipped_before_canonicalisation() -> Non
     assert "identity mismatch" in sources[0].note
 
 
-def test_tijori_unverified_slug_is_skipped_even_for_a_fixture() -> None:
-    """A guessed Tijori slug cannot be accepted merely because fixture bytes parse."""
+@pytest.mark.parametrize("flagged", ["tijori_slug", "tijori_company_id"])
+def test_tijori_unverified_identifier_is_skipped_even_for_a_fixture(flagged: str) -> None:
+    """A guessed Tijori slug or company id cannot be accepted because bytes parse."""
     stock = _stock(
         fixtures=FixturePaths(tijori="tests/fundamentals/fixtures/synthetic_tijori_pl.json")
     ).model_copy(
         update={
             "identifiers": _stock().identifiers.model_copy(
-                update={"needs_verification": ("tijori_slug",)}
+                update={"needs_verification": (flagged,)}
             )
         }
     )
@@ -553,7 +583,7 @@ def test_tijori_unverified_slug_is_skipped_even_for_a_fixture() -> None:
     )
 
     assert sources[0].status is SourceStatus.SKIPPED
-    assert "needs verification" in sources[0].note
+    assert f"needs verification: {flagged}" in sources[0].note
 
 
 # --- watchlist config ----------------------------------------------------------
@@ -601,7 +631,13 @@ def _wave_stock(symbol: str, wave: Wave) -> StockConfig:
     return base.model_copy(
         update={
             "wave": wave,
-            "identifiers": base.identifiers.model_copy(update={"nse_symbol": symbol}),
+            "identifiers": base.identifiers.model_copy(
+                update={
+                    "nse_symbol": symbol,
+                    # Distinct per stock: the watchlist rejects a reused Tijori id.
+                    "tijori_company_id": 81 + len(symbol) + sum(map(ord, symbol)),
+                }
+            ),
         }
     )
 
@@ -819,6 +855,7 @@ def _pdf_ocr_stock(path: Path, sha: str) -> StockConfig:
             bse_scrip="999999",
             screener_slug="SYNTH",
             tijori_slug="synthetic-ocr-corp",
+            tijori_company_id=81,
         ),
         quarter=StockQuarter(
             label="Q3FY25",

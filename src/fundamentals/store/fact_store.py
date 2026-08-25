@@ -28,11 +28,13 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import assert_never
 
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.fact import CanonicalStatus, Fact
 from fundamentals.contracts.observation import Observation
+from fundamentals.contracts.provenance import SourceAnchorType
 
 _TABLE = "facts"
 
@@ -130,15 +132,44 @@ def _sha256(text: str) -> str:
 
 
 def _anchor_payload(observation: Observation) -> dict[str, object]:
-    """Extract the typed provenance anchor as a serializable mapping."""
+    """Serialize the complete typed provenance anchor for hashing.
+
+    Every field the declared ``anchor_type`` uses to locate a value must appear
+    here: two observations that differ only in where they were read from are
+    different observations, and omitting a location field would collapse them
+    onto one value hash.
+    """
     prov = observation.provenance
-    return {
+    payload: dict[str, object] = {
         "anchor_type": str(prov.anchor_type),
-        "page": prov.page,
-        "block": prov.block,
-        "span": prov.span,
         "context_ref": prov.context_ref,
     }
+    if prov.anchor_type is SourceAnchorType.PDF_SPAN:
+        payload.update({"page": prov.page, "block": prov.block, "span": prov.span})
+    elif prov.anchor_type is SourceAnchorType.XBRL_CONTEXT:
+        pass
+    elif prov.anchor_type is SourceAnchorType.JSON_ISLAND:
+        payload.update(
+            {
+                "island_id": prov.island_id,
+                "table_key": prov.table_key,
+                "row_label": prov.row_label,
+                "column_label": prov.column_label,
+            }
+        )
+    elif prov.anchor_type is SourceAnchorType.HTML_TABLE:
+        payload.update(
+            {
+                "table_id": prov.table_id,
+                "row_path": prov.row_path,
+                "row_label": prov.row_label,
+                "column_index": prov.column_index,
+                "column_label": prov.column_label,
+            }
+        )
+    else:
+        assert_never(prov.anchor_type)
+    return payload
 
 
 def _content_identity(observation: Observation) -> str:

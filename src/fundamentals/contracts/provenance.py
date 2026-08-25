@@ -2,8 +2,9 @@
 
 Every observation and guidance claim must carry non-null provenance binding it
 to a source file (by sha256) and a typed anchor — a PDF page/block/span, an XBRL
-context reference, or a JSON island location — plus the bitemporal timestamps
-needed to reason about when the value could have been known.
+context reference, a JSON island location, or a server-rendered HTML table cell
+— plus the bitemporal timestamps needed to reason about when the value could
+have been known.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ class SourceAnchorType(StrEnum):
     PDF_SPAN = "PDF_SPAN"
     XBRL_CONTEXT = "XBRL_CONTEXT"
     JSON_ISLAND = "JSON_ISLAND"
+    HTML_TABLE = "HTML_TABLE"
 
 
 class Provenance(BaseModel):
@@ -27,7 +29,8 @@ class Provenance(BaseModel):
 
     A PDF anchor uses ``page``/``block``/``span``; an XBRL anchor uses
     ``context_ref``; a JSON island anchor uses ``island_id``/``table_key``/
-    ``row_label``/``column_label``. Typed fields not relevant to
+    ``row_label``/``column_label``; an HTML table anchor uses ``table_id``/
+    ``row_path``/``column_index``/``column_label``. Typed fields not relevant to
     ``anchor_type`` are left ``None``.
     """
 
@@ -45,6 +48,9 @@ class Provenance(BaseModel):
     table_key: str | None = None
     row_label: str | None = None
     column_label: str | None = None
+    table_id: str | None = None
+    row_path: str | None = None
+    column_index: int | None = None
 
     retrieved_at: datetime
     filed_at: datetime | None = None
@@ -72,4 +78,12 @@ class Provenance(BaseModel):
                     "JSON_ISLAND anchor requires island_id, table_key, row_label, "
                     "and column_label to be set"
                 )
+        elif self.anchor_type is SourceAnchorType.HTML_TABLE:
+            html_fields = (self.table_id, self.row_path, self.column_label)
+            if any(value is None or not value.strip() for value in html_fields):
+                raise ValueError(
+                    "HTML_TABLE anchor requires table_id, row_path, and column_label to be set"
+                )
+            if self.column_index is None or self.column_index < 0:
+                raise ValueError("HTML_TABLE anchor requires a non-negative column_index")
         return self

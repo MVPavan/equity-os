@@ -60,6 +60,11 @@ from fundamentals.api.news_cli import (
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
+from fundamentals.api.tijori_shareholding_cli import (
+    TIJORI_SHAREHOLDING_COMMAND,
+    render_tijori_shareholding_summary,
+    run_tijori_shareholding_command,
+)
 from fundamentals.api.tijori_tables_cli import (
     TIJORI_TABLES_COMMAND,
     render_tijori_tables_summary,
@@ -113,6 +118,7 @@ _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
 _TIJORI_SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for tijori-tables"
+_TIJORI_SHAREHOLDING_SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for tijori-shareholding"
 
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
@@ -663,6 +669,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         tables = run_tijori_tables_command(args, credentials=credentials)
         sys.stdout.write(render_tijori_tables_summary(tables) + "\n")
+        return 0
+
+    if args.command == TIJORI_SHAREHOLDING_COMMAND:
+        credentials = _tijori_credentials_from_env()
+        if credentials is None:
+            raise SystemExit(_TIJORI_SHAREHOLDING_SESSION_REQUIRED)
+        logger.info(
+            "tijori_shareholding_invoked",
+            stock=args.stock,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        shareholding = run_tijori_shareholding_command(args, credentials=credentials)
+        sys.stdout.write(render_tijori_shareholding_summary(shareholding) + "\n")
         return 0
 
     if args.command == NEWS_COMMAND:

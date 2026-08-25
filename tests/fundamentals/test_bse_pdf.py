@@ -709,6 +709,7 @@ def _pdf_stock(pdf_path: Path, pdf_sha: str) -> StockConfig:
             bse_scrip="999999",
             screener_slug="SYNTH",
             tijori_slug="synthetic-pdf-corp",
+            tijori_company_id=81,
         ),
         quarter=StockQuarter(
             label="Q3FY25",
