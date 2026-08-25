@@ -1,0 +1,16 @@
+{
+  "data": {
+    "1yr": [
+      {"name": "OCF (Before WCC)", "y": 8447.0},
+      {"name": "WCC", "y": -1120.0},
+      {"name": "OCF", "isSum": true},
+      {"name": "Capex", "y": -1500.0}
+    ],
+    "3yr": [
+      {"name": "OCF (Before WCC)", "y": 19625.0},
+      {"name": "WCC", "y": -8882.0},
+      {"name": "OCF", "isSum": true}
+    ]
+  },
+  "status": 200
+}

@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "name": "sources",
+      "data": {
+        "1yr": [
+          {"name": "Cash from Operations", "y": 8447.0},
+          {"name": "Debt Raised", "y": 1200.5},
+          {"name": "Total Sources", "y": 9647.5, "isSum": true}
+        ],
+        "3yr": [
+          {"name": "Cash from Operations", "y": 19625.0},
+          {"name": "Debt Raised", "y": 3400.0, "segment": "borrowings"},
+          {"name": "Total Sources", "y": 23025.0, "isSum": true}
+        ],
+        "15yr": [
+          {"name": "Cash from Operations", "y": 51230.0}
+        ]
+      }
+    },
+    {
+      "name": "uses",
+      "data": {
+        "1yr": [
+          {"name": "Capex", "y": 1120.0},
+          {"name": "Dividends", "y": 980.0, "isSum": "yes"}
+        ]
+      }
+    }
+  ],
+  "status": 200,
+  "generated_at": "2026-08-25T00:00:00Z"
+}

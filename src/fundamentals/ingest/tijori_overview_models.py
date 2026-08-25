@@ -33,6 +33,10 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance
+
+# The point shape is shared with the analysis APIs, so it lives in the neutral
+# series module; it is re-exported here to keep this family's imports stable.
+from fundamentals.ingest.tijori_series import TijoriSeriesPoint as TijoriSeriesPoint
 from fundamentals.ingest.tijori_tables import (
     TijoriIslandStatus,
     TijoriParseError,
@@ -121,25 +125,6 @@ class TijoriOverviewNumber(BaseModel):
     value: Decimal | None
     raw_text: str
     provenance: Provenance
-
-
-class TijoriSeriesPoint(BaseModel):
-    """One ``[timestamp, value]`` point of a price or market-share series.
-
-    Series points carry no per-point provenance: a 4,400-point daily chart would
-    otherwise serialize more anchor than data. The series that owns them carries
-    one anchor, and every point keeps its source lexemes, so a point is still
-    traceable by its index within that anchored series. A point whose shape is
-    not ``[timestamp, value]`` is kept with null readings rather than dropped.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    timestamp_ms: int | None
-    timestamp_raw_text: str
-    timestamp_iso: datetime | None
-    value: Decimal | None
-    raw_value_text: str
 
 
 class TijoriOverviewSectionOutcome(BaseModel):

@@ -19,6 +19,14 @@ collision.
 
 No un-provenanced fact may be stored: a Fact whose observation provenance is
 missing or whose ``file_sha256`` is empty is rejected fail-closed.
+
+Nor may a fact whose anchor kind has not been admitted to the store. An
+``API_DOCUMENT``-anchored observation is currently **barred**: those responses
+carry no identity field of their own, so the only binding to an issuer is the id
+in the request URL. That is enough to acquire and retain a document, but not to
+let a value join the canonical revision chain, where content identity is assumed
+to be corroborated by the source. The bar lifts when reconciliation or an
+explicit promotion step exists to supply that corroboration.
 """
 
 from __future__ import annotations
@@ -101,6 +109,21 @@ class UnprovenancedFactError(ValueError):
     """Raised when a Fact lacking usable source provenance is offered to the store."""
 
 
+class BarredAnchorFactError(ValueError):
+    """Raised when a Fact whose anchor kind is not admitted to the store is offered."""
+
+
+# Anchor kinds whose identity binding is too weak to enter the revision chain.
+_BARRED_ANCHOR_TYPES: frozenset[SourceAnchorType] = frozenset({SourceAnchorType.API_DOCUMENT})
+
+_BARRED_ANCHOR_REASON = (
+    "{anchor} observations are barred from the fact store: the response carries no "
+    "identity field, so the value is bound to an issuer only by the id in its request "
+    "URL. Acquire and retain the document; admit it here once reconciliation or an "
+    "explicit promotion step corroborates that identity."
+)
+
+
 class StoredRevision(BaseModel):
     """One persisted, retained revision within a revision family.
 
@@ -152,6 +175,15 @@ def _anchor_payload(observation: Observation) -> dict[str, object]:
         payload.update(
             {
                 "island_id": prov.island_id,
+                "table_key": prov.table_key,
+                "row_label": prov.row_label,
+                "column_label": prov.column_label,
+            }
+        )
+    elif prov.anchor_type is SourceAnchorType.API_DOCUMENT:
+        payload.update(
+            {
+                "document_id": prov.document_id,
                 "table_key": prov.table_key,
                 "row_label": prov.row_label,
                 "column_label": prov.column_label,
@@ -358,6 +390,10 @@ class FactStore:
             raise UnprovenancedFactError("observation is missing provenance")
         if not provenance.file_sha256:
             raise UnprovenancedFactError("provenance.file_sha256 must be non-empty")
+        if provenance.anchor_type in _BARRED_ANCHOR_TYPES:
+            raise BarredAnchorFactError(
+                _BARRED_ANCHOR_REASON.format(anchor=provenance.anchor_type.value)
+            )
 
     @staticmethod
     def _row_to_revision(row: sqlite3.Row) -> StoredRevision:

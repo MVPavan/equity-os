@@ -16,6 +16,11 @@ from datetime import UTC, datetime
 
 import structlog
 
+from fundamentals.api.tijori_analysis_cli import (
+    TIJORI_ANALYSIS_COMMAND,
+    render_tijori_analysis_summary,
+    run_tijori_analysis_command,
+)
 from fundamentals.api.tijori_overview_cli import (
     TIJORI_OVERVIEW_COMMAND,
     render_tijori_overview_summary,
@@ -37,6 +42,7 @@ TIJORI_COMMANDS = (
     TIJORI_TABLES_COMMAND,
     TIJORI_SHAREHOLDING_COMMAND,
     TIJORI_OVERVIEW_COMMAND,
+    TIJORI_ANALYSIS_COMMAND,
 )
 
 _CLI_LOGGER_NAME = "fundamentals.cli"
@@ -85,12 +91,24 @@ def dispatch_tijori_command(
         sys.stdout.write(render_tijori_shareholding_summary(shareholding) + "\n")
         return 0
 
+    if args.command == TIJORI_OVERVIEW_COMMAND:
+        logger.info(
+            "tijori_overview_invoked",
+            stock=args.stock,
+            section=args.section,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        sections = run_tijori_overview_command(args, credentials=credentials)
+        sys.stdout.write(render_tijori_overview_summary(sections) + "\n")
+        return 0
+
     logger.info(
-        "tijori_overview_invoked",
+        "tijori_analysis_invoked",
         stock=args.stock,
         section=args.section,
+        metric_ids=args.metric_ids,
         started_at=datetime.now(UTC).isoformat(),
     )
-    sections = run_tijori_overview_command(args, credentials=credentials)
-    sys.stdout.write(render_tijori_overview_summary(sections) + "\n")
+    run = run_tijori_analysis_command(args, credentials=credentials)
+    sys.stdout.write(render_tijori_analysis_summary(run) + "\n")
     return 0

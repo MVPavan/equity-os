@@ -218,6 +218,85 @@ def test_provenance_json_island_requires_typed_location_fields() -> None:
         )
 
 
+def test_provenance_api_document_requires_typed_location_fields() -> None:
+    """An API anchor without its location triple could not be re-fetched or compared."""
+    with pytest.raises(ValidationError, match="API_DOCUMENT anchor requires"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.API_DOCUMENT,
+            document_id="api:cash_flow_waterfall",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_api_document_requires_the_full_request_path() -> None:
+    """Without context_ref the anchor names an API but not which request made it."""
+    with pytest.raises(ValidationError, match="API_DOCUMENT anchor requires"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.API_DOCUMENT,
+            document_id="api:cash_flow_waterfall",
+            table_key="1yr",
+            row_label="0/WCC",
+            column_label="y",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_api_document_rejects_an_island_id() -> None:
+    """An API anchor carrying island fields would read as a page island downstream."""
+    with pytest.raises(ValidationError, match="must not set island_id"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.API_DOCUMENT,
+            context_ref="https://example.invalid/api/v1/ind/cash_flow_waterfall/81/#1yr",
+            document_id="api:cash_flow_waterfall",
+            island_id="fin_tables_data",
+            table_key="1yr",
+            row_label="0/WCC",
+            column_label="y",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_json_island_rejects_api_and_html_fields() -> None:
+    """The rejection is symmetric: no anchor kind may borrow another's addressing."""
+    with pytest.raises(ValidationError, match="must not set column_index, document_id"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.JSON_ISLAND,
+            context_ref="https://example.invalid/#fin_tables_data/qt_c/Dec 2024/x",
+            island_id="fin_tables_data",
+            document_id="api:cash_flow_waterfall",
+            table_key="qt_c",
+            row_label="Net Sales",
+            column_label="Dec 2024",
+            column_index=0,
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
+def test_provenance_html_table_rejects_island_and_api_fields() -> None:
+    """Symmetric with the island and API rules, and safe for every committed producer."""
+    with pytest.raises(ValidationError, match="must not set island_id"):
+        Provenance(
+            source_id="tijori",
+            file_sha256="0" * 64,
+            anchor_type=SourceAnchorType.HTML_TABLE,
+            table_id="shareholding",
+            row_path="promoters",
+            row_label="Promoters",
+            column_index=0,
+            column_label="Dec 2024",
+            island_id="fin_tables_data",
+            retrieved_at=_RETRIEVED_AT,
+        )
+
+
 def test_provenance_valid_anchors_construct() -> None:
     pdf = Provenance(
         source_id="infy-q1-fy25-results-pdf",

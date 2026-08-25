@@ -74,6 +74,11 @@ def anchor_label(provenance: Provenance) -> str:
             f"JSON island {provenance.island_id}, table {provenance.table_key}, "
             f"row {provenance.row_label}, column {provenance.column_label}"
         )
+    elif provenance.anchor_type is SourceAnchorType.API_DOCUMENT:
+        location = (
+            f"API document {provenance.document_id}, key {provenance.table_key}, "
+            f"row {provenance.row_label}, field {provenance.column_label}"
+        )
     elif provenance.anchor_type is SourceAnchorType.HTML_TABLE:
         location = (
             f"HTML table {provenance.table_id}, row {provenance.row_path}, "

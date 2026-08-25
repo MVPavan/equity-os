@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "field_name": "assets",
+      "data": [
+        {"name": "Net Block", "value": 6742.0},
+        {"name": "Investments", "value": "1,205.50"},
+        {"name": "Other Assets", "value": "NA"}
+      ]
+    },
+    {
+      "field_name": "liabilities",
+      "data": [
+        {"name": "Equity", "value": 15703.0},
+        {"name": "Debt", "value": 480.0, "note": "long term"}
+      ]
+    }
+  ],
+  "status": 200
+}

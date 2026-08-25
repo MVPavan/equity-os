@@ -24,7 +24,11 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
-from fundamentals.store.fact_store import FactStore, UnprovenancedFactError
+from fundamentals.store.fact_store import (
+    BarredAnchorFactError,
+    FactStore,
+    UnprovenancedFactError,
+)
 
 _RETRIEVED_AT = datetime(2024, 7, 18, tzinfo=UTC)
 
@@ -233,3 +237,25 @@ def test_json_island_anchor_location_fields_participate_in_the_value_hash() -> N
         assert first.value_hash != second.value_hash
     finally:
         store.close()
+
+
+def test_api_document_anchored_facts_are_barred_from_the_store(store: FactStore) -> None:
+    """These responses carry no identity field, so the id in the request URL is the
+    only thing binding the value to an issuer — not enough to join the canonical
+    revision chain, where content identity is assumed to be source-corroborated."""
+    api_anchor = Provenance(
+        source_id="tijori",
+        file_sha256="0" * 64,
+        anchor_type=SourceAnchorType.API_DOCUMENT,
+        context_ref="https://example.test/api/v1/ind/cash_flow_waterfall/81/#1yr/0/WCC/y",
+        document_id="api:cash_flow_waterfall",
+        table_key="1yr",
+        row_label="0/WCC",
+        column_label="y",
+        retrieved_at=_RETRIEVED_AT,
+    )
+
+    with pytest.raises(BarredAnchorFactError, match="barred from the fact store"):
+        store.put(_fact(_observation(provenance=api_anchor)))
+
+    assert store.query_canonical() == ()

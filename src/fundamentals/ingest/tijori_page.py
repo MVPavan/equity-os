@@ -88,6 +88,13 @@ class JsonScriptCollector(HTMLParser):
         self._chunks = []
 
 
+def as_object(value: Any, label: str) -> dict[str, Any]:
+    """Require an untrusted JSON island payload to be an object."""
+    if not isinstance(value, dict):
+        raise TijoriParseError(f"tijori JSON island {label!r} must contain an object")
+    return value
+
+
 def decode_document(raw: bytes, *, page_label: str) -> str:
     """Decode one Tijori page as UTF-8 HTML, naming the surface when it is not."""
     try:

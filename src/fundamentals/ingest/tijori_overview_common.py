@@ -12,8 +12,7 @@ Dependency flow is one-way: ``common`` knows nothing about the builders.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from datetime import date, datetime
 from typing import Any
 
 import structlog
@@ -27,6 +26,7 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSection,
     TijoriSeriesPoint,
 )
+from fundamentals.ingest.tijori_series import read_series
 from fundamentals.ingest.tijori_tables import TIJORI_SOURCE_ID, cell_reading, raw_json
 
 _LOGGER = structlog.get_logger(__name__)
@@ -41,8 +41,6 @@ SYMBOL_FIELD = "symbol"
 
 _UTC_SUFFIX = "Z"
 _UTC_OFFSET = "+00:00"
-_MILLISECONDS_PER_SECOND = 1000
-_POINT_LENGTH = 2
 
 
 class SectionContext(BaseModel):
@@ -289,65 +287,10 @@ def iso_datetime(text: str) -> datetime | None:
         return None
 
 
-def _epoch_iso(milliseconds: int) -> datetime | None:
-    """Derive a UTC instant from an epoch-millisecond source value."""
-    try:
-        return datetime.fromtimestamp(milliseconds / _MILLISECONDS_PER_SECOND, tz=UTC)
-    except (OverflowError, OSError, ValueError):
-        return None
-
-
-def _epoch_milliseconds(raw_value: Any) -> int | None:
-    """Read an epoch-millisecond stamp published as an integer or a whole float."""
-    if isinstance(raw_value, bool):
-        return None
-    if isinstance(raw_value, int):
-        return raw_value
-    if (
-        isinstance(raw_value, Decimal)
-        and raw_value.is_finite()
-        and raw_value == raw_value.to_integral_value()
-    ):
-        return int(raw_value)
-    return None
-
-
-def _series_point(raw_point: Any) -> tuple[TijoriSeriesPoint, bool]:
-    """Read one ``[timestamp, value]`` point, keeping a malformed one verbatim."""
-    if not isinstance(raw_point, list) or len(raw_point) != _POINT_LENGTH:
-        return (
-            TijoriSeriesPoint(
-                timestamp_ms=None,
-                timestamp_raw_text=raw_json(raw_point),
-                timestamp_iso=None,
-                value=None,
-                raw_value_text=raw_json(raw_point),
-            ),
-            True,
-        )
-    raw_timestamp, raw_value = raw_point
-    milliseconds = _epoch_milliseconds(raw_timestamp)
-    value, raw_value_text = cell_reading(raw_value)
-    return (
-        TijoriSeriesPoint(
-            timestamp_ms=milliseconds,
-            timestamp_raw_text=cell_reading(raw_timestamp)[1],
-            timestamp_iso=None if milliseconds is None else _epoch_iso(milliseconds),
-            value=value,
-            raw_value_text=raw_value_text,
-        ),
-        milliseconds is None,
-    )
-
-
 def series(raw_points: Any, *, label: str) -> tuple[tuple[TijoriSeriesPoint, ...], int]:
     """Read a whole point series, counting the points whose shape was not modeled."""
-    points: list[TijoriSeriesPoint] = []
-    malformed = 0
-    for raw_point in as_list(raw_points, label):
-        point, is_malformed = _series_point(raw_point)
-        points.append(point)
-        malformed += int(is_malformed)
-    if malformed:
-        _LOGGER.warning("tijori_overview_series_points_unmodeled", label=label, count=malformed)
-    return tuple(points), malformed
+    return read_series(
+        as_list(raw_points, label),
+        label=label,
+        drift_event="tijori_overview_series_points_unmodeled",
+    )
