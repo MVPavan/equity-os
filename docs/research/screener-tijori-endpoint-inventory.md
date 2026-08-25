@@ -70,12 +70,45 @@ financials page and matching `symbol` to the watchlist NSE symbol
 (fail-closed; a first-match body grep is NOT safe — peer widgets carry
 other companies' symbols earlier in the page).
 
-### Known-but-unmapped Tijori surfaces (from council evidence)
+### Full company-page surface map (headless owner-session crawl, 2026-08-25)
 
-Dashboard (`/dashboard/`), ideas dashboard (`/in/ideas-dashboard/`),
-company search page (`/in/search/`), plus the surfaces catalogued in
-tijori-finance-mcp's ARCHITECTURE.md (KPIs, revenue mix, fund flow,
-market intel, screens). To be mapped one capability at a time in Phase 4.
+Company sub-pages: `/company/<slug>/` (overview), `/financials/`,
+`/shareholding/`, `/benchmarking/`, `/reports/`.
+
+**Overview page islands** (all Django json_script, one GET, TITAN sizes):
+`price_chart` (110KB, ~4,400 daily points ≈ 17y), `intraday_price` (75 pts),
+`price_returns` (1d…10y), `price_chart_peers`, `corporate_actions`
+(Bonus/Dividend/Rights/Split), `ratios_table` (12), `peers_table_data`,
+`ms-charts` (market share), `custom_fin_table` (10 — operational KPIs /
+custom financials), `metrics` (25), `company_details_data` (identity, mcap,
+PE, quick_look forensic flags), `overview_locks`, `plan_details`,
+`is_auth`, `is_banking`, `companyId`.
+
+**Financials page**: `fin_tables_data` (15 tables — fully covered by
+`fundamentals tijori-tables`), `financials_locks`, `company_details`,
+`peersList`, `metrics`, plus the shared price islands.
+
+**Shareholding page**: data is server-rendered HTML (3 tables;
+Overview/Trend/Detailed tabs) — NOT islands; parser would be HTML-table
+based. Page also embeds estimate/scenario content (5-year revenue/EBITDA
+estimates, scenario probabilities, FY26E–FY30E estimates table, assumptions
+and risk, triggers).
+
+**Ancillary JSON APIs called by the pages** (session cookie; all verified
+live 2026-08-25): `/api/v1/ind/company_op_metrics/<company_id>/<metric_id>/`
+(time series), `/api/v1/ind/fund_flow_analysis_data/<company_id>/`
+(sources/uses of funds, 1yr/3yr/...), `/api/v1/ind/balance_sheet_snap_shot/
+<company_id>/` (BS snapshot), `/api/v1/ind/cash_flow_waterfall/<company_id>/`,
+`/timeline/company/?company_id=<id>&timestamp=0` (events timeline),
+`/in/watchlist/company/<id>` (watchlist membership),
+`/ideas-dashboard/buyback/card-body/` (ideas fragments).
+
+**Site-level**: `/dashboard/`, `/in/ideas-dashboard/`, `/in/search/` are
+thin shells (no data islands); their content loads via fragments.
+
+Priority order for future table/parser coverage (Phase 4): corporate_actions,
+ratios_table, custom_fin_table (KPIs), ms-charts, price islands, fund-flow /
+BS-snapshot / CF-waterfall APIs, shareholding HTML tables, timeline.
 
 ## Screener.in — first pass (owner HAR + headless capture, 2026-08-24)
 
