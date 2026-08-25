@@ -106,9 +106,39 @@ live 2026-08-25): `/api/v1/ind/company_op_metrics/<company_id>/<metric_id>/`
 **Site-level**: `/dashboard/`, `/in/ideas-dashboard/`, `/in/search/` are
 thin shells (no data islands); their content loads via fragments.
 
+**Exact sub-tab names per company tab** (in-page anchor nav, verified live
+2026-08-25 under premium; owner-confirmed count):
+
+- Overview (11): Custom Ratios `#custom_ratios`, Custom Financials
+  `#custom_financials`, Forensics `#forensics`, Market Share `#marketshare`,
+  Revenue Mix `#revenuemix` (Product Wise / Location Wise / Operating Profit /
+  Asset Break-Up ×2), Operational Metrics `#operationalmetrics`, Peer
+  Comparison `#competitors`, Brands `#brands`, Corporate Actions
+  `#corporateactions`, Connections `#connections`, Knowledge Base
+  `#knowledgebase`; plus unanchored sections Key Ratios, About, Timeline, and
+  the owner's own custom financial statement.
+- Financials (9): Price `#price`, Growth Table `#growth_table`, Balance Sheet
+  `#balance_sheet` (+ Balance Sheet Snapshot / Comparison), Profit & Loss
+  `#profit_and_loss`, Cash Flow `#cash_flow`, Cash Flow Analysis
+  `#cash_flow_analysis` (+ Fund Flow Analysis / Comparison), Ratios `#ratios`,
+  Quarterly Results `#quarterly_results`, Reverse DCF `#reverse_dcf`.
+- Shareholding (3): Overview `#overview`, Trend `#trend`, Detailed `#detailed`.
+- Benchmarking (2): Financial `#benchmarking-financial`, Business
+  `#benchmarking-business`.
+- Reports: no sub-nav; report cards with free/paid access flow.
+
+Results section (site-level): `/results/quarterly-results/` (filters: market
+cap, sorting, companies, sectors, date range), `/results/upcoming-events/`
+(company/date/time/link), `/results/concall-monitor/` (AI concall summaries).
+
+Note: an embedded sample-report modal ("5 Year Revenue & EBITDA Estimates",
+scenario tables, "Analyst Watchlist") renders in the DOM of every company
+page — it is a global template, not per-tab content.
+
 Priority order for future table/parser coverage (Phase 4): corporate_actions,
 ratios_table, custom_fin_table (KPIs), ms-charts, price islands, fund-flow /
-BS-snapshot / CF-waterfall APIs, shareholding HTML tables, timeline.
+BS-snapshot / CF-waterfall APIs, shareholding HTML tables, timeline,
+upcoming-events + concall monitor.
 
 ## Screener.in — first pass (owner HAR + headless capture, 2026-08-24)
 
