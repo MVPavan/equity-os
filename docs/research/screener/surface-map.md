@@ -240,7 +240,12 @@ Observed facts:
   positive markers + warehouse-id presence, never from status or URL.
 - XHR flags: `chart/?…&consolidated=true`, `segments/…/?consolidated=true`,
   `insights/…/quarter/?is_consolidated=1`, `results/rpt/<id>/consolidated/`.
-- **`schedules/` was requested with `consolidated=` (empty) even from the
-  consolidated page.** Whether the API defaults to consolidated, ignores the
-  flag, or expects `true` is unknown — Slice 0 must fetch both variants and
-  reconcile against the page's own row totals before trusting either.
+- **`schedules/` selects basis by the PRESENCE of the `consolidated` query
+  key, not its value** (verified 2026-08-26 against TITAN page totals):
+  `consolidated=`, `consolidated=true` and `consolidated=false` all return
+  the consolidated schedule (Borrowings sub-rows sum to 30,621 = consolidated
+  page row); omitting the key entirely returns standalone (sum 23,009 =
+  standalone page row). Row sets differ per basis (standalone Borrowings has
+  no "Other Borrowings"). The standalone page's own JS calls the URL without
+  the key. Any client must build the URL by basis and reconcile the sub-row
+  sum to the page row it expands.
