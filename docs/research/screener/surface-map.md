@@ -228,6 +228,16 @@ Observed facts:
   content under the consolidated URL) is **unverified** — Slice 0 must test
   with a standalone-only watchlist company (e.g. NETWEB) and record the
   outcome as a typed basis fact.
+- **Warehouse id is per basis** (probe of all ten watchlist stocks,
+  2026-08-26): e.g. TITAN consolidated `data-warehouse-id=6599273`,
+  standalone `1093`; company id (3437) is the same on both. So
+  `peers/` and `quick_ratios/` results are basis-scoped by which warehouse
+  id you call; config must hold one warehouse id per basis.
+- Standalone-only company (NETWEB): `/company/NETWEB/consolidated/` returns
+  **HTTP 200 with no basis marker and no warehouse id** — a quiet degenerate
+  page, not a redirect or 404; the standalone page has a warehouse id but
+  also no marker (no toggle offered). Basis must be established from
+  positive markers + warehouse-id presence, never from status or URL.
 - XHR flags: `chart/?…&consolidated=true`, `segments/…/?consolidated=true`,
   `insights/…/quarter/?is_consolidated=1`, `results/rpt/<id>/consolidated/`.
 - **`schedules/` was requested with `consolidated=` (empty) even from the
