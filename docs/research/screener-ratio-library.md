@@ -1,0 +1,106 @@
+# Screener.in Ratio / Column Library (374 fields, captured 2026-08-26)
+
+Every field selectable under **Manage columns** (`/user/columns/`) and usable
+in the screen query language (`/screen/raw/?query=…`). Names verbatim from the
+site. Grouped here alphabetically by first word for lookup; Screener itself
+presents them as one flat list.
+
+- **52w**: 52w Index
+- **Accumulated**: Accumulated depreciation
+- **Advance**: Advance from Customers
+- **Altman**: Altman Z Score
+- **Asset**: Asset Turnover Ratio
+- **Average**: Average 5years dividend; Average debtor days 3years; Average dividend payout 3years; Average Earnings 10Year; Average Earnings 5Year; Average EBIT 10Year; Average EBIT 5Year; Average return on capital employed 10Years; Average return on capital employed 3Years; Average return on capital employed 5Years; Average return on capital employed 7Years; Average return on equity 10Years; Average return on equity 3Years; Average return on equity 5Years; Average return on equity 7Years; Average return on invested capital 3Years; Average return on invested capital 5Years; Average Working Capital Days 3years
+- **Balance**: Balance sheet total
+- **Book**: Book value; Book value 10years back; Book value 3years back; Book value 5years back; Book value of unquoted investments; Book value preceding year
+- **Capital**: Capital work in progress; Capital work in progress preceding year
+- **Cash**: Cash 3Years back; Cash 5Years back; Cash 7Years back; Cash beginning of last year; Cash beginning of preceding year; Cash by market cap; Cash Conversion Cycle; Cash end of last year; Cash end of preceding year; Cash Equivalents; Cash from financing last year; Cash from financing preceding year; Cash from investing last year; Cash from investing preceding year; Cash from operations last year; Cash from operations preceding year
+- **cash**: cash debt contingent liabilities by mcap
+- **Change**: Change in DII holding; Change in DII holding 3Years; Change in FII holding; Change in FII holding 3Years; Change in promoter holding; Change in promoter holding 3Years
+- **Contingent**: Contingent liabilities
+- **Credit**: Credit rating
+- **CROIC**: CROIC
+- **Current**: Current assets; Current liabilities; Current price; Current ratio; Current Tax
+- **Days**: Days Inventory Outstanding; Days Payable Outstanding; Days Receivable Outstanding
+- **Debt**: Debt; Debt 10Years back; Debt 3Years back; Debt 5Years back; Debt 7Years back; Debt Capacity; Debt preceding year; Debt to equity; Debt To Profit
+- **Debtor**: Debtor days; Debtor days 3years back; Debtor days 5years back
+- **debtplus**: debtplus
+- **Depreciation**: Depreciation; Depreciation last year; Depreciation latest quarter; Depreciation preceding quarter; Depreciation preceding year; Depreciation preceding year quarter
+- **DII**: DII holding
+- **Dividend**: Dividend last year; Dividend Payout; Dividend Payout Ratio; Dividend preceding year; Dividend yield
+- **DMA**: DMA 200; DMA 200 previous day; DMA 50; DMA 50 previous day
+- **Down**: Down from 52w high
+- **Earning**: Earning Power
+- **Earnings**: Earnings yield
+- **EBIDT**: EBIDT growth 10Years; EBIDT growth 3Years; EBIDT growth 5Years; EBIDT growth 7Years; EBIDT last year; EBIDT latest quarter; EBIDT preceding quarter; EBIDT preceding year; EBIDT preceding year quarter
+- **EBIT**: EBIT; EBIT last year; EBIT latest quarter; EBIT preceding quarter; EBIT preceding year; EBIT preceding year quarter
+- **Employee**: Employee cost last year
+- **Enterprise**: Enterprise Value; Enterprise Value to EBIT
+- **EPS**: EPS; EPS growth 10Years; EPS growth 3Years; EPS growth 5Years; EPS growth 7Years; EPS last year; EPS latest quarter; EPS preceding quarter; EPS preceding year; EPS preceding year quarter
+- **Equity**: Equity capital; Equity Capital latest quarter; Equity Capital preceding quarter; Equity Capital preceding year quarter
+- **EVEBITDA**: EVEBITDA
+- **Expected**: Expected quarterly EPS; Expected quarterly net profit; Expected quarterly operating profit; Expected quarterly sales; Expected quarterly sales growth
+- **Exports**: Exports percentage; Exports percentage 3Years back; Exports percentage 5Years back
+- **Extraordinary**: Extraordinary items last year; Extraordinary items latest quarter; Extraordinary items preceding quarter; Extraordinary items preceding year; Extraordinary items preceding year quarter
+- **Face**: Face value
+- **FII**: FII holding
+- **Financial**: Financial leverage
+- **Free**: Free cash flow 10years; Free cash flow 3years; Free cash flow 5years; Free cash flow 7years; Free cash flow last year; Free cash flow preceding year
+- **From**: From 52w high
+- **G**: G Factor
+- **GPM**: GPM latest quarter
+- **Graham**: Graham; Graham Number
+- **Gross**: Gross block; Gross block preceding year
+- **High**: High price; High price all time
+- **Historical**: Historical PBV 10Years; Historical PBV 3Years; Historical PBV 5Years; Historical PBV 7Years; Historical PE 10Years; Historical PE 3Years; Historical PE 5Years; Historical PE 7Years
+- **Industry**: Industry PBV; Industry PE
+- **Interest**: Interest; Interest Coverage; Interest Coverage Ratio; Interest last year; Interest latest quarter; Interest preceding quarter; Interest preceding year; Interest preceding year quarter
+- **Intrinsic**: Intrinsic Value
+- **Inventory**: Inventory; Inventory turnover ratio; Inventory turnover ratio 10Years back; Inventory turnover ratio 3Years back; Inventory turnover ratio 5Years back; Inventory turnover ratio 7Years back
+- **Investing**: Investing cash flow 10years; Investing cash flow 3years; Investing cash flow 5years; Investing cash flow 7years
+- **Investments**: Investments
+- **Is**: Is not SME; Is SME
+- **Last**: Last annual result date; Last result date
+- **Lease**: Lease liabilities
+- **Leverage**: Leverage
+- **Low**: Low price; Low price all time
+- **MACD**: MACD; MACD Previous Day; MACD Signal; MACD Signal Previous Day
+- **Market**: Market cap to quarterly profit; Market Cap to Sales; Market Capitalization; Market Capitalization 10years back; Market Capitalization 3years back; Market Capitalization 5years back; Market Capitalization 7years back; Market Capt to Cash Flow; Market value of quoted investments
+- **Material**: Material cost last year
+- **Median**: Median return on capital employed 10Years; Median return on capital employed 5Years
+- **Mkt**: Mkt Cap To Debt Cap
+- **NCAVPS**: NCAVPS
+- **Net**: Net block; Net block 3Years back; Net block 5Years back; Net block 7Years back; Net block preceding year; Net cash flow last year; Net cash flow preceding year; Net profit; Net profit 2quarters back; Net profit 3quarters back; Net Profit last year; Net Profit latest quarter; Net profit preceding 12months; Net Profit preceding quarter; Net Profit preceding year; Net Profit preceding year quarter; Net worth
+- **NPM**: NPM last year; NPM latest quarter; NPM preceding quarter; NPM preceding year; NPM preceding year quarter
+- **Number**: Number of equity shares; Number of equity shares 10years back; Number of equity shares preceding year; Number of Shareholders; Number of Shareholders 1year back; Number of Shareholders preceding quarter
+- **Operating**: Operating cash flow 10years; Operating cash flow 3years; Operating cash flow 5years; Operating cash flow 7years; Operating profit; Operating profit 2quarters back; Operating profit 3quarters back; Operating profit growth; Operating profit last year; Operating profit latest quarter; Operating profit preceding quarter; Operating profit preceding year; Operating profit preceding year quarter
+- **OPM**: OPM; OPM 10Year; OPM 5Year; OPM last year; OPM latest quarter; OPM preceding quarter; OPM preceding year; OPM preceding year quarter
+- **Other**: Other income; Other income last year; Other income latest quarter; Other income preceding quarter; Other income preceding year; Other income preceding year quarter
+- **PB**: PB X PE
+- **PEG**: PEG Ratio
+- **Piotroski**: Piotroski score
+- **Pledged**: Pledged percentage
+- **Preference**: Preference capital
+- **Price**: Price to book value; Price to Cash Flow; Price to Earning; Price to Free Cash Flow; Price to Quarterly Earning; Price to Sales
+- **Profit**: Profit after tax; Profit after tax last year; Profit after tax latest quarter; Profit after tax preceding quarter; Profit after tax preceding year; Profit after tax preceding year quarter; Profit before tax last year; Profit before tax latest quarter; Profit before tax preceding quarter; Profit before tax preceding year; Profit before tax preceding year quarter; Profit growth; Profit growth 10Years; Profit growth 3Years; Profit growth 5Years; Profit growth 7Years
+- **Promoter**: Promoter holding
+- **Public**: Public holding
+- **QoQ**: QoQ Profits; QoQ Sales
+- **Quick**: Quick ratio
+- **Reserves**: Reserves
+- **Return**: Return on assets; Return on assets 3years; Return on assets 5years; Return on assets preceding year; Return on capital employed; Return on capital employed preceding year; Return on equity; Return on equity 5years growth; Return on equity preceding year; Return on invested capital; Return over 10years; Return over 1day; Return over 1month; Return over 1week; Return over 1year; Return over 3months; Return over 3years; Return over 5years; Return over 6months; Return over 7years
+- **Revaluation**: Revaluation reserve
+- **ROCE3yr**: ROCE3yr avg
+- **RSI**: RSI
+- **Sales**: Sales; Sales 2quarters back; Sales 3quarters back; Sales growth; Sales growth 10Years; Sales growth 10years median; Sales growth 3Years; Sales growth 5Years; Sales growth 5years median; Sales growth 7Years; Sales last year; Sales latest quarter; Sales preceding 12months; Sales preceding quarter; Sales preceding year; Sales preceding year quarter
+- **Secured**: Secured loan
+- **Tax**: Tax; Tax last year; Tax latest quarter; Tax preceding quarter; Tax preceding year; Tax preceding year quarter
+- **Total**: Total Assets; Total Capital Employed
+- **Trade**: Trade Payables; Trade receivables
+- **TTM**: TTM Result Date
+- **Unpledged**: Unpledged promoter holding
+- **Unsecured**: Unsecured loan
+- **Up**: Up from 52w low
+- **Volume**: Volume; Volume 1month average; Volume 1week average; Volume 1year average
+- **Working**: Working capital; Working capital 10Years back; Working capital 3Years back; Working capital 5Years back; Working capital 7Years back; Working Capital Days; Working capital preceding year; Working Capital to Sales ratio
+- **YOY**: YOY Quarterly profit growth; YOY Quarterly sales growth

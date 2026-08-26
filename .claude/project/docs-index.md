@@ -18,6 +18,7 @@ Authoritative docs and when to read them.
 | `docs/research/pdf-extraction-bakeoff.md` | Building or changing document extraction — measured verdicts on PageIndex, the scanned-page vision lane, deterministic table extraction, and XBRL/EDGAR tooling, plus the proposed pipeline contract |
 | `docs/research/screener-surface-map.md` | Any Screener (Phase 2) work — owner-validated map of every subscriber surface with exact site names, URLs, APIs, the two company-id namespaces, redirect-to-BSE facts, and the observed 429 rate limit |
 | `docs/research/screener-industry-classification.md` | Sector/industry mapping — Screener's full 4-tier classification tree (12/22/58/188) with codes and counts |
+| `docs/research/screener-ratio-library.md` | Writing or parsing Screener queries/columns — all 374 field names usable in `/screen/raw/?query=` and Manage columns |
 
 Not yet present, expected later: `docs/specs/` (brainstorming output),
 `docs/workstreams/<name>/roadmap.md` (phase plans), and the smaller

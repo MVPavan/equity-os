@@ -87,9 +87,38 @@ cash-flow ratios insights shareholding documents` (note `insights` has no tab;
 
 TITAN carries `data-company-id="3437"` **and** `data-warehouse-id="6599273"`.
 The same API path template `/api/company/<id>/…` takes the **warehouse id**
-for `peers/` and `quick_ratios/` but the **company id** for `chart/`. Both
-must be mapped per watchlist company and asserted per endpoint; never assume
-one namespace.
+for `peers/` and `quick_ratios/` but the **company id** for `chart/` and
+`schedules/`; `/api/3/<company_id>/…` and `/api/segments/<company_id>/…` use
+the company id. Both must be mapped per watchlist company and asserted per
+endpoint; never assume one namespace.
+
+### 3a. Click-driven endpoints (captured 2026-08-26, TITAN, 3 interaction passes)
+
+Every "+" row, tab, toggle, and modal on the company page was clicked with
+network recording. Results, with response shapes:
+
+| Control | Request | Response shape |
+|---|---|---|
+| Quarters / P&L / BS / CF expandable rows (`Sales +`, `Expenses +`, `Other Income +`, `Net Profit +`, `Borrowings +`, `Other Liabilities +`, `Fixed Assets +`, `Other Assets +`, `Cash from Operating/Investing/Financing Activity +`) | `GET /api/company/<company_id>/schedules/?parent=<Row label>&section=<quarters|profit-loss|balance-sheet|cash-flow>&consolidated=` | JSON `{sub_row: {period: "value string"}}`; values are display strings ("3,302", "25.99%") |
+| Investors drill-downs (`Promoters +`, `FIIs +`, `DIIs +`, `Government +`, `Public +`, `Others +`) | `GET /api/3/<company_id>/investors/{promoters|foreign_institutions|domestic_institutions|government|public|others}/quarterly/` | JSON `{holder_name: {period: "pct", "setAttributes": {"data-person-url": "/people/<id>/<slug>/"}}}` |
+| Investors `Quarterly` / `Yearly` | none — client-side toggle over data already in the page | — |
+| Investors `Trades` | **navigates** to `/trades/company-<company_id>/` | page: insider/bulk/block trade tables (Person, Quantity, Avg Price, Value in Rs. Lacs) |
+| `Product Segments` (Quarters, P&L) | `GET /api/segments/<company_id>/{quarters|profit-loss}/1/?consolidated=true` | HTML `<table class="data-table">` fragment; `tbody[data-segment-line]` per line: Sales, Sales Growth %, Profit, Profit Growth %, Profit %, Capital Employed, ROCE %; per-segment rows (e.g. Jewellery, Watches & Clocks, eyewear, Others, Unallocated) |
+| `Related Party` (P&L) | **navigates** to `/results/rpt/<company_id>/consolidated/` | page: `data-table` of parties (53 for TITAN, "Parent Co." tags) × transaction lines × years; Screener flags it "Experimental new feature" |
+| `Corporate actions` (BS) | modal `GET /company/actions/<company_id>/` | HTML: Equity History / Dividend / Bonus / Split tables (Date, Details) |
+| Insights `Quarterly` | `GET /insights/company/<company_id>/quarter/?is_consolidated=1` | HTML: KPI rows (e.g. "Jewellery Market Share (India) %") with per-quarter value + source quote + BSE PDF `#page=` link |
+| Insights `Yearly` | in page (`data-tab-id="yearly-insights"`) | same shape, annual |
+| Documents › Announcements `Recent` / `Important` / `Search` | `GET /announcements/{recent|important}/<company_id>/`; search form `POST /announcements/search/<company_id>/results/` (field `q`) | HTML list; items link to BSE PDFs; `All` → bseindia.com |
+| Documents › Annual reports / Credit ratings / Concalls | **inline in page** (no request) | Annual reports: BSE PDF links per year (2012–2026); Credit ratings: CARE/CRISIL/ICRA links; Concalls: per quarter `Transcript` / `PPT` / `REC` links + `AI Summary` modal `GET /concalls/summary/<concall_id>/`; `Add Missing` modal `/concalls/add-<company_id>/` |
+| Chart metric tabs (`name="metrics"` button values) | `GET /api/company/<company_id>/chart/?q=<metrics>&days=<N>&consolidated=true` with `days` ∈ 30/180/365/1095/1825/3650/10000 (`Max`) | JSON `{"datasets": [{"metric", "label", "values": [[date, value, {extra}], …]}]}` |
+| — `Price` | `q=Price-DMA50-DMA200-Volume` | Price on NSE, 50 DMA, 200 DMA, Volume (with `{"delivery": pct}`) — daily |
+| — `PE Ratio` | `q=Price to Earning-Median PE-EPS` | PE (daily), Median PE, TTM EPS (quarterly) |
+| — `Sales & Margin` | `q=GPM-OPM-NPM-Quarter Sales` | quarterly, back to 2005 |
+| — `EV / EBITDA` | `q=EV Multiple-Median EV Multiple-EBITDA` | daily multiple + quarterly EBITDA |
+| — `Price to Book` | `q=Price to book value-Median PBV-Book value` | |
+| — `Market Cap / Sales` | `q=Market Cap to Sales-Median Market Cap to Sales-Sales` | |
+| Peers `Edit Columns` | navigates to `/user/columns/?next=…` | Manage columns: 374 selectable fields (see `screener-ratio-library.md`); saved via `POST` with `csrfmiddlewaretoken` + `data` |
+| Header `Export to Excel` | link on page (per-company XLSX) | not exercised |
 
 ## 4. Watchlist and user configuration
 
@@ -124,12 +153,24 @@ one namespace.
 - Analytics endpoints (`/api/script.js`, `/api/track`, `/api/site/tracking-config/…`)
   are page telemetry, not data.
 
-## 7. Not yet captured (click-driven; next discovery round)
+## 7. Screens (explored 2026-08-26)
 
-Expandable "+" row contents (schedules), Product Segments and Related Party
-views, Investors drill-down rows, Documents tab contents, Edit Columns modal,
-the watchlist Export CSV body, Filters panels on the feeds, screen query
-results pages.
+| Surface | URL | Facts |
+|---|---|---|
+| Explore | `/explore/` | `Your screens` (owner had 8), Popular themes (6), Popular formulas (3), Price or Volume (5), Quarterly results (4), Valuation Screens (5), Popular stock screens (9), Browse sectors (58 tier-3 industries) — each screen link is `/screens/<id>/<slug>/` |
+| Saved screen results | `/screens/<id>/<slug>/` | table with the watchlist ratio columns (plus any custom columns, e.g. All time high, Down %); `?page=N` pagination; `?sort=<field>&order=desc`; the query expression is shown in a `<textarea>`; `Edit Columns` → `/user/columns/?next=…`; **Export** is a `POST` form to `/api/export/screen/?url_name=screen&screen_id=<id>&slug_name=…` (GET returns 405) |
+| **Raw query by URL** | `GET /screen/raw/?sort=&order=&source=&query=<expr>&page=N&limit=25|50` | returns `h1` "Query Results" with the same table — arbitrary screens **without saving**; e.g. `query=Market Capitalization > 10000 AND Return on capital employed > 20` → 50 rows/page |
+| Query builder | `/screen/new/` → `POST /screen/raw/` | same engine; saving a screen is a separate account mutation (not exercised) |
+| Watchlist export | `POST /api/export/screen/?url_name=goto_sublist&sublist_id=<id>` | CSV/XLSX incl. ISIN (per changelog); POST-only (GET 405) |
+
+Query language fields = the 374 names in `screener-ratio-library.md` (e.g.
+`Market Capitalization`, `Return on capital employed`, `Sales growth 3Years`).
+
+## 7a. Still not captured
+
+Export POST bodies (need CSRF token + form data), Edit-Columns save flow,
+screen create/save, `Search` announcements results, Notebook contents, the
+watchlist `Industry` grouping view, Filters panels on Market Pulse feeds.
 
 ## 8. Open question — industry classification levels
 
