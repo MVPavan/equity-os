@@ -120,6 +120,21 @@ network recording. Results, with response shapes:
 | Peers `Edit Columns` | navigates to `/user/columns/?next=…` | Manage columns: 374 selectable fields (see `ratio-library.md`); saved via `POST` with `csrfmiddlewaretoken` + `data` |
 | Header `Export to Excel` | link on page (per-company XLSX) | not exercised |
 
+### 3b. Schedule body facts (learned in Slice 1)
+
+- **Nested schedules exist.** Some sub-rows carry a reserved key
+  `isExpandable` whose value is a string `Company.showSchedule("<Sub-row>", …)`
+  (e.g. Other Assets → Trade receivables), i.e. a THIRD level opens from the
+  sub-row. Reserved keys seen in schedule bodies: `setAttributes` (dict, e.g.
+  `{"class": "strong"}` marks the site's own subtotal rows) and `isExpandable`
+  (string). Level-3 schedules are recorded but not acquired yet (follow-up
+  bead).
+- Reconciliation facts (2026-08-26, TITAN/NETWEB/HFCL): page rows and sub-rows
+  are rounded to whole crores independently (±1 per addend); the page rounds
+  where the API keeps fractions (0.42 → 0); Fixed Assets page row = Gross
+  Block − Accumulated Depreciation; Net Profit and Cash from Operating
+  Activity families are restatement/hierarchical mixes, not flat sums.
+
 ## 4. Watchlist and user configuration
 
 | Surface | Exact name | URL | Notes |
