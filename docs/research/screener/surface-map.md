@@ -135,6 +135,52 @@ network recording. Results, with response shapes:
   Block − Accumulated Depreciation; Net Profit and Cash from Operating
   Activity families are restatement/hierarchical mixes, not flat sums.
 
+### 3c. Sub-document facts (learned in Slice 2, 2026-08-26, TITAN/NETWEB/ETERNAL/HFCL)
+
+- **Discovery is page-driven.** Investor buckets come from
+  `Company.showShareholders('<bucket>', '<quarterly|yearly>', this)` buttons
+  (sets vary: NETWEB has no government/others rows; ETERNAL has no promoters
+  row); segments from `Segment.showSegment('<section>', '<type>')` (absent on
+  NETWEB, LAURUSLABS, MTARTECH, SONACOMS; only type `'1'` is ever offered —
+  `/2/` exists server-side as a geographic split but no page links it);
+  Related Party / Corporate actions / Trades from `data-url` attributes (the
+  standalone and standalone-only pages link `/results/rpt/<id>/` without the
+  `consolidated/` suffix).
+- **Investors API** values are 2-dp percent strings; every holder carries
+  `setAttributes.data-person-url`; `/yearly/` exists alongside `/quarterly/`.
+  Promoters are fully disclosed and sum to the page row (TITAN 52.90, HFCL
+  28.29 exact; NETWEB 66.99 vs 66.98 rounding). All other buckets list only
+  holders ≥ 1 %, so their sums sit below the page row (TITAN DIIs 8.07 vs
+  15.15); `{}` is legitimate when no holder crosses 1 % (TITAN government,
+  0.19 %).
+- **Segments API selects basis by the VALUE `consolidated=true`** — blank and
+  absent are byte-identical and mean standalone (the schedules API uses key
+  presence instead). Fragment = one `data-table` with a
+  `tbody[data-segment-line]` per line (Sales, Sales Growth %, Profit, Profit
+  Growth %, Profit %, Capital Employed, ROCE %); `%` alone renders a blank
+  growth cell. Segment Sales sum to the page Sales row when Screener shows an
+  elimination line (ETERNAL `Less: Intersegment`, exact) or within rounding
+  (HFCL ±1); TITAN's table omits eliminations and exceeds the page by
+  124–146 per quarter. A standalone-only company queried with
+  `consolidated=true` returns a header-only shell (no periods).
+- **Related Party** is a modal fragment (no nav, no identity, no basis marker)
+  flagged "Experimental new feature"; parties are `tr.strong` header rows with
+  optional tags (Parent Co., Subsidiary, Associate, JV, Key Person, Relative);
+  year columns vary per company (6–12); line labels repeat with case variants.
+  NETWEB's consolidated URL returns an empty table.
+- **Corporate actions** tabs vary per company (equityhistory, dividend, bonus,
+  split, esops, prefissue); one `<tbody>` per event with year + "Mon DD" and a
+  title/detail pair.
+- **Peers** fragment rows carry `data-row-company-id`; the requesting company
+  is always present with an href that ends in `/consolidated/` only on the
+  consolidated warehouse id (identity + basis are assertable from the body).
+  Self row is not necessarily first (HFCL, NETWEB: row 3). Column ids are the
+  full field names in `th[data-tooltip]`. Standalone lists carry one extra
+  peer row.
+- **Quick ratios** fragment (`li[data-source="quick-ratio"]`) is the owner's
+  Manage-quick_ratios list (51 rows), values differ per basis; the page's
+  `#top-ratios` uses the same markup with `data-source="default"`.
+
 ## 4. Watchlist and user configuration
 
 | Surface | Exact name | URL | Notes |
