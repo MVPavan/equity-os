@@ -344,3 +344,24 @@ class ScreenerPageFetch(BaseModel):
 
     raw_body: bytes
     metadata: ScreenerPageMetadata
+
+
+class ScreenerDocumentFetch(BaseModel):
+    """One retained on-origin API response, with no assertions about its content.
+
+    The company page proves who and what served it; a Screener API document
+    proves nothing at all — a schedules body is a bare label-to-value map. So
+    this record deliberately carries no outcome and no identity: it is the bytes,
+    the URL that is their only binding, and the hash that ties an artifact to
+    them. Whether the body is meaningful is decided by the reader that asked
+    for it, against evidence the page supplies.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    raw_body: bytes
+    source_url: str
+    http_status: int
+    content_sha256: str
+    byte_count: int
+    fetched_at: datetime

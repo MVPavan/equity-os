@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture. Structure mirrors a real Screener subscriber company page
+     captured 2026-08-26 (private, uncommitted); every value here is invented.
+     It deliberately carries, in one page: a TTM column, a blank cell, a negative
+     cell, a percent row, an unknown row, a row that cannot be aligned to the
+     header, the Raw PDF link row, the four ranges-tables, and a decoy
+     `data-table` outside every financial section. -->
+<html lang="en">
+<head><title>Fixture Consolidated Ltd</title></head>
+<body>
+  <nav class="navbar">
+    <div id="account-dropdown" class="dropdown-menu">
+      <a href="/user/account/">Profile</a>
+      <form action="/logout/" method="post">
+        <button type="submit">Logout</button>
+      </form>
+    </div>
+  </nav>
+  <main>
+  <div data-company-id="991001" data-warehouse-id="992001" id="company-info"></div>
+
+    <div class="card card-large" id="top"><h1>Fixture Consolidated Ltd</h1></div>
+
+    <!-- Decoy: a bare data-table OUTSIDE every financial section. Peer
+         comparison renders one of these, and it must never be read as a
+         section's numbers. -->
+    <section id="peers" class="card card-large">
+      <h2>Peer comparison</h2>
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th data-date-key="2025-06-30">Jun 2025</th></tr></thead>
+        <tbody><tr><td class="text">Decoy Peer Ltd</td><td>999999</td></tr></tbody>
+      </table>
+    </section>
+
+    <section id="quarters" class="card card-large">
+      <div class="flex-row">
+        <h2>Quarterly Results</h2>
+        <p class="sub">Consolidated Figures in Rs. Crores</p>
+        <a href="/company/FIXTURECO/">View Standalone</a>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+              <th data-date-key="2025-06-30">Jun 2025</th>
+              <th data-date-key="2025-09-30">Sep 2025</th>
+              <th class="highlight-cell" data-date-key="2025-12-31">Dec 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="stripe">
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Sales', 'quarters', this)">Sales&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>1,000</td><td>1,200</td><td class="highlight-cell">1,500</td>
+            </tr>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Expenses', 'quarters', this)">Expenses&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>700</td><td>800</td><td>1,000</td>
+            </tr>
+            <tr><td class="text">Operating Profit</td><td>300</td><td>400</td><td>500</td></tr>
+            <!-- percent row -->
+            <tr><td class="text">OPM %</td><td>30%</td><td>33%</td><td>33%</td></tr>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Other Income', 'quarters', this)">Other Income&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>50</td><td>60</td><td>70</td>
+            </tr>
+            <!-- negative cell, then a cell the page rendered blank -->
+            <tr><td class="text">Interest</td><td>-5</td><td>0</td><td></td></tr>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Net Profit', 'quarters', this)">Net Profit&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>200</td><td>260</td><td>330</td>
+            </tr>
+            <tr><td class="text">EPS in Rs</td><td>2.50</td><td>3.10</td><td>4.00</td></tr>
+            <!-- a row this contract has never seen: retained, never fatal -->
+            <tr><td class="text">Segment Mix Index</td><td>11</td><td>12</td><td>13</td></tr>
+            <tr class="font-size-14 ink-600">
+              <td class="text ink-600">Raw PDF</td>
+              <td class="hover-link"><a href="/company/source/quarter/991001/6/2025/" target="_blank" rel="noopener noreferrer"><i class="icon-file-pdf"></i></a></td>
+              <td class="hover-link"><a href="/company/source/quarter/991001/9/2025/" target="_blank" rel="noopener noreferrer"><i class="icon-file-pdf"></i></a></td>
+              <td class="hover-link"><a href="/company/source/quarter/991001/12/2025/" target="_blank" rel="noopener noreferrer"><i class="icon-file-pdf"></i></a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="profit-loss" class="card card-large">
+      <div class="flex-row">
+        <h2>Profit &amp; Loss</h2>
+        <p class="sub">Consolidated Figures in Rs. Crores</p>
+        <a href="/company/FIXTURECO/">View Standalone</a>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+              <th data-date-key="2025-03-31">Mar 2025</th>
+              <th data-date-key="2026-03-31">Mar 2026</th>
+              <!-- TTM is stamped as a date key that is not a date -->
+              <th data-date-key="TTM">TTM</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Sales', 'profit-loss', this)">Sales&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>3,400</td><td>4,900</td><td>5,100</td>
+            </tr>
+            <tr><td class="text">Operating Profit</td><td>900</td><td>1,300</td><td>1,400</td></tr>
+            <tr><td class="text">Dividend Payout %</td><td>21%</td><td>24%</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <table class="ranges-table">
+        <tr><th colspan="2">Compounded Sales Growth</th></tr>
+        <tr><td>10 Years:</td><td>23%</td></tr>
+        <tr><td>5 Years:</td><td>32%</td></tr>
+        <tr><td>3 Years:</td><td>29%</td></tr>
+        <tr><td>TTM:</td><td>45%</td></tr>
+      </table>
+      <table class="ranges-table">
+        <tr><th colspan="2">Compounded Profit Growth</th></tr>
+        <tr><td>10 Years:</td><td>22%</td></tr>
+        <tr><td>5 Years:</td><td>40%</td></tr>
+        <tr><td>3 Years:</td><td>17%</td></tr>
+        <tr><td>TTM:</td><td>57%</td></tr>
+      </table>
+      <table class="ranges-table">
+        <tr><th colspan="2">Stock Price CAGR</th></tr>
+        <tr><td>10 Years:</td><td>29%</td></tr>
+        <tr><td>5 Years:</td><td>23%</td></tr>
+        <tr><td>3 Years:</td><td>19%</td></tr>
+        <tr><td>1 Year:</td><td>43%</td></tr>
+      </table>
+      <table class="ranges-table">
+        <tr><th colspan="2">Return on Equity</th></tr>
+        <tr><td>10 Years:</td><td>29%</td></tr>
+        <tr><td>5 Years:</td><td>32%</td></tr>
+        <tr><td>3 Years:</td><td>34%</td></tr>
+        <tr><td>Last Year:</td><td>38%</td></tr>
+      </table>
+    </section>
+
+    <section id="balance-sheet" class="card card-large">
+      <div class="flex-row">
+        <h2>Balance Sheet</h2>
+        <p class="sub">Consolidated Figures in Rs. Crores</p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+              <th data-date-key="2025-03-31">Mar 2025</th>
+              <th data-date-key="2026-03-31">Mar 2026</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Borrowings', 'balance-sheet', this)">Borrowings&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>1,000</td><td>1,200</td>
+            </tr>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Other Liabilities', 'balance-sheet', this)">Other Liabilities&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>800</td><td>900</td>
+            </tr>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Fixed Assets', 'balance-sheet', this)">Fixed Assets&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>600</td><td>700</td>
+            </tr>
+            <tr><td class="text">Total Assets</td><td>2,400</td><td>2,800</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="cash-flow" class="card card-large">
+      <div class="flex-row">
+        <h2>Cash Flows</h2>
+        <p class="sub">Consolidated Figures in Rs. Crores</p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+              <th data-date-key="2025-03-31">Mar 2025</th>
+              <th data-date-key="2026-03-31">Mar 2026</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text">
+                <button class="button-plain" onclick="Company.showSchedule('Cash from Investing Activity', 'cash-flow', this)">Cash from Investing Activity&nbsp;<span class="blue-icon">+</span></button>
+              </td>
+              <td>-300</td><td>-360</td>
+            </tr>
+            <tr><td class="text">Net Cash Flow</td><td>40</td><td>55</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ratios" class="card card-large">
+      <div class="flex-row">
+        <h2>Ratios</h2>
+        <p class="sub">Consolidated Figures in Rs. Crores</p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+              <th data-date-key="2025-03-31">Mar 2025</th>
+              <th data-date-key="2026-03-31">Mar 2026</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="text">Debtor Days</td><td>31</td><td>28</td></tr>
+            <tr><td class="text">Cash Conversion Cycle</td><td>44</td><td>41</td></tr>
+            <tr><td class="text">ROCE %</td><td>26%</td><td>29%</td></tr>
+            <!-- a row that cannot be aligned to the header: quarantined, not dropped -->
+            <tr><td class="text">Working Capital Days</td><td>52</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

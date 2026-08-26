@@ -42,6 +42,7 @@ from fundamentals.ingest.screener_session_models import (
     ScreenerBlockedError,
     ScreenerCredentials,
     ScreenerCredentialsError,
+    ScreenerDocumentFetch,
     ScreenerPageFetch,
     ScreenerPageMetadata,
     ScreenerRateLimitedError,
@@ -154,6 +155,37 @@ class ScreenerSessionSource:
             bytes=len(raw),
         )
         return ScreenerPageFetch(raw_body=raw, metadata=metadata)
+
+    def fetch_schedule(self, *, url: str) -> ScreenerDocumentFetch:
+        """Fetch one on-origin schedules document through the same polite transport.
+
+        Deliberately assertion-free. A schedules response is a bare
+        ``{sub_row: {period: value}}`` map: it names no company and declares no
+        basis, so there is nothing here to assert against and pretending
+        otherwise would manufacture confidence. Its basis comes from the URL —
+        which the caller builds through
+        :func:`~fundamentals.ingest.screener_financials_models.schedule_url`,
+        the one place that knows the API selects basis by the *presence* of the
+        ``consolidated`` key — and is proven afterwards by reconciling the body
+        against the page row it expands.
+
+        It shares this instance's opener, spacing, and 429 budget on purpose:
+        a company's page plus its fifteen schedules is sixteen requests against
+        a source observed to rate-limit at ~40, so they must be paced as one
+        conversation rather than by a second, independently polite fetcher.
+        """
+        credentials = self._config.credentials
+        if credentials is None:
+            raise ScreenerCredentialsError(_NO_CREDENTIALS)
+        status, raw = self._fetch_bytes(url, credentials)
+        return ScreenerDocumentFetch(
+            raw_body=raw,
+            source_url=url,
+            http_status=status,
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            byte_count=len(raw),
+            fetched_at=datetime.now(tz=UTC),
+        )
 
     def _fetch_bytes(self, url: str, credentials: ScreenerCredentials) -> tuple[int, bytes]:
         """GET one page politely: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.

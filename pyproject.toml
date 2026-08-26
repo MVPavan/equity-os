@@ -59,5 +59,7 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
-pythonpath = ["src"]
+# ``tests/fundamentals`` is on the path so a test module can import the shared
+# seam beside it (``screener_financials_support``) instead of duplicating it.
+pythonpath = ["src", "tests/fundamentals"]
 testpaths = ["tests"]

@@ -1,0 +1,11 @@
+{
+  "Long term Borrowings": {
+    "Mar 2025": "400",
+    "Mar 2026": "500",
+    "setAttributes": "strong"
+  },
+  "Short term Borrowings": {
+    "Mar 2025": "600",
+    "Mar 2026": "700"
+  }
+}

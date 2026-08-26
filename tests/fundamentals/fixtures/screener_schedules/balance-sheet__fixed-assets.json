@@ -1,0 +1,21 @@
+{
+  "Land": {
+    "Mar 2025": "300",
+    "Mar 2026": "350"
+  },
+  "Building": {
+    "Mar 2025": "400",
+    "Mar 2026": "450"
+  },
+  "Gross Block": {
+    "Mar 2025": "700",
+    "Mar 2026": "800",
+    "setAttributes": {
+      "class": "strong"
+    }
+  },
+  "Accumulated Depreciation": {
+    "Mar 2025": "100",
+    "Mar 2026": "100"
+  }
+}

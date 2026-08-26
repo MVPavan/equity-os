@@ -14,6 +14,18 @@ from datetime import UTC, datetime
 
 import structlog
 
+from fundamentals.api.screener_financials_cli import (
+    SCREENER_FINANCIALS_COMMAND,
+    ScreenerFinancialsRefused,
+    is_incomplete,
+    refused_families,
+    render_screener_financials_summary,
+    run_screener_financials_command,
+    unreconciled_families,
+)
+from fundamentals.api.screener_financials_cli import (
+    basis_unavailable_message as financials_basis_unavailable_message,
+)
 from fundamentals.api.screener_page_cli import (
     SCREENER_PAGE_COMMAND,
     basis_unavailable_message,
@@ -23,7 +35,7 @@ from fundamentals.api.screener_page_cli import (
 )
 from fundamentals.ingest.screener_session_models import ScreenerCredentials, ScreenerSessionError
 
-SCREENER_COMMANDS = (SCREENER_PAGE_COMMAND,)
+SCREENER_COMMANDS = (SCREENER_PAGE_COMMAND, SCREENER_FINANCIALS_COMMAND)
 
 # Distinct, documented exit codes: a caller (or a shell loop over the watchlist)
 # can tell "this company has no such basis" from "the fetch was refused" without
@@ -35,6 +47,9 @@ EXIT_BASIS_UNAVAILABLE = 3
 _CLI_LOGGER_NAME = "fundamentals.cli"
 _SESSION_REQUIRED = "SCREENER_SESSION_COOKIE is required for {command}"
 _REFUSAL_LINE = "{command} refused ({refusal}): {detail}"
+_INCOMPLETE_LINE = "{command} did not finish: {reason}"
+_UNCHECKED_LINE = "{command}: schedules the reconciliation gate did not clear: {families}"
+_REFUSED_LINE = "{command}: schedules refused, with their responses retained: {families}"
 
 
 def dispatch_screener_command(
@@ -59,12 +74,15 @@ def dispatch_screener_command(
     if credentials is None:
         raise SystemExit(_SESSION_REQUIRED.format(command=args.command))
     structlog.get_logger(_CLI_LOGGER_NAME).info(
-        "screener_page_invoked",
+        "screener_command_invoked",
+        command=args.command,
         stock=args.stock,
         basis=args.basis,
         started_at=datetime.now(UTC).isoformat(),
     )
     try:
+        if args.command == SCREENER_FINANCIALS_COMMAND:
+            return _run_financials(args, credentials=credentials)
         run = run_screener_page_command(args, credentials=credentials)
     except ScreenerSessionError as error:
         sys.stderr.write(
@@ -77,3 +95,40 @@ def dispatch_screener_command(
         sys.stderr.write(basis_unavailable_message(run) + "\n")
         return EXIT_BASIS_UNAVAILABLE
     return EXIT_OK
+
+
+def _run_financials(args: argparse.Namespace, *, credentials: ScreenerCredentials) -> int:
+    """Run ``screener-financials``, reporting what did and did not get proven.
+
+    Three outcomes exit non-zero besides a transport refusal, because none is
+    the thing the caller asked for: a sweep that stopped short leaves a partial
+    artifact, a schedule that was refused leaves a hole in it, and a schedule
+    the gate never cleared leaves the basis unproven. All three are reported by
+    name on stderr while the artifact and its retained evidence are kept — the
+    refused response is the most useful thing the run produced.
+    """
+    outcome = run_screener_financials_command(args, credentials=credentials)
+    if isinstance(outcome, ScreenerFinancialsRefused):
+        sys.stderr.write(financials_basis_unavailable_message(outcome) + "\n")
+        return EXIT_BASIS_UNAVAILABLE
+    sys.stdout.write(render_screener_financials_summary(outcome) + "\n")
+    refused = refused_families(outcome)
+    if refused:
+        sys.stderr.write(
+            _REFUSED_LINE.format(command=args.command, families=", ".join(refused)) + "\n"
+        )
+    unchecked = unreconciled_families(outcome)
+    if unchecked:
+        sys.stderr.write(
+            _UNCHECKED_LINE.format(command=args.command, families=", ".join(unchecked)) + "\n"
+        )
+    if is_incomplete(outcome):
+        sys.stderr.write(
+            _INCOMPLETE_LINE.format(
+                command=args.command,
+                reason=outcome.run.artifact.metadata.incomplete_reason,
+            )
+            + "\n"
+        )
+        return EXIT_REFUSED
+    return EXIT_REFUSED if (unchecked or refused) else EXIT_OK
