@@ -36,6 +36,8 @@ from fundamentals.ingest.screener_session_models import (
     SESSION_COOKIE_NAME,
     TERMINAL_BLOCK_STATUSES,
     USER_AGENT_HEADER,
+    XHR_HEADER,
+    XHR_HEADER_VALUE,
     Basis,
     BasisTopology,
     IdentityMismatchError,
@@ -169,15 +171,39 @@ class ScreenerSessionSource:
         ``consolidated`` key — and is proven afterwards by reconciling the body
         against the page row it expands.
 
-        It shares this instance's opener, spacing, and 429 budget on purpose:
-        a company's page plus its fifteen schedules is sixteen requests against
-        a source observed to rate-limit at ~40, so they must be paced as one
-        conversation rather than by a second, independently polite fetcher.
+        Kept as a named entry point for Slice 1 while delegating to
+        :meth:`fetch_document`, which is the same transport for every on-origin
+        sub-document — including its ``X-Requested-With`` header, which is what
+        the browser sends when it expands a schedule row.
+        """
+        return self.fetch_document(url=url)
+
+    def fetch_document(self, *, url: str) -> ScreenerDocumentFetch:
+        """Fetch one on-origin sub-document through the same polite transport.
+
+        Assertion-free by design, and for a stronger reason than the schedules
+        API alone: a segments fragment, a related-party modal, a corporate-
+        actions modal and a quick-ratios list carry no company name, no identity
+        element and no basis marker at all. There is nothing on them to check,
+        so this method returns the bytes, the URL that is their only binding,
+        and the hash that ties an artifact to them — and leaves every question
+        of meaning to the reader that asked for them.
+
+        It shares this instance's opener, spacing, and 429 budget on purpose: a
+        company's page plus its fifteen schedules, or plus its eighteen Slice 2
+        sub-documents, is well inside a source observed to rate-limit at ~40, so
+        they must be paced as one conversation rather than by a second,
+        independently polite fetcher.
+
+        Every request here carries ``X-Requested-With: XMLHttpRequest``. That is
+        not cosmetic: Screener answers ``/company/actions/<id>/`` with a 302 to
+        the company page without it, which this adapter refuses to follow, so
+        the header is the difference between a modal body and a failed part.
         """
         credentials = self._config.credentials
         if credentials is None:
             raise ScreenerCredentialsError(_NO_CREDENTIALS)
-        status, raw = self._fetch_bytes(url, credentials)
+        status, raw = self._fetch_bytes(url, credentials, xhr=True)
         return ScreenerDocumentFetch(
             raw_body=raw,
             source_url=url,
@@ -187,23 +213,28 @@ class ScreenerSessionSource:
             fetched_at=datetime.now(tz=UTC),
         )
 
-    def _fetch_bytes(self, url: str, credentials: ScreenerCredentials) -> tuple[int, bytes]:
+    def _fetch_bytes(
+        self, url: str, credentials: ScreenerCredentials, *, xhr: bool = False
+    ) -> tuple[int, bytes]:
         """GET one page politely: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.
 
         The origin is checked before the request object exists, so a URL that is
         not the pinned Screener origin never gets near the session cookie.
+
+        ``xhr`` marks a sub-document rather than a navigation. It is a parameter
+        rather than a property of the URL because the same host serves both, and
+        the two must be told apart by what the browser would have done.
         """
         assert_pinned_origin(url)
-        request = urllib.request.Request(
-            url,
-            headers={
-                COOKIE_HEADER: (
-                    f"{SESSION_COOKIE_NAME}={credentials.session_cookie.get_secret_value()}"
-                ),
-                USER_AGENT_HEADER: self._config.user_agent,
-            },
-            method="GET",
-        )
+        headers = {
+            COOKIE_HEADER: (
+                f"{SESSION_COOKIE_NAME}={credentials.session_cookie.get_secret_value()}"
+            ),
+            USER_AGENT_HEADER: self._config.user_agent,
+        }
+        if xhr:
+            headers[XHR_HEADER] = XHR_HEADER_VALUE
+        request = urllib.request.Request(url, headers=headers, method="GET")
         opener = urllib.request.build_opener(_NoRedirectHandler())
         rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: the same company page with every sub-document control
+     removed. The sections are all present and render normally; what is absent
+     is the Product Segments button, the Related Party and Corporate actions
+     `data-url`s, and the Shareholding section entirely. That combination is
+     positive proof of absence — it is what NETWEB, LAURUSLABS, MTARTECH and
+     SONACOMS look like for segments — and must cost zero requests. -->
+<html lang="en">
+<head><title>Fixture Bare Ltd</title></head>
+<body>
+  <nav class="navbar">
+    <div id="account-dropdown" class="dropdown-menu">
+      <a href="/user/account/">Profile</a>
+      <form action="/logout/" method="post"><button type="submit">Logout</button></form>
+    </div>
+  </nav>
+  <main>
+  <div data-company-id="991001" data-warehouse-id="992001" id="company-info"></div>
+  <div class="card card-large" id="top"><h1>Fixture Bare Ltd</h1></div>
+
+  <section id="quarters" class="card card-large">
+    <h2>Quarterly Results</h2>
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <div class="responsive-holder fill-card-width" data-result-table>
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+        <tbody><tr><td class="text">Sales</td><td>1,800</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="profit-loss" class="card card-large">
+    <h2>Profit &amp; Loss</h2>
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <div class="responsive-holder fill-card-width" data-result-table>
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+        <tbody><tr><td class="text">Sales</td><td>5,700</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="balance-sheet" class="card card-large">
+    <h2>Balance Sheet</h2>
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <div class="responsive-holder fill-card-width" data-result-table>
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+        <tbody><tr><td class="text">Equity Capital</td><td>89</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="shareholding" class="card card-large">
+    <div>
+      <h2 class="margin-0">Shareholding Pattern</h2>
+      <p class="sub">Numbers in percentages</p>
+    </div>
+    <div id="quarterly-shp">
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th>Mar 2026</th></tr></thead>
+        <tbody>
+          <tr class="stripe"><td class="text">Promoters</td><td>59.50%</td></tr>
+          <tr class="sub"><td class="text">No. of Shareholders</td><td>1,30,111</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="yearly-shp">
+      <table class="data-table">
+        <thead><tr><th class="text"></th><th>Mar 2026</th></tr></thead>
+        <tbody>
+          <tr class="stripe"><td class="text">Promoters</td><td>59.50%</td></tr>
+          <tr class="sub"><td class="text">No. of Shareholders</td><td>1,30,111</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  </main>
+</body>
+</html>

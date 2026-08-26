@@ -233,12 +233,21 @@ class Unit(StrEnum):
 
     ``UNKNOWN`` is a real answer and the default when the row declares no unit
     of its own and its section's note does not describe it.
+
+    ``COUNT``, ``RATIO`` and ``MIXED`` were added for the company sub-documents
+    of Slice 2: the shareholding tables carry a "No. of Shareholders" row of
+    integers under a "Numbers in percentages" note, and a header quick-ratio may
+    render a bare multiple ("P/E 77.7") or two numbers in different notations
+    inside one value ("High / Low").
     """
 
     RS_CRORE = "rs_crore"
     RUPEES = "rupees"
     PERCENT = "percent"
     DAYS = "days"
+    COUNT = "count"
+    RATIO = "ratio"
+    MIXED = "mixed"
     DOCUMENT_LINK = "document_link"
     UNKNOWN = "unknown"
 

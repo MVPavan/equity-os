@@ -14,6 +14,22 @@ from datetime import UTC, datetime
 
 import structlog
 
+from fundamentals.api.screener_company_cli import (
+    SCREENER_COMPANY_COMMAND,
+    ScreenerCompanyRefused,
+    ScreenerCompanyRun,
+    not_offered_parts,
+    refused_documents,
+    render_screener_company_summary,
+    run_screener_company_command,
+    weak_evidence,
+)
+from fundamentals.api.screener_company_cli import (
+    basis_unavailable_message as company_basis_unavailable_message,
+)
+from fundamentals.api.screener_company_cli import (
+    is_incomplete as company_is_incomplete,
+)
 from fundamentals.api.screener_financials_cli import (
     SCREENER_FINANCIALS_COMMAND,
     ScreenerFinancialsRefused,
@@ -35,7 +51,7 @@ from fundamentals.api.screener_page_cli import (
 )
 from fundamentals.ingest.screener_session_models import ScreenerCredentials, ScreenerSessionError
 
-SCREENER_COMMANDS = (SCREENER_PAGE_COMMAND, SCREENER_FINANCIALS_COMMAND)
+SCREENER_COMMANDS = (SCREENER_PAGE_COMMAND, SCREENER_FINANCIALS_COMMAND, SCREENER_COMPANY_COMMAND)
 
 # Distinct, documented exit codes: a caller (or a shell loop over the watchlist)
 # can tell "this company has no such basis" from "the fetch was refused" without
@@ -50,6 +66,12 @@ _REFUSAL_LINE = "{command} refused ({refusal}): {detail}"
 _INCOMPLETE_LINE = "{command} did not finish: {reason}"
 _UNCHECKED_LINE = "{command}: schedules the reconciliation gate did not clear: {families}"
 _REFUSED_LINE = "{command}: schedules refused, with their responses retained: {families}"
+_DOCUMENTS_REFUSED_LINE = "{command}: documents refused, with their responses retained: {documents}"
+_WEAK_LINE = (
+    "{command}: documents retained without a proof (their source publishes nothing that "
+    "could prove them): {documents}"
+)
+_NOT_OFFERED_LINE = "{command}: parts this company does not publish: {parts}"
 
 
 def dispatch_screener_command(
@@ -83,6 +105,8 @@ def dispatch_screener_command(
     try:
         if args.command == SCREENER_FINANCIALS_COMMAND:
             return _run_financials(args, credentials=credentials)
+        if args.command == SCREENER_COMPANY_COMMAND:
+            return _run_company(args, credentials=credentials)
         run = run_screener_page_command(args, credentials=credentials)
     except ScreenerSessionError as error:
         sys.stderr.write(
@@ -132,3 +156,49 @@ def _run_financials(args: argparse.Namespace, *, credentials: ScreenerCredential
         )
         return EXIT_REFUSED
     return EXIT_REFUSED if (unchecked or refused) else EXIT_OK
+
+
+def _run_company(args: argparse.Namespace, *, credentials: ScreenerCredentials) -> int:
+    """Run ``screener-company``, separating what was proven from what was merely read.
+
+    Only two outcomes exit non-zero besides a transport refusal: a document that
+    was refused, and a sweep that stopped short. Weak evidence does not, and that
+    asymmetry is the point of the slice — a related-party modal carries nothing
+    to check, so failing the run for it would make success unreachable and teach
+    the caller to ignore the exit code. It is named on stderr instead, every
+    time, so it can never be mistaken for a proof.
+    """
+    outcome = run_screener_company_command(args, credentials=credentials)
+    if isinstance(outcome, ScreenerCompanyRefused):
+        sys.stderr.write(company_basis_unavailable_message(outcome) + "\n")
+        return EXIT_BASIS_UNAVAILABLE
+    sys.stdout.write(render_screener_company_summary(outcome) + "\n")
+    return _report_company(args, outcome)
+
+
+def _report_company(args: argparse.Namespace, outcome: ScreenerCompanyRun) -> int:
+    """Write the per-run advisories and decide the exit code."""
+    absent = not_offered_parts(outcome)
+    if absent:
+        sys.stderr.write(
+            _NOT_OFFERED_LINE.format(command=args.command, parts=", ".join(absent)) + "\n"
+        )
+    weak = weak_evidence(outcome)
+    if weak:
+        sys.stderr.write(_WEAK_LINE.format(command=args.command, documents=", ".join(weak)) + "\n")
+    refused = refused_documents(outcome)
+    if refused:
+        sys.stderr.write(
+            _DOCUMENTS_REFUSED_LINE.format(command=args.command, documents=", ".join(refused))
+            + "\n"
+        )
+    if company_is_incomplete(outcome):
+        sys.stderr.write(
+            _INCOMPLETE_LINE.format(
+                command=args.command,
+                reason=outcome.run.artifact.metadata.incomplete_reason,
+            )
+            + "\n"
+        )
+        return EXIT_REFUSED
+    return EXIT_REFUSED if refused else EXIT_OK

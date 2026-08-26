@@ -112,9 +112,13 @@ def _serve(
     requested: list[str] = []
 
     def fetch_bytes(
-        source: ScreenerSessionSource, url: str, credentials: ScreenerCredentials
+        source: ScreenerSessionSource,
+        url: str,
+        credentials: ScreenerCredentials,
+        *,
+        xhr: bool = False,
     ) -> tuple[int, bytes]:
-        del source, credentials
+        del source, credentials, xhr
         requested.append(url)
         if "/schedules/" not in url:
             return 200, (_SHELL_PAGE if "SOLOCO" in url else _PAGE).read_bytes()

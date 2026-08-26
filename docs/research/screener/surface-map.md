@@ -158,11 +158,20 @@ network recording. Results, with response shapes:
   presence instead). Fragment = one `data-table` with a
   `tbody[data-segment-line]` per line (Sales, Sales Growth %, Profit, Profit
   Growth %, Profit %, Capital Employed, ROCE %); `%` alone renders a blank
-  growth cell. Segment Sales sum to the page Sales row when Screener shows an
-  elimination line (ETERNAL `Less: Intersegment`, exact) or within rounding
-  (HFCL ±1); TITAN's table omits eliminations and exceeds the page by
-  124–146 per quarter. A standalone-only company queried with
-  `consolidated=true` returns a header-only shell (no periods).
+  growth cell. Segment Sales do **not** reliably sum to the page Sales row in
+  either direction (re-measured across all periods, Slice 2): TITAN omits
+  eliminations and exceeds the page by 105–184 per quarter and 70–552 per year;
+  ETERNAL matches exactly except Mar/Jun 2024, where its `Less: Intersegment`
+  row deducts 17/23 the page's Sales row does not; HFCL matches within ±1
+  recently but is 261 short in Mar 2016, where it published four segment lines
+  against today's five. Only the **newest** comparable period is dependable:
+  every correct capture is at or above the page there, while a standalone body
+  against a consolidated page is below on every period (TITAN, −3,114 on the
+  newest quarter) — so that, not the aggregate, is the usable basis gate.
+  Fragment periods are a **contiguous window** of the page section's labels, not
+  a suffix: `quarters` trims the oldest column, `profit-loss` trims the page's
+  trailing `TTM`. A standalone-only company queried with `consolidated=true`
+  returns a header-only shell (no periods).
 - **Related Party** is a modal fragment (no nav, no identity, no basis marker)
   flagged "Experimental new feature"; parties are `tr.strong` header rows with
   optional tags (Parent Co., Subsidiary, Associate, JV, Key Person, Relative);
@@ -205,6 +214,13 @@ network recording. Results, with response shapes:
 
 - Everything above is server-rendered HTML over plain HTTPS with the `sessionid`
   cookie; the only XHRs on a company page are the three `/api/company/…` calls.
+- **`X-Requested-With: XMLHttpRequest` is load-bearing on the sub-documents**
+  (verified live 2026-08-26): without it `/company/actions/<id>/` answers
+  **HTTP 302 to the company page** rather than the modal body, and the peers
+  fragment differs slightly. The browser sends the header on every company-page
+  XHR and on none of its navigations, so a fetcher must send it on the
+  schedules / investors / segments / modal / peers / quick-ratios requests and
+  **not** on the company page itself.
 - An expired cookie yields a **valid anonymous page** (no error). Every fetch
   must assert a positive logged-in marker (Account menu with Profile/Alerts/
   Notebook/Payments/AI Usage; `plausible-event-user=premium` on feed items).

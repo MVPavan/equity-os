@@ -1,0 +1,18 @@
+{
+  "Fixture Holdings Private Limited": {
+    "Sep 2025": "40.00",
+    "Dec 2025": "40.00",
+    "Mar 2026": "39.50",
+    "setAttributes": {
+      "data-person-url": "/people/701/fixture-holdings-private-limited/"
+    }
+  },
+  "Fixture Family Trust": {
+    "Sep 2025": "20.00",
+    "Dec 2025": "20.00",
+    "Mar 2026": "20.00",
+    "setAttributes": {
+      "data-person-url": "/people/702/fixture-family-trust/"
+    }
+  }
+}

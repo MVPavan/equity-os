@@ -59,6 +59,16 @@ COOKIE_HEADER = "Cookie"
 USER_AGENT_HEADER = "User-Agent"
 LOCATION_HEADER = "Location"
 
+# Screener routes the company page and its sub-documents differently on this
+# header alone. ``/company/actions/<id>/`` answers HTTP 302 to the company page
+# without it and 200 with the modal body with it (verified live 2026-08-26); the
+# peers fragment differs slightly too. A browser sends it on every XHR the
+# company page issues and on none of its navigations, so it is attached to
+# sub-document fetches only — sending it on the page would be asking for a
+# response no browser ever receives.
+XHR_HEADER = "X-Requested-With"
+XHR_HEADER_VALUE = "XMLHttpRequest"
+
 RATE_LIMITED_STATUS = 429
 # 403/451 are terminal exactly as in the anonymous adapter: stop, never evade.
 TERMINAL_BLOCK_STATUSES = frozenset({403, 451})
