@@ -117,7 +117,7 @@ network recording. Results, with response shapes:
 | — `EV / EBITDA` | `q=EV Multiple-Median EV Multiple-EBITDA` | daily multiple + quarterly EBITDA |
 | — `Price to Book` | `q=Price to book value-Median PBV-Book value` | |
 | — `Market Cap / Sales` | `q=Market Cap to Sales-Median Market Cap to Sales-Sales` | |
-| Peers `Edit Columns` | navigates to `/user/columns/?next=…` | Manage columns: 374 selectable fields (see `screener-ratio-library.md`); saved via `POST` with `csrfmiddlewaretoken` + `data` |
+| Peers `Edit Columns` | navigates to `/user/columns/?next=…` | Manage columns: 374 selectable fields (see `ratio-library.md`); saved via `POST` with `csrfmiddlewaretoken` + `data` |
 | Header `Export to Excel` | link on page (per-company XLSX) | not exercised |
 
 ## 4. Watchlist and user configuration
@@ -163,7 +163,7 @@ network recording. Results, with response shapes:
 | Query builder | `/screen/new/` → `POST /screen/raw/` | same engine; saving a screen is a separate account mutation (not exercised) |
 | Watchlist export | `POST /api/export/screen/?url_name=goto_sublist&sublist_id=<id>` | CSV/XLSX incl. ISIN (per changelog); POST-only (GET 405) |
 
-Query language fields = the 374 names in `screener-ratio-library.md` (e.g.
+Query language fields = the 374 names in `ratio-library.md` (e.g.
 `Market Capitalization`, `Return on capital employed`, `Sales growth 3Years`).
 
 ## 7a. Still not captured
@@ -199,7 +199,7 @@ Capital Goods › `IN070202` Agricultural, Commercial & Construction Vehicles
 Dealers-Commercial Vehicles, Tractors, Construction Vehicles 1. Tier-4 counts
 sum to 13, not 19: some companies carry a tier-3 industry with no listed
 basic industry, which also explains "192 entries" vs 188 rows. The complete
-tree is in `screener-industry-classification.md`.
+tree is in `industry-classification.md`.
 
 ## 9. Rate limiting (observed)
 
@@ -207,3 +207,30 @@ Sequential authenticated GETs at ~0.6 s spacing returned **HTTP 429 after
 ~40 requests** (crawl of 2026-08-26). The Phase 2 fetcher must treat 429 as
 a typed outcome with backoff and cap burst size well below this; never retry
 blindly.
+
+## 10. Standalone vs consolidated (decision + observed facts)
+
+**Decision (owner, 2026-08-26): consolidated is the default basis; standalone
+is acquired only as an explicit fallback/comparison, and every artifact records
+which basis it actually got.** Rationale: group economics is what valuation
+and peer comparison use; Tijori's `*_c` tables and the XBRL consolidated gold
+set are consolidated; Screener itself links to `/consolidated/` wherever it
+exists.
+
+Observed facts:
+
+- URL basis: `/company/<SYMBOL>/consolidated/` vs `/company/<SYMBOL>/`
+  (standalone). The consolidated page carries a positive marker
+  **"Consolidated Figures"** and per-section **"View Standalone"** links to
+  the bare URL; assert the marker, never infer basis from the URL alone.
+- Standalone-only companies: Screener links them without `/consolidated/`;
+  behaviour of `/consolidated/` for such companies (redirect vs standalone
+  content under the consolidated URL) is **unverified** — Slice 0 must test
+  with a standalone-only watchlist company (e.g. NETWEB) and record the
+  outcome as a typed basis fact.
+- XHR flags: `chart/?…&consolidated=true`, `segments/…/?consolidated=true`,
+  `insights/…/quarter/?is_consolidated=1`, `results/rpt/<id>/consolidated/`.
+- **`schedules/` was requested with `consolidated=` (empty) even from the
+  consolidated page.** Whether the API defaults to consolidated, ignores the
+  flag, or expects `true` is unknown — Slice 0 must fetch both variants and
+  reconcile against the page's own row totals before trusting either.
