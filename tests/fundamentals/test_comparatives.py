@@ -62,6 +62,8 @@ def _stock(*, qoq_fixture: str | None = _QOQ) -> StockConfig:
             nse_symbol="SYNTH",
             bse_scrip="999999",
             screener_slug="SYNTH",
+            screener_company_id=991001,
+            screener_warehouse_id_consolidated=992001,
             tijori_slug="synthetic-test-corp",
             tijori_company_id=81,
         ),

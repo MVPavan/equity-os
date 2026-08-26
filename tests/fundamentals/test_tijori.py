@@ -417,6 +417,8 @@ stocks:
       nse_symbol: "ALPHA"
       bse_scrip: "1"
       screener_slug: "ALPHA"
+      screener_company_id: 991001
+      screener_warehouse_id_consolidated: 992001
       tijori_slug: "alpha"
       tijori_company_id: 4242
     quarter:
@@ -430,6 +432,8 @@ stocks:
       nse_symbol: "BETA"
       bse_scrip: "2"
       screener_slug: "BETA"
+      screener_company_id: 991002
+      screener_warehouse_id_consolidated: 992002
       tijori_slug: "beta"
       tijori_company_id: 4242
     quarter:

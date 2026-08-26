@@ -22,15 +22,24 @@ def preflight_out_paths(out_paths: tuple[Path, ...]) -> None:
 
 def write_json_no_clobber(out_path: Path, payload: str) -> None:
     """Atomically create one JSON artifact without following or replacing a target."""
+    write_bytes_no_clobber(out_path, payload.encode("utf-8"))
+
+
+def write_bytes_no_clobber(out_path: Path, payload: bytes) -> None:
+    """Atomically create one binary artifact without following or replacing a target.
+
+    Retained response bodies are written through this path rather than through a
+    decode-and-re-encode, so the bytes on disk stay identical to the ones whose
+    sha256 the artifact beside them records.
+    """
     file_descriptor, temp_name = tempfile.mkstemp(
         dir=out_path.parent,
         prefix=f".{out_path.stem}-",
         suffix=".tmp",
-        text=True,
     )
     temp_path = Path(temp_name)
     try:
-        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(file_descriptor, "wb") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())

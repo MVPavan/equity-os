@@ -86,6 +86,8 @@ def _stock(*, fixtures: FixturePaths | None = None) -> StockConfig:
             nse_symbol="SYNTH",
             bse_scrip="999999",
             screener_slug="SYNTH",
+            screener_company_id=991001,
+            screener_warehouse_id_consolidated=992001,
             tijori_slug="synthetic-test-corp",
             tijori_company_id=81,
         ),
@@ -117,6 +119,8 @@ def _summary_stock(
             nse_symbol="SYNTH",
             bse_scrip="999999",
             screener_slug="SYNTH",
+            screener_company_id=991002,
+            screener_warehouse_id_consolidated=992002,
             tijori_slug="synthetic-summary-corp",
             tijori_company_id=81,
         ),
@@ -634,8 +638,13 @@ def _wave_stock(symbol: str, wave: Wave) -> StockConfig:
             "identifiers": base.identifiers.model_copy(
                 update={
                     "nse_symbol": symbol,
-                    # Distinct per stock: the watchlist rejects a reused Tijori id.
+                    # Distinct per stock: the watchlist rejects a reused Tijori id,
+                    # and likewise a reused Screener company or warehouse id.
                     "tijori_company_id": 81 + len(symbol) + sum(map(ord, symbol)),
+                    "screener_company_id": 991_000 + len(symbol) + sum(map(ord, symbol)),
+                    "screener_warehouse_id_consolidated": (
+                        992_000 + len(symbol) + sum(map(ord, symbol))
+                    ),
                 }
             ),
         }
@@ -854,6 +863,8 @@ def _pdf_ocr_stock(path: Path, sha: str) -> StockConfig:
             nse_symbol="SYNTH",
             bse_scrip="999999",
             screener_slug="SYNTH",
+            screener_company_id=991003,
+            screener_warehouse_id_consolidated=992003,
             tijori_slug="synthetic-ocr-corp",
             tijori_company_id=81,
         ),

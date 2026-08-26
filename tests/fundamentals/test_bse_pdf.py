@@ -708,6 +708,8 @@ def _pdf_stock(pdf_path: Path, pdf_sha: str) -> StockConfig:
             nse_symbol="SYNTH",
             bse_scrip="999999",
             screener_slug="SYNTH",
+            screener_company_id=991001,
+            screener_warehouse_id_consolidated=992001,
             tijori_slug="synthetic-pdf-corp",
             tijori_company_id=81,
         ),

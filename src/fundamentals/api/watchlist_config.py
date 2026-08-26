@@ -17,6 +17,7 @@ the runner still fails closed per stock rather than fabricating a value.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -31,6 +32,26 @@ DEFAULT_ENTITY_SCHEME = "nse-symbol"
 TIJORI_SLUG_FIELD = "tijori_slug"
 TIJORI_COMPANY_ID_FIELD = "tijori_company_id"
 TIJORI_IDENTIFIER_FIELDS = (TIJORI_SLUG_FIELD, TIJORI_COMPANY_ID_FIELD)
+
+SCREENER_SLUG_FIELD = "screener_slug"
+SCREENER_COMPANY_ID_FIELD = "screener_company_id"
+SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD = "screener_warehouse_id_consolidated"
+SCREENER_WAREHOUSE_ID_STANDALONE_FIELD = "screener_warehouse_id_standalone"
+SCREENER_IDENTIFIER_FIELDS = (
+    SCREENER_SLUG_FIELD,
+    SCREENER_COMPANY_ID_FIELD,
+    SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD,
+    SCREENER_WAREHOUSE_ID_STANDALONE_FIELD,
+)
+_NO_SCREENER_WAREHOUSE_ID = (
+    "a stock must carry at least one of "
+    f"{SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD} / {SCREENER_WAREHOUSE_ID_STANDALONE_FIELD}"
+)
+
+
+def _collisions(values: Iterable[int]) -> tuple[int, ...]:
+    """The values that appear more than once, sorted."""
+    return tuple(sorted(value for value, count in Counter(values).items() if count > 1))
 
 
 class Wave(StrEnum):
@@ -76,6 +97,14 @@ class SourceIdentifiers(BaseModel):
     required because Tijori's shareholding page publishes no identity island —
     its only deterministic marker is the ``comp_id`` attribute on the page
     heading, which is meaningless without a configured id to match it against.
+
+    Screener carries **two** numeric namespaces, both live-verified 2026-08-26
+    on the subscriber company page: ``screener_company_id`` (the page's
+    ``data-company-id``, stable across bases) and a ``data-warehouse-id`` that
+    **differs per basis** and scopes the ``peers/`` and ``quick_ratios/`` APIs —
+    so it is held once per basis. A standalone-only company (e.g. NETWEB) has no
+    consolidated warehouse id at all: that field is then ``None``, which is a
+    structural fact about the company, not an unverified value.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -84,6 +113,9 @@ class SourceIdentifiers(BaseModel):
     bse_scrip: str
     isin: str | None = None
     screener_slug: str
+    screener_company_id: int = Field(gt=0)
+    screener_warehouse_id_consolidated: int | None = Field(default=None, gt=0)
+    screener_warehouse_id_standalone: int | None = Field(default=None, gt=0)
     tijori_slug: str
     tijori_company_id: int = Field(gt=0)
     us_listed: bool = False
@@ -100,6 +132,30 @@ class SourceIdentifiers(BaseModel):
         """
         flagged = set(self.needs_verification)
         return tuple(field for field in TIJORI_IDENTIFIER_FIELDS if field in flagged)
+
+    def unverified_screener_fields(self) -> tuple[str, ...]:
+        """Screener identifiers flagged as unconfirmed, in declaration order.
+
+        Every subscriber fetch binds a response to the issuer through the slug,
+        the company id, and the basis's warehouse id, so an unconfirmed value in
+        any of them must stop the run before a request is made.
+        """
+        flagged = set(self.needs_verification)
+        return tuple(field for field in SCREENER_IDENTIFIER_FIELDS if field in flagged)
+
+    @model_validator(mode="after")
+    def _check_a_screener_warehouse_id_is_present(self) -> SourceIdentifiers:
+        """Reject a stock with no Screener warehouse id on either basis.
+
+        The warehouse id is the only handle on the basis-scoped Screener APIs; a
+        stock carrying neither could not be fetched on any basis.
+        """
+        if (
+            self.screener_warehouse_id_consolidated is None
+            and self.screener_warehouse_id_standalone is None
+        ):
+            raise ValueError(f"{_NO_SCREENER_WAREHOUSE_ID} ({self.nse_symbol})")
+        return self
 
 
 class StockQuarter(BaseModel):
@@ -178,16 +234,39 @@ class WatchlistConfig(BaseModel):
         The Tijori company id is an identity constraint, so a duplicate would
         silently let one issuer's page satisfy another issuer's request.
         """
-        collisions = sorted(
-            company_id
-            for company_id, count in Counter(
-                stock.identifiers.tijori_company_id for stock in self.stocks
-            ).items()
-            if count > 1
-        )
+        collisions = _collisions(stock.identifiers.tijori_company_id for stock in self.stocks)
         if collisions:
             shared = ", ".join(str(company_id) for company_id in collisions)
             raise ValueError(f"watchlist reuses {TIJORI_COMPANY_ID_FIELD} across stocks: {shared}")
+        return self
+
+    @model_validator(mode="after")
+    def _check_screener_ids_are_unique(self) -> WatchlistConfig:
+        """Reject a config that binds two stocks to one Screener company or warehouse.
+
+        Both namespaces are identity constraints: a duplicate company id would
+        let one issuer's page satisfy another issuer's request, and a duplicate
+        warehouse id would do the same for the basis-scoped APIs. Warehouse ids
+        are pooled across both bases because they share one numbering space.
+        """
+        collisions = _collisions(stock.identifiers.screener_company_id for stock in self.stocks)
+        if collisions:
+            shared = ", ".join(str(company_id) for company_id in collisions)
+            raise ValueError(
+                f"watchlist reuses {SCREENER_COMPANY_ID_FIELD} across stocks: {shared}"
+            )
+        warehouse_collisions = _collisions(
+            warehouse_id
+            for stock in self.stocks
+            for warehouse_id in (
+                stock.identifiers.screener_warehouse_id_consolidated,
+                stock.identifiers.screener_warehouse_id_standalone,
+            )
+            if warehouse_id is not None
+        )
+        if warehouse_collisions:
+            shared = ", ".join(str(warehouse_id) for warehouse_id in warehouse_collisions)
+            raise ValueError(f"watchlist reuses a screener warehouse id across stocks: {shared}")
         return self
 
     def repo_root(self, config_path: Path) -> Path:

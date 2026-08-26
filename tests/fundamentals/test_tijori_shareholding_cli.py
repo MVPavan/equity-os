@@ -120,6 +120,8 @@ stocks:
       nse_symbol: "TITAN"
       bse_scrip: "500114"
       screener_slug: "TITAN"
+      screener_company_id: 991001
+      screener_warehouse_id_consolidated: 992001
       tijori_slug: "titan-company-limited"
       tijori_company_id: 81
       needs_verification: [{needs_verification}]

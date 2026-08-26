@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture. Structure mirrors a real Screener subscriber company page
+     captured 2026-08-26 (private, uncommitted); every value here is invented. -->
+<html lang="en">
+<head><title>Fixture Standalone Only Ltd</title></head>
+<body>
+  <nav class="navbar">
+    <div class="flex flex-align-center">
+      <a href="/">Screener</a>
+      <div id="account-dropdown" class="dropdown-menu">
+        <button class="account" type="button">fixture-user</button>
+        <div class="dropdown-content" id="nav-user-menu">
+          <a href="/user/account/">Profile</a>
+          <a href="/alerts/">Alerts</a>
+          <a href="/notebook/">Notebook</a>
+          <a href="/premium/member/">Payments</a>
+          <form action="/logout/" method="post" style="padding: 0">
+            <input type="hidden" name="csrfmiddlewaretoken" value="fixture-csrf-token">
+            <button type="submit">Logout</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </nav>
+  <main>
+  <div data-company-id="991002"
+       data-warehouse-id="992003"
+       data-user-is-registered="true"
+       id="company-info"></div>
+
+    <div class="card card-large" id="top">
+      <h1>Fixture Standalone Only Ltd</h1>
+      <div class="company-links"><span>BSE: 500999</span><span>NSE: FIXTURECO</span></div>
+    </div>
+    <section id="chart" class="card card-large"><h2>Chart</h2></section>
+    <section id="analysis" class="card card-large"><h2>Pros &amp; Cons</h2></section>
+    <section id="peers" class="card card-large"><h2>Peer comparison</h2></section>
+    <section id="quarters" class="card card-large">
+      <div class="flex-row flex-space-between flex-gap-16">
+        <h2>Quarterly Results</h2>
+        <p class="sub" style="margin: 0;">
+          Figures in Rs. Crores
+        </p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+            <th class="highlight-cell" data-date-key="2025-06-30">Jun 2025</th>
+            <th class="highlight-cell" data-date-key="2025-09-30">Sep 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Sales&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Expenses&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Net Profit&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="profit-loss" class="card card-large">
+      <div class="flex-row flex-space-between flex-gap-16">
+        <h2>Profit &amp; Loss</h2>
+        <p class="sub" style="margin: 0;">
+          Figures in Rs. Crores
+        </p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+            <th class="highlight-cell" data-date-key="2025-06-30">Jun 2025</th>
+            <th class="highlight-cell" data-date-key="2025-09-30">Sep 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Sales&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Expenses&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Net Profit&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="balance-sheet" class="card card-large">
+      <div class="flex-row flex-space-between flex-gap-16">
+        <h2>Balance Sheet</h2>
+        <p class="sub" style="margin: 0;">
+          Figures in Rs. Crores
+        </p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+            <th class="highlight-cell" data-date-key="2025-06-30">Jun 2025</th>
+            <th class="highlight-cell" data-date-key="2025-09-30">Sep 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Borrowings&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Other Liabilities&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="cash-flow" class="card card-large">
+      <div class="flex-row flex-space-between flex-gap-16">
+        <h2>Cash Flow</h2>
+        <p class="sub" style="margin: 0;">
+          Figures in Rs. Crores
+        </p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+            <th class="highlight-cell" data-date-key="2025-06-30">Jun 2025</th>
+            <th class="highlight-cell" data-date-key="2025-09-30">Sep 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Cash from Operating Activity&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Cash from Investing Activity&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="ratios" class="card card-large">
+      <div class="flex-row flex-space-between flex-gap-16">
+        <h2>Ratios</h2>
+        <p class="sub" style="margin: 0;">
+          Figures in Rs. Crores
+        </p>
+      </div>
+      <div class="responsive-holder fill-card-width" data-result-table>
+        <table class="data-table responsive-text-nowrap">
+          <thead>
+            <tr>
+              <th class="text"></th>
+            <th class="highlight-cell" data-date-key="2025-06-30">Jun 2025</th>
+            <th class="highlight-cell" data-date-key="2025-09-30">Sep 2025</th>
+            </tr>
+          </thead>
+          <tbody>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">Debtor Days&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          <tr class="stripe">
+            <td class="text">
+              <button class="button-plain">ROCE %&nbsp;<span class="blue-icon">+</span></button>
+            </td>
+            <td>1,234</td>
+            <td>1,301</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="insights" class="card card-large">
+      <h2>Insights</h2>
+      <div class="responsive-holder" data-result-table>
+        <table class="data-table">
+          <thead><tr><th class="text"></th><th data-date-key="2025-03-31">Mar 2025</th></tr></thead>
+          <tbody><tr><td class="text">Capacity Utilisation %</td><td>78%</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="shareholding" class="card card-large"><h2>Shareholding Pattern</h2></section>
+    <section id="documents" class="card card-large"><h2>Documents</h2></section>
+  </main>
+</body>
+</html>

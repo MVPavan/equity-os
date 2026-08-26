@@ -8,6 +8,7 @@ from pathlib import Path
 from fundamentals.api.adjudication_cli import add_adjudication_parser
 from fundamentals.api.config import XbrlMode
 from fundamentals.api.news_cli import add_news_parser
+from fundamentals.api.screener_page_cli import add_screener_page_parser
 from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
 from fundamentals.api.tijori_analysis_cli import add_tijori_analysis_parser
 from fundamentals.api.tijori_events_cli import add_tijori_events_parser
@@ -135,4 +136,5 @@ def build_parser() -> argparse.ArgumentParser:
     add_tijori_overview_parser(subparsers)
     add_tijori_analysis_parser(subparsers)
     add_tijori_events_parser(subparsers)
+    add_screener_page_parser(subparsers)
     return parser

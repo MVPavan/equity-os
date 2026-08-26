@@ -60,6 +60,7 @@ from fundamentals.api.news_cli import (
 )
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
+from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.watchlist_config import (
     FixturePaths,
@@ -72,6 +73,7 @@ from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
 from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_comparator_path
 from fundamentals.ingest.ocr_engine import RapidOcrEngine
+from fundamentals.ingest.screener_session_models import ScreenerCredentials
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
@@ -108,6 +110,7 @@ _TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
 _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
+_SCREENER_SESSION_ENV = "SCREENER_SESSION_COOKIE"
 
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
@@ -246,6 +249,19 @@ def _tijori_credentials_from_env() -> TijoriCredentials | None:
             raise SystemExit(_TIJORI_LOGIN_UNIMPLEMENTED)
         return None
     return TijoriCredentials(session_cookie=SecretStr(session_cookie))
+
+
+def _screener_credentials_from_env() -> ScreenerCredentials | None:
+    """Read a pre-minted Screener subscriber session cookie from the environment.
+
+    Returns ``None`` when no cookie is present, so a Screener command refuses
+    with a named environment variable instead of attempting an anonymous fetch
+    that would silently return a valid logged-out page.
+    """
+    session_cookie = os.environ.get(_SCREENER_SESSION_ENV)
+    if session_cookie is None:
+        return None
+    return ScreenerCredentials(session_cookie=SecretStr(session_cookie))
 
 
 def _write_reports(report_dir: Path, wave: WaveReport) -> None:
@@ -651,6 +667,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if tijori_exit_code is not None:
         return tijori_exit_code
+
+    screener_exit_code = dispatch_screener_command(
+        args, credentials_factory=_screener_credentials_from_env
+    )
+    if screener_exit_code is not None:
+        return screener_exit_code
 
     if args.command == NEWS_COMMAND:
         news_result = run_news_command(args)

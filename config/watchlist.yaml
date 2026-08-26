@@ -26,6 +26,16 @@
 # "Verified watchlist identity map"), so none carries a needs_verification flag.
 # It is required: the shareholding page publishes no identity island, and its only
 # deterministic marker is the heading comp_id attribute matched against this id.
+#
+# Screener carries TWO numeric namespaces, both live-verified 2026-08-26 against
+# the subscriber company page of every stock below (docs/research/screener/
+# surface-map.md §3, §10). screener_company_id is the page's data-company-id and
+# is the same on both bases; the data-warehouse-id DIFFERS PER BASIS and scopes
+# the peers/ and quick_ratios/ APIs, so it is pinned once per basis. NETWEB is a
+# standalone-only company: its /consolidated/ URL returns HTTP 200 with no basis
+# marker, no warehouse id, and empty financial tables, so
+# screener_warehouse_id_consolidated is null. That null is a structural fact
+# about the company, NOT a needs_verification case.
 
 # Each stock carries its own `wave` (Wave-1 / Wave-2). `validate --watchlist` rolls
 # each wave up under its own <wave>-rollup.json, and `--wave <Wave-1|Wave-2>` scopes a
@@ -41,6 +51,9 @@ stocks:
       nse_symbol: "LAURUSLABS"
       bse_scrip: "540222"
       screener_slug: "LAURUSLABS"
+      screener_company_id: 1273603
+      screener_warehouse_id_consolidated: 12723395
+      screener_warehouse_id_standalone: 12723394
       tijori_slug: "laurus-labs"
       tijori_company_id: 19736
       us_listed: false
@@ -63,6 +76,9 @@ stocks:
       nse_symbol: "MTARTECH"
       bse_scrip: "543270"
       screener_slug: "MTARTECH"
+      screener_company_id: 1274841
+      screener_warehouse_id_consolidated: 62324733
+      screener_warehouse_id_standalone: 62314364
       tijori_slug: "mtar-technologies-ltd"
       tijori_company_id: 42101
       us_listed: false
@@ -87,6 +103,9 @@ stocks:
       nse_symbol: "SONACOMS"
       bse_scrip: "543300"
       screener_slug: "SONACOMS"
+      screener_company_id: 1274879
+      screener_warehouse_id_consolidated: 67225190
+      screener_warehouse_id_standalone: 67225189
       tijori_slug: "sona-blw-precision-forgings-ltd"
       tijori_company_id: 43328
       us_listed: false
@@ -111,6 +130,9 @@ stocks:
       nse_symbol: "THERMAX"
       bse_scrip: "500411"
       screener_slug: "THERMAX"
+      screener_company_id: 3412
+      screener_warehouse_id_consolidated: 6599258
+      screener_warehouse_id_standalone: 1626
       tijori_slug: "thermax-limited"
       tijori_company_id: 301
       us_listed: false
@@ -133,6 +155,9 @@ stocks:
       nse_symbol: "TITAN"
       bse_scrip: "500114"
       screener_slug: "TITAN"
+      screener_company_id: 3437
+      screener_warehouse_id_consolidated: 6599273
+      screener_warehouse_id_standalone: 1093
       tijori_slug: "titan-company-limited"
       tijori_company_id: 81
       us_listed: false
@@ -163,6 +188,9 @@ stocks:
       nse_symbol: "NETWEB"
       bse_scrip: "543945"
       screener_slug: "NETWEB"
+      screener_company_id: 1284419
+      screener_warehouse_id_consolidated: null
+      screener_warehouse_id_standalone: 104235517
       tijori_slug: "netweb-technologies-india-ltd"
       tijori_company_id: 55416
       us_listed: false
@@ -186,6 +214,9 @@ stocks:
       nse_symbol: "HFCL"
       bse_scrip: "500183"
       screener_slug: "HFCL"
+      screener_company_id: 1319
+      screener_warehouse_id_consolidated: 6596249
+      screener_warehouse_id_standalone: 2636
       tijori_slug: "himachal-futuristic-communications-limited"
       tijori_company_id: 131
       us_listed: false
@@ -208,6 +239,9 @@ stocks:
       nse_symbol: "POLYCAB"
       bse_scrip: "542652"
       screener_slug: "POLYCAB"
+      screener_company_id: 1274653
+      screener_warehouse_id_consolidated: 30744264
+      screener_warehouse_id_standalone: 30744263
       tijori_slug: "polycab-india-ltd"
       tijori_company_id: 5794
       us_listed: false
@@ -230,6 +264,9 @@ stocks:
       nse_symbol: "CGPOWER"
       bse_scrip: "500093"
       screener_slug: "CGPOWER"
+      screener_company_id: 739
+      screener_warehouse_id_consolidated: 6595429
+      screener_warehouse_id_standalone: 1308
       tijori_slug: "crompton-greaves-limited"
       tijori_company_id: 63
       us_listed: false
@@ -252,6 +289,9 @@ stocks:
       nse_symbol: "ETERNAL"
       bse_scrip: "543320"
       screener_slug: "ETERNAL"
+      screener_company_id: 1274894
+      screener_warehouse_id_consolidated: 68088707
+      screener_warehouse_id_standalone: 68088706
       tijori_slug: "zomato-ltd"
       tijori_company_id: 43813
       us_listed: false
