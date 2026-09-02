@@ -49,6 +49,7 @@ from screener_screen_fixtures import (  # noqa: F401
     NARROW_LABELS,
     NESTED_EXPORT_ANCHORS,
     NESTED_PAGE_ANCHORS,
+    NON_ANCHOR_CONTROL,
     PAGE_SIZE_ANCHORS,
     SELECTOR_QUERY,
     STRAY_PAGE_SIZE_ANCHOR,
@@ -62,6 +63,7 @@ from screener_screen_fixtures import (  # noqa: F401
     live_page,
     malformed_pages,
     nested_options_pagination,
+    non_anchor_pagination,
     one_row,
     page,
     page_of,
@@ -74,7 +76,10 @@ from screener_screen_fixtures import (  # noqa: F401
     selector_href,
     single_page,
     table_of,
+    table_with_displaced_row,
+    table_without_tbody,
     walk,
+    xml_declared_page,
     zero_result_page,
 )
 

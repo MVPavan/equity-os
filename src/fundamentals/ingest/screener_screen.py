@@ -6,8 +6,6 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from lxml import etree  # type: ignore[import-untyped]
-
 from fundamentals.ingest.screener_financials_tables import html_anchor, normalize_text, read_number
 from fundamentals.ingest.screener_screen_models import (
     ScreenAcquisitionConfig,
@@ -39,7 +37,9 @@ _SERIAL = re.compile(r"^([1-9][0-9]*)\.$")
 _NUMBER = re.compile(r"^[1-9][0-9]*$")
 _PAGE_SIZE_ONLY_AFTER_FIRST_PAGE = "screen page-size-only pagination is only valid on page one"
 _UNFETCHED_OFFERED_PAGE = "screen pagination stopped before an earlier offered page"
-_UNPARSEABLE_SCREEN_DOCUMENT = "screen document could not be parsed"
+_UNADMITTED_SCREEN_ROW = "screen table has a row outside tbody"
+_ANCHORLESS_PAGINATION_HAS_ELEMENT_CHILDREN = "anchor-less screen pagination has element children"
+_EXCEPTION_DETAIL = "{refusal}: {detail}"
 
 
 def read_screen_table(
@@ -49,9 +49,12 @@ def read_screen_table(
     tables = root.xpath(_TABLE)
     if len(tables) != 1:
         raise ScreenStructureError("screen requires exactly one data-table")
-    rows = tables[0].xpath("./tbody/tr")
+    table = tables[0]
+    rows = table.xpath("./tbody/tr")
+    if len(rows) != len(table.xpath(".//tr")):
+        raise ScreenStructureError(_UNADMITTED_SCREEN_ROW)
     if not rows:
-        if tables[0].xpath(".//th"):
+        if table.xpath(".//th"):
             raise ScreenStructureError("rowless screen table must be headerless")
         return (), ()
     first = _row_cells(rows[0])
@@ -91,6 +94,8 @@ def read_screen_pagination(root: Any, *, requested_page: int) -> tuple[int, ...]
     pagination = paginations[0]
     anchors = pagination.xpath(".//a")
     if not anchors:
+        if pagination.xpath("./*"):
+            raise ScreenPaginationError(_ANCHORLESS_PAGINATION_HAS_ELEMENT_CHILDREN)
         return ()
     options = pagination.xpath(_OPTIONS)
     if not options:
@@ -138,10 +143,7 @@ def acquire_screen(
         try:
             fetch = source.fetch_screen_page(url=url)
             documents.append(fetch)
-            try:
-                root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
-            except etree.ParserError as error:
-                raise ScreenStructureError(_UNPARSEABLE_SCREEN_DOCUMENT) from error
+            root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
             assert_logged_in(root)
             columns, rows = read_screen_table(root, fetch=fetch, page_number=page)
             offered = read_screen_pagination(root, requested_page=page)
@@ -201,6 +203,24 @@ def acquire_screen(
                 page=page,
                 url=url,
                 error=error,
+                content_sha256=None if fetch is None else fetch.content_sha256,
+            )
+        # Once a body is retained, no exception may discard it; preserve the
+        # original type and message in detail to distinguish page failures from bugs.
+        except Exception as error:
+            if not documents:
+                raise
+            detail = _EXCEPTION_DETAIL.format(refusal=type(error).__name__, detail=str(error))
+            return _incomplete(
+                query,
+                expected_columns,
+                all_rows,
+                pages,
+                documents,
+                detail,
+                page=page,
+                url=url,
+                error=ScreenStructureError(detail),
                 content_sha256=None if fetch is None else fetch.content_sha256,
             )
 

@@ -277,6 +277,15 @@ quietly rewriting its own contract are the same operation.
    `scratchpad/screener_discovery/`, which is how a pasted private capture is
    caught without needing a list of real holder names.
 
+**The identifier rail false-positives on short ids, and that is the right
+trade.** It word-matches every 4-plus-digit company id found in the captures
+against changed test files. Real companies have ids as short as four digits, so
+an ordinary number in prose can collide — a docstring saying "a 1012-test gate"
+tripped it against `/company/1012/`. Triage a STOP by asking *where* the number
+appears before assuming a leak: a fixture value is a real finding, a test count
+in a comment is not. Do not narrow the rail to reduce noise. A missed leak is
+unrecoverable; a false STOP costs two minutes.
+
 **Bounded output is the contract.** At most 8 status lines and exactly one
 `ROUTE:` line. Test names are capped at 4 plus a count; tracebacks and the full
 lists go to `scratchpad/gate/<slice>-<ts>.log`. An unbounded list of 37 node IDs

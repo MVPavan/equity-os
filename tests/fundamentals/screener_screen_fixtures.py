@@ -469,3 +469,62 @@ def malformed_pages() -> tuple[str, ...]:
         ),
         row_page(company_cell='<a href="/company/SYNTHONE/"></a>'),
     )
+
+
+def table_without_tbody(
+    labels: tuple[str, ...],
+    rows: tuple[SyntheticRow, ...],
+    *,
+    header: bool = True,
+    class_attribute: str = TABLE_CLASS,
+) -> str:
+    """A populated result table whose rows are direct children of ``<table>``.
+
+    A browser inserts the missing ``tbody``; libxml2 does not, so this is what a
+    template that stopped emitting the tag actually parses into. ``header=False``
+    drops the header row, which is the shape that carries no ``th`` anywhere.
+    """
+    body = (header_row(labels) if header else "") + "".join(data_row(row) for row in rows)
+    return f'<table class="{class_attribute}">{body}</table>'
+
+
+def table_with_displaced_row(
+    labels: tuple[str, ...],
+    rows: tuple[SyntheticRow, ...],
+    displaced: SyntheticRow,
+    *,
+    section: str = "tfoot",
+    class_attribute: str = TABLE_CLASS,
+) -> str:
+    """A normal ``tbody`` table carrying one further data row outside that ``tbody``.
+
+    ``section="tfoot"`` puts it in a sibling section libxml2 keeps separate;
+    ``section="table"`` leaves it loose as a direct child of ``<table>``. Both
+    are ordinary result rows that a reader walking only ``./tbody/tr`` cannot see.
+    """
+    body = header_row(labels) + "".join(data_row(row) for row in rows)
+    extra = data_row(displaced)
+    trailing = f"<tfoot>{extra}</tfoot>" if section == "tfoot" else extra
+    return f'<table class="{class_attribute}"><tbody>{body}</tbody>{trailing}</table>'
+
+
+# A pagination control that is not an anchor. The verified single-page block has
+# no element children at all, so anything here is a shape no capture has shown —
+# and "no ``<a>`` descendants" alone would read it as a finished one-page result.
+NON_ANCHOR_CONTROL = '<span class="ink-600 sub">Showing 7 of 7</span>'
+
+
+def non_anchor_pagination(control: str = NON_ANCHOR_CONTROL) -> str:
+    """A ``.pagination`` holding an element child that is not, and holds no, anchor."""
+    return f'<div class="pagination">{control}</div>'
+
+
+def xml_declared_page() -> str:
+    """A body whose first bytes are an XML declaration.
+
+    ``parse_document`` is handed a ``str``, and lxml refuses a unicode string
+    carrying an encoding declaration outright — a ``ValueError``, not a
+    ``ParserError``. It is a real thing a host or proxy can return, and the
+    reader has no way to know it is coming.
+    """
+    return '<?xml version="1.0" encoding="utf-8"?>' + zero_result_page()

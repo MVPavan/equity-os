@@ -184,7 +184,7 @@ class ScreenArtifact(BaseModel):
                 and not (self.incomplete_reason or self.failure)
             )
         else:
-            valid = bool(self.incomplete_reason)
+            valid = bool(self.incomplete_reason) and bool(self.pages or self.failure)
         if not valid:
             raise ValueError("screen artifact fields do not match its outcome")
         return self
