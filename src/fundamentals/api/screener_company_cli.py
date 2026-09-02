@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.api.artifact_writer import (
     preflight_out_paths,
+    safe_subdirectory,
     write_bytes_no_clobber,
     write_json_no_clobber,
 )
@@ -317,13 +318,10 @@ def _safe_documents_dir(out_dir: Path) -> Path:
     run created, or a plain directory already sitting inside the output
     directory — never a link, and never a link's target.
     """
-    path = out_dir / DOCUMENTS_DIRNAME
-    if path.is_symlink() or (path.exists() and not path.is_dir()):
-        raise SystemExit(_UNSAFE_DOCUMENTS_DIR.format(path=path))
-    path.mkdir(parents=True, exist_ok=True)
-    if path.resolve().parent != out_dir.resolve():
-        raise SystemExit(_UNSAFE_DOCUMENTS_DIR.format(path=path))
-    return path
+    try:
+        return safe_subdirectory(out_dir, DOCUMENTS_DIRNAME)
+    except SystemExit as error:
+        raise SystemExit(_UNSAFE_DOCUMENTS_DIR.format(path=out_dir / DOCUMENTS_DIRNAME)) from error
 
 
 def _write_verified(path: Path, payload: bytes, expected_sha256: str) -> None:

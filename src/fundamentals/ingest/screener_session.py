@@ -213,6 +213,21 @@ class ScreenerSessionSource:
             fetched_at=datetime.now(tz=UTC),
         )
 
+    def fetch_screen_page(self, *, url: str) -> ScreenerDocumentFetch:
+        """Fetch a raw-screen navigation through the shared subscriber transport."""
+        credentials = self._config.credentials
+        if credentials is None:
+            raise ScreenerCredentialsError(_NO_CREDENTIALS)
+        status, raw = self._fetch_bytes(url, credentials)
+        return ScreenerDocumentFetch(
+            raw_body=raw,
+            source_url=url,
+            http_status=status,
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            byte_count=len(raw),
+            fetched_at=datetime.now(tz=UTC),
+        )
+
     def _fetch_bytes(
         self, url: str, credentials: ScreenerCredentials, *, xhr: bool = False
     ) -> tuple[int, bytes]:

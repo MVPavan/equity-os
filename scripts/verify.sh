@@ -296,7 +296,9 @@ PYEOF
       escalate "${EXIT_IMPL}" "${failed:-${lint_fail}}"
     fi
   else
-    l_gate="gate             OK    958-baseline suite, ruff, mypy --strict"
+    local n_passed
+    n_passed="$(grep -cE '^PASSED ' "${log}" || true)"
+    l_gate="gate             OK    ${n_passed} passed, ruff, mypy --strict"
   fi
 
   # 3 — skips must not grow. Cheapest way to fake a green gate.
@@ -355,7 +357,10 @@ print(" ".join(hits[:6]))
 PYEOF
 )"
     if [ -n "${uncovered}" ]; then
-      l_cov="diff-coverage    FAIL  changed lines no test executes"
+      # Carry the lines on the status line itself. Two findings of the same rank
+      # can collide in the ROUTE reason, and a worker routed for coverage needs
+      # the file:line list, not the word "FAIL".
+      l_cov="diff-coverage    FAIL  $(cap_names ${uncovered})"
       escalate "${EXIT_IMPL}" "${uncovered}"
     else
       l_cov="diff-coverage    OK    every changed line in ${COV_SCOPE} is executed"

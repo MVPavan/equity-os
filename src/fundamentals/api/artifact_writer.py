@@ -13,6 +13,17 @@ from pathlib import Path
 REFUSE_OVERWRITE = "refusing to overwrite existing table artifact"
 
 
+def safe_subdirectory(out_dir: Path, name: str) -> Path:
+    """Create or accept one plain child directory without following a symlink."""
+    path = out_dir / name
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        raise SystemExit(f"refusing unsafe artifact directory: {path}")
+    path.mkdir(parents=True, exist_ok=True)
+    if path.resolve().parent != out_dir.resolve():
+        raise SystemExit(f"refusing unsafe artifact directory: {path}")
+    return path
+
+
 def preflight_out_paths(out_paths: tuple[Path, ...]) -> None:
     """Refuse the whole write when any target path already exists."""
     colliding = tuple(str(path) for path in out_paths if os.path.lexists(path))

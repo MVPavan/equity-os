@@ -49,9 +49,22 @@ from fundamentals.api.screener_page_cli import (
     render_screener_page_summary,
     run_screener_page_command,
 )
+from fundamentals.api.screener_screen_cli import (
+    SCREENER_SCREEN_COMMAND,
+    render_screener_screen_summary,
+    run_screener_screen_command,
+)
+from fundamentals.api.screener_screen_cli import (
+    is_incomplete as screen_is_incomplete,
+)
 from fundamentals.ingest.screener_session_models import ScreenerCredentials, ScreenerSessionError
 
-SCREENER_COMMANDS = (SCREENER_PAGE_COMMAND, SCREENER_FINANCIALS_COMMAND, SCREENER_COMPANY_COMMAND)
+SCREENER_COMMANDS = (
+    SCREENER_PAGE_COMMAND,
+    SCREENER_FINANCIALS_COMMAND,
+    SCREENER_COMPANY_COMMAND,
+    SCREENER_SCREEN_COMMAND,
+)
 
 # Distinct, documented exit codes: a caller (or a shell loop over the watchlist)
 # can tell "this company has no such basis" from "the fetch was refused" without
@@ -95,18 +108,19 @@ def dispatch_screener_command(
     credentials = credentials_factory()
     if credentials is None:
         raise SystemExit(_SESSION_REQUIRED.format(command=args.command))
-    structlog.get_logger(_CLI_LOGGER_NAME).info(
-        "screener_command_invoked",
-        command=args.command,
-        stock=args.stock,
-        basis=args.basis,
-        started_at=datetime.now(UTC).isoformat(),
-    )
+    fields = {"command": args.command, "started_at": datetime.now(UTC).isoformat()}
+    if args.command != SCREENER_SCREEN_COMMAND:
+        fields.update(stock=args.stock, basis=args.basis)
+    structlog.get_logger(_CLI_LOGGER_NAME).info("screener_command_invoked", **fields)
     try:
         if args.command == SCREENER_FINANCIALS_COMMAND:
             return _run_financials(args, credentials=credentials)
         if args.command == SCREENER_COMPANY_COMMAND:
             return _run_company(args, credentials=credentials)
+        if args.command == SCREENER_SCREEN_COMMAND:
+            screen = run_screener_screen_command(args, credentials=credentials)
+            sys.stdout.write(render_screener_screen_summary(screen) + "\n")
+            return EXIT_REFUSED if screen_is_incomplete(screen) else EXIT_OK
         run = run_screener_page_command(args, credentials=credentials)
     except ScreenerSessionError as error:
         sys.stderr.write(
