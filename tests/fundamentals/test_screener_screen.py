@@ -566,3 +566,167 @@ def test_a_query_that_matches_nothing_is_an_answer_and_not_a_structure_error(
         support.TSV_HEADER,
         f"zero_results\t1\t0\t0\t{support.artifact_of(out_dir).resolve()}",
     ]
+
+
+def test_a_pagination_holding_only_a_nested_page_size_selector_ends_the_walk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SL3-10a: the live single-page result, which the plan inferred wrong twice.
+
+    Verified live 2026-09-02 against a 16-row query: a real single-page result
+    does not have an anchor-less pagination. It has three anchors — the page-size
+    selector ``10 / 25 / 50`` — nested inside a flex wrapper rather than as a
+    direct ``div.options`` child. The reader's anchor-less early return therefore
+    never fires, it falls through to the direct-options lookup, finds none, and
+    refuses a perfectly good result. No page numbers means one page, so the walk
+    must *stop* here rather than merely tolerate the shape.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        support.nested_options_pagination(),
+    )
+    assert support.read_pagination(body, requested_page_number=1) == ()
+
+    run, recorder = support.acquire(monkeypatch, {1: body})
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.RESULTS
+    assert len(run.artifact.rows) == 3
+    assert run.artifact.pages[0].offered_pages == ()
+    assert run.artifact.failure is None
+    assert run.artifact.incomplete_reason is None
+    assert len(recorder.urls) == 1
+
+
+@pytest.mark.parametrize(
+    "pagination_html",
+    [
+        support.nested_options_pagination(support.NESTED_PAGE_ANCHORS),
+        support.nested_options_pagination(stray='<a href="?page=2"> Next </a>'),
+    ],
+    ids=["nested-block-carries-page-links", "anchor-outside-every-options-block"],
+)
+def test_a_nested_options_block_that_is_not_only_page_size_still_refuses(
+    monkeypatch: pytest.MonkeyPatch, pagination_html: str
+) -> None:
+    """SL3-10a's accepted hazard, and the assertion that keeps it accepted.
+
+    "No direct options block" is also what a page would look like if Screener
+    moved the page-number block one level down — and then treating it as one page
+    truncates a multi-page walk at page 1 *silently*, which is worse than
+    refusing. So ``()`` is conditional on positive evidence: every anchor inside
+    ``.pagination`` lies within a nested ``div.options`` and every one of them
+    carries ``limit=``. Both fixtures below are deliberately plausible and neither
+    clears that bar, so both must still raise.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        pagination_html,
+    )
+    with pytest.raises(support.models.ScreenPaginationError):
+        support.read_pagination(body, requested_page_number=1)
+
+    run, _ = support.acquire(monkeypatch, {1: body})
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
+    assert run.artifact.failure is not None
+    assert run.artifact.failure.refusal == "ScreenPaginationError"
+    assert run.artifact.rows == ()
+
+
+def test_one_page_size_link_loose_outside_the_options_block_is_enough_to_refuse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Containment alone, with every other signal saying "page-size selector".
+
+    The stray anchor's href is a *valid* selector href — it carries ``limit=``
+    and ``page=1`` — so the only thing wrong with this pagination is that one
+    anchor sits outside every nested ``options`` block. That is exactly the
+    residue a moved or half-moved page block would leave, and the reader has no
+    other evidence here to catch it with: drop the containment requirement and
+    this page reads as a finished one-page result.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        support.nested_options_pagination(stray=support.STRAY_PAGE_SIZE_ANCHOR),
+    )
+    with pytest.raises(support.models.ScreenPaginationError):
+        support.read_pagination(body, requested_page_number=1)
+
+    run, _ = support.acquire(monkeypatch, {1: body})
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
+    assert run.artifact.failure is not None
+    assert run.artifact.failure.refusal == "ScreenPaginationError"
+    assert run.artifact.rows == ()
+
+
+def test_a_nested_block_offering_page_two_at_the_chosen_page_size_is_never_one_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The silent-truncation hazard itself, in its most convincing disguise.
+
+    A moved page-number block that preserves the reader's chosen page size looks
+    like the selector on every axis but one: the anchors are nested, they are
+    bare numerals, and every href carries ``limit=50``. Only the page values give
+    it away — one of them is 2. Without that check this page returns ``()``, the
+    walk stops at page 1, and a truncated result is published as complete with
+    nothing anywhere recording that a second page was offered.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        support.nested_options_pagination(support.MOVED_PAGE_ANCHORS),
+    )
+    with pytest.raises(support.models.ScreenPaginationError):
+        support.read_pagination(body, requested_page_number=1)
+
+    run, _ = support.acquire(monkeypatch, {1: body})
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
+    assert run.artifact.failure is not None
+    assert run.artifact.failure.refusal == "ScreenPaginationError"
+    assert run.artifact.rows == ()
+
+
+def test_a_nested_block_that_carries_no_page_size_link_cannot_end_a_walk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``limit=`` is the only thing that identifies the block as the selector.
+
+    These anchors are nested and every one of them stays on page 1, so both other
+    clauses are satisfied — but they are export controls, not a page-size
+    selector, and a control that says nothing about page count cannot be read as
+    saying "one page". Ending the walk here would be a guess dressed as evidence.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        support.nested_options_pagination(support.NESTED_EXPORT_ANCHORS),
+    )
+    with pytest.raises(support.models.ScreenPaginationError):
+        support.read_pagination(body, requested_page_number=1)
+
+    run, _ = support.acquire(monkeypatch, {1: body})
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
+    assert run.artifact.failure is not None
+    assert run.artifact.failure.refusal == "ScreenPaginationError"
+    assert run.artifact.rows == ()
+
+
+def test_a_direct_options_block_still_offers_its_pages_and_still_walks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SL3-10a must not be paid for out of the multi-page shape.
+
+    The same page-size selector is nested on a multi-page page too, so a rule
+    that reads "a nested options block means one page" without first looking for
+    the direct one would end every walk at page 1. The direct block keeps
+    deciding, and the walk keeps advancing.
+    """
+    scoped = support.results_page(1, offered=(1, 2))
+    assert support.read_pagination(scoped, requested_page_number=1) == (1, 2)
+
+    run, recorder = support.acquire(monkeypatch, support.walk(2))
+
+    assert run.artifact.outcome is support.models.ScreenOutcome.RESULTS
+    assert [support.requested_page(url) for url in recorder.urls] == [1, 2]
+    assert run.artifact.pages[0].offered_pages == (1, 2)

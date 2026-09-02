@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from fundamentals.ingest.screener_financials_tables import html_anchor, normalize_text, read_number
 from fundamentals.ingest.screener_screen_models import (
@@ -75,15 +75,32 @@ def read_screen_table(
 
 
 def read_screen_pagination(root: Any, *, requested_page: int) -> tuple[int, ...]:
-    """Read only the first direct page-options block, never page-size controls."""
+    """Read only the first direct page-options block, never page-size controls.
+
+    Nested selector hrefs are parsed only to classify a single-page result; this
+    reader never follows them, so the no-following rule remains unchanged.
+    """
     paginations = root.xpath(_PAGINATION)
     if len(paginations) != 1:
         raise ScreenPaginationError("screen requires exactly one pagination block")
     pagination = paginations[0]
-    if not pagination.xpath(".//a"):
+    anchors = pagination.xpath(".//a")
+    if not anchors:
         return ()
     options = pagination.xpath(_OPTIONS)
     if not options:
+        nested_anchors = {
+            id(nested_anchor)
+            for nested_options in pagination.xpath(
+                ".//div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
+            )
+            for nested_anchor in nested_options.xpath(".//a")
+        }
+        if all(id(anchor) in nested_anchors for anchor in anchors) and all(
+            "limit" in query and all(page == "1" for page in query.get("page", ()))
+            for query in (parse_qs(urlsplit(anchor.get("href", "")).query) for anchor in anchors)
+        ):
+            return ()
         raise ScreenPaginationError("screen pagination has no direct options block")
     anchors = options[0].xpath(".//a")
     numeric: list[tuple[int, Any]] = []

@@ -111,6 +111,60 @@ LOGOUT_FORM = '<form action="/logout/" method="post"><button>Logout</button></fo
 # fails loudly rather than accidentally passing.
 _DECOY_HREF = "?sort=&amp;order=&amp;source=&amp;query=decoy&amp;page=999"
 
+# The invented query as it is spelled inside a selector href, and the fixed
+# prefix every anchor in the live pagination carries ahead of its own parameters.
+SELECTOR_QUERY = "Alpha+ratio+%3E+11+AND+Beta+score+%3C+3"
+_SELECTOR_BASE = f"?sort=&amp;order=&amp;source=&amp;query={SELECTOR_QUERY}"
+
+
+def selector_href(limit: int, *, page: int = 1) -> str:
+    """One page-size href in the full shape the live selector serves.
+
+    The live anchor carries the whole query string — ``sort``, ``order``,
+    ``source``, ``query``, ``page`` and ``limit`` — not a bare ``?limit=``. A
+    fixture that omits ``page=`` leaves the "every offered page is page 1" half
+    of the classification rule vacuously satisfied, so the accepting case would
+    never exercise it against the shape the site actually returns.
+    """
+    return f"{_SELECTOR_BASE}&amp;page={page}&amp;limit={limit}"
+
+
+# The page-size selector, nested one level down inside a flex wrapper exactly as
+# the live page renders it. Its anchors are bare numerals, indistinguishable from
+# page numbers by text alone; only ``limit=`` in the href separates them.
+PAGE_SIZE_ANCHORS = (
+    f'<a href="{selector_href(10)}">10</a>'
+    f'<a href="{selector_href(25)}">25</a>'
+    f'<a href="{selector_href(50)}" class="active">50</a>'
+)
+
+# A page-size link that is *outside* every ``options`` block. Its href is a
+# perfectly good selector href, so containment is the only thing it fails.
+STRAY_PAGE_SIZE_ANCHOR = f'<a href="{selector_href(25)}">25</a>'
+
+# What a moved page-number block would look like once it also preserves the
+# chosen page size: nested, bare numerals, ``limit=`` on every anchor, and page
+# values that are not all 1. Only the page check separates this from the
+# selector — and mistaking it truncates a real walk at page 1 in silence.
+MOVED_PAGE_ANCHORS = (
+    f'<a href="{selector_href(50, page=1)}" class="active">1</a>'
+    f'<a href="{selector_href(50, page=2)}">2</a>'
+)
+
+# A nested ``options`` block that is some *other* control — export links for the
+# page being viewed. Contained, and every href stays on page 1, so ``limit=`` is
+# the only thing separating it from the selector. It says nothing at all about
+# how many pages there are, which is why its presence cannot end a walk.
+_EXPORT_HREF = f"{_SELECTOR_BASE}&amp;page=1&amp;format="
+NESTED_EXPORT_ANCHORS = f'<a href="{_EXPORT_HREF}csv">1</a><a href="{_EXPORT_HREF}xlsx">2</a>'
+
+# What a moved page-number block would look like: same nesting, same bare
+# numerals, ``page=`` instead of ``limit=``. Reading text alone cannot tell this
+# from the selector above, and mistaking it truncates a real walk at page 1.
+NESTED_PAGE_ANCHORS = (
+    f'<a href="#" class="active">1</a><a href="{_DECOY_HREF}">2</a><a href="{_DECOY_HREF}">3</a>'
+)
+
 
 class SyntheticRow(BaseModel):
     """One invented result row: its serial, its identity, its link and its cells."""
@@ -230,6 +284,29 @@ def row_shapes(body: str) -> tuple[tuple[str, ...], int]:
     return tuple(headers), data
 
 
+def _page_size_block(anchors: str) -> str:
+    """The wrapper the live page nests its ``div.options`` inside."""
+    return (
+        '<div class="flex flex-baseline flex-gap-16">'
+        '<span class="ink-600 sub">Results per page</span>'
+        f'<div class="options">{anchors}</div>'
+        "</div>"
+    )
+
+
+def nested_options_pagination(anchors: str = PAGE_SIZE_ANCHORS, *, stray: str = "") -> str:
+    """A ``.pagination`` whose only ``div.options`` is *not* a direct child.
+
+    The verified single-page-populated shape: no page-number controls at all, and
+    the page-size selector one level down inside a flex wrapper. ``anchors``
+    replaces what that nested block holds and ``stray`` adds an anchor outside
+    every ``options`` block — the two ways the same nesting can instead mean a
+    page-number block has moved, which is a walk to continue and not a walk that
+    is over.
+    """
+    return f'<div class="pagination">{stray}{_page_size_block(anchors)}</div>'
+
+
 def pagination(
     offered: tuple[int, ...],
     *,
@@ -266,14 +343,7 @@ def pagination(
         anchors.append(f'<a href="{_DECOY_HREF}" class="ink-900"> Next </a>')
     selector = ""
     if page_size:
-        selector = (
-            '<div class="flex flex-baseline flex-gap-16">'
-            '<span class="ink-600 sub">Results per page</span>'
-            '<div class="options">'
-            '<a href="?limit=10">10</a><a href="?limit=25">25</a>'
-            '<a href="?limit=50" class="active">50</a>'
-            "</div></div>"
-        )
+        selector = _page_size_block(PAGE_SIZE_ANCHORS)
     block_class = "flex-baseline options" if scoped else "flex-baseline"
     return (
         '<div class="pagination">'

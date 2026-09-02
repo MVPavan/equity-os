@@ -450,6 +450,21 @@ runs the gate — assumed the implementer *could* run the gate and was merely no
 asked to. It could not: the read-only `UV_CACHE_DIR` fault above stopped `ruff`
 and `mypy` from starting. Fix the sandbox and most of this argument dissolves.
 
+**But the implementer's counts are not authoritative, and this is measured, not
+theoretical.** In the first run under the new rule the implementer reported
+`996 passed, 14 skipped` where the same tree on the host gave `1003 passed, 7
+skipped` — seven tests skip inside the codex sandbox that run outside it — and
+its own `verify.sh` invocation reported `0 <= baseline 7` skips, a third number
+again. Nothing was wrong with the code and nothing was misreported; the sandbox
+is simply a different environment.
+
+Two consequences. **The skip-guard baseline is host-calibrated**, so an
+implementer can see it pass on a number the host would fail, or fail on a number
+the host would pass. And **the orchestrator's single acceptance run is what
+decides**, not because the implementer is untrusted, but because it is the only
+run taken in the environment the baseline was measured in. Read the
+implementer's gate output as a signal that it converged, never as the result.
+
 ## What each check answers — none replaces another
 
 | Question | Answered by |
