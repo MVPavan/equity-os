@@ -85,6 +85,8 @@ usage() {
 usage:
   scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
   scripts/verify.sh gate <slice>                      run the gate
+  scripts/verify.sh reseal <slice> <proof-file>       re-hash after a REOPENED
+                                                      contract; orchestrator only
 USAGE
   exit 64
 }
@@ -344,8 +346,12 @@ PYEOF
     l_skips="skips            OK    ${n_skipped} <= baseline ${BASELINE_SKIPS}"
   fi
 
-  # 4 — diff coverage: every line this slice changed must be executed by
-  # something. Substitute 2 for mutation; catches the unexercised-path class.
+  # 4 — diff coverage, ADVISORY. Lines this slice changed that no test executes.
+  # Reported, never routed. Downgraded 2026-09-02: routing this to the
+  # implementer gave it no legal move, since it is briefed not to edit tests/,
+  # so every uncovered line came back misclassified as a contract gap. Coverage
+  # is a hint for the orchestrator to triage, not a metric to satisfy — chasing
+  # it manufactures tests that pin nothing anyone cares about.
   if [ ! -f "${covjson}" ]; then
     l_cov="diff-coverage    —     skipped, no coverage report (gate red?)"
   else
@@ -392,11 +398,10 @@ print(" ".join(hits[:6]))
 PYEOF
 )"
     if [ -n "${uncovered}" ]; then
-      # Carry the lines on the status line itself. Two findings of the same rank
-      # can collide in the ROUTE reason, and a worker routed for coverage needs
-      # the file:line list, not the word "FAIL".
-      l_cov="diff-coverage    FAIL  $(cap_names ${uncovered})"
-      escalate "${EXIT_IMPL}" "${uncovered}"
+      # Carry the lines on the status line itself, and do NOT escalate: this
+      # check does not fail the gate. "NOTE" rather than "FAIL" so a caller
+      # skimming the report cannot mistake it for a route.
+      l_cov="diff-coverage    NOTE  advisory, unexecuted: $(cap_names ${uncovered})"
     else
       l_cov="diff-coverage    OK    every changed line in ${COV_SCOPE} is executed"
     fi
@@ -486,9 +491,57 @@ PYEOF
   exit "${route}"
 }
 
+# --------------------------------------------------------------------------
+# reseal — the ONE legitimate way an acceptance file changes after the red proof
+# was taken: the contract was found wrong and reopened. Slice 3 needed this when
+# a frozen rule turned out to refuse every legitimate single-page result, so the
+# test asserting it had to be amended.
+#
+# It re-hashes the acceptance files and NOTHING else. The recorded outcomes are
+# untouched, because they are the proof and this is not a way to re-take it. It
+# demands a proof file naming what was amended and showing the amended assertion
+# failing against the implementation it was wrong about — without that, resealing
+# is indistinguishable from an implementer quietly rewriting its own contract.
+# --------------------------------------------------------------------------
+mode_reseal() {
+  local slice="$1" proof="${2:-}"
+  [ -n "${proof}" ] || usage
+  local red="${GATE_DIR}/${slice}-red.json"
+  [ -f "${red}" ] || { echo "no red proof for ${slice}: ${red}" >&2; exit 66; }
+  [ -f "${proof}" ] || { echo "no reopening proof at ${proof}" >&2; exit 66; }
+  VERIFY_ROOT="${REPO_ROOT}" VERIFY_RED="${red}" VERIFY_PROOF="${proof}" python3 - <<'PYEOF'
+import hashlib, json, os, pathlib, datetime
+
+root = pathlib.Path(os.environ["VERIFY_ROOT"])
+red = pathlib.Path(os.environ["VERIFY_RED"])
+proof = pathlib.Path(os.environ["VERIFY_PROOF"])
+data = json.loads(red.read_text())
+
+changed = []
+for entry in data["files"]:
+    path = root / entry["path"]
+    if not path.is_file():
+        raise SystemExit(f"acceptance file is gone, that is not a reseal: {entry['path']}")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != entry["sha256"]:
+        changed.append(entry["path"])
+        entry["sha256"] = digest
+
+data.setdefault("reseals", []).append({
+    "at": datetime.datetime.now(datetime.UTC).isoformat(),
+    "proof": str(proof.relative_to(root) if proof.is_absolute() else proof),
+    "files": changed,
+})
+red.write_text(json.dumps(data, indent=2) + "\n")
+print(f"resealed {len(changed)} file(s): {', '.join(changed) or 'none — hashes already matched'}")
+print(f"outcomes untouched: {len(data['tests'])} tests still recorded red")
+PYEOF
+}
+
 [ "$#" -ge 2 ] || usage
 case "$1" in
-  red)  shift; mode_red "$@" ;;
-  gate) shift; mode_gate "$1" ;;
+  red)    shift; mode_red "$@" ;;
+  gate)   shift; mode_gate "$1" ;;
+  reseal) shift; mode_reseal "$@" ;;
   *)    usage ;;
 esac
