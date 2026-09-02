@@ -16,36 +16,39 @@ acquisition-workstream security rails.
 
 ```text
 PLAN (once per slice of work)
-└─ Sol high|xhigh(O) drafts ⟳ Opus 5 med|high(C) ≤3 ⟳ Fable high(C) ≤2 ──▶ user approves ──▶ FROZEN
+└─ Sol high|xhigh(O) drafts ⟳ Opus 5 med|high(C) ≤3 ⟳ Fable 5.1 high(C) ≤2 ──▶ user approves ──▶ FROZEN
    └─ work cut by DEPENDENCY LAYER: session/transport → parsing → evidence → CLI surface
 
 PER SLICE   (only if the plan names the slice's public seam — see Seam rule)
 │
-├─ 1. Sonnet(C)   ──▶ tests/  acceptance tests, one per plan requirement ID
-│                     reuses tests/fundamentals/*_support.py fixtures
-├─ 2. Sol(O)      ──▶ reviews the TESTS: req-IDs-vs-names + assertion strength  [1 pass]
-├─ 3. orchestrator ──▶ grep requirement IDs vs test names     ← contract completeness, free
+├─ 1. Opus 5 med(C)  ──▶ tests/  acceptance tests, one per plan requirement ID
+│                        reuses tests/fundamentals/*_support.py fixtures
+├─ 2. Sol(O)         ──▶ reviews the TESTS: req-IDs-vs-names + assertion strength  [1 pass]
+├─ 3. orchestrator   ──▶ grep requirement IDs vs test names     ← contract completeness, free
+│     └─ RED PROOF   ──▶ run the new tests NOW; every one must FAIL   ← stands in for mutation
 │
-├─ 4. Terra(O)    ──▶ implement: "make these pass, do not edit tests/"
-│                     runs TARGETED tests only; never the full gate
-│                     MAY edit its own unit tests
+├─ 4. Terra(O)       ──▶ implement: "make these pass, do not edit tests/"
+│                        runs TARGETED tests only; never the full gate
+│                        MAY edit its own unit tests
 │
-├─ 5. scripts/verify.sh        ← deterministic, zero model tokens
+├─ 5. scripts/verify.sh   ← deterministic, zero model tokens      [NOT BUILT YET]
 │      └─ emits ≤8 lines + a ROUTE (see Routing)          ⟳ back to 4 until green
 │
-├─ 6. Sonnet(C)   ──▶ reviews the IMPLEMENTATION  [only on green + teeth check passed]
-├─ 7. Sol high(O) ──▶ critic                      [after convergence]
+├─ 6. Opus 5 high(C) ──▶ reviews the IMPLEMENTATION  [only on green + teeth check passed]
+├─ 7. Sol high(O)    ──▶ critic                      [after convergence]
 │     └─ v0: 2 passes with one fix round between 6 and 7; 1 pass each once mutation lands
-└─ 8. orchestrator ──▶ verify only NEW blocker/major claims by hand
+└─ 8. orchestrator   ──▶ verify only NEW blocker/major claims by hand
 
 PER SLICE CLOSE
 ├─ live smoke — real subscriber session against ≥3 watchlist symbols, both bases
-└─ sign-off — Opus 5 high(C) + Sol xhigh(O), both must agree ──▶ user
+└─ sign-off — Fable 5.1 high(C) + Sol xhigh(O), both must agree ──▶ user
 ```
 
 **The one loop that exists is step 4 ⟳ 5, and it costs zero model tokens.**
-Every model review is single-pass. v1's cost came from putting reviewers inside
-the loop; see [`v1-review-cycle.md`](v1-review-cycle.md).
+Every model review is single-pass except implementation review, which runs at 2
+passes while mutation is absent (see "Mutation and its stand-in"). v1's cost came
+from putting reviewers inside the loop; see
+[`v1-review-cycle.md`](v1-review-cycle.md).
 
 ## Slices and the seam rule
 
@@ -73,32 +76,139 @@ all pairs can alternate, so they rank:
 | test-reviewer ≠ test-writer | hard — otherwise the contract is unchecked |
 | impl-reviewer ≠ implementer | hard — **v1 violated this** (Terra implemented, Sol reviewed) |
 | plan-critic ≠ plan-author | hard — **v1's Fable fallback violated this** (Sol critiquing Sol) |
-| impl-reviewer ≠ test-writer | soft; accepted violation |
+| impl-reviewer ≠ test-writer | soft; **accepted violation** — both are Opus 5, split only by effort (med vs high) and a fresh session |
 
-**Family is the constraint; effort and model size are free.** Never let
-alternation drag Opus into mechanical work — a Claude slot can be Sonnet.
+**Family is the constraint; effort and model size are free.** The user set both
+Claude slots to Opus 5 on 2026-09-02, overriding the inherited "a Claude slot can
+be Sonnet" guidance: the test contract and the implementation review are the two
+places a cheap model's miss is most expensive, and while mutation is absent they
+carry more of the assurance load than the doc originally assumed.
 
-Roster: plan Sol / plan-review Opus 5 / plan-critic Fable (fallback: Opus 5 high,
-**fresh session**, never Sol) / tests Sonnet / test-review Sol / implement Terra /
-impl-review Sonnet / critic Sol / sign-off Opus 5 high + Sol xhigh.
+Roster: plan Sol / plan-review Opus 5 / plan-critic Fable 5.1 (fallback: Opus 5
+high, **fresh session**, never Sol) / tests Opus 5 medium / test-review Sol /
+implement Terra / impl-review Opus 5 high / critic Sol / sign-off Fable 5.1 high
++ Sol xhigh.
+
+## How each role is invoked
+
+**Every role is spawned as a CLI subprocess, not through the Agent tool.**
+Claude-family roles go through `claude -p`; OpenAI-family roles go through the
+codex-runner per [`.claude/commands/use-codex.md`](../../.claude/commands/use-codex.md).
+Both are independent processes: their transcripts never enter the orchestrator's
+context, only their final answer does. That is the "delegate EVIDENCE, keep
+ANSWERS" rule enforced by the runtime rather than by discipline.
+
+Adopted 2026-09-02. It supersedes Agent-tool dispatch for pipeline roles because
+`claude -p` accepts `--model <full-id>` **and `--effort`**, which the Agent tool
+cannot express (its `model` is a four-value alias enum and effort is
+definition-layer only).
+
+| Step | Role | Command |
+|---|---|---|
+| PLAN | plan author | `codex-run -e high "<brief>"` |
+| PLAN | plan review | `claude -p --model claude-opus-5 --effort medium --permission-mode plan "<brief>"` |
+| PLAN | plan critic | `claude -p --model claude-fable-5-1 --effort high --permission-mode plan "<brief>"` |
+| 1 | acceptance tests | `claude -p --model claude-opus-5 --effort medium --permission-mode acceptEdits "<brief>"` |
+| 2 | test review | `codex-run --role review "<brief>"` |
+| 4 | implement | `codex-run --role implement -m gpt-5.6-terra -w "<brief>"` |
+| 6 | impl review | `claude -p --model claude-opus-5 --effort high --permission-mode plan "<brief>"` |
+| 7 | critic | `codex-run --role review -e xhigh "<brief>"` |
+| close | sign-off | the Fable command + `codex-run -e xhigh`; both must agree |
+
+`codex-run` = `node "$CLAUDE_PLUGIN_ROOT/scripts/codex-run.mjs"`, resolved by the
+`codex-runner` skill.
+
+### Briefing a CLI worker
+
+A worker gets no conversation history. The brief is the whole contract, and it is
+**paths, not pasted content** — the subprocess reads the repo itself:
+
+```
+Read <role-prompt path> and follow it.
+Task: <one paragraph>.
+Files you own: <explicit list>.
+Verification: <exact commands>.
+Constraints: <the security rails that apply to this role>.
+Return: <the exact output shape wanted>.
+```
+
+Add `--add-dir <path>` for anything outside the cwd. Never paste a cookie, a HAR,
+or a capture into a brief — cite the path and let the process read it, and never
+brief a third-party CLI on either.
+
+### Verified behaviour — Claude Code `2.1.258`, live runs 2026-09-02
+
+- `--model` takes an alias (`fable`, `opus`, `sonnet`, `haiku`) or a full ID.
+  `claude-fable-5-1` is accepted, and the alias `fable` resolves to it — both
+  confirmed by reading `modelUsage` from `--output-format json`. Pin the full ID
+  in pipeline commands; the alias is *latest* and will move under you.
+- **Requires `2.1.258` or newer.** On the CLI this repo had before 2026-09-02,
+  `claude-fable-5-1` was rejected as `unrecognized_model` and the run answered
+  anyway on a fallback model. Check `claude --version` before trusting a roster.
+- **HAZARD — an unusable model ID still exits 0.** On `2.1.258` a bogus ID no
+  longer silently substitutes a model, but it returns a result envelope with
+  zero tokens, `total_cost_usd: 0`, no `modelUsage`, and **exit status 0**. A
+  caller that only checks the exit code sees an empty answer as a completed role.
+  **Mitigation, mandatory for sign-off and both review steps:** pass
+  `--output-format json` and assert `modelUsage` contains the intended model
+  before accepting the result. This is also how the two facts above were proven.
+- `--effort` accepts `low|medium|high|xhigh|max` and warns loudly on anything
+  else (`Unknown --effort value … ignoring it`), so a valid value is applied
+  rather than silently dropped. Effort is still not observable from inside the
+  child.
+- Codex model IDs are fixed by `use-codex.md`: `gpt-5.6-sol` (account default,
+  `-m` omittable), `gpt-5.6-terra` for large implementations, `gpt-5.6-luna` for
+  cheap fan-out. Never probe the CLI for model IDs.
 
 ## verify.sh — deterministic, runs BEFORE any reviewer
 
-Reviewing on a red gate spends a reviewer on what a script does free. Mutation
-needs a green baseline, so the gate is step 1 of the mutation procedure — one
-script, not two.
+**Built 2026-09-02: [`scripts/verify.sh`](../../scripts/verify.sh).** Reviewing
+on a red gate spends a reviewer on what a script does free.
 
-1. `git diff --stat tests/` must be empty for acceptance tests.
-2. Gate: `uv run pytest tests/fundamentals -q` + `uv run ruff check src/fundamentals tests/fundamentals`
-   + `uv run ruff format --check src/fundamentals tests/fundamentals`
-   + `uv run mypy --strict src/fundamentals`.
-3. Rails: protected-file hashes unchanged; `grep` fixtures for real holder
-   names/IDs; no file over 800 lines.
-4. **Teeth check** — see "Mutation and its stand-in" below. v0 uses the red
-   proof and diff coverage; mutation replaces both when it lands.
-5. Emit ≤8 lines and a route. Tracebacks go to `scratchpad/gate/<slice>-<ts>.log`,
-   never to stdout — a red gate is the only path that can dump 2,000 tokens of
-   traceback into the orchestrator's context, permanently.
+```
+scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
+scripts/verify.sh gate <slice>                      run the gate
+```
+
+`gate` runs six checks, cheapest first, in ~28s on a clean tree:
+
+1. **tests-untouched** — every acceptance file is re-hashed against the SHA-256
+   recorded in the red proof. Hashing rather than `git diff` because a new test
+   file is usually untracked, where `git diff` sees nothing.
+2. **red proof** — `scratchpad/gate/<slice>-red.json` exists and every
+   acceptance test in it was red before the implementer ran.
+3. **gate** — the four commands exactly as `.claude/project/verification.md`
+   declares them: `uv run pytest tests/fundamentals -q` · `uv run ruff check src
+   tests/fundamentals` · `uv run ruff format --check src tests/fundamentals` ·
+   `uv run mypy --strict src`. A gate that checks a different scope than the
+   project claims is a gate that lies, so the two files must stay identical.
+4. **skip guard** — the skip count may not exceed the pinned baseline (7,
+   measured 2026-09-02: all opt-in live fetches or the absent OCR wheel).
+   Adding `@pytest.mark.skip` is the cheapest way to fake a green gate; this is
+   the only check here with no counterpart in the prior art.
+5. **diff coverage** — `--cov-report=json` missing lines ∩ `git diff -U0 HEAD`
+   changed lines, plus every line of an untracked new `src/` file.
+6. **rails** — nothing under `scratchpad/` or `data/` tracked · no machine-local
+   path · no `sessionid`-shaped literal · no `.py` over 800 lines · no run of
+   ≥60 characters shared verbatim between a changed file and any page under
+   `scratchpad/screener_discovery/`, which is how a pasted private capture is
+   caught without needing a list of real holder names.
+
+**Bounded output is the contract.** At most 8 status lines and exactly one
+`ROUTE:` line. Test names are capped at 4 plus a count; tracebacks and the full
+lists go to `scratchpad/gate/<slice>-<ts>.log`. An unbounded list of 37 node IDs
+is the same context poisoning as a traceback — a red gate is the one path that
+can put thousands of tokens into the orchestrator's context, where every later
+call in the session re-sends them.
+
+**Exit code is the route**, so a caller branches without parsing text:
+`0 PASS` · `1 IMPL` · `2 CONTRACT` · `3 STOP` · `4 DIAGNOSE`. Worse routes win,
+and `STOP` is never downgraded by a later check.
+
+Self-tested 2026-09-02 against four cases, all correct: an acceptance test that
+already passes routes CONTRACT; genuinely red tests produce the proof; an
+implementer editing an acceptance test is caught as `modified`; deleting one is
+caught as `deleted`.
 
 ## Mutation and its stand-in
 
@@ -120,7 +230,7 @@ mutation remains the target state, not a discarded idea.
 Because tests are written *before* the implementer runs, they are naturally red
 at that moment. Capture it rather than reconstruct it.
 
-At the slice step 1→2 boundary, before Terra is dispatched:
+After step 3, before Terra is dispatched:
 
 ```
 uv run pytest <the new acceptance tests> -q
@@ -157,7 +267,7 @@ reviewing the tests for **assertion strength**. That is the human-judgment form 
 the same check.
 
 **Consequence, and it is not optional:** while mutation is absent, implementation
-review runs at **2 passes, not 1** — Sonnet, then Sol as critic, with one fix
+review runs at **2 passes, not 1** — Opus 5 high, then Sol as critic, with one fix
 round permitted between them. Dropping to single-pass is earned by landing
 mutation, not by adopting this document.
 

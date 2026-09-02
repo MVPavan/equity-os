@@ -15,10 +15,11 @@ in their brief.
 **The change in one sentence:** v1 was a cycle whose loop was billed; v2 is a
 pipeline whose only loop is free.
 
-**Known gap:** `scripts/verify.sh` is not built yet, and mutation testing is
-deferred — v2 ships with a red proof and diff coverage in its place, and keeps
-implementation review at 2 passes until mutation lands. See
+**Known gap:** mutation testing is deferred — v2 ships with a red proof and diff
+coverage in its place, and keeps implementation review at 2 passes until
+mutation lands. See
 [v2 § Mutation and its stand-in](v2-build-pipeline.md#mutation-and-its-stand-in).
+`scripts/verify.sh` was built 2026-09-02 and closes the other half of this gap.
 
 ## Provenance
 

@@ -31,5 +31,11 @@ the `equity_os_blueprint` ledger tests, which have a known content hash-drift
 failure) that are outside this product's scope. The structural gate above still
 applies to non-Python and non-`fundamentals` changes.
 
+`scripts/verify.sh gate <slice>` runs exactly these four commands plus the
+red-proof, skip-guard, diff-coverage, and security-rail checks, and prints a
+bounded report with a routing exit code. Prefer it over running the four by
+hand during pipeline work; keep the command list here and in the script
+identical. Protocol: `docs/graph-loops/v2-build-pipeline.md`.
+
 No completion claim without fresh evidence: run the command, read the output
 and exit status, report the actual result.

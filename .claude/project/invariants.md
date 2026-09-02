@@ -10,9 +10,10 @@ Hard constraints. Violating any of these is a defect.
    `reset --hard`, `clean`, or `restore` without explicit approval.
    (Exception observed: `bd init`/bd hooks auto-commit `.beads` integration
    files — bd-owned behavior, not a license for agents to do the same.)
-3. **No scratchpad commits.** `scratchpad/` is throwaway — note it is **not
-   yet in `.gitignore`** (the current `.gitignore` covers beads files only);
-   add it before first use.
+3. **No scratchpad commits.** `scratchpad/` is throwaway and is covered by
+   `.gitignore`. `scripts/verify.sh gate` additionally fails STOP if anything
+   under `scratchpad/` or `data/` is tracked, since `git add -f` bypasses the
+   ignore.
 4. **Beads sync remote = the repo's own git remote**
    (`git+https://github.com/MVPavan/equity-os.git` in `.beads/config.yaml`).
 5. **Blueprint docs are inputs, not scratch.** `docs/blueprint/` records the

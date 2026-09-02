@@ -73,3 +73,6 @@ docs/goals/reviews/ledger/inventory/SEQ-08/
 # docs/specs/2026-08-19-ledger-approval-contract-reconciliation.md
 # scripts/equity_os_blueprint/reconcile_ledger_approval_contracts.py
 # tests/equity_os_blueprint/
+
+# pytest-cov artifact (gate writes its JSON report under scratchpad/)
+.coverage
