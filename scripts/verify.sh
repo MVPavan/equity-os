@@ -47,7 +47,14 @@ readonly PASTE_MAX_PATTERNS=500
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly GATE_DIR="${REPO_ROOT}/scratchpad/gate"
-readonly CAPTURE_DIR="${REPO_ROOT}/scratchpad/screener_discovery"
+# Every private-capture directory, discovered rather than pinned: a rail that
+# names one directory silently stops covering the next slice's captures. Matches
+# the naming conventions the security rails already use — *discovery*, *capture*,
+# *smoke*.
+capture_dirs() {
+  find "${REPO_ROOT}/scratchpad" -maxdepth 1 -type d \
+    \( -name '*discovery*' -o -name '*capture*' -o -name '*smoke*' \) 2>/dev/null
+}
 
 # Authoritative commands: .claude/project/verification.md. Keep them identical
 # there and here — a gate that lints a different scope than the project claims
@@ -356,13 +363,15 @@ PYEOF
 
     # Verbatim runs shared with a real captured page mean a capture was pasted
     # into a fixture instead of a synthetic value being written.
-    if [ -d "${CAPTURE_DIR}" ]; then
+    local -a caps
+    mapfile -t caps < <(capture_dirs)
+    if [ "${#caps[@]}" -gt 0 ]; then
       local pat pasted
       pat="$(mktemp)"
       grep -IhoE ".{${PASTE_MIN_LEN},}" ${changed_files} 2>/dev/null \
         | sed 's/^[[:space:]]*//' | sort -u | head -"${PASTE_MAX_PATTERNS}" >"${pat}"
       if [ -s "${pat}" ]; then
-        pasted="$(grep -rlFf "${pat}" "${CAPTURE_DIR}" 2>/dev/null | head -2 | paste -sd, -)"
+        pasted="$(grep -rlFf "${pat}" "${caps[@]}" 2>/dev/null | head -2 | paste -sd, -)"
         [ -n "${pasted}" ] && rails="${rails}${rails:+; }fixture text matches private capture: ${pasted}"
       fi
       rm -f "${pat}"
