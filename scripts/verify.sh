@@ -121,19 +121,32 @@ mode_red() {
   total="$(wc -l <<<"${outcomes}")"
   red="$(grep -cE '^(FAILED|ERROR) ' <<<"${outcomes}" || true)"
 
-  VERIFY_ROOT="${REPO_ROOT}" VERIFY_SLICE="${slice}" VERIFY_TARGETS="$*" VERIFY_OUTCOMES="${outcomes}" \
+  local collected
+  collected="$( cd "${REPO_ROOT}" && uv run pytest "$@" -q --collect-only 2>/dev/null | grep '::' || true )"
+
+  VERIFY_ROOT="${REPO_ROOT}" VERIFY_SLICE="${slice}" VERIFY_TARGETS="$*" \
+  VERIFY_OUTCOMES="${outcomes}" VERIFY_COLLECTED="${collected}" \
     python3 - "${proof}" <<'PYEOF'
 import hashlib, json, os, sys, datetime, pathlib
 
 root = pathlib.Path(os.environ["VERIFY_ROOT"])
+collected = [c for c in os.environ.get("VERIFY_COLLECTED", "").splitlines() if "::" in c]
 tests = []
 for line in os.environ["VERIFY_OUTCOMES"].splitlines():
-    # `pytest -rA` appends " - <error summary>" to a failing line; the node id
-    # is the first whitespace-delimited field after the outcome.
-    parts = line.split()
+    # `pytest -rA` writes "OUTCOME nodeid" for a pass and
+    # "OUTCOME nodeid - <error summary>" for a failure. Splitting on whitespace
+    # TRUNCATES any parametrised id whose parameter contains a space — and this
+    # suite has several, e.g. an id carrying a whole screen query. Two distinct
+    # cases then collapse to one string. Match against the authoritative
+    # collected ids instead and take the longest one the line starts with.
+    parts = line.split(None, 1)
     if len(parts) < 2:
         continue
-    tests.append({"nodeid": parts[1], "outcome": parts[0].lower()})
+    outcome, rest = parts[0].lower(), parts[1]
+    match = max(
+        (n for n in collected if rest.startswith(n)), key=len, default=None
+    )
+    tests.append({"nodeid": match or rest.split(" - ", 1)[0].strip(), "outcome": outcome})
 
 # Hash the acceptance files themselves. The gate later re-hashes them, which
 # catches an implementer editing the contract even when the file is untracked
@@ -239,6 +252,15 @@ PYEOF
     fi
   fi
 
+  local changed_files
+  # scripts/verify.sh is excluded because it necessarily contains the very
+  # patterns it greps for; uv.lock and .coverage are generated artifacts.
+  changed_files="$(
+    { git diff --name-only HEAD; git ls-files --others --exclude-standard; } \
+      | sort -u \
+      | grep -vE '^(scratchpad/|scripts/verify\.sh$|uv\.lock$|\.coverage)' || true
+  )"
+
   # 2 — the gate. One pytest run, with coverage, so the loop stays cheap.
   local covjson="${GATE_DIR}/${slice}-${ts}-cov.json"
   note "=== pytest ==="
@@ -257,6 +279,19 @@ PYEOF
       lint_fail="${lint_fail}${lint_fail:+,}${label}"
     fi
   }
+  # The 800-line ceiling is a coding-style rule (.claude/rules/python/coding-style.md),
+  # so it belongs with lint and routes to the implementer. It was briefly a STOP
+  # rail, which was wrong: STOP means private data or a secret is about to be
+  # committed, and spending that severity on file length devalues it. Only
+  # CHANGED files are measured — five files in this repo already exceed the
+  # ceiling and are not this slice's business.
+  local big py_changed
+  py_changed="$(grep -E '\.py$' <<<"${changed_files}" || true)"
+  if [ -n "${py_changed}" ]; then
+    big="$(wc -l ${py_changed} 2>/dev/null | awk '$1 > 800 && $2 != "total" {print $2":"$1}' | head -3 | paste -sd, -)"
+    [ -n "${big}" ] && lint_fail="${lint_fail}${lint_fail:+,}over-800-lines(${big})"
+  fi
+
   run_check "ruff-check"  ruff check "${SRC_SCOPE}" "${TEST_SCOPE}"
   run_check "ruff-format" ruff format --check "${SRC_SCOPE}" "${TEST_SCOPE}"
   run_check "mypy"        mypy --strict "${SRC_SCOPE}"
@@ -374,14 +409,6 @@ PYEOF
   tracked_private="$(git ls-files scratchpad data 2>/dev/null | head -3 | paste -sd, -)"
   [ -n "${tracked_private}" ] && rails="${rails}${rails:+; }private path tracked: ${tracked_private}"
 
-  local changed_files
-  # scripts/verify.sh is excluded because it necessarily contains the very
-  # patterns it greps for; uv.lock and .coverage are generated artifacts.
-  changed_files="$(
-    { git diff --name-only HEAD; git ls-files --others --exclude-standard; } \
-      | sort -u \
-      | grep -vE '^(scratchpad/|scripts/verify\.sh$|uv\.lock$|\.coverage)' || true
-  )"
 
   if [ -n "${changed_files}" ]; then
     local abs
@@ -394,11 +421,6 @@ PYEOF
 
     local -a caps
     mapfile -t caps < <(capture_dirs)
-
-    local big py_files
-    py_files="$(grep -E '\.py$' <<<"${changed_files}" || true)"
-    big="$([ -n "${py_files}" ] && wc -l ${py_files} 2>/dev/null | awk '$1 > 800 && $2 != "total" {print $2}' | head -3 | paste -sd, -)"
-    [ -n "${big}" ] && rails="${rails}${rails:+; }over 800 lines: ${big}"
 
     # Short real identifiers slip under the verbatim-run rail: a 6-digit slug or
     # a 7-digit row id is nowhere near PASTE_MIN_LEN, yet copying one into a
