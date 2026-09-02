@@ -138,9 +138,16 @@ for line in os.environ["VERIFY_OUTCOMES"].splitlines():
 # Hash the acceptance files themselves. The gate later re-hashes them, which
 # catches an implementer editing the contract even when the file is untracked
 # and `git diff` would show nothing.
+#
+# Two sources, deliberately. Files derived from node ids are the tests. Files
+# named as targets that collect NO tests are the shared support modules — the
+# synthetic fixture builders and the transport seam. Those carry as much of the
+# contract as the assertions do, and protecting only the node-id files would
+# leave an implementer free to weaken a fixture until the test it feeds passes.
+paths = {root / nodeid.split("::", 1)[0] for nodeid in {t["nodeid"] for t in tests}}
+paths |= {root / a for a in os.environ["VERIFY_TARGETS"].split() if (root / a).is_file()}
 files = []
-for nodeid in {t["nodeid"] for t in tests}:
-    path = root / nodeid.split("::", 1)[0]
+for path in paths:
     if path.is_file():
         files.append({
             "path": str(path.relative_to(root)),
@@ -259,7 +266,31 @@ PYEOF
     [ "${n_failed}" -gt 0 ] && parts="pytest ${n_failed} failed"
     [ -n "${lint_fail}" ] && parts="${parts}${parts:+; }${lint_fail}"
     l_gate="gate             FAIL  ${parts}"
-    if [ "${n_failed}" -gt 3 ]; then
+    # Distinguish "the implementation is not there yet" from "the implementation
+    # is wrong". If every failure is an acceptance test the red proof recorded,
+    # and nothing outside that set fails, the gate is reporting the expected
+    # pre-implementation state — that routes to the implementer, not to a
+    # diagnostician, however many tests are red. Without this, running the gate
+    # before step 4 always says DIAGNOSE, which is noise that invites someone to
+    # act on it.
+    local pre_impl=""
+    if [ -z "${lint_fail}" ] && [ -f "${proof}" ]; then
+      pre_impl="$(python3 - "${proof}" "${log}" <<'PYEOF'
+import json, pathlib, re, sys
+proof = json.loads(pathlib.Path(sys.argv[1]).read_text())
+recorded = {t["nodeid"] for t in proof["tests"]}
+failing = set()
+for line in pathlib.Path(sys.argv[2]).read_text().splitlines():
+    m = re.match(r"^(?:FAILED|ERROR) (\S+)", line)
+    if m:
+        failing.add(m.group(1))
+print("yes" if failing and failing <= recorded else "")
+PYEOF
+)"
+    fi
+    if [ -n "${pre_impl}" ]; then
+      escalate "${EXIT_IMPL}" "implementation not present — ${n_failed} acceptance tests awaiting it, nothing else failing"
+    elif [ "${n_failed}" -gt 3 ]; then
       escalate "${EXIT_DIAGNOSE}" "${n_failed} failures — too many to route by name"
     else
       escalate "${EXIT_IMPL}" "${failed:-${lint_fail}}"
@@ -356,15 +387,39 @@ PYEOF
     cookie="$(grep -IlEi 'sessionid["'"'"':= ]+[A-Za-z0-9]{20,}' ${changed_files} 2>/dev/null | head -3 | paste -sd, -)"
     [ -n "${cookie}" ] && rails="${rails}${rails:+; }possible session cookie in: ${cookie}"
 
+    local -a caps
+    mapfile -t caps < <(capture_dirs)
+
     local big py_files
     py_files="$(grep -E '\.py$' <<<"${changed_files}" || true)"
     big="$([ -n "${py_files}" ] && wc -l ${py_files} 2>/dev/null | awk '$1 > 800 && $2 != "total" {print $2}' | head -3 | paste -sd, -)"
     [ -n "${big}" ] && rails="${rails}${rails:+; }over 800 lines: ${big}"
 
+    # Short real identifiers slip under the verbatim-run rail: a 6-digit slug or
+    # a 7-digit row id is nowhere near PASTE_MIN_LEN, yet copying one into a
+    # fixture is exactly the leak the synthetic-data rule exists to stop. It
+    # happened for real on slice3 — GROUND-TRUTH.md quoted real values as
+    # illustrations and the test writer reproduced them faithfully.
+    #
+    # Only NUMERIC identifiers are harvested. Alphabetic slugs are watchlist
+    # symbols that appear legitimately throughout the suite; a numeric row id or
+    # an all-digit BSE slug has no reason to be in a hand-written fixture.
+    local changed_tests
+    changed_tests="$(grep -E '^tests/' <<<"${changed_files}" || true)"
+    if [ -n "${changed_tests}" ] && [ "${#caps[@]}" -gt 0 ]; then
+      local ids leaked
+      ids="$(mktemp)"
+      grep -rhoE 'data-row-company-id="[0-9]{4,}"|/company/(id/)?[0-9]{4,}/' "${caps[@]}" 2>/dev/null \
+        | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
+      if [ -s "${ids}" ]; then
+        leaked="$(grep -howFf "${ids}" ${changed_tests} 2>/dev/null | sort -u | head -3 | paste -sd, -)"
+        [ -n "${leaked}" ] && rails="${rails}${rails:+; }real captured identifier in a fixture: ${leaked}"
+      fi
+      rm -f "${ids}"
+    fi
+
     # Verbatim runs shared with a real captured page mean a capture was pasted
     # into a fixture instead of a synthetic value being written.
-    local -a caps
-    mapfile -t caps < <(capture_dirs)
     if [ "${#caps[@]}" -gt 0 ]; then
       local pat pasted
       pat="$(mktemp)"
