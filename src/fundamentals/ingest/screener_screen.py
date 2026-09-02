@@ -6,6 +6,8 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from lxml import etree  # type: ignore[import-untyped]
+
 from fundamentals.ingest.screener_financials_tables import html_anchor, normalize_text, read_number
 from fundamentals.ingest.screener_screen_models import (
     ScreenAcquisitionConfig,
@@ -35,6 +37,9 @@ _PAGINATION = ".//*[contains(concat(' ', normalize-space(@class), ' '), ' pagina
 _OPTIONS = "./div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
 _SERIAL = re.compile(r"^([1-9][0-9]*)\.$")
 _NUMBER = re.compile(r"^[1-9][0-9]*$")
+_PAGE_SIZE_ONLY_AFTER_FIRST_PAGE = "screen page-size-only pagination is only valid on page one"
+_UNFETCHED_OFFERED_PAGE = "screen pagination stopped before an earlier offered page"
+_UNPARSEABLE_SCREEN_DOCUMENT = "screen document could not be parsed"
 
 
 def read_screen_table(
@@ -100,6 +105,8 @@ def read_screen_pagination(root: Any, *, requested_page: int) -> tuple[int, ...]
             "limit" in query and all(page == "1" for page in query.get("page", ()))
             for query in (parse_qs(urlsplit(anchor.get("href", "")).query) for anchor in anchors)
         ):
+            if requested_page != 1:
+                raise ScreenPaginationError(_PAGE_SIZE_ONLY_AFTER_FIRST_PAGE)
             return ()
         raise ScreenPaginationError("screen pagination has no direct options block")
     anchors = options[0].xpath(".//a")
@@ -123,6 +130,7 @@ def acquire_screen(
     all_rows: list[ScreenRow] = []
     expected_columns: tuple[ScreenColumn, ...] | None = None
     identifiers: set[int] = set()
+    highest_offered_page = 1
     page = 1
     while True:
         url = screen_url(query, page)
@@ -130,10 +138,14 @@ def acquire_screen(
         try:
             fetch = source.fetch_screen_page(url=url)
             documents.append(fetch)
-            root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
+            try:
+                root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
+            except etree.ParserError as error:
+                raise ScreenStructureError(_UNPARSEABLE_SCREEN_DOCUMENT) from error
             assert_logged_in(root)
             columns, rows = read_screen_table(root, fetch=fetch, page_number=page)
             offered = read_screen_pagination(root, requested_page=page)
+            highest_offered_page = max((highest_offered_page, *offered))
             if not rows:
                 if page != 1 or offered:
                     raise ScreenPaginationError("empty screen table is not the zero-result shape")
@@ -152,20 +164,20 @@ def acquire_screen(
             _check_rows(rows, all_rows=all_rows, identifiers=identifiers)
             pages.append(_metadata(page, fetch, offered))
             all_rows.extend(rows)
+            if page == config.max_pages and highest_offered_page > page:
+                return _incomplete(
+                    query,
+                    expected_columns,
+                    all_rows,
+                    pages,
+                    documents,
+                    f"configured page bound {config.max_pages} stopped before page {page + 1}",
+                )
             if page + 1 in offered:
-                if page == config.max_pages:
-                    return _incomplete(
-                        query,
-                        expected_columns,
-                        all_rows,
-                        pages,
-                        documents,
-                        f"configured page bound {config.max_pages} stopped before page {page + 1}",
-                    )
                 page += 1
                 continue
-            if any(number > page for number in offered):
-                raise ScreenPaginationError("screen pagination omits the next offered page")
+            if highest_offered_page > page:
+                raise ScreenPaginationError(_UNFETCHED_OFFERED_PAGE)
             return ScreenRun(
                 artifact=ScreenArtifact(
                     query=query,

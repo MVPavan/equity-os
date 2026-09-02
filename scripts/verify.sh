@@ -85,7 +85,8 @@ usage() {
 usage:
   scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
   scripts/verify.sh gate <slice>                      run the gate
-  scripts/verify.sh reseal <slice> <proof-file>       re-hash after a REOPENED
+  scripts/verify.sh reseal <slice> <proof-file> [new-file...]
+                                                      re-hash after a REOPENED
                                                       contract; orchestrator only
 USAGE
   exit 64
@@ -287,11 +288,20 @@ PYEOF
   # committed, and spending that severity on file length devalues it. Only
   # CHANGED files are measured — five files in this repo already exceed the
   # ceiling and are not this slice's business.
-  local big py_changed
+  #
+  # Severity is one thing, ROUTE is another. An oversized file under the
+  # acceptance-test scope belongs to the orchestrator, not the implementer: the
+  # implementer is briefed "do not edit tests/" and those files are hashed, so
+  # routing it IMPL leaves it no legal move — the same structural fault that
+  # made diff coverage advisory. Test-scope size violations route CONTRACT.
+  local big py_changed big_src big_test
   py_changed="$(grep -E '\.py$' <<<"${changed_files}" || true)"
   if [ -n "${py_changed}" ]; then
     big="$(wc -l ${py_changed} 2>/dev/null | awk '$1 > 800 && $2 != "total" {print $2":"$1}' | head -3 | paste -sd, -)"
-    [ -n "${big}" ] && lint_fail="${lint_fail}${lint_fail:+,}over-800-lines(${big})"
+    big_test="$(tr ',' '\n' <<<"${big}" | grep -E "^${TEST_SCOPE}/" | paste -sd, - || true)"
+    big_src="$(tr ',' '\n' <<<"${big}" | grep -vE "^${TEST_SCOPE}/" | grep -v '^$' | paste -sd, - || true)"
+    [ -n "${big_test}" ] && escalate "${EXIT_CONTRACT}" "over-800-lines in hashed test scope (${big_test})"
+    [ -n "${big_src}" ] && lint_fail="${lint_fail}${lint_fail:+,}over-800-lines(${big_src})"
   fi
 
   run_check "ruff-check"  ruff check "${SRC_SCOPE}" "${TEST_SCOPE}"
@@ -506,6 +516,8 @@ PYEOF
 mode_reseal() {
   local slice="$1" proof="${2:-}"
   [ -n "${proof}" ] || usage
+  shift 2 || true
+  export VERIFY_NEW_FILES="$*"
   local red="${GATE_DIR}/${slice}-red.json"
   [ -f "${red}" ] || { echo "no red proof for ${slice}: ${red}" >&2; exit 66; }
   [ -f "${proof}" ] || { echo "no reopening proof at ${proof}" >&2; exit 66; }
@@ -516,6 +528,19 @@ root = pathlib.Path(os.environ["VERIFY_ROOT"])
 red = pathlib.Path(os.environ["VERIFY_RED"])
 proof = pathlib.Path(os.environ["VERIFY_PROOF"])
 data = json.loads(red.read_text())
+
+# Splitting an oversized acceptance file creates a NEW file that the proof does
+# not list, and an unlisted file is an unprotected one — the implementer could
+# edit it and tests-untouched would still say OK. Adding it is deliberate,
+# explicit, and recorded, never inferred from the filesystem.
+known = {entry["path"] for entry in data["files"]}
+for extra in os.environ.get("VERIFY_NEW_FILES", "").split():
+    if extra in known:
+        continue
+    if not (root / extra).is_file():
+        raise SystemExit(f"cannot protect a file that does not exist: {extra}")
+    data["files"].append({"path": extra, "sha256": ""})
+    data.setdefault("targets", []).append(extra)
 
 changed = []
 for entry in data["files"]:

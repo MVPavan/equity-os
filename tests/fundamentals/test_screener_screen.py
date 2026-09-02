@@ -730,3 +730,25 @@ def test_a_direct_options_block_still_offers_its_pages_and_still_walks(
     assert run.artifact.outcome is support.models.ScreenOutcome.RESULTS
     assert [support.requested_page(url) for url in recorder.urls] == [1, 2]
     assert run.artifact.pages[0].offered_pages == (1, 2)
+
+
+def test_the_page_size_only_shape_is_admissible_only_on_the_first_requested_page() -> None:
+    """SL3-10b rule 1: the SL3-10a early return says what, and never says where.
+
+    The three clauses of SL3-10a describe a page-size selector, and a page-size
+    selector is exactly what page 2 of a multi-page walk also renders. So the
+    same body that legitimately means "one page, you are on it" on requested
+    page 1 means "the page numbers have gone missing" on requested page 2 — and
+    the reader consults ``requested_page`` on every other branch but this one.
+    Verified against the implementation: today it returns ``()`` on page 2, and
+    the walk above it reads that as a finished result. A single-page result is
+    by definition page 1, so nothing legitimate is lost by refusing here.
+    """
+    body = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(1, count=3)),
+        support.nested_options_pagination(),
+    )
+    assert support.read_pagination(body, requested_page_number=1) == ()
+
+    with pytest.raises(support.models.ScreenPaginationError):
+        support.read_pagination(body, requested_page_number=2)

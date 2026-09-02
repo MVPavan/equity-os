@@ -26,6 +26,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import structlog
 
@@ -60,6 +61,8 @@ _LOGGER = structlog.get_logger(__name__)
 
 _FETCH_EVENT = "screener_session_page_fetched"
 _RATE_LIMITED_EVENT = "screener_session_rate_limited"
+_PRIVATE_QUERY_PARAMETER = "query"
+_REDACTED_PRIVATE_QUERY = "[redacted]"
 _NO_CREDENTIALS = (
     "screener session cookie required for a subscriber fetch; mint one from an "
     "authenticated browser session and inject it as credentials.session_cookie"
@@ -81,6 +84,18 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         """Refuse redirects so a login bounce cannot become a plausible page."""
         del request, fp, code, msg, headers, newurl
         return None
+
+
+def _redact_private_query(url: str) -> str:
+    """Keep a screen selector out of transport diagnostics while retaining its route."""
+    parts = urlsplit(url)
+    query = urlencode(
+        tuple(
+            (name, _REDACTED_PRIVATE_QUERY if name == _PRIVATE_QUERY_PARAMETER else value)
+            for name, value in parse_qsl(parts.query, keep_blank_values=True)
+        )
+    )
+    return urlunsplit(parts._replace(query=query))
 
 
 class ScreenerSessionSource:
@@ -222,7 +237,7 @@ class ScreenerSessionSource:
         )
 
     def _fetch_bytes(
-        self, url: str, credentials: ScreenerCredentials, *, xhr: bool = False
+        self, source_url: str, credentials: ScreenerCredentials, *, xhr: bool = False
     ) -> tuple[int, bytes]:
         """GET one page politely: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.
 
@@ -233,6 +248,7 @@ class ScreenerSessionSource:
         rather than a property of the URL because the same host serves both, and
         the two must be told apart by what the browser would have done.
         """
+        url = _redact_private_query(source_url)
         assert_pinned_origin(url)
         headers = {
             COOKIE_HEADER: (
@@ -242,7 +258,7 @@ class ScreenerSessionSource:
         }
         if xhr:
             headers[XHR_HEADER] = XHR_HEADER_VALUE
-        request = urllib.request.Request(url, headers=headers, method="GET")
+        request = urllib.request.Request(source_url, headers=headers, method="GET")
         opener = urllib.request.build_opener(_NoRedirectHandler())
         rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):
@@ -286,7 +302,8 @@ class ScreenerSessionSource:
     def _refuse_terminal_status(error: urllib.error.HTTPError, *, url: str) -> None:
         """Raise the typed refusal for any status that is not a retryable 429."""
         if 300 <= error.code < 400:
-            location = error.headers.get(LOCATION_HEADER) if error.headers else None
+            location_raw = error.headers.get(LOCATION_HEADER) if error.headers else None
+            location = None if location_raw is None else _redact_private_query(location_raw)
             raise ScreenerRedirectError(
                 f"screener redirected {url} to {location!r}; refusing to follow"
             ) from error
