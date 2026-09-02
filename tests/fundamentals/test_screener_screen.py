@@ -512,8 +512,8 @@ def test_a_query_that_matches_nothing_is_an_answer_and_not_a_structure_error(
     a rule requiring one refuses every legitimate empty query; and a rule
     requiring exactly one active pagination anchor makes this outcome
     unreachable on the live surface. Zero results is data, and data must not
-    fail closed — while the two mismatched pairings below are not this shape and
-    must not be read as it.
+    fail closed — while neither pairing below is this shape, and an empty table
+    beside real anchors must not be read as it.
     """
     zero = support.zero_result_page()
     assert support.read_pagination(zero, requested_page_number=1) == ()
@@ -533,16 +533,30 @@ def test_a_query_that_matches_nothing_is_an_answer_and_not_a_structure_error(
     anchored_empty = support.page(
         support.empty_table(), support.pagination((1, 2), active=1, next_page=True)
     )
+    with monkeypatch.context() as patcher:
+        run, _ = support.acquire(patcher, {1: anchored_empty})
+        assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
+        assert run.artifact.failure is not None
+        assert run.artifact.failure.refusal == "ScreenPaginationError"
+
+    # The mirror image is NOT a refusal, and the frozen plan had it backwards.
+    # Screener renders no pagination controls at all when a result fits on one
+    # page, so refusing a populated anchor-less page refuses every legitimate
+    # 1-to-50-row screen. The table decides the outcome; pagination only decides
+    # whether to walk on. Verified live 2026-09-02 against a 7-row query.
     populated_unanchored = support.page(
         support.results_table(support.NARROW_LABELS, support.rows_for(1, count=2)),
         support.empty_pagination(),
     )
-    for body in (anchored_empty, populated_unanchored):
-        with monkeypatch.context() as patcher:
-            run, _ = support.acquire(patcher, {1: body})
-            assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
-            assert run.artifact.failure is not None
-            assert run.artifact.failure.refusal == "ScreenPaginationError"
+    with monkeypatch.context() as patcher:
+        run, recorder = support.acquire(patcher, {1: populated_unanchored})
+        assert run.artifact.outcome is support.models.ScreenOutcome.RESULTS
+        assert run.artifact.failure is None
+        assert run.artifact.incomplete_reason is None
+        assert len(run.artifact.rows) == 2
+        assert run.artifact.pages[0].offered_pages == ()
+        # The absent anchor must stop the walk, not merely be tolerated.
+        assert len(recorder.urls) == 1
 
     exit_code, out_dir, _ = support.run_cli(
         monkeypatch, tmp_path, {1: zero}, query=support.EMPTY_QUERY

@@ -131,8 +131,6 @@ class _LazyStderrLoggerFactory:
 
 def _configure_logging() -> None:
     """Route structlog output to stderr, keeping stdout clean for the artifact."""
-    if structlog.is_configured():
-        return
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,

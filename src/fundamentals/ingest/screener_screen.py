@@ -17,7 +17,6 @@ from fundamentals.ingest.screener_screen_models import (
     ScreenOutcome,
     ScreenPageMetadata,
     ScreenPaginationError,
-    ScreenQueryError,
     ScreenRow,
     ScreenRun,
     ScreenStructureError,
@@ -102,8 +101,6 @@ def acquire_screen(
     query: str, *, source: ScreenerSessionSource, config: ScreenAcquisitionConfig
 ) -> ScreenRun:
     """Acquire every offered consecutive page, retaining even an unadmitted body."""
-    if not query.strip():
-        raise ScreenQueryError("screen query must not be blank")
     documents: list[ScreenerDocumentFetch] = []
     pages: list[ScreenPageMetadata] = []
     all_rows: list[ScreenRow] = []
@@ -131,8 +128,6 @@ def acquire_screen(
                     ),
                     documents=tuple(documents),
                 )
-            if not offered:
-                raise ScreenPaginationError("populated screen has anchorless pagination")
             if expected_columns is None:
                 expected_columns = columns
             elif columns != expected_columns:
@@ -182,10 +177,17 @@ def acquire_screen(
 
 
 def _row_cells(row: Any) -> list[Any]:
+    """Return a row's own cells, header or data, without descending into nested tables."""
     return list(row.xpath("./th|./td"))
 
 
 def _columns(cells: list[Any]) -> tuple[ScreenColumn, ...]:
+    """Read the header row, which is the only schema authority for this query.
+
+    The column set is query-dependent, so only the two fixed leading labels are
+    asserted; the rest are accepted by name as published, and merely required to
+    be non-blank.
+    """
     labels = tuple(normalize_text(cell.text_content()) for cell in cells)
     if len(labels) < 3 or labels[:2] != ("S.No.", "Name") or any(not label for label in labels[2:]):
         raise ScreenStructureError("screen header is not an admitted schema")
@@ -200,6 +202,12 @@ def _screen_row(
     page_number: int,
     element: Any,
 ) -> ScreenRow:
+    """Read one data row into a typed row, anchoring every cell to its source.
+
+    Every failure here is a structure error rather than a dropped row: a row
+    this reader cannot fully account for must not be silently omitted from a
+    result the caller will treat as complete.
+    """
     serial_match = _SERIAL.fullmatch(normalize_text(cells[0].text_content()))
     if serial_match is None:
         raise ScreenStructureError("screen serial is malformed")
@@ -241,13 +249,17 @@ def _screen_row(
 
 
 def _company(href: str | None, *, name: str, row_id: int) -> ScreenCompany:
-    if (
-        href is None
-        or urlsplit(href).scheme
-        or urlsplit(href).netloc
-        or urlsplit(href).query
-        or urlsplit(href).fragment
-    ):
+    """Resolve the company cell's link into an identity, admitting three link shapes.
+
+    The live surface renders ``/company/<slug>/``, ``/company/<slug>/consolidated/``
+    and ``/company/id/<numeric-id>/``. The id-routed shape must agree with the
+    row's own ``data-row-company-id``, since two disagreeing identifiers on one
+    row mean the page is not what this reader thinks it is.
+    """
+    if href is None:
+        raise ScreenStructureError("screen company link must be a clean relative URL")
+    parsed = urlsplit(href)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         raise ScreenStructureError("screen company link must be a clean relative URL")
     segments = href.split("/")
     if len(segments) < 2 or segments[0] != "" or segments[-1] != "" or segments[1] != "company":
@@ -274,12 +286,14 @@ def _company(href: str | None, *, name: str, row_id: int) -> ScreenCompany:
 
 
 def _has_class(element: Any, token: str) -> bool:
+    """Test one whitespace-separated class token, never a substring of the attribute."""
     return token in element.get("class", "").split()
 
 
 def _metadata(
     page: int, fetch: ScreenerDocumentFetch, offered: tuple[int, ...]
 ) -> ScreenPageMetadata:
+    """Record what one fetch was and what its pagination offered."""
     return ScreenPageMetadata(
         page_number=page,
         source_url=fetch.source_url,
@@ -294,6 +308,12 @@ def _metadata(
 def _check_rows(
     rows: tuple[ScreenRow, ...], *, all_rows: list[ScreenRow], identifiers: set[int]
 ) -> None:
+    """Refuse a walk whose serials skip or restart, or that repeats a company.
+
+    Both are cross-page checks against the run so far: they are how a page
+    served out of order, or served twice, is caught. ``identifiers`` is mutated
+    as rows are admitted.
+    """
     expected = len(all_rows) + 1
     for row in rows:
         if row.serial_number != expected or row.company.data_row_company_id in identifiers:
@@ -315,6 +335,12 @@ def _incomplete(
     error: Exception | None = None,
     content_sha256: str | None = None,
 ) -> ScreenRun:
+    """Close a walk that stopped short, keeping everything it did prove.
+
+    The pages already admitted, their rows, and every retained body stay in the
+    run; only the outcome changes. A refused page's response is evidence, and
+    discarding it would make the refusal unexaminable.
+    """
     failure = (
         None
         if error is None

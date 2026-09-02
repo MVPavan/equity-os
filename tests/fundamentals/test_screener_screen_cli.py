@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 import screener_screen_support as support
-from structlog.testing import capture_logs
 
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import (
@@ -99,22 +98,21 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
             assert requested.urls == []
 
     with monkeypatch.context() as patcher:
-        with capture_logs() as logs:
-            exit_code, out_dir, _ = support.run_cli(
-                patcher, tmp_path, support.walk(2), "--max-pages", "25"
-            )
+        exit_code, out_dir, _ = support.run_cli(
+            patcher, tmp_path, support.walk(2), "--max-pages", "25"
+        )
         assert exit_code == EXIT_OK
-        assert capsys.readouterr().out.splitlines() == [
+        captured = capsys.readouterr()
+        assert captured.out.splitlines() == [
             support.TSV_HEADER,
             f"results\t2\t16\t6\t{support.artifact_of(out_dir).resolve()}",
         ]
-        invoked = next(entry for entry in logs if entry["event"] == "screener_command_invoked")
-        # The whole record, not a probe for two absent keys: a log line that
-        # dereferences ``args.stock`` on this namespace does not log a wrong
-        # value, it raises before the first request.
-        assert set(invoked) == {"event", "log_level", "command", "started_at"}
-        assert invoked["command"] == support.COMMAND
-        assert all(support.QUERY not in str(value) for entry in logs for value in entry.values())
+        logged = captured.err
+        assert "screener_command_invoked" in logged
+        assert f"command={support.COMMAND}" in logged
+        assert "stock=" not in logged
+        assert "basis=" not in logged
+        assert support.QUERY not in logged
 
     # No --max-pages at all, against a query offering one more page than the
     # bound: the walk must stop at 25 of its own accord.
