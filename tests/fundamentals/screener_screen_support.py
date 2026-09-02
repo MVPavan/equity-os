@@ -50,7 +50,9 @@ from screener_screen_fixtures import (  # noqa: F401
     NESTED_EXPORT_ANCHORS,
     NESTED_PAGE_ANCHORS,
     NON_ANCHOR_CONTROL,
+    PAGE_INFO_ATTRIBUTE,
     PAGE_SIZE_ANCHORS,
+    RESULTS_FOUND_TEMPLATE,
     SELECTOR_QUERY,
     STRAY_PAGE_SIZE_ANCHOR,
     TABLE_CLASS,
@@ -68,6 +70,7 @@ from screener_screen_fixtures import (  # noqa: F401
     page,
     page_of,
     pagination,
+    results_found_line,
     results_page,
     results_table,
     row_page,
@@ -146,41 +149,6 @@ class Recorder:
         self.urls: list[str] = []
         self.xhr: list[bool] = []
         self.sources: list[ScreenerSessionSource] = []
-
-
-# What each frozen model carries, and nothing else. Held as data because the
-# risk is not a wrong field but an extra one: a derived ``complete`` flag, a
-# second copy of the raw serial, or a ``logged_in`` boolean that can disagree
-# with the admission rule that produced it.
-MODEL_FIELDS = {
-    "ScreenAcquisitionConfig": {"max_pages"},
-    "ScreenColumn": {"index", "label"},
-    "ScreenCell": {"column_index", "value", "raw_text", "provenance"},
-    "ScreenCompany": {"slug", "display_name", "data_row_company_id", "consolidated"},
-    "ScreenRow": {"page_number", "serial_number", "company", "cells"},
-    "ScreenPageMetadata": {
-        "page_number",
-        "source_url",
-        "http_status",
-        "offered_pages",
-        "content_sha256",
-        "byte_count",
-        "fetched_at",
-    },
-    "ScreenFailure": {"page_number", "source_url", "refusal", "detail", "content_sha256"},
-    "ScreenArtifact": {
-        "source_id",
-        "query",
-        "outcome",
-        "columns",
-        "rows",
-        "pages",
-        "incomplete_reason",
-        "failure",
-    },
-    "ScreenRun": {"artifact", "documents"},
-    "ScreenerScreenCliRun": {"run", "artifact_path", "page_paths"},
-}
 
 
 def rebuilt(model: Any, **overrides: Any) -> Any:

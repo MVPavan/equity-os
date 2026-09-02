@@ -13,6 +13,7 @@ from fundamentals.ingest.screener_screen_models import (
     ScreenCell,
     ScreenColumn,
     ScreenCompany,
+    ScreenerScreenError,
     ScreenFailure,
     ScreenOutcome,
     ScreenPageMetadata,
@@ -33,12 +34,32 @@ from fundamentals.ingest.screener_session_page import assert_logged_in, parse_do
 _TABLE = ".//table[contains(concat(' ', normalize-space(@class), ' '), ' data-table ')]"
 _PAGINATION = ".//*[contains(concat(' ', normalize-space(@class), ' '), ' pagination ')]"
 _OPTIONS = "./div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
+_PAGE_INFO = ".//*[@data-page-info]"
 _SERIAL = re.compile(r"^([1-9][0-9]*)\.$")
 _NUMBER = re.compile(r"^[1-9][0-9]*$")
+_PAGE_INFO_TEXT = re.compile(
+    r"^\s*(?P<total>[0-9]+)\s+results\s+found\s*:\s*"
+    r"showing\s+page\s+(?P<page>[1-9][0-9]*)\s+of\s+(?P<pages>[1-9][0-9]*)\s*$",
+    re.IGNORECASE,
+)
 _PAGE_SIZE_ONLY_AFTER_FIRST_PAGE = "screen page-size-only pagination is only valid on page one"
 _UNFETCHED_OFFERED_PAGE = "screen pagination stopped before an earlier offered page"
 _UNADMITTED_SCREEN_ROW = "screen table has a row outside tbody"
 _ANCHORLESS_PAGINATION_HAS_ELEMENT_CHILDREN = "anchor-less screen pagination has element children"
+_MISSING_PAGE_INFO = "screen page has no data-page-info completeness oracle"
+_INVALID_PAGE_INFO = "screen data-page-info completeness oracle is malformed"
+_PAGE_INFO_CHANGED = "screen data-page-info changed across pages"
+_PAGE_INFO_WRONG_PAGE = "screen data-page-info names an unrequested page"
+_PAGE_INFO_INCOMPLETE = "screen admitted rows or pages disagree with data-page-info"
+_PAGE_BOUND_REASON = "configured page bound {bound} stopped at {rows} of stated total {total}"
+_NEXT = "Next"
+_PAGE_QUERY_PARAMETER = "page"
+_HREF_ATTRIBUTE = "href"
+_EMPTY_HREF = ""
+_PAGE_INFO_TOTAL_GROUP = "total"
+_PAGE_INFO_PAGE_GROUP = "page"
+_PAGE_INFO_PAGES_GROUP = "pages"
+_NEXT_PAGE_NOT_OFFERED = "screen Next page is absent from numeric offers"
 _EXCEPTION_DETAIL = "{refusal}: {detail}"
 
 
@@ -123,7 +144,52 @@ def read_screen_pagination(root: Any, *, requested_page: int) -> tuple[int, ...]
     active = [number for number, anchor in numeric if _has_class(anchor, "active")]
     if len(active) != 1 or active[0] != requested_page:
         raise ScreenPaginationError("screen pagination has no matching active page")
+    next_pages = [
+        int(values[0])
+        for anchor in anchors
+        if normalize_text(anchor.text_content()) == _NEXT
+        for values in [
+            parse_qs(urlsplit(anchor.get(_HREF_ATTRIBUTE, _EMPTY_HREF)).query).get(
+                _PAGE_QUERY_PARAMETER, ()
+            )
+        ]
+        if len(values) == 1 and _NUMBER.fullmatch(values[0])
+    ]
+    if requested_page + 1 in next_pages and requested_page + 1 not in {
+        number for number, _ in numeric
+    }:
+        raise ScreenPaginationError(_NEXT_PAGE_NOT_OFFERED)
     return tuple(number for number, _ in numeric)
+
+
+def _read_page_info(root: Any) -> tuple[int, int, int]:
+    """Read the source's completeness claim without relying on presentation markup.
+
+    ``data-page-info`` is the semantic hook that survives the styling changes
+    that made pagination inference unsafe as a completeness guarantee.
+    """
+    page_info = root.xpath(_PAGE_INFO)
+    if len(page_info) != 1:
+        raise ScreenStructureError(_MISSING_PAGE_INFO)
+    match = _PAGE_INFO_TEXT.fullmatch(page_info[0].text_content())
+    if match is None:
+        raise ScreenStructureError(_INVALID_PAGE_INFO)
+    total = int(match.group(_PAGE_INFO_TOTAL_GROUP))
+    page = int(match.group(_PAGE_INFO_PAGE_GROUP))
+    pages = int(match.group(_PAGE_INFO_PAGES_GROUP))
+    if page > pages:
+        raise ScreenStructureError(_INVALID_PAGE_INFO)
+    return total, page, pages
+
+
+def _require_complete(total: int, pages: int, *, row_count: int, page_count: int) -> None:
+    """Refuse publication when admitted evidence disagrees with the page's claim.
+
+    Pagination directs the walk, but only the independently stated totals prove
+    that the walk captured the result set the source says it served.
+    """
+    if row_count != total or page_count != pages:
+        raise ScreenPaginationError(_PAGE_INFO_INCOMPLETE)
 
 
 def acquire_screen(
@@ -134,6 +200,7 @@ def acquire_screen(
     pages: list[ScreenPageMetadata] = []
     all_rows: list[ScreenRow] = []
     expected_columns: tuple[ScreenColumn, ...] | None = None
+    expected_page_info: tuple[int, int] | None = None
     identifiers: set[int] = set()
     highest_offered_page = 1
     page = 1
@@ -145,17 +212,33 @@ def acquire_screen(
             documents.append(fetch)
             root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
             assert_logged_in(root)
+            stated_total, stated_page, stated_pages = _read_page_info(root)
+            if stated_page != page:
+                raise ScreenPaginationError(_PAGE_INFO_WRONG_PAGE)
+            if expected_page_info is None:
+                expected_page_info = (stated_total, stated_pages)
+            elif expected_page_info != (stated_total, stated_pages):
+                raise ScreenPaginationError(_PAGE_INFO_CHANGED)
             columns, rows = read_screen_table(root, fetch=fetch, page_number=page)
             offered = read_screen_pagination(root, requested_page=page)
             highest_offered_page = max((highest_offered_page, *offered))
             if not rows:
                 if page != 1 or offered:
                     raise ScreenPaginationError("empty screen table is not the zero-result shape")
+                _require_complete(stated_total, stated_pages, row_count=0, page_count=1)
                 return ScreenRun(
                     artifact=ScreenArtifact(
                         query=query,
                         outcome=ScreenOutcome.ZERO_RESULTS,
-                        pages=(_metadata(page, fetch, offered),),
+                        pages=(
+                            _metadata(
+                                page,
+                                fetch,
+                                offered,
+                                stated_total=stated_total,
+                                stated_pages=stated_pages,
+                            ),
+                        ),
                     ),
                     documents=tuple(documents),
                 )
@@ -164,22 +247,35 @@ def acquire_screen(
             elif columns != expected_columns:
                 raise ScreenPaginationError("screen schema changed across pages")
             _check_rows(rows, all_rows=all_rows, identifiers=identifiers)
-            pages.append(_metadata(page, fetch, offered))
+            pages.append(
+                _metadata(
+                    page,
+                    fetch,
+                    offered,
+                    stated_total=stated_total,
+                    stated_pages=stated_pages,
+                )
+            )
             all_rows.extend(rows)
-            if page == config.max_pages and highest_offered_page > page:
+            if page == config.max_pages and stated_pages > page:
                 return _incomplete(
                     query,
                     expected_columns,
                     all_rows,
                     pages,
                     documents,
-                    f"configured page bound {config.max_pages} stopped before page {page + 1}",
+                    _PAGE_BOUND_REASON.format(
+                        bound=config.max_pages, rows=len(all_rows), total=stated_total
+                    ),
                 )
             if page + 1 in offered:
                 page += 1
                 continue
             if highest_offered_page > page:
                 raise ScreenPaginationError(_UNFETCHED_OFFERED_PAGE)
+            _require_complete(
+                stated_total, stated_pages, row_count=len(all_rows), page_count=len(pages)
+            )
             return ScreenRun(
                 artifact=ScreenArtifact(
                     query=query,
@@ -220,7 +316,9 @@ def acquire_screen(
                 detail,
                 page=page,
                 url=url,
-                error=ScreenStructureError(detail),
+                error=error
+                if isinstance(error, ScreenerScreenError)
+                else ScreenStructureError(detail),
                 content_sha256=None if fetch is None else fetch.content_sha256,
             )
 
@@ -340,13 +438,20 @@ def _has_class(element: Any, token: str) -> bool:
 
 
 def _metadata(
-    page: int, fetch: ScreenerDocumentFetch, offered: tuple[int, ...]
+    page: int,
+    fetch: ScreenerDocumentFetch,
+    offered: tuple[int, ...],
+    *,
+    stated_total: int,
+    stated_pages: int,
 ) -> ScreenPageMetadata:
-    """Record what one fetch was and what its pagination offered."""
+    """Record one fetch's provenance and its own completeness claim."""
     return ScreenPageMetadata(
         page_number=page,
         source_url=fetch.source_url,
         http_status=fetch.http_status,
+        stated_total=stated_total,
+        stated_pages=stated_pages,
         offered_pages=offered,
         content_sha256=fetch.content_sha256,
         byte_count=fetch.byte_count,

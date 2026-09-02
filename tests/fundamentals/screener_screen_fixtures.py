@@ -192,16 +192,18 @@ def empty_table() -> str:
     return f'<table class="{TABLE_CLASS}"><tbody></tbody></table>'
 
 
-def row_shapes(body: str) -> tuple[tuple[str, ...], int]:
-    """The header rows and the data-row count of one body's result table.
+def row_shapes(markup: str) -> tuple[tuple[str, ...], int]:
+    """The header rows and the data-row count of one result table.
 
     Counted off the fixture's own markup rather than off what the reader made of
     it, so a test can prove the fixture really has the live shape before it
-    asserts anything about how that shape is read.
+    asserts anything about how that shape is read. ``markup`` may be a whole
+    page body or a bare ``<table>`` fragment: parsing a fragment makes the table
+    itself the root, which ``.//table`` would then walk straight past.
     """
     headers: list[str] = []
     data = 0
-    for element in parse_document(body).xpath(".//table//tr"):
+    for element in parse_document(markup).xpath("(self::table | .//table)//tr"):
         tags = {child.tag for child in element}
         if tags == {"th"}:
             headers.append("|".join(cell.text_content() for cell in element))
@@ -243,6 +245,7 @@ def pagination(
     elided_after: int | None = None,
     also_active: int | None = None,
     scoped: bool = True,
+    next_href_page: int | None = None,
 ) -> str:
     """The two-block pagination the live page renders.
 
@@ -254,6 +257,11 @@ def pagination(
     and ``scoped=False`` drops the ``options`` token from the first block while
     leaving its anchors in place: three shapes that are each unreadable for a
     different reason, and none of which the live page has ever rendered.
+
+    ``next_href_page`` names the page the ``Next`` anchor links to. Left unset it
+    keeps the decoy href every other anchor carries, so a reader that navigates
+    by href still fails loudly; set, it is the live shape in which ``Next`` makes
+    a checkable claim about which page comes after this one.
     """
     anchors: list[str] = []
     if previous:
@@ -266,7 +274,10 @@ def pagination(
         if elided_after is not None and number == elided_after:
             anchors.append('<span class="ink-600">&hellip;</span>')
     if next_page:
-        anchors.append(f'<a href="{_DECOY_HREF}" class="ink-900"> Next </a>')
+        href = (
+            _DECOY_HREF if next_href_page is None else f"{_SELECTOR_BASE}&amp;page={next_href_page}"
+        )
+        anchors.append(f'<a href="{href}" class="ink-900"> Next </a>')
     selector = ""
     if page_size:
         selector = _page_size_block(PAGE_SIZE_ANCHORS)
@@ -283,12 +294,93 @@ def empty_pagination() -> str:
     return '<div class="pagination">\n   <!-- no pages -->\n</div>'
 
 
-def page(table: str, pagination_html: str, *, account: bool = True, logout: bool = True) -> str:
-    """Wrap one table and one pagination block in the page around them."""
+# The one line every captured shape carries, zero-result page included. It is
+# the only claim on the page that the site makes about its own completeness, so
+# no fixture may omit it by accident — only on purpose, through ``stated``.
+RESULTS_FOUND_TEMPLATE = "{total} results found: Showing page {page} of {pages}"
+
+
+# The verified container, identical across every captured shape including the
+# zero-result page: a ``data-page-info`` div inside a flex wrapper. The attribute
+# is the semantic hook the template author put there on purpose; ``sub`` and the
+# wrapper's flex tokens are presentational and churn with any restyle.
+PAGE_INFO_ATTRIBUTE = "data-page-info"
+PAGE_INFO_WRAPPER_CLASS = "flex-row flex-gap-8 flex-space-between flex-align-center"
+
+
+def results_found_line(
+    total: int,
+    page_number: int,
+    pages: int,
+    *,
+    class_attr: str | None = "sub",
+) -> str:
+    """The stated-total line in the markup the live page renders it in.
+
+    ``class_attr`` is the presentational half and is variable on purpose:
+    ``None`` drops the class entirely, leaving only ``data-page-info``, which is
+    the shape a reader keyed on presentation cannot read.
+    """
+    text = RESULTS_FOUND_TEMPLATE.format(total=total, page=page_number, pages=pages)
+    class_html = "" if class_attr is None else f' class="{class_attr}"'
+    return (
+        f'<div class="{PAGE_INFO_WRAPPER_CLASS}">'
+        f"<div{class_html} {PAGE_INFO_ATTRIBUTE}> {text} </div>"
+        "</div>"
+    )
+
+
+def _offered_in_markup(pagination_html: str) -> tuple[int | None, int]:
+    """The active page and the highest page the *direct* options block offers.
+
+    Read off the fixture's own markup so a page built by hand states a total
+    consistent with the pagination beside it, rather than needing every caller to
+    restate what the anchors already say. The nested page-size selector is not a
+    direct child, so its ``10 / 25 / 50`` never leak in here.
+    """
+    root = parse_document(f"<html><body>{pagination_html}</body></html>")
+    numeric: list[tuple[int, Any]] = []
+    for block in root.xpath(
+        ".//*[contains(concat(' ', normalize-space(@class), ' '), ' pagination ')]"
+        "/*[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
+    ):
+        for element in block.xpath(".//a"):
+            text = element.text_content().strip()
+            if text.isdigit():
+                numeric.append((int(text), element))
+    active = [number for number, element in numeric if "active" in element.get("class", "").split()]
+    return (active[0] if active else None), max((number for number, _ in numeric), default=1)
+
+
+def page(
+    table: str,
+    pagination_html: str,
+    *,
+    account: bool = True,
+    logout: bool = True,
+    total: int | None = None,
+    stated: str | None = None,
+) -> str:
+    """Wrap one table and one pagination block in the page around them.
+
+    The stated-total line defaults to whatever this page's own markup already
+    says — its data rows are the total, its active anchor is the page, its
+    highest offered anchor is the page count — so a hand-built fixture is
+    self-consistent without restating any of it. ``total`` overrides only the
+    result count, which is what a walk spanning several pages needs; ``stated``
+    replaces the whole line, and ``stated=""`` removes it, which is the only way
+    a fixture may serve a page carrying no oracle at all.
+    """
     nav = f"<nav>{ACCOUNT_LINK if account else ''}{LOGOUT_FORM if logout else ''}</nav>"
+    if stated is None:
+        active, pages = _offered_in_markup(pagination_html)
+        _, data_rows = row_shapes(table)
+        stated = results_found_line(
+            data_rows if total is None else total, active if active is not None else 1, pages
+        )
     return (
         "<html><body>"
-        f"{nav}<main>{table}{pagination_html}"
+        f"{nav}<main>{stated}{table}{pagination_html}"
         '<a href="/screen/save/">Save this screen</a>'
         "</main></body></html>"
     )
@@ -324,9 +416,16 @@ def results_page(
     block: int = 2,
     account: bool = True,
     logout: bool = True,
+    total: int | None = None,
 ) -> str:
-    """One populated page of a walk, with its own header repeats and pagination."""
+    """One populated page of a walk, with its own header repeats and pagination.
+
+    Its stated total defaults to the whole walk's rows, not this page's, because
+    that is what the live line reports: every page of a 3-page walk states the
+    same ``114``. ``total`` overrides it so a page can be made to lie.
+    """
     body = rows if rows is not None else rows_for(page_number, labels=labels)
+    successor = page_number + 1
     return page(
         results_table(labels, body, block=block),
         pagination(
@@ -334,9 +433,11 @@ def results_page(
             active=page_number,
             previous=page_number > min(offered),
             next_page=page_number < max(offered),
+            next_href_page=successor,
         ),
         account=account,
         logout=logout,
+        total=len(body) * max(offered) if total is None else total,
     )
 
 

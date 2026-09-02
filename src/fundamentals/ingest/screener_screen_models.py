@@ -119,6 +119,8 @@ class ScreenPageMetadata(BaseModel):
     ``offered_pages`` is what that page's own pagination advertised, and is
     empty both for a zero-result page and for a populated result that fits on
     one page — the live surface renders no pagination controls in either case.
+    ``stated_total`` and ``stated_pages`` retain the page's own completeness
+    claim, so a consumer can audit every fetched page without reparsing bytes.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -126,6 +128,8 @@ class ScreenPageMetadata(BaseModel):
     page_number: int = Field(gt=0)
     source_url: str
     http_status: int
+    stated_total: int = Field(ge=0)
+    stated_pages: int = Field(gt=0)
     offered_pages: tuple[int, ...] = ()
     content_sha256: str
     byte_count: int = Field(ge=0)

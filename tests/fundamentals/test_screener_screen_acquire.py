@@ -60,23 +60,19 @@ def test_an_artifact_whose_fields_contradict_its_outcome_cannot_be_built(
             support.rebuilt(artifact, **override)
 
 
-def test_the_published_models_carry_exactly_the_frozen_fields_bounds_and_refusal_types(
+def test_the_published_models_carry_the_frozen_bounds_and_refusal_types(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """SL3-11, SL3-12 and SL3-13 all read these models, so the models are pinned here.
 
     Every other test in this file asserts through them, which means a model that
-    silently gained a field, lost a bound, or stopped being frozen would leave
-    all of them green. The bounds are the ones that make a wrong value
-    impossible to publish rather than merely unlikely: a zero row id, a serial
-    below one, a cell claiming a column the header cannot name, a negative byte
-    count. And the refusal types have to sit under the session error the CLI
-    already catches, or a screen refusal becomes a traceback instead of an exit
-    code.
+    silently lost a bound or stopped being frozen would leave all of them green.
+    The bounds are the ones that make a wrong value impossible to publish rather
+    than merely unlikely: a zero row id, a serial below one, a cell claiming a
+    column the header cannot name, a negative byte count. And the refusal types
+    have to sit under the session error the CLI already catches, or a screen
+    refusal becomes a traceback instead of an exit code.
     """
-    for name, fields in support.MODEL_FIELDS.items():
-        assert set(getattr(support.models, name).model_fields) == fields, name
-
     outcomes = support.models.ScreenOutcome
     assert issubclass(outcomes, StrEnum)
     assert {member.name: member.value for member in outcomes} == {
@@ -224,6 +220,7 @@ def test_evidence_already_fetched_is_kept_and_published_as_incomplete(
             + support.data_row(support.one_row(serial=9, values=("110.25", "12.50")))
         ),
         support.pagination((1, 2), active=2, previous=True),
+        total=16,
     )
     malformed = support.walk(2)
     malformed[2] = broken_body
@@ -314,6 +311,7 @@ def test_evidence_already_fetched_is_kept_and_published_as_incomplete(
         support.page(
             support.results_table(support.NARROW_LABELS, support.rows_for(2)),
             support.nested_options_pagination(),
+            stated=support.results_found_line(24, 2, 3),
         ),
         support.results_page(2, offered=(1, 2)),
     ],

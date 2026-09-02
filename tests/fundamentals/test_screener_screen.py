@@ -453,7 +453,7 @@ def test_serials_run_globally_from_one_and_no_row_company_id_may_repeat(
     for broken in broken_pages:
         with monkeypatch.context() as patcher:
             bodies = support.walk(2)
-            bodies[2] = support.results_page(2, offered=(1, 2), rows=broken)
+            bodies[2] = support.results_page(2, offered=(1, 2), rows=broken, total=16)
             run, _ = support.acquire(patcher, bodies)
             assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
             assert run.artifact.failure is not None
