@@ -5,7 +5,11 @@ agreement of two independent server renderings of one list. Rules SL4-01a
 through SL4-01e live here: the export must publish the identity columns the join
 needs, the two value-label sequences must be equal, membership must agree, the
 join must be on the decoded display name rather than on position, and every
-value cell must match. What comes back is one
+value cell must match. So do the rules that keep a published cell honest once
+the join succeeds: no identifier repeats on either side (SL4-21), a non-empty
+value that is not a finite number refuses rather than publishing as absent
+(SL4-26), and each cell is anchored to the export record it was read from
+(SL4-27). What comes back is one
 :class:`~fundamentals.ingest.screener_watchlist_models.WatchlistCrossCheck`
 audit record — written whether or not the comparison passed — beside the reason
 it failed, or the columns and rows it is safe to publish.
@@ -21,7 +25,7 @@ from __future__ import annotations
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 
-from fundamentals.ingest.screener_financials_tables import html_anchor
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ingest.screener_session_models import SOURCE_ID, ScreenerDocumentFetch
 from fundamentals.ingest.screener_watchlist_models import (
     CSV_BSE_CODE,
@@ -50,9 +54,16 @@ _MEMBERSHIP_DISAGREES = (
 )
 _ISIN_ABSENT = "the export publishes a member with no ISIN code"
 _ISIN_REPEATED = "the export publishes the same ISIN code on more than one member"
+_CODE_REPEATED = "the export publishes the same {label} on more than one member: {codes}"
+_SLUG_REPEATED = "the page routes more than one row to the same company slug: {slugs}"
 _NO_EXCHANGE_CODE = "the page routes {name!r} by slug {slug!r} and the export publishes no code"
 _SLUG_DISAGREES = "the page routes {name!r} by slug {slug!r} but the export publishes {code!r}"
 _VALUES_DISAGREE = "the page and the export disagree on {count} value cell(s)"
+_UNPARSABLE_VALUE = (
+    "the export publishes {text!r} for {name!r} under {label!r}, which is not a finite number; "
+    "publishing it as an absent figure would be indistinguishable from a company that has none"
+)
+_CSV_ROW_PATH = "record[{position}]"
 
 
 def cross_check(
@@ -154,19 +165,28 @@ def _join(
     """Join the two renderings on the decoded display name and compare every cell.
 
     Never on position: the page is in watchlist order and the export is
-    alphabetical, so a positional join hands each company another's codes.
+    alphabetical, so a positional join hands each company another's codes. The
+    same asymmetry is why each cell's anchor addresses the *export's* record
+    position: the anchor names the export file, and a page position inside it
+    would resolve to another company's figure on almost every row.
     """
     isins = [record[identity[CSV_ISIN_CODE]] for record in records]
     if not all(isins):
         return _ISIN_ABSENT, (), (), 0
     if len(set(isins)) != len(isins):
         return _ISIN_REPEATED, (), (), 0
-    by_name = {record[identity[CSV_NAME]]: record for record in records}
+    repeated = _repeated_identifiers(table, records=records, identity=identity)
+    if repeated is not None:
+        return repeated, (), (), 0
+    by_name = {
+        record[identity[CSV_NAME]]: (position, record)
+        for position, record in enumerate(records, start=1)
+    }
     rows: list[WatchlistRow] = []
     mismatches: list[WatchlistValueMismatch] = []
     compared = 0
     for row in table.rows:
-        record = by_name[row.display_name]
+        csv_position, record = by_name[row.display_name]
         bse_code = _identity_field(record, identity, CSV_BSE_CODE)
         nse_code = _identity_field(record, identity, CSV_NSE_CODE)
         unbound = _slug_disagreement(row, nse_code or bse_code)
@@ -186,20 +206,31 @@ def _join(
                         csv_text=csv_text,
                     )
                 )
+            value = _decimal(csv_text)
+            if value is None and csv_text:
+                return (
+                    _UNPARSABLE_VALUE.format(
+                        text=csv_text, name=row.display_name, label=header[index]
+                    ),
+                    (),
+                    (),
+                    compared,
+                )
             cells.append(
                 WatchlistCell(
                     csv_field_index=index,
-                    value=_decimal(csv_text),
+                    value=value,
                     csv_text=csv_text,
                     html_text=html_text,
-                    provenance=html_anchor(
+                    provenance=Provenance(
                         source_id=SOURCE_ID,
                         file_sha256=export_fetch.content_sha256,
-                        retrieved_at=export_fetch.fetched_at,
+                        anchor_type=SourceAnchorType.CSV_RECORD,
                         table_id=WATCHLIST_TABLE_ID,
-                        row_path=f"row[{row.serial_number}]",
+                        row_path=_CSV_ROW_PATH.format(position=csv_position),
                         column_index=index,
                         column_label=header[index],
+                        retrieved_at=export_fetch.fetched_at,
                     ),
                 )
             )
@@ -223,6 +254,34 @@ def _join(
     if mismatches:
         return _VALUES_DISAGREE.format(count=len(mismatches)), (), tuple(mismatches), compared
     return None, tuple(rows), (), compared
+
+
+def _repeated_identifiers(
+    table: WatchlistTable,
+    *,
+    records: tuple[tuple[str, ...], ...],
+    identity: dict[str, int],
+) -> str | None:
+    """Refuse a published identifier either rendering carries on two members.
+
+    The ISIN is checked separately because it is required; these three are
+    optional, so only their published values are compared. Two rows sharing an
+    exchange code, or two links routing to one company page, are one company
+    admitted twice however well the names and values agree — and each of them
+    passes the slug/code check independently, so nothing else sees it.
+    """
+    for label in (CSV_NSE_CODE, CSV_BSE_CODE):
+        if label not in identity:
+            continue
+        codes = _duplicates(
+            tuple(record[identity[label]] for record in records if record[identity[label]])
+        )
+        if codes:
+            return _CODE_REPEATED.format(label=label, codes=codes)
+    slugs = _duplicates(tuple(row.slug for row in table.rows if row.slug))
+    if slugs:
+        return _SLUG_REPEATED.format(slugs=slugs)
+    return None
 
 
 def _slug_disagreement(row: WatchlistTableRow, code: str | None) -> str | None:
@@ -249,9 +308,13 @@ def _identity_field(record: tuple[str, ...], identity: dict[str, int], label: st
 
 
 def _decimal(text: str) -> Decimal | None:
-    """Read one export value, failing closed rather than turning nothing into zero.
+    """Read one export value, distinguishing "no figure" from "not a figure".
 
-    The export needs no display cleanup that could turn a real value into ``None``.
+    ``None`` means one of two things and the caller must tell them apart: an
+    empty cell, which SL4-09 publishes as an absent figure, or text this reader
+    cannot turn into a finite number — which the caller refuses, because both
+    renderings can carry the same unrecognised lexeme (``1,234.50``, ``12.5%``)
+    and agree perfectly while the published value is silently absent.
     """
     if not text:
         return None

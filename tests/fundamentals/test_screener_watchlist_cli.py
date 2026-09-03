@@ -190,6 +190,12 @@ def test_a_refusal_on_the_first_request_leaves_nothing_and_exits_by_code(
     Nothing was retained, so there is nothing to publish — and the operator must
     still see a refusal line rather than a traceback, because a traceback reads
     as a bug in the command rather than a decision by the host.
+
+    "Nothing" includes the output directory. It is created before the first
+    request so the caller can learn the default destination without spending
+    one, but an empty directory left behind by a run that fetched nothing is
+    evidence of a run that produced none — and the next invocation's no-clobber
+    preflight would find it and pass.
     """
     out_dir = tmp_path / "refused"
 
@@ -202,27 +208,43 @@ def test_a_refusal_on_the_first_request_leaves_nothing_and_exits_by_code(
     assert exit_code == EXIT_REFUSED
     assert len(transport.exchanges) == 1
     assert not (out_dir / ARTIFACT_FILENAME).exists()
+    assert not out_dir.exists()
     assert "ScreenerBlockedError" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("forbidden_export", [False, True], ids=["published", "export-403"])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"export_error": fx.http_error(fx.export_url(), 403, "Forbidden")},
+        {
+            "export_error": ValueError(
+                f"Invalid header value b'{fx.SESSION_COOKIE_NAME}={fx.SESSION_TOKEN}; "
+                f"{fx.CSRF_COOKIE_NAME}={fx.CSRF_COOKIE_VALUE}'"
+            )
+        },
+    ],
+    ids=["published", "export-403", "untyped-error-quoting-the-cookie-header"],
+)
 def test_no_token_or_cookie_value_reaches_stdout_stderr_or_the_artifact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    forbidden_export: bool,
+    options: dict[str, Any],
 ) -> None:
-    """SL4-19 / A20: the retained page embeds a live CSRF token; nothing else may.
+    """SL4-19 / A20 / SL4-28: the retained page embeds a live CSRF token; nothing else may.
 
     ``data/raw`` is gitignored, so the raw body is the one sanctioned place for
     the token. A log line, a summary line, a failure detail or an artifact field
     carrying it — or the ``Set-Cookie`` value, or any request header — hands
     owner auth material to whatever the shell redirects diagnostics into.
+
+    The published and blocked paths only prove that this code never *writes* a
+    secret. The third case is the one that matters: a message this code did not
+    write, quoting the outbound ``Cookie`` header, on the exact path SL4-15
+    routes into ``failure.detail`` and stderr.
     """
     out_dir = tmp_path / "out"
-    options: dict[str, Any] = {}
-    if forbidden_export:
-        options["export_error"] = fx.http_error(fx.export_url(), 403, "Forbidden")
 
     _run_cli(monkeypatch, out_dir, **options)
 

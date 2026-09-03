@@ -404,14 +404,25 @@ for path, lines in sorted(changed_lines().items()):
         continue
     for line in sorted(lines & missed):
         hits.append(f"{path}:{line}")
-print(" ".join(hits[:6]))
+# The count first, then every hit. Printing a silent slice of the list invites
+# the reader to believe they have seen it: the last green gate reported six of
+# twenty-one, and two of the fifteen it hid were the defects of the round.
+print(len(hits))
+print(" ".join(hits))
 PYEOF
 )"
-    if [ -n "${uncovered}" ]; then
-      # Carry the lines on the status line itself, and do NOT escalate: this
-      # check does not fail the gate. "NOTE" rather than "FAIL" so a caller
-      # skimming the report cannot mistake it for a route.
-      l_cov="diff-coverage    NOTE  advisory, unexecuted: $(cap_names ${uncovered})"
+    local n_uncovered
+    n_uncovered="$(head -1 <<<"${uncovered}")"
+    [ -n "${n_uncovered}" ] || n_uncovered=0
+    uncovered="$(tail -n +2 <<<"${uncovered}")"
+    if [ "${n_uncovered}" -gt 0 ]; then
+      # Carry the count and a sample on the status line itself, and do NOT
+      # escalate: this check does not fail the gate. "NOTE" rather than "FAIL"
+      # so a caller skimming the report cannot mistake it for a route. The full
+      # list goes to the log, which is what cap_names points the reader at.
+      note "=== diff-coverage: ${n_uncovered} unexecuted changed line(s) ==="
+      note "${uncovered}"
+      l_cov="diff-coverage    NOTE  advisory, ${n_uncovered} unexecuted: $(cap_names ${uncovered})"
     else
       l_cov="diff-coverage    OK    every changed line in ${COV_SCOPE} is executed"
     fi

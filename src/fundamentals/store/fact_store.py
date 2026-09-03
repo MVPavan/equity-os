@@ -189,7 +189,7 @@ def _anchor_payload(observation: Observation) -> dict[str, object]:
                 "column_label": prov.column_label,
             }
         )
-    elif prov.anchor_type is SourceAnchorType.HTML_TABLE:
+    elif prov.anchor_type in (SourceAnchorType.HTML_TABLE, SourceAnchorType.CSV_RECORD):
         payload.update(
             {
                 "table_id": prov.table_id,

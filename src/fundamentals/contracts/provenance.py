@@ -3,8 +3,9 @@
 Every observation and guidance claim must carry non-null provenance binding it
 to a source file (by sha256) and a typed anchor — a PDF page/block/span, an XBRL
 context reference, a JSON island location, a location inside a standalone JSON
-API document, or a server-rendered HTML table cell — plus the bitemporal
-timestamps needed to reason about when the value could have been known.
+API document, a server-rendered HTML table cell, or a field of one record of a
+delimited export — plus the bitemporal timestamps needed to reason about when
+the value could have been known.
 
 The anchor type is the retrieval procedure, not a formatting detail: a
 ``JSON_ISLAND`` value is re-found by fetching a page and reading the named
@@ -14,6 +15,11 @@ a page island sits beside the identity islands its adapter verifies, whereas an
 API response may carry no identity field at all, leaving the request URL as the
 only binding. Collapsing them onto one anchor type would erase that difference
 at exactly the layer built to preserve it.
+
+``CSV_RECORD`` exists for the same reason. A downloaded export and the page it
+was exported from order their rows differently, so an anchor that names the
+export file while addressing the page's row position points at another
+issuer's figure. The type states which file the position is a position *in*.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ class SourceAnchorType(StrEnum):
     JSON_ISLAND = "JSON_ISLAND"
     API_DOCUMENT = "API_DOCUMENT"
     HTML_TABLE = "HTML_TABLE"
+    CSV_RECORD = "CSV_RECORD"
 
 
 # Location fields each anchor kind must NOT set, verified against every
@@ -43,7 +50,11 @@ _FOREIGN_ANCHOR_FIELDS: dict[SourceAnchorType, tuple[str, ...]] = {
     SourceAnchorType.JSON_ISLAND: ("document_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.API_DOCUMENT: ("island_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.HTML_TABLE: ("document_id", "island_id", "table_key"),
+    SourceAnchorType.CSV_RECORD: ("document_id", "island_id", "table_key"),
 }
+
+# The anchor kinds addressed by ``table_id``/``row_path``/``column_index``.
+_POSITIONAL_ANCHOR_TYPES = (SourceAnchorType.HTML_TABLE, SourceAnchorType.CSV_RECORD)
 
 
 class Provenance(BaseModel):
@@ -53,9 +64,9 @@ class Provenance(BaseModel):
     ``context_ref``; a JSON island anchor uses ``island_id``/``table_key``/
     ``row_label``/``column_label``; an API document anchor uses the same
     location triple below ``document_id`` instead of ``island_id``; an HTML
-    table anchor uses ``table_id``/``row_path``/``column_index``/
-    ``column_label``. Typed fields not relevant to ``anchor_type`` are left
-    ``None``.
+    table anchor and a CSV record anchor both use ``table_id``/``row_path``/
+    ``column_index``/``column_label``, differing in which file the position
+    addresses. Typed fields not relevant to ``anchor_type`` are left ``None``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -116,14 +127,15 @@ class Provenance(BaseModel):
                     "API_DOCUMENT anchor requires document_id, context_ref, table_key, "
                     "row_label, and column_label to be set"
                 )
-        elif self.anchor_type is SourceAnchorType.HTML_TABLE:
-            html_fields = (self.table_id, self.row_path, self.column_label)
-            if any(value is None or not value.strip() for value in html_fields):
+        elif self.anchor_type in _POSITIONAL_ANCHOR_TYPES:
+            kind = self.anchor_type.value
+            positional_fields = (self.table_id, self.row_path, self.column_label)
+            if any(value is None or not value.strip() for value in positional_fields):
                 raise ValueError(
-                    "HTML_TABLE anchor requires table_id, row_path, and column_label to be set"
+                    f"{kind} anchor requires table_id, row_path, and column_label to be set"
                 )
             if self.column_index is None or self.column_index < 0:
-                raise ValueError("HTML_TABLE anchor requires a non-negative column_index")
+                raise ValueError(f"{kind} anchor requires a non-negative column_index")
         self._reject_foreign_fields()
         return self
 

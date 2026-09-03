@@ -255,10 +255,10 @@ def export_form(action: str, *, token: str = CSRF_FORM_TOKEN) -> str:
 
 
 # The live page carries four `dropdown-content` blocks and only one of them is
-# the watchlist selector; the others are the site's own nav and promo menus,
+# the watchlist selector; the other three are the site's own nav and promo menus,
 # whose <li> entries read as plausible list names. A fixture with a single clean
 # dropdown cannot catch a reader that matches them all, so every page built here
-# carries decoys, exactly as the source does.
+# carries three decoys beside the selector, as the source does.
 DECOY_DROPDOWNS = (
     '<div class="dropdown-menu"><ul class="dropdown-content">'
     "<li>Create a stock screen Run queries on ten years of data</li>"
@@ -266,18 +266,23 @@ DECOY_DROPDOWNS = (
     '<div class="dropdown-menu"><ul class="dropdown-content">'
     "<li>Company Announcements Search and filter the newest disclosures</li>"
     "<li>You are a premium subscriber</li></ul></div>"
+    '<div class="dropdown-menu"><ul class="dropdown-content">'
+    "<li>Tools and downloads</li><li>Data as of the last close</li></ul></div>"
 )
 
 
-def dropdown(names: tuple[str, ...], *, selected: int | None = 0) -> str:
+def dropdown(names: tuple[str, ...], *, selected: int | tuple[int, ...] | None = 0) -> str:
     """The watchlist selector: plain entries, one marked by a check icon, plus the add link.
 
     Wrapped in the `dropdown-watchlist` container the live page uses, because
     that class is the only thing distinguishing this menu from the decoys.
+    ``selected`` takes several positions so a selector marking two lists as the
+    open one — a shape the reader must refuse rather than resolve — can be built.
     """
+    marked = () if selected is None else (selected,) if isinstance(selected, int) else selected
     entries = []
     for position, name in enumerate(names):
-        icon = '<i class="icon-ok-circled-1"></i> ' if position == selected else ""
+        icon = '<i class="icon-ok-circled-1"></i> ' if position in marked else ""
         entries.append(f"<li>{icon}{html.escape(name)}</li>")
     entries.append('<li><a href="/watchlist/add/">+ Create New Watchlist</a></li>')
     return (
@@ -294,7 +299,7 @@ def page(
     forms: int = 1,
     token: str = CSRF_FORM_TOKEN,
     names: tuple[str, ...] = (WATCHLIST_NAME,),
-    selected: int | None = 0,
+    selected: int | tuple[int, ...] | None = 0,
     account: bool = True,
     logout: bool = True,
     extra: str = "",

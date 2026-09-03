@@ -24,7 +24,7 @@ import hashlib
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -73,6 +73,7 @@ ORIGIN_HEADER = "Origin"
 FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 _PRIVATE_QUERY_PARAMETER = "query"
 _REDACTED_PRIVATE_QUERY = "[redacted]"
+_REDACTED_SECRET = "[redacted-secret]"
 _NO_CREDENTIALS = (
     "screener session cookie required for a subscriber fetch; mint one from an "
     "authenticated browser session and inject it as credentials.session_cookie"
@@ -298,12 +299,40 @@ class ScreenerSessionSource:
             raise ScreenerCredentialsError(_NO_CREDENTIALS)
         return credentials
 
+    def redact(self, text: str, *, extra: Iterable[str] = ()) -> str:
+        """Return ``text`` with this source's session cookie and any named secret removed.
+
+        The session cookie never leaves this object, not even to a caller that
+        wants to strip it from a message: the caller hands the text in and gets
+        a safe one back. ``extra`` is for the secrets the caller minted or
+        received itself, such as a page's CSRF token.
+        """
+        credentials = self._config.credentials
+        secrets = list(extra)
+        if credentials is not None:
+            secrets.append(credentials.session_cookie.get_secret_value())
+        for secret in secrets:
+            if secret:
+                text = text.replace(secret, _REDACTED_SECRET)
+        return text
+
     def _session_headers(
         self, credentials: ScreenerCredentials, *, extra_cookies: Mapping[str, str] | None = None
     ) -> dict[str, str]:
-        """Build the outbound headers, serialising every cookie into one ``Cookie`` header."""
+        """Build the outbound headers, serialising every cookie into one ``Cookie`` header.
+
+        A page-supplied cookie can never displace the injected session cookie:
+        the override is removed here rather than merely being unreached, so no
+        future caller can hand this transport a ``sessionid`` it did not mint.
+        """
         cookies = {SESSION_COOKIE_NAME: credentials.session_cookie.get_secret_value()}
-        cookies.update(extra_cookies or {})
+        cookies.update(
+            {
+                name: value
+                for name, value in (extra_cookies or {}).items()
+                if name != SESSION_COOKIE_NAME
+            }
+        )
         return {
             COOKIE_HEADER: "; ".join(f"{name}={value}" for name, value in cookies.items()),
             USER_AGENT_HEADER: self._config.user_agent,

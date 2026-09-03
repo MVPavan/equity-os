@@ -20,6 +20,8 @@ from typing import Any
 import pytest
 import screener_watchlist_fixtures as fx
 
+from fundamentals.contracts.provenance import SourceAnchorType
+
 _ROSTER = fx.members()
 _TOOLTIPS = tuple(column.tooltip for column in fx.DEFAULT_COLUMNS)
 
@@ -224,6 +226,37 @@ def test_the_csv_identity_fields_are_found_by_label_and_not_by_position(
     )
 
 
+def test_an_export_that_publishes_no_nse_code_column_still_binds_and_publishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A27 / SL4-01e: the identity columns are optional except ``Name`` and ``ISIN Code``.
+
+    Only those two are required — the name to join on and the ISIN to key on.
+    Everything else is whatever the export happens to publish, so a column set
+    without ``NSE Code`` must bind each slug by the code that *is* published
+    rather than refusing the list, and the uniqueness rules must skip the column
+    that is not there instead of reading some other field under its label.
+    """
+    identity = ("Name", "BSE Code", "ISIN Code", "Industry Group", "Industry")
+    roster = tuple(
+        member
+        if "/id/" in member.href
+        else fx.rebuilt(member, href=f"/company/{member.bse_code}/consolidated/")
+        for member in _ROSTER
+    )
+
+    run, _ = fx.acquire(
+        monkeypatch,
+        page=fx.watchlist_page(roster),
+        export=fx.export_csv(roster, identity=identity),
+    )
+
+    assert run.artifact.outcome is fx.models.WatchlistOutcome.RESULTS
+    assert {row.company.nse_code for row in run.artifact.rows} == {None}
+    published = next(row.company for row in run.artifact.rows if row.serial_number == 1)
+    assert published.slug == published.bse_code == _ROSTER[0].bse_code
+
+
 def test_a_tooltip_sequence_disagreeing_with_the_csv_headers_by_one_refuses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -393,6 +426,84 @@ def test_an_isin_that_is_empty_or_repeated_refuses(
     _incomplete(run, "WatchlistCrossCheckError")
 
 
+@pytest.mark.parametrize(
+    ("overrides", "identifier", "value"),
+    [
+        (
+            {"nse_code": _ROSTER[0].nse_code, "href": "/company/id/8800002/"},
+            "NSE Code",
+            _ROSTER[0].nse_code,
+        ),
+        (
+            {"bse_code": _ROSTER[0].bse_code, "href": "/company/id/8800002/"},
+            "BSE Code",
+            _ROSTER[0].bse_code,
+        ),
+        (
+            {"nse_code": "", "bse_code": _ROSTER[0].nse_code, "href": _ROSTER[0].href},
+            "slug",
+            _ROSTER[0].nse_code,
+        ),
+    ],
+    ids=["duplicate-nse-code", "duplicate-bse-code", "duplicate-slug"],
+)
+def test_a_repeated_exchange_code_or_company_slug_refuses(
+    monkeypatch: pytest.MonkeyPatch, overrides: dict[str, str], identifier: str, value: str
+) -> None:
+    """SL4-21 / A22 / A41: uniqueness is required of every published identifier, not just the ISIN.
+
+    Two rows carrying one exchange code, or two links routing to one company
+    page, are one company admitted twice — and each of them satisfies the
+    slug/code check on its own, so nothing else in the slice sees it. The ISIN
+    rules do not: two rows may hold distinct ISINs and still be the same issuer
+    under two names.
+
+    Each case here trips exactly one of the three: the duplicated-code rows are
+    id-routed, so the slug check has nothing to compare, and the duplicated-slug
+    row is bound by its BSE code where the row it collides with is bound by its
+    NSE code, leaving both code columns unique.
+    """
+    collided = fx.with_member(_ROSTER, 2, **overrides)
+
+    run, _ = fx.acquire_roster(monkeypatch, collided)
+
+    artifact = _incomplete(run, "WatchlistCrossCheckError")
+    assert artifact.rows == ()
+    assert identifier in artifact.incomplete_reason
+    assert value in artifact.incomplete_reason
+
+
+@pytest.mark.parametrize(
+    "drifted",
+    ["1,234.50", "12.5%", "NA", "NaN"],
+    ids=["thousands-separator", "percent-suffix", "not-available", "not-a-number"],
+)
+def test_a_non_empty_value_that_is_not_a_finite_number_refuses(
+    monkeypatch: pytest.MonkeyPatch, drifted: str
+) -> None:
+    """SL4-26 / A37: an unreadable figure is drift to be seen, never an absent one.
+
+    SL4-01c compares the two renderings as *text*, so a lexeme both sides render
+    identically passes every oracle here — and publishing it as ``value: None``
+    beside a non-empty ``csv_text`` makes a company whose ROCE is ``12.5%``
+    indistinguishable from one with no ROCE at all, which is precisely what
+    SL4-09 says ``None`` means. Thousands commas are a decoration this source
+    already uses on the sibling screen table, so the day it uses them here every
+    figure at or above a thousand would publish as absent under a ``results``
+    outcome. ``NaN`` parses as a ``Decimal`` and is not a figure either.
+    """
+    member = _ROSTER[0]
+    roster = fx.with_member(_ROSTER, member.serial, values=(drifted, *member.values[1:]))
+
+    run, _ = fx.acquire_roster(monkeypatch, roster)
+
+    artifact = _incomplete(run, "WatchlistCrossCheckError")
+    assert artifact.rows == ()
+    assert drifted in artifact.incomplete_reason
+    assert member.name in artifact.incomplete_reason
+    assert fx.DEFAULT_COLUMNS[0].tooltip in artifact.incomplete_reason
+
+
 def test_empty_exchange_codes_may_repeat_across_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     """SL4-21 / A32: uniqueness applies to published codes, never to their absence.
 
@@ -446,10 +557,23 @@ def test_a_value_is_parsed_from_the_csv_and_anchored_by_csv_field_position(
     and names the CSV header, because the notebook column makes the page's
     ``td`` index a different number — reusing Slice 3's convention would point
     every provenance at the wrong column.
+
+    SL4-27 / A38: an anchor names one file and addresses a position *in that
+    file*. The anchor names the export, so its row is the export's record
+    position and its type is the CSV's. The page's row 1 is the CSV's last
+    record here — the two orders differ on every row, which is why SL4-02
+    forbids the positional join in the first place — so an anchor carrying the
+    page's serial would send an auditor to another company's figure.
     """
     member = _ROSTER[0]
     position = next(index for index, text in enumerate(member.values) if text)
     header = fx.csv_header(fx.DEFAULT_COLUMNS)
+    csv_position = 1 + next(
+        index
+        for index, record in enumerate(fx.csv_records(_ROSTER))
+        if record[header.index("Name")] == member.name
+    )
+    assert csv_position != member.serial
 
     run, _ = fx.acquire_roster(monkeypatch, _ROSTER)
 
@@ -465,6 +589,9 @@ def test_a_value_is_parsed_from_the_csv_and_anchored_by_csv_field_position(
     assert cell.provenance.column_label == fx.DEFAULT_COLUMNS[position].tooltip
     assert cell.provenance.file_sha256 == run.documents[1].content_sha256
     assert cell.provenance.source_id == fx.SOURCE_ID
+    assert cell.provenance.anchor_type is SourceAnchorType.CSV_RECORD
+    assert cell.provenance.row_path == f"record[{csv_position}]"
+    assert cell.provenance.row_path != f"record[{member.serial}]"
 
 
 def test_the_cross_check_record_binds_both_retained_documents(

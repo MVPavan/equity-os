@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from contextlib import suppress
 from pathlib import Path
 
 from fundamentals.api.artifact_writer import (
@@ -72,8 +73,15 @@ def run_screener_watchlist_command(
     rather than silent evidence. A run that refused is still published: the pair
     of responses that disagreed is what explains the disagreement, and rolling
     it back would delete exactly that.
+
+    A run that retained nothing publishes nothing — including the directory it
+    would have published into. The destination is still resolved and created
+    before the first request, because a caller must be able to learn it without
+    spending one; but a directory this invocation created and then left empty is
+    removed with the files, or a later reader finds a run that produced none.
     """
     out_dir = Path(args.out).resolve() if args.out else _default_out_dir(args.watchlist_id)
+    made_out_dir = not out_dir.exists()
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = out_dir / ARTIFACT_FILENAME
     preflight_out_paths((artifact_path, *(out_dir / name for name in DOCUMENT_FILENAMES)))
@@ -92,6 +100,9 @@ def run_screener_watchlist_command(
     except BaseException:
         for path in created:
             path.unlink(missing_ok=True)
+        if made_out_dir:
+            with suppress(OSError):
+                out_dir.rmdir()
         raise
     return ScreenerWatchlistCliRun(
         run=run, artifact_path=artifact_path, document_paths=tuple(created[:-1])

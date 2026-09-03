@@ -54,7 +54,10 @@ CSV_IDENTITY_LABELS = (
 )
 
 # The provenance anchor names the export, because SL4-20 makes the CSV the
-# authoritative side and indexes every cell by its CSV field position.
+# authoritative side. It therefore addresses a position *in the export*: the CSV
+# record and the CSV field, under the CSV anchor type. The page's row order is
+# not the export's, so an anchor naming this file and addressing a page row
+# would resolve to another company's figure on almost every row.
 WATCHLIST_TABLE_ID = "watchlist-export"
 
 _NON_POSITIVE_ID = "watchlist id must be positive"
@@ -268,11 +271,21 @@ class WatchlistArtifact(BaseModel):
 
     The guarantee is **cross-render consistency at fetch time**: the page and
     the export agreed on membership, on the column correspondence the page
-    itself states, on identity and on every value, at the moment the two
-    requests were made. It is not a claim that the watchlist contains nothing
-    else — both renderings are served by one backend and could share one
-    capped, filtered or stale snapshot, and whether the export is a live render
-    or a cache is untested.
+    itself states, and on every value cell, at the moment the two requests were
+    made. It is not a claim that the watchlist contains nothing else — both
+    renderings are served by one backend and could share one capped, filtered
+    or stale snapshot, and whether the export is a live render or a cache is
+    untested.
+
+    On **identity** the claim is narrower than "the two agreed", and saying
+    otherwise would overstate it. What is corroborated across the renderings is
+    the exchange code, against the slug the page routes each row by; what is
+    checked within one rendering is that the ISIN is present and unique and
+    that no exchange code or slug repeats. The ISIN, the industry and the
+    industry group are published on the export's word alone, bound to the row
+    only by the display name that joined them — swap those fields between two
+    slug-routed export records and every rule here still passes. Closing that
+    needs a third source.
 
     Field validity is bound to :class:`WatchlistOutcome` by a validator rather
     than by convention, so an artifact claiming rows it did not prove, or

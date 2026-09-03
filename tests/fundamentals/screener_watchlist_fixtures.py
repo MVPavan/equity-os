@@ -421,8 +421,8 @@ def serve(
     export_status: int = 200,
     export_content_type: str | None = EXPORT_CONTENT_TYPE,
     export_disposition: str | None = EXPORT_DISPOSITION,
-    page_error: urllib.error.HTTPError | None = None,
-    export_error: urllib.error.HTTPError | None = None,
+    page_error: Exception | None = None,
+    export_error: Exception | None = None,
 ) -> Transport:
     """Pin the opener to one page and one export, refusing every other request.
 
@@ -431,6 +431,11 @@ def serve(
     default the ``goto_sublist`` action for :data:`WATCHLIST_ID` — with the
     content headers given. ``export=None`` offers no export at all. Backoff
     sleeping is removed so a refused request does not cost real seconds.
+
+    ``page_error`` and ``export_error`` raise any exception in place of a
+    response, not only an ``HTTPError``: what the transport does with a message
+    it did not write is a rule of its own, and ``http.client`` raises a bare
+    ``ValueError`` quoting the whole outbound ``Cookie`` header.
 
     The transport reads the ``Cookie`` header off the request object itself,
     which is the only place it can be: a cookie jar attached to the opener would

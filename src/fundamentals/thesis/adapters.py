@@ -87,9 +87,10 @@ def _anchor_description(provenance: Provenance) -> str:
             f"API document {provenance.document_id}, key {provenance.table_key}, "
             f"row {provenance.row_label}, field {provenance.column_label}"
         )
-    elif provenance.anchor_type is SourceAnchorType.HTML_TABLE:
+    elif provenance.anchor_type in (SourceAnchorType.HTML_TABLE, SourceAnchorType.CSV_RECORD):
+        kind = "HTML table" if provenance.anchor_type is SourceAnchorType.HTML_TABLE else "CSV"
         location = (
-            f"HTML table {provenance.table_id}, row {provenance.row_path}, "
+            f"{kind} {provenance.table_id}, row {provenance.row_path}, "
             f"column {provenance.column_index} ({provenance.column_label})"
         )
     else:

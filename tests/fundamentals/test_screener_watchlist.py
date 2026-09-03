@@ -25,7 +25,7 @@ import pytest
 import screener_watchlist_fixtures as fx
 from pydantic import ValidationError
 
-from fundamentals.ingest.screener_session_models import ScreenerSessionError
+from fundamentals.ingest.screener_session_models import SCREENER_ORIGIN, ScreenerSessionError
 
 _ROSTER = fx.members()
 _TOOLTIPS = tuple(column.tooltip for column in fx.DEFAULT_COLUMNS)
@@ -139,15 +139,35 @@ def test_a_non_positive_watchlist_id_never_becomes_a_url(watchlist_id: int) -> N
         fx.models.watchlist_url(watchlist_id)
 
 
-def test_no_export_url_is_ever_constructed() -> None:
+def test_no_export_url_is_ever_constructed(monkeypatch: pytest.MonkeyPatch) -> None:
     """SL4-17 / A18: the export is posted to the form the page gives, never to a built URL.
 
     The two page shapes carry two different form actions, and the dropdown
     exposes no id to build one from. A builder here would invent a URL the
     fetched page never offered — which is exactly how the earlier probes
     returned zero bytes.
+
+    Asserting that no *named* builder exists proves nothing about a URL built
+    inline, so the page here offers the id-free action while carrying the id in
+    its stocks link: anything that assembles a target from the id it recovered
+    posts to the ``sublist_id`` URL, which this transport never offers. The
+    marker parameter survives only on the verbatim path.
     """
     assert not hasattr(fx.models, "watchlist_export_url")
+    action = f"{fx.export_action(None)}&fixture_marker=verbatim"
+    constructible = fx.export_url(fx.WATCHLIST_ID)
+
+    run, transport = fx.acquire(
+        monkeypatch,
+        page=fx.watchlist_page(_ROSTER, form_action=action),
+        export=fx.export_csv(_ROSTER),
+        export_target=f"{SCREENER_ORIGIN}{action}",
+    )
+
+    assert run.artifact.outcome is fx.models.WatchlistOutcome.RESULTS
+    assert run.artifact.watchlist_id == fx.WATCHLIST_ID
+    assert transport.posts[0].url == f"{SCREENER_ORIGIN}{action}"
+    assert constructible not in transport.urls
 
 
 def test_the_published_guarantee_is_cross_render_consistency_and_never_completeness() -> None:
@@ -188,22 +208,39 @@ def test_the_repeated_header_rows_are_never_admitted_as_members() -> None:
     assert tuple(row.serial_number for row in table.rows) == tuple(range(1, len(roster) + 1))
 
 
+def _as_data_cells(markup: str, count: int = -1) -> str:
+    """The same row with its ``th`` cells written as ``td``, all of them or the first few."""
+    return markup.replace("<th", "<td", count).replace("</th>", "</td>", count)
+
+
+def _as_header_cells(markup: str, count: int = -1) -> str:
+    """The same row with its ``td`` cells written as ``th``, all of them or the first few."""
+    return markup.replace("<td", "<th", count).replace("</td>", "</th>", count)
+
+
 @pytest.mark.parametrize(
     "stray",
     [
-        '<tr><td colspan="7">Sector: Widgets</td></tr>',
-        '<tr data-row-company-id="8800099"><th>99.</th><th>x</th></tr>',
-        "<tr><th>1.</th><td>x</td></tr>",
-        "<tr></tr>",
+        _as_data_cells(fx.header_row(fx.DEFAULT_COLUMNS)),
+        _as_data_cells(fx.header_row(fx.DEFAULT_COLUMNS), 1),
+        _as_header_cells(fx.data_row(_ROSTER[2])),
+        _as_header_cells(fx.data_row(_ROSTER[2]), 1),
     ],
-    ids=["grouping-row", "id-carrying-header", "mixed-cells", "empty-row"],
+    ids=["header-as-td", "header-with-one-td", "member-as-th", "member-with-one-th"],
 )
 def test_a_row_that_is_neither_a_header_nor_a_member_refuses_the_table(stray: str) -> None:
     """SL4-03 / SL4-04: a row the reader cannot classify is under-reporting.
 
     Silently skipping it is how a dropped company looks exactly like a smaller
     watchlist. Refusing is a drift policy, and it costs availability if the
-    source adds a benign grouping row — that cost is accepted on purpose.
+    source restyles one row — that cost is accepted on purpose.
+
+    Every case here is otherwise *valid*: each carries the right cell count, the
+    right tooltips or serial, and a company id no other row uses, so the width,
+    colspan, serial, header-equality and id-uniqueness rules all admit it. The
+    only thing wrong with it is that its cells do not say whether it is a header
+    or a member — which is exactly the rule under test, and a fixture that also
+    tripped another rule would pass with this one deleted.
     """
     rows = "".join(fx.data_row(member) for member in _ROSTER[:2])
     body = fx.page(fx.table_of(fx.header_row(fx.DEFAULT_COLUMNS) + rows + stray))
@@ -246,6 +283,27 @@ def test_the_header_colspan_sum_must_equal_the_member_row_cell_count(header: str
     less than the row means a value cell has no label, and one summing to more
     means a label has no value. Either publishes numbers under the wrong name.
     """
+    with pytest.raises(fx.models.WatchlistStructureError):
+        fx.read_table(fx.page(fx.table_of(header + row)))
+
+
+def test_a_member_row_carrying_a_value_no_header_names_refuses_the_table() -> None:
+    """SL4-29 / A40: three counts must agree, and the colspan sum only checks two.
+
+    Widening ``S.No.`` by one while appending one ``td`` keeps the header's
+    colspan sum equal to the row's cell count, so that rule admits the row —
+    and the cross-check then iterates the CSV's columns, silently ignoring the
+    extra value and never comparing it. The value count is the third relation:
+    as many values on the row as the header declares tooltips.
+    """
+    header = fx.header_row(fx.DEFAULT_COLUMNS, serial_colspan=3)
+    row = fx.data_row(_ROSTER[0], extra_cell=True)
+    # 3 (widened serial) + 1 (name) + 5 (values) == 3 (serial, notebook, name) + 6 cells.
+    assert row.count("<td") == 3 + len(fx.DEFAULT_COLUMNS) + 1
+    assert fx.read_table(
+        fx.page(fx.table_of(fx.header_row(fx.DEFAULT_COLUMNS) + fx.data_row(_ROSTER[0])))
+    ).rows
+
     with pytest.raises(fx.models.WatchlistStructureError):
         fx.read_table(fx.page(fx.table_of(header + row)))
 

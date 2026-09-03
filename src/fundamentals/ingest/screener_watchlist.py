@@ -16,7 +16,6 @@ import csv
 import email.message
 import io
 import re
-from http.cookies import SimpleCookie
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
@@ -104,6 +103,10 @@ _IDENTITY_HEADER_TOOLTIP = "watchlist serial or name header carries a value colu
 _VALUE_HEADER_TOOLTIP = "watchlist value header declares no data-tooltip metric name"
 _BAD_COLSPAN = "watchlist header colspan is not a positive integer"
 _COLSPAN_DISAGREES = "watchlist header spans {span} columns but a member row carries {cells} cells"
+_VALUE_COUNT_DISAGREES = (
+    "watchlist header declares {labels} value column(s) but a member row carries {values} value "
+    "cell(s); the colspan sum agreeing means the widths were balanced elsewhere"
+)
 _BAD_SERIAL = "watchlist serial cell is malformed"
 _SERIALS_NOT_CONTIGUOUS = "watchlist serials are not exactly 1..N in rendered order"
 _BAD_ROW_ID = "watchlist row company id is malformed"
@@ -117,12 +120,22 @@ _PAGINATED = "watchlist page renders a pagination control this reader would sile
 _ONE_EXPORT_FORM = "watchlist page must render exactly one export form, not {count}"
 _ONE_FORM_TOKEN = "watchlist export form must carry exactly one non-empty {field} field"
 _ID_NOT_CONFIRMED = "watchlist page reports list {seen!r} but list {requested} was requested"
+_AMBIGUOUS_SELECTION = "watchlist selector marks more than one list as the selected one"
 
 _NO_CSRF_COOKIE = "the page set no csrftoken cookie; the form token is never used as one"
+_UNREADABLE_CSRF_COOKIE = (
+    "the page sent a csrftoken Set-Cookie header this reader could not read as a name=value pair"
+)
+_EMPTY_CSRF_COOKIE = (
+    "the page sent an empty csrftoken cookie, which is how the session's token is deleted"
+)
+_CONTROL_IN_COOKIE_NAME = "the page set a cookie whose name carries a control character"
+_CONTROL_IN_COOKIE_VALUE = "the page set a {name} cookie whose value carries a control character"
 _SESSION_REISSUED = "the page re-issued the session cookie, which this adapter did not mint"
-_EXPORT_FORBIDDEN = (
-    "screener refused the export POST with HTTP 403: this may be a stale CSRF token rather "
-    "than a terminal block on the account, so re-fetch the page before concluding either"
+_EXPORT_REFUSED = (
+    "screener refused the export POST ({error}): an HTTP 403 here may be a stale CSRF token "
+    "rather than a terminal block on the account, so re-fetch the page before concluding "
+    "either; any other terminal status is not a stale-token candidate"
 )
 
 _BAD_EXPORT_STATUS = "watchlist export returned HTTP {status}, not 200"
@@ -140,6 +153,10 @@ def read_watchlist_table(root: Any) -> WatchlistTable:
     a company. ``S.No.`` spans the unlabelled notebook column, so what must hold
     is the colspan-expanded header width against the member row's cell count —
     never two pinned numbers, since the column set is the user's configuration.
+
+    That total is not sufficient on its own: a wider ``S.No.`` span beside one
+    extra ``td`` keeps the two totals equal while the row carries a value no
+    header names, so the value counts are checked as well.
     """
     table = _one_table(root)
     elements = table.xpath(_TBODY_ROWS)
@@ -168,7 +185,12 @@ def read_watchlist_table(root: Any) -> WatchlistTable:
             raise WatchlistStructureError(
                 _COLSPAN_DISAGREES.format(span=header[2], cells=len(cells))
             )
-        rows.append(_member_row(cells, row_id_raw=row_id_raw))
+        member = _member_row(cells, row_id_raw=row_id_raw)
+        if len(member.values) != len(header[0]):
+            raise WatchlistStructureError(
+                _VALUE_COUNT_DISAGREES.format(labels=len(header[0]), values=len(member.values))
+            )
+        rows.append(member)
     if header is None:
         raise WatchlistStructureError(_NO_HEADER)
     if not rows:
@@ -250,27 +272,35 @@ def acquire_watchlist(
 
     The published artifact claims only that the page and the export agreed, when
     they were fetched, on membership, on the column correspondence the page
-    states in ``data-tooltip``, on identity and on every value cell. It is never
-    a claim that the list contains nothing else: a cap or a stale snapshot shared
-    by both renderings is invisible here, and a disagreement is reported once,
-    with both raw strings, and never retried.
+    states in ``data-tooltip``, on the exchange code behind each slug, and on
+    every value cell. It is never a claim that the list contains nothing else: a
+    cap or a stale snapshot shared by both renderings is invisible here, and a
+    disagreement is reported once, with both raw strings, and never retried. The
+    remaining identity fields are the export's word alone — see
+    :class:`~fundamentals.ingest.screener_watchlist_models.WatchlistArtifact`.
     """
     documents: list[ScreenerDocumentFetch] = []
     page_url = watchlist_url(watchlist_id)
     attempted = page_url
     evidence: WatchlistPageEvidence | None = None
+    # Every secret this run learns, so the retention handler can strip them from
+    # a message it did not write. The session cookie is not here: the source
+    # holds it and redacts it itself, without ever handing it out.
+    secrets: list[str] = []
     try:
         page_fetch, set_cookies = source.fetch_navigation(url=page_url)
         documents.append(page_fetch)
         root = parse_document(page_fetch.raw_body.decode("utf-8", errors="replace"))
         assert_logged_in(root)
         evidence = read_watchlist_page(root)
+        secrets.append(evidence.csrf_form_token.get_secret_value())
         if watchlist_id is not None and evidence.watchlist_id != watchlist_id:
             raise WatchlistPageError(
                 _ID_NOT_CONFIRMED.format(seen=evidence.watchlist_id, requested=watchlist_id)
             )
         table = read_watchlist_table(root)
         cookies = _cookie_state(set_cookies)
+        secrets.append(cookies[CSRF_COOKIE_NAME])
         attempted = urljoin(page_url, evidence.export_action)
         try:
             export_fetch, content_type, content_disposition = source.post_form(
@@ -280,7 +310,7 @@ def acquire_watchlist(
                 cookies=cookies,
             )
         except ScreenerBlockedError as error:
-            raise WatchlistExportError(_EXPORT_FORBIDDEN) from error
+            raise WatchlistExportError(_EXPORT_REFUSED.format(error=error)) from error
         documents.append(export_fetch)
         header, records = read_watchlist_export(
             export_fetch.raw_body,
@@ -322,11 +352,19 @@ def acquire_watchlist(
     # Once a body is retained, no exception may discard it: the response that was
     # refused is usually the most useful thing the run produced. ``BaseException``
     # is deliberately not caught — cancellation and interrupts must propagate.
+    #
+    # No untyped exception's message is persisted as written. ``http.client``
+    # raises a ``ValueError`` quoting the whole outbound ``Cookie`` header when a
+    # cookie is malformed, and that message would otherwise reach the artifact
+    # and stderr carrying both authentication secrets. Enumerating which
+    # exception types can do that is how this was missed once already, so the
+    # type is recorded and the secrets are removed from the message instead.
     except Exception as error:
         if not documents:
             raise
         refusal = type(error).__name__
-        detail = str(error) if isinstance(error, ScreenerSessionError) else f"{refusal}: {error}"
+        written = str(error) if isinstance(error, ScreenerSessionError) else f"{refusal}: {error}"
+        detail = source.redact(written, extra=secrets)
         return _incomplete(
             evidence,
             documents,
@@ -482,7 +520,10 @@ def _dropdown(root: Any) -> tuple[str | None, tuple[str, ...]]:
     """Read the selector's selected name and the names of every other list it offers.
 
     The dropdown carries no id, so it supplies provenance only, and an unmarked
-    one leaves the name unset rather than refusing: the name binds nothing.
+    one leaves the name unset rather than refusing: the name binds nothing. Two
+    marked entries are different: the selector then says two lists are the one
+    on screen, and quietly keeping the first would record a name for a list this
+    page may not be rendering.
     """
     selected: str | None = None
     others: list[str] = []
@@ -495,10 +536,12 @@ def _dropdown(root: Any) -> tuple[str | None, tuple[str, ...]]:
         name = normalize_text(entry.text_content())
         if not name:
             continue
-        if selected is None and entry.xpath(_SELECTED_ICON):
-            selected = name
-        else:
+        if not entry.xpath(_SELECTED_ICON):
             others.append(name)
+            continue
+        if selected is not None:
+            raise WatchlistPageError(_AMBIGUOUS_SELECTION)
+        selected = name
     return selected, tuple(others)
 
 
@@ -509,17 +552,48 @@ def _cookie_state(set_cookies: tuple[str, ...]) -> dict[str, str]:
     adds nothing to a request that already carries a ``Cookie`` header, so a jar
     would drop the CSRF cookie silently and the site's 403 would read as a
     terminal block. A missing token refuses locally, before the POST.
+
+    The pair is read directly rather than through :class:`http.cookies.SimpleCookie`,
+    for two reasons. That parser is not an RFC 6265 reader: an unknown valueless
+    attribute — CHIPS ``Partitioned`` is the obvious next one — makes it discard
+    the whole header silently, and the run then reports that no token was sent
+    when one was. And it *decodes* ``\\012`` in a quoted value into a real
+    newline, which ``http.client`` refuses with a ``ValueError`` naming the whole
+    ``Cookie`` header — both secrets — so the value never becomes a header at all.
     """
     state: dict[str, str] = {}
+    unreadable = False
     for header in set_cookies:
-        jar: SimpleCookie = SimpleCookie()
-        jar.load(header)
-        state.update({name: morsel.value for name, morsel in jar.items()})
+        name, separator, value = header.split(";", 1)[0].partition("=")
+        name, value = name.strip(), value.strip()
+        if not separator or not name:
+            unreadable = unreadable or header.strip().lower().startswith(CSRF_COOKIE_NAME)
+            continue
+        _refuse_control_characters(name, value)
+        state[name] = value
     if SESSION_COOKIE_NAME in state:
         raise WatchlistPageError(_SESSION_REISSUED)
     if CSRF_COOKIE_NAME not in state:
-        raise WatchlistPageError(_NO_CSRF_COOKIE)
+        raise WatchlistPageError(_UNREADABLE_CSRF_COOKIE if unreadable else _NO_CSRF_COOKIE)
+    if not state[CSRF_COOKIE_NAME]:
+        raise WatchlistPageError(_EMPTY_CSRF_COOKIE)
     return state
+
+
+def _refuse_control_characters(name: str, value: str) -> None:
+    """Refuse a cookie carrying a control character before it can reach a header.
+
+    A newline or a NUL inside a cookie makes ``http.client`` raise a
+    ``ValueError`` whose message quotes the entire outbound ``Cookie`` header —
+    the session cookie and the CSRF token together — and that message would be
+    written into the artifact and onto the terminal. For the same reason no
+    refusal here echoes the offending text, and a cookie name is named only once
+    it has itself been cleared.
+    """
+    if any(character < " " or character == "\x7f" for character in name):
+        raise WatchlistPageError(_CONTROL_IN_COOKIE_NAME)
+    if any(character < " " or character == "\x7f" for character in value):
+        raise WatchlistPageError(_CONTROL_IN_COOKIE_VALUE.format(name=name))
 
 
 def _export_filename(content_disposition: str | None) -> str:

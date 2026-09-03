@@ -169,6 +169,153 @@ def test_a_get_that_sets_no_csrftoken_cookie_refuses_before_any_post(
     assert len(run.documents) == 1
 
 
+@pytest.mark.parametrize(
+    "attribute",
+    ["Partitioned", "Priority=High"],
+    ids=["unknown-valueless-attribute", "attribute-with-a-value"],
+)
+def test_the_csrf_cookie_is_read_past_any_attribute_the_source_adds(
+    monkeypatch: pytest.MonkeyPatch, attribute: str
+) -> None:
+    """SL4-30 / A42: the pair is what matters; the attributes are not this adapter's business.
+
+    ``http.cookies.SimpleCookie`` is not an RFC 6265 parser. Probed on this
+    interpreter, an unknown valueless attribute — CHIPS ``Partitioned`` is the
+    obvious next one — makes it discard the *whole* header silently, and
+    ``Priority=High`` comes back as a second cookie that would then be sent to
+    the host. Either way the run reports that the page set no csrftoken, which
+    is false and points the operator at the wrong cause. Reading the ``name=value``
+    pair before the first ``;`` and ignoring the rest is drift-proof.
+    """
+    run, transport = fx.acquire_roster(
+        monkeypatch,
+        _ROSTER,
+        set_cookie=(f"{fx.CSRF_COOKIE_NAME}={fx.CSRF_COOKIE_VALUE}; Path=/; {attribute}",),
+    )
+
+    assert run.artifact.outcome is fx.models.WatchlistOutcome.RESULTS
+    assert fx.cookies_of(transport.posts[0]) == {
+        fx.SESSION_COOKIE_NAME: fx.SESSION_TOKEN,
+        fx.CSRF_COOKIE_NAME: fx.CSRF_COOKIE_VALUE,
+    }
+
+
+@pytest.mark.parametrize(
+    ("set_cookie", "cause"),
+    [
+        (("fixture_notice=seen; Path=/",), "set no csrftoken"),
+        (("csrftoken; Path=/",), "could not read"),
+        ((f"{fx.CSRF_COOKIE_NAME}=; Max-Age=0; Path=/",), "empty csrftoken"),
+    ],
+    ids=["none-sent", "unreadable", "deleted"],
+)
+def test_the_three_ways_the_csrf_cookie_can_be_missing_are_told_apart(
+    monkeypatch: pytest.MonkeyPatch, set_cookie: tuple[str, ...], cause: str
+) -> None:
+    """SL4-30 / A42: a symptom that names the wrong cause is the dangerous kind of refusal.
+
+    "The page set no csrftoken" is a true statement about one of these and a
+    false one about the other two: a header the reader could not parse, and
+    Django's own deletion shape (``csrftoken=; Max-Age=0``), which today passes
+    a bare presence check and would send an empty token to the host. Each must
+    say which of the three actually happened, and none may spend the POST.
+    """
+    run, transport = fx.acquire_roster(monkeypatch, _ROSTER, set_cookie=set_cookie)
+
+    artifact = _incomplete(run, "WatchlistPageError")
+    assert cause in artifact.failure.detail
+    assert transport.posts == []
+
+
+@pytest.mark.parametrize(
+    ("header", "secret"),
+    [
+        (f"{fx.CSRF_COOKIE_NAME}=fixture-csrf\nfolded; Path=/", "fixture-csrf\nfolded"),
+        (f"{fx.CSRF_COOKIE_NAME}=fixture-csrf\x7fdelete; Path=/", "fixture-csrf\x7fdelete"),
+        ("csrf\ntoken=fixture-csrf-cookie-value; Path=/", "fixture-csrf-cookie-value"),
+    ],
+    ids=["newline-in-the-value", "delete-in-the-value", "newline-in-the-name"],
+)
+def test_a_cookie_carrying_a_control_character_never_reaches_a_header(
+    monkeypatch: pytest.MonkeyPatch, header: str, secret: str
+) -> None:
+    """SL4-28 / A39, guard one: a cookie is not trusted merely because the source sent it.
+
+    An obs-folded ``Set-Cookie`` arrives from the header parser with a real
+    newline inside its value, which is also what any RFC 6265 reader produces
+    from a quoted ``\\012`` escape. Serialised into the outbound ``Cookie``
+    header it makes ``http.client`` raise a ``ValueError`` whose message quotes
+    that whole header — the session cookie and the CSRF token together — into
+    the artifact and onto the terminal. The value is refused before a header is
+    built, and the refusal echoes neither the cookie text nor the offending byte
+    — a name can carry one as easily as a value can.
+    """
+    run, transport = fx.acquire_roster(monkeypatch, _ROSTER, set_cookie=(header,))
+
+    artifact = _incomplete(run, "WatchlistPageError")
+    assert "control character" in artifact.failure.detail
+    assert secret not in artifact.failure.detail
+    assert transport.posts == []
+
+
+def test_an_error_this_code_did_not_write_is_recorded_without_its_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SL4-28 / A39, guard two: the class is closed by redaction, not by enumeration.
+
+    ``http.client`` raises a bare ``ValueError`` — not a ``URLError``, so the
+    transport does not wrap it — whose message is the whole outbound ``Cookie``
+    header. SL4-15's retention handler writes that message into the artifact and
+    onto stderr, so the type is recorded and every secret this run knows is
+    removed from the message. Enumerating which exception types can carry a
+    secret is how this was missed once; keeping the secret out of the text is
+    what closes it.
+    """
+    leaked = ValueError(
+        f"Invalid header value b'{fx.SESSION_COOKIE_NAME}={fx.SESSION_TOKEN}; "
+        f"{fx.CSRF_COOKIE_NAME}={fx.CSRF_COOKIE_VALUE}' while posting {fx.CSRF_FORM_TOKEN}"
+    )
+
+    run, _ = fx.acquire_roster(monkeypatch, _ROSTER, export_error=leaked)
+
+    artifact = _incomplete(run, "ValueError")
+    published = artifact.model_dump_json()
+    for secret in (fx.SESSION_TOKEN, fx.CSRF_COOKIE_VALUE, fx.CSRF_FORM_TOKEN):
+        assert secret not in artifact.failure.detail
+        assert secret not in published
+    assert "ValueError" in artifact.failure.detail
+
+
+def test_a_page_supplied_session_cookie_can_never_displace_the_injected_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A44 / SL4-11: the override is made impossible rather than merely unreached.
+
+    ``_cookie_state`` refuses a re-issued session cookie before the POST, so
+    nothing in this seam reaches the transport with one today. That is one
+    refusal away from a page-supplied ``sessionid`` being serialised into the
+    outbound header in place of the one this process was configured with, so the
+    transport drops it whatever the caller passes.
+    """
+    transport = fx.serve(
+        monkeypatch, page=fx.watchlist_page(_ROSTER), export=fx.export_csv(_ROSTER)
+    )
+
+    fx.source().post_form(
+        url=fx.export_url(),
+        fields={fx.CSRF_FORM_FIELD: fx.CSRF_FORM_TOKEN},
+        referer=fx.WATCHLIST_PAGE_URL,
+        cookies={
+            fx.SESSION_COOKIE_NAME: "fixture-attacker-session",
+            fx.CSRF_COOKIE_NAME: fx.CSRF_COOKIE_VALUE,
+        },
+    )
+
+    cookies = fx.cookies_of(transport.posts[0])
+    assert cookies[fx.SESSION_COOKIE_NAME] == fx.SESSION_TOKEN
+    assert cookies[fx.CSRF_COOKIE_NAME] == fx.CSRF_COOKIE_VALUE
+
+
 def test_a_get_that_reissues_the_session_cookie_fails_closed_before_any_post(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -187,23 +334,29 @@ def test_a_get_that_reissues_the_session_cookie_fails_closed_before_any_post(
     assert transport.posts == []
 
 
-def test_a_forbidden_export_names_both_readings_of_the_status(
+@pytest.mark.parametrize("status", [403, 451], ids=["forbidden", "unavailable-for-legal-reasons"])
+def test_a_refused_export_names_both_readings_and_the_status_it_actually_saw(
     monkeypatch: pytest.MonkeyPatch,
+    status: int,
 ) -> None:
-    """A26.5: a POST 403 may be a stale CSRF token, not a block on the account.
+    """A26.5 / A44: a POST 403 may be a stale CSRF token, not a block on the account.
 
-    The shipped transport calls 403 terminal and tells the operator to stop. On
-    the export that advice is wrong half the time, so the failure must say both
-    readings are possible.
+    The shipped transport calls every terminal status terminal and tells the
+    operator to stop. On the export that advice is wrong half the time for a
+    403, so the failure must say both readings are possible — but a 451 is not a
+    stale-token candidate at all, and a refusal that announces "HTTP 403"
+    whatever the host actually said sends the operator to re-fetch a page over a
+    legal block. The status seen is part of the diagnosis.
     """
     run, _ = fx.acquire_roster(
-        monkeypatch, _ROSTER, export_error=fx.http_error(fx.export_url(), 403, "Forbidden")
+        monkeypatch, _ROSTER, export_error=fx.http_error(fx.export_url(), status, "Refused")
     )
 
     artifact = _incomplete(run)
     detail = artifact.failure.detail.lower()
     assert "csrf" in detail
     assert "block" in detail
+    assert f"status {status}" in detail
     assert len(run.documents) == 1
 
 
@@ -327,6 +480,53 @@ def test_the_export_is_posted_to_the_form_action_read_verbatim_from_the_page(
 
     assert run.artifact.outcome is fx.models.WatchlistOutcome.RESULTS
     assert transport.posts[0].url == f"{SCREENER_ORIGIN}{action}"
+
+
+def test_an_off_origin_export_action_is_never_posted_to(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A44 / SL4-11: the form action is read verbatim, which is why the origin must be pinned.
+
+    The page is the authority for *where* the export goes, and the page is the
+    thing that may have been tampered with. An action on another host is the one
+    shape where taking it verbatim would carry the subscriber session cookie
+    off-origin, so the transport's origin pin is what stands between the two —
+    and until now no watchlist test held it there.
+    """
+    action = "https://fixture-not-screener.invalid/api/export/screen/?url_name=goto_sublist"
+
+    run, transport = fx.acquire(
+        monkeypatch,
+        page=fx.watchlist_page(_ROSTER, form_action=action),
+        export=fx.export_csv(_ROSTER),
+        export_target=action,
+    )
+
+    artifact = _incomplete(run)
+    assert artifact.rows == ()
+    assert transport.posts == []
+    assert [exchange.method for exchange in transport.exchanges] == ["GET"]
+
+
+def test_a_selector_marking_two_lists_as_the_open_one_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A44: an ambiguous selector is not a name to choose from, it is a page to refuse.
+
+    Keeping the first marked entry and filing the second under
+    ``other_watchlist_names`` publishes a name for a list this page may not be
+    rendering, and tells the operator that list was skipped. The name binds
+    nothing, which is why an *unmarked* selector is tolerated — but two marks
+    are a page this reader does not understand.
+    """
+    run, transport = fx.acquire(
+        monkeypatch,
+        page=fx.watchlist_page(
+            _ROSTER, names=(fx.WATCHLIST_NAME, fx.OTHER_WATCHLIST_NAME), selected=(0, 1)
+        ),
+        export=fx.export_csv(_ROSTER),
+    )
+
+    _incomplete(run, "WatchlistPageError")
+    assert transport.posts == []
 
 
 @pytest.mark.parametrize("shape_id", [fx.WATCHLIST_ID, None], ids=["sublist-form", "default-form"])
