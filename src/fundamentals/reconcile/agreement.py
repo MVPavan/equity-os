@@ -32,15 +32,30 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.observation import Observation
 from fundamentals.contracts.provenance import Provenance
+from fundamentals.contracts.source_catalog import (
+    BUILTIN_SOURCES,
+    EvidenceRole,
+    SourceCatalog,
+    SourceClass,
+)
 from fundamentals.verify.comparison_key import ComparisonKey
 from fundamentals.verify.cross_check import cross_check
 from fundamentals.verify.crossfoot import observation_half_ulp
 
-_LOGGER = structlog.get_logger("fundamentals.reconcile.agreement")
+# Re-exported: ``SourceClass`` moved to contracts (see that module for why), but
+# reconcile stays its public import site for existing callers.
+__all__ = [
+    "AgreementPolicy",
+    "AgreementResult",
+    "AgreementStatus",
+    "DiagnosticSourceError",
+    "SourceClass",
+    "SourceValue",
+    "classify_agreement",
+    "classify_source",
+]
 
-# Source-id substrings that mark an aggregator (derived) source. Derived sources
-# corroborate but never satisfy the required-two first-party count.
-DERIVED_SOURCE_MARKERS: tuple[str, ...] = ("screener", "tijori")
+_LOGGER = structlog.get_logger("fundamentals.reconcile.agreement")
 
 # Default number of independent first-party sources required to confirm a value.
 DEFAULT_REQUIRED_FIRST_PARTY = 2
@@ -51,11 +66,11 @@ DEFAULT_REQUIRED_FIRST_PARTY = 2
 DEFAULT_MINOR_DIFF_REL_TOLERANCE = Decimal("0.005")
 
 
-class SourceClass(StrEnum):
-    """Whether a source is an authoritative first-party filing or a derived aggregator."""
+class DiagnosticSourceError(ValueError):
+    """Raised when a diagnostic-only source is offered to reconciliation.
 
-    FIRST_PARTY = "first_party"
-    DERIVED = "derived"
+    The typed bar for evidence lanes that are recorded but must never vote.
+    """
 
 
 class AgreementStatus(StrEnum):
@@ -67,12 +82,14 @@ class AgreementStatus(StrEnum):
     SINGLE_FIRST_PARTY = "single_first_party"
 
 
-def classify_source(source_id: str) -> SourceClass:
-    """Classify a ``source_id`` as first-party or derived (aggregator)."""
-    lowered = source_id.lower()
-    if any(marker in lowered for marker in DERIVED_SOURCE_MARKERS):
-        return SourceClass.DERIVED
-    return SourceClass.FIRST_PARTY
+def classify_source(source_id: str, catalog: SourceCatalog = BUILTIN_SOURCES) -> SourceClass:
+    """Resolve a ``source_id`` to its declared class.
+
+    Raises :class:`~fundamentals.contracts.source_catalog.UnknownSourceError` for
+    an undeclared source. Classification is never inferred from the id text — see
+    the catalog module for why that default was unsafe.
+    """
+    return catalog.classify(source_id)
 
 
 class AgreementPolicy(BaseModel):
@@ -127,9 +144,25 @@ class AgreementResult(BaseModel):
         return self.status in (AgreementStatus.CONFLICT, AgreementStatus.SINGLE_FIRST_PARTY)
 
 
-def _is_first_party(obs: Observation) -> bool:
-    """Whether an observation comes from a first-party (non-derived) source."""
-    return classify_source(obs.provenance.source_id) is SourceClass.FIRST_PARTY
+def _resolve_first_party(
+    observations: Sequence[Observation], catalog: SourceCatalog
+) -> frozenset[str]:
+    """The declared first-party source ids among these observations.
+
+    Resolving once, up front, means an undeclared or diagnostic-only source is
+    refused before any clustering happens rather than silently counted.
+    """
+    first_party: set[str] = set()
+    for obs in observations:
+        descriptor = catalog.describe(obs.provenance.source_id)
+        if not descriptor.may_reconcile:
+            raise DiagnosticSourceError(
+                f"source_id {descriptor.source_id!r} is declared "
+                f"{EvidenceRole.DIAGNOSTIC_ONLY.value} and may not enter reconciliation"
+            )
+        if descriptor.source_class is SourceClass.FIRST_PARTY:
+            first_party.add(obs.provenance.source_id)
+    return frozenset(first_party)
 
 
 def _primary_group(
@@ -193,33 +226,43 @@ def _minor_match_factory(rel_tolerance: Decimal) -> Callable[[Observation, Obser
     return _minor_match
 
 
-def _distinct_first_party(cluster: Sequence[Observation]) -> set[str]:
+def _distinct_first_party(
+    cluster: Sequence[Observation], first_party_ids: frozenset[str]
+) -> set[str]:
     """Distinct first-party source ids present in a cluster."""
-    return {obs.provenance.source_id for obs in cluster if _is_first_party(obs)}
+    return {
+        obs.provenance.source_id for obs in cluster if obs.provenance.source_id in first_party_ids
+    }
 
 
-def _best_cluster(clusters: Sequence[list[Observation]]) -> list[Observation]:
+def _best_cluster(
+    clusters: Sequence[list[Observation]], first_party_ids: frozenset[str]
+) -> list[Observation]:
     """The cluster confirmed by the most distinct first-party sources (empty if none)."""
     if not clusters:
         return []
-    return max(clusters, key=lambda cluster: len(_distinct_first_party(cluster)))
+    return max(clusters, key=lambda cluster: len(_distinct_first_party(cluster, first_party_ids)))
 
 
-def _representative(cluster: Sequence[Observation]) -> Observation | None:
+def _representative(
+    cluster: Sequence[Observation], first_party_ids: frozenset[str]
+) -> Observation | None:
     """A deterministic first-party representative of a cluster (lowest source id)."""
     first_party = sorted(
-        (obs for obs in cluster if _is_first_party(obs)),
+        (obs for obs in cluster if obs.provenance.source_id in first_party_ids),
         key=lambda obs: obs.provenance.source_id,
     )
     return first_party[0] if first_party else None
 
 
-def _source_values(observations: Sequence[Observation]) -> tuple[SourceValue, ...]:
+def _source_values(
+    observations: Sequence[Observation], catalog: SourceCatalog
+) -> tuple[SourceValue, ...]:
     """Project each observation to its per-source value, ordered by source id."""
     values = [
         SourceValue(
             source_id=obs.provenance.source_id,
-            source_class=classify_source(obs.provenance.source_id),
+            source_class=catalog.classify(obs.provenance.source_id),
             normalized_value=obs.normalized_value,
             normalized_unit=obs.normalized_unit,
             provenance=obs.provenance,
@@ -245,32 +288,40 @@ def _corroborating(
 def classify_agreement(
     observations: Sequence[Observation],
     policy: AgreementPolicy = DEFAULT_POLICY,
+    *,
+    catalog: SourceCatalog = BUILTIN_SOURCES,
 ) -> AgreementResult:
     """Classify per-fact cross-source agreement for one comparison column.
 
-    Fails closed on an empty observation set. Only observations sharing the
-    primary comparison key are compared; derived sources corroborate but never
-    satisfy the required first-party count.
+    Fails closed on an empty observation set, on a source ``catalog`` does not
+    declare, and on a source declared diagnostic-only. Only observations sharing
+    the primary comparison key are compared; derived sources corroborate but
+    never satisfy the required first-party count.
+
+    ``catalog`` must declare every source present. Callers whose sources come
+    from configuration extend :data:`BUILTIN_SOURCES` at the composition root.
     """
     if not observations:
         raise ValueError("classify_agreement requires at least one observation")
 
+    first_party_ids = _resolve_first_party(observations, catalog)
+
     primary, incompatible = _primary_group(observations)
-    first_party = [obs for obs in primary if _is_first_party(obs)]
-    derived = [obs for obs in primary if not _is_first_party(obs)]
-    first_party_count = len(_distinct_first_party(primary))
+    first_party = [obs for obs in primary if obs.provenance.source_id in first_party_ids]
+    derived = [obs for obs in primary if obs.provenance.source_id not in first_party_ids]
+    first_party_count = len(_distinct_first_party(primary, first_party_ids))
 
     comparison_key = ComparisonKey.from_observation(primary[0])
     normalized_unit = primary[0].normalized_unit
     minor_match = _minor_match_factory(policy.minor_diff_rel_tolerance)
 
     tight_clusters = _cluster(first_party, _tight_match)
-    best_tight = _best_cluster(tight_clusters)
-    best_tight_count = len(_distinct_first_party(best_tight))
+    best_tight = _best_cluster(tight_clusters, first_party_ids)
+    best_tight_count = len(_distinct_first_party(best_tight, first_party_ids))
 
     loose_clusters = _cluster(first_party, minor_match)
-    best_loose = _best_cluster(loose_clusters)
-    best_loose_count = len(_distinct_first_party(best_loose))
+    best_loose = _best_cluster(loose_clusters, first_party_ids)
+    best_loose_count = len(_distinct_first_party(best_loose, first_party_ids))
 
     winning: list[Observation]
     if first_party_count < policy.required_first_party:
@@ -286,9 +337,9 @@ def classify_agreement(
         status = AgreementStatus.CONFLICT
         winning = []
 
-    representative = _representative(winning)
+    representative = _representative(winning, first_party_ids)
     agreed_value = representative.normalized_value if representative is not None else None
-    agreed_sources = tuple(sorted(_distinct_first_party(winning)))
+    agreed_sources = tuple(sorted(_distinct_first_party(winning, first_party_ids)))
     corroborating = _corroborating(representative, derived, minor_match)
 
     _LOGGER.debug(
@@ -306,7 +357,7 @@ def classify_agreement(
         status=status,
         agreed_value=agreed_value,
         normalized_unit=normalized_unit,
-        source_values=_source_values(primary),
+        source_values=_source_values(primary, catalog),
         agreed_sources=agreed_sources,
         corroborating_sources=corroborating,
         incompatible_sources=incompatible,

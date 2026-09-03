@@ -47,7 +47,13 @@ from fundamentals.api.config import (
     IdentityConfig,
     PdfParseConfig,
 )
-from fundamentals.api.watchlist_config import StockConfig, StockQuarter, WatchlistConfig, Wave
+from fundamentals.api.watchlist_config import (
+    StockConfig,
+    StockQuarter,
+    WatchlistConfig,
+    Wave,
+    stock_catalog,
+)
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -315,6 +321,7 @@ def reconcile_stock(
     """
     concepts = stock.concepts
     derived_map = _derived_concept_map(concepts.roles)
+    catalog = stock_catalog(stock)
 
     results: list[AgreementResult] = []
     facts: list[FactOutcome] = []
@@ -331,7 +338,7 @@ def reconcile_stock(
         if not gathered:
             missing.append(concept)
             continue
-        result = classify_agreement(gathered)
+        result = classify_agreement(gathered, catalog=catalog)
         results.append(result)
         facts.append(_fact_outcome(result))
 

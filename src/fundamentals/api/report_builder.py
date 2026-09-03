@@ -35,7 +35,7 @@ from decimal import Decimal
 import structlog
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.api.watchlist_config import StockConfig
+from fundamentals.api.watchlist_config import StockConfig, stock_catalog
 from fundamentals.contracts.fact import ReconciliationStatus
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
@@ -232,6 +232,7 @@ def build_report(report: StockReport, stock: StockConfig) -> ReportBuild:
             period_start=stock.quarter.period_start,
             period_end=stock.quarter.period_end,
             derived_map=derived_map,
+            catalog=stock_catalog(stock),
         )
         for concept in needed
     }

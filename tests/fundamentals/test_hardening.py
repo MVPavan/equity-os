@@ -41,6 +41,7 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.extract.xbrl_parser import (
     TaxonomySpec,
     XbrlParseError,
@@ -689,10 +690,16 @@ def _zero_pbt_config() -> FundamentalsConfig:
         raw_dir="data/raw/zerocorp",
         store_db=":memory:",
         results_pdf=SourceFileConfig(
-            source_id="zerocorp-results", filename="results.pdf", sha256="0" * 64
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="zerocorp-results",
+            filename="results.pdf",
+            sha256="0" * 64,
         ),
         transcript_pdf=SourceFileConfig(
-            source_id="zerocorp-transcript", filename="transcript.pdf", sha256="0" * 64
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="zerocorp-transcript",
+            filename="transcript.pdf",
+            sha256="0" * 64,
         ),
         xbrl=XbrlConfig(
             source_id="zerocorp-xbrl",

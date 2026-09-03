@@ -41,6 +41,7 @@ from fundamentals.api.pipeline import XbrlInput, _claim_range_quote, run_pipelin
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.store.fact_store import FactStore
 from fundamentals.verify.quote_anchor import SourceBlock, SourceDocument, verify_quote_anchor
 
@@ -173,10 +174,16 @@ def _genfiler_config() -> FundamentalsConfig:
         raw_dir="data/raw/genfiler",
         store_db=":memory:",
         results_pdf=SourceFileConfig(
-            source_id="genfiler-results", filename="results.pdf", sha256="0" * 64
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="genfiler-results",
+            filename="results.pdf",
+            sha256="0" * 64,
         ),
         transcript_pdf=SourceFileConfig(
-            source_id="genfiler-transcript", filename="transcript.pdf", sha256="0" * 64
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="genfiler-transcript",
+            filename="transcript.pdf",
+            sha256="0" * 64,
         ),
         xbrl=XbrlConfig(
             source_id="genfiler-xbrl",

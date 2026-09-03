@@ -36,6 +36,7 @@ from fundamentals.api.watchlist_config import (
 )
 from fundamentals.contracts.observation import AccountingFramework, Scope
 from fundamentals.contracts.provenance import SourceAnchorType
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.extract.pdf_number_parser import (
     ConsolidatedStatementNotFoundError,
     NumberParseError,
@@ -720,7 +721,10 @@ def _pdf_stock(pdf_path: Path, pdf_sha: str) -> StockConfig:
             knowledge_cutoff=_RETRIEVED_AT,
         ),
         results_pdf=SourceFileConfig(
-            source_id="bse-results-pdf", filename="results.pdf", sha256=pdf_sha
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="bse-results-pdf",
+            filename="results.pdf",
+            sha256=pdf_sha,
         ),
         fixtures=FixturePaths(nse=_NSE_FIXTURE, results_pdf=str(pdf_path)),
     )

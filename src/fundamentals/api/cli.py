@@ -74,6 +74,7 @@ from fundamentals.api.watchlist_config import (
     load_watchlist_config,
 )
 from fundamentals.contracts.comparative import ComparatorKind
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
 from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_comparator_path
 from fundamentals.ingest.ocr_engine import RapidOcrEngine
@@ -400,7 +401,10 @@ def _cached_stock(stock: StockConfig, repo_root: Path) -> StockConfig:
     )
     results_pdf = (
         SourceFileConfig(
-            source_id=BSE_RESULTS_PDF_SOURCE_ID, filename=pdf.name, sha256=_sha256_file(pdf)
+            source_id=BSE_RESULTS_PDF_SOURCE_ID,
+            source_class=SourceClass.FIRST_PARTY,
+            filename=pdf.name,
+            sha256=_sha256_file(pdf),
         )
         if pdf is not None
         else None

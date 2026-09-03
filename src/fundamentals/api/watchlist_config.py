@@ -27,6 +27,12 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fundamentals.api.config import ConceptsConfig, SourceFileConfig
+from fundamentals.contracts.source_catalog import (
+    BUILTIN_SOURCES,
+    EvidenceRole,
+    SourceCatalog,
+    SourceDescriptor,
+)
 
 DEFAULT_ENTITY_SCHEME = "nse-symbol"
 TIJORI_SLUG_FIELD = "tijori_slug"
@@ -296,3 +302,21 @@ def load_watchlist_config(config_path: Path) -> WatchlistConfig:
     """Load and validate the non-secret watchlist YAML configuration."""
     data: Any = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     return WatchlistConfig.model_validate(data)
+
+
+def stock_catalog(stock: StockConfig) -> SourceCatalog:
+    """Resolve the source catalog for one watchlist stock.
+
+    The builtin declarations plus whatever this stock declares for itself. A
+    per-stock results PDF carries a per-stock ``source_id``, so its class cannot
+    be known at import time and must travel with the stock's own config.
+    """
+    if stock.results_pdf is None:
+        return BUILTIN_SOURCES
+    return BUILTIN_SOURCES.extend(
+        SourceDescriptor(
+            source_id=stock.results_pdf.source_id,
+            source_class=stock.results_pdf.source_class,
+            evidence_role=EvidenceRole.RECONCILABLE,
+        )
+    )

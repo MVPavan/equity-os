@@ -14,6 +14,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -21,8 +23,15 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.source_catalog import (
+    BUILTIN_SOURCES,
+    EvidenceRole,
+    SourceDescriptor,
+    UnknownSourceError,
+)
 from fundamentals.reconcile.agreement import (
     AgreementStatus,
+    DiagnosticSourceError,
     SourceClass,
     classify_agreement,
     classify_source,
@@ -45,6 +54,18 @@ BSE = "bse-xbrl"
 PDF = "infy-q1-fy25-results-pdf"
 SCREENER = "screener"
 TIJORI = "tijori"
+
+# The results PDF's id is per-issuer, per-quarter and comes from configuration,
+# so no builtin declares it. Reconciliation refuses a source it cannot resolve,
+# which is the point of eqos-pyr — these tests must declare it, exactly as
+# ``config/fundamentals.yaml`` does for a real run.
+TEST_CATALOG = BUILTIN_SOURCES.extend(
+    SourceDescriptor(
+        source_id=PDF,
+        source_class=SourceClass.FIRST_PARTY,
+        evidence_role=EvidenceRole.RECONCILABLE,
+    )
+)
 
 
 def _xbrl_provenance(source_id: str) -> Provenance:
@@ -105,11 +126,45 @@ def _observation(
 
 
 def test_classify_source_marks_aggregators_derived() -> None:
-    assert classify_source(NSE) is SourceClass.FIRST_PARTY
-    assert classify_source(BSE) is SourceClass.FIRST_PARTY
-    assert classify_source(PDF) is SourceClass.FIRST_PARTY
-    assert classify_source(SCREENER) is SourceClass.DERIVED
-    assert classify_source(TIJORI) is SourceClass.DERIVED
+    assert classify_source(NSE, TEST_CATALOG) is SourceClass.FIRST_PARTY
+    assert classify_source(BSE, TEST_CATALOG) is SourceClass.FIRST_PARTY
+    assert classify_source(PDF, TEST_CATALOG) is SourceClass.FIRST_PARTY
+    assert classify_source(SCREENER, TEST_CATALOG) is SourceClass.DERIVED
+    assert classify_source(TIJORI, TEST_CATALOG) is SourceClass.DERIVED
+
+
+def test_reconciliation_entry_points_reject_a_diagnostic_only_evidence_role() -> None:
+    """A recorded-but-non-voting lane must be refused at the boundary, not filtered later.
+
+    The typed bar Lane B depends on (eqos-0j6): a source declared
+    DIAGNOSTIC_ONLY may be stored and reported, but offering it to
+    ``classify_agreement`` is an error, not a value that quietly does not count.
+    """
+    diagnostic_id = "upstox-crosscheck"
+    catalog = TEST_CATALOG.extend(
+        SourceDescriptor(
+            source_id=diagnostic_id,
+            source_class=SourceClass.DERIVED,
+            evidence_role=EvidenceRole.DIAGNOSTIC_ONLY,
+        )
+    )
+    observations = [
+        _observation(REVENUE, Decimal("39315"), _xbrl_provenance(NSE)),
+        _observation(REVENUE, Decimal("39315"), _xbrl_provenance(BSE)),
+        _observation(REVENUE, Decimal("39315"), _xbrl_provenance(diagnostic_id)),
+    ]
+    with pytest.raises(DiagnosticSourceError):
+        classify_agreement(observations, catalog=catalog)
+
+
+def test_an_undeclared_source_is_refused_not_promoted() -> None:
+    """The eqos-pyr regression: PDF is first-party only because TEST_CATALOG says so.
+
+    Against the builtins alone the same id is refused. Before the fix it was
+    silently first-party, because its text contains neither marker word.
+    """
+    with pytest.raises(UnknownSourceError):
+        classify_source(PDF, BUILTIN_SOURCES)
 
 
 # --- agreement classification --------------------------------------------------
@@ -120,7 +175,7 @@ def test_two_first_party_sources_agree() -> None:
         _observation(PAT, Decimal(6374), _xbrl_provenance(NSE)),
         _observation(PAT, Decimal(6374), _pdf_provenance(PDF)),
     ]
-    result = classify_agreement(observations)
+    result = classify_agreement(observations, catalog=TEST_CATALOG)
 
     assert result.status is AgreementStatus.AGREE
     assert result.agreed_value == Decimal(6374)
@@ -135,7 +190,7 @@ def test_first_party_corroborated_only_by_derived_is_flagged() -> None:
         _observation(PAT, Decimal(6374), _xbrl_provenance(SCREENER)),
         _observation(PAT, Decimal(6374), _xbrl_provenance(TIJORI)),
     ]
-    result = classify_agreement(observations)
+    result = classify_agreement(observations, catalog=TEST_CATALOG)
 
     assert result.status is AgreementStatus.SINGLE_FIRST_PARTY
     assert result.first_party_source_count == 1
@@ -151,7 +206,7 @@ def test_materially_different_first_party_sources_conflict() -> None:
         _observation(PAT, Decimal(6374), _xbrl_provenance(NSE)),
         _observation(PAT, Decimal(6100), _pdf_provenance(PDF)),
     ]
-    result = classify_agreement(observations)
+    result = classify_agreement(observations, catalog=TEST_CATALOG)
 
     assert result.status is AgreementStatus.CONFLICT
     assert result.agreed_value is None
@@ -166,7 +221,7 @@ def test_minor_diff_within_looser_band() -> None:
         _observation(PAT, Decimal(6374), _xbrl_provenance(NSE)),
         _observation(PAT, Decimal(6376), _pdf_provenance(PDF)),
     ]
-    result = classify_agreement(observations)
+    result = classify_agreement(observations, catalog=TEST_CATALOG)
 
     assert result.status is AgreementStatus.MINOR_DIFF
     assert result.first_party_source_count == 2
@@ -180,7 +235,7 @@ def test_incompatible_key_is_excluded_from_comparison() -> None:
         _observation(PAT, Decimal(6374), _pdf_provenance(PDF)),
         _observation(PAT, Decimal(5000), _xbrl_provenance(BSE), scope=Scope.STANDALONE),
     ]
-    result = classify_agreement(observations)
+    result = classify_agreement(observations, catalog=TEST_CATALOG)
 
     assert result.status is AgreementStatus.AGREE
     assert result.comparison_key.scope is Scope.CONSOLIDATED
@@ -206,7 +261,10 @@ def _pat_agree() -> list[Observation]:
 
 
 def test_gold_file_round_trip_and_deterministic(tmp_path: Path) -> None:
-    results = [classify_agreement(_revenue_agree()), classify_agreement(_pat_agree())]
+    results = [
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+        classify_agreement(_pat_agree(), catalog=TEST_CATALOG),
+    ]
     path = write_gold_file("INFY", "Q1FY25", results, out_dir=tmp_path)
     assert path == tmp_path / "INFY-Q1FY25.json"
 
@@ -226,7 +284,10 @@ def test_gold_file_round_trip_and_deterministic(tmp_path: Path) -> None:
 
 
 def test_regress_detects_a_drifted_value(tmp_path: Path) -> None:
-    stored_results = [classify_agreement(_revenue_agree()), classify_agreement(_pat_agree())]
+    stored_results = [
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+        classify_agreement(_pat_agree(), catalog=TEST_CATALOG),
+    ]
     path = write_gold_file("INFY", "Q1FY25", stored_results, out_dir=tmp_path)
     gold = read_gold_file(path)
 
@@ -235,7 +296,10 @@ def test_regress_detects_a_drifted_value(tmp_path: Path) -> None:
         _observation(PAT, Decimal(6300), _xbrl_provenance(NSE)),
         _observation(PAT, Decimal(6300), _pdf_provenance(PDF)),
     ]
-    fresh = [classify_agreement(_revenue_agree()), classify_agreement(drifted_pat)]
+    fresh = [
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+        classify_agreement(drifted_pat, catalog=TEST_CATALOG),
+    ]
 
     report = regress(gold, fresh)
     assert report.has_drift is True
@@ -247,17 +311,26 @@ def test_regress_detects_a_drifted_value(tmp_path: Path) -> None:
 
 
 def test_regress_clean_when_extraction_matches(tmp_path: Path) -> None:
-    results = [classify_agreement(_revenue_agree()), classify_agreement(_pat_agree())]
+    results = [
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+        classify_agreement(_pat_agree(), catalog=TEST_CATALOG),
+    ]
     path = write_gold_file("INFY", "Q1FY25", results, out_dir=tmp_path)
     gold = read_gold_file(path)
 
-    fresh = [classify_agreement(_revenue_agree()), classify_agreement(_pat_agree())]
+    fresh = [
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+        classify_agreement(_pat_agree(), catalog=TEST_CATALOG),
+    ]
     report = regress(gold, fresh)
     assert report.has_drift is False
 
 
 def test_build_gold_file_orders_facts_deterministically() -> None:
-    results = [classify_agreement(_pat_agree()), classify_agreement(_revenue_agree())]
+    results = [
+        classify_agreement(_pat_agree(), catalog=TEST_CATALOG),
+        classify_agreement(_revenue_agree(), catalog=TEST_CATALOG),
+    ]
     gold = build_gold_file("INFY", "Q1FY25", results)
     concepts = [fact.concept_qname for fact in gold.facts]
     assert concepts == sorted(concepts)

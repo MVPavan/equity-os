@@ -14,6 +14,7 @@ from fundamentals.contracts.observation import (
 )
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.contracts.role import FactRole
+from fundamentals.contracts.source_catalog import BUILTIN_SOURCES, SourceCatalog
 from fundamentals.extract.xbrl_parser import FactSelectionError, select_observation
 from fundamentals.reconcile.agreement import AgreementResult, classify_agreement
 from fundamentals.reconcile.report import (
@@ -179,8 +180,13 @@ def role_agreement(
     period_start: date,
     period_end: date,
     derived_map: dict[str, str],
+    catalog: SourceCatalog = BUILTIN_SOURCES,
 ) -> AgreementResult | None:
-    """Classify one concept through the canonical shared fact view."""
+    """Classify one concept through the canonical shared fact view.
+
+    ``catalog`` must declare every source present; callers with config-declared
+    sources pass an extended catalog (see ``stock_catalog``).
+    """
     gathered = gather_fact_observations(
         concept,
         sources,
@@ -189,7 +195,7 @@ def role_agreement(
         period_end=period_end,
         derived_map=derived_map,
     )
-    return classify_agreement(gathered) if gathered else None
+    return classify_agreement(gathered, catalog=catalog) if gathered else None
 
 
 def winning_anchors(result: AgreementResult) -> tuple[Provenance, ...]:

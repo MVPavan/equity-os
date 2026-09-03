@@ -29,11 +29,13 @@ store_db: ":memory:"
 
 results_pdf:
   source_id: "infy-q1-fy25-results-pdf"
+  source_class: "first_party"
   filename: "INFY-FY25-Q1-results-auditors.pdf"
   sha256: "a07c12effe6cbffb6024e8462250e7f5e96b22fb4ec30c163827cc729b372695"
 
 transcript_pdf:
   source_id: "infy-q1-fy25-management-transcript"
+  source_class: "first_party"
   filename: "INFY-FY25-Q1-management-transcript.pdf"
   sha256: "5039acfe6588789c028bb7d95fa1b5481f6dad1d763db16f34ebc2bb8eb023a6"
 

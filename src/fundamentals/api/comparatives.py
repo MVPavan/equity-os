@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from fundamentals.api.watchlist_config import StockConfig
+from fundamentals.api.watchlist_config import StockConfig, stock_catalog
 from fundamentals.contracts.comparative import (
     PERCENT_CONTEXT_PRECISION,
     ComparativeChange,
@@ -361,6 +361,7 @@ def collect_comparatives(
             period_start=stock.quarter.period_start,
             period_end=stock.quarter.period_end,
             derived_map=derived_map,
+            catalog=stock_catalog(stock),
         )
         if current is None or current.agreed_value is None:
             qoq_start, qoq_end = periods[ComparatorKind.QOQ]

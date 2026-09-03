@@ -18,6 +18,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.contracts.role import FactRole
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.extract.guidance_extractor import DEFAULT_GUIDANCE_RULES
 from fundamentals.extract.pdf_number_parser import (
     DEFAULT_COLUMN_X_TOLERANCE_PT,
@@ -65,11 +66,17 @@ class QuarterConfig(BaseModel):
 
 
 class SourceFileConfig(BaseModel):
-    """A held source file: its id, filename under ``raw_dir``, and pinned sha256."""
+    """A held source file: its id, filename under ``raw_dir``, and pinned sha256.
+
+    ``source_class`` is required: a source declares the authority it carries.
+    Reconciliation refuses any source whose class it cannot resolve, so a config
+    block that names a source must also say what kind of source it is.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     source_id: str
+    source_class: SourceClass
     filename: str
     sha256: str
 

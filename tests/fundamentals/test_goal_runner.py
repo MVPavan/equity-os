@@ -54,6 +54,7 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.extract.pdf_ocr_recovery import DEFAULT_OCR_DPI
 from fundamentals.ingest.ocr_engine import OcrEngineUnavailableError, OcrToken
 from fundamentals.reconcile.agreement import AgreementStatus
@@ -875,7 +876,10 @@ def _pdf_ocr_stock(path: Path, sha: str) -> StockConfig:
             knowledge_cutoff=_KNOWLEDGE_CUTOFF,
         ),
         results_pdf=SourceFileConfig(
-            source_id="bse-results-pdf", filename="results.pdf", sha256=sha
+            source_class=SourceClass.FIRST_PARTY,
+            source_id="bse-results-pdf",
+            filename="results.pdf",
+            sha256=sha,
         ),
         fixtures=FixturePaths(results_pdf=str(path)),
     )
