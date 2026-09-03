@@ -31,6 +31,13 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import structlog
 
+from fundamentals.ingest.http_session import (
+    NonBytesResponseError,
+    NoRedirectHandler,
+    RequestPacer,
+    ResponseTooLargeError,
+    read_bounded,
+)
 from fundamentals.ingest.screener_session_models import (
     COOKIE_HEADER,
     LOCATION_HEADER,
@@ -80,23 +87,6 @@ _NO_CREDENTIALS = (
 )
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Turn every HTTP redirect into a terminal response error."""
-
-    def redirect_request(
-        self,
-        request: urllib.request.Request,
-        fp: Any,
-        code: int,
-        msg: str,
-        headers: Any,
-        newurl: str,
-    ) -> None:
-        """Refuse redirects so a login bounce cannot become a plausible page."""
-        del request, fp, code, msg, headers, newurl
-        return None
-
-
 def _redact_private_query(url: str) -> str:
     """Keep a screen selector out of transport diagnostics while retaining its route."""
     parts = urlsplit(url)
@@ -114,7 +104,7 @@ class ScreenerSessionSource:
 
     def __init__(self, config: ScreenerSessionConfig | None = None) -> None:
         self._config = config or ScreenerSessionConfig()
-        self._last_request_at: float | None = None
+        self._pacer = RequestPacer(self._config.min_request_spacing_seconds)
 
     def fetch_company_page(
         self,
@@ -385,10 +375,10 @@ class ScreenerSessionSource:
         url = _redact_private_query(source_url)
         assert_pinned_origin(url)
         request = urllib.request.Request(source_url, data=data, headers=headers, method=method)
-        opener = urllib.request.build_opener(_NoRedirectHandler())
+        opener = urllib.request.build_opener(NoRedirectHandler())
         rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):
-            self._wait_for_slot()
+            self._pacer.wait_for_slot()
             try:
                 with opener.open(request, timeout=self._config.request_timeout_seconds) as response:
                     status = response.getcode()
@@ -396,7 +386,7 @@ class ScreenerSessionSource:
                         raise ScreenerRedirectError(
                             f"screener returned redirect status {status} for {url}"
                         )
-                    payload = response.read(self._config.max_response_bytes + 1)
+                    payload = read_bounded(response, self._config.max_response_bytes)
                     response_headers = response.headers
             except urllib.error.HTTPError as error:
                 self._refuse_terminal_status(error, url=url)
@@ -409,16 +399,16 @@ class ScreenerSessionSource:
                 )
                 time.sleep(backoff)
                 continue
+            except NonBytesResponseError as error:
+                raise ScreenerSessionFetchError("screener response body is not bytes") from error
+            except ResponseTooLargeError as error:
+                raise ScreenerSessionFetchError(
+                    f"screener response exceeded maximum {self._config.max_response_bytes} bytes"
+                ) from error
             except (urllib.error.URLError, TimeoutError, OSError) as error:
                 raise ScreenerSessionFetchError(
                     f"screener fetch failed for {url}: {type(error).__name__}"
                 ) from error
-            if not isinstance(payload, bytes):
-                raise ScreenerSessionFetchError("screener response body is not bytes")
-            if len(payload) > self._config.max_response_bytes:
-                raise ScreenerSessionFetchError(
-                    f"screener response exceeded maximum {self._config.max_response_bytes} bytes"
-                )
             return (200 if status is None else status), payload, response_headers
         raise ScreenerRateLimitedError(
             f"screener rate-limited {url} after "
@@ -442,13 +432,3 @@ class ScreenerSessionSource:
             raise ScreenerSessionFetchError(
                 f"screener returned HTTP {error.code} for {url}"
             ) from error
-
-    def _wait_for_slot(self) -> None:
-        """Hold the configured minimum spacing between two outbound requests."""
-        spacing = self._config.min_request_spacing_seconds
-        now = time.monotonic()
-        if self._last_request_at is not None and spacing > 0:
-            remaining = spacing - (now - self._last_request_at)
-            if remaining > 0:
-                time.sleep(remaining)
-        self._last_request_at = time.monotonic()
