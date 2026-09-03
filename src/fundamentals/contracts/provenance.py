@@ -20,6 +20,11 @@ at exactly the layer built to preserve it.
 was exported from order their rows differently, so an anchor that names the
 export file while addressing the page's row position points at another
 issuer's figure. The type states which file the position is a position *in*.
+
+``CONFIG_PIN`` is the one anchor that names no fetched document at all: a value
+a human typed into a committed YAML file, addressed by the stock's NSE symbol
+(``row_label``) and the identifier field (``column_label``). It is an assertion,
+not evidence, and the fact store bars it for exactly that reason.
 """
 
 from __future__ import annotations
@@ -39,18 +44,36 @@ class SourceAnchorType(StrEnum):
     API_DOCUMENT = "API_DOCUMENT"
     HTML_TABLE = "HTML_TABLE"
     CSV_RECORD = "CSV_RECORD"
+    CONFIG_PIN = "CONFIG_PIN"
 
 
 # Location fields each anchor kind must NOT set, verified against every
-# committed producer in this repo. ``context_ref`` and ``row_label``/
-# ``column_label`` are genuinely shared and so appear in no row. PDF_SPAN and
-# XBRL_CONTEXT are deliberately absent: their producers predate this rule and
-# tightening them is a separate, non-Tijori change.
+# committed producer in this repo. ``row_label``/``column_label`` are genuinely
+# shared and so appear in no row. PDF_SPAN and XBRL_CONTEXT are deliberately
+# absent: their producers predate this rule and tightening them is a separate,
+# non-Tijori change.
+#
+# CONFIG_PIN bars every other locator, and is the only row that bars
+# ``context_ref``: a config pin names no fetched document at all, so a pin
+# carrying a page, an island or a row position would claim to address a
+# position inside a document it never read.
 _FOREIGN_ANCHOR_FIELDS: dict[SourceAnchorType, tuple[str, ...]] = {
     SourceAnchorType.JSON_ISLAND: ("document_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.API_DOCUMENT: ("island_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.HTML_TABLE: ("document_id", "island_id", "table_key"),
     SourceAnchorType.CSV_RECORD: ("document_id", "island_id", "table_key"),
+    SourceAnchorType.CONFIG_PIN: (
+        "page",
+        "block",
+        "span",
+        "context_ref",
+        "island_id",
+        "document_id",
+        "table_key",
+        "table_id",
+        "row_path",
+        "column_index",
+    ),
 }
 
 # The anchor kinds addressed by ``table_id``/``row_path``/``column_index``.
@@ -127,6 +150,10 @@ class Provenance(BaseModel):
                     "API_DOCUMENT anchor requires document_id, context_ref, table_key, "
                     "row_label, and column_label to be set"
                 )
+        elif self.anchor_type is SourceAnchorType.CONFIG_PIN:
+            pin_fields: tuple[str | None, ...] = (self.row_label, self.column_label)
+            if any(value is None or not value.strip() for value in pin_fields):
+                raise ValueError("CONFIG_PIN anchor requires row_label and column_label to be set")
         elif self.anchor_type in _POSITIONAL_ANCHOR_TYPES:
             kind = self.anchor_type.value
             positional_fields = (self.table_id, self.row_path, self.column_label)

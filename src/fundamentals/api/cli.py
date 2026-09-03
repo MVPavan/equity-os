@@ -43,6 +43,10 @@ from fundamentals.api.cli_parser import (
 from fundamentals.api.cli_parser import build_parser as _build_parser
 from fundamentals.api.comparatives import derive_comparator_periods
 from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
+from fundamentals.api.entity_map_cli import (
+    ENTITY_MAP_COMMAND,
+    dispatch_entity_map_command,
+)
 from fundamentals.api.goal_runner import (
     ALL_SOURCE_KINDS,
     QuarterMode,
@@ -673,6 +677,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     if screener_exit_code is not None:
         return screener_exit_code
+
+    if args.command == ENTITY_MAP_COMMAND:
+        return dispatch_entity_map_command(args)
 
     if args.command == NEWS_COMMAND:
         news_result = run_news_command(args)

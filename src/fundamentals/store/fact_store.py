@@ -114,14 +114,24 @@ class BarredAnchorFactError(ValueError):
 
 
 # Anchor kinds whose identity binding is too weak to enter the revision chain.
-_BARRED_ANCHOR_TYPES: frozenset[SourceAnchorType] = frozenset({SourceAnchorType.API_DOCUMENT})
-
-_BARRED_ANCHOR_REASON = (
-    "{anchor} observations are barred from the fact store: the response carries no "
-    "identity field, so the value is bound to an issuer only by the id in its request "
-    "URL. Acquire and retain the document; admit it here once reconciliation or an "
-    "explicit promotion step corroborates that identity."
+_BARRED_ANCHOR_TYPES: frozenset[SourceAnchorType] = frozenset(
+    {SourceAnchorType.API_DOCUMENT, SourceAnchorType.CONFIG_PIN}
 )
+
+_BARRED_ANCHOR_REASON = "{anchor} observations are barred from the fact store: {why}"
+_BARRED_ANCHOR_WHY: dict[SourceAnchorType, str] = {
+    SourceAnchorType.API_DOCUMENT: (
+        "the response carries no identity field, so the value is bound to an issuer "
+        "only by the id in its request URL. Acquire and retain the document; admit it "
+        "here once reconciliation or an explicit promotion step corroborates that "
+        "identity."
+    ),
+    SourceAnchorType.CONFIG_PIN: (
+        "a human typed the value into a committed config file and nothing corroborated "
+        "it, so admitting it would let an unverified assertion enter the canonical "
+        "revision chain. Acquire the same value from a source and admit that instead."
+    ),
+}
 
 
 class StoredRevision(BaseModel):
@@ -199,6 +209,8 @@ def _anchor_payload(observation: Observation) -> dict[str, object]:
                 "column_label": prov.column_label,
             }
         )
+    elif prov.anchor_type is SourceAnchorType.CONFIG_PIN:
+        payload.update({"row_label": prov.row_label, "column_label": prov.column_label})
     else:
         assert_never(prov.anchor_type)
     return payload
@@ -392,7 +404,10 @@ class FactStore:
             raise UnprovenancedFactError("provenance.file_sha256 must be non-empty")
         if provenance.anchor_type in _BARRED_ANCHOR_TYPES:
             raise BarredAnchorFactError(
-                _BARRED_ANCHOR_REASON.format(anchor=provenance.anchor_type.value)
+                _BARRED_ANCHOR_REASON.format(
+                    anchor=provenance.anchor_type.value,
+                    why=_BARRED_ANCHOR_WHY[provenance.anchor_type],
+                )
             )
 
     @staticmethod

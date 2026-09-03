@@ -93,6 +93,8 @@ def _anchor_description(provenance: Provenance) -> str:
             f"{kind} {provenance.table_id}, row {provenance.row_path}, "
             f"column {provenance.column_index} ({provenance.column_label})"
         )
+    elif provenance.anchor_type is SourceAnchorType.CONFIG_PIN:
+        location = f"config pin {provenance.row_label}, field {provenance.column_label}"
     else:
         assert_never(provenance.anchor_type)
     return f"{location} (sha {sha}…)"

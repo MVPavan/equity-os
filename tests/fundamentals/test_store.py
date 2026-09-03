@@ -259,3 +259,28 @@ def test_api_document_anchored_facts_are_barred_from_the_store(store: FactStore)
         store.put(_fact(_observation(provenance=api_anchor)))
 
     assert store.query_canonical() == ()
+
+
+def test_config_pin_anchored_facts_are_barred_from_the_store(store: FactStore) -> None:
+    """Entity-map amendment A5: a hand-edited YAML pin is an assertion, not evidence.
+
+    ``CONFIG_PIN`` exists so the entity identity map can record where a pinned
+    identifier came from. It must never travel further than that: a human typed
+    the value into ``config/watchlist.yaml`` and nothing corroborated it, so
+    admitting it here would let an unverified guess enter the canonical revision
+    chain — the same weakness that bars ``API_DOCUMENT``, only worse, because
+    there is not even a request URL binding it to an issuer.
+    """
+    config_anchor = Provenance(
+        source_id="watchlist-config",
+        file_sha256="0" * 64,
+        anchor_type=SourceAnchorType.CONFIG_PIN,
+        row_label="INFY",
+        column_label="bse_scrip",
+        retrieved_at=_RETRIEVED_AT,
+    )
+
+    with pytest.raises(BarredAnchorFactError, match="barred from the fact store"):
+        store.put(_fact(_observation(provenance=config_anchor)))
+
+    assert store.query_canonical() == ()
