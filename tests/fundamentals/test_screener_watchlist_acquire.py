@@ -429,6 +429,45 @@ def test_a_dropdown_with_no_selected_entry_leaves_the_name_unset_without_refusin
     assert run.artifact.watchlist_name is None
 
 
+def test_the_selector_is_read_from_its_own_menu_and_not_from_every_dropdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SL4-25: the site's other menus are not watchlists, and must not be named as some.
+
+    The live page carries four ``dropdown-content`` blocks; only one is the
+    watchlist selector, and the rest are nav and promo menus whose ``<li>``
+    entries read as plausible list names. A reader that matches them all still
+    finds the right selected name — the check icon is unique — so the artifact
+    looks correct while ``other_watchlist_names`` fills with marketing copy. The
+    operator is then told the run skipped lists that do not exist, on a page
+    offering exactly one, which is precisely the advisory they would act on.
+    """
+    run, _ = fx.acquire(monkeypatch, page=fx.watchlist_page(_ROSTER), export=fx.export_csv(_ROSTER))
+
+    assert run.artifact.watchlist_name == fx.WATCHLIST_NAME
+    assert run.artifact.other_watchlist_names == ()
+
+
+def test_a_second_watchlist_in_the_selector_is_named_while_the_decoys_are_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SL4-25's other half: scoping must not cost the behaviour it protects.
+
+    Narrowing to the selector's own menu would be worthless if it also dropped a
+    genuine second list, so the same page that hides the decoys must still
+    report a real sibling. One invocation acquires one list; the other is named
+    so the caller knows what it did not get.
+    """
+    run, _ = fx.acquire(
+        monkeypatch,
+        page=fx.watchlist_page(_ROSTER, names=(fx.WATCHLIST_NAME, "Second Synth List")),
+        export=fx.export_csv(_ROSTER),
+    )
+
+    assert run.artifact.watchlist_name == fx.WATCHLIST_NAME
+    assert run.artifact.other_watchlist_names == ("Second Synth List",)
+
+
 @pytest.mark.parametrize(
     ("account", "logout"), [(False, True), (True, False)], ids=["no-account-link", "no-logout-form"]
 )

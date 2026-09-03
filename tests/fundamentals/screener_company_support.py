@@ -13,6 +13,7 @@ wrong request is one query value.
 
 from __future__ import annotations
 
+import email.message
 import json
 import urllib.request
 from datetime import UTC, datetime
@@ -301,11 +302,18 @@ def outcome(run: CompanyRun, part: CompanyPart) -> Any:
 
 
 class _FakeResponse:
-    """The minimum of a urllib response the transport reads."""
+    """The minimum of a urllib response the transport reads.
+
+    ``headers`` is part of that minimum: a real ``http.client.HTTPResponse``
+    always exposes one, and the transport reads it to hand response headers
+    back to callers. Omitting it here would push a defensive ``getattr`` into
+    production code to accommodate a shortcoming of this double.
+    """
 
     def __init__(self, status: int, payload: bytes) -> None:
         self._status = status
         self._payload = payload
+        self.headers = email.message.Message()
 
     def __enter__(self) -> _FakeResponse:
         return self

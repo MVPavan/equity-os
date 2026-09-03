@@ -57,6 +57,15 @@ from fundamentals.api.screener_screen_cli import (
 from fundamentals.api.screener_screen_cli import (
     is_incomplete as screen_is_incomplete,
 )
+from fundamentals.api.screener_watchlist_cli import (
+    SCREENER_WATCHLIST_COMMAND,
+    other_watchlists,
+    render_screener_watchlist_summary,
+    run_screener_watchlist_command,
+)
+from fundamentals.api.screener_watchlist_cli import (
+    is_incomplete as watchlist_is_incomplete,
+)
 from fundamentals.ingest.screener_session_models import ScreenerCredentials, ScreenerSessionError
 
 SCREENER_COMMANDS = (
@@ -64,7 +73,12 @@ SCREENER_COMMANDS = (
     SCREENER_FINANCIALS_COMMAND,
     SCREENER_COMPANY_COMMAND,
     SCREENER_SCREEN_COMMAND,
+    SCREENER_WATCHLIST_COMMAND,
 )
+
+# The two list-scoped commands address a query or a watchlist, never one stock
+# on one basis, so the invocation log must not dereference those fields for them.
+_STOCK_SCOPED_LOG_EXCLUSIONS = (SCREENER_SCREEN_COMMAND, SCREENER_WATCHLIST_COMMAND)
 
 # Distinct, documented exit codes: a caller (or a shell loop over the watchlist)
 # can tell "this company has no such basis" from "the fetch was refused" without
@@ -85,6 +99,7 @@ _WEAK_LINE = (
     "could prove them): {documents}"
 )
 _NOT_OFFERED_LINE = "{command}: parts this company does not publish: {parts}"
+_OTHER_LISTS_LINE = "{command}: other watchlists this invocation did not acquire: {names}"
 
 
 def dispatch_screener_command(
@@ -109,7 +124,7 @@ def dispatch_screener_command(
     if credentials is None:
         raise SystemExit(_SESSION_REQUIRED.format(command=args.command))
     fields = {"command": args.command, "started_at": datetime.now(UTC).isoformat()}
-    if args.command != SCREENER_SCREEN_COMMAND:
+    if args.command not in _STOCK_SCOPED_LOG_EXCLUSIONS:
         fields.update(stock=args.stock, basis=args.basis)
     structlog.get_logger(_CLI_LOGGER_NAME).info("screener_command_invoked", **fields)
     try:
@@ -117,6 +132,8 @@ def dispatch_screener_command(
             return _run_financials(args, credentials=credentials)
         if args.command == SCREENER_COMPANY_COMMAND:
             return _run_company(args, credentials=credentials)
+        if args.command == SCREENER_WATCHLIST_COMMAND:
+            return _run_watchlist(args, credentials=credentials)
         if args.command == SCREENER_SCREEN_COMMAND:
             screen = run_screener_screen_command(args, credentials=credentials)
             sys.stdout.write(render_screener_screen_summary(screen) + "\n")
@@ -132,6 +149,32 @@ def dispatch_screener_command(
     if is_basis_unavailable(run):
         sys.stderr.write(basis_unavailable_message(run) + "\n")
         return EXIT_BASIS_UNAVAILABLE
+    return EXIT_OK
+
+
+def _run_watchlist(args: argparse.Namespace, *, credentials: ScreenerCredentials) -> int:
+    """Run ``screener-watchlist``, publishing the run and naming what it left alone.
+
+    One invocation acquires one list: multi-list acquisition is unobserved and
+    out of scope, so any other list the selector offers is named on stderr,
+    where the machine-readable summary is not. A run that stopped short exits
+    non-zero with both retained bodies beside its artifact.
+    """
+    published = run_screener_watchlist_command(args, credentials=credentials)
+    sys.stdout.write(render_screener_watchlist_summary(published) + "\n")
+    others = other_watchlists(published)
+    if others:
+        sys.stderr.write(
+            _OTHER_LISTS_LINE.format(command=args.command, names=", ".join(others)) + "\n"
+        )
+    if watchlist_is_incomplete(published):
+        sys.stderr.write(
+            _INCOMPLETE_LINE.format(
+                command=args.command, reason=published.run.artifact.incomplete_reason
+            )
+            + "\n"
+        )
+        return EXIT_REFUSED
     return EXIT_OK
 
 

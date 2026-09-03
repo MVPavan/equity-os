@@ -24,6 +24,7 @@ import hashlib
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -34,6 +35,7 @@ from fundamentals.ingest.screener_session_models import (
     COOKIE_HEADER,
     LOCATION_HEADER,
     RATE_LIMITED_STATUS,
+    SCREENER_ORIGIN,
     SESSION_COOKIE_NAME,
     TERMINAL_BLOCK_STATUSES,
     USER_AGENT_HEADER,
@@ -61,6 +63,14 @@ _LOGGER = structlog.get_logger(__name__)
 
 _FETCH_EVENT = "screener_session_page_fetched"
 _RATE_LIMITED_EVENT = "screener_session_rate_limited"
+_GET_METHOD = "GET"
+_POST_METHOD = "POST"
+SET_COOKIE_HEADER = "Set-Cookie"
+CONTENT_TYPE_HEADER = "Content-Type"
+CONTENT_DISPOSITION_HEADER = "Content-Disposition"
+REFERER_HEADER = "Referer"
+ORIGIN_HEADER = "Origin"
+FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 _PRIVATE_QUERY_PARAMETER = "query"
 _REDACTED_PRIVATE_QUERY = "[redacted]"
 _NO_CREDENTIALS = (
@@ -221,12 +231,87 @@ class ScreenerSessionSource:
         """Fetch a raw-screen navigation through the shared subscriber transport."""
         return self._document_fetch(url, xhr=False)
 
+    def fetch_navigation(self, *, url: str) -> tuple[ScreenerDocumentFetch, tuple[str, ...]]:
+        """Fetch one navigation page and return its bytes beside the cookies it set.
+
+        The ``Set-Cookie`` values are returned as separate strings, never
+        collapsed into one, because a page that sets several cookies would
+        otherwise lose all but the first — and on the watchlist page the
+        ``csrftoken`` is not the first. Only the caller that asked for them ever
+        sees them; nothing here logs or retains a cookie value.
+        """
+        credentials = self._require_credentials()
+        status, raw, headers = self._request_bytes(
+            url, method=_GET_METHOD, headers=self._session_headers(credentials), data=None
+        )
+        return self._retained(raw, url=url, status=status), tuple(
+            headers.get_all(SET_COOKIE_HEADER) or ()
+        )
+
+    def post_form(
+        self,
+        *,
+        url: str,
+        fields: Mapping[str, str],
+        referer: str,
+        cookies: Mapping[str, str],
+    ) -> tuple[ScreenerDocumentFetch, str | None, str | None]:
+        """POST one page-embedded form and return its bytes and two content headers.
+
+        ``cookies`` is the effective cookie state the authorising GET produced.
+        It is serialised into the **one** ``Cookie`` header this transport
+        already sets, never handed to an :class:`urllib.request.HTTPCookieProcessor`:
+        CPython's cookie jar adds nothing when a request already carries a
+        ``Cookie`` header, so a jar here would silently drop the CSRF cookie and
+        the site's resulting 403 would read as a block on the account.
+
+        Only the two headers that prove what the response is are read back; every
+        other response header is neither retained nor logged.
+        """
+        credentials = self._require_credentials()
+        headers = self._session_headers(credentials, extra_cookies=cookies)
+        headers[CONTENT_TYPE_HEADER] = FORM_CONTENT_TYPE
+        headers[REFERER_HEADER] = referer
+        headers[ORIGIN_HEADER] = SCREENER_ORIGIN
+        status, raw, response_headers = self._request_bytes(
+            url,
+            method=_POST_METHOD,
+            headers=headers,
+            data=urlencode(tuple(fields.items())).encode("utf-8"),
+        )
+        return (
+            self._retained(raw, url=url, status=status),
+            response_headers.get(CONTENT_TYPE_HEADER),
+            response_headers.get(CONTENT_DISPOSITION_HEADER),
+        )
+
     def _document_fetch(self, url: str, *, xhr: bool) -> ScreenerDocumentFetch:
         """Fetch one document and attach byte-level retention metadata."""
+        credentials = self._require_credentials()
+        status, raw = self._fetch_bytes(url, credentials, xhr=xhr)
+        return self._retained(raw, url=url, status=status)
+
+    def _require_credentials(self) -> ScreenerCredentials:
+        """Return the injected subscriber credentials, or refuse before any request."""
         credentials = self._config.credentials
         if credentials is None:
             raise ScreenerCredentialsError(_NO_CREDENTIALS)
-        status, raw = self._fetch_bytes(url, credentials, xhr=xhr)
+        return credentials
+
+    def _session_headers(
+        self, credentials: ScreenerCredentials, *, extra_cookies: Mapping[str, str] | None = None
+    ) -> dict[str, str]:
+        """Build the outbound headers, serialising every cookie into one ``Cookie`` header."""
+        cookies = {SESSION_COOKIE_NAME: credentials.session_cookie.get_secret_value()}
+        cookies.update(extra_cookies or {})
+        return {
+            COOKIE_HEADER: "; ".join(f"{name}={value}" for name, value in cookies.items()),
+            USER_AGENT_HEADER: self._config.user_agent,
+        }
+
+    @staticmethod
+    def _retained(raw: bytes, *, url: str, status: int) -> ScreenerDocumentFetch:
+        """Wrap one response body in the record that ties an artifact to those bytes."""
         return ScreenerDocumentFetch(
             raw_body=raw,
             source_url=url,
@@ -239,26 +324,38 @@ class ScreenerSessionSource:
     def _fetch_bytes(
         self, source_url: str, credentials: ScreenerCredentials, *, xhr: bool = False
     ) -> tuple[int, bytes]:
-        """GET one page politely: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.
-
-        The origin is checked before the request object exists, so a URL that is
-        not the pinned Screener origin never gets near the session cookie.
+        """GET one page politely through the shared transport body.
 
         ``xhr`` marks a sub-document rather than a navigation. It is a parameter
         rather than a property of the URL because the same host serves both, and
         the two must be told apart by what the browser would have done.
         """
-        url = _redact_private_query(source_url)
-        assert_pinned_origin(url)
-        headers = {
-            COOKIE_HEADER: (
-                f"{SESSION_COOKIE_NAME}={credentials.session_cookie.get_secret_value()}"
-            ),
-            USER_AGENT_HEADER: self._config.user_agent,
-        }
+        headers = self._session_headers(credentials)
         if xhr:
             headers[XHR_HEADER] = XHR_HEADER_VALUE
-        request = urllib.request.Request(source_url, headers=headers, method="GET")
+        status, payload, _ = self._request_bytes(
+            source_url, method=_GET_METHOD, headers=headers, data=None
+        )
+        return status, payload
+
+    def _request_bytes(
+        self, source_url: str, *, method: str, headers: dict[str, str], data: bytes | None
+    ) -> tuple[int, bytes, Any]:
+        """Make one polite request: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.
+
+        The single implementation of politeness for this adapter. It takes the
+        URL rather than a built request precisely so the origin gate stays here:
+        a helper handed a :class:`urllib.request.Request` would move that check
+        into every builder, and the session cookie must never be attached to a
+        URL this adapter did not pin.
+
+        The opener is built per request rather than cached on the instance, so a
+        test seam that pins :func:`urllib.request.build_opener` covers every
+        request this adapter can make.
+        """
+        url = _redact_private_query(source_url)
+        assert_pinned_origin(url)
+        request = urllib.request.Request(source_url, data=data, headers=headers, method=method)
         opener = urllib.request.build_opener(_NoRedirectHandler())
         rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):
@@ -271,6 +368,7 @@ class ScreenerSessionSource:
                             f"screener returned redirect status {status} for {url}"
                         )
                     payload = response.read(self._config.max_response_bytes + 1)
+                    response_headers = response.headers
             except urllib.error.HTTPError as error:
                 self._refuse_terminal_status(error, url=url)
                 rate_limit = error
@@ -292,7 +390,7 @@ class ScreenerSessionSource:
                 raise ScreenerSessionFetchError(
                     f"screener response exceeded maximum {self._config.max_response_bytes} bytes"
                 )
-            return (200 if status is None else status), payload
+            return (200 if status is None else status), payload, response_headers
         raise ScreenerRateLimitedError(
             f"screener rate-limited {url} after "
             f"{self._config.max_rate_limit_retries + 1} attempts; stopping"
