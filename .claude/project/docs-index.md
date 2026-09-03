@@ -19,6 +19,10 @@ Authoritative docs and when to read them.
 | `docs/research/screener/surface-map.md` | Any Screener (Phase 2) work — owner-validated map of every subscriber surface with exact site names, URLs, APIs, the two company-id namespaces, redirect-to-BSE facts, and the observed 429 rate limit |
 | `docs/research/screener/industry-classification.md` | Sector/industry mapping — Screener's full 4-tier classification tree (12/22/58/188) with codes and counts |
 | `docs/research/screener/ratio-library.md` | Writing or parsing Screener queries/columns — all 374 field names usable in `/screen/raw/?query=` and Manage columns |
+| `docs/research/upstox-api-surface-inventory.md` | **Any Upstox work — the authority.** Full endpoint surface organized on Upstox's own doc tree, with CORE/MAYBE/EXCLUDE, access tier, and a confidence grade per row (A = verified live). Records why the six statement/ratio fundamentals endpoints are refused. |
+| `docs/research/upstox-api-schemas/` | Writing any Upstox parser — six per-sector schema files verified field-by-field against 129 live responses, plus `VERIFICATION.md` ranking the traps that break a strict parser |
+| `docs/research/upstox-integration-plan.md` | **Implementing Upstox — the plan of record (v2).** Module layout, contracts, five ordered slices with acceptance tests, open decisions and ranked risks. Leads with the verified traps that silently corrupt data (`to_date` before `from_date`, most-recent-first rows, `dd Mon yyyy` dates, `SEGMENT\|ISIN` keys). Supersedes the v1 draft in `scratchpad/` |
+| `docs/research/upstox-api-evaluation.md` | Historical — the 2026-08-24 pre-token evaluation. Partly superseded: its kill criterion fired on 2026-09-03. Read the inventory instead |
 
 Not yet present, expected later: `docs/specs/` (brainstorming output),
 `docs/workstreams/<name>/roadmap.md` (phase plans), and the smaller

@@ -6,6 +6,40 @@ hallucinated endpoints) → orchestrator consolidation. Full reports:
 `scratchpad/council/upstox-api-research/` (session-local; this doc is the
 durable record).
 
+> ## SUPERSEDED IN PART — 2026-09-03
+>
+> **The kill criterion in this document has fired.** The independence test was
+> run and Upstox's fundamentals **share lineage with Screener**: Upstox's
+> `operating_profit` is Screener's *Profit before tax* to the crore (12/12 data
+> points across 3 companies and both bases), and Upstox reproduces Screener's
+> divergence from the BSE filing on TITAN's Jun-2026 net profit (1777 vs the
+> filed 1699). Per this document's own rule — "identical-digit agreement with
+> Screener's errors = shared lineage -> drop the fundamentals lane" — the six
+> statement/ratio endpoints are **refused**.
+>
+> What survives, and is now verified live: the **price lane** (candles are
+> split/bonus adjusted, daily history to Jan 2000), the **instrument master**
+> (100% ISIN coverage on equity rows), **suspended instruments** (delisting
+> detection), **corporate actions**, **share holdings**, and **FII/DII activity**.
+> Those have no XBRL or Screener counterpart, so lineage does not bear on them.
+>
+> Also corrected here: this document records "only 4 periods" and "no as-of
+> field" as inference — both are now confirmed fact. `time_period=quarterly` is
+> silently ignored on balance sheet and cash flow (income statement only).
+>
+> **Reframed 2026-09-03 (same day, owner decision).** The refusal above stands
+> for *adjudication* and is reversed for *verification*. Upstox's statement
+> endpoints are non-independent, which makes them useless as a third vote and
+> useful as a parse-check on Screener's HTML scraping: because the upstream
+> number is the same, a disagreement isolates to our parser. `income-statement`,
+> `balance-sheet`, `cash-flow` and `key-ratios` return as **Lane B** —
+> log-only, barred from reconciliation. `profile` and `competitors` remain
+> refused. See `docs/research/upstox-integration-plan.md` §1, §6.9, §9.6.
+>
+> Current authority: `docs/research/upstox-api-surface-inventory.md` for the
+> endpoint surface, `docs/research/upstox-integration-plan.md` for what is
+> built and why.
+
 ## Verdict: PILOT-FIRST, with the price lane leading
 
 Adopt-worthy on its own merits: **price / instrument-master / corporate-actions**.
