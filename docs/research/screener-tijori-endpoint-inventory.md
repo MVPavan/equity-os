@@ -164,8 +164,18 @@ upcoming-events + concall monitor.
   filings `/filings/`; latest results `/results/latest/`; people `/people/`;
   ratings `/ratings/`; insider trades `/trades/insider-summary-<id>/`;
   account `/user/account/`; premium status `/premium/member/`.
-- No sanctioned bulk API/export surface observed yet (the flip condition);
-  the `/api/` namespace looks page-support-oriented, not a public API.
+- **The flip condition has fired (live 2026-09-03).** A sanctioned bulk export
+  surface exists: `POST /api/export/screen/?url_name=<view>[&sublist_id=<id>]`
+  returns `text/csv` with a `Content-Disposition` filename — verified against the
+  core watchlist (200, 15215 bytes, 83 data rows). Earlier probes returned zero
+  bytes because they were GETs. It is a POST, and it is not independently
+  addressable: it needs the `sessionid` cookie, the `csrftoken` cookie that the
+  page GET sets, and the `csrfmiddlewaretoken` the page embeds in the export
+  form, so the authorising page must be fetched first. `url_name` selects the
+  view, which means the same endpoint backs a saved screen's Export button —
+  a Phase 4 acquisition surface reachable by the same page-then-post pattern.
+  The rest of the `/api/` namespace still looks page-support-oriented rather
+  than a public API.
 
 Cookie handling for both sites: owner-supplied session cookies live in
 `~/.secrets/` (0600), injected at composition root via environment
