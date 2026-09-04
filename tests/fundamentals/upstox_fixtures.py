@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fundamentals.ingest.upstox_source import (
+    DEFAULT_ROUTE_KEY,
     AcquisitionOutcome,
     UpstoxCapture,
     UpstoxFetch,
@@ -180,3 +181,159 @@ def instruments_fetch(rows: list[dict[str, Any]]) -> UpstoxFetch:
 def suspended_fetch(rows: list[dict[str, Any]]) -> UpstoxFetch:
     """A suspended-instruments fetch over synthetic rows."""
     return fetch_of(gzip_body(rows), route_key="suspended")
+
+
+def statement_fetch(body: dict[str, Any], *, surface: UpstoxSurface) -> UpstoxFetch:
+    """A Lane B fundamentals fetch over a synthetic JSON body."""
+    return fetch_of(
+        json.dumps(body).encode("utf-8"),
+        route_key=DEFAULT_ROUTE_KEY,
+        surface=surface,
+        media_type="application/json",
+    )
+
+
+def _history(values: list[tuple[str, float]], *, changes: bool = True) -> list[dict[str, Any]]:
+    """A summary history, most-recent-first, with ``change`` absent on the oldest.
+
+    The absence is not tidiness: the live probe found ``change`` missing on the
+    oldest period of every one of the 18 observed series.
+    """
+    points: list[dict[str, Any]] = []
+    for index, (period, value) in enumerate(values):
+        point: dict[str, Any] = {"value": value, "period": period}
+        if changes and index < len(values) - 1:
+            point["change"] = "+10.0%"
+        points.append(point)
+    return points
+
+
+def _particular(name: str, values: list[tuple[str, float]]) -> dict[str, Any]:
+    """One ``full_statement`` row — no ``change`` key on any period."""
+    return {
+        "particular": name,
+        "history": [{"value": value, "period": period} for period, value in values],
+    }
+
+
+ANNUAL_PERIODS = ["Mar 2026", "Mar 2025"]
+QUARTERLY_PERIODS = ["Jun 2026", "Mar 2026"]
+
+
+def income_statement_body(
+    *,
+    time_period: str = "yearly",
+    basis: str = "standalone",
+    summary_periods: list[str] | None = None,
+    full_statement: list[dict[str, Any]] | None = None,
+    revenue: tuple[float, float] = (200.0, 150.0),
+    operating_profit: tuple[float, float] = (40.0, 30.0),
+    net_profit: tuple[float, float] = (30.0, 22.0),
+) -> dict[str, Any]:
+    """An ``income-statement`` body in the verified live shape."""
+    periods = summary_periods or ANNUAL_PERIODS
+    rows = [
+        {"category": "revenue", "history": _history(list(zip(periods, revenue, strict=True)))},
+        {
+            "category": "operating_profit",
+            "history": _history(list(zip(periods, operating_profit, strict=True))),
+        },
+        {
+            "category": "net_profit",
+            "history": _history(list(zip(periods, net_profit, strict=True))),
+        },
+    ]
+    if full_statement is None:
+        full_statement = [
+            _particular("Revenue", list(zip(ANNUAL_PERIODS, (190.0, 142.0), strict=True))),
+            _particular("Other Income", list(zip(ANNUAL_PERIODS, (10.0, 8.0), strict=True))),
+            _particular("Total Revenue", list(zip(ANNUAL_PERIODS, revenue, strict=True))),
+            _particular("Total Expenses", list(zip(ANNUAL_PERIODS, (160.0, 120.0), strict=True))),
+            _particular(
+                "Profit Before Tax", list(zip(ANNUAL_PERIODS, operating_profit, strict=True))
+            ),
+            _particular("Tax", list(zip(ANNUAL_PERIODS, (10.0, 8.0), strict=True))),
+            _particular("Profit After Tax", list(zip(ANNUAL_PERIODS, net_profit, strict=True))),
+            _particular("EPS - Basic", list(zip(ANNUAL_PERIODS, (3.0, 2.2), strict=True))),
+            _particular("EPS - Diluted", list(zip(ANNUAL_PERIODS, (2.9, 2.1), strict=True))),
+        ]
+    return {
+        "status": "success",
+        "data": {
+            "type": basis,
+            "time_period": time_period,
+            "units_in": "crore",
+            "income_statement": rows,
+            "full_statement": full_statement,
+        },
+    }
+
+
+def balance_sheet_body(*, basis: str = "standalone") -> dict[str, Any]:
+    """A ``balance-sheet`` body — note the singular summary keys."""
+    return {
+        "status": "success",
+        "data": {
+            "type": basis,
+            "time_period": "yearly",
+            "units_in": "crore",
+            "history": [
+                {"total_asset": 600.0, "total_liability": 440.0, "period": "Mar 2026"},
+                {"total_asset": 500.0, "total_liability": 380.0, "period": "Mar 2025"},
+            ],
+            "full_statement": [
+                _particular("Non-Current Assets", [("Mar 2026", 300.0), ("Mar 2025", 250.0)]),
+                _particular("Current Assets", [("Mar 2026", 300.0), ("Mar 2025", 250.0)]),
+                _particular("Total Assets", [("Mar 2026", 600.0), ("Mar 2025", 500.0)]),
+            ],
+        },
+    }
+
+
+def cash_flow_body(*, basis: str = "standalone") -> dict[str, Any]:
+    """A ``cash-flow`` body — three categories, signed values, optional ``change``."""
+    return {
+        "status": "success",
+        "data": {
+            "type": basis,
+            "time_period": "yearly",
+            "units_in": "crore",
+            "cash_flow": [
+                {
+                    "category": "operating",
+                    "history": _history([("Mar 2026", 55.0), ("Mar 2025", 40.0)]),
+                },
+                {
+                    "category": "investing",
+                    "history": _history([("Mar 2026", -30.0), ("Mar 2025", -25.0)]),
+                },
+                {
+                    "category": "financing",
+                    "history": _history([("Mar 2026", -12.0), ("Mar 2025", -9.0)]),
+                },
+            ],
+            "full_statement": [
+                _particular("Profit before tax", [("Mar 2026", 40.0), ("Mar 2025", 30.0)]),
+                _particular("Total Cash Flow", [("Mar 2026", 13.0), ("Mar 2025", 6.0)]),
+            ],
+        },
+    }
+
+
+def key_ratios_body(*, include_quick_ratio: bool = True) -> dict[str, Any]:
+    """A ``key-ratios`` body — a bare array of string values, some percentages.
+
+    ``Quick Ratio`` is optional because it genuinely is: one of the three live
+    issuers returned six rows without it while the other two returned seven.
+    """
+    rows: list[dict[str, Any]] = [
+        {"name": "P/E", "company_value": "76.45", "sector_value": "78.35"},
+        {"name": "P/B", "company_value": "28.04", "sector_value": "3.18"},
+        {"name": "ROA", "company_value": "9.51%", "sector_value": "15.57%"},
+        {"name": "ROE", "company_value": "32.31%", "sector_value": "9.7%"},
+        {"name": "ROCE", "company_value": "24.83%", "sector_value": "11.24%"},
+    ]
+    if include_quick_ratio:
+        rows.append({"name": "Quick Ratio", "company_value": "0.2", "sector_value": "1.22"})
+    rows.append({"name": "EV/EBITDA", "company_value": "48.35", "sector_value": "-9.01"})
+    return {"status": "success", "data": rows}

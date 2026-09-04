@@ -198,10 +198,10 @@ def test_an_unproven_line_is_not_comparable_even_when_the_values_match() -> None
     Counting a tier-3 agreement as evidence of correctness would be the same
     error as counting a tier-3 difference as evidence of a defect.
     """
-    mapping = mapping_for("cash_flow_operating")
+    mapping = mapping_for("operating")
     row = compare_line(
         mapping,
-        upstox=_upstox("500.00", "cash_flow_operating"),
+        upstox=_upstox("500.00", "operating"),
         screener=(_screener("500", "Cash from Operating Activity"),),
     )
     assert row.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
@@ -212,8 +212,8 @@ def test_an_unproven_line_is_not_comparable_even_when_the_values_match() -> None
 def test_an_unproven_line_records_the_difference_without_adjudicating_it() -> None:
     """Recorded and compared, never adjudicated — so the number is still kept."""
     row = compare_line(
-        mapping_for("cash_flow_operating"),
-        upstox=_upstox("300.00", "cash_flow_operating"),
+        mapping_for("operating"),
+        upstox=_upstox("300.00", "operating"),
         screener=(_screener("500", "Cash from Operating Activity"),),
     )
     assert row.outcome is CrosscheckOutcome.NOT_COMPARABLE
@@ -293,3 +293,31 @@ def test_no_outcome_can_block_a_run() -> None:
     )
     assert report.exit_code == 0
     assert report.mismatch_count == 1
+
+
+class TestMapKeysMatchTheLiveContract:
+    """Every mapped key must be a category name Upstox actually sends.
+
+    Five of the eight were written from the vendor's documentation and none of
+    them existed on the wire. A mapping keyed on a name that never arrives does
+    not fail loudly — it raises `UnmappedCategoryError` on the first real
+    payload, which reads as a comparator defect rather than as stale mapping.
+    """
+
+    def test_the_income_summary_categories_are_the_three_upstox_sends(self) -> None:
+        keys = {entry.upstox_category for entry in INCOME_STATEMENT_MAP}
+        assert {"revenue", "operating_profit", "net_profit"} <= keys
+
+    def test_the_balance_sheet_keys_are_singular_as_the_wire_states_them(self) -> None:
+        keys = {entry.upstox_category for entry in INCOME_STATEMENT_MAP}
+        assert {"total_asset", "total_liability"} <= keys
+        assert not {"total_assets", "total_liabilities"} & keys
+
+    def test_the_cash_flow_keys_are_the_bare_category_words(self) -> None:
+        keys = {entry.upstox_category for entry in INCOME_STATEMENT_MAP}
+        assert {"operating", "investing", "financing"} <= keys
+        assert not {k for k in keys if k.startswith("cash_flow_")}
+
+    def test_every_mapped_key_is_reachable(self) -> None:
+        for entry in INCOME_STATEMENT_MAP:
+            assert mapping_for(entry.upstox_category) is entry

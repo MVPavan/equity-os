@@ -246,7 +246,8 @@ documented.
 
 ## `GET /v2/fundamentals/{isin}/competitors`
 
-**SKIPPED — out of scope for this verification pass** (see the scope note at the top of this file). Everything below is unverified doc-derived content.
+**SKIPPED — out of scope for this verification pass** (see the scope note at
+the top of this file). Everything below is unverified doc-derived content.
 
 
 Documentation: [Competitors](https://upstox.com/developer/api-documentation/get-competitors?utm_source=equity-os)
@@ -298,9 +299,158 @@ in a path segment. No query parameter or limit is documented.
 
 `UDAPI1206` — Invalid ISIN.
 
+## LANE B LIVE VERIFICATION — 2026-09-04
+
+The four statement/ratio sections below were marked **SKIPPED — doc-derived and
+unverified**. They were verified live on 2026-09-04: **29 authenticated GETs**
+over three issuers (TITAN, HFCL, NETWEB) × both bases × four surfaces, plus
+invalid-ISIN and `time_period` probes. Raw bodies retained. This block is
+authoritative where it contradicts the sections below; those sections are left
+in place so the correction is visible.
+
+### 1. An invalid ISIN is INDISTINGUISHABLE from an empty company — HTTP 200
+
+The single most dangerous finding, and it defeats the guard the integration plan
+proposed for this exact risk.
+
+```
+GET /v2/fundamentals/INE000X00000/corporate-actions
+200  {"status":"success","data":[]}
+```
+
+The plan (§9.3, review S5) said: *"`OK_EMPTY` requires `status == "success"`
+**and** `data == []`. Without this an invalid ISIN could read as `OK_EMPTY`."*
+An invalid ISIN returns **precisely that shape**. There is no error envelope, no
+non-200, and nothing in the body to distinguish "this ISIN does not exist" from
+"this company has no corporate actions".
+
+**So the envelope cannot be the guard. The ISIN must be validated before the
+call.** Only call ISINs that are check-digit valid *and* present in the retained
+instrument catalog; then an empty response means genuinely empty.
+
+On `income-statement` the invalid ISIN differs in one thin way —
+`"full_statement": null`, where a valid-but-empty company (NETWEB consolidated)
+gives `[]`. That was the only such distinction across all 29 responses, it is
+n=1, and it does not exist on `corporate-actions` at all. **Do not rely on it.**
+
+### 2. `full_statement` is ANNUAL-ONLY even when the response says `quarterly`
+
+Silent wrong-period corruption, HTTP 200, no error — the F1 class.
+
+```
+GET /v2/fundamentals/{isin}/income-statement?type=consolidated&fs=true&time_period=quarterly
+→ "time_period": "quarterly"                                     ← the response says quarterly
+→ income_statement[].history periods: Jun 2026, Mar 2026, Dec 2025, Sep 2025   ← quarterly, correct
+→ full_statement[].history  periods: Mar 2026, Mar 2025, Mar 2024, Mar 2023    ← STILL ANNUAL
+```
+
+A parser reading `full_statement` from a quarterly request gets annual figures
+inside a payload whose own `time_period` field claims quarterly. **A quarterly
+comparison must read the summary block**, which is the three-line block whose
+category names are wrong and need the mapping table.
+
+`time_period=quarterly` is **silently ignored** by `balance-sheet` and
+`cash-flow`: both echo `"yearly"` and return byte-identical bodies. Only
+`income-statement` honours it.
+
+**The consequence for finding 3: under a quarterly request the period label is
+not a key across the two blocks.** The summary's `Mar 2026` is the quarter
+ending March 2026; `full_statement`'s `Mar 2026` is the financial year. Joining
+on the label compares 27,104 crore of quarterly revenue against 88,136 crore of
+annual revenue and calls it a disagreement. Running the identity check on the
+live quarterly TITAN response produced exactly three confident false
+disagreements — one per identity. The check is therefore only defined when both
+blocks are annual.
+
+### 3. The name map is confirmed on live data — 48 of 51 identities hold
+
+Each summary `category` was checked against the `full_statement` particular the
+mapping table claims it equals, across every valid response:
+
+| Summary `category` | `full_statement` particular | Holds |
+|---|---|---|
+| `revenue` | `Total Revenue` | ✔ |
+| `operating_profit` | **`Profit Before Tax`** | ✔ |
+| `net_profit` | `Profit After Tax` | ✔ |
+
+**48 hold, 3 fail — and all three failures are one company in one response.**
+
+| Response | Period | Summary | `full_statement` | Gap |
+|---|---|---|---|---|
+| NETWEB standalone | Mar 2024 | `revenue` 735.97 | Total Revenue 735.96 | 0.01 |
+| NETWEB standalone | Mar 2025 | `operating_profit` 153.0 | Profit Before Tax 153.97 | **0.97** |
+| NETWEB standalone | Mar 2025 | `net_profit` 113.75 | Profit After Tax 114.48 | **0.73** |
+
+The last two are the same company and period, both beyond rounding, and **both
+blocks come from the same HTTP response** — Upstox contradicts itself inside one
+payload. Lane B must therefore state which block it read and record the other,
+because "Upstox says X" is not well defined for this issuer.
+
+### 4. Verified response shapes
+
+Envelope invariants across all 29: `status` is always `"success"`; `units_in` is
+always `"crore"`; `time_period` is `"yearly"` or `"quarterly"`.
+
+`full_statement` is a list on every valid response; the only `null` seen was the
+invalid-ISIN probe (finding 1). Every `value` is a JSON **float** — never a
+string, never `null` — across all 936 observed values.
+
+**`income-statement`** — `data` keys: `type`, `time_period`, `units_in`,
+`income_statement`, `full_statement`. Summary is
+`income_statement: [{category, history: [{value, period, change?}]}]` with
+exactly the three categories above. `change` is a **string** like `"+44.62%"`
+and is **absent on the oldest period** of every series. `full_statement`
+particulars, 9 in fixed order: `Revenue`, `Other Income`, `Total Revenue`,
+`Total Expenses`, `Profit Before Tax`, `Tax`, `Profit After Tax`, `EPS - Basic`,
+`EPS - Diluted`.
+
+**`balance-sheet`** — a **different summary shape**: `history:
+[{total_asset, total_liability, period}]`, not the `{category, history}` form.
+Note `total_asset`/`total_liability` are **singular**. `full_statement`
+particulars, 8: `Non-Current Assets`, `Current Assets`, `Total Assets`,
+`Current Liabilities`, `Net Current Asset`, `Non-Current Liabilities`,
+`Equity Capital`, `Total Equity & Liabilities`. There is no `Total Liabilities`
+particular.
+
+**`cash-flow`** — summary key is `cash_flow: [{category, history}]` with
+categories `operating`, `investing`, `financing`, always all three and always in
+that order. Its `history` entries carry the same optional string `change` as
+`income-statement`. Values are signed (`-541.0` observed). `full_statement` particulars, 11: `Profit before tax`,
+`Income before WC changes`, `Change in Assets`, `Change in Liabilities`,
+`Change in WC`, `Cash flow from Operations`, `Cash flow from Investing`,
+`Cash flow from Financing`, `Total Cash Flow`, `Cash (Start of the year)`,
+`Cash (End of the year)`.
+
+**`key-ratios`** — `data` is a **bare array**, not an object, and **the row set
+is not fixed**: TITAN and NETWEB return 7 rows, HFCL returns 6 — `Quick Ratio`
+is simply absent. A parser must key by `name` and treat every ratio as optional;
+indexing by position, or asserting a count, breaks on the second company tried.
+
+Observed names: `P/E`, `P/B`, `ROA`, `ROE`, `ROCE`, `Quick Ratio`, `EV/EBITDA`.
+Each row is `{name, company_value, sector_value}` and **both values are
+STRINGS**. `ROA`, `ROE` and `ROCE` carry a trailing `%`; the others do not.
+Either field can be negative (`"-9.01"` observed on TITAN's EV/EBITDA
+`sector_value`), so both need signed parsing.
+
+The response has no `status`-sibling metadata at all: no `units_in`, no
+`time_period`, no period, and — unlike the other three — **no `type` echo**. It
+does honour `?type=`: standalone and consolidated differ for all three issuers.
+So the basis is real but unstated, and the caller must record which basis it
+requested; the payload cannot tell you afterwards.
+
+### 5. Four periods, and a basis a company may not publish
+
+Every valid response returned exactly 4 periods. NETWEB has **no consolidated
+statements**: all three consolidated surfaces return `history: []` /
+`full_statement: []` with `status: "success"`. That is a real answer about the
+company and must not be read as a failure — but see finding 1 for why it cannot
+be distinguished from a bad ISIN by the envelope alone.
+
+---
+
 ## `GET /v2/fundamentals/{isin}/key-ratios`
 
-**SKIPPED — out of scope for this verification pass** (see the scope note at the top of this file). Everything below is unverified doc-derived content.
+**SKIPPED in the 2026-09-03 pass — but VERIFIED LIVE 2026-09-04; see the LANE B LIVE VERIFICATION block above, which is authoritative where it contradicts what follows.** Everything below is the original doc-derived content.
 
 
 Documentation: [Key Ratios](https://upstox.com/developer/api-documentation/get-key-ratios?utm_source=equity-os)
@@ -349,7 +499,7 @@ nullability are UNDOCUMENTED.
 
 ## `GET /v2/fundamentals/{isin}/balance-sheet`
 
-**SKIPPED — out of scope for this verification pass** (see the scope note at the top of this file). Everything below is unverified doc-derived content.
+**SKIPPED in the 2026-09-03 pass — but VERIFIED LIVE 2026-09-04; see the LANE B LIVE VERIFICATION block above, which is authoritative where it contradicts what follows.** Everything below is the original doc-derived content.
 
 
 Documentation: [Balance Sheet](https://upstox.com/developer/api-documentation/get-balance-sheet?utm_source=equity-os)
@@ -425,7 +575,7 @@ Errors: `UDAPI1206` invalid ISIN; `UDAPI1207` invalid `type`.
 
 ## `GET /v2/fundamentals/{isin}/cash-flow`
 
-**SKIPPED — out of scope for this verification pass** (see the scope note at the top of this file). Everything below is unverified doc-derived content.
+**SKIPPED in the 2026-09-03 pass — but VERIFIED LIVE 2026-09-04; see the LANE B LIVE VERIFICATION block above, which is authoritative where it contradicts what follows.** Everything below is the original doc-derived content.
 
 
 Documentation: [Cash Flow](https://upstox.com/developer/api-documentation/get-cash-flow?utm_source=equity-os)
@@ -516,7 +666,7 @@ above reproduce its labels and values. Errors: `UDAPI1206` invalid ISIN;
 
 ## `GET /v2/fundamentals/{isin}/income-statement`
 
-**SKIPPED — out of scope for this verification pass** (see the scope note at the top of this file). Everything below is unverified doc-derived content.
+**SKIPPED in the 2026-09-03 pass — but VERIFIED LIVE 2026-09-04; see the LANE B LIVE VERIFICATION block above, which is authoritative where it contradicts what follows.** Everything below is the original doc-derived content.
 
 
 Documentation: [Income Statement](https://upstox.com/developer/api-documentation/get-income-statement?utm_source=equity-os)

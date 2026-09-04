@@ -20,8 +20,22 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from pydantic import BaseModel
+
+from fundamentals.api.upstox_crosscheck_cli import (
+    CompanyCrosscheck,
+    CompanyStatus,
+    CrosscheckRunReport,
+)
+from fundamentals.ingest.screener_crosscheck import (
+    CrosscheckOutcome,
+    CrosscheckReport,
+    CrosscheckRow,
+    EvidenceTier,
+)
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "fundamentals"
 
@@ -129,3 +143,73 @@ def test_the_entity_adapter_reads_disk_and_declares_no_transport() -> None:
     imported = _imported_modules(adapter)
     assert not any(name.startswith(("urllib", "http", "socket", "requests")) for name in imported)
     assert "UpstoxSource" not in adapter.read_text(encoding="utf-8")
+
+
+BARRED_REPORT_TYPES = frozenset(
+    {"Fact", "Observation", "Provenance", "SourceRecord", "ReconciliationResult"}
+)
+
+
+def _declared_types(model: type[BaseModel], seen: set[type[BaseModel]]) -> set[str]:
+    """Every type name reachable from a model's own field annotations."""
+    if model in seen:
+        return set()
+    seen.add(model)
+    names: set[str] = set()
+    for field in model.model_fields.values():
+        for annotation in (field.annotation, *get_args(field.annotation or object)):
+            if annotation is None:
+                continue
+            for nested in (annotation, *get_args(annotation)):
+                if isinstance(nested, type):
+                    names.add(nested.__name__)
+                    if issubclass(nested, BaseModel):
+                        names |= _declared_types(nested, seen)
+    return names
+
+
+def test_lane_b_report_schema_carries_no_fact_or_provenance_type() -> None:
+    """The report is the boundary, and a typed bar is stronger than an import scan.
+
+    An import scan proves only that these files do not import the store today.
+    It does not stop a consumer reconstructing an ``Observation`` from a report
+    row — unless the row has no field that could carry one, which is what this
+    asserts across the whole reachable schema.
+    """
+    reachable = _declared_types(CrosscheckRunReport, set())
+    assert not reachable & BARRED_REPORT_TYPES, sorted(reachable & BARRED_REPORT_TYPES)
+
+
+def test_crosscheck_exit_code_is_zero_when_mismatches_are_found() -> None:
+    """Lane B is log-only (decision A). A disagreement is data, not a build failure.
+
+    The base disagreement rate is unmeasured. A check that blocks on an unknown
+    rate either halts the pipeline or is switched off within a day, and neither
+    outcome produces the measurement the graduation procedure needs.
+    """
+    row = CrosscheckRow(
+        upstox_category="net_profit",
+        means="Profit After Tax",
+        tier=EvidenceTier.EQUIVALENCE_DEMONSTRATED,
+        outcome=CrosscheckOutcome.MISMATCH,
+    )
+    run = CrosscheckRunReport(
+        companies=(
+            CompanyCrosscheck(
+                isin="INE280A01028",
+                symbol="TITAN",
+                basis="consolidated",
+                status=CompanyStatus.COMPARED,
+                reports=(
+                    CrosscheckReport(
+                        isin="INE280A01028",
+                        basis="consolidated",
+                        period="Mar 2026",
+                        rows=(row,) * 25,
+                    ),
+                ),
+            ),
+        )
+    )
+    assert run.mismatch_count == 25
+    assert run.exit_code == 0

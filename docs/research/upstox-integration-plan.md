@@ -1327,6 +1327,37 @@ that a naive same-name mapping fails.
 **Estimate:** about one day. Roughly 1h models, 1h fetch/persist, 2h comparator,
 1h sweep and report, plus run time.
 
+**Built 2026-09-04.** Steps 1 and 3 are done and step 2 is wired; step 4 (the
+83-ISIN sweep) and step 5 (graduation) are not. Four corrections to the plan
+above, all from the live verification pass:
+
+1. **Step 1's caution was right and did not go far enough.** Balance-sheet and
+   cash-flow ignore `time_period`, as recorded — but under a *quarterly*
+   income-statement request the `full_statement` block stays annual while the
+   summary block is quarterly, so one payload carries two periodicities under
+   the same `Mar 2026` labels. `IncomeStatementDocument` names them separately
+   and the summary↔full identity check is skipped entirely when they differ; on
+   the live TITAN quarterly response, running it produced three confident false
+   disagreements.
+2. **Five of the eight name-map keys did not exist.** `total_assets`,
+   `total_liabilities`, `cash_flow_operating`, `cash_flow_investing` and
+   `cash_flow_financing` were written from the vendor's documentation. The wire
+   carries `total_asset`, `total_liability`, `operating`, `investing`,
+   `financing`. Every one would have raised `UnmappedCategoryError` on the first
+   real payload. Corrected, with a test pinning the keys to the live contract.
+3. **§9.3's `OK_EMPTY` guard cannot work.** An unknown ISIN returns
+   `{"status":"success","data":[]}` with HTTP 200 — the exact shape the guard
+   would have accepted. The mitigation moved before the request: the command
+   refuses an ISIN whose check digit does not verify, and refuses one with no
+   Screener sections under `--screener-root`. Neither reaches the wire.
+4. **`--isin-file` is a two-column TSV**, `<isin>\t<symbol>`. Screener keys on
+   NSE symbol and Upstox on ISIN, and no artifact carries both, so the join is
+   stated in a file rather than inferred.
+
+Command: `fundamentals upstox-crosscheck --isin-file <path> --screener-root
+<dir> --out-dir <dir> [--basis standalone|consolidated|both]`. Exit 0 for any
+number of disagreements; non-zero only when a response could not be parsed.
+
 **Not in this slice:** any change to reconciliation, `needs_human_review`
 triage, or fact promotion. Those wait on the measured rate from step 5.
 

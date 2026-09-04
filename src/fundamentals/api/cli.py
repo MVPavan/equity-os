@@ -67,6 +67,7 @@ from fundamentals.api.report_builder import ReportBuildError, render_report
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.upstox_cli import UPSTOX_TOKEN_ENV, dispatch_upstox_command
+from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -704,6 +705,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if upstox_exit_code is not None:
         return upstox_exit_code
+
+    crosscheck_exit_code = dispatch_upstox_crosscheck_command(
+        args, credentials_factory=_upstox_credentials_from_env
+    )
+    if crosscheck_exit_code is not None:
+        return crosscheck_exit_code
 
     if args.command == ENTITY_MAP_COMMAND:
         return dispatch_entity_map_command(args)

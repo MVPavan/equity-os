@@ -21,6 +21,7 @@ from fundamentals.api.tijori_overview_cli import add_tijori_overview_parser
 from fundamentals.api.tijori_shareholding_cli import add_tijori_shareholding_parser
 from fundamentals.api.tijori_tables_cli import add_tijori_tables_parser
 from fundamentals.api.upstox_cli import add_upstox_parser
+from fundamentals.api.upstox_crosscheck_cli import add_upstox_crosscheck_parser
 
 RUN_COMMAND = "run"
 VALIDATE_COMMAND = "validate"
@@ -149,4 +150,5 @@ def build_parser() -> argparse.ArgumentParser:
     add_screener_watchlist_parser(subparsers)
     add_entity_map_parser(subparsers)
     add_upstox_parser(subparsers)
+    add_upstox_crosscheck_parser(subparsers)
     return parser

@@ -126,6 +126,14 @@ class LineMapping(BaseModel):
 # The three quarterly summary lines Upstox publishes, plus the tier-3 surfaces
 # fetched under decision B. Every ``means`` below is what the probe observed,
 # not what the vendor's label says.
+#
+# Corrected 2026-09-04 against the live Lane B contract. The five balance-sheet
+# and cash-flow keys were written from the vendor's documentation and none of
+# them existed: the balance-sheet summary carries ``total_asset`` and
+# ``total_liability``, singular and as fields of a flat history row rather than
+# as categories, and the cash-flow categories are the bare words ``operating``,
+# ``investing`` and ``financing``. Every one of those five lookups would have
+# raised :class:`UnmappedCategoryError` on the first real payload.
 INCOME_STATEMENT_MAP: tuple[LineMapping, ...] = (
     LineMapping(
         upstox_category="revenue",
@@ -148,34 +156,34 @@ INCOME_STATEMENT_MAP: tuple[LineMapping, ...] = (
         tier=EvidenceTier.EQUIVALENCE_DEMONSTRATED,
     ),
     LineMapping(
-        upstox_category="total_assets",
-        means="Balance-sheet total assets; the summary carries totals only",
+        upstox_category="total_asset",
+        means="Balance-sheet total assets, stated as total_asset; totals only",
         screener_rows=("Total Assets",),
         # Balance-sheet evidence is weak: the independence probe covered the
         # income statement, not this.
         tier=EvidenceTier.RELATED_NOT_EQUIVALENT,
     ),
     LineMapping(
-        upstox_category="total_liabilities",
-        means="Balance-sheet total liabilities",
+        upstox_category="total_liability",
+        means="Balance-sheet total liabilities, stated as total_liability",
         screener_rows=("Total Liabilities",),
         tier=EvidenceTier.RELATED_NOT_EQUIVALENT,
     ),
     LineMapping(
-        upstox_category="cash_flow_operating",
+        upstox_category="operating",
         means="Net cash from operating activities",
         screener_rows=("Cash from Operating Activity",),
         # Cash-flow lineage was never tested at all.
         tier=EvidenceTier.EQUIVALENCE_UNPROVEN,
     ),
     LineMapping(
-        upstox_category="cash_flow_investing",
+        upstox_category="investing",
         means="Net cash from investing activities",
         screener_rows=("Cash from Investing Activity",),
         tier=EvidenceTier.EQUIVALENCE_UNPROVEN,
     ),
     LineMapping(
-        upstox_category="cash_flow_financing",
+        upstox_category="financing",
         means="Net cash from financing activities",
         screener_rows=("Cash from Financing Activity",),
         tier=EvidenceTier.EQUIVALENCE_UNPROVEN,

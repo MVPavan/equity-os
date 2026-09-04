@@ -101,3 +101,35 @@ Format per entry:
   shares), both required. When you must filter, write a test that asserts a
   known member of the population survives it, and prefer a known-awkward member
   (a suspended stock, a trade-to-trade stock) over a typical one.
+
+## An empty success payload can mean "no such entity"  (2026-09-04)
+
+- Observed: the Upstox Lane B verification asked `/v2/fundamentals/{isin}/
+  corporate-actions` for a fabricated ISIN. It answered HTTP 200 with
+  `{"status":"success","data":[]}` — byte-identical to a real company that has
+  no corporate actions. The integration plan had proposed exactly the guard this
+  defeats: *"`OK_EMPTY` requires `status == "success"` and `data == []`"*.
+- Why it matters: a typo'd or stale identifier reads as a true negative. The
+  sweep completes, the report is clean, and the company is simply missing —
+  which is the same silent-drop failure shape as the instrument filter.
+- Apply: when a lookup's not-found case is indistinguishable from its empty
+  case, no response check can recover it. Move the guard **before** the request:
+  validate the identifier structurally (an ISIN check digit is deterministic and
+  free) and only ask about identifiers already present in a catalog or artifact
+  you hold. Check this for every new per-entity endpoint.
+
+## A period label is only a key within one periodicity  (2026-09-04)
+
+- Observed: `income-statement?time_period=quarterly` returns a payload whose
+  `time_period` says `quarterly`, whose summary block is quarterly, and whose
+  `full_statement` block is still annual. Both label their columns `Mar 2026`.
+  The summary↔`full_statement` identity check joins on that label, so on the
+  live TITAN response it compared one quarter's revenue (27,104 cr) against the
+  financial year's (88,136 cr) and reported three confident disagreements — one
+  per identity, all false.
+- Why it matters: the two blocks arrive in one HTTP response, so nothing about
+  the transport hints that they are on different clocks. The check looked like
+  a working drift detector; it was manufacturing findings.
+- Apply: before joining two series on a period label, assert both carry the same
+  periodicity, and skip rather than compare when they do not. Never derive one
+  block's periodicity from the response envelope — measure each block's own.
