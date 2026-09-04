@@ -75,6 +75,9 @@ NETWEB_ISIN = "INE0NT901020"
 
 RETENTION_DIRNAME = "upstox"
 BASIS = StatementBasis.STANDALONE
+# The config a run reads when no ``--triage-config`` is given, which is what
+# ``_live_run`` drives the command with.
+DEFAULT_TRIAGE_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "laneb_triage.yaml"
 
 # A body that no reader can interpret: the envelope itself is wrong, so the
 # document comes back SCHEMA_DRIFT and the company is UPSTOX_UNREADABLE.
@@ -203,12 +206,20 @@ def _section_payload(section: str) -> dict[str, Any]:
 
 
 def test_compare_company_is_the_comparison_the_command_performs(tmp_path: Path) -> None:
-    """A-01: the pure seam, called on in-memory inputs, is what the CLI reports."""
+    """A-01: the pure seam, called on in-memory inputs, is what the CLI reports.
+
+    The command annotates every compared row with its triage class and relative
+    difference (step 5(c)) before writing the report, so the seam is compared
+    after the same annotation pass. What A-01 pins is that the *comparison* is
+    identical, not that the command reports it unannotated.
+    """
     from fundamentals.ingest.upstox_crosscheck import (
         COMPARED_SECTIONS,
+        CrosscheckRunReport,
         ScreenerSection,
         compare_company,
     )
+    from fundamentals.verify.laneb_triage import load_triage_config, triage_run
 
     income, balance, cash = _documents()
     pure = compare_company(
@@ -228,7 +239,10 @@ def test_compare_company_is_the_comparison_the_command_performs(tmp_path: Path) 
         screener=screener_root(tmp_path, "TITAN", BASIS.value),
         out_dir=tmp_path / "out",
     )
-    assert pure.model_dump() == run.companies[0].model_dump()
+    annotated = triage_run(
+        CrosscheckRunReport(companies=(pure,)), load_triage_config(DEFAULT_TRIAGE_CONFIG_PATH)
+    )
+    assert annotated.companies[0].model_dump() == run.companies[0].model_dump()
 
 
 def test_a_live_run_retains_every_body_verbatim_beside_its_meta(tmp_path: Path) -> None:

@@ -45,6 +45,7 @@ document records.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -87,6 +88,83 @@ _SUMMARY_DISAGREES = (
     "= {full}; the same response states both"
 )
 _WRONG_SURFACE = "capture is from surface {actual}, not {expected}"
+
+# What each field of the note above looks like when the note is read back. The
+# period carries a space, so it is the one field that cannot be a run of
+# non-space characters. Both numbers are captured: the triage rule needs the
+# ``full_statement`` figure to decide whether Screener agrees with it.
+_NOTE_FIELD_PATTERNS: dict[str, str] = {
+    "category": r"(?P<category>\S+)",
+    "period": r"(?P<period>.+?)",
+    "summary": r"(?P<summary>\S+)",
+    "particular": r".+?",
+    "full": r"(?P<full>\S+)",
+}
+_NOTE_FIELD_MARKER = "\x00{field}\x00"
+# ``compare_company`` stores every parse note prefixed with the surface it came
+# from, so the reader has to accept both the bare note and the stored form.
+_NOTE_SURFACE_PREFIX = "(?:(?:{surfaces}): )?"
+
+
+def _identity_note_pattern() -> re.Pattern[str]:
+    """Derive the note's reader from the note's own format string.
+
+    Written this way so the two cannot drift: a change to
+    ``_SUMMARY_DISAGREES`` changes the pattern with it, and the triage rule that
+    consumes the note keeps firing. A second, hand-written regex would go stale
+    silently — the queue would fill with lines the vendor had already admitted
+    were self-contradictory, and no test would fail.
+    """
+    marked = _SUMMARY_DISAGREES.format(
+        **{field: _NOTE_FIELD_MARKER.format(field=field) for field in _NOTE_FIELD_PATTERNS}
+    )
+    body = re.escape(marked)
+    for field, pattern in _NOTE_FIELD_PATTERNS.items():
+        body = body.replace(re.escape(_NOTE_FIELD_MARKER.format(field=field)), pattern)
+    prefix = _NOTE_SURFACE_PREFIX.format(
+        surfaces="|".join(re.escape(surface.value) for surface in UpstoxSurface)
+    )
+    return re.compile(prefix + body)
+
+
+_IDENTITY_NOTE_PATTERN = _identity_note_pattern()
+
+
+class IdentityNote(BaseModel):
+    """One cell the response contradicted itself about, and both figures it gave.
+
+    The category and period say which cell, and nothing wider. Both numbers
+    travel with them because "the vendor disagrees with itself" is not on its own
+    an alibi for a Screener disagreement: only a Screener value that matches the
+    ``full_statement`` figure places the fault on the vendor's summary block
+    rather than on this repo's parse.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    category: str = Field(min_length=1)
+    period: str = Field(min_length=1)
+    summary: Decimal
+    full: Decimal
+
+
+def parse_identity_note(note: str) -> IdentityNote | None:
+    """Read one stored anomaly back, or ``None`` when it is not an identity note.
+
+    ``None`` is the answer for every note about the envelope, the status or the
+    response's shape: those carry no cell and no figures, and guessing one would
+    exonerate a line nothing was ever said about.
+    """
+    match = _IDENTITY_NOTE_PATTERN.fullmatch(note)
+    if match is None:
+        return None
+    try:
+        summary, full = Decimal(match["summary"]), Decimal(match["full"])
+    except InvalidOperation:
+        return None
+    return IdentityNote(
+        category=match["category"], period=match["period"], summary=summary, full=full
+    )
 
 
 class StatementBasis(StrEnum):

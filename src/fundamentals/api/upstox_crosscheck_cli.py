@@ -2,6 +2,7 @@
 
     upstox-crosscheck --isin-file <path> --screener-root <dir> --out-dir <dir>
                       [--basis standalone|consolidated|both] [--upstox-root <dir>]
+                      [--triage-config <path>] [--warn-exit]
 
 **Nothing this command produces is a fact.** Upstox and Screener share upstream
 lineage, which disqualifies Upstox from corroborating Screener and is exactly
@@ -48,6 +49,14 @@ past the parser is the one most worth re-reading.
 made and no credential is asked for, each body is checked against the hash
 recorded beside it before it is parsed, and a company with nothing retained is
 skipped rather than fetched behind the operator's back.
+
+**Every compared row is then triaged** against ``--triage-config`` (step 5(c)),
+which annotates it with a relative difference and a class and writes the listed
+rows to ``warnings.tsv`` beside the report. The exit code is unchanged by
+default — decision A is log-only, and a check that starts failing builds on an
+unmeasured base rate is switched off before it produces the telemetry a block
+decision is waiting on. ``--warn-exit`` is the operator's opt-in for a manual
+run: it returns ``EXIT_WARN`` when a run that read every response still warned.
 """
 
 from __future__ import annotations
@@ -74,6 +83,7 @@ from fundamentals.ingest.upstox_crosscheck import (
     AMBIGUOUS_ROW_MESSAGE,
     COMPARED_SECTIONS,
     EXIT_UNREADABLE,
+    EXIT_WARN,
     CompanyCrosscheck,
     CompanyStatus,
     CrosscheckRunReport,
@@ -81,10 +91,12 @@ from fundamentals.ingest.upstox_crosscheck import (
     compare_company,
 )
 
-# The command's exit code and summary header are the comparison's, re-exported
-# unaliased so a caller of this command reads them from the command.
+# The command's exit code, summary header and pre-call ISIN guard are the
+# comparison's, re-exported unaliased so a caller of this command reads them
+# from the command.
 from fundamentals.ingest.upstox_crosscheck import EXIT_OK as EXIT_OK
 from fundamentals.ingest.upstox_crosscheck import SUMMARY_HEADER as SUMMARY_HEADER
+from fundamentals.ingest.upstox_crosscheck import is_valid_isin as is_valid_isin
 from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
     UpstoxCapture,
@@ -102,11 +114,23 @@ from fundamentals.ingest.upstox_statements import (
     read_cash_flow,
     read_income_statement,
 )
+from fundamentals.verify.laneb_triage import (
+    WARNINGS_FILENAME,
+    TriageConfigError,
+    load_triage_config,
+    render_warnings,
+    triage_run,
+)
 
 _LOGGER = structlog.get_logger(__name__)
 
 UPSTOX_CROSSCHECK_COMMAND = "upstox-crosscheck"
 REPORT_FILENAME = "upstox_crosscheck_report.json"
+
+# Repo-relative like every other command's default config, so a run does not
+# depend on the directory it was started from.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_TRIAGE_CONFIG_PATH = _REPO_ROOT / "config" / "laneb_triage.yaml"
 
 BOTH_BASES = "both"
 BASIS_QUERY_KEY = "type"
@@ -136,10 +160,6 @@ _RETAINED_MEDIA_TYPE = "application/json"
 _PATH_SEPARATORS = ("/", "\\")
 _UNSAFE_SEGMENTS = frozenset({".", ".."})
 
-_ISIN_LENGTH = 12
-_ISIN_COUNTRY_LENGTH = 2
-_ALPHABET_OFFSET = 55  # ord("A") - 10, so "A" expands to 10 and "Z" to 35.
-
 _REFUSED_EVENT = "upstox_crosscheck_refused"
 
 _HELP = "compare Upstox statement values against Screener's, log-only"
@@ -148,6 +168,8 @@ _SCREENER_ROOT_HELP = "root of screener-financials output: <root>/<symbol>/<basi
 _OUT_DIR_HELP = "directory the disagreement report is written to"
 _BASIS_HELP = "which set of books to compare (default: consolidated)"
 _UPSTOX_ROOT_HELP = "replay bodies retained by an earlier run instead of fetching"
+_TRIAGE_CONFIG_HELP = "triage thresholds and acknowledgements (default: config/laneb_triage.yaml)"
+_WARN_EXIT_HELP = "exit non-zero when a readable run warned; off by default (log-only)"
 
 _BAD_LINE = "{path} line {number}: expected <isin>\\t<symbol>, got {line!r}"
 _REPEATED = "{path} line {number}: isin {isin} is repeated"
@@ -191,7 +213,7 @@ class RetainedBody(BaseModel):
 def add_upstox_crosscheck_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register ``upstox-crosscheck`` and its five flags."""
+    """Register ``upstox-crosscheck`` and its seven flags."""
     parser = subparsers.add_parser(UPSTOX_CROSSCHECK_COMMAND, help=_HELP)
     parser.add_argument("--isin-file", required=True, help=_ISIN_FILE_HELP)
     parser.add_argument("--screener-root", required=True, help=_SCREENER_ROOT_HELP)
@@ -203,32 +225,10 @@ def add_upstox_crosscheck_parser(
         help=_BASIS_HELP,
     )
     parser.add_argument("--upstox-root", default=None, help=_UPSTOX_ROOT_HELP)
-
-
-def is_valid_isin(isin: str) -> bool:
-    """Whether a string is a well-formed ISIN with a correct ISO 6166 check digit.
-
-    The only guard that can precede the request. An unknown ISIN answers with a
-    successful empty payload, so a malformed one must never reach the wire —
-    the response would look exactly like a real company with nothing to report.
-    """
-    if len(isin) != _ISIN_LENGTH or not isin.isalnum() or not isin.isupper():
-        return False
-    if not isin[:_ISIN_COUNTRY_LENGTH].isalpha() or not isin[-1].isdigit():
-        return False
-    digits = "".join(
-        character if character.isdigit() else str(ord(character) - _ALPHABET_OFFSET)
-        for character in isin[:-1]
+    parser.add_argument(
+        "--triage-config", default=str(_DEFAULT_TRIAGE_CONFIG_PATH), help=_TRIAGE_CONFIG_HELP
     )
-    total = 0
-    for position, digit in enumerate(reversed(digits)):
-        value = int(digit)
-        if position % 2 == 0:
-            value *= 2
-            if value > 9:
-                value -= 9
-        total += value
-    return (10 - total % 10) % 10 == int(isin[-1])
+    parser.add_argument("--warn-exit", action="store_true", help=_WARN_EXIT_HELP)
 
 
 def read_isin_file(path: Path) -> tuple[tuple[str, str], ...]:
@@ -275,6 +275,8 @@ def run_upstox_crosscheck_command(
     out_dir: Path,
     source: SourceLike,
     upstox_root: Path | None = None,
+    triage_config: Path | None = None,
+    warn_exit: bool = False,
 ) -> CrosscheckRunReport:
     """Compare every listed company on every requested basis and write one report.
 
@@ -282,17 +284,24 @@ def run_upstox_crosscheck_command(
     ``source`` is never asked for anything; without it every fetched body is
     retained under ``out_dir`` before it is read.
 
-    Every path the run intends to write is preflighted before the first request.
-    A no-clobber refusal is correct but arrives mid-loop, and by then a live run
+    Every path the run intends to write is preflighted before the first request,
+    and the triage config is read there too. A no-clobber refusal or an
+    unjustified threshold is correct but arrives mid-loop, and by then a live run
     has spent authenticated calls it cannot get back and has written no report
     to show for them.
+
+    ``warn_exit`` is the operator's own request, recorded with the run rather
+    than acted on: this function returns a report, and only
+    :func:`dispatch_upstox_crosscheck_command` turns a warn into an exit code.
     """
     bases = requested_bases(str(args.basis))
     pairs = read_isin_file(isin_file)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / REPORT_FILENAME
+    warnings_path = out_dir / WARNINGS_FILENAME
     retained = () if upstox_root is not None else _retention_paths(out_dir, pairs, bases)
-    preflight_out_paths((report_path, *retained))
+    preflight_out_paths((report_path, warnings_path, *retained))
+    config = load_triage_config(triage_config or _DEFAULT_TRIAGE_CONFIG_PATH)
 
     companies: list[CompanyCrosscheck] = []
     for isin, symbol in pairs:
@@ -308,12 +317,16 @@ def run_upstox_crosscheck_command(
                     upstox_root=upstox_root,
                 )
             )
-    run = CrosscheckRunReport(
-        companies=tuple(companies),
-        upstox_root=str(upstox_root) if upstox_root is not None else None,
-        retained_under=None if upstox_root is not None else str(out_dir / RETENTION_DIRNAME),
+    run = triage_run(
+        CrosscheckRunReport(
+            companies=tuple(companies),
+            upstox_root=str(upstox_root) if upstox_root is not None else None,
+            retained_under=None if upstox_root is not None else str(out_dir / RETENTION_DIRNAME),
+        ),
+        config,
     )
     write_json_no_clobber(report_path, run.model_dump_json(indent=2) + "\n")
+    write_bytes_no_clobber(warnings_path, (render_warnings(run) + "\n").encode("utf-8"))
     _LOGGER.info(
         "upstox_crosscheck_written",
         companies=len(run.companies),
@@ -321,6 +334,10 @@ def run_upstox_crosscheck_command(
         anomalies=run.anomaly_count,
         unmet_tier3=run.unmet_tier3_count,
         unreadable=run.unreadable_count,
+        warn=run.warn_count,
+        listed=run.listed_count,
+        review_owner=config.review_owner,
+        warn_exit=warn_exit,
     )
     return run
 
@@ -591,6 +608,11 @@ def dispatch_upstox_crosscheck_command(
     rather than issuing ten requests that will each come back 401. A replay
     reaches no surface at all, so it never asks for the token: ``--upstox-root``
     and live fetching are exclusive, and this is where that is enforced.
+
+    This is also the only place ``--warn-exit`` acts. A response this repo could
+    not read still outranks any number of disagreements: an unreadable body
+    means the comparison did not happen, which is a stronger statement than a
+    warn, so its exit code wins.
     """
     if getattr(args, "command", None) != UPSTOX_CROSSCHECK_COMMAND:
         return None
@@ -605,7 +627,19 @@ def dispatch_upstox_crosscheck_command(
             out_dir=Path(args.out_dir),
             source=source,
             upstox_root=upstox_root,
+            triage_config=Path(args.triage_config),
+            warn_exit=bool(args.warn_exit),
         )
+    except TriageConfigError as refusal:
+        # A threshold or an exclusion the config cannot justify means the run was
+        # never triaged, so its counts are not the counts anyone asked for.
+        # Reported as unreadable rather than as a warn: EXIT_WARN says a
+        # comparison happened and found something, which is exactly what did not
+        # happen here.
+        _LOGGER.warning(
+            _REFUSED_EVENT, refusal=type(refusal).__name__, detail=source.redact(str(refusal))
+        )
+        return EXIT_UNREADABLE
     except RetainedBodyError as refusal:
         _LOGGER.warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=source.redact(str(refusal))
@@ -617,4 +651,6 @@ def dispatch_upstox_crosscheck_command(
         )
         return EXIT_REFUSED
     sys.stdout.write(run.render() + "\n")
+    if args.warn_exit and run.exit_code == EXIT_OK and run.warn_count:
+        return EXIT_WARN
     return run.exit_code

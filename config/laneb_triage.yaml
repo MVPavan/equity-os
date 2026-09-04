@@ -1,0 +1,43 @@
+# Lane B step 5(c) — the per-field warn triage for `upstox-crosscheck`.
+#
+# Read by `fundamentals.verify.laneb_triage.load_triage_config`. Every number and
+# every exclusion below is a measurement, not a preference, and each states the
+# document it was measured in so it can be re-checked when the vendor restates.
+# The lane stays log-only (decision A): nothing here blocks anything, and a warn
+# is a line in `warnings.tsv` for the review owner.
+
+# 20% is where the two Lane B measurements stop overlapping. Part 2 of the
+# 2026-09-04 first measurement read 344 live lines and put 68 of the 69
+# non-agreeing ones at or under 20% relative difference; Part 3 seeded parser
+# defects into the same comparison and found every scale, sign and truncation
+# defect at 90% or more. A lower bar (10%) catches more of the one overlapping
+# defect shape, a column shift, at the cost of warning on definitional lines the
+# owner has already read; a higher bar catches nothing extra.
+magnitude_warn_ratio: '0.20'
+
+# Who works the queue. Cadence: each manual crosscheck run — Lane B automation
+# is RESTRICTED.
+review_owner: PavanMV
+
+# Known definitional differences on tier-1 lines: listed in the queue every run,
+# never counted as a warning. Both are already stated as EXCLUSIONs in the name
+# map's `means`, and both were re-measured in the same sweep.
+acknowledged:
+  - isin: INE067A01029
+    symbol: CGPOWER
+    upstox_category: operating_profit
+    reason: >-
+      Exceptional items are material and each vendor's own pre-tax-to-post-tax
+      chain is internally consistent at a different figure. The sweep's single
+      line above the 20% bar (32.5%) is this one; the identity still held on 73
+      of 80 live lines, so the tier stays and the company is excluded instead.
+    measured_in: docs/research/upstox-lane-b-first-measurement.md
+  - isin: INE947Q01028
+    symbol: LAURUSLABS
+    upstox_category: net_profit
+    reason: >-
+      Profit after tax differed in 3 of 4 periods while profit before tax agreed
+      to the crore in all four, and the differences ran in both directions
+      across years — the signature of associates or minority interest placed
+      differently, not of a parse error.
+    measured_in: docs/research/upstox-lane-b-first-measurement.md

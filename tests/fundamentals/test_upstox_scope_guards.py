@@ -51,6 +51,7 @@ LANE_B_MODULES = (
     "ingest/screener_crosscheck.py",
     "verify/laneb_sensitivity.py",
     "verify/laneb_sensitivity_model.py",
+    "verify/laneb_triage.py",
 )
 
 

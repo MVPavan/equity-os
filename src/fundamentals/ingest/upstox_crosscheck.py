@@ -28,11 +28,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.ingest.screener_crosscheck import (
     INCOME_STATEMENT_MAP,
+    LISTED_CLASSES,
+    WARN_CLASSES,
     CrosscheckOutcome,
     CrosscheckReport,
     CrosscheckRow,
     LineMapping,
     StatedValue,
+    TriageClass,
     compare_line,
 )
 from fundamentals.ingest.upstox_source import AcquisitionOutcome
@@ -46,11 +49,21 @@ from fundamentals.ingest.upstox_statements import (
 COMPARED_SECTIONS: tuple[str, ...] = ("profit-loss", "balance-sheet", "cash-flow")
 
 EXIT_OK = 0
+# Offered to the operator's own manual runs through ``--warn-exit`` and applied
+# by the command alone. The comparison itself stays log-only (decision A): the
+# live disagreement rate is one measurement old, and a check that starts failing
+# builds on an unmeasured rate is switched off before it has produced the
+# telemetry a block decision is waiting on.
+EXIT_WARN = 1
 EXIT_UNREADABLE = 3
 
 SUMMARY_HEADER = (
-    "isin\tsymbol\tbasis\tstatus\tagree\tmismatch\tanomaly\tnot_comparable\tunmet_tier3"
+    "isin\tsymbol\tbasis\tstatus\tagree\tmismatch\tanomaly\tnot_comparable\tunmet_tier3\twarn"
 )
+
+_ISIN_LENGTH = 12
+_ISIN_COUNTRY_LENGTH = 2
+_ALPHABET_OFFSET = 55  # ord("A") - 10, so "A" expands to 10 and "Z" to 35.
 
 AMBIGUOUS_ROW_MESSAGE = (
     "screener row {label!r} appears in both {first} and {second}; refusing to guess"
@@ -186,6 +199,22 @@ class CrosscheckRunReport(BaseModel):
         )
 
     @property
+    def warn_count(self) -> int:
+        """Rows the triage placed in a warning class.
+
+        The monthly figure the deferred block decision is waiting on, so it
+        counts only the three classes that implicate this repo's extraction —
+        never a line the vendor's own response contradicts itself on, and never
+        a documented definitional exclusion.
+        """
+        return self._triaged(WARN_CLASSES)
+
+    @property
+    def listed_count(self) -> int:
+        """Rows the triage put in the review queue, warning or not."""
+        return self._triaged(LISTED_CLASSES)
+
+    @property
     def unreadable_count(self) -> int:
         """Companies whose Upstox response this repo could not read."""
         return sum(
@@ -211,17 +240,29 @@ class CrosscheckRunReport(BaseModel):
             if row.outcome is outcome
         )
 
+    def _triaged(self, classes: frozenset[TriageClass]) -> int:
+        return sum(
+            1
+            for company in self.companies
+            for report in company.reports
+            for row in report.rows
+            if row.triage in classes
+        )
+
     def render(self) -> str:
         """Render the run as TSV: one header, then one row per company and basis."""
         lines = [SUMMARY_HEADER]
         for company in self.companies:
             counts = {outcome: 0 for outcome in CrosscheckOutcome}
             unmet = 0
+            warns = 0
             for report in company.reports:
                 for row in report.rows:
                     counts[row.outcome] += 1
                     if _is_unmet_tier3(row):
                         unmet += 1
+                    if row.triage in WARN_CLASSES:
+                        warns += 1
             lines.append(
                 "\t".join(
                     (
@@ -234,6 +275,7 @@ class CrosscheckRunReport(BaseModel):
                         str(counts[CrosscheckOutcome.ANOMALY]),
                         str(counts[CrosscheckOutcome.NOT_COMPARABLE]),
                         str(unmet),
+                        str(warns),
                     )
                 )
             )
@@ -248,6 +290,35 @@ def _is_unmet_tier3(row: CrosscheckRow) -> bool:
         and row.tolerance is not None
         and row.difference > row.tolerance
     )
+
+
+def is_valid_isin(isin: str) -> bool:
+    """Whether a string is a well-formed ISIN with a correct ISO 6166 check digit.
+
+    The only guard that can precede a Lane B request. An unknown ISIN answers
+    with a successful empty payload, so a malformed one must never reach the
+    wire — the response would look exactly like a real company with nothing to
+    report. It lives in this pure module rather than in the command so the
+    triage config, which names companies by ISIN, checks them the same way
+    without reaching into the ``api`` layer.
+    """
+    if len(isin) != _ISIN_LENGTH or not isin.isalnum() or not isin.isupper():
+        return False
+    if not isin[:_ISIN_COUNTRY_LENGTH].isalpha() or not isin[-1].isdigit():
+        return False
+    digits = "".join(
+        character if character.isdigit() else str(ord(character) - _ALPHABET_OFFSET)
+        for character in isin[:-1]
+    )
+    total = 0
+    for position, digit in enumerate(reversed(digits)):
+        value = int(digit)
+        if position % 2 == 0:
+            value *= 2
+            if value > 9:
+                value -= 9
+        total += value
+    return (10 - total % 10) % 10 == int(isin[-1])
 
 
 def compare_company(

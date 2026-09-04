@@ -89,6 +89,42 @@ class CrosscheckOutcome(StrEnum):
     MISSING_SCREENER = "MISSING_SCREENER"
 
 
+class TriageClass(StrEnum):
+    """Why one compared line is, or is not, worth a reviewer's attention.
+
+    Declared beside :class:`CrosscheckOutcome` rather than in the triage module
+    that assigns it, because :class:`CrosscheckRow` carries the value and the
+    comparison must not depend on the verification package that reads it. The
+    member order is the reporting order: the classes are listed strongest first,
+    and ``warnings.tsv`` sorts on that order.
+    """
+
+    # The sensitivity harness caught a dropped or stale Screener row on every
+    # seeded cell, and the live sweep produced none, so it is the one class that
+    # never consults a threshold.
+    STRUCTURAL = "STRUCTURAL"
+    MAGNITUDE = "MAGNITUDE"
+    WHOLE_TABLE = "WHOLE_TABLE"
+    # The two classes that place the fault somewhere other than this repo's
+    # Screener parse: listed for the review queue, never counted as a warning.
+    UPSTOX_SIDE = "UPSTOX_SIDE"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    NOISE = "NOISE"
+    NONE = "NONE"
+
+
+# What a run warns on, and what it merely lists. Separate sets because an
+# acknowledged or Upstox-side line belongs in the reviewer's queue but must
+# never inflate the warn figure a future block decision would be argued from.
+WARN_CLASSES: frozenset[TriageClass] = frozenset(
+    {TriageClass.STRUCTURAL, TriageClass.MAGNITUDE, TriageClass.WHOLE_TABLE}
+)
+LISTED_CLASSES: frozenset[TriageClass] = WARN_CLASSES | {
+    TriageClass.UPSTOX_SIDE,
+    TriageClass.ACKNOWLEDGED,
+}
+
+
 class UnmappedCategoryError(LookupError):
     """Raised for a vendor category with no declared meaning.
 
@@ -257,6 +293,11 @@ class CrosscheckRow(BaseModel):
     difference: Decimal | None = None
     tolerance: Decimal | None = None
     values_equal: bool | None = None
+    # Set by the triage pass, never by the comparison: the scale-free measure
+    # both Lane B thresholds were derived in, and the class it decided. Defaults
+    # keep an untriaged report readable and make the pass an annotation.
+    relative_difference: Decimal | None = None
+    triage: TriageClass = TriageClass.NONE
 
 
 class CrosscheckReport(BaseModel):
