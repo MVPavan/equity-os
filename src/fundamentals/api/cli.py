@@ -71,6 +71,7 @@ from fundamentals.api.screener_watchlist_corroborate_cli import (
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.upstox_cli import UPSTOX_TOKEN_ENV, dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
+from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -714,6 +715,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if crosscheck_exit_code is not None:
         return crosscheck_exit_code
+
+    sensitivity_exit_code = dispatch_upstox_sensitivity_command(args)
+    if sensitivity_exit_code is not None:
+        return sensitivity_exit_code
 
     corroborate_exit_code = dispatch_screener_watchlist_corroborate_command(args)
     if corroborate_exit_code is not None:

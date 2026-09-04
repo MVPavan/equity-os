@@ -287,7 +287,7 @@ def run_upstox_crosscheck_command(
     has spent authenticated calls it cannot get back and has written no report
     to show for them.
     """
-    bases = _requested_bases(str(args.basis))
+    bases = requested_bases(str(args.basis))
     pairs = read_isin_file(isin_file)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / REPORT_FILENAME
@@ -346,8 +346,13 @@ def _retention_paths(
     )
 
 
-def _requested_bases(requested: str) -> tuple[StatementBasis, ...]:
-    """Expand ``--basis``, keeping a stable order so the report is comparable."""
+def requested_bases(requested: str) -> tuple[StatementBasis, ...]:
+    """Expand ``--basis``, keeping a stable order so the report is comparable.
+
+    Public because ``upstox-crosscheck-sensitivity`` measures this command and
+    must expand the same flag the same way; a second copy would let the two
+    drift on which books a run covered.
+    """
     if requested == BOTH_BASES:
         return (StatementBasis.STANDALONE, StatementBasis.CONSOLIDATED)
     return (StatementBasis(requested),)
@@ -374,7 +379,7 @@ def _crosscheck_company(
             "empty payload, so it is never requested",
         )
     directory = screener_root / symbol / basis.value
-    sections = _load_screener_sections(directory)
+    sections = load_screener_sections(directory)
     if sections is None:
         return CompanyCrosscheck(
             isin=isin,
@@ -540,8 +545,12 @@ def _read_retained_record(path: Path) -> RetainedBody:
         ) from error
 
 
-def _load_screener_sections(directory: Path) -> dict[str, ScreenerSection] | None:
+def load_screener_sections(directory: Path) -> dict[str, ScreenerSection] | None:
     """Read one company's Screener sections, keyed by section name.
+
+    Public for the same reason as :func:`requested_bases`: the sensitivity
+    harness measures this command, so it must read the Screener side through
+    this reader rather than a second one that could narrow differently.
 
     ``None`` means no section was found at all, which is the second pre-call
     guard: there is nothing to compare against, so nothing is requested. A row

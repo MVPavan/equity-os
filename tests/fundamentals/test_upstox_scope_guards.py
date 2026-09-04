@@ -47,7 +47,11 @@ BARRED_MODULES = ("fundamentals.store.fact_store", "fundamentals.reconcile")
 
 # Lane B modules that carry no ``upstox`` in their filename but are part of the
 # same lane and under the same bar.
-LANE_B_MODULES = ("ingest/screener_crosscheck.py",)
+LANE_B_MODULES = (
+    "ingest/screener_crosscheck.py",
+    "verify/laneb_sensitivity.py",
+    "verify/laneb_sensitivity_model.py",
+)
 
 
 def _upstox_modules() -> tuple[Path, ...]:
