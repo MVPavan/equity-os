@@ -65,6 +65,9 @@ from fundamentals.api.news_cli import (
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
+from fundamentals.api.screener_watchlist_corroborate_cli import (
+    dispatch_screener_watchlist_corroborate_command,
+)
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.upstox_cli import UPSTOX_TOKEN_ENV, dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
@@ -711,6 +714,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if crosscheck_exit_code is not None:
         return crosscheck_exit_code
+
+    corroborate_exit_code = dispatch_screener_watchlist_corroborate_command(args)
+    if corroborate_exit_code is not None:
+        return corroborate_exit_code
 
     if args.command == ENTITY_MAP_COMMAND:
         return dispatch_entity_map_command(args)

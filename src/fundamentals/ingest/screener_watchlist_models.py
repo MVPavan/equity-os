@@ -281,11 +281,14 @@ class WatchlistArtifact(BaseModel):
     otherwise would overstate it. What is corroborated across the renderings is
     the exchange code, against the slug the page routes each row by; what is
     checked within one rendering is that the ISIN is present and unique and
-    that no exchange code or slug repeats. The ISIN, the industry and the
-    industry group are published on the export's word alone, bound to the row
-    only by the display name that joined them — swap those fields between two
-    slug-routed export records and every rule here still passes. Closing that
-    needs a third source.
+    that no exchange code or slug repeats. The industry and the industry group
+    are published on the export's word alone, bound to the row only by the
+    display name that joined them — swap those fields between two slug-routed
+    export records and every rule here still passes. Closing that needs a third
+    source, and no source this repo holds publishes an industry at all. The ISIN
+    and the exchange codes do have one, outside this seam:
+    ``screener-watchlist-corroborate`` resolves them against a retained Upstox
+    instrument catalog, which has never heard of this export.
 
     Field validity is bound to :class:`WatchlistOutcome` by a validator rather
     than by convention, so an artifact claiming rows it did not prove, or

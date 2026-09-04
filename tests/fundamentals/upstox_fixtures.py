@@ -17,8 +17,10 @@ import gzip
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from fundamentals.ingest.upstox_instruments import read_instrument_catalog
 from fundamentals.ingest.upstox_source import (
     DEFAULT_ROUTE_KEY,
     AcquisitionOutcome,
@@ -29,6 +31,11 @@ from fundamentals.ingest.upstox_source import (
 )
 
 FIXTURE_STAMP = datetime(2026, 9, 4, 6, 30, tzinfo=UTC)
+
+# Four megabytes: far above any synthetic body here and far below the ~55 MB the
+# real file expands to, so a fixture can never pass by riding the production cap.
+MAX_DECOMPRESSED_BYTES = 4 * 1024 * 1024
+PARSED_CATALOG_FILENAME = "upstox_instruments.parsed.json"
 
 NSE_ISIN = "INE999Z01012"
 BSE_ISIN = "INE999Z01020"
@@ -181,6 +188,20 @@ def instruments_fetch(rows: list[dict[str, Any]]) -> UpstoxFetch:
 def suspended_fetch(rows: list[dict[str, Any]]) -> UpstoxFetch:
     """A suspended-instruments fetch over synthetic rows."""
     return fetch_of(gzip_body(rows), route_key="suspended")
+
+
+def write_parsed_catalog(directory: Path, *rows: dict[str, Any]) -> Path:
+    """Write a parsed instrument catalog artifact into ``directory`` and return its path.
+
+    Shared by every test that reads a catalog off disk, so the two consumers
+    cannot drift on the filename or the decompression cap they exercise.
+    """
+    catalog = read_instrument_catalog(
+        instruments_fetch(list(rows)), max_decompressed_bytes=MAX_DECOMPRESSED_BYTES
+    )
+    path = directory / PARSED_CATALOG_FILENAME
+    path.write_text(catalog.model_dump_json(), encoding="utf-8")
+    return path
 
 
 def statement_fetch(body: dict[str, Any], *, surface: UpstoxSurface) -> UpstoxFetch:

@@ -20,11 +20,12 @@ nothing here reaches the fact store.
 published nothing in it" is an assertion about the company, and the map treats
 it as one — it conflicts with any other source that does assert a value, and a
 conflicted entity is unreachable by lookup. This adapter cannot honestly make
-that assertion: the catalog it reads is a *filtered* view retaining only
-``NSE_EQ``/``EQ`` and ``BSE_EQ``/``A`` rows, so a security listed in another BSE
-group is missing from our rows because we dropped it, not because the vendor was
-silent. Saying "reported absent" there would state our filter as the vendor's
-claim and would make correctly-pinned entities unreachable.
+that assertion: the catalog it reads is a *filtered* view retaining only the two
+cash segments' company-equity rows, chosen by what the ISIN itself says the
+security is (see :mod:`fundamentals.ingest.upstox_instruments`), so a security
+we did not retain is missing from our rows because we dropped it, not because
+the vendor was silent. Saying "reported absent" there would state our filter as
+the vendor's claim and would make correctly-pinned entities unreachable.
 
 The suspended file emits nothing. It is retained evidence of suspension with no
 code consumer, and a candidate-match report whose matches nobody may act on
