@@ -90,6 +90,48 @@ Maruti Suzuki's record in the complete file carries `"mtf_enabled": true,
 any `BSE_EQ` record. A strict schema for the base EQ record needs these two
 fields as optional (`bool`, `float`), not just in a separate MTF-only model.
 
+## CORRECTIONS from the 2026-09-04 live run
+
+Full scan of `complete.json.gz` as served 2026-09-04 (118,334 records, up from
+117,344 the day before). Three findings, all of which contradict the section
+above and two of which were live correctness bugs.
+
+**1. `qty_multiplier` is on every equity record.** The BOD-equity table above
+omits it and lists it only under the suspended record. It was present on
+**3,337/3,337** retained equity rows, always `float`, and every observed value
+was `1.0`. Found by the unknown-key census on the adapter's first live run.
+Modelled required; the constant value is deliberately *not* modelled.
+
+**2. `instrument_type` does not separate equity from non-equity, and must never
+be used as the equity filter.** The two cash segments hold 22,458 rows:
+
+| Fact | Count |
+|---|---|
+| Rows in `NSE_EQ` + `BSE_EQ` | 22,458 |
+| Of those, company equity (`INE…` with ISIN issue-type `01`) | **7,845** |
+| `NSE_EQ`/`EQ` rows that are **ETFs**, not companies (`INF…` issuers) | 176 |
+| Distinct `instrument_type` values inside the two segments | 137 |
+
+`NSE_EQ` also carries government securities (`SG` 4,311, `GS` 131, `TB` 84),
+NCD series (`N0`–`N9`, `NA`–`NZ`, `Y*`, `Z*`) and SME/startup boards (`SM` 450,
+`ST` 117). `BSE_EQ` carries the fixed-income group `F` (6,559). Six
+segment/type combinations — including `NSE_EQ`/`EQ` itself — **mix** equity and
+non-equity.
+
+**3. The equity discriminator is the ISIN.** An Indian ISIN is
+`IN | issuer-type | 4-char issuer | 2-char issue-type | 2-char serial | check`.
+`INE` is a company and issue-type `01` is equity shares. Both conditions are
+required: issue-type `01` alone admits 328 `INF` mutual-fund rows and 12 `IN9`;
+`INE` alone admits 7,936 debentures (issue-types `07`, `08`, `14`, `15`).
+Together they give 7,845 rows over 5,409 distinct ISINs and cover all ten pinned
+watchlist stocks.
+
+The cost of getting this wrong was measured, not hypothetical. Filtering on
+`NSE_EQ`/`EQ` and `BSE_EQ`/`A` **silently dropped HFCL and MTARTECH**, which
+trade in NSE series `BE` and BSE group `T`. A company moved to trade-to-trade is
+still that company. Two of ten pinned stocks were invisible to the entity map,
+with no anomaly and no drift recorded — just absence.
+
 ## Futures record (`FUT`)
 
 **VERIFIED — full scan.** `NSE_FO`/`FUT`: 647 records; `NSE_FO`/`CE`: 15,804

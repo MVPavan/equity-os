@@ -150,10 +150,13 @@ that emits `SourceRecord`s.
    caching, retention, transformation, and private/internal output. Fixture-only
    implementation may proceed without it; live capture and any scheduled refresh
    stay disabled until it exists.
-   **Drafted 2026-09-04: `docs/research/upstox-rights-record.md`, state
-   `PROPOSED`. It authorizes nothing** — several dimensions are `UNKNOWN`, and
-   under S02 §6.3 an `UNKNOWN` denies its operation. Two findings change this
-   section's assumptions. First, the personal-use / internal-use carve-out this
+   **DECIDED 2026-09-04 by the owner — Gate 0 item 1 is CLOSED. Live capture is
+   authorized** for private, non-commercial, non-redistributed internal research
+   on the owner's own credential, on both hosts. **Scheduling is NOT authorized**;
+   runs stay manual and operator-triggered. Record, including the reading adopted
+   and what the decision does not cover: `docs/research/upstox-rights-record.md` §7.
+   The two findings below stood at drafting time and are retained because the
+   decision was made on them. First, the personal-use / internal-use carve-out this
    plan's evaluation doc relied on **does not exist** in the terms; the phrase
    was checked and is absent. Second, the **unauthenticated instrument files are
    the least covered surface, not the most**: the terms' prohibition is scoped to

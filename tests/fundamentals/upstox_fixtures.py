@@ -51,6 +51,7 @@ def nse_equity_row(**overrides: Any) -> dict[str, Any]:
         "lot_size": 1,
         "freeze_quantity": 100000.0,
         "tick_size": 5.0,
+        "qty_multiplier": 1.0,
         "short_name": "FIXTURE",
         "security_type": "NORMAL",
     }
@@ -72,9 +73,33 @@ def bse_equity_row(**overrides: Any) -> dict[str, Any]:
         "lot_size": 1,
         "freeze_quantity": 100000.0,
         "tick_size": 1.0,
+        "qty_multiplier": 1.0,
     }
     row.update(overrides)
     return row
+
+
+def trade_to_trade_row(**overrides: Any) -> dict[str, Any]:
+    """One company in NSE series ``BE`` — trade-to-trade, and still a company.
+
+    Two of ten pinned watchlist stocks look exactly like this. A filter on
+    ``instrument_type`` dropped them.
+    """
+    return nse_equity_row(instrument_type="BE", **overrides)
+
+
+def etf_row(**overrides: Any) -> dict[str, Any]:
+    """One ETF sitting in ``NSE_EQ``/``EQ`` — an ``INF`` issuer, not a company.
+
+    176 of these ride in the same segment and instrument_type as real equities,
+    which is why the trading series cannot be the discriminator.
+    """
+    return nse_equity_row(isin="INF999Z1A012", instrument_key="NSE_EQ|INF999Z1A012", **overrides)
+
+
+def debenture_row(**overrides: Any) -> dict[str, Any]:
+    """One company debenture — an ``INE`` issuer, but issue-type ``07``."""
+    return nse_equity_row(isin="INE999Z07016", instrument_key="NSE_EQ|INE999Z07016", **overrides)
 
 
 def derivative_row(**overrides: Any) -> dict[str, Any]:

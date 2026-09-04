@@ -23,13 +23,16 @@ from upstox_fixtures import (
     NSE_ISIN,
     NSE_SYMBOL,
     bse_equity_row,
+    debenture_row,
     derivative_row,
+    etf_row,
     fetch_of,
     gzip_body,
     instruments_fetch,
     nse_equity_row,
     suspended_fetch,
     suspended_row,
+    trade_to_trade_row,
 )
 
 from fundamentals.ingest.upstox_instruments import (
@@ -104,8 +107,8 @@ def test_an_empty_file_is_ok_empty_rather_than_a_failure() -> None:
 # --- the equity filter ------------------------------------------------------
 
 
-def test_only_nse_eq_and_bse_a_rows_are_retained() -> None:
-    """Non-equity rows are filtered on segment and type BEFORE validation.
+def test_only_company_equity_rows_are_retained() -> None:
+    """Non-equity rows are filtered BEFORE validation.
 
     They are dropped, not modelled: a discriminated union over record shapes we
     throw away is routing nobody consumes.
@@ -114,6 +117,40 @@ def test_only_nse_eq_and_bse_a_rows_are_retained() -> None:
     assert catalog.record_count == 3
     assert catalog.retained_count == 2
     assert {row.isin for row in catalog.instruments} == {NSE_ISIN, BSE_ISIN}
+
+
+def test_a_trade_to_trade_company_is_retained() -> None:
+    """The regression. A company in NSE series ``BE`` is still that company.
+
+    Two of ten pinned watchlist stocks — HFCL and MTARTECH — trade in ``BE`` and
+    BSE group ``T``. The original ``instrument_type``-based filter dropped both
+    of them silently: no anomaly, no drift, just absence from the entity map.
+    """
+    catalog = _catalog(trade_to_trade_row())
+    assert catalog.retained_count == 1
+    assert catalog.instruments[0].instrument_type == "BE"
+
+
+def test_an_etf_in_the_equity_segment_is_not_retained() -> None:
+    """176 ETFs share ``NSE_EQ``/``EQ`` with real equities and are not companies.
+
+    Their ISIN says so: ``INF`` is a mutual-fund issuer. Under the old filter
+    every one of them entered the entity map as though it were a listed company.
+    """
+    catalog = _catalog(nse_equity_row(), etf_row())
+    assert catalog.retained_count == 1
+    assert catalog.instruments[0].isin == NSE_ISIN
+
+
+def test_a_company_debenture_is_not_retained() -> None:
+    """An ``INE`` issuer is necessary and not sufficient: issue-type ``07`` is debt."""
+    assert _catalog(nse_equity_row(), debenture_row()).retained_count == 1
+
+
+def test_the_trading_series_is_retained_as_data_rather_than_used_as_a_filter() -> None:
+    """It still matters — it just does not decide what a security is."""
+    catalog = _catalog(nse_equity_row(), trade_to_trade_row(exchange_token="10002"))
+    assert {row.instrument_type for row in catalog.instruments} == {"EQ", "BE"}
 
 
 def test_a_file_with_rows_but_no_equity_rows_is_schema_drift() -> None:
@@ -179,6 +216,26 @@ def test_numeric_wire_fields_are_decimal_and_never_float() -> None:
     assert isinstance(row.tick_size, Decimal)
     assert isinstance(row.freeze_quantity, Decimal)
     assert row.tick_size == Decimal("5.0")
+
+
+def test_qty_multiplier_is_required_on_equity_rows_though_the_docs_omit_it() -> None:
+    """Found by the unknown-key census on the first live run, then confirmed.
+
+    The vendor's schema table lists ``qty_multiplier`` only for suspended
+    records. A full scan of the 2026-09-04 complete file found it on 3,337 of
+    3,337 retained equity rows. Modelled required, so its disappearance is
+    drift rather than a silent ``None``.
+    """
+    catalog = _catalog(nse_equity_row())
+    assert catalog.unknown_keys == ()
+    assert catalog.instruments[0].qty_multiplier == Decimal("1.0")
+
+
+def test_an_equity_row_without_qty_multiplier_is_schema_drift() -> None:
+    """Required means required: 100% presence twice over, so absence is a change."""
+    broken = nse_equity_row()
+    del broken["qty_multiplier"]
+    assert _catalog(broken).outcome is AcquisitionOutcome.SCHEMA_DRIFT
 
 
 def test_exchange_token_is_a_string_not_the_number_the_docs_claim() -> None:

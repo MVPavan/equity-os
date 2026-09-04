@@ -77,3 +77,27 @@ Format per entry:
   projection could have emptied it, emit nothing — that is
   `MissingReason.NOT_SUPPLIED`, which is the truth. Check this whenever a new
   `SourceRecord` producer is written.
+
+## A trading series is not a security type  (2026-09-04)
+
+- Observed: the Upstox instrument filter retained `NSE_EQ`/`EQ` and
+  `BSE_EQ`/`A`, the two combinations the schema census had counted. On the
+  first live entity-map build, 2 of 10 pinned watchlist stocks (HFCL,
+  MTARTECH) were missing. Both trade in NSE series `BE` and BSE group `T` —
+  trade-to-trade. A full scan then showed the filter was wrong in both
+  directions: it dropped real companies, and `NSE_EQ`/`EQ` itself carries 176
+  ETFs (`INF` issuers) that it was admitting as listed companies.
+- Why it matters: the failure was **silent**. No anomaly, no schema drift, no
+  count that looked wrong — the rows simply were not there, and the entity map
+  reported 0 conflicts while being blind to two of the ten stocks the whole
+  system exists to track. A filter that drops rows can only be checked against
+  something you already know should be present.
+- Root cause: a census enumerates the categories that *happened to be counted*.
+  Turning that enumeration into a filter encodes the sample as the population.
+  `instrument_type` is a trading-restriction series (137 distinct values inside
+  the two cash segments); it says how a security may be traded, not what it is.
+- Apply: filter on what the data *declares itself to be*, not on a category
+  list. Here the ISIN carries it — `INE` (company) plus issue-type `01` (equity
+  shares), both required. When you must filter, write a test that asserts a
+  known member of the population survives it, and prefer a known-awkward member
+  (a suspended stock, a trade-to-trade stock) over a typical one.

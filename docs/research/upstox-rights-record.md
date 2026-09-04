@@ -1,6 +1,12 @@
-# Upstox source rights record — DRAFT, `PROPOSED`, not approved
+# Upstox source rights record — `APPROVED` by the owner, 2026-09-04
 
-**Status: `PROPOSED`. This record authorizes nothing.** It is the Gate 0 item 1
+**Status: `APPROVED` for the scope in §7. Gate 0 item 1 is CLOSED.** The
+evidence and the open questions below are retained unchanged, because the
+decision is a judgement made *on* them and a reader needs to see what it was
+made on. §7 records who decided, on what reading, and what the decision does
+**not** cover.
+
+Sections 1–6 were written before the decision and are left as they stood. It is the Gate 0 item 1
 artifact of `docs/research/upstox-integration-plan.md` §3 — *"record the exact
 Upstox authorization for automated access, caching, retention, transformation,
 and private/internal output"* — compiled so a competent human can decide. Under
@@ -21,8 +27,8 @@ separate task if and when that register is built.
 | `source_name` | Upstox (RKSV Securities India Pvt. Ltd.) |
 | `source_category` | Market data / licensed vendor (broker-provided developer API) |
 | `evidence_as_of` | 2026-09-04 |
-| `decision_state` | **`PROPOSED`** |
-| `approval_record_ids` | *(none — no approval exists)* |
+| `decision_state` | **`APPROVED`** — see §7 |
+| `approval_record_ids` | `owner-decision-2026-09-04` (§7) |
 | `supersedes` | *(none)* |
 | `intended_modes` | Private, single-seat, internal research. No public display, no distribution, no execution connection. |
 
@@ -173,7 +179,9 @@ Every dimension is independent. An approval on one grants nothing to another
 
 ---
 
-## 5. What this record permits today
+## 5. What this record permitted before the decision
+
+*(Retained as written. §7 supersedes it.)*
 
 **Nothing new.** Every `UNKNOWN` denies its operation, and no approval record
 exists, so `decision_state` stays `PROPOSED` and Gate 0 item 1 remains open.
@@ -192,7 +200,10 @@ Blocked until a human decides:
 - Slice 6 / `eqos-0j6`, whose recorded schema-verification debt can only be
   paid by live calls.
 
-## 6. What a human needs to do
+## 6. What a human needed to do
+
+*(Retained as written. Items 1 and 4 were answered by §7; items 2 and 3 remain
+open and are no longer blocking.)*
 
 1. **Decide whether E1 governs the developer API**, or get Upstox to say so.
    Everything else hangs off this.
@@ -207,17 +218,64 @@ Blocked until a human decides:
 4. **Record the decision** below. Until an actor signs it, this file is a
    research artifact and confers no authority.
 
-### Attestation — unsigned
+### Attestation — unsigned *(superseded by §7)*
+
+The blank block is removed; §7 is the decision.
+
+---
+
+## 7. Owner decision — 2026-09-04
 
 ```
-actor:            (name of the deciding human)
-authority:        DATA_RIGHTS_APPROVAL   [ ] granted   [ ] denied   [ ] deferred
-legal_review:     LEGAL_REVIEW required for §2?   [ ] yes   [ ] no   [ ] obtained
-scope:            (exact dimensions and modes approved — not "the above")
-decided_at:       (UTC timestamp)
-evidence:         E1, E2, E3 as read 2026-09-04; E4 status:
-decision:         (free text — what is permitted, and what is still denied)
+actor:        PavanMV (product owner, account holder)
+authority:    DATA_RIGHTS_APPROVAL — granted
+legal_review: not sought; the owner resolved §2 directly
+decided_at:   2026-09-04
+evidence:     E1, E2, E3 as read 2026-09-04. E4 remains unlocated.
 ```
 
-An approval that does not name its exact dimensions approves nothing (S02
-§6.4). A blanket "approved" on this file is not a decision.
+**Reading adopted: Reading B (§2).** "for commercial or public purposes"
+qualifies the whole list, so private, non-published, non-commercial use falls
+outside the prohibition. The owner's stated grounds, recorded in their words:
+this is a personal system, nothing commercial, nothing automated on behalf of
+third parties, and providing this API for exactly this kind of use is the point
+of Upstox publishing it.
+
+**This settles §2 by decision, not by evidence.** No vendor statement resolves
+the ambiguity, and none was obtained. The record continues to say so, because a
+later reader must be able to see that Reading B was chosen rather than proven —
+if the vendor ever asserts Reading A, this decision is what changes, not the
+facts underneath it.
+
+### Approved dimensions
+
+Named individually, because S02 §6.4 makes an approval on one dimension grant
+nothing to another. A blanket "approved" would approve nothing.
+
+| Dimension | Decision |
+|---|---|
+| `access_method` | **APPROVED.** GET only, on the owner's own account and credential, across both `api.upstox.com` and `assets.upstox.com`. |
+| `caching` | **APPROVED** for both hosts. §3's finding — that the assets host has the weaker evidence — is resolved by Reading B, which does not distinguish the two hosts. |
+| `retention` | **APPROVED** for private internal retention. Still **no indefinite default** (S02 §5.3 forbids one): retain what an open investigation needs and no more. |
+| `derived_outputs` | **APPROVED**, private and internal only. Never published, never shown to a third party. |
+| `commercial_use` | **PROHIBITED and not sought.** Unchanged — this is the premise the decision rests on, so it is the one dimension that must not drift. |
+| `redistribution` | **PROHIBITED.** Unchanged. No raw response, no derived table, no artifact leaves this machine. E3's carve-out for distributing to Upstox users is not exercised. |
+| `account_limits` | Unchanged and enforced in code: 1.1 s minimum spacing, a per-run request budget, 429 backed off and bounded, 403 terminal and never retried. |
+
+### Not covered by this decision
+
+**`automation` stays `RESTRICTED`: manual, operator-triggered runs only.** The
+owner's grounds address *third-party* automation, which is not the same question
+as an unattended scheduler on the owner's own credential. Nothing here
+authorizes cron, a daemon, or a scheduled refresh. Ask again, narrowly, if you
+want one — the plan defers scheduling to a separate decision anyway (§1, "out of
+scope").
+
+**Commercial use and redistribution remain prohibited.** They are the two
+premises Reading B rests on. If either ever changes, this decision lapses and
+the record must be re-decided rather than amended.
+
+**E4 is still unlocated.** The 2026-06-25 citation in
+`docs/research/upstox-api-evaluation.md` is marked unverified in place. It is no
+longer load-bearing — the decision does not rest on it — but it should be struck
+or sourced when someone next touches that file.

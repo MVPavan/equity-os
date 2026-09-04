@@ -4,9 +4,16 @@
 is streamed under its own cap rather than handed to :func:`gzip.decompress`,
 which would allocate the whole thing before anyone could refuse it.
 
-Only equity rows are retained, and the filter runs on ``segment``/
-``instrument_type`` **before** validation. Routing every record shape through a
-discriminated union would type thousands of derivative rows nobody reads.
+Only company-equity rows are retained, and the filter runs **before**
+validation. Routing every record shape through a discriminated union would type
+thousands of derivative rows nobody reads.
+
+**The filter reads the ISIN, not the trading series.** An earlier version
+retained ``NSE_EQ``/``EQ`` and ``BSE_EQ``/``A`` only. That silently dropped two
+of ten pinned watchlist stocks, which trade in NSE series ``BE`` and BSE group
+``T`` — a company moved to trade-to-trade is still that company. It also
+admitted 176 ETFs, because ``NSE_EQ``/``EQ`` mixes them in. The Indian numbering
+agency states what a security *is* in the ISIN itself, and that is what is read.
 
 Three findings from the full live census drive the models, and all three
 contradict the vendor's own documentation:
@@ -15,6 +22,10 @@ contradict the vendor's own documentation:
   absent in all 699 of them;
 * ``cas_eligible`` appears only when it is ``true``, never present-and-``false``;
 * ``exchange_token`` is a string, not the number the docs claim.
+
+A fourth landed on the first live run: ``qty_multiplier`` is on every retained
+equity row, and the vendor's schema table lists it only for suspended records.
+The unknown-key census is what surfaced it.
 
 The omission rule follows from the second: ``None`` means the file did not carry
 the field and must stay distinguishable from ``False``, which would be a claim
@@ -48,18 +59,28 @@ from fundamentals.ingest.upstox_source import (
     UpstoxSurface,
 )
 
-# ``NSE_EQ``/``EQ`` (2,639 rows) and ``BSE_EQ``/``A`` (699 rows) are the only
-# combinations this lane retains. Everything else in the complete file is a
-# derivative, an index or a commodity.
-RETAINED_EQUITY: frozenset[tuple[str, str]] = frozenset({("NSE_EQ", "EQ"), ("BSE_EQ", "A")})
-
 NSE_EQUITY_SEGMENT = "NSE_EQ"
 BSE_EQUITY_SEGMENT = "BSE_EQ"
+
+# The two cash segments. They are necessary but nowhere near sufficient: a full
+# scan of the 2026-09-04 file found 22,458 rows in them, of which only 7,845 are
+# company equity. The rest are government securities, treasury bills,
+# debentures, ETFs and mutual-fund units, all trading in the same segment.
+EQUITY_SEGMENTS: frozenset[str] = frozenset({NSE_EQUITY_SEGMENT, BSE_EQUITY_SEGMENT})
+
+# An Indian ISIN is IN | issuer-type | 4-char issuer | 2-char issue-type |
+# 2-char serial | check digit. ``E`` is a company and ``01`` is equity shares —
+# the numbering agency's own statement of what the security is, which is why it
+# is read here rather than inferred from a trading series.
+EQUITY_ISIN_PREFIX = "INE"
+EQUITY_ISIN_ISSUE_TYPE = "01"
+_ISSUE_TYPE_SLICE = slice(7, 9)
+_MIN_ISIN_LENGTH = 12
 
 INSTRUMENT_KEY_SEPARATOR = "|"
 
 _SEGMENT_FIELD = "segment"
-_INSTRUMENT_TYPE_FIELD = "instrument_type"
+_ISIN_FIELD = "isin"
 
 _NOT_A_JSON_ARRAY = "instrument file is not a top-level JSON array"
 _UNREADABLE_GZIP = "instrument file could not be decompressed: {reason}"
@@ -120,6 +141,12 @@ class UpstoxInstrument(BaseModel):
     lot_size: int
     freeze_quantity: Decimal
     tick_size: Decimal
+    # Undocumented on equity rows: the vendor's schema table lists it only for
+    # suspended records. Present on 3,337/3,337 retained equity rows in the
+    # 2026-09-04 full scan, so it is modelled required and its absence is drift.
+    # Every observed value was 1.0; that is today's data, not a constant, and is
+    # deliberately not baked into the type.
+    qty_multiplier: Decimal
 
     # Missing on roughly a third of live equity rows.
     short_name: str | None = None
@@ -375,8 +402,20 @@ def _decode_rows(
 
 
 def _is_retained_equity(row: Mapping[str, Any]) -> bool:
-    """Whether one wire row is an equity row this lane keeps."""
-    return (row.get(_SEGMENT_FIELD), row.get(_INSTRUMENT_TYPE_FIELD)) in RETAINED_EQUITY
+    """Whether one wire row is company equity, read from the segment and the ISIN.
+
+    ``instrument_type`` is deliberately **not** part of this test. It is a
+    trading series — NSE ``EQ``/``BE``/``BZ``, BSE ``A``/``B``/``T``/``X`` — and
+    a company moved to trade-to-trade is still that company. Filtering on it
+    silently dropped two of ten pinned watchlist stocks, and it does not even
+    separate equity from non-equity: ``NSE_EQ``/``EQ`` carries 176 ETFs.
+    """
+    if row.get(_SEGMENT_FIELD) not in EQUITY_SEGMENTS:
+        return False
+    isin = row.get(_ISIN_FIELD)
+    if not isinstance(isin, str) or len(isin) < _MIN_ISIN_LENGTH:
+        return False
+    return isin.startswith(EQUITY_ISIN_PREFIX) and isin[_ISSUE_TYPE_SLICE] == EQUITY_ISIN_ISSUE_TYPE
 
 
 def _validate_rows[RowT: (UpstoxInstrument, UpstoxSuspendedInstrument)](
