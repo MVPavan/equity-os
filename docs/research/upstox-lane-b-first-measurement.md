@@ -211,11 +211,28 @@ differently, not of a parse error.
 **A demonstrated-equivalence claim built on three companies does not survive
 ten.** The identity holds exactly for 73 of 80 lines and fails on companies with
 exceptional items or material associates. The tier vocabulary has no conditional
-tier, so the honest options are to demote both lines to
-`RELATED_NOT_EQUIVALENT` — which empties tier 1 and makes `MISMATCH`
-unreachable — or to keep tier 1 and state the exclusion explicitly. **This is an
-owner decision and is recorded on `eqos-0j6` rather than taken here**, because
-the plan's step 5(c) reserves per-field warn/block calls to the owner.
+tier, so the choice was to demote both lines to `RELATED_NOT_EQUIVALENT` — which
+empties tier 1 and makes `MISMATCH` unreachable — or to keep tier 1 and state
+the exclusion explicitly.
+
+**Owner decision, 2026-09-04 (PavanMV): keep tier 1, state the exclusion.** The
+reasoning that decides it is what demotion would cost: with tier 1 empty, the
+POLYCAB Mar-2023 finding — a real Upstox summary-block defect, the one class
+where Lane B gives a clean answer — would arrive as one `ANOMALY` among 62,
+indistinguishable from the rounding noise that dominates tier 2.
+
+The cost of keeping it is that the enum member alone over-claims. Two things
+carry the correction instead:
+
+* each mapping's `means` now names its exclusion, the company it failed on and
+  the size of the failure — and `means` travels into every report row, which is
+  where a reader actually looks;
+* `EvidenceTier`'s own docstring says a tier is not self-sufficient and that
+  `EQUIVALENCE_DEMONSTRATED` may carry a stated exclusion.
+
+`test_screener_crosscheck.py::TestTierOneCarriesItsMeasuredExclusion` fails if
+an edit ever drops an exclusion while leaving the tier at 1, so the over-claim
+cannot silently return.
 
 ### Tier-2 magnitudes
 

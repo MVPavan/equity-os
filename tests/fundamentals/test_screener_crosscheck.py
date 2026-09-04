@@ -363,3 +363,36 @@ class TestTotalLiabilityIsNotScreenersTotalLiabilities:
         # rather than as a difference, which is what stops a partial sum
         # manufacturing a mismatch.
         assert row.outcome is CrosscheckOutcome.MISSING_SCREENER
+
+
+class TestTierOneCarriesItsMeasuredExclusion:
+    """A tier-1 line whose identity was falsified must say so in its own `means`.
+
+    Owner decision 2026-09-04: keep `operating_profit` and `net_profit` at
+    EQUIVALENCE_DEMONSTRATED so MISMATCH stays reachable and an Upstox-side
+    defect still surfaces as a mismatch rather than being lumped in with 62
+    tier-2 anomalies. The cost is that the enum member alone over-claims, so the
+    exclusion has to travel with the mapping — and `means` travels into every
+    report row, which is where a reader actually sees it.
+
+    These tests exist so the over-claim cannot silently return: an edit that
+    drops the exclusion while leaving the tier at 1 fails here.
+    """
+
+    FALSIFIED = ("operating_profit", "net_profit")
+
+    @pytest.mark.parametrize("category", FALSIFIED)
+    def test_the_tier_is_still_one(self, category: str) -> None:
+        assert mapping_for(category).tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED
+
+    @pytest.mark.parametrize("category", FALSIFIED)
+    def test_the_exclusion_is_stated_where_a_report_reader_will_see_it(self, category: str) -> None:
+        means = mapping_for(category).means
+        assert "exceptional" in means.lower() or "associates" in means.lower()
+        # Named so a reader can go and look at the evidence rather than take it
+        # on trust; both were found on live data, not reasoned about.
+        assert "CGPOWER" in means or "LAURUSLABS" in means
+
+    def test_the_tier_enum_warns_that_a_mapping_may_carry_an_exclusion(self) -> None:
+        """The enum member is not self-sufficient, and must not read as if it were."""
+        assert "exclusion" in (EvidenceTier.EQUIVALENCE_DEMONSTRATED.__doc__ or "")

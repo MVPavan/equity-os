@@ -60,7 +60,18 @@ CRORE_SCALE = 1
 
 
 class EvidenceTier(StrEnum):
-    """How much a comparison on this line is entitled to conclude."""
+    """How much a comparison on this line is entitled to conclude.
+
+    **A tier is not self-sufficient — read the mapping's ``means`` with it.**
+    ``EQUIVALENCE_DEMONSTRATED`` may carry a stated exclusion there, because an
+    identity can hold across most of a population and fail on a named part of
+    it. Both tier-1 lines currently do: the 2026-09-04 sweep held on 73 of 80
+    live lines and failed on companies with material exceptional items or
+    associates. Grading those lines down would have emptied tier 1 and made
+    ``MISMATCH`` unreachable, hiding a real Upstox-side defect among 62 tier-2
+    anomalies, so the owner kept the tier and required the exclusion to travel
+    in ``means`` — which reaches every report row, as the enum member does not.
+    """
 
     EQUIVALENCE_DEMONSTRATED = "EQUIVALENCE_DEMONSTRATED"
     RELATED_NOT_EQUIVALENT = "RELATED_NOT_EQUIVALENT"
@@ -145,13 +156,25 @@ INCOME_STATEMENT_MAP: tuple[LineMapping, ...] = (
     ),
     LineMapping(
         upstox_category="operating_profit",
-        means="Profit Before Tax — despite the label, this is NOT operating profit",
+        means=(
+            "Profit Before Tax — despite the label, this is NOT operating profit. "
+            "EXCLUSION: the identity failed on CGPOWER, 3 of 4 periods, by up to "
+            "556.62 crore, where exceptional items are material and each vendor's "
+            "own pre-tax-to-post-tax chain is internally consistent at a different "
+            "figure. Held on 73 of 80 lines in the 2026-09-04 sweep."
+        ),
         screener_rows=("Profit before tax",),
         tier=EvidenceTier.EQUIVALENCE_DEMONSTRATED,
     ),
     LineMapping(
         upstox_category="net_profit",
-        means="Profit After Tax",
+        means=(
+            "Profit After Tax. EXCLUSION: the identity failed on LAURUSLABS in 3 of "
+            "4 periods while profit before tax agreed to the crore in all four, and "
+            "the differences ran in both directions across years — the signature of "
+            "associates or minority interest placed differently, not of a parse "
+            "error. Held on 73 of 80 lines in the 2026-09-04 sweep."
+        ),
         screener_rows=("Net Profit",),
         tier=EvidenceTier.EQUIVALENCE_DEMONSTRATED,
     ),
