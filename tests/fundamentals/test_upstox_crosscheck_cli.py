@@ -261,6 +261,61 @@ class TestRun:
         assert source.calls == []
         assert result.companies[0].status is CompanyStatus.SKIPPED_NO_SCREENER_DATA
 
+    def test_a_drifted_block_lane_b_never_reads_does_not_stop_the_comparison(
+        self, tmp_path: Path
+    ) -> None:
+        """Lane B reads periods, row labels and cell values. Nothing else.
+
+        Validating the whole `SectionTable` coupled the comparator to parts of
+        the Screener artifact it ignores — `schedules`, `growth_tables`,
+        `quarantined`. A retained capture written before those sub-models grew a
+        required field then made the crosscheck refuse to read the rows it does
+        need, which is the wrong failure for a log-only lane.
+        """
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        root = _screener_root(tmp_path, "TITAN")
+        path = root / "TITAN" / "standalone" / "section_profit-loss.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["schedules"] = [{"nothing": "this model has never declared"}]
+        payload["growth_tables"] = [{"also": "unreadable"}]
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        result = run_upstox_crosscheck_command(
+            _args(),
+            isin_file=isin_file,
+            screener_root=root,
+            out_dir=tmp_path / "out",
+            source=StubSource(_bodies()),
+        )
+        assert result.companies[0].status is CompanyStatus.COMPARED
+        outcomes = {
+            row.outcome
+            for report in result.companies[0].reports
+            for row in report.rows
+            if row.upstox_category == "net_profit"
+        }
+        assert outcomes == {CrosscheckOutcome.AGREE}
+
+    def test_a_row_that_lane_b_reads_but_cannot_type_is_refused(self, tmp_path: Path) -> None:
+        """Narrow does not mean lenient: the fields it does read stay strict."""
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        root = _screener_root(tmp_path, "TITAN")
+        path = root / "TITAN" / "standalone" / "section_profit-loss.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        del payload["rows"][0]["label"]
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(SystemExit, match="section_profit-loss.json"):
+            run_upstox_crosscheck_command(
+                _args(),
+                isin_file=isin_file,
+                screener_root=root,
+                out_dir=tmp_path / "out",
+                source=StubSource(_bodies()),
+            )
+
     def test_an_unreadable_upstox_response_makes_the_run_exit_non_zero(
         self, tmp_path: Path
     ) -> None:
@@ -382,3 +437,41 @@ class TestParser:
         )
         assert args.command == UPSTOX_CROSSCHECK_COMMAND
         assert args.basis == "both"
+
+
+class TestTierThreeVisibility:
+    """A tier-3 line can be the largest disagreement in a run and claim nothing."""
+
+    def test_a_tier_three_difference_is_counted_without_being_named_a_mismatch(
+        self, tmp_path: Path
+    ) -> None:
+        """NETWEB Mar-2026 operating cash flow: Upstox 789.92, Screener 171."""
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        bodies = _bodies()
+        cash = bodies[UpstoxSurface.CASH_FLOW]
+        cash["data"]["cash_flow"][0]["history"][0]["value"] = 789.92
+        result = run_upstox_crosscheck_command(
+            _args(),
+            isin_file=isin_file,
+            screener_root=_screener_root(tmp_path, "TITAN"),
+            out_dir=tmp_path / "out",
+            source=StubSource(bodies),
+        )
+        assert result.unmet_tier3_count == 1
+        assert result.mismatch_count == 0
+        assert result.anomaly_count == 0
+        assert result.exit_code == 0
+        assert "unmet_tier3" in result.render()
+
+    def test_a_tier_three_line_that_agrees_is_not_counted(self, tmp_path: Path) -> None:
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        result = run_upstox_crosscheck_command(
+            _args(),
+            isin_file=isin_file,
+            screener_root=_screener_root(tmp_path, "TITAN"),
+            out_dir=tmp_path / "out",
+            source=StubSource(_bodies()),
+        )
+        assert result.unmet_tier3_count == 0

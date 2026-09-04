@@ -165,8 +165,16 @@ INCOME_STATEMENT_MAP: tuple[LineMapping, ...] = (
     ),
     LineMapping(
         upstox_category="total_liability",
-        means="Balance-sheet total liabilities, stated as total_liability",
-        screener_rows=("Total Liabilities",),
+        means="Liabilities excluding equity — NOT Screener's 'Total Liabilities' row",
+        # Screener's ``Total Liabilities`` is the balancing total and equals its
+        # ``Total Assets`` on every period of every company checked. Mapping to
+        # it produced a five-figure false ANOMALY on all four TITAN periods.
+        # Upstox's ``total_liability`` is borrowings plus other liabilities:
+        # exact on Mar-2026, and off by the same 2-3 crore as ``total_asset`` on
+        # Mar-2025 and Mar-2024, which is a shared restatement offset rather
+        # than a mapping error. Verified on TITAN consolidated and NETWEB
+        # standalone, 2026-09-04.
+        screener_rows=("Borrowings", "Other Liabilities"),
         tier=EvidenceTier.RELATED_NOT_EQUIVALENT,
     ),
     LineMapping(

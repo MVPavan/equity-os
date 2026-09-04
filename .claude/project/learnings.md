@@ -133,3 +133,36 @@ Format per entry:
 - Apply: before joining two series on a period label, assert both carry the same
   periodicity, and skip rather than compare when they do not. Never derive one
   block's periodicity from the response envelope — measure each block's own.
+
+## Name similarity between two vendors is not evidence of a mapping  (2026-09-04)
+
+- Observed: Lane B mapped Upstox's `total_liability` onto Screener's
+  `Total Liabilities` row. Screener's row is the *balancing total* — it equals
+  Screener's own `Total Assets` on every period of every company checked — while
+  Upstox's field is liabilities excluding equity. The comparator reported a
+  five-figure ANOMALY on all four TITAN periods (15,703 / 11,622 / 9,390 /
+  11,901 crore) while the underlying numbers agreed to the crore. The correct
+  mapping is `Borrowings + Other Liabilities`, which is exact on Mar-2026.
+- Why it matters: this is precisely the failure `screener_crosscheck`'s own
+  docstring warns about, committed by the module that warns about it. A false
+  anomaly on every company and period reads as a catastrophic parser defect that
+  does not exist, and it is the fastest way to get a log-only check switched off.
+- Apply: every entry in a cross-vendor name map must be demonstrated on live
+  data from both sides before it ships — matching labels are a hypothesis, not
+  evidence. Prefer a reconstruction from rows whose sum you have checked over a
+  single row whose name matches. See
+  [`docs/research/upstox-lane-b-first-measurement.md`](../../docs/research/upstox-lane-b-first-measurement.md).
+
+## Validate only the part of an artifact you read  (2026-09-04)
+
+- Observed: `upstox-crosscheck` loaded Screener sections through the full
+  `SectionTable` model. A retained capture written before `ScheduleStrategy` and
+  `SubRowKind` gained required fields then failed with 16 validation errors —
+  none in a field any comparison touches — and the whole run refused before
+  comparing anything.
+- Why it matters: it couples a consumer to parts of a producer's schema it has
+  no interest in, and turns unrelated schema evolution into a hard failure of a
+  log-only lane. Retained artifacts outlive the models that wrote them.
+- Apply: when reading someone else's artifact, declare a narrow model of exactly
+  the fields you use, `extra="ignore"`, and keep those fields strict. Reuse the
+  producer's full model only when you actually depend on all of it.

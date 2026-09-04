@@ -321,3 +321,45 @@ class TestMapKeysMatchTheLiveContract:
     def test_every_mapped_key_is_reachable(self) -> None:
         for entry in INCOME_STATEMENT_MAP:
             assert mapping_for(entry.upstox_category) is entry
+
+
+class TestTotalLiabilityIsNotScreenersTotalLiabilities:
+    """Screener's `Total Liabilities` row is the balancing total, not liabilities.
+
+    On every period of every company checked it equals Screener's `Total
+    Assets`. Mapping Upstox's `total_liability` onto that name — which is what a
+    same-name comparator does — produced a five-figure false ANOMALY on all four
+    TITAN periods while the underlying numbers agreed to the crore.
+    """
+
+    def test_it_maps_to_the_two_rows_that_actually_sum_to_it(self) -> None:
+        mapping = mapping_for("total_liability")
+        assert mapping.screener_rows == ("Borrowings", "Other Liabilities")
+        assert "NOT" in mapping.means
+
+    def test_the_reconstruction_agrees_on_live_titan_mar_2026(self) -> None:
+        """Upstox 44858.0 against Screener's 30621 + 14237. Exact."""
+        row = compare_line(
+            mapping_for("total_liability"),
+            upstox=StatedValue(amount=Decimal("44858.0"), decimals=1, raw_label="total_liability"),
+            screener=(
+                StatedValue(amount=Decimal("30621"), decimals=0, raw_label="Borrowings"),
+                StatedValue(amount=Decimal("14237"), decimals=0, raw_label="Other Liabilities"),
+            ),
+        )
+        assert row.outcome is CrosscheckOutcome.AGREE
+        assert row.difference == Decimal("0.0")
+
+    def test_screeners_own_total_liabilities_row_would_have_been_nonsense(self) -> None:
+        """The row it used to map to carries 60561 for the same period."""
+        row = compare_line(
+            mapping_for("total_liability"),
+            upstox=StatedValue(amount=Decimal("44858.0"), decimals=1, raw_label="total_liability"),
+            screener=(
+                StatedValue(amount=Decimal("60561"), decimals=0, raw_label="Total Liabilities"),
+            ),
+        )
+        # One row supplied where the mapping names two: scored as a coverage gap
+        # rather than as a difference, which is what stops a partial sum
+        # manufacturing a mismatch.
+        assert row.outcome is CrosscheckOutcome.MISSING_SCREENER

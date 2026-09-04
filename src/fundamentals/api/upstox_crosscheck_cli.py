@@ -48,7 +48,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import structlog
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
@@ -62,7 +62,6 @@ from fundamentals.ingest.screener_crosscheck import (
     StatedValue,
     compare_line,
 )
-from fundamentals.ingest.screener_financials_models import SectionTable
 from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
     UpstoxConfig,
@@ -103,7 +102,9 @@ EXIT_OK = 0
 EXIT_UNREADABLE = 3
 _REFUSED_EVENT = "upstox_crosscheck_refused"
 
-SUMMARY_HEADER = "isin\tsymbol\tbasis\tstatus\tagree\tmismatch\tanomaly\tnot_comparable"
+SUMMARY_HEADER = (
+    "isin\tsymbol\tbasis\tstatus\tagree\tmismatch\tanomaly\tnot_comparable\tunmet_tier3"
+)
 
 _HELP = "compare Upstox statement values against Screener's, log-only"
 _ISIN_FILE_HELP = "two-column TSV: <isin>\\t<nse symbol>, one company per line"
@@ -115,6 +116,51 @@ _BAD_LINE = "{path} line {number}: expected <isin>\\t<symbol>, got {line!r}"
 _REPEATED = "{path} line {number}: isin {isin} is repeated"
 _EMPTY_FILE = "{path} holds no isin/symbol lines"
 _AMBIGUOUS_ROW = "screener row {label!r} appears in both {first} and {second}; refusing to guess"
+_UNREADABLE_SECTION = "{path} is not readable as a screener section: {reason}"
+
+
+class _ScreenerCell(BaseModel):
+    """One Screener cell, narrowed to what a comparison needs from it."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    period_index: int = Field(ge=0)
+    value: Decimal | None
+    published: bool
+
+
+class _ScreenerRow(BaseModel):
+    """One Screener row, narrowed to its label and its cells."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    label: str = Field(min_length=1)
+    cells: tuple[_ScreenerCell, ...] = ()
+
+
+class _ScreenerPeriod(BaseModel):
+    """One Screener column, narrowed to the index and label a value is addressed by."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    index: int = Field(ge=0)
+    label: str = Field(min_length=1)
+
+
+class _ScreenerSection(BaseModel):
+    """The part of a ``section_*.json`` artifact Lane B actually reads.
+
+    Deliberately narrower than :class:`SectionTable`. Validating the whole
+    artifact coupled the comparator to ``schedules``, ``growth_tables`` and
+    ``quarantined`` — blocks no comparison touches — so a change in any of them
+    made a log-only lane refuse rows it could read perfectly well. What is read
+    stays strict; what is not read is not a dependency.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    periods: tuple[_ScreenerPeriod, ...] = ()
+    rows: tuple[_ScreenerRow, ...] = ()
 
 
 class CompanyStatus(StrEnum):
@@ -157,6 +203,30 @@ class CrosscheckRunReport(BaseModel):
         return self._count(CrosscheckOutcome.ANOMALY)
 
     @property
+    def unmet_tier3_count(self) -> int:
+        """Tier-3 lines whose two values differ beyond their derived tolerance.
+
+        ``NOT_COMPARABLE`` is the honest verdict for a line whose equivalence
+        was never demonstrated, and it is returned whatever the numbers say. But
+        a tier-3 line can still be the largest disagreement in a run — on the
+        first live replay, NETWEB's Mar-2026 operating cash flow read 789.92
+        against Screener's 171 — and counting only mismatches and anomalies
+        would leave it invisible in every summary. This counts them without
+        claiming anything about them: it says which tier-3 lines are worth a
+        reviewer's time, which is the input the graduation procedure needs.
+        """
+        return sum(
+            1
+            for company in self.companies
+            for report in company.reports
+            for row in report.rows
+            if row.outcome is CrosscheckOutcome.NOT_COMPARABLE
+            and row.difference is not None
+            and row.tolerance is not None
+            and row.difference > row.tolerance
+        )
+
+    @property
     def unreadable_count(self) -> int:
         """Companies whose Upstox response this repo could not read."""
         return sum(
@@ -187,9 +257,17 @@ class CrosscheckRunReport(BaseModel):
         lines = [SUMMARY_HEADER]
         for company in self.companies:
             counts = {outcome: 0 for outcome in CrosscheckOutcome}
+            unmet = 0
             for report in company.reports:
                 for row in report.rows:
                     counts[row.outcome] += 1
+                    if (
+                        row.outcome is CrosscheckOutcome.NOT_COMPARABLE
+                        and row.difference is not None
+                        and row.tolerance is not None
+                        and row.difference > row.tolerance
+                    ):
+                        unmet += 1
             lines.append(
                 "\t".join(
                     (
@@ -201,6 +279,7 @@ class CrosscheckRunReport(BaseModel):
                         str(counts[CrosscheckOutcome.MISMATCH]),
                         str(counts[CrosscheckOutcome.ANOMALY]),
                         str(counts[CrosscheckOutcome.NOT_COMPARABLE]),
+                        str(unmet),
                     )
                 )
             )
@@ -308,6 +387,7 @@ def run_upstox_crosscheck_command(
         companies=len(run.companies),
         mismatches=run.mismatch_count,
         anomalies=run.anomaly_count,
+        unmet_tier3=run.unmet_tier3_count,
         unreadable=run.unreadable_count,
     )
     return run
@@ -466,7 +546,12 @@ def _load_screener_values(
         if not path.is_file():
             continue
         found = True
-        table = SectionTable.model_validate_json(path.read_text(encoding="utf-8"))
+        try:
+            table = _ScreenerSection.model_validate_json(path.read_text(encoding="utf-8"))
+        except ValidationError as error:
+            raise SystemExit(
+                _UNREADABLE_SECTION.format(path=path, reason=error.errors()[0]["msg"])
+            ) from error
         labels = {period.index: period.label for period in table.periods}
         for row in table.rows:
             if row.label in origin and origin[row.label] != section:
