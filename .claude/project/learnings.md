@@ -215,3 +215,20 @@ Format per entry:
   cell from the class's own rule (never by comparing outcomes), give every
   "could not detect" reason its own named bucket, and before trusting any class
   that reports zero, prove it can fire on one cell of real data.
+
+## A convergence rule fires on its evidence, not on a coincidence  (2026-09-04)
+
+- Observed: Lane B's "Upstox-side" alibi was built as *an internal Upstox
+  contradiction on the same line and period*. On the first real replay it
+  exonerated THERMAX revenue on two periods where Screener sat ~50 crore from
+  both Upstox figures. The rule Part 1 of the measurement doc had earned was
+  two-sided — the contradiction **and** Screener agreeing with Upstox's own
+  `full_statement` — and the implementation had kept only the half that is
+  easy to key on.
+- Why it matters: an alibi that fires on coincidence removes lines from the
+  warn queue on evidence that says nothing about them. POLYCAB (0.25 crore
+  from the full_statement) was the case the rule was written for; THERMAX
+  passed the same check with no such agreement.
+- Apply: when a diagnostic rule is stated as "A and B", key the code on both
+  and write the negative test from a real case where A held and B did not.
+  Carry the values the rule needs on the structured note, not just the labels.

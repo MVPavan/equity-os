@@ -407,3 +407,85 @@ is blind" — each one indistinguishable from a real result in the summary line.
 Artifacts: `scratchpad/laneb-5b/sensitivity-2/laneb_sensitivity_report.json`
 (local, not committed — it embeds retained subscriber values); the harness is
 `fundamentals upstox-crosscheck-sensitivity`.
+
+---
+
+## Part 4 — triage: what warns, what is listed, what stays quiet
+
+Step 5(c). With a base rate (Part 2) and a sensitivity (Part 3) in hand, the
+per-field decision was made on 2026-09-04 by the owner (PavanMV) and is carried
+in `config/laneb_triage.yaml`, each entry with its reason and the measurement
+it came from. `upstox-crosscheck` now classifies every compared line and writes
+a `warnings.tsv` beside its report. **Decision A stands: the exit code is 0
+whatever is found.** `--warn-exit` is opt-in for an operator's manual run.
+
+### The evidence the thresholds rest on
+
+| | Vendor disagreements (Part 2, 69 lines) | Seeded parser defects (Part 3) |
+|---|---|---|
+| ≤ 5 % relative | 59 | `UNIT_DRIFT` only |
+| ≤ 20 % relative | 68 | about half of `COLUMN_SHIFT` (it equals year-on-year growth, median 21 %) |
+| > 20 % relative | 1 (CGPOWER Mar-2024, acknowledged) | `SCALE_10` 90 %, `SCALE_100` 99 %, `SIGN_FLIP` 200 %, `THOUSANDS_TRUNCATED` ≈ 100 %, the other half of `COLUMN_SHIFT` |
+| line missing from Screener | 0 | `DROP_ROW`, `STALE_PERIOD` |
+
+Persistence across periods does *not* separate the two: definitional gaps
+persist (9 company-lines at 4 of 4 periods, 7 at 3 of 4) exactly as a parser
+defect would. Whole-table breadth does, but only with a magnitude floor — both
+balance-sheet categories disagree in 13 of 36 periods from rounding noise alone.
+
+### The classes
+
+| Class | Rule | Action |
+|---|---|---|
+| `STRUCTURAL` | a mapped line is missing from Screener | **warn** |
+| `MAGNITUDE` | relative difference ≥ 0.20 on a tier-1 or tier-2 line | **warn** |
+| `WHOLE_TABLE` | every mapped category of a section disagrees in one period and at least one is `MAGNITUDE` or `STRUCTURAL` | **warn** |
+| `UPSTOX_SIDE` | an Upstox summary-vs-`full_statement` contradiction on the same line and period, **and** Screener within tolerance of the `full_statement` figure | listed, never warns |
+| `ACKNOWLEDGED` | a (company, line) pair the owner has labelled definitional, with a reason | listed, never warns, **never suppressed** |
+| `NOISE` | any other disagreement | logged only |
+
+No class blocks. Zero parser defects were observed in 344 live lines, and Lane
+B reads 30–50 % of rows and about 36–39 % of periods; a gate that fires only on
+synthetic evidence is switched off the first time it fires for real.
+
+### Result on the sweep
+
+Replayed over the same nine consolidated pairs and retained bodies:
+
+```
+warn 0   listed 7   noise 62   none 235
+```
+
+| Company | Period | Line | Upstox | Screener | Rel. | Class |
+|---|---|---|---:|---:|---:|---|
+| POLYCAB | Mar 2023 | `net_profit` | 1283.09 | 1282 | 0.08 % | `UPSTOX_SIDE` |
+| CGPOWER | Mar 2023 / 2024 / 2026 | `operating_profit` | | | 14.3 / 32.5 / 0.1 % | `ACKNOWLEDGED` |
+| LAURUSLABS | Mar 2023 / 2024 / 2025 | `net_profit` | | | 0.5 / 3.7 / 1.0 % | `ACKNOWLEDGED` |
+
+The queue is exactly the seven hand-labelled mismatches of Part 2, each carrying
+the label Part 2 gave it, with nothing added and nothing hidden. A parser
+defect of the shapes Part 3 seeded would appear above them as `STRUCTURAL` or
+`MAGNITUDE`.
+
+### The convergence rule needed its second half
+
+The first replay listed THERMAX `revenue` Mar-2025 and Mar-2026 as
+`UPSTOX_SIDE`: Upstox's summary (10,961.63) contradicts its own
+`full_statement` (11,041.49) on that line. But Screener says 11,091 — about 50
+crore from *both* Upstox figures. The contradiction is real and it exonerates
+nothing, because the rule Part 1 earned has two halves: an internal Upstox
+contradiction **and Screener agreeing with Upstox's own `full_statement`**. As
+first built, the rule fired on the first half alone. It now requires
+`|Screener − full_statement| ≤ tolerance`; POLYCAB (0.25 crore) keeps its
+alibi and THERMAX falls to `NOISE`.
+
+### Known limits
+
+- **Bank-format pages.** Screener's bank statements carry `Revenue` and
+  `Deposits` where the name map expects `Sales` and `Borrowings`, so every bank
+  period would read `STRUCTURAL`. No bank is in the sweep; adding one needs a
+  mapping first, not an acknowledgement.
+- **A typo'd config refuses, it does not degrade.** `acknowledgements:` for
+  `acknowledged:` is rejected outright; the alternative was CGPOWER's 32 %
+  silently becoming a warn nobody expected.
+- **Review owner:** PavanMV, on each manual run. Automation stays restricted.
