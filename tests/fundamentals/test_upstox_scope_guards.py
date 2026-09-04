@@ -31,12 +31,19 @@ _SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "fundamentals"
 BARRED_MODULES = ("fundamentals.store.fact_store", "fundamentals.reconcile")
 
 
+# Lane B modules that carry no ``upstox`` in their filename but are part of the
+# same lane and under the same bar.
+LANE_B_MODULES = ("ingest/screener_crosscheck.py",)
+
+
 def _upstox_modules() -> tuple[Path, ...]:
-    """Every first-party module of the Upstox lane."""
+    """Every first-party module of the Upstox lane, both lanes included."""
     found = tuple(sorted(_SOURCE_ROOT.rglob("upstox*.py")))
-    if not found:
-        raise AssertionError("no upstox modules found; the guard would pass vacuously")
-    return found
+    lane_b = tuple(_SOURCE_ROOT / name for name in LANE_B_MODULES)
+    missing = [path for path in lane_b if not path.exists()]
+    if not found or missing:
+        raise AssertionError(f"upstox lane modules not found: {missing or 'upstox*.py'}")
+    return found + lane_b
 
 
 def _imported_modules(path: Path) -> set[str]:

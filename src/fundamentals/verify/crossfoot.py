@@ -39,6 +39,18 @@ class FootingContextError(Exception):
     """Observations in an identity do not share the same footing context."""
 
 
+def half_ulp(decimals: int, scale: int) -> Decimal:
+    """Half a unit in the last reported place, rescaled into normalized units.
+
+    The pure arithmetic behind :func:`observation_half_ulp`, taking the two
+    numbers rather than an :class:`Observation`. Extracted so a caller that must
+    not construct an ``Observation`` — the Upstox Lane B parse-check is barred
+    from doing so, and that bar is the point — still derives its tolerance from
+    declared precision instead of inventing a constant.
+    """
+    return _HALF * _TEN ** (-decimals) / Decimal(scale)
+
+
 def observation_half_ulp(obs: Observation) -> Decimal:
     """Return the half-ULP tolerance in normalized units for an observation.
 
@@ -46,7 +58,7 @@ def observation_half_ulp(obs: Observation) -> Decimal:
     result is rescaled by ``scale`` into the normalized unit the identities work
     in (e.g. ``decimals=-7`` with ``scale=10**7`` yields ``0.5`` crore).
     """
-    return _HALF * _TEN ** (-obs.decimals) / Decimal(obs.scale)
+    return half_ulp(obs.decimals, obs.scale)
 
 
 class SignedTerm(BaseModel):

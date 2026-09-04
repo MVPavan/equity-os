@@ -13,6 +13,7 @@ from fundamentals.verify.crossfoot import (
     MissingRequiredFactError,
     SignedTerm,
     check_identity,
+    half_ulp,
     observation_half_ulp,
 )
 from fundamentals.verify.quote_anchor import (
@@ -37,6 +38,7 @@ __all__ = [
     "check_identity",
     "cross_check",
     "explain_comparability",
+    "half_ulp",
     "observation_half_ulp",
     "verify_quote_anchor",
 ]

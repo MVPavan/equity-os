@@ -901,6 +901,35 @@ repo already has the right machinery: `verify/crossfoot.observation_half_ulp`
 for decimals-derived tolerance and `verify/comparison_key`. Use those rather
 than invent a threshold.
 
+**Built 2026-09-04 as `ingest/screener_crosscheck.py`, with two recorded
+deviations from the wording above.**
+
+1. **The arithmetic is shared; the `Observation` is not.** Both named helpers
+   take an `Observation`, and Lane B is barred from constructing one — a leaked
+   Upstox value classified `first_party` is the exact hazard §10's typed bar
+   exists for. So `verify/crossfoot.half_ulp(decimals, scale)` was extracted as
+   the pure numeric core, `observation_half_ulp` now calls it, and Lane B calls
+   `half_ulp` directly with its own small alignment key instead of
+   `ComparisonKey` (which is XBRL-shaped: it wants a concept QName, a taxonomy
+   namespace and an entity scheme that a Screener row label does not have).
+   `test_verify.py` ran green before and after as the characterization harness.
+   Decision C's intent — no invented tolerance — is preserved; its literal
+   wording is not.
+
+2. **The tiers differ in what they may claim, not in how they compute.** All
+   three derive the same tolerance: the sum of every participating value's
+   half-ULP, on both sides, which is how rounding error propagates through
+   addition. Tier 2's "interval arithmetic over rounded addends" *is* that sum
+   with more than one addend. What the tier actually controls is the name a
+   breach is given. This is simpler than the table implies and is worth stating
+   plainly, because a reader could otherwise expect two separate algorithms.
+
+**Tier 3 returns `NOT_COMPARABLE` even when the values match** — stricter than
+the table's "on difference" column. Equivalence is unproven there, so counting a
+tier-3 agreement as evidence of correctness is the same error as counting a
+tier-3 difference as evidence of a defect. The row still records `values_equal`
+and the numeric difference, so nothing is lost; only the claim is withheld.
+
 | Tier | Surfaces | Comparison | On difference |
 |---|---|---|---|
 | 1 — equivalence demonstrated | income statement PBT, PAT (12/12, 3 companies, both bases) | half-ULP on declared precision | `MISMATCH` |
