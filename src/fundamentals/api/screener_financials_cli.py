@@ -36,7 +36,9 @@ from fundamentals.ingest.screener_financials import (
     read_financials,
 )
 from fundamentals.ingest.screener_financials_models import (
+    ScheduleFamily,
     Section,
+    family_key,
     reconciliation_is_proven,
 )
 from fundamentals.ingest.screener_session import ScreenerSessionSource
@@ -60,6 +62,10 @@ SCHEDULES_DIRNAME = "schedules"
 SECTION_FILENAME_TEMPLATE = "section_{section}.json"
 FAILURES_FILENAME = "screener_financials_failures.json"
 SCHEDULE_FILENAME_TEMPLATE = "{section}__{parent}.raw.json"
+# A nested body named by section and parent alone would collide with its own
+# parent's file, and the no-clobber write would then refuse the level-3 one —
+# losing exactly the evidence the artifact's deepest claim rests on.
+NESTED_SCHEDULE_FILENAME_TEMPLATE = "{section}__{parent}__{sub}.raw.json"
 
 # ``blocks`` is period columns for a data-table section and ranges-tables for
 # the growth section, which is what each of them is actually divided into.
@@ -280,8 +286,14 @@ def _schedule_filename(document: ScheduleDocument) -> str:
     alphabet rather than trusted as a path component; the ``document_id`` inside
     the artifact remains the authoritative, verbatim address.
     """
-    return SCHEDULE_FILENAME_TEMPLATE.format(
-        section=document.section.value, parent=_slug(document.parent)
+    if document.expands is None:
+        return SCHEDULE_FILENAME_TEMPLATE.format(
+            section=document.section.value, parent=_slug(document.parent)
+        )
+    return NESTED_SCHEDULE_FILENAME_TEMPLATE.format(
+        section=document.section.value,
+        parent=_slug(document.expands),
+        sub=_slug(document.parent),
     )
 
 
@@ -324,25 +336,15 @@ def render_screener_financials_summary(published: ScreenerFinancialsRun) -> str:
     lines.append(_SCHEDULE_HEADER)
     for table in artifact.sections:
         for family in table.schedules:
-            lines.append(
-                "\t".join(
-                    (
-                        f"{family.section.value}/{family.parent}",
-                        family.strategy.value,
-                        family.reconciliation.value,
-                        str(len(family.sub_rows)),
-                        str(len(family.comparisons)),
-                        family.reconciliation_note,
-                    )
-                )
-            )
+            lines.append(_schedule_line(family))
+            lines.extend(_schedule_line(child) for child in family.nested)
     if artifact.failures:
         lines.append(_FAILURE_HEADER)
         for failure in artifact.failures:
             lines.append(
                 "\t".join(
                     (
-                        f"{failure.section.value}/{failure.parent}",
+                        family_key(failure.section, failure.parent, failure.expands),
                         failure.refusal,
                         failure.detail,
                     )
@@ -351,6 +353,20 @@ def render_screener_financials_summary(published: ScreenerFinancialsRun) -> str:
     if not artifact.metadata.complete:
         lines.append(_INCOMPLETE_LINE.format(reason=artifact.metadata.incomplete_reason))
     return "\n".join(lines)
+
+
+def _schedule_line(family: ScheduleFamily) -> str:
+    """One summary row for a family, keyed the same three ways its body is named."""
+    return "\t".join(
+        (
+            family_key(family.section, family.parent, family.expands),
+            family.strategy.value,
+            family.reconciliation.value,
+            str(len(family.sub_rows)),
+            str(len(family.comparisons)),
+            family.reconciliation_note,
+        )
+    )
 
 
 def is_incomplete(published: ScreenerFinancialsRun) -> bool:
@@ -373,9 +389,10 @@ def unreconciled_families(published: ScreenerFinancialsRun) -> tuple[str, ...]:
     the caller saw.
     """
     return tuple(
-        f"{family.section.value}/{family.parent}"
+        family_key(family.section, family.parent, family.expands)
         for table in published.run.artifact.sections
-        for family in table.schedules
+        for parent_family in table.schedules
+        for family in (parent_family, *parent_family.nested)
         if not reconciliation_is_proven(family.reconciliation)
     )
 
@@ -383,5 +400,6 @@ def unreconciled_families(published: ScreenerFinancialsRun) -> tuple[str, ...]:
 def refused_families(published: ScreenerFinancialsRun) -> tuple[str, ...]:
     """Families whose response was retained but refused outright."""
     return tuple(
-        f"{failure.section.value}/{failure.parent}" for failure in published.run.artifact.failures
+        family_key(failure.section, failure.parent, failure.expands)
+        for failure in published.run.artifact.failures
     )

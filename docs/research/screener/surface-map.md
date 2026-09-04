@@ -127,8 +127,16 @@ network recording. Results, with response shapes:
   (e.g. Other Assets → Trade receivables), i.e. a THIRD level opens from the
   sub-row. Reserved keys seen in schedule bodies: `setAttributes` (dict, e.g.
   `{"class": "strong"}` marks the site's own subtotal rows) and `isExpandable`
-  (string). Level-3 schedules are recorded but not acquired yet (follow-up
-  bead).
+  (string). **Level-3 schedules acquired since 2026-09-04** (eqos-kx4.3.3): the
+  URL shape is identical to level 2 with `parent=<sub-row label>`; only two nested
+  families exist across the ten watchlist companies — `Other Assets → Trade
+  receivables` (three amounts, flat-sums to the level-2 sub-row) and `Expenses →
+  Material Cost %` (`Raw material cost` + `Change in inventory` in crores; 100 × their
+  sum ÷ the page's Sales row ≈ the level-2 percent). No level 4 observed. A
+  non-schedule parent answers `{}` at HTTP 200, so `{}` stays unverified. A nested
+  body can lag the page by one financial year (HFCL `Trade receivables`, Mar 2014 …
+  Mar 2025 against a Mar 2015 … Mar 2026 page), which the partial-alignment rule
+  refuses as unverified.
 - Reconciliation facts (2026-08-26, TITAN/NETWEB/HFCL): page rows and sub-rows
   are rounded to whole crores independently (±1 per addend); the page rounds
   where the API keeps fractions (0.42 → 0); Fixed Assets page row = Gross

@@ -38,7 +38,10 @@ readonly EXIT_DIAGNOSE=4
 # Measured 2026-09-02 on a clean tree: 958 passed, 7 skipped. The skips are all
 # opt-in live fetches or the absent optional OCR wheel. Going green by adding a
 # skip is the cheapest way to defeat this gate, so the count is pinned.
-readonly BASELINE_SKIPS="${VERIFY_BASELINE_SKIPS:-7}"
+# Re-pinned 2026-09-04: commit 3b64604 added an 8th, structural skip
+# (test_upstox_scope_guards excludes the transport module from its own
+# origin-string sweep by design — it is not a live fetch and cannot be removed).
+readonly BASELINE_SKIPS="${VERIFY_BASELINE_SKIPS:-8}"
 
 # A verbatim run of this many characters shared between a fixture and a real
 # captured page means the capture was pasted in rather than synthesised.

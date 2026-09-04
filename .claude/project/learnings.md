@@ -166,3 +166,34 @@ Format per entry:
 - Apply: when reading someone else's artifact, declare a narrow model of exactly
   the fields you use, `extra="ignore"`, and keep those fields strict. Reuse the
   producer's full model only when you actually depend on all of it.
+
+## A tolerance formula is not frozen until it is recomputed on the boundary case  (2026-09-04)
+
+- Observed: the level-3 plan wrote the percent-of-sales tolerance as
+  `0.5 + 100 × (Σ half_ulp(addend) + r × half_ulp(Sales)) / Sales`. The `×100`
+  belongs on the addend term only; applied to the `r` term it made the band
+  ≈27 pp on the ground-truth boundary case, wide enough to admit any breakdown.
+  The test author caught it by recomputing the band on the two numbers the plan
+  itself named (127/156 vs 82 % must hold; 120/156 vs 82 % must fail) — the
+  literal formula let the 120 case pass.
+- Why it matters: a wrong tolerance is the quietest defect a reconciliation
+  gate can carry — every run is green, the artifact says RECONCILED, and the
+  gate has stopped gating. The plan reviewers read the formula as prose and
+  approved it; only arithmetic on a named case exposed it.
+- Apply: every tolerance or identity in a plan must carry one hold case and one
+  fail case with concrete numbers, and the test must pin hold/fail behaviour,
+  not the tolerance value. Recompute the band on both before freezing.
+
+## A nested body can lag the page it hangs under  (2026-09-04)
+
+- Observed: HFCL's level-3 `Trade receivables` body carried Mar 2014 … Mar 2025
+  while the page and its level-2 parent carried Mar 2015 … Mar 2026 — Screener
+  had not yet populated the FY26 breakdown. TITAN and NETWEB matched exactly,
+  which is what the ground truth had recorded as a fact.
+- Why it matters: two companies agreeing is not a universal; the third one
+  falsified it on the first live smoke. The partial-alignment rule inherited
+  from level 2 marked the family UNVERIFIED and exited 2 with everything
+  retained — the fail-closed behaviour did its job without knowing the cause.
+- Apply: label window facts observed on a sample as `VERIFIED on <n>` and keep
+  the alignment gate strict; decide separately, with the owner, whether an
+  older-only overlap should reconcile on the overlap.

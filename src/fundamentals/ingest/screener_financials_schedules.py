@@ -54,6 +54,7 @@ from fundamentals.ingest.screener_financials_models import (
     Section,
     SubRowKind,
     TableRow,
+    family_key,
 )
 from fundamentals.ingest.screener_financials_shapes import (
     MIXED_FAMILY_SHAPES,
@@ -83,14 +84,14 @@ _MISMATCH = (
     "expands: {details}. The schedules API selects basis by the presence of the "
     "'consolidated' key, so check the request URL {url} before trusting either number"
 )
-_PERIOD_DETAIL = "{period} sub-rows sum to {total} against page value {page} (tolerance {tol})"
+PERIOD_DETAIL = "{period} sub-rows sum to {total} against page value {page} (tolerance {tol})"
 
 _ALL_PERCENT_NOTE = "every sub-row is a percentage ({labels}); there is nothing to add"
 _KNOWN_MIXED_NOTE = (
     "registered mixed shape for this family: its sub-rows restate or sub-total the parent "
     "row rather than decomposing it, so a sum would double-count"
 )
-_UNVERIFIED_SHAPE = (
+UNVERIFIED_SHAPE = (
     "sub-row shape is not one this contract has verified for {family}: {detail}. The "
     "reconciliation gate cannot run on an unrecognised shape, so it is refused rather "
     "than exempted"
@@ -99,7 +100,7 @@ _UNREGISTERED_MIXED = (
     "the family mixes kinds ({detail}) but has no registered signature; only the four "
     "families in MIXED_FAMILY_SIGNATURES are known not to be summable"
 )
-_OUTSIDE_SIGNATURE = "sub-rows outside the registered signature: {labels}"
+OUTSIDE_SIGNATURE = "sub-rows outside the registered signature: {labels}"
 _MISSING_REQUIRED = (
     "the rows that identify this family are absent: {labels}. Belonging to the allowed "
     "set only says a row is familiar; without the required rows the body is not the "
@@ -119,7 +120,7 @@ _NO_SUB_ROWS = (
     "the response was empty; an empty HTTP 200 carries no session, issuer or basis "
     "marker, so it cannot be told apart from an expired cookie or a soft block"
 )
-_NO_OVERLAP = (
+NO_OVERLAP = (
     "no period carried both a sub-row amount and a readable page-row value, so the sum "
     "was never checked"
 )
@@ -150,26 +151,18 @@ def read_schedule(
     sub-rows do not add up to the row it expands; every other shape surprise is
     retained rather than fatal.
     """
-    family = f"{section.value}/{parent}"
-    body = _decode(raw_body, family=family)
-    sub_rows = _read_sub_rows(
-        body,
+    family = family_key(section, parent)
+    sub_rows = parse_sub_rows(
+        raw_body,
         family=family,
         periods=periods,
         document_id=document_id,
-        table_key=family,
+        body_sha256=body_sha256,
         source_id=source_id,
-        file_sha256=body_sha256,
         retrieved_at=retrieved_at,
     )
-    reject_duplicate_anchors(
-        tuple(cell.provenance for sub_row in sub_rows for cell in sub_row.cells),
-        context=f"screener schedule {family}",
-    )
     strategy, strategy_note = _resolve_strategy(sub_rows, section=section, parent=parent)
-    unaligned = tuple(
-        dict.fromkeys(period for sub_row in sub_rows for period in sub_row.unmatched_periods)
-    )
+    unaligned = unaligned_periods(sub_rows)
     comparisons, status, note = _reconcile(
         sub_rows,
         strategy=strategy,
@@ -177,22 +170,9 @@ def read_schedule(
         hierarchy=_hierarchy_rule(section, parent),
         unaligned=unaligned,
         periods=periods,
-        page_row=page_row,
+        reference=_page_values(page_row),
     )
-    failures = tuple(comparison for comparison in comparisons if not comparison.within_tolerance)
-    if failures:
-        details = "; ".join(
-            _PERIOD_DETAIL.format(
-                period=failure.period_label,
-                total=failure.sub_row_total,
-                page=failure.page_row_value,
-                tol=failure.tolerance,
-            )
-            for failure in failures
-        )
-        raise ScheduleReconciliationError(
-            _MISMATCH.format(family=family, basis=basis.value, details=details, url=url)
-        )
+    refuse_mismatch(comparisons, family=family, basis=basis, url=url, detail=PERIOD_DETAIL)
     return ScheduleFamily(
         section=section,
         parent=parent,
@@ -208,6 +188,67 @@ def read_schedule(
         sub_rows=sub_rows,
         comparisons=comparisons,
         unaligned_periods=unaligned,
+    )
+
+
+def parse_sub_rows(
+    raw_body: bytes,
+    *,
+    family: str,
+    periods: tuple[Period, ...],
+    document_id: str,
+    body_sha256: str,
+    source_id: str,
+    retrieved_at: Any,
+) -> tuple[ScheduleSubRow, ...]:
+    """Decode one schedule response into aligned, uniquely anchored sub-rows."""
+    sub_rows = _read_sub_rows(
+        _decode(raw_body, family=family),
+        family=family,
+        periods=periods,
+        document_id=document_id,
+        table_key=family,
+        source_id=source_id,
+        file_sha256=body_sha256,
+        retrieved_at=retrieved_at,
+    )
+    reject_duplicate_anchors(
+        tuple(cell.provenance for sub_row in sub_rows for cell in sub_row.cells),
+        context=f"screener schedule {family}",
+    )
+    return sub_rows
+
+
+def unaligned_periods(sub_rows: tuple[ScheduleSubRow, ...]) -> tuple[str, ...]:
+    """Every published sub-row period that matches no column on the page, once."""
+    return tuple(
+        dict.fromkeys(period for sub_row in sub_rows for period in sub_row.unmatched_periods)
+    )
+
+
+def refuse_mismatch(
+    comparisons: tuple[PeriodReconciliation, ...],
+    *,
+    family: str,
+    basis: Basis,
+    url: str,
+    detail: str,
+) -> None:
+    """Raise when any period of a checked family fell outside its rounding band."""
+    failures = tuple(comparison for comparison in comparisons if not comparison.within_tolerance)
+    if not failures:
+        return
+    details = "; ".join(
+        detail.format(
+            period=failure.period_label,
+            total=failure.sub_row_total,
+            page=failure.page_row_value,
+            tol=failure.tolerance,
+        )
+        for failure in failures
+    )
+    raise ScheduleReconciliationError(
+        _MISMATCH.format(family=family, basis=basis.value, details=details, url=url)
     )
 
 
@@ -389,7 +430,7 @@ def _resolve_strategy(
         for sub_row in sub_rows
         if sub_row.kind is not SubRowKind.AMOUNT
     )
-    return ScheduleStrategy.UNVERIFIED, _UNVERIFIED_SHAPE.format(
+    return ScheduleStrategy.UNVERIFIED, UNVERIFIED_SHAPE.format(
         family=f"{section.value}/{parent}",
         detail=_UNREGISTERED_MIXED.format(detail=detail),
     )
@@ -407,12 +448,12 @@ def _resolve_registered(
     observed = {(sub_row.label, sub_row.kind) for sub_row in sub_rows}
     outside = sorted(f"{label} ({kind.value})" for label, kind in observed - shape.allowed)
     if outside:
-        return ScheduleStrategy.UNVERIFIED, _UNVERIFIED_SHAPE.format(
-            family=family, detail=_OUTSIDE_SIGNATURE.format(labels=", ".join(outside))
+        return ScheduleStrategy.UNVERIFIED, UNVERIFIED_SHAPE.format(
+            family=family, detail=OUTSIDE_SIGNATURE.format(labels=", ".join(outside))
         )
     missing = sorted(f"{label} ({kind.value})" for label, kind in shape.required - observed)
     if missing:
-        return ScheduleStrategy.UNVERIFIED, _UNVERIFIED_SHAPE.format(
+        return ScheduleStrategy.UNVERIFIED, UNVERIFIED_SHAPE.format(
             family=family, detail=_MISSING_REQUIRED.format(labels=", ".join(missing))
         )
     if shape.hierarchy is not None:
@@ -425,7 +466,7 @@ def _reconcile_hierarchy(
     *,
     rule: HierarchyRule,
     periods: tuple[Period, ...],
-    page_row: TableRow | None,
+    reference: dict[int, Decimal],
 ) -> tuple[tuple[PeriodReconciliation, ...], ReconciliationStatus, str]:
     """Check a page row that is one sub-row minus another, period by period.
 
@@ -437,12 +478,11 @@ def _reconcile_hierarchy(
     """
     minuend = _sub_row_values(sub_rows, rule.minuend)
     subtrahend = _sub_row_values(sub_rows, rule.subtrahend)
-    page_values = _page_values(page_row)
     comparisons: list[PeriodReconciliation] = []
     for period in periods:
         left = minuend.get(period.index)
         right = subtrahend.get(period.index)
-        page_value = page_values.get(period.index)
+        page_value = reference.get(period.index)
         if left is None or right is None or page_value is None:
             continue
         derived = left[0] - right[0]
@@ -515,21 +555,20 @@ def _has_fraction(text: str) -> bool:
     return bool(separator) and any(digit != "0" for digit in fraction)
 
 
-def _reconcile(
+def blocked_reconciliation(
     sub_rows: tuple[ScheduleSubRow, ...],
     *,
     strategy: ScheduleStrategy,
     strategy_note: str,
-    hierarchy: HierarchyRule | None,
     unaligned: tuple[str, ...],
-    periods: tuple[Period, ...],
-    page_row: TableRow | None,
-) -> tuple[tuple[PeriodReconciliation, ...], ReconciliationStatus, str]:
-    """Sum a summable family per period and compare it against the page row.
+) -> tuple[tuple[PeriodReconciliation, ...], ReconciliationStatus, str] | None:
+    """The outcome for a family whose gate cannot run at all, or ``None``.
 
-    ``RECONCILED`` is a positive claim and is reached only from the one path
-    that earns it: a registered flat-sum shape, every published sub-row period
-    aligned to a page column, and at least one comparison that held.
+    Three things stop the comparison before it starts, and each is a different
+    way for the gate to appear to run while comparing the wrong things: a shape
+    this contract has not verified, an empty ``{}`` that cannot be told apart
+    from an expired cookie, and a published sub-row period matching no column on
+    the page. One definition of them serves every depth.
     """
     if strategy is ScheduleStrategy.UNVERIFIED:
         return (), ReconciliationStatus.UNVERIFIED, strategy_note
@@ -541,13 +580,23 @@ def _reconcile(
             ReconciliationStatus.UNVERIFIED,
             _UNALIGNED.format(labels=", ".join(unaligned)),
         )
-    if strategy is ScheduleStrategy.HIERARCHICAL:
-        rule = hierarchy
-        assert rule is not None  # noqa: S101 - HIERARCHICAL is set only with a rule
-        return _reconcile_hierarchy(sub_rows, rule=rule, periods=periods, page_row=page_row)
-    if strategy is not ScheduleStrategy.FLAT_SUM:
-        return (), ReconciliationStatus.NOT_APPLICABLE, strategy_note
-    page_values = _page_values(page_row)
+    return None
+
+
+def reconcile_flat_sum(
+    sub_rows: tuple[ScheduleSubRow, ...],
+    *,
+    periods: tuple[Period, ...],
+    reference: dict[int, Decimal],
+    reconciled_note: str,
+) -> tuple[tuple[PeriodReconciliation, ...], ReconciliationStatus, str]:
+    """Sum the sub-rows per period and compare them against the row they decompose.
+
+    ``reference`` is that row's readable values by period index. It is the page
+    row for a level-2 family and the level-2 *sub-row* for a nested one — passed
+    in rather than looked up here, so one gate serves both depths instead of a
+    second one growing its own fudge factor.
+    """
     comparisons: list[PeriodReconciliation] = []
     for period in periods:
         addends = [
@@ -556,7 +605,7 @@ def _reconcile(
             for cell in sub_row.cells
             if cell.period_index == period.index and cell.value is not None
         ]
-        page_value = page_values.get(period.index)
+        page_value = reference.get(period.index)
         if not addends or page_value is None:
             continue
         values = [cell.value for cell in addends if cell.value is not None]
@@ -573,16 +622,67 @@ def _reconcile(
             )
         )
     if not comparisons:
-        return (), ReconciliationStatus.NOT_COMPARABLE, _NO_OVERLAP
+        return (), ReconciliationStatus.NOT_COMPARABLE, NO_OVERLAP
     return (
         tuple(comparisons),
         ReconciliationStatus.RECONCILED,
-        _RECONCILED.format(count=len(comparisons)),
+        reconciled_note.format(count=len(comparisons)),
     )
+
+
+def _reconcile(
+    sub_rows: tuple[ScheduleSubRow, ...],
+    *,
+    strategy: ScheduleStrategy,
+    strategy_note: str,
+    hierarchy: HierarchyRule | None,
+    unaligned: tuple[str, ...],
+    periods: tuple[Period, ...],
+    reference: dict[int, Decimal],
+) -> tuple[tuple[PeriodReconciliation, ...], ReconciliationStatus, str]:
+    """Route one level-2 family to the check its registered strategy earns.
+
+    ``RECONCILED`` is a positive claim and is reached only from the paths that
+    earn it: a flat-sum shape whose sum held, or a registered hierarchy whose
+    arithmetic held.
+    """
+    blocked = blocked_reconciliation(
+        sub_rows, strategy=strategy, strategy_note=strategy_note, unaligned=unaligned
+    )
+    if blocked is not None:
+        return blocked
+    if strategy is ScheduleStrategy.HIERARCHICAL:
+        rule = hierarchy
+        assert rule is not None  # noqa: S101 - HIERARCHICAL is set only with a rule
+        return _reconcile_hierarchy(sub_rows, rule=rule, periods=periods, reference=reference)
+    if strategy is not ScheduleStrategy.FLAT_SUM:
+        return (), ReconciliationStatus.NOT_APPLICABLE, strategy_note
+    return reconcile_flat_sum(
+        sub_rows, periods=periods, reference=reference, reconciled_note=_RECONCILED
+    )
+
+
+def cell_values(cells: tuple[Cell, ...]) -> dict[int, Decimal]:
+    """One row's readable numbers by period index, for comparison."""
+    return {cell.period_index: cell.value for cell in cells if cell.value is not None}
 
 
 def _page_values(page_row: TableRow | None) -> dict[int, Decimal]:
     """The page row's readable numbers by period index, for comparison."""
+    return {} if page_row is None else cell_values(page_row.cells)
+
+
+def page_readings(page_row: TableRow | None) -> dict[int, tuple[Decimal, str]] | None:
+    """The page row's readable numbers with their lexemes, or ``None`` for no row.
+
+    ``None`` and an empty map mean different things to a percent-of-sales
+    identity: no ``Sales`` row at all, versus a row that published nothing for
+    the periods in question.
+    """
     if page_row is None:
-        return {}
-    return {cell.period_index: cell.value for cell in page_row.cells if cell.value is not None}
+        return None
+    return {
+        cell.period_index: (cell.value, cell.raw_text)
+        for cell in page_row.cells
+        if cell.value is not None
+    }

@@ -7,6 +7,7 @@ modules exercise the same one.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -102,13 +103,31 @@ def _schedule_fixture(url: str, *, swap: tuple[str, str] | None = None) -> bytes
     return (_SCHEDULES / f"{name}{variant}.json").read_bytes()
 
 
+def _schedule_key(url: str) -> tuple[str, str]:
+    """The ``(section, parent)`` one schedule URL addresses, verbatim.
+
+    Verbatim rather than slugged, because a level-3 parent is a sub-row label
+    the body supplied (``Material Cost %``) and the point of the level-3 tests
+    is which exact label was requested.
+    """
+    query = parse_qs(urlsplit(url).query)
+    return query["section"][0], query["parent"][0]
+
+
 def _serve(
     monkeypatch: pytest.MonkeyPatch,
     *,
     swap: tuple[str, str] | None = None,
     rate_limit_after: int | None = None,
+    page: bytes | None = None,
+    bodies: dict[tuple[str, str], bytes] | None = None,
 ) -> list[str]:
-    """Pin the transport seam to committed bodies and record every URL requested."""
+    """Pin the transport seam to committed bodies and record every URL requested.
+
+    ``page`` and ``bodies`` replace the committed fixtures with in-memory ones,
+    which is how the nested-schedule tests serve a page and a body set that no
+    other module needs — through this one seam rather than a second mechanism.
+    """
     requested: list[str] = []
 
     def fetch_bytes(
@@ -121,10 +140,14 @@ def _serve(
         del source, credentials, xhr
         requested.append(url)
         if "/schedules/" not in url:
+            if page is not None:
+                return 200, page
             return 200, (_SHELL_PAGE if "SOLOCO" in url else _PAGE).read_bytes()
         schedules_so_far = sum(1 for seen in requested if "/schedules/" in seen)
         if rate_limit_after is not None and schedules_so_far > rate_limit_after:
             raise ScreenerRateLimitedError(f"screener rate-limited {url}")
+        if bodies is not None:
+            return 200, bodies[_schedule_key(url)]
         return 200, _schedule_fixture(url, swap=swap)
 
     monkeypatch.setenv(_SESSION_ENV, _SESSION_TOKEN)
@@ -237,3 +260,164 @@ def _row(run: Any, section: Section, label: str) -> Any:
 def _family(run: Any, section: Section, parent: str) -> Any:
     """One schedule family by the parent row it expands."""
     return next(family for family in _section(run, section).schedules if family.parent == parent)
+
+
+# --------------------------------------------------------------------------
+# Level-3 nested schedules.
+#
+# A page whose level-2 bodies advertise schedules of their own, served through
+# the same seam as the committed fixtures. Inline rather than committed because
+# every level-3 test varies one body or one row of the page, and the variation
+# is the point of the test. Every figure is invented; only the shapes follow the
+# live captures.
+# --------------------------------------------------------------------------
+
+NESTED_TRADE_RECEIVABLES = "Trade receivables"
+NESTED_MATERIAL_COST = "Material Cost %"
+
+_NESTED_PAGE_TEMPLATE = """<!DOCTYPE html>
+<html lang="en"><head><title>Fixture Consolidated Ltd</title></head><body>
+  <nav class="navbar"><div id="account-dropdown" class="dropdown-menu">
+    <a href="/user/account/">Profile</a>
+    <form action="/logout/" method="post"><button type="submit">Logout</button></form>
+  </div></nav>
+  <main>
+  <div data-company-id="991001" data-warehouse-id="992001" id="company-info"></div>
+  <section id="quarters" class="card card-large">
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <table class="data-table"><thead><tr><th class="text"></th>
+      <th data-date-key="2025-12-31">Dec 2025</th></tr></thead>
+      <tbody><tr><td class="text">Sales</td><td>40</td></tr></tbody></table>
+  </section>
+  <section id="profit-loss" class="card card-large">
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <table class="data-table"><thead><tr><th class="text"></th>
+      <th data-date-key="2025-03-31">Mar 2025</th>
+      <th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+      <tbody>
+        <tr><td class="text">{sales_cell}</td><td>156</td><td>160</td></tr>
+        <tr><td class="text"><button class="button-plain"
+          onclick="Company.showSchedule('Expenses', 'profit-loss', this)"
+          >Expenses&nbsp;<span class="blue-icon">+</span></button></td><td>130</td><td>134</td></tr>
+        <tr><td class="text">Operating Profit</td><td>26</td><td>26</td></tr>
+      </tbody></table>
+  </section>
+  <section id="balance-sheet" class="card card-large">
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <table class="data-table"><thead><tr><th class="text"></th>
+      <th data-date-key="2025-03-31">Mar 2025</th>
+      <th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+      <tbody>
+        <tr><td class="text"><button class="button-plain"
+          onclick="Company.showSchedule('Other Assets', 'balance-sheet', this)"
+          >Other Assets&nbsp;<span class="blue-icon">+</span></button></td>
+          <td>900</td><td>1,000</td></tr>
+        <tr><td class="text"><button class="button-plain"
+          onclick="Company.showSchedule('Borrowings', 'balance-sheet', this)"
+          >Borrowings&nbsp;<span class="blue-icon">+</span></button></td>
+          <td>500</td><td>500</td></tr>
+        <tr><td class="text">Total Assets</td><td>1,400</td><td>1,500</td></tr>
+      </tbody></table>
+  </section>
+  <section id="cash-flow" class="card card-large">
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <table class="data-table"><thead><tr><th class="text"></th>
+      <th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+      <tbody><tr><td class="text">Net Cash Flow</td><td>55</td></tr></tbody></table>
+  </section>
+  <section id="ratios" class="card card-large">
+    <p class="sub">Consolidated Figures in Rs. Crores</p>
+    <table class="data-table"><thead><tr><th class="text"></th>
+      <th data-date-key="2026-03-31">Mar 2026</th></tr></thead>
+      <tbody><tr><td class="text">Debtor Days</td><td>28</td></tr></tbody></table>
+  </section>
+  </main></body></html>"""
+
+_SALES_EXPANDER = (
+    '<button class="button-plain" onclick="Company.showSchedule(\'Sales\', '
+    '\'profit-loss\', this)">Sales&nbsp;<span class="blue-icon">+</span></button>'
+)
+
+
+def _nested_page(*, sales_expandable: bool = True) -> bytes:
+    """The nested-schedule fixture page.
+
+    ``sales_expandable`` false drops the P&L ``Sales`` expander, which is how a
+    section with no ``schedule_parent == "Sales"`` row is served — the shape
+    that leaves a percent-of-sales identity with no denominator.
+    """
+    cell = _SALES_EXPANDER if sales_expandable else "Sales"
+    return _NESTED_PAGE_TEMPLATE.format(sales_cell=cell).encode("utf-8")
+
+
+def _nested_call(label: str, section: Section) -> str:
+    """The ``isExpandable`` value a level-2 sub-row carries, as the API writes it.
+
+    Double quotes inside the JSON string, unlike the single quotes the page HTML
+    uses for its own ``showSchedule`` buttons.
+    """
+    return f'Company.showSchedule("{label}", "{section.value}", this)'
+
+
+def _nested_bodies(
+    overrides: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict[tuple[str, str], bytes]:
+    """Every level-2 and level-3 body the nested fixture page's families answer with.
+
+    Keyed by the verbatim ``(section, parent)`` of the request, so a level-3 key
+    is the level-2 sub-row label. ``overrides`` replaces or adds one body.
+    """
+    bodies: dict[tuple[str, str], dict[str, Any]] = {
+        ("profit-loss", "Sales"): {"Sales Growth %": {"Mar 2025": "18%", "Mar 2026": "12%"}},
+        ("profit-loss", "Expenses"): {
+            NESTED_MATERIAL_COST: {
+                "Mar 2025": "82%",
+                "Mar 2026": "78%",
+                "isExpandable": _nested_call(NESTED_MATERIAL_COST, Section.PROFIT_LOSS),
+            }
+        },
+        ("profit-loss", NESTED_MATERIAL_COST): {
+            "Raw material cost": {"Mar 2025": "130", "Mar 2026": "128"},
+            "Change in inventory": {"Mar 2025": "-3", "Mar 2026": "-3"},
+        },
+        ("balance-sheet", "Other Assets"): {
+            NESTED_TRADE_RECEIVABLES: {
+                "Mar 2025": "500",
+                "Mar 2026": "560",
+                "isExpandable": _nested_call(NESTED_TRADE_RECEIVABLES, Section.BALANCE_SHEET),
+            },
+            "Inventories": {"Mar 2025": "400", "Mar 2026": "440"},
+        },
+        ("balance-sheet", NESTED_TRADE_RECEIVABLES): {
+            "Receivables over 6m": {"Mar 2025": "120", "Mar 2026": "130"},
+            "Receivables under 6m": {"Mar 2025": "400", "Mar 2026": "450"},
+            "Prov for Doubtful": {"Mar 2025": "-20", "Mar 2026": "-20"},
+        },
+        ("balance-sheet", "Borrowings"): {
+            "Long term Borrowings": {"Mar 2025": "300", "Mar 2026": "320"},
+            "Short term Borrowings": {"Mar 2025": "200", "Mar 2026": "180"},
+        },
+    }
+    bodies.update(overrides or {})
+    return {key: json.dumps(body).encode("utf-8") for key, body in bodies.items()}
+
+
+def _nested_read(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    overrides: dict[tuple[str, str], dict[str, Any]] | None = None,
+    sales_expandable: bool = True,
+    **kwargs: Any,
+) -> tuple[Any, list[str]]:
+    """Read the nested fixture page and its schedules, with the request log."""
+    return _read(
+        monkeypatch,
+        page=_nested_page(sales_expandable=sales_expandable),
+        bodies=_nested_bodies(overrides),
+        **kwargs,
+    )
+
+
+def _nested(family: Any, parent: str) -> Any:
+    """One nested family of a level-2 family, by the sub-row label it expands."""
+    return next(child for child in family.nested if child.parent == parent)

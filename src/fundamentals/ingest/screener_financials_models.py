@@ -78,6 +78,13 @@ TTM_DATE_KEY = "TTM"
 # rounding error over ``n`` addends plus the rounded total is ``(n + 1) / 2``.
 ROUNDING_HALF_UNIT = Decimal("0.5")
 
+# How deep this contract follows the site's own ``showSchedule`` calls: the page
+# row is depth 1, the schedule it expands depth 2, and the schedule one of that
+# schedule's sub-rows advertises depth 3. No level-4 body was ever observed, so
+# following one would be acquisition on speculation against a rate-limited
+# source; a sub-row at the bound keeps its call and is named rather than fetched.
+MAX_SCHEDULE_DEPTH = 3
+
 
 class Section(StrEnum):
     """One acquirable block of the company page.
@@ -294,6 +301,10 @@ class ScheduleStrategy(StrEnum):
     * ``HIERARCHICAL`` — a registered family whose page row is arithmetically
       derivable from two of its sub-rows, so it is *proven* rather than
       exempted.
+    * ``PERCENT_OF_SALES`` — a nested family of crore amounts whose parent row
+      is a percentage of the section's ``Sales`` row. Summing it against that
+      parent would compare 127 crore with 82 percent; the relation that holds
+      is ``100 x sum / Sales``.
     * ``UNVERIFIED`` — anything else: an unregistered family with a mixed shape,
       or a registered one carrying a label or kind its signature does not cover.
       Evidence is retained, the artifact is marked, and the CLI exits non-zero.
@@ -303,6 +314,7 @@ class ScheduleStrategy(StrEnum):
     ALL_PERCENT = "all_percent"
     KNOWN_MIXED = "known_mixed"
     HIERARCHICAL = "hierarchical"
+    PERCENT_OF_SALES = "percent_of_sales"
     UNVERIFIED = "unverified"
 
 
@@ -495,6 +507,19 @@ def schedule_url(company_id: int, *, parent: str, section: Section, basis: Basis
     return SCREENER_ORIGIN + schedule_path(company_id, parent=parent, section=section, basis=basis)
 
 
+def family_key(section: Section, parent: str, expands: str | None = None) -> str:
+    """The key one schedule family is named by in metadata and on the summary.
+
+    Three parts for a nested family, because ``profit-loss/Material Cost %``
+    would not say which level-2 family that breakdown hangs under — and its
+    retained body is named the same three ways, so the file and the line name
+    one thing.
+    """
+    if expands is None:
+        return f"{section.value}/{parent}"
+    return f"{section.value}/{expands}/{parent}"
+
+
 class Period(BaseModel):
     """One column of a section table, addressed as the page addresses it."""
 
@@ -626,7 +651,16 @@ class PeriodReconciliation(BaseModel):
 
 
 class ScheduleFamily(BaseModel):
-    """One expandable page row and the schedule that expands it."""
+    """One expandable page row and the schedule that expands it.
+
+    ``expands`` and ``nested`` state the depth: a level-2 family expands a page
+    row and carries ``expands=None``; a level-3 family expands one *sub-row* of
+    its parent and hangs under it, because position in the artifact is the
+    statement of what a family decomposes. ``deeper_not_acquired`` names the
+    sub-rows that advertised a schedule of their own below
+    :data:`MAX_SCHEDULE_DEPTH` — kept, because the call is the only evidence
+    the site goes deeper than this contract does.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -640,10 +674,13 @@ class ScheduleFamily(BaseModel):
     strategy: ScheduleStrategy
     reconciliation: ReconciliationStatus
     reconciliation_note: str
+    expands: str | None = None
     periods: tuple[Period, ...] = ()
     sub_rows: tuple[ScheduleSubRow, ...] = ()
     comparisons: tuple[PeriodReconciliation, ...] = ()
     unaligned_periods: tuple[str, ...] = ()
+    deeper_not_acquired: tuple[str, ...] = ()
+    nested: tuple[ScheduleFamily, ...] = ()
 
 
 class ScheduleFailure(BaseModel):
@@ -654,6 +691,10 @@ class ScheduleFailure(BaseModel):
     wrong basis, or a change in what a row means, actually looks like — so it is
     named in the artifact beside the retained bytes rather than existing only in
     a traceback.
+
+    ``body_sha256`` is ``None`` when there is no body: a nested call that does
+    not describe its own sub-row is refused *before* a request is spent on it,
+    and recording a hash of nothing would imply evidence that was never fetched.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -663,7 +704,8 @@ class ScheduleFailure(BaseModel):
     basis: Basis
     url: str
     document_id: str
-    body_sha256: str
+    body_sha256: str | None
+    expands: str | None = None
     refusal: str
     detail: str
 
