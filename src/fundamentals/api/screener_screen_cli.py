@@ -60,6 +60,10 @@ def run_screener_screen_command(
     invocation wrote and removes the ``pages/`` directory if this invocation
     created it, so a refused run never leaves a half-populated directory that
     a later reader could mistake for a complete one.
+
+    What a completed run guarantees is row and page cardinality against the
+    source's own stated total at fetch time, not an atomic snapshot of set
+    membership — see :class:`~fundamentals.ingest.screener_screen_models.ScreenArtifact`.
     """
     out_dir = Path(args.out).resolve() if args.out else _default_out_dir(args.query)
     out_dir.mkdir(parents=True, exist_ok=True)

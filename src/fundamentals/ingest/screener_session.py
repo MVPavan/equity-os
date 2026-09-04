@@ -341,7 +341,7 @@ class ScreenerSessionSource:
         )
 
     def _fetch_bytes(
-        self, source_url: str, credentials: ScreenerCredentials, *, xhr: bool = False
+        self, url: str, credentials: ScreenerCredentials, *, xhr: bool = False
     ) -> tuple[int, bytes]:
         """GET one page politely through the shared transport body.
 
@@ -353,12 +353,12 @@ class ScreenerSessionSource:
         if xhr:
             headers[XHR_HEADER] = XHR_HEADER_VALUE
         status, payload, _ = self._request_bytes(
-            source_url, method=_GET_METHOD, headers=headers, data=None
+            url, method=_GET_METHOD, headers=headers, data=None
         )
         return status, payload
 
     def _request_bytes(
-        self, source_url: str, *, method: str, headers: dict[str, str], data: bytes | None
+        self, url: str, *, method: str, headers: dict[str, str], data: bytes | None
     ) -> tuple[int, bytes, Any]:
         """Make one polite request: on-origin, spaced, redirect-refusing, 429-aware, fail-closed.
 
@@ -372,9 +372,14 @@ class ScreenerSessionSource:
         test seam that pins :func:`urllib.request.build_opener` covers every
         request this adapter can make.
         """
-        url = _redact_private_query(source_url)
-        assert_pinned_origin(url)
-        request = urllib.request.Request(source_url, data=data, headers=headers, method=method)
+        # Two names on purpose: ``url`` is the real URL and the only one ever
+        # requested; ``log_url`` has the private screen query redacted and is the
+        # only one that may reach a log line or an error message. The origin gate
+        # is checked against ``log_url`` for that same reason and must not be
+        # "corrected" to ``url``: ScreenerOriginError interpolates its argument.
+        log_url = _redact_private_query(url)
+        assert_pinned_origin(log_url)
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         opener = urllib.request.build_opener(NoRedirectHandler())
         rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):
@@ -384,18 +389,18 @@ class ScreenerSessionSource:
                     status = response.getcode()
                     if status is not None and 300 <= status < 400:
                         raise ScreenerRedirectError(
-                            f"screener returned redirect status {status} for {url}"
+                            f"screener returned redirect status {status} for {log_url}"
                         )
                     payload = read_bounded(response, self._config.max_response_bytes)
                     response_headers = response.headers
             except urllib.error.HTTPError as error:
-                self._refuse_terminal_status(error, url=url)
+                self._refuse_terminal_status(error, log_url=log_url)
                 rate_limit = error
                 if attempt >= self._config.max_rate_limit_retries:
                     break
                 backoff = self._config.rate_limit_backoff_seconds * (2**attempt)
                 _LOGGER.warning(
-                    _RATE_LIMITED_EVENT, url=url, attempt=attempt + 1, backoff_seconds=backoff
+                    _RATE_LIMITED_EVENT, url=log_url, attempt=attempt + 1, backoff_seconds=backoff
                 )
                 time.sleep(backoff)
                 continue
@@ -407,28 +412,31 @@ class ScreenerSessionSource:
                 ) from error
             except (urllib.error.URLError, TimeoutError, OSError) as error:
                 raise ScreenerSessionFetchError(
-                    f"screener fetch failed for {url}: {type(error).__name__}"
+                    f"screener fetch failed for {log_url}: {type(error).__name__}"
                 ) from error
             return (200 if status is None else status), payload, response_headers
         raise ScreenerRateLimitedError(
-            f"screener rate-limited {url} after "
+            f"screener rate-limited {log_url} after "
             f"{self._config.max_rate_limit_retries + 1} attempts; stopping"
         ) from rate_limit
 
     @staticmethod
-    def _refuse_terminal_status(error: urllib.error.HTTPError, *, url: str) -> None:
-        """Raise the typed refusal for any status that is not a retryable 429."""
+    def _refuse_terminal_status(error: urllib.error.HTTPError, *, log_url: str) -> None:
+        """Raise the typed refusal for any status that is not a retryable 429.
+
+        Takes the redacted URL only: every string built here becomes a message.
+        """
         if 300 <= error.code < 400:
             location_raw = error.headers.get(LOCATION_HEADER) if error.headers else None
             location = None if location_raw is None else _redact_private_query(location_raw)
             raise ScreenerRedirectError(
-                f"screener redirected {url} to {location!r}; refusing to follow"
+                f"screener redirected {log_url} to {location!r}; refusing to follow"
             ) from error
         if error.code in TERMINAL_BLOCK_STATUSES:
             raise ScreenerBlockedError(
-                f"screener returned terminal status {error.code} for {url}"
+                f"screener returned terminal status {error.code} for {log_url}"
             ) from error
         if error.code != RATE_LIMITED_STATUS:
             raise ScreenerSessionFetchError(
-                f"screener returned HTTP {error.code} for {url}"
+                f"screener returned HTTP {error.code} for {log_url}"
             ) from error

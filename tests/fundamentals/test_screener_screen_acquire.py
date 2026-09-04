@@ -16,6 +16,7 @@ import hashlib
 import urllib.error
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import pytest
 import screener_screen_support as support
@@ -177,8 +178,14 @@ def test_a_block_or_an_exhausted_rate_limit_stops_the_run_where_it_stands(
         assert run.artifact.failure is not None
         assert run.artifact.failure.page_number == 2
         assert run.artifact.failure.refusal == refusal.__name__
-        # No body came back for that attempt, so there is no hash to record.
+        # No body came back for that attempt, so there is no hash to record, and
+        # no stated pair either: page 1's claim belongs to page 1, and the refused
+        # page never parsed one of its own.
         assert run.artifact.failure.content_sha256 is None
+        assert (run.artifact.failure.stated_total, run.artifact.failure.stated_pages) == (
+            None,
+            None,
+        )
         assert len(run.artifact.pages) == 1
 
     with monkeypatch.context() as patcher:
@@ -353,8 +360,11 @@ def test_a_body_that_does_not_parse_is_evidence_and_not_a_crash(
     ``lxml.etree.ParserError`` on it, which is not a ``ScreenerSessionError``,
     so it walks straight past the handler that publishes ``INCOMPLETE`` and
     retains the fetch. Verified against the implementation: the walk dies with
-    that traceback. It must instead become a typed structure refusal raised
-    after the fetch is recorded, like every other body this reader cannot read.
+    that traceback. It must instead be published after the fetch is recorded,
+    like every other body this reader cannot read — and under lxml's own
+    exception name, because ``ScreenStructureError`` is what this reader raises
+    about a page it *did* read, and a consumer filtering on ``refusal`` must be
+    able to tell the two apart.
     """
     empty_body = ""
     run, _ = support.acquire(
@@ -364,7 +374,8 @@ def test_a_body_that_does_not_parse_is_evidence_and_not_a_crash(
     assert run.artifact.outcome is support.models.ScreenOutcome.INCOMPLETE
     assert run.artifact.failure is not None
     assert run.artifact.failure.page_number == 2
-    assert run.artifact.failure.refusal == "ScreenStructureError"
+    assert run.artifact.failure.refusal == "ParserError"
+    assert "Document is empty" in run.artifact.failure.detail
     assert run.artifact.failure.content_sha256 == hashlib.sha256(b"").hexdigest()
     assert len(run.artifact.pages) == 1
     assert len(run.documents) == 2
@@ -392,6 +403,43 @@ def test_the_unparseable_body_survives_on_disk_instead_of_being_rolled_back(
     assert published["outcome"] == support.models.ScreenOutcome.INCOMPLETE.value
     assert published["failure"]["page_number"] == 2
     assert support.page_file(out_dir, 2).read_bytes() == b""
+
+
+def test_an_unexpected_exception_is_retained_under_its_own_name_and_never_escapes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The catch-all must keep the evidence without misreporting what happened.
+
+    Every refusal this reader raises is a ``ScreenerSessionError`` handled one
+    clause earlier, so anything reaching the catch-all is a type nobody planned
+    for — a transport read error, a bug in a reader. Publishing all of them as
+    ``ScreenStructureError`` makes ``refusal`` unfilterable: it says "malformed
+    page" about a page that was never judged, and only ``detail`` carries the
+    truth. The retention half of SL3-16 is asserted here too, because naming the
+    exception honestly must not be bought by letting it escape — the dispatcher
+    catches only ``ScreenerSessionError``, so a ``RuntimeError`` leaving
+    ``acquire_screen`` would take the CLI rollback and both bodies with it.
+    """
+    real_reader = support.screen.read_screen_table
+
+    def explode(root: Any, *, fetch: Any, page_number: int) -> Any:
+        """Read page 1 for real and blow up on page 2 with a non-parser exception."""
+        if page_number != 2:
+            return real_reader(root, fetch=fetch, page_number=page_number)
+        raise RuntimeError("reader blew up")
+
+    monkeypatch.setattr("fundamentals.ingest.screener_screen.read_screen_table", explode)
+    bodies = support.walk(2)
+
+    exit_code, out_dir, _ = support.run_cli(monkeypatch, tmp_path, bodies)
+
+    assert exit_code == EXIT_REFUSED
+    failure = support.artifact_body(support.payload_of(out_dir))["failure"]
+    assert failure["refusal"] == "RuntimeError"
+    assert failure["detail"] == "reader blew up"
+    assert failure["page_number"] == 2
+    for position in (1, 2):
+        assert support.page_file(out_dir, position).read_bytes() == bodies[position].encode("utf-8")
 
 
 def test_the_private_query_never_reaches_a_transport_log_line_or_an_error_message(

@@ -325,3 +325,63 @@ def test_a_zero_result_run_records_the_nothing_the_page_stated(
     assert run.artifact.outcome is support.models.ScreenOutcome.ZERO_RESULTS
     assert run.artifact.rows == ()
     assert [(page.stated_total, page.stated_pages) for page in run.artifact.pages] == [(0, 1)]
+
+
+def test_a_total_that_moved_mid_walk_records_both_numbers_and_the_page_that_moved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal has to answer "how did it move", not just "it moved".
+
+    Page 1 states sixteen results over two pages; page 2 states twenty-four. The
+    walk correctly refuses, but a consumer holding only the artifact then has to
+    re-parse the retained bytes to learn which direction the result set went and
+    by how much — and the numbers are the whole content of the finding. The
+    refused page's own claim is nowhere in ``pages`` either, because page
+    metadata is appended only after a page is admitted and this one never was.
+    """
+    bodies = support.walk(2)
+    bodies[2] = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(2)),
+        support.pagination((1, 2), active=2, previous=True),
+        stated=support.results_found_line(24, 2, 2),
+    )
+
+    run, _ = support.acquire(monkeypatch, bodies)
+
+    failure = run.artifact.failure
+    assert failure is not None
+    assert failure.refusal == "ScreenPaginationError"
+    assert failure.page_number == 2
+    assert (failure.stated_total, failure.stated_pages) == (24, 2)
+    assert [(page.page_number, page.stated_total) for page in run.artifact.pages] == [(1, 16)]
+    assert "24" in failure.detail
+    assert "16" in failure.detail
+
+
+def test_a_page_that_names_the_wrong_page_records_the_page_it_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observed against expected, for the refusal that is purely about a mismatch.
+
+    Page 2's body states it is page 1 — a cache or a template serving the wrong
+    body. "names an unrequested page" does not say which page was named, so it
+    cannot distinguish a stale page-1 body from a walk that skipped ahead, and
+    those have different causes. The stated total and page count are recorded
+    beside it because they are the rest of what the refused page claimed.
+    """
+    bodies = support.walk(2)
+    bodies[2] = support.page(
+        support.results_table(support.NARROW_LABELS, support.rows_for(2)),
+        support.pagination((1, 2), active=2, previous=True),
+        stated=support.results_found_line(16, 1, 2),
+    )
+
+    run, _ = support.acquire(monkeypatch, bodies)
+
+    failure = run.artifact.failure
+    assert failure is not None
+    assert failure.refusal == "ScreenPaginationError"
+    assert failure.page_number == 2
+    assert (failure.stated_total, failure.stated_pages) == (16, 2)
+    assert "page 1" in failure.detail
+    assert "page 2" in failure.detail

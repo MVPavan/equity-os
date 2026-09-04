@@ -13,7 +13,6 @@ from fundamentals.ingest.screener_screen_models import (
     ScreenCell,
     ScreenColumn,
     ScreenCompany,
-    ScreenerScreenError,
     ScreenFailure,
     ScreenOutcome,
     ScreenPageMetadata,
@@ -34,6 +33,9 @@ from fundamentals.ingest.screener_session_page import assert_logged_in, parse_do
 _TABLE = ".//table[contains(concat(' ', normalize-space(@class), ' '), ' data-table ')]"
 _PAGINATION = ".//*[contains(concat(' ', normalize-space(@class), ' '), ' pagination ')]"
 _OPTIONS = "./div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
+_NESTED_OPTIONS_ANCHORS = (
+    ".//div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]//a"
+)
 _PAGE_INFO = ".//*[@data-page-info]"
 _SERIAL = re.compile(r"^([1-9][0-9]*)\.$")
 _NUMBER = re.compile(r"^[1-9][0-9]*$")
@@ -48,12 +50,17 @@ _UNADMITTED_SCREEN_ROW = "screen table has a row outside tbody"
 _ANCHORLESS_PAGINATION_HAS_ELEMENT_CHILDREN = "anchor-less screen pagination has element children"
 _MISSING_PAGE_INFO = "screen page has no data-page-info completeness oracle"
 _INVALID_PAGE_INFO = "screen data-page-info completeness oracle is malformed"
-_PAGE_INFO_CHANGED = "screen data-page-info changed across pages"
-_PAGE_INFO_WRONG_PAGE = "screen data-page-info names an unrequested page"
+_PAGE_INFO_CHANGED = (
+    "screen data-page-info changed across pages: page {page} states total {total} over "
+    "{pages} pages, the walk started on total {expected_total} over {expected_pages} pages"
+)
+_PAGE_INFO_WRONG_PAGE = "screen data-page-info names page {stated}, requested page {requested}"
 _PAGE_INFO_INCOMPLETE = "screen admitted rows or pages disagree with data-page-info"
 _PAGE_BOUND_REASON = "configured page bound {bound} stopped at {rows} of stated total {total}"
 _NEXT = "Next"
 _PAGE_QUERY_PARAMETER = "page"
+_LIMIT_QUERY_PARAMETER = "limit"
+_FIRST_PAGE = "1"
 _HREF_ATTRIBUTE = "href"
 _EMPTY_HREF = ""
 _PAGE_INFO_TOTAL_GROUP = "total"
@@ -120,16 +127,18 @@ def read_screen_pagination(root: Any, *, requested_page: int) -> tuple[int, ...]
         return ()
     options = pagination.xpath(_OPTIONS)
     if not options:
-        nested_anchors = {
-            id(nested_anchor)
-            for nested_options in pagination.xpath(
-                ".//div[contains(concat(' ', normalize-space(@class), ' '), ' options ')]"
+        # The nested anchors are by construction a subset of ``anchors``, so equal
+        # node-set sizes say every anchor here is inside a nested options block —
+        # the same question the removed identity check asked, without depending on
+        # lxml handing back the same element proxy from a second xpath call.
+        nested_anchors = pagination.xpath(_NESTED_OPTIONS_ANCHORS)
+        if len(nested_anchors) == len(anchors) and all(
+            _LIMIT_QUERY_PARAMETER in query
+            and all(number == _FIRST_PAGE for number in query.get(_PAGE_QUERY_PARAMETER, ()))
+            for query in (
+                parse_qs(urlsplit(anchor.get(_HREF_ATTRIBUTE, _EMPTY_HREF)).query)
+                for anchor in anchors
             )
-            for nested_anchor in nested_options.xpath(".//a")
-        }
-        if all(id(anchor) in nested_anchors for anchor in anchors) and all(
-            "limit" in query and all(page == "1" for page in query.get("page", ()))
-            for query in (parse_qs(urlsplit(anchor.get("href", "")).query) for anchor in anchors)
         ):
             if requested_page != 1:
                 raise ScreenPaginationError(_PAGE_SIZE_ONLY_AFTER_FIRST_PAGE)
@@ -207,18 +216,30 @@ def acquire_screen(
     while True:
         url = screen_url(query, page)
         fetch: ScreenerDocumentFetch | None = None
+        stated: tuple[int, int] | None = None
         try:
             fetch = source.fetch_screen_page(url=url)
             documents.append(fetch)
             root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
             assert_logged_in(root)
             stated_total, stated_page, stated_pages = _read_page_info(root)
+            stated = (stated_total, stated_pages)
             if stated_page != page:
-                raise ScreenPaginationError(_PAGE_INFO_WRONG_PAGE)
+                raise ScreenPaginationError(
+                    _PAGE_INFO_WRONG_PAGE.format(stated=stated_page, requested=page)
+                )
             if expected_page_info is None:
-                expected_page_info = (stated_total, stated_pages)
-            elif expected_page_info != (stated_total, stated_pages):
-                raise ScreenPaginationError(_PAGE_INFO_CHANGED)
+                expected_page_info = stated
+            elif expected_page_info != stated:
+                raise ScreenPaginationError(
+                    _PAGE_INFO_CHANGED.format(
+                        page=page,
+                        total=stated_total,
+                        pages=stated_pages,
+                        expected_total=expected_page_info[0],
+                        expected_pages=expected_page_info[1],
+                    )
+                )
             columns, rows = read_screen_table(root, fetch=fetch, page_number=page)
             offered = read_screen_pagination(root, requested_page=page)
             highest_offered_page = max((highest_offered_page, *offered))
@@ -300,26 +321,28 @@ def acquire_screen(
                 url=url,
                 error=error,
                 content_sha256=None if fetch is None else fetch.content_sha256,
+                stated=stated,
             )
-        # Once a body is retained, no exception may discard it; preserve the
-        # original type and message in detail to distinguish page failures from bugs.
+        # Once a body is retained, no exception may discard it. Every refusal this
+        # reader raises is a ScreenerSessionError and was caught above, so anything
+        # arriving here is an unexpected type and is recorded under its own name: a
+        # consumer filtering on refusal must not read a transport read error as a
+        # malformed page.
         except Exception as error:
             if not documents:
                 raise
-            detail = _EXCEPTION_DETAIL.format(refusal=type(error).__name__, detail=str(error))
             return _incomplete(
                 query,
                 expected_columns,
                 all_rows,
                 pages,
                 documents,
-                detail,
+                _EXCEPTION_DETAIL.format(refusal=type(error).__name__, detail=str(error)),
                 page=page,
                 url=url,
-                error=error
-                if isinstance(error, ScreenerScreenError)
-                else ScreenStructureError(detail),
+                error=error,
                 content_sha256=None if fetch is None else fetch.content_sha256,
+                stated=stated,
             )
 
 
@@ -488,12 +511,14 @@ def _incomplete(
     url: str | None = None,
     error: Exception | None = None,
     content_sha256: str | None = None,
+    stated: tuple[int, int] | None = None,
 ) -> ScreenRun:
     """Close a walk that stopped short, keeping everything it did prove.
 
     The pages already admitted, their rows, and every retained body stay in the
     run; only the outcome changes. A refused page's response is evidence, and
-    discarding it would make the refusal unexaminable.
+    discarding it would make the refusal unexaminable. ``stated`` is the
+    completeness claim of the page the walk refused on, admitted or not.
     """
     failure = (
         None
@@ -504,6 +529,8 @@ def _incomplete(
             refusal=type(error).__name__,
             detail=str(error),
             content_sha256=content_sha256,
+            stated_total=None if stated is None else stated[0],
+            stated_pages=None if stated is None else stated[1],
         )
     )
     return ScreenRun(

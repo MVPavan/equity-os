@@ -141,6 +141,10 @@ class ScreenFailure(BaseModel):
 
     ``content_sha256`` is present whenever a body was received, so a refused
     page's retained evidence can still be tied back to what was judged.
+    ``stated_total`` and ``stated_pages`` are the completeness claim of the page
+    the walk refused on, whether or not that page was admitted, and are ``None``
+    when the walk failed before any claim was read — so "how did the result set
+    move" is answerable without reparsing the retained bytes.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -150,6 +154,8 @@ class ScreenFailure(BaseModel):
     refusal: str
     detail: str
     content_sha256: str | None = None
+    stated_total: int | None = Field(default=None, ge=0)
+    stated_pages: int | None = Field(default=None, gt=0)
 
 
 class ScreenArtifact(BaseModel):
@@ -160,6 +166,13 @@ class ScreenArtifact(BaseModel):
     claiming completeness while carrying a failure, cannot be constructed at
     all — a caller reading ``outcome`` never has to re-derive it from the
     other fields.
+
+    The walk this artifact records guarantees row and page cardinality against
+    the source's own stated total at fetch time, not an atomic snapshot of set
+    membership: one company leaving the screen while another joins between two
+    page fetches leaves the stated total, the page count, the serials and the
+    row ids all intact, so a consumer that needs atomicity needs a mechanism
+    this source does not offer.
     """
 
     model_config = ConfigDict(frozen=True)
