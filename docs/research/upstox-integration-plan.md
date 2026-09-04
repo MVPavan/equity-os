@@ -150,6 +150,18 @@ that emits `SourceRecord`s.
    caching, retention, transformation, and private/internal output. Fixture-only
    implementation may proceed without it; live capture and any scheduled refresh
    stay disabled until it exists.
+   **Drafted 2026-09-04: `docs/research/upstox-rights-record.md`, state
+   `PROPOSED`. It authorizes nothing** — several dimensions are `UNKNOWN`, and
+   under S02 §6.3 an `UNKNOWN` denies its operation. Two findings change this
+   section's assumptions. First, the personal-use / internal-use carve-out this
+   plan's evaluation doc relied on **does not exist** in the terms; the phrase
+   was checked and is absent. Second, the **unauthenticated instrument files are
+   the least covered surface, not the most**: the terms' prohibition is scoped to
+   "materials on our website", which is plainly what they are, while the staff
+   permission that does exist is explicitly about endpoints "requiring an Upstox
+   API access token" — which the assets host does not. Slice 1 was ordered first
+   because it was operationally cheapest; that ordering does not carry over to
+   which live run should be authorized first.
 2. **Ownership.** `eqos-rdb` owns this adapter. `eqos-kx4.4` owns the snapshot
    store and the outcome taxonomy; this plan deliberately builds neither (§8).
 3. **S17 G02/G03** block authoritative entity/action promotion. They do not
@@ -1396,7 +1408,7 @@ stays, now with a stated purpose.
 | D6 | Do special weekend sessions (Muhurat) appear in the holidays feed? | Treat as **unverified**; weekends closed unless explicitly listed | Failure mode is a skipped session, never a phantom one. Confirm on the next October capture. |
 | D7 | Full candle audit cadence | **Monthly**, plus action-triggered re-fetch | A reasoned operational default, not a measured optimum. At catalog scale it is a two-hour job (§9.4) — revisit if targets widen. |
 | D8 | Wire the Upstox catalog into `entity-map build` | Behind `--upstox-catalog`, **default off** | The map's inputs change only when asked. |
-| D9 | Upstox rights for automated access, caching, retention | Record before any live run (Gate 0) | Delays live operation; avoids building an unauthorised retention system. |
+| D9 | Upstox rights for automated access, caching, retention | **Drafted 2026-09-04** — `docs/research/upstox-rights-record.md`, state `PROPOSED`, authorizing nothing. Awaiting a named human decision on the four dimensions that are `UNKNOWN` or informal. | Delays live operation; avoids building an unauthorised retention system. Two findings landed against this plan's assumptions: the personal-use carve-out **does not exist** in the terms, and the unauthenticated instrument files are the **least** rights-covered surface rather than the most. |
 | D10 | Authoritative action promotion | A separate future S17 task after G02/G03 | Downstream adjusted-price explanations stay vendor-relative until then. |
 
 ## 13. Ranked risks

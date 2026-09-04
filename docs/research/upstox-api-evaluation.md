@@ -78,6 +78,13 @@ Unproven until tested: **fundamentals** (vendor independence unknown).
   for internal application use, no attribution required — informal, not a
   contract. Safe envelope: private internal research, no public display, no
   redistribution. Written confirmation worth requesting.
+  > **Correction, 2026-09-04.** The 2026-06-25 post cited above **was not
+  > located** when the terms were read for the Gate 0 rights record. A
+  > different, later staff thread (2025-12-29) was found and quoted instead.
+  > Treat this citation as unverified until someone opens it. The rest of the
+  > bullet holds and is superseded in detail by
+  > `docs/research/upstox-rights-record.md`, which quotes the terms verbatim
+  > and records that no personal-use or internal-use carve-out exists in them.
 
 ## The decisive risk (Opus finding)
 
