@@ -22,11 +22,10 @@ from pathlib import Path
 import pytest
 from structlog.testing import capture_logs
 
-from fundamentals.api.cli import (
-    _build_parser,
+from fundamentals.api.cli import _build_parser, main
+from fundamentals.api.thesis_cli import (
     _build_thesis_clients,
     _thesis_exit_code,
-    main,
     thesis_command,
 )
 from fundamentals.contracts.observation import AccountingFramework, PeriodType, Scope

@@ -12,6 +12,7 @@ import pytest
 from structlog.testing import capture_logs
 
 import fundamentals.api.cli as cli_module
+import fundamentals.api.thesis_cli as thesis_cli_module
 import fundamentals.thesis.adjudication as adjudication_module
 from fundamentals.api.adjudication_cli import (
     adjudication_apply_command,
@@ -635,7 +636,7 @@ def test_adjudicate_main_dispatches_list(
         discrepancies=(_discrepancy(),),
         now=datetime(2026, 8, 23, 12, tzinfo=UTC),
     )
-    monkeypatch.setattr(cli_module, "_DEFAULT_THESIS_DIR", thesis_dir)
+    monkeypatch.setattr(thesis_cli_module, "_DEFAULT_THESIS_DIR", thesis_dir)
 
     exit_code = cli_module.main(["adjudicate", "list", "--status", "OPEN"])
 

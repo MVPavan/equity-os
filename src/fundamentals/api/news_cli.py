@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unicodedata import category as unicode_category
+
+import structlog
 
 from fundamentals.api.watchlist_config import StockConfig, WatchlistConfig, load_watchlist_config
 from fundamentals.contracts.news import (
@@ -52,6 +55,7 @@ from fundamentals.news.health import with_source_health
 from fundamentals.news.store import NewsObservationStore, NewsStoreError
 
 NEWS_COMMAND = "news"
+_CLI_LOGGER_NAME = "fundamentals.cli"
 DEFAULT_DAYS = 30
 MAX_DAYS = 365
 _CONTROL_CHARACTERS = frozenset(chr(code) for code in (*range(0, 32), *range(127, 160)))
@@ -534,3 +538,29 @@ def render_news_table(result: NewsLaneResult, *, show_quarantine: bool = False) 
                 )
             )
     return "\n".join(lines)
+
+
+def dispatch_news_command(args: argparse.Namespace) -> int | None:
+    """Run the ``news`` command, or return ``None`` for any other command."""
+    if args.command != NEWS_COMMAND:
+        return None
+    logger = structlog.get_logger(_CLI_LOGGER_NAME)
+    news_result = run_news_command(args)
+    for source in news_result.sources:
+        logger.info(
+            "news_source_summary",
+            source=source.source_id,
+            observations=len(source.observations),
+            quarantined=len(source.quarantined),
+            raw_count=source.raw_count,
+            dropped_count=source.dropped_count,
+        )
+    for warning in news_result.warnings:
+        logger.warning(
+            "news_source_health",
+            source=warning.source_id,
+            kind=warning.kind.value,
+            detail=warning.message,
+        )
+    sys.stdout.write(render_news_table(news_result, show_quarantine=args.show_quarantine) + "\n")
+    return 0

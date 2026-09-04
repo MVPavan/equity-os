@@ -14,119 +14,41 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import sys
-import tempfile
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from pydantic import SecretStr, TypeAdapter
 
-from fundamentals.api.adjudication_cli import (
-    ADJUDICATE_COMMAND,
-    dispatch_adjudication_command,
-    load_adjudication_queue_or_exit,
-    normalize_stock_quarter,
-    resolve_beneath,
-)
-from fundamentals.api.cli_parser import (
-    REPORT_COMMAND as _COMMAND_REPORT,
-)
-from fundamentals.api.cli_parser import (
-    THESIS_COMMAND as _COMMAND_THESIS,
-)
-from fundamentals.api.cli_parser import (
-    VALIDATE_COMMAND as _COMMAND_VALIDATE,
-)
 from fundamentals.api.cli_parser import build_parser as _build_parser
-from fundamentals.api.comparatives import derive_comparator_periods
-from fundamentals.api.config import FundamentalsConfig, SourceFileConfig, XbrlMode, load_config
+from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
 )
-from fundamentals.api.goal_runner import (
-    ALL_SOURCE_KINDS,
-    QuarterMode,
-    RunMode,
-    SourceKind,
-    StockReport,
-    WaveReport,
-    run_stock,
-    run_wave,
+from fundamentals.api.env_credentials import (
+    _screener_credentials_from_env,
+    _tijori_credentials_from_env,
+    _upstox_credentials_from_env,
 )
-from fundamentals.api.news_cli import (
-    NEWS_COMMAND,
-    render_news_table,
-    run_news_command,
-)
+from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
-from fundamentals.api.report_builder import ReportBuildError, render_report
+from fundamentals.api.report_cli import dispatch_report_command
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     dispatch_screener_watchlist_corroborate_command,
 )
+from fundamentals.api.thesis_cli import (
+    dispatch_adjudicate_command,
+    dispatch_thesis_command,
+)
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
-from fundamentals.api.upstox_cli import UPSTOX_TOKEN_ENV, dispatch_upstox_command
+from fundamentals.api.upstox_cli import dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
 from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
-from fundamentals.api.watchlist_config import (
-    FixturePaths,
-    StockConfig,
-    WatchlistConfig,
-    Wave,
-    load_watchlist_config,
-)
-from fundamentals.contracts.comparative import ComparatorKind
-from fundamentals.contracts.source_catalog import SourceClass
-from fundamentals.ingest.bse_pdf_source import SOURCE_ID as BSE_RESULTS_PDF_SOURCE_ID
-from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_comparator_path
-from fundamentals.ingest.ocr_engine import RapidOcrEngine
-from fundamentals.ingest.screener_session_models import ScreenerCredentials
-from fundamentals.ingest.tijori_source import TijoriCredentials
-from fundamentals.ingest.upstox_source import UpstoxCredentials
+from fundamentals.api.validate_cli import dispatch_validate_command
 from fundamentals.ingest.xbrl_source import NseXbrlSource
-from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
 from fundamentals.store.fact_store import FactStore
-from fundamentals.thesis import (
-    ClaudeOpusClient,
-    CodexSolClient,
-    ThesisConfig,
-    ThesisDocument,
-    ThesisDocumentStatus,
-    ThesisModelClient,
-    build_thesis,
-    from_gold_file,
-    load_thesis_config,
-    render_thesis_document,
-)
-from fundamentals.thesis.adjudication import (
-    entries_for_stock_quarter,
-    normalize_queue_key,
-    upsert_discrepancies,
-)
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DEFAULT_REPORT_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "reports"
-_DEFAULT_THESIS_DIR = _REPO_ROOT / "docs" / "research" / "validation" / "thesis"
-_ADJUDICATION_QUEUE_FILENAME = "adjudication-queue.json"
-_QUARTER_LATEST = "latest"
-_MISSING_GOLD_REASON = "gold file does not exist"
-# The cached report reconciles the two first-party sources whose raw bytes are
-# held on disk (NSE Ind AS XBRL + BSE issuer results PDF); no live fetch.
-_REPORT_SOURCE_KINDS: frozenset[SourceKind] = frozenset({SourceKind.NSE, SourceKind.PDF})
-
-_TIJORI_EMAIL_ENV = "TIJORI_EMAIL"
-_TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
-_TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
-_TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
-_SCREENER_SESSION_ENV = "SCREENER_SESSION_COOKIE"
-_UPSTOX_TOKEN_ENV = UPSTOX_TOKEN_ENV
-
-# Serializes a per-wave roll-up sequence to a single JSON array for stdout.
-_WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
 
 
 class _LazyStderrLoggerFactory:
@@ -229,461 +151,6 @@ def run_command(args: argparse.Namespace) -> PipelineResult:
         store.close()
 
 
-def _parse_source_kinds(raw: str | None) -> frozenset[SourceKind]:
-    """Parse a ``--sources nse,bse,...`` list into source kinds, or all when absent."""
-    if not raw:
-        return ALL_SOURCE_KINDS
-    kinds: set[SourceKind] = set()
-    for token in raw.split(","):
-        name = token.strip().lower()
-        if not name:
-            continue
-        try:
-            kinds.add(SourceKind(name))
-        except ValueError as error:
-            valid = ", ".join(kind.value for kind in SourceKind)
-            raise SystemExit(f"unknown source {name!r}; choose from: {valid}") from error
-    if not kinds:
-        return ALL_SOURCE_KINDS
-    return frozenset(kinds)
-
-
-def _tijori_credentials_from_env() -> TijoriCredentials | None:
-    """Read a pre-minted Tijori session cookie from the environment.
-
-    Returns ``None`` when no auth material is present, so the runner skips Tijori
-    cleanly. Email/password-only input fails because this round does not automate login.
-    """
-    email = os.environ.get(_TIJORI_EMAIL_ENV)
-    password = os.environ.get(_TIJORI_PASSWORD_ENV)
-    session_cookie = os.environ.get(_TIJORI_SESSION_ENV)
-    if session_cookie is None:
-        if email is not None or password is not None:
-            raise SystemExit(_TIJORI_LOGIN_UNIMPLEMENTED)
-        return None
-    return TijoriCredentials(session_cookie=SecretStr(session_cookie))
-
-
-def _screener_credentials_from_env() -> ScreenerCredentials | None:
-    """Read a pre-minted Screener subscriber session cookie from the environment.
-
-    Returns ``None`` when no cookie is present, so a Screener command refuses
-    with a named environment variable instead of attempting an anonymous fetch
-    that would silently return a valid logged-out page.
-    """
-    session_cookie = os.environ.get(_SCREENER_SESSION_ENV)
-    if session_cookie is None:
-        return None
-    return ScreenerCredentials(session_cookie=SecretStr(session_cookie))
-
-
-def _upstox_credentials_from_env() -> UpstoxCredentials | None:
-    """Read the Upstox Analytics Token from the environment, if one is set.
-
-    Returns ``None`` when unset rather than refusing: the instrument files are
-    served unauthenticated, so a token-free run of Slice 1 is a supported use
-    and not a misconfiguration. An authenticated surface refuses on its own,
-    naming this variable.
-    """
-    token = os.environ.get(_UPSTOX_TOKEN_ENV)
-    if token is None:
-        return None
-    return UpstoxCredentials(access_token=SecretStr(token))
-
-
-def _write_reports(report_dir: Path, wave: WaveReport) -> None:
-    """Write the per-stock reports and the wave roll-up as JSON under ``report_dir``."""
-    report_dir.mkdir(parents=True, exist_ok=True)
-    for stock in wave.stocks:
-        path = report_dir / f"{stock.symbol}-{stock.quarter}.json"
-        path.write_text(stock.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    rollup = report_dir / f"{wave.wave}-rollup.json"
-    rollup.write_text(wave.model_dump_json(indent=2) + "\n", encoding="utf-8")
-
-
-def _selected_wave(args: argparse.Namespace) -> Wave | None:
-    """Resolve the ``--wave`` filter to a :class:`Wave`, or ``None`` when unset."""
-    return Wave(args.wave) if args.wave else None
-
-
-def _require_symbol_in_wave(stock: StockConfig, wave: Wave | None) -> None:
-    """Fail closed when an explicit ``--wave`` contradicts the ``--symbol``'s own wave."""
-    if wave is not None and stock.wave is not wave:
-        raise SystemExit(f"symbol {stock.symbol} is in {stock.wave.value}, not {wave.value}")
-
-
-def validate_command(args: argparse.Namespace) -> tuple[WaveReport, ...]:
-    """Execute the ``validate`` subcommand and return one roll-up per wave run.
-
-    ``--symbol`` returns that stock's own-wave roll-up; ``--wave`` scopes the run to
-    one wave (on its own, or narrowing ``--watchlist``); a plain ``--watchlist`` runs
-    every wave and returns one roll-up each, so their ``<wave>-rollup.json`` files
-    never collide.
-    """
-    selected_wave = _selected_wave(args)
-    if not args.watchlist and not args.symbol and selected_wave is None:
-        raise SystemExit("validate requires --watchlist, --symbol <X>, or --wave <Wave-1|Wave-2>")
-
-    config_path = Path(args.config).resolve()
-    config: WatchlistConfig = load_watchlist_config(config_path)
-    repo_root = config.repo_root(config_path)
-    mode = RunMode.LIVE if args.live else RunMode.FIXTURE
-    kinds = _parse_source_kinds(args.sources)
-    out_dir = Path(args.gold_dir) if args.gold_dir else DEFAULT_GOLD_DIR
-    credentials = _tijori_credentials_from_env() if mode is RunMode.LIVE else None
-    latest = bool(args.quarter) and args.quarter.strip().lower() == _QUARTER_LATEST
-    quarter_mode = QuarterMode.LATEST if latest else QuarterMode.PINNED
-
-    if args.symbol:
-        stock = config.stock(args.symbol)
-        _require_symbol_in_wave(stock, selected_wave)
-        if not latest and args.quarter and args.quarter.upper() != stock.quarter.label.upper():
-            raise SystemExit(
-                f"quarter {args.quarter!r} does not match configured quarter "
-                f"{stock.quarter.label!r} for {stock.symbol}"
-            )
-        report = run_stock(
-            stock,
-            mode=mode,
-            repo_root=repo_root,
-            kinds=kinds,
-            tijori_credentials=credentials,
-            out_dir=out_dir,
-            quarter_mode=quarter_mode,
-        )
-        waves: tuple[WaveReport, ...] = (
-            WaveReport(wave=stock.wave, quarter_labels=(report.quarter,), stocks=(report,)),
-        )
-    else:
-        target_waves = (selected_wave,) if selected_wave is not None else config.waves()
-        waves = tuple(
-            run_wave(
-                config,
-                wave=wave,
-                mode=mode,
-                repo_root=repo_root,
-                kinds=kinds,
-                tijori_credentials=credentials,
-                out_dir=out_dir,
-                quarter_mode=quarter_mode,
-            )
-            for wave in target_waves
-        )
-
-    if args.report_dir:
-        report_dir = Path(args.report_dir)
-        for wave_report in waves:
-            _write_reports(report_dir, wave_report)
-    return waves
-
-
-def _stock_summary_line(report: StockReport) -> str:
-    """One-line human summary of a stock report for stderr."""
-    return (
-        f"{report.symbol} ({report.domain}): {report.outcome.value.upper()} — "
-        f"{len(report.facts)} facts, {len(report.discrepancies)} discrepancies, "
-        f"sources={list(report.available_sources)}"
-    )
-
-
-def _sha256_file(path: Path) -> str:
-    """Return the hex sha256 of a file's bytes (self-verifying provenance stamp)."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _cached_stock(stock: StockConfig, repo_root: Path) -> StockConfig:
-    """Point a stock at its already-downloaded raw NSE XBRL + BSE results PDF.
-
-    Wave-1 stocks carry no committed fixtures; the report command reconciles from
-    the raw bytes a prior live run left under ``data/raw/watchlist/<symbol>/`` so it
-    never touches the network. A missing raw file leaves that source unconfigured
-    (skipped), so the reconcile fails closed rather than fabricating a value.
-    """
-    lower = stock.symbol.lower()
-    nse_dir = repo_root / RAW_WATCHLIST_DIR / lower / "nse"
-    pdf_dir = repo_root / RAW_WATCHLIST_DIR / lower / "bse_pdf"
-    nse = next(iter(sorted(nse_dir.glob("*.xml"))), None) if nse_dir.is_dir() else None
-    periods = derive_comparator_periods(stock.quarter.period_start, stock.quarter.period_end)
-    qoq_start, qoq_end = periods[ComparatorKind.QOQ]
-    yoy_start, yoy_end = periods[ComparatorKind.YOY]
-    nse_qoq = cached_comparator_path(
-        repo_root, stock.symbol, ComparatorKind.QOQ, qoq_start, qoq_end
-    )
-    nse_yoy = cached_comparator_path(
-        repo_root, stock.symbol, ComparatorKind.YOY, yoy_start, yoy_end
-    )
-    pdf = next(iter(sorted(pdf_dir.glob("*.pdf"))), None) if pdf_dir.is_dir() else None
-    fixtures = FixturePaths(
-        nse=str(nse.relative_to(repo_root)) if nse is not None else None,
-        nse_qoq=(str(nse_qoq.path.relative_to(repo_root)) if nse_qoq.path is not None else None),
-        nse_qoq_unavailable_reason=nse_qoq.unavailable_reason,
-        nse_yoy=(str(nse_yoy.path.relative_to(repo_root)) if nse_yoy.path is not None else None),
-        nse_yoy_unavailable_reason=nse_yoy.unavailable_reason,
-        results_pdf=str(pdf.relative_to(repo_root)) if pdf is not None else None,
-    )
-    results_pdf = (
-        SourceFileConfig(
-            source_id=BSE_RESULTS_PDF_SOURCE_ID,
-            source_class=SourceClass.FIRST_PARTY,
-            filename=pdf.name,
-            sha256=_sha256_file(pdf),
-        )
-        if pdf is not None
-        else None
-    )
-    return stock.model_copy(update={"fixtures": fixtures, "results_pdf": results_pdf})
-
-
-def report_command(args: argparse.Namespace) -> list[str]:
-    """Render the per-stock source-verified earnings updates from CACHED data.
-
-    Reconciles each stock's held raw first-party sources offline, bridges the
-    reconciled report into the frozen 11-section renderer, and writes
-    ``<report_dir>/<SYM>-<QUARTER>.md``. A stock with no cached source, or one that
-    cannot resolve every required role, is surfaced and skipped (never written
-    half-sourced).
-    """
-    if not args.watchlist and not args.symbol:
-        raise SystemExit("report requires either --watchlist or --symbol <X>")
-
-    config_path = Path(args.config).resolve()
-    config: WatchlistConfig = load_watchlist_config(config_path)
-    repo_root = config.repo_root(config_path)
-    report_dir = Path(args.out_dir) if args.out_dir else _DEFAULT_REPORT_DIR
-    report_dir.mkdir(parents=True, exist_ok=True)
-    # The cached reconcile writes a gold file as a side effect; route it to a
-    # scratch dir so a report run never clobbers the committed data/gold set.
-    gold_dir = (
-        Path(args.gold_dir)
-        if args.gold_dir
-        else Path(tempfile.mkdtemp(prefix="fundamentals-report-gold-"))
-    )
-
-    selected_wave = _selected_wave(args)
-    if args.symbol:
-        stock = config.stock(args.symbol)
-        _require_symbol_in_wave(stock, selected_wave)
-        stocks = [stock]
-    elif selected_wave is not None:
-        stocks = list(config.stocks_for_wave(selected_wave))
-    else:
-        stocks = list(config.stocks)
-    logger = structlog.get_logger("fundamentals.report")
-    written: list[str] = []
-    for stock in stocks:
-        if args.symbol and args.quarter and args.quarter.upper() != stock.quarter.label.upper():
-            raise SystemExit(
-                f"quarter {args.quarter!r} does not match configured quarter "
-                f"{stock.quarter.label!r} for {stock.symbol}"
-            )
-        cached = _cached_stock(stock, repo_root)
-        if cached.fixtures.nse is None:
-            logger.warning(
-                "report_skipped_no_cached_source",
-                symbol=stock.symbol,
-                reason=(
-                    "no cached NSE XBRL under "
-                    f"{RAW_WATCHLIST_DIR.as_posix()}/{stock.symbol.lower()}"
-                ),
-            )
-            continue
-        stock_report = run_stock(
-            cached,
-            mode=RunMode.FIXTURE,
-            repo_root=repo_root,
-            kinds=_REPORT_SOURCE_KINDS,
-            out_dir=gold_dir,
-            # Recover OCR-dependent facts (e.g. THERMAX's garbled revenue) so the
-            # report matches the validated gold; lazy engine, fail-closed if the
-            # optional 'ocr' extra is absent.
-            ocr_engine=RapidOcrEngine(),
-        )
-        try:
-            markdown = render_report(stock_report, cached)
-        except ReportBuildError as error:
-            logger.warning("report_failed_closed", symbol=stock.symbol, reason=str(error))
-            continue
-        out_path = report_dir / f"{stock.symbol}-{stock.quarter.label}.md"
-        out_path.write_text(markdown, encoding="utf-8")
-        written.append(str(out_path))
-        logger.info(
-            "report_written",
-            symbol=stock.symbol,
-            path=str(out_path),
-            sources=list(stock_report.available_sources),
-        )
-    return written
-
-
-def _resolve_thesis_out_dir(args: argparse.Namespace) -> Path:
-    """Resolve the directory the rendered thesis markdown is written to."""
-    return Path(args.out_dir) if args.out_dir else _DEFAULT_THESIS_DIR
-
-
-def _build_thesis_clients(config: ThesisConfig) -> tuple[ThesisModelClient, ...]:
-    """Construct the two real, independent thesis model clients from config."""
-    codex: ThesisModelClient = CodexSolClient(config.codex)
-    claude: ThesisModelClient = ClaudeOpusClient(config.claude)
-    return (codex, claude)
-
-
-def _stock_name_domain(watchlist: WatchlistConfig, symbol: str) -> tuple[str, str]:
-    """Resolve a symbol's display name and domain from the watchlist (best-effort)."""
-    try:
-        stock = watchlist.stock(symbol)
-    except ValueError:
-        return "", ""
-    return stock.name, stock.domain
-
-
-def _thesis_exit_code(docs: Sequence[ThesisDocument]) -> int:
-    """Non-zero when any thesis is BLOCKED (no usable model draft was produced)."""
-    return 1 if any(doc.status is ThesisDocumentStatus.BLOCKED for doc in docs) else 0
-
-
-def thesis_command(
-    args: argparse.Namespace,
-    *,
-    clients: Sequence[ThesisModelClient] | None = None,
-    queue_path: Path | None = None,
-) -> list[ThesisDocument]:
-    """Draft the non-authoritative, cross-verified thesis from validated gold facts.
-
-    Loads each requested stock's gold file (written by ``validate``), runs two
-    independent models over the SAME facts, cross-verifies, and writes the sourced
-    markdown to ``<out-dir>/<SYM>-<QUARTER>.md``. It never re-fetches or recomputes a
-    number: a missing gold file fails closed (run ``validate`` first). The document
-    still emits with the recorded gap when one model is unreachable (PARTIAL); when
-    both fail (BLOCKED) it emits the facts only and the caller exits non-zero. Model
-    clients are injectable so a unit test can pass fakes; the default path builds the
-    two real clients (Codex Sol + Claude Opus) from config.
-    """
-    if not args.watchlist and not args.symbol:
-        raise SystemExit("thesis requires either --watchlist or --symbol <X>")
-    if args.done_only and not args.watchlist:
-        raise SystemExit("--done-only requires --watchlist")
-
-    try:
-        _, quarter = normalize_stock_quarter("THESIS", args.quarter)
-    except ValueError as error:
-        raise SystemExit(str(error)) from error
-
-    config_path = Path(args.config).resolve()
-    watchlist: WatchlistConfig = load_watchlist_config(config_path)
-    gold_dir = Path(args.gold_dir) if args.gold_dir else DEFAULT_GOLD_DIR
-    out_dir = _resolve_thesis_out_dir(args)
-    adjudication_queue_path = (
-        queue_path if queue_path is not None else out_dir / _ADJUDICATION_QUEUE_FILENAME
-    )
-    load_adjudication_queue_or_exit(adjudication_queue_path)
-
-    selected_wave = _selected_wave(args)
-    if args.symbol:
-        try:
-            symbol, _ = normalize_stock_quarter(args.symbol, quarter)
-        except ValueError as error:
-            raise SystemExit(str(error)) from error
-        if selected_wave is not None:
-            _require_symbol_in_wave(watchlist.stock(symbol), selected_wave)
-        symbols = [symbol]
-    else:
-        scoped = (
-            watchlist.stocks_for_wave(selected_wave)
-            if selected_wave is not None
-            else watchlist.stocks
-        )
-        try:
-            symbols = [normalize_stock_quarter(stock.symbol, quarter)[0] for stock in scoped]
-        except ValueError as error:
-            raise SystemExit(str(error)) from error
-
-    try:
-        gold_paths = {
-            symbol: resolve_beneath(gold_dir, f"{symbol}-{quarter}.json") for symbol in symbols
-        }
-    except ValueError as error:
-        raise SystemExit(str(error)) from error
-    missing_symbols = [symbol for symbol in symbols if not gold_paths[symbol].is_file()]
-    if args.symbol and missing_symbols:
-        symbol = missing_symbols[0]
-        raise SystemExit(
-            f"gold file not found: {gold_paths[symbol]}. Run "
-            f"`fundamentals validate --symbol {symbol} --quarter {quarter}` first."
-        )
-    if missing_symbols and not args.done_only:
-        raise SystemExit(
-            "gold files missing for watchlist symbols: "
-            f"{', '.join(missing_symbols)}; rerun with --done-only to skip them"
-        )
-
-    thesis_config = (
-        load_thesis_config(Path(args.thesis_config)) if args.thesis_config else ThesisConfig()
-    )
-    if clients is None:
-        model_clients: list[ThesisModelClient] = list(_build_thesis_clients(thesis_config))
-    else:
-        model_clients = list(clients)
-    logger = structlog.get_logger("fundamentals.thesis")
-    generated_at = datetime.now(UTC)
-    docs: list[ThesisDocument] = []
-    for symbol in symbols:
-        gold_path = gold_paths[symbol]
-        if not gold_path.is_file():
-            logger.warning(
-                "thesis_skipped_no_gold",
-                symbol=symbol,
-                path=str(gold_path),
-                reason=_MISSING_GOLD_REASON,
-            )
-            continue
-        name, domain = _stock_name_domain(watchlist, symbol)
-        fact_set = from_gold_file(gold_path, name=name, domain=domain)
-        fact_key = (
-            normalize_queue_key(fact_set.symbol),
-            normalize_queue_key(fact_set.quarter),
-        )
-        if fact_key != (symbol, quarter):
-            raise SystemExit(
-                f"gold file identity {fact_set.symbol} {fact_set.quarter} does not match "
-                f"requested stock-quarter {symbol} {quarter}"
-            )
-        doc = build_thesis(fact_set, model_clients, max_workers=thesis_config.max_workers)
-        try:
-            queue = upsert_discrepancies(
-                adjudication_queue_path,
-                stock=symbol,
-                quarter=quarter,
-                discrepancies=doc.cross_verification.discrepancies,
-                update_supersession=doc.status is ThesisDocumentStatus.OK,
-                now=generated_at,
-            )
-        except (OSError, ValueError) as error:
-            raise SystemExit(
-                f"invalid adjudication queue {adjudication_queue_path}: {error}"
-            ) from error
-        adjudications = entries_for_stock_quarter(queue, stock=symbol, quarter=quarter)
-        markdown = render_thesis_document(
-            doc,
-            generated_at=generated_at,
-            adjudications=adjudications,
-        )
-        out_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            out_path = resolve_beneath(out_dir, f"{symbol}-{quarter}.md")
-        except ValueError as error:
-            raise SystemExit(str(error)) from error
-        out_path.write_text(markdown, encoding="utf-8")
-        docs.append(doc)
-        logger.info(
-            "thesis_written",
-            symbol=symbol,
-            path=str(out_path),
-            status=doc.status.value,
-            usable_drafts=doc.usable_draft_count,
-        )
-    return docs
-
-
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns a process exit code."""
     _configure_logging()
@@ -727,92 +194,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == ENTITY_MAP_COMMAND:
         return dispatch_entity_map_command(args)
 
-    if args.command == NEWS_COMMAND:
-        news_result = run_news_command(args)
-        for source in news_result.sources:
-            logger.info(
-                "news_source_summary",
-                source=source.source_id,
-                observations=len(source.observations),
-                quarantined=len(source.quarantined),
-                raw_count=source.raw_count,
-                dropped_count=source.dropped_count,
-            )
-        for warning in news_result.warnings:
-            logger.warning(
-                "news_source_health",
-                source=warning.source_id,
-                kind=warning.kind.value,
-                detail=warning.message,
-            )
-        sys.stdout.write(
-            render_news_table(news_result, show_quarantine=args.show_quarantine) + "\n"
-        )
-        return 0
+    news_exit_code = dispatch_news_command(args)
+    if news_exit_code is not None:
+        return news_exit_code
 
-    if args.command == ADJUDICATE_COMMAND:
-        queue_path = _DEFAULT_THESIS_DIR / _ADJUDICATION_QUEUE_FILENAME
-        output = dispatch_adjudication_command(
-            args, queue_path=queue_path, thesis_dir=_DEFAULT_THESIS_DIR
-        )
-        sys.stdout.write(output + "\n")
-        return 0
+    adjudicate_exit_code = dispatch_adjudicate_command(args)
+    if adjudicate_exit_code is not None:
+        return adjudicate_exit_code
 
-    if args.command == _COMMAND_VALIDATE:
-        logger.info(
-            "validate_invoked",
-            watchlist=args.watchlist,
-            symbol=args.symbol,
-            wave=args.wave,
-            live=args.live,
-            started_at=datetime.now(UTC).isoformat(),
-        )
-        waves = validate_command(args)
-        for wave_report in waves:
-            for stock in wave_report.stocks:
-                logger.info("stock_summary", summary=_stock_summary_line(stock))
-            logger.info(
-                "wave_summary",
-                wave=wave_report.wave.value,
-                done=wave_report.done_count,
-                blocked=wave_report.blocked_count,
-                all_done=wave_report.all_done,
-            )
-        sys.stdout.write(_WAVE_REPORTS_ADAPTER.dump_json(waves, indent=2).decode() + "\n")
-        return 0
+    validate_exit_code = dispatch_validate_command(args)
+    if validate_exit_code is not None:
+        return validate_exit_code
 
-    if args.command == _COMMAND_REPORT:
-        logger.info(
-            "report_invoked",
-            watchlist=args.watchlist,
-            symbol=args.symbol,
-            started_at=datetime.now(UTC).isoformat(),
-        )
-        written = report_command(args)
-        logger.info("report_summary", reports=len(written))
-        for path in written:
-            sys.stdout.write(path + "\n")
-        return 0
+    report_exit_code = dispatch_report_command(args)
+    if report_exit_code is not None:
+        return report_exit_code
 
-    if args.command == _COMMAND_THESIS:
-        logger.info(
-            "thesis_invoked",
-            watchlist=args.watchlist,
-            symbol=args.symbol,
-            quarter=args.quarter,
-            started_at=datetime.now(UTC).isoformat(),
-        )
-        docs = thesis_command(args)
-        out_dir = _resolve_thesis_out_dir(args)
-        for doc in docs:
-            logger.info(
-                "thesis_summary",
-                symbol=doc.fact_set.symbol,
-                status=doc.status.value,
-                usable_drafts=doc.usable_draft_count,
-            )
-            sys.stdout.write(str(out_dir / f"{doc.fact_set.symbol}-{args.quarter}.md") + "\n")
-        return _thesis_exit_code(docs)
+    thesis_exit_code = dispatch_thesis_command(args)
+    if thesis_exit_code is not None:
+        return thesis_exit_code
 
     logger.info(
         "run_invoked",

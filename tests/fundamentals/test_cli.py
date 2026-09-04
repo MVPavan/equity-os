@@ -19,13 +19,10 @@ from pathlib import Path
 
 import pytest
 
-from fundamentals.api.cli import (
-    _build_parser,
-    _tijori_credentials_from_env,
-    main,
-    thesis_command,
-    validate_command,
-)
+from fundamentals.api.cli import _build_parser, main
+from fundamentals.api.env_credentials import _tijori_credentials_from_env
+from fundamentals.api.thesis_cli import thesis_command
+from fundamentals.api.validate_cli import validate_command
 from fundamentals.api.watchlist_config import Wave
 from fundamentals.contracts.observation import AccountingFramework, PeriodType, Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType

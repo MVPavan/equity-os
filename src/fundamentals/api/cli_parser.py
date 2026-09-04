@@ -17,7 +17,7 @@ from fundamentals.api.screener_watchlist_cli import add_screener_watchlist_parse
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     add_screener_watchlist_corroborate_parser,
 )
-from fundamentals.api.thesis_cli import add_thesis_parser, add_wave_arg
+from fundamentals.api.thesis_cli import THESIS_COMMAND, add_thesis_parser, add_wave_arg
 from fundamentals.api.tijori_analysis_cli import add_tijori_analysis_parser
 from fundamentals.api.tijori_events_cli import add_tijori_events_parser
 from fundamentals.api.tijori_overview_cli import add_tijori_overview_parser
@@ -30,7 +30,6 @@ from fundamentals.api.upstox_sensitivity_cli import add_upstox_sensitivity_parse
 RUN_COMMAND = "run"
 VALIDATE_COMMAND = "validate"
 REPORT_COMMAND = "report"
-THESIS_COMMAND = "thesis"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"

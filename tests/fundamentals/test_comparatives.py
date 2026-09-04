@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from fundamentals.api.cli import _cached_stock
 from fundamentals.api.comparatives import (
     _load_fixture,
     _one_change,
@@ -24,6 +23,7 @@ from fundamentals.api.goal_runner import (
     run_stock,
 )
 from fundamentals.api.report_builder import render_report
+from fundamentals.api.report_cli import _cached_stock
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     SourceIdentifiers,
