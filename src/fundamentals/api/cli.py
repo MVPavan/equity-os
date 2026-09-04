@@ -66,6 +66,7 @@ from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_builder import ReportBuildError, render_report
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
+from fundamentals.api.upstox_cli import UPSTOX_TOKEN_ENV, dispatch_upstox_command
 from fundamentals.api.watchlist_config import (
     FixturePaths,
     StockConfig,
@@ -80,6 +81,7 @@ from fundamentals.ingest.comparator_cache import RAW_WATCHLIST_DIR, cached_compa
 from fundamentals.ingest.ocr_engine import RapidOcrEngine
 from fundamentals.ingest.screener_session_models import ScreenerCredentials
 from fundamentals.ingest.tijori_source import TijoriCredentials
+from fundamentals.ingest.upstox_source import UpstoxCredentials
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR
 from fundamentals.store.fact_store import FactStore
@@ -116,6 +118,7 @@ _TIJORI_PASSWORD_ENV = "TIJORI_PASSWORD"
 _TIJORI_SESSION_ENV = "TIJORI_SESSION_COOKIE"
 _TIJORI_LOGIN_UNIMPLEMENTED = "set TIJORI_SESSION_COOKIE; automated login not yet implemented"
 _SCREENER_SESSION_ENV = "SCREENER_SESSION_COOKIE"
+_UPSTOX_TOKEN_ENV = UPSTOX_TOKEN_ENV
 
 # Serializes a per-wave roll-up sequence to a single JSON array for stdout.
 _WAVE_REPORTS_ADAPTER: TypeAdapter[tuple[WaveReport, ...]] = TypeAdapter(tuple[WaveReport, ...])
@@ -267,6 +270,20 @@ def _screener_credentials_from_env() -> ScreenerCredentials | None:
     if session_cookie is None:
         return None
     return ScreenerCredentials(session_cookie=SecretStr(session_cookie))
+
+
+def _upstox_credentials_from_env() -> UpstoxCredentials | None:
+    """Read the Upstox Analytics Token from the environment, if one is set.
+
+    Returns ``None`` when unset rather than refusing: the instrument files are
+    served unauthenticated, so a token-free run of Slice 1 is a supported use
+    and not a misconfiguration. An authenticated surface refuses on its own,
+    naming this variable.
+    """
+    token = os.environ.get(_UPSTOX_TOKEN_ENV)
+    if token is None:
+        return None
+    return UpstoxCredentials(access_token=SecretStr(token))
 
 
 def _write_reports(report_dir: Path, wave: WaveReport) -> None:
@@ -681,6 +698,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if screener_exit_code is not None:
         return screener_exit_code
+
+    upstox_exit_code = dispatch_upstox_command(
+        args, credentials_factory=_upstox_credentials_from_env
+    )
+    if upstox_exit_code is not None:
+        return upstox_exit_code
 
     if args.command == ENTITY_MAP_COMMAND:
         return dispatch_entity_map_command(args)

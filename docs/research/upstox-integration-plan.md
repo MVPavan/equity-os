@@ -941,6 +941,19 @@ so this is a load-bearing choice v1 never stated (review S6). The justification 
 publishes ISIN and exchange code side by side *is* the confirmation. Joins are by
 ISIN / NSE symbol / BSE scrip only — **never by name**.
 
+**Nothing is ever `reported_absent`. Added 2026-09-04 during Slice 1; found by
+the slice's own acceptance test, which failed on the first run.** The map treats
+`reported_absent` as an assertion about the company: it conflicts with any source
+that *does* state a value, and a conflicted entity is unreachable by
+`EntityMap.lookup` (`entity_map.py:303`, `entity_identity.py:288`). This adapter
+cannot honestly make that assertion, because the catalog it reads is a
+**filtered** view retaining only `NSE_EQ`/`EQ` and `BSE_EQ`/`A`. A security in
+another BSE group is missing from our rows because *we* dropped it, not because
+the vendor was silent — so reporting it absent would state our own filter as the
+vendor's claim, and would make a correctly pinned entity unreachable. Slice 1
+would then have removed a lookup path while claiming to add one. Regression test:
+`test_a_pin_the_catalog_holds_no_row_for_is_not_made_unreachable`.
+
 Suspended rows emit nothing (§6.4).
 
 **The slice's stated purpose gets an acceptance test.** Slice 1 exists to close
@@ -995,6 +1008,9 @@ data/raw/upstox/<surface>/<segment>/<key>/<capture_id>/
   clobbers another, and `preflight_out_paths` never collides spuriously.
 - `<key>` is the ISIN or the holiday year — **never** the raw `instrument_key`;
   the segment is its own path component so no `|` reaches a filename.
+- **The instrument files address no single security**, so as built they use
+  `<surface>/<route key>/<capture id>/` — the `<segment>/<key>` pair would have
+  to be invented for them. Recorded 2026-09-04 with Slice 1.
 - **Deduplication of identical bytes is deliberately not implemented.** It is the
   shared store's job. Repeated identical captures cost disk and nothing else.
 - **The token never appears in a path, a filename, a log line, a `repr`, or an

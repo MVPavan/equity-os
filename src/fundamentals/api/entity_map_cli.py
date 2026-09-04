@@ -1,7 +1,12 @@
 """The ``entity-map`` command: publish the identity map, or verify the pins.
 
     entity-map build  --artifact <path> --config <path> --out <dir>
+                      [--upstox-catalog <path>]
     entity-map verify --artifact <path> --config <path>
+
+``--upstox-catalog`` is optional and **off by default**: the map's inputs change
+only when someone asks for them. It reads a retained Upstox instrument catalog
+and is what supplies an ISIN to a stock pinned only by NSE symbol.
 
 Both read files already on disk and make no request of any kind. ``verify`` is
 read-only toward both sources: it reports a wrong pin, it never repairs one, and
@@ -28,6 +33,7 @@ from fundamentals.contracts.entity_identity import (
 )
 from fundamentals.entity.entity_map import build_entity_map, verify_pins
 from fundamentals.entity.entity_map_sources import load_s1_records, load_s2_records
+from fundamentals.entity.upstox_entity_source import load_upstox_records
 
 ENTITY_MAP_COMMAND = "entity-map"
 BUILD_ACTION = "build"
@@ -40,12 +46,16 @@ _ACTION_DEST = "entity_map_action"
 _ARTIFACT_FLAG = "--artifact"
 _CONFIG_FLAG = "--config"
 _OUT_FLAG = "--out"
+_UPSTOX_CATALOG_FLAG = "--upstox-catalog"
 _HELP = "build or verify the current-state entity identity map from files on disk"
 _BUILD_HELP = "publish one deterministic entity-map artifact"
 _VERIFY_HELP = "report every hand-pinned identifier as confirmed, conflicted or not covered"
 _ARTIFACT_HELP = "path to a published screener-watchlist artifact JSON"
 _CONFIG_HELP = "path to the hand-pinned watchlist YAML"
 _OUT_HELP = "directory the entity-map artifact is written into"
+_UPSTOX_CATALOG_HELP = (
+    "optional path to a retained Upstox instrument catalog whose ISINs join the map"
+)
 _UNSAFE_OUT = "refusing unsafe entity-map artifact path: {path}"
 _REFUSED_EVENT = "entity_map_refused"
 
@@ -68,6 +78,7 @@ def add_entity_map_parser(
     build = actions.add_parser(BUILD_ACTION, help=_BUILD_HELP)
     _add_source_args(build)
     build.add_argument(_OUT_FLAG, required=True, help=_OUT_HELP)
+    build.add_argument(_UPSTOX_CATALOG_FLAG, default=None, help=_UPSTOX_CATALOG_HELP)
     verify = actions.add_parser(VERIFY_ACTION, help=_VERIFY_HELP)
     _add_source_args(verify)
 
@@ -90,7 +101,13 @@ def dispatch_entity_map_command(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
     try:
         if getattr(args, _ACTION_DEST) == BUILD_ACTION:
-            built = run_entity_map_build(artifact_path, config_path, Path(args.out))
+            catalog = getattr(args, "upstox_catalog", None)
+            built = run_entity_map_build(
+                artifact_path,
+                config_path,
+                Path(args.out),
+                upstox_catalog_path=None if catalog is None else Path(catalog),
+            )
             sys.stdout.write(render_build_summary(built, Path(args.out)) + "\n")
             return EXIT_OK
         report = verify_pins(artifact_path, config_path)
@@ -103,14 +120,26 @@ def dispatch_entity_map_command(args: argparse.Namespace) -> int:
     return EXIT_REFUSED if report.has_conflict() else EXIT_OK
 
 
-def run_entity_map_build(artifact_path: Path, config_path: Path, out_dir: Path) -> EntityMap:
-    """Build the map from both sources and publish it into ``out_dir``.
+def run_entity_map_build(
+    artifact_path: Path,
+    config_path: Path,
+    out_dir: Path,
+    *,
+    upstox_catalog_path: Path | None = None,
+) -> EntityMap:
+    """Build the map from the given sources and publish it into ``out_dir``.
 
     The artifact is replaced rather than refused on a re-run: it is derived, not
     evidence, and the point of a deterministic build is that re-running it over
     unchanged inputs leaves the bytes exactly as they were.
+
+    ``upstox_catalog_path`` defaults to ``None`` so the map's inputs stay
+    exactly the two they have always been unless a caller asks for a third.
     """
-    built = build_entity_map(load_s1_records(artifact_path) + load_s2_records(config_path))
+    records = load_s1_records(artifact_path) + load_s2_records(config_path)
+    if upstox_catalog_path is not None:
+        records = records + load_upstox_records(upstox_catalog_path)
+    built = build_entity_map(records)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_replacing(out_dir / ARTIFACT_FILENAME, built.model_dump_json(indent=2) + "\n")
     return built

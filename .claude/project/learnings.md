@@ -54,3 +54,26 @@ Format per entry:
 - Apply: after `self._x = x or Default()`, read `self._x` for the rest of the
   constructor. Run `mypy --strict` before trusting a green suite on any
   constructor change.
+
+## A filtered source may not report a namespace absent  (2026-09-04)
+
+- Observed: the Upstox entity adapter (Slice 1, eqos-rdb) emitted
+  `reported_absent=(BSE_SCRIP,)` whenever its rows carried no BSE listing.
+  `entity_map.py:303` derives `Entity.conflicted` from any `CONFLICTED`
+  namespace, and `_coverage` treats "source reported absent" as an assertion
+  that conflicts with any stated value — so a correctly pinned stock became
+  conflicted and `EntityMap.lookup` returned `None` for it. The slice's own
+  headline acceptance test caught it: the entity re-keyed to its ISIN exactly
+  as designed and was then unreachable.
+- Why it matters: the adapter reads a *filtered* catalog (only `NSE_EQ`/`EQ`
+  and `BSE_EQ`/`A` rows are retained). Absence in our rows is our filter, not
+  the vendor's silence. Reporting it as vendor silence states our own
+  processing as a source claim, and the map is built to trust exactly that
+  distinction — so the lie propagates into an unreachable entity rather than
+  into a visible error. Slice 1 would have removed a lookup path while
+  claiming to add one.
+- Apply: only a source that carried the whole namespace and published nothing
+  may set `reported_absent`. If any of your own filtering, sampling or
+  projection could have emptied it, emit nothing — that is
+  `MissingReason.NOT_SUPPLIED`, which is the truth. Check this whenever a new
+  `SourceRecord` producer is written.
