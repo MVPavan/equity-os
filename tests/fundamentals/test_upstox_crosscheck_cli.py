@@ -475,3 +475,46 @@ class TestTierThreeVisibility:
             source=StubSource(_bodies()),
         )
         assert result.unmet_tier3_count == 0
+
+
+class TestUpstoxSelfContradictionReachesTheReport:
+    """The convergence rule needs both halves in one artifact to be usable.
+
+    When Upstox's summary block contradicts its own `full_statement` on the same
+    line and period, and the Screener comparison also disagrees there, the fault
+    is Upstox-side and our Screener parse is exonerated. That rule was earned on
+    live data and was unusable from the report, which recorded only the second
+    half.
+    """
+
+    def test_a_parse_anomaly_is_carried_into_the_company_record(self, tmp_path: Path) -> None:
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        bodies = _bodies()
+        for row in bodies[UpstoxSurface.INCOME_STATEMENT]["data"]["full_statement"]:
+            if row["particular"] == "Profit After Tax":
+                row["history"][0]["value"] = 31.5
+        result = run_upstox_crosscheck_command(
+            _args(),
+            isin_file=isin_file,
+            screener_root=_screener_root(tmp_path, "TITAN"),
+            out_dir=tmp_path / "out",
+            source=StubSource(bodies),
+        )
+        company = result.companies[0]
+        assert company.status is CompanyStatus.COMPARED
+        assert any(
+            "net_profit" in note and "Profit After Tax" in note for note in company.upstox_anomalies
+        )
+
+    def test_a_clean_company_carries_none(self, tmp_path: Path) -> None:
+        isin_file = tmp_path / "isins.tsv"
+        isin_file.write_text(f"{TITAN_ISIN}\tTITAN\n", encoding="utf-8")
+        result = run_upstox_crosscheck_command(
+            _args(),
+            isin_file=isin_file,
+            screener_root=_screener_root(tmp_path, "TITAN"),
+            out_dir=tmp_path / "out",
+            source=StubSource(_bodies()),
+        )
+        assert result.companies[0].upstox_anomalies == ()

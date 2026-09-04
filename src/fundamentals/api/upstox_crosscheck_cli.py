@@ -182,6 +182,14 @@ class CompanyCrosscheck(BaseModel):
     basis: str
     status: CompanyStatus
     detail: str | None = None
+    # What the Upstox responses said about themselves. Chiefly the parse-time
+    # finding that a summary category contradicts the ``full_statement``
+    # particular it is identical to, inside one HTTP response. Carried here
+    # because the two halves are only a diagnosis together: an internal
+    # contradiction and a Screener disagreement on the same line and period
+    # place the fault on Upstox and exonerate our Screener parse. Recorded even
+    # for lines this run did not compare — the note is about the response.
+    upstox_anomalies: tuple[str, ...] = ()
     reports: tuple[CrosscheckReport, ...] = ()
 
 
@@ -456,6 +464,11 @@ def _crosscheck_company(
             detail=" | ".join(unreadable),
         )
 
+    anomalies = tuple(
+        f"{document.surface.value}: {note}"
+        for document in (income, balance, cash)
+        for note in document.anomalies
+    )
     upstox = _upstox_values(income, balance, cash)
     reports = tuple(
         CrosscheckReport(
@@ -471,6 +484,7 @@ def _crosscheck_company(
         symbol=symbol,
         basis=basis.value,
         status=CompanyStatus.COMPARED,
+        upstox_anomalies=anomalies,
         reports=reports,
     )
 
