@@ -274,5 +274,136 @@ A base rate is not sensitivity. Seven mismatches in eighty says how often the
 two vendors disagree; it says nothing about whether Lane B would *notice* a real
 Screener parser defect, and zero of the seven were parser defects. Step 5(b) —
 seeding known parser mutations and measuring detection — is the only thing that
-answers that, and it is not done. Until it is, a quiet report and a blind report
-look the same.
+answers that. Part 3 below is that measurement.
+
+---
+
+## Part 3 — sensitivity (9 seeded mutation classes, offline replay)
+
+Step 5(b) of the graduation procedure. `upstox-crosscheck-sensitivity` seeds a
+parser-defect-shaped mutation into one row of one retained Screener section,
+re-runs the real comparator against the retained Upstox bodies of the same
+sweep, and records whether the verdict changed. **Zero live requests**: the
+27 bodies retained by the Part 2 sweep replay through `--upstox-root`, and that
+replay reproduces the sweep's counts exactly (111 AGREE / 7 MISMATCH / 62
+ANOMALY / 108 NOT_COMPARABLE / 16 MISSING_UPSTOX) before any mutation is applied.
+
+Nine companies, consolidated basis (NETWEB publishes no consolidated statements
+and is skipped, not silently absent). Every row of every compared section is
+mutated — 25,416 cells classified — and each cell is one of:
+
+| Class | Meaning |
+|---|---|
+| `DETECTED` | baseline `AGREE`, mutated verdict `MISMATCH`, `ANOMALY` or `MISSING_SCREENER` |
+| `UNDETECTED` | baseline `AGREE`, still `AGREE` after the mutation |
+| `MASKED` | baseline already disagreed, so the mutation changes nothing observable |
+| `BLIND_TIER3` / `BLIND_UNMAPPED` | tier-3 row (always `NOT_COMPARABLE`) / row Lane B never reads |
+| `BLIND_NO_UPSTOX` | Screener period Upstox carries no report for |
+| `NOT_APPLICABLE` | the class cannot alter this cell (see below) |
+
+`sensitivity = DETECTED / (DETECTED + UNDETECTED)`. Everything else is reported
+beside the ratio and kept out of the denominator.
+
+### Result
+
+| Mutation | Tier 1 (demonstrated) | Tier 2 (related) |
+|---|---:|---:|
+| `DROP_ROW` | 65 / 0 → **1.000** | 72 / 0 → **1.000** |
+| `COLUMN_SHIFT` | 65 / 0 → **1.000** | 70 / 2 → 0.972 |
+| `SIGN_FLIP` | 65 / 0 → **1.000** | 72 / 0 → **1.000** |
+| `SCALE_10` | 65 / 0 → **1.000** | 72 / 0 → **1.000** |
+| `SCALE_100` | 65 / 0 → **1.000** | 72 / 0 → **1.000** |
+| `THOUSANDS_TRUNCATED` | 65 / 0 → **1.000** | 72 / 0 → **1.000** |
+| `ROW_SWAP` | 65 / 0 → **1.000** | 43 / 9 → 0.827 |
+| `UNIT_DRIFT` (+1 crore) | 65 / 0 → **1.000** | 36 / 36 → **0.500** |
+| `STALE_PERIOD` | 17 / 0 → **1.000** | 13 / 0 → **1.000** |
+| **All** | | **1059 / 47 → 0.9575** |
+
+Cells are detected / undetected. Tier 1 also carries 7 `MASKED` cells per class
+— exactly the seven hand-labelled mismatches of Part 2 (LAURUSLABS ×3, POLYCAB,
+CGPOWER ×3): a defect seeded on a line that already disagrees is invisible,
+which is a property of the base rate, not of the harness. Tier 3 is blind by
+construction (291 cells per class) and stays so.
+
+**Every one of the 47 undetected cells is on tier 2, and all 47 have one cause:
+the tolerance of a reconstruction mapping.**
+
+### Coverage — the number that matters more than the ratio
+
+| Section | Mapped rows / all rows | Periods with an Upstox report / periods on the page |
+|---|---:|---:|
+| profit-loss | 36 / 108 = 0.333 | 38 / 106 = 0.358 |
+| balance-sheet | 27 / 90 = 0.300 | 38 / 97 = 0.392 |
+| cash-flow | 27 / 54 = 0.500 (all tier 3) | 38 / 97 = 0.392 |
+
+Lane B reads 10 of the rows Screener publishes and about four of its twelve or
+thirteen columns. A sensitivity of 0.96 is a statement about those cells only:
+**a parser defect confined to an unmapped row, an older year or the TTM column
+is invisible to this lane, and no threshold chosen in step 5(c) can change
+that.** `BLIND_UNMAPPED` (1,818 cells per class) and `BLIND_NO_UPSTOX` are the
+two largest buckets in the run.
+
+### The undetected cases, each with its cause
+
+**`UNIT_DRIFT` +1 crore, 36 tier-2 misses (M3).** `revenue` and
+`total_liability` are two-addend reconstructions (`Sales + Other Income`,
+`Borrowings + Other Liabilities`). Screener publishes integer crore, so the
+tolerance is the sum of both addends' half-ULPs plus Upstox's: ≈1.005. A
++1 shift on one addend sits inside it whenever the baseline gap is under 0.005.
+The 36 detections on the same class are the cells whose baseline already sat
+near the edge. `Total Assets` is a single-row mapping (tolerance ≈0.505) and
+catches +1 on all 20 cells. **A two-addend tolerance is one crore wide, and
+one crore is exactly the drift a mis-read thousands separator or a stale cell
+produces.** This is the tolerance finding step 5(c) has to price.
+
+**`COLUMN_SHIFT`, 2 tier-2 misses — the same finding.** MTARTECH `Other Income`
+Mar-2025 took Mar-2024's value: 6 for 5. CGPOWER `Borrowings` Mar-2024 took
+Mar-2023's: 16 for 17. Both shifts are ±1 on an addend of a two-addend sum.
+
+**`ROW_SWAP`, 9 tier-2 misses (M5).** All nine are `Borrowings`, and
+`Borrowings` is *never* detected under this class — 0 detected, 9 undetected,
+27 masked. Its next row on every Screener balance sheet is `Other Liabilities`,
+the other addend of the same `total_liability` reconstruction. **A sum is
+blind to a swap of its own addends.** Swapping `Other Liabilities` with the row
+below it (the balancing total) is caught 9 of 9 times.
+
+### Two false lows the harness itself produced before it measured anything
+
+The first run reported overall sensitivity **0.19** and tier-1 **0.28**; the
+final number is 0.96. Nothing in the comparator changed between them. Both
+gaps were the harness charging the comparator for cells nobody could detect:
+
+1. **Periods Upstox does not carry (M1).** Screener pages carry 12–13 columns;
+   Upstox answers for 4–5. The first run classified a mutation on Mar-2016 as
+   `UNDETECTED`. 136 of the 140 tier-1 "misses" had no Upstox report for the
+   period at all; the other 4 were `MISSING_UPSTOX`. Now `BLIND_NO_UPSTOX`,
+   reported as period coverage.
+2. **Cells a row-scoped mutation never touched (M4).** `STALE_PERIOD` re-keys
+   one cell per row, but the run classified every period of the row — three
+   untouched cells per detection, read as 17 / 48 → 0.26. Applicability is now
+   per cell (`touched()`), and the class reads 17 / 0.
+
+`STALE_PERIOD` also read **0 of 600** in the first run for a third reason (M2):
+it targeted the oldest column (index 0 on a real page) and, for profit-loss,
+the TTM column Upstox never carries. It now targets the newest period *this
+mapping* was actually scored in. Three separate ways for a mutation class to
+report a zero that means "the harness never fired" rather than "the comparator
+is blind" — each one indistinguishable from a real result in the summary line.
+
+### What this establishes, and what it does not
+
+- **Established:** on the cells Lane B reads, the comparator notices every
+  seeded value defect on tier 1 and every non-tolerance defect on tier 2. A
+  quiet tier-1 report is not a blind one.
+- **Established:** the two-addend tolerance is the only detection floor found,
+  and it is ≈1 crore. `unmet_tier3` and the row-level JSON are where
+  `MISSING_SCREENER` detections appear; the summary line does not count them.
+- **Not established:** anything about the 67–70% of rows and 61–64% of columns
+  Lane B never reads. Coverage, not sensitivity, is the bound on what this
+  lane can promise.
+- **Not established:** sensitivity on standalone statements (NETWEB and any
+  standalone-only issuer) — this run is consolidated only.
+
+Artifacts: `scratchpad/laneb-5b/sensitivity-2/laneb_sensitivity_report.json`
+(local, not committed — it embeds retained subscriber values); the harness is
+`fundamentals upstox-crosscheck-sensitivity`.

@@ -197,3 +197,21 @@ Format per entry:
 - Apply: label window facts observed on a sample as `VERIFIED on <n>` and keep
   the alignment gate strict; decide separately, with the owner, whether an
   older-only overlap should reconcile on the overlap.
+
+## A sensitivity harness must not charge the comparator for cells nobody could detect  (2026-09-04)
+
+- Observed: the Lane B seeded-mutation harness first reported overall
+  sensitivity 0.19 and tier-1 0.28. The final figure was 0.96 with no change to
+  the comparator. Three harness defects, all the same shape: a cell was counted
+  `UNDETECTED` where detection was impossible — the period had no Upstox report
+  (136 of 140 tier-1 "misses"), the mutation targeted a column the comparator
+  never reads (`STALE_PERIOD` read 0 of 600), or the class was row-scoped and
+  every untouched period of the row was scored (17 / 48 for one changed cell).
+- Why it matters: a false low is worse than a false high here. It is read as
+  "the comparator is blind", it would set every 5(c) threshold against the wrong
+  number, and nothing in the summary distinguishes it from a real result.
+- Apply: the denominator of a detection ratio is only the cells the mutation
+  actually altered AND the comparator actually read. Make applicability per
+  cell from the class's own rule (never by comparing outcomes), give every
+  "could not detect" reason its own named bucket, and before trusting any class
+  that reports zero, prove it can fire on one cell of real data.
