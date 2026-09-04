@@ -16,6 +16,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
     UpstoxCapture,
     UpstoxFetch,
+    UpstoxRoute,
     UpstoxSurface,
     route_for,
 )
@@ -358,3 +360,117 @@ def key_ratios_body(*, include_quick_ratio: bool = True) -> dict[str, Any]:
         rows.append({"name": "Quick Ratio", "company_value": "0.2", "sector_value": "1.22"})
     rows.append({"name": "EV/EBITDA", "company_value": "48.35", "sector_value": "-9.01"})
     return {"status": "success", "data": rows}
+
+
+# The three Lane B statement surfaces, in the order the crosscheck asks for them.
+STATEMENT_SURFACES: tuple[UpstoxSurface, ...] = (
+    UpstoxSurface.INCOME_STATEMENT,
+    UpstoxSurface.BALANCE_SHEET,
+    UpstoxSurface.CASH_FLOW,
+)
+
+SCREENER_PERIODS: tuple[str, ...] = ("Mar 2026", "Mar 2025")
+
+# The Screener side of the crosscheck fixture: the row labels the name map reads
+# and values that agree with the bodies above. Held here rather than inside a
+# section writer so a test can build the same sections in memory.
+SCREENER_SECTION_ROWS: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "profit-loss": (
+        ("Sales", ("190", "142")),
+        ("Other Income", ("10", "8")),
+        ("Profit before tax", ("40", "30")),
+        ("Net Profit", ("30", "22")),
+    ),
+    "balance-sheet": (
+        ("Total Assets", ("600", "500")),
+        ("Total Liabilities", ("440", "380")),
+    ),
+    "cash-flow": (
+        ("Cash from Operating Activity", ("55", "40")),
+        ("Cash from Investing Activity", ("-30", "-25")),
+        ("Cash from Financing Activity", ("-12", "-9")),
+    ),
+}
+
+
+class StubSource:
+    """A transport that answers from a body table and records what was asked."""
+
+    def __init__(self, bodies: Mapping[UpstoxSurface, dict[str, Any]]) -> None:
+        self.bodies = bodies
+        self.calls: list[tuple[str, Mapping[str, str] | None]] = []
+
+    def fetch(
+        self,
+        route: UpstoxRoute,
+        query: Mapping[str, str] | None = None,
+        **params: str,
+    ) -> UpstoxFetch:
+        self.calls.append((route.surface.value, query))
+        return statement_fetch(self.bodies[route.surface], surface=route.surface)
+
+    def redact(self, text: str) -> str:
+        return text
+
+
+def statement_bodies(basis: str = "standalone") -> dict[UpstoxSurface, dict[str, Any]]:
+    """The three statement bodies one company answers with on one basis."""
+    return {
+        UpstoxSurface.INCOME_STATEMENT: income_statement_body(basis=basis),
+        UpstoxSurface.BALANCE_SHEET: balance_sheet_body(basis=basis),
+        UpstoxSurface.CASH_FLOW: cash_flow_body(basis=basis),
+    }
+
+
+def screener_section_payload(section: str) -> dict[str, Any]:
+    """One ``section_*.json`` body, as the crosscheck's narrow model reads it."""
+    return {
+        "section": section,
+        "table_id": f"{section}-table",
+        "outcome": "ok",
+        "unit_statement": "Consolidated Figures in Rs. Crores",
+        "periods": [
+            {"index": index, "label": label, "kind": "date"}
+            for index, label in enumerate(SCREENER_PERIODS)
+        ],
+        "rows": [
+            {
+                "position": position,
+                "label": label,
+                "status": "modeled",
+                "unit": "rs_crore",
+                "cells": [
+                    {
+                        "period_index": index,
+                        "value": text,
+                        "raw_text": text,
+                        "published": True,
+                        "provenance": {
+                            "source_id": "screener",
+                            "file_sha256": "0" * 64,
+                            "anchor_type": "HTML_TABLE",
+                            "table_id": f"{section}-table",
+                            "row_path": label,
+                            "column_index": index,
+                            "column_label": SCREENER_PERIODS[index],
+                            "retrieved_at": "2026-09-04T06:30:00Z",
+                        },
+                    }
+                    for index, text in enumerate(texts)
+                ],
+            }
+            for position, (label, texts) in enumerate(SCREENER_SECTION_ROWS[section])
+        ],
+    }
+
+
+def screener_root(tmp_path: Path, symbol: str, basis: str = "standalone") -> Path:
+    """A Screener financials tree holding the three sections the map reads."""
+    root = tmp_path / "screener"
+    directory = root / symbol / basis
+    directory.mkdir(parents=True, exist_ok=True)
+    for section in SCREENER_SECTION_ROWS:
+        (directory / f"section_{section}.json").write_text(
+            json.dumps(screener_section_payload(section)), encoding="utf-8"
+        )
+    return root

@@ -1,7 +1,7 @@
 """The ``upstox-crosscheck`` command: Lane B's log-only differential check.
 
     upstox-crosscheck --isin-file <path> --screener-root <dir> --out-dir <dir>
-                      [--basis standalone|consolidated|both]
+                      [--basis standalone|consolidated|both] [--upstox-root <dir>]
 
 **Nothing this command produces is a fact.** Upstox and Screener share upstream
 lineage, which disqualifies Upstox from corroborating Screener and is exactly
@@ -36,45 +36,67 @@ Only annual figures are compared. ``balance-sheet`` and ``cash-flow`` discard
 two blocks of one payload carry different periodicities under the same period
 labels — so a quarterly comparison would need a different alignment than this
 one and is deliberately not offered.
+
+**Every fetched body is retained before it is interpreted**, under
+``<out-dir>/upstox/<symbol>/<basis>/<surface>.raw.json`` beside a
+``.meta.json`` recording the URL, hash, size, retrieval time and route key it
+came with. A sweep costs authenticated requests against a rate-limited vendor,
+so the bytes are kept whatever the reader made of them: a response that drifted
+past the parser is the one most worth re-reading.
+
+``--upstox-root <dir>`` replays such a tree instead of fetching. No request is
+made and no credential is asked for, each body is checked against the hash
+recorded beside it before it is parsed, and a company with nothing retained is
+skipped rather than fetched behind the operator's back.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
-from collections.abc import Callable, Mapping
-from decimal import Decimal
-from enum import StrEnum
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import structlog
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
+from fundamentals.api.artifact_writer import (
+    preflight_out_paths,
+    safe_subdirectory,
+    write_bytes_no_clobber,
+    write_json_no_clobber,
+)
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
 from fundamentals.api.upstox_cli import SourceLike
-from fundamentals.ingest.screener_crosscheck import (
-    INCOME_STATEMENT_MAP,
-    CrosscheckOutcome,
-    CrosscheckReport,
-    CrosscheckRow,
-    LineMapping,
-    StatedValue,
-    compare_line,
+from fundamentals.ingest.upstox_crosscheck import (
+    AMBIGUOUS_ROW_MESSAGE,
+    COMPARED_SECTIONS,
+    EXIT_UNREADABLE,
+    CompanyCrosscheck,
+    CompanyStatus,
+    CrosscheckRunReport,
+    ScreenerSection,
+    compare_company,
 )
+
+# The command's exit code and summary header are the comparison's, re-exported
+# unaliased so a caller of this command reads them from the command.
+from fundamentals.ingest.upstox_crosscheck import EXIT_OK as EXIT_OK
+from fundamentals.ingest.upstox_crosscheck import SUMMARY_HEADER as SUMMARY_HEADER
 from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
+    UpstoxCapture,
     UpstoxConfig,
     UpstoxCredentials,
     UpstoxError,
+    UpstoxFetch,
     UpstoxSource,
     UpstoxSurface,
     route_for,
 )
 from fundamentals.ingest.upstox_statements import (
-    BalanceSheetDocument,
-    CashFlowDocument,
-    IncomeStatementDocument,
     StatementBasis,
     read_balance_sheet,
     read_cash_flow,
@@ -92,212 +114,84 @@ FULL_STATEMENT_QUERY_KEY = "fs"
 FULL_STATEMENT_QUERY_VALUE = "true"
 
 SECTION_FILENAME_TEMPLATE = "section_{section}.json"
-COMPARED_SECTIONS: tuple[str, ...] = ("profit-loss", "balance-sheet", "cash-flow")
+
+# The three statement surfaces one company is asked for, in the order they are
+# fetched, retained and replayed.
+STATEMENT_SURFACES: tuple[UpstoxSurface, ...] = (
+    UpstoxSurface.INCOME_STATEMENT,
+    UpstoxSurface.BALANCE_SHEET,
+    UpstoxSurface.CASH_FLOW,
+)
+
+RETENTION_DIRNAME = "upstox"
+RAW_FILENAME_TEMPLATE = "{surface}.raw.json"
+META_FILENAME_TEMPLATE = "{surface}.meta.json"
+# What a retained body was when it was retained: every kept response was a
+# readable 200 of JSON, and the parsers read neither field.
+_RETAINED_HTTP_STATUS = 200
+_RETAINED_MEDIA_TYPE = "application/json"
+
+# A symbol names a directory under both --screener-root and --upstox-root, so it
+# has to be one path segment and not a relative one.
+_PATH_SEPARATORS = ("/", "\\")
+_UNSAFE_SEGMENTS = frozenset({".", ".."})
 
 _ISIN_LENGTH = 12
 _ISIN_COUNTRY_LENGTH = 2
 _ALPHABET_OFFSET = 55  # ord("A") - 10, so "A" expands to 10 and "Z" to 35.
 
-EXIT_OK = 0
-EXIT_UNREADABLE = 3
 _REFUSED_EVENT = "upstox_crosscheck_refused"
-
-SUMMARY_HEADER = (
-    "isin\tsymbol\tbasis\tstatus\tagree\tmismatch\tanomaly\tnot_comparable\tunmet_tier3"
-)
 
 _HELP = "compare Upstox statement values against Screener's, log-only"
 _ISIN_FILE_HELP = "two-column TSV: <isin>\\t<nse symbol>, one company per line"
 _SCREENER_ROOT_HELP = "root of screener-financials output: <root>/<symbol>/<basis>/"
 _OUT_DIR_HELP = "directory the disagreement report is written to"
 _BASIS_HELP = "which set of books to compare (default: consolidated)"
+_UPSTOX_ROOT_HELP = "replay bodies retained by an earlier run instead of fetching"
 
 _BAD_LINE = "{path} line {number}: expected <isin>\\t<symbol>, got {line!r}"
 _REPEATED = "{path} line {number}: isin {isin} is repeated"
 _EMPTY_FILE = "{path} holds no isin/symbol lines"
-_AMBIGUOUS_ROW = "screener row {label!r} appears in both {first} and {second}; refusing to guess"
+_REPEATED_SYMBOL = (
+    "{path} line {number}: symbol {symbol} is repeated; two companies cannot retain "
+    "into one directory"
+)
+_UNSAFE_SYMBOL = "{path} line {number}: symbol {symbol!r} is not a plain directory name"
 _UNREADABLE_SECTION = "{path} is not readable as a screener section: {reason}"
+_TAMPERED_BODY = "{path}: bytes hash to {found}, but the record beside them says {recorded}"
+_UNREADABLE_META = "{path} is not readable as a retention record: {reason}"
+_TORN_RETENTION = "{directory} holds {held} of {expected} surfaces; a torn capture is not a replay"
 
 
-class _ScreenerCell(BaseModel):
-    """One Screener cell, narrowed to what a comparison needs from it."""
+class RetainedBodyError(UpstoxError):
+    """A retained body no longer matches the record written beside it.
 
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    period_index: int = Field(ge=0)
-    value: Decimal | None
-    published: bool
-
-
-class _ScreenerRow(BaseModel):
-    """One Screener row, narrowed to its label and its cells."""
-
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    label: str = Field(min_length=1)
-    cells: tuple[_ScreenerCell, ...] = ()
-
-
-class _ScreenerPeriod(BaseModel):
-    """One Screener column, narrowed to the index and label a value is addressed by."""
-
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    index: int = Field(ge=0)
-    label: str = Field(min_length=1)
-
-
-class _ScreenerSection(BaseModel):
-    """The part of a ``section_*.json`` artifact Lane B actually reads.
-
-    Deliberately narrower than :class:`SectionTable`. Validating the whole
-    artifact coupled the comparator to ``schedules``, ``growth_tables`` and
-    ``quarantined`` — blocks no comparison touches — so a change in any of them
-    made a log-only lane refuse rows it could read perfectly well. What is read
-    stays strict; what is not read is not a dependency.
+    A replayed body is evidence only while the hash recorded with it still
+    covers the bytes on disk. Reported as a response this repo could not read,
+    because that is what an unverifiable body is.
     """
 
-    model_config = ConfigDict(frozen=True, extra="ignore")
 
-    periods: tuple[_ScreenerPeriod, ...] = ()
-    rows: tuple[_ScreenerRow, ...] = ()
+class RetainedBody(BaseModel):
+    """The record written beside one retained body.
 
-
-class CompanyStatus(StrEnum):
-    """What happened to one company on one basis."""
-
-    COMPARED = "COMPARED"
-    SKIPPED_INVALID_ISIN = "SKIPPED_INVALID_ISIN"
-    SKIPPED_NO_SCREENER_DATA = "SKIPPED_NO_SCREENER_DATA"
-    UPSTOX_UNREADABLE = "UPSTOX_UNREADABLE"
-
-
-class CompanyCrosscheck(BaseModel):
-    """One company on one basis: what was compared, or why nothing was."""
+    Exactly the capture-bound fields ``_DocumentHeader`` carries, so a replayed
+    document is indistinguishable from the one the live run read.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    isin: str
-    symbol: str
-    basis: str
-    status: CompanyStatus
-    detail: str | None = None
-    # What the Upstox responses said about themselves. Chiefly the parse-time
-    # finding that a summary category contradicts the ``full_statement``
-    # particular it is identical to, inside one HTTP response. Carried here
-    # because the two halves are only a diagnosis together: an internal
-    # contradiction and a Screener disagreement on the same line and period
-    # place the fault on Upstox and exonerate our Screener parse. Recorded even
-    # for lines this run did not compare — the note is about the response.
-    upstox_anomalies: tuple[str, ...] = ()
-    reports: tuple[CrosscheckReport, ...] = ()
-
-
-class CrosscheckRunReport(BaseModel):
-    """Every company one invocation looked at. Carries no fact or provenance type."""
-
-    model_config = ConfigDict(frozen=True)
-
-    companies: tuple[CompanyCrosscheck, ...] = ()
-
-    @property
-    def mismatch_count(self) -> int:
-        """Tier-1 lines that breached their derived tolerance."""
-        return self._count(CrosscheckOutcome.MISMATCH)
-
-    @property
-    def anomaly_count(self) -> int:
-        """Tier-2 lines that breached their derived interval."""
-        return self._count(CrosscheckOutcome.ANOMALY)
-
-    @property
-    def unmet_tier3_count(self) -> int:
-        """Tier-3 lines whose two values differ beyond their derived tolerance.
-
-        ``NOT_COMPARABLE`` is the honest verdict for a line whose equivalence
-        was never demonstrated, and it is returned whatever the numbers say. But
-        a tier-3 line can still be the largest disagreement in a run — on the
-        first live replay, NETWEB's Mar-2026 operating cash flow read 789.92
-        against Screener's 171 — and counting only mismatches and anomalies
-        would leave it invisible in every summary. This counts them without
-        claiming anything about them: it says which tier-3 lines are worth a
-        reviewer's time, which is the input the graduation procedure needs.
-        """
-        return sum(
-            1
-            for company in self.companies
-            for report in company.reports
-            for row in report.rows
-            if row.outcome is CrosscheckOutcome.NOT_COMPARABLE
-            and row.difference is not None
-            and row.tolerance is not None
-            and row.difference > row.tolerance
-        )
-
-    @property
-    def unreadable_count(self) -> int:
-        """Companies whose Upstox response this repo could not read."""
-        return sum(
-            1 for company in self.companies if company.status is CompanyStatus.UPSTOX_UNREADABLE
-        )
-
-    @property
-    def exit_code(self) -> int:
-        """Zero however many disagreements were found; non-zero only on a parse failure.
-
-        Decision A is log-only and this is where that is enforced. The base
-        disagreement rate is unmeasured, and a check that blocks on an unknown
-        rate is switched off within a day.
-        """
-        return EXIT_UNREADABLE if self.unreadable_count else EXIT_OK
-
-    def _count(self, outcome: CrosscheckOutcome) -> int:
-        return sum(
-            1
-            for company in self.companies
-            for report in company.reports
-            for row in report.rows
-            if row.outcome is outcome
-        )
-
-    def render(self) -> str:
-        """Render the run as TSV: one header, then one row per company and basis."""
-        lines = [SUMMARY_HEADER]
-        for company in self.companies:
-            counts = {outcome: 0 for outcome in CrosscheckOutcome}
-            unmet = 0
-            for report in company.reports:
-                for row in report.rows:
-                    counts[row.outcome] += 1
-                    if (
-                        row.outcome is CrosscheckOutcome.NOT_COMPARABLE
-                        and row.difference is not None
-                        and row.tolerance is not None
-                        and row.difference > row.tolerance
-                    ):
-                        unmet += 1
-            lines.append(
-                "\t".join(
-                    (
-                        company.isin,
-                        company.symbol,
-                        company.basis,
-                        company.status.value,
-                        str(counts[CrosscheckOutcome.AGREE]),
-                        str(counts[CrosscheckOutcome.MISMATCH]),
-                        str(counts[CrosscheckOutcome.ANOMALY]),
-                        str(counts[CrosscheckOutcome.NOT_COMPARABLE]),
-                        str(unmet),
-                    )
-                )
-            )
-        return "\n".join(lines)
+    source_url: str
+    content_sha256: str
+    byte_count: int
+    retrieved_at: datetime
+    route_key: str
 
 
 def add_upstox_crosscheck_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register ``upstox-crosscheck`` and its four flags."""
+    """Register ``upstox-crosscheck`` and its five flags."""
     parser = subparsers.add_parser(UPSTOX_CROSSCHECK_COMMAND, help=_HELP)
     parser.add_argument("--isin-file", required=True, help=_ISIN_FILE_HELP)
     parser.add_argument("--screener-root", required=True, help=_SCREENER_ROOT_HELP)
@@ -308,6 +202,7 @@ def add_upstox_crosscheck_parser(
         default=StatementBasis.CONSOLIDATED.value,
         help=_BASIS_HELP,
     )
+    parser.add_argument("--upstox-root", default=None, help=_UPSTOX_ROOT_HELP)
 
 
 def is_valid_isin(isin: str) -> bool:
@@ -341,10 +236,15 @@ def read_isin_file(path: Path) -> tuple[tuple[str, str], ...]:
 
     A repeated ISIN is refused rather than de-duplicated: the same company under
     two symbols is a mistake in the join, and comparing it twice would double
-    its weight in every count the report carries.
+    its weight in every count the report carries. A repeated symbol is refused
+    for a second reason — both companies would retain their bodies into one
+    directory, so the collision would only surface mid-run with requests already
+    spent. A symbol that is not a plain directory name is refused outright: it
+    is used to address two trees, and neither may be climbed out of.
     """
     pairs: list[tuple[str, str]] = []
     seen: dict[str, int] = {}
+    symbols: dict[str, int] = {}
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -355,7 +255,12 @@ def read_isin_file(path: Path) -> tuple[tuple[str, str], ...]:
         isin, symbol = parts[0].strip(), parts[1].strip()
         if isin in seen:
             raise SystemExit(_REPEATED.format(path=path, number=number, isin=isin))
+        if symbol in _UNSAFE_SEGMENTS or any(part in symbol for part in _PATH_SEPARATORS):
+            raise SystemExit(_UNSAFE_SYMBOL.format(path=path, number=number, symbol=symbol))
+        if symbol in symbols:
+            raise SystemExit(_REPEATED_SYMBOL.format(path=path, number=number, symbol=symbol))
         seen[isin] = number
+        symbols[symbol] = number
         pairs.append((isin, symbol))
     if not pairs:
         raise SystemExit(_EMPTY_FILE.format(path=path))
@@ -369,15 +274,28 @@ def run_upstox_crosscheck_command(
     screener_root: Path,
     out_dir: Path,
     source: SourceLike,
+    upstox_root: Path | None = None,
 ) -> CrosscheckRunReport:
-    """Compare every listed company on every requested basis and write one report."""
+    """Compare every listed company on every requested basis and write one report.
+
+    With ``upstox_root`` the bodies come from an earlier run's retention tree and
+    ``source`` is never asked for anything; without it every fetched body is
+    retained under ``out_dir`` before it is read.
+
+    Every path the run intends to write is preflighted before the first request.
+    A no-clobber refusal is correct but arrives mid-loop, and by then a live run
+    has spent authenticated calls it cannot get back and has written no report
+    to show for them.
+    """
     bases = _requested_bases(str(args.basis))
+    pairs = read_isin_file(isin_file)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / REPORT_FILENAME
-    preflight_out_paths((report_path,))
+    retained = () if upstox_root is not None else _retention_paths(out_dir, pairs, bases)
+    preflight_out_paths((report_path, *retained))
 
     companies: list[CompanyCrosscheck] = []
-    for isin, symbol in read_isin_file(isin_file):
+    for isin, symbol in pairs:
         for basis in bases:
             companies.append(
                 _crosscheck_company(
@@ -386,9 +304,15 @@ def run_upstox_crosscheck_command(
                     basis=basis,
                     screener_root=screener_root,
                     source=source,
+                    out_dir=out_dir,
+                    upstox_root=upstox_root,
                 )
             )
-    run = CrosscheckRunReport(companies=tuple(companies))
+    run = CrosscheckRunReport(
+        companies=tuple(companies),
+        upstox_root=str(upstox_root) if upstox_root is not None else None,
+        retained_under=None if upstox_root is not None else str(out_dir / RETENTION_DIRNAME),
+    )
     write_json_no_clobber(report_path, run.model_dump_json(indent=2) + "\n")
     _LOGGER.info(
         "upstox_crosscheck_written",
@@ -399,6 +323,27 @@ def run_upstox_crosscheck_command(
         unreadable=run.unreadable_count,
     )
     return run
+
+
+def _retention_paths(
+    out_dir: Path,
+    pairs: tuple[tuple[str, str], ...],
+    bases: tuple[StatementBasis, ...],
+) -> tuple[Path, ...]:
+    """Every file a live run would retain, listed before the first one is fetched.
+
+    Companies this run will skip are included: their paths do not exist, so they
+    cost the preflight nothing, and leaving them out would make the guard depend
+    on which guard fires later.
+    """
+    return tuple(
+        directory / template.format(surface=surface.value)
+        for _, symbol in pairs
+        for basis in bases
+        for directory in (out_dir / RETENTION_DIRNAME / symbol / basis.value,)
+        for surface in STATEMENT_SURFACES
+        for template in (RAW_FILENAME_TEMPLATE, META_FILENAME_TEMPLATE)
+    )
 
 
 def _requested_bases(requested: str) -> tuple[StatementBasis, ...]:
@@ -415,8 +360,10 @@ def _crosscheck_company(
     basis: StatementBasis,
     screener_root: Path,
     source: SourceLike,
+    out_dir: Path,
+    upstox_root: Path | None,
 ) -> CompanyCrosscheck:
-    """Run both pre-call guards, then compare — or say why nothing was requested."""
+    """Run both pre-call guards, obtain the three bodies, then compare them."""
     if not is_valid_isin(isin):
         return CompanyCrosscheck(
             isin=isin,
@@ -427,8 +374,8 @@ def _crosscheck_company(
             "empty payload, so it is never requested",
         )
     directory = screener_root / symbol / basis.value
-    screener = _load_screener_values(directory)
-    if screener is None:
+    sections = _load_screener_sections(directory)
+    if sections is None:
         return CompanyCrosscheck(
             isin=isin,
             symbol=symbol,
@@ -437,156 +384,191 @@ def _crosscheck_company(
             detail=f"no screener sections under {directory}",
         )
 
-    query = {BASIS_QUERY_KEY: basis.value, FULL_STATEMENT_QUERY_KEY: FULL_STATEMENT_QUERY_VALUE}
-    income = read_income_statement(
-        source.fetch(route_for(UpstoxSurface.INCOME_STATEMENT), query, isin=isin),
-        requested_basis=basis,
-    )
-    balance = read_balance_sheet(
-        source.fetch(route_for(UpstoxSurface.BALANCE_SHEET), query, isin=isin),
-        requested_basis=basis,
-    )
-    cash = read_cash_flow(
-        source.fetch(route_for(UpstoxSurface.CASH_FLOW), query, isin=isin),
-        requested_basis=basis,
-    )
-    unreadable = tuple(
-        f"{document.surface.value}: {'; '.join(document.anomalies)}"
-        for document in (income, balance, cash)
-        if document.outcome is AcquisitionOutcome.SCHEMA_DRIFT
-    )
-    if unreadable:
-        return CompanyCrosscheck(
-            isin=isin,
-            symbol=symbol,
-            basis=basis.value,
-            status=CompanyStatus.UPSTOX_UNREADABLE,
-            detail=" | ".join(unreadable),
+    if upstox_root is None:
+        bodies = _fetch_and_retain(
+            isin=isin, symbol=symbol, basis=basis, source=source, out_dir=out_dir
         )
+    else:
+        retained = upstox_root / symbol / basis.value
+        replayed = read_retained_bodies(retained)
+        if replayed is None:
+            return CompanyCrosscheck(
+                isin=isin,
+                symbol=symbol,
+                basis=basis.value,
+                status=CompanyStatus.SKIPPED_NO_UPSTOX_DATA,
+                detail=f"no retained bodies under {retained}",
+            )
+        bodies = replayed
 
-    anomalies = tuple(
-        f"{document.surface.value}: {note}"
-        for document in (income, balance, cash)
-        for note in document.anomalies
-    )
-    upstox = _upstox_values(income, balance, cash)
-    reports = tuple(
-        CrosscheckReport(
-            isin=isin,
-            basis=basis.value,
-            period=period,
-            rows=_rows_for_period(upstox.get(period, {}), screener, period),
-        )
-        for period in sorted(upstox, reverse=True)
-    )
-    return CompanyCrosscheck(
+    return compare_company(
         isin=isin,
         symbol=symbol,
-        basis=basis.value,
-        status=CompanyStatus.COMPARED,
-        upstox_anomalies=anomalies,
-        reports=reports,
+        basis=basis,
+        sections=sections,
+        income=read_income_statement(bodies[UpstoxSurface.INCOME_STATEMENT], requested_basis=basis),
+        balance=read_balance_sheet(bodies[UpstoxSurface.BALANCE_SHEET], requested_basis=basis),
+        cash=read_cash_flow(bodies[UpstoxSurface.CASH_FLOW], requested_basis=basis),
     )
 
 
-def _rows_for_period(
-    upstox: Mapping[str, StatedValue],
-    screener: Mapping[str, Mapping[str, StatedValue]],
-    period: str,
-) -> tuple[CrosscheckRow, ...]:
-    """Compare every mapped line for one period, in the map's declared order."""
-    return tuple(
-        compare_line(
-            mapping,
-            upstox=upstox.get(mapping.upstox_category),
-            screener=_screener_side(mapping, screener, period),
-        )
-        for mapping in INCOME_STATEMENT_MAP
-    )
+def _fetch_and_retain(
+    *,
+    isin: str,
+    symbol: str,
+    basis: StatementBasis,
+    source: SourceLike,
+    out_dir: Path,
+) -> dict[UpstoxSurface, UpstoxFetch]:
+    """Fetch each statement surface, writing every body down before anything reads it.
 
-
-def _screener_side(
-    mapping: LineMapping,
-    screener: Mapping[str, Mapping[str, StatedValue]],
-    period: str,
-) -> tuple[StatedValue, ...]:
-    """Collect the Screener rows one mapping names, dropping any it did not publish.
-
-    A partial set is returned as-is rather than padded. ``compare_line`` refuses
-    to score an incomplete side, which is the point: summing some of the addends
-    would manufacture a mismatch out of a coverage gap.
+    Retention precedes interpretation on purpose. A response the parser refuses
+    is the one worth re-reading, and re-fetching it costs an authenticated call
+    against a rate-limited vendor — which is exactly what is unavailable once
+    the vendor has restated the figure.
     """
-    values: list[StatedValue] = []
-    for label in mapping.screener_rows:
-        stated = screener.get(label, {}).get(period)
-        if stated is not None:
-            values.append(stated)
-    return tuple(values)
+    query = {BASIS_QUERY_KEY: basis.value, FULL_STATEMENT_QUERY_KEY: FULL_STATEMENT_QUERY_VALUE}
+    directory = _retention_directory(out_dir, symbol, basis)
+    fetched: dict[UpstoxSurface, UpstoxFetch] = {}
+    for surface in STATEMENT_SURFACES:
+        fetch = source.fetch(route_for(surface), query, isin=isin)
+        _retain(directory, fetch)
+        fetched[surface] = fetch
+    return fetched
 
 
-def _upstox_values(
-    income: IncomeStatementDocument,
-    balance: BalanceSheetDocument,
-    cash: CashFlowDocument,
-) -> dict[str, dict[str, StatedValue]]:
-    """Index every Upstox summary value by period, then by the category it was stated under."""
-    by_period: dict[str, dict[str, StatedValue]] = {}
-    for document in (income, cash):
-        for series in document.summary:
-            for point in series.history:
-                by_period.setdefault(point.period, {})[series.category] = _stated(
-                    point.value, series.category
-                )
-    for entry in balance.history:
-        slot = by_period.setdefault(entry.period, {})
-        slot["total_asset"] = _stated(entry.total_asset, "total_asset")
-        slot["total_liability"] = _stated(entry.total_liability, "total_liability")
-    return by_period
+def _retention_directory(out_dir: Path, symbol: str, basis: StatementBasis) -> Path:
+    """Create ``<out-dir>/upstox/<symbol>/<basis>/`` one plain child at a time.
+
+    The symbol comes from the operator's join file, so each level is created
+    through the writer's own guard rather than by one ``mkdir`` of a path that
+    could carry a symlink or climb out of the output directory.
+    """
+    retained = safe_subdirectory(out_dir, RETENTION_DIRNAME)
+    return safe_subdirectory(safe_subdirectory(retained, symbol), basis.value)
 
 
-def _load_screener_values(
-    directory: Path,
-) -> dict[str, dict[str, StatedValue]] | None:
-    """Index one company's Screener sections by row label, then period label.
+def _retain(directory: Path, fetch: UpstoxFetch) -> None:
+    """Write one body verbatim, beside the record that binds the bytes to their fetch."""
+    capture = fetch.capture
+    surface = capture.surface.value
+    write_bytes_no_clobber(
+        directory / RAW_FILENAME_TEMPLATE.format(surface=surface), fetch.raw_body
+    )
+    record = RetainedBody(
+        source_url=capture.request_url,
+        content_sha256=capture.content_sha256,
+        byte_count=capture.byte_count,
+        retrieved_at=capture.retrieved_at,
+        route_key=capture.route_key,
+    )
+    write_json_no_clobber(
+        directory / META_FILENAME_TEMPLATE.format(surface=surface),
+        record.model_dump_json(indent=2) + "\n",
+    )
+
+
+def read_retained_bodies(directory: Path) -> dict[UpstoxSurface, UpstoxFetch] | None:
+    """Read one company's retained bodies, or ``None`` when the tree holds none.
+
+    An absent company is a skip rather than a failure: a retention tree
+    assembled from several runs will not cover every company in a later join
+    file, and refusing the whole run for that would make replay useless. A
+    company holding some surfaces but not all is a different thing — a torn
+    capture, where the missing third is exactly what a comparison would need —
+    and is refused, as is a body that no longer hashes to what was recorded
+    beside it.
+    """
+    held = tuple(surface for surface in STATEMENT_SURFACES if _is_retained(directory, surface))
+    if not held:
+        return None
+    if len(held) != len(STATEMENT_SURFACES):
+        raise RetainedBodyError(
+            _TORN_RETENTION.format(
+                directory=directory, held=len(held), expected=len(STATEMENT_SURFACES)
+            )
+        )
+
+    bodies: dict[UpstoxSurface, UpstoxFetch] = {}
+    for surface in STATEMENT_SURFACES:
+        raw_path = directory / RAW_FILENAME_TEMPLATE.format(surface=surface.value)
+        raw = raw_path.read_bytes()
+        record = _read_retained_record(
+            directory / META_FILENAME_TEMPLATE.format(surface=surface.value)
+        )
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != record.content_sha256 or len(raw) != record.byte_count:
+            raise RetainedBodyError(
+                _TAMPERED_BODY.format(path=raw_path, found=digest, recorded=record.content_sha256)
+            )
+        bodies[surface] = UpstoxFetch(
+            raw_body=raw,
+            capture=UpstoxCapture(
+                surface=surface,
+                route_key=record.route_key,
+                request_url=record.source_url,
+                http_status=_RETAINED_HTTP_STATUS,
+                media_type=_RETAINED_MEDIA_TYPE,
+                byte_count=record.byte_count,
+                content_sha256=record.content_sha256,
+                outcome=AcquisitionOutcome.OK,
+                retrieved_at=record.retrieved_at,
+            ),
+        )
+    return bodies
+
+
+def _is_retained(directory: Path, surface: UpstoxSurface) -> bool:
+    """Whether both halves of one retained surface are present."""
+    return (directory / RAW_FILENAME_TEMPLATE.format(surface=surface.value)).is_file() and (
+        directory / META_FILENAME_TEMPLATE.format(surface=surface.value)
+    ).is_file()
+
+
+def _read_retained_record(path: Path) -> RetainedBody:
+    """Read one ``.meta.json``, refusing a record this run cannot check a body against.
+
+    Read as bytes: a record that is not valid UTF-8 is a record this run cannot
+    verify a body against, which is the refusal it already has — not a decoding
+    traceback out of a command.
+    """
+    try:
+        return RetainedBody.model_validate_json(path.read_bytes())
+    except ValidationError as error:
+        raise RetainedBodyError(
+            _UNREADABLE_META.format(path=path, reason=error.errors()[0]["msg"])
+        ) from error
+
+
+def _load_screener_sections(directory: Path) -> dict[str, ScreenerSection] | None:
+    """Read one company's Screener sections, keyed by section name.
 
     ``None`` means no section was found at all, which is the second pre-call
-    guard: there is nothing to compare against, so nothing is requested.
+    guard: there is nothing to compare against, so nothing is requested. A row
+    label carried by two sections is refused rather than resolved, because which
+    section a value came from would then depend on file order.
     """
-    by_label: dict[str, dict[str, StatedValue]] = {}
+    sections: dict[str, ScreenerSection] = {}
     origin: dict[str, str] = {}
-    found = False
     for section in COMPARED_SECTIONS:
         path = directory / SECTION_FILENAME_TEMPLATE.format(section=section)
         if not path.is_file():
             continue
-        found = True
         try:
-            table = _ScreenerSection.model_validate_json(path.read_text(encoding="utf-8"))
+            table = ScreenerSection.model_validate_json(path.read_text(encoding="utf-8"))
         except ValidationError as error:
             raise SystemExit(
                 _UNREADABLE_SECTION.format(path=path, reason=error.errors()[0]["msg"])
             ) from error
-        labels = {period.index: period.label for period in table.periods}
         for row in table.rows:
-            if row.label in origin and origin[row.label] != section:
+            if origin.setdefault(row.label, section) != section:
                 raise SystemExit(
-                    _AMBIGUOUS_ROW.format(label=row.label, first=origin[row.label], second=section)
+                    AMBIGUOUS_ROW_MESSAGE.format(
+                        label=row.label, first=origin[row.label], second=section
+                    )
                 )
-            origin[row.label] = section
-            slot = by_label.setdefault(row.label, {})
-            for cell in row.cells:
-                label = labels.get(cell.period_index)
-                if label is None or cell.value is None or not cell.published:
-                    continue
-                slot[label] = _stated(cell.value, row.label)
-    return by_label if found else None
-
-
-def _stated(amount: Decimal, raw_label: str) -> StatedValue:
-    """Wrap one number with the precision the source stated it to."""
-    exponent = amount.as_tuple().exponent
-    decimals = -exponent if isinstance(exponent, int) else 0
-    return StatedValue(amount=amount, decimals=max(decimals, 0), raw_label=raw_label)
+        sections[section] = table
+    return sections or None
 
 
 def dispatch_upstox_crosscheck_command(
@@ -597,11 +579,15 @@ def dispatch_upstox_crosscheck_command(
     """Run ``upstox-crosscheck`` and return its exit code, or ``None`` for another command.
 
     Every Lane B surface is authenticated, so a token-free run refuses here
-    rather than issuing ten requests that will each come back 401.
+    rather than issuing ten requests that will each come back 401. A replay
+    reaches no surface at all, so it never asks for the token: ``--upstox-root``
+    and live fetching are exclusive, and this is where that is enforced.
     """
     if getattr(args, "command", None) != UPSTOX_CROSSCHECK_COMMAND:
         return None
-    source = UpstoxSource(UpstoxConfig(credentials=credentials_factory()))
+    upstox_root = Path(args.upstox_root) if args.upstox_root else None
+    credentials = None if upstox_root is not None else credentials_factory()
+    source = UpstoxSource(UpstoxConfig(credentials=credentials))
     try:
         run = run_upstox_crosscheck_command(
             args,
@@ -609,7 +595,13 @@ def dispatch_upstox_crosscheck_command(
             screener_root=Path(args.screener_root),
             out_dir=Path(args.out_dir),
             source=source,
+            upstox_root=upstox_root,
         )
+    except RetainedBodyError as refusal:
+        _LOGGER.warning(
+            _REFUSED_EVENT, refusal=type(refusal).__name__, detail=source.redact(str(refusal))
+        )
+        return EXIT_UNREADABLE
     except UpstoxError as refusal:
         _LOGGER.warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=source.redact(str(refusal))

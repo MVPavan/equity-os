@@ -25,16 +25,16 @@ from typing import get_args
 import pytest
 from pydantic import BaseModel
 
-from fundamentals.api.upstox_crosscheck_cli import (
-    CompanyCrosscheck,
-    CompanyStatus,
-    CrosscheckRunReport,
-)
 from fundamentals.ingest.screener_crosscheck import (
     CrosscheckOutcome,
     CrosscheckReport,
     CrosscheckRow,
     EvidenceTier,
+)
+from fundamentals.ingest.upstox_crosscheck import (
+    CompanyCrosscheck,
+    CompanyStatus,
+    CrosscheckRunReport,
 )
 
 _SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "fundamentals"
