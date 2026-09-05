@@ -234,9 +234,10 @@ own its own verification.
 on a red gate spends a reviewer on what a script does free.
 
 ```
-scripts/verify.sh red    <slice> <pytest-target>...   capture the red proof
-scripts/verify.sh gate   <slice>                      run the gate
-scripts/verify.sh reseal <slice> <proof-file>         reopened contract only
+scripts/verify.sh red      <slice> <pytest-target>... capture the red proof
+scripts/verify.sh baseline <slice>                    record a refactor baseline
+scripts/verify.sh gate     <slice>                    run the gate
+scripts/verify.sh reseal   <slice> <proof-file>       reopened contract only
 ```
 
 **`reseal` is the only legitimate way an acceptance file changes after its red
@@ -273,13 +274,40 @@ quietly rewriting its own contract are the same operation.
    so do not read a later green as evidence they were covered.
 6. **rails** — nothing under `scratchpad/` or `data/` tracked · no machine-local
    path · no `sessionid`-shaped literal · no `.py` over 800 lines · no run of
-   ≥60 characters shared verbatim between a changed file and any page under
-   `scratchpad/screener_discovery/`, which is how a pasted private capture is
-   caught without needing a list of real holder names.
+   ≥60 characters shared verbatim between a line this change ADDED and any page
+   under `scratchpad/screener_discovery/`, which is how a pasted private capture
+   is caught without needing a list of real holder names. The two fixture rails
+   (that one and the identifier rail below) read only added lines — the `+` side
+   of `git diff -U0 HEAD` plus the whole content of an untracked file. The
+   path and cookie rails stay whole-file: a secret anywhere in a file about to
+   be committed is a STOP whoever wrote it.
+
+**Refactor slices take the `baseline` route instead of the red proof.** A pure
+refactor adds no behaviour, so it has nothing to prove red and ROUTE PASS is
+unreachable by construction. `scripts/verify.sh baseline <slice>` runs the suite
+and records `scratchpad/gate/<slice>-baseline.json` — the passed and skipped
+counts and the sorted node id of every test that passed; it refuses unless the
+run is green. The gate then swaps check 2 for a **test-set** check: the set of
+node ids passing now must equal the recorded set, and a single id added or
+removed routes CONTRACT ("a refactor changed the test set"). Exactly one proof
+may exist per slice; both a red proof and a baseline is itself a CONTRACT.
+Checks 1 and 3–6 are unchanged on either route. **What the baseline cannot see:**
+an assertion rewritten in place, under the same node id, passes the test-set
+check. That is the route's stated limit, not a gap — a change that needs new
+assertions is behaviour and takes the red proof. Both proof files live under
+`scratchpad/gate/`, which is the orchestrator's; an implementer that deletes or
+writes one has left its brief.
+
+**The fixture rails scan added lines because whole-file scanning has a standing
+false positive.** Editing one import line in
+`tests/fundamentals/test_comparatives.py` fired the identifier rail on `2023`, a
+calendar year the file had carried since before the rail existed. A leak is
+something a change writes; what was already in the file is not this slice's, and
+a rail that re-accuses every prior line trains its reader to wave STOPs through.
 
 **The identifier rail false-positives on short ids, and that is the right
 trade.** It word-matches every 4-plus-digit company id found in the captures
-against changed test files. Real companies have ids as short as four digits, so
+against the lines this change added under `tests/`. Real companies have ids as short as four digits, so
 an ordinary number in prose can collide — a docstring saying "a 1012-test gate"
 tripped it against `/company/1012/`. Triage a STOP by asking *where* the number
 appears before assuming a leak: a fixture value is a real finding, a test count

@@ -232,3 +232,20 @@ Format per entry:
 - Apply: when a diagnostic rule is stated as "A and B", key the code on both
   and write the negative test from a real case where A held and B did not.
   Carry the values the rule needs on the structured note, not just the labels.
+
+## A gate rail judges what the change wrote, and fails closed on what it cannot read  (2026-09-05)
+
+- Observed: the captured-identifier rail grepped every *changed* test file
+  for ids harvested from private captures. Editing one import line in
+  `test_comparatives.py` fired it on `2023`, a calendar year the file had
+  carried since before the rail existed; a refactor slice could not gate at
+  all because ROUTE PASS needs a red proof. In the same fix, an unreadable
+  baseline file produced an empty comparison that printed `test-set OK`.
+- Why it matters: a rail that re-accuses pre-existing lines trains its reader
+  to wave STOPs through, which is worse than no rail. A proof check that
+  prints OK on an empty input is a fail-open in a security gate.
+- Apply: scope fixture rails to the `+` side of `git diff -U0 HEAD` plus
+  untracked-file content; keep secret rails whole-file. Give refactors their
+  own route (`scripts/verify.sh baseline <slice>`: green test set recorded,
+  set equality demanded back). Whenever a check compares against a recorded
+  file, branch on "could not read" before "no difference".

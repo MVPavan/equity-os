@@ -33,7 +33,10 @@ applies to non-Python and non-`fundamentals` changes.
 
 `scripts/verify.sh gate <slice>` runs exactly these four commands plus the
 red-proof, skip-guard, diff-coverage, and security-rail checks, and prints a
-bounded report with a routing exit code. Prefer it over running the four by
+bounded report with a routing exit code. For a refactor slice, which has no new
+behaviour to prove red, `scripts/verify.sh baseline <slice>` records the green
+test set first and the gate then requires that same set back instead of a red
+proof. Prefer it over running the four by
 hand during pipeline work; keep the command list here and in the script
 identical. Protocol: `docs/graph-loops/v2-build-pipeline.md`.
 

@@ -9,10 +9,11 @@
 # until it is green, and no model reviews anything before it passes. It costs
 # zero model tokens, so the loop is free.
 #
-# Two modes:
+# Modes:
 #
-#   scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
-#   scripts/verify.sh gate <slice>                      the gate itself
+#   scripts/verify.sh red      <slice> <pytest-target>...  capture the red proof
+#   scripts/verify.sh baseline <slice>                     record a refactor baseline
+#   scripts/verify.sh gate     <slice>                     the gate itself
 #
 # Contract: prints at most 8 status lines plus one ROUTE line. Tracebacks NEVER
 # reach stdout — they go to the log file, because a red gate is the one path
@@ -87,6 +88,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage:
   scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
+  scripts/verify.sh baseline <slice>                  record a refactor baseline
   scripts/verify.sh gate <slice>                      run the gate
   scripts/verify.sh reseal <slice> <proof-file> [new-file...]
                                                       re-hash after a REOPENED
@@ -197,6 +199,76 @@ PYEOF
 }
 
 # --------------------------------------------------------------------------
+# baseline — the refactor counterpart of `red`. A pure refactor adds no
+# behaviour, so it has nothing to prove red and ROUTE PASS would be unreachable.
+# What it can prove instead is that it changed nothing: this records the green
+# test set BEFORE the refactor, and the gate later demands the same set back.
+# Orchestrator-only, exactly like `red`.
+# --------------------------------------------------------------------------
+mode_baseline() {
+  local slice="$1"
+  cd "${REPO_ROOT}" || exit "${EXIT_STOP}"
+
+  mkdir -p "${GATE_DIR}"
+  local baseline log
+  baseline="${GATE_DIR}/${slice}-baseline.json"
+  log="${GATE_DIR}/${slice}-baseline-$(date -u +%Y%m%dT%H%M%SZ).log"
+
+  echo "verify.sh baseline ${slice} · $(date -u +%Y-%m-%dT%H:%MZ)"
+
+  uv run pytest "${TEST_SCOPE}" -q --tb=no -rA >"${log}" 2>&1
+  local n_passed n_skipped n_red
+  n_passed="$(grep -cE '^PASSED ' "${log}" || true)"
+  n_skipped="$(grep -cE '^SKIPPED ' "${log}" || true)"
+  n_red="$(grep -cE '^(FAILED|ERROR) ' "${log}" || true)"
+
+  if [ "${n_red}" -gt 0 ]; then
+    echo "suite          FAIL  ${n_red} not green: $(cap_names "$(awk '/^(FAILED|ERROR) /{print $2}' "${log}")")"
+    echo "log            ${log#"${REPO_ROOT}/"}"
+    echo "ROUTE: CONTRACT  a refactor baseline must be green"
+    exit "${EXIT_CONTRACT}"
+  fi
+
+  # `pytest -rA` writes "PASSED <nodeid>" with nothing after the id, so the rest
+  # of the line IS the id — splitting on whitespace would truncate the
+  # parametrised ids in this suite whose parameters contain spaces. The ids go
+  # through a file, not the environment: a four-figure suite overflows ARG_MAX.
+  local passed_ids
+  passed_ids="$(mktemp)"
+  sed -n 's/^PASSED //p' "${log}" >"${passed_ids}"
+  if ! VERIFY_SLICE="${slice}" VERIFY_SKIPPED="${n_skipped}" \
+    python3 - "${baseline}" "${passed_ids}" <<'PYEOF'
+import datetime, json, os, pathlib, sys
+
+tests = sorted({t for t in pathlib.Path(sys.argv[2]).read_text().splitlines() if t.strip()})
+# Written beside the target and renamed into place, so a crash mid-write can
+# never leave a half-file that the gate would later read as a baseline.
+target = pathlib.Path(sys.argv[1])
+partial = target.with_suffix(".json.partial")
+partial.write_text(json.dumps({
+    "slice": os.environ["VERIFY_SLICE"],
+    "taken_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+    "passed": len(tests),
+    "skipped": int(os.environ["VERIFY_SKIPPED"]),
+    "tests": tests,
+}, indent=2) + "\n")
+os.replace(partial, target)
+PYEOF
+  then
+    rm -f "${passed_ids}"
+    echo "baseline       FAIL  could not write ${baseline#"${REPO_ROOT}/"}"
+    echo "ROUTE: CONTRACT  the baseline was not recorded"
+    exit "${EXIT_CONTRACT}"
+  fi
+  rm -f "${passed_ids}"
+
+  echo "suite          OK    ${n_passed} passed, ${n_skipped} skipped"
+  echo "baseline       ${baseline#"${REPO_ROOT}/"}"
+  echo "ROUTE: PASS      dispatch the refactor"
+  exit "${EXIT_PASS}"
+}
+
+# --------------------------------------------------------------------------
 # gate
 # --------------------------------------------------------------------------
 mode_gate() {
@@ -223,11 +295,32 @@ mode_gate() {
   }
   rank() { case "$1" in 0) echo 0;; 1) echo 1;; 4) echo 2;; 2) echo 3;; 3) echo 4;; esac; }
 
-  # 1 — the acceptance tests must be byte-identical to the red proof.
-  if [ ! -f "${proof}" ]; then
+  # 1 — the acceptance tests must be byte-identical to the red proof, or — for a
+  # refactor, which has no new behaviour to prove red — the test set must be
+  # identical to the recorded baseline. Exactly one of the two proofs may exist:
+  # a slice that has both is claiming to add behaviour and to change nothing.
+  local baseline refactor=""
+  baseline="${GATE_DIR}/${slice}-baseline.json"
+  if [ -f "${proof}" ] && [ -f "${baseline}" ]; then
+    l_untouched="tests-untouched  SKIP  red proof and baseline both present"
+    l_red="red-proof        FAIL  ${slice}-red.json and ${slice}-baseline.json"
+    escalate "${EXIT_CONTRACT}" "both a red proof and a baseline exist for '${slice}'"
+  elif [ -f "${baseline}" ]; then
+    # The refactor route. l_red is filled in after the pytest run below, because
+    # it compares that run's PASSED set against the baseline's.
+    refactor="yes"
+    local recorded
+    recorded="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["passed"],"passed recorded",d["taken_at"])' "${baseline}" 2>>"${log}")"
+    if [ -n "${recorded}" ]; then
+      l_untouched="baseline         OK    ${recorded}"
+    else
+      l_untouched="baseline         FAIL  ${baseline#"${REPO_ROOT}/"} unreadable"
+      escalate "${EXIT_CONTRACT}" "the refactor baseline could not be read"
+    fi
+  elif [ ! -f "${proof}" ]; then
     l_untouched="tests-untouched  SKIP  no red proof for slice '${slice}'"
     l_red="red-proof        FAIL  ${proof#"${REPO_ROOT}/"} missing"
-    escalate "${EXIT_CONTRACT}" "run 'scripts/verify.sh red ${slice} <targets>' before the implementer"
+    escalate "${EXIT_CONTRACT}" "run 'scripts/verify.sh red ${slice} <targets>' before the implementer, or 'scripts/verify.sh baseline ${slice}' for a refactor"
   else
     local drift
     drift="$(python3 - "${proof}" <<'PYEOF'
@@ -266,6 +359,28 @@ PYEOF
       | sort -u \
       | grep -vE '^(scratchpad/|scripts/verify\.sh$|uv\.lock$|\.coverage)' || true
   )"
+
+  # The two fixture rails (step 5) scan only the lines this change ADDED: the
+  # `+` side of `git diff -U0 HEAD` for a tracked file, the whole content of an
+  # untracked one. Built per path so `added_tests` is exactly the added lines of
+  # files under tests/, never a grep on a merged stream.
+  local added added_tests
+  added="$(mktemp)"; added_tests="$(mktemp)"
+  if [ -n "${changed_files}" ]; then
+    local f lines
+    while IFS= read -r f; do
+      [ -n "${f}" ] || continue
+      if [ -n "$(git ls-files -- "${f}")" ]; then
+        lines="$(git diff -U0 HEAD -- "${f}" | grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//')"
+      else
+        # -I: an untracked binary file must not poison the text scans below.
+        lines="$(grep -Ih '' "${f}" 2>/dev/null)"
+      fi
+      [ -n "${lines}" ] || continue
+      printf '%s\n' "${lines}" >>"${added}"
+      case "${f}" in tests/*) printf '%s\n' "${lines}" >>"${added_tests}" ;; esac
+    done <<<"${changed_files}"
+  fi
 
   # 2 — the gate. One pytest run, with coverage, so the loop stays cheap.
   local covjson="${GATE_DIR}/${slice}-${ts}-cov.json"
@@ -349,6 +464,42 @@ PYEOF
     local n_passed
     n_passed="$(grep -cE '^PASSED ' "${log}" || true)"
     l_gate="gate             OK    ${n_passed} passed, ruff, mypy --strict"
+  fi
+
+  # 1b — the refactor route's replacement for the red proof: the set of node ids
+  # that passed just now must be the set the baseline recorded. A refactor that
+  # adds, removes or renames a test is not a refactor.
+  if [ -n "${refactor}" ]; then
+    local setdiff n_add n_rem n_base drifted
+    setdiff="$(VERIFY_BASELINE="${baseline}" VERIFY_LOG="${log}" python3 2>>"${log}" <<'PYEOF'
+import json, os, pathlib
+
+base = set(json.loads(pathlib.Path(os.environ["VERIFY_BASELINE"]).read_text())["tests"])
+now = {
+    line[len("PASSED "):]
+    for line in pathlib.Path(os.environ["VERIFY_LOG"]).read_text().splitlines()
+    if line.startswith("PASSED ")
+}
+added, removed = sorted(now - base), sorted(base - now)
+print(len(added), len(removed), len(base))
+print("\n".join(f"+{n}" for n in added) + "\n" + "\n".join(f"-{n}" for n in removed))
+PYEOF
+)"
+    read -r n_add n_rem n_base <<<"$(head -1 <<<"${setdiff}")"
+    drifted="$(tail -n +2 <<<"${setdiff}")"
+    # An unreadable baseline must fail closed: an empty comparison would
+    # otherwise read as zero drift and print OK.
+    if [ -z "${n_base}" ]; then
+      l_red="test-set         FAIL  ${baseline#"${REPO_ROOT}/"} unreadable"
+      escalate "${EXIT_CONTRACT}" "the refactor baseline could not be read"
+    elif [ "${n_add}" -ne 0 ] || [ "${n_rem}" -ne 0 ]; then
+      note "=== test-set drift ==="
+      note "${drifted}"
+      l_red="test-set         FAIL  +${n_add} -${n_rem}: $(cap_names "${drifted}")"
+      escalate "${EXIT_CONTRACT}" "a refactor changed the test set"
+    else
+      l_red="test-set         OK    ${n_base} node ids identical to baseline"
+    fi
   fi
 
   # 3 — skips must not grow. Cheapest way to fake a green gate.
@@ -460,26 +611,30 @@ PYEOF
     # Only NUMERIC identifiers are harvested. Alphabetic slugs are watchlist
     # symbols that appear legitimately throughout the suite; a numeric row id or
     # an all-digit BSE slug has no reason to be in a hand-written fixture.
-    local changed_tests
-    changed_tests="$(grep -E '^tests/' <<<"${changed_files}" || true)"
-    if [ -n "${changed_tests}" ] && [ "${#caps[@]}" -gt 0 ]; then
+    #
+    # Scanned against the ADDED test lines, not the whole changed file: editing
+    # one import line in test_comparatives.py fired this rail on `2023`, a
+    # calendar year that file had carried since before the rail existed. A leak
+    # is something a change writes; pre-existing content is not this slice's.
+    if [ -s "${added_tests}" ] && [ "${#caps[@]}" -gt 0 ]; then
       local ids leaked
       ids="$(mktemp)"
       grep -rhoE 'data-row-company-id="[0-9]{4,}"|/company/(id/)?[0-9]{4,}/' "${caps[@]}" 2>/dev/null \
         | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
       if [ -s "${ids}" ]; then
-        leaked="$(grep -howFf "${ids}" ${changed_tests} 2>/dev/null | sort -u | head -3 | paste -sd, -)"
+        leaked="$(grep -howFf "${ids}" "${added_tests}" 2>/dev/null | sort -u | head -3 | paste -sd, -)"
         [ -n "${leaked}" ] && rails="${rails}${rails:+; }real captured identifier in a fixture: ${leaked}"
       fi
       rm -f "${ids}"
     fi
 
     # Verbatim runs shared with a real captured page mean a capture was pasted
-    # into a fixture instead of a synthetic value being written.
+    # into a fixture instead of a synthetic value being written. Added lines
+    # only, for the same reason as the identifier rail above.
     if [ "${#caps[@]}" -gt 0 ]; then
       local pat pasted
       pat="$(mktemp)"
-      grep -IhoE ".{${PASTE_MIN_LEN},}" ${changed_files} 2>/dev/null \
+      grep -IhoE ".{${PASTE_MIN_LEN},}" "${added}" 2>/dev/null \
         | sed 's/^[[:space:]]*//' | sort -u | head -"${PASTE_MAX_PATTERNS}" >"${pat}"
       if [ -s "${pat}" ]; then
         pasted="$(grep -rlFf "${pat}" "${caps[@]}" 2>/dev/null | head -2 | paste -sd, -)"
@@ -488,6 +643,7 @@ PYEOF
       rm -f "${pat}"
     fi
   fi
+  rm -f "${added}" "${added_tests}"
 
   if [ -n "${rails}" ]; then
     l_rails="rails            STOP  ${rails}"
@@ -579,8 +735,9 @@ PYEOF
 
 [ "$#" -ge 2 ] || usage
 case "$1" in
-  red)    shift; mode_red "$@" ;;
-  gate)   shift; mode_gate "$1" ;;
+  red)      shift; mode_red "$@" ;;
+  baseline) shift; mode_baseline "$1" ;;
+  gate)     shift; mode_gate "$1" ;;
   reseal) shift; mode_reseal "$@" ;;
   *)    usage ;;
 esac
