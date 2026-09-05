@@ -258,9 +258,15 @@ def _screener_precision(unit: Unit, raw_text: str) -> tuple[str, int] | None:
 
 
 def _top_level_row(table: SectionTable, row_selector: str) -> TableRow | None:
-    """The table's own row with this label, ignoring schedule sub-rows."""
+    """The table's own row with this label.
+
+    Every entry of ``table.rows`` is a page row; schedule sub-rows live under
+    ``table.schedules``. ``schedule_parent`` on a page row is the name its own
+    expander requests (Sales, Net Profit and Expenses carry one on the live
+    page), so it must not be read as "this row is a sub-row".
+    """
     for row in table.rows:
-        if row.schedule_parent is None and row.label == row_selector:
+        if row.label == row_selector:
             return row
     return None
 

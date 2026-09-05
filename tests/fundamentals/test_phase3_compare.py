@@ -1,18 +1,11 @@
 """Acceptance tests for the offline three-source comparator (Phase 3, S5).
 
-The seam is ``fundamentals.verify.three_source_inputs`` — the reader that turns
-retained Screener sections, a retained Tijori page and a gold file into
-precision-carrying ``SideValue``s — plus ``fundamentals.verify.three_source``,
-the comparator that puts XBRL, Screener and Tijori on one row per concept. What
-it protects is the difference between "these two numbers are the same" and "they
-agree within the precision both sides declared": a comparison that invents its
-tolerance manufactures agreement or reports rounding as a vendor defect.
-
-Nothing here fetches: the Tijori page is retained through a real ``SnapshotStore``
-with the transport patched at the committed envelope seam and read back with the
-opener wired to raise, and the Screener sections are round-tripped through their
-own validator before they are written. Every figure is synthetic, and the seam
-modules are imported at call time, after each test's fixtures are built.
+The seam is ``fundamentals.verify.three_source_inputs`` (retained Screener
+sections, a retained Tijori page and a gold file become precision-carrying
+``SideValue``s) plus ``fundamentals.verify.three_source`` (one row per concept
+across XBRL, Screener and Tijori). It protects the difference between "the same
+number" and "agreement within the precision both sides declared". Nothing here
+fetches; every figure is synthetic; seam modules are imported at call time.
 """
 
 from __future__ import annotations
@@ -437,6 +430,23 @@ def test_quarters_and_annual_net_profit_stay_distinct(tmp_path: Path) -> None:
     assert {value.mapping_id for value in quarterly} == QUARTERS_MAPPING_IDS
 
     assert inputs.screener_side_values(acquired, period_end=ANNUAL_END) == ()
+
+
+def test_expander_rows_are_page_rows(tmp_path: Path) -> None:
+    """Live Sales/Net Profit rows carry ``schedule_parent`` == label (an expander);
+    the first replay lost both on nine stocks by reading it as "sub-row"."""
+    root = _write_screener(tmp_path / "screener", _metadata())
+    path = next(root.rglob("section_quarters.json"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for row in payload["rows"]:
+        if row["label"] in {"Sales", "Net Profit"}:
+            row["schedule_parent"] = row["label"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    inputs = _inputs()
+    acquired = inputs.read_screener_sections(root, symbol=SYMBOL, basis=Basis.CONSOLIDATED.value)
+    values = inputs.screener_side_values(acquired, period_end=QUARTER_END)
+    labels = {value.raw_label for value in values}
+    assert {"Sales", "Net Profit"} <= labels
 
 
 @pytest.mark.parametrize(
