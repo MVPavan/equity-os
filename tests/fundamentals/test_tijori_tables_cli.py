@@ -10,21 +10,28 @@ from typing import Any
 import pytest
 
 from fundamentals.api.cli import main
+from fundamentals.ingest.tijori_capture import PageEnvelope
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriTablesAbsentError
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_financials.html"
+_MEDIA_TYPE = "text/html; charset=utf-8"
+
+
+def _envelope(body: bytes) -> PageEnvelope:
+    """One complete 200 response carrying the given page bytes."""
+    return PageEnvelope(payload=body, status=200, media_type=_MEDIA_TYPE)
 
 
 def _fetch_fixture(
     source: TijoriSource,
     slug: str,
     credentials: TijoriCredentials,
-) -> bytes:
+) -> PageEnvelope:
     """Replace only the outbound transport boundary with the committed fixture."""
     del source, credentials
     assert slug == "titan-company-limited"
-    return _FIXTURE.read_bytes()
+    return _envelope(_FIXTURE.read_bytes())
 
 
 def _row(payload: dict[str, Any], row_key: str) -> dict[str, Any]:
@@ -42,7 +49,7 @@ def test_tijori_tables_cli_writes_structured_json_and_summary(
     """The composition root resolves TITAN and writes one fixture-backed raw table."""
 
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", _fetch_fixture)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", _fetch_fixture)
     out_dir = tmp_path / "tijori"
 
     code = main(
@@ -54,6 +61,8 @@ def test_tijori_tables_cli_writes_structured_json_and_summary(
             "fr_c",
             "--out",
             str(out_dir),
+            "--snapshot-root",
+            str(tmp_path / "snapshots"),
         ]
     )
 
@@ -80,7 +89,7 @@ def test_tijori_tables_cli_refuses_existing_symlink_target(
 ) -> None:
     """A caller-selected directory cannot redirect a table file through a symlink."""
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", _fetch_fixture)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", _fetch_fixture)
     out_dir = tmp_path / "tijori"
     out_dir.mkdir()
     victim = tmp_path / "victim.json"
@@ -97,6 +106,8 @@ def test_tijori_tables_cli_refuses_existing_symlink_target(
                 "fr_c",
                 "--out",
                 str(out_dir),
+                "--snapshot-root",
+                str(tmp_path / "snapshots"),
             ]
         )
 
@@ -109,7 +120,7 @@ def test_tijori_tables_cli_preflights_every_output_path_before_writing(
 ) -> None:
     """One colliding target aborts the whole multi-table write, leaving no artifact."""
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", _fetch_fixture)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", _fetch_fixture)
     out_dir = tmp_path / "tijori"
     out_dir.mkdir()
     (out_dir / "growth.json").write_text("sentinel", encoding="utf-8")
@@ -122,6 +133,8 @@ def test_tijori_tables_cli_preflights_every_output_path_before_writing(
                 "TITAN",
                 "--out",
                 str(out_dir),
+                "--snapshot-root",
+                str(tmp_path / "snapshots"),
             ]
         )
 
@@ -136,10 +149,20 @@ def test_tijori_tables_cli_writes_every_present_table(
 ) -> None:
     """The default breadth run writes one artifact per published key with data."""
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", _fetch_fixture)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", _fetch_fixture)
     out_dir = tmp_path / "tijori"
 
-    code = main(["tijori-tables", "--stock", "TITAN", "--out", str(out_dir)])
+    code = main(
+        [
+            "tijori-tables",
+            "--stock",
+            "TITAN",
+            "--out",
+            str(out_dir),
+            "--snapshot-root",
+            str(tmp_path / "snapshots"),
+        ]
+    )
 
     assert code == 0
     assert sorted(path.name for path in out_dir.iterdir()) == [
@@ -173,16 +196,28 @@ def test_tijori_tables_cli_fails_when_no_supported_table_is_present(
         flags=re.DOTALL,
     )
 
-    def fetch_stripped(source: TijoriSource, slug: str, credentials: TijoriCredentials) -> bytes:
+    def fetch_stripped(
+        source: TijoriSource, slug: str, credentials: TijoriCredentials
+    ) -> PageEnvelope:
         del source, slug, credentials
-        return page
+        return _envelope(page)
 
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", fetch_stripped)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", fetch_stripped)
     out_dir = tmp_path / "tijori"
 
     with pytest.raises(TijoriTablesAbsentError, match="no supported financial table"):
-        main(["tijori-tables", "--stock", "TITAN", "--out", str(out_dir)])
+        main(
+            [
+                "tijori-tables",
+                "--stock",
+                "TITAN",
+                "--out",
+                str(out_dir),
+                "--snapshot-root",
+                str(tmp_path / "snapshots"),
+            ]
+        )
 
     assert not out_dir.exists() or list(out_dir.iterdir()) == []
 
@@ -196,10 +231,10 @@ def test_tijori_tables_cli_requires_cookie_before_fetch(
     monkeypatch.delenv("TIJORI_PASSWORD", raising=False)
     monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
 
-    def unexpected_fetch(*args: object, **kwargs: object) -> bytes:
+    def unexpected_fetch(*args: object, **kwargs: object) -> PageEnvelope:
         raise AssertionError(f"unexpected fetch: {args!r} {kwargs!r}")
 
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_bytes", unexpected_fetch)
+    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", unexpected_fetch)
 
     with pytest.raises(SystemExit, match="TIJORI_SESSION_COOKIE is required"):
         main(

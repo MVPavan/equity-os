@@ -9,18 +9,21 @@ import structlog
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
 from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.ingest.tijori_retention import TijoriRetention, retain_tijori_tables
 from fundamentals.ingest.tijori_source import (
     TijoriCredentials,
     TijoriSource,
     TijoriSourceConfig,
 )
-from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableKey
+from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableKey, parse_table_key
+from fundamentals.store.snapshot_store import SnapshotStore
 
 TIJORI_TABLES_COMMAND = "tijori-tables"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_WATCHLIST_PATH = _REPO_ROOT / "config" / "watchlist.yaml"
 _DEFAULT_OUT_ROOT = _REPO_ROOT / "data" / "raw" / "watchlist" / "tijori-tables"
+_DEFAULT_SNAPSHOT_ROOT = _REPO_ROOT / "data" / "raw" / "snapshots" / "v1"
 _SUMMARY_HEADER = "table\trows\tcolumns\tplan_tier"
 _UNKNOWN_PLAN_TIER = "unknown"
 
@@ -50,14 +53,23 @@ def add_tijori_tables_parser(
         default=str(_DEFAULT_WATCHLIST_PATH),
         help="path to watchlist.yaml",
     )
+    parser.add_argument(
+        "--snapshot-root",
+        default=str(_DEFAULT_SNAPSHOT_ROOT),
+        help="retained-capture tree root (default: data/raw/snapshots/v1)",
+    )
 
 
 def run_tijori_tables_command(
     args: argparse.Namespace,
     *,
     credentials: TijoriCredentials,
-) -> tuple[TijoriTable, ...]:
-    """Resolve one stock, fetch one page, and write its typed table JSON files."""
+) -> TijoriRetention:
+    """Resolve one stock, retain one page, and write the typed table JSON it yielded.
+
+    The capture is committed before anything is parsed, so a refusal leaves the
+    bytes on disk and simply writes no artifact.
+    """
     config_path = Path(args.config).resolve()
     watchlist = load_watchlist_config(config_path)
     try:
@@ -78,19 +90,16 @@ def run_tijori_tables_command(
             expected_company_id=stock.identifiers.tijori_company_id,
         )
     )
-    if args.table is None:
-        tables = source.fetch_all_tables(
-            slug=stock.identifiers.tijori_slug,
-            expected_symbol=stock.symbol,
-        )
-    else:
-        tables = (
-            source.fetch_table(
-                args.table,
-                slug=stock.identifiers.tijori_slug,
-                expected_symbol=stock.symbol,
-            ),
-        )
+    retention = retain_tijori_tables(
+        source,
+        SnapshotStore(Path(args.snapshot_root).resolve()),
+        slug=stock.identifiers.tijori_slug,
+        expected_symbol=stock.symbol,
+        table_key=None if args.table is None else parse_table_key(args.table),
+    )
+    tables = retention.tables
+    if not tables:
+        return retention
 
     out_dir = Path(args.out).resolve() if args.out else _DEFAULT_OUT_ROOT / stock.symbol
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -109,7 +118,7 @@ def run_tijori_tables_command(
             unknown_island_keys=table.metadata.observed_unknown_table_keys,
             path=str(out_path),
         )
-    return tables
+    return retention
 
 
 def render_tijori_tables_summary(tables: tuple[TijoriTable, ...]) -> str:

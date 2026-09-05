@@ -37,6 +37,14 @@ from fundamentals.ingest.tijori_analysis_models import (
     TijoriAnalysisMetricIdError,
     TijoriAnalysisSection,
 )
+from fundamentals.ingest.tijori_capture import (
+    FinancialsPage,
+    PageEnvelope,
+    build_financials_page,
+    build_page_request,
+    complete_body,
+    envelope_from_http_error,
+)
 from fundamentals.ingest.tijori_events import build_tijori_events
 from fundamentals.ingest.tijori_events_models import (
     COMPANY_SURFACES,
@@ -177,11 +185,44 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _stamped_at(retrieved_at: datetime | None) -> datetime:
+    """The acquisition instant a parse must carry: the caller's, or now."""
+    return retrieved_at if retrieved_at is not None else datetime.now(tz=UTC)
+
+
 class TijoriSource:
     """Fetches verified Tijori JSON-island P&L values as derived observations."""
 
     def __init__(self, config: TijoriSourceConfig | None = None) -> None:
         self._config = config or TijoriSourceConfig()
+
+    @property
+    def config(self) -> TijoriSourceConfig:
+        """The injected settings this adapter runs under, for a retention caller."""
+        return self._config
+
+    def fetch_financials_page(self, slug: str, *, expected_symbol: str) -> FinancialsPage:
+        """Make ONE attempt at the financials page and classify what came back.
+
+        Nothing is retried here and no HTTP answer raises: a refusal, a redirect
+        and a dead socket are all sealed outcomes, so the caller can retain the
+        attempt before deciding what it means.
+        """
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori table acquisition"
+            )
+        url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
+        retrieved_at = datetime.now(tz=UTC)
+        return build_financials_page(
+            self._fetch_pl_envelope(slug, credentials),
+            url=url,
+            slug=slug,
+            retrieved_at=retrieved_at,
+            expected_symbol=expected_symbol,
+            expected_company_id=self._config.expected_company_id,
+        )
 
     def fetch_pl(
         self, slug: str, *, expected_symbol: str, period_end: date
@@ -460,6 +501,35 @@ class TijoriSource:
             url, slug=slug, credentials=credentials, fetch_event=_PL_FETCH_FAILED_EVENT
         )
 
+    def _fetch_pl_envelope(self, slug: str, credentials: TijoriCredentials) -> PageEnvelope:
+        """One outbound attempt at the financials page: the retention patch point."""
+        url = self._config.pl_url_template.format(base=self._config.base_url, slug=slug)
+        request = build_page_request(
+            url,
+            session_cookie=credentials.session_cookie,
+            user_agent=self._config.user_agent,
+        )
+        limit = self._config.max_response_bytes
+        opener = urllib.request.build_opener(_NoRedirectHandler())
+        try:
+            with opener.open(request, timeout=self._config.request_timeout_seconds) as response:
+                payload = response.read(limit + 1)
+                headers = response.headers
+                status = response.getcode()
+        except urllib.error.HTTPError as error:
+            return envelope_from_http_error(error, max_bytes=limit)
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            return PageEnvelope(error=error)
+        incomplete = complete_body(payload, headers, max_bytes=limit)
+        if incomplete is not None:
+            return PageEnvelope(error=incomplete)
+        return PageEnvelope(
+            payload=payload,
+            status=status,
+            media_type=None if headers is None else headers.get("Content-Type"),
+            content_encoding=None if headers is None else headers.get("Content-Encoding"),
+        )
+
     def _fetch_shareholding_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
         """Fetch one complete authenticated shareholding page without redirects."""
         url = self._config.shareholding_url_template.format(base=self._config.base_url, slug=slug)
@@ -478,19 +548,10 @@ class TijoriSource:
         self, url: str, *, slug: str, credentials: TijoriCredentials, fetch_event: str
     ) -> bytes:
         """Fetch one complete authenticated Tijori page without following redirects."""
-        session_cookie = credentials.session_cookie
-        if session_cookie is None:
-            raise TijoriFetchError(
-                "tijori session cookie required for HTTP fetch; mint one via an "
-                "authenticated login and inject it as credentials.session_cookie"
-            )
-        request = urllib.request.Request(
+        request = build_page_request(
             url,
-            headers={
-                "Cookie": f"sessionid={session_cookie.get_secret_value()}",
-                "User-Agent": self._config.user_agent,
-            },
-            method="GET",
+            session_cookie=credentials.session_cookie,
+            user_agent=self._config.user_agent,
         )
         opener = urllib.request.build_opener(_NoRedirectHandler())
         last_error: Exception | None = None
@@ -559,6 +620,7 @@ class TijoriSource:
         expected_company_id: int | None = None,
         period_end: date,
         source_url: str | None = None,
+        retrieved_at: datetime | None = None,
     ) -> tuple[Observation, ...]:
         """Parse the verified JSON-island DOM for one configured issuer and quarter."""
         if not slug.strip():
@@ -580,7 +642,11 @@ class TijoriSource:
             source_url=source_url
             or DEFAULT_PL_URL_TEMPLATE.format(base=DEFAULT_BASE_URL, slug=slug),
         )
-        return cls.parse_pl(payload, content_sha256=hashlib.sha256(raw).hexdigest())
+        return cls.parse_pl(
+            payload,
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            retrieved_at=retrieved_at,
+        )
 
     @classmethod
     def parse_table_bytes(
@@ -592,6 +658,7 @@ class TijoriSource:
         expected_symbol: str,
         expected_company_id: int | None = None,
         source_url: str | None = None,
+        retrieved_at: datetime | None = None,
     ) -> TijoriTable:
         """Parse one typed raw table from a verified financials page."""
         if not slug.strip():
@@ -616,7 +683,7 @@ class TijoriSource:
             key=key,
             content_sha256=hashlib.sha256(raw).hexdigest(),
             source_url=resolved_url,
-            retrieved_at=datetime.now(tz=UTC),
+            retrieved_at=_stamped_at(retrieved_at),
             slug=slug,
             symbol=response_symbol,
             company_id=company_id,
@@ -631,6 +698,7 @@ class TijoriSource:
         expected_symbol: str,
         expected_company_id: int | None = None,
         source_url: str | None = None,
+        retrieved_at: datetime | None = None,
     ) -> tuple[TijoriTable, ...]:
         """Parse every typed raw table from a verified financials page."""
         if not slug.strip():
@@ -653,7 +721,7 @@ class TijoriSource:
             plan_details=islands.get(PLAN_DETAILS_ISLAND_ID),
             content_sha256=hashlib.sha256(raw).hexdigest(),
             source_url=resolved_url,
-            retrieved_at=datetime.now(tz=UTC),
+            retrieved_at=_stamped_at(retrieved_at),
             slug=slug,
             symbol=response_symbol,
             company_id=company_id,
@@ -699,6 +767,12 @@ class TijoriSource:
         return islands, company_id, response_symbol.strip()
 
     @classmethod
-    def parse_pl(cls, payload: TijoriPlPayload, *, content_sha256: str) -> tuple[Observation, ...]:
+    def parse_pl(
+        cls,
+        payload: TijoriPlPayload,
+        *,
+        content_sha256: str,
+        retrieved_at: datetime | None = None,
+    ) -> tuple[Observation, ...]:
         """Map the selected consolidated P&L rows to derived observations."""
-        return pl_observations(payload, content_sha256=content_sha256)
+        return pl_observations(payload, content_sha256=content_sha256, retrieved_at=retrieved_at)

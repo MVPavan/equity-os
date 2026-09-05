@@ -41,6 +41,7 @@ from fundamentals.api.tijori_tables_cli import (
     render_tijori_tables_summary,
     run_tijori_tables_command,
 )
+from fundamentals.ingest.tijori_retention import TijoriRetention
 from fundamentals.ingest.tijori_source import TijoriCredentials
 
 TIJORI_COMMANDS = (
@@ -53,6 +54,25 @@ TIJORI_COMMANDS = (
 
 _CLI_LOGGER_NAME = "fundamentals.cli"
 _SESSION_REQUIRED = "TIJORI_SESSION_COOKIE is required for {command}"
+_CAPTURE_COMMITTED_EVENT = "tijori_capture_committed"
+_UNUSABLE_CAPTURE = (
+    "tijori-tables: capture {capture_id} committed with outcome {code}/{native_value}"
+)
+_PARSE_FAILED_SUFFIX = "; parse failed: {message}"
+_TABLES_UNAVAILABLE_EXIT = 2
+
+
+def _unusable_capture_line(retention: TijoriRetention) -> str:
+    """The one line stderr gets when a capture was retained but yielded no table."""
+    record = retention.record
+    line = _UNUSABLE_CAPTURE.format(
+        capture_id=record.capture_id,
+        code=record.outcome.code.value,
+        native_value=record.outcome.native_value,
+    )
+    if retention.parse_error is None:
+        return line
+    return line + _PARSE_FAILED_SUFFIX.format(message=retention.parse_error)
 
 
 def _required_credentials(
@@ -83,8 +103,19 @@ def dispatch_tijori_command(
             table=args.table,
             started_at=datetime.now(UTC).isoformat(),
         )
-        tables = run_tijori_tables_command(args, credentials=credentials)
-        sys.stdout.write(render_tijori_tables_summary(tables) + "\n")
+        retention = run_tijori_tables_command(args, credentials=credentials)
+        record = retention.record
+        logger.info(
+            _CAPTURE_COMMITTED_EVENT,
+            capture_id=record.capture_id,
+            outcome=record.outcome.code.value,
+            byte_count=0 if record.body is None else record.body.byte_count,
+            snapshot_root=args.snapshot_root,
+        )
+        if not retention.tables:
+            sys.stderr.write(_unusable_capture_line(retention) + "\n")
+            return _TABLES_UNAVAILABLE_EXIT
+        sys.stdout.write(render_tijori_tables_summary(retention.tables) + "\n")
         return 0
 
     if args.command == TIJORI_SHAREHOLDING_COMMAND:

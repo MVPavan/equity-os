@@ -264,9 +264,15 @@ def _to_observation(
     )
 
 
-def pl_observations(payload: TijoriPlPayload, *, content_sha256: str) -> tuple[Observation, ...]:
-    """Map the selected consolidated P&L rows to derived observations."""
-    retrieved_at = datetime.now(tz=UTC)
+def pl_observations(
+    payload: TijoriPlPayload, *, content_sha256: str, retrieved_at: datetime | None = None
+) -> tuple[Observation, ...]:
+    """Map the selected consolidated P&L rows to derived observations.
+
+    ``retrieved_at`` is the instant the bytes were acquired; a replay passes the
+    retained capture's own instant so re-deriving evidence cannot restamp it.
+    """
+    stamped_at = retrieved_at if retrieved_at is not None else datetime.now(tz=UTC)
     observations = tuple(
         _to_observation(
             payload=payload,
@@ -274,7 +280,7 @@ def pl_observations(payload: TijoriPlPayload, *, content_sha256: str) -> tuple[O
             row_label=row.label,
             raw_value=row.value,
             content_sha256=content_sha256,
-            retrieved_at=retrieved_at,
+            retrieved_at=stamped_at,
         )
         for row in payload.rows
     )
