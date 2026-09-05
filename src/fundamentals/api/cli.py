@@ -42,6 +42,7 @@ from fundamentals.api.thesis_cli import (
     dispatch_adjudicate_command,
     dispatch_thesis_command,
 )
+from fundamentals.api.three_source_cli import dispatch_three_source_command
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.upstox_cli import dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
@@ -186,6 +187,10 @@ def main(argv: list[str] | None = None) -> int:
     sensitivity_exit_code = dispatch_upstox_sensitivity_command(args)
     if sensitivity_exit_code is not None:
         return sensitivity_exit_code
+
+    three_source_exit_code = dispatch_three_source_command(args)
+    if three_source_exit_code is not None:
+        return three_source_exit_code
 
     corroborate_exit_code = dispatch_screener_watchlist_corroborate_command(args)
     if corroborate_exit_code is not None:
