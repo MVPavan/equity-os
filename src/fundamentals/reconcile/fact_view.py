@@ -23,15 +23,11 @@ from fundamentals.reconcile.report import (
     CollectedSource,
     SourceStatus,
 )
+from fundamentals.verify.three_source_map import alias_roles
 
 CANONICAL_ENTITY_SCHEME = "nse-symbol"
 
-_DERIVED_ROLE_ALIASES: dict[FactRole, tuple[str, ...]] = {
-    FactRole.REVENUE: ("screener:Sales", "tijori:sales"),
-    FactRole.PROFIT_BEFORE_TAX: ("tijori:pbt",),
-    FactRole.PROFIT_FOR_PERIOD: ("screener:NetProfit", "tijori:net_profit"),
-    FactRole.BASIC_EPS: ("screener:EPS", "tijori:eps"),
-}
+_DERIVED_ROLE_ALIASES: dict[FactRole, tuple[str, ...]] = alias_roles()
 
 
 class RoleConceptView(Protocol):

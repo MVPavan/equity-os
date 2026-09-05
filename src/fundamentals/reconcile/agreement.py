@@ -114,6 +114,7 @@ class SourceValue(BaseModel):
     normalized_value: Decimal
     normalized_unit: str
     provenance: Provenance
+    decimals: int | None = None
 
 
 class AgreementResult(BaseModel):
@@ -266,6 +267,7 @@ def _source_values(
             normalized_value=obs.normalized_value,
             normalized_unit=obs.normalized_unit,
             provenance=obs.provenance,
+            decimals=obs.decimals,
         )
         for obs in observations
     ]
