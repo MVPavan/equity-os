@@ -58,6 +58,9 @@ readonly GATE_DIR="${REPO_ROOT}/scratchpad/gate"
 capture_dirs() {
   find "${REPO_ROOT}/scratchpad" -maxdepth 1 -type d \
     \( -name '*discovery*' -o -name '*capture*' -o -name '*smoke*' \) 2>/dev/null
+  if [ -d "${REPO_ROOT}/data/raw/snapshots" ]; then
+    find "${REPO_ROOT}/data/raw/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
+  fi
 }
 
 # Authoritative commands: .claude/project/verification.md. Keep them identical
