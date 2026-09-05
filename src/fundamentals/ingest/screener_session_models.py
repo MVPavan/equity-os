@@ -20,9 +20,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import assert_never
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+
+from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 
 # The subscriber surface is a distinct source from the anonymous public page:
 # same site, different rights posture and different evidence, so it carries its
@@ -96,6 +99,29 @@ class PageOutcome(StrEnum):
 
     OK = "ok"
     BASIS_UNAVAILABLE = "basis_unavailable"
+
+
+PAGE_OUTCOME_KIND = f"{PageOutcome.__module__}.{PageOutcome.__qualname__}"
+
+
+def to_outcome_record(outcome: PageOutcome) -> OutcomeRecord:
+    """Restate one page outcome in the shared capture-level vocabulary.
+
+    ``BASIS_UNAVAILABLE`` becomes ``NOT_OFFERED``, never ``OK`` or ``OK_EMPTY``
+    (owner decision 2, 2026-09-05): the vendor has no consolidated basis for
+    this company, which a later coverage report must be able to tell apart from
+    a basis that was offered and came back blank — the second invites a retry
+    and a standalone substitution, the exact contamination this outcome exists
+    to prevent.
+    """
+    match outcome:
+        case PageOutcome.OK:
+            code = OutcomeCode.OK
+        case PageOutcome.BASIS_UNAVAILABLE:
+            code = OutcomeCode.NOT_OFFERED
+        case _:
+            assert_never(outcome)
+    return OutcomeRecord(code=code, native_kind=PAGE_OUTCOME_KIND, native_value=outcome.value)
 
 
 class ScreenerSessionError(Exception):

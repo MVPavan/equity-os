@@ -129,17 +129,36 @@ def test_only_the_transport_module_names_an_upstox_origin(path: Path) -> None:
     assert not [value for value in _code_strings(path) if "upstox.com" in value]
 
 
-def test_the_lane_declares_no_shared_acquisition_taxonomy() -> None:
-    """``AcquisitionOutcome`` stays local; ``eqos-kx4.4`` owns the shared one.
+def declares_acquisition_outcome_class(source: str, *, filename: str = "<memory>") -> bool:
+    """Whether module text *defines* a class named ``AcquisitionOutcome``.
 
-    Publishing a competing enum under ``contracts/`` is exactly the migration
-    cost this lane's persistence decision exists to avoid.
+    A definition is the competing taxonomy; a sentence naming the Upstox enum is
+    an explanation of one, so only the ``ClassDef`` counts.
+    """
+    tree = ast.parse(source, filename=filename)
+    return any(
+        isinstance(node, ast.ClassDef) and node.name == "AcquisitionOutcome"
+        for node in ast.walk(tree)
+    )
+
+
+def test_the_lane_declares_no_shared_acquisition_taxonomy() -> None:
+    """The shared capture-level code is ``OutcomeCode``, and only that.
+
+    ``eqos-kx4.4`` publishes ``contracts/acquisition_outcome.py``, which must be
+    free to explain the Upstox enum in prose and to import it in a mapping test.
+    A second class *named* ``AcquisitionOutcome`` under ``contracts/`` would be
+    the competing shared taxonomy this bar exists to stop — two enums with one
+    name, and every reader guessing which one it holds.
     """
     contracts = _SOURCE_ROOT / "contracts"
     assert not list(contracts.glob("upstox*.py"))
-    assert not any(
-        "AcquisitionOutcome" in path.read_text(encoding="utf-8") for path in contracts.glob("*.py")
-    )
+    offenders = [
+        path.name
+        for path in contracts.glob("*.py")
+        if declares_acquisition_outcome_class(path.read_text(encoding="utf-8"), filename=str(path))
+    ]
+    assert not offenders, offenders
 
 
 def test_the_entity_adapter_reads_disk_and_declares_no_transport() -> None:

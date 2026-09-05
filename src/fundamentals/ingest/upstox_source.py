@@ -35,12 +35,13 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, assert_never
 from urllib.parse import quote, urlencode, urlsplit
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 from fundamentals.ingest.http_session import (
     NonBytesResponseError,
     NoRedirectHandler,
@@ -134,8 +135,11 @@ class AcquisitionOutcome(StrEnum):
     """What one acquisition attempt established.
 
     Deliberately **local** to this module and not published under ``contracts/``.
-    ``eqos-kx4.4`` owns the shared acquisition taxonomy; a competing shared enum
-    published here would be the migration cost this lane exists to avoid.
+    The shared capture-level code now exists as
+    :class:`~fundamentals.contracts.acquisition_outcome.OutcomeCode`; this enum
+    stays the lane's wire vocabulary and :func:`to_outcome_record` is the only
+    bridge, so a second shared enum with this name is still the migration cost
+    the lane exists to avoid.
     """
 
     OK = "OK"
@@ -154,6 +158,41 @@ class AcquisitionOutcome(StrEnum):
 RETRYABLE_OUTCOMES = frozenset(
     {AcquisitionOutcome.RATE_LIMITED, AcquisitionOutcome.TRANSPORT_ERROR}
 )
+
+ACQUISITION_OUTCOME_KIND = f"{AcquisitionOutcome.__module__}.{AcquisitionOutcome.__qualname__}"
+
+
+def to_outcome_record(outcome: AcquisitionOutcome) -> OutcomeRecord:
+    """Restate one Upstox outcome in the shared capture-level vocabulary.
+
+    Every member is spelled out and the fallthrough is :func:`assert_never`, so
+    a member added here without a shared code fails type checking rather than
+    raising while a capture is being recorded or defaulting a block to success.
+    """
+    match outcome:
+        case AcquisitionOutcome.OK:
+            code = OutcomeCode.OK
+        case AcquisitionOutcome.OK_EMPTY:
+            code = OutcomeCode.OK_EMPTY
+        case AcquisitionOutcome.CLIENT_BLOCKED:
+            code = OutcomeCode.CLIENT_BLOCKED
+        case AcquisitionOutcome.AUTH_EXPIRED:
+            code = OutcomeCode.AUTH_EXPIRED
+        case AcquisitionOutcome.RATE_LIMITED:
+            code = OutcomeCode.RATE_LIMITED
+        case AcquisitionOutcome.REQUEST_REJECTED:
+            code = OutcomeCode.REQUEST_REJECTED
+        case AcquisitionOutcome.PLAN_LOCKED:
+            code = OutcomeCode.PLAN_LOCKED
+        case AcquisitionOutcome.SCHEMA_DRIFT:
+            code = OutcomeCode.SCHEMA_DRIFT
+        case AcquisitionOutcome.TRANSPORT_ERROR:
+            code = OutcomeCode.TRANSPORT_ERROR
+        case _:
+            assert_never(outcome)
+    return OutcomeRecord(
+        code=code, native_kind=ACQUISITION_OUTCOME_KIND, native_value=outcome.value
+    )
 
 
 class UpstoxError(Exception):
