@@ -1,10 +1,8 @@
 # Three-source first measurement (Phase 3, eqos-kx4.4)
 
-Status: **Part 1 measured 2026-09-05 — XBRL ↔ Screener only, nine stocks.** Part 2 (Tijori side)
-is appended once the owner-approved manual `tijori-tables` acquisition has run. This is an
-explicitly partial measurement: it cannot substantiate a three-source base rate, every registry
-tier is `EQUIVALENCE_UNPROVEN`, and therefore no line below is a MISMATCH claim — a residual
-outside tolerance is reported as ANOMALY, which is what tier 3 is entitled to say.
+Status: **Parts 1 and 2 measured 2026-09-05 — nine stocks, one quarter, one run each.** Every
+registry tier is `EQUIVALENCE_UNPROVEN`, so no line below is a MISMATCH claim — a residual outside tolerance is reported as ANOMALY, which is what tier 3 is
+entitled to say. Nine stocks and one quarter are a first look, not a base rate.
 
 Command: `fundamentals three-source-crosscheck --stock <SYM> --out-dir <dir>` (offline; gold
 spine from `data/gold/<SYM>-Q3FY25.json`, Screener sections from
@@ -69,6 +67,56 @@ see it. Fixed in `verify/three_source_inputs.py` with a regression test that giv
 fixture the live shape (`test_expander_rows_are_page_rows`). The second run produced the
 table above.
 
-## Part 2 — Tijori side
+## Part 2 — Tijori side (retained `financials` captures)
 
-Pending the manual acquisition (sequential, spaced, stop on the first rate limit or block).
+Acquisition: the owner-approved manual `tijori-tables` run, 2026-09-05 11:30–11:33 UTC, ten
+stocks sequential with 20 s spacing; every request answered 200 and was classified OK
+(authenticated, identity verified) before parsing; 0 rate limits, 0 blocks, 0 retries. Ten
+captures retained under `data/raw/snapshots/v1/tijori/financials/<slug>/` (gitignored, private,
+A05-DECISION-005). The measurement replays the retained bodies — no fetch.
+
+| Pair | Concept | AGREE | ANOMALY | MISSING | Note |
+|---|---|---|---|---|---|
+| XBRL ↔ Tijori | RevenueFromOperations / Net Sales | 8 | 1 | 0 | THERMAX 0.83 % — same direction and size as Screener |
+| XBRL ↔ Tijori | ProfitBeforeTax / Profit Before Tax | 9 | 0 | 0 | |
+| XBRL ↔ Tijori | ProfitLossForPeriod / Net Profit | 8 | 1 | 0 | LAURUSLABS 2.5 % |
+| XBRL ↔ Tijori | EPS | 0 | 0 | 9 (MISSING_RIGHT) | Tijori parses no EPS row (alias-only registry entry) |
+| Screener ↔ Tijori | Sales / Net Sales | 9 | 0 | 0 | |
+| Screener ↔ Tijori | Profit before tax / Profit Before Tax | 9 | 0 | 0 | |
+| Screener ↔ Tijori | Net Profit / Net Profit | 7 | 2 | 0 | HFCL 1.5 %, LAURUSLABS 2.6 % |
+
+Tijori half-ULP is 0.5 crore by declaration (`decimals=-7`, scale 10^7) even though its values
+carry two decimals; the tolerance on a Tijori pair is therefore 1 crore (vendor) or 0.5 crore +
+the XBRL half-ULP. That is the declared precision, not a measured one, and it is generous: a
+tighter declaration would turn some of the AGREEs above into sub-crore anomalies.
+
+### Hand reading
+
+- **THERMAX revenue.** Tijori and Screener agree with each other (within 0.3 crore) and both
+  exceed filed `RevenueFromOperations` by about 21 crore. Two independent vendors landing on the
+  same number says the difference is a definition (which filed line the vendors call revenue),
+  not a vendor transcription defect. Unresolved; the registry `means` for both revenue entries
+  should say "may include a line the filing reports separately" once the line is identified.
+- **LAURUSLABS net profit.** Tijori shows a value about 2.3 crore below filed
+  `ProfitLossForPeriod` and about 1.7 crore below owners-of-parent — it matches neither
+  candidate. Unexplained; one stock.
+- **HFCL net profit (Screener ↔ Tijori only).** Tijori is within the XBRL tolerance of
+  `ProfitLossForPeriod` but Screener's integer crore rounds the other way, so the vendor pair
+  reports 1.5 % while each vendor agrees with the filing. This is the integer-crore rounding
+  floor of a vendor↔vendor pair, not a disagreement about the figure.
+
+### Tijori net-profit candidate (OWNER 3, Tijori half)
+
+Where the two XBRL candidates differ by more than the tolerance (HFCL, POLYCAB, THERMAX — and
+LAURUSLABS, which matches neither), Tijori's `Net Profit` agrees with `ProfitLossForPeriod` on
+HFCL, POLYCAB and THERMAX and with owners-of-parent on none. Same answer as Screener: both
+vendors publish consolidated profit for the period including non-controlling interest. The
+registry freeze (both vendor net-profit entries to the single candidate
+`in-bse-fin:ProfitLossForPeriod`, `MAP_VERSION` bump) is bead **eqos-al0**.
+
+### Summary across the three sources
+
+Over the nine stocks, the 36 XBRL↔Screener pairs, 27 XBRL↔Tijori pairs and 27 Screener↔Tijori
+pairs with both sides present: 32 + 25 + 25 = 82 AGREE, 4 + 2 + 2 = 8 ANOMALY, 0 MISMATCH (tier
+3 cannot claim one), 0 STRUCTURAL triage. Every anomaly is under 15 % and six of eight are under
+3 %. The two vendors never disagree with each other on revenue or PBT.
