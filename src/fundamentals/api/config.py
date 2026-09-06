@@ -93,6 +93,9 @@ class XbrlConfig(BaseModel):
     timeout_seconds: int = 15
     max_retries: int = 3
     retry_backoff_seconds: float = 2.0
+    # As-filed context entity identifiers accepted as this issuer (a pre-rename NSE
+    # symbol, or the BSE scrip an Integrated Filing identifies the entity by).
+    accepted_entity_ids: tuple[str, ...] = ()
     entity_scheme_aliases: dict[str, str] = Field(
         default_factory=lambda: dict(_DEFAULT_XBRL_ALIASES)
     )

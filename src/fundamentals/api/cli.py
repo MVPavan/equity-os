@@ -94,6 +94,7 @@ def _build_xbrl_input(config: FundamentalsConfig, config_path: Path, mode: XbrlM
             timeout_seconds=config.xbrl.timeout_seconds,
             max_retries=config.xbrl.max_retries,
             retry_backoff_seconds=config.xbrl.retry_backoff_seconds,
+            accepted_entity_ids=config.xbrl.accepted_entity_ids,
         )
         retrieval = source.fetch_consolidated_quarter(
             from_date=config.quarter.period_start,

@@ -24,6 +24,7 @@ from nse import NSE  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.xbrl_identity import (
     NseEntityIdentityError,
     validate_nse_entity_identities,
@@ -44,6 +45,24 @@ BROADCAST_DATE_FORMAT = "%d-%b-%Y %H:%M:%S"
 INDAS_MARKER = "Ind-AS"
 CONSOLIDATED_ROW_VALUE = "Consolidated"
 CONSOLIDATED_SOURCE_ID = "nse-indas-xbrl-consolidated"
+
+# SEBI Integrated Filing listing (quarterly results since Mar-2025): its rows carry
+# no ``fromDate``/``isin``/``relatingTo``, only the quarter-end date ``qe_Date``.
+INTEGRATED_LISTING_PATH = "/integrated-filing-results"
+INTEGRATED_LISTING_DESCRIPTION = "integrated_filing listing"
+INTEGRATED_INDEX_PARAM = "index"
+INTEGRATED_INDEX_VALUE = "equities"
+INTEGRATED_SYMBOL_PARAM = "symbol"
+INTEGRATED_PERIOD_PARAM = "period"
+INTEGRATED_PERIOD_VALUE = "Quarterly"
+INTEGRATED_DATA_KEY = "data"
+INTEGRATED_QUARTER_END_KEY = "qe_Date"
+INTEGRATED_BROADCAST_KEY = "broadcast_Date"
+# Ind AS results attachments are named apart from the governance ones in the same row set.
+INTEGRATED_INDAS_MARKER = "INTEGRATED_FILING_INDAS_"
+
+QUARTER_MONTHS = 3
+MONTHS_PER_YEAR = 12
 
 # Rename-stable issuer-identity registry. A company's ISIN never changes across a
 # symbol/name rename, but a filing made *before* the rename still carries the OLD
@@ -120,6 +139,17 @@ class XbrlRetrieval(BaseModel):
         )
 
 
+class _FilingCandidate(BaseModel):
+    """One listing row's filing facts, normalized across NSE's two listings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    xbrl_url: str
+    isin: str | None = None
+    relating_to: str = ""
+    filed_at: datetime | None = None
+
+
 def _parse_broadcast(raw: str | None) -> datetime | None:
     """Parse a broadcast/filing timestamp; return ``None`` if unrecognised."""
     if not raw:
@@ -180,8 +210,14 @@ class NseXbrlSource:
             f"{description} failed after {self._max_retries} attempts: {last_error}"
         ) from last_error
 
-    def _find_filing(self, client: Any, *, from_date: date, to_date: date) -> dict[str, Any]:
-        """Return the single consolidated Ind AS filing row for the quarter."""
+    def _find_filing(self, client: Any, *, from_date: date, to_date: date) -> _FilingCandidate:
+        """Return the single consolidated Ind AS filing for the quarter.
+
+        The quarterly ``financial_results`` listing answers first; only when it
+        carries no candidate at all is the newer Integrated Filing listing
+        consulted, so the extra request is never made for a quarter NSE already
+        serves the legacy way.
+        """
         rows: list[dict[str, Any]] = self._retry(
             "financial_results listing",
             lambda: client.financial_results(
@@ -195,12 +231,65 @@ class NseXbrlSource:
             and _row_date(row.get("toDate")) == to_date
             and _is_consolidated_indas_xbrl_row(row)
         ]
+        if not candidates:
+            return self._find_integrated_filing(client, from_date=from_date, to_date=to_date)
         if len(candidates) != 1:
             raise XbrlFetchError(
                 f"expected exactly 1 consolidated Ind AS filing for {self._symbol} "
                 f"{from_date}..{to_date}, found {len(candidates)}"
             )
-        return candidates[0]
+        row = candidates[0]
+        return _FilingCandidate(
+            xbrl_url=row["xbrl"].strip(),
+            isin=(row.get("isin") or "").strip() or None,
+            relating_to=(row.get("relatingTo") or "").strip(),
+            filed_at=_parse_broadcast(row.get("broadCastDate")),
+        )
+
+    def _integrated_rows(self, client: Any) -> list[dict[str, Any]]:
+        """Return the Integrated Filing quarterly listing rows for this symbol.
+
+        Requested through the private ``_req`` helper because ``nse`` 3.2.1 ships
+        no public wrapper for this listing; failures are typed by :meth:`_retry`.
+        """
+        payload: dict[str, Any] = self._retry(
+            INTEGRATED_LISTING_DESCRIPTION,
+            lambda: client._req(
+                f"{client.base_url}{INTEGRATED_LISTING_PATH}",
+                params={
+                    INTEGRATED_INDEX_PARAM: INTEGRATED_INDEX_VALUE,
+                    INTEGRATED_SYMBOL_PARAM: self._symbol,
+                    INTEGRATED_PERIOD_PARAM: INTEGRATED_PERIOD_VALUE,
+                },
+            ).json(),
+        )
+        rows: list[dict[str, Any]] = payload.get(INTEGRATED_DATA_KEY) or []
+        return rows
+
+    def _find_integrated_filing(
+        self, client: Any, *, from_date: date, to_date: date
+    ) -> _FilingCandidate:
+        """Return the single consolidated Ind AS Integrated Filing for the quarter.
+
+        The listing states only the quarter end, so the requested ``from_date`` is
+        proven by the duration-context check :meth:`_verify` runs on the download.
+        """
+        candidates = [
+            row
+            for row in self._integrated_rows(client)
+            if _row_date(row.get(INTEGRATED_QUARTER_END_KEY)) == to_date
+            and _is_consolidated_integrated_row(row)
+        ]
+        if len(candidates) != 1:
+            raise XbrlFetchError(
+                f"expected exactly 1 consolidated Integrated Filing for {self._symbol} "
+                f"{from_date}..{to_date}, found {len(candidates)}"
+            )
+        row = candidates[0]
+        return _FilingCandidate(
+            xbrl_url=(row.get("xbrl") or "").strip(),
+            filed_at=_parse_broadcast(row.get(INTEGRATED_BROADCAST_KEY)),
+        )
 
     def _download(self, client: Any, xbrl_url: str) -> Path:
         """Download the XBRL document into the held folder, failing closed."""
@@ -227,8 +316,8 @@ class NseXbrlSource:
         except etree.XMLSyntaxError as exc:
             raise XbrlFetchError(f"downloaded XBRL is not well-formed: {exc}") from exc
 
-        nature = root.find(f"{{{FIN_NAMESPACE}}}{SCOPE_CONCEPT}")
-        if nature is None or (nature.text or "").strip() != CONSOLIDATED_TEXT:
+        scope_elements = _scope_elements(root)
+        if len(scope_elements) != 1 or (scope_elements[0].text or "").strip() != CONSOLIDATED_TEXT:
             raise XbrlFetchError("downloaded XBRL is not a consolidated filing")
 
         self._verify_issuer(root, isin=isin)
@@ -287,43 +376,42 @@ class NseXbrlSource:
         retrieved_at = datetime.now(UTC)
         try:
             with NSE(self._download_folder, timeout=self._timeout_seconds) as client:
-                row = self._find_filing(client, from_date=from_date, to_date=to_date)
-                xbrl_url = row["xbrl"].strip()
-                isin = (row.get("isin") or "").strip() or None
-                local_path = self._download(client, xbrl_url)
+                filing = self._find_filing(client, from_date=from_date, to_date=to_date)
+                local_path = self._download(client, filing.xbrl_url)
         except XbrlFetchError:
             raise
         except Exception as exc:  # noqa: BLE001 - normalise to a typed failure
             raise XbrlFetchError(f"NSE fetch failed: {exc}") from exc
 
         xml_bytes = local_path.read_bytes()
-        self._verify(xml_bytes, from_date=from_date, to_date=to_date, isin=isin)
+        self._verify(xml_bytes, from_date=from_date, to_date=to_date, isin=filing.isin)
         file_sha256 = hashlib.sha256(xml_bytes).hexdigest()
 
         return XbrlRetrieval(
             source_id=CONSOLIDATED_SOURCE_ID,
             local_path=local_path,
             file_sha256=file_sha256,
-            xbrl_url=xbrl_url,
+            xbrl_url=filing.xbrl_url,
             symbol=self._symbol,
             from_date=from_date,
             to_date=to_date,
-            relating_to=(row.get("relatingTo") or "").strip(),
+            relating_to=filing.relating_to,
             consolidated=True,
             retrieved_at=retrieved_at,
-            filed_at=_parse_broadcast(row.get("broadCastDate")),
+            filed_at=filing.filed_at,
         )
 
     def available_consolidated_quarters(self) -> frozenset[tuple[date, date]]:
         """Return the quarters NSE lists a consolidated Ind AS XBRL filing for.
 
-        Reads the same quarterly ``financial_results`` listing as
-        :meth:`fetch_consolidated_quarter` and returns the ``(from_date, to_date)``
-        span of every row that qualifies as a consolidated Ind AS filing carrying
-        an XBRL url; rows whose dates do not parse are skipped. Used to intersect
+        Reads both quarterly listings :meth:`fetch_consolidated_quarter` uses and
+        returns the union of the ``(from_date, to_date)`` spans of every row that
+        qualifies as a consolidated Ind AS filing carrying an XBRL url; rows whose
+        dates do not parse are skipped. An Integrated Filing row states only its
+        quarter end, so its span start is derived from that. Used to intersect
         with BSE's published quarters so latest-quarter resolution only targets a
         quarter both first-party hosts carry. Fails closed with
-        :class:`XbrlFetchError` on any network failure.
+        :class:`XbrlFetchError` on any network failure — no partial set.
         """
         self._download_folder.mkdir(parents=True, exist_ok=True)
         try:
@@ -334,6 +422,7 @@ class NseXbrlSource:
                         segment="equities", period="quarterly", symbol=self._symbol
                     ),
                 )
+                integrated_rows = self._integrated_rows(client)
         except XbrlFetchError:
             raise
         except Exception as exc:  # noqa: BLE001 - normalise to a typed failure
@@ -348,7 +437,48 @@ class NseXbrlSource:
             if from_date is None or to_date is None:
                 continue
             quarters.add((from_date, to_date))
+        for row in integrated_rows:
+            if not _is_consolidated_integrated_row(row):
+                continue
+            quarter_end = _row_date(row.get(INTEGRATED_QUARTER_END_KEY))
+            if quarter_end is None:
+                continue
+            quarters.add((_quarter_start(quarter_end), quarter_end))
         return frozenset(quarters)
+
+
+def _scope_elements(root: Any) -> list[Any]:
+    """Every registered taxonomy's scope-concept element found in the instance.
+
+    Integrated Filings declare the scope under a versioned ``in-capmkt`` namespace
+    while legacy filings use ``in-bse-fin``, so the lookup dispatches through the
+    taxonomy registry instead of one hard-coded namespace.
+    """
+    return [
+        element
+        for spec in _ALL_TAXONOMIES
+        for element in root.findall(f"{{{spec.namespace}}}{spec.scope_concept}")
+    ]
+
+
+def _quarter_start(quarter_end: date) -> date:
+    """First day of the quarter ending in ``quarter_end``'s month (30-Jun -> 1-Apr)."""
+    month = quarter_end.month - QUARTER_MONTHS + 1
+    year = quarter_end.year
+    if month <= 0:
+        month += MONTHS_PER_YEAR
+        year -= 1
+    return date(year, month, 1)
+
+
+def _is_consolidated_integrated_row(row: dict[str, Any]) -> bool:
+    """Whether an Integrated Filing row is the consolidated Ind AS results attachment."""
+    xbrl_url = (row.get("xbrl") or "").strip()
+    return (
+        (row.get("consolidated") or "") == CONSOLIDATED_ROW_VALUE
+        and INTEGRATED_INDAS_MARKER in xbrl_url
+        and bool(xbrl_url)
+    )
 
 
 def _is_consolidated_indas_xbrl_row(row: dict[str, Any]) -> bool:

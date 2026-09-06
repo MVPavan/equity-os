@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Collection
 
 NSE_ENTITY_SCHEME = "http://www.nseindia.com/NSESymbol"
-ACCEPTED_NSE_ENTITY_SCHEMES: frozenset[str] = frozenset({NSE_ENTITY_SCHEME})
+# SEBI Integrated Filings identify the entity by BSE scrip code under SEBI's own
+# scheme instead of the NSE symbol, so both schemes are accepted.
+SEBI_SCRIP_ENTITY_SCHEME = "http://www.sebi.gov.in/in-capmkt/ScripCode"
+ACCEPTED_NSE_ENTITY_SCHEMES: frozenset[str] = frozenset(
+    {NSE_ENTITY_SCHEME, SEBI_SCRIP_ENTITY_SCHEME}
+)
 
 
 class NseEntityIdentityError(ValueError):
@@ -15,7 +20,11 @@ class NseEntityIdentityError(ValueError):
 def validate_nse_entity_identities(
     identities: Collection[tuple[str, str]], accepted_entity_ids: Collection[str]
 ) -> None:
-    """Require every context identity to use the NSE scheme and an accepted issuer id."""
+    """Require every context identity to use an accepted scheme and an accepted issuer id.
+
+    Accepted schemes are the NSE symbol scheme and SEBI's Integrated-Filing scrip
+    scheme; the issuer ids themselves are never inferred, only matched.
+    """
     normalized = {
         (scheme.strip(), entity_id.strip().upper())
         for scheme, entity_id in identities
