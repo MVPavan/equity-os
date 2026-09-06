@@ -249,3 +249,17 @@ Format per entry:
   own route (`scripts/verify.sh baseline <slice>`: green test set recorded,
   set equality demanded back). Whenever a check compares against a recorded
   file, branch on "could not read" before "no difference".
+
+## 2026-09-06 — SEBI Integrated Filings (NSE, Mar-2025 onward)
+- NSE's `corporates-financial-results` listing stops at Dec-2024 for issuers that moved to the
+  Integrated Filing format; the rows live at `/integrated-filing-results` (`qe_Date`,
+  `consolidated`, `xbrl`, `broadcast_Date`; no `fromDate`/`isin`). `NseXbrlSource` falls back to it.
+- Instances declare a DATED `in-capmkt` namespace (`.../2025-01-31/in-capmkt`,
+  `.../2026-01-31/in-capmkt`); every revision must be registered in `xbrl_taxonomies` or the
+  parser fails closed. The entity identifier is the BSE scrip under
+  `http://www.sebi.gov.in/in-capmkt/ScripCode`, so `xbrl.accepted_entity_ids` and
+  `xbrl.entity_id_aliases` must be declared per issuer.
+- Scanned results PDFs carry the issuer's own OCR text layer; the unit word and even "Profit"
+  can be garbled. Declare `pdf_parse.printed_unit` (fills a missing marker only) and
+  `pdf_parse.label_overrides`; a row whose label is split across text lines cannot be bound
+  and must be excluded from `concepts.cross_check` for that quarter with a comment.

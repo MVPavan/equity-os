@@ -74,6 +74,13 @@ stay in force. The Infosys Q0 artefacts stay on record as Phase 0A evidence; the
    → verify: `run --issuer APARINDS --quarter Q1-FY27` parses the real instance; the Jun-2026
    figures in the manifest match the XBRL (Revenue 6,591.06 cr; PBT 622.34 cr; PAT 467.45 cr;
    basic EPS 116.37); Q4 FY26 uses `OneD` not `FourD`.
+   **DONE 2026-09-06** (commits 9235dde, and the config commit that follows it). All four
+   quarters render end-to-end from `config/aparinds-*.yaml`. Findings: NSE serves these
+   quarters only through `integrated-filing-results`; instances declare `in-capmkt`
+   2025-01-31 / 2026-01-31 and identify the entity by BSE scrip; the results PDFs are scanned
+   (unit word garbled in Q4 FY26 and Q1 FY27; "Profit" garbled in Q2 FY26); Apar tags PBT after
+   exceptional items and before associates; Q3 FY26's PDF cannot bind the post-exceptional PBT
+   row, so that quarter's PDF cross-check covers four of the five headline figures.
 2. **Q0 manual baseline and bootstrap thesis (owner).** Timed manual pass over the Sep-2025
    package producing the A-03-shaped baseline and an A-11-shaped thesis with explicit observable
    falsifiers. The agent does not pre-compute anything for this step.
