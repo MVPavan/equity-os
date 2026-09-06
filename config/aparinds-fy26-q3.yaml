@@ -1,0 +1,95 @@
+# Fundamentals pipeline — Apar Industries, issuer FY26_Q3 (program QUARTER_1).
+#
+# Same composition-root contract as config/fundamentals.yaml. The held bytes live in
+# gitignored data/raw/watchlist/aparinds/ (retrieval-manifest.json records URL, sha256
+# and NSE filing time for every file; A-02 v2 + A02-ATTEST-002, 2026-09-06). The XBRL is
+# a SEBI Integrated Filing (in-capmkt), so the taxonomy prefix, the SEBI scrip entity
+# scheme and the scrip -> symbol alias are declared here; the results PDF is a scanned
+# document whose text layer garbles the unit word in some quarters, so the printed unit
+# is declared too (a printed unit that disagrees still fails closed).
+
+issuer:
+  name: "Apar Industries Limited"
+  nse_symbol: "APARINDS"
+  entity_scheme: "nse-symbol"
+
+quarter:
+  issuer_quarter: "FY26_Q3"
+  program_quarter: "QUARTER_1"
+  label: "Q3 FY26 (quarter ended 2025-12-31)"
+  period_start: "2025-10-01"
+  period_end: "2025-12-31"
+  knowledge_cutoff: "2026-02-04T14:48:22Z"
+
+taxonomy_prefix: "in-capmkt"
+raw_dir: "data/raw/watchlist/aparinds"
+store_db: ":memory:"
+
+results_pdf:
+  source_id: "aparinds-fy26-q3-results-pdf"
+  source_class: "first_party"
+  filename: "nse_pdf/APARINDS-FY26_Q3-results.pdf"
+  sha256: "2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699"
+
+transcript_pdf:
+  source_id: "aparinds-fy26-q3-management-transcript"
+  source_class: "first_party"
+  filename: "nse_pdf/APARINDS-FY26_Q3-transcript.pdf"
+  sha256: "66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02"
+
+xbrl:
+  source_id: "nse-indas-xbrl-consolidated"
+  mode: "local"
+  local_path: "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1613642_29012026072210_WEB.xml"
+  symbol: "APARINDS"
+  timeout_seconds: 15
+  max_retries: 3
+  retry_backoff_seconds: 2.0
+  accepted_entity_ids: ["532259"]
+  entity_scheme_aliases:
+    "http://www.nseindia.com/NSESymbol": "nse-symbol"
+    "http://www.sebi.gov.in/in-capmkt/ScripCode": "nse-symbol"
+  entity_id_aliases:
+    "532259": "APARINDS"
+
+sec:
+  enabled: false
+
+pdf_parse:
+  printed_unit: "crore"
+  label_overrides:
+    # The scanned text layer garbles "Profit" in some quarters ("rroft after tax").
+    ProfitLossForPeriod: ["Profit after tax", "after tax"]
+
+concepts:
+  # Apar tags ProfitBeforeTax AFTER exceptional items but BEFORE the share of
+  # associates, and reports no owners/non-controlling split in some quarters, so
+  # the default identities are replaced by the one the filing actually satisfies.
+  aux:
+    - concept_qname: "in-capmkt:ProfitOrLossAttributableToOwnersOfParent"
+      required: false
+    - concept_qname: "in-capmkt:ProfitOrLossAttributableToNonControllingInterests"
+      required: false
+    - concept_qname: "in-capmkt:ExceptionalItemsBeforeTax"
+      required: false
+  # This quarter's scanned results PDF splits the label of the post-exceptional
+  # "Profit before tax" row across two text lines, so the only PBT row the parser
+  # can bind is the pre-exceptional one (313.08), which the XBRL tags as
+  # ProfitBeforeExceptionalItemsAndTax, not ProfitBeforeTax (288.09). PBT is
+  # therefore cross-checked by the accounting identity below only; the PDF
+  # cross-check for this quarter covers the other four headline figures.
+  cross_check:
+    - "in-capmkt:RevenueFromOperations"
+    - "in-capmkt:Income"
+    - "in-capmkt:ProfitLossForPeriod"
+    - "in-capmkt:BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations"
+  identities:
+    - name: "Profit before tax = Total income − Total expenses + Exceptional items"
+      lhs_concept: "in-capmkt:ProfitBeforeTax"
+      terms:
+        - sign: 1
+          concept_qname: "in-capmkt:Income"
+        - sign: -1
+          concept_qname: "in-capmkt:Expenses"
+        - sign: 1
+          concept_qname: "in-capmkt:ExceptionalItemsBeforeTax"

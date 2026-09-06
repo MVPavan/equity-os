@@ -55,6 +55,7 @@ from fundamentals.extract.pdf_column_geometry import (
     NumberParseError,
     PdfLineUnit,
     PdfParseSpec,
+    PdfPrintedUnit,
     PdfTargetLine,
     SubcomponentSummation,
     _anchor_row_top,
@@ -85,6 +86,7 @@ __all__ = [
     "NumberParseError",
     "PdfLineUnit",
     "PdfParseSpec",
+    "PdfPrintedUnit",
     "PdfTargetLine",
     "SubcomponentSummation",
     "extract_consolidated_pl",
@@ -193,7 +195,7 @@ def extract_consolidated_pl(
     rows = _band_rows(page.words, spec.row_band_tolerance_pt)
     anchor_top = _anchor_row_top(rows, spec)
     header_words = tuple(word for word in page.words if word.y0 < anchor_top)
-    unit_factor = _detect_unit_factor(header_words)
+    unit_factor = _detect_unit_factor(header_words, declared=spec.printed_unit)
     center = _current_column_center(header_words, spec)
     return _extract_lines(
         rows,

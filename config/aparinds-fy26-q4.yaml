@@ -1,0 +1,84 @@
+# Fundamentals pipeline — Apar Industries, issuer FY26_Q4 (program QUARTER_2).
+#
+# Same composition-root contract as config/fundamentals.yaml. The held bytes live in
+# gitignored data/raw/watchlist/aparinds/ (retrieval-manifest.json records URL, sha256
+# and NSE filing time for every file; A-02 v2 + A02-ATTEST-002, 2026-09-06). The XBRL is
+# a SEBI Integrated Filing (in-capmkt), so the taxonomy prefix, the SEBI scrip entity
+# scheme and the scrip -> symbol alias are declared here; the results PDF is a scanned
+# document whose text layer garbles the unit word in some quarters, so the printed unit
+# is declared too (a printed unit that disagrees still fails closed).
+
+issuer:
+  name: "Apar Industries Limited"
+  nse_symbol: "APARINDS"
+  entity_scheme: "nse-symbol"
+
+quarter:
+  issuer_quarter: "FY26_Q4"
+  program_quarter: "QUARTER_2"
+  label: "Q4 FY26 (quarter ended 2026-03-31)"
+  period_start: "2026-01-01"
+  period_end: "2026-03-31"
+  knowledge_cutoff: "2026-06-04T16:13:48Z"
+
+taxonomy_prefix: "in-capmkt"
+raw_dir: "data/raw/watchlist/aparinds"
+store_db: ":memory:"
+
+results_pdf:
+  source_id: "aparinds-fy26-q4-results-pdf"
+  source_class: "first_party"
+  filename: "nse_pdf/APARINDS-FY26_Q4-results.pdf"
+  sha256: "17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377"
+
+transcript_pdf:
+  source_id: "aparinds-fy26-q4-management-transcript"
+  source_class: "first_party"
+  filename: "nse_pdf/APARINDS-FY26_Q4-transcript.pdf"
+  sha256: "69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c"
+
+xbrl:
+  source_id: "nse-indas-xbrl-consolidated"
+  mode: "local"
+  local_path: "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml"
+  symbol: "APARINDS"
+  timeout_seconds: 15
+  max_retries: 3
+  retry_backoff_seconds: 2.0
+  accepted_entity_ids: ["532259"]
+  entity_scheme_aliases:
+    "http://www.nseindia.com/NSESymbol": "nse-symbol"
+    "http://www.sebi.gov.in/in-capmkt/ScripCode": "nse-symbol"
+  entity_id_aliases:
+    "532259": "APARINDS"
+
+sec:
+  enabled: false
+
+pdf_parse:
+  printed_unit: "crore"
+  label_overrides:
+    # The scanned text layer garbles "Profit" in some quarters ("rroft after tax").
+    ProfitLossForPeriod: ["Profit after tax", "after tax"]
+
+concepts:
+  # Apar tags ProfitBeforeTax AFTER exceptional items but BEFORE the share of
+  # associates, and reports no owners/non-controlling split in some quarters, so
+  # the default identities are replaced by the one the filing actually satisfies.
+  aux:
+    - concept_qname: "in-capmkt:ProfitOrLossAttributableToOwnersOfParent"
+      required: false
+    - concept_qname: "in-capmkt:ProfitOrLossAttributableToNonControllingInterests"
+      required: false
+    - concept_qname: "in-capmkt:ExceptionalItemsBeforeTax"
+      required: false
+  identities:
+    - name: "Profit before tax = Total income − Total expenses + Exceptional items"
+      lhs_concept: "in-capmkt:ProfitBeforeTax"
+      terms:
+        - sign: 1
+          concept_qname: "in-capmkt:Income"
+        - sign: -1
+          concept_qname: "in-capmkt:Expenses"
+        - sign: 1
+          concept_qname: "in-capmkt:ExceptionalItemsBeforeTax"

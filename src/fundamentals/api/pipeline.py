@@ -53,6 +53,7 @@ from fundamentals.extract.xbrl_parser import (
     parse_observations,
     select_observation,
 )
+from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.pdf_source import LoadedPdf, load_pdf
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
 from fundamentals.output.earnings_update import (
@@ -125,12 +126,26 @@ class PipelineResult(BaseModel):
     sec_cross_check_note: str
 
 
-def _normalize_entity(obs: Observation, aliases: dict[str, str]) -> Observation:
-    """Canonicalise an observation's entity scheme across sources."""
-    canonical = aliases.get(obs.entity_scheme)
-    if canonical is None or canonical == obs.entity_scheme:
+def _normalize_entity(
+    obs: Observation,
+    scheme_aliases: dict[str, str],
+    id_aliases: dict[str, str],
+    issuer_scheme: str,
+) -> Observation:
+    """Canonicalise an observation's entity scheme, then its id, across sources.
+
+    The id alias applies only once the canonical scheme is the issuer scheme the
+    run stamps on PDF facts, so an as-filed identifier (e.g. a scrip code) collapses
+    onto the issuer's symbol while an id under any other scheme, or one with no
+    declared alias, is left untouched and still fails the cross-check.
+    """
+    canonical_scheme = scheme_aliases.get(obs.entity_scheme, obs.entity_scheme)
+    entity_id = obs.entity_id
+    if canonical_scheme == issuer_scheme:
+        entity_id = id_aliases.get(entity_id, entity_id)
+    if canonical_scheme == obs.entity_scheme and entity_id == obs.entity_id:
         return obs
-    return obs.model_copy(update={"entity_scheme": canonical})
+    return obs.model_copy(update={"entity_scheme": canonical_scheme, "entity_id": entity_id})
 
 
 def _select_consolidated_quarter(
@@ -176,7 +191,7 @@ def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
         scope_marker=config.pdf_parse.scope_marker,
         statement_confirmations=config.pdf_parse.statement_confirmations,
         anchor_label=config.pdf_parse.anchor_label,
-        target_lines=config.pdf_parse.target_lines,
+        target_lines=config.pdf_parse.effective_target_lines,
         entity_scheme=config.issuer.entity_scheme,
         entity_id=config.issuer.nse_symbol,
         currency=config.pdf_parse.currency,
@@ -187,6 +202,7 @@ def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
         row_band_tolerance_pt=config.pdf_parse.row_band_tolerance_pt,
         column_x_tolerance_pt=config.pdf_parse.column_x_tolerance_pt,
         month_names=config.pdf_parse.month_names,
+        printed_unit=config.pdf_parse.printed_unit,
     )
 
 
@@ -321,12 +337,18 @@ def run_pipeline(
 
     # 2. Parse both first-party sources into context-bound Observations.
     xbrl_obs = tuple(
-        _normalize_entity(obs, config.xbrl.entity_scheme_aliases)
+        _normalize_entity(
+            obs,
+            config.xbrl.entity_scheme_aliases,
+            config.xbrl.entity_id_aliases,
+            config.issuer.entity_scheme,
+        )
         for obs in parse_observations(
             xbrl_input.xml_bytes,
             source_id=xbrl_input.source_id,
             file_sha256=xbrl_input.file_sha256,
             retrieved_at=xbrl_input.retrieved_at,
+            taxonomies=_ALL_TAXONOMIES,
             required_concepts=_required_concepts(config),
         )
     )

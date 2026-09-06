@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.source_catalog import SourceClass
@@ -26,6 +26,7 @@ from fundamentals.extract.pdf_number_parser import (
     DEFAULT_ROW_BAND_TOLERANCE_PT,
     ConditionalLabel,
     PdfLineUnit,
+    PdfPrintedUnit,
     PdfTargetLine,
     SubcomponentSummation,
 )
@@ -33,6 +34,14 @@ from fundamentals.extract.pdf_number_parser import (
 _DEFAULT_XBRL_ALIASES: dict[str, str] = {
     "http://www.nseindia.com/NSESymbol": "nse-symbol",
 }
+
+# The taxonomy the built-in concept defaults below are written against. An issuer
+# filing under another taxonomy (e.g. a SEBI Integrated Filing, ``in-capmkt``) uses
+# the same local names, so declaring the prefix is enough to retarget them.
+_DEFAULT_TAXONOMY_PREFIX = "in-bse-fin"
+_UNKNOWN_OVERRIDE_ERROR = (
+    "pdf_parse.label_overrides key {key!r} matches no configured target-line concept"
+)
 
 
 class XbrlMode(StrEnum):
@@ -99,6 +108,9 @@ class XbrlConfig(BaseModel):
     entity_scheme_aliases: dict[str, str] = Field(
         default_factory=lambda: dict(_DEFAULT_XBRL_ALIASES)
     )
+    # As-filed entity ids (keyed by id) accepted as the issuer's canonical id, applied
+    # only under the issuer's own entity scheme so a wrong company's file still fails.
+    entity_id_aliases: dict[str, str] = Field(default_factory=dict)
 
 
 class SecConfig(BaseModel):
@@ -114,6 +126,12 @@ class SecConfig(BaseModel):
 
 
 # --- general Ind-AS (in-bse-fin) defaults; a different filer overrides in YAML --
+
+
+def _local_name(concept_qname: str) -> str:
+    """The concept's local name, i.e. its qname without the taxonomy prefix."""
+    return concept_qname.split(":", 1)[-1]
+
 
 _INR_CRORE_UNIT = "INR crore"
 _INR_UNIT_REF = "INR"
@@ -211,6 +229,34 @@ class PdfParseConfig(BaseModel):
     row_band_tolerance_pt: float = DEFAULT_ROW_BAND_TOLERANCE_PT
     column_x_tolerance_pt: float = DEFAULT_COLUMN_X_TOLERANCE_PT
     month_names: tuple[str, ...] = Field(default_factory=lambda: DEFAULT_MONTH_NAMES)
+    # Declared unit of the printed statement, used only when a scanned text layer
+    # garbles the marker; a legible printed unit that disagrees still fails closed.
+    printed_unit: PdfPrintedUnit | None = None
+    # Extra printed labels per concept LOCAL name, appended to that concept's
+    # default labels (the defaults keep precedence).
+    label_overrides: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _reject_unknown_overrides(self) -> PdfParseConfig:
+        """Fail closed on an override key naming no configured target line."""
+        known = {_local_name(line.concept_qname) for line in self.target_lines}
+        for key in self.label_overrides:
+            if key not in known:
+                raise ValueError(_UNKNOWN_OVERRIDE_ERROR.format(key=key))
+        return self
+
+    @property
+    def effective_target_lines(self) -> tuple[PdfTargetLine, ...]:
+        """Target lines with this issuer's extra labels appended to their concepts."""
+        if not self.label_overrides:
+            return self.target_lines
+        lines: list[PdfTargetLine] = []
+        for line in self.target_lines:
+            extra = self.label_overrides.get(_local_name(line.concept_qname), ())
+            lines.append(
+                line.model_copy(update={"labels": (*line.labels, *extra)}) if extra else line
+            )
+        return tuple(lines)
 
 
 class RoleConceptConfig(BaseModel):
@@ -372,6 +418,61 @@ class GuidanceConfig(BaseModel):
     rules: tuple[GuidanceRuleConfig, ...] = Field(default_factory=_default_guidance_rules)
 
 
+def _reprefixed(concept_qname: str, prefix: str) -> str:
+    """Retarget a default-taxonomy qname onto ``prefix``; other qnames pass through.
+
+    An explicit per-issuer override that already names another taxonomy is left
+    alone — only the built-in ``in-bse-fin`` defaults are retargeted.
+    """
+    local = concept_qname.removeprefix(f"{_DEFAULT_TAXONOMY_PREFIX}:")
+    if local == concept_qname:
+        return concept_qname
+    return f"{prefix}:{local}"
+
+
+def _reprefixed_concepts(concepts: ConceptsConfig, prefix: str) -> ConceptsConfig:
+    """Retarget every role, aux, cross-check, and identity qname onto ``prefix``."""
+    return concepts.model_copy(
+        update={
+            "roles": tuple(
+                role.model_copy(update={"concept_qname": _reprefixed(role.concept_qname, prefix)})
+                for role in concepts.roles
+            ),
+            "aux": tuple(
+                aux.model_copy(update={"concept_qname": _reprefixed(aux.concept_qname, prefix)})
+                for aux in concepts.aux
+            ),
+            "cross_check": tuple(_reprefixed(concept, prefix) for concept in concepts.cross_check),
+            "identities": tuple(
+                identity.model_copy(
+                    update={
+                        "lhs_concept": _reprefixed(identity.lhs_concept, prefix),
+                        "terms": tuple(
+                            term.model_copy(
+                                update={"concept_qname": _reprefixed(term.concept_qname, prefix)}
+                            )
+                            for term in identity.terms
+                        ),
+                    }
+                )
+                for identity in concepts.identities
+            ),
+        }
+    )
+
+
+def _reprefixed_pdf_parse(pdf_parse: PdfParseConfig, prefix: str) -> PdfParseConfig:
+    """Retarget every PDF target-line qname onto ``prefix`` (local names are unchanged)."""
+    return pdf_parse.model_copy(
+        update={
+            "target_lines": tuple(
+                line.model_copy(update={"concept_qname": _reprefixed(line.concept_qname, prefix)})
+                for line in pdf_parse.target_lines
+            )
+        }
+    )
+
+
 class FundamentalsConfig(BaseModel):
     """The full, resolved composition-root configuration."""
 
@@ -388,6 +489,21 @@ class FundamentalsConfig(BaseModel):
     pdf_parse: PdfParseConfig = Field(default_factory=PdfParseConfig)
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
     guidance: GuidanceConfig = Field(default_factory=GuidanceConfig)
+    # The taxonomy this issuer files under. Its local names are shared with the
+    # default taxonomy, so declaring the prefix retargets the concept defaults.
+    taxonomy_prefix: str = _DEFAULT_TAXONOMY_PREFIX
+
+    @model_validator(mode="after")
+    def _retarget_taxonomy(self) -> FundamentalsConfig:
+        """Rewrite the default-taxonomy qnames onto this issuer's taxonomy prefix."""
+        if self.taxonomy_prefix == _DEFAULT_TAXONOMY_PREFIX:
+            return self
+        return self.model_copy(
+            update={
+                "concepts": _reprefixed_concepts(self.concepts, self.taxonomy_prefix),
+                "pdf_parse": _reprefixed_pdf_parse(self.pdf_parse, self.taxonomy_prefix),
+            }
+        )
 
     def repo_root(self, config_path: Path) -> Path:
         """Return the repository root given the loaded config file's path."""

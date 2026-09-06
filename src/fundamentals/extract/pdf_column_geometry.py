@@ -17,6 +17,19 @@ from fundamentals.extract.pdf_header_text import (
     normalize_header_tokens,
     normalize_text_tokens,
 )
+
+# Re-exported in the explicit ``as`` form: the parse error, the printed-unit
+# vocabulary, and the detector moved to ``pdf_printed_unit``, and the text and OCR
+# lanes still take them from here, unaffected by the split.
+from fundamentals.extract.pdf_printed_unit import (
+    NumberParseError as NumberParseError,
+)
+from fundamentals.extract.pdf_printed_unit import (
+    PdfPrintedUnit as PdfPrintedUnit,
+)
+from fundamentals.extract.pdf_printed_unit import (
+    _detect_unit_factor as _detect_unit_factor,
+)
 from fundamentals.ingest.pdf_source import LoadedPdf, PageWord, PdfPage
 
 DEFAULT_ROW_BAND_TOLERANCE_PT = 4.0
@@ -40,13 +53,6 @@ DEFAULT_MONTH_NAMES: tuple[str, ...] = (
     "November",
     "December",
 )
-
-# Monetary values are normalized to crore so they share the XBRL comparison key.
-_CRORE_PER_UNIT: dict[str, Decimal] = {
-    "crore": Decimal(1),
-    "lakh": Decimal("0.01"),
-    "million": Decimal("0.1"),
-}
 
 _NUMERIC_TOKEN = re.compile(r"^\(-?[\d,]+(?:\.\d+)?\)$|^-?[\d,]+(?:\.\d+)?$")
 _ORDINAL = re.compile(r"(\d)(st|nd|rd|th)\b", re.IGNORECASE)
@@ -97,10 +103,6 @@ _HEADER_KEYWORDS = frozenset(
 _MAX_PROSE_WORDS_IN_HEADER_BAND = 3
 
 _TITLE_MARKER_WORDS = frozenset({"statement", "results", "financial", "profit", "loss"})
-
-
-class NumberParseError(RuntimeError):
-    """Raised when a required statement page, column, unit, or line item is missing."""
 
 
 class ConsolidatedStatementNotFoundError(NumberParseError):
@@ -232,6 +234,7 @@ class PdfParseSpec(BaseModel):
     row_band_tolerance_pt: float = DEFAULT_ROW_BAND_TOLERANCE_PT
     column_x_tolerance_pt: float = DEFAULT_COLUMN_X_TOLERANCE_PT
     month_names: tuple[str, ...] = DEFAULT_MONTH_NAMES
+    printed_unit: PdfPrintedUnit | None = None
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -375,32 +378,6 @@ def _anchor_row_top(rows: list[list[PageWord]], spec: PdfParseSpec) -> float:
         if _is_subsequence(anchor_tokens, _normalize_tokens(_row_label(row))):
             return min(word.y0 for word in row)
     raise NumberParseError(f"anchor row {spec.anchor_label!r} not located on statement page")
-
-
-def _detect_unit_factor(header_words: tuple[PageWord, ...]) -> Decimal:
-    """Return the crore-conversion factor for the statement's printed unit.
-
-    The unit is read from the statement header (above the value rows), glyph- and
-    OCR-tolerant: the ``₹`` symbol is frequently mangled in the text layer, so only
-    the unit word (``crore``/``crores``/OCR ``crorc``, ``lakh``/``lac``,
-    ``million``) is matched. Exactly one unit family must be present; a missing or
-    ambiguous marker raises :class:`NumberParseError` rather than assuming a scale.
-    """
-    text = " ".join(word.text for word in header_words).lower()
-    # "cror"/"lakh"/"million" are distinctive enough to match without a leading word
-    # boundary, so an OCR word-join ("incrores") is still detected; the short,
-    # ambiguous "lac" keeps its boundaries (else it would match inside "black").
-    present = {
-        "crore": bool(re.search(r"cror", text)),
-        "lakh": bool(re.search(r"lakh|\blac\b|\blacs\b", text)),
-        "million": bool(re.search(r"million", text)),
-    }
-    families = [family for family, found in present.items() if found]
-    if len(families) != 1:
-        raise NumberParseError(
-            f"statement printed-unit marker is missing or ambiguous (found: {families})"
-        )
-    return _CRORE_PER_UNIT[families[0]]
 
 
 def _strip_ordinals(text: str) -> str:
