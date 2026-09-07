@@ -24,6 +24,7 @@ quarter:
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"
 store_db: "data/store/aparinds.sqlite"
+ledger_path: "data/ledger/aparinds-management-ledger.json"
 
 results_pdf:
   source_id: "aparinds-fy27-q1-results-pdf"
@@ -98,4 +99,3 @@ comparators:
     period_start: "2025-04-01"
     period_end: "2025-06-30"
     accept_taxonomy_drift: true
-

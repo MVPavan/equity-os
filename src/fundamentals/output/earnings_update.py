@@ -32,6 +32,7 @@ from fundamentals.contracts.comparative import (
 from fundamentals.contracts.fact import ReconciliationStatus
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.role import FactRole as FactRole
+from fundamentals.output.management_ledger import LedgerStatus, ManagementLedger
 
 _CRORE_UNIT = "INR crore"
 _PER_SHARE_UNIT = "INR per share"
@@ -177,6 +178,7 @@ class EarningsUpdate(BaseModel):
     cross_check: VerificationOutcome
     cross_foot: VerificationOutcome
     sec_cross_check_note: str
+    ledger: ManagementLedger | None = None
 
 
 def _format_value(value: Decimal, unit: str) -> str:
@@ -414,7 +416,26 @@ def render_earnings_update(update: EarningsUpdate) -> str:
 
     lines.append("## 5. management_ledger")
     lines.append("")
-    if update.guidance:
+    if update.ledger is not None:
+        for entry in update.ledger.entries:
+            unit = entry.unit if entry.unit == "%" else f" {entry.unit}"
+            cc = " constant currency" if entry.constant_currency else ""
+            markers = f"{notes.marker(entry.first.source)}{notes.marker(entry.latest.source)}"
+            line = (
+                f"- {entry.metric} **{entry.lower_bound}–{entry.upper_bound}{unit}{cc}** "
+                f"for {entry.horizon} — {entry.status.value} [FORECAST]{markers} — first quoted "
+                f'{entry.first.issuer_quarter}: "{entry.first.quote}"'
+            )
+            if entry.status in (LedgerStatus.REAFFIRMED, LedgerStatus.MODIFIED):
+                line += f'; restated {entry.latest.issuer_quarter}: "{entry.latest.quote}"'
+            elif entry.status is LedgerStatus.CARRIED:
+                line += f"; not restated in {update.ledger.updated_quarter}"
+            if entry.status is LedgerStatus.MODIFIED and entry.history:
+                previous = entry.history[-1]
+                line += f" (was {previous.lower_bound}–{previous.upper_bound})"
+            lines.append(line)
+        lines.append("")
+    elif update.guidance:
         lines.append(
             "Management commitments to track (each quote-anchored in the held transcript):"
         )
@@ -422,9 +443,10 @@ def render_earnings_update(update: EarningsUpdate) -> str:
         for claim in update.guidance:
             cc = " constant currency" if claim.constant_currency else ""
             marker = notes.marker(claim.source)
+            unit = claim.unit if claim.unit == "%" else f" {claim.unit}"
             lines.append(
                 f"- {claim.metric_label} **{claim.lower_bound}–{claim.upper_bound}"
-                f"{claim.unit}{cc}** for {claim.horizon} "
+                f"{unit}{cc}** for {claim.horizon} "
                 f"[FORECAST]{marker} — quoted: “{claim.quote}”"
             )
         lines.append("")

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, ConfigDict
 
@@ -31,7 +31,7 @@ from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ingest.pdf_source import LoadedPdf
 
-PERCENT_UNIT = "percent"
+PERCENT_UNIT = "%"
 FINANCIAL_YEAR_HORIZON = "FY25"
 CONSTANT_CURRENCY_QUALIFIER = "constant currency"
 _CONSTANT_CURRENCY_MARKER = "constant"
@@ -49,6 +49,7 @@ class GuidanceRule(BaseModel):
     metric: str
     pattern: str
     horizon: str
+    unit: str = PERCENT_UNIT
 
 
 # General default rule set (issuer config may override or extend it). These are
@@ -78,6 +79,8 @@ def _claim_for(
     Returns ``None`` when no block matches — guidance extraction is non-fatal.
     """
     matcher = re.compile(rule.pattern, re.IGNORECASE)
+    if matcher.groups not in (1, 2):
+        return None
     for page in pdf.pages:
         for block in page.blocks:
             match = matcher.search(block.text)
@@ -95,11 +98,18 @@ def _claim_for(
                 span=f"{match.start()}:{match.end()}",
                 retrieved_at=retrieved_at,
             )
+            try:
+                lower_bound = Decimal(match.group(1).replace(",", ""))
+                upper_bound = (
+                    lower_bound if matcher.groups == 1 else Decimal(match.group(2).replace(",", ""))
+                )
+            except (AttributeError, InvalidOperation):
+                continue
             return GuidanceClaim(
                 metric=rule.metric,
-                lower_bound=Decimal(match.group(1)),
-                upper_bound=Decimal(match.group(2)),
-                unit=PERCENT_UNIT,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                unit=rule.unit,
                 constant_currency=constant_currency,
                 horizon=rule.horizon,
                 scope=Scope.CONSOLIDATED,

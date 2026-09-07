@@ -289,7 +289,7 @@ def _guidance_claim(span: str) -> GuidanceClaim:
         metric="revenue_growth",
         lower_bound=Decimal("3"),
         upper_bound=Decimal("4"),
-        unit="percent",
+        unit="%",
         constant_currency=True,
         horizon="FY25",
         scope=Scope.CONSOLIDATED,

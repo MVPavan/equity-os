@@ -337,6 +337,7 @@ class GuidanceRuleConfig(BaseModel):
     label: str
     pattern: str
     horizon: str
+    unit: str = "%"
 
 
 def _default_role_concepts() -> tuple[RoleConceptConfig, ...]:
@@ -504,6 +505,7 @@ class FundamentalsConfig(BaseModel):
     quarter: QuarterConfig
     raw_dir: str
     store_db: str
+    ledger_path: str | None = None
     results_pdf: SourceFileConfig
     transcript_pdf: SourceFileConfig
     xbrl: XbrlConfig
@@ -558,6 +560,12 @@ class FundamentalsConfig(BaseModel):
         if self.store_db == ":memory:":
             return self.store_db
         return str(self.repo_root(config_path) / self.store_db)
+
+    def ledger_path_resolved(self, config_path: Path) -> Path | None:
+        """Resolve the optional management-ledger path against the repository root."""
+        if self.ledger_path is None:
+            return None
+        return self.repo_root(config_path) / self.ledger_path
 
 
 def load_config(config_path: Path) -> FundamentalsConfig:

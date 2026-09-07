@@ -151,14 +151,14 @@ def test_guidance_claims_extracted_with_bounds(transcript_pdf: LoadedPdf) -> Non
 
     revenue = by_metric["revenue_growth"]
     assert (revenue.lower_bound, revenue.upper_bound) == (Decimal("3"), Decimal("4"))
-    assert revenue.unit == "percent"
+    assert revenue.unit == "%"
     assert revenue.constant_currency is True
     assert revenue.horizon == "FY25"
     assert revenue.epistemic_class.value == "forecast"
 
     margin = by_metric["operating_margin"]
     assert (margin.lower_bound, margin.upper_bound) == (Decimal("20"), Decimal("22"))
-    assert margin.unit == "percent"
+    assert margin.unit == "%"
 
 
 def test_each_guidance_quote_span_exists_in_page_text(transcript_pdf: LoadedPdf) -> None:

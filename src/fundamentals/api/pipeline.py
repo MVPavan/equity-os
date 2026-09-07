@@ -23,6 +23,7 @@ Q1 fact aborts the render — no un-sourced number is ever emitted.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -43,6 +44,7 @@ from fundamentals.contracts.observation import (
 )
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.extract.guidance_extractor import (
+    PERCENT_UNIT,
     GuidanceExtractionError,
     GuidanceRule,
     extract_guidance_claims,
@@ -66,6 +68,7 @@ from fundamentals.output.earnings_update import (
     VerificationOutcome,
     render_earnings_update,
 )
+from fundamentals.output.management_ledger import load_ledger, reconcile_ledger, save_ledger
 from fundamentals.store.fact_store import FactStore, StoredRevision
 from fundamentals.verify.cross_check import CrossCheckResult, cross_check
 from fundamentals.verify.crossfoot import (
@@ -81,8 +84,6 @@ from fundamentals.verify.quote_anchor import (
 )
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
-
-_PERCENT_UNIT = "%"
 
 # Render roles whose sourced value the calculations section derives from.
 _REVENUE_ROLE = FactRole.REVENUE
@@ -209,13 +210,23 @@ def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
 
 
 def _claim_range_quote(claim: GuidanceClaim) -> str:
-    """Independent expected quote: the claim's own asserted percentage range.
+    """Independent expected quote: the claim's own asserted range or bound.
 
-    Used to actually test the quote anchor — the recorded span must contain the
-    claim's asserted range, so a mis-anchored span fails rather than tautologically
-    re-reading itself.
+    Used to actually test the quote anchor — the resolved span must carry the
+    claim's asserted numbers, so a mis-anchored span fails rather than
+    tautologically re-reading the stored quote. A percentage range is expected in
+    its ``x% to y%`` form when the transcript phrased it that way; otherwise the
+    lower bound as printed (plain or with thousands separators). A bound that
+    appears in neither form fails closed at the anchor.
     """
-    return f"{claim.lower_bound}% to {claim.upper_bound}%"
+    quote = claim.source_quote or ""
+    if claim.unit == PERCENT_UNIT and claim.lower_bound != claim.upper_bound:
+        range_text = f"{claim.lower_bound}% to {claim.upper_bound}%"
+        if not quote or range_text in quote:
+            return range_text
+    plain = str(claim.lower_bound)
+    grouped = f"{claim.lower_bound:,}"
+    return grouped if grouped in quote and plain not in quote else plain
 
 
 def _build_fact(
@@ -260,10 +271,11 @@ def _guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool
         return False
     if resolved_span_text != claim.source_quote:
         return False
-    return (
-        f"{claim.lower_bound}%" in claim.source_quote
-        and f"{claim.upper_bound}%" in claim.source_quote
-    )
+    numbers = {
+        Decimal(value.replace(",", ""))
+        for value in re.findall(r"\d[\d,]*(?:\.\d+)?", claim.source_quote)
+    }
+    return claim.lower_bound in numbers and claim.upper_bound in numbers
 
 
 def _source_document(pdf: LoadedPdf) -> SourceDocument:
@@ -425,7 +437,7 @@ def run_pipeline(
     # 6. Extract and quote-anchor management guidance. Extraction is non-fatal
     #    (no guidance -> empty), but any extracted claim must anchor or fail closed.
     guidance_rules = tuple(
-        GuidanceRule(metric=rule.metric, pattern=rule.pattern, horizon=rule.horizon)
+        GuidanceRule(metric=rule.metric, pattern=rule.pattern, horizon=rule.horizon, unit=rule.unit)
         for rule in config.guidance.rules
     )
     guidance_labels = {rule.metric: rule.label for rule in config.guidance.rules}
@@ -461,7 +473,7 @@ def run_pipeline(
                 metric_label=guidance_labels.get(claim.metric, claim.metric),
                 lower_bound=claim.lower_bound,
                 upper_bound=claim.upper_bound,
-                unit=_PERCENT_UNIT,
+                unit=claim.unit,
                 constant_currency=claim.constant_currency,
                 horizon=claim.horizon,
                 quote=quote,
@@ -469,6 +481,24 @@ def run_pipeline(
             )
         )
     log.info("guidance_anchored", claims=len(rendered_guidance))
+
+    ledger_path = (
+        config.ledger_path_resolved(config_path)
+        if config_path is not None
+        else Path(config.ledger_path)
+        if config.ledger_path is not None
+        else None
+    )
+    ledger = (
+        reconcile_ledger(
+            load_ledger(ledger_path),
+            symbol=config.issuer.nse_symbol,
+            issuer_quarter=config.quarter.issuer_quarter,
+            claims=guidance_claims,
+        )
+        if ledger_path is not None
+        else None
+    )
 
     # 7. Assemble the render inputs and the planned store writes WITHOUT touching
     #    the store yet: canonical promotion happens only after every gate AND the
@@ -568,6 +598,7 @@ def run_pipeline(
             total_count=len(cross_foot_results),
         ),
         sec_cross_check_note=sec_note,
+        ledger=ledger,
     )
     markdown = render_earnings_update(update)
 
@@ -581,6 +612,8 @@ def run_pipeline(
                 revision.row_id, reason="XBRL context-bound canonical for Q1 evidence"
             )
         stored_revisions.append(revision)
+    if ledger_path is not None and ledger is not None:
+        save_ledger(ledger, ledger_path)
     log.info("facts_stored", revisions=len(stored_revisions))
     log.info("pipeline_complete", markdown_bytes=len(markdown))
 
