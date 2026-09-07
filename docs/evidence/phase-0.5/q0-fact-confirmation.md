@@ -51,12 +51,20 @@ Anything management committed to that is missing from this list: _______________
 Filled after the judge model reports. Only divergent, material or low-confidence points appear
 here; everything the council members agreed on is adopted without your input.
 
-| # | The disagreement or flag | Judge's recommendation | Your ruling | Why |
-| --- | --- | --- | --- | --- |
-| | | | | |
+**DONE 2026-09-07.** The judge (GPT-6 Astra medium) put six divergences to the product owner.
+Ruling, verbatim: **"accept all"** — every judge recommendation accepted.
 
-Falsifiers you accept into the approved thesis: ______________________
-Falsifiers you reject, and why: ______________________
+| # | The disagreement | Judge's recommendation | Owner's ruling |
+| --- | --- | --- | :---: |
+| 1 | Profit-growth deceleration measured after tax or before tax | After tax, `pat_yoy_pct LT 14.90` | accepted |
+| 2 | Whether one quarter's sequential profit fall should fire | No; seasonality unidentified from three quarters | accepted |
+| 3 | Whether unusually high margins should count as weakening | No | accepted |
+| 4 | Whether the tax test should also cover a falling rate | No; adverse direction only, `GT 26.78` | accepted |
+| 5 | Whether earnings per share needs its own test | Yes; it catches dilution | accepted |
+| 6 | Whether to add an absolute revenue floor | No; the seasonal justification is unproven | accepted |
+
+Resulting approved set: five falsifiers, recorded in `q0-approved-thesis.md` and its machine
+twin `q0-approved-thesis.yaml` (SHA-256 `2ed9fd0f804da991249b9720f1c65909d5c66e22287a33ce80a0e962aa57c188`).
 
 ## Part 4 — Confirmation
 

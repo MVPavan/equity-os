@@ -1,0 +1,53 @@
+# APPROVED Q0 bootstrap thesis — Apar Industries Ltd (APARINDS), Q2 FY26.
+# Machine-readable twin of q0-approved-thesis.md. Read by `fundamentals thesis-impact`.
+# Approved by the product owner 2026-09-07, verbatim instruction "accept all".
+# Do not edit without issuing a new version; thesis-impact reports this file's sha256.
+symbol: "APARINDS"
+version: "1.0.0"
+approved_by: "PavanMV"
+approved_at: "2026-09-07"
+stance: "Constructive but conditional on continued company-level revenue and earnings growth, retention of the prior-year margin improvement, and positive per-share growth. The sequential profit decline in Q2 FY26 makes temporary margin pressure a hypothesis to test rather than an established fact."
+assumptions:
+  - "[FACT] Q2 FY26 combines strong year-on-year revenue and profit growth with sequential profit contraction: revenue rose 23.1 percent year on year and 12.0 percent sequentially, while PBT fell 3.4 percent and PAT fell 4.3 percent sequentially."
+  - "[FACT] Expenses grew faster than revenue sequentially, 13.1 percent against 12.0 percent, moving the expense-to-revenue ratio from 93.58 percent to 94.52 percent."
+  - "[SPECULATION] That sequential margin pressure is temporary rather than structural. This is the central uncertain assumption the three assisted quarters must test."
+  - "[INFERENCE] Retaining at least half of the Q0 revenue and PAT growth rates is sufficient to preserve the growth case."
+  - "[INFERENCE] Positive earnings-per-share growth is independently necessary for the shareholder case, because company-level profit growth can coexist with dilution."
+  - "[INFERENCE] An unusually high effective tax rate can impair the translation of PBT into PAT; the adverse direction only is tested."
+falsifiers:
+  - falsifier_id: "F1"
+    statement: "Revenue year-on-year growth falls below half its Q0 rate."
+    predicate:
+      metric_id: "revenue_yoy_pct"
+      op: "LT"
+      threshold: 11.55
+  - falsifier_id: "F2"
+    statement: "PBT margin falls below the approximate prior-year floor."
+    predicate:
+      metric_id: "pbt_margin_pct"
+      op: "LT"
+      threshold: 5.53
+  - falsifier_id: "F3"
+    statement: "PAT year-on-year growth falls below half its Q0 rate."
+    predicate:
+      metric_id: "pat_yoy_pct"
+      op: "LT"
+      threshold: 14.90
+  - falsifier_id: "F4"
+    statement: "Basic earnings per share fails to grow year on year."
+    predicate:
+      metric_id: "eps_yoy_pct"
+      op: "LTE"
+      threshold: 0
+  - falsifier_id: "F5"
+    statement: "Effective tax rate exceeds the recent-results upper tolerance of 26.78 percent."
+    predicate:
+      metric_id: "effective_tax_rate_pct"
+      op: "GT"
+      threshold: 26.78
+open_questions:
+  - "Neither management commitment is machine-checkable. Conductor EBITDA of 30,000 INR per metric ton needs a segment EBITDA and a conductor volume metric; cables revenue growth of 25 percent needs a cables segment revenue metric. Neither exists in the registry and neither was mapped onto a company-level metric."
+  - "Commitment horizons are undefined. The conductor guidance does not say when medium term is judged, nor whether 30,000 is a target, a floor or an average. The cables guidance does not fix the annual window, so quarterly year-on-year growth does not settle annual delivery."
+  - "Segment mix is the whole mechanism behind the margin move and the consolidated P&L cannot show it. Segment revenue and segment results are wanted."
+  - "Breach aggregation and recovery are undefined. Each quarter is evaluated independently; a falsifier that fires once and then recovers has no defined effect on the standing thesis."
+  - "No valuation basis. This is a business-performance thesis; nothing here establishes that the shares are attractive at any particular price."
