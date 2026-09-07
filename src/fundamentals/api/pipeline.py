@@ -119,6 +119,7 @@ class PipelineResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    update: EarningsUpdate
     markdown: str
     stored_revisions: tuple[StoredRevision, ...]
     cross_foot_results: tuple[CrossFootResult, ...]
@@ -499,7 +500,7 @@ def run_pipeline(
 
         sources: list[Provenance] = [xbrl_fact_obs.provenance]
         pdf_confirm = pdf_by_concept.get(concept)
-        if pdf_confirm is not None:
+        if concept in config.concepts.cross_check and pdf_confirm is not None:
             planned_writes.append(
                 _PlannedWrite(
                     fact=_build_fact(
@@ -567,6 +568,7 @@ def run_pipeline(
     log.info("pipeline_complete", markdown_bytes=len(markdown))
 
     return PipelineResult(
+        update=update,
         markdown=markdown,
         stored_revisions=tuple(stored_revisions),
         cross_foot_results=tuple(cross_foot_results),

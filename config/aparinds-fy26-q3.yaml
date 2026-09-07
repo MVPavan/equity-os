@@ -23,7 +23,7 @@ quarter:
 
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"
-store_db: ":memory:"
+store_db: "data/store/aparinds.sqlite"
 
 results_pdf:
   source_id: "aparinds-fy26-q3-results-pdf"

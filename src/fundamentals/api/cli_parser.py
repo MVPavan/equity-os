@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="override the configured XBRL retrieval mode (local | live)",
     )
     run.add_argument("--out", default=None, help="write the markdown to a file instead of stdout")
+    run.add_argument("--out-json", default=None, help="write the rendered update JSON to a file")
 
     validate = subparsers.add_parser(
         VALIDATE_COMMAND,

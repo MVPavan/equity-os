@@ -20,6 +20,7 @@ from pathlib import Path
 
 import structlog
 
+from fundamentals.api.artifact_writer import write_bytes_no_clobber
 from fundamentals.api.cli_parser import build_parser as _build_parser
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.entity_map_cli import (
@@ -138,7 +139,10 @@ def run_command(args: argparse.Namespace) -> PipelineResult:
     results_pdf_path = config.results_pdf_path(config_path)
     transcript_pdf_path = config.transcript_pdf_path(config_path)
 
-    store = FactStore(config.store_db_path(config_path))
+    store_db_path = config.store_db_path(config_path)
+    if store_db_path != ":memory:":
+        Path(store_db_path).parent.mkdir(parents=True, exist_ok=True)
+    store = FactStore(store_db_path)
     try:
         return run_pipeline(
             config=config,
@@ -228,6 +232,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     result = run_command(args)
+
+    if args.out_json:
+        write_bytes_no_clobber(
+            Path(args.out_json), result.update.model_dump_json(indent=2).encode("utf-8")
+        )
+        logger.info("json_artifact_written", out_json=args.out_json)
 
     if args.out:
         Path(args.out).write_text(result.markdown, encoding="utf-8")
