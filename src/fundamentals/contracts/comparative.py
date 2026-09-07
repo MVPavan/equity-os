@@ -22,6 +22,9 @@ class ComparatorKind(StrEnum):
     YOY = "YoY"
 
 
+TAXONOMY_DRIFT_PREFIX = "taxonomy drift: "
+
+
 class ComparativeChange(BaseModel):
     """One sourced prior value and its deterministic change from the current value."""
 
@@ -38,6 +41,7 @@ class ComparativeChange(BaseModel):
     prior_source: Provenance | None = None
     unavailable_reason: str | None = None
     percent_unavailable_reason: str | None = None
+    taxonomy_drift: str | None = None
 
     @model_validator(mode="after")
     def _validate_availability(self) -> ComparativeChange:
@@ -54,6 +58,7 @@ class ComparativeChange(BaseModel):
                     self.percent_trace,
                     self.prior_source,
                     self.percent_unavailable_reason,
+                    self.taxonomy_drift,
                 )
             ):
                 raise ValueError("an unavailable comparator cannot carry sourced calculations")

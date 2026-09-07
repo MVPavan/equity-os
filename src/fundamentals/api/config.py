@@ -17,6 +17,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.source_catalog import SourceClass
 from fundamentals.extract.guidance_extractor import DEFAULT_GUIDANCE_RULES
@@ -111,6 +112,27 @@ class XbrlConfig(BaseModel):
     # As-filed entity ids (keyed by id) accepted as the issuer's canonical id, applied
     # only under the issuer's own entity scheme so a wrong company's file still fails.
     entity_id_aliases: dict[str, str] = Field(default_factory=dict)
+
+
+class ComparatorInstanceConfig(BaseModel):
+    """One hash-pinned prior-quarter XBRL instance for a comparative."""
+
+    model_config = ConfigDict(frozen=True)
+
+    local_path: str
+    sha256: str
+    period_start: date
+    period_end: date
+    accept_taxonomy_drift: bool = False
+
+
+class ComparatorsConfig(BaseModel):
+    """Optional QoQ and YoY prior-quarter XBRL comparator instances."""
+
+    model_config = ConfigDict(frozen=True)
+
+    qoq: ComparatorInstanceConfig | None = None
+    yoy: ComparatorInstanceConfig | None = None
 
 
 class SecConfig(BaseModel):
@@ -485,6 +507,7 @@ class FundamentalsConfig(BaseModel):
     results_pdf: SourceFileConfig
     transcript_pdf: SourceFileConfig
     xbrl: XbrlConfig
+    comparators: ComparatorsConfig | None = None
     sec: SecConfig = Field(default_factory=SecConfig)
     pdf_parse: PdfParseConfig = Field(default_factory=PdfParseConfig)
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
@@ -520,6 +543,15 @@ class FundamentalsConfig(BaseModel):
     def xbrl_local_path(self, config_path: Path) -> Path:
         """Absolute path to the held/synthetic XBRL instance."""
         return self.repo_root(config_path) / self.xbrl.local_path
+
+    def comparator_path(self, config_path: Path, kind: ComparatorKind) -> Path | None:
+        """Resolve one declared comparator instance path against the repository root."""
+        if self.comparators is None:
+            return None
+        instance = self.comparators.qoq if kind is ComparatorKind.QOQ else self.comparators.yoy
+        if instance is None:
+            return None
+        return self.repo_root(config_path) / instance.local_path
 
     def store_db_path(self, config_path: Path) -> str:
         """Resolve the store DB path (``:memory:`` passes through)."""

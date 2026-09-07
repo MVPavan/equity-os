@@ -147,6 +147,7 @@ def run_command(args: argparse.Namespace) -> PipelineResult:
     try:
         return run_pipeline(
             config=config,
+            config_path=config_path,
             xbrl_input=xbrl_input,
             results_pdf_path=str(results_pdf_path),
             results_pdf_sha256=config.results_pdf.sha256,

@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.comparative import (
     PERCENT_CONTEXT_PRECISION,
+    TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,
     ConceptComparative,
 )
@@ -276,9 +277,14 @@ def _render_change(
     absolute_trace = (
         f"trace: {comparative.current_value}{current_markers} − {change.prior_value}{prior_marker}"
     )
+    drift_note = (
+        f" (taxonomy drift accepted: {change.taxonomy_drift.removeprefix(TAXONOMY_DRIFT_PREFIX)})"
+        if change.taxonomy_drift
+        else ""
+    )
     return (
         f"{prior}{prior_marker} ({period}); Δ {delta}{endpoint_markers}; {percent}",
-        f"{change.kind.value} {absolute_trace}{percent_trace}",
+        f"{change.kind.value} {absolute_trace}{percent_trace}{drift_note}",
     )
 
 

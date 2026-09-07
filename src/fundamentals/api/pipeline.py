@@ -32,6 +32,7 @@ import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.api.config import FundamentalsConfig
+from fundamentals.contracts.comparative import ConceptComparative
 from fundamentals.contracts.fact import CanonicalStatus, Fact, ReconciliationStatus
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
@@ -305,6 +306,7 @@ def _run_sec_cross_check(config: FundamentalsConfig) -> str:
 def run_pipeline(
     *,
     config: FundamentalsConfig,
+    config_path: Path | None = None,
     xbrl_input: XbrlInput,
     results_pdf_path: str,
     results_pdf_sha256: str,
@@ -529,6 +531,19 @@ def run_pipeline(
     # 8. Optional SEC retrospective annual cross-check (never footed against Q1).
     sec_note = _run_sec_cross_check(config)
 
+    comparatives: tuple[ConceptComparative, ...] = ()
+    if config.comparators is not None:
+        if config_path is None:
+            raise PipelineError("comparator config requires the run config path")
+        from fundamentals.api.run_comparatives import collect_run_comparatives
+
+        comparatives = collect_run_comparatives(
+            config,
+            config_path=config_path,
+            current={fact.concept_qname: role_obs[fact.role] for fact in rendered_facts},
+            current_sources={fact.concept_qname: fact.sources for fact in rendered_facts},
+        )
+
     # 9. Build the derived calculations and render the sourced 11-section update.
     #    Both must succeed before anything is committed (fail-closed transaction).
     calculations = _build_calculations(role_obs)
@@ -540,6 +555,8 @@ def run_pipeline(
         period_end=config.quarter.period_end.isoformat(),
         knowledge_cutoff=config.quarter.knowledge_cutoff.date().isoformat(),
         facts=tuple(rendered_facts),
+        comparatives=comparatives,
+        comparatives_attempted=config.comparators is not None,
         guidance=tuple(rendered_guidance),
         calculations=calculations,
         cross_check=VerificationOutcome(

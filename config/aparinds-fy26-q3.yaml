@@ -49,6 +49,7 @@ xbrl:
   entity_scheme_aliases:
     "http://www.nseindia.com/NSESymbol": "nse-symbol"
     "http://www.sebi.gov.in/in-capmkt/ScripCode": "nse-symbol"
+    "http://www.bseindia.com/in-capmkt/ScripCode": "nse-symbol"
   entity_id_aliases:
     "532259": "APARINDS"
 
@@ -93,3 +94,18 @@ concepts:
           concept_qname: "in-capmkt:Expenses"
         - sign: 1
           concept_qname: "in-capmkt:ExceptionalItemsBeforeTax"
+
+# Prior-quarter comparator instances (hash-pinned; sha256 from the retrieval manifest).
+comparators:
+  qoq:  # FY26_Q2
+    local_path: "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml"
+    sha256: "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799"
+    period_start: "2025-07-01"
+    period_end: "2025-09-30"
+    accept_taxonomy_drift: false
+  yoy:  # FY25_Q3
+    local_path: "data/raw/watchlist/aparinds/nse/INDAS_117941_1363971_29012025110018.xml"
+    sha256: "3ba61227e3341d1540504070c663eafe754f8b38fe918345a288fc4417337e5f"
+    period_start: "2024-10-01"
+    period_end: "2024-12-31"
+    accept_taxonomy_drift: true
