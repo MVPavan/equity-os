@@ -18,6 +18,7 @@ from fundamentals.api.screener_watchlist_corroborate_cli import (
     add_screener_watchlist_corroborate_parser,
 )
 from fundamentals.api.thesis_cli import THESIS_COMMAND, add_thesis_parser, add_wave_arg
+from fundamentals.api.thesis_impact_cli import add_thesis_impact_parser
 from fundamentals.api.three_source_cli import add_three_source_parser
 from fundamentals.api.tijori_analysis_cli import add_tijori_analysis_parser
 from fundamentals.api.tijori_events_cli import add_tijori_events_parser
@@ -141,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
         command=THESIS_COMMAND,
         default_watchlist_path=_DEFAULT_WATCHLIST_PATH,
     )
+    add_thesis_impact_parser(subparsers)
     add_news_parser(subparsers)
     add_adjudication_parser(subparsers)
     add_tijori_tables_parser(subparsers)
