@@ -317,7 +317,9 @@ class NseXbrlSource:
             raise XbrlFetchError(f"downloaded XBRL is not well-formed: {exc}") from exc
 
         scope_elements = _scope_elements(root)
-        if len(scope_elements) != 1 or (scope_elements[0].text or "").strip() != CONSOLIDATED_TEXT:
+        if not scope_elements or any(
+            (element.text or "").strip() != CONSOLIDATED_TEXT for element in scope_elements
+        ):
             raise XbrlFetchError("downloaded XBRL is not a consolidated filing")
 
         self._verify_issuer(root, isin=isin)
