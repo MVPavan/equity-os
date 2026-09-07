@@ -1,0 +1,18 @@
+# Machine-readable twin of q0-thesis-template.md — read by `fundamentals thesis-impact`.
+# Fill after the markdown thesis is approved; keep the two in step (same version).
+symbol: "APARINDS"
+version: "1.0.0"
+approved_by: "PavanMV"
+approved_at: "2026-__-__"
+stance: "<one line>"
+assumptions:
+  - "<assumption 1> [INFERENCE]"
+falsifiers:
+  - falsifier_id: "F1"
+    statement: "<what would break the thesis>"
+    predicate:
+      metric_id: "revenue_yoy_pct"   # one of the registered metric ids
+      op: "lt"                       # lt | lte | gt | gte | outside_band
+      threshold: 15                  # for outside_band use `band: [low, high]` instead
+open_questions:
+  - "<question>"
