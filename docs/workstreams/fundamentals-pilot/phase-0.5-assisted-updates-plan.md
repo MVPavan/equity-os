@@ -28,7 +28,7 @@ concall transcript; Q1–Q3 also have a press release. No quarter is missing a d
 | §F exit criterion | Infosys state | Apar state |
 |---|---|---|
 | Bootstrap thesis approved | DONE (A-11 v1.0.0) | NOT STARTED — owner writes it at Q0 |
-| Q0 manual baseline produced and reviewed | DONE (A-03), untimed | NOT STARTED — this time timed per A-07/A-13 |
+| Q0 baseline + bootstrap thesis produced and reviewed | DONE — A-03 facts owner-confirmed; A-11 thesis via the multi-model method | NOT STARTED — method reopened 2026-09-07, see §8 decision 2 |
 | Three assisted updates produced and reviewed | NOT STARTED | NOT STARTED |
 | Review times recorded (baseline + three) | NOT STARTED | NOT STARTED |
 | Claim-level telemetry, correction categories | NOT STARTED | INSTRUMENT BUILT 2026-09-07 (`fundamentals review`), no sessions yet |
@@ -81,10 +81,18 @@ stay in force. The Infosys Q0 artefacts stay on record as Phase 0A evidence; the
    (unit word garbled in Q4 FY26 and Q1 FY27; "Profit" garbled in Q2 FY26); Apar tags PBT after
    exceptional items and before associates; Q3 FY26's PDF cannot bind the post-exceptional PBT
    row, so that quarter's PDF cross-check covers four of the five headline figures.
-2. **Q0 manual baseline and bootstrap thesis (owner).** Timed manual pass over the Sep-2025
-   package producing the A-03-shaped baseline and an A-11-shaped thesis with explicit observable
-   falsifiers. The agent does not pre-compute anything for this step.
-   → verify: baseline record with elapsed minutes; thesis marked ANALYST-APPROVED.
+2. **Q0 baseline and bootstrap thesis (owner).** Produce the A-03-shaped fact baseline and an
+   A-11-shaped thesis with explicit observable falsifiers for the Sep-2025 package.
+   **CORRECTION 2026-09-07:** the first draft of this plan described step 2 as a *timed manual
+   pass* "per A-07/A-13". That misread both contracts. A-07 and A-13 each state in their own
+   approved text that Q0 "was executed via the multi-model method (bd memory
+   `methodology-q0-thesis-multimodel-2026-08-21`), **not** a timed manual pass", and that their
+   ceilings and targets are forward product-owner estimates **not** derived from observed manual
+   Q0 minutes. The standing product-owner method (2026-08-21) is: independent multi-model
+   generation, orchestrator cross-verification, and human adjudication of divergent, material and
+   low-confidence points only. The owner confirms the facts; the owner does not author the thesis.
+   → verify: fact baseline owner-confirmed; thesis marked ANALYST-APPROVED; adjudicated exceptions
+   listed with the owner's ruling on each.
 3. **Comparatives from stored facts.** Point the comparator at the retained instances so each
    update states QoQ and YoY with trace ids, fail-closed on a missing prior.
    **DONE 2026-09-07** (slice phase05-sB, commit d8f80b6). `comparators.qoq/yoy` blocks in the
@@ -151,6 +159,9 @@ housekeeping task to bring the register's A-rows in line with the 0A exit record
 
 1. Window as in §1 (Q0 = Sep-2025 manual, Q3 = Jun-2026 latest). Alternative: Q0 = Jun-2025 and
    four assisted quarters; more owner review time, one more package.
-2. Step 2 is a timed manual pass done by you before any assisted output exists for Apar. Confirm
-   you will do it, or say if Q0 should instead be assisted-with-full-review (weaker §F evidence).
+2. **(Reopened 2026-09-07 after the correction in §4 step 2.)** Confirm that the standing
+   2026-08-21 multi-model Q0 method extends to Apar, or choose another basis. The owner's Q0 work
+   under that method is fact confirmation plus exception adjudication, not authoring an analysis.
+   Falsifiers can be grounded in management's own quote-anchored commitments (the ledger built in
+   step 4), which turns adjudication into verification rather than valuation.
 3. Review time and per-claim dispositions recorded locally under `data/` as the B-04 instrument.
