@@ -181,6 +181,11 @@ class EarningsUpdate(BaseModel):
     ledger: ManagementLedger | None = None
 
 
+def _format_bounds(lower: Decimal, upper: Decimal) -> str:
+    """Render a guidance range, collapsing a point commitment to one value."""
+    return str(lower) if lower == upper else f"{lower}–{upper}"
+
+
 def _format_value(value: Decimal, unit: str) -> str:
     """Format a crore value with grouping (preserving decimals), or EPS to 2 dp."""
     if unit == _PER_SHARE_UNIT:
@@ -421,8 +426,9 @@ def render_earnings_update(update: EarningsUpdate) -> str:
             unit = entry.unit if entry.unit == "%" else f" {entry.unit}"
             cc = " constant currency" if entry.constant_currency else ""
             markers = f"{notes.marker(entry.first.source)}{notes.marker(entry.latest.source)}"
+            bounds = _format_bounds(entry.lower_bound, entry.upper_bound)
             line = (
-                f"- {entry.metric} **{entry.lower_bound}–{entry.upper_bound}{unit}{cc}** "
+                f"- {entry.metric} **{bounds}{unit}{cc}** "
                 f"for {entry.horizon} — {entry.status.value} [FORECAST]{markers} — first quoted "
                 f'{entry.first.issuer_quarter}: "{entry.first.quote}"'
             )
@@ -432,7 +438,7 @@ def render_earnings_update(update: EarningsUpdate) -> str:
                 line += f"; not restated in {update.ledger.updated_quarter}"
             if entry.status is LedgerStatus.MODIFIED and entry.history:
                 previous = entry.history[-1]
-                line += f" (was {previous.lower_bound}–{previous.upper_bound})"
+                line += f" (was {_format_bounds(previous.lower_bound, previous.upper_bound)})"
             lines.append(line)
         lines.append("")
     elif update.guidance:
@@ -445,7 +451,7 @@ def render_earnings_update(update: EarningsUpdate) -> str:
             marker = notes.marker(claim.source)
             unit = claim.unit if claim.unit == "%" else f" {claim.unit}"
             lines.append(
-                f"- {claim.metric_label} **{claim.lower_bound}–{claim.upper_bound}"
+                f"- {claim.metric_label} **{_format_bounds(claim.lower_bound, claim.upper_bound)}"
                 f"{unit}{cc}** for {claim.horizon} "
                 f"[FORECAST]{marker} — quoted: “{claim.quote}”"
             )
