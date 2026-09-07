@@ -35,6 +35,7 @@ from fundamentals.api.env_credentials import (
 from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_cli import dispatch_report_command
+from fundamentals.api.review_cli import dispatch_review_command
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     dispatch_screener_watchlist_corroborate_command,
@@ -221,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     report_exit_code = dispatch_report_command(args)
     if report_exit_code is not None:
         return report_exit_code
+
+    review_exit_code = dispatch_review_command(args)
+    if review_exit_code is not None:
+        return review_exit_code
 
     thesis_exit_code = dispatch_thesis_command(args)
     if thesis_exit_code is not None:

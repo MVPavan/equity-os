@@ -9,6 +9,7 @@ from fundamentals.api.adjudication_cli import add_adjudication_parser
 from fundamentals.api.config import XbrlMode
 from fundamentals.api.entity_map_cli import add_entity_map_parser
 from fundamentals.api.news_cli import add_news_parser
+from fundamentals.api.review_cli import add_review_parser
 from fundamentals.api.screener_company_cli import add_screener_company_parser
 from fundamentals.api.screener_financials_cli import add_screener_financials_parser
 from fundamentals.api.screener_page_cli import add_screener_page_parser
@@ -143,6 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
         default_watchlist_path=_DEFAULT_WATCHLIST_PATH,
     )
     add_thesis_impact_parser(subparsers)
+    add_review_parser(subparsers)
     add_news_parser(subparsers)
     add_adjudication_parser(subparsers)
     add_tijori_tables_parser(subparsers)
