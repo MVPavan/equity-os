@@ -99,3 +99,16 @@ comparators:
     period_start: "2024-07-01"
     period_end: "2024-09-30"
     accept_taxonomy_drift: true
+
+# Management guidance rules (transcript lines spoken by management; see the ledger).
+guidance:
+  rules:
+    - metric: conductor_ebitda_per_mt
+      label: Conductor EBITDA per metric ton guidance
+      pattern: 'guidance of ([\d,]+) per metric ton'
+      unit: INR per MT
+      horizon: medium_term
+    - metric: cables_revenue_growth
+      label: Cables revenue growth guidance
+      pattern: 'guiding a growth of (\d+)% year on'
+      horizon: annual

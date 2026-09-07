@@ -99,3 +99,11 @@ comparators:
     period_start: "2025-04-01"
     period_end: "2025-06-30"
     accept_taxonomy_drift: true
+
+# Management guidance rules (transcript lines spoken by management; see the ledger).
+guidance:
+  rules:
+    - metric: cables_ebitda_margin
+      label: Cables EBITDA margin guidance
+      pattern: 'guidance that we give, about (\d+)% to (\d+)%'
+      horizon: annual

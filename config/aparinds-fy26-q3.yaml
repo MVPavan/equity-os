@@ -110,3 +110,15 @@ comparators:
     period_start: "2024-10-01"
     period_end: "2024-12-31"
     accept_taxonomy_drift: true
+
+# Management guidance rules (transcript lines spoken by management; see the ledger).
+guidance:
+  rules:
+    - metric: cables_revenue_growth
+      label: Cables revenue growth guidance
+      pattern: 'tracking on a (\d+)%-plus CAGR growth'
+      horizon: annual
+    - metric: cables_ebitda_margin
+      label: Cables EBITDA margin guidance
+      pattern: 'guiding about ([\d.]+)%, ([\d.]+)%'
+      horizon: annual
