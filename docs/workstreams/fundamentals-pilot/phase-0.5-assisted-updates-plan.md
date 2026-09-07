@@ -142,6 +142,34 @@ four days of agent work (test-first, Opus subagents, one slice each). Step 7 is 
 sessions at the 20-minute ceiling plus the drill, and half a day of agent work for the matrix and
 register update. Roughly one and a half weeks of agent work plus five owner sessions.
 
+## 5b. Where everything is stored
+
+One rule decides the location: **a human decision is committed to git; anything a deterministic
+pipeline can rebuild from hash-pinned sources is not.**
+
+| What | Where | In git? | Why |
+|---|---|---|---|
+| Approved thesis, its machine twin, the fact-confirmation record, council source generations | `docs/evidence/phase-0.5/` | **yes** | Human decisions and attestations. Cannot be regenerated. |
+| Retrieval manifest (URL, SHA-256, filing date, byte count for all 23 held documents) | `docs/evidence/phase-0.5/apar-retrieval-manifest.json` | **yes** | Makes every held source auditable and re-fetchable. Contains no document content and no credentials. Follows the Infosys A-05 precedent. |
+| Held source documents: XBRL instances, results PDFs, transcripts, presentations | `data/raw/watchlist/aparinds/` | no | Issuer documents, ~155 MB, private use only under A05-DECISION-005. Never committed, never sent to a model. Pinned by SHA-256 in the manifest above. |
+| Generated earnings-update reports, markdown and JSON | `data/reports/aparinds/<FYxx_Qn>/` | no | Deterministic output of hash-pinned inputs. Regenerate rather than store; the approval record pins the exact one by SHA-256. |
+| Append-only fact store | `data/store/aparinds.sqlite` | no | Rebuildable by replaying the quarters. |
+| Management ledger | `data/ledger/aparinds-management-ledger.json` | no | Rebuildable by replaying the window in order. |
+| Review sessions: session, summary, approval record | `data/review/aparinds/<FYxx_Qn>/` | no while in progress | Working state of a review in progress. |
+| Signed approval records and review summaries, once a review is finished | `docs/evidence/phase-0.5/` | **yes** | The §F evidence about review time and correction categories. Copy them in when the review is signed. |
+| Work tracking | `.beads/` | **yes** (JSONL export) | Bead state. |
+
+**The consequence worth understanding.** `data/` is entirely gitignored, so a clone of this
+repository does not carry the source documents or any report. What a clone does carry is enough
+to prove and rebuild everything: the manifest fixes every source by hash, the configs pin the
+comparators by hash, and the pipeline is deterministic. A regenerated report whose SHA-256 matches
+the one named in an approval record is the same report the owner approved.
+
+**The single point of failure** is `data/raw/watchlist/aparinds/`. It is 155 MB of issuer
+documents retrieved once under a one-time authorisation, and it is not in git and not backed up.
+Losing it means re-retrieving from NSE, and older filings are not guaranteed to remain available.
+Back it up outside the repository.
+
 ## 6. Out of scope
 
 Screener, Tijori and Upstox for Apar (the update is first-party only: NSE XBRL, results PDF,

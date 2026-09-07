@@ -1,0 +1,238 @@
+{
+ "issuer": "APARINDS",
+ "authorization": "A-02 v2 + A02-ATTEST-002 (2026-09-06); owner-directed one-time NSE retrieval, private/internal only",
+ "method": "NseIndiaApi download_document, sequential, 3 s delay",
+ "retrieved_at_utc_date": "2026-09-06",
+ "entries": [
+  {
+   "quarter": "FY26_Q2",
+   "kind": "xbrl-consolidated",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml",
+   "sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+   "bytes": 75042,
+   "filed_at_nse": "29-Oct-2025 20:58:58",
+   "retrieved_at": "2026-09-06T15:31:21.335436+00:00"
+  },
+  {
+   "quarter": "FY26_Q3",
+   "kind": "xbrl-consolidated",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1613642_29012026072210_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1613642_29012026072210_WEB.xml",
+   "sha256": "87a5dd9583b582132c7c42c9cb6edcbc799372e3772efab19a0ba440f4fcc548",
+   "bytes": 52305,
+   "filed_at_nse": "29-Jan-2026 19:22:09",
+   "retrieved_at": "2026-09-06T15:31:24.906896+00:00"
+  },
+  {
+   "quarter": "FY26_Q4",
+   "kind": "xbrl-consolidated",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml",
+   "sha256": "be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01",
+   "bytes": 83576,
+   "filed_at_nse": "28-May-2026 20:51:11",
+   "retrieved_at": "2026-09-06T15:31:27.933204+00:00"
+  },
+  {
+   "quarter": "FY27_Q1",
+   "kind": "xbrl-consolidated",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml",
+   "sha256": "f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85",
+   "bytes": 35083,
+   "filed_at_nse": "24-Jul-2026 18:33:13",
+   "retrieved_at": "2026-09-06T15:31:30.984308+00:00"
+  },
+  {
+   "quarter": "FY26_Q3",
+   "kind": "transcript",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_04022026144737_SubmissionofConcallTranscript.pdf",
+   "filename": "APARINDS-FY26_Q3-transcript.pdf",
+   "sha256": "66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02",
+   "bytes": 801240,
+   "filed_at_nse": "04-Feb-2026 14:48:22",
+   "retrieved_at": "2026-09-06T15:31:34.110035+00:00"
+  },
+  {
+   "quarter": "FY26_Q4",
+   "kind": "transcript",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDSSM_04062026161204_SubmissionofConcallTranscript.pdf",
+   "filename": "APARINDS-FY26_Q4-transcript.pdf",
+   "sha256": "69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c",
+   "bytes": 894450,
+   "filed_at_nse": "04-Jun-2026 16:13:48",
+   "retrieved_at": "2026-09-06T15:31:37.186643+00:00"
+  },
+  {
+   "quarter": "FY26_Q2",
+   "kind": "transcript",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_06112025120344_SubmissionofConcallTranscript.pdf",
+   "filename": "APARINDS-FY26_Q2-transcript.pdf",
+   "sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+   "bytes": 394109,
+   "filed_at_nse": "06-Nov-2025 12:05:34",
+   "retrieved_at": "2026-09-06T15:31:40.243532+00:00"
+  },
+  {
+   "quarter": "FY27_Q1",
+   "kind": "results",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_24072026124119_OutcomeofBoardmeeting.pdf",
+   "filename": "APARINDS-FY27_Q1-results.pdf",
+   "sha256": "c0c2b2fa5510a776331c2092f03301c65dbea5a98ee42ecbc31f768513278612",
+   "bytes": 2476687,
+   "filed_at_nse": "24-Jul-2026 12:41:56",
+   "retrieved_at": "2026-09-06T15:31:44.167872+00:00"
+  },
+  {
+   "quarter": "FY27_Q1",
+   "kind": "presentation",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_24072026131910_Earningscallupdate.pdf",
+   "filename": "APARINDS-FY27_Q1-presentation.pdf",
+   "sha256": "d5d15f408461cfe114faa34e8292b2381c80125d4a25b2edea91bdcbe01f10d3",
+   "bytes": 818806,
+   "filed_at_nse": "24-Jul-2026 13:35:41",
+   "retrieved_at": "2026-09-06T15:31:47.278011+00:00"
+  },
+  {
+   "quarter": "FY26_Q4",
+   "kind": "results",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_28052026142649_OutcomeofBoardMeeting.pdf",
+   "filename": "APARINDS-FY26_Q4-results.pdf",
+   "sha256": "17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377",
+   "bytes": 7594254,
+   "filed_at_nse": "28-May-2026 14:27:59",
+   "retrieved_at": "2026-09-06T15:31:50.624486+00:00"
+  },
+  {
+   "quarter": "FY26_Q4",
+   "kind": "press-release",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_28052026144035_OutcomeofBoardMeeting.pdf",
+   "filename": "APARINDS-FY26_Q4-press-release.pdf",
+   "sha256": "17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377",
+   "bytes": 7594254,
+   "filed_at_nse": "28-May-2026 14:40:53",
+   "retrieved_at": "2026-09-06T15:31:54.297117+00:00"
+  },
+  {
+   "quarter": "FY26_Q4",
+   "kind": "presentation",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_28052026145725_IntimationofInvestorsUpdate.pdf",
+   "filename": "APARINDS-FY26_Q4-presentation.pdf",
+   "sha256": "1deb9bd637c1cb29ca96c251fc619856a054a8f457fd0c096e5f25c47ddcd432",
+   "bytes": 961436,
+   "filed_at_nse": "28-May-2026 14:57:37",
+   "retrieved_at": "2026-09-06T15:31:57.336704+00:00"
+  },
+  {
+   "quarter": "FY26_Q3",
+   "kind": "results",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29012026130207_OutcomeofBoardMeeting.pdf",
+   "filename": "APARINDS-FY26_Q3-results.pdf",
+   "sha256": "2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699",
+   "bytes": 2682239,
+   "filed_at_nse": "29-Jan-2026 13:06:48",
+   "retrieved_at": "2026-09-06T15:32:00.494360+00:00"
+  },
+  {
+   "quarter": "FY26_Q3",
+   "kind": "press-release",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29012026131604_OutcomeofBoardMeeting.pdf",
+   "filename": "APARINDS-FY26_Q3-press-release.pdf",
+   "sha256": "2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699",
+   "bytes": 2682239,
+   "filed_at_nse": "29-Jan-2026 13:16:34",
+   "retrieved_at": "2026-09-06T15:32:05.835460+00:00"
+  },
+  {
+   "quarter": "FY26_Q3",
+   "kind": "presentation",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29012026133546_IntimationofInvestorUpdate.pdf",
+   "filename": "APARINDS-FY26_Q3-presentation.pdf",
+   "sha256": "a065afebf0d8ca16a68cf21ca7038e6382593f509b5ce9c4e4b1e2c0a1b464a3",
+   "bytes": 917378,
+   "filed_at_nse": "29-Jan-2026 13:36:17",
+   "retrieved_at": "2026-09-06T15:32:09.009806+00:00"
+  },
+  {
+   "quarter": "FY26_Q2",
+   "kind": "results",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29102025133102_OutcomeofBM.pdf",
+   "filename": "APARINDS-FY26_Q2-results.pdf",
+   "sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+   "bytes": 4259138,
+   "filed_at_nse": "29-Oct-2025 13:33:43",
+   "retrieved_at": "2026-09-06T15:32:12.221708+00:00"
+  },
+  {
+   "quarter": "FY26_Q2",
+   "kind": "press-release",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29102025133636_OutcomeofBM.pdf",
+   "filename": "APARINDS-FY26_Q2-press-release.pdf",
+   "sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+   "bytes": 4259138,
+   "filed_at_nse": "29-Oct-2025 13:37:46",
+   "retrieved_at": "2026-09-06T15:32:16.161707+00:00"
+  },
+  {
+   "quarter": "FY26_Q2",
+   "kind": "presentation",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDS_29102025152646_Investorupdate.pdf",
+   "filename": "APARINDS-FY26_Q2-presentation.pdf",
+   "sha256": "5c936402bf9d133c49cb6ee7d098709ba938ceaebd650baf23ba22efda8cbca4",
+   "bytes": 969923,
+   "filed_at_nse": "29-Oct-2025 15:27:37",
+   "retrieved_at": "2026-09-06T15:32:19.275766+00:00"
+  },
+  {
+   "quarter": "FY27_Q1",
+   "kind": "transcript",
+   "url": "https://nsearchives.nseindia.com/corporate/APARINDSSM_31072026154353_SubmissionofConcallTranscript.pdf",
+   "filename": "APARINDS-FY27_Q1-transcript.pdf",
+   "sha256": "78a312c86f58ea515f3eea3763e02a1e977104f282256e774e428d2a898304e5",
+   "bytes": 507238,
+   "filed_at_nse": "31-Jul-2026 15:44:41",
+   "retrieved_at": "2026-09-06T15:32:22.362024+00:00"
+  },
+  {
+   "quarter": "FY25_Q2",
+   "kind": "xbrl-consolidated-comparator",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_113920_1293440_30102024104705.xml",
+   "filename": "INDAS_113920_1293440_30102024104705.xml",
+   "sha256": "c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60",
+   "bytes": 76088,
+   "filed_at_nse": "2024-10-30T10:47:06+00:00",
+   "retrieved_at": "2026-09-07T04:05:40.301807+00:00"
+  },
+  {
+   "quarter": "FY25_Q3",
+   "kind": "xbrl-consolidated-comparator",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_117941_1363971_29012025110018.xml",
+   "filename": "INDAS_117941_1363971_29012025110018.xml",
+   "sha256": "3ba61227e3341d1540504070c663eafe754f8b38fe918345a288fc4417337e5f",
+   "bytes": 51485,
+   "filed_at_nse": "2025-01-29T11:00:18+00:00",
+   "retrieved_at": "2026-09-07T04:05:42.404899+00:00"
+  },
+  {
+   "quarter": "FY25_Q4",
+   "kind": "xbrl-consolidated-comparator",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1439170_14052025093124_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1439170_14052025093124_WEB.xml",
+   "sha256": "943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2",
+   "bytes": 78590,
+   "filed_at_nse": "2025-05-14T21:31:25+00:00",
+   "retrieved_at": "2026-09-07T04:05:41.708750+00:00"
+  },
+  {
+   "quarter": "FY26_Q1",
+   "kind": "xbrl-consolidated-comparator",
+   "url": "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml",
+   "filename": "INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml",
+   "sha256": "a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1",
+   "bytes": 34297,
+   "filed_at_nse": "2025-07-29T18:24:46+00:00",
+   "retrieved_at": "2026-09-07T04:05:42.301527+00:00"
+  }
+ ]
+}
