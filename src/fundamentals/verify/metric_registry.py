@@ -287,7 +287,7 @@ def _resolve_comparative(
     )
     return MetricValue(
         metric_id=definition.metric_id,
-        value=change.percent_change,
+        value=change.percent_change.quantize(_DERIVED_QUANTUM),
         unit=definition.unit,
         trace=change.percent_trace,
         sources=sources,
