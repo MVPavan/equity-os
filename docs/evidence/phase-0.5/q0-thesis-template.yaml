@@ -12,7 +12,7 @@ falsifiers:
     statement: "<what would break the thesis>"
     predicate:
       metric_id: "revenue_yoy_pct"   # one of the registered metric ids
-      op: "lt"                       # lt | lte | gt | gte | outside_band
-      threshold: 15                  # for outside_band use `band: [low, high]` instead
+      op: "LT"                       # LT | LTE | GT | GTE | OUTSIDE_BAND
+      threshold: 15                  # for OUTSIDE_BAND use `band: [low, high]` instead
 open_questions:
   - "<question>"

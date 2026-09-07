@@ -18,6 +18,7 @@ _CRORE_UNIT = "INR crore"
 _PER_SHARE_UNIT = "INR per share"
 _MISSING_ROLE_REASON = "required role is absent from the earnings update"
 _ZERO_DENOMINATOR_REASON = "metric denominator is zero"
+_DERIVED_QUANTUM = Decimal("0.01")
 
 
 class MetricKind(StrEnum):
@@ -319,7 +320,7 @@ def _resolve_derived(
         trace = f"{numerator.value} / {denominator.value} * {definition.scale}"
     return MetricValue(
         metric_id=definition.metric_id,
-        value=numerator_value / denominator.value * definition.scale,
+        value=(numerator_value / denominator.value * definition.scale).quantize(_DERIVED_QUANTUM),
         unit=definition.unit,
         trace=trace,
         sources=sources,

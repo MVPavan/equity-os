@@ -24,8 +24,8 @@ Tag every point [FACT] / [INFERENCE] / [SPECULATION].
 Each falsifier needs a metric the pipeline can compute and a rule. Registered metrics:
 revenue_crore, total_income_crore, total_expenses_crore, pbt_crore, pat_crore, eps_basic_inr,
 revenue_qoq_pct, revenue_yoy_pct, pbt_qoq_pct, pbt_yoy_pct, pat_qoq_pct, pat_yoy_pct,
-eps_yoy_pct, pbt_margin_pct, pat_margin_pct, effective_tax_rate_pct. Rules: lt, lte, gt, gte,
-outside_band.
+eps_yoy_pct, pbt_margin_pct, pat_margin_pct, effective_tax_rate_pct. Rules: LT, LTE, GT, GTE,
+OUTSIDE_BAND.
 - F1: "<statement>" — metric ____, rule ____, threshold ____
 - F2:
 - F3:
