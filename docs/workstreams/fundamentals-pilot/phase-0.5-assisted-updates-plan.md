@@ -31,9 +31,9 @@ concall transcript; Q1–Q3 also have a press release. No quarter is missing a d
 | Q0 manual baseline produced and reviewed | DONE (A-03), untimed | NOT STARTED — this time timed per A-07/A-13 |
 | Three assisted updates produced and reviewed | NOT STARTED | NOT STARTED |
 | Review times recorded (baseline + three) | NOT STARTED | NOT STARTED |
-| Claim-level telemetry, correction categories | NOT STARTED | NOT STARTED |
+| Claim-level telemetry, correction categories | NOT STARTED | INSTRUMENT BUILT 2026-09-07 (`fundamentals review`), no sessions yet |
 | Source-of-truth matrix | NOT DONE | NOT DONE |
-| Fact identity/revision rules, registries | PARTIAL (append-only fact store; no metric registry) | same |
+| Fact identity/revision rules, registries | PARTIAL (append-only fact store; no metric registry) | PARTIAL — metric registry + frozen predicate registry landed 2026-09-07 (`verify/metric_registry.py`, `verify/thesis_predicates.py`) |
 | Rejected-claim rework path, package versioning | NOT DONE | NOT DONE |
 | Point-in-time capture started | DONE 2026-09-05 | DONE (reuse the snapshot store) |
 | Golden cases automated | PARTIAL (watchlist gold only) | NOT STARTED for Apar |
@@ -87,12 +87,32 @@ stay in force. The Infosys Q0 artefacts stay on record as Phase 0A evidence; the
    → verify: baseline record with elapsed minutes; thesis marked ANALYST-APPROVED.
 3. **Comparatives from stored facts.** Point the comparator at the retained instances so each
    update states QoQ and YoY with trace ids, fail-closed on a missing prior.
+   **DONE 2026-09-07** (slice phase05-sB, commit d8f80b6). `comparators.qoq/yoy` blocks in the
+   four Apar configs pin the prior instances by sha256; taxonomy drift (in-bse-fin → in-capmkt,
+   2025 → 2026 revision) is accepted per instance and printed once in the §3 trace. All four
+   window quarters render QoQ and YoY for every P&L line with no unavailable row.
 4. **Management ledger across quarters.** Carry each guidance/commitment claim from quarter N
    into N+1 with transcript anchors on both ends (new / reaffirmed / modified / met / missed).
+   **DONE 2026-09-07** (slice phase05-sC, commits 1755670, 7ee9a6b). Ledger at
+   `data/ledger/aparinds-management-ledger.json`; statuses NEW / REAFFIRMED / MODIFIED / CARRIED
+   (met / missed is the predicate evaluator's job, step 5). Guidance rules are per-config and
+   transcript-derived (management-spoken lines only). Operating rule: the ledger only accepts a
+   later quarter, so a re-run of an already-recorded quarter requires deleting the ledger file
+   and replaying the window in order (Q2-FY26 → Q3-FY26 → Q4-FY26 → Q1-FY27); follow-up bead filed.
 5. **Thesis impact against the approved prior thesis.** For each falsifier in the Q0 thesis,
    evaluate stored facts → strengthened / weakened / unchanged / unresolved with fact ids.
+   **DONE 2026-09-07** (slice phase05-sD, commits b1869ae, e7ec02a, 835357d). Dispositions are
+   WEAKENED / HELD / UNRESOLVED (deterministic; "strengthened" is analyst narrative, not a
+   predicate). `fundamentals thesis-impact --report-json <run --out-json> --thesis
+   docs/evidence/phase-0.5/<approved thesis>.yaml --out <md>`; exit 1 when any falsifier is
+   WEAKENED. Smoke-tested on the real Q3 FY26 and Q1 FY27 artifacts.
 6. **Review telemetry and approval record (B-04, B-13).** `review` command: session start/stop,
    per-claim disposition and correction category, approval record beside the report.
+   **DONE 2026-09-07** (slice phase05-sE, commit 1cdac76). `fundamentals review start --report-json
+   <json> --session <dir>`, `review list`, `review claim --claim <id> --disposition accepted|edited|
+   rejected|deferred [--category …] [--seconds N] [--note …]`, `review finish --decision
+   approved|rejected --decider "<name>" --verbatim "<text>"` writes `summary.json` and
+   `approval_record.md`; instrumentation overhead is measured and reported.
 7. **Run the three assisted updates in order,** owner reviewing each before the next is generated;
    seeded-error drill on one report; then write the source-of-truth matrix and claim schema from
    the evidence produced, re-score §F, and update the register rows.
@@ -101,6 +121,11 @@ Steps 3–6 carry the same verification lines as the Infosys draft (fail-closed 
 anchors resolve on both ends, every falsifier gets exactly one disposition, record carries total
 minutes and per-claim time). Steps 3, 4, 5, 6 are independent of each other and can run as
 parallel slices once step 1 lands; step 7 needs all of them.
+
+Build record for steps 3–6 (2026-09-07): one red-proof acceptance file per slice authored by
+Opus, implementation by Codex gpt-5.6-terra (owner directive), gate `scripts/verify.sh gate
+<slice>` PASS on every commit (1848 tests green, ruff, mypy --strict, skips at baseline). Step 7
+is now unblocked by the agent side; it waits on step 2 (owner Q0).
 
 ## 5. Estimate
 
