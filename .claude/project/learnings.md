@@ -263,3 +263,15 @@ Format per entry:
   can be garbled. Declare `pdf_parse.printed_unit` (fills a missing marker only) and
   `pdf_parse.label_overrides`; a row whose label is split across text lines cannot be bound
   and must be excluded from `concepts.cross_check` for that quarter with a comment.
+
+## 2026-09-07 — Codex implementer sandbox and the full-suite gate
+- The Codex `--role implement` sandbox has no network, so `tests/fundamentals/test_sec.py`
+  reports 7 "SEC EDGAR unreachable" skips and `scripts/verify.sh gate` prints
+  `skips FAIL 15 > baseline 8 / ROUTE: CONTRACT`. Tell the implementer up front that this
+  exact signature is environmental; the orchestrator re-runs the gate with network before
+  committing. Any other new skip is real.
+- The gate runs the whole suite, so a second slice's red acceptance file in
+  `tests/fundamentals/` pollutes the running implementer's gate. Record the red proof at the
+  tree path (a few seconds), then park the file in `scratchpad/phase05/staged/` until that
+  slice is dispatched; moving it back restores the proof hash. Test authors write to the
+  staged path directly and locate the repo root by walking up to `config/fundamentals.yaml`.
