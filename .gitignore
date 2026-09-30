@@ -79,3 +79,6 @@ docs/goals/reviews/ledger/inventory/SEQ-08/
 
 # Workspace-local uv cache: the codex sandbox mounts the real one read-only.
 .uv-cache/
+
+# bd 1.3.0 lock files (never delete while bd runs)
+*.gate.lock*
