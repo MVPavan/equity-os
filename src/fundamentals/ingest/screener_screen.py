@@ -310,13 +310,14 @@ def acquire_screen(
         except ScreenerSessionError as error:
             if not documents:
                 raise
+            detail = str(error)
             return _incomplete(
                 query,
                 expected_columns,
                 all_rows,
                 pages,
                 documents,
-                str(error),
+                detail if detail.strip() else type(error).__name__,
                 page=page,
                 url=url,
                 error=error,
