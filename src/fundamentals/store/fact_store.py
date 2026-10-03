@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import assert_never
 
@@ -75,10 +75,6 @@ _CREATE_UNIQUE_INDEX = (
 
 _SELECT_BY_IDENTITY = "SELECT * FROM facts WHERE content_identity = ? ORDER BY revision_ordinal ASC"
 _SELECT_BY_IDENTITY_VALUE = "SELECT * FROM facts WHERE content_identity = ? AND value_hash = ?"
-_SELECT_CANONICAL_FOR_IDENTITY = (
-    "SELECT * FROM facts WHERE content_identity = ? AND canonical_status = ?"
-)
-_SELECT_ALL_CANONICAL = "SELECT * FROM facts WHERE canonical_status = ? ORDER BY row_id ASC"
 _SELECT_BY_ROW_ID = "SELECT * FROM facts WHERE row_id = ?"
 _SELECT_MAX_ORDINAL = (
     "SELECT MAX(revision_ordinal) AS max_ordinal FROM facts WHERE content_identity = ?"
@@ -94,15 +90,56 @@ INSERT INTO {_TABLE} (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-_UPDATE_STATUS = (
-    "UPDATE facts SET canonical_status = ?, canonical_selected_at = ?, "
-    "canonical_reason = ? WHERE row_id = ?"
+_CREATE_SELECTIONS = """
+CREATE TABLE IF NOT EXISTS canonical_selections (
+    selection_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_identity TEXT NOT NULL,
+    row_id INTEGER NOT NULL REFERENCES facts(row_id),
+    sequence INTEGER NOT NULL,
+    predecessor_id INTEGER REFERENCES canonical_selections(selection_id),
+    selected_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    legacy_baseline INTEGER NOT NULL,
+    selection_sha256 TEXT NOT NULL,
+    UNIQUE(content_identity, sequence),
+    UNIQUE(content_identity, selected_at),
+    UNIQUE(predecessor_id)
 )
-_DEMOTE_STATUS = (
-    "UPDATE facts SET canonical_status = ?, canonical_selected_at = ?, "
-    "canonical_reason = ? WHERE content_identity = ? AND canonical_status = ? "
-    "AND row_id != ?"
-)
+"""
+_HISTORY = "SELECT * FROM canonical_selections WHERE content_identity = ? ORDER BY sequence"
+_APPEND_SELECTION = """
+INSERT INTO canonical_selections (
+    content_identity, row_id, sequence, predecessor_id, selected_at, reason,
+    legacy_baseline, selection_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+class CanonicalSelectionError(ValueError):
+    """A selection is ineligible, ambiguous, backdated, or based on a stale head."""
+
+
+class CanonicalSelection(BaseModel):
+    """One immutable selection; legacy baselines do not reconstruct lost history."""
+
+    model_config = ConfigDict(frozen=True)
+
+    selection_id: int
+    content_identity: str
+    row_id: int
+    sequence: int
+    predecessor_id: int | None
+    selected_at: datetime
+    reason: str
+    legacy_baseline: bool
+    selection_sha256: str
+
+
+def _utc(value: datetime) -> datetime:
+    """Reject naive/non-UTC temporal inputs instead of guessing their meaning."""
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ValueError("temporal timestamps must be aware UTC")
+    return value.astimezone(UTC)
 
 
 class UnprovenancedFactError(ValueError):
@@ -137,8 +174,8 @@ _BARRED_ANCHOR_WHY: dict[SourceAnchorType, str] = {
 class StoredRevision(BaseModel):
     """One persisted, retained revision within a revision family.
 
-    ``canonical_status`` here is the store's authoritative value (from the DB
-    column), which supersedes any stale status carried on the embedded ``fact``.
+    ``canonical_status`` is projected from immutable selection history (or
+    retained legacy metadata), superseding stale status on the embedded ``fact``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -263,13 +300,104 @@ class FactStore:
         """Open (or create) the store and ensure its schema exists."""
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
-        self._init_schema()
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            self._init_schema()
+        except Exception:
+            self._conn.close()
+            raise
 
     def _init_schema(self) -> None:
-        """Create the facts table and its idempotency index if absent."""
+        """Atomically migrate legacy selections and install append-only storage."""
         with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
             self._conn.execute(_CREATE_TABLE)
             self._conn.execute(_CREATE_UNIQUE_INDEX)
+            exists = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'canonical_selections'"
+            ).fetchone()
+            self._conn.execute(_CREATE_SELECTIONS)
+            if exists is None:
+                self._migrate_legacy_selections()
+            for table in ("facts", "canonical_selections"):
+                for operation in ("UPDATE", "DELETE"):
+                    # Names are fixed internal constants, never caller input.
+                    self._conn.execute(
+                        f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{operation} "
+                        f"BEFORE {operation} ON {table} "
+                        "BEGIN SELECT RAISE(ABORT, 'append-only store'); END"
+                    )
+
+    def _migrate_legacy_selections(self) -> None:
+        """Import only the surviving current decision, never overwritten selections."""
+        rows = self._conn.execute(
+            "SELECT * FROM facts WHERE canonical_status = ? ORDER BY row_id",
+            (str(CanonicalStatus.CANONICAL),),
+        ).fetchall()
+        seen: set[str] = set()
+        for row in rows:
+            identity = str(row["content_identity"])
+            if identity in seen:
+                raise CanonicalSelectionError("multiple legacy canonical rows in one family")
+            seen.add(identity)
+            fact = Fact.model_validate_json(row["fact_json"])
+            known = max(_utc(fact.knowledge_time), _utc(fact.first_seen_time))
+            raw = row["canonical_selected_at"]
+            stamp = _utc(datetime.fromisoformat(raw)) if raw else datetime.now(UTC)
+            if stamp < known:
+                raise CanonicalSelectionError("legacy selection precedes fact knowledge")
+            self._append_selection(
+                row, stamp, row["canonical_reason"] or "legacy baseline", None, legacy=True
+            )
+
+    def _append_selection(
+        self,
+        target: sqlite3.Row,
+        stamp: datetime,
+        reason: str,
+        predecessor: CanonicalSelection | None,
+        *,
+        legacy: bool = False,
+    ) -> None:
+        """Append a digest-bound successor while the write lock is held."""
+        sequence = predecessor.sequence + 1 if predecessor else 1
+        predecessor_id = predecessor.selection_id if predecessor else None
+        digest = self._selection_digest(target, stamp, reason, predecessor, legacy)
+        self._conn.execute(
+            _APPEND_SELECTION,
+            (
+                target["content_identity"],
+                target["row_id"],
+                sequence,
+                predecessor_id,
+                stamp.isoformat(),
+                reason,
+                int(legacy),
+                digest,
+            ),
+        )
+
+    @staticmethod
+    def _selection_digest(
+        target: sqlite3.Row,
+        stamp: datetime,
+        reason: str,
+        predecessor: CanonicalSelection | None,
+        legacy: bool,
+    ) -> str:
+        """Bind the selected value and exact predecessor to immutable decision bytes."""
+        payload = {
+            "content_identity": target["content_identity"],
+            "row_id": target["row_id"],
+            "value_hash": target["value_hash"],
+            "sequence": predecessor.sequence + 1 if predecessor else 1,
+            "predecessor_id": predecessor.selection_id if predecessor else None,
+            "predecessor_sha256": predecessor.selection_sha256 if predecessor else None,
+            "selected_at": stamp.isoformat(),
+            "reason": reason,
+            "legacy_baseline": legacy,
+        }
+        return _sha256(_stable_json(payload))
 
     def close(self) -> None:
         """Close the owned connection."""
@@ -289,23 +417,24 @@ class FactStore:
         """
         observation = fact.observation
         self._require_provenance(observation)
+        _utc(fact.knowledge_time)
+        _utc(fact.first_seen_time)
 
         content_identity = _content_identity(observation)
         value_hash = _value_hash(observation)
 
-        existing = self._conn.execute(
-            _SELECT_BY_IDENTITY_VALUE, (content_identity, value_hash)
-        ).fetchone()
-        if existing is not None:
-            return self._row_to_revision(existing)
-
-        siblings = self._conn.execute(_SELECT_BY_IDENTITY, (content_identity,)).fetchall()
-        revision_family = siblings[0]["revision_family"] if siblings else fact.revision_family
-        next_ordinal = self._next_ordinal(content_identity)
-
         prov = observation.provenance
         stored_fact = fact.model_copy(update={"canonical_status": CanonicalStatus.CANDIDATE})
         with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                _SELECT_BY_IDENTITY_VALUE, (content_identity, value_hash)
+            ).fetchone()
+            if existing is not None:
+                return self._row_to_revision(existing)
+            siblings = self._conn.execute(_SELECT_BY_IDENTITY, (content_identity,)).fetchall()
+            revision_family = siblings[0]["revision_family"] if siblings else fact.revision_family
+            next_ordinal = self._next_ordinal(content_identity)
             cursor = self._conn.execute(
                 _INSERT,
                 (
@@ -336,35 +465,40 @@ class FactStore:
         row_id: int,
         reason: str,
         selected_at: datetime | None = None,
+        *,
+        expected_selection_id: int | None = None,
     ) -> StoredRevision:
         """Auditably mark one retained revision canonical within its family.
 
-        The previously canonical revision (if any) in the same content identity
-        is demoted to ``SUPERSEDED`` and retained; nothing is deleted. The
-        selection timestamp and ``reason`` are recorded for audit.
+        Times strictly increase; equal-time decisions are rejected, never tied
+        by insertion order. ``expected_selection_id=0`` expects an empty chain;
+        another ID compares against that exact head. Omission captures the head
+        before locking for compatibility with existing callers.
         """
         target = self._conn.execute(_SELECT_BY_ROW_ID, (row_id,)).fetchone()
         if target is None:
             raise KeyError(f"no revision with row_id={row_id}")
 
         content_identity = target["content_identity"]
-        stamp = (selected_at or datetime.now(UTC)).isoformat()
+        stamp = _utc(selected_at if selected_at is not None else datetime.now(UTC))
+        if not reason.strip():
+            raise CanonicalSelectionError("selection reason must be non-empty")
+        fact = Fact.model_validate_json(target["fact_json"])
+        if stamp < max(_utc(fact.knowledge_time), _utc(fact.first_seen_time)):
+            raise CanonicalSelectionError("selection precedes fact knowledge/first-seen time")
+        history = self.get_selection_history(content_identity)
+        expected = expected_selection_id
+        if expected is None:
+            expected = history[-1].selection_id if history else 0
         with self._conn:
-            self._conn.execute(
-                _DEMOTE_STATUS,
-                (
-                    str(CanonicalStatus.SUPERSEDED),
-                    stamp,
-                    reason,
-                    content_identity,
-                    str(CanonicalStatus.CANONICAL),
-                    row_id,
-                ),
-            )
-            self._conn.execute(
-                _UPDATE_STATUS,
-                (str(CanonicalStatus.CANONICAL), stamp, reason, row_id),
-            )
+            self._conn.execute("BEGIN IMMEDIATE")
+            history = self.get_selection_history(content_identity)
+            head = history[-1] if history else None
+            if expected != (head.selection_id if head else 0):
+                raise CanonicalSelectionError("stale canonical selection predecessor")
+            if head is not None and stamp <= head.selected_at:
+                raise CanonicalSelectionError("selection time must strictly follow predecessor")
+            self._append_selection(target, stamp, reason, head)
         updated = self._conn.execute(_SELECT_BY_ROW_ID, (row_id,)).fetchone()
         return self._row_to_revision(updated)
 
@@ -373,20 +507,74 @@ class FactStore:
         rows = self._conn.execute(_SELECT_BY_IDENTITY, (content_identity,)).fetchall()
         return tuple(self._row_to_revision(row) for row in rows)
 
-    def get_canonical(self, content_identity: str) -> StoredRevision | None:
-        """Return the canonical revision for a content identity, if selected."""
-        row = self._conn.execute(
-            _SELECT_CANONICAL_FOR_IDENTITY,
-            (content_identity, str(CanonicalStatus.CANONICAL)),
-        ).fetchone()
-        return self._row_to_revision(row) if row is not None else None
+    def get_selection_history(self, content_identity: str) -> tuple[CanonicalSelection, ...]:
+        """Return and verify the immutable linear chain, including legacy baselines."""
+        rows = self._conn.execute(_HISTORY, (content_identity,)).fetchall()
+        result: list[CanonicalSelection] = []
+        for row in rows:
+            decision = CanonicalSelection(
+                selection_id=row["selection_id"],
+                content_identity=row["content_identity"],
+                row_id=row["row_id"],
+                sequence=row["sequence"],
+                predecessor_id=row["predecessor_id"],
+                selected_at=_utc(datetime.fromisoformat(row["selected_at"])),
+                reason=row["reason"],
+                legacy_baseline=bool(row["legacy_baseline"]),
+                selection_sha256=row["selection_sha256"],
+            )
+            predecessor = result[-1] if result else None
+            target = self._conn.execute(_SELECT_BY_ROW_ID, (decision.row_id,)).fetchone()
+            if (
+                target is None
+                or target["content_identity"] != content_identity
+                or decision.sequence != len(result) + 1
+                or decision.predecessor_id != (predecessor.selection_id if predecessor else None)
+                or (predecessor is not None and decision.selected_at <= predecessor.selected_at)
+            ):
+                raise CanonicalSelectionError("invalid canonical selection chain")
+            digest = self._selection_digest(
+                target, decision.selected_at, decision.reason, predecessor, decision.legacy_baseline
+            )
+            if digest != decision.selection_sha256:
+                raise CanonicalSelectionError("canonical selection digest mismatch")
+            result.append(decision)
+        return tuple(result)
 
-    def query_canonical(self) -> tuple[StoredRevision, ...]:
-        """Return every currently canonical revision across all families."""
-        rows = self._conn.execute(
-            _SELECT_ALL_CANONICAL, (str(CanonicalStatus.CANONICAL),)
-        ).fetchall()
-        return tuple(self._row_to_revision(row) for row in rows)
+    def get_canonical(
+        self,
+        content_identity: str,
+        *,
+        cutoff: datetime | None = None,
+    ) -> StoredRevision | None:
+        """Return the decision effective at cutoff, with eligible recorded fact times."""
+        stamp = _utc(cutoff) if cutoff is not None else datetime.now(UTC)
+        history = self.get_selection_history(content_identity)
+        eligible = [decision for decision in history if decision.selected_at <= stamp]
+        if not eligible:
+            return None
+        decision = eligible[-1]
+        row = self._conn.execute(_SELECT_BY_ROW_ID, (decision.row_id,)).fetchone()
+        fact = Fact.model_validate_json(row["fact_json"])
+        if max(_utc(fact.knowledge_time), _utc(fact.first_seen_time)) > stamp:
+            return None
+        return self._row_to_revision(row, decision=decision)
+
+    def query_canonical(self, *, cutoff: datetime | None = None) -> tuple[StoredRevision, ...]:
+        """Return one cutoff-eligible selected revision per existing content identity."""
+        stamp = _utc(cutoff) if cutoff is not None else datetime.now(UTC)
+        # A read transaction gives all families the same database snapshot.
+        with self._conn:
+            self._conn.execute("BEGIN")
+            identities = self._conn.execute(
+                "SELECT DISTINCT content_identity FROM canonical_selections"
+            ).fetchall()
+            revisions = [
+                self.get_canonical(row["content_identity"], cutoff=stamp) for row in identities
+            ]
+        return tuple(
+            sorted((row for row in revisions if row is not None), key=lambda row: row.row_id)
+        )
 
     def _next_ordinal(self, content_identity: str) -> int:
         """Return the next revision ordinal within a content identity (1-based)."""
@@ -410,14 +598,35 @@ class FactStore:
                 )
             )
 
-    @staticmethod
-    def _row_to_revision(row: sqlite3.Row) -> StoredRevision:
-        """Reconstruct a StoredRevision, letting the DB own canonical status."""
+    def _row_to_revision(
+        self,
+        row: sqlite3.Row,
+        *,
+        decision: CanonicalSelection | None = None,
+    ) -> StoredRevision:
+        """Project current status without mutating fact or historical decision rows."""
         status = CanonicalStatus(row["canonical_status"])
+        selected_raw = row["canonical_selected_at"]
+        selected_at = datetime.fromisoformat(selected_raw) if selected_raw else None
+        reason = row["canonical_reason"]
+        if decision is None:
+            history = self.get_selection_history(row["content_identity"])
+            own = [item for item in history if item.row_id == row["row_id"]]
+            if own:
+                decision = own[-1]
+                status = (
+                    CanonicalStatus.CANONICAL
+                    if history[-1] == decision
+                    else CanonicalStatus.SUPERSEDED
+                )
+        else:
+            status = CanonicalStatus.CANONICAL
+        if decision is not None:
+            selected_at = decision.selected_at
+            reason = decision.reason
         fact = Fact.model_validate_json(row["fact_json"]).model_copy(
             update={"canonical_status": status}
         )
-        selected_raw = row["canonical_selected_at"]
         return StoredRevision(
             row_id=int(row["row_id"]),
             content_identity=row["content_identity"],
@@ -425,7 +634,7 @@ class FactStore:
             revision_family=row["revision_family"],
             revision_ordinal=int(row["revision_ordinal"]),
             canonical_status=status,
-            canonical_selected_at=datetime.fromisoformat(selected_raw) if selected_raw else None,
-            canonical_reason=row["canonical_reason"],
+            canonical_selected_at=selected_at,
+            canonical_reason=reason,
             fact=fact,
         )
