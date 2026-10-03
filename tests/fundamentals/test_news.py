@@ -1139,10 +1139,17 @@ def test_bse_response_hook_preserves_typed_status_before_wrapper_conversion(
 
 def test_news_cli_fixture_renders_sourced_event_table(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The public fixture command renders dated confirmed and contextual events."""
+    from functools import partial
+
+    from fundamentals.api import news_cli
     from fundamentals.api.cli import main
 
+    monkeypatch.setattr(
+        news_cli, "run_news_command", partial(news_cli.run_news_command, observed_at=_OBSERVED_AT)
+    )
     code = main(["news", "--symbol", "TITAN", "--days", "30", "--fixture"])
 
     captured = capsys.readouterr()

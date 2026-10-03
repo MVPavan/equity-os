@@ -102,6 +102,21 @@ def _event_id(cluster: list[NewsObservation]) -> str:
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
+def _comparison_title(observation: NewsObservation) -> str:
+    """Remove only the resolved NSE notification wrapper for title matching."""
+    title = normalize_news_text(observation.raw_title)
+    if (
+        observation.resolved
+        and observation.source_family is NewsSourceFamily.FIRST_PARTY
+        # Marker emitted by fundamentals.ingest.news_nse, not a title claim.
+        and observation.source_id.startswith("nse-announcements:")
+    ):
+        company, separator, body = title.partition(" has informed the exchange about ")
+        if company and separator and body:
+            return body
+    return title
+
+
 def _same_event(
     observation: NewsObservation,
     event_type: NewsEventType,
@@ -120,8 +135,8 @@ def _same_event(
         return False
     title_similarity = SequenceMatcher(
         None,
-        normalize_news_text(observation.raw_title),
-        normalize_news_text(anchor.raw_title),
+        _comparison_title(observation),
+        _comparison_title(anchor),
     ).ratio()
     return title_similarity >= _TITLE_SIMILARITY_THRESHOLD
 
