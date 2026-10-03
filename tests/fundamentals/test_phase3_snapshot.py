@@ -17,6 +17,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -446,3 +447,240 @@ def test_rights_default_to_private_internal_and_demand_an_authority_ref() -> Non
     assert rights.use is snapshot.SnapshotUse.PRIVATE_INTERNAL
     assert rights.redistribution is snapshot.Redistribution.PROHIBITED
     assert snapshot.A05_DECISION_005 == "A05-DECISION-005"
+
+
+def test_v1_canonical_digest_and_nested_serialization_do_not_change(tmp_path: Path) -> None:
+    """Legacy records retain independently frozen pre-change identities, even nested."""
+    from pydantic import BaseModel
+
+    from fundamentals.contracts.snapshot import (
+        BlobRef,
+        CaptureRecord,
+        RequestIdentity,
+        SnapshotRights,
+    )
+
+    record = CaptureRecord.make(
+        RequestIdentity(source_id="synthetic", surface="test", request_key="key"),
+        datetime(2026, 1, 1, tzinfo=UTC),
+        200,
+        "text/plain",
+        None,
+        BlobRef(source_id="synthetic", content_sha256="a" * 64, byte_count=3),
+        OutcomeRecord(code=OutcomeCode.OK, native_kind="synthetic", native_value="OK"),
+        SnapshotRights(authority_refs=("synthetic",)),
+    )
+
+    class Envelope(BaseModel):
+        capture: CaptureRecord
+
+    assert (
+        record.record_sha256 == "1f27f5a6ee9cf217f59c3a7b01749cc4604b8557b359ee9e00e4ad80bd40f49a"
+    )
+    assert (
+        record.request.request_sha256
+        == "fb2ce138b9153f0dba6d8b9075f3710ffd6f776bc01b0801b84ff76acea8f945"
+    )
+    assert record.capture_id == "20260101T000000.000000Z-aaaaaaaaaaaa"
+    for dumped in (
+        record.model_dump(mode="json"),
+        Envelope(capture=record).model_dump(mode="json")["capture"],
+    ):
+        assert "body_completeness" not in dumped
+        assert "body_read_issue" not in dumped
+    assert (
+        CaptureRecord.model_validate_json(record.model_dump_json()).record_sha256
+        == record.record_sha256
+    )
+    legacy = _record()
+    store = _store(tmp_path)
+    store.put_capture(legacy, SYNTHETIC_BODY)
+    assert (
+        store.put_capture(
+            CaptureRecord.model_validate_json(legacy.model_dump_json()), SYNTHETIC_BODY
+        )
+        == legacy
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "payload", "issue", "success", "valid"),
+    [
+        ("complete", b"", None, True, True),
+        ("complete", None, None, False, False),
+        ("complete", b"a", "read_interrupted", False, False),
+        ("partial", b"a", "read_interrupted", False, True),
+        ("partial", b"", "read_interrupted", False, False),
+        ("partial", b"a", None, False, False),
+        ("partial", b"a", "read_interrupted", True, False),
+        ("absent", None, None, False, True),
+        ("absent", None, "read_interrupted", False, True),
+        ("absent", b"a", None, False, False),
+        ("absent", None, None, True, False),
+        (None, None, None, False, False),
+    ],
+)
+def test_v2_state_invariants_and_unknown_versions_are_refused(
+    state: str | None,
+    payload: bytes | None,
+    issue: str | None,
+    success: bool,
+    valid: bool,
+) -> None:
+    from fundamentals.contracts.snapshot import CaptureRecord
+
+    document = _record(payload).model_dump(mode="json")
+    document.update(schema_version=2, body_completeness=state, body_read_issue=issue)
+    if not success:
+        document["outcome"] = {
+            "code": "transport_error",
+            "native_kind": "synthetic",
+            "native_value": "ERROR",
+        }
+    if valid:
+        record = CaptureRecord.model_validate(document)
+        assert record.complete_body_sha256 == (
+            record.body.content_sha256 if state == "complete" else None
+        )
+        assert CaptureRecord.model_validate_json(record.model_dump_json()) == record
+    else:
+        with pytest.raises(ValidationError):
+            CaptureRecord.model_validate(document)
+    document["schema_version"] = 3
+    with pytest.raises(ValidationError):
+        CaptureRecord.model_validate(document)
+    document["schema_version"] = 1
+    if state is not None or issue is not None:
+        with pytest.raises(ValidationError):
+            CaptureRecord.model_validate(document)
+
+
+def test_partial_evidence_is_refused_by_read_body_but_inspectable(tmp_path: Path) -> None:
+    from fundamentals.contracts.snapshot import (
+        CaptureConflictError,
+        CaptureRecord,
+        IncompleteSnapshotError,
+        IntegrityError,
+    )
+
+    document = _record(b"abc").model_dump(mode="json")
+    document.update(
+        schema_version=2,
+        body_completeness="partial",
+        body_read_issue="read_interrupted",
+        outcome={"code": "transport_error", "native_kind": "synthetic", "native_value": "ERROR"},
+    )
+    record = CaptureRecord.model_validate(document)
+    store = _store(tmp_path)
+    store.put_capture(record, b"abc")
+    assert store.read_evidence_body(record) == b"abc"
+    assert record.complete_body_sha256 is None
+    with pytest.raises(IncompleteSnapshotError) as refused:
+        store.read_body(record)
+    assert refused.value.capture_id == record.capture_id
+    document.update(body_completeness="complete", body_read_issue=None)
+    complete = CaptureRecord.model_validate(document)
+    with pytest.raises(CaptureConflictError):
+        store.put_capture(complete, b"abc")
+    later = complete.model_copy(
+        update={"retrieved_at": _at(1), "capture_id": _record(b"abc", seconds=1).capture_id}
+    )
+    store.put_capture(later, b"abc")
+    assert len(_blob_files(tmp_path)) == 1
+    assert store.read_body(later) == b"abc"
+    _blob_files(tmp_path)[0].write_bytes(b"bad")
+    with pytest.raises(IntegrityError):
+        store.read_evidence_body(record)
+
+
+def test_intake_identical_republication_rechecks_retained_bytes(tmp_path: Path) -> None:
+    """An existing name must not hide corrupt originals on a retry."""
+    from fundamentals.contracts.snapshot import IntegrityError
+
+    store = _store(tmp_path)
+    record = _record()
+    store.put_capture(record, SYNTHETIC_BODY)
+    _blob_files(tmp_path)[0].write_bytes(b"corrupted retained bytes")
+    with pytest.raises(IntegrityError):
+        store.put_capture(record, SYNTHETIC_BODY)
+
+
+@pytest.mark.parametrize(
+    "method,request_digest,record_digest",
+    [
+        (
+            "GET",
+            "6e4bf697d172db19bd17170b0b1f162180a28416e378d260d0a0478ebeb01d43",
+            "3f88c8f4ea439c285a2ccd7770fe3e10fbc2c2b265a89a3b5e807fbec1440c39",
+        ),
+        (
+            "POST",
+            "a8d4c9c2c113326992a614f2ec29455df14865093a20470c021aee94d35cdc87",
+            "2a013192c63cdecd8912ef52314163842d2e97c27ca08e49b95fea97cb337db6",
+        ),
+    ],
+)
+def test_intake_extension_preserves_prechange_v1_bytes_and_hashes(
+    method: str,
+    request_digest: str,
+    record_digest: str,
+) -> None:
+    """Literal baseline hashes came from the unchanged HEAD contract."""
+    from fundamentals.contracts.snapshot import CaptureRecord, RequestMethod, canonical_json
+
+    document = _record().model_dump(mode="json")
+    document["request"]["method"] = method
+    record = CaptureRecord.model_validate(document)
+    assert record.request.request_sha256 == request_digest
+    assert record.record_sha256 == record_digest
+    assert "body_completeness" not in canonical_json(record.model_dump(mode="json"))
+    assert _request().method is RequestMethod.GET
+
+
+@pytest.mark.parametrize("point", ["blob", "body", "record", "rename"])
+def test_intake_publication_ancestor_substitution_never_writes_to_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    point: str,
+) -> None:
+    from fundamentals.contracts.snapshot import SnapshotError
+    from fundamentals.store import snapshot_store
+
+    root, outside, moved = tmp_path / "root", tmp_path / "outside", tmp_path / "moved"
+    root.mkdir(mode=0o700)
+    outside.mkdir(mode=0o700)
+    store = _store(root)
+    record = _record()
+    original_link, original_rename = os.link, os.rename
+    swapped = False
+
+    def substitute() -> None:
+        nonlocal swapped
+        if not swapped:
+            original_rename(root, moved)
+            root.symlink_to(outside, target_is_directory=True)
+            swapped = True
+
+    def link(src: Any, dst: Any, **kwargs: Any) -> None:
+        if (
+            point == "blob"
+            and dst == record.body.content_sha256
+            or point == "body"
+            and dst == "body.json"
+            or point == "record"
+            and dst == "record.json"
+        ):
+            substitute()
+        original_link(src, dst, **kwargs)
+
+    def rename(src: Any, dst: Any, **kwargs: Any) -> None:
+        if point == "rename" and dst == record.capture_id:
+            substitute()
+        original_rename(src, dst, **kwargs)
+
+    monkeypatch.setattr(snapshot_store.os, "link", link)
+    monkeypatch.setattr(snapshot_store.os, "rename", rename)
+    with pytest.raises(SnapshotError):
+        store.put_capture(record, SYNTHETIC_BODY)
+    assert swapped
+    assert list(outside.iterdir()) == []

@@ -174,3 +174,133 @@ def test_read_bounded_accepts_any_object_exposing_read() -> None:
             return b"ok"
 
     assert read_bounded(_Duck(), 10) == b"ok"
+
+
+class ScriptedRead:
+    def __init__(self, *items: object) -> None:
+        self.items = iter(items)
+        self.amounts: list[int] = []
+
+    def read(self, amount: int) -> object:
+        self.amounts.append(amount)
+        result = next(self.items)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+
+@pytest.mark.parametrize(
+    ("items", "cap", "expected", "state", "issue"),
+    [
+        ((b"a", b"b", b""), 2, b"ab", "complete", None),
+        ((b"ab", b""), 2, b"ab", "complete", None),
+        ((b"abc",), 2, b"ab", "partial", "limit_exceeded"),
+        ((b"a", TimeoutError()), 2, b"a", "partial", "read_interrupted"),
+        ((TimeoutError(),), 2, None, "absent", "read_interrupted"),
+        ((b"a", "bad"), 2, b"a", "partial", "non_bytes"),
+    ],
+)
+def test_capture_reader_eof_prefix_and_failure_contract(
+    items: tuple[object, ...], cap: int, expected: bytes | None, state: str, issue: str | None
+) -> None:
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    stream = ScriptedRead(*items)
+    result = read_bounded_capture(stream, cap, timeout_seconds=30)
+    assert (result.raw_body, result.completeness, result.issue) == (expected, state, issue)
+    assert stream.amounts == (
+        [3, 2, 1]
+        if len(items) == 3
+        else [3]
+        if len(items) == 1
+        else [3, 1]
+        if items[0] == b"ab"
+        else [3, 2]
+    )
+
+
+def test_incomplete_read_appends_only_unreturned_partial() -> None:
+    import http.client
+
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    error = http.client.IncompleteRead(b"cd", 5)
+    error.__cause__ = http.client.IncompleteRead(b"NOT-CONTIGUOUS", 5)
+    result = read_bounded_capture(ScriptedRead(b"ab", error), 3, timeout_seconds=30)
+    assert (result.raw_body, result.completeness, result.issue) == (
+        b"abc",
+        "partial",
+        "read_interrupted",
+    )
+
+
+@pytest.mark.parametrize(("body", "expected"), [(b"abc", 4), (b"", 1), (b"abc", 2)])
+def test_content_length_mismatch_is_incomplete(body: bytes, expected: int) -> None:
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    result = read_bounded_capture(
+        ScriptedRead(body, b""), 10, timeout_seconds=30, expected_bytes=expected
+    )
+    assert result.raw_body == (body or None)
+    assert result.issue == "read_interrupted"
+
+
+def test_read_call_and_elapsed_budgets_stop_dribbling_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    monkeypatch.setattr(time, "monotonic", lambda: 0)
+    stream = ScriptedRead(*(b"a" for _ in range(1025)))
+    result = read_bounded_capture(stream, 2000, timeout_seconds=1)
+    assert len(stream.amounts) == 1024
+    assert result.raw_body == b"a" * 1024
+    assert result.issue == "read_budget_exceeded"
+    clock = iter([0, 0, 2])
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    late = read_bounded_capture(ScriptedRead(b""), 10, timeout_seconds=1)
+    assert late.raw_body is None
+    assert late.issue == "read_budget_exceeded"
+
+
+def test_unexpected_errors_and_cancellation_propagate() -> None:
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    for error in (RuntimeError("unexpected"), KeyboardInterrupt()):
+        with pytest.raises(type(error)):
+            read_bounded_capture(ScriptedRead(error), 10, timeout_seconds=1)
+
+
+def test_chunk_trailer_bytes_are_not_retained_as_payload() -> None:
+    import http.client
+    import io
+
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    class Socket:
+        def makefile(self, mode: str) -> io.BytesIO:
+            return io.BytesIO(
+                b"HTTP/1.1 403 Forbidden\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r"
+            )
+
+    response = http.client.HTTPResponse(Socket())
+    response.begin()
+    try:
+        result = read_bounded_capture(response, 100, timeout_seconds=30)
+    finally:
+        response.close()
+    assert result.raw_body == b"abc"
+    assert result.issue == "read_interrupted"
+
+
+@pytest.mark.parametrize("kind", ["url", "os", "nonbytes_partial"])
+def test_expected_read_failures_keep_only_bytes_valued_partials(kind: str) -> None:
+    import urllib.error
+
+    from fundamentals.ingest.http_session import read_bounded_capture
+
+    error = urllib.error.URLError("offline") if kind == "url" else OSError("interrupted")
+    error.partial = "bad" if kind == "nonbytes_partial" else b"cd"
+    result = read_bounded_capture(ScriptedRead(b"ab", error), 10, timeout_seconds=30)
+    assert result.raw_body == (b"ab" if kind == "nonbytes_partial" else b"abcd")
+    assert result.issue == ("non_bytes" if kind == "nonbytes_partial" else "read_interrupted")

@@ -28,10 +28,15 @@ Layout under the root::
 
 from __future__ import annotations
 
-import errno
+import fcntl
 import hashlib
 import os
-import tempfile
+import stat
+import time
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
@@ -39,8 +44,10 @@ import structlog
 from fundamentals.contracts.snapshot import (
     RELATIVE_COMPONENTS,
     BlobRef,
+    BodyCompleteness,
     CaptureConflictError,
     CaptureRecord,
+    IncompleteSnapshotError,
     IntegrityError,
     MissingSnapshotError,
     RequestIdentity,
@@ -48,7 +55,6 @@ from fundamentals.contracts.snapshot import (
     UnsafePathError,
     canonical_json,
 )
-from fundamentals.store import no_clobber
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -87,6 +93,38 @@ class SnapshotStore:
 
     def __init__(self, root: Path) -> None:
         self._root = root
+        self._anchor: DirectoryAnchor | None = None
+
+    @contextmanager
+    def prepare_ordinary_output(self) -> Iterator[None]:
+        """Bootstrap an operator-declared output, never an intake registration anchor."""
+        root = self._root.absolute()
+        for name in root.parts[1:]:
+            _check_component(name)
+        ancestor = root.parent
+        while True:
+            try:
+                ancestor.lstat()
+                break
+            except FileNotFoundError:
+                ancestor = ancestor.parent
+            except OSError as error:
+                raise UnsafePathError("unsafe ordinary output ancestry") from error
+        with DescriptorTree(DirectoryAnchor(ancestor)) as tree:
+            try:
+                tree.descend(root.relative_to(ancestor).parts, create=True)
+                tree.flush()
+            except OSError as error:
+                raise SnapshotIOError("cannot prepare ordinary output store") from error
+            anchor = DirectoryAnchor(root)
+            if anchor.identities != tuple(_identity(os.fstat(fd)) for fd in tree.fds):
+                raise UnsafePathError("substituted ordinary output store")
+            if self._anchor is not None and self._anchor.identities != anchor.identities:
+                raise UnsafePathError("substituted pinned output store")
+            self._anchor = anchor
+            tree.verify()
+            yield
+            tree.verify()
 
     def put_capture(self, record: CaptureRecord, body: bytes | None) -> CaptureRecord:
         """Publish one capture, returning the record that is on disk afterwards.
@@ -95,28 +133,175 @@ class SnapshotStore:
         carrying a different record is a conflict and nothing is touched.
         """
         payload = self._verified_payload(record, body)
-        route = self._ensure_route(record.request)
-        final_dir = self._child(route, record.capture_id)
-        published = self._published_record(final_dir)
-        if published is not None:
-            if published.record_sha256 != record.record_sha256:
+        with self._tree(create=True) as tree, tree.writer_lock():
+            route = tree.descend(
+                (record.request.source_id, record.request.surface, record.request.request_key),
+                create=True,
+            )
+            if tree.exists(route, record.capture_id):
+                published, retained = self._read_from_tree(
+                    tree,
+                    record.request.source_id,
+                    record.request.surface,
+                    record.request.request_key,
+                    record.capture_id,
+                    MAX_BODY_BYTES,
+                    evidence=True,
+                )
+                if published.record_sha256 != record.record_sha256:
+                    raise CaptureConflictError(
+                        CAPTURE_ALREADY_PUBLISHED.format(capture_id=record.capture_id)
+                    )
+                if body is not None and retained != body:
+                    raise IntegrityError(BODY_DIGEST_MISMATCH.format(capture_id=record.capture_id))
+                if tree.exists(tree.root, STAGING_DIRNAME):
+                    tree.child(tree.root, STAGING_DIRNAME)
+                tree.flush()
+                tree.verify()
+                return published
+            blob_dir = None
+            if payload is not None:
+                reference, data = payload
+                blob_dir = tree.descend(
+                    (
+                        BLOBS_DIRNAME,
+                        reference.source_id,
+                        reference.content_sha256[:BLOB_PREFIX_LENGTH],
+                    ),
+                    create=True,
+                )
+                tree.publish_file(blob_dir, reference.content_sha256, data)
+                self._verify_bytes(
+                    tree.read(blob_dir, reference.content_sha256, MAX_BODY_BYTES), reference
+                )
+            staging_root = tree.descend((STAGING_DIRNAME,), create=True)
+            staging_name = record.capture_id + "-" + uuid.uuid4().hex
+            staging = tree.child(staging_root, staging_name, create=True)
+            if payload is not None and blob_dir is not None:
+                os.link(
+                    payload[0].content_sha256,
+                    body_filename(record),
+                    src_dir_fd=blob_dir,
+                    dst_dir_fd=staging,
+                    follow_symlinks=False,
+                )
+                os.fsync(staging)
+            tree.publish_file(
+                staging,
+                RECORD_FILENAME,
+                (canonical_json(record.model_dump(mode="json")) + "\n").encode(),
+            )
+            tree.flush()
+            tree.verify()
+            if tree.exists(route, record.capture_id):
                 raise CaptureConflictError(
                     CAPTURE_ALREADY_PUBLISHED.format(capture_id=record.capture_id)
                 )
-            _LOGGER.info(CAPTURE_REPUBLISHED, capture_id=record.capture_id)
+            os.rename(staging_name, record.capture_id, src_dir_fd=staging_root, dst_dir_fd=route)
+            tree.relocate(staging, route, record.capture_id)
+            os.fsync(route)
+            os.fsync(staging_root)
+            published, retained = self._read_from_tree(
+                tree,
+                record.request.source_id,
+                record.request.surface,
+                record.request.request_key,
+                record.capture_id,
+                MAX_BODY_BYTES,
+                evidence=True,
+            )
+            if published.record_sha256 != record.record_sha256 or retained != (body or b""):
+                raise IntegrityError("capture publication changed")
+            tree.flush()
+            tree.verify()
+            _LOGGER.info(
+                CAPTURE_PUBLISHED,
+                capture_id=record.capture_id,
+                source_id=record.request.source_id,
+                surface=record.request.surface,
+                byte_count=0 if record.body is None else record.body.byte_count,
+            )
             return published
 
-        blob_path = None if payload is None else self._store_blob(*payload)
-        staging = self._stage_capture(record, blob_path)
-        self._publish(staging, final_dir, route)
-        _LOGGER.info(
-            CAPTURE_PUBLISHED,
-            capture_id=record.capture_id,
-            source_id=record.request.source_id,
-            surface=record.request.surface,
-            byte_count=0 if record.body is None else record.body.byte_count,
+    @contextmanager
+    def _tree(self, *, create: bool = False) -> Iterator[DescriptorTree]:
+        if self._anchor is None:
+            if create:
+                ensure_root(self._root)
+            self._anchor = DirectoryAnchor(self._root)
+        with DescriptorTree(self._anchor) as tree:
+            yield tree
+
+    def read_capture_verified(
+        self,
+        source_id: str,
+        surface: str,
+        request_key: str,
+        capture_id: str,
+        *,
+        max_bytes: int = 32 * 1024 * 1024,
+    ) -> tuple[CaptureRecord, bytes]:
+        """Pin, bound and verify the exact record, body and content-addressed blob."""
+        if not 0 < max_bytes <= MAX_BODY_BYTES:
+            raise IntegrityError("body read limit exceeds producer bound")
+        with self._tree() as tree:
+            result = self._read_from_tree(
+                tree, source_id, surface, request_key, capture_id, max_bytes
+            )
+            tree.verify()
+            return result
+
+    def _read_from_tree(
+        self,
+        tree: DescriptorTree,
+        source_id: str,
+        surface: str,
+        request_key: str,
+        capture_id: str,
+        max_bytes: int,
+        *,
+        evidence: bool = False,
+    ) -> tuple[CaptureRecord, bytes]:
+        directory = tree.descend((source_id, surface, request_key, capture_id))
+        try:
+            record = CaptureRecord.model_validate_json(
+                tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
+            )
+        except ValueError as error:
+            raise IntegrityError("invalid retained capture record") from error
+        if (
+            record.request.source_id,
+            record.request.surface,
+            record.request.request_key,
+            record.capture_id,
+        ) != (source_id, surface, request_key, capture_id):
+            raise IntegrityError("record identity differs from retained route")
+        if not evidence and record.effective_body_completeness is BodyCompleteness.PARTIAL:
+            raise IncompleteSnapshotError(capture_id, BodyCompleteness.PARTIAL)
+        if record.body is None:
+            if evidence:
+                return record, b""
+            raise MissingSnapshotError(NO_RETAINED_BODY.format(capture_id=capture_id))
+        if record.body.source_id != source_id:
+            raise IntegrityError("body source differs from retained route")
+        data = tree.read(directory, body_filename(record), max_bytes)
+        self._verify_bytes(data, record.body)
+        blob_dir = tree.descend(
+            (BLOBS_DIRNAME, source_id, record.body.content_sha256[:BLOB_PREFIX_LENGTH])
         )
-        return record
+        blob = tree.read(blob_dir, record.body.content_sha256, max_bytes)
+        self._verify_bytes(blob, record.body)
+        if data != blob:
+            raise IntegrityError("body differs from retained blob")
+        return record, data
+
+    @staticmethod
+    def _verify_bytes(data: bytes, reference: BlobRef) -> None:
+        if (
+            len(data) != reference.byte_count
+            or hashlib.sha256(data).hexdigest() != reference.content_sha256
+        ):
+            raise IntegrityError("retained body no longer matches its digest/size")
 
     def get_capture(
         self, source_id: str, surface: str, request_key: str, capture_id: str
@@ -151,6 +336,14 @@ class SnapshotStore:
 
     def read_body(self, record: CaptureRecord) -> bytes:
         """The retained bytes of one capture, re-verified against its record."""
+        if record.effective_body_completeness is BodyCompleteness.PARTIAL:
+            raise IncompleteSnapshotError(record.capture_id, record.effective_body_completeness)
+        if record.effective_body_completeness is BodyCompleteness.ABSENT:
+            raise MissingSnapshotError(NO_RETAINED_BODY.format(capture_id=record.capture_id))
+        return self.read_evidence_body(record)
+
+    def read_evidence_body(self, record: CaptureRecord) -> bytes:
+        """Verify retained bytes for inspection, without granting replay eligibility."""
         if record.body is None:
             raise MissingSnapshotError(NO_RETAINED_BODY.format(capture_id=record.capture_id))
         capture_dir = self._child(self._route_of(record.request), record.capture_id)
@@ -169,6 +362,8 @@ class SnapshotStore:
                     BODY_DISAGREES_WITH_RECORD.format(capture_id=record.capture_id)
                 )
             return None
+        if len(body) > MAX_BODY_BYTES:
+            raise IntegrityError("body exceeds producer read/write bound")
         if hashlib.sha256(body).hexdigest() != record.body.content_sha256:
             raise IntegrityError(BODY_DIGEST_MISMATCH.format(capture_id=record.capture_id))
         if len(body) != record.body.byte_count:
@@ -180,53 +375,6 @@ class SnapshotStore:
                 )
             )
         return record.body, body
-
-    def _store_blob(self, reference: BlobRef, payload: bytes) -> Path:
-        """Create the content-addressed blob, or verify the one already there."""
-        blob_dir = self._ensure_child(
-            self._ensure_child(self._ensure_child(self._root, BLOBS_DIRNAME), reference.source_id),
-            reference.content_sha256[:BLOB_PREFIX_LENGTH],
-        )
-        blob_path = self._child(blob_dir, reference.content_sha256)
-        if not blob_path.exists():
-            no_clobber.write_bytes_no_clobber(blob_path, payload)
-            no_clobber.fsync_directory(blob_dir)
-        self._read_verified(blob_path, reference)
-        return blob_path
-
-    def _stage_capture(self, record: CaptureRecord, blob_path: Path | None) -> Path:
-        """Assemble the capture directory out of sight, record written last."""
-        staging_root = self._ensure_child(self._root, STAGING_DIRNAME)
-        staging = Path(tempfile.mkdtemp(dir=staging_root, prefix=f"{record.capture_id}-"))
-        if blob_path is not None:
-            os.link(blob_path, staging / body_filename(record), follow_symlinks=False)
-        document = canonical_json(record.model_dump(mode="json")) + "\n"
-        no_clobber.write_bytes_no_clobber(staging / RECORD_FILENAME, document.encode("utf-8"))
-        no_clobber.fsync_directory(staging)
-        return staging
-
-    def _publish(self, staging: Path, final_dir: Path, route: Path) -> None:
-        """Move one assembled capture into place, atomically."""
-        try:
-            os.rename(staging, final_dir)
-        except FileExistsError as error:
-            raise CaptureConflictError(
-                CAPTURE_ALREADY_PUBLISHED.format(capture_id=final_dir.name)
-            ) from error
-        except OSError as error:
-            if error.errno == errno.ENOTEMPTY:
-                raise CaptureConflictError(
-                    CAPTURE_ALREADY_PUBLISHED.format(capture_id=final_dir.name)
-                ) from error
-            raise
-        no_clobber.fsync_directory(route)
-
-    def _published_record(self, capture_dir: Path) -> CaptureRecord | None:
-        """The record already published at this capture directory, if any."""
-        record_path = self._child(capture_dir, RECORD_FILENAME)
-        if not record_path.is_file():
-            return None
-        return self._parse_record(record_path)
 
     def _parse_record(self, record_path: Path) -> CaptureRecord:
         """One record document, read without following a symlink."""
@@ -262,18 +410,6 @@ class SnapshotStore:
         """The route directory, checked component by component and not created."""
         return self._child(self._child(self._child(self._root, source_id), surface), request_key)
 
-    def _ensure_route(self, request: RequestIdentity) -> Path:
-        """The route directory, created component by component."""
-        return self._ensure_child(
-            self._ensure_child(self._ensure_child(self._root, request.source_id), request.surface),
-            request.request_key,
-        )
-
-    def _ensure_child(self, parent: Path, name: str) -> Path:
-        """One plain child directory, created if it is absent."""
-        _check_component(name)
-        return no_clobber.safe_subdirectory(parent, name)
-
     def _child(self, parent: Path, name: str) -> Path:
         """One plain child path, refused if it is a symlink."""
         _check_component(name)
@@ -295,3 +431,293 @@ def body_filename(record: CaptureRecord) -> str:
         return f"{BODY_STEM}{GZIP_EXTENSION}"
     extension = MEDIA_TYPE_EXTENSIONS.get(record.media_type or "", DEFAULT_EXTENSION)
     return f"{BODY_STEM}{extension}"
+
+
+MAX_BODY_BYTES = 32 * 1024 * 1024
+MAX_METADATA_BYTES = 64 * 1024
+READ_BUDGET_SECONDS = 5.0
+LOCK_FILENAME = ".snapshot-writer.lock"
+
+
+def _identity(info: os.stat_result) -> tuple[int, int]:
+    return info.st_dev, info.st_ino
+
+
+def _protected(info: os.stat_result, label: str, *, private: bool = False) -> None:
+    forbidden = 0o077 if private else 0o022
+    if info.st_uid != os.getuid() or info.st_mode & forbidden:
+        raise UnsafePathError(f"unsafe ownership or permissions: {label}")
+
+
+@dataclass(frozen=True)
+class DirectoryAnchor:
+    """Operator-pinned directory and ancestry; never imported from source JSON.
+
+    This detects substitution, not malicious same-account administrator rewrites.
+    """
+
+    path: Path
+    identities: tuple[tuple[int, int], ...] = ()
+
+    def __post_init__(self) -> None:
+        path = self.path.absolute()
+        if self.identities:
+            raise UnsafePathError("directory identities must be observed locally")
+        fds = [os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)]
+        identities = [_identity(os.fstat(fds[0]))]
+        try:
+            for name in path.parts[1:]:
+                _check_component(name)
+                fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fds[-1])
+                fds.append(fd)
+                identities.append(_identity(os.fstat(fd)))
+            for fd in fds[-2:]:
+                _protected(os.fstat(fd), str(path))
+        except OSError as error:
+            raise UnsafePathError(f"unsafe directory anchor: {path}") from error
+        finally:
+            for fd in reversed(fds):
+                os.close(fd)
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "identities", tuple(identities))
+
+
+def ensure_root(path: Path) -> None:
+    """Create the ordinary store root through its pinned existing parent."""
+    if path.is_symlink():
+        raise UnsafePathError(f"symlinked store root: {path}")
+    if path.exists():
+        return
+    with DescriptorTree(DirectoryAnchor(path.absolute().parent)) as tree:
+        tree.child(tree.root, path.name, create=True)
+        tree.flush()
+        tree.verify()
+
+
+class DescriptorTree:
+    """Short-lived descriptors for one anchored operation, including durability."""
+
+    def __init__(self, anchor: DirectoryAnchor) -> None:
+        self.anchor = anchor
+        self.fds: list[int] = []
+        self.edges: list[tuple[int, str, int]] = []
+        self.files: list[int] = []
+        self.read_files: list[tuple[int, str, int, os.stat_result]] = []
+        self.root = -1
+
+    def __enter__(self) -> DescriptorTree:
+        try:
+            fd = os.open(self.anchor.path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            self.fds.append(fd)
+            for index, name in enumerate(self.anchor.path.parts[1:], 1):
+                parent = fd
+                fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                self.fds.append(fd)
+                self.edges.append((parent, name, fd))
+                if _identity(os.fstat(fd)) != self.anchor.identities[index]:
+                    raise UnsafePathError(f"substituted anchor: {self.anchor.path}")
+            self.root = fd
+            for protected_fd in self.fds[-2:]:
+                _protected(os.fstat(protected_fd), str(self.anchor.path))
+            self.verify()
+            return self
+        except OSError as error:
+            self.close()
+            raise UnsafePathError(f"cannot open protected anchor: {self.anchor.path}") from error
+        except BaseException:
+            self.close()
+            raise
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        for fd in reversed(self.files + self.fds):
+            os.close(fd)
+        self.files.clear()
+        self.fds.clear()
+
+    def verify(self) -> None:
+        for parent, name, fd in self.edges:
+            try:
+                found = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            except OSError as error:
+                raise UnsafePathError(f"detached directory: {name}") from error
+            if not stat.S_ISDIR(found.st_mode) or _identity(found) != _identity(os.fstat(fd)):
+                raise UnsafePathError(f"substituted directory: {name}")
+        for parent, name, fd, before in self.read_files:
+            try:
+                current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            except OSError as error:
+                raise UnsafePathError(f"detached file: {name}") from error
+            opened = os.fstat(fd)
+            if (
+                not stat.S_ISREG(current.st_mode)
+                or _identity(current) != _identity(before)
+                or opened.st_mtime_ns != before.st_mtime_ns
+                or opened.st_size != before.st_size
+            ):
+                raise IntegrityError(f"file changed during operation: {name}")
+        root_index = self.fds.index(self.root)
+        for fd in self.fds[max(0, root_index - 1) :]:
+            _protected(os.fstat(fd), "store directory")
+
+    def flush(self) -> None:
+        self.verify()
+        for fd in self.files:
+            os.fsync(fd)
+        # Flush authoritative children and all parent entries through the anchor's parent.
+        root_index = self.fds.index(self.root)
+        for fd in reversed(self.fds[max(0, root_index - 1) :]):
+            os.fsync(fd)
+        self.verify()
+
+    def exists(self, parent: int, name: str) -> bool:
+        _check_component(name)
+        try:
+            os.stat(name, dir_fd=parent, follow_symlinks=False)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def child(self, parent: int, name: str, *, create: bool = False, private: bool = False) -> int:
+        _check_component(name)
+        if create:
+            try:
+                os.mkdir(name, 0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        except FileNotFoundError as error:
+            raise MissingSnapshotError(f"missing directory: {name}") from error
+        except OSError as error:
+            raise UnsafePathError(f"unsafe directory: {name}") from error
+        self.fds.append(fd)
+        self.edges.append((parent, name, fd))
+        _protected(os.fstat(fd), name, private=private)
+        if create:
+            os.fsync(fd)
+            os.fsync(parent)
+        self.verify()
+        return fd
+
+    def descend(
+        self, names: tuple[str, ...], *, create: bool = False, private: bool = False
+    ) -> int:
+        fd = self.root
+        for name in names:
+            fd = self.child(fd, name, create=create, private=private)
+        return fd
+
+    def relocate(self, fd: int, parent: int, name: str) -> None:
+        self.edges = [(p, n, child) for p, n, child in self.edges if child != fd]
+        self.edges.append((parent, name, fd))
+
+    def read(self, parent: int, name: str, cap: int, *, private: bool = False) -> bytes:
+        _check_component(name)
+        deadline = time.monotonic() + READ_BUDGET_SECONDS
+        try:
+            before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(before.st_mode):
+                raise UnsafePathError(f"nonregular file: {name}")
+            _protected(before, name, private=private)
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            self.files.append(fd)
+            opened = os.fstat(fd)
+            if not stat.S_ISREG(opened.st_mode) or _identity(before) != _identity(opened):
+                raise UnsafePathError(f"substituted/nonregular file: {name}")
+            _protected(opened, name, private=private)
+            self.read_files.append((parent, name, fd, opened))
+            if opened.st_size > cap:
+                raise IntegrityError(f"oversize file: {name}")
+            data = bytearray()
+            while True:
+                if time.monotonic() > deadline:
+                    raise SnapshotIOError(f"read budget exceeded: {name}")
+                chunk = os.read(fd, min(64 * 1024, cap + 1 - len(data)))
+                if time.monotonic() > deadline:
+                    raise SnapshotIOError(f"read budget exceeded: {name}")
+                if not chunk:
+                    break
+                data.extend(chunk)
+                if len(data) > cap:
+                    raise IntegrityError(f"oversize/growing file: {name}")
+            after = os.fstat(fd)
+            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if (
+                _identity(current) != _identity(opened)
+                or after.st_size != len(data)
+                or opened.st_mtime_ns != after.st_mtime_ns
+                or opened.st_ctime_ns != after.st_ctime_ns
+            ):
+                raise IntegrityError(f"file changed during read: {name}")
+            self.verify()
+            return bytes(data)
+        except FileNotFoundError as error:
+            raise MissingSnapshotError(f"missing file: {name}") from error
+        except OSError as error:
+            raise SnapshotIOError(f"cannot read file: {name}") from error
+
+    def publish_file(self, parent: int, name: str, data: bytes) -> None:
+        _check_component(name)
+        if self.exists(parent, name):
+            if self.read(parent, name, max(len(data), 1)) != data:
+                raise CaptureConflictError(f"conflicting publication: {name}")
+            os.fsync(parent)
+            return
+        temporary = ".tmp-" + uuid.uuid4().hex
+        fd = os.open(
+            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent
+        )
+        self.files.append(fd)
+        view = memoryview(data)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise SnapshotIOError("short publication write")
+            view = view[written:]
+        os.fsync(fd)
+        self.verify()
+        written_info = os.fstat(fd)
+        temp_info = os.stat(temporary, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(temp_info.st_mode) or _identity(temp_info) != _identity(written_info):
+            raise UnsafePathError(f"substituted temporary publication: {name}")
+        try:
+            os.link(temporary, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+        except FileExistsError as error:
+            raise CaptureConflictError(f"publication already exists: {name}") from error
+        installed_info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(installed_info.st_mode) or _identity(installed_info) != _identity(
+            written_info
+        ):
+            raise UnsafePathError(f"substituted final publication: {name}")
+        self.read_files.append((parent, name, fd, written_info))
+        os.fsync(parent)
+        os.unlink(temporary, dir_fd=parent)
+        os.fsync(parent)
+        self.verify()
+
+    @contextmanager
+    def writer_lock(self) -> Iterator[None]:
+        if not self.exists(self.root, LOCK_FILENAME):
+            try:
+                self.publish_file(self.root, LOCK_FILENAME, b"local snapshot writer\n")
+            except CaptureConflictError:
+                pass
+        self.read(self.root, LOCK_FILENAME, MAX_METADATA_BYTES, private=True)
+        fd = self.files[-1]
+        deadline = time.monotonic() + READ_BUDGET_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as error:
+                if time.monotonic() >= deadline:
+                    raise SnapshotIOError("store writer lock deadline exceeded") from error
+                time.sleep(0.01)
+        try:
+            self.verify()
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)

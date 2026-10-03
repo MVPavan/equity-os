@@ -42,13 +42,15 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
+from fundamentals.contracts.snapshot import BodyCompleteness, BodyReadIssue, CaptureRecord
 from fundamentals.ingest.http_session import (
-    NonBytesResponseError,
+    BoundedBodyRead,
     NoRedirectHandler,
     RequestPacer,
-    ResponseTooLargeError,
-    read_bounded,
+    read_bounded_capture,
 )
+from fundamentals.ingest.upstox_retention import seal_capture
+from fundamentals.store.snapshot_store import SnapshotStore
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -63,6 +65,7 @@ AUTHORIZATION_HEADER = "Authorization"
 USER_AGENT_HEADER = "User-Agent"
 ACCEPT_HEADER = "Accept"
 CONTENT_TYPE_HEADER = "Content-Type"
+CONTENT_ENCODING_HEADER = "Content-Encoding"
 LOCATION_HEADER = "Location"
 BEARER_PREFIX = "Bearer"
 
@@ -240,6 +243,13 @@ class UpstoxFetchError(UpstoxError):
 
     def __init__(self, message: str, *, outcome: AcquisitionOutcome | None = None) -> None:
         super().__init__(message)
+        self.raw_body: bytes | None = None
+        self.http_status: int | None = None
+        self.media_type: str | None = None
+        self.content_encoding: str | None = None
+        self.body_completeness = BodyCompleteness.ABSENT
+        self.body_read_issue: BodyReadIssue | None = None
+        self.capture_record: CaptureRecord | None = None
         if outcome is not None:
             self.outcome = outcome
 
@@ -531,8 +541,12 @@ class UpstoxConfig(BaseModel):
         le=MAX_RATE_LIMIT_BACKOFF_SECONDS,
         allow_inf_nan=False,
     )
-    max_compressed_bytes: int = Field(default=DEFAULT_MAX_COMPRESSED_BYTES, gt=0)
-    max_decompressed_bytes: int = Field(default=DEFAULT_MAX_DECOMPRESSED_BYTES, gt=0)
+    max_compressed_bytes: int = Field(
+        default=DEFAULT_MAX_COMPRESSED_BYTES, gt=0, le=DEFAULT_MAX_COMPRESSED_BYTES
+    )
+    max_decompressed_bytes: int = Field(
+        default=DEFAULT_MAX_DECOMPRESSED_BYTES, gt=0, le=DEFAULT_MAX_DECOMPRESSED_BYTES
+    )
     max_requests_per_run: int = Field(default=DEFAULT_MAX_REQUESTS_PER_RUN, gt=0)
     retrieved_at: Callable[[], datetime] = _utc_now
 
@@ -596,6 +610,7 @@ class UpstoxCapture(BaseModel):
     content_sha256: str
     outcome: AcquisitionOutcome
     retrieved_at: datetime
+    content_encoding: str | None = None
 
     @property
     def capture_id(self) -> str:
@@ -620,8 +635,11 @@ class UpstoxSource:
     command cannot exceed either by constructing a second source.
     """
 
-    def __init__(self, config: UpstoxConfig | None = None) -> None:
+    def __init__(
+        self, config: UpstoxConfig | None = None, *, snapshot_store: SnapshotStore | None = None
+    ) -> None:
         self._config = config or UpstoxConfig()
+        self._snapshot_store = snapshot_store
         self._pacer = RequestPacer(self._config.min_request_spacing_seconds)
         self._requests_made = 0
 
@@ -656,7 +674,24 @@ class UpstoxSource:
         """
         url = build_url(route, params, query)
         headers = self._headers(route)
-        status, payload, media_type = self._request_bytes(url, headers=headers)
+        try:
+            status, payload, media_type, encoding = self._request_bytes(
+                url, headers=headers, route=route
+            )
+        except UpstoxFetchError as error:
+            if error.capture_record is None:
+                error.capture_record = self._retain_response(
+                    route,
+                    url,
+                    error.raw_body,
+                    error.http_status,
+                    error.media_type,
+                    error.content_encoding,
+                    error.outcome,
+                    error.body_completeness,
+                    error.body_read_issue,
+                )
+            raise
         capture = UpstoxCapture(
             surface=route.surface,
             route_key=route.route_key,
@@ -667,7 +702,22 @@ class UpstoxSource:
             content_sha256=hashlib.sha256(payload).hexdigest(),
             outcome=AcquisitionOutcome.OK,
             retrieved_at=self._config.retrieved_at(),
+            content_encoding=encoding,
         )
+        record = seal_capture(
+            surface=capture.surface.value,
+            route_key=capture.route_key,
+            url=url,
+            retrieved_at=capture.retrieved_at,
+            http_status=status,
+            media_type=media_type,
+            content_encoding=encoding,
+            raw_body=payload,
+            outcome=to_outcome_record(capture.outcome),
+            body_completeness=BodyCompleteness.COMPLETE,
+        )
+        if self._snapshot_store is not None:
+            self._snapshot_store.put_capture(record, payload)
         _LOGGER.info(
             "upstox_fetched",
             surface=route.surface.value,
@@ -694,8 +744,8 @@ class UpstoxSource:
         return headers
 
     def _request_bytes(
-        self, url: str, *, headers: Mapping[str, str]
-    ) -> tuple[int, bytes, str | None]:
+        self, url: str, *, headers: Mapping[str, str], route: UpstoxRoute
+    ) -> tuple[int, bytes, str | None, str | None]:
         """Make one polite request: spaced, budgeted, redirect-refusing, 429-aware.
 
         The opener is built per request rather than cached on the instance, so a
@@ -704,48 +754,145 @@ class UpstoxSource:
         """
         request = urllib.request.Request(url, headers=dict(headers), method=HttpMethod.GET.value)
         opener = urllib.request.build_opener(NoRedirectHandler())
-        rate_limit: urllib.error.HTTPError | None = None
         for attempt in range(self._config.max_rate_limit_retries + 1):
             self._spend_request(url)
             self._pacer.wait_for_slot()
+            refusal: UpstoxFetchError | None = None
             try:
-                with opener.open(request, timeout=self._config.request_timeout_seconds) as response:
-                    status = response.getcode()
-                    if status is not None and 300 <= status < 400:
-                        raise UpstoxRedirectError(
-                            f"upstox returned redirect status {status} for {url}"
-                        )
-                    payload = read_bounded(response, self._config.max_compressed_bytes)
-                    media_type = _media_type(response.headers)
+                response = opener.open(request, timeout=self._config.request_timeout_seconds)
             except urllib.error.HTTPError as error:
-                self._refuse_terminal_status(error, url=url)
-                rate_limit = error
-                if attempt >= self._config.max_rate_limit_retries:
-                    break
-                backoff = self._config.rate_limit_backoff_seconds * (2**attempt)
-                _LOGGER.warning(
-                    "upstox_rate_limited", url=url, attempt=attempt + 1, backoff_seconds=backoff
-                )
-                time.sleep(backoff)
-                continue
-            except NonBytesResponseError as error:
-                raise UpstoxFetchError(
-                    "upstox response body is not bytes",
-                    outcome=AcquisitionOutcome.SCHEMA_DRIFT,
-                ) from error
-            except ResponseTooLargeError as error:
-                raise UpstoxFetchError(
-                    f"upstox response exceeded maximum {self._config.max_compressed_bytes} bytes"
-                ) from error
+                response = error
+                status = error.code
+                try:
+                    self._refuse_terminal_status(error, url=url)
+                except UpstoxRedirectError:
+                    error.close()
+                    raise
+                except UpstoxFetchError as classified:
+                    refusal = classified
+                else:
+                    refusal = UpstoxRateLimitedError(f"upstox rate-limited {url}")
             except (urllib.error.URLError, TimeoutError, OSError) as error:
-                raise UpstoxFetchError(
+                interrupted = UpstoxFetchError(
                     f"upstox fetch failed for {url}: {type(error).__name__}"
-                ) from error
-            return (200 if status is None else status), payload, media_type
-        raise UpstoxRateLimitedError(
-            f"upstox rate-limited {url} after "
-            f"{self._config.max_rate_limit_retries + 1} attempts; stopping"
-        ) from rate_limit
+                )
+                interrupted.body_read_issue = BodyReadIssue.READ_INTERRUPTED
+                raise interrupted from error
+            else:
+                status = response.getcode()
+                if status is not None and 300 <= status < 400:
+                    response.close()
+                    raise UpstoxRedirectError(f"upstox returned redirect status {status} for {url}")
+                if status is not None and status >= 400:
+                    status_error = urllib.error.HTTPError(
+                        url, status, "refused", response.headers, None
+                    )
+                    try:
+                        self._refuse_terminal_status(status_error, url=url)
+                    except UpstoxFetchError as classified:
+                        refusal = classified
+                    else:
+                        refusal = UpstoxRateLimitedError(f"upstox rate-limited {url}")
+            try:
+                media_type = _media_type(response.headers)
+                encoding = (
+                    response.headers.get(CONTENT_ENCODING_HEADER) if response.headers else None
+                )
+                length = response.headers.get("Content-Length") if response.headers else None
+                expected = None
+                if length and length.strip().isascii() and length.strip().isdigit():
+                    try:
+                        expected = int(length)
+                    except ValueError:
+                        # Excessively long digit strings are invalid framing too.
+                        pass
+                read = (
+                    BoundedBodyRead(None, BodyCompleteness.ABSENT, None)
+                    if isinstance(response, urllib.error.HTTPError) and response.fp is None
+                    else read_bounded_capture(
+                        response,
+                        self._config.max_compressed_bytes,
+                        timeout_seconds=self._config.request_timeout_seconds,
+                        expected_bytes=expected,
+                    )
+                )
+            finally:
+                response.close()
+            if refusal is None and read.completeness is not BodyCompleteness.COMPLETE:
+                refusal = UpstoxFetchError(
+                    "upstox response body could not be read completely",
+                    outcome=(
+                        AcquisitionOutcome.SCHEMA_DRIFT
+                        if read.issue is BodyReadIssue.NON_BYTES
+                        else AcquisitionOutcome.TRANSPORT_ERROR
+                    ),
+                )
+            if refusal is None:
+                assert read.raw_body is not None
+                return (200 if status is None else status), read.raw_body, media_type, encoding
+            refusal.raw_body = read.raw_body
+            refusal.http_status = status
+            refusal.media_type = media_type
+            refusal.content_encoding = encoding
+            refusal.body_completeness = read.completeness
+            refusal.body_read_issue = read.issue
+            # Publication runs under the acquisition refusal's exception context.
+            # Raw storage OSError must escape here, not become a transport retry.
+            try:
+                raise refusal
+            except UpstoxFetchError:
+                refusal.capture_record = self._retain_response(
+                    route,
+                    url,
+                    read.raw_body,
+                    status,
+                    media_type,
+                    encoding,
+                    refusal.outcome,
+                    read.completeness,
+                    read.issue,
+                )
+                if refusal.outcome is not AcquisitionOutcome.RATE_LIMITED:
+                    raise
+                if attempt >= self._config.max_rate_limit_retries:
+                    raise
+            backoff = self._config.rate_limit_backoff_seconds * (2**attempt)
+            _LOGGER.warning(
+                "upstox_rate_limited", url=url, attempt=attempt + 1, backoff_seconds=backoff
+            )
+            del response, read, refusal
+            time.sleep(backoff)
+        raise AssertionError("rate-limit loop cannot fall through")
+
+    def _retain_response(
+        self,
+        route: UpstoxRoute,
+        url: str,
+        payload: bytes | None,
+        status: int | None,
+        media_type: str | None,
+        encoding: str | None,
+        outcome: AcquisitionOutcome,
+        body_completeness: BodyCompleteness,
+        body_read_issue: BodyReadIssue | None,
+    ) -> CaptureRecord:
+        """Retain failed attempts before retry or refusal can discard evidence."""
+        record = seal_capture(
+            surface=route.surface.value,
+            route_key=route.route_key,
+            url=url,
+            retrieved_at=self._config.retrieved_at(),
+            http_status=status,
+            media_type=media_type,
+            content_encoding=encoding,
+            raw_body=payload,
+            outcome=to_outcome_record(outcome),
+            body_completeness=body_completeness,
+            body_read_issue=body_read_issue,
+        )
+        if self._snapshot_store is not None:
+            self._snapshot_store.put_capture(record, payload)
+        return record
 
     def _spend_request(self, url: str) -> None:
         """Charge one request against the run budget, refusing before the call."""

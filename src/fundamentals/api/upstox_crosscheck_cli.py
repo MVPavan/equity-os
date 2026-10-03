@@ -97,6 +97,7 @@ from fundamentals.ingest.upstox_crosscheck import (
 from fundamentals.ingest.upstox_crosscheck import EXIT_OK as EXIT_OK
 from fundamentals.ingest.upstox_crosscheck import SUMMARY_HEADER as SUMMARY_HEADER
 from fundamentals.ingest.upstox_crosscheck import is_valid_isin as is_valid_isin
+from fundamentals.ingest.upstox_retention import SNAPSHOTS_DIRECTORY
 from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
     UpstoxCapture,
@@ -114,6 +115,7 @@ from fundamentals.ingest.upstox_statements import (
     read_cash_flow,
     read_income_statement,
 )
+from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.verify.laneb_triage import (
     WARNINGS_FILENAME,
     TriageConfigError,
@@ -618,7 +620,10 @@ def dispatch_upstox_crosscheck_command(
         return None
     upstox_root = Path(args.upstox_root) if args.upstox_root else None
     credentials = None if upstox_root is not None else credentials_factory()
-    source = UpstoxSource(UpstoxConfig(credentials=credentials))
+    source = UpstoxSource(
+        UpstoxConfig(credentials=credentials),
+        snapshot_store=SnapshotStore(Path(args.out_dir) / SNAPSHOTS_DIRECTORY),
+    )
     try:
         run = run_upstox_crosscheck_command(
             args,

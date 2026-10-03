@@ -16,10 +16,15 @@ disagree.
 
 from __future__ import annotations
 
+import http.client
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Protocol
+
+from fundamentals.contracts.snapshot import BodyCompleteness, BodyReadIssue
 
 MIN_SPACING_FIELD = "min_spacing_seconds"
 
@@ -77,6 +82,87 @@ def read_bounded(response: ReadableResponse, max_bytes: int) -> bytes:
     if len(payload) > max_bytes:
         raise ResponseTooLargeError(f"response exceeded maximum {max_bytes} bytes")
     return payload
+
+
+@dataclass(frozen=True)
+class BoundedBodyRead:
+    """Available evidence, independently of the adapter's HTTP outcome."""
+
+    raw_body: bytes | None
+    completeness: BodyCompleteness
+    issue: BodyReadIssue | None
+
+
+def read_bounded_capture(
+    response: ReadableResponse,
+    max_bytes: int,
+    *,
+    timeout_seconds: float,
+    expected_bytes: int | None = None,
+) -> BoundedBodyRead:
+    """Retain a capped prefix; require EOF within byte, call and between-read budgets.
+
+    An individual read can outlast the deadline while making progress. This
+    does not cancel underlying reads or bound their allocations.
+    """
+    if max_bytes <= 0 or timeout_seconds <= 0:
+        raise ValueError("body and time budgets must be positive")
+    prefix = bytearray()
+    started = time.monotonic()
+
+    def failed(issue: BodyReadIssue) -> BoundedBodyRead:
+        return BoundedBodyRead(
+            bytes(prefix) if prefix else None,
+            BodyCompleteness.PARTIAL if prefix else BodyCompleteness.ABSENT,
+            issue,
+        )
+
+    for _ in range(1024):
+        if time.monotonic() - started >= timeout_seconds:
+            return failed(BodyReadIssue.READ_BUDGET_EXCEEDED)
+        try:
+            chunk = response.read(min(64 * 1024, max_bytes + 1 - len(prefix)))
+        except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, OSError) as error:
+            partial = getattr(error, "partial", b"")
+            if not isinstance(partial, bytes):
+                return failed(BodyReadIssue.NON_BYTES)
+            prefix.extend(memoryview(partial)[: max_bytes - len(prefix)])
+            # CPython's chunked reader wraps completed chunks around a failed
+            # _safe_read of the next chunk. Only that immediate wrapper is known
+            # to expose disjoint contiguous payload segments.
+            cause = error.__cause__
+            trace = error.__traceback__
+            chunk_wrapper = False
+            while trace is not None:
+                if trace.tb_frame.f_code is http.client.HTTPResponse._read_chunked.__code__:  # type: ignore[attr-defined]
+                    chunk_wrapper = True
+                trace = trace.tb_next
+            if (
+                isinstance(error, http.client.IncompleteRead)
+                and chunk_wrapper
+                and isinstance(cause, http.client.IncompleteRead)
+                and cause.__traceback__ is not None
+                and cause.__traceback__.tb_next is not None
+                and cause.__traceback__.tb_next.tb_frame.f_code
+                is http.client.HTTPResponse._safe_read.__code__  # type: ignore[attr-defined]
+            ):
+                if not isinstance(cause.partial, bytes):
+                    return failed(BodyReadIssue.NON_BYTES)
+                prefix.extend(memoryview(cause.partial)[: max_bytes - len(prefix)])
+            return failed(BodyReadIssue.READ_INTERRUPTED)
+        if not isinstance(chunk, bytes):
+            return failed(BodyReadIssue.NON_BYTES)
+        overflow = len(prefix) + len(chunk) > max_bytes
+        prefix.extend(memoryview(chunk)[: max_bytes - len(prefix)])
+        if overflow:
+            return failed(BodyReadIssue.LIMIT_EXCEEDED)
+        if time.monotonic() - started >= timeout_seconds:
+            return failed(BodyReadIssue.READ_BUDGET_EXCEEDED)
+        if not chunk:
+            if expected_bytes is not None and len(prefix) != expected_bytes:
+                return failed(BodyReadIssue.READ_INTERRUPTED)
+            return BoundedBodyRead(bytes(prefix), BodyCompleteness.COMPLETE, None)
+    return failed(BodyReadIssue.READ_BUDGET_EXCEEDED)
 
 
 class RequestPacer:

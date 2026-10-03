@@ -25,10 +25,9 @@ The retained body goes through :func:`write_bytes_no_clobber` rather than a
 decode-and-re-encode, so the bytes on disk stay identical to the ones the
 recorded sha256 covers — the property the whole restatement check rests on.
 
-Persistence is the artifact-writer pattern, not a store. The append-only
-content-hashed snapshot store is ``eqos-kx4.4``'s deliverable and does not exist
-yet; building an Upstox-specific ledger here would create a competing
-persistence contract and an expensive migration (``eqos-f2m`` tracks the move).
+Authoritative captures live in the shared snapshot store at ``<out>/snapshots``.
+The four legacy artifacts remain derived compatibility exports. Captures are
+published before parsing, so parser failures cannot discard acquisition evidence.
 """
 
 from __future__ import annotations
@@ -48,12 +47,14 @@ from fundamentals.api.artifact_writer import (
     write_json_no_clobber,
 )
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.contracts.snapshot import CaptureRecord, SnapshotError
 from fundamentals.ingest.upstox_instruments import (
     UpstoxInstrumentCatalog,
     UpstoxSuspendedCatalog,
     read_instrument_catalog,
     read_suspended_catalog,
 )
+from fundamentals.ingest.upstox_retention import SNAPSHOTS_DIRECTORY, seal_capture
 from fundamentals.ingest.upstox_source import (
     INSTRUMENTS_COMPLETE_KEY,
     INSTRUMENTS_SUSPENDED_KEY,
@@ -62,11 +63,14 @@ from fundamentals.ingest.upstox_source import (
     UpstoxCredentials,
     UpstoxError,
     UpstoxFetch,
+    UpstoxFetchError,
     UpstoxRoute,
     UpstoxSource,
     UpstoxSurface,
     route_for,
+    to_outcome_record,
 )
+from fundamentals.store.snapshot_store import SnapshotStore
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -127,6 +131,7 @@ class CaptureSummary(BaseModel):
     record_count: int
     retained_count: int
     directory: str
+    snapshot_record_sha256: str | None = None
 
 
 class UpstoxRunResult(BaseModel):
@@ -189,12 +194,16 @@ def dispatch_upstox_command(
     """Run ``upstox`` and return its exit code, or ``None`` for another command."""
     if getattr(args, "command", None) != UPSTOX_COMMAND:
         return None
-    source = UpstoxSource(UpstoxConfig(credentials=credentials_factory()))
+    store = SnapshotStore(Path(args.out) / SNAPSHOTS_DIRECTORY)
+    source = UpstoxSource(UpstoxConfig(credentials=credentials_factory()), snapshot_store=store)
     try:
         result = run_instruments_command(
-            Path(args.out), source=source, include_suspended=bool(args.include_suspended)
+            Path(args.out),
+            source=source,
+            include_suspended=bool(args.include_suspended),
+            snapshot_store=store,
         )
-    except UpstoxError as refusal:
+    except (UpstoxError, SnapshotError) as refusal:
         _LOGGER.warning(
             _REFUSED_EVENT,
             refusal=type(refusal).__name__,
@@ -206,7 +215,11 @@ def dispatch_upstox_command(
 
 
 def run_instruments_command(
-    out_dir: Path, *, source: SourceLike, include_suspended: bool = False
+    out_dir: Path,
+    *,
+    source: SourceLike,
+    include_suspended: bool = False,
+    snapshot_store: SnapshotStore | None = None,
 ) -> UpstoxRunResult:
     """Acquire the instrument files and write one capture directory per response.
 
@@ -215,20 +228,64 @@ def run_instruments_command(
     run rather than a default cost.
     """
     config = UpstoxConfig()
-    listed_fetch = source.fetch(route_for(UpstoxSurface.INSTRUMENTS, INSTRUMENTS_COMPLETE_KEY))
-    listed = read_instrument_catalog(
-        listed_fetch, max_decompressed_bytes=config.max_decompressed_bytes
+    store = (
+        snapshot_store
+        if snapshot_store is not None
+        else SnapshotStore(out_dir / SNAPSHOTS_DIRECTORY)
     )
-    captures = [_write_capture(out_dir, listed_fetch, listed, stem=LISTED_STEM)]
-    if include_suspended:
-        suspended_fetch = source.fetch(
-            route_for(UpstoxSurface.INSTRUMENTS, INSTRUMENTS_SUSPENDED_KEY)
+    with store.prepare_ordinary_output():
+        listed_fetch, listed_record = _fetch_retained(
+            source, route_for(UpstoxSurface.INSTRUMENTS, INSTRUMENTS_COMPLETE_KEY), store
         )
-        suspended = read_suspended_catalog(
-            suspended_fetch, max_decompressed_bytes=config.max_decompressed_bytes
+        listed = read_instrument_catalog(
+            listed_fetch, max_decompressed_bytes=config.max_decompressed_bytes
         )
-        captures.append(_write_capture(out_dir, suspended_fetch, suspended, stem=SUSPENDED_STEM))
+        captures = [
+            _write_capture(out_dir, listed_fetch, listed, stem=LISTED_STEM, record=listed_record)
+        ]
+        if include_suspended:
+            suspended_fetch, suspended_record = _fetch_retained(
+                source, route_for(UpstoxSurface.INSTRUMENTS, INSTRUMENTS_SUSPENDED_KEY), store
+            )
+            suspended = read_suspended_catalog(
+                suspended_fetch, max_decompressed_bytes=config.max_decompressed_bytes
+            )
+            captures.append(
+                _write_capture(
+                    out_dir,
+                    suspended_fetch,
+                    suspended,
+                    stem=SUSPENDED_STEM,
+                    record=suspended_record,
+                )
+            )
     return UpstoxRunResult(captures=tuple(captures))
+
+
+def _fetch_retained(
+    source: SourceLike, route: UpstoxRoute, store: SnapshotStore
+) -> tuple[UpstoxFetch, CaptureRecord]:
+    """Publish the acquisition before any surface reader runs."""
+    try:
+        fetch = source.fetch(route)
+    except UpstoxFetchError as error:
+        if error.capture_record is not None:
+            store.put_capture(error.capture_record, error.raw_body)
+        raise
+    capture = fetch.capture
+    record = seal_capture(
+        surface=capture.surface.value,
+        route_key=capture.route_key,
+        url=capture.request_url,
+        retrieved_at=capture.retrieved_at,
+        http_status=capture.http_status,
+        media_type=capture.media_type,
+        content_encoding=capture.content_encoding,
+        raw_body=fetch.raw_body,
+        outcome=to_outcome_record(capture.outcome),
+    )
+    store.put_capture(record, fetch.raw_body)
+    return fetch, record
 
 
 def _write_capture(
@@ -237,6 +294,7 @@ def _write_capture(
     catalog: UpstoxInstrumentCatalog | UpstoxSuspendedCatalog,
     *,
     stem: str,
+    record: CaptureRecord,
 ) -> CaptureSummary:
     """Write the four artifacts of one capture, refusing to clobber any of them.
 
@@ -272,6 +330,7 @@ def _write_capture(
         record_count=catalog.record_count,
         retained_count=catalog.retained_count,
         directory=str(directory),
+        snapshot_record_sha256=record.record_sha256,
     )
 
 

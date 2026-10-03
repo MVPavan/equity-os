@@ -30,14 +30,35 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     StringConstraints,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
-from fundamentals.contracts.acquisition_outcome import OutcomeRecord
+from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 
 SCHEMA_VERSION = 1
+CAPTURE_SCHEMA_VERSION = 2
+
+
+class BodyCompleteness(StrEnum):
+    """Whether retained bytes establish a normally ended response."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    ABSENT = "absent"
+
+
+class BodyReadIssue(StrEnum):
+    """Bounded reasons a response could not be read completely."""
+
+    LIMIT_EXCEEDED = "limit_exceeded"
+    READ_INTERRUPTED = "read_interrupted"
+    NON_BYTES = "non_bytes"
+    READ_BUDGET_EXCEEDED = "read_budget_exceeded"
+
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 Sha256 = Annotated[str, StringConstraints(pattern=SHA256_PATTERN)]
@@ -107,6 +128,15 @@ class MissingSnapshotError(SnapshotError):
     """The requested capture, or its body, is not retained."""
 
 
+class IncompleteSnapshotError(SnapshotError, ValueError):
+    """Retained evidence cannot be exposed as a complete response."""
+
+    def __init__(self, capture_id: str, state: BodyCompleteness) -> None:
+        self.capture_id = capture_id
+        self.state = state
+        super().__init__(f"capture {capture_id} has {state.value} body evidence")
+
+
 class SnapshotIOError(SnapshotError):
     """The retained tree could not be read or written."""
 
@@ -126,10 +156,11 @@ def canonical_sha256(payload: Any) -> str:
 
 
 class RequestMethod(StrEnum):
-    """The HTTP method a retained request used."""
+    """The operation a retained request used."""
 
     GET = "GET"
     POST = "POST"
+    LOCAL_READ = "LOCAL_READ"
 
 
 class RequestParameter(BaseModel):
@@ -236,6 +267,55 @@ class CaptureRecord(BaseModel):
     body: BlobRef | None
     outcome: OutcomeRecord
     rights: SnapshotRights
+    body_completeness: BodyCompleteness | None = None
+    body_read_issue: BodyReadIssue | None = None
+
+    @model_validator(mode="after")
+    def _validate_body_state(self) -> Self:
+        if self.schema_version == SCHEMA_VERSION:
+            if self.body_completeness is not None or self.body_read_issue is not None:
+                raise ValueError("version 1 cannot carry body-read metadata")
+            return self
+        if self.schema_version != CAPTURE_SCHEMA_VERSION:
+            raise ValueError("unsupported capture schema version")
+        state = self.body_completeness
+        if state is None:
+            raise ValueError("version 2 requires explicit body completeness")
+        if state is BodyCompleteness.COMPLETE:
+            if self.body is None or self.body_read_issue is not None:
+                raise ValueError("complete body requires a blob and no read issue")
+        elif state is BodyCompleteness.PARTIAL:
+            if self.body is None or self.body.byte_count == 0 or self.body_read_issue is None:
+                raise ValueError("partial body requires nonempty evidence and a read issue")
+        elif self.body is not None:
+            raise ValueError("absent body cannot carry a blob")
+        if state is not BodyCompleteness.COMPLETE and self.outcome.code in (
+            OutcomeCode.OK,
+            OutcomeCode.OK_EMPTY,
+        ):
+            raise ValueError("incomplete evidence cannot carry a successful outcome")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.schema_version == SCHEMA_VERSION:
+            data.pop("body_completeness", None)
+            data.pop("body_read_issue", None)
+        return data
+
+    @property
+    def effective_body_completeness(self) -> BodyCompleteness:
+        """Legacy body presence is compatibility inference, not newly proven EOF."""
+        if self.body_completeness is not None:
+            return self.body_completeness
+        return BodyCompleteness.COMPLETE if self.body is not None else BodyCompleteness.ABSENT
+
+    @property
+    def complete_body_sha256(self) -> str | None:
+        if self.effective_body_completeness is BodyCompleteness.COMPLETE and self.body is not None:
+            return self.body.content_sha256
+        return None
 
     @field_validator("retrieved_at")
     @classmethod
@@ -272,9 +352,16 @@ class CaptureRecord(BaseModel):
         body: BlobRef | None,
         outcome: OutcomeRecord,
         rights: SnapshotRights,
+        *,
+        schema_version: int = SCHEMA_VERSION,
+        body_completeness: BodyCompleteness | None = None,
+        body_read_issue: BodyReadIssue | None = None,
     ) -> Self:
         """Seal one capture, deriving its id from the instant and the body digest."""
         return cls(
+            schema_version=schema_version,
+            body_completeness=body_completeness,
+            body_read_issue=body_read_issue,
             capture_id=derive_capture_id(retrieved_at, body),
             request=request,
             retrieved_at=retrieved_at,
