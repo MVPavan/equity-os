@@ -21,7 +21,7 @@ from decimal import Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 from typing import Final, assert_never
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.contracts.comparative import (
     PERCENT_CONTEXT_PRECISION,
@@ -139,6 +139,8 @@ class RenderedGuidance(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    # None marks legacy label-based identity; canonical metrics are copied verbatim.
+    metric: str | None = Field(default=None, pattern=r"\S")
     metric_label: str
     lower_bound: Decimal
     upper_bound: Decimal

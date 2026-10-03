@@ -183,7 +183,8 @@ def _synthetic_update() -> EarningsUpdate:
         yoy=_change(ComparatorKind.YOY, YOY_PERIOD, PAT_YOY_VALUES),
     )
     guidance = RenderedGuidance(
-        metric_label="margin",
+        metric="margin",
+        metric_label="Operating margin",
         lower_bound=Decimal("18.0"),
         upper_bound=Decimal("19.5"),
         unit=PERCENT_UNIT,
@@ -594,3 +595,119 @@ def test_approval_record_markdown_shape() -> None:
     assert FINISHED_AT.date().isoformat() in record
     assert str(summary.claim_count) in record
     assert str(EXPECTED_SECONDS_RECORDED) in record
+
+
+# Literal pre-field artifact: whitespace is part of its review binding.
+LEGACY_REPORT_BYTES = b"""{
+ "issuer_name":"Synthetic Legacy", "nse_symbol":"SYNTH",
+ "issuer_quarter_label":"Q2FY28", "period_start":"2027-07-01",
+ "period_end":"2027-09-30", "knowledge_cutoff":"2027-10-20",
+ "facts":[], "guidance":[{"metric_label":"Legacy margin label",
+ "lower_bound":"18", "upper_bound":"19.5", "unit":"percent",
+ "constant_currency":false, "horizon":"fy2028", "quote":"Synthetic guidance",
+ "source":{"source_id":"synthetic",
+ "file_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "anchor_type":"XBRL_CONTEXT", "context_ref":"synthetic", "retrieved_at":"2027-10-20T06:00:00Z"}}],
+ "calculations":[], "cross_check":{"passed_count":0,"total_count":0},
+ "cross_foot":{"passed_count":0,"total_count":0}, "sec_cross_check_note":"synthetic"
+}\n"""
+LEGACY_GUIDANCE_ID = "guidance:Legacy margin label:fy2028"
+
+
+def test_legacy_report_cli_binds_original_bytes_through_approval(tmp_path: Path) -> None:
+    report = tmp_path / "legacy.json"
+    report.write_bytes(LEGACY_REPORT_BYTES)
+    session_dir = tmp_path / "legacy-session"
+    assert _run_cli(_start_argv(session_dir, report)) == EXIT_OK
+    session = _loaded(session_dir)
+    assert tuple(c.claim_id for c in session.claims) == (LEGACY_GUIDANCE_ID,)
+    digest = hashlib.sha256(LEGACY_REPORT_BYTES).hexdigest()
+    assert session.report_json_sha256 == digest
+    restored = EarningsUpdate.model_validate_json(LEGACY_REPORT_BYTES)
+    assert hashlib.sha256(restored.model_dump_json().encode()).hexdigest() != digest
+    assert _run_cli(_claim_argv(session_dir, "guidance:operating_margin:fy2028")) == EXIT_REFUSED
+    assert _loaded(session_dir).reviews == ()
+    assert _run_cli(_claim_argv(session_dir, LEGACY_GUIDANCE_ID)) == EXIT_OK
+    assert (
+        _run_cli(
+            [
+                REVIEW_COMMAND,
+                "finish",
+                "--session",
+                str(session_dir),
+                "--decision",
+                "approved",
+                "--decider",
+                DECIDER,
+                "--verbatim",
+                VERBATIM,
+            ]
+        )
+        == EXIT_OK
+    )
+    assert _loaded(session_dir).report_json_sha256 == digest
+    assert report.read_bytes() == LEGACY_REPORT_BYTES
+    assert digest in (session_dir / "approval_record.md").read_text()
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_saved_legacy_session_keeps_ids_reviews_lineage_and_decision(
+    tmp_path: Path,
+    finished: bool,
+) -> None:
+    from fundamentals.output.review_session import load_session, save_session
+
+    # A saved record is consumed as-is, without re-enumerating a current report.
+    payload = {
+        "session_id": "legacy-session",
+        "report_json_sha256": "b" * 64,
+        "symbol": "SYNTH",
+        "issuer_quarter": "Q2FY28",
+        "started_at": "2027-10-21T09:00:00Z",
+        "finished_at": "2027-10-21T09:30:00Z" if finished else None,
+        "claims": [
+            {
+                "claim_id": LEGACY_GUIDANCE_ID,
+                "kind": "guidance",
+                "text": "Old text",
+                "sources": ["Old source"],
+            }
+        ],
+        "reviews": [
+            {
+                "claim_id": LEGACY_GUIDANCE_ID,
+                "disposition": "edited",
+                "category": "wording",
+                "seconds": 25,
+                "note": "Old correction",
+                "recorded_at": "2027-10-21T09:15:00Z",
+            }
+        ],
+        "superseded": [
+            {
+                "claim_id": LEGACY_GUIDANCE_ID,
+                "disposition": "accepted",
+                "category": "none",
+                "seconds": 10,
+                "note": None,
+                "recorded_at": "2027-10-21T09:10:00Z",
+            }
+        ],
+        "instrumentation_seconds": 0.25,
+        "decision": {
+            "state": "APPROVED",
+            "decider": DECIDER,
+            "verbatim": VERBATIM,
+            "decided_at": "2027-10-21T09:30:00Z",
+        }
+        if finished
+        else None,
+    }
+    (tmp_path / "session.json").write_text(json.dumps(payload))
+    session = load_session(tmp_path)
+    assert session.model_dump(mode="json") == payload
+    save_session(session, tmp_path)
+    assert json.loads((tmp_path / "session.json").read_bytes()) == payload
+    assert load_session(tmp_path) == session
+    assert _run_cli(_claim_argv(tmp_path, "guidance:operating_margin:fy2028")) == EXIT_REFUSED
+    assert load_session(tmp_path) == session

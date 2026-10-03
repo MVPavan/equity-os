@@ -25,15 +25,17 @@ from typing import Any
 
 import pytest
 import yaml
+from temporal_fixture_support import FIXTURE_ACQUIRED_AT, run_trusted_fixture_pipeline
 
 from fundamentals.api.config import FundamentalsConfig, GuidanceRuleConfig, load_config
-from fundamentals.api.pipeline import XbrlInput, run_pipeline
+from fundamentals.api.pipeline import XbrlInput
+from fundamentals.api.source_admission import SourceAdmissionError
 from fundamentals.contracts.fact import ReconciliationStatus
 from fundamentals.contracts.guidance_claim import EpistemicClass, GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.role import FactRole
-from fundamentals.ingest.pdf_source import LoadedPdf, PdfBlock, PdfIntegrityError, PdfPage
+from fundamentals.ingest.pdf_source import LoadedPdf, PdfBlock, PdfPage
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
     RenderedFact,
@@ -319,7 +321,7 @@ def _deterministic_xbrl_input(config: FundamentalsConfig) -> XbrlInput:
         xml_bytes=xml_bytes,
         file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
         source_id=config.xbrl.source_id,
-        retrieved_at=config.quarter.knowledge_cutoff,
+        retrieved_at=FIXTURE_ACQUIRED_AT,
     )
 
 
@@ -327,7 +329,7 @@ def _run(config: FundamentalsConfig) -> None:
     """Run the deterministic pipeline once against an in-memory store."""
     store = FactStore(":memory:")
     try:
-        run_pipeline(
+        run_trusted_fixture_pipeline(
             config=config,
             xbrl_input=_deterministic_xbrl_input(config),
             results_pdf_path=str(config.results_pdf_path(_CONFIG_PATH)),
@@ -461,8 +463,7 @@ def test_earlier_quarter_cannot_overwrite_later_ledger() -> None:
 
     with pytest.raises(ValueError):
         _reconcile(prior, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-    with pytest.raises(ValueError):
-        _reconcile(prior, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)])
+    assert _reconcile(prior, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)]) == prior
 
 
 def test_ledger_round_trips_through_json(tmp_path: Path) -> None:
@@ -526,7 +527,7 @@ def test_pipeline_writes_ledger_only_after_gates_pass(tmp_path: Path) -> None:
     corrupted = config.model_copy(
         update={"transcript_pdf": config.transcript_pdf.model_copy(update={"sha256": "00" * 32})}
     )
-    with pytest.raises(PdfIntegrityError):
+    with pytest.raises(SourceAdmissionError, match=r"^transcript_pdf: source digest mismatch$"):
         _run(corrupted)
     assert not failed_path.exists(), "a failed gate must leave no ledger on disk"
 

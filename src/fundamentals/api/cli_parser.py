@@ -30,6 +30,7 @@ from fundamentals.api.upstox_cli import add_upstox_parser
 from fundamentals.api.upstox_crosscheck_cli import add_upstox_crosscheck_parser
 from fundamentals.api.upstox_sensitivity_cli import add_upstox_sensitivity_parser
 
+REGISTER_SOURCES_COMMAND = "register-sources"
 RUN_COMMAND = "run"
 VALIDATE_COMMAND = "validate"
 REPORT_COMMAND = "report"
@@ -44,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the ``fundamentals`` argument parser."""
     parser = argparse.ArgumentParser(prog="fundamentals", description=_DESCRIPTION)
     subparsers = parser.add_subparsers(dest="command", required=True)
+    register = subparsers.add_parser(
+        REGISTER_SOURCES_COMMAND, help="register approved retained originals"
+    )
+    for flag in (
+        "--config",
+        "--source-admission-manifest",
+        "--source-admission-store",
+        "--out-manifest",
+    ):
+        register.add_argument(flag, required=True)
     run = subparsers.add_parser(RUN_COMMAND, help="run the source-verified earnings update")
     run.add_argument("--issuer", required=True, help="issuer symbol, e.g. INFY")
     run.add_argument("--quarter", required=True, help="issuer quarter, e.g. Q1-FY25")
@@ -57,6 +68,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[mode.value for mode in XbrlMode],
         default=None,
         help="override the configured XBRL retrieval mode (local | live)",
+    )
+    run.add_argument(
+        "--source-admission-manifest",
+        default=None,
+        help="exact retained source references",
+    )
+    run.add_argument(
+        "--source-admission-store", default=None, help="protected native retained source root"
     )
     run.add_argument("--out", default=None, help="write the markdown to a file instead of stdout")
     run.add_argument("--out-json", default=None, help="write the rendered update JSON to a file")

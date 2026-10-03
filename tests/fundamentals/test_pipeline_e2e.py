@@ -25,6 +25,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from temporal_fixture_support import (
+    FIXTURE_ACQUIRED_AT,
+    install_trusted_fixture_cli,
+    run_trusted_fixture_pipeline,
+)
 
 from fundamentals.api.cli import _build_parser, main, run_command
 from fundamentals.api.config import FundamentalsConfig, load_config
@@ -60,13 +65,13 @@ def _synthetic_xbrl_input(config: FundamentalsConfig) -> XbrlInput:
         xml_bytes=xml_bytes,
         file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
         source_id=config.xbrl.source_id,
-        retrieved_at=config.quarter.knowledge_cutoff,
+        retrieved_at=FIXTURE_ACQUIRED_AT,
     )
 
 
 def _run_deterministic(store: FactStore) -> PipelineResult:
     config = _config()
-    return run_pipeline(
+    return run_trusted_fixture_pipeline(
         config=config,
         xbrl_input=_synthetic_xbrl_input(config),
         results_pdf_path=str(config.results_pdf_path(_CONFIG_PATH)),
@@ -268,3 +273,9 @@ def test_no_bare_unsourced_prior_period_numbers(store: FactStore) -> None:
     # Guard against an accidental stray percent-growth inference in the facts area.
     facts_section = re.search(r"## 2\. facts(.*?)## 3\.", result.markdown, re.DOTALL)
     assert facts_section is not None
+
+
+@pytest.fixture(autouse=True)
+def trusted_report_cli_composition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These caller tests exercise report outputs using asserted fixture evidence."""
+    install_trusted_fixture_cli(monkeypatch)

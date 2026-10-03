@@ -18,6 +18,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 from pydantic import ValidationError
+from tests.fundamentals.test_pipeline_temporal_admission import run_synthetic_pipeline
 
 from fundamentals.api.config import (
     FundamentalsConfig,
@@ -31,7 +32,6 @@ from fundamentals.api.pipeline import (
     PipelineError,
     XbrlInput,
     _guidance_quote_holds,
-    run_pipeline,
 )
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
@@ -728,7 +728,7 @@ def test_h6_failed_run_commits_no_canonical_facts(tmp_path: Path) -> None:
     try:
         # Gates pass; the effective-tax division guard fails the run after them.
         with pytest.raises(PipelineError, match="profit before tax is zero"):
-            run_pipeline(
+            run_synthetic_pipeline(
                 config=config,
                 xbrl_input=xbrl_input,
                 results_pdf_path=str(results_path),

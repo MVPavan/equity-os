@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pymupdf
 import pytest
+from tests.fundamentals.test_pipeline_temporal_admission import run_synthetic_pipeline
 
 from fundamentals.api.config import (
     FundamentalsConfig,
@@ -37,11 +38,12 @@ from fundamentals.api.config import (
     XbrlConfig,
     XbrlMode,
 )
-from fundamentals.api.pipeline import XbrlInput, _claim_range_quote, run_pipeline
+from fundamentals.api.pipeline import XbrlInput, _claim_range_quote
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.source_catalog import SourceClass
+from fundamentals.output.earnings_update import EarningsUpdate
 from fundamentals.store.fact_store import FactStore
 from fundamentals.verify.quote_anchor import SourceBlock, SourceDocument, verify_quote_anchor
 
@@ -222,7 +224,7 @@ def _run(
     )
     store = FactStore(":memory:")
     try:
-        result = run_pipeline(
+        result = run_synthetic_pipeline(
             config=config,
             xbrl_input=xbrl_input,
             results_pdf_path=results_path,
@@ -242,14 +244,7 @@ def test_non_infosys_filer_runs_end_to_end_without_aborting(
     _config, result = _run(genfiler_run)
     markdown = result.markdown  # type: ignore[attr-defined]
 
-    # The current-quarter (middle) column figures are rendered, not the leftmost.
-    assert "1,000" in markdown
-    assert "1,100" in markdown
-    assert "220" in markdown
-    assert "5.50" in markdown
-    # Prior-year (leftmost) and prior-quarter figures are NOT selected.
-    assert "900" not in markdown
-    assert "950" not in markdown
+    _assert_current_figures(markdown)
 
 
 def test_nci_absent_skips_the_dependent_identity_instead_of_failing(
@@ -320,3 +315,69 @@ def test_quote_anchor_gate_can_actually_fail() -> None:
 
     # A span pointing at the start of the block does not contain "3% to 4%".
     assert verify_quote_anchor(_guidance_claim("0:10"), quote, document).anchored is False
+
+
+def _facts_table_values(markdown: str) -> list[str]:
+    """Read only the value cells of the section 2 facts table."""
+    lines = markdown.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "## 2. facts")
+    values: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("## "):
+            break
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or cells[0] in {"P&L line", "---"}:
+            continue
+        values.append(cells[1])
+    return values
+
+
+def _assert_current_figures(markdown: str) -> None:
+    values = _facts_table_values(markdown)
+    assert "1,000" in values
+    assert "1,100" in values
+    assert "220" in values
+    assert "5.50" in values
+    assert "900" not in values
+    assert "950" not in values
+
+
+def _collision_update() -> EarningsUpdate:
+    from tests.fundamentals.test_phase05_review_session import _synthetic_update
+
+    update = _synthetic_update()
+    values = ("1000", "1100", "800", "300", "220", "5.50")
+    digest = "900950abcdef" + "0" * 52
+    facts = tuple(
+        fact.model_copy(
+            update={
+                "value": Decimal(value),
+                "sources": tuple(
+                    p.model_copy(update={"file_sha256": digest}) for p in fact.sources
+                ),
+            }
+        )
+        for fact, value in zip(update.facts, values, strict=True)
+    )
+    return update.model_copy(update={"facts": facts, "comparatives": (), "guidance": ()})
+
+
+def test_provenance_hash_digits_do_not_count_as_prior_column_values() -> None:
+    from fundamentals.output.earnings_update import render_earnings_update
+
+    markdown = render_earnings_update(_collision_update())
+    assert "900" in markdown and "950" in markdown
+    _assert_current_figures(markdown)
+
+
+@pytest.mark.parametrize("prior", ["900", "950"])
+def test_wrong_column_value_still_fails_figure_assertions(prior: str) -> None:
+    from fundamentals.output.earnings_update import render_earnings_update
+
+    update = _collision_update()
+    wrong = update.facts[0].model_copy(update={"value": Decimal(prior)})
+    update = update.model_copy(update={"facts": (wrong, *update.facts[1:])})
+    with pytest.raises(AssertionError):
+        _assert_current_figures(render_earnings_update(update))

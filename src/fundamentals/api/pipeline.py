@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -33,8 +34,23 @@ import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.api.config import FundamentalsConfig
+from fundamentals.api.source_admission import (
+    AdmittedPipelineInputs,
+    AdmittedSource,
+    PipelineSourceRefs,
+    SourceAdmissionError,
+    SourceEvidenceResolver,
+    actual_clock,
+    admitted_provenance,
+    bind_observation,
+    build_derived_fact,
+    monotonic_clock,
+    prepare_pipeline_sources,
+    utc_time,
+    validate_prepared,
+)
 from fundamentals.contracts.comparative import ConceptComparative
-from fundamentals.contracts.fact import CanonicalStatus, Fact, ReconciliationStatus
+from fundamentals.contracts.fact import Fact, ReconciliationStatus
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
     AccountingFramework,
@@ -68,8 +84,13 @@ from fundamentals.output.earnings_update import (
     VerificationOutcome,
     render_earnings_update,
 )
-from fundamentals.output.management_ledger import load_ledger, reconcile_ledger, save_ledger
-from fundamentals.store.fact_store import FactStore, StoredRevision
+from fundamentals.output.management_ledger import (
+    ManagementLedger,
+    load_ledger,
+    reconcile_ledger,
+    save_ledger,
+)
+from fundamentals.store.fact_store import CanonicalSelectionError, FactStore, StoredRevision
 from fundamentals.verify.cross_check import CrossCheckResult, cross_check
 from fundamentals.verify.crossfoot import (
     CrossFootResult,
@@ -116,6 +137,31 @@ class XbrlInput(BaseModel):
     retrieved_at: datetime
 
 
+class FactTemporalAudit(BaseModel):
+    """Persisted producer history is unproved, even after fresh source admission."""
+
+    model_config = ConfigDict(frozen=True)
+    row_id: int
+    persisted_knowledge_time: datetime
+    persisted_first_seen_time: datetime
+    derivation_completed_at: datetime
+    selection_action: str
+    persisted_basis: str = "unproved_producer"
+    historical_certification: bool = False
+
+
+class PipelineTemporalEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    run_started_at: datetime
+    cutoff: datetime
+    sources: tuple[AdmittedSource, ...]
+    xbrl_extracted_at: datetime
+    results_extracted_at: datetime
+    transcript_extracted_at: datetime
+    reconciled_at: datetime
+    facts: tuple[FactTemporalAudit, ...]
+
+
 class PipelineResult(BaseModel):
     """The rendered artifact plus the verification evidence behind it."""
 
@@ -127,6 +173,7 @@ class PipelineResult(BaseModel):
     cross_foot_results: tuple[CrossFootResult, ...]
     cross_check_results: tuple[CrossCheckResult, ...]
     sec_cross_check_note: str
+    temporal_evidence: PipelineTemporalEvidence
 
 
 def _normalize_entity(
@@ -229,28 +276,6 @@ def _claim_range_quote(claim: GuidanceClaim) -> str:
     return grouped if grouped in quote and plain not in quote else plain
 
 
-def _build_fact(
-    obs: Observation,
-    *,
-    role_family: str,
-    reconciliation_status: ReconciliationStatus,
-    config: FundamentalsConfig,
-    run_id: str,
-) -> Fact:
-    """Wrap an observation as an append-only, revision-aware Fact."""
-    return Fact(
-        observation=obs,
-        reconciliation_status=reconciliation_status,
-        canonical_status=CanonicalStatus.CANDIDATE,
-        revision_family=role_family,
-        run_id=run_id,
-        valid_time_start=config.quarter.period_start,
-        valid_time_end=config.quarter.period_end,
-        knowledge_time=config.quarter.knowledge_cutoff,
-        first_seen_time=config.quarter.knowledge_cutoff,
-    )
-
-
 def _required_concepts(config: FundamentalsConfig) -> frozenset[str]:
     """The concept set the XBRL parse must prove present (per-statement completeness)."""
     required: set[str] = {role.concept_qname for role in config.concepts.roles if role.required}
@@ -315,6 +340,51 @@ def _run_sec_cross_check(config: FundamentalsConfig) -> str:
     )
 
 
+def _reconcile_current_guidance(
+    prior: ManagementLedger | None,
+    *,
+    symbol: str,
+    issuer_quarter: str,
+    claims: Sequence[GuidanceClaim],
+    cutoff: datetime,
+    derivation_completed_at: datetime,
+) -> ManagementLedger:
+    """Reuse complete identical anchored output, retaining the original artifact."""
+    if (
+        prior is not None
+        and prior.updated_quarter == issuer_quarter
+        and prior.quarter_claims is not None
+    ):
+        excluded = {"provenance": {"retrieved_at", "first_seen_at"}}
+        old = {
+            (claim.metric, claim.horizon, claim.scope): claim.model_dump(exclude=excluded)
+            for claim in prior.quarter_claims
+        }
+        current = {
+            (claim.metric, claim.horizon, claim.scope): claim.model_dump(exclude=excluded)
+            for claim in claims
+        }
+        if len(old) == len(prior.quarter_claims) and len(current) == len(claims) and old == current:
+            for claim in prior.quarter_claims:
+                for clock in (claim.provenance.retrieved_at, claim.provenance.first_seen_at):
+                    if clock is None:
+                        raise SourceAdmissionError(
+                            "retained guidance clocks require present UTC time"
+                        )
+                    retained_at = utc_time(clock)
+                    if retained_at > cutoff or retained_at > derivation_completed_at:
+                        raise SourceAdmissionError(
+                            "retained guidance clocks exceed cutoff or "
+                            "current derivation completion"
+                        )
+            # Strict ledger reconciliation checks the retained artifact itself;
+            # fresh report claims above keep their actual acquisition clocks.
+            return reconcile_ledger(
+                prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=prior.quarter_claims
+            )
+    return reconcile_ledger(prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=claims)
+
+
 def run_pipeline(
     *,
     config: FundamentalsConfig,
@@ -325,8 +395,64 @@ def run_pipeline(
     transcript_pdf_path: str,
     transcript_pdf_sha256: str,
     store: FactStore,
+    source_refs: PipelineSourceRefs | None = None,
+    evidence_resolver: SourceEvidenceResolver | None = None,
+    clock: Callable[[], datetime] | None = None,
+    admitted_inputs: AdmittedPipelineInputs | None = None,
 ) -> PipelineResult:
     """Run the full Q1 FY25 increment end to end, failing closed on any gap."""
+    if (
+        xbrl_input.source_id != config.xbrl.source_id
+        or results_pdf_sha256 != config.results_pdf.sha256
+        or transcript_pdf_sha256 != config.transcript_pdf.sha256
+    ):
+        raise SourceAdmissionError("source identity/config digest mismatch")
+    if admitted_inputs is not None:
+        if source_refs is not None or evidence_resolver is not None or clock is not None:
+            raise SourceAdmissionError("prepared inputs cannot be combined with references/clock")
+        validate_prepared(
+            admitted_inputs,
+            cutoff=config.quarter.knowledge_cutoff,
+            source_ids=(
+                xbrl_input.source_id,
+                config.results_pdf.source_id,
+                config.transcript_pdf.source_id,
+            ),
+            hashes=(xbrl_input.file_sha256, results_pdf_sha256, transcript_pdf_sha256),
+            xbrl_bytes=xbrl_input.xml_bytes,
+        )
+        return _run_admitted(
+            config=config, config_path=config_path, store=store, prepared=admitted_inputs
+        )
+    tick = clock or actual_clock
+    with prepare_pipeline_sources(
+        xbrl_bytes=xbrl_input.xml_bytes,
+        xbrl_source_id=xbrl_input.source_id,
+        xbrl_sha256=xbrl_input.file_sha256,
+        results_pdf_path=results_pdf_path,
+        results_pdf_sha256=results_pdf_sha256,
+        results_source_id=config.results_pdf.source_id,
+        transcript_pdf_path=transcript_pdf_path,
+        transcript_pdf_sha256=transcript_pdf_sha256,
+        transcript_source_id=config.transcript_pdf.source_id,
+        cutoff=config.quarter.knowledge_cutoff,
+        run_started_at=utc_time(tick()),
+        source_refs=source_refs,
+        evidence_resolver=evidence_resolver,
+        clock=tick,
+    ) as prepared:
+        return _run_admitted(config=config, config_path=config_path, store=store, prepared=prepared)
+
+
+def _run_admitted(
+    *,
+    config: FundamentalsConfig,
+    config_path: Path | None,
+    store: FactStore,
+    prepared: AdmittedPipelineInputs,
+) -> PipelineResult:
+    completed = monotonic_clock(prepared)
+
     run_id = uuid.uuid4().hex
     log = _LOGGER.bind(
         issuer=config.issuer.nse_symbol, quarter=config.quarter.issuer_quarter, run_id=run_id
@@ -336,13 +462,13 @@ def run_pipeline(
     # 1. Load hash-verified held PDFs.
     results_pdf = load_pdf(
         source_id=config.results_pdf.source_id,
-        path=Path(results_pdf_path),
-        expected_sha256=results_pdf_sha256,
+        path=prepared._results_path,
+        expected_sha256=prepared.results_pdf.source_sha256,
     )
     transcript_pdf = load_pdf(
         source_id=config.transcript_pdf.source_id,
-        path=Path(transcript_pdf_path),
-        expected_sha256=transcript_pdf_sha256,
+        path=prepared._transcript_path,
+        expected_sha256=prepared.transcript_pdf.source_sha256,
     )
     log.info(
         "pdfs_loaded",
@@ -359,17 +485,21 @@ def run_pipeline(
             config.issuer.entity_scheme,
         )
         for obs in parse_observations(
-            xbrl_input.xml_bytes,
-            source_id=xbrl_input.source_id,
-            file_sha256=xbrl_input.file_sha256,
-            retrieved_at=xbrl_input.retrieved_at,
+            prepared.xbrl_bytes,
+            source_id=prepared.xbrl.source_id,
+            file_sha256=prepared.xbrl.source_sha256,
+            retrieved_at=prepared.xbrl.acquired_at,
             taxonomies=_ALL_TAXONOMIES,
             required_concepts=_required_concepts(config),
         )
     )
+    xbrl_extracted_at = completed()
     pdf_obs = extract_consolidated_pl(
-        results_pdf, spec=_pdf_parse_spec(config), retrieved_at=config.quarter.knowledge_cutoff
+        results_pdf, spec=_pdf_parse_spec(config), retrieved_at=prepared.results_pdf.acquired_at
     )
+    results_extracted_at = completed()
+    xbrl_obs = tuple(bind_observation(obs, prepared.xbrl) for obs in xbrl_obs)
+    pdf_obs = [bind_observation(obs, prepared.results_pdf) for obs in pdf_obs]
     pdf_by_concept = {obs.concept_qname: obs for obs in pdf_obs}
     log.info("sources_parsed", xbrl_observations=len(xbrl_obs), pdf_observations=len(pdf_obs))
 
@@ -442,8 +572,17 @@ def run_pipeline(
     )
     guidance_labels = {rule.metric: rule.label for rule in config.guidance.rules}
     guidance_claims = extract_guidance_claims(
-        transcript_pdf, rules=guidance_rules, retrieved_at=config.quarter.knowledge_cutoff
+        transcript_pdf, rules=guidance_rules, retrieved_at=prepared.transcript_pdf.acquired_at
     )
+    transcript_extracted_at = completed()
+    guidance_claims = [
+        claim.model_copy(
+            update={
+                "provenance": admitted_provenance(claim.provenance, prepared.transcript_pdf),
+            }
+        )
+        for claim in guidance_claims
+    ]
     source_document = _source_document(transcript_pdf)
     rendered_guidance: list[RenderedGuidance] = []
     for claim in guidance_claims:
@@ -470,6 +609,7 @@ def run_pipeline(
             )
         rendered_guidance.append(
             RenderedGuidance(
+                metric=claim.metric,
                 metric_label=guidance_labels.get(claim.metric, claim.metric),
                 lower_bound=claim.lower_bound,
                 upper_bound=claim.upper_bound,
@@ -490,11 +630,17 @@ def run_pipeline(
         else None
     )
     ledger = (
-        reconcile_ledger(
-            load_ledger(ledger_path),
+        _reconcile_current_guidance(
+            load_ledger(
+                ledger_path,
+                issuer_quarter=config.quarter.issuer_quarter,
+                symbol=config.issuer.nse_symbol,
+            ),
             symbol=config.issuer.nse_symbol,
             issuer_quarter=config.quarter.issuer_quarter,
             claims=guidance_claims,
+            cutoff=prepared.cutoff,
+            derivation_completed_at=transcript_extracted_at,
         )
         if ledger_path is not None
         else None
@@ -503,6 +649,7 @@ def run_pipeline(
     # 7. Assemble the render inputs and the planned store writes WITHOUT touching
     #    the store yet: canonical promotion happens only after every gate AND the
     #    render succeed, so a later failure never leaves partial canonical facts.
+    reconciled_at = completed()
     planned_writes: list[_PlannedWrite] = []
     rendered_facts: list[RenderedFact] = []
     for role_concept in config.concepts.roles:
@@ -519,12 +666,13 @@ def run_pipeline(
         )
         planned_writes.append(
             _PlannedWrite(
-                fact=_build_fact(
+                fact=build_derived_fact(
                     xbrl_fact_obs,
                     role_family=family,
                     reconciliation_status=status,
                     config=config,
                     run_id=run_id,
+                    completed_at=reconciled_at,
                 ),
                 make_canonical=True,
             )
@@ -535,12 +683,13 @@ def run_pipeline(
         if concept in config.concepts.cross_check and pdf_confirm is not None:
             planned_writes.append(
                 _PlannedWrite(
-                    fact=_build_fact(
+                    fact=build_derived_fact(
                         pdf_confirm,
                         role_family=family,
                         reconciliation_status=ReconciliationStatus.CROSS_SOURCE_CONFIRMED,
                         config=config,
                         run_id=run_id,
+                        completed_at=reconciled_at,
                     ),
                     make_canonical=False,
                 )
@@ -604,13 +753,38 @@ def run_pipeline(
 
     # 10. All gates and the render passed — now commit. Canonical promotion is a
     #     separate auditable step; nothing was persisted on a failed run.
+    audits: list[FactTemporalAudit] = []
     stored_revisions: list[StoredRevision] = []
-    for planned in planned_writes:
+    decision_times = [completed() if planned.make_canonical else None for planned in planned_writes]
+    for planned, decision_time in zip(planned_writes, decision_times, strict=True):
         revision = store.put(planned.fact)
+        action = "not_selected"
         if planned.make_canonical:
-            revision = store.select_canonical(
-                revision.row_id, reason="XBRL context-bound canonical for Q1 evidence"
+            assert decision_time is not None
+            history = store.get_selection_history(revision.content_identity)
+            if history and decision_time <= history[-1].selected_at:
+                raise CanonicalSelectionError("selection time must strictly follow predecessor")
+            current = store.get_canonical(revision.content_identity, cutoff=decision_time)
+            if current is not None and current.row_id == revision.row_id:
+                revision = current
+                action = "unchanged"
+            else:
+                revision = store.select_canonical(
+                    revision.row_id,
+                    reason="XBRL context-bound canonical for Q1 evidence",
+                    selected_at=decision_time,
+                    expected_selection_id=history[-1].selection_id if history else 0,
+                )
+                action = "selected"
+        audits.append(
+            FactTemporalAudit(
+                row_id=revision.row_id,
+                persisted_knowledge_time=revision.fact.knowledge_time,
+                persisted_first_seen_time=revision.fact.first_seen_time,
+                derivation_completed_at=reconciled_at,
+                selection_action=action,
             )
+        )
         stored_revisions.append(revision)
     if ledger_path is not None and ledger is not None:
         save_ledger(ledger, ledger_path)
@@ -624,6 +798,16 @@ def run_pipeline(
         cross_foot_results=tuple(cross_foot_results),
         cross_check_results=tuple(cross_check_results),
         sec_cross_check_note=sec_note,
+        temporal_evidence=PipelineTemporalEvidence(
+            run_started_at=prepared.run_started_at,
+            cutoff=prepared.cutoff,
+            sources=(prepared.xbrl, prepared.results_pdf, prepared.transcript_pdf),
+            xbrl_extracted_at=xbrl_extracted_at,
+            results_extracted_at=results_extracted_at,
+            transcript_extracted_at=transcript_extracted_at,
+            reconciled_at=reconciled_at,
+            facts=tuple(audits),
+        ),
     )
 
 

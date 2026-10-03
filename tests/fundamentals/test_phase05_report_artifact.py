@@ -20,11 +20,16 @@ from typing import Any
 
 import pytest
 import yaml
+from temporal_fixture_support import (
+    FIXTURE_ACQUIRED_AT,
+    install_trusted_fixture_cli,
+    run_trusted_fixture_pipeline,
+)
 
 from fundamentals.api.cli import main, run_command
 from fundamentals.api.cli_parser import build_parser
 from fundamentals.api.config import FundamentalsConfig, load_config
-from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
+from fundamentals.api.pipeline import PipelineResult, XbrlInput
 from fundamentals.contracts.fact import Fact, ReconciliationStatus
 from fundamentals.output.earnings_update import EarningsUpdate
 from fundamentals.store.fact_store import FactStore
@@ -58,13 +63,13 @@ def _synthetic_xbrl_input(config: FundamentalsConfig) -> XbrlInput:
         xml_bytes=xml_bytes,
         file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
         source_id=config.xbrl.source_id,
-        retrieved_at=config.quarter.knowledge_cutoff,
+        retrieved_at=FIXTURE_ACQUIRED_AT,
     )
 
 
 def _run(config: FundamentalsConfig, store: FactStore) -> PipelineResult:
     """Run the deterministic pipeline for ``config`` against the synthetic fixtures."""
-    return run_pipeline(
+    return run_trusted_fixture_pipeline(
         config=config,
         xbrl_input=_synthetic_xbrl_input(config),
         results_pdf_path=str(config.results_pdf_path(_CONFIG_PATH)),
@@ -196,3 +201,9 @@ def test_store_parent_directory_is_created(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert db_path.exists()
+
+
+@pytest.fixture(autouse=True)
+def trusted_report_cli_composition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These caller tests exercise report outputs using asserted fixture evidence."""
+    install_trusted_fixture_cli(monkeypatch)

@@ -24,10 +24,11 @@ from typing import Any
 import pytest
 import yaml
 from pydantic import BaseModel, ConfigDict
+from temporal_fixture_support import FIXTURE_ACQUIRED_AT, run_trusted_fixture_pipeline
 
 from fundamentals.api.comparatives import REASON_SELECTION_FAILED
 from fundamentals.api.config import FundamentalsConfig, load_config
-from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
+from fundamentals.api.pipeline import PipelineResult, XbrlInput
 from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.contracts.observation import (
     AccountingFramework,
@@ -360,14 +361,14 @@ def _e2e_config(tmp_path: Path, comparators: dict[str, Any] | None) -> Path:
 def _run_e2e(config: FundamentalsConfig, config_path: Path, store: FactStore) -> PipelineResult:
     """Run the deterministic INFY pipeline over the committed synthetic fixtures."""
     xml_bytes = _SYNTHETIC_XBRL.read_bytes()
-    return run_pipeline(
+    return run_trusted_fixture_pipeline(
         config=config,
         config_path=config_path,
         xbrl_input=XbrlInput(
             xml_bytes=xml_bytes,
             file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
             source_id=config.xbrl.source_id,
-            retrieved_at=config.quarter.knowledge_cutoff,
+            retrieved_at=FIXTURE_ACQUIRED_AT,
         ),
         results_pdf_path=str(config.results_pdf_path(config_path)),
         results_pdf_sha256=config.results_pdf.sha256,

@@ -202,7 +202,12 @@ def enumerate_claims(update: EarningsUpdate) -> tuple[ReviewClaim, ...]:
         claims.extend(_comparative_claims(comparative))
     claims.extend(
         ReviewClaim(
-            claim_id=f"guidance:{guidance.metric_label}:{guidance.horizon}",
+            # Missing/null metrics retain the artifact's legacy label-based identity.
+            claim_id=(
+                f"guidance:{guidance.metric}:{guidance.horizon}"
+                if guidance.metric is not None
+                else f"guidance:{guidance.metric_label}:{guidance.horizon}"
+            ),
             kind=ClaimKind.GUIDANCE,
             text=(
                 f"{guidance.metric_label}: {guidance.lower_bound} to {guidance.upper_bound} "
