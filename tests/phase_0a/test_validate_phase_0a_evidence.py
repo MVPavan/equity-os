@@ -80,9 +80,7 @@ class BeadsGraphTests(unittest.TestCase):
 
 class OwnershipTests(unittest.TestCase):
     def test_exact_set_passes(self) -> None:
-        self.assertEqual(
-            validator.check_ownership_set(list(validator.REGISTER_ITEMS)), []
-        )
+        self.assertEqual(validator.check_ownership_set(list(validator.REGISTER_ITEMS)), [])
 
     def test_duplicate_owner_rejected(self) -> None:
         ids = list(validator.REGISTER_ITEMS) + ["A-01"]
@@ -139,9 +137,7 @@ class RightsTests(unittest.TestCase):
 
 class CoverageTests(unittest.TestCase):
     def test_four_quarter_continuity(self) -> None:
-        self.assertEqual(
-            validator.check_quarter_continuity({"Q0", "Q1", "Q2", "Q3"}), []
-        )
+        self.assertEqual(validator.check_quarter_continuity({"Q0", "Q1", "Q2", "Q3"}), [])
         self.assertTrue(validator.check_quarter_continuity({"Q0", "Q1", "Q2"}))
 
     def test_incomplete_coverage_gap_flagged(self) -> None:
@@ -234,9 +230,7 @@ def _decision(**overrides: object) -> dict:
 
 class AuthorityTests(unittest.TestCase):
     def test_valid_decision_passes(self) -> None:
-        self.assertEqual(
-            validator.check_human_decision(_decision(), "product_owner", "V1"), []
-        )
+        self.assertEqual(validator.check_human_decision(_decision(), "product_owner", "V1"), [])
 
     def test_absent_decision_blocked(self) -> None:
         findings = validator.check_human_decision(
@@ -624,9 +618,7 @@ class IntegratedPackageBuilder:
 
     def _build_coverage(self) -> None:
         header = "program_quarter,dimension,state"
-        rows = [
-            f"{q},D1,COVERED" for q in ("Q0", "Q1", "Q2", "Q3")
-        ]
+        rows = [f"{q},D1,COVERED" for q in ("Q0", "Q1", "Q2", "Q3")]
         self._write("a-06-filing-coverage-matrix.csv", "\n".join([header, *rows]))
 
     def _build_golden(self) -> None:
