@@ -1,0 +1,126 @@
+{
+  "recorded_on": "2026-10-03",
+  "scope": "Portable selected review and verification evidence, not private source documents or runtime agent transcripts",
+  "files": [
+    {
+      "source_path": "scratchpad/execution/product-gold-first-batch/final-review-report.md",
+      "source_sha256": "247e4ccfa1b41d1d02d44c270904197d4d26cad6f6f34a4021f7bad5a9b81fe6",
+      "archived_path": "docs/evidence/product-completion/verification/first-batch-review.md",
+      "archived_sha256": "a93142fe6334901732bfa95725c7becae6c248a24dd6a5456ed92978d21a0c40",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/final-engineering-review-report.md",
+      "source_sha256": "2db62f027db998083154bbcd3ea773bb636a2a670f8642aa4a93190c6bdf1e56",
+      "archived_path": "docs/evidence/product-completion/verification/integrated-review-initial.md",
+      "archived_sha256": "423f1294ce7976b68bc3ae77b781da51306d5f81681783105657338ac8f3f72e",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/final-fix-rereview-report.md",
+      "source_sha256": "a9afbd4c649ef92b44373aa8eac368f5638cedd928f460fe04a70d77c4331fac",
+      "archived_path": "docs/evidence/product-completion/verification/integrated-review-final.md",
+      "archived_sha256": "6342e624980cf04f105e462d72f9a9552523f02c9a531b2bcd1477f634f1409f",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/temporal-r1-rereview-report.md",
+      "source_sha256": "4681088b5967f08efd622d89de5ae4ac3b5c17297e8fccdd40b697de45030e86",
+      "archived_path": "docs/evidence/product-completion/verification/temporal-review.md",
+      "archived_sha256": "0fa1edd5845de8d76e28e3cdfe2bf272c3a1b1cf516f6b8b7601d2b16868d3ea",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/intake-task1-r1-rereview-report.md",
+      "source_sha256": "e672b9c7ef541e406a8b1e48795b1a54d5fdc4df12af5e28557a15b8a6309e28",
+      "archived_path": "docs/evidence/product-completion/verification/source-intake-store-review.md",
+      "archived_sha256": "f7bc4a8de62ae98d9e2f60b868afa0b005a936c1fad728b166e6e2c8585e8b45",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/intake-task2-r2-rereview-report.md",
+      "source_sha256": "128ae6e58ba8f26eb52b14e918b259ffaf43c4fd22619774fbec4e43eccbe0b9",
+      "archived_path": "docs/evidence/product-completion/verification/source-intake-native-review.md",
+      "archived_sha256": "b71ac50046f13702b8d52b34a7bf3216bdaf651ff5216d321b4d2a6f66f4dfb0",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/producer-proof-plan-rereview-report.md",
+      "source_sha256": "76c08e9034ff094a4ab19a1de045730260bf532d17d0635888c7affcccf37a84",
+      "archived_path": "docs/evidence/product-completion/verification/producer-plan-review.md",
+      "archived_sha256": "893adb0678b526a1835d5b05fead37d718fe0d3d2ef1e00eab596b2dc3e60bdc",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-closeout-20261003/closeout-tests.log",
+      "source_sha256": "709a3134ecb9646d53a641e9bbfd670720279f69d37a14bbfa3c09c53c7c0ecc",
+      "archived_path": "docs/evidence/product-completion/verification/closeout-tests.log",
+      "archived_sha256": "709a3134ecb9646d53a641e9bbfd670720279f69d37a14bbfa3c09c53c7c0ecc",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-closeout-20261003/ruff.log",
+      "source_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "archived_path": "docs/evidence/product-completion/verification/ruff.log",
+      "archived_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-closeout-20261003/format.log",
+      "source_sha256": "04989a5b23ca766c18f9efa8258977a1672c326efdc53b3c1f544e3fad4650b2",
+      "archived_path": "docs/evidence/product-completion/verification/format.log",
+      "archived_sha256": "04989a5b23ca766c18f9efa8258977a1672c326efdc53b3c1f544e3fad4650b2",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-closeout-20261003/mypy.log",
+      "source_sha256": "00ba2ab9dd03863df8645024fb737cd25f56157fde88245fab148390dbbe795a",
+      "archived_path": "docs/evidence/product-completion/verification/mypy.log",
+      "archived_sha256": "00ba2ab9dd03863df8645024fb737cd25f56157fde88245fab148390dbbe795a",
+      "transformation": "Repository absolute paths made relative; transient pytest paths redacted. Original retained locally."
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/root-final-after-fix-candidate-hashes.json",
+      "source_sha256": "ff1ee85f9f6cec711fc518333ad931873627e8a6aab34e4ff1572b7af96d3d17",
+      "archived_path": "docs/evidence/product-completion/verification/candidate-file-hashes.json",
+      "archived_sha256": "ff1ee85f9f6cec711fc518333ad931873627e8a6aab34e4ff1572b7af96d3d17",
+      "transformation": "NONE_EXACT_BYTES"
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-second-batch/vision-acceptance-first-batch-original.json",
+      "source_sha256": "f05863e4098dd25a6a2ce0e07da9816257dc4df9530d8eb8105abb0c0729d64e",
+      "archived_path": "docs/evidence/product-completion/verification/vision-acceptance-first-batch.json",
+      "archived_sha256": "f05863e4098dd25a6a2ce0e07da9816257dc4df9530d8eb8105abb0c0729d64e",
+      "transformation": "NONE_EXACT_BYTES"
+    },
+    {
+      "source_path": "scratchpad/execution/product-gold-closeout-20261003/handoff-check-report.md",
+      "source_sha256": "1cf4eaa20c23c3c5434b4a83e2fb9c529fb84431d0830fa70c32f1ffd339d72a",
+      "archived_path": "docs/evidence/product-completion/verification/handoff-retrieval-check.md",
+      "archived_sha256": "ae01fc172fbf0a356f94dc2b2337dae59a5e56343e0677592cb9ca3198d9e370",
+      "transformation": "Repository absolute file links made relative; original report retained locally."
+    }
+  ],
+  "closeout_verification": {
+    "exit_status": 0,
+    "passed": 2341,
+    "skipped": 15,
+    "subtests_passed": 8,
+    "command": "PYTHONPATH=. .venv/bin/python -m pytest tests/fundamentals tests/phase_0a tests/equity_os_blueprint -q -ra --tb=short --basetemp=scratchpad/execution/product-gold-closeout-20261003/test-temp",
+    "ruff_lint": "PASS",
+    "ruff_format_files": 303,
+    "strict_mypy_source_files": 185,
+    "code_changed_since_accepted_review": false,
+    "skip_boundary": "Five opt-in live cases, two unavailable optional OCR cases, seven unreachable SEC cases, one deliberate pinned-origin exemption"
+  },
+  "vision_verdicts": {
+    "PILOT_PROVEN": "NO",
+    "CORE_RESEARCH_RELEASE": "NO",
+    "VISION_SATISFIED": "NO"
+  },
+  "handoff_retrieval_check": {
+    "status": "PASS_FRESH_CONTEXT_RETRIEVAL",
+    "candidate_hashes_matched": 45,
+    "documentation_state_note": "Report predates final documentation commit; its untracked-artifact observation is resolved by closeout. Historical plan/issue wording is explicitly qualified in handoff; stale index absence assertion removed."
+  }
+}

@@ -1,0 +1,50 @@
+..................s..................................................... [  3%]
+........................................................................ [  6%]
+.................................................................s...... [  9%]
+.s...................................................................... [ 12%]
+........................................................................ [ 15%]
+........................................................................ [ 18%]
+........................................................................ [ 21%]
+s....................................................................... [ 24%]
+........................................................................ [ 27%]
+................................................................s....... [ 30%]
+........................................................................ [ 33%]
+......................................................................s. [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 45%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 55%]
+........................................................................ [ 58%]
+........sssssss......................................................... [ 61%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 82%]
+........................................................................ [ 85%]
+........................................................................ [ 88%]
+........................................................................ [ 91%]
+..........s............................................................. [ 94%]
+...........................................s............................ [ 97%]
+....................................................             [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/fundamentals/test_bse.py:437: live BSE fetch is opt-in; set RUN_BSE_LIVE=1 to run
+SKIPPED [1] tests/fundamentals/test_goal_runner.py:705: live validation is opt-in (set FUNDAMENTALS_LIVE_VALIDATION=1)
+SKIPPED [1] tests/fundamentals/test_goal_runner.py:1005: could not import 'rapidocr_onnxruntime': No module named 'rapidocr_onnxruntime'
+SKIPPED [1] tests/fundamentals/test_pdf_ocr.py:531: could not import 'rapidocr_onnxruntime': No module named 'rapidocr_onnxruntime'
+SKIPPED [1] tests/fundamentals/test_pipeline_e2e.py:243: live NSE fetch is opt-in; set RUN_NSE_LIVE=1 to run
+SKIPPED [1] tests/fundamentals/test_screener.py:172: opt-in live Screener fetch; set RUN_SCREENER_LIVE=1
+SKIPPED [1] tests/fundamentals/test_sec.py:63: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:72: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:79: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:87: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:97: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:106: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_sec.py:112: SEC EDGAR unreachable: companyfacts fetch failed after 3 attempts
+SKIPPED [1] tests/fundamentals/test_upstox_scope_guards.py:128: the transport module is where the two pinned origins are declared
+SKIPPED [1] tests/fundamentals/test_xbrl.py:406: live NSE fetch is opt-in; set RUN_NSE_LIVE=1 to run
+2341 passed, 15 skipped, 8 subtests passed in 66.23s (0:01:06)

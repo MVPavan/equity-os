@@ -1,0 +1,182 @@
+[
+  {
+    "path": "src/fundamentals/api/cli.py",
+    "sha256": "1ffbcecee82fadf37ee3998ab9ddbe7dc6d11e09b2155b27c2794654443a61c7"
+  },
+  {
+    "path": "src/fundamentals/api/cli_parser.py",
+    "sha256": "6209c158769e989081d171cfe62706ef748fc1fa56a1de98a1eda9b35d41da7f"
+  },
+  {
+    "path": "src/fundamentals/api/pipeline.py",
+    "sha256": "fcbca720695676e79f4d07cb10433059ffeb79f90ccd475f57c6b7816a8e5bba"
+  },
+  {
+    "path": "src/fundamentals/api/source_admission.py",
+    "sha256": "33bf05bce5b983c922089386f2213e96fea4a3fb0a1a3b2f667d1cc1b4e7b3aa"
+  },
+  {
+    "path": "src/fundamentals/api/source_intake.py",
+    "sha256": "2a366a2c446ce05f65dc8567f6126381835672164a9a07bc5b124731c53f7384"
+  },
+  {
+    "path": "src/fundamentals/api/upstox_cli.py",
+    "sha256": "c07da53052c75e7d2a1895897595f1bc96bd1acd605003f00ea279db8ca26911"
+  },
+  {
+    "path": "src/fundamentals/api/upstox_crosscheck_cli.py",
+    "sha256": "8339f5d22cadf221d95b90081d2c0292e790c3dad26c004b52efa075c9451fba"
+  },
+  {
+    "path": "src/fundamentals/contracts/snapshot.py",
+    "sha256": "64c3494b03c03183423b8115d8fb17d336e6156c86e28096a79ca035cec14e07"
+  },
+  {
+    "path": "src/fundamentals/contracts/source_registration.py",
+    "sha256": "601999e6157a06b737086d563f7af7bc52970013edfe99035c1ca11095602da1"
+  },
+  {
+    "path": "src/fundamentals/ingest/http_session.py",
+    "sha256": "01e1a42185e278a6edacb4e31005bed483f7764a88a1586dcfcefda097ad790c"
+  },
+  {
+    "path": "src/fundamentals/ingest/screener_screen.py",
+    "sha256": "69ba79a030da6ebb66166642ec31fbcefe7af8dc64dbca1011d2d5dad69ce70a"
+  },
+  {
+    "path": "src/fundamentals/ingest/upstox_candle_retention.py",
+    "sha256": "31923d78687e59592d732db98c1fe1c61ab3c86057c82c3f7da43a3108d48af7"
+  },
+  {
+    "path": "src/fundamentals/ingest/upstox_retention.py",
+    "sha256": "9b7fb9591f4c5696db32ad9bae3778960469218eccf4ee226007bc91ac8b1734"
+  },
+  {
+    "path": "src/fundamentals/ingest/upstox_source.py",
+    "sha256": "4650d35442ba0a48d31724123fe84e427a795d4e23f11c71a1a91652de3e237b"
+  },
+  {
+    "path": "src/fundamentals/news/events.py",
+    "sha256": "0a359483e3d66787bda4ceda74e05f0b0ded253bf5f92485e595e90a2f072c9a"
+  },
+  {
+    "path": "src/fundamentals/output/earnings_update.py",
+    "sha256": "73a3d4aa90e76b53f428f4a80a953270cd91d40c500c460c1b144d09d398b2dc"
+  },
+  {
+    "path": "src/fundamentals/output/management_ledger.py",
+    "sha256": "197df77dc46d9f2b5c477e20528d302a054ae347eab9e87a53044276fee65fc5"
+  },
+  {
+    "path": "src/fundamentals/output/review_session.py",
+    "sha256": "608c81e29069c5ff13a71ea92b36f5759aabdd8e7f9a1aeeec6355b73cfe50df"
+  },
+  {
+    "path": "src/fundamentals/store/fact_store.py",
+    "sha256": "ff373eeec644915da0b2c66b4a32f3e9ed1ce56efaa81db0e358b2dbddba8c50"
+  },
+  {
+    "path": "src/fundamentals/store/snapshot_store.py",
+    "sha256": "079424e492c026f885101ff15272e436e4891f79a5bf3fcde835bc0b937c2429"
+  },
+  {
+    "path": "src/fundamentals/store/source_intake_store.py",
+    "sha256": "e5605f76434b22232cd88c625a9f1f163e8388022de4ea6cb6dd7af4c1d9edcd"
+  },
+  {
+    "path": "tests/equity_os_blueprint/test_reconcile_ledger_approval_contracts.py",
+    "sha256": "2e8767f74e46b49068c47d60702dd0d286e7ecef20a750d2b20f163880f6905d"
+  },
+  {
+    "path": "tests/fundamentals/temporal_fixture_support.py",
+    "sha256": "8d66ba44498c6c3eb77caa8321f94c26ead278132149822da84cd38ffd0ca618"
+  },
+  {
+    "path": "tests/fundamentals/test_cli_temporal_admission.py",
+    "sha256": "751629ddf4b6886c7e01382fa716fa0404d11aae715f565c0d81b38fc1b31788"
+  },
+  {
+    "path": "tests/fundamentals/test_generalization.py",
+    "sha256": "467d607d4df510a153b58543ed442213cafd5db13a4c17f1e60ec0ae966ba986"
+  },
+  {
+    "path": "tests/fundamentals/test_guidance_review_identity.py",
+    "sha256": "c73764c11bcccd7eba8aa7cc611a417773d1b34a0355aeee7852f63f29c1b49f"
+  },
+  {
+    "path": "tests/fundamentals/test_hardening.py",
+    "sha256": "6ce2112763c065a9ee0e076c8e939d2c21f729f9a0b8b251edb07ac9f7a81033"
+  },
+  {
+    "path": "tests/fundamentals/test_http_session.py",
+    "sha256": "5e48766d667a5ccb36c36742f070f70ab05c3d4a7a2d177ef9210425eb9d6ba3"
+  },
+  {
+    "path": "tests/fundamentals/test_management_ledger_replay.py",
+    "sha256": "49956fbb361bf347f63554a60142fc9d4bcbf83f7a12b26ddf7ad104fd6a5305"
+  },
+  {
+    "path": "tests/fundamentals/test_news.py",
+    "sha256": "0e8f489f66229600c9f637fb5ef17d1cc1cab4f7d9cb25fa1ae9ae717e8e67f8"
+  },
+  {
+    "path": "tests/fundamentals/test_news_filing_dedup.py",
+    "sha256": "2b2f66edd9c454bcbec178a36fcd671cfc8af6f0400a95c1dc48620d95032e11"
+  },
+  {
+    "path": "tests/fundamentals/test_phase05_management_ledger.py",
+    "sha256": "6da918165f7ea3fc4db56d7c23ca5cfc6c18fa507888ae1d564f7090dfa3fc25"
+  },
+  {
+    "path": "tests/fundamentals/test_phase05_report_artifact.py",
+    "sha256": "accf38ebdff507b0528dbb2a41e85cd86e220902e738238a2f5c5aa6a6c7f37c"
+  },
+  {
+    "path": "tests/fundamentals/test_phase05_review_session.py",
+    "sha256": "d59d049902e77eae9e0af7935e198a403e81f26c0e53696ebe3ab528e7504bef"
+  },
+  {
+    "path": "tests/fundamentals/test_phase05_run_comparatives.py",
+    "sha256": "94dfd7c8f7a80d1e26cbe11c3069b4a411b901822862989bc8a932549df9f673"
+  },
+  {
+    "path": "tests/fundamentals/test_phase3_snapshot.py",
+    "sha256": "1d77c1f0c2ba7b3edaeb428e72b8101a2f0a2f36d9420b4302caf92af8501b1c"
+  },
+  {
+    "path": "tests/fundamentals/test_pipeline_e2e.py",
+    "sha256": "4f4da57aa1829f664d3bb1284df7ce58a2901a2840b2926d4c513e47c4a96c2f"
+  },
+  {
+    "path": "tests/fundamentals/test_pipeline_temporal_admission.py",
+    "sha256": "76e30e59aae58a425958c403e20c5f9a79edd368850ace131294a232a1a285db"
+  },
+  {
+    "path": "tests/fundamentals/test_screener_screen_empty_refusal.py",
+    "sha256": "9f1880f863be19d755e2dc9d0b67426ce3967d7fdece1fdad92bf8f4eaefd721"
+  },
+  {
+    "path": "tests/fundamentals/test_source_intake_cli.py",
+    "sha256": "db9ac0d79fbec256f827c2b801527027bae220605a5db58cfb6e19d31c722d33"
+  },
+  {
+    "path": "tests/fundamentals/test_source_intake_store.py",
+    "sha256": "94314e3a59e1eda1840aed426cc190900447717bacfc12e6ff9318b88a7df3d3"
+  },
+  {
+    "path": "tests/fundamentals/test_store_temporal.py",
+    "sha256": "7d44686e4838386c7f0e6742e88953afb3cea5fc9d5eedb54568c3e87b962650"
+  },
+  {
+    "path": "tests/fundamentals/test_upstox_capture_integration.py",
+    "sha256": "a912bec8813b5a25f7f4cb04fbcecc0d4f054fa9ca00e5b017b400e1db5370fb"
+  },
+  {
+    "path": "tests/fundamentals/test_upstox_retention.py",
+    "sha256": "608dc651c4388d21571fb985ad7164da8fa6296340d08eb8c15f6f873eaae899"
+  },
+  {
+    "path": "tests/phase_0a/test_validate_phase_0a_evidence.py",
+    "sha256": "3e81ce4b8518d857e8c2dcffd6667a8e1b7f1d2fc06b71c39f40937b02be745b"
+  }
+]

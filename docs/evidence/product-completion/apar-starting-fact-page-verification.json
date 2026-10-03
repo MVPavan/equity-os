@@ -1,0 +1,135 @@
+{
+  "artifact_type": "CurrentHeldSourcePageVerification",
+  "recorded_at": "2026-10-02T19:19:34.755284+00:00",
+  "command": ".venv/bin/python scratchpad/execution/product-gold-second-batch/root_starting_fact_page_probe.py",
+  "scope": "Source page/column and literal value verification only; no research report or analyst approval",
+  "results_pdf_sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+  "transcript_pdf_sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+  "xbrl_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+  "checks": [
+    {
+      "concept": "RevenueFromOperations",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "57154200000",
+      "pdf_printed_value": "5,715.42",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 103.70999908447266,
+        "y0": 174.27000427246094,
+        "x1": 126.7420883178711,
+        "y1": 182.51400756835938,
+        "text": "5,715.42",
+        "block": 7,
+        "line": 41,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    },
+    {
+      "concept": "Income",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "57428500000",
+      "pdf_printed_value": "5,742.85",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 99.5999984741211,
+        "y0": 190.34999084472656,
+        "x1": 126.53887176513672,
+        "y1": 198.593994140625,
+        "text": "5,742.85",
+        "block": 7,
+        "line": 69,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    },
+    {
+      "concept": "Expenses",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "54022900000",
+      "pdf_printed_value": "5,402.29",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 98.62999725341797,
+        "y0": 263.0699768066406,
+        "x1": 126.33248138427734,
+        "y1": 271.3139953613281,
+        "text": "5,402.29",
+        "block": 7,
+        "line": 175,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    },
+    {
+      "concept": "ProfitBeforeTax",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "3405600000",
+      "pdf_printed_value": "340.56",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 104.9000015258789,
+        "y0": 270.989990234375,
+        "x1": 126.30477905273438,
+        "y1": 279.2340087890625,
+        "text": "340.56",
+        "block": 7,
+        "line": 189,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    },
+    {
+      "concept": "ProfitLossForPeriod",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "2517000000",
+      "pdf_printed_value": "251.70",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 105.8499984741211,
+        "y0": 327.1499938964844,
+        "x1": 126.32452392578125,
+        "y1": 335.3940124511719,
+        "text": "251.70",
+        "block": 7,
+        "line": 265,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    },
+    {
+      "concept": "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+      "xbrl_context": "OneD",
+      "xbrl_raw_value": "62.66",
+      "pdf_printed_value": "62.66",
+      "pdf_page": 3,
+      "pdf_word_anchor": {
+        "x0": 108.16999816894531,
+        "y0": 496.5899658203125,
+        "x1": 126.06429290771484,
+        "y1": 504.833984375,
+        "text": "62.66",
+        "block": 7,
+        "line": 457,
+        "word_no": 0
+      },
+      "current_source_values_agree": true
+    }
+  ],
+  "profit_label_distinction": {
+    "before_tax_and_share_of_associates_crore": "340.56",
+    "share_of_associate_loss_crore": "-0.03",
+    "after_associate_share_before_tax_crore": "340.53",
+    "status": "Existing tracked headline and configuration use the before-associate amount; label/metric interpretation requires explicit confirmation before successor evaluation. No approved metric or threshold changed."
+  },
+  "management_context": {
+    "conductor_pdf_page": 12,
+    "conductor_printed_page": 11,
+    "conductor_summary": "30,000 rupees per metric ton guidance; speaker discusses a comfort level not likely to be breached over a 12-month period and a medium-to-long-term 12-month period. Exact rolling/fiscal window and formal target/floor/average semantics are not supplied by this probe.",
+    "cables_pdf_page": 20,
+    "cables_summary": "25 percent growth compared with the previous year; speaker discusses first-half delivery, a third-quarter blip and later continuation. Existing annual label is not an exact measurement-window definition."
+  },
+  "analyst_confirmed": false,
+  "historical_system_possession_proved": false,
+  "approved_records_modified": false
+}

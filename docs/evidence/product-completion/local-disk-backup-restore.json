@@ -1,0 +1,19 @@
+{
+  "artifact_type": "LocalDiskBackupRestoreProof",
+  "recorded_at": "2026-10-02T16:53:14.389141+00:00",
+  "authority": "User message 2026-10-02: local disk only, no cloud, accepts possible source loss",
+  "scope": "Local-disk copy and clean extraction integrity; no off-machine durability claim",
+  "archive_path": "scratchpad/backups/retained-sources-20261002/watchlist.tar",
+  "archive_bytes": 103188480,
+  "archive_sha256": "a865e0ff35b9607bfdc8e13bd560225a8f46ed083f7ea3f541cb024dd5ddb6a8",
+  "restored_root": "scratchpad/backups/retained-sources-20261002/restore-check",
+  "inventory_path": "docs/evidence/product-completion/retained-source-inventory.json",
+  "inventory_sha256": "2d7544aa454f4dd71e6a457212626b97f6cc6a321ad4617aeba1f6c932d855a1",
+  "restored_file_count": 277,
+  "restored_total_bytes": 102680439,
+  "hash_mismatches": [],
+  "restore_verified": true,
+  "cloud_used": false,
+  "off_machine_durability_claimed": false,
+  "accepted_loss_risk": true
+}

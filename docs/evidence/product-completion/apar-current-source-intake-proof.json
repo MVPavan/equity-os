@@ -1,0 +1,190 @@
+{
+  "artifact_type": "ActualCurrentLocalSourceIntakeProbe",
+  "recorded_at": "2026-10-02T19:03:34.878084+00:00",
+  "scope": "Real three-source registration and restart verification only",
+  "research_report_generated": false,
+  "pilot_or_successor_contract_accepted": false,
+  "historical_capture_certified": false,
+  "persisted_fact_producer_certified": false,
+  "source_use_authority": "A05-DECISION-004; runtime representation by trusted root",
+  "approved_config_path": "config/aparinds-fy26-q2.yaml",
+  "approved_config_sha256": "da9a509424213bca9cc5e70e6f758f8cf5c6afe08636b58e206cb27fe83be0b5",
+  "retained_manifest_sha256": "53d7eacf2cf2ddb89a387218f0219ce656eea8898d1d3e8c9a0efaa4a9e6125e",
+  "private_store_path": "scratchpad/execution/product-gold-second-batch/apar-q0-intake-store",
+  "private_locator_path": "scratchpad/execution/product-gold-second-batch/apar-q0-registered-source-locators.json",
+  "sources": [
+    {
+      "role": "xbrl",
+      "retained_byte_count": 75042,
+      "registration": {
+        "schema_version": 1,
+        "source_id": "nse-indas-xbrl-consolidated",
+        "surface": "local_xbrl",
+        "request_key": "c5ee6744c6be91073b6fd3153fa39009e587ae779c267041448cebe40d08b5ff",
+        "capture_id": "20261002T190334.637592Z-90baae0babfa",
+        "source_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+        "record_sha256": "52c9d7e659911261a2d893f80972da132769b37e35c1be0f2ecb3df7f423a5f4",
+        "role": "xbrl",
+        "capture_completed_at": "2026-10-02T19:03:34.672992Z",
+        "first_observed_at": "2026-10-02T19:03:34.673036Z",
+        "registered_at": "2026-10-02T19:03:34.683488Z",
+        "receipt_sha256": "e6bc6995401cb8bd92cae43303ad16118e48257575793abea9e2e0ae360958a8"
+      },
+      "reopened_receipt_equal": true,
+      "reopened_body_sha256_matches": true
+    },
+    {
+      "role": "results_pdf",
+      "retained_byte_count": 4259138,
+      "registration": {
+        "schema_version": 1,
+        "source_id": "aparinds-fy26-q2-results-pdf",
+        "surface": "local_results_pdf",
+        "request_key": "80653ef01273f5ae5b77966d8003bd3398b6465bc9e5b7de3a179d0406c9e6ff",
+        "capture_id": "20261002T190334.697196Z-8be1b8de7199",
+        "source_sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+        "record_sha256": "a1fa38fa0e33656d84323ee54fa88b64e8276f92fe63982368a21022f66f8a58",
+        "role": "results_pdf",
+        "capture_completed_at": "2026-10-02T19:03:34.760690Z",
+        "first_observed_at": "2026-10-02T19:03:34.760835Z",
+        "registered_at": "2026-10-02T19:03:34.783161Z",
+        "receipt_sha256": "646e5e83a5c661ce6554c1f6236b8f3fe8b2ed9152bec8f189363325ce353002"
+      },
+      "reopened_receipt_equal": true,
+      "reopened_body_sha256_matches": true
+    },
+    {
+      "role": "transcript_pdf",
+      "retained_byte_count": 394109,
+      "registration": {
+        "schema_version": 1,
+        "source_id": "aparinds-fy26-q2-management-transcript",
+        "surface": "local_transcript_pdf",
+        "request_key": "8a14857a7eb5b6769376726e1eecb66fbeb116d8921ffc7e1552ee7e5a5e481d",
+        "capture_id": "20261002T190334.791838Z-c9ed50d30185",
+        "source_sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+        "record_sha256": "d58a6629de8bfd802c1af6f189c416be7485c64a94d4c50cfc9a0e6050444fab",
+        "role": "transcript_pdf",
+        "capture_completed_at": "2026-10-02T19:03:34.819434Z",
+        "first_observed_at": "2026-10-02T19:03:34.819479Z",
+        "registered_at": "2026-10-02T19:03:34.829266Z",
+        "receipt_sha256": "3d6e8bbc8441900e59a065f52eda63d11e2c72025ff2643db38bb87bc8173d09"
+      },
+      "reopened_receipt_equal": true,
+      "reopened_body_sha256_matches": true
+    }
+  ],
+  "native_pipeline_admission": {
+    "status": "PASS_CURRENT_REGISTERED_SOURCES_ONLY",
+    "recorded_at": "2026-10-02T20:17:19.091458+00:00",
+    "command": ".venv/bin/python scratchpad/execution/product-gold-second-batch/root_native_intake_admission_probe.py",
+    "technical_probe_cutoff": "2026-10-02T20:17:19.047734+00:00",
+    "actual_probe_started_at": "2026-10-02T20:17:19.047734+00:00",
+    "sources": [
+      {
+        "source_id": "nse-indas-xbrl-consolidated",
+        "source_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+        "acquired_at": "2026-10-02T19:03:34.672992Z",
+        "first_seen_at": "2026-10-02T19:03:34.673036Z",
+        "mode": "retained_registered",
+        "reference": {
+          "source_id": "nse-indas-xbrl-consolidated",
+          "surface": "local_xbrl",
+          "request_key": "c5ee6744c6be91073b6fd3153fa39009e587ae779c267041448cebe40d08b5ff",
+          "capture_id": "20261002T190334.637592Z-90baae0babfa",
+          "source_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+          "record_sha256": "52c9d7e659911261a2d893f80972da132769b37e35c1be0f2ecb3df7f423a5f4"
+        },
+        "registration": {
+          "schema_version": 1,
+          "source_id": "nse-indas-xbrl-consolidated",
+          "surface": "local_xbrl",
+          "request_key": "c5ee6744c6be91073b6fd3153fa39009e587ae779c267041448cebe40d08b5ff",
+          "capture_id": "20261002T190334.637592Z-90baae0babfa",
+          "source_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+          "record_sha256": "52c9d7e659911261a2d893f80972da132769b37e35c1be0f2ecb3df7f423a5f4",
+          "role": "xbrl",
+          "capture_completed_at": "2026-10-02T19:03:34.672992Z",
+          "first_observed_at": "2026-10-02T19:03:34.673036Z",
+          "registered_at": "2026-10-02T19:03:34.683488Z",
+          "receipt_sha256": "e6bc6995401cb8bd92cae43303ad16118e48257575793abea9e2e0ae360958a8"
+        },
+        "claimed_retrieved_at": "2026-10-02T19:03:34.637592Z"
+      },
+      {
+        "source_id": "aparinds-fy26-q2-results-pdf",
+        "source_sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+        "acquired_at": "2026-10-02T19:03:34.760690Z",
+        "first_seen_at": "2026-10-02T19:03:34.760835Z",
+        "mode": "retained_registered",
+        "reference": {
+          "source_id": "aparinds-fy26-q2-results-pdf",
+          "surface": "local_results_pdf",
+          "request_key": "80653ef01273f5ae5b77966d8003bd3398b6465bc9e5b7de3a179d0406c9e6ff",
+          "capture_id": "20261002T190334.697196Z-8be1b8de7199",
+          "source_sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+          "record_sha256": "a1fa38fa0e33656d84323ee54fa88b64e8276f92fe63982368a21022f66f8a58"
+        },
+        "registration": {
+          "schema_version": 1,
+          "source_id": "aparinds-fy26-q2-results-pdf",
+          "surface": "local_results_pdf",
+          "request_key": "80653ef01273f5ae5b77966d8003bd3398b6465bc9e5b7de3a179d0406c9e6ff",
+          "capture_id": "20261002T190334.697196Z-8be1b8de7199",
+          "source_sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5",
+          "record_sha256": "a1fa38fa0e33656d84323ee54fa88b64e8276f92fe63982368a21022f66f8a58",
+          "role": "results_pdf",
+          "capture_completed_at": "2026-10-02T19:03:34.760690Z",
+          "first_observed_at": "2026-10-02T19:03:34.760835Z",
+          "registered_at": "2026-10-02T19:03:34.783161Z",
+          "receipt_sha256": "646e5e83a5c661ce6554c1f6236b8f3fe8b2ed9152bec8f189363325ce353002"
+        },
+        "claimed_retrieved_at": "2026-10-02T19:03:34.697196Z"
+      },
+      {
+        "source_id": "aparinds-fy26-q2-management-transcript",
+        "source_sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+        "acquired_at": "2026-10-02T19:03:34.819434Z",
+        "first_seen_at": "2026-10-02T19:03:34.819479Z",
+        "mode": "retained_registered",
+        "reference": {
+          "source_id": "aparinds-fy26-q2-management-transcript",
+          "surface": "local_transcript_pdf",
+          "request_key": "8a14857a7eb5b6769376726e1eecb66fbeb116d8921ffc7e1552ee7e5a5e481d",
+          "capture_id": "20261002T190334.791838Z-c9ed50d30185",
+          "source_sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+          "record_sha256": "d58a6629de8bfd802c1af6f189c416be7485c64a94d4c50cfc9a0e6050444fab"
+        },
+        "registration": {
+          "schema_version": 1,
+          "source_id": "aparinds-fy26-q2-management-transcript",
+          "surface": "local_transcript_pdf",
+          "request_key": "8a14857a7eb5b6769376726e1eecb66fbeb116d8921ffc7e1552ee7e5a5e481d",
+          "capture_id": "20261002T190334.791838Z-c9ed50d30185",
+          "source_sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803",
+          "record_sha256": "d58a6629de8bfd802c1af6f189c416be7485c64a94d4c50cfc9a0e6050444fab",
+          "role": "transcript_pdf",
+          "capture_completed_at": "2026-10-02T19:03:34.819434Z",
+          "first_observed_at": "2026-10-02T19:03:34.819479Z",
+          "registered_at": "2026-10-02T19:03:34.829266Z",
+          "receipt_sha256": "3d6e8bbc8441900e59a065f52eda63d11e2c72025ff2643db38bb87bc8173d09"
+        },
+        "claimed_retrieved_at": "2026-10-02T19:03:34.791838Z"
+      }
+    ],
+    "old_source_paths_absent": true,
+    "pinned_staged_body_hashes_match": true,
+    "original_historical_configuration_refused": true,
+    "historical_config_exact_bytes_used_from_protected_private_replica": true,
+    "probe_config_path": "scratchpad/execution/product-gold-second-batch/private-operator-config/config/aparinds-fy26-q2.yaml",
+    "probe_config_sha256": "da9a509424213bca9cc5e70e6f758f8cf5c6afe08636b58e206cb27fe83be0b5",
+    "original_repository_config_permissions_unchanged": true,
+    "relocated_data_directory_absent": true,
+    "refusal": "xbrl: source acquisition/first-seen/registration exceeds cutoff",
+    "protected_artifacts_unchanged": true,
+    "output_directory_absent": true,
+    "research_report_generated": false,
+    "successor_evaluation_contract_accepted": false,
+    "historical_system_possession_or_legacy_producer_certified": false
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "recorded_on": "2026-10-03",
+  "scope_base": "193a37163f7baf575d8eee84de4ba12f16dcc5b8",
+  "scope": "Completed work commits preceding the documentation closeout; the handoff and final tracking commits follow this map.",
+  "commits": [
+    {
+      "subject": "chore(tracking): record Gold execution checkpoints and requested pause",
+      "sha": "20204433fcdd3366187903cd3afacdb4a9fd2752",
+      "paths": [
+        ".beads/issues.jsonl"
+      ]
+    },
+    {
+      "subject": "docs(goal): define full product completion and acceptance boundaries",
+      "sha": "17ac26e6348fe62a9751a8ffc9451fffcf8594b1",
+      "paths": [
+        "docs/goals/equity-os-product-completion-gold.md"
+      ]
+    },
+    {
+      "subject": "feat(store): preserve append-only temporal canonical selections",
+      "sha": "e0dfee14ee450cf052201a43307951de29a9d48e",
+      "paths": [
+        "src/fundamentals/store/fact_store.py",
+        "tests/fundamentals/test_store_temporal.py"
+      ]
+    },
+    {
+      "subject": "feat(ingest): retain bounded response evidence and versioned candle captures",
+      "sha": "f544ca4179fbe3fa22d920aa3b16b341d7a261ae",
+      "paths": [
+        "src/fundamentals/api/upstox_cli.py",
+        "src/fundamentals/api/upstox_crosscheck_cli.py",
+        "src/fundamentals/contracts/snapshot.py",
+        "src/fundamentals/ingest/http_session.py",
+        "src/fundamentals/ingest/upstox_source.py",
+        "src/fundamentals/ingest/upstox_candle_retention.py",
+        "src/fundamentals/ingest/upstox_retention.py",
+        "src/fundamentals/store/snapshot_store.py",
+        "tests/fundamentals/test_http_session.py",
+        "tests/fundamentals/test_phase3_snapshot.py",
+        "tests/fundamentals/test_upstox_capture_integration.py",
+        "tests/fundamentals/test_upstox_retention.py",
+        "docs/plans/product-completion-incomplete-capture-retention.md"
+      ]
+    },
+    {
+      "subject": "feat(intake): bind current source registration to protected originals",
+      "sha": "5826e0191f81a9e8b8a5c2f0144519907c087fb5",
+      "paths": [
+        "src/fundamentals/api/source_intake.py",
+        "src/fundamentals/api/source_admission.py",
+        "src/fundamentals/contracts/source_registration.py",
+        "src/fundamentals/store/source_intake_store.py",
+        "tests/fundamentals/test_source_intake_store.py",
+        "docs/plans/product-completion-source-intake.md"
+      ]
+    },
+    {
+      "subject": "feat(workflow): enforce source cutoffs and immutable review lineage",
+      "sha": "7e95d9d7c0681abecb8f6e08bbd1a360d1c949cf",
+      "paths": [
+        "src/fundamentals/api/cli.py",
+        "src/fundamentals/api/cli_parser.py",
+        "src/fundamentals/api/pipeline.py",
+        "src/fundamentals/output/earnings_update.py",
+        "src/fundamentals/output/management_ledger.py",
+        "src/fundamentals/output/review_session.py",
+        "tests/fundamentals/temporal_fixture_support.py",
+        "tests/fundamentals/test_cli_temporal_admission.py",
+        "tests/fundamentals/test_pipeline_temporal_admission.py",
+        "tests/fundamentals/test_source_intake_cli.py",
+        "tests/fundamentals/test_guidance_review_identity.py",
+        "tests/fundamentals/test_management_ledger_replay.py",
+        "tests/fundamentals/test_generalization.py",
+        "tests/fundamentals/test_hardening.py",
+        "tests/fundamentals/test_phase05_management_ledger.py",
+        "tests/fundamentals/test_phase05_report_artifact.py",
+        "tests/fundamentals/test_phase05_review_session.py",
+        "tests/fundamentals/test_phase05_run_comparatives.py",
+        "tests/fundamentals/test_pipeline_e2e.py",
+        "docs/plans/product-completion-temporal-admission.md",
+        "docs/plans/product-completion-pilot-review-identities.md"
+      ]
+    },
+    {
+      "subject": "fix(news): match filing wrappers without altering source provenance",
+      "sha": "be2f64ac5c3181d58b06782ce55536042bb3d03e",
+      "paths": [
+        "src/fundamentals/news/events.py",
+        "tests/fundamentals/test_news.py",
+        "tests/fundamentals/test_news_filing_dedup.py",
+        "docs/plans/product-completion-news-filing-dedup.md"
+      ]
+    },
+    {
+      "subject": "fix(ingest): preserve typed empty screen refusal details",
+      "sha": "248abae5fe406ab6db856461a4c6af7b412709a7",
+      "paths": [
+        "src/fundamentals/ingest/screener_screen.py",
+        "tests/fundamentals/test_screener_screen_empty_refusal.py",
+        "docs/plans/product-completion-screen-failure-retention.md"
+      ]
+    },
+    {
+      "subject": "test(governance): isolate obsolete approval fixtures from live authority",
+      "sha": "a6b181e7546520b185304072f8f584ed1ceec135",
+      "paths": [
+        "tests/equity_os_blueprint/test_reconcile_ledger_approval_contracts.py",
+        "tests/phase_0a/test_validate_phase_0a_evidence.py",
+        "docs/plans/product-completion-legacy-check-fixtures.md"
+      ]
+    }
+  ],
+  "history_command": "git log --oneline 193a37163f7baf575d8eee84de4ba12f16dcc5b8..HEAD",
+  "development_status": "PAUSED_BY_USER",
+  "remote_push_or_sync": false
+}

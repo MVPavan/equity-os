@@ -1,0 +1,1400 @@
+{
+  "artifact_type": "RetainedSourceIntegrityInventory",
+  "recorded_at": "2026-10-02T16:47:21.190268+00:00",
+  "root": "data/raw/watchlist",
+  "files": [
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INDAS_113920_1293440_30102024104705.xml",
+      "bytes": 76088,
+      "sha256": "c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INDAS_117941_1363971_29012025110018.xml",
+      "bytes": 51485,
+      "sha256": "3ba61227e3341d1540504070c663eafe754f8b38fe918345a288fc4417337e5f"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1439170_14052025093124_WEB.xml",
+      "bytes": 78590,
+      "sha256": "943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml",
+      "bytes": 34297,
+      "sha256": "a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml",
+      "bytes": 75042,
+      "sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1613642_29012026072210_WEB.xml",
+      "bytes": 52305,
+      "sha256": "87a5dd9583b582132c7c42c9cb6edcbc799372e3772efab19a0ba440f4fcc548"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml",
+      "bytes": 83576,
+      "sha256": "be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml",
+      "bytes": 35083,
+      "sha256": "f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-presentation.pdf",
+      "bytes": 969923,
+      "sha256": "5c936402bf9d133c49cb6ee7d098709ba938ceaebd650baf23ba22efda8cbca4"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-press-release.pdf",
+      "bytes": 4259138,
+      "sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-results.pdf",
+      "bytes": 4259138,
+      "sha256": "8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-transcript.pdf",
+      "bytes": 394109,
+      "sha256": "c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-presentation.pdf",
+      "bytes": 917378,
+      "sha256": "a065afebf0d8ca16a68cf21ca7038e6382593f509b5ce9c4e4b1e2c0a1b464a3"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-press-release.pdf",
+      "bytes": 2682239,
+      "sha256": "2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-results.pdf",
+      "bytes": 2682239,
+      "sha256": "2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-transcript.pdf",
+      "bytes": 801240,
+      "sha256": "66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-presentation.pdf",
+      "bytes": 961436,
+      "sha256": "1deb9bd637c1cb29ca96c251fc619856a054a8f457fd0c096e5f25c47ddcd432"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-press-release.pdf",
+      "bytes": 7594254,
+      "sha256": "17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-results.pdf",
+      "bytes": 7594254,
+      "sha256": "17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-transcript.pdf",
+      "bytes": 894450,
+      "sha256": "69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-presentation.pdf",
+      "bytes": 818806,
+      "sha256": "d5d15f408461cfe114faa34e8292b2381c80125d4a25b2edea91bdcbe01f10d3"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-results.pdf",
+      "bytes": 2476687,
+      "sha256": "c0c2b2fa5510a776331c2092f03301c65dbea5a98ee42ecbc31f768513278612"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-transcript.pdf",
+      "bytes": 507238,
+      "sha256": "78a312c86f58ea515f3eea3763e02a1e977104f282256e774e428d2a898304e5"
+    },
+    {
+      "path": "data/raw/watchlist/aparinds/retrieval-manifest.json",
+      "bytes": 10119,
+      "sha256": "53d7eacf2cf2ddb89a387218f0219ce656eea8898d1d3e8c9a0efaa4a9e6125e"
+    },
+    {
+      "path": "data/raw/watchlist/cgpower/bse_pdf/af476a81-837f-412c-8cca-5f2e583b49a4.pdf",
+      "bytes": 6544191,
+      "sha256": "68a3caff6d02babbd9c2731d23311a4786cbd296e3677f78d8f7a189cf1a2e7e"
+    },
+    {
+      "path": "data/raw/watchlist/cgpower/nse/INDAS_117955_1364192_29012025010421.xml",
+      "bytes": 43632,
+      "sha256": "8e42116c743bf1dc2a298c0d133efa26b93f27fa07bc953f88f34baddc0fc16a"
+    },
+    {
+      "path": "data/raw/watchlist/eternal/bse_pdf/189f6577-91c3-4738-abf1-dc3f9c68de6b.pdf",
+      "bytes": 3447938,
+      "sha256": "bac409da254d2f5b8d8aa6ebcd3a721f12b2352a485f0cdaca24b4b775609c1a"
+    },
+    {
+      "path": "data/raw/watchlist/eternal/nse/INDAS_117408_1353522_20012025062858.xml",
+      "bytes": 61768,
+      "sha256": "d386a46527d775df1d9dcbc4d324360722ca30baf25d07efa9a23b6d9b8359fd"
+    },
+    {
+      "path": "data/raw/watchlist/eternal/nse/comparatives/qoq/2024-07-01_2024-09-30/INDAS_113034_1285254_22102024070105.xml",
+      "bytes": 88703,
+      "sha256": "97a3138a36395d6675a3b03dffd0134f8180cdf7f2e7bca5712d0beea8f7a9fc"
+    },
+    {
+      "path": "data/raw/watchlist/eternal/nse/comparatives/yoy/2023-10-01_2023-12-31/INDAS_102849_1048686_08022024063603.xml",
+      "bytes": 61761,
+      "sha256": "4ef406fa0b2f040806b6a23a3108ab46f0c97505b9acba81d06c39d7c01b53ac"
+    },
+    {
+      "path": "data/raw/watchlist/hfcl/bse_pdf/96c4fe56-2f6d-4d2f-b511-718f612e8b05.pdf",
+      "bytes": 2250362,
+      "sha256": "d7e71dc06e62124cad2288be4d5cf6bcffd7632f71fb72d06df618c692158f4f"
+    },
+    {
+      "path": "data/raw/watchlist/hfcl/nse/INDAS_118544_1369950_04022025012501.xml",
+      "bytes": 47796,
+      "sha256": "a390ccfad8d61019d6f1db400ab5d3ab7c1181c38246468d8904a43b5eeec3db"
+    },
+    {
+      "path": "data/raw/watchlist/lauruslabs/bse_pdf/40f6294a-0346-4a9a-9dc8-baf1790984ae.pdf",
+      "bytes": 3269564,
+      "sha256": "2b79047e7d2e7c4f46eb3dfe56e1aff03d5871b92df1b24e63ffd0cd89c5b517"
+    },
+    {
+      "path": "data/raw/watchlist/lauruslabs/nse/INDAS_117690_1360957_24012025084417.xml",
+      "bytes": 31118,
+      "sha256": "2d50d29a467b9035f8124f7a9576346b7d36888e9895befc3363e3c5d227cfa6"
+    },
+    {
+      "path": "data/raw/watchlist/mtartech/bse_pdf/901e434d-85df-4ab9-bffb-ce641d973099.pdf",
+      "bytes": 8740629,
+      "sha256": "ed8099172e25c813c12fc44f1542dce6fe2378288e855b36d5af3b5678503d0c"
+    },
+    {
+      "path": "data/raw/watchlist/mtartech/nse/INDAS_119445_1377020_10022025065704.xml",
+      "bytes": 19153,
+      "sha256": "2f42635a245b1e2ef9e05ad9cc6f21bbf7b77d9c8b77d59b74673503eba0e822"
+    },
+    {
+      "path": "data/raw/watchlist/netweb/bse_pdf/b0e5bb4f-ff37-4094-8983-1bbe721a851f.pdf",
+      "bytes": 2745208,
+      "sha256": "122ca4cc7fafc72f3c96dce0f30d42b618f78b272bac2c64cde1589cc258ab3a"
+    },
+    {
+      "path": "data/raw/watchlist/polycab/bse_pdf/b60596af-4d43-4ef7-8c7b-9c6145b87097.pdf",
+      "bytes": 3102781,
+      "sha256": "8602f194f97ca8f045f2c878c9c3a7e111bc73f1398a9e2ba5c0bb2a8b10a71c"
+    },
+    {
+      "path": "data/raw/watchlist/polycab/nse/INDAS_117488_1357164_22012025051528.xml",
+      "bytes": 53019,
+      "sha256": "05ebba47a2a07015f107cc9ca3a616138e4a78b900f43074cbfd489db011518d"
+    },
+    {
+      "path": "data/raw/watchlist/polycab/nse/comparatives/qoq/2024-07-01_2024-09-30/INDAS_112849_1275859_17102024065630.xml",
+      "bytes": 88725,
+      "sha256": "e79e1a0e880bacb83ae4df5f46fae904dfe7233ab2fa7c9f68e046dadb4f8b06"
+    },
+    {
+      "path": "data/raw/watchlist/polycab/nse/comparatives/yoy/2023-10-01_2023-12-31/INDAS_101141_1027038_18012024042726.xml",
+      "bytes": 63675,
+      "sha256": "782ebefb5c65ff0c6b0c2e3646ed69c93c1a2137fd82305f28f09ceef621e6cc"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 978,
+      "sha256": "d3a91f2a8eb5da63c4536f739e4da660f1921983e0a6cb39b8e88058d5f147cc"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2536,
+      "sha256": "f5ac13edfcd3047adfb4084e19a9e649b8a64bd6cf312ac638120a2d116f564e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1382,
+      "sha256": "d8c2c1e2d73f05770c9553a050f9daafc7984184074d84b295007073097ec81b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 1043,
+      "sha256": "b3d024d9319dd0a0ff5a1a26fbab1f74afbf71db34de084b0a6e019b8e20466c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1755,
+      "sha256": "6f8a73f7da97359a23b82c9e8eced0f197ab2bc66de0ef99a9cdd14a698e8d89"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 2437,
+      "sha256": "1b19775a25ccb0c8f584a8ffbb5c2b3138e05418ee1572a6a72cbbfbe96dac93"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2318,
+      "sha256": "7740edc66e7799a22ff23cc4ef66ff646dfa7ae0fb9a6a66d59f33164116e4f8"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1059,
+      "sha256": "0a686f601c89fb060c03bd1e16db8f69b1950ed0b5792d626c0cca1ca2760e93"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1521,
+      "sha256": "c5d99e3cec233d64d7ef2ee3695845ff0de27cfca46e9304d45ffac842c4e9ef"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 502,
+      "sha256": "6e7b72d87befcffa9290c8bfc306cecfd8cf1c0383aa92822928bb8730ab5253"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 286,
+      "sha256": "6a1f7002070c379b433f570f57aec4fb7a9fe29f49ea74e65c4f0305c18afd09"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 523,
+      "sha256": "c92dd04a48be227a5c3692406d4b75aaadccce6de23734888b415a86aef4053d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1575,
+      "sha256": "17ca05ae4deace56549267535ef15bc602fae092595117ccfaa933a199174e6d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 509,
+      "sha256": "e071118e212e8bc5a9f51bf92b55f25690a0527756f07695d709e0e9eceb17d3"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 310,
+      "sha256": "6ca2cc2b2ea76ccc3b3ef30e5075aac14853b7bf55a4921306ca98c27707f1d6"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/screener_financials_meta.json",
+      "bytes": 1724,
+      "sha256": "77fa217252dd1a58ae1ccb34d00aceba348e89a4d55983e21eb70df1c97fb61e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/screener_financials_page.raw.html",
+      "bytes": 249921,
+      "sha256": "933d7c5f1e51a70ba810885c6a783bb8974b8c4382aaf4c8900e039402415230"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_balance-sheet.json",
+      "bytes": 452646,
+      "sha256": "0060192a4cdeb5e0603d695524a7f2ac352fcba07ba8c2a36dc5690933ca1071"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_cash-flow.json",
+      "bytes": 448836,
+      "sha256": "78ce9d040631461b8d80670333bbc4d80f6c04fb5127b974800f81acbe1d581c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_growth.json",
+      "bytes": 15964,
+      "sha256": "47aea6b5333738b9c0014346edf4c7716702d7a6f083c8c8c023417623a4df22"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_profit-loss.json",
+      "bytes": 339229,
+      "sha256": "690c9d80d0fbb5ac80942b9a2b0887e1e99dc8643f903f224f70c4dc0ecdccf5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_quarters.json",
+      "bytes": 324220,
+      "sha256": "5e84da2821e1453b59f7282ed6ec8b3d2c0e9cf5c35258cd98a71d9f7ef6440b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/CGPOWER/consolidated/section_ratios.json",
+      "bytes": 68993,
+      "sha256": "4f126244e054f60b669a5360a1af02f831d5d06561c184fe7cb9d9606d2a24d8"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 916,
+      "sha256": "fbc8dbd194fd781c79b2705bcef3d373296ebaff710eb5b9c91f1a9e1f923889"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 1933,
+      "sha256": "bebb8e819651f74d23c51a7331e29bacb6baad0cd4dc096b81c0496e80344306"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 969,
+      "sha256": "05bf3ae6bc1ddbdfce2413926a27a43c02119916ce1bd54c6bdf37d14c192590"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 775,
+      "sha256": "9d1b97d57f3621ae8bb4c3d8eb8595122e561bcba2482d9804c133f0ab481c00"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 940,
+      "sha256": "17115052caea701d66a9594b12d0e5430e8b4f61e441b49854dcc5640f83915e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 1310,
+      "sha256": "a35692ee26ab6ab67e3972a9dc132e8d8b8c434e01d7ef7ca8ccaa1ba85c8cfc"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 1178,
+      "sha256": "156e9c20dbef4cda7ee6e547644a0415897b50e90d6559b05d80e1b01375f3af"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 846,
+      "sha256": "82bfe171887f4d9e450634dd3e3d988960a5bcc4c0c743ec03ee9d82f1ed2e8c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1183,
+      "sha256": "7b10ed326e863f86dddb8f1ec793fffead9a4e92c11af9435329039708ed1cad"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 388,
+      "sha256": "d8ce98915133c2a42d54fbc97b5a9f6e4017ac61e831ce33078200c9777c1f42"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 192,
+      "sha256": "9e3cff6f9947710940098419a74cdfebcc25147ce5cb8b06a72577387535b42b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 532,
+      "sha256": "7aea8dbb242f05d6627790cf917e3eb625d5155a273a63d9453b92a1c48c5d3f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1066,
+      "sha256": "1d89c057d58ce2a7a1cb545b06f8fb05c1c0ebb1e2ce71cf4f0ea70453aa4315"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 272,
+      "sha256": "91e560a714f149b0c278169810df1bbe2e22bb233cead7598928899f5718c9c5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 275,
+      "sha256": "609d08a1b12e715e35fe2d87ac9a01e755058f2e3d317b1edd2eb919dc9c3c64"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/screener_financials_meta.json",
+      "bytes": 1679,
+      "sha256": "9a552a1ab69858e43672b3a84e6e2df71ce46a11d15e564a144c37a4bdee425f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/screener_financials_page.raw.html",
+      "bytes": 231745,
+      "sha256": "afba050b92f56b433cad50b58f2937d44fa135b30dbc7fdd5c0536e6b36adf33"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_balance-sheet.json",
+      "bytes": 353349,
+      "sha256": "4cae24681300b44abe98550bd8ee7b544c5a2d24963f2b625bc91f1e1a876712"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_cash-flow.json",
+      "bytes": 238122,
+      "sha256": "c0ec01028a5a3ce8d44248c409d60907e7a32cadad6e95410ce0a3a8aa414773"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_growth.json",
+      "bytes": 15956,
+      "sha256": "95eaabba5da132a62ba9dd5513a7b99cc8f645a4a15b658c199cc38151ce482c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_profit-loss.json",
+      "bytes": 260173,
+      "sha256": "136985465249ec1aee69414f1741edd3913da918e709722385f9254a61ecaf72"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_quarters.json",
+      "bytes": 280834,
+      "sha256": "5a5ef90cedb245475c5ff9201b6c97283b81d1dfcd7cd4dd3badb092655d1a84"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/ETERNAL/consolidated/section_ratios.json",
+      "bytes": 52091,
+      "sha256": "4b8d1e5b50ea7ad5580ef1d68bbce8cf96912d837a9db6ccb6faa235f9c39632"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 1209,
+      "sha256": "7507ffb95d4da91ad8bb9e5c18d1fffe383b704f2073544ebc92b75490395443"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2640,
+      "sha256": "bb5119ed8b4cd14c9fc63a1223d62042ea358fa944dfc4ea21b6937ba2c8572c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1365,
+      "sha256": "c3d137fec5462d919b7e107bf77a2870b25f6730e3db37a9524a468fe8732337"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 991,
+      "sha256": "e3b666d069f5aacaa4f27aa15893e6b037eb94007e2ad7caf804ba4e8599d86b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1722,
+      "sha256": "d34fd0327e4e25690fc0535dc58719550be3a1250966c20d9ac04c4e5db4d527"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 2140,
+      "sha256": "8051f2c18d826becd3dc55f2e6d02a87fda16b3c716cc20f1ed7c3619186591e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2065,
+      "sha256": "bbff7118bd6bc494f430593178eda64b6ab834c28ddf5f9b4bc29d6f5060c314"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1060,
+      "sha256": "cc36edf4d6b2311217c9a8603533b5cfb021d2405ce95e904c8df68bdd3afcf2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1706,
+      "sha256": "b08a192462591afccdf94e2777926e45b79402e6fb245f72348597d4f6aaa759"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 479,
+      "sha256": "735827a11cbc518181dac7f549d8aa616c42c0368f8a19ae3db39da5347cd03c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 284,
+      "sha256": "02de6c5cde01e56e833333a7f48ca7c63fe55ed3ea37ed74034d99c12efcab81"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 525,
+      "sha256": "ad543e43261fb45c8c841027a0142e5cfd75df029646da11e3b9193ca4a97e69"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1313,
+      "sha256": "5ee1b8f0db8f623e5940d741c1a4921fdf345c76ac1dbfd7e6691d3c769b27da"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 298,
+      "sha256": "dba4267c6539405d20e576250237a3a834c2aa74a266760cb8ebe6f939bc8a5f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 275,
+      "sha256": "65c7eeb94a8a55009b53ca0ea2a689f9249e1401c78efa8f2a450d6b0ab311d2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/screener_financials_meta.json",
+      "bytes": 1667,
+      "sha256": "99f3951e16499ea9fb537b596b4b252b8f25c4f3c86899401a6dacaca474765c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/screener_financials_page.raw.html",
+      "bytes": 263248,
+      "sha256": "4fefad29dfb80061be461597fd6b1bd1150c87ce8d2c59820cfaed4b4291e236"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_balance-sheet.json",
+      "bytes": 479579,
+      "sha256": "9479584ad73bbb976f9e4839c22f163b4d653361225e47d21e0877784b60b260"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_cash-flow.json",
+      "bytes": 420637,
+      "sha256": "64208f8b05d1949f612d55efcc636646b53c7eb2e638b8149cefdb3803387076"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_growth.json",
+      "bytes": 15956,
+      "sha256": "953ebb59f2ccf9acf644a49d9cd2cacd4e8c8c7c7005d084e12f206c65e6d0e9"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_profit-loss.json",
+      "bytes": 352746,
+      "sha256": "ba365afa2ca650a179f37b5f1cb03f8bc7c92570dd2b060406219cc4782bb52d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_quarters.json",
+      "bytes": 295062,
+      "sha256": "fbe4f11e49eddba26dd0b7d807cae178f2f9664d144f360d8ffb66174b554520"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/HFCL/consolidated/section_ratios.json",
+      "bytes": 69035,
+      "sha256": "398fb53991c8e8483cc5ffdd3ade099aff960b310fcfc86ab8a07d1709b312e2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 1219,
+      "sha256": "658c03d663786176732caa0db9ebbac957bfb0187b68170019dfc700f9ed48cb"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2510,
+      "sha256": "f7f5983602f7a342c19cfc8ddbb3fe775a1bc5577364d1815cad76916c2a603e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1332,
+      "sha256": "e6658f2c3bbf634fb4b8b53ad2ac77ba23cf051398fde406027af905a0cff51b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 990,
+      "sha256": "39c1ee7ca60720adfdb54f5097aab381a0c1236809b7b301d085cbda393e0211"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1741,
+      "sha256": "5771f390a858151e1e3991e1f004d0cc0309bfa894fc416241b149496cf16268"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 2148,
+      "sha256": "efd370ea2d94f81f90ca8d8684d8c64a658938af87163a57980a422a3e73451a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2065,
+      "sha256": "5f74dbc7c4d901a1b70dc4b9a25e3e0bd6750bb92e66b759a8513a0b9b9dc754"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1209,
+      "sha256": "d0ecff8e2c6e61f0633d4c2fff5e29136be3a3f05aaf460a90739b9a11e2e90c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1704,
+      "sha256": "db3a81d17a99d6e02cc46ed85255fd4f31d6a361e96d3de5d77fdecf5f89cf89"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 476,
+      "sha256": "5b0a21683eca688de386733aff0fbcc5b1d89af0653aff970738739e157ecd5d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 282,
+      "sha256": "462be9213d40498b11c08d2f22709f864623bcf5452093c31d652f178a861d65"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 614,
+      "sha256": "b549f3a17bc7fa31e61fc6ee725d1bdac15b97b32964cee0d0be72affca92ce2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1572,
+      "sha256": "5cd87a5225c526da2b43c0111ae266aa901ccad616b75c467e54efb86bebde68"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 290,
+      "sha256": "a89db7828cac5a5a329a656e0d133aa9e124187b56fb78672a1be7bdcef1a126"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 310,
+      "sha256": "107b443d6f9747a3ea7a968a3a8ae9f38641c5be0928636838a1028f521fe712"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/screener_financials_meta.json",
+      "bytes": 1718,
+      "sha256": "172f64aa28967c57e1328c232122af5dfaf8777fa441ddd289b32566eee07abb"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/screener_financials_page.raw.html",
+      "bytes": 305729,
+      "sha256": "eadb8cbf417fce6e7b7af5eb4643fba2b5fac0cf2c41cc03b363d46340b22411"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_balance-sheet.json",
+      "bytes": 467226,
+      "sha256": "8b1f0bd4ba145a93afdc20bea6bf5e9a28188adff036d089c60761b0994726b1"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_cash-flow.json",
+      "bytes": 421569,
+      "sha256": "e86c79e634d7d9adaf90d980708d6a6706205183d60f6f768ad627d72de7afae"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_growth.json",
+      "bytes": 15964,
+      "sha256": "08cc3af18ffa290be4dfd10d193a5bf8903baa7514c6c1bd315b06afcbb13d1f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_profit-loss.json",
+      "bytes": 353618,
+      "sha256": "87d5b09712ae3721337bf8ed3db7e2c2c0a77fe7b019e84ad49696ca18ee4753"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_quarters.json",
+      "bytes": 310577,
+      "sha256": "4621c682a67acc809bda7a0c98e8dc25834c5ef33e904d483eb1a7f0beb9a81a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/LAURUSLABS/consolidated/section_ratios.json",
+      "bytes": 69031,
+      "sha256": "6cfad22872047c853bcda636273e592839370a72a60ff36bccc5a7026e8497d8"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 587,
+      "sha256": "194f7a3c411806389bc07b3337d0abb114722c4ea1e443ddc342e655e9b84336"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 1794,
+      "sha256": "032b4f8dcaef0e18c5d97db95f63f8b9077e80360d42b299c92a9da3f3d5f534"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 745,
+      "sha256": "1cdb8fdaefee3aca7e91daaff30d55cbd3e6f320b5a70cd5ece42015c2c50d26"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 455,
+      "sha256": "5e9897127e648d0c1d8db632d2a0fd6b8daeacd2e313dc568a4b587f3472a3e7"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1056,
+      "sha256": "64fff7bd704d9aa5f527c7462ac21259c029f7a37f48b9a0d238528ecee72d10"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 1051,
+      "sha256": "a3ffce5b490ba1399e1fcac827824a496bdd0f5eddce65e958c1d818ffe8e9ee"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 1129,
+      "sha256": "0ded07017fe9e714a1691d20277afc21d6afcb4a42a605ad07e4b79d49cd35e8"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 691,
+      "sha256": "2197c63c08cf9d085719205cd5df85cf8f9e9f629b3a60694cb29aef1ee67247"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 741,
+      "sha256": "a82694b8bb4581c9d599072db8d19bfb4f9a18164f8c1da5d0e83c27a1205bb5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 331,
+      "sha256": "aeff5616b77eb0608e7f4ae135d6e43c75ac195599006577d1ec480126c04b2d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 167,
+      "sha256": "4ea4c550ec1698440931cf54d64680a54a81dac1aa853294c39d1f594fd2420f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 536,
+      "sha256": "0b80a967dd54d05847b5425805d2837029b28dd9ea2b1a91c5afe73ec4cc69d4"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1285,
+      "sha256": "5fe0345da265a0e5f0229c5812d3388d90cc055ec6e0c7ed0d226a0266ede6d4"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 570,
+      "sha256": "189a914a565b0c5a2013fdf2041efc7397f8c198e325eddce1aef5abc0ed3ced"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 276,
+      "sha256": "a26b33aa341a95cd438a012cce7fbd035c1faa2130dfd3e83f40af66c5ab69aa"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/screener_financials_meta.json",
+      "bytes": 1682,
+      "sha256": "44d4f712381bdaf8127c1517cdb664a5dec590f20ff915eea71652ff31f61809"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/screener_financials_page.raw.html",
+      "bytes": 242750,
+      "sha256": "41dbe14ecf1757f88d516e7875b763bcd6e7eb034d390779ce4874f78993b2c2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_balance-sheet.json",
+      "bytes": 268952,
+      "sha256": "fe2c7d789e84aafbc7cce2e7dd70e83e9ac1aeba6b904c205f294a787a6daa0c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_cash-flow.json",
+      "bytes": 225223,
+      "sha256": "5d94fd132504f7874b820cfc6608856953b5946f39a7a0718c8820058f599dd1"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_growth.json",
+      "bytes": 15964,
+      "sha256": "9882cbf6f3e5149d2001b065b651970ca94d9a646de04dedb5fe9dd4166f6b93"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_profit-loss.json",
+      "bytes": 198710,
+      "sha256": "68ab0a31ac3b08bd1184b2d43a67eb99275f52048e2e2a64d5f0444dc9c71677"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_quarters.json",
+      "bytes": 310083,
+      "sha256": "a76c8d1c3091d1c3cc62a6744d0923a309549b7fc647542e79c1d3dd8bc4aee7"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/MTARTECH/consolidated/section_ratios.json",
+      "bytes": 40873,
+      "sha256": "4c05473f3e6b0634c8e44670e4e29e65bd7f8ac2572b2b94e87e98d18bdb1f00"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 653,
+      "sha256": "3227d61c8b5cc6bf6bed1e3cc136c0fa429ee5250aed198b18e3e792428cd2c6"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 1759,
+      "sha256": "d542c4aac01c9d53adf0382a42000e253274e43d3a9436ede68645df6d0ad86a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 913,
+      "sha256": "350dcbbe9effa2281be9a9d00c0b98942f2a44d7a090c50f5df54da22adb7479"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 504,
+      "sha256": "8a286d1064ab3e82701c23725c64556916a689985d17f153ee508988fa722ebb"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1172,
+      "sha256": "4f3bf281b23e4d5ef5e856db3179c8ff9977e001485b2d1b3b2e9162ee711004"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 677,
+      "sha256": "4948f8080c4003b9829ab84f991143e26eb5dddbc0b19a12b4a801445edb5a20"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 1410,
+      "sha256": "fd6da9f5f77684e5be1b1a22d27da1d70ebcaca08f601c2a2f5e39db5c8441be"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/profit-loss__expenses.raw.json",
+      "bytes": 754,
+      "sha256": "9e9fbf175a2f7fe958b58311b040459cc4e99ac361b613d010a464096aabbbd3"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 826,
+      "sha256": "1af99975d1f22327b2989c17067bc003519136ca415d567d8f405edb8fe9162b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/profit-loss__other-income.raw.json",
+      "bytes": 370,
+      "sha256": "21b93859cda44aeb02c23d715245779d669f076ad1af6d52778593a05d390357"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/profit-loss__sales.raw.json",
+      "bytes": 169,
+      "sha256": "93a5a9c3c778409b87945c4b08d34541004f70393380d0a8841861a557a3280e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/quarters__expenses.raw.json",
+      "bytes": 525,
+      "sha256": "f28e537f2c3b9a4ef294969a9a028c9df783909be69750bb1f62f38ba8c6e70c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/quarters__net-profit.raw.json",
+      "bytes": 1038,
+      "sha256": "bb03cabfa6626211b4fb0764db53685abf3266c83c404ba841937483614e43ec"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/quarters__other-income.raw.json",
+      "bytes": 286,
+      "sha256": "38480f07044a2f7d252202c3110d73444a7f3d98a167ea794639fc1e4c29da3f"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/schedules/quarters__sales.raw.json",
+      "bytes": 277,
+      "sha256": "46397effcd9cb39d1720265387cc243451637fd086923e46473baeccb7cf587a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/screener_financials_meta.json",
+      "bytes": 1661,
+      "sha256": "ea524cf06173ef58e21155b085ab45ca8b7b844222584543bd31e614b83f4a10"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/screener_financials_page.raw.html",
+      "bytes": 206934,
+      "sha256": "6199e844cdc0d1d242e412c266154a0b22dc1cdab0cbb2477da85044507f2546"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_balance-sheet.json",
+      "bytes": 302510,
+      "sha256": "ed925ea40329cf13e05d8538368ead43a5c8f7fc12d1295252cba722d96780c4"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_cash-flow.json",
+      "bytes": 234660,
+      "sha256": "52f26645eacaed97f7093f2c631732480d43a4290df0a368213d932c5dcaf80a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_growth.json",
+      "bytes": 15931,
+      "sha256": "cd4ac31fa7bbe04e514d8f9fc9d1916f28113bd6fe01ec490accddd56ece3502"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_profit-loss.json",
+      "bytes": 222519,
+      "sha256": "865bc1133127009fe199fc35c1da58ab0b9a57789f042998b84ece88272f7f8b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_quarters.json",
+      "bytes": 278936,
+      "sha256": "97f627aa4fc5f20420cc4a6c386bd5f61b2c3f9840d749c2017e5f466b4d5387"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/NETWEB/standalone/section_ratios.json",
+      "bytes": 46428,
+      "sha256": "3b97de6025ddf1072ec10bf0f9d49773cd92aad059ae12478a918e744287b395"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 945,
+      "sha256": "a83746aa501407e35a9087b083d20649738046d6e1acd5c06e60707701fa4dd1"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2735,
+      "sha256": "f29248ba6186367dcd80961f20f302549bce68a2458fe8d328f1c5f7285cff27"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1371,
+      "sha256": "c6f39af0cb14d6162bfc240dfe4e9ebebac92df1c8b61f76b08a9d3e6f408b7e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 1007,
+      "sha256": "450bfd69504746c1c3b3fc51da5386dbdaeb1d9711d127da98613017db3ad504"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1725,
+      "sha256": "383e98d2ab90fd7400a44596f5884dc3fb14e52a8f6ac9aa6c80cff1af02746b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 1987,
+      "sha256": "aa12ce1c5b5ca77ee654ed6235824ca72dc58cd119e2166b9250a19065e22502"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2092,
+      "sha256": "10d217e12eac9d1d46b1ac8381c5f4938ecb1cd900b7992b9f9f927c5dafb1f5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1046,
+      "sha256": "ac75e9722db118b163b4d600c4280be81a6ef5e9c85bf2342691333915351dce"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1496,
+      "sha256": "c7fb0a2810a5b67778ebe5a938c96554411f243882e0eaa03a172ef81bd01418"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 481,
+      "sha256": "f0a78b460ba41e85c0da9e5e398658ded24cc287e338348f28d770fc4ae11cb7"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 283,
+      "sha256": "164f96e0c7b97ce8cd33f8e09687d9450256347daf88a98bc07bd0c982bbcf1a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 523,
+      "sha256": "61befb9ca051e1f948ffe71d7c9a2fcfe8f7d7e691cf90ed7ff5308733b63d0e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1329,
+      "sha256": "67d51048e6a70f05bcc3e8cfe70e435e2f8e23436a66da648c9c8cc326102e0b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 260,
+      "sha256": "352e65d27e76c7a622de60366fb98850d34cebf201768e4a7beb1ed5353cbd03"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 310,
+      "sha256": "d88fb552e3cdc2a289cdd7e2dc36bef59d1a11eb46631708abb0d793e8acc85b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/screener_financials_meta.json",
+      "bytes": 1716,
+      "sha256": "cce8b281af5b91cd0ab8705394086ec961f652ac865d288a9f4194dcfd780adc"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/screener_financials_page.raw.html",
+      "bytes": 262222,
+      "sha256": "02daa3131765d6d2bb89a66668379615ac60702ac9b4ccb6f347490859bedea3"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_balance-sheet.json",
+      "bytes": 464757,
+      "sha256": "084262d9555fab46d2dac0cadfcc923bf3ca0e62ea445d0bf638d099d070cf62"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_cash-flow.json",
+      "bytes": 407669,
+      "sha256": "011b03557994b42b961d2d8fe4b764047a807c366cc31a906901a6457b69f2bd"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_growth.json",
+      "bytes": 15966,
+      "sha256": "2f3ad203502c4f2c25851ec1af3c09b9207d4edfec4c33ad4ccb9e3c412fdbd3"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_profit-loss.json",
+      "bytes": 339743,
+      "sha256": "f3c3ca8c8cc9aa141799a67cd8e442cd7873303411ce0b81bfbc0fb1e7bea40d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_quarters.json",
+      "bytes": 295479,
+      "sha256": "f7967a79bb887e1e1e59f8937cd82516e315184a86c63153ce0156b32b272731"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/POLYCAB/consolidated/section_ratios.json",
+      "bytes": 68975,
+      "sha256": "a41bab416edf9856657f875951b5b1ec7d80c087c5215d3702f10d9c13eaea45"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 748,
+      "sha256": "fcf5d7ed0655c8a8f8cacad882452ea2b45e50f8b3f309718059f1bb9b816b25"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2089,
+      "sha256": "3dc86a0d07776bf4f419fa25772ce448e53370308a3ce62c6f9c26d7e3bee501"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 950,
+      "sha256": "be1f78994fbf00a78b545d122a2d505ba10f300aa5714e701d07443480cf6573"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 755,
+      "sha256": "c9809694a4b9e67d170b143597b9b06655667086d8adc0e64916ba783c711f75"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1347,
+      "sha256": "24d7ff23d999e3ecf83dd6053d28dd7c921892f7dbc08b86499107d3a4f7262d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 1509,
+      "sha256": "11180bc0af93badfab51e37e2a7235db4a217cdfb4fb2afc6d27d7cbbb44d2ae"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 1587,
+      "sha256": "2812a45d6471512251c8d1159d32b60ba5ab44e15098fa28f846893a98fe6a76"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 946,
+      "sha256": "6b3eb2956e95b9abb10faca79b73fdae2d12f7d7d85af13c2a68d5d63e73cb90"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1129,
+      "sha256": "41c0e7e5c4bb23f09e22dc467884726adddea891c5e0441a0baef71a19247eb7"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 370,
+      "sha256": "d9cf4413b9622d5d7b53f26654359ebe3fdaed820be536a642b8b48818d1354d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 212,
+      "sha256": "27881a7edfe7b5d78282f3afb003de07137ebc110972b05df692789b92ac3c50"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 603,
+      "sha256": "de01aac8077d3077bff1a289f8fcf3c305bd1873d73cd2d428b6f32208b4a917"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1574,
+      "sha256": "658252bd15ccf38eeac92fa8af3fe941b6c4f16667cacee61e8e5d0cd5c1ed4b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 587,
+      "sha256": "7fb460aa378ad1f396839811d4c6ea861a3853431444ec8b8c53408c8413f003"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 271,
+      "sha256": "bcc48656c53d7ec46b62dcd75095c125594b8e13a845d4fc8344cf3a2b4bd396"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/screener_financials_meta.json",
+      "bytes": 1731,
+      "sha256": "1c3e15227d560ab87073a5d4a013ac8eafc15d7b3e87f5f6f6222f7ddce07ada"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/screener_financials_page.raw.html",
+      "bytes": 255575,
+      "sha256": "44347bbbd29a191760059564cd21bed2a7ce53f9091762d5b86125178b68b0a2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_balance-sheet.json",
+      "bytes": 353083,
+      "sha256": "e24deb867566a2e7030d0eec7de556ba751c8fe459cb942875f9ab826c8d5020"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_cash-flow.json",
+      "bytes": 308343,
+      "sha256": "a27fa2f422455c104df56de88a6534fa9862eaa7e060a777671216940c2194ba"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_growth.json",
+      "bytes": 15958,
+      "sha256": "44bd679593f6c445694b06d02961d1e301f2da4882d58b6552b00952582f1952"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_profit-loss.json",
+      "bytes": 260075,
+      "sha256": "41ba00729172a341e418dcb0c55bb12f0a4e3a9ff3ca8567eba7f6d425910639"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_quarters.json",
+      "bytes": 325124,
+      "sha256": "f4d5305789faab68fcb667f26b395a2edfa4225f401bd09b84b10356c5c62909"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/SONACOMS/consolidated/section_ratios.json",
+      "bytes": 52091,
+      "sha256": "b55b651e4cb40bd6bed6a68b8b4197b7798c5cffadc2fab7707f0905c8013112"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 969,
+      "sha256": "2071fbca448cd6c4e43c765c6b3905982edfcb0baa866e2d22f856ccf56bf685"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2740,
+      "sha256": "be1081614681155f8f3deaea138af630f741fbda5aa3e1b02e311d23cf5c0b82"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1389,
+      "sha256": "cb43ab70f4782319c87b67de3c122fa4b57d6ef7990cd823e20a2aa05f42110d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 1038,
+      "sha256": "dd6d9bf495c9eff50c20d71372b8e5922dd605ce64ca1cb9dcdad15e39857bb1"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1708,
+      "sha256": "a0dbf09e2519001224b4a73124980f14a2120d2bd62ae00dd17115d0291010ce"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 2685,
+      "sha256": "b05cb0dd276de5342a113f0948a7d75e034a28eff79bf9e616cb819e322572f0"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2059,
+      "sha256": "1ede473804a47f6d717746b1ab6764cd0dc494bf4e21ef9e629180a21013331c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1075,
+      "sha256": "0c07b0a8ce9c008843506be0f007500c78390ab91b0df72b1c8ac32ab89e6f9d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1705,
+      "sha256": "ccde10e1c27103c85ee06b91ebff6ff926f5bb3e7a38488cd5829fb34d124472"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 495,
+      "sha256": "5859064dbe28247c8bef78b175a61295c63f52b7779a632b175d7befa8ee96db"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 284,
+      "sha256": "76d94e8ec8e3ac236f4dea16019bd7ead0edb70f542c74b41801393bbf006aab"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 536,
+      "sha256": "c3d6db8e04b856d8729fdbef60b4a7bcb9bef92ae30fac35107b57e1f76cf39d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1568,
+      "sha256": "3aaee9f77e0f31a9fcfd3adc88a6f4bbea43e6395f8b82a75455047a9c52fc90"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 508,
+      "sha256": "0c1e9a845f10676637d9a01d8dd864a0839e41da4a625e350d5cb3210f98530a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 307,
+      "sha256": "622ba6783b7f0dbc851351f25af2475ac71e4e757266d928a0b3d3734a3949be"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/screener_financials_meta.json",
+      "bytes": 1676,
+      "sha256": "5f92d924fffc94924cc206035c3c684db03a6d039dc450d4c4f40abf84dbfae2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/screener_financials_page.raw.html",
+      "bytes": 276627,
+      "sha256": "6894f0979643755a618a6e8f572dc63ee3efb61abb6495ddf4766d5ec678f0ad"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_balance-sheet.json",
+      "bytes": 466491,
+      "sha256": "a9557c8625a18f428d6d2f037bc548d3a809fe2cdb9a580bd93983ccec05a5fb"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_cash-flow.json",
+      "bytes": 448785,
+      "sha256": "16fa8e57db5c8aba3bc5acba2530d9c125b6d5df56e155fd88e2abd74e7c158d"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_growth.json",
+      "bytes": 15962,
+      "sha256": "8e60974f5bcea246c476670a6864352bb00c9f154f3301d554e13d6a1f9bd8ba"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_profit-loss.json",
+      "bytes": 352875,
+      "sha256": "71923a25f63c412a19b47e018ce19a9ff870344e1ce50d3fe672e7565fe2fea5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_quarters.json",
+      "bytes": 324414,
+      "sha256": "1835b809a12394172fc9d2dabc226171b437dd1a1cc356d12b4de888471fa85e"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/THERMAX/consolidated/section_ratios.json",
+      "bytes": 69003,
+      "sha256": "95be8323b1deb79a78a95818823077969d187ef3a41549797aaf5c3a5714dbe8"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/balance-sheet__borrowings.raw.json",
+      "bytes": 998,
+      "sha256": "5cb3f12455d37949a1b101f4fe06ce95076f3d68107617694b4fce4eccce4ff5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/balance-sheet__fixed-assets.raw.json",
+      "bytes": 2769,
+      "sha256": "4af427ab03d5c19cc80cbf5dc46cf91986ff2f8865a59675202f7ae1c2334017"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/balance-sheet__other-assets.raw.json",
+      "bytes": 1392,
+      "sha256": "293856f01aab3fa053b39c32181f329ba6e802351868c51b27ccb81608392b72"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/balance-sheet__other-liabilities.raw.json",
+      "bytes": 1031,
+      "sha256": "7edf6acdb0a408d99ea62a928d5ac0a8f249ecfd5ddafe40b11ad8b8099a032a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/cash-flow__cash-from-financing-activity.raw.json",
+      "bytes": 1513,
+      "sha256": "b3ccd8713c742280a7b6315d02f2b97c643b91f5bc7e1ef2e0a10713124daafc"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/cash-flow__cash-from-investing-activity.raw.json",
+      "bytes": 2493,
+      "sha256": "8ff5b36ee59b6074b227f58bd119fa227f3c019802e086adddfe5f272e9f7ae5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/cash-flow__cash-from-operating-activity.raw.json",
+      "bytes": 2414,
+      "sha256": "c79cab9c909f312ffac1d9fb1a95ba7109d1aa255523754872192e8a04213b5a"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/profit-loss__expenses.raw.json",
+      "bytes": 1052,
+      "sha256": "1f248c4965a7df86bbe1f620768986326eb8ccf093638677394235ce3897b11b"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/profit-loss__net-profit.raw.json",
+      "bytes": 1752,
+      "sha256": "bd99879f7d37d1a51baa767496132c816955d1643f976944f4e5ad1d65838581"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/profit-loss__other-income.raw.json",
+      "bytes": 491,
+      "sha256": "fce9fe437f71ce6d2b88a8a1e6bcef4262aba9537258ff71e81d8fbae2b05546"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/profit-loss__sales.raw.json",
+      "bytes": 281,
+      "sha256": "562419998cf92fef700da18ba8ba10e462ecae7b2d30acba070fd8cb700bafd2"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/quarters__expenses.raw.json",
+      "bytes": 523,
+      "sha256": "df7798464b9c0cb9c7dc7413ec786ee4e7f34cab84f53f462f2f7c3061c5a0f7"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/quarters__net-profit.raw.json",
+      "bytes": 1611,
+      "sha256": "0e24d0e7f80cc7445b5eea5e8608fd1f45b44e47199edc45d59a81cbc93c17ed"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/quarters__other-income.raw.json",
+      "bytes": 520,
+      "sha256": "fb3fb5a0e677ef0e7560e208d841339c056c1faec7bb5c25fe23b63bba709f48"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/schedules/quarters__sales.raw.json",
+      "bytes": 310,
+      "sha256": "16bcb55c9122f10a1fd74676c4b390c6e8995e82ab47fccdbe028b75e8d0f8a5"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/screener_financials_meta.json",
+      "bytes": 1670,
+      "sha256": "fa3d3b53c5ca5b91143c381af4644e9eb0a2b8be8cd40bf8945fbf39f102257c"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/screener_financials_page.raw.html",
+      "bytes": 250967,
+      "sha256": "98e499bd097bcef85e7a4994d6ad79a3af8b18c4e3f455734349f7368d362a83"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_balance-sheet.json",
+      "bytes": 466670,
+      "sha256": "3bb07bb7c2206a43b72670f623fa72f8ed4ad9876f9fa8c564afaf549c205195"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_cash-flow.json",
+      "bytes": 435284,
+      "sha256": "a7c0ac511c80555a6c90ffb78c7ecbece04b54a3119cbc59de8a9c7abfa2cc87"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_growth.json",
+      "bytes": 15968,
+      "sha256": "85aaf4d0678eed431b626825e06f2332287ed01859df60b2775ed8ec22ab14b9"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_profit-loss.json",
+      "bytes": 353054,
+      "sha256": "d4246af1d15d999aa0bb6537fa1787786f838d56ebba188c767fc7fe31e70d56"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_quarters.json",
+      "bytes": 324728,
+      "sha256": "28dd89e3d3aa633b6f8cdcccc44bd10bacfb89cdbfd12d1f8807fdc6cfa46aeb"
+    },
+    {
+      "path": "data/raw/watchlist/screener-financials/TITAN/consolidated/section_ratios.json",
+      "bytes": 68979,
+      "sha256": "f67b9273ef013c825bfd8666cb3abdeb03998e7daecee01db50d4bd4d53fa887"
+    },
+    {
+      "path": "data/raw/watchlist/sonacoms/bse_pdf/e23c0bd4-b922-4702-92b1-9fb4ab0a0a45.pdf",
+      "bytes": 4451528,
+      "sha256": "0ce43a604a1622e3ae28b49a7ed552e756fb80190a830f64df7e5f5e0fa16ee7"
+    },
+    {
+      "path": "data/raw/watchlist/sonacoms/nse/INDAS_117581_1359784_23012025083325.xml",
+      "bytes": 31873,
+      "sha256": "c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc"
+    },
+    {
+      "path": "data/raw/watchlist/thermax/bse_pdf/f7a48138-a78e-4666-82fa-2138e2a9d7fa.pdf",
+      "bytes": 5099236,
+      "sha256": "9554c06ceb43f0f24d4536aeebc8cfecdb6324d3cfea270e403085f490c99c43"
+    },
+    {
+      "path": "data/raw/watchlist/thermax/nse/INDAS_118568_1370145_04022025030939.xml",
+      "bytes": 53093,
+      "sha256": "36d79235f8ab475c3206dd90137bd707e55446e26ba4979dd9f0a039bf33980d"
+    },
+    {
+      "path": "data/raw/watchlist/titan/bse_pdf/d4ddb6ee-2cb7-4dae-b39e-145601dc47b4.pdf",
+      "bytes": 6763365,
+      "sha256": "7248bdacf5f4b20b07612a370850cb16e5b8f9bffe20c3ddc4f2fb6e6bc983bc"
+    },
+    {
+      "path": "data/raw/watchlist/titan/nse/INDAS_118668_1371012_04022025105441.xml",
+      "bytes": 56614,
+      "sha256": "09dbeb46c6edfe31be0cbbd1c55e5861d247cacba040b855737a51841cd771c1"
+    }
+  ],
+  "file_count": 277,
+  "total_bytes": 102680439,
+  "backup_destination": "scratchpad/backups/retained-sources-20261002/watchlist.tar",
+  "durable_backup_verified": false,
+  "restore_verified": true,
+  "limitation": "User accepted local-disk-only backup and possible loss. Local restore integrity is verified separately; no off-machine durability claim.",
+  "local_disk_backup_verified": true,
+  "accepted_loss_risk": true
+}
