@@ -54,7 +54,7 @@ Approved implementation work runs through the **execution skill** (three scopes:
 
 ## Agent Stack and Review
 
-Fixed owner-directed stack: Opus 5.5 medium implements big work, Sonnet 5.5 medium does small work, GPT-6.1 Sol high reviews at critical points, all dispatched through the T3 Code orchestrator. Review is a same-session loop (exhaustive one-pass findings → fix all → same reviewer verifies) closed by one fresh critical review. Authoritative: [`.claude/rules/core/04-agent-stack.md`](.claude/rules/core/04-agent-stack.md). Do not change models or roles unless the owner names a change.
+Fixed owner-directed stack: Opus 5.5 medium implements big work, Sonnet 5.5 medium does small work, GPT-6.1 Sol high reviews at critical points, all dispatched through the T3 Code orchestrator. Review is a loop of fresh rounds (exhaustive one-pass findings → fix all → re-review against the findings) closed by one fresh critical review. Authoritative: [`.claude/rules/core/04-agent-stack.md`](.claude/rules/core/04-agent-stack.md). Do not change models or roles unless the owner names a change.
 
 ## Tools & Subagents
 

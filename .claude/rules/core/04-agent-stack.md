@@ -13,8 +13,19 @@ memory where they conflict.
 | Small-task worker | `claude-sonnet-5-5`, effort `medium` | Small, low-ambiguity work: single-file edits, config, docs, mechanical changes. |
 | Reviewer | `gpt-6.1-sol`, effort `high` | Specs, plans, significant implementation chunks. |
 
-Dispatch every worker through the T3 Code orchestrator (`delegate_task`, then `task_status`;
-continue a worker by messaging its child thread). Not native subagents, not the Codex adapter.
+Dispatch every worker through the T3 Code orchestrator (`delegate_task`; results arrive by
+notification). Not native subagents, not the Codex adapter.
+
+**Workers run autonomously (owner, 2026-10-11):** the owner cannot open subagent threads to answer
+permission prompts, and a prompted worker stalls. Dispatch with `runtimeMode: "auto"` (the
+session's own mode; T3 refuses anything broader than the parent, e.g. `full-access`), never
+`approval-required`. Keep read-only workers read-only through their brief ("do not edit files,
+no git, no bd").
+
+**Rounds are fresh (owner, 2026-10-11):** T3 cannot resume a finished delegated session, so every
+round is a fresh `delegate_task` with a lean brief — no transcripts or full prior context. A fix
+round gets the artifact plus the findings list; a re-review round gets the artifact, its own prior
+findings list, and the fixes. Use a distinct `clientRequestId` per round.
 
 ## When to review
 
@@ -28,12 +39,12 @@ tasks — including routine Opus work — skip review.
 2. Reviewer reports **every** issue in one pass. Always put this in the brief: "List ALL issues you
    find in a single exhaustive report — do not stop at the first few, do not hold any back for a
    later round. Rank by severity." Reviewers tend to under-report; insist.
-3. The **same implementer session** fixes all issues in one go.
-4. The **same reviewer session** checks the fixes and gives a verdict (not a fresh review).
+3. A fresh implementer round fixes all issues in one go.
+4. A fresh reviewer round checks the fixes against the prior findings list and gives a verdict.
 5. Repeat 3–4 until approved. Not converged after 3 rounds → escalate to the owner.
 6. Loop closed → one **fresh** reviewer session (same model, no prior context) does a critical
-   review of everything: nothing broken, nothing wrong. Real findings go back to the implementer's
-   session; that fresh reviewer verifies the fixes.
+   review of everything: nothing broken, nothing wrong. Real findings go to a fresh implementer
+   round, then a re-review round verifies them.
 7. Orchestrator runs verification and commits.
 
 ## Testing
