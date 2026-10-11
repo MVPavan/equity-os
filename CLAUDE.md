@@ -52,9 +52,9 @@ If the user already supplied a clear, approved plan, do not re-run brainstorming
 
 Approved implementation work runs through the **execution skill** (three scopes: task / phase / workstream; entry commands `/phase-execution N` and `/run-phases`). Full cycle: planning → dispatch → review (code-review skill) → TDD/debugging as routed → verification. Phase inventory: `docs/workstreams/<name>/roadmap.md`; work-state in Beads.
 
-## Claude and Codex
+## Agent Stack and Review
 
-Applies only when the Codex plugin is available. Codex is a **one-way, best-effort critic** — it reviews your completed output; no reverse loop. `small` tasks: skip Codex unless risk is unusual. For **any** invocation, follow [`.claude/commands/use-codex.md`](.claude/commands/use-codex.md) (authoritative — invocation path, operational rules, which command for what). Capacity errors: retry once, then proceed without it and log the skip. Detail: `.claude/project/tools.md`.
+Fixed owner-directed stack: Opus 5.5 medium implements big work, Sonnet 5.5 medium does small work, GPT-6.1 Sol high reviews at critical points, all dispatched through the T3 Code orchestrator. Review is a same-session loop (exhaustive one-pass findings → fix all → same reviewer verifies) closed by one fresh critical review. Authoritative: [`.claude/rules/core/04-agent-stack.md`](.claude/rules/core/04-agent-stack.md). Do not change models or roles unless the owner names a change.
 
 ## Tools & Subagents
 

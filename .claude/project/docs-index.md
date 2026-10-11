@@ -11,6 +11,7 @@ Authoritative docs and when to read them.
 | `CONTEXT.md` | Naming anything — the domain glossary; use its terms, avoid its listed synonyms |
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
+| `docs/plans/2026-10-11-completion-work-list.md` | **Choosing what to work on next** — owner-accepted, deduplicated priority list of all remaining work to full vision, with dependencies and bead mapping |
 | `.claude/rules/core/03-ak-guidelines.md` | Coding rules that reduce common LLM mistakes |
 | `.claude/rules/python/` | Writing any first-party Python (style, safety, testing) |
 | `.claude/commands/use-codex.md` | Any Codex invocation — authoritative rules and roles |

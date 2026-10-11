@@ -9,24 +9,38 @@
 | `bd` (beads) | 1.1.0, embedded Dolt | issue tracking (see `tracking.md`) |
 | `codex` CLI | 0.147.0, on PATH | Codex critique/review path is live |
 
-Nothing to install or build yet — the repo is pre-code.
+Tool versions above are from 2026-08-12; current: codex-cli 0.162.0, bd 1.3.0.
 
-## Codex
+## Agent stack
 
-The codex-adapter plugin is installed and `codex` is authenticated, so the
-one-way critic path is live. Follow `.claude/commands/use-codex.md` for which
-command/role to use. Best-effort: one retry on capacity error, then proceed and
-log the skip. Skip Codex for `small` tasks.
+Workers and reviewers run through the T3 Code orchestrator under the fixed stack in
+`.claude/rules/core/04-agent-stack.md` (Opus 5.5 medium / Sonnet 5.5 medium implement,
+GPT-6.1 Sol high reviews). The old codex-adapter plugin path no longer exists; do not use it.
+
+## Web research: DWS (deep web search)
+
+Owner's local evidence tool (owner directive 2026-10-11). Use it for **open-ended web research**:
+general/news searches, equity news, anything not covered by a dedicated source. Use the dedicated
+acquisition lanes (Screener, Tijori, Upstox, NSE/BSE filings) for their own data — DWS does not
+replace them.
+
+- Runs as local Docker services; API on `127.0.0.1:8765` (`/ready` reports status, MCP enabled).
+- CLI: from the owner's DWS product checkout (the `dws/` directory holding `compose.yaml`), load
+  `.runtime/owner.env`, then `uv run --no-sync dws search "<query>" --limit N`; `fetch`, `read`,
+  `retrieve`, `pin`, `crawl` per its `docs/host-integration.md`.
+- Use a separate DWS workspace per project scope (e.g. `equity-os`). Cite by `snapshot_id` plus
+  returned line/char locations; re-`read` the snapshot to verify a quote.
+- Search ranking is provider order, not credibility — select and evaluate a source before treating
+  it as evidence. Never put `DWS_TOKEN` in reports, prompts, or committed files.
 
 ## Subagent / MCP routing
 
 - **`docs-researcher`** subagent + **`context7`** MCP — library/SDK/API/CLI
   facts; prefer over web search for library docs; never invent APIs. Will
   matter heavily once ingestion/parsing libraries are chosen.
-- **implementer / code-reviewer / spec-reviewer** — core harness agents for
-  bounded build → review work (reviewers follow the `code-review` skill;
-  planning lives in the `planning` skill, dispatch in `execution`).
-- **claude-max** — heaviest, most open-ended tasks.
+- Implementation and review dispatch: see `04-agent-stack.md` (supersedes the
+  native implementer / code-reviewer / spec-reviewer routing). Planning still lives
+  in the `planning` skill.
 - Use **brainstorming** for open-ended design tradeoffs; the blueprint's open
   decisions (register items with status Open) are the natural inputs.
 

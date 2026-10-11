@@ -1,9 +1,8 @@
 # Project Brief
 
-**Equity-OS** is an agentic equity-research system for Indian markets, in its
-**pre-code blueprint stage**. The blueprint's working title for the product is
-*Funda* (name/trademark check still open — decision A-09); the repo and product
-name going forward is Equity-OS.
+**Equity-OS** is an agentic equity-research system for Indian markets. The
+blueprint calls the product *Funda* (its working title); the product and repo
+name is Equity-OS. The Python package is `fundamentals`.
 
 ## Product thesis (from the approved blueprint review)
 
@@ -19,27 +18,33 @@ company's new quarterly-result package and an approved prior thesis, produce a
 reviewable, source-backed update showing what changed in facts, management
 commitments, calculations, uncertainties, and thesis.
 
-## Current state
+## Current state (refreshed 2026-10-11)
 
-No first-party source code, no CI, no README. The repo holds the agent harness
-(`.claude/`), beads tracking (`.beads/`), and two authoritative blueprint docs
-under `docs/blueprint/` (the **v2 decision register is the operational
-authority**; the consolidated review is rationale). Next milestones: **Phase
-0A** — freeze the distribution boundary, discovery company, source rights,
-manual baseline, output contract, materiality policy, success-metric contract,
-budgets/capacity, and the XBRL-vs-PDF spike (register items A-01…A-13, all
-currently Open) — then **Phase 0.5** (vertical slice: one company × four
-quarters — Quarter 0 manual baseline + bootstrap thesis, Quarters 1–3
-assisted updates).
+- **Phase 0A gate cleared** (bead eqos-3ps closed 2026-08-21); Phase 0.5 product
+  code is authorized and shipping. Beads, not this brief, are the source of
+  truth for gate and task status.
+- **Code:** ~58k lines under `src/fundamentals/` (`ingest`, `store`, `extract`,
+  `reconcile`, `thesis`, `news`, `output`, `verify`, `entity`, `api`, `contracts`)
+  with tests under `tests/`. Sources: NSE/BSE filings, Screener, Tijori, Upstox.
+- **Pilot company:** Apar Industries (epic eqos-4j2), not INFY.
+- **Product verdict:** `PILOT_PROVEN: NO`, `CORE_RESEARCH_RELEASE: NO`,
+  `VISION_SATISFIED: NO`. No Apar successor report has been generated.
+- **Development paused at the owner's request** since 2026-10-03. Resume entry
+  point: `docs/evidence/product-completion/handoff-2026-10-03.md`.
+- **Human decisions pending:** starting-fact/commitment confirmation
+  (eqos-4j2.3) and the monitoring aggregation/recovery policy (eqos-4j2.14).
+  Plain-language questions:
+  `docs/evidence/product-completion/questions-for-project-owner.md`.
 
-## Intended stack (user-confirmed 2026-08-12)
+## Stack
 
 - Python 3.12+ managed with `uv`; Pydantic models; ruff / mypy --strict / pytest;
   structlog — matching `.claude/rules/python/`.
-- SQLite structured store + immutable document/object store + Parquet for
-  derived price panels (blueprint Phase 1).
+- SQLite fact store plus append-only snapshot and protected source-intake stores
+  (`src/fundamentals/store/`). Parquet price panels are planned, not built.
+- The only direct LLM client is `src/fundamentals/thesis/claude_client.py`.
 - Agent framework, memory engine (GBrain vs Git/Markdown/SQL), and quant
-  tooling are **deliberately undecided** (blueprint §9) — do not pick them
+  tooling are still **deliberately undecided** (blueprint §9) — do not pick them
   implicitly.
 
 ## Constraints / non-negotiables
