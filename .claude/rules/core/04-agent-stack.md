@@ -44,9 +44,10 @@ reports and makes the financial decisions.
 
 ## When to review
 
-Only at critical points: a spec or plan, a significant implementation chunk (phase or major
-component), and before integrating anything touching financial logic or shared contracts. Routine
-tasks — including routine Opus work — skip review.
+Only at critical points: a spec or plan, and once per **phase** at its end (owner, 2026-10-12:
+lowered bar for speed). Stages inside a phase are not Sol-reviewed; the orchestrator verifies each
+stage (tests, mypy, acceptance values) and commits it. The phase-end review covers everything the
+phase built and runs the loop below. Routine tasks skip review.
 
 ## Review loop
 
