@@ -1,0 +1,218 @@
+# Cash-flow rows, indirect method (inventory §2c). Canonical sign: positive increases cash
+# (inflow, or an adjustment added back); mappings transform sources that store outflows positive.
+# Filed in half-year and annual results, and in Q1/Q3 only when the package contains a cash flow.
+# One id per filed measure: each XBRL element is its own row. A condensed or net PDF line (Apar
+# FY26 Q2 results p7 "trade and other receivables", "trade and other payables", "Sale/(purchase)
+# of investments - net", "short-term borrowings. net") is a distinct filed measure with its own
+# row, never a netting rule over the element rows; no aggregate construction is declared because
+# no source evidences the lines' composition. Element names below are all present in the retained
+# Apar X-Q2 and FY26 annual instances.
+family: CASH_FLOW
+defaults:
+  value_kind: CURRENCY_AMOUNT
+  period_nature: DURATION
+  sign_convention: SIGNED_INFLOW_POSITIVE
+  aggregation_behaviour: SUMMABLE_ACROSS_MEMBERS
+  period_aggregation: ADDITIVE_DURATION
+  applicability_rule_id: results.cash_flow
+  basis_applicability: [CONSOLIDATED, STANDALONE]
+rows:
+  - canonical_id: cf_profit_before_tax
+    meaning: "Profit before tax that starts the indirect-method reconciliation. PDF Apar \"Profit before tax & share in net profit/(loss) of associates\"; no XBRL element (XBRL starts from AdjustmentsForReconcileProfitLoss)."
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: cf_adj_depreciation
+    meaning: "Adjustment for depreciation and amortisation. XBRL AdjustmentsForDepreciationAndAmortisationExpense; PDF."
+  - canonical_id: cf_adj_gain_loss_sale_ppe
+    meaning: "Adjustment for the gain or loss on sale of property, plant and equipment (a loss added back is positive, a gain deducted negative). PDF Apar FY26 Q2 results p7 \"(Gain)/loss on sale of property, plant and equipment\" (H1 FY26 consolidated 9.58, standalone 9.58; H1 FY25 consolidated 0.09, standalone 0.09 crore). No XBRL element with this meaning: Apar X-Q2 carries 9.58 only as AdjustmentsForDecreaseIncreaseInOtherNoncurrentAssets, a working-capital element. Distinct from the disposal proceeds in cf_sale_ppe. Added beyond the inventory (filed line with no inventory row)."
+  - canonical_id: cf_adj_finance_costs
+    meaning: "Adjustment for finance costs. XBRL AdjustmentsForFinanceCosts; PDF \"Interest costs\"."
+  - canonical_id: cf_adj_interest_income
+    meaning: "Adjustment for interest income (deducted, so normally negative). XBRL AdjustmentsForInterestIncome (stored positive); PDF."
+  - canonical_id: cf_adj_dividend_income
+    meaning: "Adjustment for dividend income. XBRL AdjustmentsForDividendIncome."
+  - canonical_id: cf_adj_unrealised_fx
+    meaning: "Adjustment for unrealised foreign exchange losses or gains. XBRL AdjustmentsForUnrealisedForeignExchangeLossesGains; PDF."
+  - canonical_id: cf_adj_share_based_payments
+    meaning: "Adjustment for share-based payments. XBRL AdjustmentsForSharebasedPayments; PDF."
+  - canonical_id: cf_adj_impairment
+    meaning: "Adjustment for impairment loss or its reversal recognised in profit or loss. XBRL AdjustmentsForImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss."
+  - canonical_id: cf_adj_fair_value
+    meaning: "Adjustment for fair-value losses or gains. XBRL AdjustmentsForFairValueGainsLosses."
+  - canonical_id: cf_adj_profit_sale_investments
+    meaning: "Adjustment deducting the profit on sale of investments (a profit is negative). PDF Apar FY26 Q2 results p7 \"Profit on sale of investments\" (H1 FY26 consolidated -7.21, standalone -6.94; H1 FY25 consolidated -3.07, standalone -2.90 crore). No XBRL element with this meaning: Apar X-Q2 carries -7.21 only as AdjustmentsForOtherFinancialAssetsCurrent, a working-capital element. Not cf_adj_fair_value (equivalence unproven, inventory §2c) and distinct from the investment flows in cf_sale_equity_debt_instruments and cf_investments_net. Added beyond the inventory (filed line with no inventory row)."
+  - canonical_id: cf_adj_provisions_current
+    meaning: "Adjustment for current provisions. XBRL AdjustmentsForProvisionsCurrent (Apar X-Q2 FourD 20.09 crore = PDF \"Provision for doubtful debts\"). Split from the inventory's grouped cf_adj_provisions row."
+  - canonical_id: cf_adj_provisions_noncurrent
+    meaning: "Adjustment for non-current provisions. XBRL AdjustmentsForProvisionsNoncurrent (Apar X-Q2 FourD 0). Split from the inventory's grouped cf_adj_provisions row."
+  - canonical_id: cf_adj_associates_undistributed
+    meaning: "Adjustment for undistributed profits of associates. XBRL AdjustmentsForUndistributedProfitsOfAssociates."
+  - canonical_id: cf_adj_other_noncash
+    meaning: "Other adjustments for non-cash items. XBRL OtherAdjustmentsForNoncashItems. Split from the inventory's grouped cf_adj_other_noncash row (three residual elements)."
+  - canonical_id: cf_adj_other_investing_financing
+    meaning: "Other adjustments for items whose cash effects are investing or financing cash flow. XBRL OtherAdjustmentsForWhichCashEffectsAreInvestingOrFinancingCashFlow. Split from the inventory's grouped cf_adj_other_noncash row."
+  - canonical_id: cf_adj_other_reconcile
+    meaning: "Other adjustments to reconcile profit or loss. XBRL OtherAdjustmentsToReconcileProfitLoss. Split from the inventory's grouped cf_adj_other_noncash row."
+  - canonical_id: cf_wc_trade_receivables_current
+    meaning: "Working-capital change in current trade receivables. XBRL AdjustmentsForDecreaseIncreaseInTradeReceivablesCurrent. Split from the inventory's grouped cf_wc_trade_receivables row."
+  - canonical_id: cf_wc_trade_receivables_noncurrent
+    meaning: "Working-capital change in non-current trade receivables. XBRL AdjustmentsForDecreaseIncreaseInTradeReceivablesNoncurrent. Split from the inventory's grouped cf_wc_trade_receivables row."
+  - canonical_id: cf_wc_trade_and_other_receivables
+    meaning: "Working-capital change in trade and other receivables as the issuer's condensed PDF line. PDF Apar \"(Increase) / decrease in trade and other receivables\" (H1 FY26 consolidated -232.97, standalone -206.80 crore); no XBRL element (X-Q2 consolidated trade receivables current -232.99, non-current 0). Its composition is not evidenced, so it is not constructed from the cf_wc_trade_receivables_* rows. Split from the inventory's grouped cf_wc_trade_receivables row (its PDF column)."
+  - canonical_id: cf_wc_inventories
+    meaning: "Working-capital change in inventories. XBRL AdjustmentsForDecreaseIncreaseInInventories; PDF."
+  - canonical_id: cf_wc_trade_payables_current
+    meaning: "Working-capital change in current trade payables. XBRL AdjustmentsForIncreaseDecreaseInTradePayablesCurrent. Split from the inventory's grouped cf_wc_trade_payables row."
+  - canonical_id: cf_wc_trade_payables_noncurrent
+    meaning: "Working-capital change in non-current trade payables. XBRL AdjustmentsForIncreaseDecreaseInTradePayablesNoncurrent. Split from the inventory's grouped cf_wc_trade_payables row."
+  - canonical_id: cf_wc_trade_and_other_payables
+    meaning: "Working-capital change in trade and other payables as the issuer's condensed PDF line. PDF Apar \"Increase/ (decrease) in trade and other payables\" (H1 FY26 consolidated -300.48, standalone -368.82 crore); no XBRL element (X-Q2 consolidated trade payables current -300.48, non-current 0). Its composition is not evidenced, so it is not constructed from the cf_wc_trade_payables_* rows. Split from the inventory's grouped cf_wc_trade_payables row (its PDF column)."
+  - canonical_id: cf_wc_other_current_assets
+    meaning: "Working-capital change in other current assets. XBRL AdjustmentsForDecreaseIncreaseInOtherCurrentAssets. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_noncurrent_assets
+    meaning: "Working-capital change in other non-current assets. XBRL AdjustmentsForDecreaseIncreaseInOtherNoncurrentAssets. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_current_liabilities
+    meaning: "Working-capital change in other current liabilities. XBRL AdjustmentsForIncreaseDecreaseInOtherCurrentLiabilities. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_noncurrent_liabilities
+    meaning: "Working-capital change in other non-current liabilities. XBRL AdjustmentsForIncreaseDecreaseInOtherNoncurrentLiabilities. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_financial_assets_current
+    meaning: "Working-capital change in other current financial assets. XBRL AdjustmentsForOtherFinancialAssetsCurrent. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_financial_assets_noncurrent
+    meaning: "Working-capital change in other non-current financial assets. XBRL AdjustmentsForOtherFinancialAssetsNoncurrent. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_financial_liabilities_current
+    meaning: "Working-capital change in other current financial liabilities. XBRL AdjustmentsForOtherFinancialLiabilitiesCurrent. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_financial_liabilities_noncurrent
+    meaning: "Working-capital change in other non-current financial liabilities. XBRL AdjustmentsForOtherFinancialLiabilitiesNoncurrent. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_wc_other_bank_balances
+    meaning: "Working-capital change in other bank balances. XBRL AdjustmentsForOtherBankBalances. Split from the inventory's grouped cf_wc_other_assets_liabilities row."
+  - canonical_id: cf_adjustments_total
+    meaning: "Total adjustments to reconcile profit, including working-capital changes. XBRL AdjustmentsForReconcileProfitLoss (Apar -344.41 crore)."
+  - canonical_id: cf_cash_generated_from_operations
+    meaning: "Cash generated from operations, before income taxes. XBRL CashFlowsFromUsedInOperations; no Apar PDF subtotal."
+  - canonical_id: cf_interest_paid_operating
+    meaning: "Interest paid, classified as operating. XBRL InterestPaidClassifiedAsOperatingActivities; split from the inventory's grouped cf_interest_dividend_operating row."
+  - canonical_id: cf_interest_received_operating
+    meaning: "Interest received, classified as operating. XBRL InterestReceivedClassifiedAsOperatingActivities; split from the inventory's grouped cf_interest_dividend_operating row."
+  - canonical_id: cf_dividends_received_operating
+    meaning: "Dividends received, classified as operating. XBRL DividendsReceivedClassifiedAsOperatingActivities; split from the inventory's grouped cf_interest_dividend_operating row."
+  - canonical_id: cf_income_taxes_paid
+    meaning: "Income taxes paid or refunded, classified as operating. XBRL IncomeTaxesPaidRefundClassifiedAsOperatingActivities (positive = outflow there); PDF \"Tax paid\"."
+  - canonical_id: cf_income_taxes_paid_investing
+    meaning: "Income taxes paid or refunded, classified as investing. XBRL IncomeTaxesPaidRefundClassifiedAsInvestingActivities. Split from the inventory's cf_income_taxes_paid row, which cites the investing and financing variants."
+  - canonical_id: cf_income_taxes_paid_financing
+    meaning: "Income taxes paid or refunded, classified as financing. XBRL IncomeTaxesPaidRefundClassifiedAsFinancingActivities. Split from the inventory's cf_income_taxes_paid row, which cites the investing and financing variants."
+  - canonical_id: cf_other_operating
+    meaning: "Other operating inflows or outflows of cash. XBRL OtherInflowsOutflowsOfCashClassifiedAsOperatingActivities."
+  - canonical_id: cfo
+    meaning: "Net cash from operating activities. XBRL CashFlowsFromUsedInOperatingActivities (Apar 168.84 vs PDF 168.86 crore); PDF."
+  - canonical_id: cf_capex_ppe
+    meaning: "Purchase of property, plant and equipment. XBRL PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities (positive = outflow there); PDF \"Acquisition of property, plant and equipment\"."
+  - canonical_id: cf_sale_ppe
+    meaning: "Proceeds from sale of property, plant and equipment. XBRL ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities; PDF."
+  - canonical_id: cf_purchase_intangible_assets
+    meaning: "Purchase of intangible assets (investing). XBRL PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_intangible_assets
+    meaning: "Proceeds from sale of intangible assets (investing). XBRL ProceedsFromSalesOfIntangibleAssetsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_intangibles_under_development
+    meaning: "Purchase of intangible assets under development (investing). XBRL PurchaseOfIntangibleAssetsUnderDevelopment. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_intangibles_under_development
+    meaning: "Proceeds from sale of intangible assets under development (investing). XBRL ProceedsFromSalesOfIntangibleAssetsUnderDevelopment. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_goodwill
+    meaning: "Purchase of goodwill (investing). XBRL PurchaseOfGoodwillClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_goodwill
+    meaning: "Proceeds from sale of goodwill (investing). XBRL ProceedsFromSalesOfGoodwillClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_investment_property
+    meaning: "Purchase of investment property (investing). XBRL PurchaseOfInvestmentPropertyClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_investment_property
+    meaning: "Proceeds from sale of investment property (investing). XBRL ProceedsFromSalesOfInvestmentPropertyClassifiedAsInvestingActivities. Apar tags its net sale of investments (198.26 crore) here (inventory §4 conflict 10), a filer mis-tag. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_biological_assets
+    meaning: "Purchase of biological assets other than bearer plants (investing). XBRL PurchaseOfBiologicalAssetsOtherThanBearerPlantsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_biological_assets
+    meaning: "Proceeds from sale of biological assets other than bearer plants (investing). XBRL ProceedsFromBiologicalAssetsOtherThanBearerPlantsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_other_long_term_assets
+    meaning: "Purchase of other long-term assets (investing). XBRL PurchaseOfOtherLongTermAssetsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_sale_other_long_term_assets
+    meaning: "Proceeds from sale of other long-term assets (investing). XBRL ProceedsFromSalesOfOtherLongTermAssetsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_intangibles_other_lt_assets row."
+  - canonical_id: cf_purchase_equity_debt_instruments
+    meaning: "Payments to acquire equity or debt instruments of other entities (investing). XBRL OtherCashPaymentsToAcquireEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_investments_purchase_sale row."
+  - canonical_id: cf_sale_equity_debt_instruments
+    meaning: "Receipts from sales of equity or debt instruments of other entities (investing). XBRL OtherCashReceiptsFromSalesOfEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities. The Apar PDF line \"Sale/(purchase) of investments - net\" is cf_investments_net, not this row. Split from the inventory's grouped cf_investments_purchase_sale row."
+  - canonical_id: cf_purchase_jv_interests
+    meaning: "Payments to acquire interests in joint ventures (investing). XBRL OtherCashPaymentsToAcquireInterestsInJointVenturesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_investments_purchase_sale row."
+  - canonical_id: cf_sale_jv_interests
+    meaning: "Receipts from sales of interests in joint ventures (investing). XBRL OtherCashReceiptsFromSalesOfInterestsInJointVenturesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_investments_purchase_sale row."
+  - canonical_id: cf_investments_net
+    meaning: "Net sale or purchase of investments (investing) as the issuer's net PDF line; positive = net sale. PDF Apar \"Sale / (purchase) of investments- net\" (H1 FY26 consolidated 198.26, standalone 198.76 crore); no XBRL element (Apar X-Q2 tags the 198.26 under ProceedsFromSalesOfInvestmentPropertyClassifiedAsInvestingActivities, inventory §4 conflict 10). Its composition is not evidenced, so it is not constructed from the purchase and sale rows. Split from the inventory's grouped cf_investments_purchase_sale row (its PDF column)."
+  - canonical_id: cf_obtaining_control_subsidiaries
+    meaning: "Cash flows used in obtaining control of subsidiaries or other businesses (investing). XBRL CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_subsidiaries_acquisition_disposal row."
+  - canonical_id: cf_losing_control_subsidiaries
+    meaning: "Cash flows from losing control of subsidiaries or other businesses (investing). XBRL CashFlowsFromLosingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_subsidiaries_acquisition_disposal row."
+  - canonical_id: cf_loans_advances_made
+    meaning: "Cash advances and loans made to other parties (investing). XBRL CashAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_loans_advances_investing row."
+  - canonical_id: cf_loans_advances_repaid
+    meaning: "Cash receipts from repayment of advances and loans made to other parties (investing). XBRL CashReceiptsFromRepaymentOfAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities. Split from the inventory's grouped cf_loans_advances_investing row."
+  - canonical_id: cf_derivative_payments_investing
+    meaning: "Cash payments for futures, forwards, options and swaps (investing). XBRL CashPaymentsForFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_derivative_contracts_investing row."
+  - canonical_id: cf_derivative_receipts_investing
+    meaning: "Cash receipts from futures, forwards, options and swaps (investing). XBRL CashReceiptsFromFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities. Split from the inventory's grouped cf_derivative_contracts_investing row."
+  - canonical_id: cf_interest_received_investing
+    meaning: "Interest received, classified as investing. XBRL InterestReceivedClassifiedAsInvestingActivities (Apar 0.49 vs PDF 0.53 crore); PDF."
+  - canonical_id: cf_dividends_received_investing
+    meaning: "Dividends received, classified as investing. XBRL DividendsReceivedClassifiedAsInvestingActivities."
+  - canonical_id: cf_partnership_investment
+    meaning: "Cash payment for investment in partnership firms, associations of persons or LLPs. XBRL CashPaymentForInvestmentInPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships. Split from the inventory's grouped cf_partnership_firms row."
+  - canonical_id: cf_partnership_profit_share
+    meaning: "Cash receipts from share of profits of partnership firms, associations of persons or LLPs. XBRL CashReceiptsFromShareOfProfitsOfPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships. Split from the inventory's grouped cf_partnership_firms row."
+  - canonical_id: cf_government_grants
+    meaning: "Government grants received (investing). XBRL ProceedsFromGovernmentGrantsClassifiedAsInvestingActivities."
+  - canonical_id: cf_other_investing
+    meaning: "Other investing inflows or outflows of cash. XBRL OtherInflowsOutflowsOfCashClassifiedAsInvestingActivities."
+  - canonical_id: cfi
+    meaning: "Net cash from investing activities. XBRL CashFlowsFromUsedInInvestingActivities; PDF."
+  - canonical_id: cf_proceeds_shares
+    meaning: "Proceeds from issuing shares (financing). XBRL ProceedsFromIssuingSharesClassifiedAsFinancingActivities. Split from the inventory's grouped cf_proceeds_shares row."
+  - canonical_id: cf_proceeds_other_equity_instruments
+    meaning: "Proceeds from issuing other equity instruments. XBRL ProceedsFromIssuingOtherEquityInstruments. Split from the inventory's grouped cf_proceeds_shares row."
+  - canonical_id: cf_proceeds_stock_options
+    meaning: "Proceeds from exercise of stock options. XBRL ProceedsFromExerciseOfStockOptions. Split from the inventory's grouped cf_proceeds_shares row."
+  - canonical_id: cf_payments_redeem_own_shares
+    meaning: "Payments to acquire or redeem the entity's shares. XBRL PaymentsToAcquireOrRedeemEntitysShares. Split from the inventory's grouped cf_buyback_equity_payments row."
+  - canonical_id: cf_payments_other_equity_instruments
+    meaning: "Payments of other equity instruments. XBRL PaymentsOfOtherEquityInstruments. Split from the inventory's grouped cf_buyback_equity_payments row."
+  - canonical_id: cf_proceeds_ownership_changes_subsidiaries
+    meaning: "Proceeds from changes in ownership interests in subsidiaries that do not result in loss of control. XBRL ProceedsFromChangesInOwnershipInterestsInSubsidiaries. Split from the inventory's grouped cf_ownership_changes_subsidiaries row."
+  - canonical_id: cf_payments_ownership_changes_subsidiaries
+    meaning: "Payments from changes in ownership interests in subsidiaries that do not result in loss of control. XBRL PaymentsFromChangesInOwnershipInterestsInSubsidiaries. Split from the inventory's grouped cf_ownership_changes_subsidiaries row."
+  - canonical_id: cf_proceeds_borrowings
+    meaning: "Proceeds from borrowings (financing). XBRL ProceedsFromBorrowingsClassifiedAsFinancingActivities; PDF Apar \"Proceeds from long-term borrowings\". Apar X-Q2 files its short-term net flow (41.45 crore) under this element; that net flow is cf_short_term_borrowings_net, not this row. Split from the inventory's grouped cf_proceeds_borrowings row."
+  - canonical_id: cf_short_term_borrowings_net
+    meaning: "Net proceeds from or repayments of short-term borrowings (financing) as the issuer's net PDF line; positive = net proceeds. PDF Apar \"Proceeds/(repayments) from short-term borrowings. net\" (H1 FY26 consolidated and standalone 41.45 crore); no XBRL element of its own (see cf_proceeds_borrowings). Split from the inventory's grouped cf_proceeds_borrowings row (its short-term net PDF line)."
+  - canonical_id: cf_proceeds_debentures
+    meaning: "Proceeds from issuing debentures, notes, bonds and similar. XBRL ProceedsFromIssuingDebenturesNotesBondsEtc. Split from the inventory's grouped cf_proceeds_borrowings row."
+  - canonical_id: cf_repayment_borrowings
+    meaning: "Repayments of borrowings. XBRL RepaymentsOfBorrowingsClassifiedAsFinancingActivities; PDF."
+  - canonical_id: cf_lease_payments
+    meaning: "Payments of lease liabilities. XBRL PaymentsOfLeaseLiabilitiesClassifiedAsFinancingActivities (in-bse-fin PaymentsOfFinanceLeaseLiabilities...); PDF."
+  - canonical_id: cf_dividends_paid
+    meaning: "Dividends paid. XBRL DividendsPaidClassifiedAsFinancingActivities; PDF \"Dividend Payment\"."
+  - canonical_id: cf_interest_paid_financing
+    meaning: "Interest paid, classified as financing. XBRL InterestPaidClassifiedAsFinancingActivities; PDF."
+  - canonical_id: cf_other_financing
+    meaning: "Other financing inflows or outflows of cash. XBRL OtherInflowsOutflowsOfCashClassifiedAsFinancingActivities."
+  - canonical_id: cff
+    meaning: "Net cash from financing activities. XBRL CashFlowsFromUsedInFinancingActivities; PDF."
+  - canonical_id: cf_net_change_before_fx
+    meaning: "Net increase or decrease in cash and cash equivalents before the effect of exchange-rate changes. XBRL IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges; PDF \"Net increase/(decrease)\"."
+  - canonical_id: cf_fx_effect
+    meaning: "Effect of exchange-rate changes on cash and cash equivalents. XBRL EffectOfExchangeRateChangesOnCashAndCashEquivalents; PDF."
+  - canonical_id: cf_net_change
+    meaning: "Net increase or decrease in cash and cash equivalents after the exchange-rate effect. XBRL IncreaseDecreaseInCashAndCashEquivalents."
+  - canonical_id: cf_cash_opening
+    meaning: "Cash and cash equivalents at the start of the cash-flow period (instant on the day before the period start). XBRL CashAndCashEquivalentsCashFlowStatement at PY_I (Apar 2025-03-31 for H1 FY26); PDF."
+    period_nature: INSTANT
+    sign_convention: POSITIVE_AS_LABELLED
+    period_aggregation: NONE
+  - canonical_id: cf_cash_closing
+    meaning: "Cash and cash equivalents at the end of the cash-flow period. XBRL CashAndCashEquivalentsCashFlowStatement at OneI; PDF."
+    period_nature: INSTANT
+    sign_convention: POSITIVE_AS_LABELLED
+    period_aggregation: NONE

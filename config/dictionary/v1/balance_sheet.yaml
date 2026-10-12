@@ -1,0 +1,140 @@
+# Balance-sheet rows (inventory §2b). Instants at the period end; filed in half-year and annual
+# results, and in Q1/Q3 only when the package contains a balance sheet (applicability.yaml).
+family: BALANCE_SHEET
+defaults:
+  value_kind: CURRENCY_AMOUNT
+  period_nature: INSTANT
+  sign_convention: POSITIVE_AS_LABELLED
+  aggregation_behaviour: SUMMABLE_ACROSS_MEMBERS
+  period_aggregation: NONE
+  applicability_rule_id: results.balance_sheet
+  basis_applicability: [CONSOLIDATED, STANDALONE]
+rows:
+  - canonical_id: ppe
+    meaning: "Property, plant and equipment. XBRL PropertyPlantAndEquipment (Apar 1,441.55 crore = PDF); PDF \"Property, plant and equipments\"."
+  - canonical_id: right_of_use_assets
+    meaning: "Right-of-use assets. PDF \"Right to use assets\"; no XBRL element (Apar folds ROU into OtherIntangibleAssets)."
+  - canonical_id: cwip
+    meaning: "Capital work-in-progress. XBRL CapitalWorkInProgress; PDF."
+  - canonical_id: goodwill
+    meaning: "Goodwill. XBRL Goodwill."
+  - canonical_id: other_intangible_assets
+    meaning: "Other intangible assets. XBRL OtherIntangibleAssets (Apar folds ROU assets in); PDF."
+  - canonical_id: intangibles_under_development
+    meaning: "Intangible assets under development. XBRL IntangibleAssetsUnderDevelopment; PDF."
+  - canonical_id: investment_property
+    meaning: "Investment property. XBRL InvestmentProperty (X-Q4, X-BSE)."
+  - canonical_id: biological_assets
+    meaning: "Biological assets other than bearer plants. XBRL BiologicalAssetsOtherThanBearerPlants (X-Q4)."
+  - canonical_id: investments_equity_method
+    meaning: "Investments accounted for using the equity method. XBRL InvestmentsAccountedForUsingEquityMethod (X-Q4)."
+  - canonical_id: noncurrent_investments
+    meaning: "Non-current investments. XBRL NoncurrentInvestments; PDF Apar \"Investments in subsidiaries & associates\"."
+  - canonical_id: trade_receivables_noncurrent
+    meaning: "Trade receivables, non-current. XBRL TradeReceivablesNoncurrent; PDF."
+  - canonical_id: loans_noncurrent
+    meaning: "Loans, non-current. XBRL LoansNoncurrent; PDF."
+  - canonical_id: other_noncurrent_financial_assets
+    meaning: "Other non-current financial assets. XBRL OtherNoncurrentFinancialAssets (Apar folds derivative assets in); PDF \"Other financial assets\" (+ \"Derivative financial assets\")."
+  - canonical_id: noncurrent_financial_assets
+    meaning: "Non-current financial assets (subtotal). XBRL NoncurrentFinancialAssets; no printed PDF subtotal (Apar)."
+  - canonical_id: deferred_tax_assets_net
+    meaning: "Deferred tax assets (net). XBRL DeferredTaxAssetsNet (X-Q4, X-BSE)."
+  - canonical_id: noncurrent_tax_assets
+    meaning: "Non-current tax assets (net). PDF \"Noncurrent tax assets (net)\"; no XBRL element (Apar folds it into OtherNoncurrentAssets)."
+  - canonical_id: other_noncurrent_assets
+    meaning: "Other non-current assets. XBRL OtherNoncurrentAssets; PDF."
+  - canonical_id: noncurrent_assets_total
+    meaning: "Total non-current assets. XBRL NoncurrentAssets (Apar 2,265.23 crore = PDF); PDF."
+  - canonical_id: inventories
+    meaning: "Inventories. XBRL Inventories; PDF."
+  - canonical_id: current_investments
+    meaning: "Current investments. XBRL CurrentInvestments; PDF."
+  - canonical_id: trade_receivables_current
+    meaning: "Trade receivables, current. XBRL TradeReceivablesCurrent; PDF."
+  - canonical_id: cash_and_cash_equivalents
+    meaning: "Cash and cash equivalents (balance sheet). XBRL CashAndCashEquivalents; PDF."
+  - canonical_id: other_bank_balances
+    meaning: "Bank balances other than cash and cash equivalents. XBRL BankBalanceOtherThanCashAndCashEquivalents; PDF \"Bank balances other than above\"."
+  - canonical_id: loans_current
+    meaning: "Loans, current. XBRL LoansCurrent; PDF."
+  - canonical_id: other_current_financial_assets
+    meaning: "Other current financial assets. XBRL OtherCurrentFinancialAssets (Apar folds derivatives in); PDF (+ derivatives line)."
+  - canonical_id: current_financial_assets
+    meaning: "Current financial assets (subtotal). XBRL CurrentFinancialAssets; no printed PDF subtotal (Apar)."
+  - canonical_id: current_tax_assets
+    meaning: "Current tax assets. XBRL CurrentTaxAssets (X-Q4, X-BSE)."
+  - canonical_id: other_current_assets
+    meaning: "Other current assets. XBRL OtherCurrentAssets; PDF."
+  - canonical_id: assets_held_for_sale
+    meaning: "Non-current assets classified as held for sale. XBRL NoncurrentAssetsClassifiedAsHeldForSale (X-Q4)."
+  - canonical_id: regulatory_deferral_debit
+    meaning: "Regulatory deferral account debit balances and related deferred tax assets. XBRL RegulatoryDeferralAccountDebitBalancesAndRelatedDeferredTaxAssets (X-Q4)."
+  - canonical_id: current_assets_total
+    meaning: "Total current assets. XBRL CurrentAssets; PDF."
+  - canonical_id: total_assets
+    meaning: "Total assets. XBRL Assets (Apar 11,312.53 crore = PDF); PDF \"TOTAL ASSETS\"."
+  - canonical_id: equity_share_capital
+    meaning: "Equity share capital. XBRL EquityShareCapital; PDF."
+  - canonical_id: other_equity
+    meaning: "Other equity. XBRL OtherEquity; PDF."
+  - canonical_id: equity_attributable_owners
+    meaning: "Equity attributable to owners of the parent. XBRL EquityAttributableToOwnersOfParent; PDF Apar \"Total equity\" (no NCI)."
+  - canonical_id: non_controlling_interest_bs
+    meaning: "Non-controlling interest (balance sheet). XBRL NonControllingInterest (X-Q4, X-BSE)."
+  - canonical_id: total_equity
+    meaning: "Total equity. XBRL Equity; PDF \"Total equity\"."
+  - canonical_id: borrowings_noncurrent
+    meaning: "Non-current borrowings. XBRL BorrowingsNoncurrent; PDF."
+  - canonical_id: lease_liabilities_noncurrent
+    meaning: "Lease liabilities, non-current. PDF; no XBRL element (Apar folds it into OtherNoncurrentFinancialLiabilities)."
+  - canonical_id: other_noncurrent_financial_liabilities
+    meaning: "Other non-current financial liabilities. XBRL OtherNoncurrentFinancialLiabilities (Apar folds lease liabilities in); PDF (+ derivatives line)."
+  - canonical_id: noncurrent_financial_liabilities
+    meaning: "Non-current financial liabilities (subtotal). XBRL NoncurrentFinancialLiabilities."
+  - canonical_id: provisions_noncurrent
+    meaning: "Non-current provisions. XBRL ProvisionsNoncurrent; PDF."
+  - canonical_id: deferred_tax_liabilities_net
+    meaning: "Deferred tax liabilities (net). XBRL DeferredTaxLiabilitiesNet; PDF."
+  - canonical_id: other_noncurrent_liabilities
+    meaning: "Other non-current liabilities. XBRL OtherNoncurrentLiabilities (X-Q4)."
+  - canonical_id: deferred_government_grants_current
+    meaning: "Deferred government grants, current. XBRL DeferredGovernmentGrantsCurrent (X-Q4); split from the inventory's grouped current/non-current row."
+  - canonical_id: deferred_government_grants_noncurrent
+    meaning: "Deferred government grants, non-current. XBRL DeferredGovernmentGrantsNoncurrent (X-Q4); split from the inventory's grouped current/non-current row."
+  - canonical_id: noncurrent_liabilities_total
+    meaning: "Total non-current liabilities. XBRL NoncurrentLiabilities; PDF."
+  - canonical_id: borrowings_current
+    meaning: "Current borrowings. XBRL BorrowingsCurrent; PDF."
+  - canonical_id: lease_liabilities_current
+    meaning: "Lease liabilities, current. PDF; no XBRL element (Apar folds it into OtherCurrentFinancialLiabilities)."
+  - canonical_id: trade_payables_msme
+    meaning: "Trade payables, current, to micro and small enterprises. XBRL TotalOutstandingDuesOfMicroEnterpriseAndSmallEnterpriseCurrent; PDF \"a) ...micro and small enterprises\"."
+  - canonical_id: trade_payables_msme_noncurrent
+    meaning: "Trade payables, non-current, to micro and small enterprises. XBRL TotalOutstandingDuesOfMicroEnterpriseAndSmallEnterpriseNoncurrent (X-Q4); split from the inventory's trade_payables_msme row."
+  - canonical_id: trade_payables_others
+    meaning: "Trade payables, current, to creditors other than micro and small enterprises. XBRL TotalOutstandingDuesOfCreditorsOtherThanMicroEnterpriseAndSmallEnterpriseCurrent; PDF \"b) ...\"."
+  - canonical_id: trade_payables_current
+    meaning: "Trade payables, current (total). XBRL TradePayablesCurrent (Apar 5,293.82 crore = a + b); no printed PDF total (Apar)."
+  - canonical_id: trade_payables_noncurrent
+    meaning: "Trade payables, non-current. XBRL TradePayablesNoncurrent (X-Q4, X-BSE)."
+  - canonical_id: other_current_financial_liabilities
+    meaning: "Other current financial liabilities. XBRL OtherCurrentFinancialLiabilities (Apar folds lease and derivative liabilities in); PDF (three lines)."
+  - canonical_id: current_financial_liabilities
+    meaning: "Current financial liabilities (subtotal). XBRL CurrentFinancialLiabilities."
+  - canonical_id: other_current_liabilities
+    meaning: "Other current liabilities. XBRL OtherCurrentLiabilities; PDF."
+  - canonical_id: provisions_current
+    meaning: "Current provisions. XBRL ProvisionsCurrent; PDF."
+  - canonical_id: current_tax_liabilities
+    meaning: "Current tax liabilities (net). XBRL CurrentTaxLiabilities; PDF."
+  - canonical_id: liabilities_held_for_sale
+    meaning: "Liabilities directly associated with assets in disposal groups classified as held for sale. XBRL LiabilitiesDirectlyAssociatedWithAssetsInDisposalGroupClassifiedAsHeldForSale (X-Q4)."
+  - canonical_id: regulatory_deferral_credit
+    meaning: "Regulatory deferral account credit balances and related deferred tax liability. XBRL RegulatoryDeferralAccountCreditBalancesAndRelatedDeferredTaxLiability (X-Q4)."
+  - canonical_id: current_liabilities_total
+    meaning: "Total current liabilities. XBRL CurrentLiabilities; PDF."
+  - canonical_id: total_liabilities
+    meaning: "Total liabilities, excluding equity. XBRL Liabilities (Apar 6,460.02 crore = PDF); PDF \"Total liabilities\". Screener \"Total Liabilities\" is the balance-sheet total and never maps here (spec §2)."
+  - canonical_id: total_equity_and_liabilities
+    meaning: "Total equity and liabilities. XBRL EquityAndLiabilities; PDF."

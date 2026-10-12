@@ -52,30 +52,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Re-exported: EvidenceTier moved to contracts (D1a Task 3); existing importers keep working.
+from fundamentals.contracts.evidence_tier import EvidenceTier as EvidenceTier
 from fundamentals.verify.crossfoot import half_ulp
 
 # Values on both sides are already stated in crore, so no rescaling is needed
 # and ``decimals`` alone carries the precision.
 CRORE_SCALE = 1
-
-
-class EvidenceTier(StrEnum):
-    """How much a comparison on this line is entitled to conclude.
-
-    **A tier is not self-sufficient — read the mapping's ``means`` with it.**
-    ``EQUIVALENCE_DEMONSTRATED`` may carry a stated exclusion there, because an
-    identity can hold across most of a population and fail on a named part of
-    it. Both tier-1 lines currently do: the 2026-09-04 sweep held on 73 of 80
-    live lines and failed on companies with material exceptional items or
-    associates. Grading those lines down would have emptied tier 1 and made
-    ``MISMATCH`` unreachable, hiding a real Upstox-side defect among 62 tier-2
-    anomalies, so the owner kept the tier and required the exclusion to travel
-    in ``means`` — which reaches every report row, as the enum member does not.
-    """
-
-    EQUIVALENCE_DEMONSTRATED = "EQUIVALENCE_DEMONSTRATED"
-    RELATED_NOT_EQUIVALENT = "RELATED_NOT_EQUIVALENT"
-    EQUIVALENCE_UNPROVEN = "EQUIVALENCE_UNPROVEN"
 
 
 class CrosscheckOutcome(StrEnum):

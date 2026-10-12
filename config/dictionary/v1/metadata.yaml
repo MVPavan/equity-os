@@ -1,0 +1,7 @@
+# Canonical dictionary v1 (D1a Task 3; data spec §1). Rows are seeded from
+# docs/research/canonical-field-coverage-inventory.md §2 (2a–2f) under the spec's rules; the
+# resolved counts and every inventory row's disposition are in
+# docs/specs/artifacts/dictionary-v1-manifest.md. Published versions are immutable.
+version: v1
+formula_set_version: v1
+scope: Indian listed non-financial issuers reporting under Ind AS (banks, NBFCs and insurers excluded)

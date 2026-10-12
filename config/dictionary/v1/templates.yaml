@@ -1,0 +1,117 @@
+# Dimension templates (data spec §1 "Numeric only", §4 dimension set). Names of segments, items,
+# holders and share classes are dimension members, never rows. ENTITY_EVIDENCE members are
+# recorded per entity from the filing text that defines them; CLOSED_LIST members are fixed here.
+templates:
+  - template_id: segment
+    axes:
+      - axis: segment
+        member_source: ENTITY_EVIDENCE
+        aggregate_members: [reportable_segments_total]
+        instantiation: >-
+          One member per reportable segment, recorded per entity (segment_members) with its
+          evidencing DescriptionOfReportableSegment occurrence. Member id = the filed description
+          lower-cased, every run of non-alphanumeric characters replaced by one underscore, leading
+          and trailing underscores removed (e.g. "Power / Telecom cables" -> power_telecom_cables).
+          Aligned by evidenced description, never by context ordinal (Apar "Others" is member 02 in
+          FY25 and 04 in FY26). reportable_segments_total is the declared output of dimensional
+          aggregation over an entity's members.
+      - axis: elimination_basis
+        member_source: CLOSED_LIST
+        members:
+          - member: PRE_ELIMINATION
+          - member: POST_ELIMINATION
+        instantiation: >-
+          Whether a segment figure is before or after inter-segment elimination. Apar XBRL segment
+          assets are post-elimination while the PDF prints them pre-elimination (inventory 2d), so
+          the two are distinct keys and never paired.
+  - template_id: other_expense_detail
+    axes:
+      - axis: other_expense_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per itemised other-expense line: XBRL OtherExpenses on DetailsOfOtherExpensesAxis
+          (e.g. OtherExpenses1Member), named by DescriptionOfOtherExpenses; member id from the
+          description as for segments.
+  - template_id: oci_not_reclassified_detail
+    axes:
+      - axis: oci_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per OCI item that will not be reclassified to profit or loss: XBRL
+          AmountOfItemThatWillNotBeReclassifiedToProfitAndLoss on
+          ItemsThatWillNotBeReclassifiedToProfitAndLossAxis, named by
+          DescriptionOfItemThatWillNotBeReclassifiedToProfitAndLoss; member id from the description.
+  - template_id: oci_reclassified_detail
+    axes:
+      - axis: oci_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per OCI item that will be reclassified to profit or loss: XBRL
+          AmountOfItemThatWillBeReclassifiedToProfitAndLoss on
+          ItemsThatWillBeReclassifiedToProfitAndLossAxis, named by
+          DescriptionOfItemThatWillBeReclassifiedToProfitAndLoss; member id from the description.
+  - template_id: shareholding_category
+    axes:
+      - axis: shareholding_category
+        member_source: CLOSED_LIST
+        # Parents only where the inventory's own descriptions state the containment (2e):
+        # other_dii is "DII excl. mutual funds (insurance, banks, ...)".
+        members:
+          - member: promoter_group
+          - member: fpi
+          - member: dii
+          - member: mutual_funds
+            parent: dii
+          - member: other_dii
+            parent: dii
+          - member: insurance
+            parent: other_dii
+          - member: government
+          - member: public
+          - member: others
+          - member: custodian_dr
+        instantiation: >-
+          Shareholding categories of inventory 2e (promoter and promoter group, FPI, DII, mutual
+          funds, DII excluding mutual funds, insurance companies, government, public, others,
+          custodians/DRs). A category never sums with a member it contains.
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+          - member: PROMOTER_HOLDING
+        instantiation: The denominator a percentage is stated against (data spec §4).
+  - template_id: shareholding_holder
+    axes:
+      - axis: holder
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per named holder disclosed in the filing (vendor drill-downs list holders at
+          or above 1 %); the disclosure threshold travels as occurrence metadata (spec §4).
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+        instantiation: The denominator a percentage is stated against (data spec §4).
+  - template_id: shareholding_pledge
+    axes:
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+          - member: PROMOTER_HOLDING
+        instantiation: >-
+          The denominator the pledged or encumbered percentage is stated against: the data spec §4
+          denominator list. Which of them an SHP prints for encumbrance is unevidenced (no SHP
+          filing is ingested; inventory 2e), so none is assumed.

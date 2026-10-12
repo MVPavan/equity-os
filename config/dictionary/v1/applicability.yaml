@@ -1,0 +1,63 @@
+# Applicability rules (data spec §1, Applicability; plan D1a Task 3). Decided from context only,
+# before any value is examined. Basis refusals (a consolidated request against a standalone-only
+# entity; a basis the row does not apply to) run first and are fixed in code.
+rules:
+  - rule_id: results.every_period
+    regime: IN_LODR
+    document_type: FINANCIAL_RESULTS
+    required_in: [QUARTER, HALF_YEAR, NINE_MONTH, YEAR]
+    evidence: >-
+      The P&L is filed in every quarterly, half-year and annual results package (inventory §1
+      periodicity: P&L every filing).
+  - rule_id: results.annual_disclosure
+    regime: IN_LODR
+    document_type: FINANCIAL_RESULTS
+    required_in: [YEAR]
+    when_disclosed: true
+    evidence: >-
+      Lines the inventory gives annual periodicity only (2a: reserves_excl_revaluation "FY",
+      XBRL ReserveExcludingRevaluationReserves in X-Q4 only and PDF line 15 in the FY column only;
+      excise_duty "FY"). Retained Apar XBRL bears this out for reserves: present in the FY26 annual
+      filing (INTEGRATED_FILING_INDAS_1675395), absent from the Q2 FY26 filing
+      (INTEGRATED_FILING_INDAS_1560713). Required in annual packages; in any other package
+      applicable only when the package contains the line.
+  - rule_id: results.segment
+    regime: IN_LODR
+    document_type: FINANCIAL_RESULTS
+    required_in: [QUARTER, HALF_YEAR, NINE_MONTH, YEAR]
+    when_statement_present: SEGMENT
+    requires_evidenced_segments: true
+    evidence: >-
+      Segment rows are required in every reporting kind only on a basis for which the entity's
+      reportable segments are evidenced (segment_members with their DescriptionOfReportableSegment
+      occurrences). Apar's retained segment note is consolidated only (inventory evidence key PDF:
+      "p4 segments (consolidated only, Note 3)"; all eight retained Apar XBRL instances declare
+      NatureOfReportStandaloneConsolidated = Consolidated), and the consolidated
+      Q1 FY26 XBRL (INTEGRATED_FILING_INDAS_1496866, no balance sheet or cash flow) still carries
+      SegmentRevenue, SegmentAssets and SegmentLiabilities. Without evidenced segments on the basis
+      the row is genuinely inapplicable unless the package contains a segment statement.
+  - rule_id: results.balance_sheet
+    regime: IN_LODR
+    document_type: FINANCIAL_RESULTS
+    required_in: [HALF_YEAR, YEAR]
+    when_statement_present: BALANCE_SHEET
+    evidence: >-
+      Under the listing regulations the balance sheet is required in half-year and annual
+      results; in Q1 and Q3 it applies only when the package contains it (data spec §1). Apar Q1
+      FY26 XBRL has no balance sheet (inventory X-Q1).
+  - rule_id: results.cash_flow
+    regime: IN_LODR
+    document_type: FINANCIAL_RESULTS
+    required_in: [HALF_YEAR, YEAR]
+    when_statement_present: CASH_FLOW
+    evidence: >-
+      Under the listing regulations the cash-flow statement is required in half-year and annual
+      results; in Q1 and Q3 it applies only when the package contains it (data spec §1). Apar Q1
+      FY26 XBRL has no cash flow (inventory X-Q1).
+  - rule_id: shareholding.every_period
+    regime: IN_LODR
+    document_type: SHAREHOLDING_PATTERN
+    required_in: [QUARTER, HALF_YEAR, NINE_MONTH, YEAR]
+    evidence: >-
+      The shareholding pattern is a quarterly filing (inventory §1, SHP). No SHP filing is
+      ingested yet; the rule only keeps shareholding rows out of results packages.

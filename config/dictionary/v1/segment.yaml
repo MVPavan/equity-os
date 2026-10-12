@@ -1,0 +1,75 @@
+# Segment rows (inventory §2d). Per-segment rows use the `segment` template (segment member plus
+# elimination basis); totals, unallocable and reconciling lines carry no dimension. Segment names
+# are dimension members, not rows. Segment rows are required only on a basis with evidenced
+# reportable segments (applicability rule results.segment).
+family: SEGMENT
+defaults:
+  value_kind: CURRENCY_AMOUNT
+  period_nature: DURATION
+  sign_convention: POSITIVE_AS_LABELLED
+  aggregation_behaviour: SUMMABLE_ACROSS_MEMBERS
+  period_aggregation: ADDITIVE_DURATION
+  applicability_rule_id: results.segment
+  basis_applicability: [CONSOLIDATED, STANDALONE]
+rows:
+  - canonical_id: segment_revenue
+    meaning: "Segment revenue per reportable segment, gross of inter-segment revenue. XBRL SegmentRevenue at the segment member; PDF segment note (Apar Note 3, p4)."
+    dimension_template: segment
+  - canonical_id: segment_revenue_total
+    meaning: "Total segment revenue as filed. XBRL SegmentRevenue with no dimension; PDF."
+  - canonical_id: inter_segment_revenue
+    meaning: "Inter-segment revenue eliminated from the segment total. XBRL InterSegmentRevenue; PDF \"Less: Inter-segment revenue\"."
+  - canonical_id: segment_revenue_from_operations
+    meaning: "External revenue per the segment reconciliation (equals revenue from operations, Apar). XBRL SegmentRevenueFromOperations; PDF."
+  - canonical_id: segment_result
+    meaning: "Segment result (profit before finance costs and tax) per reportable segment. XBRL SegmentProfitLossBeforeTaxAndFinanceCosts at the segment member; PDF."
+    dimension_template: segment
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: segment_result_total
+    meaning: "Total segment results. XBRL SegmentProfitLossBeforeTaxAndFinanceCosts with no dimension; PDF."
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: segment_finance_costs
+    meaning: "Finance costs in the segment reconciliation. XBRL SegmentFinanceCosts; PDF."
+  - canonical_id: segment_unallocable_net
+    meaning: "Unallocable expenditure net of unallocable income in the segment reconciliation, as one filed element. XBRL OtherUnallocableExpenditureNetOffUnAllocableIncome. Apar Q2 FY26 (X-Q2 OneD) files 36.72 crore; the PDF (p4) prints two lines, unallocable (32.58) and other elimination (4.11), which sum to 36.69 — a 0.03 crore discrepancy, not an equality. The gap equals the PDF's Q2 share of associates (0.03 loss): X-Q2 segment results 485.15 - finance cost 107.90 - 36.72 = 340.53 = SegmentProfitBeforeTax, which is after associates, while the PDF lines give 340.56 before associates. The XBRL element therefore appears to absorb the associates share as well (inferred from one filing, not proven)."
+  - canonical_id: segment_profit_before_tax
+    meaning: "Profit before tax per the segment reconciliation (after associates in Apar). XBRL SegmentProfitBeforeTax (340.53 crore = PDF line 9, Q2 FY26); PDF."
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: segment_assets
+    meaning: "Segment assets per reportable segment, keyed by elimination basis. XBRL SegmentAssets at the segment member (post-elimination in Apar); PDF (pre-elimination)."
+    dimension_template: segment
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_assets_total
+    meaning: "Total segment assets. XBRL SegmentAssets with no dimension; PDF. Split from the inventory's grouped total/unallocable/net row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_unallocable_assets
+    meaning: "Unallocable assets in the segment reconciliation. XBRL UnAllocableAssets; PDF. Split from the inventory's grouped segment_assets_total row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_assets_net
+    meaning: "Net segment assets (equals total assets). XBRL NetSegmentAssets; PDF. Split from the inventory's grouped segment_assets_total row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: inter_segment_assets
+    meaning: "Inter-segment assets eliminated. PDF \"Less:- Inter-segment assets\"; no XBRL element (eliminations pushed into members)."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_liabilities
+    meaning: "Segment liabilities per reportable segment, keyed by elimination basis. XBRL SegmentLiabilities at the segment member (Apar allocation differs from the PDF); PDF."
+    dimension_template: segment
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_liabilities_total
+    meaning: "Total segment liabilities. XBRL SegmentLiabilities with no dimension; PDF. Split from the inventory's grouped total/unallocable/net row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_unallocable_liabilities
+    meaning: "Unallocable liabilities in the segment reconciliation. XBRL UnAllocableLiabilities; PDF. Split from the inventory's grouped segment_liabilities_total row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: segment_liabilities_net
+    meaning: "Net segment liabilities. XBRL NetSegmentLiabilities; PDF. Split from the inventory's grouped segment_liabilities_total row."
+    period_nature: INSTANT
+    period_aggregation: NONE

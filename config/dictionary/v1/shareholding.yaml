@@ -1,0 +1,26 @@
+# Shareholding-pattern rows (inventory §2e). Instants at the shareholding date. Categories, holders,
+# share classes and denominators are dimension members (spec §1, §4). No SHP filing is ingested in
+# D1a; these rows are declared so the family exists and stays out of results packages.
+family: SHAREHOLDING
+defaults:
+  value_kind: PERCENTAGE
+  period_nature: INSTANT
+  sign_convention: POSITIVE_AS_LABELLED
+  aggregation_behaviour: NOT_SUMMABLE
+  period_aggregation: NONE
+  applicability_rule_id: shareholding.every_period
+  basis_applicability: [CONSOLIDATED, STANDALONE]
+rows:
+  - canonical_id: shp_holding_pct
+    meaning: "Shareholding percentage per category (promoter group, FPI, DII and its subcategories, government, public, others, custodians/DRs), per share class and denominator. Collapses the inventory's per-category rows (shp_promoter_pct, shp_fpi_pct, shp_dii_pct, shp_mutual_funds_pct, shp_other_dii_pct, shp_insurance_pct, shp_government_pct, shp_public_pct, shp_others_pct, shp_custodian_dr_pct) into members of the shareholding_category template (spec §1: categories are dimension members). Unevidenced in first-party captures: no SHP filing is ingested."
+    dimension_template: shareholding_category
+    aggregation_behaviour: SUMMABLE_ACROSS_MEMBERS
+  - canonical_id: shp_promoter_pledged_pct
+    meaning: "Promoter shares pledged or encumbered, as a percentage of the denominator member it is stated against, per share class (shareholding_pledge template). Unevidenced: no source observed on company pages (inventory 2e); declared from the SHP format's encumbrance columns."
+    dimension_template: shareholding_pledge
+  - canonical_id: shp_num_shareholders
+    meaning: "Number of shareholders. Unevidenced in first-party captures (Screener \"No. of Shareholders\" only)."
+    value_kind: COUNT
+  - canonical_id: shp_holder_pct
+    meaning: "Named holder's percentage, per member of the shareholding_holder template (vendors list holders at or above 1 %). Unevidenced in first-party captures."
+    dimension_template: shareholding_holder
