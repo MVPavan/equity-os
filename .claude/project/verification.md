@@ -40,5 +40,23 @@ proof. Prefer it over running the four by
 hand during pipeline work; keep the command list here and in the script
 identical. Protocol: `docs/graph-loops/v2-build-pipeline.md`.
 
+### PostgreSQL and retained-capture markers (D1a)
+
+Two pytest markers gate what the suite needs beyond the checkout:
+
+- `pg` — needs the compose PostgreSQL service up (`docker compose up -d postgres`) and
+  `.env` complete: `EQOS_PG_HOST`, `EQOS_PG_PORT`, `EQOS_PG_DB`, `EQOS_PG_USER`,
+  `EQOS_PG_PASSWORD`, `EQOS_PG_MIGRATOR_PASSWORD`, `EQOS_PG_RUNTIME_PASSWORD` (see
+  `.env.example`). Each test gets its own `eqos_test_*` database cloned from a migrated
+  template and dropped afterwards; the harness never touches `EQOS_PG_DB`.
+- `retained` — reads the gitignored retained Apar originals under
+  `data/raw/watchlist/aparinds/`, pinned by SHA-256.
+
+A missing service, incomplete settings, a missing original or a hash mismatch **fails** the
+test; nothing skips. The only opt-outs are `-m "not pg"` and `-m "not retained"` — say so
+when reporting a run that used them, because the D1a Verify cells require both green.
+`uv run pytest tests/fundamentals` and `scripts/verify.sh gate` therefore need the compose
+service up.
+
 No completion claim without fresh evidence: run the command, read the output
 and exit status, report the actual result.

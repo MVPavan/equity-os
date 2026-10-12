@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fundamentals.api.adjudication_cli import add_adjudication_parser
 from fundamentals.api.config import XbrlMode
+from fundamentals.api.db_cli import add_db_parser
 from fundamentals.api.entity_map_cli import add_entity_map_parser
 from fundamentals.api.news_cli import add_news_parser
 from fundamentals.api.review_cli import add_review_parser
@@ -178,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_screener_watchlist_parser(subparsers)
     add_screener_watchlist_corroborate_parser(subparsers)
     add_entity_map_parser(subparsers)
+    add_db_parser(subparsers)
     add_upstox_parser(subparsers)
     add_upstox_crosscheck_parser(subparsers)
     add_upstox_sensitivity_parser(subparsers)

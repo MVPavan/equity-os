@@ -1,8 +1,7 @@
 # Verification
 
-This repo currently has **no first-party application code, build, or CI**.
-There are no test/lint/build commands to run for the repo as a whole, so the
-health gate is **structural** — do not invent commands.
+The `fundamentals` uv project (`pyproject.toml` at the repo root) has a real test gate,
+below. The structural gate still applies to non-Python and non-`fundamentals` changes.
 
 ## Structural gate (run what applies to your change)
 
@@ -19,17 +18,34 @@ health gate is **structural** — do not invent commands.
    When hooks or `.rules` change, also exercise representative allow/block
    fixtures and confirm `codex execpolicy check` reports the intended match.
 
-## Once first-party Python code lands
+## Fundamentals product (`pyproject.toml` at repo root)
 
-The intended stack is Python 3.12+ / `uv` (see `brief.md`). When
-`pyproject.toml` exists, replace this gate with the real commands — expected
-shape, to be pinned then, not assumed now:
+- `uv sync`
+- `uv run ruff check src tests/fundamentals` and
+  `uv run ruff format --check src tests/fundamentals`
+- `uv run mypy --strict src`
+- `uv run pytest tests/fundamentals`
 
-- `uv run ruff format --check .` and `uv run ruff check .`
-- `uv run mypy --strict <package>`
-- `uv run pytest`
+Scope ruff/pytest to owned paths; `scripts/verify.sh gate <slice>` runs these four plus the
+pipeline checks. The authoritative copy is `.claude/project/verification.md`.
 
-Update this file in the same change that introduces `pyproject.toml`.
+### PostgreSQL and retained-capture markers (D1a)
+
+Two pytest markers gate what the suite needs beyond the checkout:
+
+- `pg` — needs the compose PostgreSQL service up (`docker compose up -d postgres`) and
+  `.env` complete: `EQOS_PG_HOST`, `EQOS_PG_PORT`, `EQOS_PG_DB`, `EQOS_PG_USER`,
+  `EQOS_PG_PASSWORD`, `EQOS_PG_MIGRATOR_PASSWORD`, `EQOS_PG_RUNTIME_PASSWORD` (see
+  `.env.example`). Each test gets its own `eqos_test_*` database cloned from a migrated
+  template and dropped afterwards; the harness never touches `EQOS_PG_DB`.
+- `retained` — reads the gitignored retained Apar originals under
+  `data/raw/watchlist/aparinds/`, pinned by SHA-256.
+
+A missing service, incomplete settings, a missing original or a hash mismatch **fails** the
+test; nothing skips. The only opt-outs are `-m "not pg"` and `-m "not retained"` — say so
+when reporting a run that used them, because the D1a Verify cells require both green.
+`uv run pytest tests/fundamentals` and `scripts/verify.sh gate` therefore need the compose
+service up.
 
 No completion claim without fresh evidence: run the command, read the output
 and exit status, report the actual result.

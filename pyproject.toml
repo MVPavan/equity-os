@@ -9,7 +9,10 @@ dependencies = [
     "lxml>=6.1.2",
     "nse>=3.2.1",
     "nselib>=2.5.1",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.3.6",
     "pydantic>=2.7",
+    "pydantic-settings>=2.15.0",
     "pymupdf>=1.28.2",
     "pyyaml>=6.0.3",
     "structlog>=26.1.0",
@@ -64,3 +67,7 @@ addopts = "--import-mode=importlib"
 # seam beside it (``screener_financials_support``) instead of duplicating it.
 pythonpath = ["src", "tests/fundamentals"]
 testpaths = ["tests"]
+markers = [
+    "pg: needs the compose PostgreSQL service up (see .claude/project/verification.md)",
+    "retained: reads the gitignored retained Apar originals under data/raw/watchlist/aparinds",
+]

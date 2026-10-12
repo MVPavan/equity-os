@@ -24,6 +24,7 @@ from fundamentals.api.artifact_writer import write_bytes_no_clobber
 from fundamentals.api.cli_parser import REGISTER_SOURCES_COMMAND
 from fundamentals.api.cli_parser import build_parser as _build_parser
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
+from fundamentals.api.db_cli import dispatch_db_command
 from fundamentals.api.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
@@ -296,6 +297,10 @@ def main(
 
     if args.command == ENTITY_MAP_COMMAND:
         return dispatch_entity_map_command(args)
+
+    db_exit_code = dispatch_db_command(args)
+    if db_exit_code is not None:
+        return db_exit_code
 
     news_exit_code = dispatch_news_command(args)
     if news_exit_code is not None:
