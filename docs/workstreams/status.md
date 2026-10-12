@@ -1,6 +1,6 @@
 <!-- BD:GENERATED START -->
 # Workstream Status (global)
-_generated from bd @ 2026-10-12T11:50:17Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
+_generated from bd @ 2026-10-12T17:02:20Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
 
 ### (no anchor)
 - **Fundamentals Apar Industries pilot build (Phase 0.5)** — 13/15  ⏳
@@ -12,7 +12,7 @@ _generated from bd @ 2026-10-12T11:50:17Z — DO NOT EDIT (run: BD_RENDER=1 bash
 - **Phase 0A evidence program** — 5/5  ✅ DONE
 
 ### docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
-- **[D1a] Canonical comparison tracer** — 3/7  ⏳
+- **[D1a] Canonical comparison tracer** — 7/7  ✅ stages done (close epic)
 - **[D1b] Vendors, corroboration, queue and Stage 1 acceptance** — 0/7  ⏳
 - **[D2] Legacy store migration and cutover** — 0/8  ⏳
 - **[D6] Identifier-only onboarding** — 0/6  ⏳
@@ -33,16 +33,16 @@ _generated from bd @ 2026-10-12T11:50:17Z — DO NOT EDIT (run: BD_RENDER=1 bash
 - `eqos-hvh` Lane B: bank-format name map gap (no bank in the sweep set)
 - `eqos-ya6` Lane B: relative-figure triage on tier-2 magnitudes (Part 2 proposal, not built)
 - `eqos-s2g` Lane B: standalone-basis coverage (NETWEB and standalone-only issuers)
+- `eqos-51d` Mapping set: cover SEBI 2026-01-31 XBRL taxonomy and fix FY26 Q4 PDF revenue rows (INVALID)
 - `eqos-kx4.5` Phase 4: full breadth via capability registry
 - `eqos-7qe` Screener watchlist export: industry and industry group remain the export's word alone (no third source)
 - `eqos-720` Tracking renderer skips workstreams whose spec_id is outside docs/workstreams/ (data-foundation tracking/ stays empty)
-- `eqos-3f9.4` [D1a.4] First-party adapters, occurrences, interpretations and package selection (XBRL `in-bse-fin` + `in-capmkt`, PDF)
-- `eqos-3f9.5` [D1a.5] Pair, extraction and derived-extraction decision tables
 - `eqos-8zl` capture an empty company timeline to establish the verified-empty marker
 - `eqos-s02` entity map: Screener warehouse ids are not in the identifier namespace set
 - `eqos-mv8` entity map: the S1 anchor uses JSON_ISLAND for a JSON artifact read from disk
 - `eqos-4j2.9` register-a-rows-housekeeping
 - `eqos-4ff` split goal_runner.py (1061 lines, pre-existing 800-line breach)
+- `eqos-csi` test_pg_evidence_schema.py exceeds 800-line limit (983)
 - `eqos-283` verify.sh: the red proof does not hash fixture modules, only files that yield node ids
 <!-- BD:GENERATED END -->
 
