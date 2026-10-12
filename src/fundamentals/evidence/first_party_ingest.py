@@ -1,0 +1,427 @@
+"""Ingest one first-party results package from retained originals (D1a Task 5).
+
+Pins, authority, staging, extraction (with identity, period and framework checks),
+presence, attempt generations, interpretation, package and segment members, with three
+reuse levels (data spec l.346: re-mapping adds, never rewrites): (1) a capture
+registration is always reused; (2) an attempt generation is reused under the same
+extractor version and request scope; (3) interpretations are reused under the same
+(mapping set, normalisation policy, extractor) triple and scope. The mapping set and
+normalisation policy versions are pinned to their content before any reuse or write.
+Re-ingesting unchanged inputs writes nothing new.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from datetime import date
+
+import structlog
+from pydantic import BaseModel, ConfigDict
+
+from fundamentals.canon.dictionary import CanonicalDictionary
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
+from fundamentals.contracts.evidence import (
+    AcquisitionAttempt,
+    AttemptStage,
+    CaptureReference,
+    FilingFamily,
+    FilingPackage,
+    Interpretation,
+    InterpretationStatus,
+    KnowledgeTimeStatus,
+    Occurrence,
+    PackageMember,
+)
+from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.snapshot import SnapshotError, canonical_sha256
+from fundamentals.contracts.source_catalog import SourceCatalog
+from fundamentals.contracts.source_registration import SourceRegistrationError
+from fundamentals.evidence.capture_intake import (
+    SURFACE_OF,
+    IntakeError,
+    RetainedCaptureBinding,
+    RetainedIntake,
+    authorise,
+    parse_filed_at,
+    stage_retained_member,
+)
+from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
+from fundamentals.evidence.first_party_extract import (
+    IngestError,
+    IngestRequest,
+    MemberGeneration,
+    extract_member,
+    stored_capture,
+)
+from fundamentals.evidence.interpret import SEGMENT_AXIS
+from fundamentals.evidence.mapping import (
+    CONTEXT_LOCAL_NAME,
+    CONTEXT_SCHEMA_IDENTITY,
+    MappingSet,
+    NormalisationPolicy,
+    in_namespace,
+)
+from fundamentals.evidence.pdf_adapter import PDF_EXTRACTOR_VERSION
+from fundamentals.evidence.presence import reporting_kind, statements_present
+from fundamentals.evidence.repository import (
+    EvidenceRepository,
+    InterpretationConflictError,
+    VersionPin,
+)
+from fundamentals.evidence.repository_rows import SegmentMemberWrite
+from fundamentals.evidence.xbrl_adapter import (
+    SEGMENT_DESCRIPTION_CONCEPT,
+    XBRL_EXTRACTOR_VERSION,
+    member_slug,
+)
+from fundamentals.extract.pdf_statement_pages import StatementPageSpec
+from fundamentals.pg.identity_seed import SettingKey
+from fundamentals.store.snapshot_store import SnapshotStore
+
+__all__ = ["IngestError", "IngestReport", "ingest_first_party"]
+
+_LOG = structlog.get_logger(__name__)
+MAX_INTERPRETATION_RETRIES = 3
+MAPPING_SET_ARTIFACT = "mapping_set"
+NORMALISATION_POLICY_ARTIFACT = "normalisation_policy"
+DEFAULT_EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
+    Representation.XBRL: XBRL_EXTRACTOR_VERSION,
+    Representation.PDF: PDF_EXTRACTOR_VERSION,
+}
+_MEMBER_ORDER = (Representation.XBRL, Representation.PDF)
+_NOT_AUTHORISED = "source {source_id!r} is not an authorised first-party {representation} source"
+_NO_FISCAL_YEAR_END = "entity {entity_id} has no evidenced fiscal-year-end month"
+_STAGING_FAILED = "members failed to stage: {members}"
+_RETRIES_EXHAUSTED = "interpretations of capture {capture} conflicted {count} times"
+_SCOPE_CONFLICT = (
+    "capture {capture} has interpretations under this triple for another entity, basis or "
+    "framework; refusing to reuse or add to them"
+)
+
+
+class IngestReport(BaseModel):
+    """What one ingest invocation stored or reused."""
+
+    model_config = ConfigDict(frozen=True)
+
+    package_id: int | None
+    occurrence_count: int
+    interpretation_counts: Mapping[InterpretationStatus, int]
+    attempts: tuple[AcquisitionAttempt, ...]
+
+
+def ingest_first_party(
+    *,
+    intake: RetainedIntake,
+    catalog: SourceCatalog,
+    snapshot_store: SnapshotStore,
+    repository: EvidenceRepository,
+    dictionary: CanonicalDictionary,
+    mapping_set: MappingSet,
+    policy: NormalisationPolicy,
+    entity_id: int,
+    basis: Basis,
+    framework: AccountingFramework,
+    family: FilingFamily,
+    reporting_period_end: date,
+    pdf_specs: Mapping[StatementFamily, StatementPageSpec] | None,
+    supersedes_package_id: int | None = None,
+    replaced_statements: frozenset[StatementFamily] = frozenset(),
+    extractor_versions: Mapping[Representation, str] | None = None,
+) -> IngestReport:
+    """Stage, extract, interpret and package one filing's members (see module docstring).
+
+    Raises ``VersionContentDriftError`` (nothing written) when the mapping set or policy
+    version is already pinned to other content.
+    """
+    repository.pin_versions(
+        [
+            VersionPin(
+                artifact=MAPPING_SET_ARTIFACT,
+                version=mapping_set.version,
+                content_sha256=mapping_set.content_sha256,
+            ),
+            VersionPin(
+                artifact=NORMALISATION_POLICY_ARTIFACT,
+                version=policy.version,
+                content_sha256=policy.content_sha256,
+            ),
+        ]
+    )
+    versions = {**DEFAULT_EXTRACTOR_VERSIONS, **(extractor_versions or {})}
+    request = IngestRequest(
+        entity_id=entity_id, period_end=reporting_period_end, basis=basis, framework=framework
+    )
+    identifiers = repository.issuer_identifiers(entity_id)
+    fiscal_year_end_month = _fiscal_year_end_month(repository, entity_id)
+    member_failures: list[AcquisitionAttempt] = []
+    failed_staging: list[str] = []
+    pending: list[MemberGeneration] = []
+    bindings = sorted(intake.bindings, key=lambda item: _MEMBER_ORDER.index(item.representation))
+    for binding in bindings:
+        if (
+            authorise(binding, catalog=catalog, results_pdf_source_id=intake.results_pdf_source_id)
+            is None
+        ):
+            member_failures.append(
+                request.attempt(
+                    binding,
+                    ExtractionOutcome.NOT_AUTHORISED,
+                    stage=AttemptStage.ACQUISITION,
+                    capture=None,
+                    reason=_NOT_AUTHORISED.format(
+                        source_id=binding.source_id, representation=binding.representation
+                    ),
+                )
+            )
+            continue
+        try:
+            capture = _registered(repository, snapshot_store, intake, binding)
+        except (SourceRegistrationError, IntakeError, SnapshotError, OSError) as error:
+            failed_staging.append(binding.representation.value)
+            member_failures.append(
+                request.attempt(
+                    binding,
+                    ExtractionOutcome.FAILED,
+                    stage=AttemptStage.ACQUISITION,
+                    capture=None,
+                    reason=str(error),
+                )
+            )
+            continue
+        member = PackageMember(
+            representation=binding.representation,
+            capture=capture,
+            knowledge_time=parse_filed_at(binding.filed_at_raw),
+            knowledge_time_raw=binding.filed_at_raw,
+            knowledge_time_status=KnowledgeTimeStatus.KNOWN,
+        )
+        pending.append(
+            extract_member(
+                binding,
+                member,
+                intake=intake,
+                repository=repository,
+                request=request,
+                identifiers=identifiers,
+                mapping_set=mapping_set,
+                pdf_specs=pdf_specs,
+                extractor_version=versions[binding.representation],
+            )
+        )
+    # Presence first, so a present family's unlocated PDF block fails inside its generation.
+    present = _present(pending, mapping_set, reporting_period_end)
+    extracted = [item.with_unlocated(present, request).written(repository) for item in pending]
+    usable = [item for item in extracted if item.outcome is ExtractionOutcome.COMPLETE]
+    interpretations: list[Interpretation] = []
+    for item in usable:
+        scope = CaptureScope(
+            capture=item.member.capture,
+            entity_id=entity_id,
+            basis=basis,
+            framework=framework,
+            mapping_set=mapping_set,
+            policy=policy,
+            dictionary=dictionary,
+            fiscal_year_end_month=fiscal_year_end_month,
+        )
+        interpretations.extend(_interpretations(item, scope=scope, repository=repository))
+    package_id = None
+    occurrences = [occurrence for item in usable for occurrence in item.occurrences]
+    if usable:
+        stored_present = _present(usable, mapping_set, reporting_period_end)
+        package = FilingPackage(
+            package_id=None,
+            entity_id=entity_id,
+            family=family,
+            reporting_period_end=reporting_period_end,
+            basis=basis,
+            framework=framework,
+            reporting_kind=reporting_kind(
+                occurrences,
+                period_end=reporting_period_end,
+                fiscal_year_end_month=fiscal_year_end_month,
+            ),
+            knowledge_time=max(item.member.knowledge_time for item in usable),
+            supersedes_package_id=supersedes_package_id,
+            replaced_statements=replaced_statements,
+            statements_present=frozenset(stored_present),
+            members={item.binding.representation: item.member for item in usable},
+            evidence_sha256=_package_sha256(usable, supersedes_package_id, replaced_statements),
+        )
+        package_id = repository.put_package(
+            package,
+            statement_evidence={
+                family_: [_stored_id(occurrence) for occurrence in found]
+                for family_, found in stored_present.items()
+            },
+        )
+        repository.put_segment_members(_segment_members(occurrences, entity_id))
+    acquisition = [
+        attempt.model_copy(update={"package_id": package_id}) for attempt in member_failures
+    ]
+    stored_acquisition = repository.put_attempts(acquisition) if acquisition else ()
+    attempts = (*(a for item in extracted for a in item.attempts), *stored_acquisition)
+    _LOG.info(
+        "first-party ingest",
+        entity_id=entity_id,
+        period_end=str(reporting_period_end),
+        package_id=package_id,
+        occurrences=len(occurrences),
+        interpretations=len(interpretations),
+    )
+    if failed_staging:
+        raise IngestError(_STAGING_FAILED.format(members=", ".join(failed_staging)))
+    return IngestReport(
+        package_id=package_id,
+        occurrence_count=len(occurrences),
+        interpretation_counts=dict(Counter(item.status for item in interpretations)),
+        attempts=attempts,
+    )
+
+
+def _fiscal_year_end_month(repository: EvidenceRepository, entity_id: int) -> int:
+    """The evidenced fiscal-year-end month as of the store clock."""
+    record = repository.settings_as_of(
+        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock()
+    )
+    if record is None:
+        raise IngestError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
+    return int(record.value_text)
+
+
+def _registered(
+    repository: EvidenceRepository,
+    store: SnapshotStore,
+    intake: RetainedIntake,
+    binding: RetainedCaptureBinding,
+) -> CaptureReference:
+    """The stored registration of these bytes, staging them only when none exists (level 1)."""
+    surface = SURFACE_OF[binding.representation].value
+    existing = repository.find_capture_ref(binding.source_id, surface, binding.expected_sha256)
+    if existing is not None:
+        return existing
+    return repository.put_capture_ref(stage_retained_member(store, intake, binding.representation))
+
+
+def _present(
+    generations: Sequence[MemberGeneration], mapping_set: MappingSet, period_end: date
+) -> Mapping[StatementFamily, tuple[Occurrence, ...]]:
+    """Structural presence over the complete members' occurrences and located PDF blocks."""
+    usable = [item for item in generations if item.outcome is ExtractionOutcome.COMPLETE]
+    return statements_present(
+        [occurrence for item in usable for occurrence in item.occurrences],
+        period_end=period_end,
+        anchors=mapping_set.statement_anchors,
+        pdf_located=frozenset(family for item in usable for family in item.pdf_located),
+    )
+
+
+def _interpretations(
+    item: MemberGeneration, *, scope: CaptureScope, repository: EvidenceRepository
+) -> tuple[Interpretation, ...]:
+    """Reuse the capture's rows under the current triple, else interpret and append (level 3).
+
+    Rows under the triple for another entity, basis or framework are never reused or added
+    to: the ingest refuses.
+    """
+    capture_ref_id = stored_capture(item.member.capture)
+    for _ in range(MAX_INTERPRETATION_RETRIES):
+        stored = repository.list_capture_interpretations(capture_ref_id)
+        current = tuple(
+            row
+            for row in stored
+            if row.mapping_set_version == scope.mapping_set.version
+            and row.normalisation_policy_version == scope.policy.version
+            and row.extractor_version == item.extractor_version
+        )
+        if any(
+            (row.entity_id, row.basis, row.framework)
+            != (scope.entity_id, scope.basis, scope.framework)
+            for row in current
+        ):
+            raise IngestError(_SCOPE_CONFLICT.format(capture=capture_ref_id))
+        if current:
+            return current
+        prior = [row for row in stored if row not in current]
+        prior_occurrences = {row.occurrence_id for row in prior if row.occurrence_id is not None}
+        prior_anchor_keys = {
+            _stored_id(occurrence): occurrence.anchor_key
+            for occurrence in repository.get_occurrences(sorted(prior_occurrences))
+        }
+        written = interpret_generation(
+            item.occurrences,
+            scope=scope,
+            prior=prior,
+            prior_anchor_keys=prior_anchor_keys,
+            reserve_ids=repository.reserve_interpretation_ids,
+            recorded_at=repository.store_clock(),
+        )
+        try:
+            repository.put_interpretations(written)
+        except InterpretationConflictError:
+            _LOG.warning("interpretation conflict; retrying", capture_ref_id=capture_ref_id)
+            continue
+        return written
+    raise IngestError(
+        _RETRIES_EXHAUSTED.format(capture=capture_ref_id, count=MAX_INTERPRETATION_RETRIES)
+    )
+
+
+def _segment_members(occurrences: Sequence[Occurrence], entity_id: int) -> list[SegmentMemberWrite]:
+    """One member per evidenced segment description, valid from its earliest period start."""
+    found: dict[str, tuple[str, list[Occurrence]]] = {}
+    for occurrence in occurrences:
+        context = occurrence.native_context
+        if context.get(CONTEXT_LOCAL_NAME) != SEGMENT_DESCRIPTION_CONCEPT or not in_namespace(
+            context, str(context.get(CONTEXT_SCHEMA_IDENTITY))
+        ):
+            continue
+        text = (occurrence.raw_value_text or "").strip()
+        if not text or occurrence.period is None:
+            continue
+        found.setdefault(member_slug(text), (text, []))[1].append(occurrence)
+    members = []
+    for slug, (text, evidence) in sorted(found.items()):
+        starts = [
+            occurrence.period.start or occurrence.period.instant
+            for occurrence in evidence
+            if occurrence.period is not None
+        ]
+        members.append(
+            SegmentMemberWrite(
+                entity_id=entity_id,
+                axis=SEGMENT_AXIS,
+                member=slug,
+                display_name=text,
+                valid_from=min(day for day in starts if day is not None),
+                evidence_occurrence_ids=tuple(sorted(_stored_id(item) for item in evidence)),
+            )
+        )
+    return members
+
+
+def _package_sha256(
+    usable: Sequence[MemberGeneration],
+    supersedes_package_id: int | None,
+    replaced_statements: frozenset[StatementFamily],
+) -> str:
+    """Content identity of a package: its members' bytes, what it supersedes and replaces."""
+    return canonical_sha256(
+        {
+            "members": {
+                item.binding.representation.value: item.binding.expected_sha256 for item in usable
+            },
+            "supersedes_package_id": supersedes_package_id,
+            "replaced_statements": sorted(family.value for family in replaced_statements),
+        }
+    )
+
+
+def _stored_id(occurrence: Occurrence) -> int:
+    """A stored occurrence's id."""
+    if occurrence.occurrence_id is None:
+        raise IngestError("occurrence is not stored")
+    return occurrence.occurrence_id

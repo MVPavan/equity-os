@@ -1,0 +1,40 @@
+# Structural statement anchors v1 (D1a Task 5): a family is present in a package when any
+# occurrence of one of these native fields is filed for the anchor's period shape at the package
+# period end. Nil and unmapped occurrences count; mapped values are never consulted.
+statement_anchors:
+  - schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    statement_family: PL
+    native_fields: [RevenueFromOperations, ProfitBeforeTax]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    statement_family: BALANCE_SHEET
+    native_fields: [Assets, EquityAndLiabilities]
+    period_shape: INSTANT_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    statement_family: CASH_FLOW
+    native_fields: [CashFlowsFromUsedInOperatingActivities]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    statement_family: CASH_FLOW
+    native_fields: [CashAndCashEquivalentsCashFlowStatement]
+    period_shape: INSTANT_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    statement_family: SEGMENT
+    native_fields: [SegmentRevenue]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin
+    statement_family: PL
+    native_fields: [RevenueFromOperations, ProfitBeforeTax]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin
+    statement_family: BALANCE_SHEET
+    native_fields: [Assets, EquityAndLiabilities]
+    period_shape: INSTANT_AT_PERIOD_END
+  - schema_identity: http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin
+    statement_family: CASH_FLOW
+    native_fields: [CashFlowsFromUsedInOperatingActivities, CashAndCashEquivalentsCashFlowStatement]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin
+    statement_family: SEGMENT
+    native_fields: [SegmentRevenue]
+    period_shape: DURATION_ENDING_AT_PERIOD_END

@@ -1796,3 +1796,18 @@ Fresh critical review (Sol): 7 MAJOR, 3 MINOR, 5 notes. DD = design decision.
 - Definition-record `explained_amount` and adjustment `amount` must be positive; `direction` carries the sign. One record applies to an operand at most once, on either representation (matches the `pair_adjustments` key).
 - Extraction refuses (`ValueError`) representations from different packages or a valued side with no package id, as for cross-entity pairs.
 - **Task 9 obligation:** `load_comparison_policy` hashes the file but cannot detect drift from a path alone; the run must check the comparison-policy pin and raise `VersionContentDriftError` on drift.
+
+## Stage 4a build notes (Tasks 11 and 5, as built 2026-10-12)
+
+Sol round-1 review (REQUEST_CHANGES, 16 findings) fixed in one round; under the owner's lowered review bar the
+re-review moves to the D1a phase-end review.
+- Migration `0003` adds `eqos.version_pins` (artifact, version, content hash; append-only). Ingest pins the mapping set
+  and normalisation policy and raises `VersionContentDriftError` on drift; **Task 9 obligation:** pin the comparison
+  policy in the same table.
+- The accounting framework is verified against the capture's own declaration (XBRL notes text block; PDF text);
+  missing or mismatched declaration fails closed. Period and basis are checked on every request, including reuse.
+- Mapping entries match source, namespace URI and local name; overlapping selectors are refused at load; runtime
+  ambiguity gives `INVALID` / `INTERPRETATION_AMBIGUOUS`. Shipped entries name no source (apply to the surface).
+- Unlocated PDF-family failures sit in the PDF member's own attempt generation (shared `attempted_at`).
+- Unreadable and blank PDF rows are kept; unreadable cells become `INVALID` / `UNREADABLE_CELL`.
+- Extractor versions are not pinned (no content hash).

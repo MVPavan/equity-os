@@ -34,6 +34,7 @@ from fundamentals.api.env_credentials import (
     _tijori_credentials_from_env,
     _upstox_credentials_from_env,
 )
+from fundamentals.api.evidence_cli import dispatch_evidence_command
 from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_cli import dispatch_report_command
@@ -301,6 +302,10 @@ def main(
     db_exit_code = dispatch_db_command(args)
     if db_exit_code is not None:
         return db_exit_code
+
+    evidence_exit_code = dispatch_evidence_command(args)
+    if evidence_exit_code is not None:
+        return evidence_exit_code
 
     news_exit_code = dispatch_news_command(args)
     if news_exit_code is not None:

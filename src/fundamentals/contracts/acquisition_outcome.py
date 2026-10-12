@@ -21,9 +21,11 @@ owns that mapping.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
+
+from fundamentals.contracts.comparison import SourceState
 
 
 class OutcomeCode(StrEnum):
@@ -70,3 +72,97 @@ class OutcomeRecord(BaseModel):
     def retryable(self) -> bool:
         """Whether a bounded retry could clear this outcome."""
         return self.code in RETRYABLE_CODES
+
+
+class ExtractionOutcome(StrEnum):
+    """What one evidence acquisition or extraction attempt established (D1a Task 5).
+
+    The evidence-layer vocabulary of ``acquisition_attempts``: it extends the capture-level
+    :class:`OutcomeCode` with what reading the retained bytes established, and is never
+    folded back into it.
+    """
+
+    COMPLETE = "COMPLETE"
+    NOT_PUBLISHED = "NOT_PUBLISHED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+    NOT_AUTHORISED = "NOT_AUTHORISED"
+    IDENTITY_REJECTED = "IDENTITY_REJECTED"
+    UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
+    PARSE_FAILED = "PARSE_FAILED"
+
+
+# Capture codes that say the source holds nothing for the request, as opposed to a failure.
+_NOT_PUBLISHED_CODES: frozenset[OutcomeCode] = frozenset(
+    {OutcomeCode.OK_EMPTY, OutcomeCode.NOT_OFFERED}
+)
+_CAPTURE_TRANSLATION: dict[OutcomeCode, ExtractionOutcome] = {
+    OutcomeCode.IDENTITY_MISMATCH: ExtractionOutcome.IDENTITY_REJECTED,
+    OutcomeCode.SCHEMA_DRIFT: ExtractionOutcome.UNSUPPORTED_SCHEMA,
+}
+
+
+class CapturedOutcome(Protocol):
+    """What a capture record says about its fetch (``CaptureRecord`` satisfies it).
+
+    Structural so this module, which ``contracts.snapshot`` imports, never imports it back.
+    """
+
+    @property
+    def outcome(self) -> OutcomeRecord:
+        """The capture-level outcome."""
+        ...
+
+    @property
+    def effective_body_completeness(self) -> StrEnum:
+        """The ``BodyCompleteness`` the retained bytes establish."""
+        ...
+
+
+def extraction_outcome_for(
+    record: CapturedOutcome,
+    *,
+    parse_failed: bool,
+    unsupported_schema: bool,
+    identity_rejected: bool,
+) -> ExtractionOutcome:
+    """Translate a capture and what reading it established into one extraction outcome.
+
+    A capture that did not return a complete body decides first; then an unsupported
+    schema, a parse failure and an identity rejection, in that order (each later check
+    needs the earlier one to have passed).
+    """
+    from fundamentals.contracts.snapshot import BodyCompleteness
+
+    code = record.outcome.code
+    if code in _NOT_PUBLISHED_CODES:
+        return ExtractionOutcome.NOT_PUBLISHED
+    if code in _CAPTURE_TRANSLATION:
+        return _CAPTURE_TRANSLATION[code]
+    if code is not OutcomeCode.OK:
+        return ExtractionOutcome.FAILED
+    completeness = record.effective_body_completeness
+    if completeness is BodyCompleteness.PARTIAL:
+        return ExtractionOutcome.PARTIAL
+    if completeness is BodyCompleteness.ABSENT:
+        return ExtractionOutcome.FAILED
+    if unsupported_schema:
+        return ExtractionOutcome.UNSUPPORTED_SCHEMA
+    if parse_failed:
+        return ExtractionOutcome.PARSE_FAILED
+    if identity_rejected:
+        return ExtractionOutcome.IDENTITY_REJECTED
+    return ExtractionOutcome.COMPLETE
+
+
+def outcome_source_state(outcome: ExtractionOutcome) -> SourceState | None:
+    """The source state an attempt outcome imposes; ``None`` lets each cell decide.
+
+    Only ``NOT_PUBLISHED`` is an evidenced absence (``NO_VALUE``); every failure is
+    ``UNAVAILABLE`` and never ``NO_VALUE``.
+    """
+    if outcome is ExtractionOutcome.COMPLETE:
+        return None
+    if outcome is ExtractionOutcome.NOT_PUBLISHED:
+        return SourceState.NO_VALUE
+    return SourceState.UNAVAILABLE

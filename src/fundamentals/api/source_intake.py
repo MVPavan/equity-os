@@ -14,14 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fundamentals.api.config import FundamentalsConfig
-from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 from fundamentals.contracts.snapshot import (
-    CAPTURE_SCHEMA_VERSION,
-    BlobRef,
-    BodyCompleteness,
-    CaptureRecord,
-    RequestIdentity,
-    RequestMethod,
     SnapshotError,
     SnapshotRights,
     canonical_sha256,
@@ -30,10 +23,9 @@ from fundamentals.contracts.source_registration import (
     SourceRegistration,
     SourceRegistrationError,
     SourceRole,
-    require_utc,
 )
+from fundamentals.store.capture_local import capture_local_original
 from fundamentals.store.snapshot_store import (
-    MAX_BODY_BYTES,
     MAX_METADATA_BYTES,
     DescriptorTree,
     DirectoryAnchor,
@@ -115,48 +107,26 @@ def stage_local_source(
 
     approved_intake.check_store(store)
     binding = approved_intake.binding(role)
-    if path.is_absolute() or not path.parts or any(part in (".", "..") for part in path.parts):
-        raise SourceRegistrationError("input must be relative to the operator-pinned directory")
     try:
-        with DescriptorTree(approved_intake.input_anchor) as tree:
-            parent = tree.descend(tuple(path.parts[:-1]))
-            body = tree.read(parent, path.name, MAX_BODY_BYTES)
-            if not body or hashlib.sha256(body).hexdigest() != binding.expected_sha256:
-                raise SourceRegistrationError("local original differs from approved content pin")
-            completed = require_utc(_utc_now())
-            tree.verify()
-        request = RequestIdentity(
+        surface = f"local_{role.value}"
+        request_key = canonical_sha256({"role": role.value, "sha256": binding.expected_sha256})
+        record = capture_local_original(
+            store,
+            input_anchor=approved_intake.input_anchor,
             source_id=binding.source_id,
-            surface=f"local_{role.value}",
-            request_key=canonical_sha256({"role": role.value, "sha256": binding.expected_sha256}),
-            method=RequestMethod.LOCAL_READ,
-            parameters=(),
-        )
-        record = CaptureRecord.make(
-            request=request,
-            retrieved_at=completed,
-            http_status=None,
+            surface=surface,
+            request_key=request_key,
+            expected_sha256=binding.expected_sha256,
             media_type="application/xml" if role is SourceRole.XBRL else "application/pdf",
-            content_encoding=None,
-            body=BlobRef(
-                source_id=binding.source_id,
-                content_sha256=binding.expected_sha256,
-                byte_count=len(body),
-            ),
-            outcome=OutcomeRecord(
-                code=OutcomeCode.OK, native_kind="LOCAL_READ", native_value="complete"
-            ),
             rights=binding.rights,
-            schema_version=CAPTURE_SCHEMA_VERSION,
-            body_completeness=BodyCompleteness.COMPLETE,
-            body_read_issue=None,
+            path=path,
+            clock=_utc_now,
         )
-        store.put_capture(record, body)
         return SourceIntakeStore(store, approved_intake=approved_intake).register_capture(
             role=role,
             source_id=binding.source_id,
-            surface=request.surface,
-            request_key=request.request_key,
+            surface=surface,
+            request_key=request_key,
             capture_id=record.capture_id,
             source_sha256=binding.expected_sha256,
             record_sha256=record.record_sha256,

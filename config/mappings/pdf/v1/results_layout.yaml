@@ -1,0 +1,635 @@
+# Results-PDF layout entries (D1a Task 5) for the issuer-configured SEBI LODR results layout, read
+# from the PDF text layer through Task 11's statement blocks. Labels are as the text layer prints
+# them on the retained Q2 FY26 results PDF (sha256 8be1b8de), garbled variants included; repeated labels are
+# told apart by section heading or ordinal within the block. Lines whose meaning no retained capture
+# evidences (OCI tax lines, composite 'other financial' lines, 'Others / Unallocable', the two
+# unallocable lines, the segment-page repeats of P&L lines) stay unmapped.
+# No source: these entries apply to every authorised results PDF of the NSE_RESULTS_PDF surface
+# (the issuer config names the source; decision-12 authority admits it).
+surface: NSE_RESULTS_PDF
+schema_identity: sebi-lodr-results-layout
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+entries:
+  - entry_id: pdf.sales
+    selector: {statement_family: PL, labels: ["1 Sales"]}
+    canonical_id: sales
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 1"
+  - entry_id: pdf.other_operating_income
+    selector: {statement_family: PL, labels: ["2 Other operating incomes"]}
+    canonical_id: other_operating_income
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 2"
+  - entry_id: pdf.revenue_from_operations
+    selector: {statement_family: PL, labels: ["3 Revenue from operations (1+2)"]}
+    canonical_id: revenue_from_operations
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 3, 5,715.42 = XBRL RevenueFromOperations"
+  - entry_id: pdf.other_income
+    selector: {statement_family: PL, labels: ["4 Other incomes"]}
+    canonical_id: other_income
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 4"
+  - entry_id: pdf.total_income
+    selector: {statement_family: PL, labels: ["5 Total income (3+4)"]}
+    canonical_id: total_income
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 5"
+  - entry_id: pdf.cost_of_materials_consumed
+    selector: {statement_family: PL, labels: ["(a) Costs of materials consumed"]}
+    canonical_id: cost_of_materials_consumed
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(a)"
+  - entry_id: pdf.purchases_of_stock_in_trade
+    selector: {statement_family: PL, labels: ["(b) Purchases of stock-in-trade"]}
+    canonical_id: purchases_of_stock_in_trade
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(b)"
+  - entry_id: pdf.changes_in_inventories
+    selector: {statement_family: PL, labels: ["(c) Changes in inventories of finished goods, work-in-progress and stock-in-trade", "(c) Changes in inventories of finished goods, work-in-progress and stock-in-t"]}
+    canonical_id: changes_in_inventories
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(c); the text layer truncates the label"
+  - entry_id: pdf.employee_benefits_expense
+    selector: {statement_family: PL, labels: ["(d) Employee benefits expense"]}
+    canonical_id: employee_benefits_expense
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(d)"
+  - entry_id: pdf.finance_costs
+    selector: {statement_family: PL, labels: ["(e) Finance costs"]}
+    canonical_id: finance_costs
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(e)"
+  - entry_id: pdf.depreciation_amortisation
+    selector: {statement_family: PL, labels: ["(f) Depreciation and amortisation expense"]}
+    canonical_id: depreciation_amortisation
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(f)"
+  - entry_id: pdf.other_expenses
+    selector: {statement_family: PL, labels: ["(g) Other expenses"]}
+    canonical_id: other_expenses
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 6(g)"
+  - entry_id: pdf.total_expenses
+    selector: {statement_family: PL, labels: ["6 Total expenses", "6 Total exp"]}
+    canonical_id: total_expenses
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 6 (text layer prints '6 Total exp')"
+  - entry_id: pdf.profit_before_tax
+    selector: {statement_family: PL, labels: ["7 Profit before tax & share in net profit / (loss) of associates (5-6)", "7 Profit before tax & share in net profit / (loss) of associates (5.6)"]}
+    canonical_id: profit_before_tax
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 7, 340.56 = XBRL ProfitBeforeTax OneD: the position before the associates share (line 8)"
+  - entry_id: pdf.share_of_profit_associates_jv
+    selector: {statement_family: PL, labels: ["8 Share in net profit / (loss) of associates"]}
+    canonical_id: share_of_profit_associates_jv
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 8"
+  - entry_id: pdf.profit_before_tax_incl_associates
+    selector: {statement_family: PL, labels: ["9 Profit before tax (7+8)"]}
+    canonical_id: profit_before_tax_incl_associates
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 9, 340.53 = line 7 + line 8 as printed; the layout line, never the label 'Profit before tax'"
+  - entry_id: pdf.current_tax
+    selector: {statement_family: PL, labels: ["(a) Current tax"], section: "Tax exp"}
+    canonical_id: current_tax
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 10(a)"
+  - entry_id: pdf.deferred_tax
+    selector: {statement_family: PL, labels: ["(b) Deferred tax", "(b( Deferred tax"], section: "Tax exp"}
+    canonical_id: deferred_tax
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 10(b)"
+  - entry_id: pdf.tax_earlier_years
+    selector: {statement_family: PL, labels: ["(c) Current tax in respect of earlier years"], section: "Tax exp"}
+    canonical_id: tax_earlier_years
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 10(c)"
+  - entry_id: pdf.profit_for_period
+    selector: {statement_family: PL, labels: ["11 Profit after tax (9-10)", "11 rroft after tax (9.10)"]}
+    canonical_id: profit_for_period
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 11, 251.70 = XBRL ProfitLossForPeriod (text layer garbles the label)"
+  - entry_id: pdf.oci_not_reclassified_items
+    selector: {statement_family: PL, labels: ["(i) Items that will not be reclassified to profit or loss"]}
+    canonical_id: oci_not_reclassified_items
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 12(A)(i)"
+  - entry_id: pdf.oci_reclassified_items
+    selector: {statement_family: PL, labels: ["(i) Items that will be reclassified to profit or loss"]}
+    canonical_id: oci_reclassified_items
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 12(B)(i)"
+  - entry_id: pdf.oci_net
+    selector: {statement_family: PL, labels: ["12 Other comprehensive incomes (OCI)"]}
+    canonical_id: oci_net
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 12"
+  - entry_id: pdf.total_comprehensive_income
+    selector: {statement_family: PL, labels: ["13 Total comprehensive income for the period/year (11+12)"]}
+    canonical_id: total_comprehensive_income
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 13"
+  - entry_id: pdf.profit_attributable_owners
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], label_ordinal: 1}
+    canonical_id: profit_attributable_owners
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 first '(a) Owners' line, 251.70 = line 11"
+  - entry_id: pdf.profit_attributable_nci
+    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], label_ordinal: 1}
+    canonical_id: profit_attributable_nci
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 first '(b) Non-controlling' line"
+  - entry_id: pdf.oci_attributable_owners
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section: "Other comprehensive incomes attributable to", label_ordinal: 2}
+    canonical_id: oci_attributable_owners
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 second '(a) Owners' line, 22.95 = line 12"
+  - entry_id: pdf.oci_attributable_nci
+    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], section: "Other comprehensive incomes attributable to", label_ordinal: 2}
+    canonical_id: oci_attributable_nci
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 second '(b) Non-controlling' line"
+  - entry_id: pdf.tci_attributable_owners
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section: "Total comprehensive incomes attributable to", label_ordinal: 3}
+    canonical_id: tci_attributable_owners
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 third '(a) Owners' line under 'Total comprehensive incomes attributable to'"
+  - entry_id: pdf.paid_up_equity_capital
+    selector: {statement_family: PL, labels: ["14 Paid up share Capital (Face value of E 10 each)", "14 Paid up share Capital (Face value of Rs 10 each)"]}
+    canonical_id: paid_up_equity_capital
+    period_rule: COLUMN_CLOSING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 14, printed as at each column's end"
+  - entry_id: pdf.reserves_excl_revaluation
+    selector: {statement_family: PL, labels: ["15 Reserves excluding revaluation reserve"]}
+    canonical_id: reserves_excl_revaluation
+    period_rule: COLUMN_CLOSING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 15, FY column only"
+  - entry_id: pdf.eps_diluted
+    selector: {statement_family: PL, labels: ["Diluted"], section: "Earnings per share"}
+    canonical_id: eps_diluted
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 16 Diluted, rupees per share"
+  - entry_id: pdf.ppe
+    selector: {statement_family: BALANCE_SHEET, labels: ["Property, plant and equipments"]}
+    canonical_id: ppe
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.right_of_use_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["Right to use assets"]}
+    canonical_id: right_of_use_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.cwip
+    selector: {statement_family: BALANCE_SHEET, labels: ["Capital work-in-progress"]}
+    canonical_id: cwip
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.other_intangible_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["Other intangible assets"]}
+    canonical_id: other_intangible_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.intangibles_under_development
+    selector: {statement_family: BALANCE_SHEET, labels: ["Intangible assets under development"]}
+    canonical_id: intangibles_under_development
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.noncurrent_investments
+    selector: {statement_family: BALANCE_SHEET, labels: ["Investments in subsidiaries & associates"]}
+    canonical_id: noncurrent_investments
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 11.06 = XBRL NoncurrentInvestments"
+  - entry_id: pdf.trade_receivables_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Trade receivables"], label_ordinal: 1}
+    canonical_id: trade_receivables_noncurrent
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 first 'Trade receivables' (non-current financial assets), 81.12"
+  - entry_id: pdf.loans_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Loans"], label_ordinal: 1}
+    canonical_id: loans_noncurrent
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 first 'Loans', 3.20"
+  - entry_id: pdf.noncurrent_tax_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["Noncurrent tax assets (net)"]}
+    canonical_id: noncurrent_tax_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.other_noncurrent_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["Other noncurrent assets"]}
+    canonical_id: other_noncurrent_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.noncurrent_assets_total
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total non current assets", "Total non currant assets"]}
+    canonical_id: noncurrent_assets_total
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 2,265.23 = XBRL NoncurrentAssets"
+  - entry_id: pdf.inventories
+    selector: {statement_family: BALANCE_SHEET, labels: ["Inventories"]}
+    canonical_id: inventories
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.current_investments
+    selector: {statement_family: BALANCE_SHEET, labels: ["Investments"]}
+    canonical_id: current_investments
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 current 'Investments', 17.36 = XBRL CurrentInvestments"
+  - entry_id: pdf.trade_receivables_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Trade receivables"], label_ordinal: 2}
+    canonical_id: trade_receivables_current
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 second 'Trade receivables' (current), 4,584.56 = XBRL TradeReceivablesCurrent"
+  - entry_id: pdf.cash_and_cash_equivalents
+    selector: {statement_family: BALANCE_SHEET, labels: ["Cash and cash equivalents"]}
+    canonical_id: cash_and_cash_equivalents
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 309.39"
+  - entry_id: pdf.other_bank_balances
+    selector: {statement_family: BALANCE_SHEET, labels: ["Bank balances other than above"]}
+    canonical_id: other_bank_balances
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.loans_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Loans"], label_ordinal: 2}
+    canonical_id: loans_current
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 second 'Loans', 1.09"
+  - entry_id: pdf.other_current_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["Other current assets"]}
+    canonical_id: other_current_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.current_assets_total
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total current assets"]}
+    canonical_id: current_assets_total
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.total_assets
+    selector: {statement_family: BALANCE_SHEET, labels: ["TOTAL ASSETS"]}
+    canonical_id: total_assets
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 11,312.53 = XBRL Assets"
+  - entry_id: pdf.equity_share_capital
+    selector: {statement_family: BALANCE_SHEET, labels: ["Equity share capital"]}
+    canonical_id: equity_share_capital
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.other_equity
+    selector: {statement_family: BALANCE_SHEET, labels: ["Other equity"]}
+    canonical_id: other_equity
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.total_equity
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total equity"]}
+    canonical_id: total_equity
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 4,852.51 = XBRL Equity"
+  - entry_id: pdf.borrowings_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Borrowings"], label_ordinal: 1}
+    canonical_id: borrowings_noncurrent
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 first 'Borrowings', 261.91 = XBRL BorrowingsNoncurrent"
+  - entry_id: pdf.lease_liabilities_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Lease liabilities"], label_ordinal: 1}
+    canonical_id: lease_liabilities_noncurrent
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 first 'Lease liabilities'"
+  - entry_id: pdf.provisions_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Provisions"], label_ordinal: 1}
+    canonical_id: provisions_noncurrent
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 first 'Provisions', 20.18 = XBRL ProvisionsNoncurrent"
+  - entry_id: pdf.deferred_tax_liabilities_net
+    selector: {statement_family: BALANCE_SHEET, labels: ["Deferred tax liabilities (net)"]}
+    canonical_id: deferred_tax_liabilities_net
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.noncurrent_liabilities_total
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total noncurrent liabilities"]}
+    canonical_id: noncurrent_liabilities_total
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.borrowings_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Borrowings"], label_ordinal: 2}
+    canonical_id: borrowings_current
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 second 'Borrowings', 329.01 = XBRL BorrowingsCurrent"
+  - entry_id: pdf.lease_liabilities_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Lease liabilities"], label_ordinal: 2}
+    canonical_id: lease_liabilities_current
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 second 'Lease liabilities'"
+  - entry_id: pdf.trade_payables_msme
+    selector: {statement_family: BALANCE_SHEET, labels: ["a) Total outstanding dues of micro and small enterprises"]}
+    canonical_id: trade_payables_msme
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 63.06"
+  - entry_id: pdf.trade_payables_others
+    selector: {statement_family: BALANCE_SHEET, labels: ["b) Total outstanding dues of other than micro and small enterprises"]}
+    canonical_id: trade_payables_others
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 5,230.76"
+  - entry_id: pdf.other_current_liabilities
+    selector: {statement_family: BALANCE_SHEET, labels: ["Other current liabilities"]}
+    canonical_id: other_current_liabilities
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.provisions_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Provisions"], label_ordinal: 2}
+    canonical_id: provisions_current
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 second 'Provisions', 8.95"
+  - entry_id: pdf.current_tax_liabilities
+    selector: {statement_family: BALANCE_SHEET, labels: ["Current tax liabilities (net)"]}
+    canonical_id: current_tax_liabilities
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.current_liabilities_total
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total current liabilities"]}
+    canonical_id: current_liabilities_total
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.total_liabilities
+    selector: {statement_family: BALANCE_SHEET, labels: ["Total liabilities"]}
+    canonical_id: total_liabilities
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6, 6,460.02 = XBRL Liabilities"
+  - entry_id: pdf.total_equity_and_liabilities
+    selector: {statement_family: BALANCE_SHEET, labels: ["TOTAL EQUITY AND LIABILITIES"]}
+    canonical_id: total_equity_and_liabilities
+    period_rule: COLUMN_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6"
+  - entry_id: pdf.segment_revenue_total
+    selector: {statement_family: SEGMENT, labels: ["Total segment revenue"]}
+    canonical_id: segment_revenue_total
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 6,010.79 = XBRL SegmentRevenue (no dimension)"
+  - entry_id: pdf.inter_segment_revenue
+    selector: {statement_family: SEGMENT, labels: ["Less: Inter-segment revenue"]}
+    canonical_id: inter_segment_revenue
+    period_rule: COLUMN_DURATION
+    sign: -1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 prints the deduction (295.37); XBRL InterSegmentRevenue stores 295.37 positive"
+  - entry_id: pdf.segment_revenue_from_operations
+    selector: {statement_family: SEGMENT, labels: ["Total external revenue (revenue from operations)"]}
+    canonical_id: segment_revenue_from_operations
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 5,715.42"
+  - entry_id: pdf.segment_result_total
+    selector: {statement_family: SEGMENT, labels: ["Total segment results"]}
+    canonical_id: segment_result_total
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 485.15 = XBRL SegmentProfitLossBeforeTaxAndFinanceCosts"
+  - entry_id: pdf.segment_finance_costs
+    selector: {statement_family: SEGMENT, labels: ["Less:- Finance cost"]}
+    canonical_id: segment_finance_costs
+    period_rule: COLUMN_DURATION
+    sign: -1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 prints the deduction (107.90); XBRL SegmentFinanceCosts 107.90"
+  - entry_id: pdf.segment_profit_before_tax
+    selector: {statement_family: SEGMENT, labels: ["Profit before tax"]}
+    canonical_id: segment_profit_before_tax
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 last line, 340.53 = XBRL SegmentProfitBeforeTax"
+  - entry_id: pdf.inter_segment_assets
+    selector: {statement_family: SEGMENT, labels: ["Less:- Inter-segment assets"]}
+    canonical_id: inter_segment_assets
+    period_rule: COLUMN_CLOSING_INSTANT
+    sign: -1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 prints the deduction (656.59) as at each column's end"
+  - entry_id: pdf.segment_assets_net
+    selector: {statement_family: SEGMENT, labels: ["Total asset"]}
+    canonical_id: segment_assets_net
+    period_rule: COLUMN_CLOSING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 11,312.53 = XBRL NetSegmentAssets"
+  - entry_id: pdf.segment_liabilities_net
+    selector: {statement_family: SEGMENT, labels: ["Total liabilities"], section: "Segment liabilities"}
+    canonical_id: segment_liabilities_net
+    period_rule: COLUMN_CLOSING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 5,852.33 = XBRL NetSegmentLiabilities"
+  - entry_id: pdf.segment_revenue.conductors
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment revenue"}
+    canonical_id: segment_revenue
+    period_rule: COLUMN_DURATION
+    dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Conductors' as for XBRL DescriptionOfReportableSegment"
+  - entry_id: pdf.segment_revenue.transformer_and_speciality_oils
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment revenue"}
+    canonical_id: segment_revenue
+    period_rule: COLUMN_DURATION
+    dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Transformer and speciality oils' as for XBRL DescriptionOfReportableSegment"
+  - entry_id: pdf.segment_revenue.power_telecom_cables
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment revenue"}
+    canonical_id: segment_revenue
+    period_rule: COLUMN_DURATION
+    dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Power / Telecom cables' as for XBRL DescriptionOfReportableSegment"
+  - entry_id: pdf.segment_revenue.others
+    selector: {statement_family: SEGMENT, labels: ["Others"], section: "Segment revenue"}
+    canonical_id: segment_revenue
+    period_rule: COLUMN_DURATION
+    dimension_members: {segment: others, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Others' as for XBRL DescriptionOfReportableSegment"
+  - entry_id: pdf.segment_assets.conductors
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment assets"}
+    canonical_id: segment_assets
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
+  - entry_id: pdf.segment_liabilities.conductors
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment liabilities"}
+    canonical_id: segment_liabilities
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment liabilities', pre-elimination (the inter-segment liabilities line follows the total)"
+  - entry_id: pdf.segment_assets.transformer_and_speciality_oils
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment assets"}
+    canonical_id: segment_assets
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
+  - entry_id: pdf.segment_liabilities.transformer_and_speciality_oils
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment liabilities"}
+    canonical_id: segment_liabilities
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment liabilities', pre-elimination (the inter-segment liabilities line follows the total)"
+  - entry_id: pdf.segment_assets.power_telecom_cables
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment assets"}
+    canonical_id: segment_assets
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
+  - entry_id: pdf.segment_liabilities.power_telecom_cables
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment liabilities"}
+    canonical_id: segment_liabilities
+    period_rule: COLUMN_CLOSING_INSTANT
+    dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment liabilities', pre-elimination (the inter-segment liabilities line follows the total)"
+  - entry_id: pdf.cf_profit_before_tax
+    selector: {statement_family: CASH_FLOW, labels: ["Profit before tax & share in net profit / (loss) of associates"]}
+    canonical_id: cf_profit_before_tax
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_depreciation
+    selector: {statement_family: CASH_FLOW, labels: ["Depreciation / amortisation"]}
+    canonical_id: cf_adj_depreciation
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_gain_loss_sale_ppe
+    selector: {statement_family: CASH_FLOW, labels: ["(Gain)/loss on sale of property, plant and equipment"]}
+    canonical_id: cf_adj_gain_loss_sale_ppe
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_finance_costs
+    selector: {statement_family: CASH_FLOW, labels: ["Interest costs"]}
+    canonical_id: cf_adj_finance_costs
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_interest_income
+    selector: {statement_family: CASH_FLOW, labels: ["Interest incomes"]}
+    canonical_id: cf_adj_interest_income
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_provisions_current
+    selector: {statement_family: CASH_FLOW, labels: ["Provision for Doubtful Debts / advances (net)"]}
+    canonical_id: cf_adj_provisions_current
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_unrealised_fx
+    selector: {statement_family: CASH_FLOW, labels: ["Unrealised exchange loss/(gain)"]}
+    canonical_id: cf_adj_unrealised_fx
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_share_based_payments
+    selector: {statement_family: CASH_FLOW, labels: ["Share based payment expense"]}
+    canonical_id: cf_adj_share_based_payments
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_adj_profit_sale_investments
+    selector: {statement_family: CASH_FLOW, labels: ["Profit on sale of investments"]}
+    canonical_id: cf_adj_profit_sale_investments
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_wc_trade_and_other_receivables
+    selector: {statement_family: CASH_FLOW, labels: ["(Increase) / decrease in trade and other receivables"]}
+    canonical_id: cf_wc_trade_and_other_receivables
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_wc_inventories
+    selector: {statement_family: CASH_FLOW, labels: ["(Increase) / decrease in inventories"]}
+    canonical_id: cf_wc_inventories
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_wc_trade_and_other_payables
+    selector: {statement_family: CASH_FLOW, labels: ["Increase/ (decrease) in trade and other payables"]}
+    canonical_id: cf_wc_trade_and_other_payables
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_income_taxes_paid
+    selector: {statement_family: CASH_FLOW, labels: ["Tax paid"]}
+    canonical_id: cf_income_taxes_paid
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cfo
+    selector: {statement_family: CASH_FLOW, labels: ["Net cash generated from / (used in) operating activities"]}
+    canonical_id: cfo
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_capex_ppe
+    selector: {statement_family: CASH_FLOW, labels: ["Acquisition of property, plant and equipment"]}
+    canonical_id: cf_capex_ppe
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_sale_ppe
+    selector: {statement_family: CASH_FLOW, labels: ["Proceeds from sale of property, plant and equipment"]}
+    canonical_id: cf_sale_ppe
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_investments_net
+    selector: {statement_family: CASH_FLOW, labels: ["Sale / (purchase) of investments- net"]}
+    canonical_id: cf_investments_net
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_interest_received_investing
+    selector: {statement_family: CASH_FLOW, labels: ["Interest received"]}
+    canonical_id: cf_interest_received_investing
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cfi
+    selector: {statement_family: CASH_FLOW, labels: ["Net cash generated from / (used in) investing activities"]}
+    canonical_id: cfi
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_short_term_borrowings_net
+    selector: {statement_family: CASH_FLOW, labels: ["Proceeds/(repayments) from short-term borrowings. net"]}
+    canonical_id: cf_short_term_borrowings_net
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_proceeds_borrowings
+    selector: {statement_family: CASH_FLOW, labels: ["Proceeds from long-term borrowings"]}
+    canonical_id: cf_proceeds_borrowings
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_repayment_borrowings
+    selector: {statement_family: CASH_FLOW, labels: ["Repayments of long-term borrowings"]}
+    canonical_id: cf_repayment_borrowings
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_lease_payments
+    selector: {statement_family: CASH_FLOW, labels: ["Repayment of Lease Liabilities"]}
+    canonical_id: cf_lease_payments
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_interest_paid_financing
+    selector: {statement_family: CASH_FLOW, labels: ["Interest paid"]}
+    canonical_id: cf_interest_paid_financing
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_dividends_paid
+    selector: {statement_family: CASH_FLOW, labels: ["Dividend Payment"]}
+    canonical_id: cf_dividends_paid
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cff
+    selector: {statement_family: CASH_FLOW, labels: ["Net cash (used in) / generated from financing activities"]}
+    canonical_id: cff
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_net_change_before_fx
+    selector: {statement_family: CASH_FLOW, labels: ["Net increase / (decrease)in cash and cash equivalents"]}
+    canonical_id: cf_net_change_before_fx
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_fx_effect
+    selector: {statement_family: CASH_FLOW, labels: ["Effect of exchanges rate changes on cash and cash equivalents"]}
+    canonical_id: cf_fx_effect
+    period_rule: COLUMN_DURATION
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses"
+  - entry_id: pdf.cf_cash_opening
+    selector: {statement_family: CASH_FLOW, labels: ["Cash and cash equivalents at the beginning of the year"]}
+    canonical_id: cf_cash_opening
+    period_rule: COLUMN_OPENING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses; opening balance: the day before the half-year column's start"
+  - entry_id: pdf.cf_cash_closing
+    selector: {statement_family: CASH_FLOW, labels: ["Cash and cash equivalents at the end of the year"]}
+    canonical_id: cf_cash_closing
+    period_rule: COLUMN_CLOSING_INSTANT
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p7 (vetted line map, test_canon_dictionary_load); printed inflow-positive with outflows in parentheses; closing balance: the half-year column's end"
+  - entry_id: pdf.eps_basic
+    selector: {statement_family: PL, labels: ["Basic"], section: "Earnings per share"}
+    canonical_id: eps_basic
+    period_rule: COLUMN_DURATION
+    tier: EQUIVALENCE_DEMONSTRATED
+    qualification:
+      scope_id: pdf-basic-eps-is-total-eps
+      schema_identities: [sebi-lodr-results-layout]
+      surfaces: [NSE_RESULTS_PDF]
+      bases: [CONSOLIDATED, STANDALONE]
+      period_kinds: [QUARTER, HALF_YEAR, NINE_MONTH, YEAR]
+      conditions:
+        - {condition_id: discontinued-profit-zero, canonical_id: profit_discontinued_after_tax, predicate: EQUALS_ZERO}
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 16 Basic, rupees per share (62.66); the PDF prints one Basic line, total EPS only when discontinued profit is zero (X-Q2 BasicEarningsLossPerShareFromDiscontinuedOperations 0); the PDF prints no discontinued line, so the condition stays unproven there"

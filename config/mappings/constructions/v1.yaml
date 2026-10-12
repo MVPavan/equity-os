@@ -1,0 +1,48 @@
+# Source-scoped constructions v1 (D1a Task 5): reported values assembled from one capture's own
+# lines (origin CONSTRUCTED, value identity REPORTED), each scoped to one surface and schema and
+# source-generic (every authorised source of its surface), like the entries it combines.
+constructions:
+  - rule_id: capmkt.profit_before_tax_incl_associates
+    surface: NSE_XBRL_INSTANCE
+    schema_identity: http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt
+    canonical_id: profit_before_tax_incl_associates
+    operands:
+      - {name: pbt, mapping_entry_id: capmkt.profit_before_tax}
+      - {name: associates, mapping_entry_id: capmkt.share_of_profit_associates_jv}
+    expression:
+      op: ADD
+      args: [{op: OPERAND, operand: pbt}, {op: OPERAND, operand: associates}]
+    evidence_ref: >-
+      X-Q2 (sha256 90baae0b) OneD: ProfitBeforeTax 3,405,600,000 + ShareOfProfitLossOfAssociates...
+      -300,000 = 3,405,300,000 = SegmentProfitBeforeTax and PDF p3 line 9 "Profit before tax (7+8)"
+      340.53 crore; the instance files no separate after-associates PBT element.
+  - rule_id: bsefin.profit_before_tax_incl_associates
+    surface: NSE_XBRL_INSTANCE
+    schema_identity: http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin
+    canonical_id: profit_before_tax_incl_associates
+    operands:
+      - {name: pbt, mapping_entry_id: bsefin.profit_before_tax}
+      - {name: associates, mapping_entry_id: bsefin.share_of_profit_associates_jv}
+    expression:
+      op: ADD
+      args: [{op: OPERAND, operand: pbt}, {op: OPERAND, operand: associates}]
+    evidence_ref: >-
+      Same SEBI results arithmetic in in-bse-fin: FY25 Q2 (sha256 c44ac376) OneD ProfitBeforeTax
+      256.70 crore + share of associates = SegmentProfitBeforeTax 256.72 = PDF Q2 FY25 column line 9
+      256.73 within precision.
+  - rule_id: pdf.tax_expense
+    surface: NSE_RESULTS_PDF
+    schema_identity: sebi-lodr-results-layout
+    canonical_id: tax_expense
+    operands:
+      - {name: current, mapping_entry_id: pdf.current_tax}
+      - {name: deferred, mapping_entry_id: pdf.deferred_tax}
+      - {name: earlier_years, mapping_entry_id: pdf.tax_earlier_years, dash_rule_id: apar-pdf-tax-earlier-years-dash}
+    expression:
+      op: ADD
+      args: [{op: OPERAND, operand: current}, {op: OPERAND, operand: deferred}, {op: OPERAND, operand: earlier_years}]
+    evidence_ref: >-
+      Inventory section 2 tax_expense: the Apar PDF prints no total, only (a) current tax, (b) deferred
+      tax and (c) current tax in respect of earlier years. Q2 FY26 (sha256 8be1b8de) p3 quarter
+      column 89.13 + (0.30) + "-" = 88.83 crore = X-Q2 TaxExpense OneD; Q2 FY25 column 63.45 + (1.28)
+      + 0.68 = 62.85 crore = FY25 Q2 in-bse-fin TaxExpense OneD 628,500,000.

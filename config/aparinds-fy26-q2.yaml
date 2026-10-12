@@ -62,6 +62,17 @@ pdf_parse:
   label_overrides:
     # The scanned text layer garbles "Profit" in some quarters ("rroft after tax").
     ProfitLossForPeriod: ["Profit after tax", "after tax"]
+  statement_pages:
+    # The text layer of page 6 of the results PDF (SHA-256 8be1b8de…4ae5) prints the
+    # balance-sheet unit as "(Rs. in crones)": declared as an exact variant, never
+    # matched fuzzily. Without it those rows carry no unit.
+    BALANCE_SHEET:
+      unit_markers:
+        - text: "Rs. in crones"
+          scope: "PAGE"
+          raw_unit: "INR"
+          raw_scale: 7
+          value_kind: "CURRENCY_AMOUNT"
 
 concepts:
   # Apar tags ProfitBeforeTax AFTER exceptional items but BEFORE the share of

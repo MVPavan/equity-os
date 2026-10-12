@@ -1,0 +1,31 @@
+# Normalisation policy v1 (D1a Task 5). A raw value becomes exact base units as value x 10^raw_scale
+# with the mapping entry's sign; a raw unit means exactly one value kind and currency. A row whose
+# raw unit is not listed, or means another value kind than its canonical row, is INVALID
+# (UNIT_MISMATCH). Dash rules are construction-scoped: a printed dash contributes exact zero to the
+# named operand of the named construction only; the dash occurrence's own interpretation keeps no
+# value (data spec section 1, Missing-value states).
+version: v1
+units:
+  - raw_unit: "iso4217:INR"
+    value_kind: CURRENCY_AMOUNT
+    currency: INR
+    evidence_ref: "XBRL unit INR (measure iso4217:INR), every retained Apar instance"
+  - raw_unit: "iso4217:INR/xbrli:shares"
+    value_kind: PER_SHARE_AMOUNT
+    currency: INR
+    evidence_ref: "XBRL unit INRPerShare (iso4217:INR divided by xbrli:shares), every retained Apar instance"
+  - raw_unit: INR
+    value_kind: CURRENCY_AMOUNT
+    currency: INR
+    evidence_ref: "PDF printed unit 'Rs. in crores' (Task 11 unit marker, raw scale 7)"
+  - raw_unit: INR per share
+    value_kind: PER_SHARE_AMOUNT
+    currency: INR
+    evidence_ref: "PDF EPS heading 'Earnings per share (EPS) (Rs.)' (Task 11 unit marker, raw scale 0)"
+dash_rules:
+  - rule_id: apar-pdf-tax-earlier-years-dash
+    construction_rule_id: pdf.tax_expense
+    operand_name: earlier_years
+    evidence_ref: >-
+      Q2 FY26 results PDF (sha256 8be1b8de) p3 quarter column: (a) 89.13 + (b) (0.30) with (c)
+      printed "-" equals X-Q2 TaxExpense 88.83 crore, so the printed dash reads as zero in this sum.

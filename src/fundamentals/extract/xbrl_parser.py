@@ -28,6 +28,7 @@ from typing import Any
 from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -617,3 +618,169 @@ def select_observation(
         f"{period_start}..{period_end or period_instant}, dims={dimensions}) "
         f"matched {len(matches)} observations, expected exactly 1"
     )
+
+
+# --- raw fact iteration (D1a Task 5: lossless occurrences) ---------------------
+
+_XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
+_NIL_TRUE = frozenset({"true", "1"})
+
+
+class UnsupportedTaxonomyError(XbrlParseError):
+    """The instance declares no scope tag under any registered taxonomy."""
+
+
+class RawXbrlPeriod(BaseModel):
+    """A context's ``xbrli:period`` exactly as written."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start: str | None = None
+    end: str | None = None
+    instant: str | None = None
+
+
+class RawXbrlFact(BaseModel):
+    """One fact as filed: raw text, nil flag, precision, unit, context and dimensions.
+
+    ``namespace_uri`` is the element's own namespace (the prefix is only a local alias).
+    ``period`` is after the declared-period repair; ``raw_period`` is as written and
+    ``period_declaration`` names the declaration facts (start concept, end concept)
+    that set ``period``, so the repair stays auditable.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    fact_id: str | None
+    concept_qname: str
+    namespace_uri: str | None
+    context_ref: str
+    raw_text: str | None
+    is_nil: bool
+    is_numeric: bool
+    decimals_raw: str | None
+    unit_measure: str | None
+    entity_scheme: str
+    entity_id: str
+    raw_period: RawXbrlPeriod
+    period: PeriodInterval
+    period_declaration: tuple[str, str] | None
+    dimensions: tuple[tuple[str, str], ...]
+    document_order: int
+
+
+class RawXbrlInstance(BaseModel):
+    """Every fact of an instance with its taxonomy, schema identity and file scope."""
+
+    model_config = ConfigDict(frozen=True)
+
+    taxonomy: TaxonomySpec
+    schema_identity: str
+    scope: Scope
+    facts: tuple[RawXbrlFact, ...]
+
+
+def _raw_periods(root: Any) -> dict[str, RawXbrlPeriod]:
+    """Each context's period text exactly as written."""
+    periods: dict[str, RawXbrlPeriod] = {}
+    for element in root.findall(f"{_XBRLI}context"):
+        context_id = element.get("id")
+        period = element.find(f"{_XBRLI}period")
+        if context_id is None or period is None:
+            continue
+
+        def _text(tag: str, container: Any = period) -> str | None:
+            node = container.find(f"{_XBRLI}{tag}")
+            return None if node is None else (node.text or "").strip()
+
+        periods[context_id] = RawXbrlPeriod(
+            start=_text("startDate"), end=_text("endDate"), instant=_text("instant")
+        )
+    return periods
+
+
+def iter_raw_facts(
+    xml_bytes: bytes, *, taxonomies: tuple[TaxonomySpec, ...] = DEFAULT_TAXONOMIES
+) -> RawXbrlInstance:
+    """Read every context-bound fact of an instance without dropping or normalising any.
+
+    Reuses the parser's context, unit, taxonomy and scope helpers and the
+    declared-period repair. Raises :class:`UnsupportedTaxonomyError` when no
+    registered taxonomy's scope tag is present, and :class:`XbrlParseError` for a
+    malformed instance, an unreadable context date or period, or a fact whose context
+    does not resolve.
+    """
+    try:
+        root = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError as exc:
+        raise XbrlParseError(f"instance is not well-formed XML: {exc}") from exc
+    try:
+        return _raw_instance(root, taxonomies)
+    except ValueError as exc:
+        # Context dates and periods are parsed with date.fromisoformat and validated models;
+        # a malformed one is a parse failure of this instance, never an escaping ValueError.
+        raise XbrlParseError(f"instance has an unreadable context: {exc}") from exc
+
+
+def _raw_instance(root: Any, taxonomies: tuple[TaxonomySpec, ...]) -> RawXbrlInstance:
+    """Every context-bound fact of a parsed instance (see :func:`iter_raw_facts`)."""
+    if not any(
+        root.find(f"{{{spec.namespace}}}{spec.scope_concept}") is not None for spec in taxonomies
+    ):
+        raise UnsupportedTaxonomyError("instance declares no scope tag under a registered taxonomy")
+    spec = _detect_taxonomy(root, taxonomies)
+    raw_contexts = _parse_contexts(root)
+    declared = _declared_reporting_periods(root, spec)
+    contexts = _apply_declared_periods(raw_contexts, declared)
+    raw_periods = _raw_periods(root)
+    units = _parse_units(root)
+    scope = _file_scope(root, spec)
+    declaration = (
+        f"{spec.prefix}:{spec.reporting_period_start_concept}",
+        f"{spec.prefix}:{spec.reporting_period_end_concept}",
+    )
+    facts: list[RawXbrlFact] = []
+    for order, element in enumerate(root.iter()):
+        context_ref = element.get("contextRef") if isinstance(element.tag, str) else None
+        if context_ref is None:
+            continue
+        context = contexts.get(context_ref)
+        if context is None:
+            raise XbrlParseError(f"fact {element.tag} references unknown context {context_ref!r}")
+        is_nil = (element.get(_XSI_NIL) or "").strip().lower() in _NIL_TRUE
+        unit_ref = element.get("unitRef")
+        qname = etree.QName(element)
+        local = qname.localname
+        prefix = element.prefix or qname.namespace
+        repaired = context_ref in declared and context.period_type is PeriodType.DURATION
+        facts.append(
+            RawXbrlFact(
+                fact_id=element.get("id"),
+                concept_qname=f"{prefix}:{local}",
+                namespace_uri=qname.namespace,
+                context_ref=context_ref,
+                raw_text=None if is_nil else (element.text or ""),
+                is_nil=is_nil,
+                is_numeric=unit_ref is not None,
+                decimals_raw=element.get("decimals"),
+                unit_measure=None if unit_ref is None else units.get(unit_ref),
+                entity_scheme=context.entity_scheme,
+                entity_id=context.entity_id,
+                raw_period=raw_periods[context_ref],
+                period=_period_interval(context),
+                period_declaration=declaration if repaired else None,
+                dimensions=context.dimensions,
+                document_order=order,
+            )
+        )
+    return RawXbrlInstance(
+        taxonomy=spec, schema_identity=spec.namespace, scope=scope, facts=tuple(facts)
+    )
+
+
+def _period_interval(context: _XbrlContext) -> PeriodInterval:
+    """The context's (repaired) period as a measurement-key interval."""
+    if context.period_instant is not None:
+        return PeriodInterval.at(context.period_instant)
+    assert context.period_start is not None and context.period_end is not None
+    return PeriodInterval.duration(context.period_start, context.period_end)

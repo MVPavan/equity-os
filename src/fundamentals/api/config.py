@@ -17,6 +17,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from fundamentals.contracts.canonical import StatementFamily
 from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.source_catalog import SourceClass
@@ -31,6 +32,7 @@ from fundamentals.extract.pdf_number_parser import (
     PdfTargetLine,
     SubcomponentSummation,
 )
+from fundamentals.extract.pdf_statement_pages import UnitMarker
 
 _DEFAULT_XBRL_ALIASES: dict[str, str] = {
     "http://www.nseindia.com/NSESymbol": "nse-symbol",
@@ -43,6 +45,7 @@ _DEFAULT_TAXONOMY_PREFIX = "in-bse-fin"
 _UNKNOWN_OVERRIDE_ERROR = (
     "pdf_parse.label_overrides key {key!r} matches no configured target-line concept"
 )
+_UNKNOWN_FAMILY_ERROR = "pdf_parse.statement_pages key {key!r} is not a statement family"
 
 
 class XbrlMode(StrEnum):
@@ -234,6 +237,21 @@ _DEFAULT_PDF_TARGET_LINES: tuple[PdfTargetLine, ...] = (
 )
 
 
+class StatementMarkersConfig(BaseModel):
+    """Issuer marker overrides for one statement family's page discovery.
+
+    A non-empty marker tuple replaces that family's defaults; unit markers are added
+    to the defaults as exact printed variants, each evidenced in the issuer config.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    title_markers: tuple[str, ...] = ()
+    confirmations: tuple[str, ...] = ()
+    end_markers: tuple[str, ...] = ()
+    unit_markers: tuple[UnitMarker, ...] = ()
+
+
 class PdfParseConfig(BaseModel):
     """Per-issuer PDF-parse settings; defaults suit an Ind-AS in-bse-fin filer."""
 
@@ -257,14 +275,20 @@ class PdfParseConfig(BaseModel):
     # Extra printed labels per concept LOCAL name, appended to that concept's
     # default labels (the defaults keep precedence).
     label_overrides: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    # Statement-page marker overrides keyed by statement family (D1a Task 11).
+    statement_pages: dict[str, StatementMarkersConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _reject_unknown_overrides(self) -> PdfParseConfig:
-        """Fail closed on an override key naming no configured target line."""
+        """Fail closed on an override key naming no configured target line or family."""
         known = {_local_name(line.concept_qname) for line in self.target_lines}
         for key in self.label_overrides:
             if key not in known:
                 raise ValueError(_UNKNOWN_OVERRIDE_ERROR.format(key=key))
+        families = {family.value for family in StatementFamily}
+        for key in self.statement_pages:
+            if key not in families:
+                raise ValueError(_UNKNOWN_FAMILY_ERROR.format(key=key))
         return self
 
     @property

@@ -42,7 +42,8 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-EXPECTED_TABLE_COUNT = 33
+# 0001's 33 tables plus 0003's version_pins.
+EXPECTED_TABLE_COUNT = 34
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -419,6 +420,9 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
     )
     ids["definition_sets"] = definition_set = _insert(
         conn, "definition_sets", {"version": "v1", "content_sha256": SHA_A}
+    )
+    ids["version_pins"] = _insert(
+        conn, "version_pins", {"artifact": "mapping_set", "version": "v1", "content_sha256": SHA_A}
     )
     ids["definition_records"] = record = _insert(
         conn,
