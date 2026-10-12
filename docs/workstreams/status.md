@@ -1,6 +1,6 @@
 <!-- BD:GENERATED START -->
 # Workstream Status (global)
-_generated from bd @ 2026-10-12T10:01:11Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
+_generated from bd @ 2026-10-12T11:09:57Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
 
 ### (no anchor)
 - **Fundamentals Apar Industries pilot build (Phase 0.5)** — 13/15  ⏳
@@ -12,8 +12,8 @@ _generated from bd @ 2026-10-12T10:01:11Z — DO NOT EDIT (run: BD_RENDER=1 bash
 - **Phase 0A evidence program** — 5/5  ✅ DONE
 
 ### docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
-- **[D1a] Canonical comparison tracer** — 1/7  ⏳
-- **[D1b] Vendors, corroboration, queue and Stage 1 acceptance** — 0/6  ⏳
+- **[D1a] Canonical comparison tracer** — 2/7  ⏳
+- **[D1b] Vendors, corroboration, queue and Stage 1 acceptance** — 0/7  ⏳
 - **[D2] Legacy store migration and cutover** — 0/8  ⏳
 - **[D6] Identifier-only onboarding** — 0/6  ⏳
 - **[D8] Shareholding filing source** — 0/5  ⏳
@@ -36,7 +36,7 @@ _generated from bd @ 2026-10-12T10:01:11Z — DO NOT EDIT (run: BD_RENDER=1 bash
 - `eqos-kx4.5` Phase 4: full breadth via capability registry
 - `eqos-7qe` Screener watchlist export: industry and industry group remain the export's word alone (no third source)
 - `eqos-720` Tracking renderer skips workstreams whose spec_id is outside docs/workstreams/ (data-foundation tracking/ stays empty)
-- `eqos-3f9.2` [D1a.2] Canonical dictionary v1, applicability rules and loader
+- `eqos-3f9.3` [D1a.3] Formula, interval and period-aggregation engine
 - `eqos-8zl` capture an empty company timeline to establish the verified-empty marker
 - `eqos-s02` entity map: Screener warehouse ids are not in the identifier namespace set
 - `eqos-mv8` entity map: the S1 anchor uses JSON_ISLAND for a JSON artifact read from disk
