@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from fractions import Fraction
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,6 +26,7 @@ from fundamentals.canon.dictionary import (
 )
 from fundamentals.canon.formula import (
     CalculationResult,
+    CalculationTrace,
     OperandValue,
     aggregate_members,
     average_operand,
@@ -40,9 +42,19 @@ from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.qualification import QualificationContext
 from fundamentals.evidence.alignment import AlignmentProof
-from fundamentals.evidence.repository import EvidenceRepository, SegmentMemberRecord
+from fundamentals.evidence.repository import SegmentMemberRecord
 
 Resolve = Callable[[MeasurementKey, TemporalRole], KeySelection]
+
+
+@runtime_checkable
+class TraceStore(Protocol):
+    """Where evaluated traces go: the repository, or a run replay's read-only trace index."""
+
+    def put_calculation_trace(self, trace: CalculationTrace) -> int:
+        """Store (or find) one trace by content hash and return its id."""
+        ...
+
 
 _NO_FORMULA = "row {canonical_id!r} has no formula"
 _NO_MEMBERS = "no evidenced {axis!r} member is valid for {period}"
@@ -66,7 +78,7 @@ class DerivedSide(BaseModel):
 class _Evaluation(BaseModel):
     """What every nested evaluation of one derived side shares.
 
-    Process-local only: it carries the repository (not a Pydantic model), so arbitrary
+    Process-local only: it carries the trace store (not a Pydantic model), so arbitrary
     types are allowed here and nowhere else in this module; it never crosses a boundary.
     """
 
@@ -76,7 +88,7 @@ class _Evaluation(BaseModel):
     proofs: tuple[AlignmentProof, ...]
     qualification: QualificationContext
     policy: RoundingPolicy
-    repository: EvidenceRepository
+    repository: TraceStore
     dictionary: CanonicalDictionary
     reporting_currency: str
     segment_members: tuple[SegmentMemberRecord, ...]
@@ -131,7 +143,7 @@ def evaluate_derived(
     proofs: Sequence[AlignmentProof],
     qualification: QualificationContext,
     policy: RoundingPolicy,
-    repository: EvidenceRepository,
+    repository: TraceStore,
     dictionary: CanonicalDictionary,
     reporting_currency: str,
     segment_members: Sequence[SegmentMemberRecord] = (),

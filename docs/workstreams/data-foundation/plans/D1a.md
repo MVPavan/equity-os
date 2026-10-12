@@ -1827,3 +1827,17 @@ re-review moves to the D1a phase-end review.
   ~1 s about once a minute, which inverted knowledge-time order (intermittent "no evidenced fiscal-year-end month").
   `eqos.store_now()` is strictly increasing; every knowledge-time column defaults to it; `store_clock()` and capture
   registration use it. Wall clock remains only where no store knowledge time is involved.
+
+## Stage 6 build notes (Task 9, as built 2026-10-12; orchestrator-verified)
+
+- Run SQL lives in `compare/run_store.py` (800-line cap); `resolve` takes the store.
+- Replay reloads every artifact at its pinned version and refuses changed content, except extractor pins, which are
+  used as stored (replay never re-extracts).
+- Enum round trip covers runs, run versions, run inputs, results, source values and pairs; `pair_adjustments` is not
+  exercised (D1a publishes no definition records).
+- The retained FY26 Q4 XBRL uses the SEBI 2026-01-31 taxonomy, outside mapping set v1 → `UNSUPPORTED_SCHEMA`; the Q4
+  PDF revenue rows come out `INVALID`. The Q4 period-aggregation test uses a namespace-rewritten copy in tmp (facts
+  unchanged): FY 229,021,200,000 − 9M 162,993,200,000 = 66,028,000,000 vs reported Q4 66,028,100,000.
+- Fail-closed: missing fiscal-year-end month or basis status, a non-quarter-end period, or not exactly one evidenced
+  currency → error, nothing published; opening-balance operands `UNAVAILABLE`; shareholding and deprecated rows
+  skipped; dimensioned rows only for evidenced member sets.

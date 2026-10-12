@@ -1,0 +1,243 @@
+"""Fiscal periods and attempt-to-state for one run (D1a Task 9).
+
+Attempt-to-state is decided per (entity, period end, basis, representation, statement family)
+before member presence: a failed or missing attempt imposes ``UNAVAILABLE`` or ``INVALID``
+whatever the package holds, so a failed read is never reported as absence.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from datetime import date, datetime, timedelta
+
+from fundamentals.compare.engine_rows import Cell
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome, outcome_source_state
+from fundamentals.contracts.canonical import Representation, StatementFamily
+from fundamentals.contracts.comparison import SelectionSource, SourceState
+from fundamentals.contracts.evidence import (
+    AcquisitionAttempt,
+    AttemptStage,
+    FilingPackage,
+    InterpretationTriple,
+    KeySelection,
+    RunMode,
+)
+from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.evidence.selection import NOT_EXTRACTED_UNDER_PINS, period_end
+
+_ONE_DAY = timedelta(days=1)
+_MONTHS = 12
+_QUARTER_MONTHS = 3
+_NOT_MONTH_END = "period end {period_end} is not a month end"
+_NOT_QUARTER_END = "period end {period_end} is not a fiscal quarter end for year-end month {month}"
+
+
+class RunResolutionError(RuntimeError):
+    """A run cannot be resolved from the evidence it may read (fail closed, nothing stored)."""
+
+
+def fiscal_periods(period_end_: date, fiscal_year_end_month: int) -> tuple[PeriodInterval, ...]:
+    """The fiscal quarter ending at ``period_end_`` and the fiscal year-to-date, if longer."""
+    if (period_end_ + _ONE_DAY).day != 1:
+        raise RunResolutionError(_NOT_MONTH_END.format(period_end=period_end_))
+    months = (period_end_.month - fiscal_year_end_month) % _MONTHS or _MONTHS
+    if months % _QUARTER_MONTHS:
+        raise RunResolutionError(
+            _NOT_QUARTER_END.format(period_end=period_end_, month=fiscal_year_end_month)
+        )
+    quarter = PeriodInterval.duration(_month_start(period_end_, _QUARTER_MONTHS - 1), period_end_)
+    year_to_date = PeriodInterval.duration(_month_start(period_end_, months - 1), period_end_)
+    return (quarter,) if quarter == year_to_date else (quarter, year_to_date)
+
+
+def attempt_available(
+    attempt: AcquisitionAttempt, *, cutoff: datetime, mode: RunMode, extractor: str
+) -> bool:
+    """Availability under a cutoff, mode and pinned extractor (data spec l.400–407).
+
+    Acquisition attempts by ``attempted_at`` in both modes; extraction attempts only under
+    the pinned extractor, by ``attempted_at`` in ``AS_KNOWN`` and by capture eligibility in
+    ``RETROSPECTIVE``.
+    """
+    attempted_at = attempt.attempted_at
+    assert attempted_at is not None
+    if attempt.stage is AttemptStage.ACQUISITION:
+        return attempted_at <= cutoff
+    if attempt.extractor_version != extractor:
+        return False
+    if mode is RunMode.AS_KNOWN:
+        return attempted_at <= cutoff
+    return attempt.capture is not None and attempt.capture.first_seen_at <= cutoff
+
+
+class AttemptStates:
+    """The state an attempt imposes on one request side (data spec l.353, 400–425)."""
+
+    def __init__(
+        self,
+        attempts: Sequence[AcquisitionAttempt],
+        *,
+        member_captures: Iterable[int],
+        cutoff: datetime,
+        mode: RunMode,
+        triple: InterpretationTriple,
+    ) -> None:
+        self._attempts = tuple(attempts)
+        self._member_captures = frozenset(member_captures)
+        self._cutoff = cutoff
+        self._mode = mode
+        self._triple = triple
+
+    def state(
+        self,
+        key: MeasurementKey,
+        representation: Representation,
+        family: StatementFamily,
+        package: FilingPackage | None,
+    ) -> Cell | None:
+        """The imposed cell, or ``None`` when selection decides.
+
+        First match wins: a failed latest acquisition with no member; a non-``COMPLETE``
+        overall attempt of the latest pinned-extractor generation; a non-``COMPLETE``
+        family attempt in that generation; a member with no available generation.
+        """
+        member = None if package is None else package.members.get(representation)
+        candidates = [
+            attempt
+            for attempt in self._attempts
+            if self._candidate(attempt, key, representation, package)
+        ]
+        acquisitions = [item for item in candidates if item.stage is AttemptStage.ACQUISITION]
+        if member is None and acquisitions:
+            latest = max(acquisitions, key=_attempt_order)
+            if latest.outcome is not ExtractionOutcome.COMPLETE:
+                return _imposed(key, representation, package, latest)
+        extractions = [item for item in candidates if item.stage is AttemptStage.EXTRACTION]
+        overall = [item for item in extractions if item.statement_family is None]
+        if overall:
+            generation = max(overall, key=_attempt_order)
+            if generation.outcome is not ExtractionOutcome.COMPLETE:
+                return _imposed(key, representation, package, generation)
+            failed = [
+                item
+                for item in extractions
+                if item.statement_family is family
+                and _capture_id(item) == _capture_id(generation)
+                and item.attempted_at == generation.attempted_at
+                and item.outcome is not ExtractionOutcome.COMPLETE
+            ]
+            if failed:
+                return _imposed(key, representation, package, min(failed, key=_attempt_order))
+        elif member is not None:
+            return Cell(
+                selection=bare_selection(
+                    key,
+                    representation,
+                    SourceState.UNAVAILABLE,
+                    package=package,
+                    reason=NOT_EXTRACTED_UNDER_PINS,
+                ),
+                attempt_id=None,
+            )
+        return None
+
+    def _candidate(
+        self,
+        attempt: AcquisitionAttempt,
+        key: MeasurementKey,
+        representation: Representation,
+        package: FilingPackage | None,
+    ) -> bool:
+        """Whether an attempt may decide this request side."""
+        if (
+            attempt.entity_id != key.entity_id
+            or attempt.period_end != period_end(key.period)
+            or attempt.basis is not key.basis
+            or attempt.framework is not key.framework
+            or attempt.representation is not representation
+            or not attempt_available(
+                attempt,
+                cutoff=self._cutoff,
+                mode=self._mode,
+                extractor=self._triple.extractor(representation),
+            )
+        ):
+            return False
+        member = None if package is None else package.members.get(representation)
+        own_package = package is not None and attempt.package_id == package.package_id
+        if member is not None:
+            capture = member.capture
+            return (
+                attempt.source_id == capture.source_id
+                and attempt.surface == capture.surface
+                and (own_package or _capture_id(attempt) == capture.capture_ref_id)
+            )
+        if own_package:
+            return True
+        captured = _capture_id(attempt)
+        return attempt.package_id is None and (
+            captured is None or captured not in self._member_captures
+        )
+
+
+def _imposed(
+    key: MeasurementKey,
+    representation: Representation,
+    package: FilingPackage | None,
+    attempt: AcquisitionAttempt,
+) -> Cell:
+    """A cell whose state the attempt's outcome decides."""
+    state = outcome_source_state(attempt.outcome)
+    assert state is not None
+    return Cell(
+        selection=bare_selection(
+            key, representation, state, package=package, reason=attempt.outcome.value
+        ),
+        attempt_id=attempt.attempt_id,
+    )
+
+
+def _month_start(day: date, months_back: int) -> date:
+    """The first day of the month ``months_back`` months before ``day``'s month."""
+    index = day.year * _MONTHS + day.month - 1 - months_back
+    return date(index // _MONTHS, index % _MONTHS + 1, 1)
+
+
+def nine_months(periods: tuple[PeriodInterval, ...]) -> PeriodInterval:
+    """The fiscal year's first nine months, given (Q4, FY)."""
+    quarter, year = periods
+    assert quarter.start is not None and year.start is not None
+    return PeriodInterval.duration(year.start, quarter.start - _ONE_DAY)
+
+
+def _attempt_order(attempt: AcquisitionAttempt) -> tuple[datetime, int]:
+    """Attempts by time, then id."""
+    assert attempt.attempted_at is not None
+    return attempt.attempted_at, attempt.attempt_id or 0
+
+
+def _capture_id(attempt: AcquisitionAttempt) -> int | None:
+    """The capture an attempt read, if any."""
+    return None if attempt.capture is None else attempt.capture.capture_ref_id
+
+
+def bare_selection(
+    key: MeasurementKey,
+    representation: Representation,
+    state: SourceState,
+    *,
+    package: FilingPackage | None = None,
+    reason: str | None = None,
+) -> KeySelection:
+    """A selection decided without reading an interpretation."""
+    return KeySelection(
+        key=key,
+        representation=representation,
+        state=state,
+        interpretation=None,
+        package_id=None if package is None else package.package_id,
+        source=SelectionSource.PACKAGE_AS_REPORTED,
+        reason=reason,
+        considered_interpretation_ids=(),
+        surfaced_restatements=(),
+    )

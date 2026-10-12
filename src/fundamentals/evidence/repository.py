@@ -21,6 +21,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
+from fundamentals.compare.definitions import DefinitionSet, read_definition_set
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import Basis, StatementFamily
 from fundamentals.contracts.evidence import (
@@ -560,6 +561,11 @@ class EvidenceRepository:
         """Stored attempts by id."""
         found = self._fetch(rows_sql.ATTEMPTS_BY_ID, (list(ids),))
         return tuple(rows_sql.attempt_of(row) for row in found)
+
+    def get_definition_set(self, definition_set_id: int) -> DefinitionSet:
+        """One published definition set with its records (Task 9 replay)."""
+        with self._pool.connection() as conn:
+            return read_definition_set(conn, definition_set_id)
 
     # --- alignment proofs and calculation traces (Task 7) ----------------------------
 

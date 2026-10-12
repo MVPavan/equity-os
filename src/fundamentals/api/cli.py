@@ -23,6 +23,7 @@ import structlog
 from fundamentals.api.artifact_writer import write_bytes_no_clobber
 from fundamentals.api.cli_parser import REGISTER_SOURCES_COMMAND
 from fundamentals.api.cli_parser import build_parser as _build_parser
+from fundamentals.api.compare_cli import dispatch_compare_command
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.db_cli import dispatch_db_command
 from fundamentals.api.entity_map_cli import (
@@ -306,6 +307,10 @@ def main(
     evidence_exit_code = dispatch_evidence_command(args)
     if evidence_exit_code is not None:
         return evidence_exit_code
+
+    compare_exit_code = dispatch_compare_command(args)
+    if compare_exit_code is not None:
+        return compare_exit_code
 
     news_exit_code = dispatch_news_command(args)
     if news_exit_code is not None:

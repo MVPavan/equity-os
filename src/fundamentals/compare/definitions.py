@@ -29,6 +29,14 @@ _INSERT_SET = (
     "ON CONFLICT (version) DO NOTHING RETURNING id"
 )
 _SELECT_SET = "SELECT id, content_sha256 FROM eqos.definition_sets WHERE version = %s"
+_SET_BY_ID = "SELECT version, content_sha256 FROM eqos.definition_sets WHERE id = %s"
+_RECORDS_OF_SET = (
+    "SELECT record_id, scope, mapping_entry_id, key_digest, package_id, canonical_id, "
+    "operand_name, evidence_ref, explained_amount, unit FROM eqos.definition_records "
+    "WHERE definition_set_id = %s ORDER BY id"
+)
+_RECORD_IDS = "SELECT id, record_id FROM eqos.definition_records WHERE definition_set_id = %s"
+_NO_SET = "definition set {set_id} is not published"
 _INSERT_RECORD = (
     "INSERT INTO eqos.definition_records (definition_set_id, record_id, scope, mapping_entry_id, "
     "key_digest, package_id, canonical_id, operand_name, evidence_ref, explained_amount, unit) "
@@ -142,6 +150,41 @@ def publish_definition_set(conn: psycopg.Connection, definition_set: DefinitionS
         for definition in definition_set.records:
             conn.execute(_INSERT_RECORD, (set_id, *_record_columns(definition)))
         return set_id
+
+
+def read_definition_set(conn: psycopg.Connection, definition_set_id: int) -> DefinitionSet:
+    """A published set and its records, by id (an immutable read)."""
+    stored = conn.execute(_SET_BY_ID, (definition_set_id,)).fetchone()
+    if stored is None:
+        raise LookupError(_NO_SET.format(set_id=definition_set_id))
+    records = []
+    for row in conn.execute(_RECORDS_OF_SET, (definition_set_id,)).fetchall():
+        record_id, scope, mapping_entry_id, key_digest, package_id = row[:5]
+        canonical_id, operand_name, evidence_ref, amount, unit = row[5:]
+        scope_ref = {
+            DefinitionScope.MAPPING.value: mapping_entry_id,
+            DefinitionScope.MEASUREMENT.value: key_digest,
+            DefinitionScope.FILING.value: None if package_id is None else str(package_id),
+        }[scope]
+        records.append(
+            DefinitionRecord(
+                record_id=record_id,
+                scope=DefinitionScope(scope),
+                scope_ref=scope_ref,
+                canonical_id=canonical_id,
+                operand_name=operand_name,
+                evidence_ref=evidence_ref,
+                explained_amount=amount,
+                unit=ValueKind(unit),
+            )
+        )
+    return DefinitionSet(version=stored[0], content_sha256=stored[1], records=tuple(records))
+
+
+def definition_record_ids(conn: psycopg.Connection, definition_set_id: int) -> dict[str, int]:
+    """Stored row ids of a published set's records, by record id."""
+    rows = conn.execute(_RECORD_IDS, (definition_set_id,)).fetchall()
+    return {str(record_id): int(row_id) for row_id, record_id in rows}
 
 
 def _record_columns(definition: DefinitionRecord) -> tuple[object, ...]:
