@@ -12,6 +12,9 @@ Authoritative docs and when to read them.
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
 | `docs/plans/2026-10-11-completion-work-list.md` | **Choosing what to work on next** — owner-accepted, deduplicated priority list of all remaining work to full vision, with dependencies and bead mapping |
+| `docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md` | **Building the data foundation** — approved spec: canonical field dictionary, XBRL-vs-PDF extraction check, filing-vs-vendor corroboration, PostgreSQL store and legacy migration |
+| `docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md` | **Reports, memory, coverage and retention** — approved spec: report ledger and long-term memory in PostgreSQL, panel approvals, screen-to-watchlist coverage, retention/purge; amends the data spec |
+| `docs/research/vendor-terms-screener-tijori-2026-10.md` | **Before using Screener/Tijori data** — their terms on scraping, screens, retention; basis for the vendor retention window |
 | `.claude/rules/core/03-ak-guidelines.md` | Coding rules that reduce common LLM mistakes |
 | `.claude/rules/python/` | Writing any first-party Python (style, safety, testing) |
 | `.claude/commands/use-codex.md` | Any Codex invocation — authoritative rules and roles |

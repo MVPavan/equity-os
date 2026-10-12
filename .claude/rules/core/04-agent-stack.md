@@ -27,6 +27,22 @@ round is a fresh `delegate_task` with a lean brief — no transcripts or full pr
 round gets the artifact plus the findings list; a re-review round gets the artifact, its own prior
 findings list, and the fixes. Use a distinct `clientRequestId` per round.
 
+## Autonomous approval (owner, 2026-10-12)
+
+The owner does not approve specs, plans, source interpretations, report versions, memory
+promotions or routine decisions, and is never waited on for them. The owner reads finished
+reports and makes the financial decisions; they settle only escalated conflicts.
+
+- **Approval = independent corroboration.** At least two reviewers from different model families
+  (default `gpt-6.1-sol` high + `claude-fable-5-1` high) get the same artifact and brief, blind to
+  each other. Both approve → approved; record reviewers, verdicts and date as the approver.
+- **Disagreement** → one adjudication round by a third model (`gpt-6-astra` high) given both
+  outputs. Still conflicting → escalate to the owner with the specific point of conflict only.
+- Deterministic checks run first; models never compute or invent numbers (see `invariants.md`).
+- A review loop not converged after 3 rounds goes to the same panel to decide whether the residual
+  findings block; only a panel conflict reaches the owner.
+- Otherwise follow the orchestrator's stated recommendation without asking.
+
 ## When to review
 
 Only at critical points: a spec or plan, a significant implementation chunk (phase or major

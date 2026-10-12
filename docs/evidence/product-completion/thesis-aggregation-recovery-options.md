@@ -1,6 +1,6 @@
 # Apar thesis aggregation and recovery — decision options
 
-**Status: PROPOSED.** Prepared 2026-10-02 for `eqos-4j2.14`. No option is human-approved or implemented by this document.
+**Status: SUPERSEDED (2026-10-12).** The owner rule was adopted as monitoring policy v1 instead of options A–C: a breach opens a warning episode; later breaches while it is open join it; it clears after 3 consecutive non-breaching quarters; an analyst may close it early. See `eqos-4j2.14`.
 
 The [approved Q0 machine twin](../phase-0.5/q0-approved-thesis.yaml) explicitly leaves aggregation and recovery undefined. A quarter-level breach currently says `WEAKENED`; it does not decide whether the standing approved thesis recovers. Choose one policy below before implementing that distinction. These are workflow proposals, with no calibrated severity, probability, valuation or investment conclusion.
 
