@@ -38,6 +38,8 @@ reports and makes the financial decisions; they settle only escalated conflicts.
   each other. Both approve → approved; record reviewers, verdicts and date as the approver.
 - **Disagreement** → one adjudication round by a third model (`gpt-6-astra` high) given both
   outputs. Still conflicting → escalate to the owner with the specific point of conflict only.
+- A panel model unavailable after one retry (e.g. "at capacity") is replaced by `gpt-6-astra`
+  high, keeping the two reviewers in different families; note the substitution in the record.
 - Deterministic checks run first; models never compute or invent numbers (see `invariants.md`).
 - A review loop not converged after 3 rounds goes to the same panel to decide whether the residual
   findings block; only a panel conflict reaches the owner.
