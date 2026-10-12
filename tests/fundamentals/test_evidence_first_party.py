@@ -11,8 +11,33 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from fractions import Fraction
+from pathlib import Path
 
 import pytest
+import yaml
+from derived_support import (
+    ALIGNMENT_V1,
+    BSE_FIN,
+    FY25_Q4_END,
+    OPENING_CASH,
+    PROVEN,
+    SEGMENT_TOTAL,
+    SEGMENTS,
+    WITHHELD_OPENING_CASH,
+    WITHHELD_OTHERS,
+    WITHHELD_REVENUE,
+    PackageView,
+    historical_fallback,
+    marked_xbrl_package,
+    operands_by_name,
+    rounding,
+    scope_entry,
+    scope_formula,
+    temp_dictionary,
+    triple,
+    xbrl_scope,
+)
 from evidence_support import (
     CONFIG,
     FY25_Q2_QUARTER,
@@ -33,11 +58,13 @@ from evidence_support import (
     one,
     policy,
     rows_of,
+    temp_mapping,
 )
 from pydantic import BaseModel, ConfigDict
 from retained_support import APAR_MANIFEST, MarkedEdit
 
 from fundamentals.api.cli import main
+from fundamentals.canon.formula import average_operand
 from fundamentals.contracts.acquisition_outcome import (
     ExtractionOutcome,
     OutcomeCode,
@@ -46,17 +73,19 @@ from fundamentals.contracts.acquisition_outcome import (
     outcome_source_state,
 )
 from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, StatementFamily
-from fundamentals.contracts.comparison import SourceState
+from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
 from fundamentals.contracts.evidence import (
     InterpretationOrigin,
     InterpretationReason,
     InterpretationStatus,
+    KeySelection,
     MissingValueState,
 )
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.snapshot import BodyCompleteness
 from fundamentals.evidence.capture_intake import FiledAtFormatError, parse_filed_at
+from fundamentals.evidence.derived import operand_value
 from fundamentals.evidence.mapping import CONTEXT_LOCAL_NAME
 from fundamentals.evidence.xbrl_adapter import CONTEXT_MEMBER_DESCRIPTIONS
 
@@ -499,3 +528,244 @@ def test_extraction_outcome_translation(
         assert state is SourceState.NO_VALUE
     else:
         assert state is SourceState.UNAVAILABLE
+
+
+# --- Task 7: alignment proofs, scoped tiers, derived evaluation with stored traces --------
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_opm_q2_fy26_evaluates_to_8_06_with_a_stored_trace(ingest: Ingest) -> None:
+    """OPM per representation is the committed formula over filed lines, stored and re-read.
+
+    Expected value by hand from the filed crore lines (revenue 5,715.42; total expenses
+    5,402.29; finance costs 107.90; D&A 39.88): (5,715.42 - (5,402.29 - 107.90 - 39.88)) /
+    5,715.42 x 100 = 8.0643...%, stored at scale 2 as 8.06. Finance costs and D&A have no
+    alignment rule, so the effective tier stays unproven.
+    """
+    view = PackageView(ingest, ingest.run(ingest.intake()))
+    proofs = view.stored_proofs()
+    revenue, expenses, finance, amortisation = (
+        Fraction(57154200000),
+        Fraction(54022900000),
+        Fraction(1079000000),
+        Fraction(398800000),
+    )
+    expected = (revenue - (expenses - finance - amortisation)) / revenue * 100
+    for representation in (Representation.XBRL, Representation.PDF):
+        side = view.evaluate(
+            "opm_pct", Q2_QUARTER, representation, dictionary=ingest.dictionary, proofs=proofs
+        )
+        assert side.result.state is CalculationState.COMPUTED
+        assert side.result.exact == expected and side.result.value == Decimal("8.06")
+        (stored,) = ingest.repository.get_calculation_traces([side.trace_id])
+        trace = stored.trace
+        assert trace == side.result.trace and trace.value == Decimal("8.06")
+        assert (trace.formula_id, trace.formula_version, trace.rounding_policy_id) == (
+            "opm_pct",
+            "1",
+            "v1",
+        )
+        assert trace.effective_tier is EvidenceTier.EQUIVALENCE_UNPROVEN
+        top = operands_by_name(stored)
+        (ebitda,) = stored.children
+        (opex,) = ebitda.children
+        assert top["ebitda"].operand_trace_id == ebitda.trace_id
+        assert operands_by_name(ebitda)["opex"].operand_trace_id == opex.trace_id
+        selected = top["revenue"]
+        assert selected.scoped_tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED
+        assert selected.alignment_proof_id is not None
+        assert selected.selection_source is SelectionSource.PACKAGE_AS_REPORTED
+        opex_operands = operands_by_name(opex)
+        for name in ("finance_costs", "depreciation_amortisation"):
+            operand = opex_operands[name]
+            assert operand.scoped_tier is EvidenceTier.EQUIVALENCE_UNPROVEN
+            assert operand.alignment_proof_id is None and operand.interpretation_id
+            assert operand.lower <= operand.value <= operand.upper
+        print(f"OPM {representation.value}: {trace.value} (exact {trace.exact_value})")
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_alignment_proofs_are_per_key_and_per_member(ingest: Ingest, tmp_path: Path) -> None:
+    """Quarter and H1 keys are proven separately; a proof never names another key's rows."""
+    view = PackageView(ingest, ingest.run(ingest.intake()))
+    proofs = view.stored_proofs()
+    assert ingest.repository.list_alignment_proofs(view.package.package_id or 0) == proofs
+    holding = [proof for proof in proofs if proof.holds]
+    for canonical_id in PROVEN:
+        for period in (Q2_QUARTER, Q2_HALF):
+            (proof,) = [
+                p for p in holding if p.key.canonical_id == canonical_id and p.key.period == period
+            ]
+            participants = ingest.repository.get_interpretations(
+                [pid for pid, _ in proof.participants]
+            )
+            assert {(row.key.period, row.key.dimensions) for row in participants if row.key} == {
+                (period, proof.key.dimensions)
+            }
+    assert len({proof.proof_id for proof in holding}) == len(holding)
+    rules = yaml.safe_load(ALIGNMENT_V1.read_text(encoding="utf-8"))
+    rules["rules"].append(
+        {
+            "rule_id": "test.segment_revenue.layout",
+            "kind": "LAYOUT_POSITION",
+            "canonical_id": "segment_revenue",
+            "layout_anchor": {"XBRL": "capmkt.segment_revenue", "PDF": "pdf.segment_revenue"},
+            "evidence_ref": "temporary test rule",
+        }
+    )
+    path = tmp_path / "alignment-with-segments.yaml"
+    path.write_text(yaml.safe_dump(rules), encoding="utf-8")
+    segment = [p for p in view.stored_proofs(path) if p.key.canonical_id == "segment_revenue"]
+    by_member = {
+        dict(p.key.dimensions.pairs)["segment"]: p for p in segment if p.key.period == Q2_QUARTER
+    }
+    assert set(by_member) == set(SEGMENTS)
+    conductors, others = by_member["conductors"], by_member["others"]
+    assert conductors.proof_id != others.proof_id
+    for proof, member in ((conductors, "conductors"), (others, "others")):
+        rows = ingest.repository.get_interpretations([pid for pid, _ in proof.participants])
+        assert {dict(row.key.dimensions.pairs)["segment"] for row in rows if row.key} == {member}
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_receivable_days_reads_the_closing_instant(ingest: Ingest) -> None:
+    """H1 receivable days uses receivables at 2025-09-30, never the 2025-03-31 column."""
+    view = PackageView(ingest, ingest.run(ingest.intake()))
+    closing = view.key("trade_receivables_current", PeriodInterval.at(Q2_END), ingest.dictionary)
+    for representation in (Representation.XBRL, Representation.PDF):
+        side = view.evaluate(
+            "receivable_days", Q2_HALF, representation, dictionary=ingest.dictionary
+        )
+        assert side.result.exact == Fraction(45845600000, 108195800000) * 183
+        (stored,) = ingest.repository.get_calculation_traces([side.trace_id])
+        receivables = operands_by_name(stored)["receivables"]
+        chosen = view.select(closing, representation).interpretation
+        assert chosen is not None and chosen.key == closing
+        assert receivables.key_digest == closing.digest()
+        assert receivables.interpretation_id == chosen.interpretation_id
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_opening_cash_operand_source(ingest: Ingest) -> None:
+    """The H1 cash-flow opening balance is the package's own disclosure; without it, the
+    FY25 Q4 package supplies it as a historical package, with that package's row."""
+    view = PackageView(ingest, ingest.run(ingest.intake()))
+    key = view.key("cf_cash_closing", OPENING_CASH, ingest.dictionary)
+
+    def unused() -> KeySelection:
+        raise AssertionError("the package discloses its opening balance")
+
+    own = operand_value(view.opening(key, Representation.XBRL, unused), proofs=())
+    assert own.selection_source is SelectionSource.PACKAGE_OPENING_DISCLOSURE
+    assert own.value == Decimal("6864200000") and own.package_id == view.package.package_id
+    fy25_q4 = ingest.run(
+        ingest.intake({Representation.XBRL: "xbrl-consolidated-comparator"}, "FY25_Q4"), FY25_Q4_END
+    )
+    marked = marked_xbrl_package(ingest, WITHHELD_OPENING_CASH)
+    historical = PackageView(ingest, fy25_q4)
+
+    def fallback() -> KeySelection:
+        return historical_fallback(ingest, historical, key, marked.boundary)
+
+    used = operand_value(marked.opening(key, Representation.XBRL, fallback), proofs=())
+    expected = historical.select(key, Representation.XBRL).interpretation
+    assert expected is not None and used.interpretation_id == expected.interpretation_id
+    assert used.selection_source is SelectionSource.HISTORICAL_PACKAGE
+    assert used.package_id == fy25_q4.package_id
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_segment_total_and_average_child_traces(ingest: Ingest) -> None:
+    """The segment total aggregates every evidenced member in a stored child trace; a
+    withheld member leaves the total missing yet still listed; an average lists both instants."""
+    view = PackageView(ingest, ingest.run(ingest.intake()))
+    side = view.evaluate(
+        "segment_revenue_members_total",
+        Q2_QUARTER,
+        Representation.XBRL,
+        dictionary=ingest.dictionary,
+        dimensions=SEGMENT_TOTAL,
+    )
+    assert side.result.value == Decimal("60107900000.00") and len(side.bound_member_ids) == 4
+    marked = marked_xbrl_package(ingest, WITHHELD_OTHERS)
+    missing = marked.evaluate(
+        "segment_revenue_members_total",
+        Q2_QUARTER,
+        Representation.XBRL,
+        dictionary=ingest.dictionary,
+        dimensions=SEGMENT_TOTAL,
+    )
+    assert missing.result.state is CalculationState.OPERAND_MISSING and missing.result.value is None
+    for derived, withheld in ((side, set()), (missing, {"others"})):
+        (stored,) = ingest.repository.get_calculation_traces([derived.trace_id])
+        (child,) = stored.children
+        assert child.trace.trace_kind.value == "DIMENSIONAL_AGGREGATE"
+        assert {operand.name for operand in child.trace.operands} == set(SEGMENTS)
+        absent = {o.name for o in child.trace.operands if o.interpretation_id is None}
+        assert absent == withheld
+        assert all(
+            o.source_state is SourceState.NO_VALUE
+            for o in child.trace.operands
+            if o.name in withheld
+        )
+    opening = view.key("trade_receivables_current", OPENING_CASH, ingest.dictionary)
+    closing = opening.model_copy(update={"period": PeriodInterval.at(Q2_END)})
+    averaged = average_operand(
+        operand_value(view.select(opening, Representation.PDF), proofs=()),
+        operand_value(view.select(closing, Representation.PDF), proofs=()),
+        output=opening.model_copy(update={"period": Q2_HALF}),
+        policy=rounding(),
+    )
+    assert averaged.child_trace is not None
+    (stored,) = ingest.repository.get_calculation_traces(
+        [ingest.repository.put_calculation_trace(averaged.child_trace)]
+    )
+    assert [o.key_digest for o in stored.trace.operands] == [opening.digest(), closing.digest()]
+    assert all(o.interpretation_id is not None for o in stored.trace.operands)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_withheld_operand_gives_a_stored_missing_side(ingest: Ingest) -> None:
+    """No revenue line: OPM is ``OPERAND_MISSING`` with no value and still a stored trace."""
+    marked = marked_xbrl_package(ingest, WITHHELD_REVENUE)
+    side = marked.evaluate("opm_pct", Q2_QUARTER, Representation.XBRL, dictionary=ingest.dictionary)
+    assert side.result.state is CalculationState.OPERAND_MISSING
+    assert side.result.value is None and side.result.exact is None
+    (stored,) = ingest.repository.get_calculation_traces([side.trace_id])
+    assert stored.trace.state is CalculationState.OPERAND_MISSING and stored.trace.value is None
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_tiers_are_scoped_per_measurement(ingest: Ingest, tmp_path: Path) -> None:
+    """A demonstrated entry or formula outside its scope is unproven; a QUARTER-scoped
+    formula is demonstrated for the Q2 output and unproven for the H1 output."""
+
+    in_bse_fin = xbrl_scope("test-bse-only", ["CONSOLIDATED"], ["QUARTER", "HALF_YEAR"], BSE_FIN)
+    edit = scope_entry("capmkt.finance_costs", in_bse_fin)
+    scoped = temp_mapping(tmp_path, ingest.dictionary, edit, version="v1-scope")
+    view = PackageView(ingest, ingest.run(ingest.intake(XBRL_ONLY), mapping_set=scoped))
+    view.pins = triple("v1-scope")
+    finance_key = view.key("finance_costs", Q2_QUARTER, ingest.dictionary)
+    operand = operand_value(view.select(finance_key, Representation.XBRL), proofs=())
+    unproven = (EvidenceTier.EQUIVALENCE_UNPROVEN, None)
+    assert (operand.scoped_tier, operand.qualification_ref) == unproven
+    standalone_scope = xbrl_scope("test-standalone", ["STANDALONE"], ["QUARTER"])
+    standalone = temp_dictionary(tmp_path, scope_formula("opm_pct", standalone_scope))
+    quarter_scope = xbrl_scope("test-quarter", ["CONSOLIDATED"], ["QUARTER"])
+    quarter = temp_dictionary(tmp_path, scope_formula("opm_pct", quarter_scope))
+    out = view.evaluate("opm_pct", Q2_QUARTER, Representation.XBRL, dictionary=standalone)
+    assert (out.result.trace.formula_tier, out.result.trace.formula_qualification_ref) == unproven
+    q2 = view.evaluate("opm_pct", Q2_QUARTER, Representation.XBRL, dictionary=quarter).result.trace
+    h1 = view.evaluate("opm_pct", Q2_HALF, Representation.XBRL, dictionary=quarter).result.trace
+    assert (q2.formula_tier, q2.formula_qualification_ref) == (
+        EvidenceTier.EQUIVALENCE_DEMONSTRATED,
+        "test-quarter",
+    )
+    assert (h1.formula_tier, h1.formula_qualification_ref) == unproven

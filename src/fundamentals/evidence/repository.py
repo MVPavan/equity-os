@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, LiteralString
 
 import psycopg
@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.canon.formula import CalculationTrace, TraceOperand
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import Basis, StatementFamily
 from fundamentals.contracts.evidence import (
@@ -33,8 +34,11 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence import repository_calc as calc_sql
 from fundamentals.evidence import repository_rows as rows_sql
+from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.member_identity import IssuerIdentifiers
+from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.evidence.repository_rows import PackageStatementRecord, SegmentMemberWrite
 from fundamentals.pg.identity_seed import EvidenceInputKind, SettingKey
 
@@ -202,9 +206,12 @@ class EvidenceRepository:
     # --- writes ---------------------------------------------------------------------
 
     def store_clock(self) -> datetime:
-        """The store's own clock (``recorded_at`` is never a knowledge time)."""
+        """The store's monotonic clock in UTC (``recorded_at`` is never a knowledge time).
+
+        Strictly later on every call, even when the host wall clock steps backwards.
+        """
         clock: datetime = self._fetch(rows_sql.STORE_CLOCK, ())[0]["now"]
-        return clock
+        return clock.astimezone(UTC)
 
     def put_evidence_input(self, kind: EvidenceInputKind, label: str, content_sha256: str) -> int:
         """Record one evidence input, returning the stored id."""
@@ -553,6 +560,114 @@ class EvidenceRepository:
         """Stored attempts by id."""
         found = self._fetch(rows_sql.ATTEMPTS_BY_ID, (list(ids),))
         return tuple(rows_sql.attempt_of(row) for row in found)
+
+    # --- alignment proofs and calculation traces (Task 7) ----------------------------
+
+    def put_alignment_proofs(self, proofs: Sequence[AlignmentProof]) -> tuple[AlignmentProof, ...]:
+        """Record proofs with their participants, returning each with its stored id.
+
+        Participants are written only with a new proof row; a stored proof is returned as is.
+        """
+        stored: list[AlignmentProof] = []
+        with self._transaction() as conn:
+            for proof in proofs:
+                params = calc_sql.proof_params(proof)
+                inserted = _rows(conn, calc_sql.INSERT_PROOF, params)
+                if inserted:
+                    proof_id = int(inserted[0]["id"])
+                    for interpretation_id, representation in proof.participants:
+                        conn.execute(
+                            calc_sql.INSERT_PARTICIPANT,
+                            (proof_id, interpretation_id, representation.value),
+                        )
+                else:
+                    natural = (params[0], params[1], params[3], params[4], params[7])
+                    proof_id = _one_id(conn, calc_sql.SELECT_PROOF_ID, natural)
+                stored.append(proof.model_copy(update={"proof_id": proof_id}))
+        return tuple(stored)
+
+    def list_alignment_proofs(self, package_id: int) -> tuple[AlignmentProof, ...]:
+        """Every stored proof of one package."""
+        return self._proofs(self._fetch(calc_sql.PROOFS_OF_PACKAGE, (package_id,)))
+
+    def get_alignment_proofs(self, ids: Sequence[int]) -> tuple[AlignmentProof, ...]:
+        """Stored proofs by id, with their participants."""
+        return self._proofs(self._fetch(calc_sql.PROOFS_BY_ID, (list(ids),)))
+
+    def put_calculation_trace(self, trace: CalculationTrace) -> int:
+        """Record one trace and its operand rows by content hash, returning its id.
+
+        Child traces must be stored first: their ids are already in the operand rows, so
+        they are part of this trace's content hash. The stored trace is read back and its
+        content hash checked before the id is returned.
+        """
+        expected = trace.content_sha256()
+        with self._transaction() as conn:
+            inserted = _rows(conn, calc_sql.INSERT_TRACE, calc_sql.trace_params(trace))
+            if inserted:
+                trace_id = int(inserted[0]["id"])
+                with conn.cursor() as cursor:
+                    cursor.executemany(
+                        calc_sql.INSERT_TRACE_OPERAND,
+                        [
+                            calc_sql.operand_params(trace_id, ordinal, operand)
+                            for ordinal, operand in enumerate(trace.operands)
+                        ],
+                    )
+            else:
+                trace_id = _one_id(conn, calc_sql.SELECT_TRACE_ID, (expected,))
+        (stored,) = self.get_calculation_traces([trace_id])
+        calc_sql.check_trace_digest(stored.trace, expected)
+        return trace_id
+
+    def get_calculation_traces(self, ids: Sequence[int]) -> tuple[StoredTrace, ...]:
+        """Stored traces by id, with operand rows and child traces; each hash re-checked."""
+        if not ids:
+            return ()
+        traces = self._fetch(calc_sql.TRACES_BY_ID, (list(ids),))
+        operands: dict[int, list[TraceOperand]] = {}
+        for row in self._fetch(calc_sql.OPERANDS_OF_TRACES, (list(ids),)):
+            operands.setdefault(row["calculation_trace_id"], []).append(calc_sql.operand_of(row))
+        child_ids = sorted(
+            {
+                operand.operand_trace_id
+                for items in operands.values()
+                for operand in items
+                if operand.operand_trace_id is not None
+            }
+        )
+        children = {child.trace_id: child for child in self.get_calculation_traces(child_ids)}
+        stored: list[StoredTrace] = []
+        for row in traces:
+            own = operands.get(row["id"], [])
+            trace = calc_sql.trace_of(row, own)
+            calc_sql.check_trace_digest(trace, row["content_sha256"])
+            stored.append(
+                StoredTrace(
+                    trace_id=row["id"],
+                    trace=trace,
+                    children=tuple(
+                        children[operand.operand_trace_id]
+                        for operand in own
+                        if operand.operand_trace_id is not None
+                    ),
+                )
+            )
+        return tuple(stored)
+
+    def _proofs(self, found: Sequence[Mapping[str, Any]]) -> tuple[AlignmentProof, ...]:
+        """Proof rows keyed by their XBRL target interpretation's measurement key."""
+        targets = {
+            item.interpretation_id: item.key
+            for item in self.get_interpretations([row["xbrl_interpretation_id"] for row in found])
+        }
+        proofs = []
+        for row in found:
+            key = targets.get(row["xbrl_interpretation_id"])
+            if key is None:
+                raise calc_sql.ProvenanceMismatchError(_UNSTORED.format(what="proof target key"))
+            proofs.append(calc_sql.proof_of(row, key))
+        return tuple(proofs)
 
     @contextmanager
     def _transaction(self) -> Iterator[psycopg.Connection[Any]]:

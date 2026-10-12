@@ -20,6 +20,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer, mod
 
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, StatementFamily
+from fundamentals.contracts.comparison import SelectionSource, SourceState
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.interval import Interval
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
@@ -345,3 +346,82 @@ class AcquisitionAttempt(BaseModel):
     input_sha256: str
     extractor_version: str
     attempted_at: datetime | None
+
+
+class RunMode(StrEnum):
+    """Whether a run sees interpretations as recorded by its cutoff, or the latest ones."""
+
+    AS_KNOWN = "AS_KNOWN"
+    RETROSPECTIVE = "RETROSPECTIVE"
+
+
+class VersionPin(BaseModel):
+    """One pinned artifact version with the SHA-256 of its resolved content."""
+
+    model_config = ConfigDict(frozen=True)
+
+    version: str
+    content_sha256: str
+
+
+class InterpretationTriple(BaseModel):
+    """The (mapping set, normalisation policy, extractor) versions an interpretation is under.
+
+    Selection reads only these versions, so ingest's comparative check can select under its
+    own versions without pinning artifacts it never loaded.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    mapping_set: str
+    normalisation_policy: str
+    extractor_xbrl: str
+    extractor_pdf: str
+
+    def extractor(self, representation: Representation) -> str:
+        """The extractor version for one representation."""
+        if representation is Representation.XBRL:
+            return self.extractor_xbrl
+        return self.extractor_pdf
+
+
+class PinnedVersions(BaseModel):
+    """Every versioned artifact a run pins (design decision 7)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dictionary: VersionPin
+    formula_set: VersionPin
+    mapping_set: VersionPin
+    normalisation_policy: VersionPin
+    extractor_xbrl: VersionPin
+    extractor_pdf: VersionPin
+    rounding_policy: VersionPin
+    definition_set: VersionPin
+    comparison_policy: VersionPin
+    alignment_rules: VersionPin
+
+    def triple(self) -> InterpretationTriple:
+        """The interpretation versions selection filters by."""
+        return InterpretationTriple(
+            mapping_set=self.mapping_set.version,
+            normalisation_policy=self.normalisation_policy.version,
+            extractor_xbrl=self.extractor_xbrl.version,
+            extractor_pdf=self.extractor_pdf.version,
+        )
+
+
+class KeySelection(BaseModel):
+    """Which interpretation (if any) supplies one key in one representation, and why."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: MeasurementKey
+    representation: Representation
+    state: SourceState
+    interpretation: Interpretation | None
+    package_id: int | None
+    source: SelectionSource
+    reason: str | None
+    considered_interpretation_ids: tuple[int, ...]
+    surfaced_restatements: tuple[int, ...]

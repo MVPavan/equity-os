@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import date, datetime
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -26,13 +26,17 @@ from fundamentals.contracts.evidence import (
     AcquisitionAttempt,
     AttemptStage,
     CaptureReference,
+    EligibilityBoundary,
     FilingFamily,
     FilingPackage,
     Interpretation,
     InterpretationStatus,
+    InterpretationTriple,
     KnowledgeTimeStatus,
     Occurrence,
     PackageMember,
+    RevisionCause,
+    RunMode,
 )
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.snapshot import SnapshotError, canonical_sha256
@@ -71,6 +75,12 @@ from fundamentals.evidence.repository import (
     VersionPin,
 )
 from fundamentals.evidence.repository_rows import SegmentMemberWrite
+from fundamentals.evidence.selection import (
+    differing_restatement,
+    period_end,
+    select_key,
+    select_package,
+)
 from fundamentals.evidence.xbrl_adapter import (
     SEGMENT_DESCRIPTION_CONCEPT,
     XBRL_EXTRACTOR_VERSION,
@@ -216,6 +226,23 @@ def ingest_first_party(
     extracted = [item.with_unlocated(present, request).written(repository) for item in pending]
     usable = [item for item in extracted if item.outcome is ExtractionOutcome.COMPLETE]
     interpretations: list[Interpretation] = []
+    comparative = (
+        _ComparativeCheck(
+            repository=repository,
+            family=family,
+            reporting_period_end=reporting_period_end,
+            knowledge_time=max(item.member.knowledge_time for item in usable),
+            triple=InterpretationTriple(
+                mapping_set=mapping_set.version,
+                normalisation_policy=policy.version,
+                extractor_xbrl=versions[Representation.XBRL],
+                extractor_pdf=versions[Representation.PDF],
+            ),
+            dictionary=dictionary,
+        )
+        if usable
+        else None
+    )
     for item in usable:
         scope = CaptureScope(
             capture=item.member.capture,
@@ -227,7 +254,10 @@ def ingest_first_party(
             dictionary=dictionary,
             fiscal_year_end_month=fiscal_year_end_month,
         )
-        interpretations.extend(_interpretations(item, scope=scope, repository=repository))
+        assert comparative is not None
+        interpretations.extend(
+            _interpretations(item, scope=scope, repository=repository, comparative=comparative)
+        )
     package_id = None
     occurrences = [occurrence for item in usable for occurrence in item.occurrences]
     if usable:
@@ -303,7 +333,10 @@ def _registered(
     existing = repository.find_capture_ref(binding.source_id, surface, binding.expected_sha256)
     if existing is not None:
         return existing
-    return repository.put_capture_ref(stage_retained_member(store, intake, binding.representation))
+    staged = stage_retained_member(
+        store, intake, binding.representation, clock=repository.store_clock
+    )
+    return repository.put_capture_ref(staged)
 
 
 def _present(
@@ -320,7 +353,11 @@ def _present(
 
 
 def _interpretations(
-    item: MemberGeneration, *, scope: CaptureScope, repository: EvidenceRepository
+    item: MemberGeneration,
+    *,
+    scope: CaptureScope,
+    repository: EvidenceRepository,
+    comparative: _ComparativeCheck,
 ) -> tuple[Interpretation, ...]:
     """Reuse the capture's rows under the current triple, else interpret and append (level 3).
 
@@ -351,13 +388,17 @@ def _interpretations(
             _stored_id(occurrence): occurrence.anchor_key
             for occurrence in repository.get_occurrences(sorted(prior_occurrences))
         }
-        written = interpret_generation(
-            item.occurrences,
-            scope=scope,
-            prior=prior,
-            prior_anchor_keys=prior_anchor_keys,
-            reserve_ids=repository.reserve_interpretation_ids,
-            recorded_at=repository.store_clock(),
+        recorded_at = repository.store_clock()
+        written = comparative.causes(
+            interpret_generation(
+                item.occurrences,
+                scope=scope,
+                prior=prior,
+                prior_anchor_keys=prior_anchor_keys,
+                reserve_ids=repository.reserve_interpretation_ids,
+                recorded_at=recorded_at,
+            ),
+            registered_at=recorded_at,
         )
         try:
             repository.put_interpretations(written)
@@ -368,6 +409,98 @@ def _interpretations(
     raise IngestError(
         _RETRIES_EXHAUSTED.format(capture=capture_ref_id, count=MAX_INTERPRETATION_RETRIES)
     )
+
+
+class _ComparativeCheck:
+    """The ingest-time comparative test (Task 6), with per-ingest read caches.
+
+    The eligible original is the package already stored for the comparative's period end,
+    selected under the honest ingest boundary (filed no later than this package, stored
+    before this ingest) and read ``RETROSPECTIVE`` under this ingest's own versions — in the
+    comparative's representation if the original has it, else XBRL, else PDF.
+    """
+
+    def __init__(
+        self,
+        *,
+        repository: EvidenceRepository,
+        family: FilingFamily,
+        reporting_period_end: date,
+        knowledge_time: datetime,
+        triple: InterpretationTriple,
+        dictionary: CanonicalDictionary,
+    ) -> None:
+        self._repository = repository
+        self._family = family
+        self._period_end = reporting_period_end
+        self._knowledge_time = knowledge_time
+        self._triple = triple
+        self._dictionary = dictionary
+        self._packages: dict[date, tuple[FilingPackage, ...]] = {}
+        self._rows: dict[int, tuple[tuple[Occurrence, ...], tuple[Interpretation, ...]]] = {}
+
+    def causes(
+        self, written: Sequence[Interpretation], *, registered_at: datetime
+    ) -> tuple[Interpretation, ...]:
+        """Each row unchanged, or ``COMPARATIVE_RESTATEMENT`` when it differs from its original."""
+        boundary = EligibilityBoundary.for_ingest(self._knowledge_time, registered_at)
+        return tuple(self._cause(row, boundary) for row in written)
+
+    def _cause(self, row: Interpretation, boundary: EligibilityBoundary) -> Interpretation:
+        """One row's comparative cause (design decision 10 step 2)."""
+        if (
+            row.key is None
+            or row.revision_cause is not RevisionCause.ORIGINAL
+            or row.supersedes_interpretation_id is not None
+            or period_end(row.key.period) == self._period_end
+        ):
+            return row
+        end = period_end(row.key.period)
+        if end not in self._packages:
+            self._packages[end] = self._repository.list_packages(row.entity_id, self._family, end)
+        original = select_package(
+            self._packages[end],
+            entity_id=row.entity_id,
+            family=self._family,
+            statement_family=self._dictionary.row(row.key.canonical_id).family,
+            basis=row.basis,
+            framework=row.framework,
+            period_end=end,
+            boundary=boundary,
+        )
+        if original is None:
+            return row
+        representation = next(
+            item
+            for item in (row.representation, Representation.XBRL, Representation.PDF)
+            if item in original.members
+        )
+        occurrences, interpretations = self._member_rows(original, representation)
+        selected = select_key(
+            row.key,
+            representation,
+            package=original,
+            occurrences=occurrences,
+            interpretations=interpretations,
+            boundary=boundary,
+            mode=RunMode.RETROSPECTIVE,
+            pinned=self._triple,
+        )
+        if not differing_restatement(selected, [row]):
+            return row
+        return row.model_copy(update={"revision_cause": RevisionCause.COMPARATIVE_RESTATEMENT})
+
+    def _member_rows(
+        self, package: FilingPackage, representation: Representation
+    ) -> tuple[tuple[Occurrence, ...], tuple[Interpretation, ...]]:
+        """A member capture's occurrences and interpretations, read once per ingest."""
+        capture_ref_id = stored_capture(package.members[representation].capture)
+        if capture_ref_id not in self._rows:
+            self._rows[capture_ref_id] = (
+                self._repository.list_capture_occurrences(capture_ref_id),
+                self._repository.list_capture_interpretations(capture_ref_id),
+            )
+        return self._rows[capture_ref_id]
 
 
 def _segment_members(occurrences: Sequence[Occurrence], entity_id: int) -> list[SegmentMemberWrite]:

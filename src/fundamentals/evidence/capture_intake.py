@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -209,9 +209,17 @@ def authorise(
 
 
 def stage_retained_member(
-    store: SnapshotStore, intake: RetainedIntake, representation: Representation
+    store: SnapshotStore,
+    intake: RetainedIntake,
+    representation: Representation,
+    *,
+    clock: Callable[[], datetime],
 ) -> CaptureReference:
-    """Stage one authorised member's pinned bytes as a capture (no database write)."""
+    """Stage one authorised member's pinned bytes as a capture (no database write).
+
+    ``clock`` stamps the capture and so its registered and first-seen times; production
+    passes the evidence store's monotonic clock, never the host wall clock.
+    """
     _check_store(store, intake.store_anchor)
     binding = intake.binding(representation)
     surface = SURFACE_OF[representation]
@@ -225,6 +233,7 @@ def stage_retained_member(
         media_type=MEDIA_TYPES[representation],
         rights=SnapshotRights(authority_refs=(intake.authority_ref,)),
         path=binding.relative_path,
+        clock=clock,
     )
     return CaptureReference(
         capture_ref_id=None,

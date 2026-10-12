@@ -265,7 +265,7 @@ RESERVE_INTERPRETATION_IDS: LiteralString = (
     "SELECT nextval(pg_get_serial_sequence('eqos.interpretations', 'id')) AS id "
     "FROM generate_series(1, %s)"
 )
-STORE_CLOCK: LiteralString = "SELECT clock_timestamp() AS now"
+STORE_CLOCK: LiteralString = "SELECT eqos.store_now() AS now"
 INSERT_INTERPRETATION: LiteralString = (
     "INSERT INTO eqos.interpretations (id, origin, occurrence_id, capture_ref_id, "
     "representation, construction_rule_id, input_digest, status, entity_id, canonical_id, "

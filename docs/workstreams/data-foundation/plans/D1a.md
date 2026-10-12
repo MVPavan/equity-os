@@ -1811,3 +1811,19 @@ re-review moves to the D1a phase-end review.
 - Unlocated PDF-family failures sit in the PDF member's own attempt generation (shared `attempted_at`).
 - Unreadable and blank PDF rows are kept; unreadable cells become `INVALID` / `UNREADABLE_CELL`.
 - Extractor versions are not pinned (no content hash).
+
+## Stage 4b build notes (Tasks 6 and 7, as built 2026-10-12; orchestrator-verified)
+
+- Apar Q2 FY26 OPM stored at 8.06% (exact 2304550/285771 %) for XBRL and PDF; EBITDA and opex are child traces;
+  revenue equivalence carries an alignment proof; overall tier unproven.
+- Fail-closed choices: unknown package knowledge time → not eligible; broken supersede chain → nothing selected;
+  ≥2 candidate interpretations → `INVALID` (ambiguous); no extraction under the pinned extractor → `UNAVAILABLE`;
+  opening-value fallback only when the package discloses nothing; missing alignment participant → no proof (Apar PDF
+  prints no exceptional items, so PBT stays unproven there); no valid segment member → operand absent, never zero.
+- Deviations: `InterpretationTriple` (version-only selection pin); `evaluate_derived` also takes `dictionary`,
+  `reporting_currency`, `segment_members`; `DerivedSide` records segment-member ids; layout anchors match `anchor.*`
+  family ids; proof/trace persistence lives in `repository_calc.py`.
+- **Monotonic store clock (migration `0004`):** the dev host (WSL2 + Docker Desktop) steps the wall clock back up to
+  ~1 s about once a minute, which inverted knowledge-time order (intermittent "no evidenced fiscal-year-end month").
+  `eqos.store_now()` is strictly increasing; every knowledge-time column defaults to it; `store_clock()` and capture
+  registration use it. Wall clock remains only where no store knowledge time is involved.
