@@ -1,0 +1,6 @@
+# Comparison policy v1 (data spec §5; plan D1a Task 8). A MISMATCH or ANOMALY that is not
+# structural is MAGNITUDE when |a - b| / max(|a|, |b|) is at or above this threshold, else NOISE.
+# 0.5% deliberately replaces the earlier comparator's 20% (spec §5: THERMAX revenue gap 0.83-0.84%).
+policy_id: comparison
+version: v1
+magnitude_threshold: '0.005'

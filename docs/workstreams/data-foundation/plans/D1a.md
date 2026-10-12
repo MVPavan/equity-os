@@ -1788,3 +1788,11 @@ Fresh critical review (Sol): 7 MAJOR, 3 MINOR, 5 notes. DD = design decision.
 
 - Monetary operand currency comes from the caller's evidenced `reporting_currency`; dimensionless outputs carry no currency; mixed currencies raise `CurrencyMismatchError`. Negative rounding scales are refused.
 - **Task 7 obligation:** `TraceOperand` does not itself enforce the NULL-selection rule. Task 7 must persist child traces first, attach their ids to the parent before hashing and persisting it, and verify provenance by readback; the 0002 CHECK fails closed if a child id is missing.
+
+## Stage 5 build notes (as built, Sol-approved 2026-10-12)
+
+- **Triage is exact (orchestrator ruling, overrides Task 8's "reuse `relative_difference`"):** the `NOISE`/`MAGNITUDE` decision and structural classes use exact `Fraction` arithmetic; Decimal is for displayed values only. The shared helper is unchanged for its other callers.
+- `derived_extraction_status` also takes `dictionary` and `reporting_currency` (required by `evaluate_formula`).
+- Definition-record `explained_amount` and adjustment `amount` must be positive; `direction` carries the sign. One record applies to an operand at most once, on either representation (matches the `pair_adjustments` key).
+- Extraction refuses (`ValueError`) representations from different packages or a valued side with no package id, as for cross-entity pairs.
+- **Task 9 obligation:** `load_comparison_policy` hashes the file but cannot detect drift from a path alone; the run must check the comparison-policy pin and raise `VersionContentDriftError` on drift.

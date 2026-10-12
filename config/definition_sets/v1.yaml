@@ -1,0 +1,4 @@
+# Definition set v1 (data spec §5; plan D1a Task 8). Records are created only by an evidenced
+# disposition or mapping change, never from a label; D1a publishes the set empty.
+version: v1
+records: []
