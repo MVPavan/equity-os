@@ -14,8 +14,8 @@ Tool versions above are from 2026-08-12; current: codex-cli 0.162.0, bd 1.3.0.
 ## Agent stack
 
 Workers and reviewers run through the T3 Code orchestrator under the fixed stack in
-`.claude/rules/core/04-agent-stack.md` (Opus 5.5 medium / Sonnet 5.5 medium implement,
-GPT-6.1 Sol high reviews). The old codex-adapter plugin path no longer exists; do not use it.
+`.claude/rules/core/04-agent-stack.md` (Opus 5.5 medium implements,
+GPT-6.1 Sol high reviews and approves). The old codex-adapter plugin path no longer exists; do not use it.
 
 ## Web research: DWS (deep web search)
 

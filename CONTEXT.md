@@ -88,7 +88,7 @@ The tracked record of management promises: new, modified, due, and outcomes.
 _Avoid_: guidance tracker
 
 **Memory promotion**:
-The separate, approved action that lets a drafted claim or narrative change affect the canonical thesis. Agents draft, validators attach QA, and the approval panel (≥2 blind reviewers of different model families) or the analyst promotes; the analyst may override (owner directive 2026-10-12).
+The separate, approved action that lets a drafted claim or narrative change affect the canonical thesis. Agents draft, validators attach QA, and the reviewer's approval or the analyst promotes; the analyst may override (owner directive 2026-10-12).
 _Avoid_: auto-save, sync
 
 **Golden set**:
@@ -138,11 +138,10 @@ _Avoid_: worker (in role-binding contexts), named model lanes
 An independent subagent that reviews an implementer's output. Always a separate agent and context from the implementer of the same artifact — never the same agent on both sides.
 _Avoid_: named model lanes
 
-Docs, goals, prompts, rules, and beads must reference these role names, never hard-coded model or vendor names. The current model bindings, including the approval panel, are owned by `.claude/rules/core/04-agent-stack.md` (owner directive 2026-10-11/12); the table below mirrors it, and product approval-panel models are runtime configuration bound by that rule.
+Docs, goals, prompts, rules, and beads must reference these role names, never hard-coded model or vendor names. The current model bindings are owned by `.claude/rules/core/04-agent-stack.md` (owner directive 2026-10-11/12); the table below mirrors it.
 
 | Role | Current binding |
 |---|---|
 | Orchestrator | the main session |
-| Implementer | Claude Opus 5.5 medium (big work); Claude Sonnet 5.5 medium (small work) |
-| Reviewer | GPT-6.1 Sol high |
-| Approval panel | GPT-6.1 Sol high + Claude Fable 5.1 high, blind; GPT-6 Astra high adjudicates |
+| Implementer | Claude Opus 5.5 medium |
+| Reviewer (and approver) | GPT-6.1 Sol high |
