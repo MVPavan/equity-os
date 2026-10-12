@@ -1,6 +1,6 @@
 <!-- BD:GENERATED START -->
 # Backlog (parked, vetted)
-_generated from bd @ 2026-10-12T06:55:15Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
+_generated from bd @ 2026-10-12T10:01:11Z — DO NOT EDIT (run: BD_RENDER=1 bash scripts/bd-render-tracking.sh)_
 _none._
 <!-- BD:GENERATED END -->
 
