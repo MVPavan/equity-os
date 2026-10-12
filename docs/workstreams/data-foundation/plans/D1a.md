@@ -688,15 +688,15 @@ Interfaces:
     - `store_value(value: Fraction, kind: ValueKind, policy) -> Decimal` (half-even) and `store_bounds(interval, kind, policy) -> tuple[Decimal, Decimal]` (lower down, upper up).
   - **`config/rounding_policy/v1.yaml`** scales (decimal places of the stored unit): `CURRENCY_AMOUNT` 2 (base-unit INR, paise), `PER_SHARE_AMOUNT` 2, `COUNT` 0, `PERCENTAGE` 2, `RATIO` 6, `DAYS` 2.
   - **`fundamentals.canon.formula`:**
-    - `OperandValue` (frozen: `key: MeasurementKey`, `state: SourceState`, `exact: Fraction | None` (the exact point value), `value: Decimal | None` (its stored rounding, display only), `interval: Interval | None` (exact), `interpretation_id: int | None`, `package_id: int | None`, `calculation_trace_id: int | None`, `child_trace: CalculationTrace | None`, `alignment_proof_id: int | None`, `mapping_entry_id: str | None`, `qualification_ref: str | None`, `scoped_tier: EvidenceTier`, `selection_source: SelectionSource`, `precision_supported: bool`, `reasons: tuple[str, ...]`).
-    - `resolve_operand_keys(output: MeasurementKey, operand: FormulaOperand, *, dictionary: CanonicalDictionary) -> tuple[MeasurementKey, ...]`. `OPENING` is the instant on the day before the start, and `AVERAGE` gives the opening and closing pair.
+    - `OperandValue` (frozen: `key: MeasurementKey`, `state: SourceState`, `exact: Fraction | None` (the exact point value), `value: Decimal | None` (its stored rounding, display only), `interval: Interval | None` (exact), `interpretation_id: int | None`, `package_id: int | None`, `calculation_trace_id: int | None`, `child_trace: CalculationTrace | None`, `alignment_proof_id: int | None`, `mapping_entry_id: str | None`, `qualification_ref: str | None`, `scoped_tier: EvidenceTier`, `selection_source: SelectionSource | None` (None only for a missing operand or a computed aggregate/average whose constituents are in a child trace — migration `0002_trace_selection_provenance.sql`), `precision_supported: bool`, `reasons: tuple[str, ...]`).
+    - `resolve_operand_keys(output: MeasurementKey, operand: FormulaOperand, *, dictionary: CanonicalDictionary, reporting_currency: str) -> tuple[MeasurementKey, ...]`. `OPENING` is the instant on the day before the start, and `AVERAGE` gives the opening and closing pair.
     - `aggregate_members(aggregation: DimensionalAggregation, values: Mapping[str, OperandValue | None], *, output: MeasurementKey, policy: RoundingPolicy) -> OperandValue` and `average_operand(opening: OperandValue, closing: OperandValue, *, output: MeasurementKey, policy: RoundingPolicy) -> OperandValue`. Each returns an operand whose `child_trace` (`trace_kind` `DIMENSIONAL_AGGREGATE` or `AVERAGE`) lists **every** constituent as a `TraceOperand` — a listed member with no value appears with its state and null ids — and whose tier is the weakest constituent tier. The parent's `TraceOperand.operand_trace_id` references the stored child trace, never a single representative interpretation.
     - `calculation_state(operands: Sequence[OperandValue], *, revision_incompatible: bool, denominator_contains_zero: bool) -> CalculationState`.
     - `state_to_source_state(state: CalculationState) -> SourceState`.
     - `TraceOperand` (frozen: `name`, `key_digest`, `temporal_role`, `interpretation_id`, `operand_trace_id`, `alignment_proof_id`, `mapping_entry_id`, `qualification_ref`, `scoped_tier`, `selection_source`, `source_state`, `value`, `lower`, `upper`, `exact_value: Fraction | None`, `exact_interval: Interval | None`).
     - `CalculationTrace` (frozen: `trace_kind`, `formula_id`, `formula_version`, `formula_tier`, `formula_qualification_ref`, `rounding_policy_id`, `key_digest`, `value_identity`, `operands: tuple[TraceOperand, ...]`, `state`, `value`, `lower`, `upper`, `exact_value: Fraction | None`, `exact_interval: Interval | None`, `effective_tier`), with `content_sha256() -> str` (exact fields included as reduced `p/q`). It maps one-to-one onto `calculation_traces` plus `calculation_trace_operands`.
     - `CalculationResult` (frozen: `state`, `source_state`, `exact: Fraction | None`, `value: Decimal | None`, `interval: Interval | None` (exact), `trace: CalculationTrace`, `effective_tier: EvidenceTier`, `reasons`).
-    - `evaluate_formula(row: DictionaryRow, output: MeasurementKey, operands: Mapping[str, OperandValue], policy: RoundingPolicy, *, qualification: QualificationContext, value_identity: ValueIdentity = ValueIdentity.DERIVED, revision_incompatible: bool = False) -> CalculationResult`. The formula's scoped tier is `scoped_tier(row.formula.tier, row.formula.qualification, qualification)`, recorded as `formula_tier` and `formula_qualification_ref`; `effective_tier = weakest(formula scoped tier, every operand scoped_tier)`. No formula is exempt (design decision 8).
+    - `evaluate_formula(row: DictionaryRow, output: MeasurementKey, operands: Mapping[str, OperandValue], policy: RoundingPolicy, *, dictionary: CanonicalDictionary, reporting_currency: str, qualification: QualificationContext, value_identity: ValueIdentity = ValueIdentity.DERIVED, revision_incompatible: bool = False) -> CalculationResult`. The formula's scoped tier is `scoped_tier(row.formula.tier, row.formula.qualification, qualification)`, recorded as `formula_tier` and `formula_qualification_ref`; `effective_tier = weakest(formula scoped tier, every operand scoped_tier)`. No formula is exempt (design decision 8).
   - **`fundamentals.canon.period_aggregation`:**
     - `PeriodDerivation` StrEnum: `Q4_FROM_FY_MINUS_9M`, `H2_FROM_FY_MINUS_H1`, `TTM_FROM_FOUR_QUARTERS`.
     - `AggregationOperand` (frozen: `operand: OperandValue`, `has_differing_restatement: bool`).
@@ -714,8 +714,8 @@ formula's scoped tier and every operand tier (data spec §2, computed values), u
 contracts. Revision compatibility is passed in as a flag per operand; Task 6 decides "differing
 eligible restatement" from evidence.
 
-Verification: `uv run pytest tests/fundamentals/test_canon_formula.py tests/fundamentals/test_canon_interval.py`
-passes. It covers:
+Verification: `uv run pytest tests/fundamentals/test_canon_formula.py tests/fundamentals/test_canon_interval.py tests/fundamentals/test_canon_period_aggregation.py tests/fundamentals/test_canon_calculation_state.py tests/fundamentals/test_pg_trace_selection_provenance.py`
+passes (as built; the original two files were split during review). It covers:
 - interval add, sub, mul, div and shift with outward rounding;
 - div by an interval containing zero → `UNDEFINED`;
 - half-even storage (e.g. a value exactly at the half step) at each v1 scale;
@@ -1783,3 +1783,8 @@ Fresh critical review (Sol): 7 MAJOR, 3 MINOR, 5 notes. DD = design decision.
 | c3 | Status line |
 | Notes | Reserved ids: Task 2 Write classes, Task 5 qualification; predicates: Task 5 `prove_conditions`; nesting/contiguity: Task 4; maintenance connection: DD 3, Task 1; "Rs. in crones", "78,09": Task 11, Task 5 numeric grammar |
 | N1 (critical re-review): revision-cause precedence | Design decision 10 precedence rule; Task 5 Interpretation; Task 6 Comparatives; Task 5 re-processing test (comparative case) |
+
+## Stage 3 build notes (as built, Sol-approved 2026-10-12)
+
+- Monetary operand currency comes from the caller's evidenced `reporting_currency`; dimensionless outputs carry no currency; mixed currencies raise `CurrencyMismatchError`. Negative rounding scales are refused.
+- **Task 7 obligation:** `TraceOperand` does not itself enforce the NULL-selection rule. Task 7 must persist child traces first, attach their ids to the parent before hashing and persisting it, and verify provenance by readback; the 0002 CHECK fails closed if a child id is missing.

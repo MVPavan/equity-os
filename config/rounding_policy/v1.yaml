@@ -1,0 +1,11 @@
+# Rounding policy v1 (data spec §1 Arithmetic; plan D1a Task 4). Values are evaluated exactly;
+# this policy applies only when a value is stored or displayed: the point value rounds half-even
+# and its bounds round outward (lower down, upper up). Scale is decimal places of the stored unit.
+policy_id: v1
+scale:
+  CURRENCY_AMOUNT: 2  # base-unit INR, paise
+  PER_SHARE_AMOUNT: 2
+  COUNT: 0
+  PERCENTAGE: 2
+  RATIO: 6
+  DAYS: 2
