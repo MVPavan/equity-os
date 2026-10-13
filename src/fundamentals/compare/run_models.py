@@ -53,6 +53,7 @@ from fundamentals.contracts.comparison import (
 from fundamentals.contracts.evidence import PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.review_queue import QueueOverlay
 from fundamentals.evidence.capture_intake import FirstPartySurface
 from fundamentals.evidence.vendor_common import VendorRetainedBinding
 
@@ -356,6 +357,14 @@ class RunRecord(BaseModel):
     run_id: int
     manifest: RunManifest
     created: bool
+    queue_overlay: QueueOverlay | None = None
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if self.queue_overlay is None:
+            document.pop("queue_overlay", None)
+        return document
 
 
 def row_id(key: MeasurementKey, value_identity: ValueIdentity) -> str:

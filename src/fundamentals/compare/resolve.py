@@ -15,8 +15,9 @@ from collections.abc import Iterable, Sequence
 
 from fundamentals.canon.formula import CalculationTrace
 from fundamentals.compare.engine import RunEngine
+from fundamentals.compare.engine_attempts import attempt_available
 from fundamentals.compare.resolve_loader import RunLoader
-from fundamentals.compare.resolve_models import ReplayReader, ResolvedInputs
+from fundamentals.compare.resolve_models import ReplayReader, ResolvedInputs, first_party_inputs
 from fundamentals.compare.run_config import LoadedConfig
 from fundamentals.compare.run_models import (
     ResultRow,
@@ -28,6 +29,8 @@ from fundamentals.compare.run_models import (
 )
 from fundamentals.compare.run_store import RunStore
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.evidence import RunMode
 from fundamentals.evidence.alignment import AlignmentProof, prove_alignment
 from fundamentals.evidence.derived import TraceStore
 from fundamentals.evidence.repository import EvidenceRepository
@@ -95,7 +98,165 @@ def recompute(
 ) -> tuple[ResultRow, ...]:
     """Result rows from loaded inputs alone; replay's traces come from the inputs."""
     store = traces if traces is not None else ReplayTraces(inputs.traces)
-    return RunEngine(inputs, request, config=config, traces=store).rows()
+    base = first_party_inputs(inputs) if request.scope.vendor_sources else inputs
+    rows = RunEngine(base, request, config=config, traces=store).rows()
+    if request.scope.vendor_sources:
+        from fundamentals.compare.vendor_rows import attach_vendor_rows
+
+        return attach_vendor_rows(rows, inputs=inputs, request=request, config=config)
+    return rows
+
+
+def resolve_joined_inputs(
+    inputs: ResolvedInputs,
+    request: RunRequest,
+    *,
+    config: LoadedConfig,
+    repository: EvidenceRepository,
+) -> tuple[ResolvedInputs, tuple[ResultRow, ...]]:
+    """Compute an exact handoff scope, then close all actual traces and vendor uses."""
+    from fundamentals.compare.vendor_rows import attach_vendor_rows
+
+    recorder = _RecordingTraces(repository)
+    engine = RunEngine(first_party_inputs(inputs), request, config=config, traces=recorder)
+    first_party_rows = engine.rows()
+    traces = repository.get_calculation_traces(sorted(recorder.ids))
+    complete = inputs.model_copy(update={"traces": traces})
+    rows = attach_vendor_rows(first_party_rows, inputs=complete, request=request, config=config)
+    eligible_attempts = []
+    for attempt in complete.attempts:
+        extractor = next(
+            (
+                pin.version
+                for pin in request.pinned.vendor_extractors
+                if (pin.source_id, pin.surface) == (attempt.source_id, attempt.surface)
+            ),
+            request.pinned.extractor_xbrl.version
+            if attempt.representation is Representation.XBRL
+            else request.pinned.extractor_pdf.version,
+        )
+        if attempt_available(
+            attempt, cutoff=request.cutoff, mode=request.mode, extractor=extractor
+        ):
+            eligible_attempts.append(attempt)
+    eligible = complete.model_copy(update={"attempts": tuple(eligible_attempts)})
+    consulted = dispositions(
+        eligible,
+        rows,
+        selected_packages=engine.selected_package_ids,
+        definition_set_id=inputs.definition_set_id,
+        sources=request.scope.sources,
+        selected_interpretations=engine.selected_condition_ids,
+    )
+    tokens = [
+        item.model_copy(update={"disposition": RunInputDisposition.NOT_SELECTED})
+        for item in inputs.inputs
+    ]
+    tokens.extend(consulted)
+    # The actual context rows and considered vendor attempt captures were consumed
+    # during fresh reproof/availability even when the numeric side is suppressed.
+    tokens.extend(
+        item
+        for item in inputs.inputs
+        if item.kind
+        in (
+            RunInputKind.SETTINGS_RECORD,
+            RunInputKind.EVIDENCE_INPUT,
+            RunInputKind.BASIS_STATUS,
+            RunInputKind.SEGMENT_MEMBER,
+            RunInputKind.PACKAGE_STATEMENT,
+        )
+        or (
+            item.kind is RunInputKind.CAPTURE_REF
+            and item.disposition is RunInputDisposition.SELECTED
+        )
+    )
+    by_id = {item.interpretation_id: item for item in complete.interpretations}
+    used = _used_interpretations(complete, rows)
+    pending = list(used)
+    while pending:
+        item = by_id.get(pending.pop())
+        if item is not None:
+            additions = set(item.operand_interpretation_ids)
+            additions.update(
+                evidence
+                for condition in item.condition_evidence
+                for evidence in condition.evidence_interpretation_ids
+            )
+            pending.extend(additions - used)
+            used.update(additions)
+    used_captures = {by_id[item].capture_ref_id for item in used if item in by_id}
+    for declaration in request.scope.vendor_sources:
+        if declaration.capture_ref_id in used_captures:
+            context = declaration.composer_context
+            supporting = getattr(context, "supporting_page_capture_ref_id", None)
+            if supporting is not None:
+                used_captures.add(supporting)
+    tokens.extend(
+        RunInput(
+            kind=RunInputKind.CAPTURE_REF, ref_id=item, disposition=RunInputDisposition.SELECTED
+        )
+        for item in used_captures
+    )
+    tokens.extend(
+        RunInput(
+            kind=RunInputKind.INTERPRETATION, ref_id=item, disposition=RunInputDisposition.SELECTED
+        )
+        for item in used
+    )
+    tokens.extend(
+        RunInput(
+            kind=RunInputKind.OCCURRENCE,
+            ref_id=occurrence_id,
+            disposition=RunInputDisposition.SELECTED,
+        )
+        for item in used
+        if item in by_id
+        for occurrence_id in (by_id[item].occurrence_id,)
+        if occurrence_id is not None
+    )
+    used_attempts = {
+        value.attempt_id
+        for row in rows
+        for value in row.source_values
+        if value.attempt_id is not None
+    }
+    vendor_attempts = {
+        item.attempt_id: item
+        for item in complete.attempts
+        if item.representation in (Representation.HTML, Representation.JSON)
+    }
+    tokens = [
+        item.model_copy(
+            update={
+                "disposition": (
+                    RunInputDisposition.FAILED_ATTEMPT
+                    if vendor_attempts[item.ref_id].outcome is not ExtractionOutcome.COMPLETE
+                    else RunInputDisposition.SELECTED
+                )
+                if item.ref_id in used_attempts
+                else RunInputDisposition.NOT_SELECTED
+            }
+        )
+        if item.kind is RunInputKind.ATTEMPT and item.ref_id in vendor_attempts
+        else item
+        for item in tokens
+    ]
+    # Unavailable attempts have no invented selected fact; future rows remain closed
+    # but unused, including producer append records newer than AS_KNOWN's cutoff.
+    if request.mode is RunMode.AS_KNOWN:
+        late = {
+            item.interpretation_id
+            for item in complete.interpretations
+            if item.recorded_at > request.cutoff
+        }
+        tokens = [
+            item.model_copy(update={"disposition": RunInputDisposition.NOT_SELECTED})
+            if item.kind is RunInputKind.INTERPRETATION and item.ref_id in late
+            else item
+            for item in tokens
+        ]
+    return complete.model_copy(update={"inputs": sorted_inputs(tokens)}), rows
 
 
 def resolve(
@@ -176,6 +337,11 @@ def load_inputs(reader: ReplayReader, inputs: Sequence[RunInput]) -> ResolvedInp
     for kind, count in counts.items():
         if count != len(set(ids[kind])):
             raise ReplayMismatchError(_MISSING.format(kind=kind.value, ids=sorted(ids[kind])[:5]))
+    frozen_occurrences = {row.occurrence_id for row in loaded.occurrences}
+    if any(
+        not set(row.evidence_occurrence_ids) <= frozen_occurrences for row in loaded.segment_members
+    ):
+        raise ReplayMismatchError("segment metadata evidence escaped frozen occurrence IDs")
     return loaded
 
 

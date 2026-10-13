@@ -16,7 +16,7 @@ from pathlib import Path
 
 from psycopg_pool import ConnectionPool
 
-from fundamentals.compare.resolve import load_inputs, recompute, resolve
+from fundamentals.compare.resolve import load_inputs, recompute, resolve, resolve_joined_inputs
 from fundamentals.compare.resolve_models import ReplayReader
 from fundamentals.compare.run_config import (
     ConfigVersions,
@@ -40,13 +40,18 @@ from fundamentals.compare.run_models import (
     RunStatus,
     SourceRole,
     SourceValue,
+    VendorSurfaceRequest,
 )
 from fundamentals.compare.run_store import PublishHook, RunStore
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import RunMode, VersionPin
+from fundamentals.contracts.review_queue import QueueItemDraft, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence.first_party_generation import FirstPartyGenerationHandoff
 from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.evidence.vendor_common import VendorGeneration
+from fundamentals.store.snapshot_store import DirectoryAnchor
 
 __all__ = [
     "DatabaseIdentity",
@@ -88,12 +93,17 @@ def request_for(
     sources: tuple[str, ...] = FIRST_PARTY_SOURCES,
     versions: ConfigVersions | None = None,
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
+    vendor_sources: tuple[VendorSurfaceRequest, ...] = (),
 ) -> RunRequest:
     """A one-entity, one-period request pinned to the config root's artifacts at ``versions``."""
     config = load_run_config(config_root, versions, extractor_pins=extractor_pins)
     return RunRequest(
         scope=RunScope(
-            entity_ids=(entity_id,), period_ends=(period_end,), bases=(basis,), sources=sources
+            entity_ids=(entity_id,),
+            period_ends=(period_end,),
+            bases=(basis,),
+            sources=sources,
+            vendor_sources=vendor_sources,
         ),
         cutoff=cutoff,
         mode=mode,
@@ -110,21 +120,66 @@ def execute_run(
     config_root: Path,
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
     publish_hook: PublishHook | None = None,
+    first_party_generation: FirstPartyGenerationHandoff | None = None,
+    vendor_generations: tuple[VendorGeneration, ...] = (),
+    vendor_input_anchor: DirectoryAnchor | None = None,
 ) -> RunRecord:
     """Resolve and publish one run, or return the stored run of the same identity."""
-    config = _config(config_root, request, extractor_pins)
     repository = EvidenceRepository(pool)
+    vendor = bool(request.scope.vendor_sources)
+    if vendor and first_party_generation is None:
+        raise ValueError("vendor run requires its exact joined first-party handoff")
+    if not vendor and (
+        first_party_generation is not None or vendor_generations or vendor_input_anchor
+    ):
+        raise ValueError("joined vendor handoffs require explicit vendor declarations")
+    config = _config(
+        config_root,
+        request,
+        extractor_pins,
+        allow_synthetic_vendor_config=vendor and _is_test_database(repository),
+    )
+    preparation = None
+    if vendor:
+        from fundamentals.compare.vendor_resolution import prepare_vendor_run
+
+        preparation = prepare_vendor_run(
+            request,
+            first_party_generation=first_party_generation,
+            vendor_generations=vendor_generations,
+            config=config,
+            config_root=config_root,
+            repository=repository,
+            input_anchor=vendor_input_anchor,
+        )
     definition_set_id = pin_config(
         config, repository=repository, pool=pool, config_root=config_root
     )
     store = RunStore(pool)
-    inputs, rows = resolve(
-        request,
-        repository=repository,
-        store=store,
-        config=config,
-        definition_set_id=definition_set_id,
-    )
+    drafts: tuple[QueueItemDraft, ...] = ()
+    if preparation is not None:
+        from fundamentals.compare.vendor_resolution import append_vendor_run_inputs
+        from fundamentals.compare.vendor_rows import queue_drafts
+
+        closed = append_vendor_run_inputs(
+            preparation,
+            request,
+            config=config,
+            config_root=config_root,
+            repository=repository,
+            input_anchor=vendor_input_anchor,
+            definition_set_id=definition_set_id,
+        )
+        inputs, rows = resolve_joined_inputs(closed, request, config=config, repository=repository)
+        drafts = queue_drafts(rows, inputs=inputs, request=request, config=config)
+    else:
+        inputs, rows = resolve(
+            request,
+            repository=repository,
+            store=store,
+            config=config,
+            definition_set_id=definition_set_id,
+        )
     manifest = RunManifest(
         scope=request.scope,
         cutoff=request.cutoff,
@@ -137,10 +192,19 @@ def execute_run(
         operational_failures=operational_failures(rows),
     )
     run_id, created = store.publish(
-        manifest, rows, definition_set_id=definition_set_id, publish_hook=publish_hook
+        manifest,
+        rows,
+        definition_set_id=definition_set_id,
+        publish_hook=publish_hook,
+        queue_drafts=drafts,
     )
     stored = manifest if created else store.read_manifest(run_id)
-    return RunRecord(run_id=run_id, manifest=stored, created=created)
+    overlay = None
+    if vendor:
+        from fundamentals.compare.queue import capture_queue_overlay
+
+        overlay = capture_queue_overlay(pool, run_id=run_id)
+    return RunRecord(run_id=run_id, manifest=stored, created=created, queue_overlay=overlay)
 
 
 def replay_run(
@@ -169,7 +233,13 @@ def replay_run(
         code_version=manifest.code_version,
         database_identity=manifest.database_identity,
     )
-    config = _config(config_root, request, extractors)
+    config = _config(
+        config_root,
+        request,
+        extractors,
+        allow_synthetic_vendor_config=bool(request.scope.vendor_sources)
+        and _is_test_database(EvidenceRepository(pool)),
+    )
     by_id = reader if reader is not None else EvidenceRepository(pool)
     inputs = load_inputs(by_id, manifest.inputs)
     stored_set = by_id.get_definition_set(inputs.definition_set_id)
@@ -194,7 +264,7 @@ def run_status(rows: tuple[ResultRow, ...]) -> RunStatus:
         value.state is SourceState.UNAVAILABLE
         for row in rows
         for value in row.source_values
-        if value.source_role is SourceRole.FIRST_PARTY
+        if value.source_role in (SourceRole.FIRST_PARTY, SourceRole.INDEPENDENT_VENDOR)
     )
     return RunStatus.INCOMPLETE if unavailable else RunStatus.COMPLETE
 
@@ -209,14 +279,23 @@ def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
     return tuple(
         sorted(
             {
-                _FAILURE.format(
-                    representation=value.representation.value,
-                    reason=value.reason or NO_ATTEMPT,
-                    attempt=NO_ATTEMPT if value.attempt_id is None else value.attempt_id,
+                (
+                    _FAILURE.format(
+                        representation=value.representation.value,
+                        reason=value.reason or NO_ATTEMPT,
+                        attempt=NO_ATTEMPT if value.attempt_id is None else value.attempt_id,
+                    )
+                    if value.source_role is SourceRole.FIRST_PARTY
+                    else f"{value.source_id}/{value.surface}\t"
+                    + _FAILURE.format(
+                        representation=value.representation.value,
+                        reason=value.reason or NO_ATTEMPT,
+                        attempt=NO_ATTEMPT if value.attempt_id is None else value.attempt_id,
+                    )
                 )
                 for row in rows
                 for value in row.source_values
-                if value.source_role is SourceRole.FIRST_PARTY
+                if value.source_role in (SourceRole.FIRST_PARTY, SourceRole.INDEPENDENT_VENDOR)
                 and value.state is SourceState.UNAVAILABLE
             }
         )
@@ -227,6 +306,10 @@ def exit_status(record: RunRecord) -> RunExitStatus:
     """The CLI exit status of a published run (open-high is first emitted by D1b.3)."""
     if record.manifest.status is RunStatus.INCOMPLETE:
         return RunExitStatus.INCOMPLETE
+    if record.queue_overlay is not None and any(
+        item.severity is QueueSeverity.HIGH for item in record.queue_overlay.open_items
+    ):
+        return RunExitStatus.SUCCESS_WITH_OPEN_HIGH
     return RunExitStatus.SUCCESS
 
 
@@ -234,10 +317,21 @@ def _config(
     config_root: Path,
     request: RunRequest,
     extractor_pins: Mapping[Representation, VersionPin] | None,
+    *,
+    allow_synthetic_vendor_config: bool = False,
 ) -> LoadedConfig:
     """The request's pinned artifacts, refused if any resolved content differs."""
     config = load_run_config(
-        config_root, ConfigVersions.of(request.pinned), extractor_pins=extractor_pins
+        config_root,
+        ConfigVersions.of(request.pinned),
+        extractor_pins=extractor_pins,
+        allow_synthetic_vendor_config=allow_synthetic_vendor_config,
     )
     require_pins(config, request.pinned)
     return config
+
+
+def _is_test_database(repository: EvidenceRepository) -> bool:
+    """Synthetic loading is confined by the actual connection, never a caller name."""
+    names = repository._fetch("SELECT current_database() AS name", ())
+    return len(names) == 1 and str(names[0]["name"]).startswith("eqos_test_")

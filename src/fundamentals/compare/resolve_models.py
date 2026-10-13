@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.compare.definitions import DefinitionSet
 from fundamentals.compare.run_models import RunInput
+from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.evidence import (
     AcquisitionAttempt,
     CaptureReference,
@@ -55,6 +56,39 @@ class ResolvedInputs(BaseModel):
     segment_members: tuple[SegmentMemberRecord, ...] = ()
     definition_set_id: int
     inputs: tuple[RunInput, ...] = ()
+
+
+def first_party_inputs(inputs: ResolvedInputs) -> ResolvedInputs:
+    """Project the exact closed inputs into the existing first-party engine.
+
+    Vendor native operands remain in the complete manifest and never enter a
+    first-party selection or formula calculation.
+    """
+    first_party = (Representation.XBRL, Representation.PDF)
+    capture_ids = {
+        member.capture.capture_ref_id
+        for package in inputs.packages
+        for member in package.members.values()
+    }
+    capture_ids.update(
+        item.capture.capture_ref_id
+        for item in inputs.attempts
+        if item.representation in first_party and item.capture is not None
+    )
+    return inputs.model_copy(
+        update={
+            "capture_refs": tuple(
+                row for row in inputs.capture_refs if row.capture_ref_id in capture_ids
+            ),
+            "occurrences": tuple(
+                row for row in inputs.occurrences if row.representation in first_party
+            ),
+            "interpretations": tuple(
+                row for row in inputs.interpretations if row.representation in first_party
+            ),
+            "attempts": tuple(row for row in inputs.attempts if row.representation in first_party),
+        }
+    )
 
 
 class ReplayReader(Protocol):

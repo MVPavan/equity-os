@@ -327,3 +327,18 @@ contracts pass. The later cases fail at a missing private `fixtureco-fy26-q2.yam
 before their intended behavior boundary. This is an invalid fixture/probe for those nine cases,
 not a public API GREEN/RED claim; repair fixture construction without weakening production proof,
 preserve all original assertions/literals, and rerun. Actual SONACOMS acceptance remains separate.
+
+At the owner-requested pause checkpoint, the independent R2 public review is APPROVE;
+all three preflight findings and the NOT_APPLICABLE/replay association defects are fixed.
+The frozen31 PostgreSQL cases and100 pure cases pass. The original24 public cases,
+original v1 prefix and six original refusal outcomes remain preserved. Mechanical
+helper split preserves24 declaration ASTs,64 assertions, numerical literals and100
+node IDs, with712/267-line test/helper files. Root explicitly approves proof resealing
+for disclosed fixture expansion, formatting and that mechanical split; no historical
+outcome is replaced. See [checkpoint review](../reviews/D1b-public-vendor-run-checkpoint.md).
+
+Historical segment link creation time is unprovable under the immutable existing
+schema, and actual multi-period segment acceptance remains unverified. These are
+follow-up acceptance limits, not waived phase requirements. After the public writer
+froze resolve.py, Root takes exclusive ownership of the additional witness closure
+and context guard calls in that file for the joined checkpoint.

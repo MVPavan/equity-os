@@ -60,6 +60,7 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.review_queue import QueueItemDraft
 from fundamentals.evidence import repository_rows as rows_sql
 
 MAX_PUBLISH_ATTEMPTS = 3
@@ -74,6 +75,7 @@ STAGE_SOURCE_VALUES = "result_source_values"
 STAGE_SURFACED = "result_surfaced_restatements"
 STAGE_PAIRS = "pair_outcomes"
 STAGE_ADJUSTMENTS = "pair_adjustments"
+STAGE_QUEUE = "queue"
 
 _INPUT_COLUMNS: tuple[RunInputKind, ...] = (
     RunInputKind.CAPTURE_REF,
@@ -225,12 +227,15 @@ class RunStore:
         *,
         definition_set_id: int,
         publish_hook: PublishHook | None = None,
+        queue_drafts: Sequence[QueueItemDraft] = (),
     ) -> tuple[int, bool]:
         """Publish a run atomically, or return the stored run of the same identity."""
         _validate_vendor_manifest(manifest, rows)
         for _ in range(MAX_PUBLISH_ATTEMPTS):
             try:
-                return self._publish_once(manifest, rows, definition_set_id, publish_hook)
+                return self._publish_once(
+                    manifest, rows, definition_set_id, publish_hook, queue_drafts
+                )
             except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
                 continue
         raise PublishRetriesExhaustedError(_EXHAUSTED.format(count=MAX_PUBLISH_ATTEMPTS))
@@ -241,6 +246,7 @@ class RunStore:
         rows: Sequence[ResultRow],
         definition_set_id: int,
         hook: PublishHook | None,
+        queue_drafts: Sequence[QueueItemDraft],
     ) -> tuple[int, bool]:
         """One publication transaction (see module docstring)."""
         identity = manifest.identity_hash()
@@ -261,7 +267,20 @@ class RunStore:
             if inserted is None:
                 existing = cursor.execute(_RUN_BY_HASH, (identity,)).fetchone()
                 assert existing is not None
-                return int(existing[0]), False
+                run_id = int(existing[0])
+                if queue_drafts or manifest.scope.vendor_sources:
+                    from fundamentals.compare.queue import publish_queue_drafts
+
+                    before = {
+                        int(item[0])
+                        for item in cursor.execute(
+                            "SELECT item_id FROM eqos.queue_run_items WHERE run_id = %s", (run_id,)
+                        ).fetchall()
+                    }
+                    items = publish_queue_drafts(cursor, run_id=run_id, drafts=queue_drafts)
+                    if before != {item.item_id for item in items}:
+                        raise RunReadError("existing vendor run has inconsistent exact queue links")
+                return run_id, False
             run_id = int(inserted[0])
             stage(STAGE_RUNS)
             cursor.executemany(
@@ -333,6 +352,11 @@ class RunStore:
                 ],
             )
             stage(STAGE_ADJUSTMENTS)
+            if queue_drafts or manifest.scope.vendor_sources:
+                from fundamentals.compare.queue import publish_queue_drafts
+
+                publish_queue_drafts(cursor, run_id=run_id, drafts=queue_drafts)
+                stage(STAGE_QUEUE)
             return run_id, True
 
     # --- reads ----------------------------------------------------------------------

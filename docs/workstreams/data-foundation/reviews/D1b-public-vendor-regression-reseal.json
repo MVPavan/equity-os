@@ -1,0 +1,51 @@
+{
+  "authority": "Root explicit contract reseal at owner-requested pause checkpoint",
+  "verified_at": "2026-10-13T15:30:12.719544+00:00",
+  "public_original_six_refusal_file": {
+    "old_sha256": "bad56653b448404c09ff8f7fa77ed7dec65f4854cc27dcc1c9ff4323a9c40cb5",
+    "unchanged_prefix_bytes": 4846,
+    "change": "Appended characterization cases; original complete file remains byte-identical prefix."
+  },
+  "review_regressions": {
+    "old_sha256": "7e2a1c28097c6a41e14337f8baa7c2e0d0704a8948e3b9ccaface14613552675",
+    "new_sha256": "532e573a86f621ed4a6f30ba0650b94ca8d2e3f009f975e40945920375f331ca",
+    "change": "One LF blank line after body = _segment_body(variant).",
+    "proof_kind": "Fresh reconstruction reproduces original frozen digest; AST equality freshly checked. No contemporaneous before-byte artifact claimed."
+  },
+  "helper_split": {
+    "before": {
+      "path": "scratchpad/execution/data-foundation-public-runs/test_compare_vendor_rows-before-helper-split.py",
+      "sha256": "e4e2b39b77fbd6778171e04c84d158f0d10de39ba6ffa076751f3a15ddf25daf",
+      "lines": 938
+    },
+    "after": {
+      "tests/fundamentals/test_compare_vendor_rows.py": {
+        "sha256": "4e61cc31ffdf9c9e9de56ebc7d0943eaee37a7fe587d5795f7040d0ff18e1ca5",
+        "lines": 712
+      },
+      "tests/fundamentals/vendor_rows_support.py": {
+        "sha256": "6b4490815b61c151045203c797640e1d15bf2b9011df251f2c2dc2cb0de65173",
+        "lines": 267
+      }
+    },
+    "moved_declarations": [
+      "Case",
+      "case",
+      "assembled",
+      "vendor_value",
+      "later"
+    ],
+    "checks": {
+      "every_function_class_AST_unchanged": true,
+      "every_assertion_AST_unchanged": true,
+      "every_numeric_literal_unchanged": true,
+      "every_pytest_node_ID_unchanged": true,
+      "same_helper_folder": true,
+      "both_files_at_most_800_lines": true
+    },
+    "function_class_count": 24,
+    "assertion_count": 64,
+    "pytest_node_count": 100
+  },
+  "outcomes": "Original6+review6RED outcomes preserved. Corrected valid_to genuine DIDNOTRAISE proof on independently frozen original production; invalid setup and overlapping contaminated probe excluded."
+}
