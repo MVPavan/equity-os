@@ -1,0 +1,9 @@
+publication_version: v2
+publication_sha256: 1770517e47e08cf2b33f220efd90e11e6ada26f3013ccfa518785370cb1d1693
+reviewed_commit: 4779819c8727b9a9248279e573ad55b086a25631
+selected_members_sha256: 09fe7800f2267af3faddc3f865482bb5752f3cdc9cb27984e135ddd3527ec1c1
+review_result:
+  path: docs/workstreams/data-foundation/reviews/D1b-v2-release-review.md
+  content_sha256: 3b2bde789825ee0b14510a3594033f952a9e3f4e79f5cacb7d7d1368a6b67615
+verdict: APPROVE
+coordinator_recorded_at: '2026-10-13T11:25:48.468535Z'
