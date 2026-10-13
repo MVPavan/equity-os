@@ -42,3 +42,6 @@ unresolved-originals preflight, Stage 2 cutover) are also reviewer-approved unde
 2026-10-12 autonomy directive; the orchestrator executes them and informs the owner.
 
 **Execution.** `/phase-execution <phase-id>` runs one phase. `/run-phases` walks the remaining phases.
+
+**Current handoff.** [`handoff-codex-2026-10-13.md`](handoff-codex-2026-10-13.md): work queue, authority and stop
+conditions for the autonomous run; D1a review findings in [`reviews/`](reviews/).
