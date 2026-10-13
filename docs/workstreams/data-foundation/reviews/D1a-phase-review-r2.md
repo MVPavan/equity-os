@@ -188,4 +188,3 @@ verified True reason None
 ```
 
 VERDICT: REQUEST_CHANGES
-

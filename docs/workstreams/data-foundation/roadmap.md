@@ -16,8 +16,8 @@ section is the human summary.
 
 | Phase | Stages | State |
 |---|---|---|
-| D1a Canonical comparison tracer | 7 | All 7 stages built and committed (`3a28223`..`41aca85`). Exit test green. Phase-end review: REQUEST_CHANGES, 34 findings (0 critical); fix rounds paused by the owner on 2026-10-13, uncommitted in the working tree. Area A: 7 of 14 done (A1, A4, A5, A6, A8, A13 and migration 0005), A7 partial, A2/A3/A9–A12/A14 open, 3 mypy errors to fix. Area C: partial edits, no report. Area B: not started. Then re-review and close |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Not started |
+| D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In execution. Approved 13-task plan committed `f82634d`; parallel evidence, shared schema and corroboration work underway. Full Stage 1 remains gated by missing retained vendor captures and complete source-verified acceptance. |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |

@@ -80,4 +80,3 @@ Counts: **34 ADDRESSED; 0 PARTIAL; 0 OPEN**.
 - Out-of-scope observations: none asserted as additional acceptance blockers.
 
 VERDICT: APPROVE
-

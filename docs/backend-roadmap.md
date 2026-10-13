@@ -54,8 +54,8 @@ time.
 
 | # | Work | Done when | State (2026-10-13) |
 |---|---|---|---|
-| D1a | Canonical comparison tracer: schema, dictionary, formula engine, evidence model, first-party tables, runs, report | `test_compare_tracer.py` green; phase review approved | Built and committed; review fixes in progress (paused) |
-| D1b | Vendors (Screener, Tijori), corroboration, review queue, frozen Stage 1 manifest | `test_data_stage1_e2e.py` matches the manifest (Apar + ten companies) | Not started |
+| D1a | Canonical comparison tracer: schema, dictionary, formula engine, evidence model, first-party tables, runs, report | `test_compare_tracer.py` green; phase review approved | Complete; fixes `22a3c78`, independent phase/critical re-reviews approved; full suite and quality checks green |
+| D1b | Vendors (Screener, Tijori), corroboration, review queue, frozen Stage 1 manifest | `test_data_stage1_e2e.py` matches the manifest (Apar + ten companies) | In execution; approved plan `f82634d`, independent work parallelized; full acceptance pending retained vendor evidence |
 | D2 | Migrate the legacy SQLite fact store; move consumers to PostgreSQL; cutover | Stage 2 e2e green; cutover recorded | Not started |
 | D3 | Report ledger: versions, numeric claims citing facts or traces, claim check, approvals, export | Ledger Stage 1 e2e and `test_ledger_export.py` green | Not started |
 | D4 | Long-term memory with separate promotion | Ledger Stage 2 e2e green | Not started |
