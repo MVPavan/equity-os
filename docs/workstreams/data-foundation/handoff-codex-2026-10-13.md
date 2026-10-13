@@ -155,3 +155,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 11:51 — post-release private draft fixture (`eqos-u0u.21`) — omit actual publication only from private draft copy, all17 assertions/13RED outcomes unchanged, full affected matrix95PASS and Ruff/format clear; fixture task and Task13 technical release closed, Task11/6/source/fullStage1 remain open, no push — 875bf80
 
 - 2026-10-13 12:18 — pinned vendor acquisition SQL (`eqos-u0u.22`) — narrow additive0008 independently APPROVE, all26 schema/upgrade/publication cases and38 isolated producer cases PASS; original2RED preserved, actual retainedv1 run/results/attempts/queue input/membership/by-ID replay unchanged;0001–0008 immutable, full vendor handoff/run/source acceptance open, no push — 2d15c1d
+
+- 2026-10-13 12:20 — historical publication upgrade fixture (`eqos-u0u.23`) — exact private0001–7 directory preserves25 original assertion ASTs and13RED outcomes, adds7-file inventory assertion; all14 publication cases PASS within26node matrix and scoped Ruff/format clear; growing future migration directory no longer changes the named0007 upgrade witness, no push — 073df04
