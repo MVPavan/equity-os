@@ -1084,4 +1084,15 @@ Total Liabilities and first-party NCI, remains equivalence-unproven and uses the
 nine-member extractor pin. Fresh final verification is 7 passed, including guarded PostgreSQL,
 with scoped Ruff lint/format clean. All D1b saved test seals match. Publication and complete
 source acceptance remain separate gates; no missing-source waiver is granted.
+
+### Stable native/publication/producer gate — 2026-10-13
+
+The frozen main checkpoint `c9817f0` passes the fresh complete historical-scope command
+`VERIFY_SCOPE_BASE=05b2634 scripts/verify.sh gate d1b-native-construction`: exit 0/PASS,
+**3,106 passed / 8 existing skips**, full Ruff lint/format and strict mypy clear, all privacy
+rails clear, and the four protected native files plus original 1/1 RED unchanged. Diff coverage
+remains advisory with 372 unexecuted changed lines; no complete-coverage claim is made. This
+resolves the two fixture failures of the prior run without relabelling that historical FAIL.
+Task 14 and bounded draft Task 15 are closed. Actual joined A/review/C release, vendor-run/queue
+integration and full D1b remain open; isolated queue R1 defects are not part of this frozen tree.
 No nominal RELEASED label or caller model is accepted as release authority.

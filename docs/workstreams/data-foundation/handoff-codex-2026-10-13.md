@@ -141,3 +141,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 10:46 — Task11 first-party producer mechanism (`eqos-u0u.15`) — independent R2 COMPLIANT and quality/security APPROVE; exact-ID handoff, settings-context race and immutable trace repaired; 114 integrated and final 11 focused cases pass, scoped Ruff/format/strict mypy green; original RED preserved, actual release and Task6 consumption remain open, no push — 535df96
 
 - 2026-10-13 10:48 — Task15 retained Screener native draft (`eqos-u0u.12`) — independent source/native review APPROVE, final 7 retained/guarded-PG cases pass, exact numerical oracles preserved, all D1b seals match and scoped Ruff clean; draft committed, roadmap refreshed after resume, shared release/full source acceptance remain open, no push — ee4b000
+
+- 2026-10-13 11:03 — stable native/publication/producer historical gate — exit 0/PASS, 3,106 tests / 8 existing skips, full Ruff/format/strict mypy and privacy clear, protected native RED unchanged; Task14/15 closed within scope, prior FAIL retained, release/vendor-run/queue and full D1b remain open, no push — c9817f0 (verified frozen checkpoint)
