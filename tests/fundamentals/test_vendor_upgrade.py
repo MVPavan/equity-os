@@ -95,6 +95,10 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     policy: NormalisationPolicy,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    upgrade_migrations = tmp_path / "through-0006-migrations"
+    upgrade_migrations.mkdir()
+    for source in sorted(MIGRATIONS_DIR.glob("000[1-6]_*.sql")):
+        shutil.copyfile(source, upgrade_migrations / source.name)
     with old_db.runtime_pool() as pool:
         ingest = Ingest(old_db, EvidenceRepository(pool), tmp_path, dictionary, mapping_set, policy)
         ingest.run(ingest.intake())
@@ -115,7 +119,7 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
                 (record.run_id,),
             ).fetchone()
         with old_db.migrator_connection() as connection:
-            applied = apply_migrations(connection, MIGRATIONS_DIR)
+            applied = apply_migrations(connection, upgrade_migrations)
             assert [item.filename for item in applied] == ["0006_review_queue.sql"]
             assert (
                 connection.execute(

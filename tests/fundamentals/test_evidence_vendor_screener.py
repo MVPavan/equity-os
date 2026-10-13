@@ -317,6 +317,12 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
 
     from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
     from fundamentals.evidence.repository import EvidenceRepository
+    from fundamentals.evidence.vendor_config import (
+        SCREENER_EXTRACTOR_SOURCES,
+        SCREENER_EXTRACTOR_VERSION,
+        SCREENER_SOURCE,
+        vendor_extractor_pin,
+    )
 
     dictionary, mappings, policy = draft_config(tmp_path)
     with pg_db.migrator_connection() as conn:
@@ -343,6 +349,18 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
     request, _, schedule_body = retained_schedule("THERMAX", "quarters", "Other Income")
     page_request = page_request.model_copy(update={"entity_id": entity})
     request = request.model_copy(update={"entity_id": entity})
+    page_extractor_pin = vendor_extractor_pin(
+        SCREENER_SOURCE,
+        page_request.surface,
+        SCREENER_EXTRACTOR_VERSION,
+        SCREENER_EXTRACTOR_SOURCES,
+    )
+    schedule_extractor_pin = vendor_extractor_pin(
+        SCREENER_SOURCE,
+        request.surface,
+        SCREENER_EXTRACTOR_VERSION,
+        SCREENER_EXTRACTOR_SOURCES,
+    )
     with pg_db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
         before = repository.store_clock()
@@ -361,6 +379,7 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
             capture=page_capture,
             binding=binding(),
             section=Section.QUARTERS,
+            extractor_version=page_extractor_pin.version,
         )
         schedule = adapter().extract_screener_schedule(
             request,
@@ -372,13 +391,14 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
             binding=binding(),
             section=Section.QUARTERS,
             parent="Other Income",
+            extractor_version=schedule_extractor_pin.version,
             metadata_body=(
                 RAW_ROOT / "screener-financials/THERMAX/consolidated/screener_financials_meta.json"
             ).read_bytes(),
         )
-        for scope_request, scope_capture, extracted in [
-            (page_request, page_capture, page),
-            (request, schedule_capture, schedule),
+        for scope_request, scope_capture, extracted, extractor_pin in [
+            (page_request, page_capture, page, page_extractor_pin),
+            (request, schedule_capture, schedule, schedule_extractor_pin),
         ]:
             occurrences = repository.put_occurrences(extracted.occurrences)
             interpretations = interpret_generation(
@@ -392,6 +412,7 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
                     policy=policy,
                     dictionary=dictionary,
                     fiscal_year_end_month=3,
+                    expected_extractor_pin=extractor_pin,
                 ),
                 prior=(),
                 prior_anchor_keys={},

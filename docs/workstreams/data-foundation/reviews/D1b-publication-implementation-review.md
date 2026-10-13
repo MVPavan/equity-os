@@ -73,3 +73,25 @@ manifest, identity and replay assertions must remain unchanged while fixtures ar
 No whole-tree PASS or release is inferred from scoped mechanism approval.
 
 VERDICT: APPROVE
+
+## Final legacy fixture reopening proof
+
+The two formal-gate failures are repaired in fixtures only and pass **2/2 in 4.73s** on guarded
+PostgreSQL. The retained page/schedule test now threads the actual nine-member production
+extractor version/pin through extraction and CaptureScope. The upgrade test copies byte-identical
+0001–0006 migrations into its temporary fixture so its historical 0005 -> 0006 subject stays exact.
+No production guard or migration is changed.
+
+Full assertion AST inventories are unchanged: **38/38** in the Screener file and **11/11** in the
+upgrade file. The retained Sales amount/lexeme, clocks, capture/persistence/readback, exact applied
+0006 list and all manifest/pin/result/identity/replay assertions remain unchanged. The respective
+before/after file SHA-256 pairs are:
+
+- Screener: `b5a74d4b3ff1bd7cf1e15ad7ef3b668b65af0d4926bbd2793455b9c4f0d7f5d0` ->
+  `0ec87b94d56b0e3735edc990c09c4688812cc3ce9b2368f4706d9c6c071804ee`.
+- Upgrade: `a78cc9f5695c73b4a7f5c7885a86bae25fc0116bd4f52920f437b02aed4d55f3` ->
+  `40177c40be83f962596c5bd858f7b1b1bbec98340290bde5516993dcee84c81b`.
+
+Root authorizes the Screener proof hash reseal using this amendment, preserving every original
+recorded outcome. New 0007 retains its separate upgrade proof. The combined formal gate still
+requires a fresh rerun; these fixture checks do not relabel its earlier FAIL.
