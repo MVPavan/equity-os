@@ -1,0 +1,13 @@
+version: v2
+normalisation_policy_version: v1
+entry_files:
+- xbrl/v1/in_capmkt.yaml
+- xbrl/v1/in_bse_fin.yaml
+- pdf/v1/results_layout.yaml
+- screener/v2/financials.yaml
+construction_files:
+- constructions/v1.yaml
+- constructions/v2.yaml
+- screener/v2/constructions.yaml
+statement_anchor_files:
+- statement_anchors/v1.yaml
