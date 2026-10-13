@@ -11,6 +11,7 @@ import hashlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -31,8 +32,8 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-# 0001's 33 tables, 0003's version_pins, 0006's seven queue tables and 0009's snapshot.
-EXPECTED_TABLE_COUNT = 42
+# 0001's 33 tables, 0003's pin, 0006's seven queue tables, 0009's snapshot and 0010's six.
+EXPECTED_TABLE_COUNT = 48
 PROTECTED_REVIEW_TABLES = frozenset(
     {
         "approval_review_evidence",
@@ -532,7 +533,9 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
 
 
 @pytest.fixture
-def seeded(runtime: psycopg.Connection, migrator: psycopg.Connection) -> dict[str, int]:
+def seeded(
+    runtime: psycopg.Connection, migrator: psycopg.Connection, pg_db: PgTestDatabase, tmp_path: Path
+) -> dict[str, int]:
     """Constructed rows prove every table's SQL immutability; no project approval is claimed."""
     ids = _seed_every_table(runtime)
     from selection_support import key
@@ -634,7 +637,7 @@ def seeded(runtime: psycopg.Connection, migrator: psycopg.Connection) -> dict[st
         },
     )
     # Historical upgrade witnesses call this seed helper before migration 0009.
-    # Current full-schema assertions still require all 42 tables and populated rows.
+    # Current full-schema assertions still require all 48 tables and populated rows.
     if migrator.execute("SELECT to_regclass('eqos.queue_overlay_snapshots')").fetchone()[0]:
         with runtime.transaction():
             runtime.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -643,6 +646,12 @@ def seeded(runtime: psycopg.Connection, migrator: psycopg.Connection) -> dict[st
             ).fetchone()
             assert snapshot is not None
             ids["queue_overlay_snapshots"] = snapshot[0]
+    # Exact historical pre-0010 schemas keep their original seeds; current schemas
+    # require a genuine sealed synthetic witness and all six ordinary row IDs.
+    if migrator.execute("SELECT to_regclass('eqos.retained_intake_witnesses')").fetchone()[0]:
+        from pg_retained_intake_schema_support import seed_retained_intake_tables
+
+        ids.update(seed_retained_intake_tables(pg_db, runtime, tmp_path))
     return ids
 
 

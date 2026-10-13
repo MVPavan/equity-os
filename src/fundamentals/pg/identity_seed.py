@@ -50,6 +50,7 @@ class EvidenceInputKind(StrEnum):
     ENTITY_MAP = "ENTITY_MAP"
     ISSUER_IDENTITY = "ISSUER_IDENTITY"
     ISSUER_CONFIG = "ISSUER_CONFIG"
+    RETAINED_INTAKE = "RETAINED_INTAKE"
 
 
 class ListingVenue(StrEnum):

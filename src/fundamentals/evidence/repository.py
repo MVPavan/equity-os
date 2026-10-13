@@ -18,7 +18,7 @@ from typing import Any, LiteralString
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
 from fundamentals.compare.definitions import DefinitionSet, read_definition_set
@@ -41,6 +41,7 @@ from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.member_identity import IssuerIdentifiers
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.evidence.repository_rows import PackageStatementRecord, SegmentMemberWrite
+from fundamentals.evidence.retained_intake_models import RetainedIntakeWitness
 from fundamentals.pg.identity_seed import EvidenceInputKind, SettingKey
 
 _NO_IDENTIFIERS = "entity {entity_id} has no seeded security with ISIN, NSE and BSE listings"
@@ -80,6 +81,9 @@ class EvidenceInputRecord(BaseModel):
     label: str
     content_sha256: str
     recorded_at: datetime
+    retained_intake_witness: RetainedIntakeWitness | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class BasisStatusRecord(BaseModel):
@@ -198,8 +202,14 @@ class EvidenceRepository:
 
     def get_evidence_inputs(self, ids: Sequence[int]) -> tuple[EvidenceInputRecord, ...]:
         """Stored evidence-input rows by id."""
+        from fundamentals.evidence.retained_intake_store import (
+            enrich_retained_intake_evidence_inputs,
+        )
+
         rows = self._fetch(_EVIDENCE_INPUTS_BY_ID, (list(ids),))
-        return tuple(EvidenceInputRecord.model_validate(row) for row in rows)
+        return enrich_retained_intake_evidence_inputs(
+            self, tuple(EvidenceInputRecord.model_validate(row) for row in rows)
+        )
 
     def get_basis_statuses(self, ids: Sequence[int]) -> tuple[BasisStatusRecord, ...]:
         """Stored basis-status rows by id."""

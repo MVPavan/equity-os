@@ -284,7 +284,7 @@ def test_concurrent_capture_is_a_complete_mvcc_publication_cut(
 
 
 @pytest.fixture
-def through_0008_db(tmp_path: Path) -> Iterator[PgTestDatabase]:
+def through_0008_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[PgTestDatabase]:
     """Apply byte-identical migrations through the named 0008 boundary."""
     settings = load_test_settings()
     name = mint_name(settings)
@@ -303,6 +303,15 @@ def through_0008_db(tmp_path: Path) -> Iterator[PgTestDatabase]:
         with database.migrator_connection() as connection:
             applied = apply_migrations(connection, migrations)
             assert [item.filename for item in applied] == expected
+        # Only the two historical upgrade targets use this fixture. Keep their
+        # unchanged migration calls bound to byte-identical 0001 through 0009.
+        upgrade_migrations = tmp_path / "through-0009"
+        upgrade_migrations.mkdir()
+        for filename in expected:
+            shutil.copyfile(migrations / filename, upgrade_migrations / filename)
+        (ninth,) = MIGRATIONS_DIR.glob("0009_*.sql")
+        shutil.copyfile(ninth, upgrade_migrations / ninth.name)
+        monkeypatch.setitem(globals(), "MIGRATIONS_DIR", upgrade_migrations)
         yield database
     finally:
         drop_database(settings, name)

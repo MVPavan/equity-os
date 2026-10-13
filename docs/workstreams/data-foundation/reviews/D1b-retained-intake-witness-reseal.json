@@ -1,0 +1,126 @@
+{
+  "authority": "Root explicit witness opt-in fixture, new cutoff regression and mechanical fixture reseal; latest owner requested stable pause",
+  "original_seam_old_sha256": "ed3006ae91592a8be143ea8eba8d77623e6ae26bef6084d23ef08e087d1533cb",
+  "current_seam_sha256": "19df08f8281b3988de04c4cfdb968440ef7607c3facc92df48258a876b7a9993",
+  "original_function_and_assertion_AST_equal": true,
+  "changes": [
+    "Only seam helper import changes to opt-in wrapper; all original test bodies/assertions preserved. Legacy unsupported-no-witness tests unchanged.",
+    "Final review W-R02 requires fail-closed refusal before engine evaluation for future AS_KNOWN witness even all NOT_SELECTED; new actual recompute regression genuinely1/1 RED before repair. Earlier direct-helper acceptance explicitly changed to typed refusal.",
+    "Formatting, additive proof cases and parser-context test specificity: hold extractor identity unchanged."
+  ],
+  "outcomes": "Original1/1 seam and1/1 engine-cutoff RED outcomes unchanged. Infrastructure/no-collection/SQL syntax failures excluded.",
+  "files": {
+    "migrations/0010_retained_intake_witness.sql": {
+      "sha256": "5f9426ef4e611472e6dc0e46c133c3ac4a5fb67107a1d732c16c8cc0436c9026",
+      "lines": 679
+    },
+    "src/fundamentals/evidence/retained_intake_models.py": {
+      "sha256": "1317a68c2f2a30119590c63a7810757a22d07db0469021e3161a73244c35e970",
+      "lines": 296
+    },
+    "src/fundamentals/evidence/retained_intake_source.py": {
+      "sha256": "676e2f55b5c2f579377a62d05fc1d10a74c1c30def97513d193d03edc267e3e1",
+      "lines": 283
+    },
+    "src/fundamentals/evidence/retained_intake_proof.py": {
+      "sha256": "c08021864835d19b326b4fc54855e9fb6d47436d581bee65ad54a9e76fa67bdb",
+      "lines": 575
+    },
+    "src/fundamentals/evidence/retained_intake_store.py": {
+      "sha256": "57723f38f0ad4e7532810fc5690e0640b35bd9d77d0f34c87ce5db2343cde919",
+      "lines": 717
+    },
+    "src/fundamentals/evidence/capture_intake.py": {
+      "sha256": "d7fae88fdb051c8009c63b5e81118e8b0133a611eafa2ed889be752009c153b4",
+      "lines": 345
+    },
+    "src/fundamentals/evidence/first_party_generation.py": {
+      "sha256": "c13e341fd75c8e6230e7912175c76371d40fe9998b0193cb3703f34a5483aacf",
+      "lines": 686
+    },
+    "src/fundamentals/evidence/repository.py": {
+      "sha256": "a9e6cd334766b056981a724460fae72e27fcb7fe070b625c0c64987889828d4f",
+      "lines": 797
+    },
+    "src/fundamentals/pg/identity_seed.py": {
+      "sha256": "b7b886e6c5f0e978786ed27ec9e34945a63bf8bbb1806d44f9cd93e19e474114",
+      "lines": 369
+    },
+    "src/fundamentals/compare/vendor_handoff_attempts.py": {
+      "sha256": "0a1ee0c11d13b133191fa96f2cca90d7c55d017af81b3ef53cde51002697803b",
+      "lines": 335
+    },
+    "src/fundamentals/compare/vendor_handoffs.py": {
+      "sha256": "1dc67bfefa21db79314d9a0f70704e9e928ac55d9a096cbf9106f055919a7cdf",
+      "lines": 733
+    },
+    "src/fundamentals/compare/retained_intake_replay.py": {
+      "sha256": "cea187a094d2df554c1659a997734f1d51432fec4efe481af1de0d1b46b044ed",
+      "lines": 191
+    },
+    "src/fundamentals/compare/resolve.py": {
+      "sha256": "ac2ce0aed6c8c76cb37f15d94864709430559a5cd912b5f40c50bdc5c6b53264",
+      "lines": 491
+    },
+    "tests/fundamentals/test_retained_intake_witness.py": {
+      "sha256": "19df08f8281b3988de04c4cfdb968440ef7607c3facc92df48258a876b7a9993",
+      "lines": 55
+    },
+    "tests/fundamentals/retained_intake_witness_support.py": {
+      "sha256": "60a1d029f89c0a4dca417454028f944f61503c43a521de8c8b9eb038588adade",
+      "lines": 54
+    },
+    "tests/fundamentals/test_retained_intake_witness_source.py": {
+      "sha256": "fd5b7a5a21167bbf17befa2106df285de21413c25944673eda2730a2542f69c5",
+      "lines": 358
+    },
+    "tests/fundamentals/test_retained_intake_witness_replay.py": {
+      "sha256": "55c0e9ce781c62cb18e710396530994f84501604f11b2e611a06021a9489a31d",
+      "lines": 317
+    },
+    "tests/fundamentals/test_retained_intake_witness_store.py": {
+      "sha256": "fc5c4e5e60aa7a44dbc17440b5c7b5505ec2953032f151742a635375c0e5c1eb",
+      "lines": 551
+    },
+    "tests/fundamentals/test_retained_intake_witness_upgrade.py": {
+      "sha256": "5677c7cd2fdef66fe08fce464963d23d931e074356d8507a38bbda376b935fc2",
+      "lines": 130
+    },
+    "tests/fundamentals/test_retained_intake_witness_public_run.py": {
+      "sha256": "2d7dab04d2342a3ab7781038d3bd6ddffb9b884b5e902b8d75817a434e04d42b",
+      "lines": 113
+    },
+    "tests/fundamentals/pg_evidence_schema_support.py": {
+      "sha256": "0898f9ccb6ad452fa83850037f404b51f9d21aaa068069388b5a4c81455126f4",
+      "lines": 680
+    },
+    "tests/fundamentals/pg_retained_intake_schema_support.py": {
+      "sha256": "2bc61b0e616cc636d448341588b8d2a874382d38ad8987dc9a42659b00f8c65c",
+      "lines": 231
+    },
+    "tests/fundamentals/test_pg_evidence_schema.py": {
+      "sha256": "46fa55f243b514d456539a43c2cfa4ffa58610591b042cb337b9db32e41ea7dc",
+      "lines": 518
+    },
+    "tests/fundamentals/test_queue_overlay_snapshots.py": {
+      "sha256": "abd716776692ae185f05a2c829797ef65754240c4006ba76041f651f6cdcd97e",
+      "lines": 483
+    }
+  },
+  "r3_metadata_optin": {
+    "verified_at": "2026-10-13T15:46:26.097914+00:00",
+    "new_factory_RED": "2/2 genuine UnsafePathError before narrow optional-anchor repair",
+    "new_regression_function_AST_unchanged": true,
+    "all_existing_source_assertion_AST_unchanged": true,
+    "fixture_change": "Explicitly declared safe private exact original metadata; same original hashes/bindings/input/storeanchors; no financial RAW change or real permissions change. Legacy remains usable, opted-in unsafe material refuses.",
+    "initial_broad_attempt": "Interrupted130 after confirmed systemic legacy regression; not full PASS."
+  },
+  "final_classification": {
+    "authority": "Root metadata-only closeout correction; no unfiltered full-suite test body or membership change",
+    "change": "Add missing PostgreSQL marker to synthetic public witness integration test",
+    "test_function_AST_unchanged": true,
+    "old_sha256": "c374ddd69d648e20b5b9f1489f9bb2db9c9d1d06b14d58a34387876dafa7615b",
+    "new_sha256": "2d7dab04d2342a3ab7781038d3bd6ddffb9b884b5e902b8d75817a434e04d42b",
+    "full_verification": "3398passed8existing skips; fullRuff/mypyPASS. FormalSTOP only review prose containing prohibited path-pattern literals. Narrow documentation correction and exact original security-block rerun; no duplicate26-minute full suite."
+  }
+}

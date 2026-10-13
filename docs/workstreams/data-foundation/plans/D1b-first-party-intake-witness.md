@@ -398,6 +398,84 @@ Formal `red d1b-retained-intake-witness` records1/1 failed at13:49 UTC. A separa
 guarded PG run confirms successful retained XML/PDF registration and PDF package generation,
 then the exact existing refusal: "XBRL physical binding is unproven; accepted retained-intake
 witness required". This is genuine behavioral RED, not missing API/import or fixture setup.
+
+## Pause checkpoint integration rulings — 2026-10-13
+
+Root explicitly expands only the original positive's helper import to an opt-in witness
+wrapper. The original function body and every assertion have identical ASTs; the
+original RED remains recorded. Both legacy no-witness refusals remain unchanged.
+All source/proof/store/consumer/SQL changes land as one verified witness group.
+
+Source metadata is anchored and read before preparation writes; absent original issuer
+configuration refuses even for XBRL-only material. The producer's keyword defaults
+false; absent witness fields stay absent from old JSON and old generation preimages.
+Transport hydration may fetch only witness/header/material/binding association rows,
+not unlisted package/settings/attempt/capture domain rows. Full domain reproof consumes
+the manifest's supplied by-ID rows. Root takes resolve.py ownership after the public
+writer freezes it and wires the shared closure/context guards before engine evaluation.
+
+R1 W-I01 exposed missing PDF source catalog reconstruction for a valid failed-XBRL
+peer. The repair reads the sealed original issuer configuration and applies the same
+first-party/reconcilable intake catalog contract, refusing conflicts. The28-case source,
+positive and replay packet passes. Initial SQL CASE syntax setup failures are excluded
+from behavior RED evidence.
+
+Final review W-R02 exposed a genuine AS_KNOWN engine escape: NOT_SELECTED tokens
+alone cannot prevent the engine from selecting pre-seal source rows. Root records the
+fail-closed ruling: a future witness refuses the shared evaluation path before engine
+construction, even when all generation tokens are NOT_SELECTED. Metadata validation
+may still report an ineligible scope. RETROSPECTIVE remains unchanged. A new actual
+recompute sentinel regression is1/1 genuine RED before repair; the focused final packet
+passes27 cases, followed by the one-field parser-context specificity positive.
+
+Final review W-R03 expands the PUBLIC ACL test to all12 exact new functions, including
+SECURITY DEFINER guards, with a non-vacuous function inventory assertion.
+
+Concurrency evidence must be stated precisely:47 store cases prove genuine stale
+REPEATABLE READ refusal, rollback, equal concurrent seals, and a READ COMMITTED child
+waiting behind the common evidence lock before sealed-child refusal. That last test
+does not dynamically prove a seal committed during its wait. Atomic publication makes
+an uncommitted parent invisible; inventing a precommit-visible header is prohibited.
+The independently reviewed SQL VOLATILE post-lock check provides the visibility guard.
+
+The fixture seeds all48 ordinary id-PK tables, preserving original mutation/ownership
+assertions. Actual1–9 to10 upgrade preserves all42 old tables and both retained v1/v2
+run/result/manifest/queue/pin payloads and by-ID replays. Historical0008-to9 tests use
+a private exact1–9 directory; all11 test function ASTs and31 assertions remain unchanged.
+Root approves disclosed fixture/format/additive-case reseals; original outcomes remain.
+Actual SONACOMS, full Task6 and Stage1 acceptance remain separately open.
+
+The first main-worktree broad attempt exposed a legacy regression: optional new metadata
+DirectoryAnchor construction rejected the existing issuer-config parent even when witness
+mode was off. Two actual existing nodes independently reproduced UnsafePathError. Root
+stopped that known-failed run with exit130; it is interrupted verification, never a full PASS.
+Two new safe synthetic factory regressions are2/2 genuine RED for manifest/config parents.
+The narrow repair catches SnapshotError only around optional metadata anchors, returns
+metadata_source=None for legacy intake, and preserves input/store/parse refusals. Opt-in
+preparation still refuses absent original metadata before repository writes.
+
+Root explicitly expands enabled-witness fixtures to declare safe private copies of exact
+original manifest/issuer-config metadata, asserting both original hashes and identical
+bindings, while retaining the same physical-input and store anchors. No financial original
+handling or real directory permissions changes. Missing-metadata and unsafe-parent negatives
+remain strict. Fixture edits and the new regression reseal preserve all original assertions
+and recorded failure outcomes. Main retained/legacy tests and fresh full verification follow.
+
+Final frozen full behavior/quality run:3398PASS,8existing skips in1605.66s; full Ruff
+lint/format495files and strict mypy278sourcefiles PASS. Formal wrapper exits3/STOP
+solely because R1 review prose repeats prohibited machine-path pattern literals while
+claiming their absence. Root replaces only that prose with equivalent path-free wording.
+The original formal STOP is preserved. The exact unchanged verifier security block is
+rerun on the full original scope and clears all privacy/path/capture rails. No gate code
+or rail is changed or disabled. A duplicate26-minute suite is unnecessary for that prose fix.
+
+Final test classification adds the missing pg marker to the synthetic witnessed public
+case. Its complete function/assertion AST remains unchanged; pg collection selects the
+same one node, while not-pg collection deselects it. Root explicitly reseals this
+metadata-only change. Source and test bodies are unchanged from the3398-case run.
+Acceptance uses fresh full behavior/quality evidence plus the separately rerun rails and
+classification proof; it does not relabel the preserved formal wrapper result as PASS.
+Diff coverage remains advisory:633 changed source lines unexecuted, not100% coverage.
 Production is authorized in the isolated witness worktree; no positive GREEN is claimed yet.
 
 Witness preparation requires original issuer-config material even for an XBRL-only selection,

@@ -18,6 +18,10 @@ from fundamentals.compare.engine import RunEngine
 from fundamentals.compare.engine_attempts import attempt_available
 from fundamentals.compare.resolve_loader import RunLoader
 from fundamentals.compare.resolve_models import ReplayReader, ResolvedInputs, first_party_inputs
+from fundamentals.compare.retained_intake_replay import (
+    require_witness_manifest_closure,
+    require_witness_replay_context,
+)
 from fundamentals.compare.run_config import LoadedConfig
 from fundamentals.compare.run_models import (
     ResultRow,
@@ -97,6 +101,7 @@ def recompute(
     traces: TraceStore | None = None,
 ) -> tuple[ResultRow, ...]:
     """Result rows from loaded inputs alone; replay's traces come from the inputs."""
+    require_witness_replay_context(inputs, request, config=config)
     store = traces if traces is not None else ReplayTraces(inputs.traces)
     base = first_party_inputs(inputs) if request.scope.vendor_sources else inputs
     rows = RunEngine(base, request, config=config, traces=store).rows()
@@ -117,6 +122,7 @@ def resolve_joined_inputs(
     """Compute an exact handoff scope, then close all actual traces and vendor uses."""
     from fundamentals.compare.vendor_rows import attach_vendor_rows
 
+    require_witness_replay_context(inputs, request, config=config)
     recorder = _RecordingTraces(repository)
     engine = RunEngine(first_party_inputs(inputs), request, config=config, traces=recorder)
     first_party_rows = engine.rows()
@@ -342,6 +348,7 @@ def load_inputs(reader: ReplayReader, inputs: Sequence[RunInput]) -> ResolvedInp
         not set(row.evidence_occurrence_ids) <= frozen_occurrences for row in loaded.segment_members
     ):
         raise ReplayMismatchError("segment metadata evidence escaped frozen occurrence IDs")
+    require_witness_manifest_closure(loaded)
     return loaded
 
 

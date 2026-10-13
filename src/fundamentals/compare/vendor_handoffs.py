@@ -58,6 +58,11 @@ from fundamentals.evidence.repository import (
     EvidenceRepository,
     SettingsRecord,
 )
+from fundamentals.evidence.retained_intake_models import RetainedIntakeWitness
+from fundamentals.evidence.retained_intake_proof import (
+    generation_document,
+    reprove_retained_intake_witness,
+)
 from fundamentals.evidence.selection import is_eligible, select_key
 from fundamentals.evidence.vendor_config import PublicationState
 from fundamentals.evidence.vendor_config_files import read_safe
@@ -151,6 +156,30 @@ def _validate(
     context = _settings(handoff, setting, evidence, config_root, repository)
     attempts = repository.get_attempts(handoff.attempt_ids)
     _exact(handoff.attempt_ids, [row.attempt_id for row in attempts], "attempt")
+    witness_evidence = None
+    witnessed_intake = None
+    if handoff.retained_intake_witness_id is not None:
+        witness_evidence = _one(
+            repository.get_evidence_inputs([handoff.retained_intake_witness_id]),
+            "retained intake evidence input",
+        )
+        witness = _witness_record(handoff, witness_evidence)
+        capture_ids = sorted(
+            {_id(row.capture.capture_ref_id) for row in attempts if row.capture is not None}
+        )
+        witness_captures = repository.get_capture_refs(capture_ids)
+        _exact(capture_ids, [row.capture_ref_id for row in witness_captures], "witness capture")
+        assert config.vendor_config is not None
+        reprove_retained_intake_witness(
+            witness,
+            package=package,
+            settings=setting,
+            captures=witness_captures,
+            attempts=attempts,
+            pins=witness.payload.pins,
+            publication=config.vendor_config,
+        )
+        witnessed_intake = witness.payload.prepared
     captures: list[CaptureReference] = []
     occurrences: list[Occurrence] = []
     interpretations: list[Interpretation] = []
@@ -183,6 +212,7 @@ def _validate(
         config=config,
         config_root=config_root,
         repository=repository,
+        witnessed_intake=witnessed_intake,
     )
     by_id = {row.capture_ref_id: row for row in (*captures, *deciding_captures)}
     captures = [by_id[item] for item in sorted(by_id, key=lambda item: item or 0)]
@@ -191,6 +221,10 @@ def _validate(
     proofs = _proofs(handoff, package, occurrences, interpretations, config, repository)
     clock = repository.store_clock()
     _clocks(setting, evidence, captures, occurrences, interpretations, attempts, clock)
+    if witness_evidence is not None:
+        witness = _witness_record(handoff, witness_evidence)
+        if witness.recorded_at > clock or witness.sealed_at > clock:
+            raise FirstPartyHandoffError("retained witness has a future database clock")
     return _scope(
         handoff,
         request,
@@ -202,7 +236,24 @@ def _validate(
         proofs,
         setting,
         evidence,
+        witness_evidence,
     )
+
+
+def _witness_record(
+    handoff: FirstPartyGenerationHandoff, evidence: EvidenceInputRecord
+) -> RetainedIntakeWitness:
+    witness = evidence.retained_intake_witness
+    if (
+        witness is None
+        or evidence.kind is not EvidenceInputKind.RETAINED_INTAKE
+        or evidence.id != handoff.retained_intake_witness_id
+        or (evidence.id, evidence.label, evidence.content_sha256, evidence.recorded_at)
+        != (witness.evidence_input_id, witness.label, witness.content_sha256, witness.recorded_at)
+        or witness.payload.generation_json != generation_document(handoff)
+    ):
+        raise FirstPartyHandoffError("retained witness identity or complete generation differs")
+    return witness
 
 
 def _pins_and_scope(
@@ -504,12 +555,21 @@ def _scope(
     proofs: tuple[AlignmentProof, ...],
     setting: SettingsRecord,
     evidence: EvidenceInputRecord,
+    witness_evidence: EvidenceInputRecord | None = None,
 ) -> FirstPartyScope:
     boundary = EligibilityBoundary.at(request.cutoff)
+    witness_available = witness_evidence is None or (
+        request.mode is RunMode.RETROSPECTIVE
+        or (
+            witness_evidence.recorded_at <= request.cutoff
+            and _witness_record(handoff, witness_evidence).sealed_at <= request.cutoff
+        )
+    )
     active = (
         package.eligible(boundary)
         and setting.recorded_at <= request.cutoff
         and evidence.recorded_at <= request.cutoff
+        and witness_available
     )
     owned = {
         row.capture_ref_id
@@ -552,6 +612,7 @@ def _scope(
         row.attempt_id
         for row in attempts
         if row.attempted_at is not None
+        and witness_available
         and row.surface in request.scope.sources
         and row.attempted_at <= request.cutoff
         and (row.capture is None or row.capture.first_seen_at <= request.cutoff)
@@ -575,6 +636,14 @@ def _scope(
             disposition=selected if active else unused,
         ),
     ]
+    if witness_evidence is not None:
+        items.append(
+            RunInput(
+                kind=RunInputKind.EVIDENCE_INPUT,
+                ref_id=witness_evidence.id,
+                disposition=selected if active else unused,
+            )
+        )
     for kind, rows, available in (
         (
             RunInputKind.CAPTURE_REF,
@@ -632,7 +701,7 @@ def _scope(
         attempts=tuple(attempts),
         proofs=proofs,
         settings=(setting,),
-        evidence_inputs=(evidence,),
+        evidence_inputs=(evidence,) if witness_evidence is None else (evidence, witness_evidence),
         package_eligible=active,
         eligible_occurrence_ids=tuple(sorted(_id(item) for item in occurrence_ids)),
         eligible_interpretation_ids=tuple(sorted(_id(item) for item in eligible)),

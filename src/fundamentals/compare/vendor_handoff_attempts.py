@@ -19,7 +19,12 @@ from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.evidence import AcquisitionAttempt, AttemptStage, CaptureReference
 from fundamentals.contracts.snapshot import canonical_sha256
-from fundamentals.contracts.source_catalog import SourceClass
+from fundamentals.contracts.source_catalog import (
+    EvidenceRole,
+    SourceClass,
+    SourceDescriptor,
+    UnknownSourceError,
+)
 from fundamentals.evidence.capture_intake import NSE_XBRL_SOURCE_ID, SURFACE_OF
 from fundamentals.evidence.first_party_context import FirstPartyGenerationContext
 from fundamentals.evidence.first_party_extract import (
@@ -28,6 +33,7 @@ from fundamentals.evidence.first_party_extract import (
 )
 from fundamentals.evidence.first_party_generation import FirstPartyGenerationHandoff
 from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.evidence.retained_intake_models import PreparedRetainedIntakeWitness
 from fundamentals.evidence.vendor_config_files import read_safe
 from fundamentals.extract.pdf_statement_pages import specs_from_config
 
@@ -47,6 +53,7 @@ class _Source:
     blob_sha256: str | None
     extractor_version: str
     extraction_context_sha256: str | None
+    witnessed: bool = False
 
 
 def validate_handoff_attempts(
@@ -57,9 +64,14 @@ def validate_handoff_attempts(
     config: LoadedConfig,
     config_root: Path,
     repository: EvidenceRepository,
+    witnessed_intake: PreparedRetainedIntakeWitness | None = None,
 ) -> tuple[CaptureReference, ...]:
     """Close all attempts and return every actual deciding capture, including failed peers."""
-    sources = _sources(handoff, context, config, config_root, repository)
+    sources = (
+        _witnessed_sources(witnessed_intake, config)
+        if witnessed_intake is not None
+        else _sources(handoff, context, config, config_root, repository)
+    )
     package_captures = {member.capture_ref_id for member in handoff.members}
     capture_free = {row.attempt_id for row in attempts if row.capture is None}
     if len(handoff.capture_free_attempt_ids) != len(capture_free) or capture_free != set(
@@ -129,6 +141,67 @@ def validate_handoff_attempts(
                 "overall extraction contradicts package member disposition"
             )
     return captures
+
+
+def _witnessed_sources(
+    intake: PreparedRetainedIntakeWitness, config: LoadedConfig
+) -> dict[Representation, _Source]:
+    """Use only bindings independently reproved by the enclosing handoff consumer."""
+    assert config.vendor_config is not None
+    held = FundamentalsConfig.model_validate(yaml.safe_load(intake.issuer_config.body))
+    catalog = config.vendor_config.catalog
+    try:
+        declared_pdf = catalog.describe(held.results_pdf.source_id)
+    except UnknownSourceError:
+        if held.results_pdf.source_class is not SourceClass.FIRST_PARTY:
+            raise FirstPartyAttemptError(
+                "original PDF declaration lacks first-party authority"
+            ) from None
+        catalog = catalog.extend(
+            SourceDescriptor(
+                source_id=held.results_pdf.source_id,
+                source_class=SourceClass.FIRST_PARTY,
+                evidence_role=EvidenceRole.RECONCILABLE,
+            )
+        )
+    else:
+        if (
+            declared_pdf.source_class is not SourceClass.FIRST_PARTY
+            or not declared_pdf.may_reconcile
+        ):
+            raise FirstPartyAttemptError(
+                "original PDF declaration conflicts with published catalog"
+            )
+    sources: dict[Representation, _Source] = {}
+    for request in intake.requests:
+        declared = catalog.describe(request.source_id)
+        if (
+            declared.source_class is not SourceClass.FIRST_PARTY
+            or not declared.may_reconcile
+            or request.surface != SURFACE_OF[request.representation].value
+            or request.representation in sources
+        ):
+            raise FirstPartyAttemptError(
+                "witness source is not an exact authorized first-party input"
+            )
+        expected = (
+            config.pinned.extractor_xbrl
+            if request.representation is Representation.XBRL
+            else config.pinned.extractor_pdf
+        )
+        if request.extractor_pin != expected:
+            raise FirstPartyAttemptError("witness source extractor differs from published pins")
+        sources[request.representation] = _Source(
+            request.source_id,
+            request.surface,
+            request.expected_input_sha256,
+            request.extractor_pin.version,
+            request.extraction_context_sha256
+            if request.representation is Representation.PDF
+            else None,
+            witnessed=True,
+        )
+    return sources
 
 
 def _sources(
@@ -212,7 +285,7 @@ def _matches(
             and row.extractor_version == ""
             and row.extraction_context_sha256 is None
             and row.statement_family is None
-            and row.package_id == handoff.package_id
+            and row.package_id == (None if source.witnessed else handoff.package_id)
             and row.outcome in _ACQUISITION_FAILURES
             and source.blob_sha256 is not None
         )

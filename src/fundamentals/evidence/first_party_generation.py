@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.compare.run_config import LoadedConfig
 from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
@@ -134,6 +134,9 @@ class FirstPartyGenerationHandoff(BaseModel):
     attempt_ids: tuple[int, ...]
     capture_free_attempt_ids: tuple[int, ...]
     alignment_proof_ids: tuple[int, ...]
+    retained_intake_witness_id: int | None = Field(
+        default=None, gt=0, strict=True, exclude_if=lambda value: value is None
+    )
 
 
 def append_first_party_generation(
@@ -151,14 +154,33 @@ def append_first_party_generation(
     pdf_specs: Mapping[StatementFamily, StatementPageSpec] | None,
     supersedes_package_id: int | None = None,
     replaced_statements: frozenset[StatementFamily] = frozenset(),
+    retain_intake_witness: bool = False,
 ) -> FirstPartyGenerationHandoff:
     """Append through existing ingest, then return only its exact persisted generation ids."""
+    if type(retain_intake_witness) is not bool:
+        raise FirstPartyGenerationError("retain_intake_witness must be an explicit boolean")
     publication = config.vendor_config
     if publication is None or not mapping_requires_publication(config.mapping_set):
         raise VendorConfigPublicationError(
             "first-party generation requires a joined verified vendor publication"
         )
     repository = EvidenceRepository(pool)
+    prepared_witness = None
+    if retain_intake_witness:
+        from fundamentals.evidence.retained_intake_source import prepare_retained_intake_witness
+
+        prepared_witness = prepare_retained_intake_witness(
+            intake,
+            config=config,
+            config_root=config_root,
+            repository=repository,
+            entity_id=entity_id,
+            family=family,
+            reporting_period_end=reporting_period_end,
+            basis=basis,
+            framework=framework,
+            pdf_specs=pdf_specs,
+        )
     catalog = _catalog_for_intake(publication.catalog, intake)
     extractors = {
         Representation.XBRL: config.pinned.extractor_xbrl.version,
@@ -189,7 +211,7 @@ def append_first_party_generation(
             raise FirstPartyGenerationError(
                 "published generation did not report its stored qualification context"
             )
-        return _handoff(
+        handoff = _handoff(
             report.package_id,
             report.members,
             report.attempts,
@@ -202,6 +224,16 @@ def append_first_party_generation(
             family=family,
             reporting_period_end=reporting_period_end,
         )
+        if prepared_witness is not None:
+            from fundamentals.evidence.retained_intake_store import RetainedIntakeWitnessStore
+
+            witness = RetainedIntakeWitnessStore(repository).seal(
+                prepared_witness, handoff=handoff, report=report
+            )
+            handoff = handoff.model_copy(
+                update={"retained_intake_witness_id": witness.evidence_input_id}
+            )
+        return handoff
     except FirstPartyContextError as exc:
         raise FirstPartyGenerationError(str(exc)) from exc
 
