@@ -1134,4 +1134,9 @@ run/replay, queue/CLI, source coverage and Stage 1 acceptance remain open.
 The actual release and retained-generation proof tests are committed in `ca8e98a`; their
 genuine pre-C RED and fresh 2/2 GREEN remain separate from synthetic mechanics. Post-release
 publication/producer/v1-pin compatibility is being checked before Task 13 mechanism closure.
+
+Post-release compatibility is now **95 passed in 33.46s** after fixture-only repair `875bf80`:
+the unpublished temporary copy omits real publication records; all seventeen original assertion
+ASTs and thirteen RED outcomes remain unchanged. Task 13's technical publication/release scope
+is closed. Task 11's final integrated run/replay acceptance and full D1b remain open.
 No nominal RELEASED label or caller model is accepted as release authority.

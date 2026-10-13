@@ -151,3 +151,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 11:34 — actual release proof tests — genuine pre-C public-loader 1/1 RED preserved; real RELEASED load and guarded retained-Apar v2 append/reuse/v1 identity preservation 2/2 GREEN, Ruff/format clear; verification tests committed, post-release compatibility pending, no push — ca8e98a
 
 - 2026-10-13 11:39 — bounded queue/acquisition repair plans — independent R2 APPROVE resolves unique-seal/MVCC/retry findings; narrow additive0008 vendor acquisition and0009 durable queue visibility contracts approved, all four queue PG regressions remain RED; exhaustive seven-finding vendor producer/consumer R1 ledger recorded for repair, no mechanism/full-phase acceptance or push — 167547e
+
+- 2026-10-13 11:51 — post-release private draft fixture (`eqos-u0u.21`) — omit actual publication only from private draft copy, all17 assertions/13RED outcomes unchanged, full affected matrix95PASS and Ruff/format clear; fixture task and Task13 technical release closed, Task11/6/source/fullStage1 remain open, no push — 875bf80
