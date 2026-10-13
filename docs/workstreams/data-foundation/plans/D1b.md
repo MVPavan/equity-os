@@ -846,3 +846,83 @@ close each stage only when its exact live acceptance holds. D1b closes only with
 approved amendments/manifest, source-backed fixture coverage and stable integration proof.
 Until the missing evidence is available under renewed authorization, report usable seams and
 parked obligations separately and keep dependent full Stage 1 acceptance open.
+
+### Paused scoped checkpoint — 2026-10-13
+
+The owner requested completion of existing work and a pause. Tasks 2–5 are frozen and
+independently approved within the scopes below and committed. The final formal integration
+attempt remains FAIL/STOP; that verdict is preserved. Start no new implementation, source measurement or joined
+configuration publication. Resume normal bounded execution only after an explicit resume or new task.
+Checkpoint commits: Task 2 `119ae48`, Task 5 `fdae6ee`, Task 3 `7489b8d`, Task 4 `1eeaf69`;
+each has a separate committed handoff entry. Migration `0006` is now immutable. Final coverage
+suite: 2,877 passed / 1 failed / 8 existing optional skips; all 74 original D1b RED nodes passed
+and all current seals match. Full Ruff lint/format and strict mypy pass. The full gate is not PASS.
+
+D1a is verified complete under the recorded four-check/tracer/independent-review closure route.
+Its historical red proof is absent; D1b red evidence does not retroactively repair that history.
+Independent [schema approval](../reviews/D1b-schema-review.md) covers Task 2 and addresses S1–S5.
+Independent [batch approval](../reviews/D1b-batch-review.md) covers Tasks 3–5 and addresses M1.
+Together these approve a scoped checkpoint, not full stage acceptance or D1b closure.
+
+| Task | Approved checkpoint | Remaining acceptance boundary |
+|---|---|---|
+| 2 | Source-qualified contracts, migration `0006`, legacy upgrade/replay compatibility, common retained intake and protected receipt seams | Actual Task 7 trusted-authenticator composition and Task 6 integrated run/queue behavior |
+| 3 | Available retained Screener page/schedule extraction, real local registration clocks and isolated draft mappings | Joined v2 publication, source-native liabilities construction, Apar capture and demonstrated vendor equivalence |
+| 4 | Capture-free unavailable/refused generations and guarded offline Tijori/Upstox parser wiring | Real authorized bodies, numeric/TTM qualification, true absence and internal-conflict proofs |
+| 5 | Ordered pure corroboration, independent pair routing, named-overlay trust and diagnostic-role repair | Persisted queue/overlay reader and retained multi-vendor run/replay integration |
+
+Fail-closed decisions retained at this checkpoint:
+
+- Missing authorized local bindings produce capture-free `FAILED` → `UNAVAILABLE`; they never
+  establish `NOT_PUBLISHED`. Unknown/incompatible authority is refused; present bindings cannot
+  be relabelled missing. Persistence alone supplies actual `eqos.store_now()` attempt times.
+- Screener EPS remains `RELATED_NOT_EQUIVALENT`; other draft meanings remain unproven. Total
+  Liabilities stays unmapped. Borrowings + Other Liabilities needs reviewed source-native operands;
+  false canonical mappings or first-party NCI cannot supply that vendor construction.
+- Missing Apar Screener, real Tijori/Upstox measurements and NETWEB negative responses leave
+  mandatory source proofs and the complete eleven-company oracle open. Pure constructed cases
+  prove rule behavior only. Retrieval metadata never supplies historical first-seen/publication time.
+- Protected SQL roles and proposal/amount seals are proved within Task 2's scope. Nominal Python
+  capabilities and constructed test authenticators do not prove real owner/reviewer authority.
+  Task 7 still requires trusted authentication; Task 13 alone joins and publishes shared v2 drafts.
+
+Red-proof disclosures: initial red outcomes remain preserved. Task 2's explicitly authorized
+fixture reopening corrected real stored ids/provenance without weakening values, node ids or
+round-trip/refusal assertions; corrected affected nodes still failed under unchanged `0001`–`0005`.
+Task 5's lint cleanup reconstructed the exact original, matched its sealed hash and proved an
+equivalent normalized AST; the diagnostic repair has its own genuine red regression. The
+coordinator completed the changed-test hash reseals and retained original/reopening evidence.
+Task 2 generation scope has an exact recovered sealed preimage with identical whole-module AST;
+the original SQL binding file is an exact final prefix, with added S5 cases having their own RED proof.
+Task 3's exact original ten-case file was recovered and its sealed SHA and all original helper/test ASTs verified; fourteen appended focused characterization cases do not acquire retrospective RED status. The extended file and retained support are now protected by the coordinator reseal. Task 8/12 format-only reseals remain disclosed above; none constitutes historical D1a red proof.
+
+Source reports remain untracked under `scratchpad/execution/data-foundation-autonomous-2026-10-13/`:
+`d1b-task2-report.md`, `vendor-screener-report.md`, `offline-vendor-report.md` and
+`d1b-corroboration-report.md`. Durable independent reviews above carry the scoped approval.
+Remaining implementation includes Tasks 6/7 run, queue and authenticated CLI integration;
+Task 13 joined publication; Task 11 matching-version first-party generations; and Tasks 9/10
+the source-verified approved manifest followed by its e2e proof. Preserve genuine dependencies,
+prior manifest commit order and all missing vendor obligations before closing any full stage.
+
+Formal gate stop, preserved at pause:
+
+- `scripts/verify.sh gate d1b-vendor-schema` exited 3/STOP. Privacy matches were traced to
+  constructed `1010`/`1200` monetary operands, the source-read HFCL Sales oracle `1012`, and
+  generic `identity_strength: configured_url_only` source code. The last match came from a long
+  indented source line becoming a short generic pattern after whitespace stripping. No private
+  capture body, issuer id or credential was identified in those matched lines. `eqos-490` records
+  a narrow reviewed scanner-contract follow-up; no gate rail was disabled, no PASS inferred, and
+  no post-commit empty-diff rerun used to conceal the original STOP. The independently approved
+  offline scope was inspected as unaffected and committed; the full formal acceptance stays held.
+- The sole suite failure was the unchanged existing
+  `test_refused_retained_cutoff_preserves_database_and_existing_report[False-cutoff1]`. All four
+  parametrizations passed with the same coverage option on the focused rerun (1.26s). Cause is
+  unknown; an unclosed SQLite ResourceWarning is an observation, not a proven cause. `eqos-hdz`
+  preserves the investigation without weakening cutoff/database/report assertions.
+- The real project verifier recorded D1a and amendment PASS, 12 NOT BUILT obligations and a
+  stale enum-helper failure. Its fresh focused rerun passed; the subsequent coverage suite also
+  passed that node. The coverage-suite cutoff failure and privacy STOP remain separate unresolved
+  results. No full project or D1b acceptance is claimed.
+- Do not start another batch while paused. After explicit resume, resolve these recorded gate
+  findings before stable acceptance; then resume Tasks 13/11/6/7 and the evidence-gated manifest
+  tasks under their actual producer/consumer contracts. Missing vendor source proofs stay parked.

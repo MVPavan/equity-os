@@ -1,6 +1,36 @@
 # Equity-OS autonomous backend completion goal — 2026-10-13
 
-Status: active, owner-activated 2026-10-13. Preparation task: `eqos-lob`.
+Status: paused, 2026-10-13. Independently approved scoped work is committed; formal integration
+acceptance remains FAIL/STOP. Preparation task: `eqos-lob`.
+
+## Pause steering — 2026-10-13
+
+The owner reported that limits reset and requested finishing already spawned work, then pausing
+at a verified checkpoint. Existing schema, adapter, corroboration and offline-boundary work is
+frozen and independently approved within its stated scope. Start no new implementation batch.
+The final integration attempt, explicit-file commits and handoff are recorded below. The goal
+tool is paused at this checkpoint. Subsequent work uses normal bounded execution only after an
+explicit resume or new task.
+
+D1a is verified complete under its disclosed four-check/tracer/review closure route; its missing
+historical red proof remains missing. D1b Tasks 2–5 have an approved scoped checkpoint, covering
+shared schema, draft Screener extraction, offline unavailable seams and pure corroboration tables.
+These task-level proofs do not establish full D1b stage acceptance. Full vendor source proofs and
+Tasks 6, 7, 9, 10, 11 and 13 remain open; no shared v2 release or real approval authentication is
+claimed. Resume from the [D1b build notes](../workstreams/data-foundation/plans/D1b.md#paused-scoped-checkpoint--2026-10-13)
+and live state. Commits: schema `119ae48`, pure decisions `fdae6ee`, Screener draft `7489b8d`,
+offline boundaries `1eeaf69`; each has a committed progress-log entry. Migration `0006` is now
+immutable; future schema uses `0007` or the next free number.
+
+Formal frozen gate: **2,877 passed, 1 failed, 8 existing skips**; Ruff lint/format and strict mypy
+passed. All 74 recorded D1b RED nodes passed and all current seals match. The existing cutoff
+refusal node failed only in the coverage-suite run; its four focused coverage cases then passed.
+Cause remains unproved (`eqos-hdz`). The privacy scanner returned STOP on monetary oracle/
+synthetic-value collisions and a generic metadata field (`eqos-490`). The gate is not PASS;
+no rail was disabled, and committing the inspected, unaffected offline scope does not resolve it.
+The real project verifier also records 12 NOT BUILT exits/governance/pilot obligations.
+After explicit resume, investigate these two gate findings before claiming stable acceptance or
+starting another implementation batch. Then follow the actual D1b publication/run dependencies.
 
 ## Objective
 
