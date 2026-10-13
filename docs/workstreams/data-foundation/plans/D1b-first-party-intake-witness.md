@@ -389,3 +389,18 @@ snapshot/concurrent-seal tests; W02 assigns the exact 48-table schema fixture ex
 ordinary IDs and preserved all-table/ACL assertions; W03 freezes pure replay helper signatures
 and `.25`'s sole call-site ownership with a recorded integration handshake. These are plan
 decisions, not claims that the implementation or verification already exists.
+
+## Build notes — 2026-10-13
+
+Root freezes the first existing-seam positive at SHA-256
+`ed3006ae91592a8be143ea8eba8d77623e6ae26bef6084d23ef08e087d1533cb`.
+Formal `red d1b-retained-intake-witness` records1/1 failed at13:49 UTC. A separate detailed
+guarded PG run confirms successful retained XML/PDF registration and PDF package generation,
+then the exact existing refusal: "XBRL physical binding is unproven; accepted retained-intake
+witness required". This is genuine behavioral RED, not missing API/import or fixture setup.
+Production is authorized in the isolated witness worktree; no positive GREEN is claimed yet.
+
+Witness preparation requires original issuer-config material even for an XBRL-only selection,
+because the approved contract re-proves issuer/quarter/period from that material. Missing material
+refuses in opt-in witness mode; legacy mode retains its existing behavior. This fail-closed ruling
+does not authorize a new source filing clock or a replacement SONACOMS original manifest.

@@ -305,3 +305,25 @@ Test seams: isolated synthetic mechanics versus committed `RELEASED` authority a
 Dependencies: Tasks 1-5 and the exact A -> fresh review -> C -> H gate. Full D1b release still waits
 for the approved main plan's missing Tijori/Upstox/NETWEB evidence.
 Risks: the focused implementation may be green while D1b Stage 1 remains correctly blocked.
+
+## Build notes — 2026-10-13
+
+Root records two additive integration rulings after inspecting the accepted handoff/API seams.
+Fresh `execute_run` may take keyword-only `vendor_input_anchor: DirectoryAnchor | None = None`.
+Captured claims require the explicitly observed directory anchor and guarded body/metadata reproof
+before any append; capture-free offline claims may omit it. Do not guess a root from configuration,
+cwd or a retained filename. The process-local anchor is absent from logical request/run identity,
+manifest and legacy v1 JSON, grants no publication rights, and is unnecessary for by-ID replay.
+
+Applicability context is re-proved from the exact first-party generation: package statement scope,
+source-derived fiscal setting, and basis artifacts tied to the handoff's exact evidence identity,
+including their key, value and stored metadata. Segment evidence must be inside the handoff's
+closed IDs and match exact entity/basis/period/dimensions with real stored clocks and cutoff.
+Ambiguous or absent context refuses; fresh resolution must close every consumed evidence ID,
+and replay cannot use latest fiscal/segment/package scans.
+
+Root's first frozen24-case public PG probe returns15 PASS /9 FAIL in29.96s. Original six refusal
+contracts pass. The later cases fail at a missing private `fixtureco-fy26-q2.yaml` settings artifact,
+before their intended behavior boundary. This is an invalid fixture/probe for those nine cases,
+not a public API GREEN/RED claim; repair fixture construction without weakening production proof,
+preserve all original assertions/literals, and rerun. Actual SONACOMS acceptance remains separate.
