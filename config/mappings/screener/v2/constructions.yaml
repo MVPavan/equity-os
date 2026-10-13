@@ -1,0 +1,10 @@
+# Draft source-native construction contract, intentionally not promoted into a published release.
+# Required next seam: Borrowings + Other Liabilities -> liabilities_incl_nci, on the SAME vendor
+# surface/capture, with exact source-native occurrence/operand ids and no first-party NCI operand.
+# Existing ConstructionRule consumes mapped canonical operands; borrowings_total is excluded
+# and Other Liabilities has no evidenced dictionary operand. Inventing their canonical mappings
+# would misstate the evidence. Until native-operand support is reviewed, retain both rows UNMAPPED.
+# Evidence: approved data specification §2 known traps; stage1-source-inventory.md deferred ledger.
+# Other Income is directly published; its first-party bridge belongs to constructions/v2.yaml,
+# not a vendor arithmetic operation that overwrites its source occurrence.
+constructions: []

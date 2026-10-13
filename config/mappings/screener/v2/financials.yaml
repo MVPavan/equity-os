@@ -1,0 +1,490 @@
+# Draft only: unpublished until Task13 joins all reviewed authority/dictionary/artifacts.
+source: screener-subscriber
+surface: SCREENER_FINANCIALS
+schema_identity: screener-financials-html-v1
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+entries:
+- entry_id: screener.quarters.revenue_from_operations
+  selector:
+    statement_family: PL
+    labels:
+    - Sales
+    section_equals: quarters
+  canonical_id: revenue_from_operations
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Sales row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.opex_excl_finance_and_da
+  selector:
+    statement_family: PL
+    labels:
+    - Expenses
+    section_equals: quarters
+  canonical_id: opex_excl_finance_and_da
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Expenses row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.ebitda_excl_other_income
+  selector:
+    statement_family: PL
+    labels:
+    - Operating Profit
+    section_equals: quarters
+  canonical_id: ebitda_excl_other_income
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Operating Profit row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.other_income_incl_exceptional
+  selector:
+    statement_family: PL
+    labels:
+    - Other Income
+    section_equals: quarters
+  canonical_id: other_income_incl_exceptional
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Other Income row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.finance_costs
+  selector:
+    statement_family: PL
+    labels:
+    - Interest
+    section_equals: quarters
+  canonical_id: finance_costs
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Interest row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.depreciation_amortisation
+  selector:
+    statement_family: PL
+    labels:
+    - Depreciation
+    section_equals: quarters
+  canonical_id: depreciation_amortisation
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Depreciation row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.profit_before_tax
+  selector:
+    statement_family: PL
+    labels:
+    - Profit before tax
+    section_equals: quarters
+  canonical_id: profit_before_tax
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Profit before tax row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.profit_for_period
+  selector:
+    statement_family: PL
+    labels:
+    - Net Profit
+    section_equals: quarters
+  canonical_id: profit_for_period
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters Net Profit row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.quarters.eps_basic
+  selector:
+    statement_family: PL
+    labels:
+    - EPS in Rs
+    section_equals: quarters
+  canonical_id: eps_basic
+  period_rule: COLUMN_DURATION
+  tier: RELATED_NOT_EQUIVALENT
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #quarters EPS in Rs row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - QUARTER
+- entry_id: screener.profit-loss.revenue_from_operations
+  selector:
+    statement_family: PL
+    labels:
+    - Sales
+    section_equals: profit-loss
+  canonical_id: revenue_from_operations
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Sales row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.opex_excl_finance_and_da
+  selector:
+    statement_family: PL
+    labels:
+    - Expenses
+    section_equals: profit-loss
+  canonical_id: opex_excl_finance_and_da
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Expenses row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.ebitda_excl_other_income
+  selector:
+    statement_family: PL
+    labels:
+    - Operating Profit
+    section_equals: profit-loss
+  canonical_id: ebitda_excl_other_income
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Operating Profit row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.other_income_incl_exceptional
+  selector:
+    statement_family: PL
+    labels:
+    - Other Income
+    section_equals: profit-loss
+  canonical_id: other_income_incl_exceptional
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Other Income row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.finance_costs
+  selector:
+    statement_family: PL
+    labels:
+    - Interest
+    section_equals: profit-loss
+  canonical_id: finance_costs
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Interest row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.depreciation_amortisation
+  selector:
+    statement_family: PL
+    labels:
+    - Depreciation
+    section_equals: profit-loss
+  canonical_id: depreciation_amortisation
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Depreciation row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.profit_before_tax
+  selector:
+    statement_family: PL
+    labels:
+    - Profit before tax
+    section_equals: profit-loss
+  canonical_id: profit_before_tax
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Profit before tax row. SONACOMS Dec2024 OtherIncome41 vs Other income
+    normal46.85 plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome;
+    unresolved qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.profit_for_period
+  selector:
+    statement_family: PL
+    labels:
+    - Net Profit
+    section_equals: profit-loss
+  canonical_id: profit_for_period
+  period_rule: COLUMN_DURATION
+  tier: EQUIVALENCE_UNPROVEN
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss Net Profit row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.profit-loss.eps_basic
+  selector:
+    statement_family: PL
+    labels:
+    - EPS in Rs
+    section_equals: profit-loss
+  canonical_id: eps_basic
+  period_rule: COLUMN_DURATION
+  tier: RELATED_NOT_EQUIVALENT
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps; docs/specs/artifacts/stage1-source-inventory.md; raw Screener
+    #profit-loss EPS in Rs row. SONACOMS Dec2024 OtherIncome41 vs Other income normal46.85
+    plus Exceptional items-5.70 discriminates aggregate from plain OtherIncome; unresolved
+    qualification remains unproven.'
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.balance-sheet.total_assets
+  selector:
+    statement_family: BALANCE_SHEET
+    labels:
+    - Total Assets
+    section_equals: balance-sheet
+  canonical_id: total_assets
+  period_rule: COLUMN_INSTANT
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2b; retained
+    Screener balance-sheet row. Total Liabilities is the balance-sheet total and deliberately
+    has no liability mapping.
+  period_kinds:
+  - INSTANT
+- entry_id: screener.balance-sheet.equity_share_capital
+  selector:
+    statement_family: BALANCE_SHEET
+    labels:
+    - Equity Capital
+    section_equals: balance-sheet
+  canonical_id: equity_share_capital
+  period_rule: COLUMN_INSTANT
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2b; retained
+    Screener balance-sheet row. Total Liabilities is the balance-sheet total and deliberately
+    has no liability mapping.
+  period_kinds:
+  - INSTANT
+- entry_id: screener.cash-flow.cfo
+  selector:
+    statement_family: CASH_FLOW
+    labels:
+    - Cash from Operating Activity
+    section_equals: cash-flow
+  canonical_id: cfo
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2c; retained
+    raw Screener cash-flow annual printed row; scope unproven.
+  period_kinds:
+  - YEAR
+- entry_id: screener.cash-flow.cfi
+  selector:
+    statement_family: CASH_FLOW
+    labels:
+    - Cash from Investing Activity
+    section_equals: cash-flow
+  canonical_id: cfi
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2c; retained
+    raw Screener cash-flow annual printed row; scope unproven.
+  period_kinds:
+  - YEAR
+- entry_id: screener.cash-flow.cff
+  selector:
+    statement_family: CASH_FLOW
+    labels:
+    - Cash from Financing Activity
+    section_equals: cash-flow
+  canonical_id: cff
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2c; retained
+    raw Screener cash-flow annual printed row; scope unproven.
+  period_kinds:
+  - YEAR
+- entry_id: screener.schedule.quarters.other_income
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Other income normal
+    section_equals: quarters/Other Income
+  canonical_id: other_income
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - QUARTER
+- entry_id: screener.schedule.quarters.exceptional_items_before_tax
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Exceptional items
+    section_equals: quarters/Other Income
+  canonical_id: exceptional_items_before_tax
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - QUARTER
+- entry_id: screener.schedule.quarters.profit_attributable_nci
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Minority share
+    section_equals: quarters/Net Profit
+  canonical_id: profit_attributable_nci
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - QUARTER
+- entry_id: screener.schedule.quarters.profit_attributable_owners
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Profit for EPS
+    section_equals: quarters/Net Profit
+  canonical_id: profit_attributable_owners
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - QUARTER
+- entry_id: screener.schedule.profit-loss.other_income
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Other income normal
+    section_equals: profit-loss/Other Income
+  canonical_id: other_income
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.schedule.profit-loss.exceptional_items_before_tax
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Exceptional items
+    section_equals: profit-loss/Other Income
+  canonical_id: exceptional_items_before_tax
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.schedule.profit-loss.profit_attributable_nci
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Minority share
+    section_equals: profit-loss/Net Profit
+  canonical_id: profit_attributable_nci
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - YEAR
+  - TTM
+- entry_id: screener.schedule.profit-loss.profit_attributable_owners
+  surface: SCREENER_SCHEDULE
+  schema_identity: screener-financials-schedule-v1
+  selector:
+    statement_family: PL
+    labels:
+    - Profit for EPS
+    section_equals: profit-loss/Net Profit
+  canonical_id: profit_attributable_owners
+  period_rule: COLUMN_DURATION
+  evidence_ref: docs/research/canonical-field-coverage-inventory.md §2a; separately
+    retained raw schedule JSON, source/page binding and reconciliation required; no
+    general qualification is claimed.
+  period_kinds:
+  - YEAR
+  - TTM
