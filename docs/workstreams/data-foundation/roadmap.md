@@ -1,8 +1,8 @@
 # Roadmap: data-foundation
 
-Status: approved and seeded in bd (`16140d0`); in execution. Every Equity-OS data-foundation plan
-item lives in this one file. What the project is, its goal and how to verify completion:
-[`project.md`](project.md). "Panel" in this file now means the single reviewer's approval
+Status: approved and seeded in bd (`16140d0`); in execution. This is the plan of the backend core
+(data foundation). What the core is and how to verify it: [`core.md`](core.md). All backend work
+and the pilot that decides project completion: [`../../backend-roadmap.md`](../../backend-roadmap.md). "Panel" in this file now means the single reviewer's approval
 (owner, 2026-10-12; `.claude/rules/core/04-agent-stack.md`); the specs' wording is amended under
 `eqos-uqu.10` before D3.
 Specs: [data spec](../../specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md)
@@ -488,10 +488,10 @@ substituting for GPT-6.1 Sol at capacity; both REVISE, consistent; 2026-10-12).
 5. **`eqos-4j2.8`** stays outside this workstream and runs after D3 as ledger versions (D3
    Touches).
 
-## Project completion
+## Core completion
 
-The workstream is complete when all ten phase exits above are green and every phase epic is
-closed. [`project.md`](project.md#how-to-verify-the-project-is-complete) has the full definition.
+The core is complete when all ten phase exits above are green and every phase epic is
+closed. [`core.md`](core.md#how-to-verify-the-core-is-complete) has the full definition.
 Four parts, all mechanical:
 1. Every phase exit test passes.
 2. Every frozen manifest and amendment record passes its shared test (`test_frozen_manifests.py`,
@@ -500,7 +500,10 @@ Four parts, all mechanical:
    check and format.
 4. Every phase's end-of-phase reviewer approval is recorded on its closed epic.
 
-**To build: `scripts/verify_project.sh`.** One command that runs parts 1–3, prints PASS/FAIL per
+Core completion is necessary but not sufficient: the project completes when the pilot in
+[`../../backend-roadmap.md`](../../backend-roadmap.md) passes.
+
+**To build: `scripts/verify_project.sh`** (backend roadmap P0.8). One command that runs parts 1–3 and the pilot test, prints PASS/FAIL per
 phase, and exits nonzero unless every part passes. A phase not yet built reports `NOT BUILT`
 rather than skipping. Add it with D1b, the first phase that has a frozen manifest, and extend it
 as each phase lands its exit test.

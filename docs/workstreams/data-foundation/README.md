@@ -12,8 +12,9 @@ retention policy with replay after deletion.
 - [Canonical financial data and cross-source comparison](../../specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md) (the "data spec"): Stages 1–4
 - [Report ledger, memory and data lifecycle](../../specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md) (the "ledger spec"): Stages 1–5
 
-**Project definition.** [`project.md`](project.md): what the project is, its goal, and how to
-verify it is complete.
+**Core definition.** [`core.md`](core.md): this workstream is the backend core; what it is, its goal,
+and how to verify the core is complete. Whole-backend work and the pilot that decides project
+completion: [`docs/backend-roadmap.md`](../../backend-roadmap.md).
 
 **Plan.** [`roadmap.md`](roadmap.md) holds the progress, the estimate and the completion check.
 It has ten phases: D1a, D1b and D2–D9. Each one is a spec

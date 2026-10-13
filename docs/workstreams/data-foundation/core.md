@@ -1,7 +1,10 @@
-# Project: data-foundation
+# Backend core: data foundation
 
-What this project is, what it is for, and how to tell that it is finished. The plan and progress
-live in [`roadmap.md`](roadmap.md); the requirements live in the two specs below. Where this file
+The data foundation is the **core phase of the Equity-OS backend**, not the whole project. This file
+says what the core is, what it is for, and how to tell that the core is finished. The whole
+backend's remaining work and the pilot that decides project completion are in
+[`docs/backend-roadmap.md`](../../backend-roadmap.md). The core's plan and progress live in
+[`roadmap.md`](roadmap.md); the requirements live in the two specs below. Where this file
 and a spec differ, the spec wins.
 
 ## What it is
@@ -56,7 +59,7 @@ Out of scope: the specs' Out of Scope tables. Main items:
 - multi-user access;
 - off-machine backups.
 
-## How to verify the project is complete
+## How to verify the core is complete
 
 Completion is mechanical. It is never a model's opinion, and it has four parts.
 
@@ -99,5 +102,6 @@ each must show.
   (`.claude/rules/core/04-agent-stack.md`).
 
 **Single check (to be built):** `scripts/verify_project.sh` should run parts 1–3 and report
-per-phase PASS/FAIL. It does not exist yet; [`roadmap.md`](roadmap.md#project-completion) tracks it.
-The project is complete when that check passes and all ten phase epics are closed.
+per-phase PASS/FAIL. It does not exist yet; [`roadmap.md`](roadmap.md#core-completion) tracks it.
+The core is complete when that check passes and all ten phase epics are closed. The project
+is complete only when the pilot in [`docs/backend-roadmap.md`](../../backend-roadmap.md#4-pilot-acceptance-how-the-pilot-decides-completion) passes.
