@@ -552,6 +552,17 @@ def _value(
     occurrence: Occurrence, entry: MappingEntry, trace: dict[str, object]
 ) -> tuple[Decimal | None, Interval | None, InterpretationReason | None]:
     """Exact base-unit value and interval; no value for a missing marker."""
+    amount, interval, reason = normalise_occurrence_value(occurrence, sign=entry.sign, trace=trace)
+    return (exact_decimal(amount) if amount is not None else None), interval, reason
+
+
+def normalise_occurrence_value(
+    occurrence: Occurrence,
+    *,
+    sign: int,
+    trace: dict[str, object],
+) -> tuple[Fraction | None, Interval | None, InterpretationReason | None]:
+    """Read exact base units and uncertainty with the shared direct/native policy."""
     if occurrence.native_context.get("pdf_row_ambiguous") is True:
         trace[TRACE_REASON] = "blank labelled PDF row has ambiguous data/heading attribution"
         return None, None, InterpretationReason.INTERPRETATION_AMBIGUOUS
@@ -564,19 +575,14 @@ def _value(
     if occurrence.precision_kind is PrecisionKind.UNSUPPORTED:
         trace[TRACE_REASON] = "no usable declared precision"
         return None, None, InterpretationReason.PRECISION_UNSUPPORTED
-    exact = (
-        Fraction(magnitude)
-        * occurrence.raw_sign
-        * entry.sign
-        * Fraction(10) ** occurrence.raw_scale
-    )
+    exact = Fraction(magnitude) * occurrence.raw_sign * sign * Fraction(10) ** occurrence.raw_scale
     value = exact_decimal(exact)
     if occurrence.precision_kind is PrecisionKind.EXACT:
-        return value, Interval.exact(value), None
+        return exact, Interval.exact(value), None
     assert occurrence.declared_precision is not None
     places = occurrence.declared_precision - occurrence.raw_scale
     trace["interval_places"] = places
-    return value, Interval.from_precision(value, places), None
+    return exact, Interval.from_precision(value, places), None
 
 
 def _magnitude(occurrence: Occurrence) -> Decimal | None:

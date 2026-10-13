@@ -1,6 +1,6 @@
 # D1b native implementation review
 
-Status: R1 REQUEST_CHANGES, 2026-10-13. Codex session (handoff run): separate fresh
+Status: R3 APPROVE, 2026-10-13. Codex session (handoff run): separate fresh
 spec, code-quality and retained-source/config reviewers inspected the frozen batch.
 This technical review grants no financial, publication or owner-decision authority.
 
@@ -51,3 +51,73 @@ or change immutable migrations. These are technical contract enforcements of the
 not owner financial judgments.
 
 R1 verdict: REQUEST_CHANGES. Re-review and stable integrated verification remain pending.
+
+## Final R3 closure
+
+Fresh independent spec and code-quality re-reviews both return APPROVE. Every N01–N12
+finding is ADDRESSED; the original R1 and intermediate R2 refusals above remain historical
+evidence. R2 left N08 open because callers could forge a reading's derived fields. The final
+constructor re-reads each actual occurrence/direct pair under the current operand, rule and
+scope, compares the complete reading, and constructs only from the re-derived object.
+
+| ID | Final resolution |
+|---|---|
+| N01 | Common generation provenance applies to every pair; native UNMAPPED checks apply only to selected operands. Mapped neighbors remain valid; wrong-capture neighbors refuse. |
+| N02 | Every operand must share a nonempty basis/period scope; partial eligibility cannot form a sum. |
+| N03 | Mixed representations refuse before grouping or arithmetic. |
+| N04 | Related tier refuses; unqualified output stays unproven; demonstrated tier requires evidenced whole-rule scope. |
+| N05 | Blank fields, normalized labels and evidence predicates refuse at load. |
+| N06 | Known currency/kind/target mismatch, both signs and fixed-ID permutation stability are proved. |
+| N07 | Load-time decimal closure and defensive exact point/bounds conversion refuse unsupported arithmetic without rounding. |
+| N08 | Public selector/name/key checks and full current-rule re-derivation reject forged values, intervals, periods, dimensions, sign reuse and false collisions. Genuine overlapping selectors remain ambiguous. |
+| N09 | Exact target axes and permitted members are enforced at load and runtime. |
+| N10 | Copied dimension mappings are immutable and serialize stably. |
+| N11 | Non-value readings reject either populated numeric field; values require both. |
+| N12 | Both first-party bridge rules explicitly require consolidated basis; standalone emits no bridge. Default legacy serialization stays unchanged. |
+
+Root's final guarded integration reports **131 passed in 8.26s**, including retained source,
+native persistence, actual by-ID reload, mapped-neighbor, dictionary/bridge, and legacy mapping,
+interpretation-key and config-pin cases. Scoped Ruff lint/format and strict mypy also pass.
+The actual count supersedes the earlier 132-case forecast. No new review findings remain.
+This accepts the bounded drafts and native mechanism. The combined formal gate, joined release,
+publication-bound generations, vendor runs and full D1b source acceptance remain separate gates.
+
+## Orchestrator test reopening and reseal proof
+
+Original RED outcomes are preserved, never retaken or relabelled. The original native feature
+proof is one genuine unsupported-native load failure; the mixed-neighbor proof is one genuine
+generation failure. The R1 fixes have 25 genuine failures and the final reading-binding repair
+has six genuine `DID NOT RAISE` failures. Seven already-green R1 characterization cases and the
+already-green real-overlap control do not acquire retrospective RED status. The first invalid
+reading-binding setup attempt had four fixture-validation errors; it was discarded before code,
+then corrected and captured as six genuine failures.
+
+The original native test was changed only by mechanical import sorting/formatting. The R1
+regression and consolidated-scope files received mechanical formatting plus disclosed later
+characterization. The original store collision fixture incorrectly renamed a reading to a
+nonmatching selector. Under the repaired API it fails with `PROVENANCE_MISMATCH`; root saved its
+pre-reopening bytes (SHA-256 `b8414fc8c045a84f6424ecfb7424001e92c0d1eefe34b01e8c2901e08eb28c95`)
+and observed that refusal. The corrected fixture loads two selectors that actually match the
+same occurrence and derives both readings through the public reader. Its three assertions stay
+unchanged: INVALID, INTERPRETATION_AMBIGUOUS, and the one real direct ID exactly once. The new
+binding plus corrected collision tests pass **8/8**. The full store file is explicitly protected
+by the native feature reseal.
+
+The retained dictionary test's source fixture was corrected from an unsigned exceptional
+contribution to the raw signed value: 467,906,000 + (-56,992,000) = **410,914,000**. Integer-crore
+display precision is read from source, not from implementation output. The independent source
+review agrees. Root replayed all four corrected dictionary tests against the pre-draft config;
+all four still fail because v2 is absent. The Screener feature test retains its hand-read sums,
+intervals, basis and date. Its extractor pin now uses the actual production bundle helper with
+nine actual code members, including schedule shapes and interpretation digest semantics.
+Replay against the pre-draft config still fails at the missing aggregate assertion. Thus the
+corrected configuration-feature replay is **5/5 genuine RED**, not an API/import failure.
+
+The source-oracle draft remains unchanged at SHA-256
+`75e2493d535ca6444f4f0c2b18b5aae61971fa63db6b8c791dd3db73032e5a8d`.
+Root explicitly authorizes the disclosed test-hash reseals using this proof, preserving every
+recorded outcome and protecting the added store, mixed-neighbor and binding test files. Retained
+numeric proofs establish these drafts only; missing vendor bodies and excluded additions remain
+open and unproven.
+
+VERDICT: APPROVE

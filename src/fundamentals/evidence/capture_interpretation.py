@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
+from functools import partial
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -30,6 +31,7 @@ from fundamentals.contracts.evidence import (
     InterpretationStatus,
     Occurrence,
     RevisionCause,
+    VendorExtractorPin,
 )
 from fundamentals.contracts.measurement_key import DimensionSet, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
@@ -52,6 +54,15 @@ from fundamentals.evidence.mapping import (
     MappingSet,
     NormalisationPolicy,
     applies_to_source,
+)
+from fundamentals.evidence.native_construction import (
+    NativeConstructionDefect,
+    NativeConstructionError,
+    NativeOperandReading,
+    construct_native,
+    native_selector_matches,
+    read_native_operand,
+    validate_generation_provenance,
 )
 
 _LOG = structlog.get_logger(__name__)
@@ -77,6 +88,7 @@ class CaptureScope(BaseModel):
     policy: NormalisationPolicy
     dictionary: CanonicalDictionary
     fiscal_year_end_month: int
+    expected_extractor_pin: VendorExtractorPin | None = None
 
 
 def interpret_generation(
@@ -120,6 +132,7 @@ def interpret_generation(
     alternatives = _ambiguous_alternatives(first, occurrences, scope, recorded_at)
     first_constructed = _constructions(
         first,
+        occurrences,
         scope,
         schemas=schemas,
         proofs={},
@@ -138,6 +151,7 @@ def interpret_generation(
     ]
     second_constructed = _constructions(
         second,
+        occurrences,
         scope,
         schemas=schemas,
         proofs=proofs,
@@ -266,6 +280,7 @@ def _ambiguous_alternatives(
 
 def _constructions(
     direct: Sequence[Interpretation],
+    occurrences: Sequence[Occurrence],
     scope: CaptureScope,
     *,
     schemas: frozenset[str],
@@ -280,7 +295,22 @@ def _constructions(
             not applies_to_source(rule.source, scope.capture.source_id)
             or rule.surface != scope.capture.surface
             or rule.schema_identity not in schemas
+            or (rule.bases is not None and scope.basis not in rule.bases)
         ):
+            continue
+        if rule.is_native:
+            if scope.basis not in rule.native_bases:
+                continue
+            readings = _native_readings(rule, occurrences, direct, scope)
+            built.extend(
+                construct_native(
+                    rule,
+                    readings,
+                    scope=scope,
+                    qualification_for=partial(_native_context, rule, scope=scope, proofs=proofs),
+                    recorded_at=recorded_at,
+                )
+            )
             continue
         for group_key, found in sorted(
             _groups(rule, direct, alternatives).items(), key=lambda pair: _group_order(pair[0])
@@ -306,6 +336,81 @@ def _constructions(
     return built
 
 
+def _native_readings(
+    rule: ConstructionRule,
+    occurrences: Sequence[Occurrence],
+    direct: Sequence[Interpretation],
+    scope: CaptureScope,
+) -> Mapping[str, tuple[NativeOperandReading, ...]]:
+    """Match current occurrence/direct pairs to each source-native operand."""
+    if scope.expected_extractor_pin is None:
+        raise NativeConstructionError(
+            NativeConstructionDefect.PROVENANCE_MISMATCH,
+            "native construction requires the current extractor content pin",
+        )
+    occurrence_ids = tuple(occurrence.occurrence_id for occurrence in occurrences)
+    direct_ids = tuple(item.interpretation_id for item in direct)
+    if (
+        len(occurrences) != len(direct)
+        or any(item is None for item in (*occurrence_ids, *direct_ids))
+        or len(set(occurrence_ids)) != len(occurrences)
+        or len(set(direct_ids)) != len(direct)
+    ):
+        raise NativeConstructionError(
+            NativeConstructionDefect.PROVENANCE_MISMATCH,
+            "native generation requires one current direct row per occurrence",
+        )
+    for occurrence, interpreted in zip(occurrences, direct, strict=True):
+        validate_generation_provenance(occurrence, interpreted, scope=scope)
+    rule_period_kinds = rule.native_period_kinds
+    operand_period_kinds = frozenset(
+        kind
+        for operand in rule.operands
+        for kind in (operand.native.period_kinds if operand.native is not None else ())
+    )
+    found: dict[str, tuple[NativeOperandReading, ...]] = {}
+    for operand in rule.operands:
+        spec = operand.native
+        assert spec is not None
+        if scope.basis not in spec.bases:
+            continue
+        for occurrence, interpreted in zip(occurrences, direct, strict=True):
+            if not native_selector_matches(occurrence, operand):
+                continue
+            period = occurrence.period
+            if period is not None:
+                period_kind = period.kind(scope.fiscal_year_end_month)
+                if period_kind in operand_period_kinds and period_kind not in rule_period_kinds:
+                    continue
+            reading = read_native_operand(
+                occurrence,
+                interpreted,
+                operand=operand,
+                rule=rule,
+                scope=scope,
+            )
+            found[operand.name] = (*found.get(operand.name, ()), reading)
+    return found
+
+
+def _native_context(
+    rule: ConstructionRule,
+    period: PeriodInterval,
+    dimensions: DimensionSet,
+    scope: CaptureScope,
+    proofs: Mapping[ProofKey, Mapping[str, ProvenCondition]],
+) -> QualificationContext:
+    """The exact native group's qualification context under same-capture proofs."""
+    del dimensions
+    return QualificationContext(
+        schema_identity=rule.schema_identity,
+        surface=scope.capture.surface,
+        basis=scope.basis,
+        period_kind=period.kind(scope.fiscal_year_end_month),
+        proven=proofs.get((period, scope.basis), {}),
+    )
+
+
 def _groups(
     rule: ConstructionRule, direct: Sequence[Interpretation], alternatives: Alternatives
 ) -> Mapping[GroupKey, Mapping[str, tuple[Interpretation, ...]]]:
@@ -314,7 +419,11 @@ def _groups(
     An ambiguous line joins the group of every operand entry it matched, so the
     construction is ``INVALID`` (invalid beats missing), never built without it.
     """
-    names = {operand.mapping_entry_id: operand.name for operand in rule.operands}
+    names = {
+        operand.mapping_entry_id: operand.name
+        for operand in rule.operands
+        if operand.mapping_entry_id is not None
+    }
     groups: dict[GroupKey, dict[str, tuple[Interpretation, ...]]] = {}
 
     def join(group_key: GroupKey, name: str, item: Interpretation) -> None:

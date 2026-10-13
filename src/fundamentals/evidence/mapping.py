@@ -16,26 +16,73 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
+from fractions import Fraction
 from itertools import combinations
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from fundamentals.canon.dictionary import CanonicalDictionary, FormulaNode
+from fundamentals.canon.dictionary import (
+    CanonicalDictionary,
+    FormulaNode,
+    FormulaOp,
+)
+from fundamentals.canon.dictionary import MemberSource as DimensionMemberSource
 from fundamentals.contracts.canonical import (
-    Basis,
     PeriodKind,
     PeriodNature,
     Representation,
-    StatementFamily,
-    ValueKind,
 )
 from fundamentals.contracts.evidence import Occurrence
-from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.qualification import QualificationScope
+from fundamentals.evidence.mapping_models import (
+    AnchorPeriodShape,
+    ConstructionOperand,
+    ConstructionRule,
+    DashRule,
+    MappingEntry,
+    MemberSource,
+    NativeOperandSpec,
+    NormalisationPolicy,
+    PdfPeriodRule,
+    PeriodShape,
+    PrecisionRule,
+    Selector,
+    StatementAnchor,
+    UnitRule,
+    UnitTransform,
+    selector_matches,
+)
 from fundamentals.extract.pdf_header_text import normalize_text_tokens
+
+__all__ = [
+    "AnchorPeriodShape",
+    "AmbiguousMappingError",
+    "ConstructionOperand",
+    "ConstructionRule",
+    "DashRule",
+    "MappingDefect",
+    "MappingEntry",
+    "MappingLoadError",
+    "MappingSet",
+    "MemberSource",
+    "NativeOperandSpec",
+    "NormalisationPolicy",
+    "PdfPeriodRule",
+    "PeriodShape",
+    "PrecisionRule",
+    "Selector",
+    "StatementAnchor",
+    "UnitRule",
+    "UnitTransform",
+    "UnsupportedSchemaError",
+    "applies_to_source",
+    "load_mapping_set",
+    "load_normalisation_policy",
+    "native_dimensions_compatible",
+]
 
 # Keys every adapter writes into ``Occurrence.native_context`` for matching.
 CONTEXT_SCHEMA_IDENTITY = "schema_identity"
@@ -49,8 +96,6 @@ CONTEXT_SECTION = "section"
 CONTEXT_LABEL_ORDINAL = "label_ordinal"
 CONTEXT_COLUMN_HEADER = "column_header"
 
-ALL_BASES = frozenset(Basis)
-ALL_PERIOD_KINDS = frozenset(PeriodKind)
 _LOAD_FAILED = "mapping set load failed: {defect} for {ids}{detail}"
 _UNSUPPORTED = "schema {schema!r} is not supported by mapping set {version}"
 _AMBIGUOUS = "entries {entry_ids} all match native field {native_field!r}"
@@ -89,226 +134,6 @@ class AmbiguousMappingError(LookupError):
     def __init__(self, native_field: str, entry_ids: Sequence[str]) -> None:
         self.entry_ids = tuple(entry_ids)
         super().__init__(_AMBIGUOUS.format(entry_ids=list(entry_ids), native_field=native_field))
-
-
-class PeriodShape(StrEnum):
-    """Whether an XBRL selector takes duration or instant contexts."""
-
-    DURATION = "DURATION"
-    INSTANT = "INSTANT"
-
-
-class PdfPeriodRule(StrEnum):
-    """How a PDF row's key period follows from its column header (row-aware, R5)."""
-
-    COLUMN_DURATION = "COLUMN_DURATION"
-    COLUMN_OPENING_INSTANT = "COLUMN_OPENING_INSTANT"
-    COLUMN_CLOSING_INSTANT = "COLUMN_CLOSING_INSTANT"
-    COLUMN_INSTANT = "COLUMN_INSTANT"
-
-
-class MemberSource(StrEnum):
-    """Where a templated entry's entity-evidence member comes from."""
-
-    XBRL_DESCRIPTION = "XBRL_DESCRIPTION"
-
-
-class UnitTransform(StrEnum):
-    """How a raw value becomes base units: ``value × 10^raw_scale``."""
-
-    SCALE_TO_BASE_UNIT = "SCALE_TO_BASE_UNIT"
-
-
-class PrecisionRule(StrEnum):
-    """Where the uncertainty interval comes from: the occurrence's declared precision."""
-
-    DECLARED = "DECLARED"
-
-
-class AnchorPeriodShape(StrEnum):
-    """The period a statement anchor must be filed for, relative to the package period end."""
-
-    INSTANT_AT_PERIOD_END = "INSTANT_AT_PERIOD_END"
-    DURATION_ENDING_AT_PERIOD_END = "DURATION_ENDING_AT_PERIOD_END"
-
-
-class Selector(BaseModel):
-    """The native field and context predicate an entry matches.
-
-    XBRL: ``native_field`` (element local name), ``period_shape`` and the one
-    ``dimension_axis`` the context carries (``None``: no dimensions). PDF:
-    ``statement_family``, label variants, and optionally the nearest section heading,
-    the label's ordinal within the block and a column-header marker.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    native_field: str | None = None
-    period_shape: PeriodShape | None = None
-    dimension_axis: str | None = None
-    statement_family: StatementFamily | None = None
-    labels: tuple[str, ...] = ()
-    section: str | None = None
-    section_equals: str | None = None
-    unestablished_section_ambiguous: bool = False
-    section_parent_equals: str | None = None
-    label_ordinal: int | None = Field(default=None, ge=1)
-    column_header: str | None = None
-
-    @model_validator(mode="after")
-    def _one_kind(self) -> Selector:
-        """An XBRL selector names an element; a PDF selector names a family and labels."""
-        xbrl = self.native_field is not None
-        pdf = self.statement_family is not None
-        if xbrl == pdf or (xbrl and self.period_shape is None) or (pdf and not self.labels):
-            raise ValueError("a selector is either XBRL (element, period shape) or PDF (labels)")
-        return self
-
-    def overlaps(self, other: Selector) -> bool:
-        """Whether some native field and context could satisfy both selectors.
-
-        XBRL: same element, period shape and axis. PDF: same family and a shared label
-        variant, with each optional predicate unrestricted on one side, equal, or (section,
-        column header) one token run containing the other.
-        """
-        if (self.native_field is None) != (other.native_field is None):
-            return False
-        if self.native_field is not None:
-            return (self.native_field, self.period_shape, self.dimension_axis) == (
-                other.native_field,
-                other.period_shape,
-                other.dimension_axis,
-            )
-        labels = {tuple(normalize_text_tokens(label)) for label in self.labels}
-        return (
-            self.statement_family == other.statement_family
-            and bool(labels & {tuple(normalize_text_tokens(label)) for label in other.labels})
-            and (
-                self.label_ordinal is None
-                or other.label_ordinal is None
-                or self.label_ordinal == other.label_ordinal
-            )
-            and _compatible_sections(self, other)
-            and (
-                self.section_parent_equals is None
-                or other.section_parent_equals is None
-                or normalize_text_tokens(self.section_parent_equals)
-                == normalize_text_tokens(other.section_parent_equals)
-            )
-            and _compatible(self.column_header, other.column_header)
-        )
-
-
-class MappingEntry(BaseModel):
-    """One evidenced native-to-canonical mapping with its tier and qualification scope."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    entry_id: str = Field(min_length=1)
-    source: str | None = Field(default=None, min_length=1)
-    surface: str = Field(min_length=1)
-    schema_identity: str = Field(min_length=1)
-    selector: Selector
-    canonical_id: str = Field(min_length=1)
-    dimension_members: Mapping[str, str] = Field(default_factory=dict)
-    member_source: MemberSource | None = None
-    sign: int = Field(default=1)
-    unit_transform: UnitTransform = UnitTransform.SCALE_TO_BASE_UNIT
-    precision_rule: PrecisionRule = PrecisionRule.DECLARED
-    period_rule: PdfPeriodRule | None = None
-    tier: EvidenceTier = EvidenceTier.EQUIVALENCE_UNPROVEN
-    qualification: QualificationScope | None = None
-    basis: frozenset[Basis] = ALL_BASES
-    period_kinds: frozenset[PeriodKind] = ALL_PERIOD_KINDS
-    evidence_ref: str = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _well_formed(self) -> MappingEntry:
-        """Signs are ±1; a PDF entry carries a period rule and an XBRL entry none."""
-        if self.sign not in (1, -1):
-            raise ValueError("sign must be 1 or -1")
-        if (self.period_rule is None) != (self.selector.native_field is not None):
-            raise ValueError("PDF entries carry a period_rule; XBRL entries carry none")
-        return self
-
-    def emitted_measurement(self) -> tuple[object, ...]:
-        """Canonical id and dimension selector this entry emits (duplicate check)."""
-        return (
-            self.canonical_id,
-            tuple(sorted(self.dimension_members.items())),
-            self.member_source,
-        )
-
-
-class ConstructionOperand(BaseModel):
-    """One named operand of a construction: a mapping entry, optionally dash-ruled."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(min_length=1)
-    mapping_entry_id: str = Field(min_length=1)
-    dash_rule_id: str | None = None
-
-
-class ConstructionRule(BaseModel):
-    """A reported value assembled from one capture's own lines (``origin=CONSTRUCTED``)."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    rule_id: str = Field(min_length=1)
-    source: str | None = Field(default=None, min_length=1)
-    surface: str = Field(min_length=1)
-    schema_identity: str = Field(min_length=1)
-    canonical_id: str = Field(min_length=1)
-    operands: tuple[ConstructionOperand, ...] = Field(min_length=1)
-    expression: FormulaNode
-    tier: EvidenceTier = EvidenceTier.EQUIVALENCE_UNPROVEN
-    qualification: QualificationScope | None = None
-    evidence_ref: str = Field(min_length=1)
-
-
-class StatementAnchor(BaseModel):
-    """Native fields whose filing at the package period end shows a statement is present."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    schema_identity: str = Field(min_length=1)
-    statement_family: StatementFamily
-    native_fields: frozenset[str] = Field(min_length=1)
-    period_shape: AnchorPeriodShape
-
-
-class DashRule(BaseModel):
-    """Reads a printed dash as exact zero for one operand of one construction only."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    rule_id: str = Field(min_length=1)
-    construction_rule_id: str = Field(min_length=1)
-    operand_name: str = Field(min_length=1)
-    evidence_ref: str = Field(min_length=1)
-
-
-class UnitRule(BaseModel):
-    """What one raw unit means: its value kind and currency."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    raw_unit: str = Field(min_length=1)
-    value_kind: ValueKind
-    currency: str | None
-    evidence_ref: str = Field(min_length=1)
-
-
-class NormalisationPolicy(BaseModel):
-    """Raw-unit meanings and construction-scoped dash rules, pinned by content."""
-
-    model_config = ConfigDict(frozen=True)
-
-    version: str
-    content_sha256: str
-    units: Mapping[str, UnitRule]
-    dash_rules: Mapping[str, DashRule]
 
 
 class MappingSet(BaseModel):
@@ -429,63 +254,7 @@ def _selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
         if is_instant != (selector.period_shape is PeriodShape.INSTANT):
             return False
         return matches_dimensions(context, entry.schema_identity, selector.dimension_axis)
-    if context.get(CONTEXT_STATEMENT_FAMILY) != selector.statement_family:
-        return False
-    label = normalize_text_tokens(str(context.get(CONTEXT_LABEL, "")))
-    if all(normalize_text_tokens(variant) != label for variant in selector.labels):
-        return False
-    if selector.section is not None and not _contains(
-        normalize_text_tokens(str(context.get(CONTEXT_SECTION, ""))),
-        normalize_text_tokens(selector.section),
-    ):
-        return False
-    if selector.section_equals is not None and normalize_text_tokens(
-        str(context.get(CONTEXT_SECTION, ""))
-    ) != normalize_text_tokens(selector.section_equals):
-        return False
-    if selector.section_parent_equals is not None and normalize_text_tokens(
-        str(context.get("section_parent", ""))
-    ) != normalize_text_tokens(selector.section_parent_equals):
-        return False
-    if (
-        selector.label_ordinal is not None
-        and context.get(CONTEXT_LABEL_ORDINAL) != selector.label_ordinal
-    ):
-        return False
-    return selector.column_header is None or _contains(
-        normalize_text_tokens(str(context.get(CONTEXT_COLUMN_HEADER, ""))),
-        normalize_text_tokens(selector.column_header),
-    )
-
-
-def _contains(haystack: Sequence[str], needle: Sequence[str]) -> bool:
-    """Whether ``needle`` occurs as a contiguous token run in ``haystack``."""
-    width = len(needle)
-    return width > 0 and any(
-        list(haystack[i : i + width]) == list(needle) for i in range(len(haystack) - width + 1)
-    )
-
-
-def _compatible(left: str | None, right: str | None) -> bool:
-    """Any two contains predicates may match their concatenation."""
-    return True
-
-
-def _compatible_sections(left: Selector, right: Selector) -> bool:
-    """Only equality evidence can prove that two section predicates are disjoint."""
-    for exact, other in ((left.section_equals, right), (right.section_equals, left)):
-        if exact is None:
-            continue
-        tokens = normalize_text_tokens(exact)
-        if other.section_equals is not None and tokens != normalize_text_tokens(
-            other.section_equals
-        ):
-            return False
-        if other.section is not None and not _contains(
-            tokens, normalize_text_tokens(other.section)
-        ):
-            return False
-    return True
+    return selector_matches(selector, context)
 
 
 # --- loading -------------------------------------------------------------------
@@ -610,7 +379,12 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
         entries=tuple(entries),
         constructions=tuple(constructions),
         statement_anchors=tuple(anchors),
-        supported_schemas=frozenset(entry.schema_identity for entry in entries),
+        supported_schemas=frozenset(
+            [
+                *(entry.schema_identity for entry in entries),
+                *(rule.schema_identity for rule in constructions if rule.is_native),
+            ]
+        ),
     )
 
 
@@ -656,8 +430,121 @@ def _check_schema(
         names = [operand.name for operand in rule.operands]
         if len(set(names)) != len(names) or rule.expression.operand_names() != set(names):
             offenders.add(rule.rule_id)
+        if not rule.is_native:
+            continue
+        row = known.get(rule.canonical_id)
+        specs = [operand.native for operand in rule.operands]
+        if row is None or any(spec is None for spec in specs):
+            continue
+        native_specs = [spec for spec in specs if spec is not None]
+        first = native_specs[0]
+        if (
+            row.value_kind is not first.value_kind
+            or row.period_nature is not first.period_nature
+            or not native_dimensions_compatible(
+                dictionary, rule.canonical_id, first.dimension_members
+            )
+            or _native_unit_power(rule.expression) != 1
+            or not _native_decimal_closed(rule.expression)
+            or any(
+                (spec.value_kind, spec.currency, spec.period_nature, spec.dimension_members)
+                != (first.value_kind, first.currency, first.period_nature, first.dimension_members)
+                for spec in native_specs[1:]
+            )
+            or any(
+                (kind is PeriodKind.INSTANT) != (spec.period_nature is PeriodNature.INSTANT)
+                for spec in native_specs
+                for kind in spec.period_kinds
+            )
+        ):
+            offenders.add(rule.rule_id)
     if offenders:
         raise MappingLoadError(MappingDefect.SCHEMA, offenders)
+
+
+def _native_unit_power(node: FormulaNode) -> int | None:
+    """Return the shared operand unit's output power, or ``None`` for invalid algebra."""
+    if node.op is FormulaOp.OPERAND:
+        return 1
+    if node.op is FormulaOp.LITERAL:
+        return 0
+    powers = tuple(_native_unit_power(arg) for arg in node.args)
+    if any(power is None for power in powers):
+        return None
+    known = tuple(power for power in powers if power is not None)
+    if node.op in (FormulaOp.ADD, FormulaOp.SUB):
+        return known[0] if all(power == known[0] for power in known[1:]) else None
+    if node.op is FormulaOp.MUL:
+        return sum(known)
+    assert node.op is FormulaOp.DIV and len(known) == 2
+    return known[0] - known[1]
+
+
+def _native_decimal_closed(node: FormulaNode) -> bool:
+    """Whether every accepted division preserves Decimal-storable exact rationals."""
+    if node.op in (FormulaOp.OPERAND, FormulaOp.LITERAL):
+        return True
+    if not all(_native_decimal_closed(arg) for arg in node.args):
+        return False
+    if node.op is not FormulaOp.DIV:
+        return True
+    divisor = _constant_fraction(node.args[1])
+    return divisor not in (None, 0) and _terminates(Fraction(1, 1) / divisor)
+
+
+def _constant_fraction(node: FormulaNode) -> Fraction | None:
+    """Evaluate a literal-only formula, or return ``None`` for variables/undefined division."""
+    if node.op is FormulaOp.OPERAND:
+        return None
+    if node.op is FormulaOp.LITERAL:
+        assert node.value is not None
+        return Fraction(node.value)
+    values = tuple(_constant_fraction(arg) for arg in node.args)
+    if any(value is None for value in values):
+        return None
+    known = tuple(value for value in values if value is not None)
+    if node.op is FormulaOp.ADD:
+        return sum(known, Fraction(0))
+    if node.op is FormulaOp.SUB:
+        return known[0] - known[1]
+    if node.op is FormulaOp.MUL:
+        return known[0] * known[1]
+    if known[1] == 0:
+        return None
+    return known[0] / known[1]
+
+
+def _terminates(value: Fraction) -> bool:
+    """Whether a reduced rational has a finite base-10 representation."""
+    denominator = value.denominator
+    for prime in (2, 5):
+        while denominator % prime == 0:
+            denominator //= prime
+    return denominator == 1
+
+
+def native_dimensions_compatible(
+    dictionary: CanonicalDictionary,
+    canonical_id: str,
+    members: Mapping[str, str],
+) -> bool:
+    """Whether exact native axes/members fit the canonical target template."""
+    row = dictionary.row(canonical_id)
+    if row.dimension_template is None:
+        return not members
+    template = dictionary.template(row.dimension_template)
+    if set(members) != {axis.axis for axis in template.axes}:
+        return False
+    for axis in template.axes:
+        member = members[axis.axis]
+        if not member.strip():
+            return False
+        if axis.member_source is not DimensionMemberSource.CLOSED_LIST:
+            continue
+        allowed = {item.member for item in axis.members} | set(axis.aggregate_members)
+        if member not in allowed:
+            return False
+    return True
 
 
 def _check_dangling_canonical(
@@ -695,7 +582,10 @@ def _check_dangling_entries(
     by_id = {entry.entry_id: entry for entry in entries}
     offenders: set[str] = set()
     for rule in constructions:
+        if rule.is_native:
+            continue
         for operand in rule.operands:
+            assert operand.mapping_entry_id is not None
             entry = by_id.get(operand.mapping_entry_id)
             if (
                 entry is None
