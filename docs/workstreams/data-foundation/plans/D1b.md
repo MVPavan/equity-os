@@ -983,9 +983,22 @@ Task 11's bounded existing-ingest report now exposes exact per-member stored sou
 extractor/capture/occurrence/interpretation identity. The fresh independent R2 review approves
 all three fixes, including legacy empty-default serialization, unchanged re-ingest IDs and
 honest partial-member failures. Root verification: **15 guarded PostgreSQL cases pass**, scoped
-Ruff lint/format and strict mypy green. The [review and explicit contract reopening proof]
-(../reviews/D1b-ingest-id-report-review.md) preserves the original RED outcome and the separate
+Ruff lint/format and strict mypy green. The
+[review and explicit contract reopening proof](../reviews/D1b-ingest-id-report-review.md)
+preserves the original RED outcome and the separate
 3/3 genuine identity RED. Verified prerequisite commit: `041bd7b`; `eqos-u0u.15.1` is closed.
 The full `eqos-u0u.15` producer remains open for the accepted publication/write-guard API and
 actual committed joined release. Its unbuilt test preparation remains outside executable
 acceptance in `scratchpad/`; no shared v2 generation or full Task 11/D1b closure is claimed.
+
+### Publication repair plan — 2026-10-13
+
+Independent Task 13 review found nine Important publication/authority/write/replay gaps despite
+green focused mechanics. The [publication repair plan](D1b-publication-repair.md) is independently
+approved at R3 after all six original plan gaps and both R2 trust-boundary gaps were resolved;
+the [review ledger](../reviews/D1b-publication-repair-review.md) records each verdict. Root's
+separate formal proof captures **12/12 genuine public-seam RED** before repair code. Migrations
+0001–0006 stay immutable; the explicitly scoped optional publication-pin extension uses new 0007.
+Implementation may proceed in its assigned files. Final shared v2 candidate/review/receipt
+commits, generation proof and actual release acceptance remain pending; no flag, caller model,
+path or hash alone is an external approval claim.
