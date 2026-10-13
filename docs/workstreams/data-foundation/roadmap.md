@@ -1,9 +1,62 @@
 # Roadmap: data-foundation
 
-Status: draft. The panel approves the structure before bd seeding (`.claude/rules/core/04-agent-stack.md`).
+Status: approved and seeded in bd (`16140d0`); in execution. Every Equity-OS data-foundation plan
+item lives in this one file. What the project is, its goal and how to verify completion:
+[`project.md`](project.md). "Panel" in this file now means the single reviewer's approval
+(owner, 2026-10-12; `.claude/rules/core/04-agent-stack.md`); the specs' wording is amended under
+`eqos-uqu.10` before D3.
 Specs: [data spec](../../specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md)
 (Stages 1–4, "dS1–dS4") and [ledger spec](../../specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md)
 (Stages 1–5, "lS1–lS5"). The ledger spec amends data spec §4–§8 retention and replay (ledger §6).
+
+## Progress
+
+Last updated 2026-10-13. bd (`bd list --label ws-data-foundation`) holds the live state; this
+section is the human summary.
+
+| Phase | Stages | State |
+|---|---|---|
+| D1a Canonical comparison tracer | 7 | All 7 stages built and committed (`3a28223`..`41aca85`). Exit test green. Phase-end review: REQUEST_CHANGES, 34 findings (0 critical); fix rounds paused by the owner on 2026-10-13, uncommitted in the working tree. Area A: 7 of 14 done (A1, A4, A5, A6, A8, A13 and migration 0005), A7 partial, A2/A3/A9–A12/A14 open, 3 mypy errors to fix. Area C: partial edits, no report. Area B: not started. Then re-review and close |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Not started |
+| D2 Legacy store migration and cutover | 8 | Not started |
+| D3 Report ledger | 9 | Not started |
+| D4 Long-term memory | 5 | Not started |
+| D5 Generated views | 5 | Not started |
+| D6 Identifier-only onboarding | 6 | Not started |
+| D7 Coverage model | 6 | Not started |
+| D8 Shareholding filing source | 5 | Not started |
+| D9 Retention and replay | 9 | Not started |
+
+7 of 66 stages are built. D1a's stages are the shared foundation (schema, dictionary, formula
+engine, evidence model, decision tables, runs), so their share of the effort exceeds their count.
+
+**Execution loop per phase** (`.claude/rules/core/04-agent-stack.md`):
+1. Opus writes the phase plan just in time, and Sol reviews it.
+2. Opus builds each stage. The orchestrator verifies it against tests, mypy and the acceptance
+   values, then commits it and closes its bd stage.
+3. At phase end, Sol does one exhaustive review. Opus fixes, Sol re-reviews, and a fresh Sol
+   critical review follows.
+4. Exit test green → close the epic.
+
+Only one worker runs at a time (parallel workers hit the API rate limit).
+
+**Estimate (inference from D1a only, not a measurement).** D1a took about 1 day of planning and
+review, about 7 hours of build and about 1–2 days of phase review and fixes, so 2–3 days of
+wall-clock per phase. The remaining 59 stages come to about 3–6 weeks of continuous running.
+Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration and cutover) and D9
+(deletion under concurrency). API rate limits are the largest schedule risk.
+
+**Open items found during D1a** (bd beads):
+- Mapping set v1 does not cover the SEBI 2026-01-31 XBRL taxonomy (Apar FY26 Q4), and the Q4 PDF
+  revenue rows extract `INVALID`. Needed before Q4/FY coverage in D1b.
+- `eqos-u0u.7`: 17 dictionary rows deferred to D1b.
+- `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
+- The two pre-existing `test_source_intake_store` failures.
+- `test_pg_evidence_schema.py` is over the 800-line cap (being fixed in the D1a review round).
+- Migration numbering: D1a used `0001`–`0005`. Later stages take the next free number. The
+  `migrations/0002_review_queue.sql` named in D1b.3 below becomes the next free number.
+- The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
+  `eqos.store_now()`.
 
 ## Conventions
 
@@ -36,7 +89,9 @@ Specs: [data spec](../../specs/2026-10-11-canonical-financial-data-and-cross-sou
 - **Test focus** follows `.claude/rules/python/testing.md`: integration and e2e on the PostgreSQL
   test database first, and unit tests only for dynamic financial logic.
 - **Gate per phase:** `scripts/verify.sh gate <slice>` (`.claude/project/verification.md`),
-  plus the Verify cells below.
+  plus the Verify cells below. D1a did not capture the gate's red proof (`verify.sh red`)
+  before building, so its gate cannot pass. From D1b on, run `scripts/verify.sh red <slice>`
+  on each stage's acceptance tests before dispatching the implementer.
 - **Owner-reserved steps.** Data spec §6 steps 1 and 3 (import-manifest confirmation,
   unresolved-originals preflight) and the Stage 2 cutover approval go to the approval panel under
   the owner's 2026-10-12 autonomy directive. The orchestrator executes them and informs the owner.
@@ -432,3 +487,20 @@ substituting for GPT-6.1 Sol at capacity; both REVISE, consistent; 2026-10-12).
 4. **Amendment records** live in `docs/blueprint/amendments/`.
 5. **`eqos-4j2.8`** stays outside this workstream and runs after D3 as ledger versions (D3
    Touches).
+
+## Project completion
+
+The workstream is complete when all ten phase exits above are green and every phase epic is
+closed. [`project.md`](project.md#how-to-verify-the-project-is-complete) has the full definition.
+Four parts, all mechanical:
+1. Every phase exit test passes.
+2. Every frozen manifest and amendment record passes its shared test (`test_frozen_manifests.py`,
+   `test_amendment_records.py`), including manifest-before-e2e commit order.
+3. The suite passes: `uv run pytest tests/fundamentals`, `uv run mypy --strict src`, and ruff
+   check and format.
+4. Every phase's end-of-phase reviewer approval is recorded on its closed epic.
+
+**To build: `scripts/verify_project.sh`.** One command that runs parts 1–3, prints PASS/FAIL per
+phase, and exits nonzero unless every part passes. A phase not yet built reports `NOT BUILT`
+rather than skipping. Add it with D1b, the first phase that has a frozen manifest, and extend it
+as each phase lands its exit test.
