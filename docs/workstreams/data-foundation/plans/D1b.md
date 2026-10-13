@@ -1039,3 +1039,16 @@ proof, queue payload identity, actual transaction boundaries, source-rights excl
 canonical multi-item lock ordering. Source-independent cursor/overlay SQL may proceed separately.
 Authoritative vendor execution still waits for the actual accepted release and generation handoffs;
 no missing source, financial qualification, protected disposition or full D1b acceptance is waived.
+
+### Publication mechanism checkpoint — 2026-10-13
+
+Verified mechanism commit `00972d2` implements joined review/rights/source/schema enforcement,
+descriptor-only cached-byte parsing and same-repository guarded pins, with publication identity
+preserved in run manifests and SQL. New migration 0007 is now immutable. The
+[R4 implementation review](../reviews/D1b-publication-implementation-review.md) approves every
+mechanism finding after the orchestrator's no-waiver ruling and records all original/reopened
+proofs. Root's fresh combined integration is **114 passed**. The historical formal gate is still
+FAIL: **3,102 passed / 2 reproduced legacy-fixture failures / 8 existing skips**, with all quality
+and privacy checks green. Actual code defects are resolved; final fixture corrections, full gate,
+committed candidate A/fresh review/receipt C, and authoritative generation/run proofs remain gated.
+No nominal RELEASED label or caller model is accepted as release authority.
