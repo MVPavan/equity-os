@@ -802,6 +802,15 @@ reports later NOT BUILT truthfully. There is no D1b → D3 → D1b approval depe
 
 ## Fail-closed build notes and verification handoff
 
+- 2026-10-13, Task 12: the approved pilot exit filename is unresolved. The production verifier
+  keeps an explicit Pilot NOT BUILT slot without runtime path overrides; only an isolated
+  control-flow test copy registers a constructed future target. This preserves the PREP-8 gate.
+- The Task 8/12 red proofs preceded implementation and remained honest after format-only line
+  wrapping. The coordinator reconstructed both exact pre-format files, matched their original
+  sealed SHA-256 hashes, and proved identical parsed ASTs before resealing the formatting hashes.
+  No fixture, assertion, node id or recorded red outcome changed; no historical D1a red proof
+  is inferred from these D1b proofs.
+
 The [2026-10-13 activated goal](../../../goals/2026-10-13-autonomous-backend-completion.md)
 supersedes the [handoff](../handoff-codex-2026-10-13.md)'s one-at-a-time schedule and permits
 parallel preparation/relevant verification. It preserves hard protections, genuine producer/
