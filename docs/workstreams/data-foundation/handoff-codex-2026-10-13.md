@@ -139,3 +139,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 10:44 — final gate legacy fixture repair (`eqos-u0u.18`) — two exact formerly failing guarded-PG nodes pass; all 38+11 original assertion ASTs preserved, scoped Ruff clean; actual production extractor pin and isolated historical 0001–0006 upgrade boundary restored; prior full FAIL retained pending fresh rerun, no push — 243a6b2
 
 - 2026-10-13 10:46 — Task11 first-party producer mechanism (`eqos-u0u.15`) — independent R2 COMPLIANT and quality/security APPROVE; exact-ID handoff, settings-context race and immutable trace repaired; 114 integrated and final 11 focused cases pass, scoped Ruff/format/strict mypy green; original RED preserved, actual release and Task6 consumption remain open, no push — 535df96
+
+- 2026-10-13 10:48 — Task15 retained Screener native draft (`eqos-u0u.12`) — independent source/native review APPROVE, final 7 retained/guarded-PG cases pass, exact numerical oracles preserved, all D1b seals match and scoped Ruff clean; draft committed, roadmap refreshed after resume, shared release/full source acceptance remain open, no push — ee4b000

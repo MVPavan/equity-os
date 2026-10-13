@@ -1074,4 +1074,14 @@ spec verdict is COMPLIANT, with code-quality and security APPROVE. Root's integr
 and final 11 producer/context/guard cases pass, as do scoped Ruff lint/format and strict mypy.
 Original refusal/race RED outcomes are preserved and the genuine immutability regression is
 protected. Actual released A/C artifacts, Task 6 by-ID consumption and full D1b remain open.
+
+### Retained Screener native draft checkpoint — 2026-10-13
+
+Commit `ee4b000` records the unpublished Task 15 draft and its retained extraction/storage
+tests. The consolidated source-native Borrowings + Other Liabilities construction retains
+the independently read THERMAX/HFCL values, intervals and exact operand identities. It excludes
+Total Liabilities and first-party NCI, remains equivalence-unproven and uses the actual
+nine-member extractor pin. Fresh final verification is 7 passed, including guarded PostgreSQL,
+with scoped Ruff lint/format clean. All D1b saved test seals match. Publication and complete
+source acceptance remain separate gates; no missing-source waiver is granted.
 No nominal RELEASED label or caller model is accepted as release authority.

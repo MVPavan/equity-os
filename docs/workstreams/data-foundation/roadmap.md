@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In execution; stage 4 amendment complete (`c77657d`). Approved 13-task plan `f82634d`; project verifier `9781763` implemented. Owner-requested pause after a scoped schema, retained Screener draft, offline-boundary and pure corroboration checkpoint; see the handoff progress log and D1b build notes for final commits/evidence. Formal gate remains FAIL/STOP (`eqos-hdz`, `eqos-490`); no further stage closure. Full Stage 1 remains gated by missing retained vendor captures, joined configuration, authenticated run/queue integration and complete source-verified acceptance. |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Active after owner resume; stage 4 amendment complete (`c77657d`). Schema, offline adapters, pure corroboration, native construction, retained Screener drafts, publication mechanism (`00972d2`) and exact-context first-party producer (`535df96`) are committed within their verified scopes. Privacy repair `f48ee20` passed the historical gate (2,902 tests / 8 skips). The latest broader run had 3,102 passes / 2 legacy-fixture failures / 8 skips; both exact failures now pass after fixture-only repairs, and a fresh full rerun is pending. Queue SQL proceeds in isolation. Full Stage 1 remains gated by missing retained vendor evidence, actual reviewed joined release, run/replay and authenticated queue CLI integration, and the frozen source-verified manifest/e2e. |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -53,7 +53,7 @@ Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration an
 - `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
 - The two former `test_source_intake_store` failures are resolved (`3e966cb`); 42 cases passed.
 - The schema-test size issue is resolved (`6077ca3`); original case inventory preserved.
-- Migration numbering: D1a used immutable `0001`–`0005`; the D1b checkpoint uses `0006_review_queue.sql`. After its checkpoint commit, new schema work takes `0007` or the next free number. The proposed `0002_review_queue.sql` below is stale.
+- Migration numbering: committed `0001`–`0007` are immutable; D1b uses `0006_review_queue.sql` and `0007_vendor_publication_pin.sql`. New schema work takes `0008` or the next free number. The proposed `0002_review_queue.sql` below is stale.
 - The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
   `eqos.store_now()`.
 
