@@ -1,0 +1,42 @@
+# Current observed issuer identity; temporal identity history is outside D1a.
+# XML/PDF anchors concern the retained Dec-2024 results. The ISIN is reported by
+# one retained Upstox instrument-catalog snapshot retrieved on 2026-09-04; its
+# NSE and BSE rows are not independent providers or a historical effective interval.
+# Source review: docs/workstreams/data-foundation/reviews/D1b-sonacoms-source-gate.md.
+# This artifact grants no financial SurfaceAuthority or filing/publication clock.
+entity_key: SONACOMS
+display_name: Sona Blw Precision Forgings Limited
+isin: INE073K01018
+share_class: EQUITY
+nse_symbol: SONACOMS
+bse_scrip: "543300"
+basis_status: CONSOLIDATED_AND_STANDALONE
+fiscal_year_end_month: 3
+citations:
+  - field: display_name
+    capture_sha256: c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc
+    native_field: NameOfTheCompany
+    context_ref: OneD
+  - field: nse_symbol
+    capture_sha256: c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc
+    native_field: Symbol
+    context_ref: OneD
+  - field: bse_scrip
+    capture_sha256: c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc
+    native_field: ScripCode
+    context_ref: OneD
+  - field: fiscal_year_end_month
+    capture_sha256: c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc
+    native_field: DateOfEndOfFinancialYear
+    context_ref: OneD
+  - field: basis_status
+    capture_sha256: 0ce43a604a1622e3ae28b49a7ed552e756fb80190a830f64df7e5f5e0fa16ee7
+    pages: [1]
+  - field: isin
+    capture_sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd
+    native_field: /21511/isin
+    context_ref: retained-2026-09-04:NSE_EQ:SONACOMS
+  - field: isin
+    capture_sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd
+    native_field: /102295/isin
+    context_ref: retained-2026-09-04:BSE_EQ:SONACOMS
