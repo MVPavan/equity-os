@@ -147,3 +147,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 11:06 — Task13 joined candidate A (`eqos-u0u.14`) — exactly three joined artifacts committed, prepared actual-byte pins match and public v2 load correctly refuses without review receipt; candidate is non-authoritative, fresh exact-A review/separate C/released readback pending, no push — 4779819
 
 - 2026-10-13 11:28 — Task13 actual joined release C (`eqos-u0u.14`) — fresh exact-A APPROVE, all 32 selected blobs/pins and rights gates confirmed; separate fixed receipt/review introduction, strict verdict parser and real A/C/H loader proof pass; 2 actual release/retained-Apar v2 append/reuse cases pass with v1 preserved, pre-C 1/1 genuine RED; vendor-run/queue/full Stage1 remain open, no push — a4002bb
+
+- 2026-10-13 11:34 — actual release proof tests — genuine pre-C public-loader 1/1 RED preserved; real RELEASED load and guarded retained-Apar v2 append/reuse/v1 identity preservation 2/2 GREEN, Ruff/format clear; verification tests committed, post-release compatibility pending, no push — ca8e98a

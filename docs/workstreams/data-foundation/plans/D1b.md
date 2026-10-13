@@ -1130,4 +1130,8 @@ Root's actual public load and guarded retained-Apar v2 append/reuse test pass **
 original v1 rows and matching the real RELEASED pins. The pre-C public-release assertion is a
 genuine 1/1 RED. This proves actual technical release and first-party generation; full vendor
 run/replay, queue/CLI, source coverage and Stage 1 acceptance remain open.
+
+The actual release and retained-generation proof tests are committed in `ca8e98a`; their
+genuine pre-C RED and fresh 2/2 GREEN remain separate from synthetic mechanics. Post-release
+publication/producer/v1-pin compatibility is being checked before Task 13 mechanism closure.
 No nominal RELEASED label or caller model is accepted as release authority.
