@@ -1,0 +1,656 @@
+# Formula set v2 (derived rows; plan design decision 7: pinned separately as `formula_set`).
+# Formulas are declarative operator trees over declared operands and decimal literals, never
+# parsed strings. Every formula is EQUIVALENCE_UNPROVEN with no qualification scope: none cites
+# qualification evidence yet. Each formula's `evidence` names the source of its construction.
+# Inventory 2f vendor formula rows whose construction is unresolved are deferred to D1b with a
+# cited reason, and kept exclusions are listed with theirs (see the v1 manifest).
+family: DERIVED
+defaults:
+  period_nature: DURATION
+  sign_convention: AS_COMPUTED
+  aggregation_behaviour: NOT_SUMMABLE
+  period_aggregation: NONE
+  applicability_rule_id: results.every_period
+  basis_applicability:
+  - CONSOLIDATED
+  - STANDALONE
+rows:
+- canonical_id: opex_excl_finance_and_da
+  value_kind: CURRENCY_AMOUNT
+  meaning: 'Vendor-definition row: total expenses less finance costs and depreciation and amortisation
+    (the Screener "Expenses" and Tijori qt_* "Operating Expenses" construction).'
+  formula:
+    formula_id: opex_excl_finance_and_da
+    version: '1'
+    operands:
+    - name: total_expenses
+      canonical_id: total_expenses
+      temporal_role: DURATION
+    - name: finance_costs
+      canonical_id: finance_costs
+      temporal_role: DURATION
+    - name: depreciation_amortisation
+      canonical_id: depreciation_amortisation
+      temporal_role: DURATION
+    expression:
+      op: SUB
+      args:
+      - op: SUB
+        args:
+        - op: OPERAND
+          operand: total_expenses
+        - op: OPERAND
+          operand: finance_costs
+      - op: OPERAND
+        operand: depreciation_amortisation
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2f operating_expenses_ex_fin_da and §4 conflict 3: Screener "Expenses" = total_expenses
+      - finance_costs - depreciation_amortisation, measured 8/9 (THERMAX +21.2); Tijori "Operating Expenses"
+      the same, 8/9. Spec §1 names the row opex_excl_finance_and_da.'
+- canonical_id: ebitda_excl_other_income
+  value_kind: CURRENCY_AMOUNT
+  meaning: 'EBITDA excluding other income: revenue from operations less opex_excl_finance_and_da (Screener
+    and Tijori "Operating Profit").'
+  formula:
+    formula_id: ebitda_excl_other_income
+    version: '1'
+    operands:
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    - name: opex
+      canonical_id: opex_excl_finance_and_da
+      temporal_role: DURATION
+    expression:
+      op: SUB
+      args:
+      - op: OPERAND
+        operand: revenue
+      - op: OPERAND
+        operand: opex
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2f operating_profit_vendor: Screener "Operating Profit" = revenue_from_operations
+      - operating_expenses_ex_fin_da, measured 9/9; Tijori the same, 9/9. Spec §1 "EBITDA excluding other
+      income".'
+- canonical_id: opm_pct
+  value_kind: PERCENTAGE
+  meaning: 'Operating profit margin: EBITDA excluding other income as a percentage of revenue from operations.'
+  formula:
+    formula_id: opm_pct
+    version: '1'
+    operands:
+    - name: ebitda
+      canonical_id: ebitda_excl_other_income
+      temporal_role: DURATION
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: ebitda
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f opm_pct: Screener "OPM %" = operating profit / revenue x 100, measured 9/9
+      (integer rounding); Tijori "Operating Profit Margin" = OP/Sales x 100 (its formula string''s x1000
+      is not literal). Apar Q2 FY26 XBRL amounts in INR million (PDF p3: 5,715.42 / 5,402.29 /
+      107.90 / 39.88 crore): (57,154.2 - (54,022.9 - 1,079.0 - 398.8)) / 57,154.2 = 8.064
+      % (spec Stage 1: OPM 8.06 %).'
+- canonical_id: pbdt_vendor
+  value_kind: CURRENCY_AMOUNT
+  meaning: 'Vendor-definition row: profit before depreciation and tax (Tijori "PBDT").'
+  formula:
+    formula_id: pbdt_vendor
+    version: '1'
+    operands:
+    - name: ebitda
+      canonical_id: ebitda_excl_other_income
+      temporal_role: DURATION
+    - name: other_income
+      canonical_id: other_income
+      temporal_role: DURATION
+    - name: finance_costs
+      canonical_id: finance_costs
+      temporal_role: DURATION
+    - name: exceptional
+      canonical_id: exceptional_items_before_tax
+      temporal_role: DURATION
+    expression:
+      op: ADD
+      args:
+      - op: SUB
+        args:
+        - op: ADD
+          args:
+          - op: OPERAND
+            operand: ebitda
+          - op: OPERAND
+            operand: other_income
+        - op: OPERAND
+          operand: finance_costs
+      - op: OPERAND
+        operand: exceptional
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2f pbdt_vendor: Tijori "PBDT" = OP + other_income - finance_costs + exceptional_items,
+      exact on CGPOWER, ETERNAL and TITAN; SONACOMS shows exceptional items are inside.'
+- canonical_id: pbt_margin_pct
+  value_kind: PERCENTAGE
+  meaning: 'PBT margin: headline profit before tax (after associates) as a percentage of revenue from
+    operations.'
+  formula:
+    formula_id: pbt_margin_pct
+    version: '1'
+    operands:
+    - name: pbt
+      canonical_id: profit_before_tax_incl_associates
+      temporal_role: DURATION
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: pbt
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    pbt_id: profit_before_tax_incl_associates
+    evidence: 'Inventory 2f pbt_margin_pct: PBT / revenue x 100. Spec §1 Two PBT concepts: profit_before_tax_incl_associates
+      is used by the PBT margin.'
+- canonical_id: effective_tax_rate_pct
+  value_kind: PERCENTAGE
+  meaning: 'Effective tax rate: filed tax expense as a percentage of profit before tax before the share
+    of associates. Never derived as PBT - PAT; without a filed tax expense it is OPERAND_MISSING.'
+  formula:
+    formula_id: effective_tax_rate_pct
+    version: '1'
+    operands:
+    - name: tax
+      canonical_id: tax_expense
+      temporal_role: DURATION
+    - name: pbt
+      canonical_id: profit_before_tax
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: tax
+        - op: OPERAND
+          operand: pbt
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    pbt_id: profit_before_tax
+    evidence: 'Spec §1 and decision D6: tax_expense / profit_before_tax. Inventory 2f effective_tax_rate_pct:
+      Screener "Tax %" = tax_expense / profit_before_tax x 100, measured 9/9.'
+- canonical_id: material_cost_pct
+  value_kind: PERCENTAGE
+  meaning: 'Vendor-definition row (Screener "Material Cost %"): materials consumed, stock-in-trade purchased
+    and changes in inventories, as a percentage of revenue from operations. Tijori''s variant excludes
+    stock-in-trade and is not this row.'
+  formula:
+    formula_id: material_cost_pct
+    version: '1'
+    operands:
+    - name: materials
+      canonical_id: cost_of_materials_consumed
+      temporal_role: DURATION
+    - name: stock_in_trade
+      canonical_id: purchases_of_stock_in_trade
+      temporal_role: DURATION
+    - name: inventory_change
+      canonical_id: changes_in_inventories
+      temporal_role: DURATION
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: ADD
+          args:
+          - op: OPERAND
+            operand: materials
+          - op: OPERAND
+            operand: stock_in_trade
+          - op: OPERAND
+            operand: inventory_change
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f material_cost_pct and §4 conflict 9: Screener "Material Cost %" = (cost_of_materials_consumed
+      + purchases_of_stock_in_trade + changes_in_inventories) / Sales x 100, measured 9/9; Screener Sales
+      is revenue_from_operations (2a).'
+- canonical_id: employee_cost_pct
+  value_kind: PERCENTAGE
+  meaning: 'Vendor-definition row (Screener "Employee Cost %"): employee benefits expense as a percentage
+    of revenue from operations.'
+  formula:
+    formula_id: employee_cost_pct
+    version: '1'
+    operands:
+    - name: employee
+      canonical_id: employee_benefits_expense
+      temporal_role: DURATION
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: employee
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f employee_cost_pct: Screener S-sch "Employee Cost %" = employee cost / revenue,
+      measured 9/9; Screener Sales is revenue_from_operations (2a).'
+- canonical_id: cfo_to_op_pct
+  value_kind: PERCENTAGE
+  applicability_rule_id: results.cash_flow
+  meaning: 'Vendor-definition row (Screener "CFO/OP"): net cash from operating activities as a percentage
+    of EBITDA excluding other income.'
+  formula:
+    formula_id: cfo_to_op_pct
+    version: '1'
+    operands:
+    - name: cfo
+      canonical_id: cfo
+      temporal_role: DURATION
+    - name: operating_profit
+      canonical_id: ebitda_excl_other_income
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: cfo
+        - op: OPERAND
+          operand: operating_profit
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f cfo_to_op_pct: CFO / operating profit (Screener "CFO/OP", NATIVE unproven);
+      Screener "Operating Profit" is ebitda_excl_other_income (2f, measured 9/9).'
+- canonical_id: receivable_days
+  value_kind: DAYS
+  applicability_rule_id: results.balance_sheet
+  meaning: 'Receivable days, defined here on current trade receivables only (trade_receivables_current;
+    non-current trade receivables are excluded by this definition, not inferred from a source): closing
+    current trade receivables divided by revenue from operations, times the actual days in the output
+    interval. Only the closing instant of the output period is used, never an opening one.'
+  formula:
+    formula_id: receivable_days
+    version: '1'
+    operands:
+    - name: receivables
+      canonical_id: trade_receivables_current
+      temporal_role: CLOSING
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: DIV
+      args:
+      - op: OPERAND
+        operand: receivables
+      - op: OPERAND
+        operand: revenue
+    output_kind: DAYS
+    day_count: ACTUAL_DAYS_IN_OUTPUT_INTERVAL
+    evidence: 'Spec §1 unit algebra (amount / amount x days -> days, actual days in the output interval)
+      and Stage 1 calculation fixture: receivable days = closing receivables / revenue x days. Receivables
+      are trade_receivables_current (Screener "Other Assets/Trade receivables", inventory 2b).'
+- canonical_id: liabilities_incl_nci
+  value_kind: CURRENCY_AMOUNT
+  period_nature: INSTANT
+  applicability_rule_id: results.balance_sheet
+  meaning: 'Vendor-aggregate row: total liabilities plus balance-sheet non-controlling interest. Screener
+    "Borrowings" + "Other Liabilities" is compared only at this aggregate, never adjusted with first-party
+    NCI.'
+  formula:
+    formula_id: liabilities_incl_nci
+    version: '1'
+    operands:
+    - name: liabilities
+      canonical_id: total_liabilities
+      temporal_role: CLOSING
+    - name: nci
+      canonical_id: non_controlling_interest_bs
+      temporal_role: CLOSING
+    expression:
+      op: ADD
+      args:
+      - op: OPERAND
+        operand: liabilities
+      - op: OPERAND
+        operand: nci
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Spec §2 known traps: Screener Borrowings + Other Liabilities includes NCI and maps to liabilities_incl_nci
+      = total_liabilities + non_controlling_interest; without a first-party NCI value the comparison is
+      OPERAND_MISSING. Inventory §4 conflict 6.'
+- canonical_id: net_current_assets
+  value_kind: CURRENCY_AMOUNT
+  period_nature: INSTANT
+  applicability_rule_id: results.balance_sheet
+  meaning: 'Net current assets: total current assets less total current liabilities (Upstox "Net Current
+    Asset").'
+  formula:
+    formula_id: net_current_assets
+    version: '1'
+    operands:
+    - name: current_assets
+      canonical_id: current_assets_total
+      temporal_role: CLOSING
+    - name: current_liabilities
+      canonical_id: current_liabilities_total
+      temporal_role: CLOSING
+    expression:
+      op: SUB
+      args:
+      - op: OPERAND
+        operand: current_assets
+      - op: OPERAND
+        operand: current_liabilities
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2b net_current_assets: FORMULA current_assets_total - current_liabilities_total.'
+- canonical_id: shares_outstanding
+  value_kind: COUNT
+  period_nature: INSTANT
+  meaning: 'Number of equity shares at a results column''s closing date: closing paid-up equity capital
+    divided by closing face value per share. No first-party share-count element exists in the results
+    XBRL.'
+  formula:
+    formula_id: shares_outstanding
+    version: '1'
+    operands:
+    - name: paid_up
+      canonical_id: paid_up_equity_capital
+      temporal_role: CLOSING
+    - name: face_value
+      canonical_id: face_value_per_share
+      temporal_role: CLOSING
+    expression:
+      op: DIV
+      args:
+      - op: OPERAND
+        operand: paid_up
+      - op: OPERAND
+        operand: face_value
+    output_kind: COUNT
+    evidence: 'Inventory 2a shares_outstanding: FORMULA UNPROVEN paid_up_equity_capital / face_value_per_share
+      (XBRL and PDF); §3 no first-party element.'
+- canonical_id: cf_wc_total
+  value_kind: CURRENCY_AMOUNT
+  applicability_rule_id: results.cash_flow
+  meaning: 'Total working-capital change: the sum of every working-capital change row, each one filed
+    element. No XBRL total element exists.'
+  formula:
+    formula_id: cf_wc_total
+    version: '1'
+    operands:
+    - name: receivables_current
+      canonical_id: cf_wc_trade_receivables_current
+      temporal_role: DURATION
+    - name: receivables_noncurrent
+      canonical_id: cf_wc_trade_receivables_noncurrent
+      temporal_role: DURATION
+    - name: inventories
+      canonical_id: cf_wc_inventories
+      temporal_role: DURATION
+    - name: payables_current
+      canonical_id: cf_wc_trade_payables_current
+      temporal_role: DURATION
+    - name: payables_noncurrent
+      canonical_id: cf_wc_trade_payables_noncurrent
+      temporal_role: DURATION
+    - name: other_current_assets
+      canonical_id: cf_wc_other_current_assets
+      temporal_role: DURATION
+    - name: other_noncurrent_assets
+      canonical_id: cf_wc_other_noncurrent_assets
+      temporal_role: DURATION
+    - name: other_current_liabilities
+      canonical_id: cf_wc_other_current_liabilities
+      temporal_role: DURATION
+    - name: other_noncurrent_liabilities
+      canonical_id: cf_wc_other_noncurrent_liabilities
+      temporal_role: DURATION
+    - name: other_financial_assets_current
+      canonical_id: cf_wc_other_financial_assets_current
+      temporal_role: DURATION
+    - name: other_financial_assets_noncurrent
+      canonical_id: cf_wc_other_financial_assets_noncurrent
+      temporal_role: DURATION
+    - name: other_financial_liabilities_current
+      canonical_id: cf_wc_other_financial_liabilities_current
+      temporal_role: DURATION
+    - name: other_financial_liabilities_noncurrent
+      canonical_id: cf_wc_other_financial_liabilities_noncurrent
+      temporal_role: DURATION
+    - name: other_bank_balances
+      canonical_id: cf_wc_other_bank_balances
+      temporal_role: DURATION
+    expression:
+      op: ADD
+      args:
+      - op: OPERAND
+        operand: receivables_current
+      - op: OPERAND
+        operand: receivables_noncurrent
+      - op: OPERAND
+        operand: inventories
+      - op: OPERAND
+        operand: payables_current
+      - op: OPERAND
+        operand: payables_noncurrent
+      - op: OPERAND
+        operand: other_current_assets
+      - op: OPERAND
+        operand: other_noncurrent_assets
+      - op: OPERAND
+        operand: other_current_liabilities
+      - op: OPERAND
+        operand: other_noncurrent_liabilities
+      - op: OPERAND
+        operand: other_financial_assets_current
+      - op: OPERAND
+        operand: other_financial_assets_noncurrent
+      - op: OPERAND
+        operand: other_financial_liabilities_current
+      - op: OPERAND
+        operand: other_financial_liabilities_noncurrent
+      - op: OPERAND
+        operand: other_bank_balances
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2c cf_wc_total: FORMULA UNPROVEN, the sum of the cf_wc_* elements; no total element.
+      The inventory''s four grouped cf_wc_* rows are split into their 14 filed elements (v1 manifest).'
+- canonical_id: segment_capital_employed
+  value_kind: CURRENCY_AMOUNT
+  period_nature: INSTANT
+  dimension_template: segment
+  applicability_rule_id: results.segment
+  meaning: 'Capital employed per reportable segment: segment assets less segment liabilities, on the same
+    elimination basis.'
+  formula:
+    formula_id: segment_capital_employed
+    version: '1'
+    operands:
+    - name: assets
+      canonical_id: segment_assets
+      temporal_role: CLOSING
+    - name: liabilities
+      canonical_id: segment_liabilities
+      temporal_role: CLOSING
+    expression:
+      op: SUB
+      args:
+      - op: OPERAND
+        operand: assets
+      - op: OPERAND
+        operand: liabilities
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Inventory 2d segment_capital_employed[k]: FORMULA UNPROVEN assets - liabilities (Screener
+      segment line "Capital Employed").'
+- canonical_id: segment_revenue_members_total
+  value_kind: CURRENCY_AMOUNT
+  dimension_template: segment
+  applicability_rule_id: results.segment
+  meaning: Segment revenue summed over the entity's evidenced reportable-segment members for the period,
+    by dimensional aggregation into reportable_segments_total. The closed member list is bound at evaluation
+    from the entity's recorded segment members valid for the period and pinned as an input; it is never
+    listed here. Every bound member needs a value, else OPERAND_MISSING. Compared with the filed
+    segment_revenue_total, never merged.
+  formula:
+    formula_id: segment_revenue_members_total
+    version: '1'
+    operands:
+    - name: segment_revenue
+      canonical_id: segment_revenue
+      temporal_role: DURATION
+      aggregation:
+        axis: segment
+        member_binding: ENTITY_EVIDENCE
+        missing_member: OPERAND_MISSING
+        output_member: reportable_segments_total
+    expression:
+      op: OPERAND
+      operand: segment_revenue
+    output_kind: CURRENCY_AMOUNT
+    evidence: 'Spec §1 dimensional aggregation (a segment total) and §3 segment members (canonical members
+      per entity, versioned with valid-from/to and the defining evidence); Stage 1 calculation fixture
+      (Apar segment total over its evidenced members). Members come from segment_members (Task 2) via the
+      evidence repository at evaluation, e.g. Apar''s four DescriptionOfReportableSegment members in
+      X-Q2.'
+- canonical_id: net_profit_margin_pct
+  value_kind: PERCENTAGE
+  meaning: 'Vendor-definition row (Tijori qt_c "Net Profit Margin"): net profit from continuing operations
+    before the share of associates, as a percentage of revenue from operations.'
+  formula:
+    formula_id: net_profit_margin_pct
+    version: '1'
+    operands:
+    - name: net_profit
+      canonical_id: profit_continuing_after_tax
+      temporal_role: DURATION
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: OPERAND
+          operand: net_profit
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f net_profit_margin_pct: Tijori qt_c "Net Profit Margin" = Net Profit / Net Sales
+      x 100, FORMULA MEASURED on one row (THERMAX Jun-26, 0.95). Tijori qt_c "Net Profit" is
+      profit_continuing_after_tax (§4 conflict 2, 9/9 to 0.01 crore) and qt_c "Net Sales" is
+      revenue_from_operations (2a, 8/9).'
+- canonical_id: gross_margin_pct
+  value_kind: PERCENTAGE
+  meaning: 'Vendor-definition row (Tijori fr_c "Gross Margin (%)"): 100 less Tijori''s material cost
+    percentage, i.e. revenue from operations less cost of materials consumed and changes in inventories,
+    as a percentage of revenue from operations. Excludes purchases of stock-in-trade (Tijori''s material
+    cost variant), so it is not 100 less material_cost_pct.'
+  formula:
+    formula_id: gross_margin_pct
+    version: '1'
+    operands:
+    - name: revenue
+      canonical_id: revenue_from_operations
+      temporal_role: DURATION
+    - name: materials
+      canonical_id: cost_of_materials_consumed
+      temporal_role: DURATION
+    - name: inventory_change
+      canonical_id: changes_in_inventories
+      temporal_role: DURATION
+    expression:
+      op: MUL
+      args:
+      - op: DIV
+        args:
+        - op: SUB
+          args:
+          - op: SUB
+            args:
+            - op: OPERAND
+              operand: revenue
+            - op: OPERAND
+              operand: materials
+          - op: OPERAND
+            operand: inventory_change
+        - op: OPERAND
+          operand: revenue
+      - op: LITERAL
+        value: '100'
+    output_kind: PERCENTAGE
+    evidence: 'Inventory 2f gross_margin_pct: Tijori fr_c "Gross Margin (%)" = 100 - Material Cost (%), a
+      vendor formula string (FORMULA UNPROVEN; §4 conflict 12: hints only). Its operand, Tijori pl_*
+      "Material Cost (%)" = (Inc/Dec in Stock + Raw Material) / Net Sales x 100 (2f material_cost_pct,
+      §4 conflict 9), resolves to changes_in_inventories, cost_of_materials_consumed (Tijori "Raw Material",
+      §4 conflict 5) and revenue_from_operations (Tijori Net Sales, 2a). 100 - (m + c) / r x 100 is written
+      as (r - m - c) / r x 100, the same value for r != 0.'
+- canonical_id: other_income_incl_exceptional
+  value_kind: CURRENCY_AMOUNT
+  meaning: >-
+    Comparison bridge for vendor Other Income that includes exceptional items: first-party
+    other_income plus signed exceptional_items_before_tax for the same entity, basis, framework,
+    currency, dimensions and duration period. Missing or invalid operands fail closed.
+  formula:
+    formula_id: other_income_incl_exceptional
+    version: '1'
+    operands:
+    - name: other_income
+      canonical_id: other_income
+      temporal_role: DURATION
+    - name: exceptional_items
+      canonical_id: exceptional_items_before_tax
+      temporal_role: DURATION
+    expression:
+      op: ADD
+      args:
+      - op: OPERAND
+        operand: other_income
+      - op: OPERAND
+        operand: exceptional_items
+    output_kind: CURRENCY_AMOUNT
+    evidence: >-
+      Data spec §2 known trap: Screener "Other Income" maps to other_income plus exceptional_items.
+      Retained SONACOMS Q3 FY25 in-bse-fin XML sha256
+      c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc, OneD consolidated:
+      OtherIncome 467,906,000 INR plus signed ExceptionalItemsBeforeTax -56,992,000 INR equals
+      410,914,000 INR. Retained Screener HTML sha256
+      44347bbbd29a191760059564cd21bed2a7ce53f9091762d5b86125178b68b0a2 prints 41 crore for
+      Dec 2024. This one discriminating source case establishes the row and signed arithmetic,
+      not a demonstrated five-company equivalence qualification; the formula remains unproven.
