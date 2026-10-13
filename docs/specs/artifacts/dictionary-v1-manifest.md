@@ -152,6 +152,16 @@ Both are `EQUIVALENCE_UNPROVEN`.
 | `dividend_payout_pct` | `dividend_payout_pct` | No construction stated in the sources (vendor labels only) |
 | `working_capital_days etc.` | `inventory_days`, `payable_days`, `cash_conversion_cycle_days`, `working_capital_days` | Vendor labels only (Screener ratios, Tijori fr_c); no construction |
 
+D1b disposition, 2026-10-13 (Codex session, handoff run): all 17 deferred ids above are
+`EXCLUDED_UNPROVEN` within the presently authorized retained inputs. The
+[complete source-cited ledger](stage1-source-inventory.md#deferred-construction-dispositions)
+records every id, exact native source locator and unresolved construction; the
+[independent review](../../workstreams/data-foundation/reviews/D1b-source-inventory-review.md)
+approves each exclusion. Native rows remain evidence and are not zero-filled or silently
+remapped. These exclusions do not reduce the Stage 1 oracle or waive missing vendor measurements.
+No v1 dictionary row was added by this disposition. The separately spec-defined Screener
+Other Income construction belongs in a reviewed next-version release, preserving v1 replay.
+
 ### Excluded inventory rows
 
 | Inventory row | Reason |
