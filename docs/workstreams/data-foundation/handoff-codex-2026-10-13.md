@@ -143,3 +143,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 10:48 — Task15 retained Screener native draft (`eqos-u0u.12`) — independent source/native review APPROVE, final 7 retained/guarded-PG cases pass, exact numerical oracles preserved, all D1b seals match and scoped Ruff clean; draft committed, roadmap refreshed after resume, shared release/full source acceptance remain open, no push — ee4b000
 
 - 2026-10-13 11:03 — stable native/publication/producer historical gate — exit 0/PASS, 3,106 tests / 8 existing skips, full Ruff/format/strict mypy and privacy clear, protected native RED unchanged; Task14/15 closed within scope, prior FAIL retained, release/vendor-run/queue and full D1b remain open, no push — c9817f0 (verified frozen checkpoint)
+
+- 2026-10-13 11:06 — Task13 joined candidate A (`eqos-u0u.14`) — exactly three joined artifacts committed, prepared actual-byte pins match and public v2 load correctly refuses without review receipt; candidate is non-authoritative, fresh exact-A review/separate C/released readback pending, no push — 4779819

@@ -1095,4 +1095,21 @@ remains advisory with 372 unexecuted changed lines; no complete-coverage claim i
 resolves the two fixture failures of the prior run without relabelling that historical FAIL.
 Task 14 and bounded draft Task 15 are closed. Actual joined A/review/C release, vendor-run/queue
 integration and full D1b remain open; isolated queue R1 defects are not part of this frozen tree.
+
+### Joined candidate A — 2026-10-13
+
+Commit `4779819` introduces exactly `config/mappings/v2.yaml`,
+`config/source_authority/v1.yaml` and `config/vendor_publication/v2.yaml`. Prepared candidate
+pins match actual bytes: 260 dictionary rows, 416 mapping entries and 6 constructions; the
+publication SHA is `1770517e47e08cf2b33f220efd90e11e6ada26f3013ccfa518785370cb1d1693`.
+Root verified the public actual-root v2 load refuses while its committed review receipt is
+absent. A therefore grants no runtime release authority. Fresh exact-A independent review,
+the separate C receipt/review introduction, and actual load/pin/generation proofs remain next.
+
+Task 6 handoff completeness ruling: exact by-ID validation alone cannot detect omitting both
+an occurrence and its direct interpretation. Fresh preflight may additionally compare exact
+immutable capture/extractor/mapping/normalisation/context-scoped complete sets with the supplied
+IDs. This is a bounded completeness check, not latest-evidence resolution. Replay remains
+restricted to the closed manifest IDs. No guessed signature, timestamp proxy or schema change
+is allowed to substitute for that equality proof.
 No nominal RELEASED label or caller model is accepted as release authority.
