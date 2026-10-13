@@ -1062,4 +1062,16 @@ repairs use the actual pin and a private byte-identical 0001–0006 migration di
 now pass (4.73s), with scoped Ruff lint/format clean. Commit `243a6b2` records only those two
 fixture files and the reopening proof. The previous full gate remains a recorded FAIL until
 a fresh complete run; no financial oracle, migration or production constraint was relaxed.
+
+### First-party producer mechanism checkpoint — 2026-10-13
+
+Commit `535df96` records the Task 11 mechanism: the existing ingest guard requires fresh
+published configuration before writes, and the producer returns exact persisted member/row/
+attempt/proof identities. One complete settings record supplies qualification context; its
+identity/hash is stored in immutable v2 traces and checked before reuse and handoff. R1's
+setting-change/retry race and R2's Minor in-memory trace issue are repaired. Independent R2
+spec verdict is COMPLIANT, with code-quality and security APPROVE. Root's integrated 114 cases
+and final 11 producer/context/guard cases pass, as do scoped Ruff lint/format and strict mypy.
+Original refusal/race RED outcomes are preserved and the genuine immutability regression is
+protected. Actual released A/C artifacts, Task 6 by-ID consumption and full D1b remain open.
 No nominal RELEASED label or caller model is accepted as release authority.
