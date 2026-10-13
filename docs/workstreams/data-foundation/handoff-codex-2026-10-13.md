@@ -95,3 +95,4 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 03:49 — goal preparation (`eqos-lob`) — [dated activation goal](../../goals/2026-10-13-autonomous-backend-completion.md) and index verified; fresh-context readback PASS; implementation not started, next is queue item 1 — 2e65b1d
 - 2026-10-13 03:53 — owner goal activation — latest instruction permits parallel queue/area execution and relevant verification batching; protected boundaries remain; goal updated to record the supersession — 615f032 (activation base)
 - 2026-10-13 04:03 — `eqos-hz0` source-intake spawn repair — 42 passed; scoped Ruff lint/format and diff checks pass; two known baseline failures resolved — 3e966cb
+- 2026-10-13 04:05 — `eqos-csi` / D1a-R1-A14 schema-test split — test bodies and 13-case inventory preserved; 17 schema/clock tests pass on isolated PostgreSQL; scoped Ruff clean — 6077ca3
