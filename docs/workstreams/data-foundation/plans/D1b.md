@@ -976,3 +976,16 @@ definition, round fractions or change immutable migrations. Root's corrected-con
 against the pre-draft configuration remains **5/5 failed** for the absent dictionary/construction
 features. Original RED outcomes are retained; reviewed test amendments/additions require explicit
 orchestrator resealing. Missing vendor bodies and full D1b acceptance remain open.
+
+### Exact-ID report prerequisite — 2026-10-13
+
+Task 11's bounded existing-ingest report now exposes exact per-member stored source/surface/
+extractor/capture/occurrence/interpretation identity. The fresh independent R2 review approves
+all three fixes, including legacy empty-default serialization, unchanged re-ingest IDs and
+honest partial-member failures. Root verification: **15 guarded PostgreSQL cases pass**, scoped
+Ruff lint/format and strict mypy green. The [review and explicit contract reopening proof]
+(../reviews/D1b-ingest-id-report-review.md) preserves the original RED outcome and the separate
+3/3 genuine identity RED. Verified prerequisite commit: `041bd7b`; `eqos-u0u.15.1` is closed.
+The full `eqos-u0u.15` producer remains open for the accepted publication/write-guard API and
+actual committed joined release. Its unbuilt test preparation remains outside executable
+acceptance in `scratchpad/`; no shared v2 generation or full Task 11/D1b closure is claimed.
