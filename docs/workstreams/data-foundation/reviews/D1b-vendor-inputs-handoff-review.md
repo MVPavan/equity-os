@@ -63,3 +63,21 @@ After removing the dependent construction consistently from that private, explic
 test mapping, both tests reach the actual consumer and fail **DID NOT RAISE**. The corrected
 two genuine RED outcomes prove the null-binding and caller-expanded foreign-body cases before
 guard implementation. This creates no source equivalence, actual approval or full-stage waiver.
+
+## R3 consumer guard checkpoint
+
+Fresh independent [consumer R3](D1b-vendor-inputs-handoff-spec-r3.md) approves V02/V03/V05 and
+N01 under the fail-closed ruling. Missing successful-XBRL input authority now raises the typed
+binding/witness refusal; an unset physical hash cannot match any attempt. Both corrected new
+RED test bodies remain unchanged. The isolated twenty-case matrix passes in 55.46s; main's
+consumer/first-party-generation/actual-release matrix is **29 passed in 79.01s**. Scoped Ruff
+lint/format and strict mypy pass. This accepts a bounded checkpoint; positive missing-XBRL
+support (`eqos-u0u.24`), the broader consumer task and full Task 6 stay open.
+
+Root authorizes the R1 acceptance-file reseal from
+`f72955c4c463493f80f2f886ccc72372d919ed002e7023b05331c5508cb7598e` to
+`c33a7ef131b3c550c12b8482b4514b63fcb6f5b8cb7a279c21a0e848e046aaed` for disclosed added
+foreign-context, omission and reverse-XBRL coverage and its corrected private mapping fixture.
+All five original R1 failed-node outcomes remain; the already-green captured-peer joint
+omission case remains characterization. The separate R2 proof contains exactly two genuine
+post-fixture-correction consumer failures; no initial fixture failure is counted as RED.
