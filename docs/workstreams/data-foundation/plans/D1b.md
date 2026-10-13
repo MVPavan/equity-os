@@ -926,3 +926,24 @@ Formal gate stop, preserved at pause:
 - Do not start another batch while paused. After explicit resume, resolve these recorded gate
   findings before stable acceptance; then resume Tasks 13/11/6/7 and the evidence-gated manifest
   tasks under their actual producer/consumer contracts. Missing vendor source proofs stay parked.
+
+### Resume investigation — 2026-10-13
+
+The owner explicitly resumed the goal. The paused checkpoint above remains historical evidence;
+normal bounded execution begins with the recorded gate findings. `eqos-hdz` remains open: 102
+source-intake CLI cases passed unchanged with coverage, followed by an authorized original-order
+full coverage run with short tracebacks: **2,878 passed, 8 existing skips, exit 0** (453.41s).
+The historical cutoff failure did not reproduce; no concrete cause or product/test fix is claimed.
+SQLite ResourceWarnings also occurred during passing runs and are not proven causal.
+
+The scanner repair is frozen for fresh independent contract/context review. Root's focused
+scanner run passes all 24 cases; actual identifier-only historical replay against `05b2634`
+checks 317 captured tokens with no unresolved collision. This is focused scanner evidence,
+not a replacement for the full formal gate. Its original FAIL/STOP remains until fresh reviewed
+combined gate evidence. No vendor implementation batch starts before that barrier.
+
+Source-native Screener liabilities construction is an available-source engineering prerequisite
+for Task 13; missing-body vendor exclusions do not waive it. Read-only exploration confirmed
+existing relational interpretation operand links and transform JSONB can preserve native inputs
+without fake canonical operands or a new migration. A supplemental Task 14/15 plan is under
+independent review; no native construction or final v2 release has started.
