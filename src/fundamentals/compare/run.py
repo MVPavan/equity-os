@@ -114,7 +114,9 @@ def execute_run(
     """Resolve and publish one run, or return the stored run of the same identity."""
     config = _config(config_root, request, extractor_pins)
     repository = EvidenceRepository(pool)
-    definition_set_id = pin_config(config, repository=repository, pool=pool)
+    definition_set_id = pin_config(
+        config, repository=repository, pool=pool, config_root=config_root
+    )
     store = RunStore(pool)
     inputs, rows = resolve(
         request,

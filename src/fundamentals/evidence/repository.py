@@ -168,6 +168,10 @@ class EvidenceRepository:
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
+    def uses_pool(self, pool: ConnectionPool) -> bool:
+        """Whether ``pool`` is this repository's one authoritative connection pool."""
+        return self._pool is pool
+
     def basis_status_as_of(
         self, entity_id: int, cutoff: datetime
     ) -> tuple[int, BasisStatus] | None:
@@ -261,7 +265,24 @@ class EvidenceRepository:
         A version already pinned to other content raises :class:`VersionContentDriftError`
         and nothing is written (mirrors ``publish_definition_set``).
         """
+        self.pin_versions_guarded(pins)
+
+    def pin_versions_guarded(
+        self,
+        pins: Sequence[VersionPin],
+        *,
+        required_database_prefix: str | None = None,
+    ) -> None:
+        """Pin versions after an optional database-name guard on the same transaction."""
         with self._transaction() as conn:
+            if required_database_prefix is not None:
+                found = _rows(conn, rows_sql.CURRENT_DATABASE, ())
+                database = str(found[0]["name"]) if found else ""
+                if not database.startswith(required_database_prefix):
+                    raise ValueError(
+                        "guarded version pins require database prefix "
+                        f"{required_database_prefix!r}, got {database!r}"
+                    )
             for pin in pins:
                 params = (pin.artifact, pin.version, pin.content_sha256)
                 if _rows(conn, rows_sql.INSERT_VERSION_PIN, params):

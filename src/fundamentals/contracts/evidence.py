@@ -465,6 +465,7 @@ class PinnedVersions(BaseModel):
     alignment_rules: VersionPin
     vendor_extractors: tuple[VendorExtractorPin, ...] = ()
     source_authority: VersionPin | None = None
+    vendor_publication: VersionPin | None = None
 
     @field_validator("vendor_extractors")
     @classmethod
@@ -484,6 +485,8 @@ class PinnedVersions(BaseModel):
             document.pop("vendor_extractors", None)
         if self.source_authority is None:
             document.pop("source_authority", None)
+        if self.vendor_publication is None:
+            document.pop("vendor_publication", None)
         return document
 
     def triple(self) -> InterpretationTriple:

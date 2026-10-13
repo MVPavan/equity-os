@@ -93,7 +93,7 @@ _INPUT_COLUMNS: tuple[RunInputKind, ...] = (
 _PIN_NAMES = tuple(
     name
     for name in PinnedVersions.model_fields
-    if name not in {"vendor_extractors", "source_authority"}
+    if name not in {"vendor_extractors", "source_authority", "vendor_publication"}
 )
 _UNREADABLE = "run {run_id} {detail}"
 _NO_RECORD = "definition record {record_id!r} is not in the run's published set"
@@ -510,6 +510,9 @@ def _version_params(run_id: int, pinned: PinnedVersions) -> list[tuple[object, .
     if pinned.source_authority is not None:
         pin = pinned.source_authority
         rows.append((run_id, "source_authority", pin.version, pin.content_sha256, None, None))
+    if pinned.vendor_publication is not None:
+        pin = pinned.vendor_publication
+        rows.append((run_id, "vendor_publication", pin.version, pin.content_sha256, None, None))
     return rows
 
 

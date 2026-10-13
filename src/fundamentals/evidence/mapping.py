@@ -14,7 +14,7 @@ own namespace URI and the selector; two entries matching one native field fail c
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from enum import StrEnum
 from fractions import Fraction
 from itertools import combinations
@@ -310,9 +310,11 @@ class _PolicyFile(BaseModel):
     dash_rules: tuple[DashRule, ...] = ()
 
 
-def load_normalisation_policy(path: Path) -> NormalisationPolicy:
+def load_normalisation_policy(
+    path: Path, *, read_bytes: Callable[[Path], bytes] | None = None
+) -> NormalisationPolicy:
     """Load a normalisation policy, pinned by the SHA-256 of its bytes."""
-    body = path.read_bytes()
+    body = path.read_bytes() if read_bytes is None else read_bytes(path)
     try:
         parsed = _PolicyFile.model_validate(yaml.safe_load(body))
     except (ValidationError, yaml.YAMLError) as error:
@@ -330,7 +332,13 @@ def load_normalisation_policy(path: Path) -> NormalisationPolicy:
     )
 
 
-def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionary) -> MappingSet:
+def load_mapping_set(
+    root: Path,
+    version: str,
+    *,
+    dictionary: CanonicalDictionary,
+    read_bytes: Callable[[Path], bytes] | None = None,
+) -> MappingSet:
     """Load and validate mapping set ``version`` from ``root/<version>.yaml``.
 
     Raises :class:`MappingLoadError` with the first failing defect class (schema,
@@ -338,14 +346,14 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     """
     index_path = root / f"{version}.yaml"
     bodies: dict[Path, bytes] = {}
-    index = _parse(_Index, index_path, version, bodies=bodies)
+    index = _parse(_Index, index_path, version, bodies=bodies, read_bytes=read_bytes)
     if index.version != version:
         raise MappingLoadError(MappingDefect.SCHEMA, [index.version], "version mismatch")
     entries: list[MappingEntry] = []
     failures: dict[str, str] = {}
     for name in index.entry_files:
         path = root / name
-        entry_file = _parse(_EntryFile, path, name, bodies=bodies)
+        entry_file = _parse(_EntryFile, path, name, bodies=bodies, read_bytes=read_bytes)
         scope = {
             "source": entry_file.source,
             "surface": entry_file.surface,
@@ -363,11 +371,25 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     constructions: list[ConstructionRule] = []
     for name in index.construction_files:
         constructions.extend(
-            _parse(_ConstructionFile, root / name, name, bodies=bodies).constructions
+            _parse(
+                _ConstructionFile,
+                root / name,
+                name,
+                bodies=bodies,
+                read_bytes=read_bytes,
+            ).constructions
         )
     anchors: list[StatementAnchor] = []
     for name in index.statement_anchor_files:
-        anchors.extend(_parse(_AnchorFile, root / name, name, bodies=bodies).statement_anchors)
+        anchors.extend(
+            _parse(
+                _AnchorFile,
+                root / name,
+                name,
+                bodies=bodies,
+                read_bytes=read_bytes,
+            ).statement_anchors
+        )
     _check_schema(entries, constructions, dictionary)
     _check_dangling_canonical(entries, constructions, dictionary)
     _check_dangling_entries(entries, constructions)
@@ -388,11 +410,18 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     )
 
 
-def _parse[M: BaseModel](model: type[M], path: Path, label: str, *, bodies: dict[Path, bytes]) -> M:
+def _parse[M: BaseModel](
+    model: type[M],
+    path: Path,
+    label: str,
+    *,
+    bodies: dict[Path, bytes],
+    read_bytes: Callable[[Path], bytes] | None,
+) -> M:
     """Parse one YAML file into ``model``; any failure is a ``SCHEMA`` defect."""
     try:
         if path not in bodies:
-            bodies[path] = path.read_bytes()
+            bodies[path] = path.read_bytes() if read_bytes is None else read_bytes(path)
         return model.model_validate(yaml.safe_load(bodies[path]))
     except (ValidationError, yaml.YAMLError, OSError) as error:
         raise MappingLoadError(MappingDefect.SCHEMA, [label], _flat(error)) from error

@@ -268,6 +268,7 @@ RESERVE_INTERPRETATION_IDS: LiteralString = (
     "FROM generate_series(1, %s)"
 )
 STORE_CLOCK: LiteralString = "SELECT eqos.store_now() AS now"
+CURRENT_DATABASE: LiteralString = "SELECT current_database() AS name"
 INSERT_INTERPRETATION: LiteralString = (
     "INSERT INTO eqos.interpretations (id, origin, occurrence_id, capture_ref_id, "
     "representation, construction_rule_id, input_digest, status, entity_id, canonical_id, "
