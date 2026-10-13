@@ -1014,3 +1014,11 @@ Fail closed: these checks accept this bounded mechanism; the task stays open for
 formal gate. Dictionary/Screener drafts, shared release, publication-bound producers and full
 D1b acceptance retain their own gates. No authority, qualification or missing-source waiver is
 inferred from numerical validity.
+
+The complete dictionary and consolidated first-party bridge drafts are committed in `95dd442`;
+`eqos-u0u.13` is closed for its bounded draft criteria. All 259 legacy rows remain semantically
+unchanged and only the evidenced DERIVED `other_income_incl_exceptional` row is added. Independent
+raw-source review verifies the signed arithmetic and displayed precision; four corrected tests
+still fail against the pre-draft config and pass in the final integration. These drafts grant no
+vendor authority or demonstrated equivalence. Only Task 13's separate committed joined release
+may enable their authoritative v2 use.
