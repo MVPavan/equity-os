@@ -1,6 +1,6 @@
 # Protected vendor producer test split
 
-Status: scoped structural repair verified, 2026-10-13, `eqos-u0u.27`; fresh formal gate pending.
+Status: scoped structural repair and fresh full formal gate verified, 2026-10-13, `eqos-u0u.27`.
 
 Frozen batch `5151576` passes **3,218 tests / 8 existing skips**, complete Ruff lint/format,
 strict mypy on270 sources and privacy rails. Its formal exit is still CONTRACT/nonzero because
@@ -23,5 +23,9 @@ scoped Ruff lint/format pass. Root explicitly authorizes resealing both acceptan
 using this mechanical evidence; the original two producer behavioral RED outcomes are unchanged.
 The helper must be explicitly added to the protected proof, not left outside its file hashes.
 
-No full formal PASS is claimed until the fresh combined gate returns0 after this repair. Public
-run integration and positive failed-XBRL witness support remain independently in progress.
+The fresh combined gate completed at13:42 UTC with exit0 / ROUTE PASS: **3,218 passed / 8
+existing skips**, full Ruff lint/format, strict mypy and privacy rails clear. All four protected
+native acceptance files and their original RED proof remain unchanged. Advisory diff coverage
+reports470 unexecuted changed lines; this is not a100% coverage claim. Log:
+`scratchpad/gate/d1b-native-construction-20261013T132826Z.log`.
+Public run integration and positive failed-XBRL witness support remain independently in progress.
