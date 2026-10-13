@@ -1,9 +1,17 @@
 # Equity-OS autonomous backend completion goal — 2026-10-13
 
-Status: paused, 2026-10-13. Independently approved scoped work is committed; formal integration
-acceptance remains FAIL/STOP. Preparation task: `eqos-lob`.
+Status: work resumed by owner, 2026-10-13. The paused checkpoint below is historical; formal
+integration acceptance remains FAIL/STOP until the recorded fixes pass. Preparation task: `eqos-lob`.
 
-## Pause steering — 2026-10-13
+## Resume steering — 2026-10-13
+
+The owner explicitly requested resuming this goal. Continue normal bounded execution, beginning
+with `eqos-hdz` and `eqos-490` in independent file scopes. Existing autonomy, local commit authority,
+no-push rule and protected boundaries persist. The tool control currently still reports paused;
+available goal tools cannot change that control to active. Work proceeds under the explicit resume
+instruction without creating a replacement goal or claiming the control changed.
+
+## Historical pause steering — 2026-10-13
 
 The owner reported that limits reset and requested finishing already spawned work, then pausing
 at a verified checkpoint. Existing schema, adapter, corroboration and offline-boundary work is
