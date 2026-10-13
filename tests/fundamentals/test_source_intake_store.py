@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from source_intake_process_support import register_process
 
 from fundamentals.api.source_intake import (
     ApprovedIntakeBinding,
@@ -348,22 +349,6 @@ def test_receipt_with_self_consistent_future_digest_refuses(setup: Any) -> None:
         ledger.get_registration(**ref(record))
 
 
-def _register_process(
-    root: str, inputs: str, record_data: str, role: str, barrier: Any, queue: Any
-) -> None:
-    store = SnapshotStore(Path(root))
-    ctx = context(Path(root), Path(inputs), shared=True)
-    record = CaptureRecord.model_validate_json(record_data)
-    barrier.wait(timeout=5)
-    try:
-        receipt = SourceIntakeStore(store, approved_intake=ctx).register_capture(
-            **ref(record, role=SourceRole(role))
-        )
-        queue.put(("ok", receipt.receipt_sha256))
-    except SourceRegistrationError as error:
-        queue.put(("refused", str(error)))
-
-
 @pytest.mark.parametrize("conflict", [False, True])
 def test_two_processes_identical_or_conflicting_registration(setup: Any, conflict: bool) -> None:
     store, old_ctx = setup
@@ -374,7 +359,7 @@ def test_two_processes_identical_or_conflicting_registration(setup: Any, conflic
     roles = ["xbrl", "results_pdf" if conflict else "xbrl"]
     processes = [
         mp.Process(
-            target=_register_process,
+            target=register_process,
             args=(
                 str(store._root),
                 str(ctx.input_anchor.path),
