@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In execution. Approved 13-task plan committed `f82634d`; parallel evidence, shared schema and corroboration work underway. Full Stage 1 remains gated by missing retained vendor captures and complete source-verified acceptance. |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In execution; stage 4 amendment complete (`c77657d`). Approved 13-task plan `f82634d`; project verifier `9781763` implemented. Vendor/schema/corroboration work parallelized. Full Stage 1 remains gated by missing retained vendor captures and complete source-verified acceptance. |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -27,7 +27,7 @@ section is the human summary.
 | D8 Shareholding filing source | 5 | Not started |
 | D9 Retention and replay | 9 | Not started |
 
-7 of 66 stages are built. D1a's stages are the shared foundation (schema, dictionary, formula
+8 of 66 stages are built (D1a 7; D1b amendment 1). D1a's stages are the shared foundation (schema, dictionary, formula
 engine, evidence model, decision tables, runs), so their share of the effort exceeds their count.
 
 **Execution loop per phase** (`.claude/rules/core/04-agent-stack.md`):

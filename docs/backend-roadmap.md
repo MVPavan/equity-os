@@ -71,7 +71,7 @@ time.
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Open |
 | PREP-6 | Review telemetry wired to ledger claims (B-04, B-13); seeded-error drill | Per-claim disposition and time recorded; drill errors caught | Instrument exists (`fundamentals review`); not yet on the ledger |
 | PREP-7 | Frozen pilot manifest | Expected values hand-verified from the four quarters' filings, reviewer-approved, committed before the pilot test | Not started |
-| PREP-8 | `scripts/verify_project.sh` | Runs every D-phase exit plus the pilot test; PASS/FAIL per part | Not started |
+| PREP-8 | `scripts/verify_project.sh` | Runs every D-phase exit plus the pilot test; PASS/FAIL per part | Verifier foundation built `9781763`; all exits registered, actual pilot target unresolved and NOT BUILT; full project gate pending |
 
 Estimate (inference from D1a only): D1a–D9 take 3–6 weeks of continuous running, and PREP work plus
 the pilot take about 1–2 weeks more. The pilot also needs the owner's time (§4, PILOT-12).
