@@ -103,3 +103,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 04:56 — `eqos-u0u.7` / D1b Task 1 — retained source inventory and all 17 cited EXCLUDED_UNPROVEN dispositions independently approved; 10 Screener / 23 Apar body hashes verified, source-clock/identity/basis evidence recorded; prerequisite closed, positive missing-vendor acceptance remains parked — a131b74
 
 - 2026-10-13 05:43 — D1b Task 2 / `eqos-u0u.3` scoped schema checkpoint — 32 focused + 15 migration/contracts tests passed; Ruff/format and strict mypy green; independent APPROVE, S1–S5 addressed; genuine 0005 upgrade/replay preserved; migration 0006 now immutable; stage remains open for run/queue/authenticated CLI integration; final stable gate running — 119ae48
+
+- 2026-10-13 05:44 — D1b Task 5 / `eqos-u0u.2` pure corroboration checkpoint — 43 original RED → GREEN, 99 legacy pure cases green, unmapped diagnostic repair 1 RED → GREEN; scoped quality checks and independent batch APPROVE; original contracts preserved through proven lint-only reseal; retained multi-vendor/queue integration remains open — fdae6ee
