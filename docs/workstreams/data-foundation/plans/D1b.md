@@ -1029,3 +1029,13 @@ available, before product behavior. Commit `352648b` replaces only that isolated
 with the intended v1 clone; no acceptance assertion or repository configuration changes.
 Fresh unchanged run/rule verification is **31 passed**, with scoped Ruff lint/format green.
 This resolves that fixture blocker; publication review's write/path/schema defects remain separate.
+
+### Vendor run and queue supplemental plan — 2026-10-13
+
+The [supplemental Task 6 plan](D1b-vendor-runs.md) is committed in `0f5c2da`, with an
+[exhaustive R4 APPROVE review](../reviews/D1b-vendor-run-plan-review.md). It resolves exact versus
+logical attempt identity, the single first-party run scope, deterministic byte/by-ID/context
+proof, queue payload identity, actual transaction boundaries, source-rights exclusions and
+canonical multi-item lock ordering. Source-independent cursor/overlay SQL may proceed separately.
+Authoritative vendor execution still waits for the actual accepted release and generation handoffs;
+no missing source, financial qualification, protected disposition or full D1b acceptance is waived.

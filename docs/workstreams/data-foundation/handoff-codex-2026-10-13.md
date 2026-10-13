@@ -131,3 +131,5 @@ Append `YYYY-MM-DD HH:MM — item — result — commit` below. A new session re
 - 2026-10-13 09:25 — Task1/13 dictionary and first-party bridge drafts (`eqos-u0u.13`) — all 259 legacy rows preserved plus one evidenced DERIVED aggregate; signed SONACOMS arithmetic/precision and consolidated-only bridge independently approved and integration green, 4/4 corrected pre-draft RED preserved; bounded draft task closed, shared v2 remains unpublished, no push — 95dd442
 
 - 2026-10-13 09:32 — legacy run temporary-config fixture — real dictionary/v2 caused seven FileExistsError setup failures; replace only the isolated private copy with the original intended v1 clone, preserve all assertions; 31 guarded-PG run/rule cases and Ruff/format pass, no repository config rewrite or push — 352648b
+
+- 2026-10-13 10:28 — Task6 vendor-run/queue supplemental plan — all six R1, three R2 and the multi-item deadlock finding addressed; independent R4 APPROVE; exact byte/ID/context and logical availability contracts, atomic run scope and ordered queue locks specified; source-independent queue SQL authorized, actual release/source/run acceptance remains gated, no push — 0f5c2da
