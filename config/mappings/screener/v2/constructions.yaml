@@ -1,10 +1,55 @@
-# Draft source-native construction contract, intentionally not promoted into a published release.
-# Required next seam: Borrowings + Other Liabilities -> liabilities_incl_nci, on the SAME vendor
-# surface/capture, with exact source-native occurrence/operand ids and no first-party NCI operand.
-# Existing ConstructionRule consumes mapped canonical operands; borrowings_total is excluded
-# and Other Liabilities has no evidenced dictionary operand. Inventing their canonical mappings
-# would misstate the evidence. Until native-operand support is reviewed, retain both rows UNMAPPED.
-# Evidence: approved data specification §2 known traps; stage1-source-inventory.md deferred ledger.
-# Other Income is directly published; its first-party bridge belongs to constructions/v2.yaml,
-# not a vendor arithmetic operation that overwrites its source occurrence.
-constructions: []
+# Unpublished Screener source-native construction draft. Task 13 owns any shared v2 index,
+# authority decision, final content pin and publication.
+constructions:
+  - rule_id: screener.balance-sheet.liabilities_incl_nci
+    source: screener-subscriber
+    surface: SCREENER_FINANCIALS
+    schema_identity: screener-financials-html-v1
+    canonical_id: liabilities_incl_nci
+    operands:
+      - name: borrowings
+        native:
+          selector:
+            statement_family: BALANCE_SHEET
+            labels: [Borrowings]
+            section_equals: balance-sheet
+          sign: 1
+          unit_transform: SCALE_TO_BASE_UNIT
+          precision_rule: DECLARED
+          value_kind: CURRENCY_AMOUNT
+          currency: INR
+          period_nature: INSTANT
+          dimension_members: {}
+          bases: [CONSOLIDATED]
+          period_kinds: [INSTANT]
+          evidence_ref: >-
+            Task 15 source oracle: original retained THERMAX and HFCL balance-sheet tables
+            print Borrowings on the consolidated Rs. Crores surface at Mar 2025.
+      - name: other_liabilities
+        native:
+          selector:
+            statement_family: BALANCE_SHEET
+            labels: [Other Liabilities]
+            section_equals: balance-sheet
+          sign: 1
+          unit_transform: SCALE_TO_BASE_UNIT
+          precision_rule: DECLARED
+          value_kind: CURRENCY_AMOUNT
+          currency: INR
+          period_nature: INSTANT
+          dimension_members: {}
+          bases: [CONSOLIDATED]
+          period_kinds: [INSTANT]
+          evidence_ref: >-
+            Task 15 source oracle: original retained THERMAX and HFCL balance-sheet tables
+            print Other Liabilities on the consolidated Rs. Crores surface at Mar 2025.
+    expression:
+      op: ADD
+      args:
+        - {op: OPERAND, operand: borrowings}
+        - {op: OPERAND, operand: other_liabilities}
+    evidence_ref: >-
+      docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+      section 2 known trap; independently hand-read retained source oracle prepared before
+      implementation. Borrowings plus Other Liabilities emits liabilities_incl_nci only;
+      Total Liabilities and first-party NCI are excluded. Scope remains equivalence-unproven.
