@@ -4,6 +4,7 @@ Authoritative docs and when to read them.
 
 | Doc | Read when |
 |---|---|
+| `docs/goals/2026-10-13-autonomous-backend-completion.md` | Activating or resuming the October 13 autonomous backend run: latest-document authority, parallel ownership, ordered handoff queue, protected boundaries and completion evidence |
 | `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md` | **Canonical for all implementation gates** — "single operational source of truth" for decisions (IDs A-01…E-10), acceptance evidence, dependencies, status, phase-gate scorecards (§F), and SQLite/state-table scale-up triggers (§H) |
 | `docs/blueprint/funda-blueprint-final-consolidated-review.md` | Product/architecture rationale — approved direction, doctrine, first-release contract (§7); narrative only, does **not** override the v2 register |
 | `docs/blueprint/funda-third-order-review-disposition-report.md` | Why v2 says what it says — disposition of the third-order audit (accepted/modified/rejected findings, document strategy) |

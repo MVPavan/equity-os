@@ -1,0 +1,97 @@
+# Equity-OS autonomous backend completion goal — 2026-10-13
+
+Status: ready for owner activation through the goal tool. Preparation task: `eqos-lob`.
+
+## Objective
+
+Advance the authorized Equity-OS backend work to completion, using as much safe parallel
+execution as available capacity permits. Continue through verified, eligible work until the
+objective is achieved or the runtime budget is exhausted. Preserve a resumable checkpoint at
+every completed item. Budget exhaustion or parked work is not project completion.
+
+The product maintains an approved analytical view of Indian companies across quarters: retained
+evidence → reconciled figures → deterministic calculations → reviewable earnings updates →
+separately approved memory. Backend acceptance is the Apar four-quarter PostgreSQL pilot.
+
+## Authority and references
+
+This file records the owner's latest instructions of 2026-10-13: work autonomously, maximize
+parallel execution, and resolve document conflicts using the latest applicable document.
+Use recorded document/revision/decision dates, not filesystem modification times. This instruction
+supersedes older one-worker scheduling rules. Keep the handoff's hard protections and queue order.
+If dates tie and precedence remains ambiguous, choose fail closed and record the ruling in the
+current phase plan's build notes. Do not ask the owner questions or infer financial judgments.
+
+Read [the current handoff](../workstreams/data-foundation/handoff-codex-2026-10-13.md), then the
+repository read order in `AGENTS.md`. Consult these sources when their work becomes active:
+
+| Source | Use |
+|---|---|
+| [Core definition](../workstreams/data-foundation/core.md), [core roadmap](../workstreams/data-foundation/roadmap.md), [backend roadmap](../backend-roadmap.md) | Scope, stage dependencies, prerequisites and pilot acceptance |
+| [Data spec](../specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md), [ledger/lifecycle spec](../specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md) | Build contracts; resolve conflicts by the dated authority rule above |
+| [D1a plan](../workstreams/data-foundation/plans/D1a.md), [D1a findings](../workstreams/data-foundation/reviews/D1a-phase-review-r1.md), live Beads | Current tasks, findings and verified work state |
+| [Decision register](../blueprint/funda-blueprint-implementation-decision-register-v2.md), [architecture v2](architecture/architecture-brief-v2.md), [Gold goal](equity-os-product-completion-gold.md), [vision checkpoint](../evidence/product-completion/vision-acceptance.md) | Broader release gates and vision; refresh old status claims against newer evidence |
+| `.claude/project/verification.md`, `.claude/project/invariants.md` | Required checks and financial/provenance invariants |
+
+## Execute in order
+
+1. Preserve the existing uncommitted Area A/C work and migration `0005`. Fix the three reported
+   mypy errors, establish the exact known-failure baseline (`eqos-hz0`, two source-intake cases),
+   and commit the verified Area A starting work, including `0005`, without staging Area C.
+2. Finish D1a Area A → Area C → Area B. Implement every finding's specified fix, with tests first.
+   Area B owns A4's selection change. Verify every previously reported fix against current code.
+3. Run D1a's fresh independent review/fix/re-review loop. After three non-convergent rounds,
+   record a fix-or-park ruling for every residual; run a fresh critical review of the whole phase.
+   Close `eqos-3f9` and update roadmap progress only when its exit and review requirements hold.
+   D1a's original red proof is missing: disclose that limitation and never claim its historical
+   `verify.sh gate` passed. Follow the handoff's explicit four-check/tracer/review closure route;
+   record this dated authority ruling in D1a build notes. Red-proof gates apply from D1b onward.
+4. Elaborate and independently review `plans/D1b.md` under the data-foundation workstream.
+   Record `scripts/verify.sh red <slice>` before each D1b implementation stage. Build retained
+   vendor adapters, corroboration, queue, amendments and the source-verified frozen manifest;
+   commit the approved manifest before its e2e test. Proceed only after D1b's exit is green.
+5. Continue D2–D9, PREP-1–PREP-8 and the pilot in backend-roadmap order, respecting actual
+   dependencies. Park prohibited steps, record reasons, and select the next unblocked item.
+   Later research capabilities require their recorded activation gates; do not activate them by
+   treating an older whole-product goal as blanket permission.
+
+## Parallel execution and item completion
+
+Within the active queue item, dispatch independent bounded tasks with explicit file ownership.
+Keep Area A/C/B sequential. One writer owns shared contracts, configuration, migrations and test
+support per batch. Tell every worker others are editing and require preservation of their work.
+Use available slots for implementation, source verification and fresh independent review; rotate
+finished workers out. Run integrated ingest checks after extractor edits are frozen; establish
+test-harness isolation before concurrent PostgreSQL runs. Follow the execution skill; use planning
+for new phase plans and test-first/debugging/security skills where applicable.
+
+Every verified item: test first → implement → run all four handoff checks → commit explicit files
+with `Co-Authored-By: Codex <noreply@openai.com>` → update/close Beads using `--actor codex` and
+evidence → append `YYYY-MM-DD HH:MM — item — result — commit` to the handoff progress log and
+commit that log. Preserve unrelated changes; the known baseline failures are not a clean-suite
+claim. Fresh reviewers must receive: "List ALL issues you find in a single exhaustive report.
+Do not stop at the first few. Rank them by severity." Record them as "Codex session (handoff run)".
+
+## Protected boundaries and completion evidence
+
+Never push, expose/commit credentials, rewrite unrelated changes, modify `data/raw/`, fetch live
+vendor data, touch the real `equity_os` database or PostgreSQL data directory, or run destructive
+Docker commands. PostgreSQL tests use `eqos_test_*` only. Applied migrations `0001`–`0004` are
+immutable; `0005` becomes immutable at its first commit; subsequent schema work takes the next
+free number. Use exact `Fraction` arithmetic, `eqos.store_now()` knowledge times, honest capture
+times and source-derived expectations. Never zero-fill or backdate; commit repo-relative paths
+only and keep `scratchpad/` untracked.
+
+Park work requiring live access/new credentials, actual D2 cutover, owner-time steps including
+PILOT-12, or owner financial judgment. Rehearsals do not satisfy an operational cutover or human
+measurement gate; keep dependent acceptance blocked and continue eligible independent work.
+
+Core completion requires all ten phase exits, approved source-verified manifests/amendments,
+fresh quality checks and evidence-backed phase closures. Backend completion additionally requires
+PILOT-1–PILOT-13, `scripts/verify_project.sh` exit 0 and an approved evidence-linked pilot report.
+Keep `PILOT_PROVEN`, `CORE_RESEARCH_RELEASE` and `VISION_SATISFIED` separate; claim each only when
+its own documented proof passes. At a runtime stop, record commits, checks/failures, parked work,
+worker state and the exact next item in the progress log and Beads before handing off.
+
+**First action on activation:** read the latest progress log and live Beads/git state; if queue
+item 1 remains unfinished, claim it and run the four baseline checks before changing code.
