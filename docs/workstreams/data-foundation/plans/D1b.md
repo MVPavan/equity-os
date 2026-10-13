@@ -955,3 +955,24 @@ independent review; no native construction or final v2 release has started.
   previous STOP without a post-commit empty-diff rerun. `eqos-hdz` stays open with cause UNKNOWN;
   both current full coverage runs passed its unchanged cases. Formal built-tree acceptance is
   current; full D1b source/configuration/run/queue/frozen-manifest acceptance remains open.
+
+### Native draft integration review — 2026-10-13
+
+The approved supplemental r3 plan was committed in `3b16a13`; three exclusive implementation
+lanes returned native contract, retained Screener and complete dictionary/first-party bridge
+drafts. Fresh independent spec, code-quality and source/config reviews returned REQUEST_CHANGES.
+Their exhaustive twelve-item deduplicated ledger is recorded in
+[the native implementation review](../reviews/D1b-native-implementation-review.md).
+The actual guarded integration reached product code: **53 passed / 6 failed**. PostgreSQL is
+reachable with authorized sandbox escalation; the failures are the native UNMAPPED-only guard
+rejecting unrelated mapped rows before selector filtering. No infrastructure change is indicated.
+
+All retained source arithmetic/date/basis/precision and 259+1 dictionary compatibility were
+independently confirmed. A fix round owns the shared evidence code and adds behavioral RED cases;
+Task 13 publication checks run in a separate exclusive file scope. No draft is accepted or shared
+v2 published yet. Fail closed by enforcing explicit consolidated bridge scope and rejecting exact
+arithmetic that cannot fit existing Decimal/SQL persistence; do not infer a broader financial
+definition, round fractions or change immutable migrations. Root's corrected-contract replay
+against the pre-draft configuration remains **5/5 failed** for the absent dictionary/construction
+features. Original RED outcomes are retained; reviewed test amendments/additions require explicit
+orchestrator resealing. Missing vendor bodies and full D1b acceptance remain open.
