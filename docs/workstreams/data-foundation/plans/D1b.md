@@ -947,3 +947,11 @@ for Task 13; missing-body vendor exclusions do not waive it. Read-only explorati
 existing relational interpretation operand links and transform JSONB can preserve native inputs
 without fake canonical operands or a new migration. A supplemental Task 14/15 plan is under
 independent review; no native construction or final v2 release has started.
+
+- Resume gate repair closure: `eqos-490` is closed by `f48ee20`. Fresh independent r1/r2
+  review approves the scanner and all seven exact context records; the final historical-scope
+  formal gate against `05b2634` exits 0/PASS: **2,902 passed, 8 existing skips**, all four quality
+  checks green, original four RED records unchanged, privacy rails clear. This resolves the
+  previous STOP without a post-commit empty-diff rerun. `eqos-hdz` stays open with cause UNKNOWN;
+  both current full coverage runs passed its unchanged cases. Formal built-tree acceptance is
+  current; full D1b source/configuration/run/queue/frozen-manifest acceptance remains open.

@@ -1,15 +1,15 @@
 # Equity-OS autonomous backend completion goal — 2026-10-13
 
-Status: work resumed by owner, 2026-10-13. The paused checkpoint below is historical; formal
-integration acceptance remains FAIL/STOP until the recorded fixes pass. Preparation task: `eqos-lob`.
+Status: active; owner resumed work and the goal control, 2026-10-13. The paused checkpoint is historical; the current
+built-tree formal gate passes, while full backend acceptance remains open. Preparation task: `eqos-lob`.
 
 ## Resume steering — 2026-10-13
 
 The owner explicitly requested resuming this goal. Continue normal bounded execution, beginning
 with `eqos-hdz` and `eqos-490` in independent file scopes. Existing autonomy, local commit authority,
-no-push rule and protected boundaries persist. The tool control currently still reports paused;
-available goal tools cannot change that control to active. Work proceeds under the explicit resume
-instruction without creating a replacement goal or claiming the control changed.
+no-push rule and protected boundaries persist. The owner subsequently activated the goal control;
+`get_goal` confirmed active. Continue the existing goal without creating a replacement or narrowing
+its objective. The initial resume-record commit truthfully described the then-paused control.
 
 ## Historical pause steering — 2026-10-13
 
@@ -39,6 +39,13 @@ no rail was disabled, and committing the inspected, unaffected offline scope doe
 The real project verifier also records 12 NOT BUILT exits/governance/pilot obligations.
 After explicit resume, investigate these two gate findings before claiming stable acceptance or
 starting another implementation batch. Then follow the actual D1b publication/run dependencies.
+
+Resume gate result: `eqos-490` repaired in `f48ee20`; fresh independent context/contract review
+and actual original-scope formal gate (`VERIFY_SCOPE_BASE=05b2634`) PASS: 2,902 passed, 8 existing
+skips, Ruff lint/format and strict mypy green, privacy rails clear. The historical FAIL/STOP above
+is retained evidence. `eqos-hdz` remains open with cause UNKNOWN; unchanged 102-case focused
+and two full coverage runs passed. Proceed with reviewed native-construction prerequisites,
+then the Task 13 publication and actual dependent run/queue work; no full D1b closure is claimed.
 
 ## Objective
 
