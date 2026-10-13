@@ -31,13 +31,14 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-# 0001's 33 tables plus 0003's version_pins.
-EXPECTED_TABLE_COUNT = 41
+# 0001's 33 tables, 0003's version_pins, 0006's seven queue tables and 0009's snapshot.
+EXPECTED_TABLE_COUNT = 42
 PROTECTED_REVIEW_TABLES = frozenset(
     {
         "approval_review_evidence",
         "approval_receipts",
         "queue_dispositions",
+        "queue_overlay_snapshots",
     }
 )
 
@@ -632,6 +633,16 @@ def seeded(runtime: psycopg.Connection, migrator: psycopg.Connection) -> dict[st
             "evidence_ref": proposed["evidence_ref"],
         },
     )
+    # Historical upgrade witnesses call this seed helper before migration 0009.
+    # Current full-schema assertions still require all 42 tables and populated rows.
+    if migrator.execute("SELECT to_regclass('eqos.queue_overlay_snapshots')").fetchone()[0]:
+        with runtime.transaction():
+            runtime.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            snapshot = runtime.execute(
+                "SELECT id FROM eqos.capture_queue_overlay_snapshot(%s)", (ids["runs"],)
+            ).fetchone()
+            assert snapshot is not None
+            ids["queue_overlay_snapshots"] = snapshot[0]
     return ids
 
 

@@ -214,7 +214,9 @@ opening a pool connection in the cursor helper. Reload typed associations and pr
 that cursor. Overlay SQL joins membership, sealed inputs, protected dispositions and ACCEPT receipts.
 Verification: `uv run pytest tests/fundamentals/test_compare_queue.py -k "digest or reuse or predecessor or concurrent or overlay or receipt or store_clock"` passes reorder-invariant reuse; successor creation for every immutable payload or typed evidence change; authoritative-clock binding; concurrent one-item reuse; reversed concurrent multi-item batches with no deadlock and exact shared item/link reuse; accepted-close/rejected-open; and origin membership.
 Test seams: real migration-0006 schema in `eqos_test_*`; no Task 7 command or approval producer.
-Dependencies: no new migration; migration 0006 produces the draft/membership contracts for Task 5.
+Dependencies: migration 0006 produces the draft/membership contracts; the later independently
+approved [visibility repair](D1b-queue-visibility-repair.md) adds 0009's durable captured ID seal
+and supersedes the timestamp-only overlay assumption before Task 5 integration.
 Risks: test-first; the advisory lock key and canonical digest must be identical in every caller.
 
 ### Task 4: Resolve exact handoffs into real vendor sides
