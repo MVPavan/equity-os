@@ -30,3 +30,36 @@ changed. Full Task 6 dispatch/resolution/run/replay and Stage 1 acceptance remai
 The fixture-only post-release failure is separate: copying the now-real publication into an
 unpublished private draft changes its refusal message. Root may omit only `vendor_publication`
 from the private `_draft_root` copy, retaining every original assertion and actual release byte.
+
+## R2 checkpoint and scoped producer acceptance
+
+Fresh independent [spec R2](D1b-vendor-inputs-handoff-spec-r2.md) and
+[quality R2](D1b-vendor-inputs-handoff-quality-r2.md) address V01/V03/V04/V05/V06/V07 in code.
+V01's separately reviewed additive migration is accepted at `2d15c1d`: all twelve constraint/
+retained-v1-upgrade cases pass. All thirty-eight producer cases pass, including the two genuine
+existing-helper PG regressions and the concurrent shared-page section case. Root's integrated
+producer/publication/legacy-run/actual-release matrix is **85 passed in 165.88s**; scoped Ruff
+lint/format and strict mypy pass on all four changed producer/model modules. No adapter byte or
+selected actual-release artifact changed. Root accepts only the guarded vendor-generation
+producer scope (`eqos-u0u.19`), separately from the consumer and full Task 6 run writer/dispatch.
+
+The two real R1 producer RED outcomes remain unchanged. Root authorizes resealing its test file
+from `50bc416a446e9dd51fa5c8567934c3b6fa3731f2265cbc30ad8dd10759ea3cbd` to
+`fd58cdb687a1f8c86c2ae063683669e5b35f5136f4a7bc353dc030bcbc1ab46f` for disclosed additional
+source-artifact and concurrent shared-capture characterization. Neither original failed node
+body or assertion is changed. The separate permanent existing-public-dispatch refusal test
+remains unchanged and RED; it is not integrated as a passing mechanism test or silently waived.
+
+V02/N01 remains Important: with no successful XBRL package member, the current handoff has no
+independent failed-XBRL physical input witness. An unset hash must not match arbitrary captured
+inputs. Root's fail-closed ruling requires an explicit refusal for that unsupported variant,
+never a candidate attempt's own hash, wildcard, newest-row choice or omitted failure. Future
+positive support is tracked as `eqos-u0u.24`, requiring a separately approved durable retained-
+intake witness. Successful XBRL plus failed PDF retains its exact configured PDF input proof.
+
+Root's first two R2 tests stopped at a private mapping fixture's dangling capmkt construction;
+that proof is invalid and archived outside `scratchpad/gate`, never claimed as behavioral RED.
+After removing the dependent construction consistently from that private, explicitly published
+test mapping, both tests reach the actual consumer and fail **DID NOT RAISE**. The corrected
+two genuine RED outcomes prove the null-binding and caller-expanded foreign-body cases before
+guard implementation. This creates no source equivalence, actual approval or full-stage waiver.

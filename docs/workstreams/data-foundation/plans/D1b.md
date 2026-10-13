@@ -1140,3 +1140,21 @@ the unpublished temporary copy omits real publication records; all seventeen ori
 ASTs and thirteen RED outcomes remain unchanged. Task 13's technical publication/release scope
 is closed. Task 11's final integrated run/replay acceptance and full D1b remain open.
 No nominal RELEASED label or caller model is accepted as release authority.
+
+## Vendor producer integration and failed-XBRL authority ruling — 2026-10-13
+
+The guarded vendor-generation producer is verified within its bounded scope: independent R2
+reviews address its full payload, semantic shared-capture and source-artifact defects; accepted
+0008 preserves the genuine capture-free extractor/logical scope. Root's actual integration is
+85 PASS across producer, publication persistence, legacy run rules and actual release proofs;
+scoped Ruff lint/format and strict mypy pass. The current public vendor dispatch refusal still
+requires the shared Task 6 writer/resolver; this producer checkpoint does not close full Task 6.
+
+Consumer R2 exposes an absent independent failed-XBRL body witness in a PDF-only package.
+Root chooses the required fail-closed option: explicit refusal until a durable retained-intake
+witness is independently planned, built and re-proved (`eqos-u0u.24`). No null hash wildcard,
+caller-selected attempt hash, newest-source inference or omitted failure is authorized.
+The separate supported successful-XBRL/failed-PDF path remains source-bound. Two corrected
+existing-consumer regressions genuinely fail before this guard; the earlier private-mapping
+fixture failures are archived as invalid proof. Full source coverage, run/replay, authenticated
+queue CLI and frozen manifest/e2e remain open; no migration, rights or financial oracle changes.

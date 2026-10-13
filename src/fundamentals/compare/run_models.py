@@ -18,6 +18,7 @@ from typing import Any
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     SerializerFunctionWrapHandler,
     field_validator,
     model_serializer,
@@ -25,9 +26,12 @@ from pydantic import (
 )
 
 from fundamentals.compare.tables import TaggingAdjustment
+from fundamentals.compare.vendor_request import VendorComposerContext
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
+    Representation,
+    StatementFamily,
     ValueIdentity,
 )
 from fundamentals.contracts.comparison import (
@@ -48,7 +52,9 @@ from fundamentals.contracts.comparison import (
 )
 from fundamentals.contracts.evidence import PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.evidence.capture_intake import FirstPartySurface
+from fundamentals.evidence.vendor_common import VendorRetainedBinding
 
 NO_DIMENSIONS = "-"
 _ROW_ID_SEPARATOR = "|"
@@ -115,12 +121,30 @@ class RunInput(BaseModel):
 
 
 class VendorSurfaceRequest(BaseModel):
-    """One explicitly requested retained vendor source and surface."""
+    """Legacy source/surface declaration, optionally closed into one v2 input request."""
 
     model_config = ConfigDict(frozen=True)
 
     source_id: str
     surface: str
+    representation: Representation | None = None
+    schema_identity: str | None = None
+    entity_id: int | None = Field(default=None, gt=0)
+    period: PeriodInterval | None = None
+    basis: Basis | None = None
+    framework: AccountingFramework | None = None
+    statement_family: StatementFamily | None = None
+    retained: VendorRetainedBinding | None = None
+    knowledge_time: datetime | None = None
+    knowledge_time_evidence_ref: str | None = None
+    capture_ref_id: int | None = Field(default=None, gt=0)
+    composer_context: VendorComposerContext | None = None
+    expected_logical_scope_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        return {key: value for key, value in document.items() if value is not None}
 
     @field_validator("source_id", "surface")
     @classmethod
@@ -151,7 +175,8 @@ class RunScope(BaseModel):
     def _vendor_surfaces(
         cls, value: tuple[VendorSurfaceRequest, ...]
     ) -> tuple[VendorSurfaceRequest, ...]:
-        return tuple(sorted(set(value), key=lambda item: (item.source_id, item.surface)))
+        documents = {item.model_dump_json(): item for item in value}
+        return tuple(documents[key] for key in sorted(documents))
 
     @model_serializer(mode="wrap")
     def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
