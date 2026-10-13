@@ -25,8 +25,11 @@ from fundamentals.contracts.comparison import (
     CalculationState,
     CorroborationStatus,
     ExtractionStatus,
+    PairKind,
     PairOutcome,
     ReasonCode,
+    SourceRef,
+    SourceRole,
     SourceState,
     Triage,
 )
@@ -38,7 +41,6 @@ _VALUE_NEEDS_NUMBER = "a VALUE side carries its value"
 _NUMBER_WITHOUT_VALUE = "a {state} side carries no value or interval"
 _NO_PAIR = "a pair needs two VALUE or INVALID sides, got {first} and {other}"
 _OTHER_ENTITY = "a pair compares one entity, got {first} and {other}"
-_VENDORS_LATER = "vendor corroboration rows are D1b.2 (eqos-u0u.2); D1a has no vendor sides"
 _ZERO_DIRECTION = "direction is +1 or -1"
 _UNKNOWN_OPERAND = "adjustment names operand {name!r}, which the formula does not have"
 _OTHER_PACKAGE = "extraction compares XBRL and PDF of one package, got packages {xbrl} and {pdf}"
@@ -72,7 +74,7 @@ _KEY_PARTS: tuple[tuple[Callable[[MeasurementKey], object], ReasonCode], ...] = 
 
 
 class VendorCorroborationNotImplemented(NotImplementedError):  # noqa: N818 - name fixed by plan
-    """Vendor corroboration rows are added by D1b.2 to :func:`corroboration_status`."""
+    """Compatibility refusal for legacy vendor inputs without actual source identities."""
 
 
 class EvidencedRelationship(BaseModel):
@@ -131,6 +133,58 @@ class PairResult(BaseModel):
     difference: Decimal | None
     interval_gap: Decimal | None
     definition_record_id: str | None
+
+
+class SourceQualifiedSide(BaseModel):
+    """One declared source/surface and its already resolved financial state.
+
+    Source authority and mapping qualification must be evidenced upstream. Constructing
+    this model does not establish either, nor does a synthetic table test qualify a vendor.
+    """
+
+    model_config = ConfigDict(frozen=True)
+    ref: SourceRef
+    side: ComparisonSide
+    occurrence_ids: tuple[int, ...] = ()
+    interpretation_ids: tuple[int, ...] = ()
+    attempt_ids: tuple[int, ...] = ()
+
+
+class SourceQualifiedPair(BaseModel):
+    """One independently reportable pair, with every source and evidence reference."""
+
+    model_config = ConfigDict(frozen=True)
+    pair_kind: PairKind
+    left: SourceRef
+    right: SourceRef
+    result: PairResult
+    evidence_occurrence_ids: tuple[int, ...] = ()
+    evidence_interpretation_ids: tuple[int, ...] = ()
+    attempt_ids: tuple[int, ...] = ()
+
+    @model_validator(mode="after")
+    def _roles_match_kind(self) -> SourceQualifiedPair:
+        if self.pair_kind is PairKind.CORROBORATION and (
+            self.left.source_role is not SourceRole.FIRST_PARTY
+            or self.right.source_role is not SourceRole.INDEPENDENT_VENDOR
+        ):
+            raise ValueError("corroboration compares first-party and independent-vendor sources")
+        if self.pair_kind is not PairKind.DIAGNOSTIC and any(
+            ref.source_role is SourceRole.DIAGNOSTIC for ref in (self.left, self.right)
+        ):
+            raise ValueError("a diagnostic source belongs only to diagnostic pairs")
+        return self
+
+
+class CorroborationResult(BaseModel):
+    """Ordered status plus all independent pairs and non-diagnostic source states."""
+
+    model_config = ConfigDict(frozen=True)
+    status: CorroborationStatus
+    reason: ReasonCode | None
+    pairs: tuple[SourceQualifiedPair, ...] = ()
+    sources: tuple[SourceQualifiedSide, ...] = ()
+    unavailable_sources: tuple[SourceRef, ...] = ()
 
 
 class TaggingAdjustment(BaseModel):
@@ -384,24 +438,162 @@ def derived_extraction_status(
     )
 
 
+def corroboration_result(
+    *,
+    applicability: ApplicabilityStatus,
+    first_party: SourceQualifiedSide,
+    vendors: Sequence[SourceQualifiedSide],
+    definitions: DefinitionSet,
+    policy: ComparisonPolicy,
+) -> CorroborationResult:
+    """All fifteen ordered conditions; diagnostics enter neither states nor pairs."""
+    if first_party.ref.source_role is not SourceRole.FIRST_PARTY:
+        raise ValueError("the representative is a first-party source")
+    if any(
+        source.ref.source_role not in (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC)
+        for source in vendors
+    ):
+        raise ValueError("vendor inputs are independent or diagnostic sources")
+    if applicability is ApplicabilityStatus.NOT_APPLICABLE:
+        return CorroborationResult(status=CorroborationStatus.NOT_APPLICABLE, reason=None)
+    independent = tuple(
+        source for source in vendors if source.ref.source_role is SourceRole.INDEPENDENT_VENDOR
+    )
+    if len({source.ref.model_dump_json() for source in independent}) != len(independent):
+        raise ValueError("each independent vendor surface has exactly one resolved state")
+    pairs = tuple(
+        _qualified_pair(first_party, source, PairKind.CORROBORATION, definitions, policy)
+        for source in independent
+        if first_party.side.state in _PAIRABLE and source.side.state in _PAIRABLE
+    )
+    status, reason = _corroboration_decision(
+        applicability,
+        first_party.side,
+        tuple(source.side for source in independent),
+        tuple(pair.result for pair in pairs),
+    )
+    sources = (first_party, *independent)
+    return CorroborationResult(
+        status=status,
+        reason=reason,
+        pairs=pairs,
+        sources=sources,
+        unavailable_sources=tuple(
+            source.ref for source in sources if source.side.state is SourceState.UNAVAILABLE
+        ),
+    )
+
+
+def diagnostic_pair(
+    first: SourceQualifiedSide,
+    other: SourceQualifiedSide,
+    *,
+    definitions: DefinitionSet,
+    policy: ComparisonPolicy,
+) -> SourceQualifiedPair | None:
+    """A diagnostic uses the same refusal-first pair table, with no status contribution."""
+    if first.side.state not in _PAIRABLE or other.side.state not in _PAIRABLE:
+        return None
+    return _qualified_pair(first, other, PairKind.DIAGNOSTIC, definitions, policy)
+
+
+def _qualified_pair(
+    first: SourceQualifiedSide,
+    other: SourceQualifiedSide,
+    kind: PairKind,
+    definitions: DefinitionSet,
+    policy: ComparisonPolicy,
+) -> SourceQualifiedPair:
+    return SourceQualifiedPair(
+        pair_kind=kind,
+        left=first.ref,
+        right=other.ref,
+        result=pair_outcome(first.side, other.side, definitions=definitions, policy=policy),
+        evidence_occurrence_ids=tuple(sorted(set(first.occurrence_ids + other.occurrence_ids))),
+        evidence_interpretation_ids=tuple(
+            sorted(set(first.interpretation_ids + other.interpretation_ids))
+        ),
+        attempt_ids=tuple(sorted(set(first.attempt_ids + other.attempt_ids))),
+    )
+
+
 def corroboration_status(
     *,
     applicability: ApplicabilityStatus,
     first_party: ComparisonSide,
-    vendors: Sequence[ComparisonSide] = (),
+    vendors: Sequence[ComparisonSide | SourceQualifiedSide] = (),
+    definitions: DefinitionSet | None = None,
+    policy: ComparisonPolicy | None = None,
 ) -> tuple[CorroborationStatus, ReasonCode | None]:
-    """The corroboration table for an empty vendor set: rows 1, 2, 2a, 5 and 7."""
-    if vendors:
-        raise VendorCorroborationNotImplemented(_VENDORS_LATER)
+    """Legacy tuple interface; nonempty vendor inputs must name source and surface."""
+    if any(isinstance(source, ComparisonSide) for source in vendors):
+        raise VendorCorroborationNotImplemented(
+            "vendor inputs require SourceQualifiedSide identities"
+        )
+    independent = tuple(
+        source.side
+        for source in vendors
+        if isinstance(source, SourceQualifiedSide)
+        and source.ref.source_role is SourceRole.INDEPENDENT_VENDOR
+    )
+    if (
+        applicability is ApplicabilityStatus.NOT_APPLICABLE
+        or first_party.state is not SourceState.VALUE
+    ):
+        return _corroboration_decision(applicability, first_party, independent, ())
+    pairs: tuple[PairResult, ...] = ()
+    if first_party.state in _PAIRABLE and any(source.state in _PAIRABLE for source in independent):
+        if definitions is None or policy is None:
+            raise ValueError("vendor pairs require the pinned definition set and comparison policy")
+        pairs = tuple(
+            pair_outcome(first_party, source, definitions=definitions, policy=policy)
+            for source in independent
+            if source.state in _PAIRABLE
+        )
+    return _corroboration_decision(applicability, first_party, independent, pairs)
+
+
+def _corroboration_decision(
+    applicability: ApplicabilityStatus,
+    first_party: ComparisonSide,
+    vendors: Sequence[ComparisonSide],
+    pairs: Sequence[PairResult],
+) -> tuple[CorroborationStatus, ReasonCode | None]:
     if applicability is ApplicabilityStatus.NOT_APPLICABLE:
         return CorroborationStatus.NOT_APPLICABLE, None
     if first_party.state is SourceState.UNAVAILABLE:
         return CorroborationStatus.UNAVAILABLE, None
     if first_party.state is SourceState.INVALID:
         return CorroborationStatus.NOT_COMPARABLE, _invalid_reason(first_party)
+    states = {source.state for source in vendors}
     if first_party.state is SourceState.NO_VALUE:
+        if SourceState.VALUE in states:
+            return CorroborationStatus.VENDOR_ONLY, None
+        if SourceState.UNAVAILABLE in states:
+            return CorroborationStatus.UNAVAILABLE, None
+        invalid = next((source for source in vendors if source.state is SourceState.INVALID), None)
+        if invalid is not None:
+            return CorroborationStatus.NOT_COMPARABLE, _invalid_reason(invalid)
         return CorroborationStatus.NO_SOURCE, None
-    return CorroborationStatus.FILING_ONLY, None
+    if not states.intersection(_PAIRABLE):
+        return (
+            CorroborationStatus.UNAVAILABLE
+            if SourceState.UNAVAILABLE in states
+            else CorroborationStatus.FILING_ONLY
+        ), None
+    precedence = (
+        (PairOutcome.MISMATCH, CorroborationStatus.CONFLICT),
+        (PairOutcome.AGREE, CorroborationStatus.CORROBORATED),
+        (PairOutcome.AGREE_UNQUALIFIED, CorroborationStatus.AGREES_UNQUALIFIED),
+        (PairOutcome.ANOMALY, CorroborationStatus.ANOMALY),
+        (PairOutcome.DEFINITION_DIFFERENCE, CorroborationStatus.DEFINITION_DIFFERENCE),
+    )
+    for outcome, status in precedence:
+        if any(pair.outcome is outcome for pair in pairs):
+            return status, None
+    return CorroborationStatus.NOT_COMPARABLE, next(
+        (pair.reason for pair in pairs if pair.reason is not None), ReasonCode.SIDE_INVALID
+    )
 
 
 def _row_one_reason(
