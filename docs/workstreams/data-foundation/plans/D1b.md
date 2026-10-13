@@ -1022,3 +1022,10 @@ raw-source review verifies the signed arithmetic and displayed precision; four c
 still fail against the pre-draft config and pass in the final integration. These drafts grant no
 vendor authority or demonstrated equivalence. Only Task 13's separate committed joined release
 may enable their authoritative v2 use.
+
+The broader publication/run check initially reported **52 passed / 7 failed**. Every failure
+was `FileExistsError` in the old temporary `config_copy` fixture after real dictionary/v2 became
+available, before product behavior. Commit `352648b` replaces only that isolated copied directory
+with the intended v1 clone; no acceptance assertion or repository configuration changes.
+Fresh unchanged run/rule verification is **31 passed**, with scoped Ruff lint/format green.
+This resolves that fixture blocker; publication review's write/path/schema defects remain separate.
