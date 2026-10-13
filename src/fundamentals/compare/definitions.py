@@ -13,7 +13,7 @@ from pathlib import Path
 
 import psycopg
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -43,6 +43,10 @@ _INSERT_RECORD = (
     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
     "ON CONFLICT (definition_set_id, record_id) DO NOTHING"
 )
+
+
+class DefinitionSetError(ValueError):
+    """The definition set file is malformed."""
 
 
 class DefinitionScope(StrEnum):
@@ -77,6 +81,12 @@ class DefinitionRecord(BaseModel):
         if isinstance(value, float):
             raise ValueError(_NOT_TEXT.format(given=value))
         return value
+
+    @model_validator(mode="after")
+    def _valid_scope_reference(self) -> DefinitionRecord:
+        """Reject malformed filing references while loading the configuration."""
+        self.package_id()
+        return self
 
     def package_id(self) -> int | None:
         """The package a ``FILING`` record is scoped to; ``None`` for other scopes."""
@@ -115,13 +125,13 @@ class DefinitionSet(BaseModel):
 def load_definition_set(path: Path) -> DefinitionSet:
     """Load a definition set, pinned by the SHA-256 of its file bytes."""
     content = path.read_bytes()
-    raw = yaml.safe_load(content)
     try:
+        raw = yaml.safe_load(content)
         return DefinitionSet.model_validate(
             {**raw, "content_sha256": hashlib.sha256(content).hexdigest()}
         )
-    except (TypeError, ValidationError) as error:
-        raise ValueError(_INVALID_SET.format(path=path, detail=error)) from error
+    except (TypeError, ValidationError, yaml.YAMLError) as error:
+        raise DefinitionSetError(_INVALID_SET.format(path=path, detail=error)) from error
 
 
 def publish_definition_set(conn: psycopg.Connection, definition_set: DefinitionSet) -> int:

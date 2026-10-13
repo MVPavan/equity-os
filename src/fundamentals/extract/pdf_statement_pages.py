@@ -50,6 +50,46 @@ _BS_CONFIRMATIONS: tuple[str, ...] = ("Total assets",)
 _CF_CONFIRMATIONS: tuple[str, ...] = ("operating activities",)
 _SEGMENT_CONFIRMATIONS: tuple[str, ...] = ("Inter-segment",)
 _NOTES_MARKER = "Notes"
+# Explicit headings evidenced in the retained results layout. Blankness alone never
+# establishes a heading; an unknown labelled blank band remains ambiguous data.
+_SECTION_HEADINGS: Mapping[StatementFamily, tuple[str, ...]] = {
+    StatementFamily.PL: (
+        "Income",
+        "Expenses",
+        "10 Tax exp",
+        "Other comprehensive income (OCl)",
+        "(A) Items that will not be reclassified to profit or loss",
+        "(B) Items that will be reclassified to profit or loss",
+        "Profit attributable to",
+        "Other comprehensive incomes attributable to",
+        "Total comprehensive incomes attributable to",
+    ),
+    StatementFamily.BALANCE_SHEET: (
+        "ASSETS",
+        "Non-current asset;",
+        "Financial Assets",
+        "Current Assets",
+        "EQUITY AND LIABILITIES",
+        "Equity",
+        "Noncurrent liabilities",
+        "Financial liabilities",
+        "Currant liabilities",
+    ),
+    StatementFamily.CASH_FLOW: (
+        "Cash flow from operating activities",
+        "Adjustments for",
+        "Movement in working capital",
+        "Cash flow from investing activities",
+        "Cash flow from financing activities",
+    ),
+    StatementFamily.SEGMENT: (
+        "Segment revenue",
+        "Segment results (profit bofore finance cost and tax expenses "
+        "share in net profit / (loss) of",
+        "Segment assets",
+        "Segment liabilities",
+    ),
+}
 
 
 class UnitScope(StrEnum):
@@ -102,6 +142,7 @@ class StatementPageSpec(BaseModel):
     confirmations: tuple[str, ...]
     end_markers: tuple[str, ...]
     unit_markers: tuple[UnitMarker, ...]
+    section_headings: tuple[str, ...] = ()
 
 
 class ColumnInterval(BaseModel):
@@ -132,6 +173,7 @@ class StatementLocation(BaseModel):
     columns: tuple[ColumnInterval, ...]
     excluded_columns: int
     unit_markers: tuple[UnitMarker, ...] = ()
+    section_headings: tuple[str, ...] = ()
 
 
 class PdfCell(BaseModel):
@@ -164,7 +206,9 @@ class PdfStatementRow(BaseModel):
     unit_line: int | None
     cells: tuple[PdfCell, ...]
     section: str = ""
+    section_parent: str = ""
     label_ordinal: int = 1
+    classification_ambiguous: bool = False
 
 
 class StatementPageNotFoundError(LookupError):
@@ -252,6 +296,7 @@ def specs_from_config(pdf_parse: PdfParseConfig) -> Mapping[StatementFamily, Sta
             ),
             end_markers=override.end_markers if override and override.end_markers else ends,
             unit_markers=(*DEFAULT_UNIT_MARKERS, *(override.unit_markers if override else ())),
+            section_headings=_SECTION_HEADINGS.get(family, ()),
         )
     return specs
 
@@ -288,12 +333,9 @@ def locate_statement(pdf: LoadedPdf, spec: StatementPageSpec, *, basis: Basis) -
 def extract_statement_rows(
     pdf: LoadedPdf, location: StatementLocation
 ) -> tuple[PdfStatementRow, ...]:
-    """Every banded row of a located block, with raw text per requested column.
+    """Read raw requested-basis cells, retaining unknown labelled blank bands as ambiguous.
 
-    A row is banded when anything is printed under a column of either basis; its cells keep
-    their raw text, clean or not, and a cell with nothing printed is empty (a fully blank
-    row in the requested basis is still a row). A row with a label and nothing under any
-    column is a section heading.
+    Only declared heading evidence establishes a section; blankness never does.
     """
     page = pdf.page(location.page)
     rows = _page_rows(page)
@@ -301,6 +343,7 @@ def extract_statement_rows(
     markers = _unit_marker_lines(rows, location)
     result: list[PdfStatementRow] = []
     section = ""
+    section_parent = ""
     seen_labels: dict[tuple[str, ...], int] = {}
     for row in rows:
         if not header_row < row.index <= location.bottom_line:
@@ -320,9 +363,19 @@ def extract_statement_rows(
             # Unlabelled lines between the dated header and the first labelled row continue
             # the header (the audit-status line "Reviewed / Audited").
             continue
-        if not assigned:
-            # Nothing printed under any column of either basis: a heading row.
+        heading_labels = (*location.section_headings, *(m.text for m in location.unit_markers))
+        if not assigned and any(
+            normalize_text_tokens(label) == normalize_text_tokens(heading)
+            or any(
+                m.text == heading and _contains(row.tokens, _marker_tokens(heading))
+                for m in location.unit_markers
+            )
+            for heading in heading_labels
+        ):
+            section_parent = section
             section = label
+            continue
+        if not label and not assigned:
             continue
         unit, unit_line = _unit_for_row(row.index, markers, location)
         label_key = tuple(normalize_text_tokens(label))
@@ -337,7 +390,9 @@ def extract_statement_rows(
                 unit_line=unit_line,
                 cells=cells,
                 section=section,
+                section_parent=section_parent,
                 label_ordinal=seen_labels[label_key],
+                classification_ambiguous=not bool(assigned),
             )
         )
     return tuple(result)
@@ -429,6 +484,7 @@ def _locate_on_page(page: PdfPage, spec: StatementPageSpec, basis: Basis) -> Sta
         columns=wanted,
         excluded_columns=len(bound) - len(wanted),
         unit_markers=spec.unit_markers,
+        section_headings=spec.section_headings,
     )
 
 

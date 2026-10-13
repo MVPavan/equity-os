@@ -102,6 +102,31 @@ def test_identity_conflict_rejects_the_member(ingest: Ingest, edit: MarkedEdit) 
         assert after[table] == before[table]
 
 
+@pytest.mark.parametrize("basis", [Basis.CONSOLIDATED, Basis.STANDALONE])
+def test_basis_without_context_bound_declaration_is_rejected(ingest: Ingest, basis: Basis) -> None:
+    """The Q2 FY26 instance declares its nature twice (OneD, FourD), both "Consolidated".
+
+    With both declarations stripped of their context, nothing context-bound evidences the
+    basis: neither a consolidated nor a standalone request may verify, and the file-level
+    scope (still "Consolidated") must never be overridden by the request.
+    """
+    stripped = marked_xbrl(
+        ingest.tmp_path,
+        MarkedEdit(
+            label="contextless-report-nature",
+            find=b'<in-capmkt:NatureOfReportStandaloneConsolidated contextRef="',
+            replace=b'<in-capmkt:NatureOfReportStandaloneConsolidated data-ref="',
+            count=2,
+        ),
+    )
+    report = ingest.run(
+        ingest.intake(XBRL_ONLY, marked={Representation.XBRL: stripped}), basis=basis
+    )
+    attempt = _overall(report.attempts, Representation.XBRL)
+    assert attempt.outcome is ExtractionOutcome.IDENTITY_REJECTED
+    assert report.package_id is None
+
+
 @pytest.mark.parametrize(
     "request_change",
     [
@@ -222,14 +247,45 @@ def _invalid_date_xbrl(tmp_path: Path) -> Path:
     return marked_xbrl(tmp_path, edit)
 
 
+ONE_I_ENTITY = (
+    b'<xbrli:entity><xbrli:identifier scheme="http://www.sebi.gov.in/in-capmkt/ScripCode">'
+    b"532259</xbrli:identifier></xbrli:entity>"
+)
+ONE_I_PERIOD = b"<xbrli:period><xbrli:instant>2025-09-30</xbrli:instant></xbrli:period>"
+
+
+def _entityless_context_xbrl(tmp_path: Path) -> Path:
+    """The XBRL with the period-end instant context's entity removed."""
+    head = b'<xbrli:context id="OneI">'
+    edit = MarkedEdit(label="context-without-entity", find=head + ONE_I_ENTITY, replace=head)
+    return marked_xbrl(tmp_path, edit)
+
+
+def _periodless_context_xbrl(tmp_path: Path) -> Path:
+    """The XBRL with the period-end instant context's period removed."""
+    whole = b'<xbrli:context id="OneI">' + ONE_I_ENTITY + ONE_I_PERIOD
+    edit = MarkedEdit(
+        label="context-without-period", find=whole, replace=whole.replace(ONE_I_PERIOD, b"")
+    )
+    return marked_xbrl(tmp_path, edit)
+
+
 @pytest.mark.parametrize(
     ("representation", "build"),
     [
         (Representation.XBRL, _invalid_date_xbrl),
+        (Representation.XBRL, _entityless_context_xbrl),
+        (Representation.XBRL, _periodless_context_xbrl),
         (Representation.PDF, _garbage_pdf),
         (Representation.PDF, _truncated_pdf),
     ],
-    ids=["xbrl-invalid-context-date", "pdf-garbage", "pdf-truncated"],
+    ids=[
+        "xbrl-invalid-context-date",
+        "xbrl-context-without-entity",
+        "xbrl-context-without-period",
+        "pdf-garbage",
+        "pdf-truncated",
+    ],
 )
 def test_parser_failure_is_one_parse_failed_attempt(
     ingest: Ingest, representation: Representation, build: Callable[[Path], Path]

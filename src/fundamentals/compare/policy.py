@@ -43,10 +43,10 @@ def load_comparison_policy(path: Path) -> ComparisonPolicy:
     the pin is stored, by comparing ``content_sha256`` and raising ``VersionContentDriftError``.
     """
     content = path.read_bytes()
-    raw = yaml.safe_load(content)
     try:
+        raw = yaml.safe_load(content)
         return ComparisonPolicy.model_validate(
             {**raw, "content_sha256": hashlib.sha256(content).hexdigest()}
         )
-    except (TypeError, ValidationError) as error:
+    except (TypeError, ValidationError, yaml.YAMLError) as error:
         raise ComparisonPolicyError(_INVALID_POLICY.format(path=path, detail=error)) from error

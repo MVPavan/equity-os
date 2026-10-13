@@ -112,3 +112,10 @@ class PairKind(StrEnum):
 
     EXTRACTION = "EXTRACTION"
     REPORTED_VS_DERIVED = "REPORTED_VS_DERIVED"
+
+
+class EpistemicClass(StrEnum):
+    """What kind of claim a reported number is (invariant 8); D1a emits these two."""
+
+    OBSERVED = "OBSERVED"
+    COMPUTED = "COMPUTED"

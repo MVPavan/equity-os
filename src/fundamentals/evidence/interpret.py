@@ -48,6 +48,7 @@ from fundamentals.evidence.mapping import (
     MemberSource,
     NormalisationPolicy,
     PdfPeriodRule,
+    matches_dimensions,
 )
 from fundamentals.evidence.pdf_adapter import CONTEXT_HEADER_MONTHS, parse_printed_number
 from fundamentals.evidence.xbrl_adapter import (
@@ -76,6 +77,7 @@ _HEADER_KINDS = {
     12: PeriodKind.YEAR,
 }
 _NO_OPERANDS = "construction {rule_id} has no operand interpretation"
+TRACE_MATCHED_ENTRY_IDS = "matched_entry_ids"
 _AMBIGUOUS_ENTRIES = "entries {entry_ids} all match this native field"
 _AMBIGUOUS_OPERANDS = "operands matched more than once: {names}"
 _ZERO = Fraction(0)
@@ -100,13 +102,22 @@ def interpret(
     fiscal_year_end_month: int,
     qualification: QualificationContext,
     recorded_at: datetime,
+    as_entry: MappingEntry | None = None,
 ) -> Interpretation:
-    """Map one stored occurrence under the pinned mapping set and normalisation policy."""
+    """Map one stored occurrence under the pinned mapping set and normalisation policy.
+
+    ``as_entry`` reads the occurrence as if that entry alone matched: what an ambiguous
+    line would be under each candidate entry, never a stored interpretation.
+    """
     assert occurrence.occurrence_id is not None and occurrence.capture.capture_ref_id is not None
     period_kind = (
         occurrence.period.kind(fiscal_year_end_month) if occurrence.period is not None else None
     )
-    entries = mapping_set.matches(occurrence, period_kind=period_kind)
+    entries = (
+        (as_entry,)
+        if as_entry is not None
+        else mapping_set.matches(occurrence, period_kind=period_kind)
+    )
     trace: dict[str, object] = {
         TRACE_MISSING_STATE: occurrence.missing_state.value,
         "raw_value_text": occurrence.raw_value_text,
@@ -138,8 +149,42 @@ def interpret(
         return _without_key(common, InterpretationStatus.UNMAPPED, None, occurrence.period, trace)
     if len(entries) > 1:
         ids = [candidate.entry_id for candidate in entries]
-        trace["matched_entry_ids"] = ids
+        trace[TRACE_MATCHED_ENTRY_IDS] = ids
         trace[TRACE_REASON] = _AMBIGUOUS_ENTRIES.format(entry_ids=ids)
+        candidate_keys = []
+        for candidate in entries:
+            established = interpret(
+                occurrence,
+                entity_id=entity_id,
+                basis=basis,
+                framework=framework,
+                mapping_set=mapping_set,
+                policy=policy,
+                dictionary=dictionary,
+                fiscal_year_end_month=fiscal_year_end_month,
+                qualification=qualification,
+                recorded_at=recorded_at,
+                as_entry=candidate,
+            )
+            identity = established.model_dump(
+                mode="json",
+                include={
+                    "entity_id",
+                    "canonical_id",
+                    "period",
+                    "basis",
+                    "framework",
+                    "dimensions",
+                },
+            )
+            identity["currency"] = established.key.currency if established.key is not None else None
+            identity["value_kind"] = (
+                established.key.value_kind.value if established.key is not None else None
+            )
+            candidate_keys.append(identity)
+        # These identify uncertainty only. No candidate value, interval, tier or
+        # speculative interpretation is persisted or selected as evidence.
+        trace["ambiguous_candidate_keys"] = candidate_keys
         return _without_key(
             common,
             InterpretationStatus.INVALID,
@@ -162,6 +207,7 @@ def interpret(
             entry.canonical_id,
             occurrence.period,
             trace,
+            dimensions=dimensions,
         )
     if dimensions is None:
         return _without_key(
@@ -177,6 +223,7 @@ def interpret(
             period,
             trace,
             reason=InterpretationReason.UNIT_MISMATCH,
+            dimensions=dimensions,
         )
     key = MeasurementKey(
         entity_id=entity_id,
@@ -218,6 +265,7 @@ def construct(
     qualification: QualificationContext,
     recorded_at: datetime,
     duplicates: Mapping[str, Sequence[Interpretation]] | None = None,
+    group: tuple[PeriodInterval, DimensionSet] | None = None,
 ) -> Interpretation:
     """Assemble one reported value from one capture's own operand interpretations.
 
@@ -227,7 +275,8 @@ def construct(
     ``INVALID`` (invalid beats missing). ``duplicates`` names operands matched more than
     once in the group (every candidate listed): the construction is ``INVALID``
     (``INTERPRETATION_AMBIGUOUS``), never built from one of them. The tier is the weakest
-    of the rule's scoped tier and every operand's.
+    of the rule's scoped tier and every operand's. Without a keyed operand, the period and
+    dimensions are the operand ``group``'s (period, dimensions), when given.
     """
     extra = duplicates or {}
     present = [operands[operand.name] for operand in rule.operands if operand.name in operands]
@@ -308,9 +357,10 @@ def construct(
         basis=first.basis,
         framework=first.framework,
         canonical_id=rule.canonical_id,
-        period=key.period if key is not None else first.period,
+        period=key.period if key is not None else (group[0] if group else first.period),
         dictionary_version=first.dictionary_version,
         key=key,
+        dimensions=key.dimensions if key is not None else (group[1] if group else None),
         value=value,
         interval=interval,
         tier=weakest(scoped.tier, *(item.tier for item in present)),
@@ -402,8 +452,13 @@ def _without_key(
     trace: Mapping[str, object],
     *,
     reason: InterpretationReason | None = None,
+    dimensions: DimensionSet | None = None,
 ) -> Interpretation:
-    """An interpretation that could not complete its key: no key, no value, unproven tier."""
+    """An interpretation that could not complete its key: no key, no value, unproven tier.
+
+    It keeps the key parts the evidence establishes (canonical id, period, dimensions) and
+    never invents the rest (currency, value kind).
+    """
     return Interpretation.model_validate(
         {
             "mapping_entry_id": None,
@@ -412,6 +467,7 @@ def _without_key(
             "canonical_id": canonical_id,
             "period": period,
             "key": None,
+            "dimensions": dimensions,
             "value": None,
             "interval": None,
             "tier": EvidenceTier.EQUIVALENCE_UNPROVEN,
@@ -474,10 +530,16 @@ def _dimensions(
 ) -> DimensionSet | None:
     """The entry's fixed members plus the evidenced segment member, if the entry takes one."""
     members = dict(entry.dimension_members)
+    if occurrence.representation is Representation.XBRL and not matches_dimensions(
+        occurrence.native_context, entry.schema_identity, entry.selector.dimension_axis
+    ):
+        trace[TRACE_REASON] = "dimension namespace or member identity does not fit the mapping"
+        return None
     if entry.member_source is MemberSource.XBRL_DESCRIPTION:
         descriptions = occurrence.native_context.get(CONTEXT_MEMBER_DESCRIPTIONS)
         axis = entry.selector.dimension_axis
-        found = descriptions.get(axis) if isinstance(descriptions, Mapping) else None
+        identity = f"{{{entry.schema_identity}}}{axis}"
+        found = descriptions.get(identity) if isinstance(descriptions, Mapping) else None
         if not isinstance(found, Mapping) or not found.get("text"):
             trace[TRACE_REASON] = f"no evidenced description for axis {axis}"
             return None
@@ -490,6 +552,9 @@ def _value(
     occurrence: Occurrence, entry: MappingEntry, trace: dict[str, object]
 ) -> tuple[Decimal | None, Interval | None, InterpretationReason | None]:
     """Exact base-unit value and interval; no value for a missing marker."""
+    if occurrence.native_context.get("pdf_row_ambiguous") is True:
+        trace[TRACE_REASON] = "blank labelled PDF row has ambiguous data/heading attribution"
+        return None, None, InterpretationReason.INTERPRETATION_AMBIGUOUS
     if occurrence.missing_state in _NO_VALUE_STATES:
         return None, None, None
     magnitude = _magnitude(occurrence)

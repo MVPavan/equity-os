@@ -160,6 +160,39 @@ def test_v1_family_counts_equal_the_committed_manifest() -> None:
     assert set(_manifest_counts()) == set(StatementFamily)
 
 
+def test_average_dimensional_aggregate_is_rejected_before_evaluation(v1_copy: Path) -> None:
+    """Unsupported composition must fail at load, before tuple-unpacking at runtime."""
+
+    def change(doc: Doc) -> None:
+        _operand(doc, SEGMENT_TOTAL, "segment_revenue").update(
+            canonical_id="segment_capital_employed", temporal_role="AVERAGE"
+        )
+        _row(doc, "segment_capital_employed")["aggregation_behaviour"] = "SUMMABLE_ACROSS_MEMBERS"
+
+    _edit(FORMULA_SET_FILE, change)(v1_copy / VERSION)
+    with pytest.raises(DictionaryLoadError) as error:
+        load_dictionary(v1_copy, VERSION)
+    assert error.value.defect is DictionaryDefect.TEMPORAL_ROLE_MISFIT
+    assert error.value.ids == ("segment_revenue_members_total.segment_revenue",)
+
+
+def test_separately_printed_apar_derivatives_and_segment_reconciling_lines_have_rows() -> None:
+    """Retained Apar FY26 Q2 p6/p4 file six measures beyond folded XBRL subtotals."""
+    dictionary = load_dictionary(DICTIONARY_ROOT, VERSION)
+    expected = {
+        "derivative_financial_assets_noncurrent": StatementFamily.BALANCE_SHEET,
+        "derivative_financial_assets_current": StatementFamily.BALANCE_SHEET,
+        "derivative_financial_liabilities_noncurrent": StatementFamily.BALANCE_SHEET,
+        "derivative_financial_liabilities_current": StatementFamily.BALANCE_SHEET,
+        "segment_other_elimination": StatementFamily.SEGMENT,
+        "inter_segment_liabilities": StatementFamily.SEGMENT,
+    }
+    assert {
+        row.canonical_id: row.family for row in dictionary.rows if row.canonical_id in expected
+    } == expected
+    assert sum(dictionary.family_counts().values()) == 259  # 253 existing + six filed measures
+
+
 # Every line printed on p7 of the retained Apar FY26 Q2 results PDF (the H1 cash-flow statement),
 # in page order, with the v1 row that carries it.
 APAR_Q2_PAGE7_CASH_FLOW_LINES: dict[str, str] = {

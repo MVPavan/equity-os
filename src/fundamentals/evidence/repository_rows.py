@@ -227,17 +227,18 @@ OCCURRENCES_BY_ID: LiteralString = OCCURRENCE_COLUMNS + "WHERE o.id = ANY(%s) OR
 
 ATTEMPT_KEY: LiteralString = (
     "stage, source_id, surface, entity_id, period_end, basis, framework, representation, "
-    "statement_family, package_id, capture_ref_id, input_sha256, extractor_version, outcome"
+    "statement_family, package_id, capture_ref_id, input_sha256, extractor_version, outcome, "
+    "extraction_context_sha256"
 )
 INSERT_ATTEMPT: LiteralString = (
     "INSERT INTO eqos.acquisition_attempts (" + ATTEMPT_KEY + ", reason) VALUES (%s, %s, %s, "
-    "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING"
+    "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING"
 )
 ATTEMPT_COLUMNS: LiteralString = (
     "SELECT a.id AS attempt_id, a.stage, a.source_id AS attempt_source_id, "
     "a.surface AS attempt_surface, a.entity_id, a.period_end, a.basis, a.framework, "
     "a.representation, a.statement_family, a.package_id, a.outcome, a.reason, "
-    "a.input_sha256, a.extractor_version, a.attempted_at, "
+    "a.input_sha256, a.extractor_version, a.extraction_context_sha256, a.attempted_at, "
     "c.id, c.source_id, c.surface, c.request_key, c.capture_id, c.blob_sha256, "
     "c.record_sha256, c.registered_at, c.first_seen_at "
     "FROM eqos.acquisition_attempts a LEFT JOIN eqos.capture_refs c ON c.id = a.capture_ref_id "
@@ -247,7 +248,8 @@ SELECT_ATTEMPT: LiteralString = (
     "AND a.entity_id = %s AND a.period_end = %s AND a.basis = %s AND a.framework = %s "
     "AND a.representation = %s AND a.statement_family IS NOT DISTINCT FROM %s "
     "AND a.package_id IS NOT DISTINCT FROM %s AND a.capture_ref_id IS NOT DISTINCT FROM %s "
-    "AND a.input_sha256 = %s AND a.extractor_version = %s AND a.outcome = %s"
+    "AND a.input_sha256 = %s AND a.extractor_version = %s AND a.outcome = %s "
+    "AND a.extraction_context_sha256 IS NOT DISTINCT FROM %s"
 )
 ATTEMPTS_BY_ID: LiteralString = ATTEMPT_COLUMNS + "WHERE a.id = ANY(%s) ORDER BY a.id"
 ATTEMPTS_FOR_PERIOD: LiteralString = (
@@ -460,6 +462,7 @@ def attempt_params(attempt: AcquisitionAttempt) -> tuple[object, ...]:
         attempt.input_sha256,
         attempt.extractor_version,
         attempt.outcome.value,
+        attempt.extraction_context_sha256,
     )
 
 
@@ -483,6 +486,7 @@ def attempt_of(row: Row) -> AcquisitionAttempt:
         capture=capture_of(row) if row["id"] is not None else None,
         input_sha256=row["input_sha256"],
         extractor_version=row["extractor_version"],
+        extraction_context_sha256=row["extraction_context_sha256"],
         attempted_at=row["attempted_at"],
     )
 
@@ -490,7 +494,7 @@ def attempt_of(row: Row) -> AcquisitionAttempt:
 def interpretation_params(item: Interpretation) -> tuple[object, ...]:
     """Insert parameters of one interpretation (its id reserved in advance)."""
     key = item.key
-    dimensions = key.dimensions if key is not None else DimensionSet()
+    dimensions = item.dimensions
     period = key.period if key is not None else item.period
     interval = item.interval
     return (
@@ -510,8 +514,8 @@ def interpretation_params(item: Interpretation) -> tuple[object, ...]:
         item.framework.value,
         key.currency if key is not None else None,
         key.value_kind.value if key is not None else None,
-        Jsonb([list(pair) for pair in dimensions.pairs]),
-        dimensions.digest(),
+        Jsonb([list(pair) for pair in dimensions.pairs]) if dimensions is not None else None,
+        dimensions.digest() if dimensions is not None else None,
         key.digest() if key is not None else None,
         item.value,
         exact_decimal(interval.lower) if interval is not None else None,
@@ -533,8 +537,12 @@ def interpretation_params(item: Interpretation) -> tuple[object, ...]:
 def interpretation_of(row: Row) -> Interpretation:
     """An interpretation with its operands and condition evidence."""
     period = period_of(row)
+    stored = row["dimension_set"]
+    dimensions = (
+        DimensionSet(pairs=tuple(tuple(pair) for pair in stored)) if stored is not None else None
+    )
     key = None
-    if row["key_digest"] is not None and period is not None:
+    if row["key_digest"] is not None and period is not None and dimensions is not None:
         key = MeasurementKey(
             entity_id=row["entity_id"],
             canonical_id=row["canonical_id"],
@@ -543,7 +551,7 @@ def interpretation_of(row: Row) -> Interpretation:
             framework=AccountingFramework(row["framework"]),
             currency=row["currency"],
             value_kind=ValueKind(row["value_kind"]),
-            dimensions=DimensionSet(pairs=tuple(tuple(pair) for pair in row["dimension_set"])),
+            dimensions=dimensions,
         )
     lower, upper = row["lower"], row["upper"]
     reason = row["reason"]
@@ -564,6 +572,7 @@ def interpretation_of(row: Row) -> Interpretation:
         period=period,
         dictionary_version=row["dictionary_version"],
         key=key,
+        dimensions=dimensions,
         value=row["value"],
         interval=(
             Interval(lower=Fraction(lower), upper=Fraction(upper))

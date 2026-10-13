@@ -1,7 +1,7 @@
 """Capture bytes to lossless XBRL occurrences (D1a Task 5).
 
-One occurrence per numeric fact (nil facts as ``NIL``), plus every text fact a mapping
-entry, statement anchor or member resolution names. Values stay as filed: raw text, raw
+One occurrence per distinct numeric or text fact (nil facts as ``NIL``). Keeping text
+facts independently of mappings permits capture-only reuse. Values stay as filed: raw text, raw
 unit, raw scale 0 (XBRL values are base-unit INR already), the declared ``decimals``,
 the raw period and the declared-period repair evidence.
 """
@@ -34,6 +34,7 @@ from fundamentals.extract.xbrl_parser import (
     RawXbrlFact,
     RawXbrlInstance,
     UnsupportedTaxonomyError,
+    XbrlParseError,
     iter_raw_facts,
 )
 from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
@@ -86,9 +87,22 @@ def occurrences_from_instance(
     mapping_set: MappingSet,
 ) -> tuple[Occurrence, ...]:
     """Occurrences of an already parsed instance (see :func:`read_xbrl_occurrences`)."""
-    named = _named_text_concepts(mapping_set, instance.schema_identity)
-    ambiguous = _ambiguous_raw_periods(instance.facts)
-    descriptions = _member_descriptions(instance.facts, instance.schema_identity)
+    # Document order distinguishes unanchored facts, but is not payload identity
+    # when two facts explicitly claim the same native id.
+    unique: dict[str, RawXbrlFact] = {}
+    for fact in instance.facts:
+        anchor = anchor_key_of(fact)
+        previous = unique.get(anchor)
+        if previous is not None:
+            if previous.model_dump(exclude={"document_order"}) != fact.model_dump(
+                exclude={"document_order"}
+            ):
+                raise XbrlParseError(f"duplicate XBRL anchor {anchor!r} has differing payloads")
+            continue
+        unique[anchor] = fact
+    facts = tuple(unique.values())
+    ambiguous = _ambiguous_raw_periods(facts)
+    descriptions = _member_descriptions(facts, instance.schema_identity)
     basis = _BASIS_OF_SCOPE[instance.scope]
     return tuple(
         _occurrence(
@@ -100,9 +114,7 @@ def occurrences_from_instance(
             period_ambiguous=_is_ambiguous(fact, ambiguous),
             descriptions=descriptions,
         )
-        for fact in instance.facts
-        if fact.is_numeric
-        or (fact.namespace_uri == instance.schema_identity and _local(fact.concept_qname) in named)
+        for fact in facts
     )
 
 
@@ -132,11 +144,11 @@ def _occurrence(
     text = fact.raw_text
     precision, declared = _precision(fact)
     member_descriptions = {}
-    if fact.dimensions and fact.dimensions in descriptions:
-        description, anchor_key = descriptions[fact.dimensions]
+    if fact.dimension_qnames and fact.dimension_qnames in descriptions:
+        description, anchor_key = descriptions[fact.dimension_qnames]
         member_descriptions = {
-            _local(axis): {"text": description, "anchor_key": anchor_key}
-            for axis, _ in fact.dimensions
+            axis: {"text": description, "anchor_key": anchor_key}
+            for axis, _ in fact.dimension_qnames
         }
     return Occurrence(
         occurrence_id=None,
@@ -155,10 +167,13 @@ def _occurrence(
             CONTEXT_BASIS: basis,
             CONTEXT_LOCAL_NAME: _local(fact.concept_qname),
             CONTEXT_NAMESPACE: fact.namespace_uri,
-            CONTEXT_DIMENSION_AXES: [_local(axis) for axis, _ in fact.dimensions],
+            CONTEXT_DIMENSION_AXES: [
+                axis for axis, _ in (fact.dimension_qnames or fact.dimensions)
+            ],
             "concept_qname": fact.concept_qname,
             "context_ref": fact.context_ref,
             "dimensions": [list(pair) for pair in fact.dimensions],
+            "dimension_qnames": [list(pair) for pair in fact.dimension_qnames],
             "entity": {"scheme": fact.entity_scheme, "identifier": fact.entity_id},
             "raw_period": fact.raw_period.model_dump(mode="json"),
             "period_declaration": (
@@ -212,20 +227,6 @@ def _precision(fact: RawXbrlFact) -> tuple[PrecisionKind, int | None]:
     return PrecisionKind.UNSUPPORTED, None
 
 
-def _named_text_concepts(mapping_set: MappingSet, schema_identity: str) -> frozenset[str]:
-    """Text concepts some entry, statement anchor or member resolution names."""
-    names = {SEGMENT_DESCRIPTION_CONCEPT}
-    names.update(
-        entry.selector.native_field
-        for entry in mapping_set.entries
-        if entry.schema_identity == schema_identity and entry.selector.native_field is not None
-    )
-    for anchor in mapping_set.statement_anchors:
-        if anchor.schema_identity == schema_identity:
-            names.update(anchor.native_fields)
-    return frozenset(names)
-
-
 def _ambiguous_raw_periods(facts: Sequence[RawXbrlFact]) -> frozenset[tuple[object, ...]]:
     """Raw duration periods that two declared contexts repaired to different periods.
 
@@ -261,12 +262,12 @@ def _member_descriptions(
         if (
             fact.namespace_uri != schema_identity
             or _local(fact.concept_qname) != SEGMENT_DESCRIPTION_CONCEPT
-            or not fact.dimensions
+            or not fact.dimension_qnames
         ):
             continue
         text = (fact.raw_text or "").strip()
-        found.setdefault(fact.dimensions, set()).add(text)
-        anchors.setdefault(fact.dimensions, anchor_key_of(fact))
+        found.setdefault(fact.dimension_qnames, set()).add(text)
+        anchors.setdefault(fact.dimension_qnames, anchor_key_of(fact))
     return {
         dimensions: (next(iter(texts)), anchors[dimensions])
         for dimensions, texts in found.items()

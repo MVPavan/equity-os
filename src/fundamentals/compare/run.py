@@ -4,7 +4,8 @@
 evidence (``resolve``), and publishes the run in one transaction (``RunStore.publish``):
 identical requests, even concurrent ones, yield one run. ``replay_run`` reads only the
 manifest (``run_versions`` and ``run_inputs``), reloads every input by id through a
-``ReplayReader`` and recomputes, so later evidence never changes a stored run.
+``ReplayReader`` and recomputes, so later evidence never changes a stored run. A run's
+operational failures are a function of its rows, so a replay reproduces them too.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from fundamentals.compare.run_config import (
     require_pins,
 )
 from fundamentals.compare.run_models import (
+    FIRST_PARTY_SOURCES,
     DatabaseIdentity,
     ResultRow,
     RunExitStatus,
@@ -63,11 +65,14 @@ __all__ = [
     "execute_run",
     "exit_status",
     "load_results",
+    "operational_failures",
     "replay_run",
     "request_for",
 ]
 
 DEFINITION_SET_ARTIFACT = "definition_set"
+NO_ATTEMPT = "-"
+_FAILURE = "{representation}\t{reason}\tattempt={attempt}"
 
 
 def request_for(
@@ -80,7 +85,7 @@ def request_for(
     code_version: str,
     database_identity: DatabaseIdentity,
     mode: RunMode = RunMode.AS_KNOWN,
-    sources: tuple[str, ...] = (),
+    sources: tuple[str, ...] = FIRST_PARTY_SOURCES,
     versions: ConfigVersions | None = None,
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
 ) -> RunRequest:
@@ -109,8 +114,7 @@ def execute_run(
     """Resolve and publish one run, or return the stored run of the same identity."""
     config = _config(config_root, request, extractor_pins)
     repository = EvidenceRepository(pool)
-    with pool.connection() as conn:
-        definition_set_id = pin_config(config, repository=repository, conn=conn)
+    definition_set_id = pin_config(config, repository=repository, pool=pool)
     store = RunStore(pool)
     inputs, rows = resolve(
         request,
@@ -128,6 +132,7 @@ def execute_run(
         database_identity=request.database_identity,
         inputs=inputs.inputs,
         status=run_status(rows),
+        operational_failures=operational_failures(rows),
     )
     run_id, created = store.publish(
         manifest, rows, definition_set_id=definition_set_id, publish_hook=publish_hook
@@ -190,6 +195,30 @@ def run_status(rows: tuple[ResultRow, ...]) -> RunStatus:
         if value.source_role is SourceRole.FIRST_PARTY
     )
     return RunStatus.INCOMPLETE if unavailable else RunStatus.COMPLETE
+
+
+def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
+    """Each distinct failure behind a first-party ``UNAVAILABLE`` state, in sorted order.
+
+    A failure is the representation, the reason that decided the state and the attempt that
+    recorded it (``-`` when the state comes from the pins, e.g. nothing extracted under the
+    pinned extractor). Non-empty exactly when the run is ``INCOMPLETE``.
+    """
+    return tuple(
+        sorted(
+            {
+                _FAILURE.format(
+                    representation=value.representation.value,
+                    reason=value.reason or NO_ATTEMPT,
+                    attempt=NO_ATTEMPT if value.attempt_id is None else value.attempt_id,
+                )
+                for row in rows
+                for value in row.source_values
+                if value.source_role is SourceRole.FIRST_PARTY
+                and value.state is SourceState.UNAVAILABLE
+            }
+        )
+    )
 
 
 def exit_status(record: RunRecord) -> RunExitStatus:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import Occurrence
-from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.observation import AccountingFramework, Scope
 from fundamentals.extract.pdf_header_text import normalize_text_tokens
 from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.pdf_source import LoadedPdf
@@ -55,6 +55,12 @@ _UNKNOWN_SCHEME = "context entity scheme {scheme!r} is not a seeded identifier s
 _CONFLICT = "{what} {found!r} differs from the seeded {expected!r}"
 _NO_MARKER = "page 1 prints no {marker!r} line"
 _BASIS_CONFLICT = "report nature {found!r} is not the package basis {basis}"
+_SCOPE_CONFLICT = "the instance scope {scope} is not the package basis {basis}"
+_NO_BASIS_DECLARATION = "no context-bound {concept} fact declares the report nature"
+_BASIS_SCOPE: Mapping[Basis, Scope] = {
+    Basis.CONSOLIDATED: Scope.CONSOLIDATED,
+    Basis.STANDALONE: Scope.STANDALONE,
+}
 
 
 class IssuerIdentifiers(BaseModel):
@@ -82,7 +88,11 @@ class IdentityVerdict(BaseModel):
 def verify_xbrl_identity(
     instance: RawXbrlInstance, identifiers: IssuerIdentifiers, *, basis: Basis
 ) -> IdentityVerdict:
-    """Every context entity, identity fact and report-nature fact must match the seed."""
+    """Every context entity, identity fact and report-nature fact must match the seed.
+
+    The basis needs both the independently parsed file scope and at least one
+    context-bound report-nature fact to equal the request.
+    """
     expected_by_scheme: Mapping[str, str] = {
         NSE_ENTITY_SCHEME: identifiers.nse_symbol,
         SEBI_SCRIP_ENTITY_SCHEME: identifiers.bse_scrip,
@@ -96,6 +106,9 @@ def verify_xbrl_identity(
     spec = instance.taxonomy
     nature_text = spec.consolidated_text if basis is Basis.CONSOLIDATED else spec.standalone_text
     evidence: list[str] = []
+    if instance.scope is not _BASIS_SCOPE[basis]:
+        return _rejected(_SCOPE_CONFLICT.format(scope=instance.scope, basis=basis), evidence)
+    nature_declared = False
     for fact in instance.facts:
         expected_entity = expected_by_scheme.get(fact.entity_scheme)
         if expected_entity is None:
@@ -107,6 +120,10 @@ def verify_xbrl_identity(
                 ),
                 evidence,
             )
+        # Local-name lookalikes in an extension namespace cannot declare the
+        # registered taxonomy's issuer identity or report nature.
+        if fact.namespace_uri != spec.namespace:
+            continue
         local = fact.concept_qname.rsplit(":", 1)[-1]
         found = (fact.raw_text or "").strip()
         if local in expected_by_concept and found != expected_by_concept[local]:
@@ -116,8 +133,11 @@ def verify_xbrl_identity(
             )
         if local == spec.scope_concept and found != nature_text:
             return _rejected(_BASIS_CONFLICT.format(found=found, basis=basis), evidence)
+        nature_declared = nature_declared or local == spec.scope_concept
         if local in expected_by_concept or local == spec.scope_concept:
             evidence.append(f"{fact.concept_qname}@{fact.context_ref}={found}")
+    if not nature_declared:
+        return _rejected(_NO_BASIS_DECLARATION.format(concept=spec.scope_concept), evidence)
     schemes = sorted({fact.entity_scheme for fact in instance.facts})
     evidence.extend(f"scheme {scheme}" for scheme in schemes)
     return IdentityVerdict(verified=True, reason=None, evidence=tuple(evidence))
@@ -148,7 +168,11 @@ def verify_xbrl_framework(
     """The instance's own text blocks must declare exactly the requested framework."""
     found: dict[AccountingFramework, list[str]] = {}
     for fact in instance.facts:
-        if fact.is_numeric or not fact.concept_qname.endswith(TEXT_BLOCK_SUFFIX):
+        if (
+            fact.namespace_uri != instance.taxonomy.namespace
+            or fact.is_numeric
+            or not fact.concept_qname.endswith(TEXT_BLOCK_SUFFIX)
+        ):
             continue
         for declared in _declared_frameworks(fact.raw_text or ""):
             found.setdefault(declared, []).append(f"{fact.concept_qname}@{fact.context_ref}")

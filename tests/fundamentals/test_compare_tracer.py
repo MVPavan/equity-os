@@ -33,7 +33,10 @@ __all__ = ["dictionary", "ingest", "mapping_set", "policy"]
 # docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md, Success
 # Criteria, Stage 1 happy path (PBT 340.56 crore, PBT including associates 340.53 crore,
 # headline 340.53, OPM 8.06% with a stored trace; the five rows with extraction AGREE) and the
-# Stage 2 Apar Q2 FY26 consumer report (PAT 251.70). The filing is the retained Q2 FY26
+# Stage 2 Apar Q2 FY26 consumer report (PAT 251.70). Revenue 5715.42, total income 5742.85,
+# total expenses 5402.29 and basic EPS 62.66 are read directly from page 3 of the retained
+# results PDF's consolidated Sep 30, 2025 quarter column (rows 3, 5, 6 and Basic).
+# The filing is the retained Q2 FY26
 # consolidated XBRL (SHA-256 90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799)
 # and results PDF (SHA-256 8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5),
 # both verified against the retrieval manifest pins by ``apar_original`` before ingest.
@@ -46,10 +49,14 @@ AGREE_ROWS = (
     "eps_basic",
 )
 CRORE_VALUES = {
+    "revenue_from_operations": "5715.42",
+    "total_income": "5742.85",
+    "total_expenses": "5402.29",
     "profit_before_tax": "340.56",
     "profit_before_tax_incl_associates": "340.53",
     "profit_for_period": "251.70",
 }
+EPS_BASIC = "62.66"
 HEADLINE_PBT = "profit_before_tax_incl_associates"
 OPM = "opm_pct"
 OPM_PERCENT = "8.06"
@@ -161,6 +168,9 @@ def test_tracer_reports_the_spec_stated_q2_fy26_values(
             assert row.field(representation, CRORE_SUFFIX) == crore, (canonical_id, representation)
     assert rows[_row_id(HEADLINE_PBT)].headline
     assert not rows[_row_id("profit_before_tax")].headline
+    eps = rows[_row_id("eps_basic")]
+    for representation in REPRESENTATIONS:
+        assert eps.sources[representation][:2] == [VALUE_STATE, EPS_BASIC], representation
 
     opm = rows[_row_id(OPM, "DERIVED")]
     assert opm.extraction == OPM_EXTRACTION

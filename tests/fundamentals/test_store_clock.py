@@ -114,3 +114,30 @@ def test_setting_recorded_ahead_of_wall_clock_is_found_by_the_next_ingest(
     capture = ingest.package(report).members[Representation.XBRL].capture
     assert capture.first_seen_at > before, "capture stamped on the store clock"
     assert all(row.recorded_at > capture.first_seen_at for row in ingest.interpretations(report))
+
+
+@pytest.mark.pg
+def test_runtime_session_setting_cannot_move_or_freeze_the_clock(pg_db: PgTestDatabase) -> None:
+    """A session-settable value must never decide a knowledge time.
+
+    0004 cached the transaction's time in the custom setting ``eqos.store_now_us``; the runtime
+    role could ``SET LOCAL`` it to stamp rows at the epoch (moved back) or at one fixed time in
+    every transaction (frozen).
+    """
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        stamps: list[datetime] = []
+        for _ in range(2):
+            with conn.transaction():
+                conn.execute("SET LOCAL eqos.store_now_us = '0'")
+                row = conn.execute("SELECT eqos.store_now()").fetchone()
+                assert row is not None
+                stamps.append(row[0])
+        assert stamps[0] > _wall_clock(pg_db) - timedelta(minutes=5), "not moved to the epoch"
+        assert stamps[1] > stamps[0], "not frozen across transactions"
+        with conn.transaction():
+            first = conn.execute("SELECT eqos.store_now()").fetchone()
+            conn.execute("SET LOCAL eqos.store_now_us = '1'")
+            second = conn.execute("SELECT eqos.store_now()").fetchone()
+        assert first == second, "the cache ignores the setting inside a transaction too"
+        with pytest.raises(errors.InsufficientPrivilege):
+            conn.execute("SELECT * FROM eqos_clock.transaction_times")

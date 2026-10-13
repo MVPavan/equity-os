@@ -21,7 +21,6 @@ from evidence_support import (
     EPS_DISCONTINUED_ONED,
     Q2_HALF,
     Q2_QUARTER,
-    SCOPE_ID,
     XBRL_ONLY,
     Ingest,
     by_occurrence,
@@ -53,7 +52,7 @@ from fundamentals.contracts.evidence import (
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.qualification import QualificationContext
-from fundamentals.evidence.interpret import interpret
+from fundamentals.evidence.interpret import interpret, prove_conditions
 from fundamentals.evidence.mapping import (
     CONTEXT_LOCAL_NAME,
     CONTEXT_NAMESPACE,
@@ -213,6 +212,36 @@ def test_overlapping_pdf_selectors_are_refused(
                 "entry_id": "pdf.current_tax_unrestricted",
                 "selector": selector,
                 "canonical_id": "tax_discontinued",
+            }
+        )
+
+    _expect_refusal(tmp_path, dictionary, edit, MappingDefect.DUPLICATE_SELECTOR, PDF_LAYOUTS)
+
+
+def test_two_distinct_contains_sections_are_refused(
+    tmp_path: Path, dictionary: CanonicalDictionary
+) -> None:
+    """The same Tax exp context can satisfy Tax and exp simultaneously."""
+
+    def edit(data: dict[str, Any]) -> None:
+        current = entry_of(data, "pdf.current_tax")
+        replace_entry(
+            data,
+            "pdf.current_tax",
+            {
+                **current,
+                "selector": {
+                    **current["selector"],
+                    "section": "Tax",
+                },
+            },
+        )
+        data["entries"].append(
+            {
+                **current,
+                "entry_id": "pdf.tax_twin",
+                "canonical_id": "tax_discontinued",
+                "selector": {**current["selector"], "section": "exp"},
             }
         )
 
@@ -396,7 +425,7 @@ def test_duplicate_operand_makes_the_construction_ambiguous(ingest: Ingest) -> N
 def test_qualification_needs_its_condition_proven(
     ingest: Ingest, dictionary: CanonicalDictionary
 ) -> None:
-    """A demonstrated entry holds only where a same-capture zero proves its condition."""
+    """A same-capture zero proves the condition but cannot replace measured company fixtures."""
     demonstrated = temp_mapping(
         ingest.tmp_path,
         dictionary,
@@ -406,9 +435,13 @@ def test_qualification_needs_its_condition_proven(
     report = ingest.run(ingest.intake(XBRL_ONLY), mapping_set=demonstrated)
     rows = ingest.interpretations(report)
     eps = one(rows, "eps_basic", Q2_QUARTER, Representation.XBRL)
-    assert eps.tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED
-    assert eps.qualification_ref == SCOPE_ID
-    (proof,) = eps.condition_evidence
+    assert eps.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
+    assert eps.qualification_ref is None and not eps.condition_evidence
+    scope = demonstrated.entry("capmkt.eps_basic").qualification
+    assert scope is not None
+    (proof,) = prove_conditions(
+        scope.conditions, interpretations=rows, period=Q2_QUARTER, basis=Basis.CONSOLIDATED
+    ).values()
     assert proof.holds
     (evidence,) = ingest.repository.get_interpretations(proof.evidence_interpretation_ids)
     assert evidence.canonical_id == "eps_basic_discontinued"
@@ -449,8 +482,18 @@ def test_qualification_is_per_measurement(ingest: Ingest, dictionary: CanonicalD
     rows = ingest.interpretations(report)
     quarter = one(rows, "eps_basic", Q2_QUARTER, Representation.XBRL)
     half = one(rows, "eps_basic", Q2_HALF, Representation.XBRL)
-    assert quarter.tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED
+    assert quarter.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
     assert half.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
+    scope = demonstrated.entry("capmkt.eps_basic").qualification
+    assert scope is not None
+    quarter_proofs = prove_conditions(
+        scope.conditions, interpretations=rows, period=Q2_QUARTER, basis=Basis.CONSOLIDATED
+    )
+    half_proofs = prove_conditions(
+        scope.conditions, interpretations=rows, period=Q2_HALF, basis=Basis.CONSOLIDATED
+    )
+    assert all(proof.holds for proof in quarter_proofs.values())
+    assert all(not proof.holds for proof in half_proofs.values())
     quarter_only = temp_mapping(
         ingest.tmp_path, dictionary, demonstrate_eps(["QUARTER"]), version="v1-test-quarter-only"
     )
@@ -458,7 +501,7 @@ def test_qualification_is_per_measurement(ingest: Ingest, dictionary: CanonicalD
     assert ingest.package(original).reporting_kind is PeriodKind.HALF_YEAR
     rows = ingest.interpretations(original)
     assert one(rows, "eps_basic", Q2_QUARTER, Representation.XBRL).tier is (
-        EvidenceTier.EQUIVALENCE_DEMONSTRATED
+        EvidenceTier.EQUIVALENCE_UNPROVEN
     )
     assert one(rows, "eps_basic", Q2_HALF, Representation.XBRL).tier is (
         EvidenceTier.EQUIVALENCE_UNPROVEN

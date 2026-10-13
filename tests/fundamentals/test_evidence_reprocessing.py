@@ -16,6 +16,7 @@ from evidence_support import (
     Q2_FY26,
     XBRL_ONLY,
     Ingest,
+    apar_pdf_specs,
     dictionary,
     entry_of,
     ingest,
@@ -28,12 +29,14 @@ from evidence_support import (
 from retained_support import MarkedEdit, apar_original, marked_copy
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.canonical import Representation, StatementFamily
 from fundamentals.contracts.evidence import RevisionCause
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.first_party_ingest import MAPPING_SET_ARTIFACT
 from fundamentals.evidence.mapping import MappingSet
+from fundamentals.evidence.repository import OccurrenceConflictError
 
 __all__ = ["dictionary", "ingest", "mapping_set", "policy"]
 
@@ -134,7 +137,7 @@ def test_changed_content_under_a_pinned_version_is_refused(
     """A mapping sign changed under the pinned ``v1`` raises drift and writes nothing."""
     ingest.run(ingest.intake(XBRL_ONLY))
     before = ingest.table_counts()
-    assert before["version_pins"] == 2
+    assert before["version_pins"] == 3
 
     def flipped(data: dict[str, Any]) -> None:
         entry = entry_of(data, "capmkt.current_tax")
@@ -156,6 +159,119 @@ def test_reingest_writes_nothing(ingest: Ingest) -> None:
     assert ingest.table_counts() == before
     assert second.package_id == first.package_id
     assert [a.attempt_id for a in second.attempts] == [a.attempt_id for a in first.attempts]
+
+
+def test_extractor_content_is_pinned_before_reuse(
+    ingest: Ingest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same extractor version with changed content refuses reuse and adds no records."""
+    from fundamentals.compare import run_config
+
+    ingest.run(ingest.intake(XBRL_ONLY))
+    before = ingest.table_counts()
+    original = run_config.extractor_pin
+
+    def drifted(representation: Representation, *, version: str | None = None) -> Any:
+        return original(representation, version=version).model_copy(
+            update={"content_sha256": "f" * 64}
+        )
+
+    monkeypatch.setattr(run_config, "extractor_pin", drifted)
+    with pytest.raises(VersionContentDriftError) as raised:
+        ingest.run(ingest.intake(XBRL_ONLY))
+    assert raised.value.artifact == "extractor_xbrl"
+    assert ingest.table_counts() == before
+
+
+def test_pdf_specs_narrow_widen_and_reuse_current_locations(ingest: Ingest) -> None:
+    """A capture's old successful blocks never supply a differently scoped location decision."""
+    specs = apar_pdf_specs()
+    narrow = {StatementFamily.PL: specs[StatementFamily.PL]}
+    first = ingest.run(ingest.intake(), pdf_specs=narrow)
+    assert {
+        a.statement_family
+        for a in first.attempts
+        if a.package_id == first.package_id and a.outcome is ExtractionOutcome.PARSE_FAILED
+    } == {StatementFamily.BALANCE_SHEET, StatementFamily.CASH_FLOW, StatementFamily.SEGMENT}
+    first_count = first.occurrence_count
+    wide = ingest.run(ingest.intake(), pdf_specs=specs)
+    assert wide.occurrence_count > first_count
+    assert not [
+        a
+        for a in wide.attempts
+        if a.representation is Representation.PDF
+        and a.statement_family is not None
+        and a.outcome is ExtractionOutcome.PARSE_FAILED
+    ]
+    before = ingest.table_counts()
+    again = ingest.run(ingest.intake(), pdf_specs=specs)
+    assert again.occurrence_count == wide.occurrence_count
+    assert ingest.table_counts() == before
+    narrower = ingest.run(ingest.intake(), pdf_specs=narrow)
+    assert narrower.occurrence_count == first_count
+    assert {
+        a.statement_family
+        for a in narrower.attempts
+        if a.package_id == narrower.package_id and a.outcome is ExtractionOutcome.PARSE_FAILED
+    } == {StatementFamily.BALANCE_SHEET, StatementFamily.CASH_FLOW, StatementFamily.SEGMENT}
+
+
+def test_unsupported_schema_outcome_does_not_poison_another_mapping(ingest: Ingest) -> None:
+    """Unsupported is a mapping decision: a new mapping must check the retained capture again."""
+    from fundamentals.contracts.snapshot import canonical_sha256
+
+    unsupported = ingest.mapping_set.model_copy(
+        update={
+            "version": "test-unsupported",
+            "content_sha256": canonical_sha256({"unsupported": True}),
+            "supported_schemas": frozenset(),
+        }
+    )
+    first = ingest.run(ingest.intake(XBRL_ONLY), mapping_set=unsupported)
+    assert first.package_id is None
+    assert [a.outcome for a in first.attempts] == [ExtractionOutcome.UNSUPPORTED_SCHEMA]
+    second = ingest.run(ingest.intake(XBRL_ONLY))
+    assert second.package_id is not None and second.occurrence_count > 0
+    assert [a.outcome for a in second.attempts] == [ExtractionOutcome.COMPLETE]
+
+
+def test_pdf_spec_payload_change_is_refused_under_same_extractor(ingest: Ingest) -> None:
+    ingest.run(ingest.intake())
+    before = ingest.table_counts()
+    specs = dict(apar_pdf_specs())
+    pl = specs[StatementFamily.PL]
+    specs[StatementFamily.PL] = pl.model_copy(
+        update={
+            "unit_markers": tuple(
+                marker.model_copy(update={"raw_scale": 9}) for marker in pl.unit_markers
+            )
+        }
+    )
+    with pytest.raises(OccurrenceConflictError):
+        ingest.run(ingest.intake(), pdf_specs=specs)
+    assert ingest.table_counts() == before
+
+
+def test_reused_pdf_recomputes_missing_families_for_new_package(ingest: Ingest) -> None:
+    specs = apar_pdf_specs()
+    narrow = {StatementFamily.PL: specs[StatementFamily.PL]}
+    first = ingest.run(ingest.intake({Representation.PDF: "results"}), pdf_specs=narrow)
+    assert not [attempt for attempt in first.attempts if attempt.statement_family is not None]
+    second = ingest.run(ingest.intake(), pdf_specs=narrow)
+    assert second.package_id != first.package_id
+    assert {
+        attempt.statement_family
+        for attempt in second.attempts
+        if attempt.representation is Representation.PDF and attempt.statement_family is not None
+    } == {
+        StatementFamily.BALANCE_SHEET,
+        StatementFamily.CASH_FLOW,
+        StatementFamily.SEGMENT,
+    }
+    first_pdf_attempt = next(
+        attempt for attempt in first.attempts if attempt.statement_family is None
+    )
+    assert first_pdf_attempt.attempt_id in {attempt.attempt_id for attempt in second.attempts}
 
 
 def test_revision_package_shares_the_unchanged_member(ingest: Ingest) -> None:

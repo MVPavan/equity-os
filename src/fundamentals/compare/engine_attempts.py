@@ -2,7 +2,8 @@
 
 Attempt-to-state is decided per (entity, period end, basis, representation, statement family)
 before member presence: a failed or missing attempt imposes ``UNAVAILABLE`` or ``INVALID``
-whatever the package holds, so a failed read is never reported as absence.
+whatever the package holds, so a failed read is never reported as absence. Only attempts and
+members on the run's requested sources (first-party surfaces) may decide a side.
 """
 
 from __future__ import annotations
@@ -20,9 +21,11 @@ from fundamentals.contracts.evidence import (
     FilingPackage,
     InterpretationTriple,
     KeySelection,
+    PackageMember,
     RunMode,
 )
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.evidence.first_party_extract import unsupported_schema_context
 from fundamentals.evidence.selection import NOT_EXTRACTED_UNDER_PINS, period_end
 
 _ONE_DAY = timedelta(days=1)
@@ -30,6 +33,7 @@ _MONTHS = 12
 _QUARTER_MONTHS = 3
 _NOT_MONTH_END = "period end {period_end} is not a month end"
 _NOT_QUARTER_END = "period end {period_end} is not a fiscal quarter end for year-end month {month}"
+INCOMPATIBLE_EXTRACTION_CONTEXTS = "INCOMPATIBLE_EXTRACTION_CONTEXTS"
 
 
 class RunResolutionError(RuntimeError):
@@ -70,6 +74,31 @@ def attempt_available(
     return attempt.capture is not None and attempt.capture.first_seen_at <= cutoff
 
 
+def pdf_contexts_conflict(
+    attempts: Sequence[AcquisitionAttempt],
+    *,
+    capture_ref_id: int,
+    cutoff: datetime,
+    mode: RunMode,
+    extractor: str,
+) -> bool:
+    """Whether PDF occurrences cannot be bound to one available location context.
+
+    Occurrences currently carry no generation context. Different context hashes, including
+    legacy unknown context alongside a known one, cannot safely share those occurrences.
+    """
+    contexts = {
+        attempt.extraction_context_sha256
+        for attempt in attempts
+        if attempt.representation is Representation.PDF
+        and attempt.stage is AttemptStage.EXTRACTION
+        and attempt.statement_family is None
+        and _capture_id(attempt) == capture_ref_id
+        and attempt_available(attempt, cutoff=cutoff, mode=mode, extractor=extractor)
+    }
+    return len(contexts) > 1
+
+
 class AttemptStates:
     """The state an attempt imposes on one request side (data spec l.353, 400–425)."""
 
@@ -81,8 +110,10 @@ class AttemptStates:
         cutoff: datetime,
         mode: RunMode,
         triple: InterpretationTriple,
+        surfaces: Iterable[str],
     ) -> None:
         self._attempts = tuple(attempts)
+        self._surfaces = frozenset(surfaces)
         self._member_captures = frozenset(member_captures)
         self._cutoff = cutoff
         self._mode = mode
@@ -101,7 +132,7 @@ class AttemptStates:
         overall attempt of the latest pinned-extractor generation; a non-``COMPLETE``
         family attempt in that generation; a member with no available generation.
         """
-        member = None if package is None else package.members.get(representation)
+        member = self._member(package, representation)
         candidates = [
             attempt
             for attempt in self._attempts
@@ -114,6 +145,27 @@ class AttemptStates:
                 return _imposed(key, representation, package, latest)
         extractions = [item for item in candidates if item.stage is AttemptStage.EXTRACTION]
         overall = [item for item in extractions if item.statement_family is None]
+        if (
+            representation is Representation.PDF
+            and member is not None
+            and pdf_contexts_conflict(
+                overall,
+                capture_ref_id=member.capture.capture_ref_id or 0,
+                cutoff=self._cutoff,
+                mode=self._mode,
+                extractor=self._triple.extractor(representation),
+            )
+        ):
+            return Cell(
+                selection=bare_selection(
+                    key,
+                    representation,
+                    SourceState.UNAVAILABLE,
+                    package=package,
+                    reason=INCOMPATIBLE_EXTRACTION_CONTEXTS,
+                ),
+                attempt_id=max(overall, key=_attempt_order).attempt_id,
+            )
         if overall:
             generation = max(overall, key=_attempt_order)
             if generation.outcome is not ExtractionOutcome.COMPLETE:
@@ -123,7 +175,11 @@ class AttemptStates:
                 for item in extractions
                 if item.statement_family is family
                 and _capture_id(item) == _capture_id(generation)
-                and item.attempted_at == generation.attempted_at
+                and item.extraction_context_sha256 == generation.extraction_context_sha256
+                and (
+                    item.attempted_at == generation.attempted_at
+                    or (package is not None and item.package_id == package.package_id)
+                )
                 and item.outcome is not ExtractionOutcome.COMPLETE
             ]
             if failed:
@@ -150,7 +206,15 @@ class AttemptStates:
     ) -> bool:
         """Whether an attempt may decide this request side."""
         if (
-            attempt.entity_id != key.entity_id
+            attempt.outcome is ExtractionOutcome.UNSUPPORTED_SCHEMA
+            and attempt.extraction_context_sha256 is not None
+            and attempt.extraction_context_sha256
+            != unsupported_schema_context(self._triple.mapping_set)
+        ):
+            return False
+        if (
+            attempt.surface not in self._surfaces
+            or attempt.entity_id != key.entity_id
             or attempt.period_end != period_end(key.period)
             or attempt.basis is not key.basis
             or attempt.framework is not key.framework
@@ -163,7 +227,7 @@ class AttemptStates:
             )
         ):
             return False
-        member = None if package is None else package.members.get(representation)
+        member = self._member(package, representation)
         own_package = package is not None and attempt.package_id == package.package_id
         if member is not None:
             capture = member.capture
@@ -178,6 +242,13 @@ class AttemptStates:
         return attempt.package_id is None and (
             captured is None or captured not in self._member_captures
         )
+
+    def _member(
+        self, package: FilingPackage | None, representation: Representation
+    ) -> PackageMember | None:
+        """A package's member on a requested source, if any."""
+        member = None if package is None else package.members.get(representation)
+        return member if member is not None and member.capture.surface in self._surfaces else None
 
 
 def _imposed(

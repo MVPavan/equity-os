@@ -83,6 +83,11 @@ def select_package(
         and package.framework is framework
         and package.reporting_period_end == period_end
         and package.eligible(boundary)
+        and all(
+            member.knowledge_time_status is KnowledgeTimeStatus.KNOWN
+            and member.knowledge_time <= boundary.knowledge_cutoff
+            for member in package.members.values()
+        )
     ]
     superseded = {package.supersedes_package_id for package in eligible}
     heads = [package for package in eligible if package.package_id not in superseded]
@@ -131,8 +136,7 @@ def select_interpretation(
         for item in candidates
         if _under(item, triple) and _known(item.recorded_at, boundary, mode)
     ]
-    superseded = {item.supersedes_interpretation_id for item in available}
-    current = [item for item in available if item.interpretation_id not in superseded]
+    current = _current(available)
     if not current:
         return SourceState.NO_VALUE, None, None
     if len(current) > 1:
@@ -172,8 +176,11 @@ def select_key(
     capture_ref_id = member.capture.capture_ref_id
     triple = _triple(pinned)
     owned = [item for item in interpretations if item.capture_ref_id == capture_ref_id]
-    candidates = [item for item in owned if item.key == key]
-    considered = _ids(candidates)
+    considered = _ids([item for item in owned if _matches(item, key)])
+    available = [
+        item for item in owned if _under(item, triple) and _known(item.recorded_at, boundary, mode)
+    ]
+    candidates = [item for item in _current(available) if _matches(item, key)]
     extractor = triple.extractor(representation)
     if not any(
         item.capture.capture_ref_id == capture_ref_id and item.extractor_version == extractor
@@ -281,6 +288,57 @@ def period_end(period: PeriodInterval) -> date:
 def _triple(pinned: Pins) -> InterpretationTriple:
     """The interpretation versions of either pin form."""
     return pinned.triple() if isinstance(pinned, PinnedVersions) else pinned
+
+
+def _current(items: Sequence[Interpretation]) -> list[Interpretation]:
+    """Remove superseded interpretations across the entire eligible pinned generation."""
+    superseded = {item.supersedes_interpretation_id for item in items}
+    return [item for item in items if item.interpretation_id not in superseded]
+
+
+def _matches(item: Interpretation, key: MeasurementKey) -> bool:
+    """Match a complete key, or every evidenced part of an invalid incomplete key.
+
+    Unknown unit semantics never become an invented currency or value kind. A partial
+    key must still establish its canonical row, period and dimensions to match here.
+    """
+    if item.key is not None:
+        return item.key == key
+    partial = (
+        item.status is InterpretationStatus.INVALID
+        and item.entity_id == key.entity_id
+        and item.canonical_id == key.canonical_id
+        and item.period == key.period
+        and item.basis is key.basis
+        and item.framework is key.framework
+        and item.dimensions == key.dimensions
+    )
+    if partial or item.status is not InterpretationStatus.INVALID:
+        return partial
+    candidates = item.transform_trace.get("ambiguous_candidate_keys", ())
+    expected = key.model_dump(mode="json")
+    return isinstance(candidates, list | tuple) and any(
+        isinstance(candidate, dict)
+        and all(
+            candidate.get(part) == expected[part]
+            for part in (
+                "entity_id",
+                "canonical_id",
+                "period",
+                "basis",
+                "framework",
+                "dimensions",
+            )
+        )
+        and (
+            candidate.get("value_kind") is None
+            or (
+                candidate.get("value_kind") == expected["value_kind"]
+                and candidate.get("currency") == expected["currency"]
+            )
+        )
+        for candidate in candidates
+    )
 
 
 def _under(item: Interpretation, triple: InterpretationTriple) -> bool:

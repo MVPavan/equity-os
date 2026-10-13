@@ -369,14 +369,14 @@ def test_computed_operands_pass_their_exact_value_up_a_chain(
 ) -> None:
     """OPM over EBITDA over opex keeps exact intermediates (Apar Q2 FY26 figures cited in v1).
 
-    Every input is ± 500 000 (half of 10^6). Opex = 54022.9 − 1079.0 − 398.8 crore is
-    525 451 000 000 ± 1 500 000; EBITDA = 571 542 000 000 − opex is 46 091 000 000 ± 2 000 000;
-    OPM lies in [46 089 000 000 ÷ 571 542 500 000, 46 093 000 000 ÷ 571 541 500 000] × 100.
+    Every input is ± 50 000 (half of 10^5). Opex = 54022.9 − 1079.0 − 398.8 million is
+    52 545 100 000 ± 150 000; EBITDA = 57 154 200 000 − opex is 4 609 100 000 ± 200 000;
+    OPM lies in [4 608 900 000 ÷ 57 154 250 000, 4 609 300 000 ÷ 57 154 150 000] × 100.
     """
-    crore = Decimal(10) ** 7
+    million = Decimal(10) ** 6
 
-    def amount(canonical_id: str, crores: str) -> OperandValue:
-        return leaf(key(canonical_id, Q2_FY26), str(Decimal(crores) * crore), decimals=-6)
+    def amount(canonical_id: str, millions: str) -> OperandValue:
+        return leaf(key(canonical_id, Q2_FY26), str(Decimal(millions) * million), decimals=-5)
 
     revenue = amount("revenue_from_operations", "57154.2")
     opex = evaluate_inr(
@@ -390,8 +390,8 @@ def test_computed_operands_pass_their_exact_value_up_a_chain(
             "depreciation_amortisation": amount("depreciation_amortisation", "398.8"),
         },
     )
-    assert opex.exact == Fraction(525451000000)
-    assert opex.interval == Interval(lower=Fraction(525449500000), upper=Fraction(525452500000))
+    assert opex.exact == Fraction(52545100000)
+    assert opex.interval == Interval(lower=Fraction(52544950000), upper=Fraction(52545250000))
     ebitda = evaluate_inr(
         dictionary,
         policy,
@@ -399,8 +399,8 @@ def test_computed_operands_pass_their_exact_value_up_a_chain(
         key("ebitda_excl_other_income", Q2_FY26),
         {"revenue": revenue, "opex": _computed(opex, key("opex_excl_finance_and_da", Q2_FY26))},
     )
-    assert ebitda.exact == Fraction(46091000000)
-    assert ebitda.interval == Interval(lower=Fraction(46089000000), upper=Fraction(46093000000))
+    assert ebitda.exact == Fraction(4609100000)
+    assert ebitda.interval == Interval(lower=Fraction(4608900000), upper=Fraction(4609300000))
     opm = evaluate_inr(
         dictionary,
         policy,

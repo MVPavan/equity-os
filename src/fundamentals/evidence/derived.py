@@ -45,6 +45,7 @@ from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.repository import SegmentMemberRecord
 
 Resolve = Callable[[MeasurementKey, TemporalRole], KeySelection]
+QualificationFor = Callable[[DictionaryRow, MeasurementKey], QualificationContext]
 
 
 @runtime_checkable
@@ -87,6 +88,9 @@ class _Evaluation(BaseModel):
     resolve: Resolve
     proofs: tuple[AlignmentProof, ...]
     qualification: QualificationContext
+    qualification_for: QualificationFor | None
+    output: MeasurementKey
+    fiscal_year_end_month: int
     policy: RoundingPolicy
     repository: TraceStore
     dictionary: CanonicalDictionary
@@ -147,17 +151,25 @@ def evaluate_derived(
     dictionary: CanonicalDictionary,
     reporting_currency: str,
     segment_members: Sequence[SegmentMemberRecord] = (),
+    qualification_for: QualificationFor | None = None,
+    fiscal_year_end_month: int = 3,
 ) -> DerivedSide:
     """Evaluate one derived row for ``output`` and store its trace (children first).
 
     ``qualification`` is the output measurement's own context and scopes the formula's
     tier. ``segment_members`` are the entity's knowledge-cutoff member records; an
     entity-bound aggregation binds those valid for the output period and pins their ids.
+    ``qualification_for`` supplies context and condition proofs separately for every
+    nested row/key. Without it nested conditions stay unproven; period kinds are still
+    resolved using ``fiscal_year_end_month`` (March by default for existing callers).
     """
     context = _Evaluation(
         resolve=resolve,
         proofs=tuple(proofs),
         qualification=qualification,
+        qualification_for=qualification_for,
+        output=output,
+        fiscal_year_end_month=fiscal_year_end_month,
         policy=policy,
         repository=repository,
         dictionary=dictionary,
@@ -221,9 +233,24 @@ def _evaluate(
         context.policy,
         dictionary=context.dictionary,
         reporting_currency=context.reporting_currency,
-        qualification=context.qualification,
+        qualification=_qualification_for(row, output, context),
     )
     return result, context.repository.put_calculation_trace(result.trace)
+
+
+def _qualification_for(
+    row: DictionaryRow, output: MeasurementKey, context: _Evaluation
+) -> QualificationContext:
+    """Resolve scope and condition evidence for this particular nested output key."""
+    if context.qualification_for is not None:
+        return context.qualification_for(row, output)
+    return context.qualification.model_copy(
+        update={
+            "basis": output.basis,
+            "period_kind": output.period.kind(context.fiscal_year_end_month),
+            "proven": context.qualification.proven if output == context.output else {},
+        }
+    )
 
 
 def _operand(
@@ -242,16 +269,23 @@ def _operand(
     if operand.temporal_role is TemporalRole.AVERAGE:
         opening_key, closing_key = keys
         averaged = average_operand(
-            _selected(opening_key, TemporalRole.OPENING, context),
-            _selected(closing_key, TemporalRole.CLOSING, context),
+            _constituent(opening_key, TemporalRole.OPENING, context, bound),
+            _constituent(closing_key, TemporalRole.CLOSING, context, bound),
             output=opening_key.model_copy(update={"period": output.period}),
             policy=context.policy,
         )
         return _stored_child(averaged, context)
     (key,) = keys
-    nested = context.dictionary.row(operand.canonical_id)
+    return _constituent(key, operand.temporal_role, context, bound)
+
+
+def _constituent(
+    key: MeasurementKey, role: TemporalRole, context: _Evaluation, bound: list[int]
+) -> OperandValue:
+    """Resolve a leaf or recursively evaluate a derived constituent at its own key."""
+    nested = context.dictionary.row(key.canonical_id)
     if nested.formula is None:
-        return _selected(key, operand.temporal_role, context)
+        return _selected(key, role, context)
     result, trace_id = _evaluate(nested, key, context, bound)
     child = operand_from_result(result, key=key, selection_source=None)
     return child.model_copy(update={"calculation_trace_id": trace_id})
@@ -273,12 +307,13 @@ def _aggregate(
         bound.extend(member_ids)
     axes = dict(key.dimensions.pairs)
     values = {
-        member: _selected(
+        member: _constituent(
             key.model_copy(
                 update={"dimensions": DimensionSet.of({**axes, aggregation.axis: member})}
             ),
             operand.temporal_role,
             context,
+            bound,
         )
         for member in aggregation.input_members
     }

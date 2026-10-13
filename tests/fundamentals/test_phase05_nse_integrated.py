@@ -91,6 +91,7 @@ def _in_capmkt_instance(
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"\n'
+        '    xmlns:iso4217="http://www.xbrl.org/2003/iso4217"\n'
         f'    xmlns:in-capmkt="{namespace}">\n'
         '  <xbrli:context id="OneD">\n'
         f'    <xbrli:entity><xbrli:identifier scheme="{entity_scheme}">{entity_id}'

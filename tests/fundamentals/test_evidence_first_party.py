@@ -343,9 +343,13 @@ def test_every_occurrence_is_interpreted_and_unmatched_lines_are_unmapped(ingest
     assert report.occurrence_count == len(occurrences) == len(direct)
     for occurrence_id, occurrence in occurrences.items():
         kind = occurrence.period.kind(3) if occurrence.period is not None else None
-        if ingest.mapping_set.match(occurrence, period_kind=kind) is None:
+        matches = ingest.mapping_set.matches(occurrence, period_kind=kind)
+        if not matches:
             assert direct[occurrence_id].status is InterpretationStatus.UNMAPPED
             assert direct[occurrence_id].mapping_entry_id is None
+        elif len(matches) > 1:
+            assert direct[occurrence_id].status is InterpretationStatus.INVALID
+            assert direct[occurrence_id].reason is InterpretationReason.INTERPRETATION_AMBIGUOUS
     assert InterpretationStatus.UNMAPPED in {row.status for row in rows}
 
 
@@ -744,8 +748,7 @@ def test_withheld_operand_gives_a_stored_missing_side(ingest: Ingest) -> None:
 @pytest.mark.pg
 @pytest.mark.retained
 def test_tiers_are_scoped_per_measurement(ingest: Ingest, tmp_path: Path) -> None:
-    """A demonstrated entry or formula outside its scope is unproven; a QUARTER-scoped
-    formula is demonstrated for the Q2 output and unproven for the H1 output."""
+    """Out-of-scope declarations and this one-company fixture remain unproven under D3."""
 
     in_bse_fin = xbrl_scope("test-bse-only", ["CONSOLIDATED"], ["QUARTER", "HALF_YEAR"], BSE_FIN)
     edit = scope_entry("capmkt.finance_costs", in_bse_fin)
@@ -764,8 +767,5 @@ def test_tiers_are_scoped_per_measurement(ingest: Ingest, tmp_path: Path) -> Non
     assert (out.result.trace.formula_tier, out.result.trace.formula_qualification_ref) == unproven
     q2 = view.evaluate("opm_pct", Q2_QUARTER, Representation.XBRL, dictionary=quarter).result.trace
     h1 = view.evaluate("opm_pct", Q2_HALF, Representation.XBRL, dictionary=quarter).result.trace
-    assert (q2.formula_tier, q2.formula_qualification_ref) == (
-        EvidenceTier.EQUIVALENCE_DEMONSTRATED,
-        "test-quarter",
-    )
+    assert (q2.formula_tier, q2.formula_qualification_ref) == unproven
     assert (h1.formula_tier, h1.formula_qualification_ref) == unproven

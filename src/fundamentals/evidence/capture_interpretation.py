@@ -40,16 +40,19 @@ from fundamentals.contracts.qualification import (
     qualification_context,
     scoped_tier,
 )
-from fundamentals.evidence.interpret import SEGMENT_AXIS, construct, interpret, prove_conditions
+from fundamentals.evidence.interpret import (
+    TRACE_MATCHED_ENTRY_IDS,
+    construct,
+    interpret,
+    prove_conditions,
+)
 from fundamentals.evidence.mapping import (
     CONTEXT_SCHEMA_IDENTITY,
     ConstructionRule,
     MappingSet,
-    MemberSource,
     NormalisationPolicy,
     applies_to_source,
 )
-from fundamentals.evidence.xbrl_adapter import member_slug
 
 _LOG = structlog.get_logger(__name__)
 _DUPLICATE_OPERAND = "construction operand matched twice in one group; construction INVALID"
@@ -58,6 +61,7 @@ _UNGROUPED = "invalid operand has no resolvable group; it joins no construction"
 ReserveIds = Callable[[int], tuple[int, ...]]
 ProofKey = tuple[PeriodInterval, Basis]
 GroupKey = tuple[PeriodInterval, DimensionSet]
+Alternatives = Mapping[int, tuple[tuple[str, GroupKey], ...]]
 
 
 class CaptureScope(BaseModel):
@@ -113,8 +117,14 @@ def interpret_generation(
         str(occurrence.native_context.get(CONTEXT_SCHEMA_IDENTITY, ""))
         for occurrence in occurrences
     )
+    alternatives = _ambiguous_alternatives(first, occurrences, scope, recorded_at)
     first_constructed = _constructions(
-        first, scope, schemas=schemas, proofs={}, recorded_at=recorded_at
+        first,
+        scope,
+        schemas=schemas,
+        proofs={},
+        alternatives=alternatives,
+        recorded_at=recorded_at,
     )
     constructed_ids = reserve_ids(len(first_constructed))
     first_constructed = [
@@ -127,7 +137,12 @@ def interpret_generation(
         for item, occurrence in zip(first, occurrences, strict=True)
     ]
     second_constructed = _constructions(
-        second, scope, schemas=schemas, proofs=proofs, recorded_at=recorded_at
+        second,
+        scope,
+        schemas=schemas,
+        proofs=proofs,
+        alternatives=alternatives,
+        recorded_at=recorded_at,
     )
     second_constructed = [
         item.model_copy(update={"interpretation_id": reserved})
@@ -210,12 +225,52 @@ def _qualified(
     )
 
 
+def _ambiguous_alternatives(
+    direct: Sequence[Interpretation],
+    occurrences: Sequence[Occurrence],
+    scope: CaptureScope,
+    recorded_at: datetime,
+) -> Alternatives:
+    """Each ambiguous line's group under every entry it matched, keyed by occurrence id.
+
+    The line is read as if each candidate entry alone matched, only to find the
+    construction group it would join; the reading itself is never stored.
+    """
+    alternatives: dict[int, tuple[tuple[str, GroupKey], ...]] = {}
+    for item, occurrence in zip(direct, occurrences, strict=True):
+        entry_ids = item.transform_trace.get(TRACE_MATCHED_ENTRY_IDS)
+        if item.mapping_entry_id is not None or not isinstance(entry_ids, Sequence):
+            continue
+        found: list[tuple[str, GroupKey]] = []
+        for entry_id in entry_ids:
+            reading = interpret(
+                occurrence,
+                entity_id=scope.entity_id,
+                basis=scope.basis,
+                framework=scope.framework,
+                mapping_set=scope.mapping_set,
+                policy=scope.policy,
+                dictionary=scope.dictionary,
+                fiscal_year_end_month=scope.fiscal_year_end_month,
+                qualification=_unproven(occurrence, scope),
+                recorded_at=recorded_at,
+                as_entry=scope.mapping_set.entry(str(entry_id)),
+            )
+            group_key = _group_key(reading)
+            if group_key is not None:
+                found.append((str(entry_id), group_key))
+        assert occurrence.occurrence_id is not None
+        alternatives[occurrence.occurrence_id] = tuple(found)
+    return alternatives
+
+
 def _constructions(
     direct: Sequence[Interpretation],
     scope: CaptureScope,
     *,
     schemas: frozenset[str],
     proofs: Mapping[ProofKey, Mapping[str, ProvenCondition]],
+    alternatives: Alternatives,
     recorded_at: datetime,
 ) -> list[Interpretation]:
     """Every construction of the capture, one per rule and (period, dimensions) group."""
@@ -228,7 +283,7 @@ def _constructions(
         ):
             continue
         for group_key, found in sorted(
-            _groups(rule, direct, scope.mapping_set).items(), key=lambda pair: _group_order(pair[0])
+            _groups(rule, direct, alternatives).items(), key=lambda pair: _group_order(pair[0])
         ):
             operands = {name: items[0] for name, items in found.items() if len(items) == 1}
             duplicates = {name: items for name, items in found.items() if len(items) > 1}
@@ -245,52 +300,66 @@ def _constructions(
                     qualification=context,
                     recorded_at=recorded_at,
                     duplicates=duplicates,
+                    group=group_key,
                 )
             )
     return built
 
 
 def _groups(
-    rule: ConstructionRule, direct: Sequence[Interpretation], mapping_set: MappingSet
+    rule: ConstructionRule, direct: Sequence[Interpretation], alternatives: Alternatives
 ) -> Mapping[GroupKey, Mapping[str, tuple[Interpretation, ...]]]:
-    """Every operand candidate per (period, dimensions) group and operand name."""
+    """Every operand candidate per (period, dimensions) group and operand name.
+
+    An ambiguous line joins the group of every operand entry it matched, so the
+    construction is ``INVALID`` (invalid beats missing), never built without it.
+    """
     names = {operand.mapping_entry_id: operand.name for operand in rule.operands}
     groups: dict[GroupKey, dict[str, tuple[Interpretation, ...]]] = {}
+
+    def join(group_key: GroupKey, name: str, item: Interpretation) -> None:
+        group = groups.setdefault(group_key, {})
+        group[name] = (*group.get(name, ()), item)
+
     for item in direct:
+        occurrence_id = item.occurrence_id
+        if (
+            item.mapping_entry_id is None
+            and occurrence_id is not None
+            and occurrence_id in alternatives
+        ):
+            for entry_id, alternative_group in alternatives[occurrence_id]:
+                if entry_id in names:
+                    join(alternative_group, names[entry_id], item)
+            continue
         if item.mapping_entry_id not in names:
             continue
-        group_key = _group_key(item, mapping_set)
+        group_key = _group_key(item)
         if group_key is None:
             if item.status is InterpretationStatus.INVALID:
                 _LOG.warning(
                     _UNGROUPED, rule_id=rule.rule_id, interpretation=item.interpretation_id
                 )
             continue
-        group = groups.setdefault(group_key, {})
-        name = names[item.mapping_entry_id]
-        group[name] = (*group.get(name, ()), item)
+        join(group_key, names[item.mapping_entry_id], item)
     return groups
 
 
-def _group_key(item: Interpretation, mapping_set: MappingSet) -> GroupKey | None:
-    """A keyed row's (period, dimensions); an ``INVALID`` keyless row's from its entry.
+def _group_key(item: Interpretation) -> GroupKey | None:
+    """A keyed row's (period, dimensions); an ``INVALID`` keyless row's evidenced ones.
 
-    A unit-mismatched row keeps its key period; its dimensions are the entry's fixed
-    members plus the traced segment member. Other keyless rows join no group.
+    A unit-mismatched row keeps its key period and dimensions; other keyless rows join
+    no group.
     """
     if item.key is not None:
         return item.key.period, item.key.dimensions
-    if item.status is not InterpretationStatus.INVALID or item.period is None:
+    if (
+        item.status is not InterpretationStatus.INVALID
+        or item.period is None
+        or item.dimensions is None
+    ):
         return None
-    assert item.mapping_entry_id is not None
-    entry = mapping_set.entry(item.mapping_entry_id)
-    members = dict(entry.dimension_members)
-    if entry.member_source is MemberSource.XBRL_DESCRIPTION:
-        description = item.transform_trace.get("member_description")
-        if not isinstance(description, Mapping) or not description.get("text"):
-            return None
-        members[SEGMENT_AXIS] = member_slug(str(description["text"]))
-    return item.period, DimensionSet.of(members)
+    return item.period, item.dimensions
 
 
 def _group_order(group_key: GroupKey) -> tuple[str, str]:

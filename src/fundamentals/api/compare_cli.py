@@ -6,8 +6,9 @@
         [--config-root config]
 
 The composition root: ``PgSettings`` and the runtime pool are built here and nowhere else.
-The default cutoff is the store clock, never the host clock. Any database or resolution
-failure before commit exits ``FAILURE`` with a structlog error that names no credential.
+The default cutoff is the store clock, never the host clock. Any database, configuration or
+resolution failure before commit exits ``FAILURE`` with a structlog error that names no
+credential. A report refuses a dictionary whose content differs from the run's pin.
 """
 
 from __future__ import annotations
@@ -20,12 +21,16 @@ from pathlib import Path
 
 import psycopg
 import structlog
+import yaml
 from psycopg_pool import ConnectionPool
 from pydantic import ValidationError
 
-from fundamentals.canon.dictionary import load_dictionary
+from fundamentals.canon.dictionary import DictionaryLoadError, load_dictionary
+from fundamentals.canon.interval import RoundingPolicyError
+from fundamentals.compare.definitions import DefinitionSetError
 from fundamentals.compare.engine_attempts import RunResolutionError
-from fundamentals.compare.report import render_report
+from fundamentals.compare.policy import ComparisonPolicyError
+from fundamentals.compare.report import render_report, source_anchors
 from fundamentals.compare.resolve import ReplayMismatchError
 from fundamentals.compare.run import (
     DatabaseIdentity,
@@ -41,6 +46,8 @@ from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunRead
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence.alignment import AlignmentLoadError
+from fundamentals.evidence.mapping import MappingLoadError
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -106,6 +113,13 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         RunReadError,
         PublishRetriesExhaustedError,
         VersionContentDriftError,
+        ComparisonPolicyError,
+        DefinitionSetError,
+        DictionaryLoadError,
+        RoundingPolicyError,
+        MappingLoadError,
+        AlignmentLoadError,
+        yaml.YAMLError,
         ValidationError,
         OSError,
         LookupError,
@@ -153,10 +167,12 @@ def _report(args: argparse.Namespace) -> int:
         store = RunStore(pool)
         record = RunRecord(run_id=run_id, manifest=store.read_manifest(run_id), created=False)
         results = load_results(run_id, pool=pool)
+        anchors = source_anchors(EvidenceRepository(pool), results)
     dictionary = load_dictionary(
         args.config_root / DICTIONARY_DIR, record.manifest.pinned.dictionary.version
     )
-    sys.stdout.write(render_report(record, results, dictionary=dictionary))
+    report = render_report(record, results, dictionary=dictionary, anchors=anchors)
+    sys.stdout.write(report)
     return int(RunExitStatus.SUCCESS)
 
 

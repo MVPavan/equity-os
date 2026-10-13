@@ -132,27 +132,27 @@ entries:
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 13"
   - entry_id: pdf.profit_attributable_owners
-    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], label_ordinal: 1}
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section_equals: "Profit attributable to", unestablished_section_ambiguous: true}
     canonical_id: profit_attributable_owners
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 first '(a) Owners' line, 251.70 = line 11"
   - entry_id: pdf.profit_attributable_nci
-    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], label_ordinal: 1}
+    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], section_equals: "Profit attributable to"}
     canonical_id: profit_attributable_nci
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 first '(b) Non-controlling' line"
   - entry_id: pdf.oci_attributable_owners
-    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section: "Other comprehensive incomes attributable to", label_ordinal: 2}
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section_equals: "Other comprehensive incomes attributable to", unestablished_section_ambiguous: true}
     canonical_id: oci_attributable_owners
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 second '(a) Owners' line, 22.95 = line 12"
   - entry_id: pdf.oci_attributable_nci
-    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], section: "Other comprehensive incomes attributable to", label_ordinal: 2}
+    selector: {statement_family: PL, labels: ["(b) Non-controlling interest"], section_equals: "Other comprehensive incomes attributable to"}
     canonical_id: oci_attributable_nci
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 second '(b) Non-controlling' line"
   - entry_id: pdf.tci_attributable_owners
-    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section: "Total comprehensive incomes attributable to", label_ordinal: 3}
+    selector: {statement_family: PL, labels: ["(a) Owners of the Company"], section_equals: "Total comprehensive incomes attributable to", unestablished_section_ambiguous: true}
     canonical_id: tci_attributable_owners
     period_rule: COLUMN_DURATION
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 third '(a) Owners' line under 'Total comprehensive incomes attributable to'"
@@ -405,66 +405,66 @@ entries:
     period_rule: COLUMN_CLOSING_INSTANT
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 11,312.53 = XBRL NetSegmentAssets"
   - entry_id: pdf.segment_liabilities_net
-    selector: {statement_family: SEGMENT, labels: ["Total liabilities"], section: "Segment liabilities"}
+    selector: {statement_family: SEGMENT, labels: ["Total liabilities"], section_equals: "Segment liabilities"}
     canonical_id: segment_liabilities_net
     period_rule: COLUMN_CLOSING_INSTANT
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4, 5,852.33 = XBRL NetSegmentLiabilities"
   - entry_id: pdf.segment_revenue.conductors
-    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment revenue"}
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section_equals: "Segment revenue"}
     canonical_id: segment_revenue
     period_rule: COLUMN_DURATION
     dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Conductors' as for XBRL DescriptionOfReportableSegment"
   - entry_id: pdf.segment_revenue.transformer_and_speciality_oils
-    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment revenue"}
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section_equals: "Segment revenue"}
     canonical_id: segment_revenue
     period_rule: COLUMN_DURATION
     dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Transformer and speciality oils' as for XBRL DescriptionOfReportableSegment"
   - entry_id: pdf.segment_revenue.power_telecom_cables
-    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment revenue"}
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section_equals: "Segment revenue"}
     canonical_id: segment_revenue
     period_rule: COLUMN_DURATION
     dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Power / Telecom cables' as for XBRL DescriptionOfReportableSegment"
   - entry_id: pdf.segment_revenue.others
-    selector: {statement_family: SEGMENT, labels: ["Others"], section: "Segment revenue"}
+    selector: {statement_family: SEGMENT, labels: ["Others"], section_equals: "Segment revenue"}
     canonical_id: segment_revenue
     period_rule: COLUMN_DURATION
     dimension_members: {segment: others, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment revenue', gross of inter-segment revenue (members sum to Total segment revenue before the inter-segment line); member = the description 'Others' as for XBRL DescriptionOfReportableSegment"
   - entry_id: pdf.segment_assets.conductors
-    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment assets"}
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section_equals: "Segment assets"}
     canonical_id: segment_assets
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
   - entry_id: pdf.segment_liabilities.conductors
-    selector: {statement_family: SEGMENT, labels: ["Conductors"], section: "Segment liabilities"}
+    selector: {statement_family: SEGMENT, labels: ["Conductors"], section_equals: "Segment liabilities"}
     canonical_id: segment_liabilities
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: conductors, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment liabilities', pre-elimination (the inter-segment liabilities line follows the total)"
   - entry_id: pdf.segment_assets.transformer_and_speciality_oils
-    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment assets"}
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section_equals: "Segment assets"}
     canonical_id: segment_assets
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
   - entry_id: pdf.segment_liabilities.transformer_and_speciality_oils
-    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section: "Segment liabilities"}
+    selector: {statement_family: SEGMENT, labels: ["Transformer and speciality oils"], section_equals: "Segment liabilities"}
     canonical_id: segment_liabilities
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: transformer_and_speciality_oils, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment liabilities', pre-elimination (the inter-segment liabilities line follows the total)"
   - entry_id: pdf.segment_assets.power_telecom_cables
-    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment assets"}
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section_equals: "Segment assets"}
     canonical_id: segment_assets
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 under 'Segment assets', pre-elimination (inventory 2d; the inter-segment assets line follows the total)"
   - entry_id: pdf.segment_liabilities.power_telecom_cables
-    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section: "Segment liabilities"}
+    selector: {statement_family: SEGMENT, labels: ["Power / Telecom cables"], section_equals: "Segment liabilities"}
     canonical_id: segment_liabilities
     period_rule: COLUMN_CLOSING_INSTANT
     dimension_members: {segment: power_telecom_cables, elimination_basis: PRE_ELIMINATION}
@@ -633,3 +633,39 @@ entries:
       conditions:
         - {condition_id: discontinued-profit-zero, canonical_id: profit_discontinued_after_tax, predicate: EQUALS_ZERO}
     evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p3 line 16 Basic, rupees per share (62.66); the PDF prints one Basic line, total EPS only when discontinued profit is zero (X-Q2 BasicEarningsLossPerShareFromDiscontinuedOperations 0); the PDF prints no discontinued line, so the condition stays unproven there"
+  - entry_id: pdf.derivative_financial_assets_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Derivative financial assets"], section_equals: "Financial Assets", section_parent_equals: "Non-current asset;"}
+    canonical_id: derivative_financial_assets_noncurrent
+    period_rule: COLUMN_INSTANT
+    sign: 1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 non-current financial assets 2.49 cr"
+  - entry_id: pdf.derivative_financial_assets_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Derivative financial assets"], section_equals: "Current Assets"}
+    canonical_id: derivative_financial_assets_current
+    period_rule: COLUMN_INSTANT
+    sign: 1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 current financial assets 79.69 cr"
+  - entry_id: pdf.derivative_financial_liabilities_noncurrent
+    selector: {statement_family: BALANCE_SHEET, labels: ["Derivatives financial liabilities"], section_equals: "Financial liabilities", section_parent_equals: "Noncurrent liabilities"}
+    canonical_id: derivative_financial_liabilities_noncurrent
+    period_rule: COLUMN_INSTANT
+    sign: 1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 non-current financial liabilities dash; comparative 3.75 cr"
+  - entry_id: pdf.derivative_financial_liabilities_current
+    selector: {statement_family: BALANCE_SHEET, labels: ["Derivatives financial liabilities"], section_equals: "Financial liabilities", section_parent_equals: "Currant liabilities"}
+    canonical_id: derivative_financial_liabilities_current
+    period_rule: COLUMN_INSTANT
+    sign: 1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p6 current financial liabilities 25.08 cr"
+  - entry_id: pdf.segment_other_elimination
+    selector: {statement_family: SEGMENT, labels: ["(Less) /Add: Other elimination"], section_equals: "Segment results (profit bofore finance cost and tax expenses share in net profit / (loss) of", label_ordinal: 1}
+    canonical_id: segment_other_elimination
+    period_rule: COLUMN_DURATION
+    sign: 1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 segment results other elimination (4.11) cr"
+  - entry_id: pdf.inter_segment_liabilities
+    selector: {statement_family: SEGMENT, labels: ["Less:- Inter-segment liabilities"], section_equals: "Segment liabilities", label_ordinal: 1}
+    canonical_id: inter_segment_liabilities
+    period_rule: COLUMN_CLOSING_INSTANT
+    sign: -1
+    evidence_ref: "Q2 FY26 results PDF (sha256 8be1b8de) p4 segment liabilities deducted (656.59) cr"

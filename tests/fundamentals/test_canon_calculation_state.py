@@ -41,6 +41,7 @@ from fundamentals.contracts.qualification import (
     ConditionPredicate,
     QualificationCondition,
     QualificationContext,
+    QualificationFixture,
     QualificationScope,
 )
 
@@ -57,6 +58,17 @@ SCOPE = QualificationScope(
     bases=frozenset({Basis.CONSOLIDATED}),
     period_kinds=frozenset({PeriodKind.QUARTER}),
     conditions=(CONDITION,),
+    # Constructed evidence exercises the tier rule; it does not qualify a real mapping.
+    fixture_evidence=tuple(
+        QualificationFixture(
+            capture_id=f"constructed-calculation-state-{index}",
+            capture_sha256=f"{index:064x}",
+            entity_id=index,
+            discriminating=index == 1,
+        )
+        for index in range(1, 6)
+    ),
+    sample_rule="Constructed test cases: five companies and a discriminating case",
 )
 
 

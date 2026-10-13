@@ -535,11 +535,14 @@ def test_retained_private_pdf_staging_survives_original_swap_during_parse(
     assert main(fixture["register"], intake_context=fixture["context"]) == 0
     (tmp_path / "output").mkdir()
     original_open = pymupdf.open
-    seen: list[Path] = []
+    expected = [(tmp_path / name).read_bytes() for name in ("results.pdf", "transcript.pdf")]
+    seen: list[bytes] = []
 
     def open_pdf(*args: Any, **kwargs: Any) -> Any:
-        path = Path(args[0])
-        seen.append(path)
+        assert not args and kwargs.get("filetype") == "pdf"
+        stream = kwargs.get("stream")
+        assert isinstance(stream, bytes)
+        seen.append(stream)
         held = tmp_path / "results.pdf"
         before = held.read_bytes()
         held.write_bytes(b"replacement bytes during parser call")
@@ -551,7 +554,10 @@ def test_retained_private_pdf_staging_survives_original_swap_during_parse(
     # This is the external PDF engine boundary. Production admission is unpatched.
     monkeypatch.setattr(pymupdf, "open", open_pdf)
     assert main(fixture["run"], intake_context=fixture["context"]) == 0
-    assert len(seen) == 2 and all(path.parent != tmp_path and not path.exists() for path in seen)
+    assert seen == expected
+    assert (tmp_path / "results.pdf").read_bytes() == (
+        expected[0] if restore else b"replacement bytes during parser call"
+    )
     report = json.loads((tmp_path / "report.json").read_bytes())
     revenue = next(
         f for f in report["facts"] if f["concept_qname"].endswith(":RevenueFromOperations")

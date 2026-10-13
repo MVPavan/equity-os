@@ -40,7 +40,7 @@ from fundamentals.contracts.comparison import (
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.qualification import QualificationScope
+from fundamentals.contracts.qualification import QualificationFixture, QualificationScope
 
 from .canon_formula_support import (
     DEMONSTRATED,
@@ -678,7 +678,7 @@ REJECTED_ADJUSTMENTS = [
 
 
 def demonstrated_opex_row() -> DictionaryRow:
-    """The opex row with its formula demonstrated within a quarter consolidated scope."""
+    """Constructed qualification metadata for pure table plumbing, not measured evidence."""
     row = DICTIONARY.row("opex_excl_finance_and_da")
     assert row.formula is not None
     scope = QualificationScope(
@@ -687,6 +687,16 @@ def demonstrated_opex_row() -> DictionaryRow:
         surfaces=frozenset({"NSE_XBRL_INSTANCE"}),
         bases=frozenset({Basis.CONSOLIDATED}),
         period_kinds=frozenset({PeriodKind.QUARTER}),
+        fixture_evidence=tuple(
+            QualificationFixture(
+                capture_id=f"constructed-table-{index}",
+                capture_sha256=f"{index:064x}",
+                entity_id=index,
+                discriminating=index == 1,
+            )
+            for index in range(1, 6)
+        ),
+        sample_rule="constructed five-entity sample for pure decision-table plumbing",
     )
     formula = row.formula.model_copy(update={"tier": DEMONSTRATED, "qualification": scope})
     return row.model_copy(update={"formula": formula})

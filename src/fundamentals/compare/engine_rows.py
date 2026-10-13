@@ -22,7 +22,7 @@ from fundamentals.compare.run_models import (
     row_id,
 )
 from fundamentals.compare.tables import ComparisonSide, PairResult, TaggingAdjustment
-from fundamentals.contracts.canonical import Representation, ValueIdentity
+from fundamentals.contracts.canonical import Representation, ValueIdentity, ValueKind
 from fundamentals.contracts.comparison import (
     CorroborationStatus,
     ExtractionStatus,
@@ -45,6 +45,8 @@ from fundamentals.evidence.derived import operand_value
 from fundamentals.evidence.interpret import prove_conditions
 from fundamentals.evidence.mapping import CONTEXT_SCHEMA_IDENTITY
 
+REPRESENTATIONS = (Representation.XBRL, Representation.PDF)
+MONETARY = frozenset({ValueKind.CURRENCY_AMOUNT, ValueKind.PER_SHARE_AMOUNT})
 _REASON_CODES = frozenset(code.value for code in ReasonCode)
 # A non-value side's precedence when no side holds a value: unavailable is never hidden.
 _ABSENCE_ORDER = (SourceState.UNAVAILABLE, SourceState.INVALID, SourceState.NO_VALUE)

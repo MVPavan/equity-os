@@ -13,7 +13,7 @@ import hashlib
 from collections.abc import Mapping
 from pathlib import Path
 
-import psycopg
+from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
@@ -51,12 +51,22 @@ DEFAULT_VERSION = "v1"
 _SOURCE_ROOT = Path(__file__).resolve().parents[1]
 # Extractor content sources (design decision 7), relative to the ``fundamentals`` package.
 EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
-    Representation.XBRL: ("evidence/xbrl_adapter.py", "extract/xbrl_parser.py"),
+    Representation.XBRL: (
+        "evidence/xbrl_adapter.py",
+        "extract/xbrl_parser.py",
+        "extract/xbrl_taxonomies.py",
+        "extract/xbrl_dimensions.py",
+        "evidence/first_party_extract.py",
+        "evidence/member_identity.py",
+    ),
     Representation.PDF: (
         "evidence/pdf_adapter.py",
         "extract/pdf_statement_pages.py",
         "extract/pdf_header_text.py",
         "extract/pdf_printed_unit.py",
+        "evidence/first_party_extract.py",
+        "evidence/member_identity.py",
+        "ingest/pdf_source.py",
     ),
 }
 EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
@@ -118,13 +128,18 @@ class LoadedConfig(BaseModel):
     pinned: PinnedVersions
 
 
-def extractor_pin(representation: Representation) -> Pin:
-    """The current extractor's pin: its version constant plus its source files' bytes."""
-    digest = hashlib.sha256(EXTRACTOR_VERSIONS[representation].encode("utf-8") + b"\0")
+def extractor_pin(representation: Representation, *, version: str | None = None) -> Pin:
+    """The chosen extractor version plus its current source files' bytes.
+
+    Ingestion may explicitly name a re-extraction version; comparison defaults to the
+    current adapter version. Both paths use the same content hashing contract.
+    """
+    chosen = EXTRACTOR_VERSIONS[representation] if version is None else version
+    digest = hashlib.sha256(chosen.encode("utf-8") + b"\0")
     for relative in EXTRACTOR_SOURCES[representation]:
         digest.update(relative.encode("utf-8") + b"\0")
         digest.update(hashlib.sha256((_SOURCE_ROOT / relative).read_bytes()).digest())
-    return Pin(version=EXTRACTOR_VERSIONS[representation], content_sha256=digest.hexdigest())
+    return Pin(version=chosen, content_sha256=digest.hexdigest())
 
 
 def load_run_config(
@@ -199,12 +214,13 @@ def require_pins(config: LoadedConfig, pinned: PinnedVersions) -> None:
 
 
 def pin_config(
-    config: LoadedConfig, *, repository: EvidenceRepository, conn: psycopg.Connection
+    config: LoadedConfig, *, repository: EvidenceRepository, pool: ConnectionPool
 ) -> int:
     """Pin every artifact on first use and publish the definition set; return the set's id.
 
     A version already pinned (or published) with other content raises
-    ``VersionContentDriftError`` before anything of the run is written.
+    ``VersionContentDriftError`` before anything of the run is written. The pins are stored
+    before the definition set's connection is taken, so one pooled connection suffices.
     """
     repository.pin_versions(
         [
@@ -213,7 +229,8 @@ def pin_config(
             for pin in (getattr(config.pinned, name),)
         ]
     )
-    return publish_definition_set(conn, config.definition_set)
+    with pool.connection() as conn:
+        return publish_definition_set(conn, config.definition_set)
 
 
 def _file(config_root: Path, directory: str, version: str) -> Path:

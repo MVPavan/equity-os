@@ -52,6 +52,17 @@ class ProvenCondition(BaseModel):
     evidence_interpretation_ids: tuple[int, ...] = Field(min_length=1)
 
 
+class QualificationFixture(BaseModel):
+    """A hash-pinned measured capture and its company identity for the D3 sample rule."""
+
+    model_config = ConfigDict(frozen=True)
+
+    capture_id: str = Field(min_length=1)
+    capture_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    entity_id: int = Field(gt=0)
+    discriminating: bool = False
+
+
 class QualificationScope(BaseModel):
     """The recorded scope inside which a demonstrated tier holds."""
 
@@ -65,6 +76,7 @@ class QualificationScope(BaseModel):
     conditions: tuple[QualificationCondition, ...] = ()
     exclusions: tuple[QualificationCondition, ...] = ()
     fixture_capture_sha256s: tuple[str, ...] = ()
+    fixture_evidence: tuple[QualificationFixture, ...] = ()
     sample_rule: str | None = None
 
     @model_validator(mode="after")
@@ -160,7 +172,7 @@ def scoped_tier(
     unproven = ScopedTier(
         tier=EvidenceTier.EQUIVALENCE_UNPROVEN, qualification_ref=None, condition_evidence=()
     )
-    if scope is None or not _in_scope(scope, context):
+    if scope is None or not _qualification_evidenced(scope) or not _in_scope(scope, context):
         return unproven
     evidence: list[ProvenCondition] = []
     for condition, must_hold in _checks(scope):
@@ -170,6 +182,26 @@ def scoped_tier(
         evidence.append(proven)
     return ScopedTier(
         tier=tier, qualification_ref=scope.scope_id, condition_evidence=tuple(evidence)
+    )
+
+
+def _qualification_evidenced(scope: QualificationScope) -> bool:
+    """D3 needs five distinct companies, a discriminating measured case and a sample rule.
+
+    Bare scope declarations or capture hashes cannot establish company diversity. Filing
+    alignment proofs are applied separately and do not pass through this global rule.
+    """
+    fixtures = scope.fixture_evidence
+    hashes = {fixture.capture_sha256 for fixture in fixtures}
+    captures = {fixture.capture_id for fixture in fixtures}
+    return (
+        scope.sample_rule is not None
+        and bool(scope.sample_rule.strip())
+        and len({fixture.entity_id for fixture in fixtures}) >= 5
+        and len(hashes) == len(fixtures)
+        and len(captures) == len(fixtures)
+        and any(fixture.discriminating for fixture in fixtures)
+        and (not scope.fixture_capture_sha256s or hashes == set(scope.fixture_capture_sha256s))
     )
 
 

@@ -100,7 +100,12 @@ class ApplicabilityDecision(BaseModel):
 
 def load_applicability_rules(path: Path) -> tuple[ApplicabilityRule, ...]:
     """Read the applicability rules file; schema errors propagate to the dictionary loader."""
-    data = yaml.safe_load(path.read_bytes())
+    return parse_applicability_rules(path.read_bytes())
+
+
+def parse_applicability_rules(body: bytes) -> tuple[ApplicabilityRule, ...]:
+    """Parse an already captured buffer so a dictionary's content pin covers its rules."""
+    data = yaml.safe_load(body)
     return tuple(ApplicabilityRule.model_validate(item) for item in data[RULES_KEY])
 
 

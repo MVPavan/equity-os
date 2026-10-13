@@ -4,9 +4,10 @@ Pins, authority, staging, extraction (with identity, period and framework checks
 presence, attempt generations, interpretation, package and segment members, with three
 reuse levels (data spec l.346: re-mapping adds, never rewrites): (1) a capture
 registration is always reused; (2) an attempt generation is reused under the same
-extractor version and request scope; (3) interpretations are reused under the same
+content-pinned extractor and request scope, with mapping/spec-dependent decisions pinned
+separately; (3) interpretations are reused under the same
 (mapping set, normalisation policy, extractor) triple and scope. The mapping set and
-normalisation policy versions are pinned to their content before any reuse or write.
+normalisation policy and extractor versions are pinned before any reuse or write.
 Re-ingesting unchanged inputs writes nothing new.
 """
 
@@ -30,6 +31,7 @@ from fundamentals.contracts.evidence import (
     FilingFamily,
     FilingPackage,
     Interpretation,
+    InterpretationOrigin,
     InterpretationStatus,
     InterpretationTriple,
     KnowledgeTimeStatus,
@@ -146,6 +148,20 @@ def ingest_first_party(
     Raises ``VersionContentDriftError`` (nothing written) when the mapping set or policy
     version is already pinned to other content.
     """
+    # Share the comparison runner's source hash so ingest and replay enforce one pin.
+    from fundamentals.compare.run_config import extractor_pin
+
+    versions = {**DEFAULT_EXTRACTOR_VERSIONS, **(extractor_versions or {})}
+    extractor_pins = [
+        VersionPin(
+            artifact=f"extractor_{representation.value.lower()}",
+            version=versions[representation],
+            content_sha256=extractor_pin(
+                representation, version=versions[representation]
+            ).content_sha256,
+        )
+        for representation in sorted({binding.representation for binding in intake.bindings})
+    ]
     repository.pin_versions(
         [
             VersionPin(
@@ -158,9 +174,9 @@ def ingest_first_party(
                 version=policy.version,
                 content_sha256=policy.content_sha256,
             ),
+            *extractor_pins,
         ]
     )
-    versions = {**DEFAULT_EXTRACTOR_VERSIONS, **(extractor_versions or {})}
     request = IngestRequest(
         entity_id=entity_id, period_end=reporting_period_end, basis=basis, framework=framework
     )
@@ -223,7 +239,7 @@ def ingest_first_party(
         )
     # Presence first, so a present family's unlocated PDF block fails inside its generation.
     present = _present(pending, mapping_set, reporting_period_end)
-    extracted = [item.with_unlocated(present, request).written(repository) for item in pending]
+    extracted = [item.written(repository) for item in pending]
     usable = [item for item in extracted if item.outcome is ExtractionOutcome.COMPLETE]
     interpretations: list[Interpretation] = []
     comparative = (
@@ -289,6 +305,12 @@ def ingest_first_party(
             },
         )
         repository.put_segment_members(_segment_members(occurrences, entity_id))
+    # Unlocated families depend on the assembled package; capture reuse must not
+    # reuse another package's presence decisions.
+    extracted = [
+        item.with_unlocated(present, request, package_id=package_id).written(repository)
+        for item in extracted
+    ]
     acquisition = [
         attempt.model_copy(update={"package_id": package_id}) for attempt in member_failures
     ]
@@ -380,8 +402,18 @@ def _interpretations(
             for row in current
         ):
             raise IngestError(_SCOPE_CONFLICT.format(capture=capture_ref_id))
-        if current:
-            return current
+        occurrence_ids = {_stored_id(occurrence) for occurrence in item.occurrences}
+        active_direct = tuple(row for row in current if row.occurrence_id in occurrence_ids)
+        direct_ids = {row.interpretation_id for row in active_direct}
+        active_constructed = tuple(
+            row
+            for row in current
+            if row.origin is InterpretationOrigin.CONSTRUCTED
+            and row.operand_interpretation_ids
+            and set(row.operand_interpretation_ids) <= direct_ids
+        )
+        if occurrence_ids <= {row.occurrence_id for row in active_direct}:
+            return (*active_direct, *active_constructed)
         prior = [row for row in stored if row not in current]
         prior_occurrences = {row.occurrence_id for row in prior if row.occurrence_id is not None}
         prior_anchor_keys = {
@@ -389,23 +421,84 @@ def _interpretations(
             for occurrence in repository.get_occurrences(sorted(prior_occurrences))
         }
         recorded_at = repository.store_clock()
+        existing_direct = {row.occurrence_id: row for row in active_direct}
+        first_reservation = True
+
+        def reserve_ids(
+            count: int, existing_rows: Mapping[int | None, Interpretation] = existing_direct
+        ) -> tuple[int, ...]:
+            """Keep existing direct ids while appending a newly located family's rows."""
+            nonlocal first_reservation
+            if not first_reservation:
+                return repository.reserve_interpretation_ids(count)
+            first_reservation = False
+            new_ids = iter(repository.reserve_interpretation_ids(count - len(existing_rows)))
+            reserved: list[int] = []
+            for occurrence in item.occurrences:
+                existing = existing_rows.get(occurrence.occurrence_id)
+                if existing is None:
+                    reserved.append(next(new_ids))
+                else:
+                    assert existing.interpretation_id is not None
+                    reserved.append(existing.interpretation_id)
+            return tuple(reserved)
+
         written = comparative.causes(
             interpret_generation(
                 item.occurrences,
                 scope=scope,
                 prior=prior,
                 prior_anchor_keys=prior_anchor_keys,
-                reserve_ids=repository.reserve_interpretation_ids,
+                reserve_ids=reserve_ids,
                 recorded_at=recorded_at,
             ),
             registered_at=recorded_at,
         )
+        existing_constructions = {
+            (row.construction_rule_id, row.input_digest): row for row in active_constructed
+        }
+        replacements = {
+            row.interpretation_id: existing_constructions[
+                (row.construction_rule_id, row.input_digest)
+            ].interpretation_id
+            for row in written
+            if row.origin is InterpretationOrigin.CONSTRUCTED
+            and (row.construction_rule_id, row.input_digest) in existing_constructions
+        }
+        merged: list[Interpretation] = []
+        additions: list[Interpretation] = []
+        for row in written:
+            existing = (
+                existing_direct.get(row.occurrence_id)
+                if row.origin is InterpretationOrigin.DIRECT
+                else existing_constructions.get((row.construction_rule_id, row.input_digest))
+            )
+            if existing is not None:
+                merged.append(existing)
+                continue
+            row = row.model_copy(
+                update={
+                    "condition_evidence": tuple(
+                        proof.model_copy(
+                            update={
+                                "evidence_interpretation_ids": tuple(
+                                    replacements.get(id_, id_)
+                                    for id_ in proof.evidence_interpretation_ids
+                                )
+                            }
+                        )
+                        for proof in row.condition_evidence
+                    )
+                }
+            )
+            merged.append(row)
+            additions.append(row)
         try:
-            repository.put_interpretations(written)
+            repository.put_interpretations(additions)
         except InterpretationConflictError:
             _LOG.warning("interpretation conflict; retrying", capture_ref_id=capture_ref_id)
             continue
-        return written
+        return tuple(merged)
     raise IngestError(
         _RETRIES_EXHAUSTED.format(capture=capture_ref_id, count=MAX_INTERPRETATION_RETRIES)
     )

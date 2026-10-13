@@ -7,7 +7,6 @@ from the run rules; altered inputs are marked copies under ``tmp_path``.
 
 from __future__ import annotations
 
-import hashlib
 import threading
 from datetime import date
 from decimal import Decimal
@@ -55,7 +54,7 @@ from fundamentals.api.cli import main
 from fundamentals.canon.dictionary import DictionaryRow
 from fundamentals.compare.engine_attempts import RunResolutionError
 from fundamentals.compare.run import ResultRow, RunStatus, SourceValue, VersionContentDriftError
-from fundamentals.compare.run_config import ConfigVersions
+from fundamentals.compare.run_config import ConfigVersions, extractor_pin
 from fundamentals.compare.run_store import STAGE_RESULTS
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import (
@@ -71,7 +70,7 @@ from fundamentals.contracts.comparison import (
     PairKind,
     SourceState,
 )
-from fundamentals.contracts.evidence import AttemptStage, RunMode, VersionPin
+from fundamentals.contracts.evidence import AttemptStage, RunMode
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.evidence.first_party_ingest import IngestError
 from fundamentals.evidence.mapping import load_mapping_set
@@ -102,11 +101,6 @@ Q4_NAMESPACE = MarkedEdit(
 )
 NO_PL_TITLE = PdfRedaction(page=3, row_of="Statement", words=("financial",))
 NO_BS_TITLE = PdfRedaction(page=6, row_of="Statement", words=("Liabilities",))
-
-
-def _pin(version: str) -> VersionPin:
-    """A test extractor pin: the version names the generation, the digest is of the name."""
-    return VersionPin(version=version, content_sha256=hashlib.sha256(version.encode()).hexdigest())
 
 
 def _pdf_state(
@@ -307,7 +301,7 @@ def test_new_pins_over_an_unchanged_capture(runner: Runner, tmp_path: Path) -> N
     root = config_copy(tmp_path)
     edit_yaml(root / "mappings" / "v2.yaml", {"version": "v2"})
     versions = ConfigVersions(mapping_set="v2")
-    pins = {Representation.XBRL: _pin(REEXTRACT)}
+    pins = {Representation.XBRL: extractor_pin(Representation.XBRL, version=REEXTRACT)}
     before = runner.run(config_root=root, versions=versions, extractor_pins=pins)
     revenue = row(runner.results(before.run_id), REVENUE, Q2_QUARTER)
     xbrl = [v for v in revenue.source_values if v.representation is Representation.XBRL][0]
@@ -416,8 +410,8 @@ def test_generations_modes_and_isolation(runner: Runner) -> None:
     ]
     between = runner.now()
     ingest.run(ingest.intake(BOTH), extractor_versions={Representation.PDF: X_PRIME})
-    pinned_x = {Representation.PDF: _pin(X)}
-    pinned_x_prime = {Representation.PDF: _pin(X_PRIME)}
+    pinned_x = {Representation.PDF: extractor_pin(Representation.PDF, version=X)}
+    pinned_x_prime = {Representation.PDF: extractor_pin(Representation.PDF, version=X_PRIME)}
     on_x = runner.run(extractor_pins=pinned_x)
     rows_x = runner.results(on_x.run_id)
     assert _pdf_state(rows_x).state is SourceState.UNAVAILABLE

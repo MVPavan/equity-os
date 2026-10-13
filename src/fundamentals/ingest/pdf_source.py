@@ -148,12 +148,15 @@ def load_pdf(*, source_id: str, path: Path, expected_sha256: str) -> LoadedPdf:
     """
     if not path.is_file():
         raise PdfIntegrityError(f"held PDF not found: {path}")
-    actual_sha256 = compute_file_sha256(path)
+    # The hash and parser must consume the very same read, even if the held pathname
+    # is replaced after verification.
+    body = path.read_bytes()
+    actual_sha256 = hashlib.sha256(body).hexdigest()
     if actual_sha256 != expected_sha256:
         raise PdfIntegrityError(
             f"sha256 mismatch for {path}: expected {expected_sha256}, got {actual_sha256}"
         )
-    document: Any = pymupdf.open(path)  # type: ignore[no-untyped-call]
+    document: Any = pymupdf.open(stream=body, filetype="pdf")  # type: ignore[no-untyped-call]
     try:
         pages = tuple(_extract_page(document, index) for index in range(document.page_count))
         page_count = int(document.page_count)

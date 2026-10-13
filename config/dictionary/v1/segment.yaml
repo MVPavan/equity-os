@@ -32,6 +32,9 @@ rows:
     meaning: "Finance costs in the segment reconciliation. XBRL SegmentFinanceCosts; PDF."
   - canonical_id: segment_unallocable_net
     meaning: "Unallocable expenditure net of unallocable income in the segment reconciliation, as one filed element. XBRL OtherUnallocableExpenditureNetOffUnAllocableIncome. Apar Q2 FY26 (X-Q2 OneD) files 36.72 crore; the PDF (p4) prints two lines, unallocable (32.58) and other elimination (4.11), which sum to 36.69 — a 0.03 crore discrepancy, not an equality. The gap equals the PDF's Q2 share of associates (0.03 loss): X-Q2 segment results 485.15 - finance cost 107.90 - 36.72 = 340.53 = SegmentProfitBeforeTax, which is after associates, while the PDF lines give 340.56 before associates. The XBRL element therefore appears to absorb the associates share as well (inferred from one filing, not proven)."
+  - canonical_id: segment_other_elimination
+    meaning: "Signed other elimination in the segment profit reconciliation. Retained Apar FY26 Q2 results PDF p4 prints '(Less) /Add: Other elimination' separately (4.11 crore deducted in Q2 FY26); it is distinct from segment_unallocable_net."
+    sign_convention: SIGNED_PROFIT_POSITIVE
   - canonical_id: segment_profit_before_tax
     meaning: "Profit before tax per the segment reconciliation (after associates in Apar). XBRL SegmentProfitBeforeTax (340.53 crore = PDF line 9, Q2 FY26); PDF."
     sign_convention: SIGNED_PROFIT_POSITIVE
@@ -71,5 +74,9 @@ rows:
     period_aggregation: NONE
   - canonical_id: segment_liabilities_net
     meaning: "Net segment liabilities. XBRL NetSegmentLiabilities; PDF. Split from the inventory's grouped segment_liabilities_total row."
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: inter_segment_liabilities
+    meaning: "Inter-segment liabilities eliminated from total segment liabilities. Retained Apar FY26 Q2 results PDF p4 prints 'Less:- Inter-segment liabilities' separately (656.59 crore deducted at 30 September 2025); it is distinct from inter_segment_assets."
     period_nature: INSTANT
     period_aggregation: NONE

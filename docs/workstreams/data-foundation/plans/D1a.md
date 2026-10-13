@@ -1841,3 +1841,46 @@ re-review moves to the D1a phase-end review.
 - Fail-closed: missing fiscal-year-end month or basis status, a non-quarter-end period, or not exactly one evidenced
   currency → error, nothing published; opening-balance operands `UNAVAILABLE`; shareholding and deprecated rows
   skipped; dimensioned rows only for evidenced member sets.
+
+## Autonomous Codex build notes (2026-10-13)
+
+- Latest owner activation permits parallel queue/area work with exclusive file ownership and
+  relevant verification batching. Shared interfaces and migrations have one writer; full
+  integration checks run after extractor/configuration edits freeze. The original D1a red proof
+  is absent: no historical `verify.sh gate` PASS is claimed. Closure follows the latest handoff's
+  four quality checks, tracer exit and independent phase reviews; red proofs apply from D1b.
+- PDF attribution without evidenced section context and labelled blank rows without clear
+  heading evidence are `INVALID`, never a neighbouring value or a zero. PDF bytes are hashed and
+  parsed from the same buffer. A changed layout re-resolves current anchors; reuse requires full
+  occurrence payload equality and current operand membership.
+- Capture-only extraction reuse is separate from mapping/layout/package decisions. Mapping-
+  dependent unsupported-schema attempts and layout-dependent location outcomes carry
+  `extraction_context_sha256`; package-specific missing-family attempts are recomputed with
+  honest later store timestamps. Migration `0005` adds this nullable context to attempt identity
+  alongside the server-owned clock cache and nullable evidenced interpretation dimensions.
+- Ingest pins actual extractor content before reuse, including identity verification and PDF
+  buffer loading. Version reuse with changed content is refused. Original migrations `0001`–`0004`
+  remain unchanged; `0005` stays editable only until its first commit.
+- B4 takes the fail-closed branch: dictionary loading refuses `AVERAGE` combined with dimensional
+  aggregation. Nested formulas resolve their own temporal/qualification context and persist
+  constituent child traces before parents. Demonstrated qualification requires real typed
+  five-company evidence and a discriminating fixture; one-company retained cases stay unproven.
+- D1a/D1b runs contain exactly one entity. Scope filters apply to packages, members, attempts and
+  comparatives. Apparent historical cutoffs never create historical possession of retained input.
+- D1a-R1-B7 adds six distinct PDF-evidenced rows (dictionary total 259), preserving folded XBRL
+  meanings and absence for the printed non-current derivative-liability dash. PDF p3 independently
+  supplies total income 5,742.85 crore; all other Apar acceptance figures retain their source values.
+- All 34 original findings and the seven r2 findings were independently approved in
+  [r3 re-review](../reviews/D1a-phase-review-r3.md). A fresh
+  [whole-phase critical review](../reviews/D1a-critical-review.md) found four further content/
+  identity defects; their fixes passed [critical re-review](../reviews/D1a-critical-rereview.md).
+  XBRL dimension axes/members preserve expanded QName identity; foreign namespaces refuse
+  canonical values and cannot become undimensioned totals. Taxonomy/dimension helper bytes are
+  included in extractor pins. Dictionary, formula, applicability, mapping and migration execution
+  consume the exact byte buffers that their hashes describe.
+- Ambiguous unestablished-section fallback is an explicit selector opt-in for the three owner
+  attribution rows. A known unmapped segment-results label cannot invalidate valid segment
+  revenue from a different section. The retained alignment regression passes with all four members.
+- Final stable D1a integration, 2026-10-13: 2,787 passed, eight existing optional skips; Ruff lint
+  and format passed (409 files); strict mypy passed (247 source files). This includes the Apar
+  tracer exit and guarded PostgreSQL persistence/replay. No historical D1a red proof is claimed.

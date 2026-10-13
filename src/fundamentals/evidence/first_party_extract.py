@@ -4,12 +4,11 @@ An invocation reads the member's bytes and checks, before anything is kept, that
 capture is the requested one: the seeded issuer (identity), the package basis, the
 requested period end and the requested accounting framework, each from the capture's own
 declarations. The result is a **pending** generation — one overall ``EXTRACTION`` attempt
-plus any family attempts, and the occurrences when ``COMPLETE`` — that the ingest writes in
-one transaction once structural presence is known, so every attempt of the invocation
-(unlocated-family failures included) shares one ``attempted_at`` and belongs to the
-generation. A generation is reused only for the same capture, extractor version and
-request scope (entity, period end, basis, framework); any other request runs every check
-again. Parser failures of the documented kinds are one overall ``PARSE_FAILED`` attempt.
+plus intrinsic family attempts and occurrences when ``COMPLETE`` — written atomically.
+Unlocated-family failures belong to the assembled package and are recomputed separately.
+A generation is reused only for the same capture, pinned extractor and request scope;
+unsupported-schema decisions also bind the mapping version, and PDF locations bind the
+statement-spec hash. Parser failures are one overall ``PARSE_FAILED`` attempt.
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ from fundamentals.contracts.evidence import (
     RevisionCause,
 )
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.snapshot import canonical_sha256
 from fundamentals.evidence.capture_intake import (
     SURFACE_OF,
     RetainedCaptureBinding,
@@ -91,6 +91,7 @@ class IngestRequest(BaseModel):
         family: StatementFamily | None = None,
         package_id: int | None = None,
         reason: str | None = None,
+        extraction_context_sha256: str | None = None,
     ) -> AcquisitionAttempt:
         """One attempt for one member binding."""
         return AcquisitionAttempt(
@@ -110,6 +111,7 @@ class IngestRequest(BaseModel):
             capture=capture,
             input_sha256=binding.expected_sha256,
             extractor_version=extractor_version,
+            extraction_context_sha256=extraction_context_sha256,
             attempted_at=None,
         )
 
@@ -129,10 +131,14 @@ class MemberGeneration(BaseModel):
     stored: bool
 
     def with_unlocated(
-        self, present: Mapping[StatementFamily, object], request: IngestRequest
+        self,
+        present: Mapping[StatementFamily, object],
+        request: IngestRequest,
+        *,
+        package_id: int | None,
     ) -> MemberGeneration:
-        """A pending PDF generation plus ``PARSE_FAILED`` for each present, unlocated family."""
-        if self.stored or self.binding.representation is not Representation.PDF:
+        """Current package-owned ``PARSE_FAILED`` attempts for its unlocated PDF families."""
+        if self.binding.representation is not Representation.PDF:
             return self
         failures = tuple(
             request.attempt(
@@ -142,17 +148,35 @@ class MemberGeneration(BaseModel):
                 capture=self.member.capture,
                 extractor_version=self.extractor_version,
                 family=family,
+                package_id=package_id,
+                extraction_context_sha256=self.attempts[0].extraction_context_sha256,
                 reason=f"{_NOT_LOCATED}: {family.value}",
             )
             for family in sorted(present)
             if family not in self.pdf_located and family is not StatementFamily.DERIVED
         )
-        return self.model_copy(update={"attempts": (*self.attempts, *failures)})
+        intrinsic = tuple(
+            attempt
+            for attempt in self.attempts
+            if not (attempt.reason or "").startswith(_NOT_LOCATED)
+        )
+        return self.model_copy(update={"attempts": (*intrinsic, *failures)})
 
     def written(self, repository: EvidenceRepository) -> MemberGeneration:
         """The generation stored in one transaction (one shared ``attempted_at``)."""
         if self.stored:
-            return self
+            pending = [attempt for attempt in self.attempts if attempt.attempt_id is None]
+            if not pending:
+                return self
+            written = iter(repository.put_attempts(pending))
+            return self.model_copy(
+                update={
+                    "attempts": tuple(
+                        next(written) if attempt.attempt_id is None else attempt
+                        for attempt in self.attempts
+                    )
+                }
+            )
         occurrences, attempts = repository.put_generation(self.occurrences, self.attempts)
         return self.model_copy(
             update={"occurrences": occurrences, "attempts": attempts, "stored": True}
@@ -171,6 +195,18 @@ class _Read(BaseModel):
     located: frozenset[StatementFamily] = frozenset()
 
 
+def unsupported_schema_context(mapping_set_version: str) -> str:
+    """Identity of a mapping-dependent unsupported-schema decision."""
+    return canonical_sha256({"mapping_set_version": mapping_set_version})
+
+
+def pdf_statement_specs_sha256(specs: Mapping[StatementFamily, StatementPageSpec]) -> str:
+    """Pin the complete statement-location inputs, including declared heading evidence."""
+    return canonical_sha256(
+        {family.value: spec.model_dump(mode="json") for family, spec in sorted(specs.items())}
+    )
+
+
 def extract_member(
     binding: RetainedCaptureBinding,
     member: PackageMember,
@@ -185,6 +221,11 @@ def extract_member(
 ) -> MemberGeneration:
     """Reuse the member's generation for this request, or run its adapter (pending, unwritten)."""
     capture_ref_id = stored_capture(member.capture)
+    pdf_context = None
+    if binding.representation is Representation.PDF:
+        if pdf_specs is None:
+            raise IngestError("a PDF member needs the issuer's PDF statement specs")
+        pdf_context = pdf_statement_specs_sha256(pdf_specs)
     generation = repository.list_generation_attempts(
         capture_ref_id,
         extractor_version,
@@ -193,9 +234,22 @@ def extract_member(
         basis=request.basis,
         framework=request.framework,
     )
+    generation = tuple(
+        attempt
+        for attempt in generation
+        if attempt.extraction_context_sha256
+        == (
+            pdf_context
+            if binding.representation is Representation.PDF
+            else unsupported_schema_context(mapping_set.version)
+            if attempt.outcome is ExtractionOutcome.UNSUPPORTED_SCHEMA
+            else None
+        )
+    )
     overall = [attempt for attempt in generation if attempt.statement_family is None]
     if overall:
         occurrences: tuple[Occurrence, ...] = ()
+        located: frozenset[StatementFamily] | None = None
         if overall[0].outcome is ExtractionOutcome.COMPLETE:
             occurrences = tuple(
                 occurrence
@@ -204,13 +258,42 @@ def extract_member(
                 )
                 if occurrence.native_context.get(CONTEXT_BASIS) == request.basis.value
             )
+            # Schema support is a current mapping decision even when capture-only
+            # occurrences can otherwise be reused.
+            schema = {
+                str(occurrence.native_context["schema_identity"]) for occurrence in occurrences
+            }
+            if (
+                binding.representation is Representation.XBRL
+                and not schema <= mapping_set.supported_schemas
+            ):
+                overall = []
+            if binding.representation is Representation.PDF:
+                assert pdf_specs is not None
+                # Raw occurrences are capture-owned; location decisions are recomputed
+                # from the exact current specs, never inferred from another spec's rows.
+                checked = _read_pdf(
+                    intake.input_anchor.path / binding.relative_path,
+                    binding,
+                    member,
+                    identifiers,
+                    request,
+                    pdf_specs,
+                )
+                if checked.outcome is not ExtractionOutcome.COMPLETE:
+                    raise IngestError("reused PDF generation no longer passes its pinned checks")
+                occurrences = _reuse_pdf_occurrences(
+                    checked.occurrences, occurrences, extractor_version
+                )
+                located = checked.located
+    if overall:
         return MemberGeneration(
             binding=binding,
             member=member,
             extractor_version=extractor_version,
             outcome=overall[0].outcome,
             occurrences=occurrences,
-            pdf_located=_located(occurrences, generation),
+            pdf_located=located if located is not None else _located(occurrences, generation),
             attempts=generation,
             stored=True,
         )
@@ -234,6 +317,13 @@ def extract_member(
             extractor_version=extractor_version,
             family=family,
             reason=reason,
+            extraction_context_sha256=(
+                pdf_context
+                if binding.representation is Representation.PDF
+                else unsupported_schema_context(mapping_set.version)
+                if outcome is ExtractionOutcome.UNSUPPORTED_SCHEMA
+                else None
+            ),
         )
 
     complete = read.outcome is ExtractionOutcome.COMPLETE
@@ -265,6 +355,32 @@ def stored_capture(capture: CaptureReference) -> int:
     return capture.capture_ref_id
 
 
+def _reuse_pdf_occurrences(
+    read: Sequence[Occurrence], stored: Sequence[Occurrence], extractor_version: str
+) -> tuple[Occurrence, ...]:
+    """Reuse only current-location anchors, requiring full payload equality."""
+    by_anchor = {item.anchor_key: item for item in stored}
+    selected = []
+    for item in read:
+        existing = by_anchor.get(item.anchor_key)
+        if existing is None:
+            raise IngestError(f"pinned PDF location has no stored occurrence: {item.anchor_key}")
+        current = item.model_copy(
+            update={
+                "extractor_version": extractor_version,
+                "revision_cause": existing.revision_cause,
+            }
+        )
+        if current.model_dump(exclude={"occurrence_id"}) != existing.model_dump(
+            exclude={"occurrence_id"}
+        ):
+            raise IngestError(
+                f"PDF specs changed occurrence payload at {item.anchor_key}; bump extractor version"
+            )
+        selected.append(existing)
+    return tuple(selected)
+
+
 def _read_xbrl(
     path: Path,
     binding: RetainedCaptureBinding,
@@ -291,9 +407,12 @@ def _read_xbrl(
     )
     if rejected is not None:
         return rejected
-    occurrences = occurrences_from_instance(
-        instance, capture=member.capture, member=member, mapping_set=mapping_set
-    )
+    try:
+        occurrences = occurrences_from_instance(
+            instance, capture=member.capture, member=member, mapping_set=mapping_set
+        )
+    except XbrlParseError as error:
+        return _Read(outcome=ExtractionOutcome.PARSE_FAILED, reason=str(error))
     return _Read(
         outcome=ExtractionOutcome.COMPLETE,
         reason=_DECLARED.format(evidence="; ".join(framework.evidence)),

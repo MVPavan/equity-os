@@ -113,7 +113,8 @@ def apply_migrations(
             recorded: dict[str, str] = {
                 str(name): str(sha) for name, sha in migrator.execute(_SELECT_APPLIED).fetchall()
             }
-        checksums = {path.name: _sha256(path) for path in files}
+        bodies = {path.name: path.read_bytes() for path in files}
+        checksums = {name: hashlib.sha256(body).hexdigest() for name, body in bodies.items()}
         for filename, recorded_sha in recorded.items():
             actual = checksums.get(filename)
             if actual is not None and actual != recorded_sha:
@@ -125,7 +126,7 @@ def apply_migrations(
             if path.name in recorded:
                 continue
             with migrator.transaction():
-                migrator.execute(path.read_bytes())
+                migrator.execute(bodies[path.name])
                 row = migrator.execute(_RECORD_APPLIED, (path.name, checksums[path.name]))
                 fetched = row.fetchone()
                 assert fetched is not None
@@ -151,8 +152,3 @@ def _migration_files(migrations_dir: Path) -> tuple[Path, ...]:
     if misnamed:
         raise MigrationNameError(_BAD_NAME.format(names=", ".join(misnamed)))
     return tuple(files)
-
-
-def _sha256(path: Path) -> str:
-    """Hex SHA-256 of a file's bytes."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()

@@ -46,6 +46,14 @@ from fundamentals.pg.identity_seed import EvidenceInputKind, SettingKey
 _NO_IDENTIFIERS = "entity {entity_id} has no seeded security with ISIN, NSE and BSE listings"
 _AMBIGUOUS_IDENTIFIERS = "entity {entity_id} has {count} seeded securities; identity is ambiguous"
 _UNSTORED = "{what} has no stored id"
+_OCCURRENCE_CONFLICT = (
+    "occurrence {anchor} is already stored (id {occurrence_id}) with another payload; "
+    "refusing to reuse it"
+)
+
+
+class OccurrenceConflictError(RuntimeError):
+    """A stored occurrence of the same capture, extractor and anchor carries another payload."""
 
 
 class InterpretationConflictError(RuntimeError):
@@ -719,7 +727,7 @@ def _insert_occurrences(
         cursor.executemany(
             rows_sql.INSERT_OCCURRENCE, [rows_sql.occurrence_params(item) for item in occurrences]
         )
-    stored: dict[tuple[int, str, str], int] = {}
+    stored: dict[tuple[int, str, str], Occurrence] = {}
     for capture_ref_id, extractor_version in {
         (_stored(item.capture.capture_ref_id, "occurrence capture"), item.extractor_version)
         for item in occurrences
@@ -727,17 +735,26 @@ def _insert_occurrences(
         for row in _rows(
             conn, rows_sql.OCCURRENCES_OF_GENERATION, (capture_ref_id, extractor_version)
         ):
-            stored[(capture_ref_id, extractor_version, row["anchor_key"])] = row["occurrence_id"]
-    return tuple(
-        item.model_copy(
-            update={
-                "occurrence_id": stored[
-                    (item.capture.capture_ref_id or 0, item.extractor_version, item.anchor_key)
-                ]
-            }
-        )
-        for item in occurrences
-    )
+            found = rows_sql.occurrence_of(row)
+            stored[(capture_ref_id, extractor_version, found.anchor_key)] = found
+    written = []
+    for item in occurrences:
+        existing = stored[
+            (item.capture.capture_ref_id or 0, item.extractor_version, item.anchor_key)
+        ]
+        if _payload(existing) != _payload(item):
+            raise OccurrenceConflictError(
+                _OCCURRENCE_CONFLICT.format(
+                    anchor=item.anchor_key, occurrence_id=existing.occurrence_id
+                )
+            )
+        written.append(existing)
+    return tuple(written)
+
+
+def _payload(occurrence: Occurrence) -> dict[str, Any]:
+    """Everything an occurrence says, without its store id."""
+    return occurrence.model_dump(exclude={"occurrence_id"})
 
 
 def _insert_attempt(

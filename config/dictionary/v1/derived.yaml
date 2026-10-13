@@ -99,7 +99,8 @@ rows:
     output_kind: PERCENTAGE
     evidence: 'Inventory 2f opm_pct: Screener "OPM %" = operating profit / revenue x 100, measured 9/9
       (integer rounding); Tijori "Operating Profit Margin" = OP/Sales x 100 (its formula string''s x1000
-      is not literal). Apar Q2 FY26 XBRL: (57,154.2 - (54,022.9 - 1,079.0 - 398.8)) / 57,154.2 = 8.064
+      is not literal). Apar Q2 FY26 XBRL amounts in INR million (PDF p3: 5,715.42 / 5,402.29 /
+      107.90 / 39.88 crore): (57,154.2 - (54,022.9 - 1,079.0 - 398.8)) / 57,154.2 = 8.064
       % (spec Stage 1: OPM 8.06 %).'
 - canonical_id: pbdt_vendor
   value_kind: CURRENCY_AMOUNT

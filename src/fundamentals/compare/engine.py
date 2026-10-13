@@ -5,8 +5,10 @@ so execution and replay share this code. The only side effect is through the inj
 store (the repository when a run executes; a read-only index of the run's own traces when it
 replays). Order, per (entity, basis, period end):
 
-1. Context before any value: the package per statement family, the fiscal calendar, the basis
-   status and segment evidence decide applicability per row (``decide_applicability``).
+1. Context before any value: the package per statement family (a formula row's: its leaf
+   operands' families), the fiscal calendar, the basis status and segment evidence decide
+   applicability per row (``decide_applicability``). Only members on the scope's requested
+   sources (first-party surfaces) are read.
 2. Attempt-to-state before presence: the latest available generation under the pinned
    extractor (or a failed acquisition with no member) decides a representation and family.
 3. Selection under the pins (Task 6), alignment-scoped tiers and derived evaluation (Task 7).
@@ -19,7 +21,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date
-from functools import partial
 
 from fundamentals.canon.applicability import (
     REPORTING_KINDS,
@@ -39,14 +40,23 @@ from fundamentals.compare.engine_attempts import (
     bare_selection,
     fiscal_periods,
     nine_months,
+    pdf_contexts_conflict,
 )
+from fundamentals.compare.engine_context import (
+    basis_status,
+    fiscal_year_end,
+    segment_bases,
+    segment_members,
+)
+from fundamentals.compare.engine_formula import FormulaRows
 from fundamentals.compare.engine_rows import (
+    MONETARY,
+    REPRESENTATIONS,
     Cell,
     Side,
     as_counterpart,
     calculated_side,
     not_applicable_row,
-    output_context,
     pair_record,
     pairable,
     ref,
@@ -63,8 +73,12 @@ from fundamentals.compare.run_models import (
     SourceRole,
     row_id,
 )
-from fundamentals.compare.tables import corroboration_status, extraction_status, pair_outcome
-from fundamentals.contracts.basis_status import BasisStatus
+from fundamentals.compare.tables import (
+    ExtractionResult,
+    corroboration_status,
+    extraction_status,
+    pair_outcome,
+)
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
@@ -90,33 +104,28 @@ from fundamentals.contracts.evidence import (
     InterpretationStatus,
     KeySelection,
     Occurrence,
+    PackageMember,
     RunMode,
 )
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.evidence.derived import TraceStore, evaluate_derived, operand_value
-from fundamentals.evidence.interpret import SEGMENT_AXIS
-from fundamentals.evidence.mapping import CONTEXT_BASIS
+from fundamentals.evidence.derived import TraceStore, operand_value
 from fundamentals.evidence.repository import SegmentMemberRecord
 from fundamentals.evidence.selection import (
     differing_restatement,
     period_end,
-    select_interpretation,
     select_key,
     select_package,
 )
-from fundamentals.pg.identity_seed import SettingKey
+
+__all__ = ["REPRESENTATIONS", "RUN_FAMILY", "RUN_FRAMEWORK", "RunEngine"]
 
 RUN_FRAMEWORK = AccountingFramework.IND_AS
 RUN_FAMILY = FilingFamily.FINANCIAL_RESULTS
-REPRESENTATIONS = (Representation.XBRL, Representation.PDF)
-# Shareholding rows belong to the shareholding filing family, which no D1a run reads.
 _OUTSIDE_RESULTS = frozenset({StatementFamily.SHAREHOLDING})
-_MONETARY = frozenset({ValueKind.CURRENCY_AMOUNT, ValueKind.PER_SHARE_AMOUNT})
-# D1a v1 formulas read no opening balance; an opening or average operand fails closed.
 OPENING_NOT_RESOLVED = "OPENING_NOT_RESOLVED"
-_NO_FISCAL_YEAR_END = "entity {entity_id} has no fiscal-year-end month recorded by the cutoff"
-_NO_BASIS_STATUS = "entity {entity_id} has no basis status recorded by the cutoff"
+SOURCE_NOT_REQUESTED = "SOURCE_NOT_REQUESTED"
+_KINDS = "statement families {families} come from packages of reporting kinds {kinds}"
 _CURRENCY = "entity {entity_id} period {period_end}: evidenced reporting currencies {found}"
 _DUPLICATE_ROWS = "row ids repeat within one run: {ids}"
 
@@ -141,6 +150,7 @@ class RunEngine:
         self._cutoff = request.cutoff
         self._boundary = EligibilityBoundary.at(request.cutoff)
         self._triple = request.pinned.triple()
+        self._surfaces = frozenset(request.scope.sources)
         self._rows = {row.canonical_id: row for row in config.dictionary.rows}
         self._occurrences: dict[int, Occurrence] = {}
         self._witness_occurrence: dict[int, Occurrence] = {}
@@ -153,22 +163,17 @@ class RunEngine:
                 if held is None or (held.occurrence_id or 0) > occurrence.occurrence_id:
                     self._witness_occurrence[capture] = occurrence
         self._by_capture: dict[int, list[Interpretation]] = defaultdict(list)
-        self._by_capture_digest: dict[tuple[int, str], list[Interpretation]] = defaultdict(list)
         self._by_digest: dict[str, list[Interpretation]] = defaultdict(list)
         for item in sorted(inputs.interpretations, key=lambda row: row.interpretation_id or 0):
             self._by_capture[item.capture_ref_id].append(item)
             if item.key is not None:
                 digest = item.key.digest()
-                self._by_capture_digest[(item.capture_ref_id, digest)].append(item)
                 self._by_digest[digest].append(item)
-        self._witness_interpretation = {
-            capture: next((item for item in items if self._current_triple(item)), None)
-            for capture, items in self._by_capture.items()
-        }
         self._member_of: dict[int, list[FilingPackage]] = defaultdict(list)
         for package in inputs.packages:
             for member in package.members.values():
-                self._member_of[member.capture.capture_ref_id or 0].append(package)
+                if member.capture.surface in self._surfaces:
+                    self._member_of[member.capture.capture_ref_id or 0].append(package)
         self._proofs = inputs.proofs
         self._attempt_states = AttemptStates(
             inputs.attempts,
@@ -176,15 +181,24 @@ class RunEngine:
             cutoff=request.cutoff,
             mode=request.mode,
             triple=self._triple,
+            surfaces=self._surfaces,
         )
         self._package_cache: dict[tuple[int, Basis, date, StatementFamily], FilingPackage | None]
         self._package_cache = {}
         self._cells: dict[Key, Cell] = {}
         self._reported_sides: dict[str, dict[Representation, Side]] = {}
+        self._formulas = FormulaRows(self, config=config, traces=traces, proofs=inputs.proofs)
         self.selected_package_ids: set[int] = set()
-        self.bound_segment_member_ids: set[int] = set()
 
-    # --- public ------------------------------------------------------------------------
+    @property
+    def bound_segment_member_ids(self) -> set[int]:
+        """Segment-member records an entity-bound aggregation bound."""
+        return self._formulas.bound_member_ids
+
+    @property
+    def selected_condition_ids(self) -> set[int]:
+        """Pinned interpretations consulted for formula qualification conditions."""
+        return self._formulas.selected_condition_ids
 
     def rows(self) -> tuple[ResultRow, ...]:
         """Every result row of the request, sorted by row id."""
@@ -208,13 +222,13 @@ class RunEngine:
             for row in self._result_rows():
                 if row.formula is not None:
                     continue
-                package = self._package(entity_id, basis, end, row.family)
+                package = self.package(entity_id, basis, end, row.family)
                 if package is None or package.package_id is None:
                     continue
                 entry = found.setdefault(package.package_id, (package, {}))
                 for key in self._keys(row, entity_id, basis, end, periods, currency):
                     for representation in REPRESENTATIONS:
-                        selection = self._cell(key, representation).selection
+                        selection = self.cell(key, representation).selection
                         entry[1][(key.digest(), representation)] = selection
         return [found[package_id] for package_id in sorted(found)]
 
@@ -233,8 +247,6 @@ class RunEngine:
                         nine = nine_months(periods)
                         found.add(key.model_copy(update={"period": nine}).digest())
         return found
-
-    # --- groups and keys ------------------------------------------------------------------
 
     def _groups(self) -> Iterable[tuple[int, Basis, date]]:
         """Every (entity, basis, period end) of the scope."""
@@ -255,13 +267,16 @@ class RunEngine:
         fiscal_month = self._fiscal_year_end(entity_id)
         periods = fiscal_periods(end, fiscal_month)
         currency = self._currency(entity_id, basis, end)
-        contexts: dict[StatementFamily, ApplicabilityContext] = {}
+        contexts: dict[frozenset[StatementFamily], ApplicabilityContext] = {}
         rows: list[ResultRow] = []
         for row in self._result_rows():
-            if row.family not in contexts:
-                contexts[row.family] = self._context(entity_id, basis, end, row.family, periods)
+            families = (
+                frozenset({row.family}) if row.formula is None else self._formulas.families(row)
+            )
+            if families not in contexts:
+                contexts[families] = self._context(entity_id, basis, end, families, periods)
             for key in self._keys(row, entity_id, basis, end, periods, currency):
-                decision = decide_applicability(row, contexts[row.family])
+                decision = decide_applicability(row, contexts[families])
                 if row.formula is not None:
                     rows.append(self._derived_row(row, key, decision, fiscal_month, currency))
                     continue
@@ -299,7 +314,7 @@ class RunEngine:
                         period=period,
                         basis=basis,
                         framework=RUN_FRAMEWORK,
-                        currency=currency if row.value_kind in _MONETARY else None,
+                        currency=currency if row.value_kind in MONETARY else None,
                         value_kind=row.value_kind,
                         dimensions=dimensions,
                     )
@@ -316,18 +331,18 @@ class RunEngine:
         """
         found: set[DimensionSet] = set()
         if row.formula is None:
-            package = self._package(entity_id, basis, end, row.family)
+            package = self.package(entity_id, basis, end, row.family)
             for representation in REPRESENTATIONS:
                 for item in self._member_interpretations(package, representation):
-                    key = item.key
                     if (
-                        key is not None
-                        and key.canonical_id == row.canonical_id
-                        and key.period == period
-                        and key.basis is basis
-                        and key.dimensions.pairs
+                        self._current_triple(item)
+                        and item.canonical_id == row.canonical_id
+                        and item.period == period
+                        and item.basis is basis
+                        and item.dimensions is not None
+                        and item.dimensions.pairs
                     ):
-                        found.add(key.dimensions)
+                        found.add(item.dimensions)
             return sorted(found, key=lambda dimensions: dimensions.pairs)
         for operand in row.formula.operands:
             if operand.temporal_role in (TemporalRole.OPENING, TemporalRole.AVERAGE):
@@ -348,87 +363,56 @@ class RunEngine:
                 found.add(dimensions)
         return sorted(found, key=lambda dimensions: dimensions.pairs)
 
-    # --- context ----------------------------------------------------------------------
-
     def _context(
         self,
         entity_id: int,
         basis: Basis,
         end: date,
-        family: StatementFamily,
+        families: frozenset[StatementFamily],
         periods: tuple[PeriodInterval, ...],
     ) -> ApplicabilityContext:
-        """What is known about the family's filing before any value is read."""
-        package = self._package(entity_id, basis, end, family)
+        """What the families' selected packages tell before any value is read."""
+        selected = (self.package(entity_id, basis, end, family) for family in sorted(families))
+        packages = [package for package in selected if package is not None]
         fiscal_month = self._fiscal_year_end(entity_id)
-        kind = package.reporting_kind if package is not None else periods[-1].kind(fiscal_month)
+        kinds = sorted({package.reporting_kind for package in packages})
+        if len(kinds) > 1:
+            raise RunResolutionError(_KINDS.format(families=sorted(families), kinds=kinds))
+        kind = kinds[0] if kinds else periods[-1].kind(fiscal_month)
         if kind not in REPORTING_KINDS:
             raise RunResolutionError(f"package reporting kind {kind} is not a reporting kind")
         disclosed = {
             item.key.canonical_id
+            for package in packages
             for representation in REPRESENTATIONS
             for item in self._member_interpretations(package, representation)
             if item.key is not None
             and item.status is InterpretationStatus.MAPPED
             and self._current_triple(item)
         }
+        present: set[StatementFamily] = set()
+        for package in packages:
+            present.update(package.statements_present)
         return ApplicabilityContext(
             regime=ReportingRegime.IN_LODR,
             document_type=DocumentType.FINANCIAL_RESULTS,
-            statements_present=package.statements_present if package else frozenset(),
+            statements_present=frozenset(present),
             period_kind=kind,
             requested_basis=basis,
-            entity_basis_status=self._basis_status(entity_id),
-            evidenced_segment_bases=self._segment_bases(entity_id),
+            entity_basis_status=basis_status(self._inputs.basis_statuses, entity_id, self._cutoff),
+            evidenced_segment_bases=segment_bases(
+                self.segment_members_of(entity_id), self._occurrences
+            ),
             disclosed_rows=frozenset(disclosed),
         )
 
     def _fiscal_year_end(self, entity_id: int) -> int:
         """The fiscal-year-end month recorded latest by the cutoff."""
-        records = [
-            record
-            for record in self._inputs.settings
-            if record.entity_id == entity_id
-            and record.setting_key is SettingKey.FISCAL_YEAR_END_MONTH
-            and record.recorded_at <= self._cutoff
-        ]
-        if not records:
-            raise RunResolutionError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
-        return int(max(records, key=lambda record: (record.recorded_at, record.id)).value_text)
+        return fiscal_year_end(self._inputs.settings, entity_id, self._cutoff)
 
-    def _basis_status(self, entity_id: int) -> BasisStatus:
-        """The basis status recorded latest by the cutoff."""
-        records = [
-            record
-            for record in self._inputs.basis_statuses
-            if record.entity_id == entity_id and record.recorded_at <= self._cutoff
-        ]
-        if not records:
-            raise RunResolutionError(_NO_BASIS_STATUS.format(entity_id=entity_id))
-        return max(records, key=lambda record: (record.recorded_at, record.id)).basis_status
-
-    def _segment_members(self, entity_id: int) -> tuple[SegmentMemberRecord, ...]:
+    def segment_members_of(self, entity_id: int) -> tuple[SegmentMemberRecord, ...]:
         """The entity's segment members recorded by the cutoff."""
-        return tuple(
-            record
-            for record in self._inputs.segment_members
-            if record.entity_id == entity_id
-            and record.axis == SEGMENT_AXIS
-            and record.recorded_at <= self._cutoff
-        )
-
-    def _segment_bases(self, entity_id: int) -> frozenset[Basis]:
-        """Bases on which the entity's segment members are evidenced by segment-note facts."""
-        bases = set()
-        for record in self._segment_members(entity_id):
-            for occurrence_id in record.evidence_occurrence_ids:
-                occurrence = self._occurrences.get(occurrence_id)
-                stated = (
-                    None if occurrence is None else occurrence.native_context.get(CONTEXT_BASIS)
-                )
-                if stated in {basis.value for basis in Basis}:
-                    bases.add(Basis(str(stated)))
-        return frozenset(bases)
+        return segment_members(self._inputs.segment_members, entity_id, self._cutoff)
 
     def _currency(self, entity_id: int, basis: Basis, end: date) -> str:
         """The one reporting currency the eligible packages' monetary lines evidence."""
@@ -437,6 +421,7 @@ class RunEngine:
             for package in self._inputs.packages
             if self._in_group(package, entity_id, basis, end)
             for member in package.members.values()
+            if member.capture.surface in self._surfaces
             for item in self._by_capture.get(member.capture.capture_ref_id or 0, ())
             if item.key is not None
             and item.key.value_kind is ValueKind.CURRENCY_AMOUNT
@@ -460,14 +445,21 @@ class RunEngine:
             and package.eligible(self._boundary)
         )
 
-    def _package(
+    def package(
         self, entity_id: int, basis: Basis, end: date, family: StatementFamily
     ) -> FilingPackage | None:
         """The package supplying one statement family for one period end (Task 6)."""
         cache_key = (entity_id, basis, end, family)
         if cache_key not in self._package_cache:
             package = select_package(
-                self._inputs.packages,
+                [
+                    candidate
+                    for candidate in self._inputs.packages
+                    if any(
+                        member.capture.surface in self._surfaces
+                        for member in candidate.members.values()
+                    )
+                ],
                 entity_id=entity_id,
                 family=RUN_FAMILY,
                 statement_family=family,
@@ -481,11 +473,18 @@ class RunEngine:
                 self.selected_package_ids.add(package.package_id)
         return self._package_cache[cache_key]
 
-    def _package_witness(
+    def member(
+        self, package: FilingPackage | None, representation: Representation
+    ) -> PackageMember | None:
+        """A package's member for one representation, if it is on a requested source."""
+        found = None if package is None else package.members.get(representation)
+        return found if found is not None and found.capture.surface in self._surfaces else None
+
+    def witness(
         self, package: FilingPackage | None, representation: Representation
     ) -> Occurrence | None:
         """The member capture's witness occurrence under the pinned extractor, if any."""
-        member = None if package is None else package.members.get(representation)
+        member = self.member(package, representation)
         if member is None:
             return None
         return self._witness_occurrence.get(member.capture.capture_ref_id or 0)
@@ -494,7 +493,7 @@ class RunEngine:
         self, package: FilingPackage | None, representation: Representation
     ) -> list[Interpretation]:
         """Every loaded interpretation of a package member capture."""
-        member = None if package is None else package.members.get(representation)
+        member = self.member(package, representation)
         if member is None:
             return []
         return self._by_capture.get(member.capture.capture_ref_id or 0, [])
@@ -508,46 +507,49 @@ class RunEngine:
             and (self._request.mode is RunMode.RETROSPECTIVE or item.recorded_at <= self._cutoff)
         )
 
-    # --- cells --------------------------------------------------------------------------
-
-    def _cell(self, key: MeasurementKey, representation: Representation) -> Cell:
+    def cell(self, key: MeasurementKey, representation: Representation) -> Cell:
         """One key's state in one representation: attempt-to-state first, then selection."""
         cache_key = (key.digest(), representation)
         if cache_key in self._cells:
             return self._cells[cache_key]
         end = period_end(key.period)
         family = self._rows[key.canonical_id].family
-        package = self._package(key.entity_id, key.basis, end, family)
+        package = self.package(key.entity_id, key.basis, end, family)
         decided = self._attempt_states.state(key, representation, family, package)
         if decided is None:
-            member = None if package is None else package.members.get(representation)
-            capture = None if member is None else (member.capture.capture_ref_id or 0)
-            witness_occurrence = None if capture is None else self._witness_occurrence.get(capture)
-            witness = None if capture is None else self._witness_interpretation.get(capture)
-            candidates = (
-                []
-                if capture is None
-                else list(self._by_capture_digest.get((capture, key.digest()), []))
-            )
-            if witness is not None and witness not in candidates:
-                candidates.append(witness)
-            decided = Cell(
-                selection=select_key(
-                    key,
-                    representation,
-                    package=package,
-                    occurrences=() if witness_occurrence is None else (witness_occurrence,),
-                    interpretations=candidates,
-                    boundary=self._boundary,
-                    mode=self._request.mode,
-                    pinned=self._triple,
-                ),
-                attempt_id=None,
-            )
+            decided = Cell(selection=self._select(key, representation, package), attempt_id=None)
         self._cells[cache_key] = decided
         return decided
 
-    def _resolve(
+    def _select(
+        self, key: MeasurementKey, representation: Representation, package: FilingPackage | None
+    ) -> KeySelection:
+        """Selection under the pins; a member on an unrequested source is never read."""
+        member = self.member(package, representation)
+        if member is None and package is not None and representation in package.members:
+            return bare_selection(
+                key,
+                representation,
+                SourceState.NO_VALUE,
+                package=package,
+                reason=SOURCE_NOT_REQUESTED,
+            )
+        capture = None if member is None else (member.capture.capture_ref_id or 0)
+        witness_occurrence = None if capture is None else self._witness_occurrence.get(capture)
+        # Selection needs full capture history for cross-key revisions and partial INVALID keys.
+        candidates = [] if capture is None else self._by_capture.get(capture, [])
+        return select_key(
+            key,
+            representation,
+            package=package,
+            occurrences=() if witness_occurrence is None else (witness_occurrence,),
+            interpretations=candidates,
+            boundary=self._boundary,
+            mode=self._request.mode,
+            pinned=self._triple,
+        )
+
+    def resolve(
         self, key: MeasurementKey, role: TemporalRole, *, representation: Representation
     ) -> KeySelection:
         """A derived operand's selection; opening balances fail closed in D1a."""
@@ -555,7 +557,7 @@ class RunEngine:
             return bare_selection(
                 key, representation, SourceState.UNAVAILABLE, reason=OPENING_NOT_RESOLVED
             )
-        return self._cell(key, representation).selection
+        return self.cell(key, representation).selection
 
     def _comparatives(self, key: MeasurementKey) -> list[Interpretation]:
         """The current comparative of this key in each eligible other-period package."""
@@ -573,21 +575,41 @@ class RunEngine:
                 by_capture[item.capture_ref_id].append(item)
         found = []
         for capture in sorted(by_capture):
-            state, chosen, _ = select_interpretation(
-                by_capture[capture],
+            representation = by_capture[capture][0].representation
+            if representation is Representation.PDF and pdf_contexts_conflict(
+                self._inputs.attempts,
+                capture_ref_id=capture,
+                cutoff=self._cutoff,
+                mode=self._request.mode,
+                extractor=self._triple.extractor(representation),
+            ):
+                continue
+            package = next(
+                package
+                for package in self._member_of[capture]
+                if package.reporting_period_end != end
+                and package.entity_id == key.entity_id
+                and package.basis is key.basis
+                and package.eligible(self._boundary)
+            )
+            witness = self._witness_occurrence.get(capture)
+            selected = select_key(
+                key,
+                representation,
+                package=package,
+                occurrences=() if witness is None else (witness,),
+                interpretations=self._by_capture[capture],
                 boundary=self._boundary,
                 mode=self._request.mode,
                 pinned=self._triple,
             )
-            if state is SourceState.VALUE and chosen is not None:
-                found.append(chosen)
+            if selected.state is SourceState.VALUE and selected.interpretation is not None:
+                found.append(selected.interpretation)
         return found
 
     def _surfaced(self, cell: Cell) -> tuple[int, ...]:
         """Comparatives whose interval misses the selected interval (Task 6)."""
         return differing_restatement(cell.selection, self._comparatives(cell.selection.key))
-
-    # --- rows ---------------------------------------------------------------------------
 
     def _reported_row(
         self, row: DictionaryRow, key: MeasurementKey, decision: ApplicabilityDecision
@@ -597,9 +619,9 @@ class RunEngine:
             return not_applicable_row(
                 key, ValueIdentity.REPORTED, decision, self._config.dictionary.version
             )
-        package = self._package(key.entity_id, key.basis, period_end(key.period), row.family)
+        package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
         package_id = None if package is None else package.package_id
-        cells = {rep: self._cell(key, rep) for rep in REPRESENTATIONS}
+        cells = {rep: self.cell(key, rep) for rep in REPRESENTATIONS}
         sides = {
             rep: selected_side(cells[rep], rep, proofs=self._proofs, package_id=package_id)
             for rep in REPRESENTATIONS
@@ -621,40 +643,15 @@ class RunEngine:
             return not_applicable_row(
                 key, ValueIdentity.DERIVED, decision, self._config.dictionary.version
             )
-        end = period_end(key.period)
-        package = self._package(key.entity_id, key.basis, end, row.family)
-        sides = {}
-        for rep in REPRESENTATIONS:
-            evaluated = evaluate_derived(
-                row,
-                key,
-                representation=rep,
-                resolve=partial(self._resolve, representation=rep),
-                proofs=self._proofs,
-                qualification=output_context(
-                    row,
-                    key,
-                    package.members.get(rep) if package is not None else None,
-                    representation=rep,
-                    witness=self._package_witness(package, rep),
-                    interpretations=self._member_interpretations(package, rep),
-                    fiscal_month=fiscal_month,
-                ),
-                policy=self._config.rounding,
-                repository=self._traces,
-                dictionary=self._config.dictionary,
-                reporting_currency=currency,
-                segment_members=self._segment_members(key.entity_id),
-            )
-            self.bound_segment_member_ids.update(evaluated.bound_member_ids)
-            sides[rep] = calculated_side(
-                evaluated.result,
-                key=key,
-                representation=rep,
-                trace_id=evaluated.trace_id,
-                package_id=None if package is None else package.package_id,
-            )
-        return self._compared(key, ValueIdentity.DERIVED, decision, sides, surfaced=[])
+        evaluated = self._formulas.evaluate(row, key, fiscal_month=fiscal_month, currency=currency)
+        return self._compared(
+            key,
+            ValueIdentity.DERIVED,
+            decision,
+            evaluated.sides,
+            surfaced=[],
+            extraction=evaluated.extraction,
+        )
 
     def _derives_q4(
         self,
@@ -673,7 +670,7 @@ class RunEngine:
             or row.value_kind is not ValueKind.CURRENCY_AMOUNT
         ):
             return False
-        package = self._package(key.entity_id, key.basis, period_end(key.period), row.family)
+        package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
         return package is not None and package.reporting_kind is PeriodKind.YEAR
 
     def _q4_row(
@@ -686,13 +683,13 @@ class RunEngine:
         """Q4 derived from the FY and the same fiscal year's 9M, paired with the reported Q4."""
         year = periods[1]
         nine = nine_months(periods)
-        package = self._package(key.entity_id, key.basis, period_end(key.period), row.family)
+        package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
         sides: dict[Representation, Side] = {}
         surfaced: set[int] = set()
         for rep in REPRESENTATIONS:
             operands = []
             for period in (year, nine):
-                cell = self._cell(key.model_copy(update={"period": period}), rep)
+                cell = self.cell(key.model_copy(update={"period": period}), rep)
                 differing = self._surfaced(cell)
                 surfaced.update(differing)
                 operands.append(
@@ -754,16 +751,18 @@ class RunEngine:
         sides: dict[Representation, Side],
         *,
         surfaced: Iterable[int],
+        extraction: ExtractionResult | None = None,
     ) -> ResultRow:
-        """Extraction and corroboration over an applicable row's two first-party sides."""
+        """Extraction (unless already decided) and corroboration over the two sides."""
         xbrl, pdf = sides[Representation.XBRL].comparison, sides[Representation.PDF].comparison
-        extraction = extraction_status(
-            family_has_pair=True,
-            xbrl=xbrl,
-            pdf=pdf,
-            definitions=self._config.definition_set,
-            policy=self._config.comparison_policy,
-        )
+        if extraction is None:
+            extraction = extraction_status(
+                family_has_pair=True,
+                xbrl=xbrl,
+                pdf=pdf,
+                definitions=self._config.definition_set,
+                policy=self._config.comparison_policy,
+            )
         corroboration, reason = corroboration_status(
             applicability=decision.status, first_party=representative(xbrl, pdf)
         )

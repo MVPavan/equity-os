@@ -36,6 +36,7 @@ from fundamentals.contracts.observation import (
     Scope,
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.extract.xbrl_dimensions import collect_dimensions
 
 # --- XBRL namespaces (fixed for the in-bse-fin 2020-03-31 taxonomy) -----------
 
@@ -45,8 +46,9 @@ FIN_NAMESPACE = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"
 FIN_PREFIX = "in-bse-fin"
 REGISTRY_VERSION = "in-bse-fin/2020-03-31"
 
+NS_ISO4217 = "http://www.xbrl.org/2003/iso4217"
+
 _XBRLI = f"{{{NS_XBRLI}}}"
-_XBRLDI = f"{{{NS_XBRLDI}}}"
 
 # --- Domain constants ---------------------------------------------------------
 
@@ -106,6 +108,8 @@ SHARES_MEASURE_MARKER = "shares"
 PURE_MEASURE = "xbrli:pure"
 SHARES_MEASURE = "xbrli:shares"
 DIVIDE_SEPARATOR = "/"
+_CANONICAL_MEASURE_PREFIX = {NS_ISO4217: "iso4217", NS_XBRLI: "xbrli"}
+_PERIOD_TAGS = ("instant", "startDate", "endDate")
 # XBRL allows decimals="INF"; represent it with a large finite precision marker.
 INF_DECIMALS = 15
 
@@ -155,71 +159,57 @@ class _XbrlContext(BaseModel):
     period_end: date | None = None
     period_instant: date | None = None
     dimensions: tuple[tuple[str, str], ...] = ()
-
-
-def _collect_dimensions(container: Any) -> list[tuple[str, str]]:
-    """Read explicit and typed dimension members from a segment/scenario container."""
-    dimensions: list[tuple[str, str]] = []
-    if container is None:
-        return dimensions
-    for member in container.findall(f"{_XBRLDI}explicitMember"):
-        axis = member.get("dimension")
-        if axis is not None:
-            dimensions.append((axis, (member.text or "").strip()))
-    for member in container.findall(f"{_XBRLDI}typedMember"):
-        axis = member.get("dimension")
-        if axis is not None:
-            inner = "".join(part.strip() for part in member.itertext() if part.strip())
-            dimensions.append((axis, f"typed:{inner}"))
-    return dimensions
+    dimension_qnames: tuple[tuple[str, str], ...] = ()
 
 
 def _parse_contexts(root: Any) -> dict[str, _XbrlContext]:
-    """Resolve every ``xbrli:context`` into a typed record keyed by id."""
+    """Resolve every ``xbrli:context`` by id; a malformed one raises :class:`XbrlParseError`."""
     contexts: dict[str, _XbrlContext] = {}
     for element in root.findall(f"{_XBRLI}context"):
         context_id = element.get("id")
         if context_id is None:
             continue
         entity = element.find(f"{_XBRLI}entity")
-        identifier = entity.find(f"{_XBRLI}identifier")
+        identifier = None if entity is None else entity.find(f"{_XBRLI}identifier")
+        scheme = None if identifier is None else identifier.get("scheme")
         period = element.find(f"{_XBRLI}period")
-
-        start = period.find(f"{_XBRLI}startDate")
-        end = period.find(f"{_XBRLI}endDate")
-        instant = period.find(f"{_XBRLI}instant")
-        if instant is not None:
-            period_type = PeriodType.INSTANT
-            period_instant: date | None = date.fromisoformat(instant.text.strip())
-            period_start: date | None = None
-            period_end: date | None = None
-        elif start is not None and end is not None:
-            period_type = PeriodType.DURATION
-            period_start = date.fromisoformat(start.text.strip())
-            period_end = date.fromisoformat(end.text.strip())
-            period_instant = None
-        else:
-            raise XbrlParseError(f"context {context_id!r} has no resolvable period")
+        instant, start, end = (_context_date(period, tag) for tag in _PERIOD_TAGS)
+        if identifier is None or not scheme or (instant is None and (start is None or end is None)):
+            raise XbrlParseError(f"context {context_id!r} has no entity scheme or period")
+        period_type = PeriodType.INSTANT if instant is not None else PeriodType.DURATION
 
         dimensions: list[tuple[str, str]] = []
+        dimension_qnames: list[tuple[str, str]] = []
         # Dimensions can live under entity/segment OR context/scenario; a segment
         # fact hidden under scenario must NOT appear dimension-free (and thus
         # eligible as the consolidated total). Typed members are captured too, so
         # an unsupported dimensional construct is never treated as undimensioned.
-        dimensions.extend(_collect_dimensions(entity.find(f"{_XBRLI}segment")))
-        dimensions.extend(_collect_dimensions(element.find(f"{_XBRLI}scenario")))
+        for container in (entity.find(f"{_XBRLI}segment"), element.find(f"{_XBRLI}scenario")):
+            try:
+                lexical, resolved = collect_dimensions(container)
+            except ValueError as error:
+                raise XbrlParseError(str(error)) from error
+            dimensions.extend(lexical)
+            dimension_qnames.extend(resolved)
 
         contexts[context_id] = _XbrlContext(
             context_id=context_id,
-            entity_scheme=identifier.get("scheme"),
+            entity_scheme=scheme,
             entity_id=(identifier.text or "").strip(),
             period_type=period_type,
-            period_start=period_start,
-            period_end=period_end,
-            period_instant=period_instant,
+            period_start=None if instant is not None else start,
+            period_end=None if instant is not None else end,
+            period_instant=instant,
             dimensions=tuple(dimensions),
+            dimension_qnames=tuple(dimension_qnames),
         )
     return contexts
+
+
+def _context_date(period: Any, tag: str) -> date | None:
+    """A period child's date, ``None`` when absent (an unreadable one raises ValueError)."""
+    node = None if period is None else period.find(f"{_XBRLI}{tag}")
+    return None if node is None else date.fromisoformat((node.text or "").strip())
 
 
 def _reporting_dates(root: Any, tag: str) -> dict[str, date]:
@@ -276,7 +266,7 @@ def _parse_units(root: Any) -> dict[str, str]:
     """Map each ``xbrli:unit`` id to a normalized measure string.
 
     A simple monetary unit resolves to e.g. ``"iso4217:INR"``; a per-share unit
-    resolves to ``"iso4217:INR/xbrli:shares"``.
+    resolves to ``"iso4217:INR/xbrli:shares"`` (see :func:`_measure_qname`).
     """
     units: dict[str, str] = {}
     for element in root.findall(f"{_XBRLI}unit"):
@@ -285,16 +275,27 @@ def _parse_units(root: Any) -> dict[str, str]:
             continue
         measure = element.find(f"{_XBRLI}measure")
         if measure is not None:
-            units[unit_id] = (measure.text or "").strip()
+            units[unit_id] = _measure_qname(measure, unit_id)
             continue
         divide = element.find(f"{_XBRLI}divide")
         if divide is not None:
             numerator = divide.find(f"{_XBRLI}unitNumerator/{_XBRLI}measure")
             denominator = divide.find(f"{_XBRLI}unitDenominator/{_XBRLI}measure")
-            num_text = (numerator.text or "").strip() if numerator is not None else ""
-            den_text = (denominator.text or "").strip() if denominator is not None else ""
+            num_text = "" if numerator is None else _measure_qname(numerator, unit_id)
+            den_text = "" if denominator is None else _measure_qname(denominator, unit_id)
             units[unit_id] = f"{num_text}/{den_text}"
     return units
+
+
+def _measure_qname(measure: Any, unit_id: str) -> str:
+    """``iso4217:``/``xbrli:`` only for those namespaces' measures, else ``{uri}local``."""
+    text = (measure.text or "").strip()
+    prefix, _, local = text.rpartition(":")
+    namespace = measure.nsmap.get(prefix or None)
+    if namespace is None:
+        raise XbrlParseError(f"unit {unit_id!r} measure {text!r} has an unbound prefix")
+    canonical = _CANONICAL_MEASURE_PREFIX.get(namespace)
+    return f"{canonical}:{local}" if canonical is not None else f"{{{namespace}}}{local}"
 
 
 def _detect_taxonomy(root: Any, taxonomies: tuple[TaxonomySpec, ...]) -> TaxonomySpec:
@@ -666,6 +667,7 @@ class RawXbrlFact(BaseModel):
     period: PeriodInterval
     period_declaration: tuple[str, str] | None
     dimensions: tuple[tuple[str, str], ...]
+    dimension_qnames: tuple[tuple[str, str], ...] = ()
     document_order: int
 
 
@@ -770,6 +772,7 @@ def _raw_instance(root: Any, taxonomies: tuple[TaxonomySpec, ...]) -> RawXbrlIns
                 period=_period_interval(context),
                 period_declaration=declaration if repaired else None,
                 dimensions=context.dimensions,
+                dimension_qnames=context.dimension_qnames,
                 document_order=order,
             )
         )

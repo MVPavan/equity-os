@@ -36,6 +36,8 @@ rows:
     meaning: "Loans, non-current. XBRL LoansNoncurrent; PDF."
   - canonical_id: other_noncurrent_financial_assets
     meaning: "Other non-current financial assets. XBRL OtherNoncurrentFinancialAssets (Apar folds derivative assets in); PDF \"Other financial assets\" (+ \"Derivative financial assets\")."
+  - canonical_id: derivative_financial_assets_noncurrent
+    meaning: "Derivative financial assets, non-current. Retained Apar FY26 Q2 results PDF p6 prints this separately (2.49 crore at 30 September 2025); the XBRL folds it into OtherNoncurrentFinancialAssets."
   - canonical_id: noncurrent_financial_assets
     meaning: "Non-current financial assets (subtotal). XBRL NoncurrentFinancialAssets; no printed PDF subtotal (Apar)."
   - canonical_id: deferred_tax_assets_net
@@ -60,6 +62,8 @@ rows:
     meaning: "Loans, current. XBRL LoansCurrent; PDF."
   - canonical_id: other_current_financial_assets
     meaning: "Other current financial assets. XBRL OtherCurrentFinancialAssets (Apar folds derivatives in); PDF (+ derivatives line)."
+  - canonical_id: derivative_financial_assets_current
+    meaning: "Derivative financial assets, current. Retained Apar FY26 Q2 results PDF p6 prints this separately (79.69 crore at 30 September 2025); the XBRL folds it into OtherCurrentFinancialAssets."
   - canonical_id: current_financial_assets
     meaning: "Current financial assets (subtotal). XBRL CurrentFinancialAssets; no printed PDF subtotal (Apar)."
   - canonical_id: current_tax_assets
@@ -90,6 +94,8 @@ rows:
     meaning: "Lease liabilities, non-current. PDF; no XBRL element (Apar folds it into OtherNoncurrentFinancialLiabilities)."
   - canonical_id: other_noncurrent_financial_liabilities
     meaning: "Other non-current financial liabilities. XBRL OtherNoncurrentFinancialLiabilities (Apar folds lease liabilities in); PDF (+ derivatives line)."
+  - canonical_id: derivative_financial_liabilities_noncurrent
+    meaning: "Derivative financial liabilities, non-current. Retained Apar FY26 Q2 results PDF p6 prints this separately (dash at 30 September 2025; 3.75 crore at 31 March 2025). Dash remains absent, never zero."
   - canonical_id: noncurrent_financial_liabilities
     meaning: "Non-current financial liabilities (subtotal). XBRL NoncurrentFinancialLiabilities."
   - canonical_id: provisions_noncurrent
@@ -120,6 +126,8 @@ rows:
     meaning: "Trade payables, non-current. XBRL TradePayablesNoncurrent (X-Q4, X-BSE)."
   - canonical_id: other_current_financial_liabilities
     meaning: "Other current financial liabilities. XBRL OtherCurrentFinancialLiabilities (Apar folds lease and derivative liabilities in); PDF (three lines)."
+  - canonical_id: derivative_financial_liabilities_current
+    meaning: "Derivative financial liabilities, current. Retained Apar FY26 Q2 results PDF p6 prints this separately (25.08 crore at 30 September 2025); the XBRL folds it into OtherCurrentFinancialLiabilities."
   - canonical_id: current_financial_liabilities
     meaning: "Current financial liabilities (subtotal). XBRL CurrentFinancialLiabilities."
   - canonical_id: other_current_liabilities

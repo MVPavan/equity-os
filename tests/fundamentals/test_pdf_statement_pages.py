@@ -295,3 +295,21 @@ def test_unreadable_and_blank_rows_are_kept(
     rows = extract_statement_rows(marked, location)
     assert len(rows) == Q2_PL_ROWS
     assert [cell.raw_text for cell in _row(rows, "(a) Current tax").cells] == ["???"] * 6
+
+
+def test_labelled_row_blank_in_both_bases_is_retained(tmp_path: Path) -> None:
+    """Removing every figure preserves the current-tax label and ambiguous blank cells."""
+    path = marked_pdf(
+        tmp_path,
+        "blank-current-tax-both-bases",
+        PdfRedaction(page=3, row_of="89.13", x_max=CONSOLIDATED_X_MAX),
+        PdfRedaction(page=3, row_of="88.15", x_min=570),
+    )
+    pdf = load_pdf(source_id="marked", path=path, expected_sha256=compute_file_sha256(path))
+    location = locate_statement_pages(
+        pdf, specs_from_config(_issuer_parse(Q2)), basis=Basis.CONSOLIDATED
+    )[StatementFamily.PL]
+    assert location is not None
+    current = _row(extract_statement_rows(pdf, location), "(a) Current tax")
+    assert all(not cell.raw_text for cell in current.cells)
+    assert current.classification_ambiguous

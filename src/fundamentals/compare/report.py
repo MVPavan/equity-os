@@ -1,25 +1,34 @@
 """Render a stored run as plain text (D1a Task 9).
 
-One header block from the run record, then one block per result row keyed by ``row_id``:
-each source value with its unit and state (currency amounts also in crore, two decimals),
-extraction and corroboration, pair outcomes with difference and gap, the headline marker,
-surfaced restatements and, for derived rows, the calculation trace ids. ``NOT_APPLICABLE``
-rows are listed with their rule id and nothing else.
+One header block from the run record (with its operational failures), then one block per
+result row keyed by ``row_id``: each source value with its unit, state and epistemic class
+(an interpretation is ``OBSERVED``, a calculation ``COMPUTED``), its provenance (the
+interpretation id and source anchor, the calculation trace, or the attempt that decided a
+failed side), extraction and corroboration, pair outcomes with reason, difference, gap,
+definition record and adjustments, the headline marker and surfaced restatements. Currency
+amounts also print in crore, two decimals. ``NOT_APPLICABLE`` rows list their rule id only.
+The dictionary must be the one the run pinned, by content.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from decimal import ROUND_HALF_EVEN, Decimal
+from typing import Protocol
 
 from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.compare.run_models import PairRecord, ResultRow, RunRecord, SourceValue
+from fundamentals.compare.tables import TaggingAdjustment
 from fundamentals.contracts.canonical import ApplicabilityStatus, ValueKind
+from fundamentals.contracts.comparison import EpistemicClass
+from fundamentals.contracts.evidence import Interpretation, Occurrence
+from fundamentals.contracts.versioning import VersionContentDriftError
 
 CRORE = Decimal(10) ** 7
 CRORE_PLACES = Decimal("0.01")
 HEADLINE_MARKER = "*"
 NONE_TEXT = "-"
+DICTIONARY_ARTIFACT = "dictionary"
 _HEADER = (
     "run\t{run_id}",
     "cutoff\t{cutoff}",
@@ -27,23 +36,93 @@ _HEADER = (
     "status\t{status}",
     "code\t{code}",
 )
+_FAILURE = "failure\t{failure}"
 _ROW = "row\t{row_id}{headline}"
 _NOT_APPLICABLE = "  NOT_APPLICABLE\t{rule}"
 _STATUSES = "  extraction\t{extraction}\t{extraction_reason}\n  corroboration\t{corroboration}"
-_VALUE = "  {role}\t{representation}\t{state}\t{value}\t{unit}{crore}{reason}{trace}"
+_VALUE = "  {role}\t{representation}\t{state}\t{value}\t{unit}{crore}\tclass={label}{provenance}"
 _CRORE = "\t{amount} crore"
 _REASON = "\treason={reason}"
 _TRACE = "\ttrace={trace}"
-_PAIR = "  pair\t{kind}\t{left}~{right}\t{outcome}\tdifference={difference}\tgap={gap}{triage}"
+_INTERPRETATION = "\tinterpretation={interpretation}\tanchor={anchor}"
+_ATTEMPT = "\tattempt={attempt}"
+_PAIR = (
+    "  pair\t{kind}\t{left}~{right}\t{outcome}\treason={reason}\tdifference={difference}"
+    "\tgap={gap}{triage}{definition}{adjustments}"
+)
 _TRIAGE = "\ttriage={triage}"
+_DEFINITION = "\tdefinition={record}"
+_ADJUSTMENT = "\tadjust={operand}:{representation}:{direction}{amount}:{record}"
 _SURFACED = "  surfaced\t{ids}"
+_CAPTURE_ANCHOR = "capture:{capture}:{anchor}"
+_CONSTRUCTION_ANCHOR = "construction:{rule}"
+
+
+class AnchorReader(Protocol):
+    """By-id reads that resolve an interpretation to its source anchor."""
+
+    def get_interpretations(self, ids: Sequence[int]) -> tuple[Interpretation, ...]:
+        """Interpretations by id."""
+        ...
+
+    def get_occurrences(self, ids: Sequence[int]) -> tuple[Occurrence, ...]:
+        """Occurrences by id."""
+        ...
+
+
+def source_anchors(reader: AnchorReader, results: Sequence[ResultRow]) -> dict[int, str]:
+    """Every reported interpretation's anchor: its capture and anchor key, or its rule."""
+    ids = sorted(
+        {
+            value.interpretation_id
+            for row in results
+            for value in row.source_values
+            if value.interpretation_id is not None
+        }
+    )
+    interpretations = reader.get_interpretations(ids) if ids else ()
+    occurrence_ids = sorted(
+        {item.occurrence_id for item in interpretations if item.occurrence_id is not None}
+    )
+    occurrences = {
+        occurrence.occurrence_id: occurrence
+        for occurrence in (reader.get_occurrences(occurrence_ids) if occurrence_ids else ())
+    }
+    anchors: dict[int, str] = {}
+    for item in interpretations:
+        assert item.interpretation_id is not None
+        occurrence = occurrences.get(item.occurrence_id)
+        if occurrence is not None:
+            anchors[item.interpretation_id] = _CAPTURE_ANCHOR.format(
+                capture=occurrence.capture.capture_ref_id, anchor=occurrence.anchor_key
+            )
+        elif item.construction_rule_id is not None:
+            anchors[item.interpretation_id] = _CONSTRUCTION_ANCHOR.format(
+                rule=item.construction_rule_id
+            )
+    return anchors
 
 
 def render_report(
-    record: RunRecord, results: Sequence[ResultRow], *, dictionary: CanonicalDictionary
+    record: RunRecord,
+    results: Sequence[ResultRow],
+    *,
+    dictionary: CanonicalDictionary,
+    anchors: Mapping[int, str],
 ) -> str:
-    """The run header and one block per result row, in ``row_id`` order."""
+    """The run header and one block per result row, in ``row_id`` order.
+
+    Raises ``VersionContentDriftError`` when ``dictionary`` is not the run's pinned one.
+    """
     manifest = record.manifest
+    pinned = manifest.pinned.dictionary
+    if (dictionary.version, dictionary.content_sha256) != (pinned.version, pinned.content_sha256):
+        raise VersionContentDriftError(
+            artifact=DICTIONARY_ARTIFACT,
+            version=pinned.version,
+            pinned_sha256=pinned.content_sha256,
+            actual_sha256=dictionary.content_sha256,
+        )
     lines = [
         template.format(
             run_id=record.run_id,
@@ -54,13 +133,16 @@ def render_report(
         )
         for template in _HEADER
     ]
+    lines.extend(_FAILURE.format(failure=failure) for failure in manifest.operational_failures)
     headlines = {row.canonical_id for row in dictionary.rows if row.headline}
     for result in sorted(results, key=lambda item: item.row_id):
-        lines.extend(_row_lines(result, headline=result.key.canonical_id in headlines))
+        lines.extend(
+            _row_lines(result, headline=result.key.canonical_id in headlines, anchors=anchors)
+        )
     return "\n".join(lines) + "\n"
 
 
-def _row_lines(result: ResultRow, *, headline: bool) -> list[str]:
+def _row_lines(result: ResultRow, *, headline: bool, anchors: Mapping[int, str]) -> list[str]:
     """One row's block."""
     lines = [_ROW.format(row_id=result.row_id, headline=HEADLINE_MARKER if headline else "")]
     if result.applicability is ApplicabilityStatus.NOT_APPLICABLE:
@@ -75,7 +157,9 @@ def _row_lines(result: ResultRow, *, headline: bool) -> list[str]:
     )
     unit = _unit(result)
     amount = result.key.value_kind is ValueKind.CURRENCY_AMOUNT
-    lines.extend(_value_line(value, unit, in_crore=amount) for value in result.source_values)
+    lines.extend(
+        _value_line(value, unit, in_crore=amount, anchors=anchors) for value in result.source_values
+    )
     lines.extend(_pair_line(pair) for pair in result.pairs)
     if result.surfaced_restatements:
         ids = ",".join(str(item) for item in result.surfaced_restatements)
@@ -91,11 +175,14 @@ def _unit(result: ResultRow) -> str:
     return key.currency if key.currency is not None else key.value_kind.value
 
 
-def _value_line(value: SourceValue, unit: str, *, in_crore: bool) -> str:
-    """One source value with state, unit, crore amount, reason and trace."""
+def _value_line(
+    value: SourceValue, unit: str, *, in_crore: bool, anchors: Mapping[int, str]
+) -> str:
+    """One source value with state, unit, crore amount, class, provenance and reason."""
     crore = ""
     if in_crore and value.value is not None:
         crore = _CRORE.format(amount=_crore(value.value))
+    computed = value.calculation_trace_id is not None
     return _VALUE.format(
         role=value.source_role.value,
         representation=value.representation.value,
@@ -103,25 +190,56 @@ def _value_line(value: SourceValue, unit: str, *, in_crore: bool) -> str:
         value=NONE_TEXT if value.value is None else str(value.value),
         unit=unit,
         crore=crore,
-        reason="" if value.reason is None else _REASON.format(reason=value.reason),
-        trace=(
-            ""
-            if value.calculation_trace_id is None
-            else _TRACE.format(trace=value.calculation_trace_id)
-        ),
+        label=(EpistemicClass.COMPUTED if computed else EpistemicClass.OBSERVED).value,
+        provenance=_provenance(value, anchors),
     )
 
 
+def _provenance(value: SourceValue, anchors: Mapping[int, str]) -> str:
+    """Where a value comes from: interpretation and anchor, trace, attempt; then the reason."""
+    text = ""
+    if value.interpretation_id is not None:
+        text += _INTERPRETATION.format(
+            interpretation=value.interpretation_id,
+            anchor=anchors.get(value.interpretation_id, NONE_TEXT),
+        )
+    if value.calculation_trace_id is not None:
+        text += _TRACE.format(trace=value.calculation_trace_id)
+    if value.attempt_id is not None:
+        text += _ATTEMPT.format(attempt=value.attempt_id)
+    if value.reason is not None:
+        text += _REASON.format(reason=value.reason)
+    return text
+
+
 def _pair_line(pair: PairRecord) -> str:
-    """One pair outcome with difference, gap and triage."""
+    """One pair outcome with reason, difference, gap, triage, record and adjustments."""
     return _PAIR.format(
         kind=pair.pair_kind.value,
         left=f"{pair.left.source_role.value}:{pair.left.representation.value}",
         right=f"{pair.right.source_role.value}:{pair.right.representation.value}",
         outcome=pair.outcome.value,
+        reason=NONE_TEXT if pair.reason is None else pair.reason.value,
         difference=NONE_TEXT if pair.difference is None else str(pair.difference),
         gap=NONE_TEXT if pair.interval_gap is None else str(pair.interval_gap),
         triage="" if pair.triage is None else _TRIAGE.format(triage=pair.triage.value),
+        definition=(
+            ""
+            if pair.definition_record_id is None
+            else _DEFINITION.format(record=pair.definition_record_id)
+        ),
+        adjustments="".join(_adjustment(item) for item in pair.adjustments),
+    )
+
+
+def _adjustment(adjustment: TaggingAdjustment) -> str:
+    """One applied tagging adjustment: operand, representation, signed amount, record."""
+    return _ADJUSTMENT.format(
+        operand=adjustment.operand_name,
+        representation=adjustment.representation.value,
+        direction="+" if adjustment.direction > 0 else "-",
+        amount=adjustment.amount,
+        record=adjustment.definition_record_id,
     )
 
 

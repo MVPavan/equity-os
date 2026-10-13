@@ -5,7 +5,8 @@ reads the fiscal calendar, basis status and segment members recorded by the cuto
 (entity, basis, period end) the eligible results packages (plus the same fiscal year's
 nine-month package when a ``YEAR`` package is present), their member captures'
 interpretations under the pinned triple, the witness and selected occurrences, and the
-available attempts; and finally every eligible comparative of the selected keys.
+available attempts; and finally every eligible comparative of the selected keys. Only members
+and attempts on the scope's requested sources (first-party surfaces) are read.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ class RunLoader:
         self._repository = repository
         self._boundary = EligibilityBoundary.at(request.cutoff)
         self._triple = request.pinned.triple()
+        self._surfaces = frozenset(request.scope.sources)
         self._captures: dict[int, CaptureReference] = {}
         self._packages: dict[int, FilingPackage] = {}
         self._statements: dict[int, PackageStatementRecord] = {}
@@ -82,16 +84,13 @@ class RunLoader:
         added = {
             package.package_id or 0
             for package in self._repository.get_packages(sorted(set(fresh)))
-            if self._in_scope(package) and self._add_package(package, interpretations=False)
+            if self._in_scope(package) and self._add_package(package, interpretations=True)
         }
-        member_captures = {
-            member.capture.capture_ref_id
-            for package_id in added
-            for member in self._packages[package_id].members.values()
-        }
-        for item in candidates:
-            if item.capture_ref_id in member_captures:
-                self._add_interpretation(item)
+        # Context refusals and cross-key supersession require the comparative capture's
+        # complete eligible evidence, not just interpretations matching the initial digest.
+        for package_id in sorted(added):
+            package = self._packages[package_id]
+            self._period_attempts(package.entity_id, package.basis, package.reporting_period_end)
         self._occurrences_of_interpretations()
 
     def inputs(self, definition_set_id: int) -> ResolvedInputs:
@@ -157,7 +156,8 @@ class RunLoader:
         """Attempts of one period end available under the cutoff, mode and pinned extractor."""
         for attempt in self._repository.list_attempts(entity_id, period_end):
             if (
-                attempt.basis is basis
+                attempt.surface in self._surfaces
+                and attempt.basis is basis
                 and attempt.framework is RUN_FRAMEWORK
                 and attempt_available(
                     attempt,
@@ -187,6 +187,7 @@ class RunLoader:
             if package.basis is basis
             and package.framework is RUN_FRAMEWORK
             and package.eligible(self._boundary)
+            and any(member.capture.surface in self._surfaces for member in package.members.values())
         ]
 
     def _in_scope(self, package: FilingPackage) -> bool:
@@ -198,6 +199,7 @@ class RunLoader:
             and package.framework is RUN_FRAMEWORK
             and package.family is RUN_FAMILY
             and package.eligible(self._boundary)
+            and any(member.capture.surface in self._surfaces for member in package.members.values())
         )
 
     # --- accumulation -----------------------------------------------------------------------
@@ -214,6 +216,8 @@ class RunLoader:
             capture = member.capture
             assert capture.capture_ref_id is not None
             self._captures[capture.capture_ref_id] = capture
+            if capture.surface not in self._surfaces:
+                continue
             if interpretations and capture.capture_ref_id not in self._loaded_captures:
                 self._loaded_captures.add(capture.capture_ref_id)
                 self._capture_evidence(capture, representation)
@@ -228,8 +232,8 @@ class RunLoader:
             witness = min(occurrences, key=lambda item: item.occurrence_id or 0)
             assert witness.occurrence_id is not None
             self._occurrences[witness.occurrence_id] = witness
-        # Every triple known by the cutoff: the pins filter selection, while the reporting
-        # currency stays evidenced when nothing is interpreted under the pins yet.
+        # Every triple known by the cutoff: the pins filter selection and condition evidence,
+        # while the reporting currency stays evidenced when nothing is interpreted under them.
         for item in self._repository.list_capture_interpretations(capture.capture_ref_id):
             if self._known(item):
                 self._add_interpretation(item)

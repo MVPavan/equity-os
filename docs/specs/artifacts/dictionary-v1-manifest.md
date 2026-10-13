@@ -44,21 +44,21 @@ copying the loader's output.
 | Family | Rows |
 |---|---|
 | PL | 53 |
-| BALANCE_SHEET | 64 |
+| BALANCE_SHEET | 68 |
 | CASH_FLOW | 96 |
-| SEGMENT | 18 |
+| SEGMENT | 20 |
 | SHAREHOLDING | 4 |
 | DERIVED | 18 |
-| **Total** | **253** |
+| **Total** | **259** |
 
 ## Reconciliation with the inventory (224 rows)
 
 | Section | Inventory rows | Kept as one row | Moved to `DERIVED` | Excluded | Deferred to D1b | Split or collapsed | v1 rows in family |
 |---|---|---|---|---|---|---|---|
 | 2a P&L | 53 | 51 | 1 (`shares_outstanding`) | 1 | 0 | +2 OCI detail template rows | 53 |
-| 2b Balance sheet | 65 | 62 | 1 (`net_current_assets`) | 1 | 1 (`borrowings_total`) | +1 (`deferred_government_grants` → 2), +1 (`trade_payables_msme_noncurrent`) | 64 |
+| 2b Balance sheet | 65 | 62 | 1 (`net_current_assets`) | 1 | 1 (`borrowings_total`) | +1 (`deferred_government_grants` → 2), +1 (`trade_payables_msme_noncurrent`), +4 separately filed derivative measures | 68 |
 | 2c Cash flow | 51 | 33 | 1 (`cf_wc_total`) | 0 | 0 | 17 grouped rows → 61 rows (+44; table below), +2 added filed lines | 96 |
-| 2d Segment | 16 | 14 | 1 (`segment_capital_employed`) | 1 | 0 | +2 (`segment_assets_total` → 3), +2 (`segment_liabilities_total` → 3) | 18 |
+| 2d Segment | 16 | 14 | 1 (`segment_capital_employed`) | 1 | 0 | +2 (`segment_assets_total` → 3), +2 (`segment_liabilities_total` → 3), +2 separately filed reconciliation measures | 20 |
 | 2e Shareholding | 13 | 3 | 0 | 0 | 0 | 10 category rows → 1 templated row | 4 |
 | 2f Derived | 26 | 11 | — | 4 | 10 | `working_capital_days etc.` → `receivable_days` (its other 4 ids deferred) | 12 |
 
@@ -80,6 +80,8 @@ The 2 added rows are filed lines with no inventory row (below). 2f: 26 = 11 kept
 | `working_capital_days etc.` | `receivable_days`; deferred `inventory_days`, `payable_days`, `cash_conversion_cycle_days`, `working_capital_days` | Grouped. Receivable days has a stated construction (spec Stage 1 fixture) and is defined on current trade receivables only; the inventory gives only vendor labels for the other four |
 | `deferred_government_grants` | `deferred_government_grants_current`, `deferred_government_grants_noncurrent` | Grouped current / non-current |
 | `trade_payables_msme` | `trade_payables_msme` (current), `trade_payables_msme_noncurrent` | The inventory cites both XBRL elements |
+| Derivatives folded into other financial assets/liabilities | `derivative_financial_assets_noncurrent`, `derivative_financial_assets_current`, `derivative_financial_liabilities_noncurrent`, `derivative_financial_liabilities_current` | Rule 3: retained Apar FY26 Q2 results PDF p6 prints four distinct lines: 2.49, 79.69, dash (comparative 3.75), and 25.08 crore, respectively. A folded XBRL measure does not replace separately filed PDF measures |
+| Additional segment reconciliation lines | `segment_other_elimination`, `inter_segment_liabilities` | Rule 3: the same PDF p4 prints other elimination (4.11 crore deducted in Q2) and inter-segment liabilities (656.59 crore deducted at 30 September 2025) separately |
 | `cf_adj_provisions` | `cf_adj_provisions_current`, `cf_adj_provisions_noncurrent` | Current / non-current elements |
 | `cf_adj_other_noncash` | `cf_adj_other_noncash`, `cf_adj_other_investing_financing`, `cf_adj_other_reconcile` | Three residual elements |
 | `cf_wc_trade_receivables` | `cf_wc_trade_receivables_current`, `cf_wc_trade_receivables_noncurrent`, `cf_wc_trade_and_other_receivables` | Current / non-current elements; the inventory's PDF column is the condensed "trade and other receivables" line (H1 FY26 consolidated −232.97, standalone −206.80 crore) |

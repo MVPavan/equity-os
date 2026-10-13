@@ -16,14 +16,14 @@ from fractions import Fraction
 from types import MappingProxyType
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, StatementFamily
 from fundamentals.contracts.comparison import SelectionSource, SourceState
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.interval import Interval
-from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.qualification import ProvenCondition
 
@@ -31,6 +31,7 @@ _NOT_TERMINATING = "{value} has no exact decimal form"
 _PRECISION_SHAPE = "declared_precision is set exactly when precision_kind is FINITE"
 _MEMBER_COUNT = "a package has one or two members, got {count}"
 _MEMBER_KEYS = "member keyed {key} is a {representation} member"
+_KEY_DIMENSIONS = "dimensions {dimensions} differ from the key's {key}"
 
 
 class MissingValueState(StrEnum):
@@ -233,9 +234,11 @@ class FilingPackage(BaseModel):
     evidence_sha256: str
 
     def eligible(self, boundary: EligibilityBoundary) -> bool:
-        """Filed by the knowledge cutoff, with every member stored by the first-seen cutoff."""
+        """Every member has evidenced publication and capture times within the boundary."""
         return self.knowledge_time <= boundary.knowledge_cutoff and all(
-            member.capture.first_seen_at <= boundary.first_seen_cutoff
+            member.knowledge_time_status is KnowledgeTimeStatus.KNOWN
+            and member.knowledge_time <= boundary.knowledge_cutoff
+            and member.capture.first_seen_at <= boundary.first_seen_cutoff
             for member in self.members.values()
         )
 
@@ -285,9 +288,11 @@ class Occurrence(BaseModel):
 class Interpretation(BaseModel):
     """One occurrence or construction mapped into a measurement key under pinned versions.
 
-    ``canonical_id`` and ``period`` stay set when a mapping matched but the key could not
-    be completed (``PERIOD_AMBIGUOUS``); ``entity_id``, ``basis`` and ``framework`` are
-    always the package's, so an ``UNMAPPED`` row still records its scope.
+    ``canonical_id``, ``period`` and ``dimensions`` stay set when a mapping matched but the
+    key could not be completed (``PERIOD_AMBIGUOUS``, an ``INVALID`` unit): each is kept
+    exactly when the evidence establishes it, and is ``None`` otherwise. ``entity_id``,
+    ``basis`` and ``framework`` are always the package's, so an ``UNMAPPED`` row still
+    records its scope. With a key, ``dimensions`` is the key's.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -308,6 +313,7 @@ class Interpretation(BaseModel):
     period: PeriodInterval | None
     dictionary_version: str
     key: MeasurementKey | None
+    dimensions: DimensionSet | None = None
     value: Decimal | None
     interval: Interval | None
     tier: EvidenceTier
@@ -322,6 +328,25 @@ class Interpretation(BaseModel):
     revision_cause: RevisionCause
     supersedes_interpretation_id: int | None
     recorded_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _dimensions_of_key(cls, data: Any) -> Any:
+        """Default the dimensions to the key's, so a keyed row never omits them."""
+        if isinstance(data, Mapping) and data.get("dimensions") is None:
+            key = data.get("key")
+            if isinstance(key, MeasurementKey):
+                return {**data, "dimensions": key.dimensions}
+        return data
+
+    @model_validator(mode="after")
+    def _key_dimensions_agree(self) -> Interpretation:
+        """A keyed interpretation's dimensions are exactly its key's."""
+        if self.key is not None and self.dimensions != self.key.dimensions:
+            raise ValueError(
+                _KEY_DIMENSIONS.format(dimensions=self.dimensions, key=self.key.dimensions)
+            )
+        return self
 
 
 class AcquisitionAttempt(BaseModel):
@@ -346,6 +371,7 @@ class AcquisitionAttempt(BaseModel):
     input_sha256: str
     extractor_version: str
     attempted_at: datetime | None
+    extraction_context_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class RunMode(StrEnum):

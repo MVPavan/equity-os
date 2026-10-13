@@ -40,6 +40,7 @@ from fundamentals.contracts.qualification import (
     ProvenCondition,
     QualificationCondition,
     QualificationContext,
+    QualificationFixture,
     QualificationScope,
     qualification_context,
     scoped_tier,
@@ -285,6 +286,16 @@ def _scope(**changes: object) -> QualificationScope:
         period_kinds=frozenset({PeriodKind.QUARTER, PeriodKind.HALF_YEAR}),
         conditions=(DISCONTINUED_ZERO,),
         exclusions=(EXCEPTIONAL_NONZERO,),
+        fixture_evidence=tuple(
+            QualificationFixture(
+                capture_id=f"constructed-{index}",
+                capture_sha256=f"{index:064x}",
+                entity_id=index,
+                discriminating=index == 1,
+            )
+            for index in range(1, 6)
+        ),
+        sample_rule="D3: five distinct companies including a discriminating case",
     )
     return base.model_copy(update=changes)
 
@@ -310,6 +321,49 @@ def _qualification(
 
 
 BOTH_PROVEN = (_proven(DISCONTINUED_ZERO, True), _proven(EXCEPTIONAL_NONZERO, False))
+
+
+def test_scope_without_measured_fixtures_cannot_preserve_demonstrated() -> None:
+    """Scope labels and holding conditions alone do not satisfy the D3 sample rule."""
+    result = scoped_tier(
+        DEMONSTRATED, _scope(fixture_evidence=(), sample_rule=None), _qualification(BOTH_PROVEN)
+    )
+    assert result.tier is UNPROVEN
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {
+            "fixture_evidence": tuple(
+                QualificationFixture(
+                    capture_id=f"constructed-{index}",
+                    capture_sha256=f"{index:064x}",
+                    entity_id=1,
+                    discriminating=index == 1,
+                )
+                for index in range(1, 6)
+            )
+        },
+        {
+            "fixture_evidence": tuple(
+                QualificationFixture(
+                    capture_id=f"constructed-{index}",
+                    capture_sha256=f"{index:064x}",
+                    entity_id=index,
+                    discriminating=False,
+                )
+                for index in range(1, 6)
+            )
+        },
+        {"sample_rule": " "},
+        {"fixture_capture_sha256s": ("f" * 64,)},
+    ],
+)
+def test_unverified_sample_rule_is_unproven(changes: dict[str, object]) -> None:
+    assert (
+        scoped_tier(DEMONSTRATED, _scope(**changes), _qualification(BOTH_PROVEN)).tier is UNPROVEN
+    )
 
 
 def test_in_scope_with_conditions_proven_stays_demonstrated() -> None:

@@ -28,6 +28,7 @@ from fundamentals.contracts.canonical import (
     Basis,
     PeriodKind,
     PeriodNature,
+    Representation,
     StatementFamily,
     ValueKind,
 )
@@ -148,6 +149,9 @@ class Selector(BaseModel):
     statement_family: StatementFamily | None = None
     labels: tuple[str, ...] = ()
     section: str | None = None
+    section_equals: str | None = None
+    unestablished_section_ambiguous: bool = False
+    section_parent_equals: str | None = None
     label_ordinal: int | None = Field(default=None, ge=1)
     column_header: str | None = None
 
@@ -184,7 +188,13 @@ class Selector(BaseModel):
                 or other.label_ordinal is None
                 or self.label_ordinal == other.label_ordinal
             )
-            and _compatible(self.section, other.section)
+            and _compatible_sections(self, other)
+            and (
+                self.section_parent_equals is None
+                or other.section_parent_equals is None
+                or normalize_text_tokens(self.section_parent_equals)
+                == normalize_text_tokens(other.section_parent_equals)
+            )
             and _compatible(self.column_header, other.column_header)
         )
 
@@ -333,7 +343,7 @@ class MappingSet(BaseModel):
         context = occurrence.native_context
         schema = context.get(CONTEXT_SCHEMA_IDENTITY)
         basis = context.get(CONTEXT_BASIS)
-        return tuple(
+        candidates = tuple(
             entry
             for entry in self.entries
             if applies_to_source(entry.source, occurrence.capture.source_id)
@@ -341,8 +351,23 @@ class MappingSet(BaseModel):
             and entry.schema_identity == schema
             and basis in {member.value for member in entry.basis}
             and (period_kind is None or period_kind in entry.period_kinds)
-            and _selects(entry, occurrence)
         )
+        selected = tuple(entry for entry in candidates if _selects(entry, occurrence))
+        if selected or occurrence.representation is Representation.XBRL:
+            return selected
+        # A repeated label with explicit but unestablished section identities is
+        # ambiguous evidence, not absence. Interpretation retains all candidates
+        # and fails INVALID rather than assigning another section's value.
+        labelled = tuple(
+            entry
+            for entry in candidates
+            if entry.selector.unestablished_section_ambiguous
+            and entry.selector.section_equals is not None
+            and context.get(CONTEXT_STATEMENT_FAMILY) == entry.selector.statement_family
+            and tuple(normalize_text_tokens(str(context.get(CONTEXT_LABEL, ""))))
+            in {tuple(normalize_text_tokens(label)) for label in entry.selector.labels}
+        )
+        return labelled if len(labelled) > 1 else selected
 
     def match(
         self, occurrence: Occurrence, *, period_kind: PeriodKind | None = None
@@ -366,6 +391,29 @@ def in_namespace(context: Mapping[str, object], schema_identity: str) -> bool:
     return context.get(CONTEXT_NAMESPACE) == schema_identity
 
 
+def matches_dimensions(
+    context: Mapping[str, object], schema_identity: str, axis: str | None
+) -> bool:
+    """Dimension identities must name this schema's explicit axis and member namespaces."""
+    native = context.get("dimensions")
+    axes = context.get(CONTEXT_DIMENSION_AXES)
+    found = tuple(axes) if isinstance(axes, list | tuple) else ()
+    if axis is None:
+        return not found and not native
+    wanted = f"{{{schema_identity}}}{axis}"
+    qualified = context.get("dimension_qnames")
+    if found != (wanted,) or not isinstance(qualified, list | tuple) or len(qualified) != 1:
+        return False
+    pair = qualified[0]
+    return (
+        isinstance(pair, list | tuple)
+        and len(pair) == 2
+        and pair[0] == wanted
+        and isinstance(pair[1], str)
+        and pair[1].startswith(f"{{{schema_identity}}}")
+    )
+
+
 def _selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
     """Whether one entry's selector matches one occurrence's native field and context."""
     selector = entry.selector
@@ -380,10 +428,7 @@ def _selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
         is_instant = occurrence.period.instant is not None
         if is_instant != (selector.period_shape is PeriodShape.INSTANT):
             return False
-        axes = context.get(CONTEXT_DIMENSION_AXES)
-        found = tuple(axes) if isinstance(axes, list | tuple) else ()
-        wanted = () if selector.dimension_axis is None else (selector.dimension_axis,)
-        return found == wanted
+        return matches_dimensions(context, entry.schema_identity, selector.dimension_axis)
     if context.get(CONTEXT_STATEMENT_FAMILY) != selector.statement_family:
         return False
     label = normalize_text_tokens(str(context.get(CONTEXT_LABEL, "")))
@@ -393,6 +438,14 @@ def _selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
         normalize_text_tokens(str(context.get(CONTEXT_SECTION, ""))),
         normalize_text_tokens(selector.section),
     ):
+        return False
+    if selector.section_equals is not None and normalize_text_tokens(
+        str(context.get(CONTEXT_SECTION, ""))
+    ) != normalize_text_tokens(selector.section_equals):
+        return False
+    if selector.section_parent_equals is not None and normalize_text_tokens(
+        str(context.get("section_parent", ""))
+    ) != normalize_text_tokens(selector.section_parent_equals):
         return False
     if (
         selector.label_ordinal is not None
@@ -414,11 +467,25 @@ def _contains(haystack: Sequence[str], needle: Sequence[str]) -> bool:
 
 
 def _compatible(left: str | None, right: str | None) -> bool:
-    """Two "contains" predicates one text could satisfy: either unset, or one inside the other."""
-    if left is None or right is None:
-        return True
-    left_tokens, right_tokens = normalize_text_tokens(left), normalize_text_tokens(right)
-    return _contains(left_tokens, right_tokens) or _contains(right_tokens, left_tokens)
+    """Any two contains predicates may match their concatenation."""
+    return True
+
+
+def _compatible_sections(left: Selector, right: Selector) -> bool:
+    """Only equality evidence can prove that two section predicates are disjoint."""
+    for exact, other in ((left.section_equals, right), (right.section_equals, left)):
+        if exact is None:
+            continue
+        tokens = normalize_text_tokens(exact)
+        if other.section_equals is not None and tokens != normalize_text_tokens(
+            other.section_equals
+        ):
+            return False
+        if other.section is not None and not _contains(
+            tokens, normalize_text_tokens(other.section)
+        ):
+            return False
+    return True
 
 
 # --- loading -------------------------------------------------------------------
@@ -501,16 +568,15 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     dangling canonical id, dangling entry id, overlapping selector) and every offender.
     """
     index_path = root / f"{version}.yaml"
-    files: list[Path] = [index_path]
-    index = _parse(_Index, index_path, version)
+    bodies: dict[Path, bytes] = {}
+    index = _parse(_Index, index_path, version, bodies=bodies)
     if index.version != version:
         raise MappingLoadError(MappingDefect.SCHEMA, [index.version], "version mismatch")
     entries: list[MappingEntry] = []
     failures: dict[str, str] = {}
     for name in index.entry_files:
         path = root / name
-        files.append(path)
-        entry_file = _parse(_EntryFile, path, name)
+        entry_file = _parse(_EntryFile, path, name, bodies=bodies)
         scope = {
             "source": entry_file.source,
             "surface": entry_file.surface,
@@ -527,19 +593,19 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
         raise MappingLoadError(MappingDefect.SCHEMA, failures, detail)
     constructions: list[ConstructionRule] = []
     for name in index.construction_files:
-        files.append(root / name)
-        constructions.extend(_parse(_ConstructionFile, root / name, name).constructions)
+        constructions.extend(
+            _parse(_ConstructionFile, root / name, name, bodies=bodies).constructions
+        )
     anchors: list[StatementAnchor] = []
     for name in index.statement_anchor_files:
-        files.append(root / name)
-        anchors.extend(_parse(_AnchorFile, root / name, name).statement_anchors)
+        anchors.extend(_parse(_AnchorFile, root / name, name, bodies=bodies).statement_anchors)
     _check_schema(entries, constructions, dictionary)
     _check_dangling_canonical(entries, constructions, dictionary)
     _check_dangling_entries(entries, constructions)
     _check_duplicates(entries, constructions)
     return MappingSet(
         version=index.version,
-        content_sha256=_content_sha256(files),
+        content_sha256=_content_sha256(bodies),
         normalisation_policy_version=index.normalisation_policy_version,
         entries=tuple(entries),
         constructions=tuple(constructions),
@@ -548,10 +614,12 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     )
 
 
-def _parse[M: BaseModel](model: type[M], path: Path, label: str) -> M:
+def _parse[M: BaseModel](model: type[M], path: Path, label: str, *, bodies: dict[Path, bytes]) -> M:
     """Parse one YAML file into ``model``; any failure is a ``SCHEMA`` defect."""
     try:
-        return model.model_validate(yaml.safe_load(path.read_bytes()))
+        if path not in bodies:
+            bodies[path] = path.read_bytes()
+        return model.model_validate(yaml.safe_load(bodies[path]))
     except (ValidationError, yaml.YAMLError, OSError) as error:
         raise MappingLoadError(MappingDefect.SCHEMA, [label], _flat(error)) from error
 
@@ -692,10 +760,10 @@ def _sources_overlap(left: str | None, right: str | None) -> bool:
     return left is None or right is None or left == right
 
 
-def _content_sha256(paths: Sequence[Path]) -> str:
+def _content_sha256(bodies: Mapping[Path, bytes]) -> str:
     """SHA-256 over the index and every member file, in load order."""
     digest = hashlib.sha256()
-    for path in paths:
+    for path, body in bodies.items():
         digest.update(path.name.encode("utf-8") + b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii") + b"\n")
+        digest.update(hashlib.sha256(body).hexdigest().encode("ascii") + b"\n")
     return digest.hexdigest()
