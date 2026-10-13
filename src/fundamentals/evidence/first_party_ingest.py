@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 
 import structlog
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
@@ -92,7 +92,7 @@ from fundamentals.extract.pdf_statement_pages import StatementPageSpec
 from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.store.snapshot_store import SnapshotStore
 
-__all__ = ["IngestError", "IngestReport", "ingest_first_party"]
+__all__ = ["IngestError", "IngestMemberGeneration", "IngestReport", "ingest_first_party"]
 
 _LOG = structlog.get_logger(__name__)
 MAX_INTERPRETATION_RETRIES = 3
@@ -113,6 +113,20 @@ _SCOPE_CONFLICT = (
 )
 
 
+class IngestMemberGeneration(BaseModel):
+    """Stored ids of one package member's exact interpretation generation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    representation: Representation
+    source_id: str
+    surface: str
+    capture_ref_id: int
+    extractor_version: str
+    occurrence_ids: tuple[int, ...]
+    interpretation_ids: tuple[int, ...]
+
+
 class IngestReport(BaseModel):
     """What one ingest invocation stored or reused."""
 
@@ -122,6 +136,9 @@ class IngestReport(BaseModel):
     occurrence_count: int
     interpretation_counts: Mapping[InterpretationStatus, int]
     attempts: tuple[AcquisitionAttempt, ...]
+    members: tuple[IngestMemberGeneration, ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
 
 
 def ingest_first_party(
@@ -242,6 +259,7 @@ def ingest_first_party(
     extracted = [item.written(repository) for item in pending]
     usable = [item for item in extracted if item.outcome is ExtractionOutcome.COMPLETE]
     interpretations: list[Interpretation] = []
+    member_generations: list[IngestMemberGeneration] = []
     comparative = (
         _ComparativeCheck(
             repository=repository,
@@ -271,8 +289,22 @@ def ingest_first_party(
             fiscal_year_end_month=fiscal_year_end_month,
         )
         assert comparative is not None
-        interpretations.extend(
-            _interpretations(item, scope=scope, repository=repository, comparative=comparative)
+        member_interpretations = _interpretations(
+            item, scope=scope, repository=repository, comparative=comparative
+        )
+        interpretations.extend(member_interpretations)
+        member_generations.append(
+            IngestMemberGeneration(
+                representation=item.binding.representation,
+                source_id=item.member.capture.source_id,
+                surface=item.member.capture.surface,
+                capture_ref_id=stored_capture(item.member.capture),
+                extractor_version=item.extractor_version,
+                occurrence_ids=tuple(sorted(_stored_id(row) for row in item.occurrences)),
+                interpretation_ids=tuple(
+                    sorted(_stored_interpretation_id(row) for row in member_interpretations)
+                ),
+            )
         )
     package_id = None
     occurrences = [occurrence for item in usable for occurrence in item.occurrences]
@@ -331,6 +363,7 @@ def ingest_first_party(
         occurrence_count=len(occurrences),
         interpretation_counts=dict(Counter(item.status for item in interpretations)),
         attempts=attempts,
+        members=tuple(sorted(member_generations, key=lambda item: item.representation.value)),
     )
 
 
@@ -651,3 +684,10 @@ def _stored_id(occurrence: Occurrence) -> int:
     if occurrence.occurrence_id is None:
         raise IngestError("occurrence is not stored")
     return occurrence.occurrence_id
+
+
+def _stored_interpretation_id(interpretation: Interpretation) -> int:
+    """A stored interpretation's id."""
+    if interpretation.interpretation_id is None:
+        raise IngestError("interpretation is not stored")
+    return interpretation.interpretation_id
