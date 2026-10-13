@@ -373,8 +373,14 @@ def database_at_0006(tmp_path: Path) -> Iterator[PgTestDatabase]:
 @pytest.mark.pg
 def test_0006_to_0007_preserves_old_rows_and_adds_publication_pin(
     database_at_0006: PgTestDatabase,
+    tmp_path: Path,
 ) -> None:
     database = database_at_0006
+    migrations = tmp_path / "migrations-through-0007"
+    migrations.mkdir()
+    for source in sorted(MIGRATIONS_DIR.glob("000[1-7]_*.sql")):
+        shutil.copyfile(source, migrations / source.name)
+    assert len(tuple(migrations.iterdir())) == 7
     with database.migrator_connection() as connection:
         run_id = connection.execute(
             "INSERT INTO eqos.runs "
@@ -397,7 +403,7 @@ def test_0006_to_0007_preserves_old_rows_and_adds_publication_pin(
                 )
 
     with database.migrator_connection() as connection:
-        applied = apply_migrations(connection, MIGRATIONS_DIR)
+        applied = apply_migrations(connection, migrations)
         assert [item.filename for item in applied] == ["0007_vendor_publication_pin.sql"]
         connection.execute(
             "INSERT INTO eqos.run_versions (run_id, pin, version, content_sha256) "
