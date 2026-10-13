@@ -1112,4 +1112,22 @@ immutable capture/extractor/mapping/normalisation/context-scoped complete sets w
 IDs. This is a bounded completeness check, not latest-evidence resolution. Replay remains
 restricted to the closed manifest IDs. No guessed signature, timestamp proxy or schema change
 is allowed to substitute for that equality proof.
+
+### Actual joined release C — 2026-10-13
+
+Fresh independent exact-A review confirms all 32 selected blobs, complete pins/reference closure,
+legacy 259-row compatibility, private A05 rights and honest unavailable/excluded vendor gates.
+It approves candidate `4779819c8727b9a9248279e573ad55b086a25631`; only a stale preparation
+comment remains Minor. The first review artifact had two top-level verdict labels and was
+correctly refused by the receipt parser. The reviewer reissued only its first label, preserved
+all other bytes and candidate hashes, and proved the strict final-verdict parser accepts it.
+No receipt or release was committed from the ambiguous artifact.
+
+Separate C `a4002bb` introduces that exact final review and the fixed receipt together. The
+publication SHA stays `1770517e47e08cf2b33f220efd90e11e6ada26f3013ccfa518785370cb1d1693`;
+the selected-member digest is `09fe7800f2267af3faddc3f865482bb5752f3cdc9cb27984e135ddd3527ec1c1`.
+Root's actual public load and guarded retained-Apar v2 append/reuse test pass **2/2**, preserving
+original v1 rows and matching the real RELEASED pins. The pre-C public-release assertion is a
+genuine 1/1 RED. This proves actual technical release and first-party generation; full vendor
+run/replay, queue/CLI, source coverage and Stage 1 acceptance remain open.
 No nominal RELEASED label or caller model is accepted as release authority.
