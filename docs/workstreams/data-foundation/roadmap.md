@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Active after owner resume; stage 4 amendment complete (`c77657d`). Schema, offline adapters, pure corroboration, native construction, retained Screener drafts, publication mechanism (`00972d2`) and exact-context first-party producer (`535df96`) are committed within their verified scopes. Latest frozen historical gate PASS: 3,106 tests / 8 existing skips, full Ruff/format/strict mypy and privacy clear; native Task14 and draft Task15 closed. Queue SQL and vendor persistence/handoff validation proceed in isolated scopes. Full Stage 1 remains gated by missing retained vendor evidence, actual reviewed joined release, run/replay and authenticated queue CLI integration, and the frozen source-verified manifest/e2e. |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Active after owner resume; stage 4 amendment complete (`c77657d`). Schema, offline adapters, pure corroboration, native construction, retained Screener drafts, publication mechanism (`00972d2`) and exact-context first-party producer (`535df96`) are committed within their verified scopes. Actual reviewed joined release C (`a4002bb`) passes real loader and retained Apar v2 append/reuse/v1-preservation proof; Task13 technical release is closed. Additive acquisition constraint (`2d15c1d`) passes all26 schema/upgrade/publication cases;38 isolated vendor producer cases pass. Latest frozen historical gate PASS: 3,106 tests / 8 existing skips, full Ruff/format/strict mypy and privacy clear; native Task14 and draft Task15 closed. Queue SQL and vendor persistence/handoff validation proceed in isolated scopes; absent failed-XBRL input authority remains fail closed. Full Stage 1 remains gated by missing retained vendor evidence, integrated run/replay and authenticated queue CLI, and the frozen source-verified manifest/e2e. |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -53,7 +53,7 @@ Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration an
 - `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
 - The two former `test_source_intake_store` failures are resolved (`3e966cb`); 42 cases passed.
 - The schema-test size issue is resolved (`6077ca3`); original case inventory preserved.
-- Migration numbering: committed `0001`–`0007` are immutable; D1b uses `0006_review_queue.sql` and `0007_vendor_publication_pin.sql`. New schema work takes `0008` or the next free number. The proposed `0002_review_queue.sql` below is stale.
+- Migration numbering: committed `0001`–`0008` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql` and `0008_vendor_acquisition_context.sql`. Queue visibility is reserved for reviewed `0009`; other new schema work takes the next free number. The proposed `0002_review_queue.sql` below is stale.
 - The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
   `eqos.store_now()`.
 
