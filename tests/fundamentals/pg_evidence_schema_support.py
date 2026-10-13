@@ -7,6 +7,7 @@ grant (SELECT and INSERT) that the refusals then bound.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -19,6 +20,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from fundamentals.compare.approval_receipts import proposal_digest, subject_digest
 from fundamentals.pg.settings import SCHEMA_NAME, PgRole
 
 pytestmark = pytest.mark.pg
@@ -30,7 +32,14 @@ PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 # 0001's 33 tables plus 0003's version_pins.
-EXPECTED_TABLE_COUNT = 34
+EXPECTED_TABLE_COUNT = 41
+PROTECTED_REVIEW_TABLES = frozenset(
+    {
+        "approval_review_evidence",
+        "approval_receipts",
+        "queue_dispositions",
+    }
+)
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -522,8 +531,108 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
 
 
 @pytest.fixture
-def seeded(runtime: psycopg.Connection) -> dict[str, int]:
-    return _seed_every_table(runtime)
+def seeded(runtime: psycopg.Connection, migrator: psycopg.Connection) -> dict[str, int]:
+    """Constructed rows prove every table's SQL immutability; no project approval is claimed."""
+    ids = _seed_every_table(runtime)
+    from selection_support import key
+
+    with runtime.transaction():
+        item = _insert(
+            runtime,
+            "queue_items",
+            {
+                "run_id": ids["runs"],
+                "key_digest": "constructed-queue-key",
+                "measurement_key": Jsonb(key("profit_before_tax").model_dump(mode="json")),
+                "pair_identity": "constructed-pair",
+                "outcome": "MISMATCH",
+                "input_sha256": "5" * 64,
+                "severity": "HIGH",
+            },
+        )
+        ids["queue_items"] = item
+        ids["queue_item_inputs"] = _insert(
+            runtime,
+            "queue_item_inputs",
+            {
+                "item_id": item,
+                "interpretation_id": ids["interpretations"],
+            },
+        )
+        ids["queue_run_items"] = _insert(
+            runtime,
+            "queue_run_items",
+            {
+                "run_id": ids["runs"],
+                "item_id": item,
+            },
+        )
+        proposed = {
+            "item_id": item,
+            "kind": "MAPPING_FIX",
+            "reason": "constructed schema fixture",
+            "proposer": "constructed-author",
+            "evidence_ref": "constructed-only",
+            "subject_sha256": subject_digest(_read(runtime, "queue_items", item)),
+            "explained_amount": None,
+            "amount_trace_id": None,
+        }
+        proposed["proposal_sha256"] = proposal_digest(proposed)
+        proposal = _insert(runtime, "queue_disposition_proposals", proposed)
+        ids["queue_disposition_proposals"] = proposal
+    raw = b"constructed SQL immutability fixture; not an actual review or owner approval"
+    evidence_hash = hashlib.sha256(raw).hexdigest()
+    proof = {
+        "subject_kind": "QUEUE_DISPOSITION",
+        "subject_id": item,
+        "proposal_id": proposal,
+        "proposal_sha256": proposed["proposal_sha256"],
+        "subject_sha256": proposed["subject_sha256"],
+        "evidence_sha256": evidence_hash,
+        "raw_evidence": raw,
+        "evidence_document": Jsonb({"fixture": "SQL constraints only"}),
+        "evidence_origin": "INDEPENDENT_REVIEW",
+        "decision": "ACCEPT",
+        "decider": "constructed-peer",
+    }
+    evidence = _insert(migrator, "approval_review_evidence", proof)
+    ids["approval_review_evidence"] = evidence
+    receipt = _insert(
+        migrator,
+        "approval_receipts",
+        {
+            **{
+                name: proof[name]
+                for name in (
+                    "subject_kind",
+                    "subject_id",
+                    "proposal_id",
+                    "proposal_sha256",
+                    "subject_sha256",
+                    "decision",
+                    "decider",
+                )
+            },
+            "review_evidence_id": evidence,
+            "review_evidence_sha256": evidence_hash,
+        },
+    )
+    ids["approval_receipts"] = receipt
+    ids["queue_dispositions"] = _insert(
+        migrator,
+        "queue_dispositions",
+        {
+            "item_id": item,
+            "proposal_id": proposal,
+            "approval_receipt_id": receipt,
+            "kind": proposed["kind"],
+            "reason": proposed["reason"],
+            "proposer": proposed["proposer"],
+            "decider": "constructed-peer",
+            "evidence_ref": proposed["evidence_ref"],
+        },
+    )
+    return ids
 
 
 def _tables(conn: psycopg.Connection) -> list[str]:

@@ -6,12 +6,12 @@ import pytest
 
 from fundamentals.compare import run_config
 from fundamentals.compare.run_config import EXTRACTOR_VERSIONS, extractor_pin
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
 
 
 def test_extractor_pin_hashes_the_selected_version_with_current_sources() -> None:
     """Ingesting under another version gets a content pin for that version's actual code."""
-    for representation in Representation:
+    for representation in FIRST_PARTY_REPRESENTATIONS:
         current = extractor_pin(representation)
         assert extractor_pin(representation, version=EXTRACTOR_VERSIONS[representation]) == current
         reextracted = extractor_pin(representation, version="test-reextract")
@@ -33,11 +33,14 @@ def test_identity_verification_source_changes_both_extractor_pins(
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text("test extraction source\n", encoding="utf-8")
     monkeypatch.setattr(run_config, "_SOURCE_ROOT", tmp_path)
-    before = {representation: extractor_pin(representation) for representation in Representation}
+    before = {
+        representation: extractor_pin(representation)
+        for representation in FIRST_PARTY_REPRESENTATIONS
+    }
     (tmp_path / "evidence/member_identity.py").write_text(
         "changed issuer and basis verifier\n", encoding="utf-8"
     )
-    for representation in Representation:
+    for representation in FIRST_PARTY_REPRESENTATIONS:
         assert extractor_pin(representation) != before[representation]
 
 

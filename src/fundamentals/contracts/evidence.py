@@ -16,10 +16,26 @@ from fractions import Fraction
 from types import MappingProxyType
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PlainSerializer, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
-from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, StatementFamily
+from fundamentals.contracts.canonical import (
+    FIRST_PARTY_REPRESENTATIONS,
+    Basis,
+    PeriodKind,
+    Representation,
+    StatementFamily,
+)
 from fundamentals.contracts.comparison import SelectionSource, SourceState
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.interval import Interval
@@ -207,6 +223,8 @@ def _members(value: Mapping[Representation, PackageMember]) -> Mapping[Any, Any]
     if not 1 <= len(value) <= 2:
         raise ValueError(_MEMBER_COUNT.format(count=len(value)))
     for key, member in value.items():
+        if key not in FIRST_PARTY_REPRESENTATIONS:
+            raise ValueError("a filing package contains only XBRL/PDF first-party members")
         if member.representation is not key:
             raise ValueError(_MEMBER_KEYS.format(key=key, representation=member.representation))
     return _read_only(value)
@@ -390,6 +408,13 @@ class VersionPin(BaseModel):
     content_sha256: str
 
 
+class VendorExtractorPin(VersionPin):
+    """Content-pinned extractor identity for one vendor source and surface."""
+
+    source_id: str = Field(min_length=1)
+    surface: str = Field(min_length=1)
+
+
 class InterpretationTriple(BaseModel):
     """The (mapping set, normalisation policy, extractor) versions an interpretation is under.
 
@@ -403,12 +428,24 @@ class InterpretationTriple(BaseModel):
     normalisation_policy: str
     extractor_xbrl: str
     extractor_pdf: str
+    vendor_extractors: tuple[VendorExtractorPin, ...] = ()
 
-    def extractor(self, representation: Representation) -> str:
+    def extractor(
+        self,
+        representation: Representation,
+        *,
+        source_id: str | None = None,
+        surface: str | None = None,
+    ) -> str:
         """The extractor version for one representation."""
         if representation is Representation.XBRL:
             return self.extractor_xbrl
-        return self.extractor_pdf
+        if representation is Representation.PDF:
+            return self.extractor_pdf
+        for pin in self.vendor_extractors:
+            if pin.source_id == source_id and pin.surface == surface:
+                return pin.version
+        raise ValueError("a vendor extractor requires its pinned source and surface")
 
 
 class PinnedVersions(BaseModel):
@@ -426,6 +463,28 @@ class PinnedVersions(BaseModel):
     definition_set: VersionPin
     comparison_policy: VersionPin
     alignment_rules: VersionPin
+    vendor_extractors: tuple[VendorExtractorPin, ...] = ()
+    source_authority: VersionPin | None = None
+
+    @field_validator("vendor_extractors")
+    @classmethod
+    def _vendor_pins(cls, pins: tuple[VendorExtractorPin, ...]) -> tuple[VendorExtractorPin, ...]:
+        by_surface: dict[tuple[str, str], VendorExtractorPin] = {}
+        for pin in pins:
+            identity = (pin.source_id, pin.surface)
+            previous = by_surface.setdefault(identity, pin)
+            if previous != pin:
+                raise ValueError("a vendor source/surface has conflicting extractor pins")
+        return tuple(by_surface[identity] for identity in sorted(by_surface))
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if not self.vendor_extractors:
+            document.pop("vendor_extractors", None)
+        if self.source_authority is None:
+            document.pop("source_authority", None)
+        return document
 
     def triple(self) -> InterpretationTriple:
         """The interpretation versions selection filters by."""
@@ -434,6 +493,7 @@ class PinnedVersions(BaseModel):
             normalisation_policy=self.normalisation_policy.version,
             extractor_xbrl=self.extractor_xbrl.version,
             extractor_pdf=self.extractor_pdf.version,
+            vendor_extractors=self.vendor_extractors,
         )
 
 

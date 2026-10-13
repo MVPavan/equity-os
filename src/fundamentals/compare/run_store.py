@@ -52,7 +52,12 @@ from fundamentals.contracts.comparison import (
     SourceState,
     Triage,
 )
-from fundamentals.contracts.evidence import Interpretation, PinnedVersions, VersionPin
+from fundamentals.contracts.evidence import (
+    Interpretation,
+    PinnedVersions,
+    VendorExtractorPin,
+    VersionPin,
+)
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.evidence import repository_rows as rows_sql
@@ -85,7 +90,11 @@ _INPUT_COLUMNS: tuple[RunInputKind, ...] = (
     RunInputKind.PACKAGE_STATEMENT,
     RunInputKind.DEFINITION_SET,
 )
-_PIN_NAMES = tuple(PinnedVersions.model_fields)
+_PIN_NAMES = tuple(
+    name
+    for name in PinnedVersions.model_fields
+    if name not in {"vendor_extractors", "source_authority"}
+)
 _UNREADABLE = "run {run_id} {detail}"
 _NO_RECORD = "definition record {record_id!r} is not in the run's published set"
 _EXHAUSTED = "run publication hit {count} serialisation failures"
@@ -103,10 +112,12 @@ _LATEST_RUN: LiteralString = (
     "SELECT id FROM eqos.runs WHERE manifest @> %s ORDER BY created_at DESC, id DESC LIMIT 1"
 )
 _INSERT_VERSION: LiteralString = (
-    "INSERT INTO eqos.run_versions (run_id, pin, version, content_sha256) VALUES (%s, %s, %s, %s)"
+    "INSERT INTO eqos.run_versions (run_id, pin, version, content_sha256, source_id, surface) "
+    "VALUES (%s, %s, %s, %s, %s, %s)"
 )
 _VERSIONS: LiteralString = (
-    "SELECT pin, version, content_sha256 FROM eqos.run_versions WHERE run_id = %s"
+    "SELECT pin, version, content_sha256, source_id, surface "
+    "FROM eqos.run_versions WHERE run_id = %s"
 )
 _INSERT_INPUT: LiteralString = (
     "INSERT INTO eqos.run_inputs (run_id, input_kind, disposition, capture_ref_id, package_id, "
@@ -133,7 +144,8 @@ _RESULTS: LiteralString = "SELECT * FROM eqos.results WHERE run_id = %s ORDER BY
 _INSERT_VALUE: LiteralString = (
     "INSERT INTO eqos.result_source_values (result_id, source_role, representation, "
     "source_state, reason, value, lower, upper, interpretation_id, calculation_trace_id, "
-    "attempt_id, calculation_state) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+    "attempt_id, calculation_state, source_id, surface) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
     "RETURNING id"
 )
 _VALUES: LiteralString = (
@@ -215,6 +227,7 @@ class RunStore:
         publish_hook: PublishHook | None = None,
     ) -> tuple[int, bool]:
         """Publish a run atomically, or return the stored run of the same identity."""
+        _validate_vendor_manifest(manifest, rows)
         for _ in range(MAX_PUBLISH_ATTEMPTS):
             try:
                 return self._publish_once(manifest, rows, definition_set_id, publish_hook)
@@ -253,11 +266,7 @@ class RunStore:
             stage(STAGE_RUNS)
             cursor.executemany(
                 _INSERT_VERSION,
-                [
-                    (run_id, name, pin.version, pin.content_sha256)
-                    for name in _PIN_NAMES
-                    for pin in (getattr(manifest.pinned, name),)
-                ],
+                _version_params(run_id, manifest.pinned),
             )
             stage(STAGE_VERSIONS)
             cursor.executemany(
@@ -277,8 +286,14 @@ class RunStore:
                 cursor, _INSERT_VALUE, [_value_params(rid, value) for rid, value in value_rows]
             )
             stage(STAGE_SOURCE_VALUES)
-            ids_of: dict[tuple[int, SourceRole, Representation], int] = {
-                (rid, value.source_role, value.representation): value_id
+            ids_of: dict[tuple[int, SourceRole, Representation, str | None, str | None], int] = {
+                (
+                    rid,
+                    value.source_role,
+                    value.representation,
+                    value.source_id,
+                    value.surface,
+                ): value_id
                 for (rid, value), value_id in zip(value_rows, value_ids, strict=True)
             }
             cursor.executemany(
@@ -361,17 +376,35 @@ class RunStore:
 
     def read_versions(self, run_id: int) -> PinnedVersions:
         """A stored run's pinned versions from ``run_versions``."""
-        pins = {
+        records = self._fetch(_VERSIONS, (run_id,))
+        pins: dict[str, Any] = {
             row["pin"]: VersionPin(version=row["version"], content_sha256=row["content_sha256"])
-            for row in self._fetch(_VERSIONS, (run_id,))
+            for row in records
+            if row["pin"] != "vendor_extractor"
         }
+        pins["vendor_extractors"] = tuple(
+            VendorExtractorPin(
+                source_id=row["source_id"],
+                surface=row["surface"],
+                version=row["version"],
+                content_sha256=row["content_sha256"],
+            )
+            for row in records
+            if row["pin"] == "vendor_extractor"
+        )
         return PinnedVersions.model_validate(pins)
 
     def read_results(self, run_id: int) -> tuple[ResultRow, ...]:
         """A stored run's result rows with source values, surfaced restatements and pairs."""
+        manifest = self.read_manifest(run_id)
+        legacy_sources = (
+            not manifest.scope.vendor_sources
+            and not manifest.pinned.vendor_extractors
+            and manifest.pinned.source_authority is None
+        )
         values: dict[int, list[tuple[int, SourceValue]]] = defaultdict(list)
         for row in self._fetch(_VALUES, (run_id,)):
-            values[row["result_id"]].append((row["id"], _value_of(row)))
+            values[row["result_id"]].append((row["id"], _value_of(row, legacy=legacy_sources)))
         surfaced: dict[int, list[int]] = defaultdict(list)
         for row in self._fetch(_SURFACED, (run_id,)):
             surfaced[row["result_id"]].append(row["interpretation_id"])
@@ -388,7 +421,12 @@ class RunStore:
                 )
             )
         refs = {
-            value_id: SourceRef(source_role=value.source_role, representation=value.representation)
+            value_id: SourceRef(
+                source_role=value.source_role,
+                representation=value.representation,
+                source_id=value.source_id,
+                surface=value.surface,
+            )
             for items in values.values()
             for value_id, value in items
         }
@@ -419,6 +457,21 @@ def _no_hook(_: str) -> None:
     """The default publication hook: nothing."""
 
 
+def _validate_vendor_manifest(manifest: RunManifest, rows: Sequence[ResultRow]) -> None:
+    """Reject vendor values under a legacy request or unpinned vendor/authority identity."""
+    requested = {(item.source_id, item.surface) for item in manifest.scope.vendor_sources}
+    pinned = {(pin.source_id, pin.surface) for pin in manifest.pinned.vendor_extractors}
+    if requested and (not requested <= pinned or manifest.pinned.source_authority is None):
+        raise ValueError("requested vendor surfaces require extractor and source-authority pins")
+    for row in rows:
+        for value in row.source_values:
+            if value.source_role in (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC):
+                if (value.source_id, value.surface) not in requested:
+                    raise ValueError(
+                        "vendor result side is outside the manifest's requested sources"
+                    )
+
+
 def _returning(
     cursor: psycopg.Cursor[Any], query: LiteralString, params: list[tuple[object, ...]]
 ) -> list[int]:
@@ -441,6 +494,23 @@ def _input_params(run_id: int, item: RunInput) -> tuple[object, ...]:
     columns: list[object] = [None] * len(_INPUT_COLUMNS)
     columns[_INPUT_COLUMNS.index(item.kind)] = item.ref_id
     return (run_id, item.kind.value, item.disposition.value, *columns)
+
+
+def _version_params(run_id: int, pinned: PinnedVersions) -> list[tuple[object, ...]]:
+    """Persist first-party and source-qualified vendor pins without changing v1 documents."""
+    rows: list[tuple[object, ...]] = [
+        (run_id, name, pin.version, pin.content_sha256, None, None)
+        for name in _PIN_NAMES
+        for pin in (getattr(pinned, name),)
+    ]
+    rows.extend(
+        (run_id, "vendor_extractor", pin.version, pin.content_sha256, pin.source_id, pin.surface)
+        for pin in pinned.vendor_extractors
+    )
+    if pinned.source_authority is not None:
+        pin = pinned.source_authority
+        rows.append((run_id, "source_authority", pin.version, pin.content_sha256, None, None))
+    return rows
 
 
 def _result_params(run_id: int, row: ResultRow) -> tuple[object, ...]:
@@ -484,18 +554,36 @@ def _value_params(result_id: int, value: SourceValue) -> tuple[object, ...]:
         value.calculation_trace_id,
         value.attempt_id,
         _value(value.calculation_state),
+        value.source_id,
+        value.surface,
     )
 
 
 def _pair_params(
     result_id: int,
     pair: PairRecord,
-    ids_of: dict[tuple[int, SourceRole, Representation], int],
+    ids_of: dict[tuple[int, SourceRole, Representation, str | None, str | None], int],
     records: dict[str, int],
 ) -> tuple[object, ...]:
     """One ``pair_outcomes`` row naming two source values of the same result."""
-    left = ids_of[(result_id, pair.left.source_role, pair.left.representation)]
-    right = ids_of[(result_id, pair.right.source_role, pair.right.representation)]
+    left = ids_of[
+        (
+            result_id,
+            pair.left.source_role,
+            pair.left.representation,
+            pair.left.source_id,
+            pair.left.surface,
+        )
+    ]
+    right = ids_of[
+        (
+            result_id,
+            pair.right.source_role,
+            pair.right.representation,
+            pair.right.source_id,
+            pair.right.surface,
+        )
+    ]
     record = (
         None
         if pair.definition_record_id is None
@@ -527,11 +615,17 @@ def _value(member: Any) -> str | None:
     return None if member is None else str(member.value)
 
 
-def _value_of(row: dict[str, Any]) -> SourceValue:
+def _value_of(row: dict[str, Any], *, legacy: bool = False) -> SourceValue:
     """A stored source value."""
     state = row["calculation_state"]
+    first_party_legacy = legacy and row["source_role"] in (
+        SourceRole.FIRST_PARTY.value,
+        SourceRole.REPORTED_COUNTERPART.value,
+    )
     return SourceValue(
         source_role=SourceRole(row["source_role"]),
+        source_id=None if first_party_legacy else row["source_id"],
+        surface=None if first_party_legacy else row["surface"],
         representation=Representation(row["representation"]),
         state=SourceState(row["source_state"]),
         reason=row["reason"],
@@ -600,7 +694,15 @@ def _result_of(
             None if corroboration_reason is None else ReasonCode(corroboration_reason)
         ),
         source_values=tuple(
-            sorted(values, key=lambda item: (item.source_role.value, item.representation))
+            sorted(
+                values,
+                key=lambda item: (
+                    item.source_role.value,
+                    item.representation.value,
+                    item.source_id or "",
+                    item.surface or "",
+                ),
+            )
         ),
         pairs=pairs,
         surfaced_restatements=surfaced,

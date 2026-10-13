@@ -94,3 +94,8 @@ class Representation(StrEnum):
 
     XBRL = "XBRL"
     PDF = "PDF"
+    HTML = "HTML"
+    JSON = "JSON"
+
+
+FIRST_PARTY_REPRESENTATIONS = (Representation.XBRL, Representation.PDF)

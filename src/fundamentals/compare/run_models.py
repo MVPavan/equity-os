@@ -13,14 +13,21 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from enum import IntEnum, StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from fundamentals.compare.tables import TaggingAdjustment
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
-    Representation,
     ValueIdentity,
 )
 from fundamentals.contracts.comparison import (
@@ -32,6 +39,12 @@ from fundamentals.contracts.comparison import (
     ReasonCode,
     SourceState,
     Triage,
+)
+from fundamentals.contracts.comparison import (
+    SourceRef as SourceRef,
+)
+from fundamentals.contracts.comparison import (
+    SourceRole as SourceRole,
 )
 from fundamentals.contracts.evidence import PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
@@ -91,14 +104,6 @@ class RunInputDisposition(StrEnum):
     FAILED_ATTEMPT = "FAILED_ATTEMPT"
 
 
-class SourceRole(StrEnum):
-    """Which side a stored source value plays in its result row."""
-
-    FIRST_PARTY = "FIRST_PARTY"
-    # A reported value copied onto a derived row so its REPORTED_VS_DERIVED pair can name it.
-    REPORTED_COUNTERPART = "REPORTED_COUNTERPART"
-
-
 class RunInput(BaseModel):
     """One evidence row a run read, with what it did with it."""
 
@@ -107,6 +112,22 @@ class RunInput(BaseModel):
     kind: RunInputKind
     ref_id: int
     disposition: RunInputDisposition
+
+
+class VendorSurfaceRequest(BaseModel):
+    """One explicitly requested retained vendor source and surface."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str
+    surface: str
+
+    @field_validator("source_id", "surface")
+    @classmethod
+    def _nonempty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("vendor source/surface is nonempty")
+        return value
 
 
 class RunScope(BaseModel):
@@ -123,6 +144,21 @@ class RunScope(BaseModel):
     period_ends: tuple[date, ...]
     bases: tuple[Basis, ...]
     sources: tuple[str, ...]
+    vendor_sources: tuple[VendorSurfaceRequest, ...] = ()
+
+    @field_validator("vendor_sources")
+    @classmethod
+    def _vendor_surfaces(
+        cls, value: tuple[VendorSurfaceRequest, ...]
+    ) -> tuple[VendorSurfaceRequest, ...]:
+        return tuple(sorted(set(value), key=lambda item: (item.source_id, item.surface)))
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if not self.vendor_sources:
+            document.pop("vendor_sources", None)
+        return document
 
     @field_validator("entity_ids")
     @classmethod
@@ -209,13 +245,11 @@ class RunManifest(BaseModel):
         return _sha256(self.model_dump(mode="json"))
 
 
-class SourceValue(BaseModel):
+class SourceValue(SourceRef):
     """One source's value for one result row; ``interpretation_id`` and trace id exclusive."""
 
     model_config = ConfigDict(frozen=True)
 
-    source_role: SourceRole
-    representation: Representation
     state: SourceState
     reason: str | None
     value: Decimal | None
@@ -226,14 +260,14 @@ class SourceValue(BaseModel):
     attempt_id: int | None
     calculation_state: CalculationState | None
 
-
-class SourceRef(BaseModel):
-    """Which source value of the same row one side of a pair is."""
-
-    model_config = ConfigDict(frozen=True)
-
-    source_role: SourceRole
-    representation: Representation
+    @model_validator(mode="after")
+    def _vendor_value_provenance(self) -> SourceValue:
+        if self.source_role in (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC):
+            if self.state is SourceState.VALUE and (
+                (self.interpretation_id is None) == (self.calculation_trace_id is None)
+            ):
+                raise ValueError("vendor VALUE names its selected interpretation or child trace")
+        return self
 
 
 class PairRecord(BaseModel):
@@ -271,6 +305,22 @@ class ResultRow(BaseModel):
     source_values: tuple[SourceValue, ...]
     pairs: tuple[PairRecord, ...]
     surfaced_restatements: tuple[int, ...]
+
+    @field_validator("source_values")
+    @classmethod
+    def _ordered_sources(cls, values: tuple[SourceValue, ...]) -> tuple[SourceValue, ...]:
+        """Canonical order includes source/surface when providers share a representation."""
+        return tuple(
+            sorted(
+                values,
+                key=lambda item: (
+                    item.source_role.value,
+                    item.representation.value,
+                    item.source_id or "",
+                    item.surface or "",
+                ),
+            )
+        )
 
 
 class RunRecord(BaseModel):

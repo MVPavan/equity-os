@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from fundamentals.contracts.canonical import Representation
+
 
 class SourceState(StrEnum):
     """One source's state for a cell (data spec §5 source states)."""
@@ -32,6 +36,40 @@ class SelectionSource(StrEnum):
     PACKAGE_OPENING_DISCLOSURE = "PACKAGE_OPENING_DISCLOSURE"
     INSTANT_OWN_SELECTION = "INSTANT_OWN_SELECTION"
     HISTORICAL_PACKAGE = "HISTORICAL_PACKAGE"
+    VENDOR_CAPTURE = "VENDOR_CAPTURE"
+
+
+class SourceRole(StrEnum):
+    """The evidentiary role of a source-qualified result side."""
+
+    FIRST_PARTY = "FIRST_PARTY"
+    REPORTED_COUNTERPART = "REPORTED_COUNTERPART"
+    INDEPENDENT_VENDOR = "INDEPENDENT_VENDOR"
+    DIAGNOSTIC = "DIAGNOSTIC"
+
+
+class SourceRef(BaseModel):
+    """Identify a side by its actual source and surface; legacy first-party refs may omit them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_role: SourceRole
+    representation: Representation
+    source_id: str | None = None
+    surface: str | None = None
+
+    @model_validator(mode="after")
+    def _source_identity(self) -> SourceRef:
+        if (self.source_id is None) != (self.surface is None):
+            raise ValueError("source_id and surface must be supplied together")
+        if self.source_role in (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC):
+            if not self.source_id or not self.surface:
+                raise ValueError("a vendor side names its actual source_id and surface")
+            if self.representation not in (Representation.HTML, Representation.JSON):
+                raise ValueError("a vendor side uses HTML or JSON representation")
+        elif self.representation not in (Representation.XBRL, Representation.PDF):
+            raise ValueError("a first-party side uses XBRL or PDF representation")
+        return self
 
 
 class PairOutcome(StrEnum):
@@ -112,6 +150,8 @@ class PairKind(StrEnum):
 
     EXTRACTION = "EXTRACTION"
     REPORTED_VS_DERIVED = "REPORTED_VS_DERIVED"
+    CORROBORATION = "CORROBORATION"
+    DIAGNOSTIC = "DIAGNOSTIC"
 
 
 class EpistemicClass(StrEnum):

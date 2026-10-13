@@ -585,6 +585,11 @@ def _magnitude(occurrence: Occurrence) -> Decimal | None:
     if occurrence.representation is Representation.PDF:
         parsed = parse_printed_number(text)
         return parsed.magnitude if parsed is not None else None
+    if occurrence.representation in (Representation.HTML, Representation.JSON):
+        from fundamentals.ingest.screener_financials_tables import read_number
+
+        vendor_number, _ = read_number(text)
+        return None if vendor_number is None else vendor_number.copy_abs()
     try:
         filed = Decimal(text)
     except InvalidOperation:

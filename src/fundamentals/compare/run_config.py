@@ -24,7 +24,7 @@ from fundamentals.compare.definitions import (
     publish_definition_set,
 )
 from fundamentals.compare.policy import ComparisonPolicy, load_comparison_policy
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.contracts.evidence import VersionPin as Pin
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -169,7 +169,7 @@ def load_run_config(
     )
     extractors = {
         representation: (extractor_pins or {}).get(representation) or extractor_pin(representation)
-        for representation in Representation
+        for representation in FIRST_PARTY_REPRESENTATIONS
     }
     pinned = PinnedVersions(
         dictionary=Pin(version=dictionary.version, content_sha256=dictionary.content_sha256),

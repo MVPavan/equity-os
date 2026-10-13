@@ -36,6 +36,7 @@ from fundamentals.compare.run import (
 )
 from fundamentals.compare.run_config import ConfigVersions
 from fundamentals.contracts.canonical import (
+    FIRST_PARTY_REPRESENTATIONS,
     ApplicabilityStatus,
     Basis,
     Representation,
@@ -81,7 +82,9 @@ RESULT_ENUMS = (
     ("corroboration_reason", ReasonCode),
 )
 VALUE_ENUMS = (
-    ("representation", Representation),
+    # These donor rows are FIRST_PARTY. Vendor representation checks use actual
+    # source-qualified vendor rows in test_vendor_schema/test_vendor_sql_boundaries.
+    ("representation", FIRST_PARTY_REPRESENTATIONS),
     ("source_state", SourceState),
     ("calculation_state", CalculationState),
 )
@@ -350,8 +353,21 @@ def enum_round_trip(runner: Runner, run_id: int) -> list[str]:
                 overrides = {"identity_hash": f"enum-{value}", column: value.value}
                 attempt("runs", run_id, overrides, f"runs.{column}={value}")
         version = one("SELECT id FROM eqos.run_versions WHERE run_id = %s LIMIT 1", (run_id,))
-        for pin in PinnedVersions.model_fields:
+        for pin in (name for name in PinnedVersions.model_fields if name != "vendor_extractors"):
             attempt("run_versions", version, {"run_id": run, "pin": pin}, f"pin={pin}")
+        # The typed collection serializes as one source-qualified row per pin,
+        # not as a SQL pin named vendor_extractors.
+        attempt(
+            "run_versions",
+            version,
+            {
+                "run_id": run,
+                "pin": "vendor_extractor",
+                "source_id": "constructed-enum-vendor",
+                "surface": "CONSTRUCTED_HTML",
+            },
+            "pin=vendor_extractor",
+        )
         for kind in RunInputKind:
             template = one(
                 "SELECT id FROM eqos.run_inputs WHERE run_id = %s AND input_kind = %s LIMIT 1",

@@ -22,6 +22,7 @@ from pg_evidence_schema_support import (
     EXPECTED_TABLE_COUNT,
     NOW,
     PERIOD_END,
+    PROTECTED_REVIEW_TABLES,
     SHA_A,
     SHA_B,
     _attempt,
@@ -112,7 +113,7 @@ def test_migrator_owns_schema_and_every_object(migrator: psycopg.Connection) -> 
             "has_table_privilege(%s, %s, 'TRUNCATE')",
             (RUNTIME_ROLE_NAME, qualified) * 5,
         ).fetchone()
-        assert granted == (True, True, False, False, False), table
+        assert granted == (True, table not in PROTECTED_REVIEW_TABLES, False, False, False), table
 
 
 # ---------------------------------------------------------------------------

@@ -25,7 +25,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from fundamentals.contracts.canonical import Representation
 
 
 class SourceClass(StrEnum):
@@ -69,6 +71,23 @@ class SourceDescriptor(BaseModel):
     def may_reconcile(self) -> bool:
         """Whether values from this source may enter reconciliation."""
         return self.evidence_role is EvidenceRole.RECONCILABLE
+
+
+class SurfaceAuthority(BaseModel):
+    """An explicit, content-pinned rights decision for one source and retained surface.
+
+    Classification alone grants no surface access. The publication owner supplies this
+    record from the joined authority artifact and keeps its approval evidence reference.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_id: str = Field(min_length=1)
+    surface: str = Field(min_length=1)
+    representation: Representation
+    evidence_role: EvidenceRole
+    authority_ref: str = Field(min_length=1)
+    authority_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class SourceCatalog(BaseModel):
