@@ -1051,4 +1051,15 @@ proofs. Root's fresh combined integration is **114 passed**. The historical form
 FAIL: **3,102 passed / 2 reproduced legacy-fixture failures / 8 existing skips**, with all quality
 and privacy checks green. Actual code defects are resolved; final fixture corrections, full gate,
 committed candidate A/fresh review/receipt C, and authoritative generation/run proofs remain gated.
+
+### Final gate legacy fixture repair — 2026-10-13
+
+Both failures in the 3,102-pass historical gate were isolated to old fixtures: the retained
+Screener roundtrip omitted the required actual nine-member production extractor pin, and the
+0005-to-0006 upgrade test unintentionally included the newly committed 0007 migration. The
+repairs use the actual pin and a private byte-identical 0001–0006 migration directory. All
+38 and 11 original assertion ASTs remain unchanged. The two exact guarded-PostgreSQL nodes
+now pass (4.73s), with scoped Ruff lint/format clean. Commit `243a6b2` records only those two
+fixture files and the reopening proof. The previous full gate remains a recorded FAIL until
+a fresh complete run; no financial oracle, migration or production constraint was relaxed.
 No nominal RELEASED label or caller model is accepted as release authority.
