@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Active after owner resume; stage 4 amendment complete (`c77657d`). Schema, offline adapters, pure corroboration, native construction, retained Screener drafts, publication mechanism (`00972d2`) and exact-context first-party producer (`535df96`) are committed within their verified scopes. Actual reviewed joined release C (`a4002bb`) passes real loader and retained Apar v2 append/reuse/v1-preservation proof; Task13 technical release is closed. Vendor-generation producer (`9e43fd5`), exact first-party consumer checkpoint (`ee3b07f`) and immutable queue visibility (`f8eba1c`, migration0009) are committed. Latest full formal gate PASS at13:42 UTC: **3,218 tests / 8 existing skips**, full Ruff/format/strict mypy and privacy clear, protected test split (`5831a2c`) accepted. Public vendor run/replay and source-bound retained-intake witness implementation proceed in isolated scopes; absent failed-XBRL input authority remains fail closed. Full Stage 1 remains gated by missing retained vendor evidence, integrated run/replay and authenticated queue CLI, and the frozen source-verified manifest/e2e. |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance |6| Paused at owner request. D1b amendment stage is complete; source/schema/native/publication/vendor producer/immutable queue mechanisms are committed. Actual reviewed joined v2 release C=a4002bb and current SONACOMS identity3df9421 are accepted within scope. Public exact vendor execution cd76f3a and atomic retained-intake witness/shared replay209e4ad are committed with independent R2/R3 approval; technical producer/consumer/witness beads `.15`, `.20`, `.24` closed. Final full behavior suite3398PASS/8existing skips and fullRuff/strictmypyPASS. Formal wrapper STOP for old review path-pattern prose is preserved; corrected prose and exact unchanged full-scope privacy rails recheck exit0. Marker-only test classification separately proved/resealed; no duplicate full suite or formal-wrapper PASS claimed. Actual SONACOMS, missing vendors, authenticated review CLI `.29`, frozen source manifest and Stage1 e2e remain open. Resume from the [new checkpoint](resume-2026-10-13-paused-checkpoint.md). |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -42,7 +42,7 @@ Only one worker runs at a time (parallel workers hit the API rate limit).
 
 **Estimate (inference from D1a only, not a measurement).** D1a took about 1 day of planning and
 review, about 7 hours of build and about 1–2 days of phase review and fixes, so 2–3 days of
-wall-clock per phase. The remaining 59 stages come to about 3–6 weeks of continuous running.
+wall-clock per phase. The remaining58 stages come to about 3–6 weeks of continuous running.
 Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration and cutover) and D9
 (deletion under concurrency). API rate limits are the largest schedule risk.
 
@@ -53,7 +53,7 @@ Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration an
 - `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
 - The two former `test_source_intake_store` failures are resolved (`3e966cb`); 42 cases passed.
 - The schema-test size issue is resolved (`6077ca3`); original case inventory preserved.
-- Migration numbering: committed `0001`–`0009` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql`, `0008_vendor_acquisition_context.sql` and accepted `0009_queue_overlay_snapshots.sql` (`f8eba1c`,62 focused cases PASS). Other new schema work takes the next free number. The proposed `0002_review_queue.sql` below is stale.
+- Migration numbering: committed `0001`–`0010` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql`, `0008_vendor_acquisition_context.sql` and accepted `0009_queue_overlay_snapshots.sql` (`f8eba1c`,62 focused cases PASS). Accepted `0010_retained_intake_witness.sql` (`209e4ad`) is also immutable; future schema takes `0011` or the next free number. The proposed `0002_review_queue.sql` below is stale.
 - The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
   `eqos.store_now()`.
 

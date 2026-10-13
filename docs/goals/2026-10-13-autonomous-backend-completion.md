@@ -1,7 +1,17 @@
 # Equity-OS autonomous backend completion goal — 2026-10-13
 
-Status: active; owner resumed work and the goal control, 2026-10-13. The paused checkpoint is historical; the current
-built-tree formal gate passes, while full backend acceptance remains open. Preparation task: `eqos-lob`.
+Status: paused checkpoint prepared at the latest owner request, 2026-10-13. The started
+public/witness group is verified and committed; all workers have finished. Goal control pauses
+after this final status commit. Full backend acceptance remains open. Preparation task: `eqos-lob`.
+
+## Latest pause steering — 2026-10-13
+
+The owner requested finishing already-started tasks at a verified resume point, committing
+the result, saving progress and writing a new completed/remaining-work file, then stopping.
+This supersedes the resume steering below until the next explicit resume. The current
+[resume checkpoint](../workstreams/data-foundation/resume-2026-10-13-paused-checkpoint.md)
+consolidates current authority, final evidence, remaining Beads, project goal and next scope.
+All prior pause and resume entries below remain historical evidence.
 
 ## Resume steering — 2026-10-13
 
