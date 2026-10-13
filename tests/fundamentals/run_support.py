@@ -230,6 +230,10 @@ def config_copy(tmp_path: Path) -> Path:
     definition set (edited by the test; the v1 files stay byte-identical)."""
     root = tmp_path / "config-root"
     shutil.copytree(CONFIG, root)
+    # This legacy mutation fixture deliberately starts its private v2 from v1, even
+    # after the repository gains a real v2 dictionary. Never alter repository config.
+    if (root / "dictionary" / "v2").exists():
+        shutil.rmtree(root / "dictionary" / "v2")
     shutil.copytree(root / "dictionary" / "v1", root / "dictionary" / "v2")
     shutil.copyfile(root / "mappings" / "v1.yaml", root / "mappings" / "v2.yaml")
     shutil.copyfile(root / "definition_sets" / "v1.yaml", root / "definition_sets" / "v2.yaml")
