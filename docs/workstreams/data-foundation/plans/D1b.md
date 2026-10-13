@@ -1002,3 +1002,15 @@ separate formal proof captures **12/12 genuine public-seam RED** before repair c
 Implementation may proceed in its assigned files. Final shared v2 candidate/review/receipt
 commits, generation proof and actual release acceptance remain pending; no flag, caller model,
 path or hash alone is an external approval claim.
+
+### Native mechanism verified checkpoint — 2026-10-13
+
+Task 14's implementation is locally committed as `cd8151b`. Both fresh independent R3 reviews
+approve all N01–N12 findings and the complete current-rule reading re-derivation. Root verifies
+**131 focused retained/guarded-PostgreSQL/legacy cases**, Ruff lint/format and strict mypy.
+The [final review and reopening proof](../reviews/D1b-native-implementation-review.md) records
+each resolution, the unchanged RED outcomes, source-correct fixtures and explicit reseals.
+Fail closed: these checks accept this bounded mechanism; the task stays open for the combined
+formal gate. Dictionary/Screener drafts, shared release, publication-bound producers and full
+D1b acceptance retain their own gates. No authority, qualification or missing-source waiver is
+inferred from numerical validity.
