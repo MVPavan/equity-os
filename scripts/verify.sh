@@ -278,6 +278,16 @@ mode_gate() {
   local slice="$1"
   cd "${REPO_ROOT}" || exit "${EXIT_STOP}"
 
+  # Default remains HEAD. An explicit ancestor replays the full checkpoint,
+  # including committed additions; reject malformed/unrelated bases before work.
+  local scope_base
+  if ! scope_base="$(git rev-parse --verify --end-of-options "${VERIFY_SCOPE_BASE:-HEAD}^{commit}" 2>/dev/null)" \
+    || ! git merge-base --is-ancestor "${scope_base}" HEAD 2>/dev/null; then
+    echo "rails            STOP  invalid verification scope base"
+    echo "ROUTE: STOP      scope base must resolve to an ancestor commit"
+    exit "${EXIT_STOP}"
+  fi
+
   mkdir -p "${GATE_DIR}"
   local ts log proof
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -358,13 +368,13 @@ PYEOF
   # scripts/verify.sh is excluded because it necessarily contains the very
   # patterns it greps for; uv.lock and .coverage are generated artifacts.
   changed_files="$(
-    { git diff --name-only HEAD; git ls-files --others --exclude-standard; } \
+    { git diff --name-only "${scope_base}"; git ls-files --others --exclude-standard; } \
       | sort -u \
       | grep -vE '^(scratchpad/|scripts/verify\.sh$|uv\.lock$|\.coverage)' || true
   )"
 
   # The two fixture rails (step 5) scan only the lines this change ADDED: the
-  # `+` side of `git diff -U0 HEAD` for a tracked file, the whole content of an
+  # `+` side of `git diff -U0 scope_base` for a tracked file, the whole content of an
   # untracked one. Built per path so `added_tests` is exactly the added lines of
   # files under tests/, never a grep on a merged stream.
   local added added_tests
@@ -374,7 +384,7 @@ PYEOF
     while IFS= read -r f; do
       [ -n "${f}" ] || continue
       if [ -n "$(git ls-files -- "${f}")" ]; then
-        lines="$(git diff -U0 HEAD -- "${f}" | grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//')"
+        lines="$(git diff -U0 "${scope_base}" -- "${f}" | grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//')"
       else
         # -I: an untracked binary file must not poison the text scans below.
         lines="$(grep -Ih '' "${f}" 2>/dev/null)"
@@ -388,7 +398,7 @@ PYEOF
   # 2 — the gate. One pytest run, with coverage, so the loop stays cheap.
   local covjson="${GATE_DIR}/${slice}-${ts}-cov.json"
   note "=== pytest ==="
-  uv run pytest "${TEST_SCOPE}" -q --tb=no -rA \
+  uv run pytest "${TEST_SCOPE}" -q --tb=short -rA \
     "--cov=${COV_SCOPE}" "--cov-report=json:${covjson}" --cov-report= >>"${log}" 2>&1
   local failed n_failed n_skipped
   failed="$(cap_names "$(awk '/^(FAILED|ERROR) /{print $2}' "${log}")")"
@@ -523,15 +533,15 @@ PYEOF
     l_cov="diff-coverage    —     skipped, no coverage report (gate red?)"
   else
     local uncovered
-    uncovered="$(python3 - "${covjson}" "${COV_SCOPE}" <<'PYEOF'
+    uncovered="$(python3 - "${covjson}" "${COV_SCOPE}" "${scope_base}" <<'PYEOF'
 import json, pathlib, re, subprocess, sys, collections
 
-covfile, scope = sys.argv[1], sys.argv[2]
+covfile, scope, scope_base = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def changed_lines() -> dict[str, set[int]]:
     out: dict[str, set[int]] = collections.defaultdict(set)
     diff = subprocess.run(
-        ["git", "diff", "-U0", "HEAD", "--", scope],
+        ["git", "diff", "-U0", scope_base, "--", scope],
         capture_output=True, text=True, check=False).stdout
     path = None
     for line in diff.splitlines():
@@ -625,7 +635,11 @@ PYEOF
       grep -rhoE 'data-row-company-id="[0-9]{4,}"|/company/(id/)?[0-9]{4,}/' "${caps[@]}" 2>/dev/null \
         | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
       if [ -s "${ids}" ]; then
-        leaked="$(grep -howFf "${ids}" "${added_tests}" 2>/dev/null | sort -u | head -3 | paste -sd, -)"
+        # Reviewed financial collisions require exact file/line/token proofs;
+        # every unknown captured identifier still fails closed.
+        if ! leaked="$(python3 "${REPO_ROOT}/scripts/verify_privacy_identifiers.py" "${REPO_ROOT}" "${scope_base}" "${ids}" 2>>"${log}")"; then
+          rails="${rails}${rails:+; }identifier scan failed closed"
+        fi
         [ -n "${leaked}" ] && rails="${rails}${rails:+; }real captured identifier in a fixture: ${leaked}"
       fi
       rm -f "${ids}"
@@ -637,8 +651,8 @@ PYEOF
     if [ "${#caps[@]}" -gt 0 ]; then
       local pat pasted
       pat="$(mktemp)"
-      grep -IhoE ".{${PASTE_MIN_LEN},}" "${added}" 2>/dev/null \
-        | sed 's/^[[:space:]]*//' | sort -u | head -"${PASTE_MAX_PATTERNS}" >"${pat}"
+      sed 's/^[[:space:]]*//' "${added}" \
+        | grep -IE ".{${PASTE_MIN_LEN},}" | sort -u | head -"${PASTE_MAX_PATTERNS}" >"${pat}"
       if [ -s "${pat}" ]; then
         pasted="$(grep -rlFf "${pat}" "${caps[@]}" 2>/dev/null | head -2 | paste -sd, -)"
         [ -n "${pasted}" ] && rails="${rails}${rails:+; }fixture text matches private capture: ${pasted}"

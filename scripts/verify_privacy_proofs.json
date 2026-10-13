@@ -1,0 +1,69 @@
+{
+  "contract": "Exact financial-context adjudications for eqos-490. File, line and token must all match. New or edited contexts fail closed. Fresh independent scanner/record review required before gate acceptance.",
+  "authority": "docs/workstreams/data-foundation/handoff-codex-2026-10-13.md",
+  "contexts": [
+    {
+      "path": "tests/fundamentals/test_compare_corroboration.py",
+      "file_sha256": "a5fda23716bb56942dd409ae6eaff718df17a15c4e7db4eb10dc549e78eab34a",
+      "line_sha256": "ebbadd46a25b7174b3a16ef343e574bd19765c7f9795ee479407d9b4b042a92d",
+      "token": "1200",
+      "line_number_at_review": 120,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/test_compare_corroboration.py",
+      "file_sha256": "a5fda23716bb56942dd409ae6eaff718df17a15c4e7db4eb10dc549e78eab34a",
+      "line_sha256": "9f281036ba9042b028c8d316b6a6148e50e423e40495bef576c9e84bcc18031d",
+      "token": "1200",
+      "line_number_at_review": 140,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/test_compare_corroboration.py",
+      "file_sha256": "a5fda23716bb56942dd409ae6eaff718df17a15c4e7db4eb10dc549e78eab34a",
+      "line_sha256": "d2d108ace804e6f1bf02ff8877e3d0282d8c8322743ea3961f6eec98ff95a120",
+      "token": "1010",
+      "line_number_at_review": 141,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/test_compare_corroboration.py",
+      "file_sha256": "a5fda23716bb56942dd409ae6eaff718df17a15c4e7db4eb10dc549e78eab34a",
+      "line_sha256": "441fcc3ba38bda4137ff0e6efa2bd83e3e3c2b56b82369900a05bbaa9280e4f3",
+      "token": "1200",
+      "line_number_at_review": 200,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/test_compare_corroboration.py",
+      "file_sha256": "a5fda23716bb56942dd409ae6eaff718df17a15c4e7db4eb10dc549e78eab34a",
+      "line_sha256": "0841d2c7634884aa0022717d3d7d2925f35988b4212efd0394c8b9f938c44e50",
+      "token": "1200",
+      "line_number_at_review": 278,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/test_compare_diagnostic.py",
+      "file_sha256": "8279b888574703406eb896b79ac12d3bef46a930a3a63296b93174341e471ef6",
+      "line_sha256": "d7bda0c1898caafde2086282f277eeaacaa2b8374bafb75660981c65155aa83f",
+      "token": "1200",
+      "line_number_at_review": 148,
+      "reason": "Synthetic monetary operand supplied to qualified value / exact corroboration or triage decision-table tests; not an issuer or row identifier.",
+      "source_proof": "docs/workstreams/data-foundation/plans/D1b.md Task 5; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    },
+    {
+      "path": "tests/fundamentals/vendor_retained_support.py",
+      "file_sha256": "5ab9697b0ae64f919d2da5202c3096e6b91de5d9676e9b77bd3a744e03e0af6a",
+      "line_sha256": "1a35ebbcb227cf2345a31dc6bcab2ca1656e3d78742fdcec5fd9fe2465336c70",
+      "token": "1012",
+      "line_number_at_review": 29,
+      "reason": "HFCL consolidated Sales for Dec 2024, independently hand-read in crore from retained #quarters HTML; not an issuer or row identifier.",
+      "source_proof": "docs/specs/artifacts/stage1-source-inventory.md; docs/workstreams/data-foundation/reviews/D1b-batch-review.md"
+    }
+  ]
+}
