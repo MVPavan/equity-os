@@ -65,7 +65,7 @@ def _write_yaml(path: Path, document: object) -> None:
 
 def _draft_root(tmp_path: Path, *, version: str = "v2") -> Path:
     root = tmp_path / f"config-{version}"
-    shutil.copytree(CONFIG, root)
+    shutil.copytree(CONFIG, root, ignore=shutil.ignore_patterns("vendor_publication"))
     vendor_member = root / "mappings" / "publication-test" / version / "financials.yaml"
     _write_yaml(
         vendor_member,

@@ -95,3 +95,17 @@ before/after file SHA-256 pairs are:
 Root authorizes the Screener proof hash reseal using this amendment, preserving every original
 recorded outcome. New 0007 retains its separate upgrade proof. The combined formal gate still
 requires a fresh rerun; these fixture checks do not relabel its earlier FAIL.
+
+## Actual release: private draft fixture reopening
+
+After actual release C, the private `_draft_root` copied the real publication and receipt,
+so two intended missing-publication tests correctly refused for a different reason. Root
+changes only the temporary copy's ignore rule to omit `vendor_publication`; the actual
+committed release and every test assertion stay unchanged. Complete assertion AST inventories
+are identical, **17/17**. Primary test-file SHA changes from
+`b13847c056bbf828ab6b73236f86867cbe1e501d9702a97c34299c962ae872a5` to
+`12dbba6a6fe7b7fb3e5018331a2ea74933f9b49d02a8d4c23c69910fc2ebebb2`.
+The before bytes are retained in scratchpad. Root's fresh entire affected publication/producer/
+legacy-pin matrix is **95 passed in 33.46s**; scoped Ruff lint/format pass. Root explicitly
+authorizes that fixture-only reseal, preserving all thirteen original RED outcomes and their
+previously disclosed attribution. This creates no new approval or source-coverage waiver.
