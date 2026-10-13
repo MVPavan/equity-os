@@ -1,6 +1,6 @@
 # Equity-OS autonomous backend completion goal — 2026-10-13
 
-Status: ready for owner activation through the goal tool. Preparation task: `eqos-lob`.
+Status: active, owner-activated 2026-10-13. Preparation task: `eqos-lob`.
 
 ## Objective
 
@@ -18,7 +18,11 @@ separately approved memory. Backend acceptance is the Apar four-quarter PostgreS
 This file records the owner's latest instructions of 2026-10-13: work autonomously, maximize
 parallel execution, and resolve document conflicts using the latest applicable document.
 Use recorded document/revision/decision dates, not filesystem modification times. This instruction
-supersedes older one-worker scheduling rules. Keep the handoff's hard protections and queue order.
+supersedes older one-worker scheduling rules. On activation the owner also explicitly authorized
+ignoring enforced sequence and using relevant, risk-scaled verification. Overlap independent
+queue items and Areas A/C/B with exclusive ownership; preserve genuine data/interface dependencies,
+acceptance gates and the handoff's hard protections. Batch broad checks on stable integrations,
+using focused proofs during development; omit redundant checks for trivial changes.
 If dates tie and precedence remains ambiguous, choose fail closed and record the ruling in the
 current phase plan's build notes. Do not ask the owner questions or infer financial judgments.
 
@@ -33,12 +37,13 @@ repository read order in `AGENTS.md`. Consult these sources when their work beco
 | [Decision register](../blueprint/funda-blueprint-implementation-decision-register-v2.md), [architecture v2](architecture/architecture-brief-v2.md), [Gold goal](equity-os-product-completion-gold.md), [vision checkpoint](../evidence/product-completion/vision-acceptance.md) | Broader release gates and vision; refresh old status claims against newer evidence |
 | `.claude/project/verification.md`, `.claude/project/invariants.md` | Required checks and financial/provenance invariants |
 
-## Execute in order
+## Work inventory and acceptance
 
 1. Preserve the existing uncommitted Area A/C work and migration `0005`. Fix the three reported
    mypy errors, establish the exact known-failure baseline (`eqos-hz0`, two source-intake cases),
    and commit the verified Area A starting work, including `0005`, without staging Area C.
-2. Finish D1a Area A → Area C → Area B. Implement every finding's specified fix, with tests first.
+2. Finish D1a Areas A, C and B through independent parallel file scopes. Implement every finding's
+   specified fix, with tests first for meaningful behavior changes.
    Area B owns A4's selection change. Verify every previously reported fix against current code.
 3. Run D1a's fresh independent review/fix/re-review loop. After three non-convergent rounds,
    record a fix-or-park ruling for every residual; run a fresh critical review of the whole phase.
@@ -50,22 +55,23 @@ repository read order in `AGENTS.md`. Consult these sources when their work beco
    Record `scripts/verify.sh red <slice>` before each D1b implementation stage. Build retained
    vendor adapters, corroboration, queue, amendments and the source-verified frozen manifest;
    commit the approved manifest before its e2e test. Proceed only after D1b's exit is green.
-5. Continue D2–D9, PREP-1–PREP-8 and the pilot in backend-roadmap order, respecting actual
+5. Continue D2–D9, PREP-1–PREP-8 and the pilot, respecting actual
    dependencies. Park prohibited steps, record reasons, and select the next unblocked item.
    Later research capabilities require their recorded activation gates; do not activate them by
    treating an older whole-product goal as blanket permission.
 
 ## Parallel execution and item completion
 
-Within the active queue item, dispatch independent bounded tasks with explicit file ownership.
-Keep Area A/C/B sequential. One writer owns shared contracts, configuration, migrations and test
+Across eligible queue items, dispatch independent bounded tasks with explicit file ownership.
+One writer owns shared contracts, configuration, migrations and test
 support per batch. Tell every worker others are editing and require preservation of their work.
 Use available slots for implementation, source verification and fresh independent review; rotate
 finished workers out. Run integrated ingest checks after extractor edits are frozen; establish
 test-harness isolation before concurrent PostgreSQL runs. Follow the execution skill; use planning
 for new phase plans and test-first/debugging/security skills where applicable.
 
-Every verified item: test first → implement → run all four handoff checks → commit explicit files
+Every verified item: obtain relevant behavior proof → implement → verify the affected surface
+(all four handoff checks at stable integration/phase gates) → commit explicit files
 with `Co-Authored-By: Codex <noreply@openai.com>` → update/close Beads using `--actor codex` and
 evidence → append `YYYY-MM-DD HH:MM — item — result — commit` to the handoff progress log and
 commit that log. Preserve unrelated changes; the known baseline failures are not a clean-suite
