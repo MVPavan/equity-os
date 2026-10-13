@@ -53,7 +53,7 @@ Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration an
 - `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
 - The two former `test_source_intake_store` failures are resolved (`3e966cb`); 42 cases passed.
 - The schema-test size issue is resolved (`6077ca3`); original case inventory preserved.
-- Migration numbering: committed `0001`–`0008` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql` and `0008_vendor_acquisition_context.sql`. Queue visibility is reserved for reviewed `0009`; other new schema work takes the next free number. The proposed `0002_review_queue.sql` below is stale.
+- Migration numbering: committed `0001`–`0009` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql`, `0008_vendor_acquisition_context.sql` and accepted `0009_queue_overlay_snapshots.sql` (`f8eba1c`,62 focused cases PASS). Other new schema work takes the next free number. The proposed `0002_review_queue.sql` below is stale.
 - The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
   `eqos.store_now()`.
 
