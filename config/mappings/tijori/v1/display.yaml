@@ -1,0 +1,22 @@
+# Tijori financials island display facts (spec §5 "Vendor HTML: displayed decimals at the displayed
+# scale"). Scoped to the money rows of fin_tables_data.qt_c: every qt_c row outside the
+# "Quarterly Ratios" subtree (EPS and margins are not crore). Every other table stays unsupported.
+# Evidence: Tijori's own render script, retained capture
+# tijori/static_script/fin-tables.js/20261014T080646.411252Z-3984b8e174d5
+# (sha256 3984b8e174d5d4b66fb348052dba05a2e62ff35d68650588f0c4429084ce5925, 2026-10-14).
+section: qt_c
+excluded_parent: Quarterly Ratios
+raw_unit: INR
+raw_scale: 7
+unit_evidence_ref: >-
+  fin-tables.js line 103, quarterly_results_table (variations qt_s/qt_c): unit: "In Rs. Cr.".
+  Measured: qt_c "Dec 2024" equals the filed crore figure in 23 of 27 cases across nine companies
+  (data/gold/<SYM>-Q3FY25.json, 15 to 17,740 crore; the 4 exceptions are known definition
+  differences).
+rounding_threshold: 100
+decimals_above: 0
+decimals_within: 2
+precision_evidence_ref: >-
+  fin-tables.js lines 280-287, every numeric column renders the "value" key as
+  if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+  { if (dataKey !== "value") { return data; } else { return data?.toFixed(2); } }

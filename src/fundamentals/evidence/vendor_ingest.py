@@ -191,8 +191,9 @@ def json_occurrence(
     native_context: Mapping[str, Any],
     anchor: Mapping[str, Any],
     disclosure: Mapping[str, Any],
+    declared_precision: int | None = None,
 ) -> Occurrence:
-    """One vendor JSON numeral: serialised digits declare no precision (spec §5)."""
+    """One vendor JSON numeral: only an evidenced display precision is precision (spec §5)."""
     return Occurrence(
         occurrence_id=None,
         capture=capture,
@@ -203,8 +204,10 @@ def json_occurrence(
         raw_unit=raw_unit,
         raw_scale=raw_scale,
         raw_sign=-1 if value is not None and value < 0 else 1,
-        precision_kind=PrecisionKind.UNSUPPORTED,
-        declared_precision=None,
+        precision_kind=PrecisionKind.UNSUPPORTED
+        if declared_precision is None
+        else PrecisionKind.FINITE,
+        declared_precision=declared_precision,
         native_context=native_context,
         period=period,
         missing_state=missing_state(lexeme, value),

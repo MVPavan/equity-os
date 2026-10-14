@@ -2,16 +2,20 @@
 
 One case per Verify claim. Expected lexemes and periods were read by hand from the raw
 captures (Tijori island JSON, Upstox bodies, Screener HTML), never from adapter output.
-Tijori: ``data/raw/snapshots/v1/tijori`` (2026-09-05). Upstox: ``data/raw/snapshots/v1/upstox``
-(owner-authorised live fetch, 2026-10-14). Screener: ``data/raw/watchlist``, staged into a
-private snapshot store. The NETWEB "degenerate consolidated page" case re-interprets the
-retained standalone-only page under a consolidated request (no consolidated page is retained).
+Tijori: ``data/raw/snapshots/v1/tijori`` (2026-09-05); qt_c money intervals follow the display
+rule of the retained ``fin-tables.js`` (``config/mappings/tijori/v1/display.yaml``). Upstox:
+``data/raw/snapshots/v1/upstox`` (owner-authorised live fetch, 2026-10-14). Screener:
+``data/raw/watchlist``, staged into a private snapshot store. The NETWEB "degenerate
+consolidated page" case re-interprets the retained standalone-only page under a consolidated
+request (no consolidated page is retained).
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from datetime import date, timedelta
+from fractions import Fraction
 from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -34,6 +38,7 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.snapshot import BlobRef, CaptureRecord
 from fundamentals.evidence import vendor_tijori, vendor_upstox
 from fundamentals.evidence.mapping import load_mapping_set, load_normalisation_policy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -79,6 +84,8 @@ class Row(NamedTuple):
     canonical_id: str | None
     status: InterpretationStatus
     reason: InterpretationReason | None
+    raw_unit: str | None = None
+    interval_crore: tuple[str, str] | None = None  # Hand-computed from the display rule.
 
 
 class Case(NamedTuple):
@@ -93,6 +100,7 @@ class Case(NamedTuple):
     outcome: ExtractionOutcome
     rows: tuple[Row, ...] = ()
     screener_symbol: str = ""
+    units_in: str = ""  # Restage the Upstox capture with this ``units_in``.
 
 
 def tijori(slug: str, symbol: str) -> Any:
@@ -103,6 +111,7 @@ def tijori(slug: str, symbol: str) -> Any:
         binding=vendor_tijori.TijoriBinding(
             slug=slug, symbol=symbol, company_id=ids["tijori_company_id"]
         ),
+        display=vendor_tijori.load_tijori_display(REPO / "config/mappings/tijori/v1/display.yaml"),
         basis=Basis.CONSOLIDATED,
     )
 
@@ -126,7 +135,7 @@ def screener(symbol: str, basis: Basis, section: Section) -> Any:
     return extract
 
 
-UNIT = InterpretationReason.UNIT_MISMATCH  # Tijori's island declares no unit.
+UNIT = InterpretationReason.UNIT_MISMATCH  # No evidenced unit outside Tijori qt_c money rows.
 PRECISION = InterpretationReason.PRECISION_UNSUPPORTED  # API numerals declare no precision.
 INVALID = InterpretationStatus.INVALID
 CASES = (
@@ -150,6 +159,7 @@ CASES = (
                 "revenue_from_operations",
                 INVALID,
                 UNIT,
+                raw_unit="unknown",  # pl_* is outside the qt_c display fact.
             ),
             Row(
                 "pl_c_s",
@@ -183,6 +193,19 @@ CASES = (
                 "total_income",
                 INVALID,
                 PRECISION,
+                raw_unit="INR",
+            ),
+            Row(
+                "full_statement",
+                "EPS - Basic",
+                "Mar 2026",
+                "177.53",
+                FY26,
+                PeriodKind.YEAR,
+                None,
+                InterpretationStatus.UNMAPPED,
+                None,
+                raw_unit="unknown",  # Per share, never crore.
             ),
             Row(
                 "summary",
@@ -280,6 +303,16 @@ CASES = (
         screener_symbol="THERMAX",
     ),
     Case(
+        "upstox_units_in_other_than_crore_yields_no_values",
+        ("upstox", "income-statement", STAGED, STAGED),
+        Representation.JSON,
+        Basis.CONSOLIDATED,
+        lambda: upstox(Basis.CONSOLIDATED),
+        vendor_upstox.EXTRACTOR_VERSION,
+        ExtractionOutcome.UNSUPPORTED_SCHEMA,
+        units_in="lakh",
+    ),
+    Case(
         "tijori_qt_c_net_profit_maps_to_continuing_pat",
         TIJORI_THERMAX,
         Representation.HTML,
@@ -296,8 +329,37 @@ CASES = (
                 PeriodInterval.duration(date(2025, 10, 1), date(2025, 12, 31)),
                 PeriodKind.QUARTER,
                 "profit_continuing_after_tax",
-                INVALID,
-                UNIT,
+                InterpretationStatus.MAPPED,
+                None,
+                raw_unit="INR",
+                # |v| > 100 displays Math.round(v): 0 decimals, ± 0.5 crore.
+                interval_crore=("204.61999999999998", "205.61999999999998"),
+            ),
+            Row(
+                "qt_c",
+                "Net Profit",
+                "Jun 2026",
+                "21.79",
+                PeriodInterval.duration(date(2026, 4, 1), date(2026, 6, 30)),
+                PeriodKind.QUARTER,
+                "profit_continuing_after_tax",
+                InterpretationStatus.MAPPED,
+                None,
+                raw_unit="INR",
+                # |v| <= 100 displays v.toFixed(2): ± 0.005 crore.
+                interval_crore=("21.785", "21.795"),
+            ),
+            Row(
+                "qt_c",
+                "EPS",
+                "Dec 2025",
+                "18.1252",
+                PeriodInterval.duration(date(2025, 10, 1), date(2025, 12, 31)),
+                PeriodKind.QUARTER,
+                None,
+                InterpretationStatus.UNMAPPED,
+                None,
+                raw_unit="unknown",  # Quarterly Ratios subtree: not crore.
             ),
         ),
     ),
@@ -393,7 +455,17 @@ def test_d1b1_vendor_claim(
         assert interpretation.canonical_id == row.canonical_id
         assert interpretation.period == row.period
         assert (interpretation.status, interpretation.reason) == (row.status, row.reason)
-        assert interpretation.value is None  # no unit, precision or mapping: never invented
+        if row.raw_unit is not None:
+            assert occurrence.raw_unit == row.raw_unit
+        if row.interval_crore is None:
+            assert interpretation.value is None  # no unit, precision or mapping: never invented
+            continue
+        crore = Fraction(10**7)
+        assert interpretation.value is not None and interpretation.interval is not None
+        assert Fraction(interpretation.value) == Fraction(row.lexeme) * crore
+        assert (interpretation.interval.lower, interpretation.interval.upper) == tuple(
+            Fraction(bound) * crore for bound in row.interval_crore
+        )
 
 
 def _entity(pg_db: Any) -> int:
@@ -418,7 +490,30 @@ def _entity(pg_db: Any) -> int:
 def _located(
     case: Case, repository: EvidenceRepository, tmp_path: Path
 ) -> tuple[SnapshotStore, tuple[str, str, str, str]]:
-    """The retained store, or a private store the Screener page is staged into."""
+    """The retained store, or a private store a Screener page or altered body is staged into."""
+    if case.units_in:
+        record, body = SnapshotStore(RETAINED).read_capture_verified(*POLYCAB_QUARTERLY)
+        altered = body.replace(b'"units_in":"crore"', f'"units_in":"{case.units_in}"'.encode())
+        assert altered != body
+        blob = BlobRef(
+            source_id=record.request.source_id,
+            content_sha256=hashlib.sha256(altered).hexdigest(),
+            byte_count=len(altered),
+        )
+        staged_record = CaptureRecord.make(
+            record.request,
+            record.retrieved_at,
+            record.http_status,
+            record.media_type,
+            record.content_encoding,
+            blob,
+            record.outcome,
+            record.rights,
+        )
+        (tmp_path / "snapshots").mkdir(mode=0o700)
+        store = SnapshotStore(tmp_path / "snapshots")
+        store.put_capture(staged_record, altered)
+        return store, (*POLYCAB_QUARTERLY[:3], staged_record.capture_id)
     if not case.screener_symbol:
         return SnapshotStore(RETAINED), case.capture
     root = tmp_path / "snapshots"

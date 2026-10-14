@@ -3,8 +3,9 @@
 The requested basis and periodicity are the capture record's own request parameters. Each
 block keeps its real periodicity: the summary follows the request, ``full_statement`` is
 annual even on a quarterly request. An empty response cannot be told apart from an unknown
-ISIN, so it is rejected and yields no values. Values are stated in crore; API numerals
-declare no precision.
+ISIN, so it is rejected and yields no values. The reader refuses any ``units_in`` other than
+crore; EPS rows are per share, never crore (the docs wrongly call every value crore), so they
+keep no unit. API numerals declare no precision.
 """
 
 from __future__ import annotations
@@ -40,13 +41,16 @@ from fundamentals.ingest.upstox_statements import (
 )
 
 SOURCE_ID = "upstox"
-EXTRACTOR_VERSION = "upstox-v1"
+EXTRACTOR_VERSION = "upstox-v2"
 SUMMARY = "summary"
 FULL_STATEMENT = "full_statement"
 SCHEMA_IDENTITY = {
     SUMMARY: "upstox-income-statement-summary-v2",
     FULL_STATEMENT: "upstox-income-statement-full-statement-v2",
 }
+CRORE = ("INR", 7)  # The reader refuses every ``units_in`` but crore.
+UNKNOWN_UNIT = ("unknown", 0)
+_PER_SHARE_PREFIX = "EPS"
 _MONTHS = {StatementPeriodicity.QUARTERLY: 3, StatementPeriodicity.YEARLY: 12}
 _EMPTY = "empty response: an unknown ISIN answers the same, so it proves nothing"
 _OTHER_BASIS = "capture requested {requested!r}, not {basis!r}"
@@ -115,8 +119,8 @@ def extract_upstox(
             label=label,
             lexeme=str(point.value),
             value=point.value,
-            raw_unit="INR",
-            raw_scale=7,
+            raw_unit=unit,
+            raw_scale=scale,
             period=month_period(point.period, months),
             native_context={
                 "schema_identity": SCHEMA_IDENTITY[block],
@@ -135,6 +139,7 @@ def extract_upstox(
             disclosure={"anomalies": list(document.anomalies)},
         )
         for block, label, history, months in blocks
+        for unit, scale in [UNKNOWN_UNIT if label.startswith(_PER_SHARE_PREFIX) else CRORE]
         for point in history
     )
     return VendorExtraction(

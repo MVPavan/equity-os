@@ -2,7 +2,8 @@
 
 Only tables whose own key scope is the requested basis are read; a page with none for that
 basis is rejected and yields no values (standalone is never stored as consolidated). The
-island's numerals declare neither unit nor displayed precision, so both stay unproven.
+island's numerals declare neither unit nor precision; only the rows an evidenced display fact
+(``config/mappings/tijori/v1/display.yaml``) scopes take its unit and displayed precision.
 Periods come from column labels: ``qt_*`` quarters, ``pl_*``/``cf_*`` years, ``bs_*``
 instants. The final ``pl_*`` column is TTM, evidenced by the table footer, never a fiscal
 period.
@@ -11,7 +12,10 @@ period.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
+from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
@@ -32,7 +36,7 @@ from fundamentals.ingest.tijori_tables import TijoriError, TijoriTable, TijoriTa
 SOURCE_ID = "tijori"
 SURFACE = "financials"
 SCHEMA_IDENTITY = "tijori-financials-island-v1"
-EXTRACTOR_VERSION = "tijori-v1"
+EXTRACTOR_VERSION = "tijori-v2"
 UNKNOWN_UNIT = "unknown"
 _TTM_FOOTER = "TTM Values as of {label}"
 _FAMILY = {
@@ -59,6 +63,31 @@ class TijoriBinding(BaseModel):
     fiscal_year_end_month: int = Field(default=3, ge=1, le=12)
 
 
+class TijoriDisplay(BaseModel):
+    """One island table's evidenced unit and displayed precision (spec §5)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    section: str
+    excluded_parent: str
+    raw_unit: str
+    raw_scale: int
+    unit_evidence_ref: str = Field(min_length=1)
+    rounding_threshold: Decimal
+    decimals_above: int
+    decimals_within: int
+    precision_evidence_ref: str = Field(min_length=1)
+
+    def decimals(self, value: Decimal) -> int:
+        """Decimals Tijori's page displays for ``value``."""
+        above = abs(value) > self.rounding_threshold
+        return self.decimals_above if above else self.decimals_within
+
+
+def load_tijori_display(path: Path) -> TijoriDisplay:
+    """Load the display fact file."""
+    return TijoriDisplay.model_validate(yaml.safe_load(path.read_bytes()))
+
+
 def extract_tijori(
     body: bytes,
     *,
@@ -66,6 +95,7 @@ def extract_tijori(
     record: CaptureRecord,
     extractor_version: str,
     binding: TijoriBinding,
+    display: TijoriDisplay,
     basis: Basis,
 ) -> VendorExtraction:
     """Read every cell of the requested basis's tables from one registered page."""
@@ -90,6 +120,10 @@ def extract_tijori(
     for table in scoped:
         labels = table.column_period_labels
         for row in table.rows:
+            scoped_row = table.key.value == display.section and display.excluded_parent not in (
+                row.label,
+                *row.parent_labels,
+            )
             lexemes = [(cell.raw_text, cell.value) for cell in row.cells] or [
                 (raw, None) for raw in row.unaligned_raw_values
             ]
@@ -103,8 +137,11 @@ def extract_tijori(
                         label=row.label,
                         lexeme=lexeme,
                         value=value,
-                        raw_unit=UNKNOWN_UNIT,
-                        raw_scale=0,
+                        raw_unit=display.raw_unit if scoped_row else UNKNOWN_UNIT,
+                        raw_scale=display.raw_scale if scoped_row else 0,
+                        declared_precision=display.decimals(value)
+                        if scoped_row and value is not None
+                        else None,
                         period=_period(table, index, binding.fiscal_year_end_month)
                         if row.cells
                         else None,
@@ -148,6 +185,7 @@ def extract_tijori(
                 "capture_sha256": capture.blob_sha256,
                 "basis": basis.value,
                 "binding": binding.model_dump(mode="json"),
+                "display": display.model_dump(mode="json"),
             }
         ),
     )

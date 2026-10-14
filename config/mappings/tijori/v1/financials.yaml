@@ -1,6 +1,6 @@
 # Tijori financials island (D1b.1). Only the rows Stage 1 compares; every other line is kept
 # as an UNMAPPED occurrence. All entries are unproven: the island declares neither unit nor
-# displayed precision (spec §2, §5; D4 withdrew the 0.5-crore declaration).
+# precision; only qt_c money rows take them, from the display fact in display.yaml (spec §2, §5).
 source: tijori
 surface: financials
 schema_identity: tijori-financials-island-v1
