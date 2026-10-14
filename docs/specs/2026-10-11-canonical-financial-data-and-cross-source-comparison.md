@@ -808,6 +808,7 @@ status.
   - Upstox: an Upstox statement value agreeing with the filing changes no status or trust; an
     Upstox–Screener disagreement queues `PARSE_CHECK_DISAGREE` MEDIUM; an Upstox failure leaves
     the run `COMPLETE`.
+    *Owner amendment 2026-10-14: Upstox documents its unit (crore) but not its precision, so every Upstox pair is `NOT_COMPARABLE` with `PRECISION_UNSUPPORTED`, routed MEDIUM as a diagnostic item; a numeric Upstox disagreement (and so `PARSE_CHECK_DISAGREE`) cannot arise until Upstox documents precision. A within-vendor conflict can still arise from evidenced contradictory semantics.*
   - A dictionary, mapping or definition-set change yields a new version and run; replaying the
     earlier manifest reproduces it exactly. `ACCEPTED_AS_DEFINITION` changes no result.
 - **Error and edge cases**
@@ -821,6 +822,7 @@ status.
   - Upstox summary vs `full_statement` (NETWEB, POLYCAB) with disjoint intervals: diagnostic pairs
     `NOT_COMPARABLE` with `VENDOR_INTERNAL_CONFLICT`, routed MEDIUM, both occurrences retained.
     Surface values within tolerance of each other raise no conflict.
+    *Owner amendment 2026-10-14: see the Upstox note above; disjoint intervals cannot be shown for Upstox, so this case is met by the evidenced-semantics route or by the diagnostic `NOT_COMPARABLE` / `PRECISION_UNSUPPORTED` pairs, MEDIUM, both occurrences retained.*
   - Invalid vendor: F `VALUE` with the only vendor `INVALID` gives `NOT_COMPARABLE`, never
     `FILING_ONLY`; F `NO_VALUE` with it gives `NOT_COMPARABLE`, never `NO_SOURCE`.
   - Adjacent integer share counts (n vs n + 1) do not agree.
@@ -861,6 +863,7 @@ status.
   - An unmapped native line is kept as `UNMAPPED` and queued LOW.
   - **Diagnostic fixture:** a structural Upstox disagreement on an otherwise trusted cell leaves
     it trusted, with only a MEDIUM `PARSE_CHECK_DISAGREE` item.
+    *Owner amendment 2026-10-14: with Upstox precision undocumented, the fixture's Upstox item is a MEDIUM diagnostic `NOT_COMPARABLE` (`PRECISION_UNSUPPORTED`) item; the cell stays trusted.*
   - Identical reruns, including two concurrent default-cutoff ones over unchanged evidence, yield
     one run and no duplicate rows. Replaying a run with a failed attempt reproduces `UNAVAILABLE`.
   - The runtime role cannot update or delete evidence rows.
