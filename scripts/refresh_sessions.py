@@ -50,7 +50,7 @@ SITES = {
         "login_url": "https://www.tijorifinance.com/account/signin/",
         "email": "#email",
         "password": "#pwd-field",
-        "submit": "button:has-text('SIGN IN')",
+        "submit": "form:has(#pwd-field) [type=submit]",
         "cookie_domain": "tijorifinance.com",
         "check": tijori_logged_in,
     },
