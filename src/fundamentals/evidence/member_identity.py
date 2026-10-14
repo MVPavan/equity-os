@@ -36,15 +36,19 @@ TEXT_BLOCK_SUFFIX = "TextBlock"
 # block DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock@OneD (Q2 FY26 sha256 90baae0b,
 # Q3 FY26, FY25 Q2 sha256 c44ac376) and the results PDF page 5 note 1 (sha256 8be1b8de):
 # "... financial statements have been prepared in accordance with Indian Accounting Standard
-# notified under Section 133 of the Companies Act, 2013". LAURUSLABS Q3 FY25 (sha256 2d50d29a,
-# same text block, note 2): "... have been prepared in accordance with the Indian Accounting
-# Standards ('IND AS') prescribed under Section 133 of the Companies Act, 2013".
+# notified under Section 133 of the Companies Act, 2013". LAURUSLABS results PDF (sha256 2b79047e):
+# "... have been prepared in accordance with the Indian Accounting Standards ('IND AS')".
 FRAMEWORK_DECLARATIONS: Mapping[AccountingFramework, tuple[str, ...]] = {
     AccountingFramework.IND_AS: (
         "prepared in accordance with Indian Accounting Standard",
         "prepared in accordance with the Indian Accounting Standards",
     ),
 }
+# The exchange's Ind AS taxonomy entry point, a structural framework declaration: every retained
+# NSE INDAS_*.xml (POLYCAB, HFCL, CGPOWER, MTARTECH, LAURUSLABS, ...) carries
+# <link:schemaRef xlink:href="Ind-AS_entry_point_2020-03-31.xsd"/>. Apar's integrated filings
+# reference in-capmkt-ent-*.xsd, which names no framework, so they rely on the text blocks.
+IND_AS_ENTRY_POINT_PREFIX = "Ind-AS_entry_point"
 _NO_FRAMEWORK = "the capture declares no accounting framework"
 _FRAMEWORKS_DISAGREE = "the capture declares several accounting frameworks {found}"
 _FRAMEWORK_CONFLICT = "the capture declares {found} at {where}, not the requested {requested}"
@@ -170,8 +174,11 @@ def verify_pdf_identity(pdf: LoadedPdf, identifiers: IssuerIdentifiers) -> Ident
 def verify_xbrl_framework(
     instance: RawXbrlInstance, framework: AccountingFramework
 ) -> IdentityVerdict:
-    """The instance's own text blocks must declare exactly the requested framework."""
+    """The entry point and own text blocks must declare exactly the requested framework."""
     found: dict[AccountingFramework, list[str]] = {}
+    for href in instance.schema_refs:
+        if href.rsplit("/", 1)[-1].startswith(IND_AS_ENTRY_POINT_PREFIX):
+            found.setdefault(AccountingFramework.IND_AS, []).append(f"schemaRef {href}")
     for fact in instance.facts:
         if (
             fact.namespace_uri != instance.taxonomy.namespace

@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 from evidence_support import dictionary, mapping_set
 from retained_support import apar_original
+from vendor_retained_support import RAW_ROOT
 
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.observation import AccountingFramework
@@ -94,6 +95,15 @@ def test_foreign_framework_text_cannot_replace_genuine_declaration(mapping_set: 
     verdict = verify_xbrl_framework(stripped, AccountingFramework.IND_AS)
     assert not verdict.verified
     assert verdict.reason == "the capture declares no accounting framework"
+
+
+def test_ind_as_entry_point_declares_the_framework(mapping_set: MappingSet) -> None:
+    # POLYCAB Q3 FY25 has no notes sentence naming Ind AS; its schemaRef is the declaration.
+    xbrl = RAW_ROOT / "polycab/nse/INDAS_117488_1357164_22012025051528.xml"
+    instance = parse_instance(xbrl.read_bytes(), mapping_set=mapping_set)
+    verdict = verify_xbrl_framework(instance, AccountingFramework.IND_AS)
+    assert verdict.verified
+    assert verdict.evidence == ("IND_AS declared at schemaRef Ind-AS_entry_point_2020-03-31.xsd",)
 
 
 def test_foreign_period_end_cannot_replace_genuine_declaration(mapping_set: MappingSet) -> None:

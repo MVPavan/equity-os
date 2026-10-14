@@ -47,6 +47,8 @@ FIN_PREFIX = "in-bse-fin"
 REGISTRY_VERSION = "in-bse-fin/2020-03-31"
 
 NS_ISO4217 = "http://www.xbrl.org/2003/iso4217"
+NS_LINK = "http://www.xbrl.org/2003/linkbase"
+NS_XLINK = "http://www.w3.org/1999/xlink"
 
 _XBRLI = f"{{{NS_XBRLI}}}"
 
@@ -672,12 +674,13 @@ class RawXbrlFact(BaseModel):
 
 
 class RawXbrlInstance(BaseModel):
-    """Every fact of an instance with its taxonomy, schema identity and file scope."""
+    """Every fact of an instance with its taxonomy, schema identity, schemaRefs and file scope."""
 
     model_config = ConfigDict(frozen=True)
 
     taxonomy: TaxonomySpec
     schema_identity: str
+    schema_refs: tuple[str, ...]
     scope: Scope
     facts: tuple[RawXbrlFact, ...]
 
@@ -776,8 +779,15 @@ def _raw_instance(root: Any, taxonomies: tuple[TaxonomySpec, ...]) -> RawXbrlIns
                 document_order=order,
             )
         )
+    schema_refs = tuple(
+        node.get(f"{{{NS_XLINK}}}href", "") for node in root.findall(f"{{{NS_LINK}}}schemaRef")
+    )
     return RawXbrlInstance(
-        taxonomy=spec, schema_identity=spec.namespace, scope=scope, facts=tuple(facts)
+        taxonomy=spec,
+        schema_identity=spec.namespace,
+        schema_refs=schema_refs,
+        scope=scope,
+        facts=tuple(facts),
     )
 
 
