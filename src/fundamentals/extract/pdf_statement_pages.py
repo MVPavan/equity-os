@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.canonical import Basis, StatementFamily, ValueKind
+from fundamentals.extract.pdf_figure_columns import HeaderColumn as _Column
+from fundamentals.extract.pdf_figure_columns import unheaded_columns
 from fundamentals.extract.pdf_header_text import normalize_text_tokens
 from fundamentals.ingest.pdf_source import LoadedPdf, PageWord, PdfPage
 
@@ -227,22 +229,6 @@ class _Row(BaseModel):
     def tokens(self) -> list[str]:
         """Normalised tokens of the row's text."""
         return normalize_text_tokens(" ".join(word.text for word in self.words))
-
-
-class _Column(BaseModel):
-    """A header-row column before basis binding.
-
-    ``header_x0``/``header_x1`` are the printed header's extent; ``x0``/``x1`` widen
-    it to the figures printed under it, which are often right-aligned past it.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    x0: float
-    x1: float
-    header_x0: float
-    header_x1: float
-    date_text: str
 
 
 class _Phrase(BaseModel):
@@ -722,13 +708,16 @@ def _all_columns_for(
 ) -> tuple[int, list[_Column]]:
     """The block's header line and every header column (both bases).
 
-    Excluded-basis columns are kept here so their cells never join a row label.
+    Excluded-basis and unheaded columns are kept here so their cells never join a row label;
+    unheaded ones come after the header columns, leaving every header column's index as is.
     """
     block = [row for row in rows if location.top_line < row.index <= location.bottom_line]
     header_row, columns = _block_layout(block)
     if header_row is None:
         raise StatementPageNotFoundError(f"{location.family}: located block lost its header row")
-    return header_row.index, columns
+    words = [word for row in block if row.index > header_row.index for word in row.words]
+    unheaded = unheaded_columns(words, lambda word: _column_of(word, columns))
+    return header_row.index, [*columns, *unheaded]
 
 
 def _cell_texts(words: Sequence[PageWord], columns: Sequence[_Column]) -> dict[int, list[str]]:

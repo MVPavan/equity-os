@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
+from typing import cast
 
 from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
 from fundamentals.contracts.comparison import SelectionSource, SourceState
@@ -27,12 +28,14 @@ from fundamentals.contracts.evidence import (
     InterpretationTriple,
     KeySelection,
     KnowledgeTimeStatus,
+    MissingValueState,
     Occurrence,
     PinnedVersions,
     RunMode,
 )
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.evidence.interpret import TRACE_MISSING_STATE
 
 INTERPRETATION_AMBIGUOUS = "INTERPRETATION_AMBIGUOUS"
 NO_ELIGIBLE_PACKAGE = "NO_ELIGIBLE_PACKAGE"
@@ -40,6 +43,9 @@ NOT_EXTRACTED_UNDER_PINS = "NOT_EXTRACTED_UNDER_PINS"
 NOT_INTERPRETED_UNDER_PINS = "NOT_INTERPRETED_UNDER_PINS"
 
 Pins = PinnedVersions | InterpretationTriple
+# A mapped line read with its raw period (an undeclared XBRL context that a declared context's
+# repair makes ambiguous) still stands at that period: unusable there, never absent.
+_PARTIAL = (InterpretationStatus.INVALID, InterpretationStatus.PERIOD_AMBIGUOUS)
 SelectionOutcome = tuple[SourceState, Interpretation | None, str | None]
 
 
@@ -132,7 +138,8 @@ def select_interpretation(
 
     No candidate left gives ``NO_VALUE`` (the caller decides whether the capture was
     interpreted under the pins at all); two or more give ``INVALID`` with
-    ``INTERPRETATION_AMBIGUOUS`` and no interpretation, never a first match.
+    ``INTERPRETATION_AMBIGUOUS`` and no interpretation, never a first match. A mapped
+    printed dash is ``NO_VALUE`` with reason ``DASH``.
     """
     triple = _triple(pinned)
     available = [
@@ -147,8 +154,10 @@ def select_interpretation(
         return SourceState.INVALID, None, INTERPRETATION_AMBIGUOUS
     (chosen,) = current
     if chosen.status is InterpretationStatus.MAPPED:
-        state = SourceState.VALUE if chosen.value is not None else SourceState.NO_VALUE
-        return state, chosen, None
+        if chosen.value is not None:
+            return SourceState.VALUE, chosen, None
+        dash = chosen.transform_trace.get(TRACE_MISSING_STATE) == MissingValueState.DASH.value
+        return SourceState.NO_VALUE, chosen, MissingValueState.DASH.value if dash else None
     reason = chosen.reason.value if chosen.reason is not None else chosen.status.value
     return SourceState.INVALID, chosen, reason
 
@@ -184,7 +193,8 @@ def select_key(
     available = [
         item for item in owned if _under(item, triple) and _known(item.recorded_at, boundary, mode)
     ]
-    candidates = [item for item in _current(available) if matches_key(item, key)]
+    matched = [item for item in _current(available) if matches_key(item, key)]
+    candidates = _one_printed_cell(_specific(matched, key), occurrences)
     extractor = triple.extractor(representation)
     if not any(
         item.capture.capture_ref_id == capture_ref_id and item.extractor_version == extractor
@@ -300,6 +310,36 @@ def _current(items: Sequence[Interpretation]) -> list[Interpretation]:
     return [item for item in items if item.interpretation_id not in superseded]
 
 
+def _specific(candidates: list[Interpretation], key: MeasurementKey) -> list[Interpretation]:
+    """A line read as only one of several rows (an unestablished section) never displaces the
+    key's own keyed reading; with no keyed reading it stays a candidate (ambiguous)."""
+    keyed = [item for item in candidates if item.key == key]
+    if not keyed:
+        return candidates
+    return [item for item in candidates if item.key is not None or item.canonical_id is not None]
+
+
+def _one_printed_cell(
+    candidates: list[Interpretation], occurrences: Sequence[Occurrence]
+) -> list[Interpretation]:
+    """One PDF line printing a key in several columns (a closing instant under both the quarter
+    and the half-year column) is one reading when every cell agrees: the leftmost is kept.
+    Cells that disagree, or candidates from different lines, stay ambiguous."""
+    anchors = {item.occurrence_id: item.anchor for item in occurrences}
+    cells = [anchors.get(item.occurrence_id) for item in candidates]
+    if (
+        len(candidates) < 2
+        or any(item.representation is not Representation.PDF for item in candidates)
+        or any(cell is None for cell in cells)
+        or len({(cell["page"], cell["line"]) for cell in cells if cell}) != 1
+        or len({(item.status, item.reason, item.value, item.interval) for item in candidates}) != 1
+    ):
+        return candidates
+    return [
+        min(candidates, key=lambda item: cast(int, anchors[item.occurrence_id]["column_index"]))
+    ]
+
+
 def matches_key(item: Interpretation, key: MeasurementKey) -> bool:
     """Match a complete key, or every evidenced part of an invalid incomplete key.
 
@@ -309,7 +349,7 @@ def matches_key(item: Interpretation, key: MeasurementKey) -> bool:
     if item.key is not None:
         return item.key == key
     partial = (
-        item.status is InterpretationStatus.INVALID
+        item.status in _PARTIAL
         and item.entity_id == key.entity_id
         and item.canonical_id == key.canonical_id
         and item.period == key.period

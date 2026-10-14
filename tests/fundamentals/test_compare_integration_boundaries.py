@@ -200,7 +200,7 @@ def test_run_refuses_pdf_values_from_incompatible_location_contexts(runner: Runn
 
 
 def test_run_routes_ambiguous_pdf_owner_candidates_to_invalid(runner: Runner) -> None:
-    """Unknown ownership keeps candidate rows INVALID; explicit OCI evidence stays stored."""
+    """Unknown ownership keeps the profit owners row INVALID; the section-scoped OCI row stands."""
     report = runner.ingest.run(runner.ingest.intake(BOTH))
     assert any(
         item.canonical_id == "oci_attributable_owners"
@@ -217,7 +217,8 @@ def test_run_routes_ambiguous_pdf_owner_candidates_to_invalid(runner: Runner) ->
     assert owners.reason == "INTERPRETATION_AMBIGUOUS"
     assert owners.value is None
     oci = _value(runner, record.run_id, "oci_attributable_owners", Q2_QUARTER, Representation.PDF)
-    assert oci.state is SourceState.INVALID
-    assert oci.reason == "INTERPRETATION_AMBIGUOUS"
-    assert oci.value is None
+    # Its section heading is established, so the unestablished owners line never displaces it
+    # (stage1_manifest: oci_attributable_owners PDF VALUE 22.95).
+    assert oci.state is SourceState.VALUE
+    assert oci.value == Decimal("229500000")
     assert runner.replay(record.run_id) == runner.results(record.run_id)

@@ -6,6 +6,7 @@ cell queue proposal; callers retain it in the run's failure evidence.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Sequence
 
 from fundamentals.compare.resolve_models import ResolvedInputs
@@ -31,13 +32,14 @@ from fundamentals.contracts.evidence import InterpretationStatus, PinnedVersions
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.review_queue import UNMAPPED, QueueItemDraft, QueueSeverity
 from fundamentals.contracts.snapshot import canonical_sha256
+from fundamentals.contracts.source_catalog import surface_authority
 
 
 def route_run(
     inputs: ResolvedInputs, rows: Sequence[ResultRow], pinned: PinnedVersions
 ) -> tuple[QueueItemDraft, ...]:
-    """Every draft of one run: each applicable row's routes, then each ``UNMAPPED`` occurrence
-    of a selected capture interpreted under the run's pins.
+    """Every draft of one run: each applicable row's routes, then each ``UNMAPPED`` first-party
+    occurrence and vendor native row of a selected capture interpreted under the run's pins.
 
     A side without an interpretation or attempt (``NO_VALUE`` from a complete capture, or a
     calculation) is evidenced by the run's attempts.
@@ -57,29 +59,58 @@ def route_run(
         if item.kind is RunInputKind.CAPTURE_REF
         and item.disposition is RunInputDisposition.SELECTED
     }
-    extractors = {
-        Representation.XBRL: pinned.extractor_xbrl.version,
-        Representation.PDF: pinned.extractor_pdf.version,
-    }
-    drafts.extend(
-        route_unmapped_occurrence_draft(
-            occurrence_id=item.occurrence_id,
-            source_ref=SourceRef(
-                source_role=SourceRole.FIRST_PARTY, representation=item.representation
+    occurrences = {item.occurrence_id: item for item in inputs.occurrences}
+    triple = pinned.triple()
+    queued: dict[str, list[int]] = defaultdict(list)
+    refs: dict[str, SourceRef] = {}
+    for item in inputs.interpretations:
+        if (
+            item.status is not InterpretationStatus.UNMAPPED
+            or item.occurrence_id is None
+            or item.capture_ref_id not in selected
+        ):
+            continue
+        capture = occurrences[item.occurrence_id].capture
+        pins = (
+            triple.mapping_set,
+            triple.normalisation_policy,
+            triple.extractor(
+                item.representation, source_id=capture.source_id, surface=capture.surface
             ),
         )
-        for item in inputs.interpretations
-        if item.status is InterpretationStatus.UNMAPPED
-        and item.occurrence_id is not None
-        and item.capture_ref_id in selected
-        and (item.mapping_set_version, item.normalisation_policy_version, item.extractor_version)
-        == (
-            pinned.mapping_set.version,
-            pinned.normalisation_policy.version,
-            extractors.get(item.representation),
+        if (
+            item.mapping_set_version,
+            item.normalisation_policy_version,
+            item.extractor_version,
+        ) != pins:
+            continue
+        if item.representation in (Representation.XBRL, Representation.PDF):
+            identity = str(item.occurrence_id)
+            ref = SourceRef(source_role=SourceRole.FIRST_PARTY, representation=item.representation)
+        else:  # a vendor native row: its anchor without the column
+            anchor = occurrences[item.occurrence_id].anchor
+            row = {name: value for name, value in anchor.items() if name not in _COLUMN_FIELDS}
+            identity = canonical_sha256({"capture": item.capture_ref_id, "row": row})
+            authority = surface_authority(capture.source_id, capture.surface)
+            ref = SourceRef(
+                source_role=authority.role,
+                representation=authority.representation,
+                source_id=capture.source_id,
+                surface=capture.surface,
+            )
+        queued[identity].append(item.occurrence_id)
+        refs[identity] = ref
+    drafts.extend(
+        route_unmapped_occurrence_draft(
+            occurrence_id=min(ids), source_ref=refs[identity], row_occurrence_ids=tuple(ids)
         )
+        for identity, ids in queued.items()
     )
     return tuple(drafts)
+
+
+_COLUMN_FIELDS = frozenset({"column_index", "column_label"})
+"""Anchor fields that place a vendor cell in its row; the row without them is one native row."""
 
 
 def pair_identity(pair: SourceQualifiedPair) -> str:
@@ -144,8 +175,12 @@ def route_status_draft(
     )
 
 
-def route_unmapped_occurrence_draft(*, occurrence_id: int, source_ref: SourceRef) -> QueueItemDraft:
-    """Propose a dictionary addition with its actual occurrence and no invented key."""
+def route_unmapped_occurrence_draft(
+    *, occurrence_id: int, source_ref: SourceRef, row_occurrence_ids: tuple[int, ...] = ()
+) -> QueueItemDraft:
+    """Propose a dictionary addition with its actual occurrence and no invented key; a vendor
+    native row names its first occurrence and anchors every other column as evidence."""
+    ids = tuple(sorted({occurrence_id, *row_occurrence_ids}))
     return QueueItemDraft(
         key=None,
         pair_identity=f"occurrence:{occurrence_id}:{canonical_sha256(source_ref.model_dump(mode='json'))}",
@@ -154,7 +189,7 @@ def route_unmapped_occurrence_draft(*, occurrence_id: int, source_ref: SourceRef
         diagnostic=source_ref.source_role is SourceRole.DIAGNOSTIC,
         routing_reason="FOLDING_OR_MAPPING_GAP",
         source_refs=(source_ref,),
-        evidence_occurrence_ids=(occurrence_id,),
+        evidence_occurrence_ids=ids,
     )
 
 
@@ -213,12 +248,16 @@ def _ref(value: SourceRef) -> SourceRef:
 
 
 def _pair_route(pair: SourceQualifiedPair) -> tuple[QueueSeverity, str] | None:
-    """The pair-route precedence: diagnostic disagreement first, then generic rows."""
+    """The pair-route precedence: diagnostic disagreement first, then generic rows. A
+    diagnostic disagreement is a parse check only against a diagnostic source (Upstox);
+    between corroborating sources it routes nothing."""
     outcome = pair.result.outcome
     diagnostic = pair.pair_kind is PairKind.DIAGNOSTIC
     route: tuple[QueueSeverity, str] | None = None
     if diagnostic and outcome in (PairOutcome.MISMATCH, PairOutcome.ANOMALY):
-        route = QueueSeverity.MEDIUM, "PARSE_CHECK_DISAGREE"
+        roles = {pair.left.source_role, pair.right.source_role}
+        if SourceRole.DIAGNOSTIC in roles:
+            route = QueueSeverity.MEDIUM, "PARSE_CHECK_DISAGREE"
     elif outcome is PairOutcome.NOT_COMPARABLE:
         route = QueueSeverity.MEDIUM, "MAPPING_OR_PERIOD_DEFECT"
     elif pair.pair_kind is PairKind.EXTRACTION and outcome in (

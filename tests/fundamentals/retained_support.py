@@ -140,9 +140,12 @@ class PdfRedaction(BaseModel):
     fontsize: float = 8.0
 
 
-def marked_pdf(tmp_path: Path, label: str, *redactions: PdfRedaction) -> Path:
-    """A redacted copy of the retained Q2 FY26 results PDF; the original is untouched."""
-    document = pymupdf.open(apar_original(MARKED_PDF_QUARTER, MARKED_PDF_KIND))  # type: ignore[no-untyped-call]
+def marked_pdf(
+    tmp_path: Path, label: str, *redactions: PdfRedaction, quarter: str = MARKED_PDF_QUARTER
+) -> Path:
+    """A redacted copy of one quarter's retained results PDF (Q2 FY26 unless named); the
+    original is untouched."""
+    document = pymupdf.open(apar_original(quarter, MARKED_PDF_KIND))  # type: ignore[no-untyped-call]
     try:
         for redaction in redactions:
             page = document[redaction.page - 1]
@@ -208,6 +211,7 @@ def apar_intake(
     members: Mapping[Representation, str],
     *,
     marked: Mapping[Representation, Path] | None = None,
+    issuer_config: Path = APAR_ISSUER_CONFIG,
 ) -> RetainedIntake:
     """A retained intake over private copies of the originals (and any marked copies).
 
@@ -231,7 +235,7 @@ def apar_intake(
         kinds=members,
         store_root=(tmp_path / STORE_DIR).absolute(),
         input_root=inputs.absolute(),
-        issuer_config=APAR_ISSUER_CONFIG if Representation.PDF in members else None,
+        issuer_config=issuer_config if Representation.PDF in members else None,
     )
     if not marked:
         return intake

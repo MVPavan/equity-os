@@ -513,6 +513,8 @@ def conclude(
     reasons = (
         _invalid_reasons([value for _, _, value in entries])
         if state is CalculationState.OPERAND_INVALID
+        else (state.value,)
+        if state in (CalculationState.REVISION_INCOMPATIBLE, CalculationState.UNDEFINED)
         else ()
     )
     trace = CalculationTrace(

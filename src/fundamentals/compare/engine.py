@@ -332,7 +332,7 @@ class RunEngine:
         """Member sets the selected package evidences for a dimensioned row and period.
 
         A formula row takes its operands' member sets (an aggregated operand's axis becomes
-        its output member). Members are never invented: no evidence, no dimensioned key.
+        its output member, evidenced at any fiscal period). Members are never invented.
         """
         found: set[DimensionSet] = set()
         if row.formula is None:
@@ -355,17 +355,17 @@ class RunEngine:
             operand_row = self._rows[operand.canonical_id]
             if operand_row.dimension_template is None:
                 continue
-            operand_period = (
-                PeriodInterval.at(end) if operand.temporal_role is TemporalRole.CLOSING else period
-            )
-            for dimensions in self._evidence_dimensions(
-                operand_row, entity_id, basis, end, operand_period
-            ):
-                if operand.aggregation is not None:
-                    members = dict(dimensions.pairs)
-                    members[operand.aggregation.axis] = operand.aggregation.output_member
-                    dimensions = DimensionSet.of(members)
-                found.add(dimensions)
+            closing = operand.temporal_role is TemporalRole.CLOSING
+            periods = [PeriodInterval.at(end)] if closing else [period]
+            if operand.aggregation is not None and not closing:
+                periods = list(fiscal_periods(end, self._fiscal_year_end(entity_id)))
+            for at in periods:
+                for dimensions in self._evidence_dimensions(operand_row, entity_id, basis, end, at):
+                    if operand.aggregation is not None:
+                        members = dict(dimensions.pairs)
+                        members[operand.aggregation.axis] = operand.aggregation.output_member
+                        dimensions = DimensionSet.of(members)
+                    found.add(dimensions)
         return sorted(found, key=lambda dimensions: dimensions.pairs)
 
     def _context(
@@ -552,14 +552,13 @@ class RunEngine:
                 reason=SOURCE_NOT_REQUESTED,
             )
         capture = None if member is None else (member.capture.capture_ref_id or 0)
-        witness_occurrence = None if capture is None else self._witness_occurrence.get(capture)
         # Selection needs full capture history for cross-key revisions and partial INVALID keys.
         candidates = [] if capture is None else self._by_capture.get(capture, [])
         return select_key(
             key,
             representation,
             package=package,
-            occurrences=() if witness_occurrence is None else (witness_occurrence,),
+            occurrences=tuple(self._occurrences.values()),
             interpretations=candidates,
             boundary=self._boundary,
             mode=self._request.mode,

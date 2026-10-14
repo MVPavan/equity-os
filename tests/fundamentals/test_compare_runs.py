@@ -12,6 +12,7 @@ import threading
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from derived_support import SEGMENT_TOTAL, SEGMENTS, WITHHELD_OTHERS
@@ -277,9 +278,8 @@ def test_replay_closure_survives_four_evidence_changes(runner: Runner) -> None:
     assert runner.replay(record.run_id) == stored
 
 
-def test_standalone_only_issuer_without_a_consolidated_package(runner: Runner) -> None:
-    """NETWEB files no consolidated results: a consolidated run is NOT_APPLICABLE throughout,
-    reads no value (none borrowed from standalone), completes and replays."""
+def seed_netweb(pool: Any) -> int:
+    """NETWEB's standalone-only identity, cited to its retained BSE filing and Upstox list."""
     pdf = {"capture_sha256": NETWEB_PDF}
     identity = IssuerIdentityInput(
         entity_key="NETWEB",
@@ -300,8 +300,14 @@ def test_standalone_only_issuer_without_a_consolidated_package(runner: Runner) -
         ),
         content_sha256=hashlib.sha256(b"NETWEB standalone-only test identity").hexdigest(),
     )
-    with runner.pool.connection() as conn:
-        entity_id = seed_issuer_identity(conn, identity).entity_ids["NETWEB"]
+    with pool.connection() as conn:
+        return seed_issuer_identity(conn, identity).entity_ids["NETWEB"]
+
+
+def test_standalone_only_issuer_without_a_consolidated_package(runner: Runner) -> None:
+    """NETWEB files no consolidated results: a consolidated run is NOT_APPLICABLE throughout,
+    reads no value (none borrowed from standalone), completes and replays."""
+    entity_id = seed_netweb(runner.pool)
     request = request_for(
         entity_id,
         date(2024, 12, 31),

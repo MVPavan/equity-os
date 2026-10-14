@@ -162,5 +162,9 @@ def test_ambiguous_attribution_routes_invalid_to_every_evidenced_candidate(
         mode=RunMode.AS_KNOWN,
         pinned=pins,
     )
-    assert selected_oci.state is SourceState.INVALID
+    # The explicit section-scoped reading stands; the unestablished line never displaces it
+    # (stage1_manifest discrepancy apar-p3-profit-attributable-heading: oci_attributable_owners
+    # PDF VALUE 22.95).
+    assert selected_oci.state is SourceState.VALUE
+    assert selected_oci.interpretation == explicit
     assert explicit.value == Decimal("229500000")

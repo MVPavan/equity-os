@@ -113,9 +113,10 @@ def ingest_vendor(
     """
     try:
         surface_authority(request.source_id, request.surface)
-        record, body = snapshot_store.read_capture_verified(
-            request.source_id, request.surface, request.request_key, request.capture_id
-        )
+        identity = (request.source_id, request.surface, request.request_key, request.capture_id)
+        record, body = snapshot_store.get_capture(*identity), b""
+        if record.body is not None:  # a body-less record is its outcome alone (not_offered)
+            record, body = snapshot_store.read_capture_verified(*identity)
     except SurfaceNotAuthorisedError as error:
         return _store(repository, request, ExtractionOutcome.NOT_AUTHORISED, str(error))
     except (SnapshotError, OSError) as error:
