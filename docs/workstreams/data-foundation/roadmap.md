@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In progress. Only D1b.4 (register amendment) is accepted. The Codex run's scaffolding was audited and deleted per [D1b-cleanup.md](plans/D1b-cleanup.md) (about −26,000 lines net across G1–G2). D1b.1–D1b.3, D1b.5 and D1b.6 remain. Upstox statement captures are still to be acquired (the token exists, bead `eqos-rdb`). SONACOMS is dropped from Stage 1 (owner, 2026-10-14). Eight companies are XBRL-only (their BSE PDFs are excluded: PDF layout mapping is Apar-only; reviewer ruling D2, 2026-10-14). |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Complete. Exit `tests/fundamentals/test_data_stage1_e2e.py` matches the frozen Stage 1 manifest exactly (10 runs, every fixture; manifest Sol-approved and payload-bound, `a5bbba1`). Phase review: three Sol rounds, then a fresh critical review and re-review, APPROVE 2026-10-14 (fixes `a9caa2b`, `5b5cb73`, `241e530`, `e02ba87`). PDF extractor `pdf-occurrences/2`; migrations 0008–0009. SONACOMS dropped (owner, 2026-10-14); eight companies XBRL-only (reviewer ruling D2). Epic `eqos-u0u` closed. |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -27,7 +27,7 @@ section is the human summary.
 | D8 Shareholding filing source | 5 | Not started |
 | D9 Retention and replay | 9 | Not started |
 
-8 of 66 stages are built (D1a 7; D1b amendment 1). D1a's stages are the shared foundation (schema, dictionary, formula
+13 of 66 stages are built (D1a 7; D1b 6). D1a's stages are the shared foundation (schema, dictionary, formula
 engine, evidence model, decision tables, runs), so their share of the effort exceeds their count.
 
 **Execution loop per phase** (`.claude/rules/core/04-agent-stack.md`):
