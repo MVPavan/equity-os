@@ -465,6 +465,10 @@ class PinnedVersions(BaseModel):
     vendor_extractors: tuple[VendorExtractorPin, ...] = Field(
         default=(), exclude_if=lambda value: not value
     )
+    # The engine's comparison semantics; ``None`` on runs recorded before D1b introduced it.
+    comparison_semantics: VersionPin | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("vendor_extractors")
     @classmethod

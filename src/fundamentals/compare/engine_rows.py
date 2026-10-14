@@ -97,6 +97,14 @@ def family_has_pair(package: FilingPackage | None, cells: Mapping[Representation
     )
 
 
+def still_proven(stored: Sequence[ProvenCondition], proven: Mapping[str, ProvenCondition]) -> bool:
+    """Every stored condition proof is re-proven with the same outcome."""
+    return all(
+        proof.condition_id in proven and proven[proof.condition_id].holds == proof.holds
+        for proof in stored
+    )
+
+
 def with_current_proofs(
     side: ComparisonSide, proven: Mapping[str, ProvenCondition]
 ) -> ComparisonSide:
@@ -110,10 +118,7 @@ def with_current_proofs(
     stored = side.condition_evidence
     if not stored:
         return side
-    if all(
-        proof.condition_id in proven and proven[proof.condition_id].holds == proof.holds
-        for proof in stored
-    ):
+    if still_proven(stored, proven):
         return side.model_copy(
             update={"condition_evidence": tuple(proven[proof.condition_id] for proof in stored)}
         )

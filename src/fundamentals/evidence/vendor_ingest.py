@@ -44,7 +44,7 @@ from fundamentals.contracts.source_catalog import SurfaceNotAuthorisedError, sur
 from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
 from fundamentals.evidence.interpret import input_digest
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
-from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.evidence.repository import EvidenceRepository, InterpretationConflictError
 from fundamentals.store.snapshot_store import SnapshotStore
 
 _LOG = structlog.get_logger(__name__)
@@ -116,10 +116,18 @@ def ingest_vendor(
 ) -> VendorIngestReport:
     """Authority, register, extract and interpret one capture (see module docstring).
 
-    ``extract(body, capture=, record=, extractor_version=)`` is a surface adapter.
+    ``extract(body, capture=, record=, extractor_version=)`` is a surface adapter. The
+    authorised surface's extractor version is pinned to its source content first: changed
+    content under a pinned version raises ``VersionContentDriftError`` before anything is read,
+    stored or reused.
     """
+    # Share the comparison runner's source hash so ingest and comparison enforce one pin.
+    from fundamentals.compare.run_config import vendor_extractor_pin, vendor_version_pin
+
     try:
         surface_authority(request.source_id, request.surface)
+        pin = vendor_extractor_pin(request.source_id, request.surface, version=extractor_version)
+        repository.pin_versions([vendor_version_pin(pin)])
         identity = (request.source_id, request.surface, request.request_key, request.capture_id)
         record, body = snapshot_store.get_capture(*identity), b""
         if record.body is not None:  # a body-less record is its outcome alone (not_offered)
@@ -284,7 +292,12 @@ def _interpretations(
     repository: EvidenceRepository,
     extractor_version: str,
 ) -> tuple[Interpretation, ...]:
-    """This generation's rows under the pinned versions and scope: reused, else appended."""
+    """This generation's rows under the pinned versions and scope: reused, else appended.
+
+    A concurrent identical ingest that stores them first wins: its rows are re-read and
+    reused. A conflict that leaves none under this scope (a basis or entity change on the
+    same occurrences) stays a loud refusal.
+    """
     assert scope.capture.capture_ref_id is not None
     pins = (
         scope.mapping_set.version,
@@ -294,7 +307,6 @@ def _interpretations(
         scope.basis,
     )
     ids = {item.occurrence_id for item in occurrences}
-    stored = repository.list_capture_interpretations(scope.capture.capture_ref_id)
 
     def under(row: Interpretation) -> bool:
         return (
@@ -305,9 +317,13 @@ def _interpretations(
             row.basis,
         ) == pins
 
-    current = tuple(row for row in stored if under(row) and row.occurrence_id in ids)
-    if current or not occurrences:
-        return current
+    def current() -> tuple[Interpretation, ...]:
+        return tuple(row for row in stored if under(row) and row.occurrence_id in ids)
+
+    capture_ref_id = scope.capture.capture_ref_id
+    stored = repository.list_capture_interpretations(capture_ref_id)
+    if current() or not occurrences:
+        return current()
     prior = [row for row in stored if not under(row)]
     prior_ids = sorted({row.occurrence_id for row in prior if row.occurrence_id is not None})
     written = interpret_generation(
@@ -322,7 +338,13 @@ def _interpretations(
         reserve_ids=repository.reserve_interpretation_ids,
         recorded_at=repository.store_clock(),
     )
-    repository.put_interpretations(written)
+    try:
+        repository.put_interpretations(written)
+    except InterpretationConflictError:
+        stored = repository.list_capture_interpretations(capture_ref_id)
+        if not current():
+            raise
+        return current()
     return written
 
 

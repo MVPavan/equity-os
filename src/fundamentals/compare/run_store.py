@@ -488,6 +488,7 @@ def _version_params(run_id: int, pinned: PinnedVersions) -> list[tuple[object, .
         (run_id, name, pin.version, pin.content_sha256, None, None)
         for name in _PIN_NAMES
         for pin in (getattr(pinned, name),)
+        if pin is not None
     ]
     rows.extend(
         (run_id, "vendor_extractor", pin.version, pin.content_sha256, pin.source_id, pin.surface)

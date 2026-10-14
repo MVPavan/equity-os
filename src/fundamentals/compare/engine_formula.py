@@ -30,6 +30,7 @@ from fundamentals.compare.engine_rows import (
     family_has_pair,
     output_context,
     selected_side,
+    still_proven,
     with_current_proofs,
 )
 from fundamentals.compare.run_config import LoadedConfig
@@ -54,8 +55,13 @@ from fundamentals.contracts.evidence import (
     Occurrence,
     PackageMember,
 )
+from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
-from fundamentals.contracts.qualification import QualificationContext, QualificationScope
+from fundamentals.contracts.qualification import (
+    ProvenCondition,
+    QualificationContext,
+    QualificationScope,
+)
 from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.derived import DerivedSide, TraceStore, evaluate_derived, operand_value
 from fundamentals.evidence.interpret import prove_conditions
@@ -167,7 +173,7 @@ class FormulaRows:
         digest = (key.digest(), shared)
         if digest in self._evaluated:
             return self._evaluated[digest]
-        resolve = self._resolve if shared else self._host.resolve
+        resolve = partial(self._operand, shared=shared)
         results: dict[Representation, DerivedSide] = {}
         sides: dict[Representation, Side] = {}
         contexts = {}
@@ -262,20 +268,47 @@ class FormulaRows:
         own = side.comparison
         if not own.condition_evidence or not own.mapping_entry_ids:
             return side
-        scope = self._config.mapping_set.entry(own.mapping_entry_ids[0]).qualification
-        conditions = () if scope is None else (*scope.conditions, *scope.exclusions)
-        evidence = self.condition_evidence(scope, key, rep, key.currency)
-        proven = prove_conditions(
-            conditions, interpretations=evidence, period=key.period, basis=key.basis
-        )
+        proven = self._proven(own.mapping_entry_ids[0], key, rep)
         return side.model_copy(update={"comparison": with_current_proofs(own, proven)})
 
-    def _resolve(
-        self, key: MeasurementKey, role: TemporalRole, *, representation: Representation
+    def _proven(
+        self, entry_id: str, key: MeasurementKey, rep: Representation
+    ) -> Mapping[str, ProvenCondition]:
+        """A mapping entry's conditions proven from the run's current condition selections."""
+        scope = self._config.mapping_set.entry(entry_id).qualification
+        conditions = () if scope is None else (*scope.conditions, *scope.exclusions)
+        evidence = self.condition_evidence(scope, key, rep, key.currency)
+        return prove_conditions(
+            conditions, interpretations=evidence, period=key.period, basis=key.basis
+        )
+
+    def _operand(
+        self,
+        key: MeasurementKey,
+        role: TemporalRole,
+        *,
+        representation: Representation,
+        shared: bool,
     ) -> KeySelection:
-        """An operand's selection; a single-representation family's is shared (spec §5)."""
-        shared = self._sole_representation(key)
-        return self._host.resolve(key, role, representation=shared or representation)
+        """An operand's selection, its stored qualification re-proven as a reported side's is.
+
+        When shared, a single-representation family's selection is shared (spec §5).
+        """
+        if shared:
+            representation = self._sole_representation(key) or representation
+        selection = self._host.resolve(key, role, representation=representation)
+        chosen = selection.interpretation
+        if chosen is None or not chosen.condition_evidence or chosen.mapping_entry_id is None:
+            return selection
+        proven = self._proven(chosen.mapping_entry_id, key, selection.representation)
+        if still_proven(chosen.condition_evidence, proven):
+            return selection
+        unproven = {
+            "tier": EvidenceTier.EQUIVALENCE_UNPROVEN,
+            "qualification_ref": None,
+            "condition_evidence": (),
+        }
+        return selection.model_copy(update={"interpretation": chosen.model_copy(update=unproven)})
 
     def _sole_representation(self, key: MeasurementKey) -> Representation | None:
         """A reported key's only representation when its family has no paired one (table row 1).

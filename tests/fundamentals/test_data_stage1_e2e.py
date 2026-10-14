@@ -90,6 +90,7 @@ def test_run_matches_manifest(stage: Stage, monkeypatch: pytest.MonkeyPatch) -> 
     outcome = full_run(stage)
     lines = manifest_lines(outcome) + provenance(outcome)
     assert not lines, f"{len(lines)} differences:\n" + "\n".join(lines[:60])
+    stage1_provenance.check_mutations_caught(outcome)
     # Provenance is compared, not only numbers: relabelled selections and rules are caught.
     ids = [
         value.interpretation_id

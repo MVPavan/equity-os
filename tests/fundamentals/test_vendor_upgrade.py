@@ -1,4 +1,4 @@
-"""A retained v1 run remains readable and replayable across the 0006 upgrade."""
+"""A retained v1 run stays readable across the 0006 upgrade; its replay refuses under D1b."""
 
 import shutil
 from collections.abc import Iterator
@@ -18,7 +18,7 @@ from pg_support import (
 from run_support import Runner, row
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.compare import run, run_store
+from fundamentals.compare import run, run_config, run_store
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -91,6 +91,8 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     # The queue tables arrive in 0006; the old producer routed nothing.
     monkeypatch.setattr(run, "route_run", lambda *_: ())
+    # D1a recorded no comparison-semantics pin (D1b review C2).
+    monkeypatch.setattr(run_config, "COMPARISON_SEMANTICS", None)
 
 
 def test_0005_retained_run_keeps_manifest_and_results_after_0006(
@@ -142,5 +144,8 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
         assert identity_after == identity_before
         assert run_store.RunStore(pool).read_manifest(record.run_id) == manifest
         assert runner.results(record.run_id) == before
-        assert runner.replay(record.run_id, config_root=CONFIG) == before
+        # D1b changed comparison semantics: replaying the D1a run refuses rather than
+        # recomputing it differently; its stored results stay readable as published.
+        with pytest.raises(run_config.ComparisonSemanticsError, match="under semantics None"):
+            runner.replay(record.run_id, config_root=CONFIG)
         assert not PinnedVersions.model_validate(manifest.pinned).vendor_extractors

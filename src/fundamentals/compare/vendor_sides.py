@@ -37,7 +37,7 @@ from fundamentals.compare.tables import (
     corroboration_result,
     diagnostic_pair,
 )
-from fundamentals.contracts.acquisition_outcome import outcome_source_state
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome, outcome_source_state
 from fundamentals.contracts.canonical import ApplicabilityStatus, Representation
 from fundamentals.contracts.comparison import (
     CorroborationStatus,
@@ -146,10 +146,9 @@ class VendorSides:
         applicability: ApplicabilityStatus,
         extraction: ExtractionStatus,
         first_party: Mapping[Representation, ComparisonSide],
-        vendors: bool = True,
     ) -> VendorRow:
         """The row's vendor sides, pairs and corroboration status (module docstring)."""
-        sides = self._sides(key, fiscal_month) if vendors else []
+        sides = self._sides(key, fiscal_month)
         xbrl, pdf = first_party[Representation.XBRL], first_party[Representation.PDF]
         chosen = representative(xbrl, pdf)
         rep = Representation.XBRL if chosen is xbrl else Representation.PDF
@@ -319,17 +318,43 @@ class VendorSides:
     def _latest(
         self, source_id: str, surface: str, key: MeasurementKey
     ) -> AcquisitionAttempt | None:
-        """The key's latest attempt whose capture (if any) is registered by the cutoff."""
-        found = [
-            attempt
-            for attempt in self._attempts
-            if (attempt.source_id, attempt.surface) == (source_id, surface)
-            and attempt.entity_id == key.entity_id
-            and attempt.basis is key.basis
-            and attempt.period_end == period_end(key.period)
-            and (attempt.capture is None or attempt.capture.registered_at <= self._request.cutoff)
-        ]
-        return max(found, key=lambda item: (item.attempted_at, item.attempt_id), default=None)
+        """The key's latest attempt whose capture (if any) is registered by the cutoff.
+
+        One capture read section by section (Screener) records an attempt per section; the
+        capture's outcome is then the first non-``COMPLETE`` one among each section's latest
+        attempt under the same extractor, so a later section never hides a failed one.
+        """
+        found = sorted(
+            (
+                attempt
+                for attempt in self._attempts
+                if (attempt.source_id, attempt.surface) == (source_id, surface)
+                and attempt.entity_id == key.entity_id
+                and attempt.basis is key.basis
+                and attempt.period_end == period_end(key.period)
+                and (
+                    attempt.capture is None or attempt.capture.registered_at <= self._request.cutoff
+                )
+            ),
+            key=lambda item: (item.attempted_at, item.attempt_id),
+        )
+        if not found:
+            return None
+        latest = found[-1]
+        if latest.capture is None:
+            return latest
+        capture = latest.capture.capture_ref_id
+        sections = {
+            attempt.extraction_context_sha256: attempt
+            for attempt in found
+            if attempt.capture is not None
+            and attempt.capture.capture_ref_id == capture
+            and attempt.extractor_version == latest.extractor_version
+        }
+        return next(
+            (item for item in sections.values() if item.outcome is not ExtractionOutcome.COMPLETE),
+            latest,
+        )
 
     def _select(
         self, key: MeasurementKey, attempt: AcquisitionAttempt, schema: str

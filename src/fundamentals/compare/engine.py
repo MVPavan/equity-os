@@ -728,7 +728,6 @@ class RunEngine:
             decision,
             sides,
             surfaced=surfaced,
-            vendors=False,
             paired=family_has_pair(package, {rep: self.cell(key, rep) for rep in REPRESENTATIONS}),
         )
         counterparts = tuple(
@@ -758,11 +757,9 @@ class RunEngine:
         *,
         surfaced: Iterable[int],
         extraction: ExtractionResult | None = None,
-        vendors: bool = True,
         paired: bool = True,
     ) -> ResultRow:
-        """Extraction (unless already decided), then corroboration with the vendor sides
-        (none for a Q4 derived from FY − 9M, which pairs with the reported Q4 instead)."""
+        """Extraction (unless already decided), then corroboration with the vendor sides."""
         xbrl, pdf = sides[Representation.XBRL].comparison, sides[Representation.PDF].comparison
         if extraction is None:
             extraction = extraction_status(
@@ -778,7 +775,6 @@ class RunEngine:
             applicability=decision.status,
             extraction=extraction.status,
             first_party={Representation.XBRL: xbrl, Representation.PDF: pdf},
-            vendors=vendors,
         )
         return ResultRow(
             row_id=row_id(key, identity),

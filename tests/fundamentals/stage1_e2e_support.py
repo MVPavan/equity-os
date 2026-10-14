@@ -314,15 +314,23 @@ def stored(value: Any, unit: tuple[int, int], how: str = "exact") -> Fraction | 
     return Fraction(rounding[how](units)) / scale
 
 
-def expected(run: dict[str, Any]) -> dict[str, Any]:
-    """The manifest's rows, projected onto the compared fields in stored units."""
+def expected(run: dict[str, Any], entity_id: int) -> dict[str, Any]:
+    """The manifest's rows, projected onto the compared fields in stored units; the key's
+    entity is the run's seeded entity, its basis and framework the header pins'."""
     found: dict[str, Any] = {}
+    pins, kinds = MANIFEST["header"]["pins"], MANIFEST["header"]["units"]
     for key, row in expanded_rows(run).items():
         unit_name = MANIFEST["header"]["row_units"][key.split("|")[0]]
         unit = UNITS[unit_name]
         sides = {name: row[name] for name in run["source_vector"]["first_party"]}
         sides |= row.get("vendors", {})
         found[key] = {
+            "key": (
+                entity_id,
+                pins["basis"],
+                pins["framework"],
+                next(kind for kind, text in kinds.items() if text.split()[0] == unit_name),
+            ),
             "applicability": row.get("applicability", "APPLICABLE"),
             # notation: currency INR on monetary rows only; a row's key_currency overrides
             "currency": row.get("key_currency", "INR" if unit_name in MONETARY else None),
@@ -463,6 +471,12 @@ def actual(run: dict[str, Any], rows: tuple[ResultRow, ...], items: list[Any]) -
                 )
             )
         found[key] = {
+            "key": (
+                row.key.entity_id,
+                row.key.basis.value,
+                row.key.framework.value,
+                row.key.value_kind.value,
+            ),
             "applicability": row.applicability.value,
             "currency": row.key.currency,
             "ext": ext,
@@ -671,7 +685,7 @@ def _at(row: dict[str, Any] | None, path: str) -> Any:
 def manifest_lines(outcome: Outcome) -> list[str]:
     """Every difference between one run and its manifest entry (rows, UNMAPPED, run)."""
     stage, run = outcome.stage, outcome.stage.run
-    lines = diff(expected(run), outcome.got)
+    lines = diff(expected(run, stage.entity_id), outcome.got)
     want = Counter(
         tuple(sorted((key, json.dumps(value)) for key, value in entry.items()))
         for entry in run["unmapped"]

@@ -3,9 +3,10 @@
 An item is keyed by measurement key, pair, outcome and input hash. Identical inputs reuse the
 stored item; changed inputs open a new item linked to its predecessor. Run membership is
 recorded per run. Queue publication, disposition writes and overlay boundaries share one
-transaction-level advisory lock, taken before the transaction's first ``eqos.store_now()``
-call (the clock caches its time per transaction). Every queue time at or before a boundary
-therefore belongs to a committed transaction, so an as-of read is stable.
+transaction-level lock, ``eqos.lock_queue()``, which refuses a transaction that already read
+``eqos.store_now()`` (the clock caches its time per transaction); every queue insert takes it
+in its trigger. Every queue time at or before a boundary therefore belongs to a committed
+transaction, so an as-of read is stable.
 """
 
 from __future__ import annotations
@@ -29,10 +30,7 @@ from fundamentals.contracts.review_queue import (
 )
 from fundamentals.contracts.snapshot import canonical_sha256
 
-# One fixed key: every queue writer and boundary serializes on it.
-QUEUE_LOCK_KEY = 0x5155455545
-
-_LOCK: LiteralString = "SELECT pg_advisory_xact_lock(%s)"
+_LOCK: LiteralString = "SELECT eqos.lock_queue()"
 _NOW: LiteralString = "SELECT eqos.store_now() AS now"
 _EXACT_ITEM: LiteralString = (
     "SELECT id FROM eqos.queue_items WHERE key_digest IS NOT DISTINCT FROM %s "
@@ -83,7 +81,7 @@ _ITEM_TRACES: LiteralString = (
 
 def lock_queue(cursor: Cursor[Any]) -> None:
     """Take the shared queue lock; call it before the transaction's first store-clock read."""
-    cursor.execute(_LOCK, (QUEUE_LOCK_KEY,))
+    cursor.execute(_LOCK)
 
 
 def publish_queue_drafts(

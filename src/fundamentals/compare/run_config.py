@@ -115,6 +115,14 @@ VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
         ),
     ),
 }
+# Bump on any change to how the engine turns pinned inputs into results: replay refuses a run
+# recorded under other semantics rather than recomputing it differently.
+_SEMANTICS_VERSION = "d1b"
+COMPARISON_SEMANTICS = Pin(
+    version=_SEMANTICS_VERSION,
+    content_sha256=hashlib.sha256(_SEMANTICS_VERSION.encode("utf-8")).hexdigest(),
+)
+_SEMANTICS = "run was compared under semantics {recorded}; this code compares under {current}"
 _PIN_FIELDS = (
     "dictionary",
     "formula_set",
@@ -126,6 +134,10 @@ _PIN_FIELDS = (
     "comparison_policy",
     "alignment_rules",
 )
+
+
+class ComparisonSemanticsError(ValueError):
+    """A run's recorded comparison semantics are not the ones this code computes."""
 
 
 class ConfigVersions(BaseModel):
@@ -182,9 +194,12 @@ def extractor_pin(representation: Representation, *, version: str | None = None)
     )
 
 
-def vendor_extractor_pin(source_id: str, surface: str) -> VendorExtractorPin:
-    """A vendor surface's current extractor version plus its adapter source files' bytes."""
-    version, sources = VENDOR_EXTRACTORS[source_id]
+def vendor_extractor_pin(
+    source_id: str, surface: str, *, version: str | None = None
+) -> VendorExtractorPin:
+    """A vendor surface's extractor version (current unless named) plus its sources' bytes."""
+    current, sources = VENDOR_EXTRACTORS[source_id]
+    version = current if version is None else version
     return VendorExtractorPin(
         source_id=source_id,
         surface=surface,
@@ -256,6 +271,7 @@ def load_run_config(
             if vendor_pins is None
             else vendor_pins
         ),
+        comparison_semantics=COMPARISON_SEMANTICS,
     )
     return LoadedConfig(
         dictionary=dictionary,
@@ -271,6 +287,14 @@ def load_run_config(
 
 def require_pins(config: LoadedConfig, pinned: PinnedVersions) -> None:
     """Refuse a config whose resolved content differs from the pins a run names."""
+    if pinned.comparison_semantics != config.pinned.comparison_semantics:
+        recorded = pinned.comparison_semantics
+        raise ComparisonSemanticsError(
+            _SEMANTICS.format(
+                recorded=recorded and recorded.version,
+                current=_SEMANTICS_VERSION,
+            )
+        )
     for name in (*_PIN_FIELDS, "definition_set"):
         expected: Pin = getattr(pinned, name)
         actual: Pin = getattr(config.pinned, name)
@@ -290,6 +314,15 @@ def require_pins(config: LoadedConfig, pinned: PinnedVersions) -> None:
         )
 
 
+def vendor_version_pin(pin: VendorExtractorPin) -> VersionPin:
+    """A vendor extractor pin as its source-qualified ``eqos.version_pins`` row."""
+    return VersionPin(
+        artifact=f"vendor_extractor:{pin.source_id}",
+        version=pin.version,
+        content_sha256=pin.content_sha256,
+    )
+
+
 def pin_config(
     config: LoadedConfig, *, repository: EvidenceRepository, pool: ConnectionPool
 ) -> int:
@@ -305,6 +338,7 @@ def pin_config(
             for name in _PIN_FIELDS
             for pin in (getattr(config.pinned, name),)
         ]
+        + [vendor_version_pin(pin) for pin in config.pinned.vendor_extractors]
     )
     with pool.connection() as conn:
         return publish_definition_set(conn, config.definition_set)
