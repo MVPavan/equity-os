@@ -5,7 +5,8 @@ Retained captures only; expected values read by hand from the files (crore).
 - LAURUSLABS (the run test): Q3 FY25 consolidated XBRL (``data/raw/watchlist/lauruslabs``,
   SHA-256 2d50d29a…cfa6, ``decimals="-7"``, ± 0.5): revenue 14150500000 (1415.05),
   continuing PAT 90.61. Screener Dec 2024 Sales "1,415" (± 0.5). Tijori qt_c Dec 2024
-  (2026-09-05) Net Sales 1415.05 (> 100: ± 0.5), Net Profit 90.61 (≤ 100: ± 0.005). No
+  (2026-09-05) Net Sales 1415.05 rendered "1,415" (> 100: ± 0.5), Net Profit 90.61 (≤ 100:
+  ± 0.005). No
   LAURUSLABS Upstox capture is retained.
 - POLYCAB (cases b–d): Q3 FY25 XBRL revenue 5226.062, continuing PAT 464.348; Screener Dec
   2024 Sales "5,226", Mar 2026 Profit before tax "1,049"; Tijori qt_c Dec 2024 Net Sales
@@ -69,11 +70,8 @@ from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey,
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.review_queue import QueueSeverity
 from fundamentals.contracts.source_catalog import BUILTIN_SOURCES
-from fundamentals.evidence.capture_intake import (
-    NSE_XBRL_SOURCE_ID,
-    RetainedCaptureBinding,
-    RetainedIntake,
-)
+from fundamentals.evidence import vendor_tijori
+from fundamentals.evidence.capture_intake import retained_intake_from_manifest
 from fundamentals.evidence.first_party_ingest import ingest_first_party
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.vendor_ingest import VendorIngestRequest, ingest_vendor
@@ -83,7 +81,7 @@ from fundamentals.pg.identity_seed import (
     IssuerIdentityInput,
     seed_issuer_identity,
 )
-from fundamentals.store.snapshot_store import DirectoryAnchor, SnapshotStore
+from fundamentals.store.snapshot_store import SnapshotStore
 
 REPO = Path(__file__).resolve().parents[2]
 CONFIG = REPO / "config"
@@ -105,14 +103,11 @@ class Company(NamedTuple):
     bse_scrip: str
     xbrl: Path
     xbrl_sha256: str
-    filed_at: str
     pdf_sha256: str
     isin_cited: bool
     tijori: tuple[str, str, str, str]
 
 
-# NSE archive name stamps are DDMMYYYY with a 12-hour clock (Apar's manifest pairs
-# ...29102025085858 with filed 20:58:58); both boards met on the stamp's day.
 POLYCAB = Company(
     symbol="POLYCAB",
     name="Polycab India Limited",
@@ -120,7 +115,6 @@ POLYCAB = Company(
     bse_scrip="542652",
     xbrl=Path("nse") / "INDAS_117488_1357164_22012025051528.xml",
     xbrl_sha256="05ebba47a2a07015f107cc9ca3a616138e4a78b900f43074cbfd489db011518d",
-    filed_at="22-Jan-2025 17:15:28",
     pdf_sha256="8602f194f97ca8f045f2c878c9c3a7e111bc73f1398a9e2ba5c0bb2a8b10a71c",
     isin_cited=True,
     tijori=("tijori", "financials", "polycab-india-ltd", "20260905T113246.459386Z-9bc61e44e378"),
@@ -132,7 +126,6 @@ LAURUS = Company(
     bse_scrip="540222",
     xbrl=Path("nse") / "INDAS_117690_1360957_24012025084417.xml",
     xbrl_sha256="2d50d29a467b9035f8124f7a9576346b7d36888e9895befc3363e3c5d227cfa6",
-    filed_at="24-Jan-2025 20:44:17",
     pdf_sha256="2b79047e7d2e7c4f46eb3dfe56e1aff03d5871b92df1b24e63ffd0cd89c5b517",
     isin_cited=False,
     tijori=("tijori", "financials", "laurus-labs", "20260905T113024.330612Z-a99ac5398de1"),
@@ -159,13 +152,21 @@ VENDORS = (SCREENER_PAGE, ("tijori", "financials"), ("upstox", UPSTOX_SURFACE))
 class Issuer:
     """One seeded company entity with stored first-party and vendor evidence."""
 
-    def __init__(self, company: Company, pg_db: Any, pool: Any, tmp_path: Path) -> None:
+    def __init__(
+        self,
+        company: Company,
+        pg_db: Any,
+        pool: Any,
+        tmp_path: Path,
+        versions: ConfigVersions = VERSIONS,
+    ) -> None:
         self.company = company
+        self.versions = versions
         self.pg_db = pg_db
         self.pool = pool
         self.repository = EvidenceRepository(pool)
         self.tmp_path = tmp_path
-        self.config = load_run_config(CONFIG, VERSIONS)
+        self.config = load_run_config(CONFIG, versions)
         self.entity_id = _seed(pool, company)
         (tmp_path / "staged").mkdir(mode=0o700)
         self.staged = SnapshotStore(tmp_path / "staged")
@@ -177,22 +178,15 @@ class Issuer:
             folder.mkdir(mode=0o700)
         xbrl = self.company.xbrl
         shutil.copyfile(RAW_ROOT / self.company.symbol.lower() / xbrl, inputs / xbrl)
-        inventory = REPO / "docs/evidence/product-completion/retained-source-inventory.json"
-        intake = RetainedIntake(
-            bindings=(
-                RetainedCaptureBinding(
-                    representation=Representation.XBRL,
-                    source_id=NSE_XBRL_SOURCE_ID,
-                    relative_path=xbrl,
-                    expected_sha256=self.company.xbrl_sha256,
-                    filed_at_raw=self.company.filed_at,
-                ),
-            ),
-            retrieval_manifest_sha256=hashlib.sha256(inventory.read_bytes()).hexdigest(),
-            issuer_config_sha256=None,
-            authority_ref="D1b.2 test: retained watchlist XBRL, private/internal only",
-            store_anchor=DirectoryAnchor(store.absolute()),
-            input_anchor=DirectoryAnchor(inputs.absolute()),
+        # filed_at_nse is the retained NSE listing's broadCastDate for this filing.
+        intake = retained_intake_from_manifest(
+            RAW_ROOT / self.company.symbol.lower() / "retrieval-manifest.json",
+            issuer=self.company.symbol,
+            quarter="FY25_Q3",
+            kinds={Representation.XBRL: "xbrl-consolidated"},
+            store_root=store.absolute(),
+            input_root=inputs.absolute(),
+            issuer_config=None,
         )
         report = ingest_first_party(
             intake=intake,
@@ -254,7 +248,7 @@ class Issuer:
     def tijori(self, capture_id: str | None = None) -> Any:
         capture = (*self.company.tijori[:3], capture_id or self.company.tijori[3])
         adapter = tijori(self.company.tijori[2], self.company.symbol)
-        return self.vendor(capture, adapter, "tijori-v2", Q3_END)
+        return self.vendor(capture, adapter, vendor_tijori.EXTRACTOR_VERSION, Q3_END)
 
     def upstox(self, capture: tuple[str, ...]) -> Any:
         return self.vendor(capture, upstox(Basis.CONSOLIDATED), "upstox-v2", Q4_END)
@@ -272,7 +266,7 @@ class Issuer:
                 host=settings.host, port=settings.port, name=self.pg_db.dbname
             ),
             vendors=vendors,
-            versions=VERSIONS,
+            versions=self.versions,
         )
 
     def sides(
@@ -331,6 +325,8 @@ def test_vendor_run_corroborates_fails_closed_and_replays(laurus: Issuer) -> Non
     rows = load_results(record.run_id, pool=laurus.pool)
     revenue = _row(rows, "revenue_from_operations")
     assert revenue.corroboration_status is CorroborationStatus.AGREES_UNQUALIFIED
+    # XBRL-only package (no PDF member or attempt): no extraction pair (Sol D2).
+    assert revenue.extraction_status is ExtractionStatus.NOT_APPLICABLE
     assert _states(revenue) == {
         "XBRL": SourceState.VALUE,
         "PDF": SourceState.NO_VALUE,
@@ -342,17 +338,20 @@ def test_vendor_run_corroborates_fails_closed_and_replays(laurus: Issuer) -> Non
         Decimal("1414.5"),
         Decimal("1415.5"),
     )
-    assert _crore(revenue, "tijori/financials") == (
-        Decimal("1415.05"),
-        Decimal("1414.55"),
-        Decimal("1415.55"),
+    assert _crore(revenue, "tijori/financials") == (  # rendered "1,415" (island 1415.05)
+        Decimal("1415"),
+        Decimal("1414.5"),
+        Decimal("1415.5"),
     )
     assert _pairs(revenue) == {
         ("CORROBORATION", "XBRL", "screener-subscriber/SCREENER_FINANCIALS"): (
             PairOutcome.AGREE_UNQUALIFIED,
             Decimal("0.05") * CRORE,
         ),
-        ("CORROBORATION", "XBRL", "tijori/financials"): (PairOutcome.AGREE_UNQUALIFIED, 0),
+        ("CORROBORATION", "XBRL", "tijori/financials"): (
+            PairOutcome.AGREE_UNQUALIFIED,
+            Decimal("0.05") * CRORE,
+        ),
     }
     pat = _row(rows, "profit_continuing_after_tax")
     assert pat.corroboration_status is CorroborationStatus.AGREES_UNQUALIFIED

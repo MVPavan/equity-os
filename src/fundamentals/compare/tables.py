@@ -35,7 +35,7 @@ from fundamentals.contracts.comparison import (
 )
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
-from fundamentals.contracts.qualification import QualificationContext
+from fundamentals.contracts.qualification import ProvenCondition, QualificationContext
 
 _VALUE_NEEDS_NUMBER = "a VALUE side carries its value"
 _NUMBER_WITHOUT_VALUE = "a {state} side carries no value or interval"
@@ -106,6 +106,7 @@ class ComparisonSide(BaseModel):
     package_id: int | None
     calculation_state: CalculationState | None
     reasons: tuple[ReasonCode, ...]
+    condition_evidence: tuple[ProvenCondition, ...] = ()  # scope conditions that held
 
     @model_validator(mode="after")
     def _value_only_when_valued(self) -> ComparisonSide:

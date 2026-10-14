@@ -86,6 +86,7 @@ class Row(NamedTuple):
     reason: InterpretationReason | None
     raw_unit: str | None = None
     interval_crore: tuple[str, str] | None = None  # Hand-computed from the display rule.
+    rendered: str | None = None  # The page's displayed number, when it differs from ``lexeme``.
 
 
 class Case(NamedTuple):
@@ -332,8 +333,9 @@ CASES = (
                 InterpretationStatus.MAPPED,
                 None,
                 raw_unit="INR",
-                # |v| > 100 displays Math.round(v): 0 decimals, ± 0.5 crore.
-                interval_crore=("204.61999999999998", "205.61999999999998"),
+                # |v| > 100 displays Math.round(v): "205", 0 decimals, ± 0.5 crore.
+                interval_crore=("204.5", "205.5"),
+                rendered="205",
             ),
             Row(
                 "qt_c",
@@ -448,7 +450,8 @@ def test_d1b1_vendor_claim(
             if (item.native_context["section"], item.native_field, item.anchor["column_label"])
             == (row.section, row.field, row.column)
         )
-        assert occurrence.raw_value_text == row.lexeme
+        assert occurrence.raw_value_text == (row.rendered or row.lexeme)
+        assert occurrence.native_context.get("island_value", row.lexeme) == row.lexeme
         assert occurrence.period == row.period
         assert (occurrence.period.kind(3) if occurrence.period else None) is row.kind
         interpretation = stored[occurrence.occurrence_id]
@@ -462,7 +465,7 @@ def test_d1b1_vendor_claim(
             continue
         crore = Fraction(10**7)
         assert interpretation.value is not None and interpretation.interval is not None
-        assert Fraction(interpretation.value) == Fraction(row.lexeme) * crore
+        assert Fraction(interpretation.value) == Fraction(row.rendered or row.lexeme) * crore
         assert (interpretation.interval.lower, interpretation.interval.upper) == tuple(
             Fraction(bound) * crore for bound in row.interval_crore
         )

@@ -14,6 +14,20 @@ ACCEPTED_NSE_ENTITY_SCHEMES: frozenset[str] = frozenset(
 )
 
 
+# Rename-stable issuer-identity registry. A company's ISIN never changes across a
+# symbol/name rename, but a filing made *before* the rename still carries the OLD
+# NSE symbol in its XBRL context entity, while ``financial_results`` now keys the
+# row (and its ``isin``) under the NEW symbol. This maps the stable ISIN to the
+# as-filed entity identifiers that legitimately belong to that issuer, so a
+# pre-rename filing verifies without weakening the guard against a genuinely
+# different company. Curated + auditable; keyed by ISIN so it survives future
+# renames. (Zomato Limited -> Eternal Limited; symbol ZOMATO -> ETERNAL, effective
+# 2025-04-09; ISIN INE758T01015 unchanged.)
+ACCEPTED_ENTITY_IDS_BY_ISIN: dict[str, frozenset[str]] = {
+    "INE758T01015": frozenset({"ZOMATO"}),
+}
+
+
 class NseEntityIdentityError(ValueError):
     """Raised when an XBRL context does not identify the requested NSE issuer."""
 

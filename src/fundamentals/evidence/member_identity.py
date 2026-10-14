@@ -21,6 +21,7 @@ from fundamentals.extract.pdf_header_text import normalize_text_tokens
 from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.pdf_source import LoadedPdf
 from fundamentals.ingest.xbrl_identity import (
+    ACCEPTED_ENTITY_IDS_BY_ISIN,
     BSE_SCRIP_ENTITY_SCHEME,
     NSE_ENTITY_SCHEME,
     SEBI_SCRIP_ENTITY_SCHEME,
@@ -100,17 +101,19 @@ def verify_xbrl_identity(
     """Every context entity, identity fact and report-nature fact must match the seed.
 
     The basis needs both the independently parsed file scope and at least one
-    context-bound report-nature fact to equal the request.
+    context-bound report-nature fact to equal the request. The NSE symbol may also be a
+    pre-rename symbol registered for the seeded ISIN (``ACCEPTED_ENTITY_IDS_BY_ISIN``).
     """
-    expected_by_scheme: Mapping[str, str] = {
-        NSE_ENTITY_SCHEME: identifiers.nse_symbol,
-        SEBI_SCRIP_ENTITY_SCHEME: identifiers.bse_scrip,
-        BSE_SCRIP_ENTITY_SCHEME: identifiers.bse_scrip,
+    symbols = {identifiers.nse_symbol, *ACCEPTED_ENTITY_IDS_BY_ISIN.get(identifiers.isin, ())}
+    expected_by_scheme: Mapping[str, set[str]] = {
+        NSE_ENTITY_SCHEME: symbols,
+        SEBI_SCRIP_ENTITY_SCHEME: {identifiers.bse_scrip},
+        BSE_SCRIP_ENTITY_SCHEME: {identifiers.bse_scrip},
     }
-    expected_by_concept: Mapping[str, str] = {
-        ISIN_CONCEPT: identifiers.isin,
-        SCRIP_CODE_CONCEPT: identifiers.bse_scrip,
-        SYMBOL_CONCEPT: identifiers.nse_symbol,
+    expected_by_concept: Mapping[str, set[str]] = {
+        ISIN_CONCEPT: {identifiers.isin},
+        SCRIP_CODE_CONCEPT: {identifiers.bse_scrip},
+        SYMBOL_CONCEPT: symbols,
     }
     spec = instance.taxonomy
     nature_text = spec.consolidated_text if basis is Basis.CONSOLIDATED else spec.standalone_text
@@ -122,10 +125,10 @@ def verify_xbrl_identity(
         expected_entity = expected_by_scheme.get(fact.entity_scheme)
         if expected_entity is None:
             return _rejected(_UNKNOWN_SCHEME.format(scheme=fact.entity_scheme), evidence)
-        if fact.entity_id != expected_entity:
+        if fact.entity_id not in expected_entity:
             return _rejected(
                 _CONFLICT.format(
-                    what=fact.entity_scheme, found=fact.entity_id, expected=expected_entity
+                    what=fact.entity_scheme, found=fact.entity_id, expected=sorted(expected_entity)
                 ),
                 evidence,
             )
@@ -135,9 +138,11 @@ def verify_xbrl_identity(
             continue
         local = fact.concept_qname.rsplit(":", 1)[-1]
         found = (fact.raw_text or "").strip()
-        if local in expected_by_concept and found != expected_by_concept[local]:
+        if local in expected_by_concept and found not in expected_by_concept[local]:
             return _rejected(
-                _CONFLICT.format(what=local, found=found, expected=expected_by_concept[local]),
+                _CONFLICT.format(
+                    what=local, found=found, expected=sorted(expected_by_concept[local])
+                ),
                 evidence,
             )
         if local == spec.scope_concept and found != nature_text:

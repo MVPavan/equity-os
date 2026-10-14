@@ -27,6 +27,7 @@ from fundamentals.compare.engine_rows import (
     Cell,
     Side,
     calculated_side,
+    family_has_pair,
     output_context,
     selected_side,
 )
@@ -308,7 +309,7 @@ class FormulaRows:
                     for rep in REPRESENTATIONS
                 }
                 own = extraction_status(
-                    family_has_pair=True,
+                    family_has_pair=family_has_pair(package, cells),
                     xbrl=read[Representation.XBRL],
                     pdf=read[Representation.PDF],
                     definitions=self._config.definition_set,

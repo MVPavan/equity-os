@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.xbrl_identity import (
+    ACCEPTED_ENTITY_IDS_BY_ISIN,
     NseEntityIdentityError,
     validate_nse_entity_identities,
 )
@@ -63,19 +64,6 @@ INTEGRATED_INDAS_MARKER = "INTEGRATED_FILING_INDAS_"
 
 QUARTER_MONTHS = 3
 MONTHS_PER_YEAR = 12
-
-# Rename-stable issuer-identity registry. A company's ISIN never changes across a
-# symbol/name rename, but a filing made *before* the rename still carries the OLD
-# NSE symbol in its XBRL context entity, while ``financial_results`` now keys the
-# row (and its ``isin``) under the NEW symbol. This maps the stable ISIN to the
-# as-filed entity identifiers that legitimately belong to that issuer, so a
-# pre-rename filing verifies without weakening the guard against a genuinely
-# different company. Curated + auditable; keyed by ISIN so it survives future
-# renames. (Zomato Limited -> Eternal Limited; symbol ZOMATO -> ETERNAL, effective
-# 2025-04-09; ISIN INE758T01015 unchanged.)
-_ACCEPTED_ENTITY_IDS_BY_ISIN: dict[str, frozenset[str]] = {
-    "INE758T01015": frozenset({"ZOMATO"}),
-}
 
 # Markers that classify a provider response as a TERMINAL hard block — never
 # retried, surfaced immediately. Only timeouts and transient statuses are retried.
@@ -344,7 +332,7 @@ class NseXbrlSource:
         """
         accepted = {self._symbol} | self._accepted_entity_ids
         if isin:
-            accepted |= _ACCEPTED_ENTITY_IDS_BY_ISIN.get(isin.strip().upper(), frozenset())
+            accepted |= ACCEPTED_ENTITY_IDS_BY_ISIN.get(isin.strip().upper(), frozenset())
         return frozenset(accepted)
 
     def _verify_issuer(self, root: Any, *, isin: str | None = None) -> None:

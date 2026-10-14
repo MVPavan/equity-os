@@ -463,8 +463,8 @@ def test_generations_modes_and_isolation(runner: Runner) -> None:
 # --- coverage of period kinds ---------------------------------------------------------------
 
 
-def test_one_member_package_is_one_side_xbrl(runner: Runner) -> None:
-    """FY25 Q2 has only an XBRL member: ONE_SIDE_XBRL, COMPLETE."""
+def test_one_member_package_is_not_applicable(runner: Runner) -> None:
+    """FY25 Q2 has only an XBRL member and no PDF attempt: no pair, so NOT_APPLICABLE (§5 row 1)."""
     ingest = runner.ingest
     ingest.run(
         ingest.intake({Representation.XBRL: "xbrl-consolidated-comparator"}, Q2_FY25),
@@ -472,7 +472,7 @@ def test_one_member_package_is_one_side_xbrl(runner: Runner) -> None:
     )
     record = runner.run(FY25_Q2_END)
     revenue = row(runner.results(record.run_id), REVENUE, FY25_Q2_QUARTER)
-    assert revenue.extraction_status is ExtractionStatus.ONE_SIDE_XBRL
+    assert revenue.extraction_status is ExtractionStatus.NOT_APPLICABLE
     assert record.manifest.status is RunStatus.COMPLETE
 
 

@@ -1,0 +1,62 @@
+# v3 (D1b.5): v1 copied forward; only tijori.qt_c.profit_continuing_after_tax changes.
+# Tijori financials island (D1b.1). Only the rows Stage 1 compares; every other line is kept
+# as an UNMAPPED occurrence. Other entries are unproven: the island declares neither unit nor
+# precision; only qt_c money rows take them, from the display fact in display.yaml (spec §2, §5).
+source: tijori
+surface: financials
+schema_identity: tijori-financials-island-v1
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  period_rule: COLUMN_DURATION
+entries:
+- entry_id: tijori.qt_c.revenue_from_operations
+  selector: {statement_family: PL, labels: [Net Sales], section_equals: qt_c}
+  canonical_id: revenue_from_operations
+  basis: [CONSOLIDATED]
+  period_kinds: [QUARTER]
+  evidence_ref: 'Retained Tijori qt_c tables (data/raw/snapshots/v1/tijori/financials, 2026-09-05):
+    Net Sales is the first quarterly line, before Other Income. Unproven until measured (D3).'
+- entry_id: tijori.qt_s.revenue_from_operations
+  selector: {statement_family: PL, labels: [Net Sales], section_equals: qt_s}
+  canonical_id: revenue_from_operations
+  basis: [STANDALONE]
+  period_kinds: [QUARTER]
+  evidence_ref: 'Retained Tijori qt_s tables; standalone-only issuers (NETWEB) publish only
+    *_s tables. Unproven until measured (D3).'
+- entry_id: tijori.qt_c.profit_continuing_after_tax
+  selector: {statement_family: PL, labels: [Net Profit], section_equals: qt_c}
+  canonical_id: profit_continuing_after_tax
+  basis: [CONSOLIDATED]
+  period_kinds: [QUARTER]
+  tier: EQUIVALENCE_DEMONSTRATED
+  qualification:
+    scope_id: tijori-qt-c-continuing-pat-vs-bse-fin
+    schema_identities: [http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin]
+    surfaces: [financials]
+    bases: [CONSOLIDATED]
+    period_kinds: [QUARTER]
+    conditions:
+      - {condition_id: discontinued-profit-zero, canonical_id: profit_discontinued_after_tax, predicate: EQUALS_ZERO}
+    fixture_evidence:  # entity_id: the issuer's BSE scrip code (company identity)
+      - {capture_id: tijori/financials/laurus-labs/20260905T113024.330612Z-a99ac5398de1, capture_sha256: a99ac5398de199cd98f8af8ea2ba2c03704bfc9d3167ea5045ed06b1cdcf26e6, entity_id: 540222, discriminating: true}
+      - {capture_id: tijori/financials/mtar-technologies-ltd/20260905T113044.107142Z-24d2a2636128, capture_sha256: 24d2a26361281a0dbdb04fc7e821f42b2e1db05d94046c7d210b9554e187de79, entity_id: 543270, discriminating: false}
+      - {capture_id: tijori/financials/thermax-limited/20260905T113125.708476Z-8745b6623baf, capture_sha256: 8745b6623baff7c54458acaa9bf9794e1d328549d1d0268a4c2ed529d484d046, entity_id: 500411, discriminating: false}
+      - {capture_id: tijori/financials/titan-company-limited/20260905T113145.469887Z-b7ecf5d0bc40, capture_sha256: b7ecf5d0bc40404f47975dc7b3e27aef1ebbac9de7973b1b03de14f38ab5b7f0, entity_id: 500114, discriminating: false}
+      - {capture_id: tijori/financials/himachal-futuristic-communications-limited/20260905T113225.863771Z-4f02afd88fc5, capture_sha256: 4f02afd88fc50532ce3e39cf9dd702f955162420237a4b406c9ee06d5a15e073, entity_id: 500183, discriminating: true}
+      - {capture_id: tijori/financials/polycab-india-ltd/20260905T113246.459386Z-9bc61e44e378, capture_sha256: 9bc61e44e378f573614ea6156258985b0acc446cdcf194937fcf9f3a090eb6f7, entity_id: 542652, discriminating: false}
+      - {capture_id: tijori/financials/crompton-greaves-limited/20260905T113306.232100Z-bd96d54879fe, capture_sha256: bd96d54879fe76ad723c4836e70f93ea2c43f45e5509d74a74239b08c3fe98fd, entity_id: 500093, discriminating: false}
+      - {capture_id: tijori/financials/zomato-ltd/20260905T113325.872184Z-b3a2e09daa1a, capture_sha256: b3a2e09daa1aec82f1c94459f87e1e185cc3a7e7e4e1507ee801ffa1ea0bc482, entity_id: 543320, discriminating: false}
+    sample_rule: "five or more distinct companies whose values agree at displayed precision, including a case discriminating continuing PAT from profit_for_period (spec section 2, D3); measured 8 of 8 agree, LAURUSLABS and HFCL discriminate: LAURUSLABS 90.61 and HFCL 71.93 vs profit for period 92.94 and 72.58 crore"
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2 known traps: Tijori qt_c "Net Profit" is continuing PAT before associates, never
+    profit_for_period. v3: re-measured at displayed precision (extractor tijori-v3 compares
+    the rendered value of display.yaml) against eight Q3 FY25 in-bse-fin filings. The scope
+    schema is the comparison filing taxonomy and its condition is read from that filing,
+    so the stored vendor row stays unproven; comparison re-scopes it per filing.'
+- entry_id: tijori.pl_c_s.revenue_from_operations
+  selector: {statement_family: PL, labels: [Sales], section_equals: pl_c_s}
+  canonical_id: revenue_from_operations
+  basis: [CONSOLIDATED]
+  period_kinds: [YEAR, TTM]
+  evidence_ref: 'Retained Tijori pl_c_s tables: annual Sales columns plus the final TTM column
+    (footer "TTM Values as of <label>"; spec §3). Unproven until measured (D3).'

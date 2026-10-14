@@ -56,6 +56,7 @@ from fundamentals.compare.engine_rows import (
     Side,
     as_counterpart,
     calculated_side,
+    family_has_pair,
     not_applicable_row,
     pair_record,
     pairable,
@@ -631,7 +632,14 @@ class RunEngine:
         }
         self._reported_sides[key.digest()] = sides
         surfaced = sorted({item for cell in cells.values() for item in self._surfaced(cell)})
-        return self._compared(key, ValueIdentity.REPORTED, decision, sides, surfaced=surfaced)
+        return self._compared(
+            key,
+            ValueIdentity.REPORTED,
+            decision,
+            sides,
+            surfaced=surfaced,
+            paired=family_has_pair(package, cells),
+        )
 
     def _derived_row(
         self,
@@ -715,7 +723,13 @@ class RunEngine:
             status=reported.applicability, rule_id=reported.applicability_rule_id
         )
         derived = self._compared(
-            key, ValueIdentity.DERIVED, decision, sides, surfaced=surfaced, vendors=False
+            key,
+            ValueIdentity.DERIVED,
+            decision,
+            sides,
+            surfaced=surfaced,
+            vendors=False,
+            paired=family_has_pair(package, {rep: self.cell(key, rep) for rep in REPRESENTATIONS}),
         )
         counterparts = tuple(
             as_counterpart(value)
@@ -758,13 +772,14 @@ class RunEngine:
         surfaced: Iterable[int],
         extraction: ExtractionResult | None = None,
         vendors: bool = True,
+        paired: bool = True,
     ) -> ResultRow:
         """Extraction (unless already decided), then corroboration with the vendor sides
         (none for a Q4 derived from FY − 9M, which pairs with the reported Q4 instead)."""
         xbrl, pdf = sides[Representation.XBRL].comparison, sides[Representation.PDF].comparison
         if extraction is None:
             extraction = extraction_status(
-                family_has_pair=True,
+                family_has_pair=paired,
                 xbrl=xbrl,
                 pdf=pdf,
                 definitions=self._config.definition_set,

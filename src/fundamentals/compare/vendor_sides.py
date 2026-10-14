@@ -14,6 +14,9 @@ declared periodicity differs (no precedence between tables is ever recorded); bo
 with the first-party representative for the corroboration status. Upstox pairs with it and
 with Screener as a diagnostic, and when extraction is not ``AGREE`` every vendor also pairs
 with the other first-party representation as a diagnostic. Diagnostics never enter a status.
+
+A vendor mapping whose scope names a filing taxonomy is qualified only against the selected
+filing: its schema and its proven conditions, never the vendor capture's own (spec §2).
 """
 
 from __future__ import annotations
@@ -53,7 +56,9 @@ from fundamentals.contracts.evidence import (
     Occurrence,
     RunMode,
 )
+from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
+from fundamentals.contracts.qualification import qualification_context, scoped_tier
 from fundamentals.contracts.source_catalog import surface_authority
 from fundamentals.evidence.selection import (
     INTERPRETATION_AMBIGUOUS,
@@ -140,7 +145,7 @@ class VendorSides:
         xbrl, pdf = first_party[Representation.XBRL], first_party[Representation.PDF]
         chosen = representative(xbrl, pdf)
         rep = Representation.XBRL if chosen is xbrl else Representation.PDF
-        qualified = [side.qualified for side in sides]
+        qualified = [self._filing_scoped(side.qualified, chosen, fiscal_month) for side in sides]
         result = corroboration_result(
             applicability=applicability,
             first_party=_first_party(rep, chosen),
@@ -185,6 +190,35 @@ class VendorSides:
             status=result.status,
             reason=result.reason,
         )
+
+    def _filing_scoped(
+        self, vendor: SourceQualifiedSide, filing: ComparisonSide, fiscal_month: int
+    ) -> SourceQualifiedSide:
+        """A vendor side's declared tier re-scoped against the selected filing.
+
+        Context: the filing's schema identity (its mapping entry's) and the conditions its
+        own interpretation proved; the vendor surface, key basis and period kind. Only ever
+        raises a stored unproven tier, never lowers one.
+        """
+        side = vendor.side
+        if (
+            side.tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED
+            or not side.mapping_entry_ids
+            or filing.state is not SourceState.VALUE
+            or not filing.mapping_entry_ids
+        ):
+            return vendor
+        mapping = self._config.mapping_set
+        entry = mapping.entry(side.mapping_entry_ids[0])
+        context = qualification_context(
+            side.key,
+            schema_identity=mapping.entry(filing.mapping_entry_ids[0]).schema_identity,
+            surface=entry.surface,
+            fiscal_year_end_month=fiscal_month,
+            proven={proof.condition_id: proof for proof in filing.condition_evidence},
+        )
+        tier = scoped_tier(entry.tier, entry.qualification, context).tier
+        return vendor.model_copy(update={"side": side.model_copy(update={"tier": tier})})
 
     def _sides(self, key: MeasurementKey, fiscal_month: int) -> list[VendorSide]:
         """One side per requested vendor table mapping the row, conflicts marked."""

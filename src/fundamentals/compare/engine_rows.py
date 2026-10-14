@@ -6,7 +6,7 @@ shapes. A side that is not ``VALUE`` never carries a number; absence stays absen
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
@@ -31,6 +31,7 @@ from fundamentals.contracts.comparison import (
     SourceState,
 )
 from fundamentals.contracts.evidence import (
+    FilingPackage,
     Interpretation,
     KeySelection,
     Occurrence,
@@ -75,6 +76,14 @@ def reason_codes(reasons: Sequence[str | None]) -> tuple[ReasonCode, ...]:
     return tuple(ReasonCode(item) for item in reasons if item in _REASON_CODES)
 
 
+def family_has_pair(package: FilingPackage | None, cells: Mapping[Representation, Cell]) -> bool:
+    """Extraction table row 1: a package with a representation that is neither a member nor
+    attempted (an XBRL-only package) has no paired first-party representation."""
+    return package is None or all(
+        rep in package.members or cells[rep].attempt_id is not None for rep in REPRESENTATIONS
+    )
+
+
 def selected_side(
     cell: Cell,
     representation: Representation,
@@ -102,6 +111,7 @@ def selected_side(
         package_id=package_id,
         calculation_state=None,
         reasons=reason_codes([selection.reason]),
+        condition_evidence=() if chosen is None else chosen.condition_evidence,
     )
     stored = SourceValue(
         source_role=role,

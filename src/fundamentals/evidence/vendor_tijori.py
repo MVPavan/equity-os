@@ -3,7 +3,8 @@
 Only tables whose own key scope is the requested basis are read; a page with none for that
 basis is rejected and yields no values (standalone is never stored as consolidated). The
 island's numerals declare neither unit nor precision; only the rows an evidenced display fact
-(``config/mappings/tijori/v1/display.yaml``) scopes take its unit and displayed precision.
+(``config/mappings/tijori/v1/display.yaml``) scopes take its unit, and their value is the
+number the page renders at its displayed precision (the island number stays as raw evidence).
 Periods come from column labels: ``qt_*`` quarters, ``pl_*``/``cf_*`` years, ``bs_*``
 instants. The final ``pl_*`` column is TTM, evidenced by the table footer, never a fiscal
 period.
@@ -12,7 +13,7 @@ period.
 from __future__ import annotations
 
 import json
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import yaml
@@ -36,7 +37,7 @@ from fundamentals.ingest.tijori_tables import TijoriError, TijoriTable, TijoriTa
 SOURCE_ID = "tijori"
 SURFACE = "financials"
 SCHEMA_IDENTITY = "tijori-financials-island-v1"
-EXTRACTOR_VERSION = "tijori-v2"
+EXTRACTOR_VERSION = "tijori-v3"
 UNKNOWN_UNIT = "unknown"
 _TTM_FOOTER = "TTM Values as of {label}"
 _FAMILY = {
@@ -81,6 +82,10 @@ class TijoriDisplay(BaseModel):
         """Decimals Tijori's page displays for ``value``."""
         above = abs(value) > self.rounding_threshold
         return self.decimals_above if above else self.decimals_within
+
+    def render(self, value: Decimal) -> str:
+        """The number Tijori's page displays for ``value``, without digit grouping."""
+        return str(value.quantize(Decimal(1).scaleb(-self.decimals(value)), ROUND_HALF_UP))
 
 
 def load_tijori_display(path: Path) -> TijoriDisplay:
@@ -129,19 +134,18 @@ def extract_tijori(
             ]
             for index, (lexeme, value) in enumerate(lexemes):
                 column = labels[index] if row.cells else None
+                shown = value if scoped_row else None
                 ttm = bool(row.cells) and _is_ttm(table, index, binding.fiscal_year_end_month)
                 occurrences.append(
                     json_occurrence(
                         capture,
                         extractor_version=extractor_version,
                         label=row.label,
-                        lexeme=lexeme,
+                        lexeme=lexeme if shown is None else display.render(shown),
                         value=value,
                         raw_unit=display.raw_unit if scoped_row else UNKNOWN_UNIT,
                         raw_scale=display.raw_scale if scoped_row else 0,
-                        declared_precision=display.decimals(value)
-                        if scoped_row and value is not None
-                        else None,
+                        declared_precision=None if shown is None else display.decimals(shown),
                         period=_period(table, index, binding.fiscal_year_end_month)
                         if row.cells
                         else None,
@@ -153,6 +157,7 @@ def extract_tijori(
                             "section": table.key.value,
                             "section_parent": "/".join(row.parent_labels),
                             "field_id": row.field_id,
+                            "island_value": lexeme,
                             "header_months": 3 if table.key.value[:2] == "qt" else 12,
                             "header_kind": PeriodKind.TTM.value if ttm else None,
                         },

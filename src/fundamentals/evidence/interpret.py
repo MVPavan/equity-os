@@ -514,9 +514,10 @@ def prove_conditions(
 ) -> Mapping[str, ProvenCondition]:
     """Prove conditions from same-capture ``MAPPED`` interpretations of that period and basis.
 
-    Interval exactly {0}: ``EQUALS_ZERO`` holds and ``NOT_EQUALS_ZERO`` fails; interval
-    excluding 0: the reverse. An interval containing 0 and other values, no such
-    interpretation, or one without a value leaves the condition unproven and absent.
+    Value 0 (a filed zero, at any declared precision; spec §4 ``ZERO_PRINTED``):
+    ``EQUALS_ZERO`` holds and ``NOT_EQUALS_ZERO`` fails; interval excluding 0: the reverse.
+    A nonzero value whose interval contains 0, no such interpretation, or one without a
+    value leaves the condition unproven and absent.
     """
     proofs: dict[str, ProvenCondition] = {}
     for condition in conditions:
@@ -535,7 +536,7 @@ def prove_conditions(
         ):
             continue
         intervals = [item.interval for item in evidence if item.interval is not None]
-        if all(interval.lower == interval.upper == _ZERO for interval in intervals):
+        if all(item.value == 0 for item in evidence):
             is_zero = True
         elif all(not interval.contains(_ZERO) for interval in intervals):
             is_zero = False
