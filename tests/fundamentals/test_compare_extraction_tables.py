@@ -31,7 +31,6 @@ from fundamentals.compare.tables import (
     ComparisonSide,
     EvidencedRelationship,
     TaggingAdjustment,
-    VendorCorroborationNotImplemented,
     corroboration_status,
     derived_extraction_status,
     extraction_status,
@@ -692,14 +691,6 @@ def test_first_party_only_corroboration_rows(
 ) -> None:
     """Rows 1, 2, 2a, 5 and 7 with no mapped vendor."""
     assert corroboration_status(applicability=applicability, first_party=first_party) == expected
-
-
-def test_vendor_corroboration_is_not_implemented_in_d1a() -> None:
-    """A non-empty vendor set is D1b.2's extension, never silently ignored."""
-    with pytest.raises(VendorCorroborationNotImplemented):
-        corroboration_status(
-            applicability=APPLICABLE, first_party=side("1000.0"), vendors=(pdf("1000.0"),)
-        )
 
 
 # --- Policy and definition set ------------------------------------------------------------------

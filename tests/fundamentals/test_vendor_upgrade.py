@@ -85,6 +85,10 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         run_store, "_value_params", lambda result_id, value: value_params(result_id, value)[:12]
     )
+    value_of = run_store._value_of
+    monkeypatch.setattr(
+        run_store, "_value_of", lambda row: value_of({"source_id": None, "surface": None} | row)
+    )
 
 
 def test_0005_retained_run_keeps_manifest_and_results_after_0006(
@@ -120,13 +124,13 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
             ).fetchone()
         with old_db.migrator_connection() as connection:
             applied = apply_migrations(connection, upgrade_migrations)
-            assert [item.filename for item in applied] == ["0006_review_queue.sql"]
+            assert [item.filename for item in applied] == ["0006_vendor_and_queue.sql"]
+            # Stored result values are append-only: 0006 adds nullable columns, no backfill.
             assert (
                 connection.execute(
-                    "SELECT count(*) FROM eqos.result_source_values "
-                    "WHERE source_id IS NOT NULL AND surface IS NOT NULL"
+                    "SELECT count(*) FROM eqos.result_source_values WHERE source_id IS NOT NULL"
                 ).fetchone()[0]
-                > 0
+                == 0
             )
         with pool.connection() as connection:
             identity_after = connection.execute(

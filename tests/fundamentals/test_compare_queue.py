@@ -1,700 +1,236 @@
-"""D1b Task 3 queue publication and temporal overlay integration tests."""
+"""Review queue (data spec §5): item reuse and links, sealed evidence, run-transaction
+publication through ``RunStore.publish``, and a stable as-of overlay under concurrency.
+
+Rows are constructed plumbing fixtures on a disposable ``eqos_test_*`` database.
+"""
 
 from __future__ import annotations
 
 import hashlib
-import json
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 import psycopg
 import pytest
-from pg_evidence_schema_support import (
-    NOW,
-    _attempt,
-    _insert,
-    _interpretation,
-    _occurrence,
-    _read,
-    _run_input,
-    migrator,
-    runtime,
-    seeded,
-)
+from pg_evidence_schema_support import _seed_every_table, runtime
 from pg_support import PgTestDatabase
-from psycopg import sql
-from psycopg.types.json import Jsonb
-from pydantic import ValidationError
+from psycopg import errors
+from psycopg_pool import ConnectionPool
 
-from fundamentals.compare.approval_receipts import proposal_digest, subject_digest
+from fundamentals.compare.queue import overlay_boundary, read_overlay, record_disposition
+from fundamentals.compare.run_models import DatabaseIdentity, RunManifest, RunScope, RunStatus
+from fundamentals.compare.run_store import STAGE_QUEUE, STAGE_RUNS, RunStore
 from fundamentals.contracts.canonical import Basis, Representation, ValueKind
-from fundamentals.contracts.comparison import ReasonCode, SourceRef, SourceRole
+from fundamentals.contracts.comparison import SourceRef, SourceRole
+from fundamentals.contracts.evidence import PinnedVersions, RunMode, VersionPin
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.review_queue import (
-    QueueItemDraft,
-    QueueOverlay,
-    QueueSeverity,
+from fundamentals.contracts.review_queue import DispositionKind, QueueItemDraft, QueueSeverity
+
+__all__ = ["runtime"]
+pytestmark = pytest.mark.pg
+
+_PINS = PinnedVersions.model_validate(
+    {
+        name: VersionPin(
+            version="fixture", content_sha256=hashlib.sha256(name.encode()).hexdigest()
+        )
+        for name in PinnedVersions.model_fields
+        if name != "vendor_extractors"
+    }
 )
 
-__all__ = ["migrator", "runtime", "seeded"]
 
-_QUEUE_TABLES = ("queue_items", "queue_item_inputs", "queue_run_items")
+class Fixture:
+    """Seeded evidence, a runtime pool and a run factory over ``RunStore.publish``."""
 
+    def __init__(self, ids: dict[str, int], pool: ConnectionPool) -> None:
+        self.ids = ids
+        self.pool = pool
+        self.store = RunStore(pool)
 
-def _key(entity_id: int) -> MeasurementKey:
-    return MeasurementKey(
-        entity_id=entity_id,
-        canonical_id="synthetic_metric",
-        period=PeriodInterval.duration(date(2025, 7, 1), date(2025, 9, 30)),
-        basis=Basis.CONSOLIDATED,
-        framework=AccountingFramework.IND_AS,
-        currency="INR",
-        value_kind=ValueKind.CURRENCY_AMOUNT,
-        dimensions=DimensionSet(),
-    )
-
-
-def _refs() -> tuple[SourceRef, ...]:
-    return (
-        SourceRef(source_role=SourceRole.FIRST_PARTY, representation=Representation.XBRL),
-        SourceRef(source_role=SourceRole.REPORTED_COUNTERPART, representation=Representation.PDF),
-    )
-
-
-def _draft(
-    ids: dict[str, int],
-    *,
-    pair_identity: str = "synthetic-pair",
-    occurrence_ids: tuple[int, ...] = (),
-    interpretation_ids: tuple[int, ...] | None = None,
-    attempt_ids: tuple[int, ...] = (),
-) -> QueueItemDraft:
-    return QueueItemDraft(
-        key=_key(ids["_entity"]),
-        pair_identity=pair_identity,
-        outcome="MISMATCH",
-        severity=QueueSeverity.HIGH,
-        routing_reason="SYNTHETIC_REVIEW",
-        source_refs=_refs(),
-        attempt_ids=attempt_ids,
-        evidence_interpretation_ids=(
-            (ids["interpretations"],) if interpretation_ids is None else interpretation_ids
-        ),
-        evidence_occurrence_ids=occurrence_ids,
-    )
-
-
-def _publish(
-    conn: psycopg.Connection[Any], run_id: int, drafts: tuple[QueueItemDraft, ...]
-) -> tuple[Any, ...]:
-    from fundamentals.compare.queue import publish_queue_drafts
-
-    with conn.transaction(), conn.cursor() as cursor:
-        return publish_queue_drafts(cursor, run_id=run_id, drafts=drafts)
-
-
-def _counts(conn: psycopg.Connection[Any]) -> tuple[int, ...]:
-    counts = []
-    for table in _QUEUE_TABLES:
-        query = sql.SQL("SELECT count(*) FROM eqos.{}").format(sql.Identifier(table))
-        row = conn.execute(query).fetchone()
-        assert row is not None
-        counts.append(int(row[0]))
-    return tuple(counts)
-
-
-def _add_run_inputs(
-    conn: psycopg.Connection[Any],
-    ids: dict[str, int],
-    *,
-    run_id: int | None = None,
-) -> dict[str, int]:
-    owner_run = ids["runs"] if run_id is None else run_id
-    existing_occurrence = ids["occurrences"]
-    existing_attempt = ids["acquisition_attempts"]
-    if run_id is None:
-        _insert(
-            conn,
-            "run_inputs",
-            _run_input(owner_run, "OCCURRENCE", occurrence_id=existing_occurrence),
-        )
-        _insert(
-            conn,
-            "run_inputs",
-            _run_input(owner_run, "ATTEMPT", attempt_id=existing_attempt),
-        )
-    else:
-        for kind, column, evidence_id in (
-            ("OCCURRENCE", "occurrence_id", existing_occurrence),
-            ("INTERPRETATION", "interpretation_id", ids["interpretations"]),
-            ("ATTEMPT", "attempt_id", existing_attempt),
-        ):
-            _insert(conn, "run_inputs", _run_input(owner_run, kind, **{column: evidence_id}))
-    occurrence = _insert(
-        conn,
-        "occurrences",
-        _occurrence(
-            ids["_capture"],
-            f"queue-evidence-{owner_run}",
-            first_seen_at=NOW + timedelta(microseconds=2),
-        ),
-    )
-    interpretation = _insert(
-        conn,
-        "interpretations",
-        _interpretation(
-            ids["_entity"],
-            ids["_capture"],
-            occurrence,
-            input_digest=f"queue-interpretation-{owner_run}",
-            canonical_id="synthetic_metric",
-            mapping_entry_id=f"synthetic-entry-{owner_run}",
-        ),
-    )
-    attempt_body = _attempt(ids["_entity"], ids["_capture"])
-    attempt_body["input_sha256"] = hashlib.sha256(f"queue-attempt-{owner_run}".encode()).hexdigest()
-    attempt = _insert(conn, "acquisition_attempts", attempt_body)
-    for kind, column, evidence_id in (
-        ("OCCURRENCE", "occurrence_id", occurrence),
-        ("INTERPRETATION", "interpretation_id", interpretation),
-        ("ATTEMPT", "attempt_id", attempt),
-    ):
-        _insert(conn, "run_inputs", _run_input(owner_run, kind, **{column: evidence_id}))
-    return {
-        "occurrence": occurrence,
-        "interpretation": interpretation,
-        "attempt": attempt,
-    }
-
-
-def _new_run(conn: psycopg.Connection[Any], label: str) -> int:
-    digest = hashlib.sha256(label.encode()).hexdigest()
-    return _insert(
-        conn,
-        "runs",
-        {
-            "identity_hash": digest,
-            "cutoff": NOW,
-            "mode": "AS_KNOWN",
-            "status": "COMPLETE",
-            "code_version": "queue-fixture",
-            "manifest": Jsonb({"fixture": label}),
-            "manifest_sha256": hashlib.sha256(f"manifest:{label}".encode()).hexdigest(),
-        },
-    )
-
-
-def _link_existing_evidence(
-    conn: psycopg.Connection[Any], ids: dict[str, int], run_id: int
-) -> None:
-    for kind, column, evidence_id in (
-        ("OCCURRENCE", "occurrence_id", ids["occurrences"]),
-        ("INTERPRETATION", "interpretation_id", ids["interpretations"]),
-        ("ATTEMPT", "attempt_id", ids["acquisition_attempts"]),
-    ):
-        _insert(conn, "run_inputs", _run_input(run_id, kind, **{column: evidence_id}))
-
-
-def _seed_rejected_receipt(conn: psycopg.Connection[Any], item_id: int) -> int:
-    subject = _read(conn, "queue_items", item_id)
-    proposed: dict[str, Any] = {
-        "item_id": item_id,
-        "kind": "MAPPING_FIX",
-        "reason": "constructed rejection fixture",
-        "proposer": "constructed-author",
-        "evidence_ref": "constructed-only",
-        "subject_sha256": subject_digest(subject),
-        "explained_amount": None,
-        "amount_trace_id": None,
-    }
-    proposed["proposal_sha256"] = proposal_digest(proposed)
-    proposal_id = _insert(conn, "queue_disposition_proposals", proposed)
-    raw = b"constructed rejection binding fixture, not an actual review or owner approval"
-    evidence_sha = hashlib.sha256(raw).hexdigest()
-    bound = {
-        "subject_kind": "QUEUE_DISPOSITION",
-        "subject_id": item_id,
-        "proposal_id": proposal_id,
-        "proposal_sha256": proposed["proposal_sha256"],
-        "subject_sha256": proposed["subject_sha256"],
-        "decision": "REJECT",
-        "decider": "constructed-peer",
-    }
-    evidence_id = _insert(
-        conn,
-        "approval_review_evidence",
-        {
-            **bound,
-            "evidence_sha256": evidence_sha,
-            "evidence_document": Jsonb({"fixture": "SQL rejection binding only"}),
-            "raw_evidence": raw,
-            "evidence_origin": "INDEPENDENT_REVIEW",
-        },
-    )
-    return _insert(
-        conn,
-        "approval_receipts",
-        {
-            **bound,
-            "review_evidence_id": evidence_id,
-            "review_evidence_sha256": evidence_sha,
-        },
-    )
-
-
-def _seed_verified_synthetic_accept(
-    conn: psycopg.Connection[Any],
-    item_id: int,
-    *,
-    invalid_proof: str | None = None,
-) -> int:
-    """Create synthetic ACCEPT mechanics, optionally corrupting one verifier boundary."""
-    subject = _read(conn, "queue_items", item_id)
-    proposed: dict[str, Any] = {
-        "item_id": item_id,
-        "kind": "MAPPING_FIX",
-        "reason": "constructed verifier-valid acceptance fixture",
-        "proposer": "constructed-author",
-        "evidence_ref": "constructed-verifier-only",
-        "subject_sha256": subject_digest(subject),
-        "explained_amount": None,
-        "amount_trace_id": None,
-    }
-    if invalid_proof == "subject":
-        proposed["subject_sha256"] = "0" * 64
-    proposed["proposal_sha256"] = proposal_digest(proposed)
-    if invalid_proof == "proposal":
-        proposed["proposal_sha256"] = "1" * 64
-    proposal_id = _insert(conn, "queue_disposition_proposals", proposed)
-    raw = b"constructed verifier-valid binding; not an actual review or owner approval"
-    evidence_sha = hashlib.sha256(
-        b"different constructed bytes" if invalid_proof == "raw" else raw
-    ).hexdigest()
-    bound = {
-        "subject_kind": "QUEUE_DISPOSITION",
-        "subject_id": item_id,
-        "proposal_id": proposal_id,
-        "proposal_sha256": proposed["proposal_sha256"],
-        "subject_sha256": proposed["subject_sha256"],
-        "decision": "ACCEPT",
-        "decider": "constructed-peer",
-    }
-    evidence_id = _insert(
-        conn,
-        "approval_review_evidence",
-        {
-            **bound,
-            "evidence_sha256": evidence_sha,
-            "evidence_document": Jsonb(
-                {"fixture": "invalid authenticated document"}
-                if invalid_proof == "document"
-                else {
-                    "origin": "INDEPENDENT_REVIEW",
-                    "authenticated_producer_identity": "constructed-test-authenticator",
-                    "evidence_ref": "constructed-verifier-only",
-                    "decider": "constructed-peer",
-                    "author": "constructed-author",
-                    "decision": "ACCEPT",
-                    "subject_sha256": proposed["subject_sha256"],
-                    "proposal_sha256": proposed["proposal_sha256"],
-                    "owner_amount": None,
-                    "verbatim_owner_ruling": None,
-                }
+    def draft(self, *, interpretation: bool = True, pair: str = "fixture-pair") -> QueueItemDraft:
+        """A HIGH mismatch on one key, evidenced by the seeded occurrence (and interpretation)."""
+        return QueueItemDraft(
+            key=MeasurementKey(
+                entity_id=self.ids["_entity"],
+                canonical_id="synthetic_metric",
+                period=PeriodInterval.duration(date(2025, 7, 1), date(2025, 9, 30)),
+                basis=Basis.CONSOLIDATED,
+                framework=AccountingFramework.IND_AS,
+                currency="INR",
+                value_kind=ValueKind.CURRENCY_AMOUNT,
+                dimensions=DimensionSet(),
             ),
-            "raw_evidence": raw,
-            "evidence_origin": "INDEPENDENT_REVIEW",
-        },
-    )
-    receipt_id = _insert(
-        conn,
-        "approval_receipts",
-        {
-            **bound,
-            "review_evidence_id": evidence_id,
-            "review_evidence_sha256": evidence_sha,
-        },
-    )
-    return _insert(
-        conn,
-        "queue_dispositions",
-        {
-            "item_id": item_id,
-            "proposal_id": proposal_id,
-            "approval_receipt_id": receipt_id,
-            "kind": proposed["kind"],
-            "reason": proposed["reason"],
-            "proposer": proposed["proposer"],
-            "decider": "constructed-peer",
-            "evidence_ref": proposed["evidence_ref"],
-            "explained_amount": None,
-            "amount_trace_id": None,
-        },
-    )
-
-
-def _canonical_sha(payload: object) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _clock(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat(timespec="microseconds")
-
-
-def test_queue_contract_defaults_keep_legacy_overlay_dump_and_require_evidence() -> None:
-    overlay = QueueOverlay(
-        run_id=1,
-        recorded_position=0,
-        as_of=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-
-    legacy_document = overlay.model_dump(mode="json")
-    assert "memberships" not in legacy_document
-    assert "closure_failures" not in legacy_document
-    with pytest.raises(ValidationError, match="typed evidence"):
-        QueueItemDraft(
-            key=_key(1),
-            pair_identity="synthetic-pair",
+            pair_identity=pair,
             outcome="MISMATCH",
             severity=QueueSeverity.HIGH,
-        )
-
-
-@pytest.mark.pg
-def test_digest_binds_full_payload_and_authoritative_interpretation_clock(
-    seeded: dict[str, int], runtime: psycopg.Connection[Any]
-) -> None:
-    draft = _draft(seeded)
-    (stored,) = _publish(runtime, seeded["runs"], (draft,))
-    interpretation = _read(runtime, "interpretations", seeded["interpretations"])
-    capture = _read(runtime, "capture_refs", interpretation["capture_ref_id"])
-    refs = sorted(
-        (ref.model_dump(mode="json") for ref in draft.source_refs),
-        key=lambda value: json.dumps(value, sort_keys=True, separators=(",", ":")),
-    )
-    expected_document = {
-        "schema": "eqos.queue-item-input.v2",
-        "base": {
-            "key_digest": draft.key.digest() if draft.key is not None else None,
-            "measurement_key": (
-                draft.key.model_dump(mode="json") if draft.key is not None else None
+            routing_reason="EXTRACTION_DISAGREE",
+            source_refs=(
+                SourceRef(source_role=SourceRole.FIRST_PARTY, representation=Representation.XBRL),
+                SourceRef(source_role=SourceRole.FIRST_PARTY, representation=Representation.PDF),
             ),
-            "pair_identity": draft.pair_identity,
-            "outcome": draft.outcome,
-        },
-        "payload": {
-            "severity": draft.severity.value,
-            "diagnostic": draft.diagnostic,
-            "routing_reason": draft.routing_reason,
-            "reason_code": None,
-            "source_refs": refs,
-        },
-        "inputs": [
-            {
-                "kind": "INTERPRETATION",
-                "id": seeded["interpretations"],
-                "source_id": capture["source_id"],
-                "surface": capture["surface"],
-                "representation": interpretation["representation"],
-                "recorded_at": _clock(interpretation["recorded_at"]),
-            }
-        ],
-    }
-
-    assert stored.input_sha256 == _canonical_sha(expected_document)
-
-
-@pytest.mark.pg
-def test_reordered_draft_exactly_reuses_item_inputs_and_origin_membership(
-    seeded: dict[str, int], runtime: psycopg.Connection[Any]
-) -> None:
-    extra = _add_run_inputs(runtime, seeded)
-    first = _draft(
-        seeded,
-        occurrence_ids=(seeded["occurrences"], extra["occurrence"]),
-        interpretation_ids=(seeded["interpretations"], extra["interpretation"]),
-        attempt_ids=(seeded["acquisition_attempts"], extra["attempt"]),
-    )
-    (origin,) = _publish(runtime, seeded["runs"], (first,))
-    reused_run = _new_run(runtime, "queue-reuse-run")
-    _link_existing_evidence(runtime, seeded, reused_run)
-    for kind, column in (
-        ("OCCURRENCE", "occurrence_id"),
-        ("INTERPRETATION", "interpretation_id"),
-        ("ATTEMPT", "attempt_id"),
-    ):
-        evidence_id = extra[kind.lower()]
-        _insert(runtime, "run_inputs", _run_input(reused_run, kind, **{column: evidence_id}))
-    reordered = first.model_copy(
-        update={
-            "source_refs": tuple(reversed(first.source_refs)),
-            "evidence_occurrence_ids": tuple(reversed(first.evidence_occurrence_ids)),
-            "evidence_interpretation_ids": tuple(reversed(first.evidence_interpretation_ids)),
-            "attempt_ids": tuple(reversed(first.attempt_ids)),
-        }
-    )
-    before = _counts(runtime)
-    (reused,) = _publish(runtime, reused_run, (reordered,))
-
-    assert reused.item_id == origin.item_id
-    assert reused.run_id == seeded["runs"]
-    assert _counts(runtime) == (before[0], before[1], before[2] + 1)
-
-
-@pytest.mark.pg
-def test_every_payload_or_typed_evidence_change_links_latest_predecessor(
-    seeded: dict[str, int], runtime: psycopg.Connection[Any]
-) -> None:
-    extra = _add_run_inputs(runtime, seeded)
-    drafts = [_draft(seeded)]
-    drafts.append(drafts[-1].model_copy(update={"severity": QueueSeverity.MEDIUM}))
-    drafts.append(drafts[-1].model_copy(update={"diagnostic": True}))
-    drafts.append(drafts[-1].model_copy(update={"routing_reason": "SECOND_REVIEW"}))
-    drafts.append(drafts[-1].model_copy(update={"reason_code": ReasonCode.PERIOD_MISMATCH}))
-    drafts.append(drafts[-1].model_copy(update={"source_refs": (drafts[-1].source_refs[0],)}))
-    drafts.append(drafts[-1].model_copy(update={"evidence_occurrence_ids": (extra["occurrence"],)}))
-    drafts.append(
-        drafts[-1].model_copy(
-            update={
-                "evidence_interpretation_ids": (
-                    seeded["interpretations"],
-                    extra["interpretation"],
-                )
-            }
+            evidence_occurrence_ids=(self.ids["occurrences"],),
+            evidence_interpretation_ids=(self.ids["interpretations"],) if interpretation else (),
         )
-    )
-    drafts.append(drafts[-1].model_copy(update={"attempt_ids": (extra["attempt"],)}))
 
-    stored = [_publish(runtime, seeded["runs"], (draft,))[0] for draft in drafts]
+    def publish(
+        self, day: int, drafts: tuple[QueueItemDraft, ...], hook: Any = None
+    ) -> tuple[int, bool]:
+        """Publish a distinct (by period end) empty run carrying ``drafts``."""
+        manifest = RunManifest(
+            scope=RunScope(
+                entity_ids=(self.ids["_entity"],),
+                period_ends=(date(2025, 9, day),),
+                bases=(Basis.CONSOLIDATED,),
+                sources=("NSE_XBRL_INSTANCE",),
+            ),
+            cutoff=datetime(2026, 1, 1, tzinfo=UTC),
+            mode=RunMode.AS_KNOWN,
+            pinned=_PINS,
+            code_version="queue-fixture",
+            database_identity=DatabaseIdentity(host="fixture", port=1, name="fixture"),
+            inputs=(),
+            status=RunStatus.COMPLETE,
+        )
+        return self.store.publish(
+            manifest,
+            (),
+            definition_set_id=self.ids["definition_sets"],
+            publish_hook=hook,
+            queue_drafts=drafts,
+        )
 
-    assert len({item.item_id for item in stored}) == len(drafts)
-    assert [item.predecessor_item_id for item in stored] == [
-        None,
-        *(item.item_id for item in stored[:-1]),
+    def rows(self, query: str, *params: object) -> list[tuple[Any, ...]]:
+        with self.pool.connection() as conn:
+            return conn.execute(query, params).fetchall()  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def queue(pg_db: PgTestDatabase, runtime: psycopg.Connection) -> Iterator[Fixture]:
+    ids = _seed_every_table(runtime)
+    with pg_db.runtime_pool() as pool:
+        yield Fixture(ids, pool)
+
+
+def test_identical_inputs_reuse_the_item_and_changed_inputs_link_a_new_one(
+    queue: Fixture,
+) -> None:
+    """Same inputs: one item, a membership per run. Changed inputs: a new, linked item."""
+    first, _ = queue.publish(1, (queue.draft(),))
+    second, _ = queue.publish(2, (queue.draft(),))
+    changed, _ = queue.publish(3, (queue.draft(interpretation=False),))
+    items = queue.rows("SELECT id, run_id, predecessor_item_id FROM eqos.queue_items ORDER BY id")
+    assert [(run, predecessor) for _, run, predecessor in items] == [
+        (first, None),
+        (changed, items[0][0]),
     ]
-
-
-@pytest.mark.pg
-def test_unknown_mistyped_cross_run_and_unknown_run_evidence_are_guarded_before_dml(
-    seeded: dict[str, int], runtime: psycopg.Connection[Any]
-) -> None:
-    from fundamentals.compare.queue import QueuePublicationError
-
-    empty_run = _new_run(runtime, "queue-empty-run")
-    mistyped_occurrence = _insert(
-        runtime,
-        "occurrences",
-        _occurrence(seeded["_capture"], "mistyped-queue-evidence"),
+    links = queue.rows("SELECT run_id, item_id FROM eqos.queue_run_items ORDER BY id")
+    assert links == [(first, items[0][0]), (second, items[0][0]), (changed, items[1][0])]
+    inputs = queue.rows(
+        "SELECT item_id, occurrence_id, interpretation_id FROM eqos.queue_item_inputs ORDER BY id"
     )
-    _insert(
-        runtime,
-        "run_inputs",
-        _run_input(seeded["runs"], "OCCURRENCE", occurrence_id=mistyped_occurrence),
-    )
-    baseline = _counts(runtime)
-    cases = (
-        (
-            seeded["runs"],
-            _draft(seeded, attempt_ids=(seeded["acquisition_attempts"] + 10_000_000,)),
-        ),
-        (
-            seeded["runs"],
-            _draft(seeded, attempt_ids=(mistyped_occurrence,)),
-        ),
-        (empty_run, _draft(seeded)),
-        (seeded["runs"] + 10_000_000, _draft(seeded)),
-    )
-    for run_id, draft in cases:
-        with pytest.raises(QueuePublicationError):
-            _publish(runtime, run_id, (draft,))
-
-    assert _counts(runtime) == baseline
+    assert {row[0] for row in inputs if row[2] is not None} == {items[0][0]}
 
 
-@pytest.mark.pg
-def test_queue_publication_rolls_back_with_its_calling_cursor(
-    seeded: dict[str, int], runtime: psycopg.Connection[Any]
-) -> None:
-    from fundamentals.compare.queue import publish_queue_drafts
-
-    baseline = _counts(runtime)
-    with pytest.raises(RuntimeError, match="rollback fixture"):
-        with runtime.transaction(), runtime.cursor() as cursor:
-            publish_queue_drafts(
-                cursor,
-                run_id=seeded["runs"],
-                drafts=(_draft(seeded, pair_identity="rollback-pair"),),
-            )
-            raise RuntimeError("rollback fixture")
-
-    assert _counts(runtime) == baseline
-
-
-@pytest.mark.pg
-def test_concurrent_identical_draft_reuses_one_item_and_link(
-    seeded: dict[str, int], pg_db: PgTestDatabase
-) -> None:
-    barrier = threading.Barrier(2)
-    draft = _draft(seeded, pair_identity="concurrent-pair")
-
-    with pg_db.runtime_pool() as pool:
-
-        def publish() -> int | None:
-            with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-                barrier.wait()
-                from fundamentals.compare.queue import publish_queue_drafts
-
-                return publish_queue_drafts(cursor, run_id=seeded["runs"], drafts=(draft,))[
-                    0
-                ].item_id
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = (executor.submit(publish), executor.submit(publish))
-            item_ids = [future.result() for future in futures]
-        with pool.connection() as conn:
-            item_count = conn.execute(
-                "SELECT count(*) FROM eqos.queue_items WHERE pair_identity=%s",
-                (draft.pair_identity,),
-            ).fetchone()
-            link_count = conn.execute(
-                "SELECT count(*) FROM eqos.queue_run_items q "
-                "JOIN eqos.queue_items i ON i.id=q.item_id WHERE i.pair_identity=%s",
-                (draft.pair_identity,),
-            ).fetchone()
-
-    assert len(set(item_ids)) == 1
-    assert item_count == (1,)
-    assert link_count == (1,)
-
-
-@pytest.mark.pg
-def test_reversed_concurrent_multi_item_batches_share_items_without_deadlock(
-    seeded: dict[str, int], pg_db: PgTestDatabase
-) -> None:
-    barrier = threading.Barrier(2)
-    first = _draft(seeded, pair_identity="multi-a")
-    second = _draft(seeded, pair_identity="multi-b")
-
-    with pg_db.runtime_pool() as pool:
-
-        def publish(drafts: tuple[QueueItemDraft, ...]) -> tuple[int | None, ...]:
-            with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-                barrier.wait()
-                from fundamentals.compare.queue import publish_queue_drafts
-
-                return tuple(
-                    item.item_id
-                    for item in publish_queue_drafts(cursor, run_id=seeded["runs"], drafts=drafts)
-                )
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = (
-                executor.submit(publish, (first, second)),
-                executor.submit(publish, (second, first)),
-            )
-            results = [future.result() for future in futures]
-        with pool.connection() as conn:
-            item_count = conn.execute(
-                "SELECT count(*) FROM eqos.queue_items WHERE pair_identity=ANY(%s)",
-                ([first.pair_identity, second.pair_identity],),
-            ).fetchone()
-            link_count = conn.execute(
-                "SELECT count(*) FROM eqos.queue_run_items q "
-                "JOIN eqos.queue_items i ON i.id=q.item_id "
-                "WHERE i.pair_identity=ANY(%s)",
-                ([first.pair_identity, second.pair_identity],),
-            ).fetchone()
-
-    assert results[0] == results[1]
-    assert item_count == (2,)
-    assert link_count == (2,)
-
-
-@pytest.mark.pg
-def test_overlay_store_clock_exact_reread_and_reused_origin(
-    seeded: dict[str, int],
-    runtime: psycopg.Connection[Any],
-    pg_db: PgTestDatabase,
-) -> None:
-    from fundamentals.compare.queue import (
-        QueueOverlayReadError,
-        capture_queue_overlay,
-        read_queue_overlay,
-    )
-
-    draft = _draft(seeded, pair_identity="origin-pair")
-    (origin,) = _publish(runtime, seeded["runs"], (draft,))
-    reused_run = _new_run(runtime, "overlay-reused-run")
-    _link_existing_evidence(runtime, seeded, reused_run)
-    (reused,) = _publish(runtime, reused_run, (draft,))
-    assert reused.item_id == origin.item_id
-
-    with pg_db.runtime_pool() as pool:
-        overlay = capture_queue_overlay(pool, run_id=reused_run)
-        replayed = read_queue_overlay(
-            pool,
-            run_id=reused_run,
-            as_of=overlay.as_of,
-            recorded_position=overlay.recorded_position,
+def test_item_evidence_is_sealed_and_times_are_the_store_clock(queue: Fixture) -> None:
+    """Evidence cannot be added to an item later; a caller-supplied time is overwritten."""
+    run_id, _ = queue.publish(1, (queue.draft(),))
+    ((item_id, recorded_at),) = queue.rows("SELECT id, recorded_at FROM eqos.queue_items")
+    ((created_at,),) = queue.rows("SELECT created_at FROM eqos.runs WHERE id = %s", run_id)
+    assert recorded_at == created_at  # one transaction, one cached store-clock time
+    with queue.pool.connection() as conn, pytest.raises(errors.CheckViolation, match="sealed"):
+        conn.execute(
+            "INSERT INTO eqos.queue_item_inputs (item_id, attempt_id) VALUES (%s, %s)",
+            (item_id, queue.ids["acquisition_attempts"]),
         )
-        with pytest.raises(QueueOverlayReadError, match="position"):
-            read_queue_overlay(
-                pool,
-                run_id=reused_run,
-                as_of=overlay.as_of,
-                recorded_position=overlay.recorded_position + 1,
-            )
-
-    epoch_microseconds = (overlay.as_of - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(
-        microseconds=1
+    early = datetime(2000, 1, 1, tzinfo=UTC)
+    with queue.pool.connection() as conn:
+        conn.execute(
+            "INSERT INTO eqos.queue_run_items (run_id, item_id, recorded_at) VALUES (%s, %s, %s)",
+            (queue.ids["runs"], item_id, early),
+        )
+    ((stored,),) = queue.rows(
+        "SELECT recorded_at FROM eqos.queue_run_items WHERE run_id = %s", queue.ids["runs"]
     )
-    assert overlay.recorded_position == epoch_microseconds
-    assert replayed == overlay
-    assert [item.item_id for item in overlay.open_items] == [origin.item_id]
-    assert overlay.open_items[0].run_id == seeded["runs"]
-    assert overlay.memberships[0].origin_run_id == seeded["runs"]
-    assert overlay.memberships[0].run_id == reused_run
+    assert stored > early
 
 
-@pytest.mark.pg
-def test_accept_receipt_closes_item_while_reject_receipt_leaves_item_open(
-    seeded: dict[str, int],
-    runtime: psycopg.Connection[Any],
-    migrator: psycopg.Connection[Any],
-    pg_db: PgTestDatabase,
-) -> None:
-    from fundamentals.compare.queue import capture_queue_overlay
+def test_queue_failure_rolls_back_the_run_and_a_retry_publishes(queue: Fixture) -> None:
+    """Queue publication is part of the run transaction."""
 
-    (rejected_item,) = _publish(
-        runtime,
-        seeded["runs"],
-        (_draft(seeded, pair_identity="rejected-proposal-pair"),),
+    def fail_at_queue(stage: str) -> None:
+        if stage == STAGE_QUEUE:
+            raise RuntimeError("injected queue fault")
+
+    with pytest.raises(RuntimeError, match="injected"):
+        queue.publish(1, (queue.draft(),), hook=fail_at_queue)
+    assert queue.rows("SELECT count(*) FROM eqos.runs") == [(1,)]  # the seeded run only
+    assert queue.rows("SELECT count(*) FROM eqos.queue_items") == [(0,)]
+    run_id, created = queue.publish(1, (queue.draft(),))
+    assert created
+    assert queue.rows("SELECT run_id FROM eqos.queue_run_items") == [(run_id,)]
+
+
+def test_concurrent_reversed_batches_share_items_without_deadlock(queue: Fixture) -> None:
+    """Two runs publishing the same two drafts in opposite orders: two items, four links."""
+    first, other = queue.draft(pair="pair-a"), queue.draft(pair="pair-b")
+    barrier = threading.Barrier(2)
+
+    def publish(day: int, drafts: tuple[QueueItemDraft, ...]) -> int:
+        barrier.wait(timeout=10)
+        return queue.publish(day, drafts)[0]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        runs = [
+            pool.submit(publish, 1, (first, other)),
+            pool.submit(publish, 2, (other, first)),
+        ]
+        run_ids = {future.result(timeout=30) for future in runs}
+    assert queue.rows("SELECT count(*) FROM eqos.queue_items") == [(2,)]
+    links = queue.rows("SELECT run_id, count(*) FROM eqos.queue_run_items GROUP BY run_id")
+    assert dict(links) == dict.fromkeys(run_ids, 2)
+
+
+def test_overlay_boundary_waits_for_writers_and_rereads_identically(queue: Fixture) -> None:
+    """A boundary taken while a run is publishing waits for it; later writes never leak in."""
+    started, release = threading.Event(), threading.Event()
+
+    def hold(stage: str) -> None:
+        if stage == STAGE_RUNS:
+            started.set()
+            assert release.wait(timeout=10)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        publishing = pool.submit(queue.publish, 1, (queue.draft(),), hold)
+        assert started.wait(timeout=10)
+        boundary = pool.submit(overlay_boundary, queue.pool)
+        with pytest.raises(TimeoutError):
+            boundary.result(timeout=0.5)  # the writer holds the queue lock
+        release.set()
+        run_id, _ = publishing.result(timeout=10)
+        as_of = boundary.result(timeout=10)
+
+    before = read_overlay(queue.pool, run_id=run_id, as_of=as_of)
+    (item,) = before.open_items
+    assert item.run_id == run_id and item.recorded_at <= as_of and before.dispositions == ()
+    disposition = record_disposition(
+        queue.pool,
+        item_id=item.item_id,
+        kind=DispositionKind.PARSER_DEFECT,
+        reason="fixture",
+        decider="fixture-reviewer",
+        evidence_ref="fixture-evidence",
     )
-    assert rejected_item.item_id is not None
-    _seed_rejected_receipt(migrator, rejected_item.item_id)
-    (accepted_item,) = _publish(
-        runtime,
-        seeded["runs"],
-        (_draft(seeded, pair_identity="verified-synthetic-accept-pair"),),
-    )
-    assert accepted_item.item_id is not None
-    _seed_verified_synthetic_accept(migrator, accepted_item.item_id)
+    later_run, _ = queue.publish(2, (queue.draft(),))
+    assert read_overlay(queue.pool, run_id=run_id, as_of=as_of) == before
+    assert read_overlay(queue.pool, run_id=later_run, as_of=as_of).open_items == ()
 
-    with pg_db.runtime_pool() as pool:
-        overlay = capture_queue_overlay(pool, run_id=seeded["runs"])
-
-    assert rejected_item.item_id in {item.item_id for item in overlay.open_items}
-    assert seeded["queue_items"] in {item.item_id for item in overlay.open_items}
-    assert seeded["queue_items"] not in {
-        disposition.item_id for disposition in overlay.accepted_dispositions
-    }
-    assert seeded["queue_dispositions"] in {
-        failure.disposition_id for failure in overlay.closure_failures
-    }
-    assert accepted_item.item_id not in {item.item_id for item in overlay.open_items}
-    assert accepted_item.item_id in {
-        disposition.item_id for disposition in overlay.accepted_dispositions
-    }
+    after = read_overlay(queue.pool, run_id=run_id, as_of=overlay_boundary(queue.pool))
+    assert after.open_items == ()
+    assert [(item.disposition_id, item.kind) for item in after.dispositions] == [
+        (disposition, DispositionKind.PARSER_DEFECT)
+    ]

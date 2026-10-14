@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
-from fundamentals.contracts.evidence import CaptureReference
+from fundamentals.contracts.evidence import CaptureReference, VendorExtractorPin
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.evidence.vendor_common import VendorRequest, VendorRetainedBinding
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_ROOT = REPO_ROOT / "data/raw/watchlist"
@@ -35,6 +35,43 @@ SALES_ORACLE = {
     "THERMAX": 2529,
     "TITAN": 17740,
 }
+
+
+class VendorRetainedBinding(BaseModel):
+    """One retained response relative to ``RAW_ROOT`` and its content pin."""
+
+    model_config = ConfigDict(frozen=True)
+
+    relative_path: Path
+    expected_sha256: str
+
+
+class VendorRequest(BaseModel):
+    """Test-only scope of one retained Screener capture; it grants no authority."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str
+    surface: str
+    representation: Representation
+    schema_identity: str
+    entity_id: int
+    period: PeriodInterval
+    basis: Basis
+    framework: AccountingFramework
+    statement_family: StatementFamily
+    retained: VendorRetainedBinding
+
+    def identity_sha256(self) -> str:
+        """The request hashed deterministically (the capture's request key)."""
+        return hashlib.sha256(self.model_dump_json().encode("utf-8")).hexdigest()
+
+
+def extractor_pin(surface: str) -> VendorExtractorPin:
+    """A constructed Screener extractor pin; only its version and surface are checked."""
+    return VendorExtractorPin(
+        source_id=SOURCE, surface=surface, version="screener-v1", content_sha256="0" * 64
+    )
 
 
 def identifiers(symbol: str) -> dict[str, Any]:
@@ -131,7 +168,6 @@ def marked_body(
     request: VendorRequest, capture: CaptureReference, body: bytes
 ) -> tuple[VendorRequest, CaptureReference]:
     """Explicit test reinterpretation, marked by synthetic capture identity and new content pin."""
-    assert request.retained is not None
     digest = hashlib.sha256(body).hexdigest()
     request = request.model_copy(
         update={"retained": request.retained.model_copy(update={"expected_sha256": digest})}
@@ -213,7 +249,6 @@ def stage_registered(request: VendorRequest, repository: Any, store: Any) -> Cap
     from fundamentals.store.capture_local import capture_local_original
     from fundamentals.store.snapshot_store import DirectoryAnchor
 
-    assert request.retained is not None
     record = capture_local_original(
         store,
         input_anchor=DirectoryAnchor(RAW_ROOT),

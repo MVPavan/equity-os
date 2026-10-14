@@ -25,9 +25,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.comparison import SourceRole
 
 
 class SourceClass(StrEnum):
@@ -74,20 +75,27 @@ class SourceDescriptor(BaseModel):
 
 
 class SurfaceAuthority(BaseModel):
-    """An explicit, content-pinned rights decision for one source and retained surface.
+    """One allowed vendor ``(source, surface)``: its role and retention authority (spec §3)."""
 
-    Classification alone grants no surface access. The publication owner supplies this
-    record from the joined authority artifact and keeps its approval evidence reference.
-    """
+    model_config = ConfigDict(frozen=True)
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    source_id: str = Field(min_length=1)
-    surface: str = Field(min_length=1)
+    source_id: str
+    surface: str
     representation: Representation
-    evidence_role: EvidenceRole
-    authority_ref: str = Field(min_length=1)
-    authority_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    role: SourceRole
+    retention_authority: str
+
+
+class SurfaceNotAuthorisedError(LookupError):
+    """The ``(source, surface)`` is not registered; capture and interpretation are refused."""
+
+
+def surface_authority(source_id: str, surface: str) -> SurfaceAuthority:
+    """The registered authority of one vendor surface, or ``SurfaceNotAuthorisedError``."""
+    for authority in VENDOR_SURFACES:
+        if (authority.source_id, authority.surface) == (source_id, surface):
+            return authority
+    raise SurfaceNotAuthorisedError(f"{source_id}/{surface} is not a registered vendor surface")
 
 
 class SourceCatalog(BaseModel):
@@ -183,4 +191,50 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     # derived so they can never satisfy the two-first-party requirement.
     _derived("watchlist-config"),
     _derived("news-store"),
+)
+
+_SUBSCRIBER_RIGHTS = "docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md"
+# Owner decision 2026-09-03 (data spec §3): Upstox statements are a diagnostic parse-check only.
+_UPSTOX_DIAGNOSTIC = "docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md"
+
+
+def _surface(
+    source_id: str, surface: str, representation: Representation, role: SourceRole, authority: str
+) -> SurfaceAuthority:
+    """Declare one allowed vendor surface."""
+    return SurfaceAuthority(
+        source_id=source_id,
+        surface=surface,
+        representation=representation,
+        role=role,
+        retention_authority=authority,
+    )
+
+
+VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
+    _surface(
+        "screener-subscriber",
+        "SCREENER_FINANCIALS",
+        Representation.HTML,
+        SourceRole.INDEPENDENT_VENDOR,
+        _SUBSCRIBER_RIGHTS,
+    ),
+    _surface(
+        "screener-subscriber",
+        "SCREENER_SCHEDULE",
+        Representation.JSON,
+        SourceRole.INDEPENDENT_VENDOR,
+        _SUBSCRIBER_RIGHTS,
+    ),
+    _surface(
+        "tijori",
+        "TIJORI_FINANCIALS",
+        Representation.HTML,
+        SourceRole.INDEPENDENT_VENDOR,
+        _SUBSCRIBER_RIGHTS,
+    ),
+    *(
+        _surface("upstox", surface, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC)
+        for surface in ("income-statement", "balance-sheet", "cash-flow", "key-ratios")
+    ),
 )

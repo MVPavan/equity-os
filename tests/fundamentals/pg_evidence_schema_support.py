@@ -7,11 +7,9 @@ grant (SELECT and INSERT) that the refusals then bound.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -21,7 +19,6 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from fundamentals.compare.approval_receipts import proposal_digest, subject_digest
 from fundamentals.pg.settings import SCHEMA_NAME, PgRole
 
 pytestmark = pytest.mark.pg
@@ -32,16 +29,8 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-# 0001's 33 tables, 0003's pin, 0006's seven queue tables, 0009's snapshot and 0010's six.
-EXPECTED_TABLE_COUNT = 48
-PROTECTED_REVIEW_TABLES = frozenset(
-    {
-        "approval_review_evidence",
-        "approval_receipts",
-        "queue_dispositions",
-        "queue_overlay_snapshots",
-    }
-)
+# 0001's 33 tables, 0003's version_pins and 0006's four queue tables.
+EXPECTED_TABLE_COUNT = 38
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -533,10 +522,8 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
 
 
 @pytest.fixture
-def seeded(
-    runtime: psycopg.Connection, migrator: psycopg.Connection, pg_db: PgTestDatabase, tmp_path: Path
-) -> dict[str, int]:
-    """Constructed rows prove every table's SQL immutability; no project approval is claimed."""
+def seeded(runtime: psycopg.Connection) -> dict[str, int]:
+    """One row in every table, the queue's included, written by the runtime role."""
     ids = _seed_every_table(runtime)
     from selection_support import key
 
@@ -552,106 +539,31 @@ def seeded(
                 "outcome": "MISMATCH",
                 "input_sha256": "5" * 64,
                 "severity": "HIGH",
+                "diagnostic": False,
+                "routing_reason": "MAPPING_DEFINITION_OR_SOURCE_ERROR",
+                "source_refs": Jsonb([]),
             },
         )
         ids["queue_items"] = item
         ids["queue_item_inputs"] = _insert(
             runtime,
             "queue_item_inputs",
-            {
-                "item_id": item,
-                "interpretation_id": ids["interpretations"],
-            },
+            {"item_id": item, "interpretation_id": ids["interpretations"]},
         )
         ids["queue_run_items"] = _insert(
+            runtime, "queue_run_items", {"run_id": ids["runs"], "item_id": item}
+        )
+        ids["queue_dispositions"] = _insert(
             runtime,
-            "queue_run_items",
+            "queue_dispositions",
             {
-                "run_id": ids["runs"],
                 "item_id": item,
+                "kind": "MAPPING_FIX",
+                "reason": "constructed schema fixture",
+                "decider": "constructed-author",
+                "evidence_ref": "constructed-only",
             },
         )
-        proposed = {
-            "item_id": item,
-            "kind": "MAPPING_FIX",
-            "reason": "constructed schema fixture",
-            "proposer": "constructed-author",
-            "evidence_ref": "constructed-only",
-            "subject_sha256": subject_digest(_read(runtime, "queue_items", item)),
-            "explained_amount": None,
-            "amount_trace_id": None,
-        }
-        proposed["proposal_sha256"] = proposal_digest(proposed)
-        proposal = _insert(runtime, "queue_disposition_proposals", proposed)
-        ids["queue_disposition_proposals"] = proposal
-    raw = b"constructed SQL immutability fixture; not an actual review or owner approval"
-    evidence_hash = hashlib.sha256(raw).hexdigest()
-    proof = {
-        "subject_kind": "QUEUE_DISPOSITION",
-        "subject_id": item,
-        "proposal_id": proposal,
-        "proposal_sha256": proposed["proposal_sha256"],
-        "subject_sha256": proposed["subject_sha256"],
-        "evidence_sha256": evidence_hash,
-        "raw_evidence": raw,
-        "evidence_document": Jsonb({"fixture": "SQL constraints only"}),
-        "evidence_origin": "INDEPENDENT_REVIEW",
-        "decision": "ACCEPT",
-        "decider": "constructed-peer",
-    }
-    evidence = _insert(migrator, "approval_review_evidence", proof)
-    ids["approval_review_evidence"] = evidence
-    receipt = _insert(
-        migrator,
-        "approval_receipts",
-        {
-            **{
-                name: proof[name]
-                for name in (
-                    "subject_kind",
-                    "subject_id",
-                    "proposal_id",
-                    "proposal_sha256",
-                    "subject_sha256",
-                    "decision",
-                    "decider",
-                )
-            },
-            "review_evidence_id": evidence,
-            "review_evidence_sha256": evidence_hash,
-        },
-    )
-    ids["approval_receipts"] = receipt
-    ids["queue_dispositions"] = _insert(
-        migrator,
-        "queue_dispositions",
-        {
-            "item_id": item,
-            "proposal_id": proposal,
-            "approval_receipt_id": receipt,
-            "kind": proposed["kind"],
-            "reason": proposed["reason"],
-            "proposer": proposed["proposer"],
-            "decider": "constructed-peer",
-            "evidence_ref": proposed["evidence_ref"],
-        },
-    )
-    # Historical upgrade witnesses call this seed helper before migration 0009.
-    # Current full-schema assertions still require all 48 tables and populated rows.
-    if migrator.execute("SELECT to_regclass('eqos.queue_overlay_snapshots')").fetchone()[0]:
-        with runtime.transaction():
-            runtime.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            snapshot = runtime.execute(
-                "SELECT id FROM eqos.capture_queue_overlay_snapshot(%s)", (ids["runs"],)
-            ).fetchone()
-            assert snapshot is not None
-            ids["queue_overlay_snapshots"] = snapshot[0]
-    # Exact historical pre-0010 schemas keep their original seeds; current schemas
-    # require a genuine sealed synthetic witness and all six ordinary row IDs.
-    if migrator.execute("SELECT to_regclass('eqos.retained_intake_witnesses')").fetchone()[0]:
-        from pg_retained_intake_schema_support import seed_retained_intake_tables
-
-        ids.update(seed_retained_intake_tables(pg_db, runtime, tmp_path))
     return ids
 
 

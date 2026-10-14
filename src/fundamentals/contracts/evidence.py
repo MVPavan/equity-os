@@ -22,9 +22,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
-    SerializerFunctionWrapHandler,
     field_validator,
-    model_serializer,
     model_validator,
 )
 
@@ -463,9 +461,10 @@ class PinnedVersions(BaseModel):
     definition_set: VersionPin
     comparison_policy: VersionPin
     alignment_rules: VersionPin
-    vendor_extractors: tuple[VendorExtractorPin, ...] = ()
-    source_authority: VersionPin | None = None
-    vendor_publication: VersionPin | None = None
+    # Omitted when empty, so first-party manifests serialize exactly as in D1a.
+    vendor_extractors: tuple[VendorExtractorPin, ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
 
     @field_validator("vendor_extractors")
     @classmethod
@@ -477,17 +476,6 @@ class PinnedVersions(BaseModel):
             if previous != pin:
                 raise ValueError("a vendor source/surface has conflicting extractor pins")
         return tuple(by_surface[identity] for identity in sorted(by_surface))
-
-    @model_serializer(mode="wrap")
-    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        document: dict[str, Any] = handler(self)
-        if not self.vendor_extractors:
-            document.pop("vendor_extractors", None)
-        if self.source_authority is None:
-            document.pop("source_authority", None)
-        if self.vendor_publication is None:
-            document.pop("vendor_publication", None)
-        return document
 
     def triple(self) -> InterpretationTriple:
         """The interpretation versions selection filters by."""

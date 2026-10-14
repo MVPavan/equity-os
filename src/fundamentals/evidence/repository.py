@@ -18,7 +18,7 @@ from typing import Any, LiteralString
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
 from fundamentals.compare.definitions import DefinitionSet, read_definition_set
@@ -41,7 +41,6 @@ from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.member_identity import IssuerIdentifiers
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.evidence.repository_rows import PackageStatementRecord, SegmentMemberWrite
-from fundamentals.evidence.retained_intake_models import RetainedIntakeWitness
 from fundamentals.pg.identity_seed import EvidenceInputKind, SettingKey
 
 _NO_IDENTIFIERS = "entity {entity_id} has no seeded security with ISIN, NSE and BSE listings"
@@ -81,9 +80,6 @@ class EvidenceInputRecord(BaseModel):
     label: str
     content_sha256: str
     recorded_at: datetime
-    retained_intake_witness: RetainedIntakeWitness | None = Field(
-        default=None, exclude_if=lambda value: value is None
-    )
 
 
 class BasisStatusRecord(BaseModel):
@@ -172,10 +168,6 @@ class EvidenceRepository:
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
 
-    def uses_pool(self, pool: ConnectionPool) -> bool:
-        """Whether ``pool`` is this repository's one authoritative connection pool."""
-        return self._pool is pool
-
     def basis_status_as_of(
         self, entity_id: int, cutoff: datetime
     ) -> tuple[int, BasisStatus] | None:
@@ -202,14 +194,8 @@ class EvidenceRepository:
 
     def get_evidence_inputs(self, ids: Sequence[int]) -> tuple[EvidenceInputRecord, ...]:
         """Stored evidence-input rows by id."""
-        from fundamentals.evidence.retained_intake_store import (
-            enrich_retained_intake_evidence_inputs,
-        )
-
         rows = self._fetch(_EVIDENCE_INPUTS_BY_ID, (list(ids),))
-        return enrich_retained_intake_evidence_inputs(
-            self, tuple(EvidenceInputRecord.model_validate(row) for row in rows)
-        )
+        return tuple(EvidenceInputRecord.model_validate(row) for row in rows)
 
     def get_basis_statuses(self, ids: Sequence[int]) -> tuple[BasisStatusRecord, ...]:
         """Stored basis-status rows by id."""
@@ -275,24 +261,7 @@ class EvidenceRepository:
         A version already pinned to other content raises :class:`VersionContentDriftError`
         and nothing is written (mirrors ``publish_definition_set``).
         """
-        self.pin_versions_guarded(pins)
-
-    def pin_versions_guarded(
-        self,
-        pins: Sequence[VersionPin],
-        *,
-        required_database_prefix: str | None = None,
-    ) -> None:
-        """Pin versions after an optional database-name guard on the same transaction."""
         with self._transaction() as conn:
-            if required_database_prefix is not None:
-                found = _rows(conn, rows_sql.CURRENT_DATABASE, ())
-                database = str(found[0]["name"]) if found else ""
-                if not database.startswith(required_database_prefix):
-                    raise ValueError(
-                        "guarded version pins require database prefix "
-                        f"{required_database_prefix!r}, got {database!r}"
-                    )
             for pin in pins:
                 params = (pin.artifact, pin.version, pin.content_sha256)
                 if _rows(conn, rows_sql.INSERT_VERSION_PIN, params):

@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import pytest
 
+from fundamentals.contracts.comparison import SourceRole
 from fundamentals.contracts.source_catalog import (
     BUILTIN_SOURCES,
     EvidenceRole,
     SourceCatalog,
     SourceClass,
     SourceDescriptor,
+    SurfaceNotAuthorisedError,
     UnknownSourceError,
+    surface_authority,
 )
 
 # The source proven non-independent of Screener (see eqos-0j6). It matches no
@@ -95,3 +98,12 @@ def test_builtin_first_party_sources_are_filings_only() -> None:
     assert "screener" not in first_party
     assert "tijori" not in first_party
     assert "bse-xbrl" in first_party
+
+
+def test_vendor_surfaces_are_registered_with_a_role_and_unknown_ones_are_refused() -> None:
+    """Upstox is diagnostic-only; an unregistered (source, surface) has no authority."""
+    assert surface_authority("upstox", "income-statement").role is SourceRole.DIAGNOSTIC
+    screener = surface_authority("screener-subscriber", "SCREENER_FINANCIALS")
+    assert screener.role is SourceRole.INDEPENDENT_VENDOR
+    with pytest.raises(SurfaceNotAuthorisedError):
+        surface_authority("screener-subscriber", "UNREGISTERED")

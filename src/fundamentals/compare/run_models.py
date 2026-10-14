@@ -13,25 +13,13 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from enum import IntEnum, StrEnum
-from typing import Any
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SerializerFunctionWrapHandler,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from fundamentals.compare.tables import TaggingAdjustment
-from fundamentals.compare.vendor_request import VendorComposerContext
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
-    Representation,
-    StatementFamily,
     ValueIdentity,
 )
 from fundamentals.contracts.comparison import (
@@ -52,10 +40,7 @@ from fundamentals.contracts.comparison import (
 )
 from fundamentals.contracts.evidence import PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
-from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.review_queue import QueueOverlay
 from fundamentals.evidence.capture_intake import FirstPartySurface
-from fundamentals.evidence.vendor_common import VendorRetainedBinding
 
 NO_DIMENSIONS = "-"
 _ROW_ID_SEPARATOR = "|"
@@ -121,40 +106,6 @@ class RunInput(BaseModel):
     disposition: RunInputDisposition
 
 
-class VendorSurfaceRequest(BaseModel):
-    """Legacy source/surface declaration, optionally closed into one v2 input request."""
-
-    model_config = ConfigDict(frozen=True)
-
-    source_id: str
-    surface: str
-    representation: Representation | None = None
-    schema_identity: str | None = None
-    entity_id: int | None = Field(default=None, gt=0)
-    period: PeriodInterval | None = None
-    basis: Basis | None = None
-    framework: AccountingFramework | None = None
-    statement_family: StatementFamily | None = None
-    retained: VendorRetainedBinding | None = None
-    knowledge_time: datetime | None = None
-    knowledge_time_evidence_ref: str | None = None
-    capture_ref_id: int | None = Field(default=None, gt=0)
-    composer_context: VendorComposerContext | None = None
-    expected_logical_scope_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-
-    @model_serializer(mode="wrap")
-    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        document: dict[str, Any] = handler(self)
-        return {key: value for key, value in document.items() if value is not None}
-
-    @field_validator("source_id", "surface")
-    @classmethod
-    def _nonempty(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("vendor source/surface is nonempty")
-        return value
-
-
 class RunScope(BaseModel):
     """What a run covers: one entity, period ends, bases and first-party sources.
 
@@ -169,22 +120,6 @@ class RunScope(BaseModel):
     period_ends: tuple[date, ...]
     bases: tuple[Basis, ...]
     sources: tuple[str, ...]
-    vendor_sources: tuple[VendorSurfaceRequest, ...] = ()
-
-    @field_validator("vendor_sources")
-    @classmethod
-    def _vendor_surfaces(
-        cls, value: tuple[VendorSurfaceRequest, ...]
-    ) -> tuple[VendorSurfaceRequest, ...]:
-        documents = {item.model_dump_json(): item for item in value}
-        return tuple(documents[key] for key in sorted(documents))
-
-    @model_serializer(mode="wrap")
-    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        document: dict[str, Any] = handler(self)
-        if not self.vendor_sources:
-            document.pop("vendor_sources", None)
-        return document
 
     @field_validator("entity_ids")
     @classmethod
@@ -357,14 +292,6 @@ class RunRecord(BaseModel):
     run_id: int
     manifest: RunManifest
     created: bool
-    queue_overlay: QueueOverlay | None = None
-
-    @model_serializer(mode="wrap")
-    def _legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        document: dict[str, Any] = handler(self)
-        if self.queue_overlay is None:
-            document.pop("queue_overlay", None)
-        return document
 
 
 def row_id(key: MeasurementKey, value_identity: ValueIdentity) -> str:

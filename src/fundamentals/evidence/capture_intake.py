@@ -23,10 +23,6 @@ from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.snapshot import SnapshotError, SnapshotRights, canonical_sha256
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
-from fundamentals.evidence.retained_intake_models import (
-    RetainedIntakeMetadataSource,
-    RetainedIntakeSelection,
-)
 from fundamentals.store.capture_local import capture_local_original
 from fundamentals.store.snapshot_store import DescriptorTree, DirectoryAnchor, SnapshotStore
 
@@ -107,7 +103,6 @@ class RetainedIntake(BaseModel):
     results_pdf_source_id: str | None = None
     store_anchor: DirectoryAnchor
     input_anchor: DirectoryAnchor
-    metadata_source: RetainedIntakeMetadataSource | None = Field(default=None, exclude=True)
 
     def binding(self, representation: Representation) -> RetainedCaptureBinding:
         """The binding of one representation."""
@@ -180,44 +175,6 @@ def retained_intake_from_manifest(
         results_pdf_source_id=results_pdf.source_id if results_pdf is not None else None,
         store_anchor=DirectoryAnchor(store_root),
         input_anchor=DirectoryAnchor(input_root),
-        metadata_source=_optional_metadata_source(
-            manifest_path,
-            issuer_config=issuer_config,
-            issuer=issuer,
-            quarter=quarter,
-            kinds=kinds,
-        ),
-    )
-
-
-def _optional_metadata_source(
-    manifest_path: Path,
-    *,
-    issuer_config: Path | None,
-    issuer: str,
-    quarter: str,
-    kinds: Mapping[Representation, str],
-) -> RetainedIntakeMetadataSource | None:
-    """Observe witness metadata when safe, preserving the legacy intake boundary.
-
-    Opt-in witness preparation refuses an absent source before generation writes.
-    """
-    try:
-        manifest_anchor = DirectoryAnchor(manifest_path.absolute().parent)
-        config_anchor = DirectoryAnchor(issuer_config.absolute().parent) if issuer_config else None
-    except SnapshotError:
-        return None
-    return RetainedIntakeMetadataSource(
-        manifest_anchor=manifest_anchor,
-        manifest_relative_path=Path(manifest_path.name),
-        issuer_config_anchor=config_anchor,
-        issuer_config_relative_path=Path(issuer_config.name) if issuer_config else None,
-        issuer=issuer,
-        quarter=quarter,
-        selection=tuple(
-            RetainedIntakeSelection.model_validate({"representation": representation, "kind": kind})
-            for representation, kind in sorted(kinds.items())
-        ),
     )
 
 

@@ -73,10 +73,6 @@ _KEY_PARTS: tuple[tuple[Callable[[MeasurementKey], object], ReasonCode], ...] = 
 )
 
 
-class VendorCorroborationNotImplemented(NotImplementedError):  # noqa: N818 - name fixed by plan
-    """Compatibility refusal for legacy vendor inputs without actual source identities."""
-
-
 class EvidencedRelationship(BaseModel):
     """An evidenced statement that two different canonical ids measure the same thing."""
 
@@ -518,39 +514,10 @@ def _qualified_pair(
 
 
 def corroboration_status(
-    *,
-    applicability: ApplicabilityStatus,
-    first_party: ComparisonSide,
-    vendors: Sequence[ComparisonSide | SourceQualifiedSide] = (),
-    definitions: DefinitionSet | None = None,
-    policy: ComparisonPolicy | None = None,
+    *, applicability: ApplicabilityStatus, first_party: ComparisonSide
 ) -> tuple[CorroborationStatus, ReasonCode | None]:
-    """Legacy tuple interface; nonempty vendor inputs must name source and surface."""
-    if any(isinstance(source, ComparisonSide) for source in vendors):
-        raise VendorCorroborationNotImplemented(
-            "vendor inputs require SourceQualifiedSide identities"
-        )
-    independent = tuple(
-        source.side
-        for source in vendors
-        if isinstance(source, SourceQualifiedSide)
-        and source.ref.source_role is SourceRole.INDEPENDENT_VENDOR
-    )
-    if (
-        applicability is ApplicabilityStatus.NOT_APPLICABLE
-        or first_party.state is not SourceState.VALUE
-    ):
-        return _corroboration_decision(applicability, first_party, independent, ())
-    pairs: tuple[PairResult, ...] = ()
-    if first_party.state in _PAIRABLE and any(source.state in _PAIRABLE for source in independent):
-        if definitions is None or policy is None:
-            raise ValueError("vendor pairs require the pinned definition set and comparison policy")
-        pairs = tuple(
-            pair_outcome(first_party, source, definitions=definitions, policy=policy)
-            for source in independent
-            if source.state in _PAIRABLE
-        )
-    return _corroboration_decision(applicability, first_party, independent, pairs)
+    """The corroboration table for an empty vendor set: rows 1, 2, 2a, 5 and 7."""
+    return _corroboration_decision(applicability, first_party, (), ())
 
 
 def _corroboration_decision(

@@ -12,13 +12,12 @@ from fundamentals.contracts.review_queue import QueueOverlay, QueueSeverity
 
 
 class TrustResult(BaseModel):
-    """A view at the stated run, overlay time and monotonic position; never a stored result."""
+    """A view at the stated run and overlay time; never a stored result."""
 
     model_config = ConfigDict(frozen=True)
     run_id: int
     key_digest: str
     overlay_as_of: datetime
-    overlay_recorded_position: int
     trusted: bool
 
 
@@ -33,8 +32,8 @@ def trusted(
 ) -> TrustResult:
     """Both checks must hold, with no open non-diagnostic HIGH item on this cell.
 
-    The overlay is supplied explicitly by the queue's as-of reader. Accepted dispositions
-    never rewrite either immutable status; they affect this view through the open item set.
+    The overlay is supplied explicitly by the queue's as-of reader. Dispositions never
+    rewrite either immutable status; they affect this view through the open item set.
     """
     if overlay.run_id != run_id:
         raise ValueError("queue overlay belongs to another run")
@@ -53,7 +52,6 @@ def trusted(
         run_id=run_id,
         key_digest=key.digest(),
         overlay_as_of=overlay.as_of,
-        overlay_recorded_position=overlay.recorded_position,
         trusted=extraction_holds
         and corroboration is CorroborationStatus.CORROBORATED
         and not blocked,

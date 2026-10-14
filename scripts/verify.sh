@@ -635,11 +635,7 @@ PYEOF
       grep -rhoE 'data-row-company-id="[0-9]{4,}"|/company/(id/)?[0-9]{4,}/' "${caps[@]}" 2>/dev/null \
         | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
       if [ -s "${ids}" ]; then
-        # Reviewed financial collisions require exact file/line/token proofs;
-        # every unknown captured identifier still fails closed.
-        if ! leaked="$(python3 "${REPO_ROOT}/scripts/verify_privacy_identifiers.py" "${REPO_ROOT}" "${scope_base}" "${ids}" 2>>"${log}")"; then
-          rails="${rails}${rails:+; }identifier scan failed closed"
-        fi
+        leaked="$(grep -howFf "${ids}" "${added_tests}" 2>/dev/null | sort -u | head -3 | paste -sd, -)"
         [ -n "${leaked}" ] && rails="${rails}${rails:+; }real captured identifier in a fixture: ${leaked}"
       fi
       rm -f "${ids}"

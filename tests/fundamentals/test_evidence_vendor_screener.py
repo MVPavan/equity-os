@@ -42,7 +42,11 @@ def test_retained_quarter_sales_preserve_native_units_period_and_honest_clocks(
 ) -> None:
     request, capture, body = retained_page(symbol)
     result = adapter().extract_screener_page(
-        request, body=body, capture=capture, binding=binding(symbol), section=Section.QUARTERS
+        body,
+        capture=capture,
+        binding=binding(symbol),
+        basis=request.basis,
+        section=Section.QUARTERS,
     )
     cell = next(
         item
@@ -65,7 +69,11 @@ def test_hash_mismatch_is_refused_before_extraction() -> None:
     request, capture, body = retained_page()
     with pytest.raises(adapter().ScreenerExtractionError) as raised:
         adapter().extract_screener_page(
-            request, body=body + b" ", capture=capture, binding=binding(), section=Section.QUARTERS
+            body + b" ",
+            capture=capture,
+            binding=binding(),
+            basis=request.basis,
+            section=Section.QUARTERS,
         )
     assert raised.value.outcome.value == "FAILED"
 
@@ -74,7 +82,11 @@ def test_wrong_issuer_binding_is_refused() -> None:
     request, capture, body = retained_page()
     with pytest.raises(adapter().ScreenerExtractionError) as raised:
         adapter().extract_screener_page(
-            request, body=body, capture=capture, binding=binding("TITAN"), section=Section.QUARTERS
+            body,
+            capture=capture,
+            binding=binding("TITAN"),
+            basis=request.basis,
+            section=Section.QUARTERS,
         )
     assert raised.value.outcome.value in ("IDENTITY_REJECTED", "PARSE_FAILED")
 
@@ -88,10 +100,9 @@ def test_schedule_other_income_keeps_nonzero_exceptional_lexeme_and_separate_cap
         RAW_ROOT / "screener-financials/SONACOMS/consolidated/screener_financials_meta.json"
     ).read_bytes()
     result = adapter().extract_screener_schedule(
-        request,
-        body=body,
+        body,
         capture=capture,
-        page_request=page_request,
+        basis=request.basis,
         page_body=page_body,
         page_capture=page_capture,
         binding=binding("SONACOMS"),
@@ -121,10 +132,9 @@ def test_unverified_surface_claim_survives_a_complete_package_flag() -> None:
         RAW_ROOT / "screener-financials/LAURUSLABS/consolidated/screener_financials_meta.json"
     ).read_bytes()
     result = adapter().extract_screener_schedule(
-        request,
-        body=body,
+        body,
         capture=capture,
-        page_request=page_request,
+        basis=request.basis,
         page_body=page_body,
         page_capture=page_capture,
         binding=binding("LAURUSLABS"),
@@ -159,10 +169,9 @@ def test_schedule_missing_and_invalid_lexemes_survive_without_zero_fill(
     body = json.dumps(document).encode()
     request, capture = marked_body(request, capture, body)
     result = adapter().extract_screener_schedule(
-        request,
-        body=body,
+        body,
         capture=capture,
-        page_request=page_request,
+        basis=request.basis,
         page_body=page_body,
         page_capture=page_capture,
         binding=binding(),
@@ -194,7 +203,11 @@ def test_source_other_income_maps_to_aggregate_and_not_plain_income(tmp_path: An
     dictionary, mappings, policy = draft_config(tmp_path)
     request, capture, body = retained_page("SONACOMS")
     extracted = adapter().extract_screener_page(
-        request, body=body, capture=capture, binding=binding("SONACOMS"), section=Section.QUARTERS
+        body,
+        capture=capture,
+        binding=binding("SONACOMS"),
+        basis=request.basis,
+        section=Section.QUARTERS,
     )
     occurrence = next(
         item
@@ -241,7 +254,11 @@ def test_page_total_liabilities_never_maps_to_a_liabilities_key(tmp_path: Any) -
     request, capture, body = retained_page()
     request = request.model_copy(update={"statement_family": StatementFamily.BALANCE_SHEET})
     extracted = adapter().extract_screener_page(
-        request, body=body, capture=capture, binding=binding(), section=Section.BALANCE_SHEET
+        body,
+        capture=capture,
+        binding=binding(),
+        basis=request.basis,
+        section=Section.BALANCE_SHEET,
     )
     occurrence = next(
         item for item in extracted.occurrences if item.native_field == "Total Liabilities"
@@ -268,61 +285,34 @@ def test_page_total_liabilities_never_maps_to_a_liabilities_key(tmp_path: Any) -
     assert interpreted.value is None
 
 
-def test_public_retained_reader_refuses_another_authority_surface() -> None:
-    from vendor_retained_support import RAW_ROOT, SOURCE
-
-    from fundamentals.contracts.source_catalog import (
-        EvidenceRole,
-        SourceCatalog,
-        SourceClass,
-        SourceDescriptor,
-        SurfaceAuthority,
-    )
-    from fundamentals.evidence.vendor_common import VendorAuthorityError
-    from fundamentals.store.snapshot_store import DirectoryAnchor
-
-    request, capture, _ = retained_page()
-    catalog = SourceCatalog.of(
-        SourceDescriptor(
-            source_id=SOURCE,
-            source_class=SourceClass.DERIVED,
-            evidence_role=EvidenceRole.RECONCILABLE,
-        )
-    )
-    authority = SurfaceAuthority(
-        source_id=SOURCE,
-        surface="SCREENER_SCHEDULE",
-        representation=request.representation,
-        evidence_role=EvidenceRole.RECONCILABLE,
-        authority_ref="constructed refusal test",
-        authority_sha256="a" * 64,
-    )
-    with pytest.raises(VendorAuthorityError):
-        adapter().read_retained_screener_page(
-            request,
-            input_anchor=DirectoryAnchor(RAW_ROOT),
-            capture=capture,
+def test_unregistered_surface_is_not_authorised_before_parsing() -> None:
+    """An unregistered (source, surface) yields NOT_AUTHORISED before its bytes are read."""
+    request, capture, body = retained_page()
+    with pytest.raises(adapter().ScreenerExtractionError) as raised:
+        adapter().extract_screener_page(
+            body,
+            capture=capture.model_copy(update={"surface": "SCREENER_UNREGISTERED"}),
             binding=binding(),
+            basis=request.basis,
             section=Section.QUARTERS,
-            catalog=catalog,
-            authority=authority,
         )
+    assert raised.value.outcome.value == "NOT_AUTHORISED"
 
 
 def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgres(
     pg_db: Any, tmp_path: Any
 ) -> None:
     from pg_evidence_schema_support import _insert
-    from vendor_retained_support import RAW_ROOT, draft_config, retained_schedule, stage_registered
+    from vendor_retained_support import (
+        RAW_ROOT,
+        draft_config,
+        extractor_pin,
+        retained_schedule,
+        stage_registered,
+    )
 
     from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
     from fundamentals.evidence.repository import EvidenceRepository
-    from fundamentals.evidence.vendor_config import (
-        SCREENER_EXTRACTOR_SOURCES,
-        SCREENER_EXTRACTOR_VERSION,
-        SCREENER_SOURCE,
-        vendor_extractor_pin,
-    )
 
     dictionary, mappings, policy = draft_config(tmp_path)
     with pg_db.migrator_connection() as conn:
@@ -349,18 +339,8 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
     request, _, schedule_body = retained_schedule("THERMAX", "quarters", "Other Income")
     page_request = page_request.model_copy(update={"entity_id": entity})
     request = request.model_copy(update={"entity_id": entity})
-    page_extractor_pin = vendor_extractor_pin(
-        SCREENER_SOURCE,
-        page_request.surface,
-        SCREENER_EXTRACTOR_VERSION,
-        SCREENER_EXTRACTOR_SOURCES,
-    )
-    schedule_extractor_pin = vendor_extractor_pin(
-        SCREENER_SOURCE,
-        request.surface,
-        SCREENER_EXTRACTOR_VERSION,
-        SCREENER_EXTRACTOR_SOURCES,
-    )
+    page_extractor_pin = extractor_pin(page_request.surface)
+    schedule_extractor_pin = extractor_pin(request.surface)
     with pg_db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
         before = repository.store_clock()
@@ -374,18 +354,17 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
         assert before <= page_capture.first_seen_at <= repository.store_clock()
         assert page_capture.first_seen_at == page_capture.registered_at
         page = adapter().extract_screener_page(
-            page_request,
-            body=page_body,
+            page_body,
             capture=page_capture,
             binding=binding(),
+            basis=page_request.basis,
             section=Section.QUARTERS,
             extractor_version=page_extractor_pin.version,
         )
         schedule = adapter().extract_screener_schedule(
-            request,
-            body=schedule_body,
+            schedule_body,
             capture=schedule_capture,
-            page_request=page_request,
+            basis=request.basis,
             page_body=page_body,
             page_capture=page_capture,
             binding=binding(),
@@ -436,20 +415,3 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
         )
         assert Fraction(sales.value) == 25_290_000_000
         assert sales.transform_trace["raw_value_text"] == "2,529"
-
-
-def test_caller_cannot_convert_retrieval_claim_to_publication_time() -> None:
-    from datetime import UTC, datetime
-
-    request, capture, body = retained_page()
-    request = request.model_copy(
-        update={
-            "knowledge_time": datetime(2026, 9, 4, tzinfo=UTC),
-            "knowledge_time_evidence_ref": "metadata fetched_at claim",
-        }
-    )
-    with pytest.raises(adapter().ScreenerExtractionError) as raised:
-        adapter().extract_screener_page(
-            request, body=body, capture=capture, binding=binding(), section=Section.QUARTERS
-        )
-    assert raised.value.outcome.value == "FAILED"

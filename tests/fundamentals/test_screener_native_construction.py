@@ -12,8 +12,8 @@ from typing import Any, cast
 import pytest
 from pg_evidence_schema_support import _insert
 from vendor_retained_support import (
-    SOURCE,
     draft_config,
+    extractor_pin,
     identifiers,
     retained_page,
     stage_registered,
@@ -24,7 +24,6 @@ from fundamentals.contracts.evidence import (
     InterpretationOrigin,
     InterpretationReason,
     InterpretationStatus,
-    VendorExtractorPin,
 )
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.interval import Interval
@@ -35,7 +34,6 @@ from fundamentals.evidence.native_construction import (
     NativeConstructionError,
 )
 from fundamentals.evidence.repository import EvidenceRepository
-from fundamentals.evidence.vendor_config import vendor_extractor_pin
 from fundamentals.evidence.vendor_screener import ScreenerIssuerBinding, extract_screener_page
 from fundamentals.ingest.screener_financials_models import Section
 from fundamentals.ingest.screener_session_models import BasisTopology
@@ -48,17 +46,6 @@ TARGET_CANONICAL_ID = "liabilities_incl_nci"
 THERMAX_BODY_SHA256 = "6894f0979643755a618a6e8f572dc63ee3efb61abb6495ddf4766d5ec678f0ad"
 HFCL_BODY_SHA256 = "4fefad29dfb80061be461597fd6b1bd1150c87ce8d2c59820cfaed4b4291e236"
 SCREENER_EXTRACTOR_VERSION = "screener-v1"
-SCREENER_EXTRACTOR_SOURCES = (
-    "evidence/vendor_common.py",
-    "evidence/vendor_screener.py",
-    "evidence/interpret.py",
-    "ingest/screener_financials_models.py",
-    "ingest/screener_financials_schedules.py",
-    "ingest/screener_financials_shapes.py",
-    "ingest/screener_financials_tables.py",
-    "ingest/screener_session_models.py",
-    "ingest/screener_session_page.py",
-)
 
 
 def _binding(symbol: str) -> ScreenerIssuerBinding:
@@ -72,16 +59,6 @@ def _binding(symbol: str) -> ScreenerIssuerBinding:
             standalone_warehouse_id=identity["screener_warehouse_id_standalone"],
         ),
         identity_evidence_ref="config/watchlist.yaml",
-    )
-
-
-def _extractor_pin() -> VendorExtractorPin:
-    """Pin the actual retained-page adapter bundle with the common pin algorithm."""
-    return vendor_extractor_pin(
-        SOURCE,
-        "SCREENER_FINANCIALS",
-        SCREENER_EXTRACTOR_VERSION,
-        SCREENER_EXTRACTOR_SOURCES,
     )
 
 
@@ -130,8 +107,8 @@ def _prepared_source(
     request, capture, body = retained_page(symbol)
     request = request.model_copy(update={"statement_family": StatementFamily.BALANCE_SHEET})
     extracted = extract_screener_page(
-        request,
-        body=body,
+        body,
+        basis=request.basis,
         capture=capture,
         binding=_binding(symbol),
         section=Section.BALANCE_SHEET,
@@ -166,7 +143,7 @@ def _interpret_source(
                     "policy": policy,
                     "dictionary": dictionary,
                     "fiscal_year_end_month": 3,
-                    "expected_extractor_pin": _extractor_pin(),
+                    "expected_extractor_pin": extractor_pin("SCREENER_FINANCIALS"),
                 }
             ),
             prior=(),
@@ -186,8 +163,8 @@ def test_thermax_native_rows_construct_the_hand_read_liabilities_aggregate(
     request = request.model_copy(update={"statement_family": StatementFamily.BALANCE_SHEET})
     assert hashlib.sha256(body).hexdigest() == THERMAX_BODY_SHA256
     extracted = extract_screener_page(
-        request,
-        body=body,
+        body,
+        basis=request.basis,
         capture=capture,
         binding=_binding("THERMAX"),
         section=Section.BALANCE_SHEET,
@@ -209,7 +186,7 @@ def test_thermax_native_rows_construct_the_hand_read_liabilities_aggregate(
                 "policy": policy,
                 "dictionary": dictionary,
                 "fiscal_year_end_month": 3,
-                "expected_extractor_pin": _extractor_pin(),
+                "expected_extractor_pin": extractor_pin("SCREENER_FINANCIALS"),
             }
         ),
         prior=(),
@@ -258,7 +235,7 @@ def test_thermax_native_rows_construct_the_hand_read_liabilities_aggregate(
     assert aggregate.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
     trace_pins = aggregate.transform_trace["pins"]
     assert isinstance(trace_pins, dict)
-    assert trace_pins["extractor"] == _extractor_pin().model_dump(mode="json")
+    assert trace_pins["extractor"] == extractor_pin("SCREENER_FINANCIALS").model_dump(mode="json")
     assert aggregate.operand_interpretation_ids == (
         native_direct["Borrowings"].interpretation_id,
         native_direct["Other Liabilities"].interpretation_id,
@@ -402,8 +379,8 @@ def test_thermax_native_rows_and_aggregate_roundtrip_through_guarded_postgres(
         assert before_capture <= capture.registered_at == capture.first_seen_at <= after_capture
 
         extracted = extract_screener_page(
-            request,
-            body=body,
+            body,
+            basis=request.basis,
             capture=capture,
             binding=_binding("THERMAX"),
             section=Section.BALANCE_SHEET,
@@ -460,7 +437,7 @@ def test_thermax_native_rows_and_aggregate_roundtrip_through_guarded_postgres(
                     "policy": policy,
                     "dictionary": dictionary,
                     "fiscal_year_end_month": 3,
-                    "expected_extractor_pin": _extractor_pin(),
+                    "expected_extractor_pin": extractor_pin("SCREENER_FINANCIALS"),
                 }
             ),
             prior=(),

@@ -1,41 +1,14 @@
-"""Tijori retained-only seams; numeric qualification waits for actual retained bodies."""
+"""Tijori retained financials: pinned bytes to native tables (occurrence mapping is D1b.1)."""
 
 import hashlib
 from datetime import datetime
 
-from fundamentals.contracts.canonical import Representation
-from fundamentals.contracts.comparison import SourceRole
-from fundamentals.contracts.evidence import VendorExtractorPin, VersionPin
-from fundamentals.contracts.source_catalog import SourceCatalog, SurfaceAuthority
-from fundamentals.evidence.vendor_common import VendorGeneration, VendorRequest
-from fundamentals.evidence.vendor_offline import unavailable_generation
+from fundamentals.contracts.source_catalog import surface_authority
 from fundamentals.ingest.tijori_source import TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriTable
 
 SOURCE_ID = "tijori"
 SURFACE = "TIJORI_FINANCIALS"
-
-
-def prepare_unavailable(
-    request: VendorRequest,
-    *,
-    catalog: SourceCatalog,
-    authority: SurfaceAuthority,
-    extractor_pin: VendorExtractorPin,
-    authority_pin: VersionPin,
-) -> VendorGeneration:
-    """Prepare an honest unavailable/refused draft; never declare publication absence."""
-    return unavailable_generation(
-        request,
-        source_id=SOURCE_ID,
-        surfaces=(SURFACE,),
-        representation=Representation.HTML,
-        role=SourceRole.INDEPENDENT_VENDOR,
-        catalog=catalog,
-        authority=authority,
-        extractor_pin=extractor_pin,
-        authority_pin=authority_pin,
-    )
 
 
 def read_financials(
@@ -53,6 +26,7 @@ def read_financials(
     Table scope, raw cells, precision and final-column labels remain native evidence;
     this function does not infer TTM intervals, qualification or first-seen timestamps.
     """
+    surface_authority(SOURCE_ID, SURFACE)
     if hashlib.sha256(body).hexdigest() != expected_sha256:
         raise ValueError("Tijori body differs from its retained content pin")
     if claimed_retrieved_at.tzinfo is None:

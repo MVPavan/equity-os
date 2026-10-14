@@ -1,6 +1,6 @@
 """Pure routing payloads retain evidence while leaving store identity to queue SQL."""
 
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -33,8 +33,6 @@ KEY = MeasurementKey(
     value_kind=ValueKind.CURRENCY_AMOUNT,
     dimensions=DimensionSet(),
 )
-RECORDED_AT = datetime(2026, 10, 13, tzinfo=UTC)
-INPUT_SHA = "a" * 64
 LEFT = SourceRef(
     source_role=SourceRole.FIRST_PARTY,
     representation=Representation.XBRL,
@@ -141,49 +139,6 @@ def pair(kind: PairKind, outcome: PairOutcome, triage: Triage | None) -> SourceQ
 
 
 @pytest.mark.parametrize("kind,outcome,triage,severity,reason", PAIR_ROUTES)
-def test_legacy_pair_routing_payload_remains_compatible(
-    kind: PairKind,
-    outcome: PairOutcome,
-    triage: Triage | None,
-    severity: QueueSeverity,
-    reason: str,
-) -> None:
-    source_pair = pair(kind, outcome, triage)
-    item = routing.route_pair(
-        source_pair, run_id=37, key=KEY, input_sha256=INPUT_SHA, recorded_at=RECORDED_AT
-    )
-    assert item is not None
-    assert item.severity is severity
-    assert item.routing_reason == reason
-    assert item.diagnostic is (kind is PairKind.DIAGNOSTIC)
-    assert item.source_refs == (source_pair.left, source_pair.right)
-    assert item.attempt_ids == (9, 4, 9)
-    assert item.evidence_interpretation_ids == (6, 2, 6)
-    assert item.evidence_occurrence_ids == (8, 3, 8)
-    assert item.model_dump(mode="json") == {
-        "item_id": None,
-        "run_id": 37,
-        "key": KEY.model_dump(mode="json"),
-        "pair_identity": routing.pair_identity(source_pair),
-        "outcome": outcome.value,
-        "input_sha256": INPUT_SHA,
-        "severity": severity.value,
-        "diagnostic": kind is PairKind.DIAGNOSTIC,
-        "routing_reason": reason,
-        "reason_code": "PERIOD_MISMATCH" if outcome is PairOutcome.NOT_COMPARABLE else None,
-        "source_refs": [
-            source_pair.left.model_dump(mode="json"),
-            source_pair.right.model_dump(mode="json"),
-        ],
-        "attempt_ids": [9, 4, 9],
-        "evidence_interpretation_ids": [6, 2, 6],
-        "evidence_occurrence_ids": [8, 3, 8],
-        "predecessor_item_id": None,
-        "recorded_at": "2026-10-13T00:00:00Z",
-    }
-
-
-@pytest.mark.parametrize("kind,outcome,triage,severity,reason", PAIR_ROUTES)
 def test_pair_draft_preserves_route_and_all_typed_evidence(
     kind: PairKind,
     outcome: PairOutcome,
@@ -275,14 +230,7 @@ def test_unmapped_draft_names_actual_occurrence_without_inventing_key(
     source_ref: SourceRef,
 ) -> None:
     draft = routing.route_unmapped_occurrence_draft(occurrence_id=23, source_ref=source_ref)
-    item = routing.route_unmapped_occurrence(
-        run_id=37,
-        occurrence_id=23,
-        source_ref=source_ref,
-        input_sha256=INPUT_SHA,
-    )
     assert draft.key is None
-    assert draft.pair_identity == item.pair_identity
     assert draft.outcome == "UNMAPPED"
     assert draft.severity is QueueSeverity.LOW
     assert draft.diagnostic is (source_ref.source_role is SourceRole.DIAGNOSTIC)
@@ -291,16 +239,9 @@ def test_unmapped_draft_names_actual_occurrence_without_inventing_key(
     assert draft.evidence_occurrence_ids == (23,)
 
 
-def test_routed_drafts_refuse_empty_evidence_without_changing_legacy_wrappers() -> None:
+def test_routed_drafts_refuse_empty_evidence() -> None:
     source_pair = pair(PairKind.CORROBORATION, PairOutcome.MISMATCH, Triage.MAGNITUDE).model_copy(
         update={"attempt_ids": (), "evidence_interpretation_ids": (), "evidence_occurrence_ids": ()}
-    )
-    assert routing.route_pair(source_pair, run_id=37, key=KEY, input_sha256=INPUT_SHA) is not None
-    assert (
-        routing.route_status(
-            CorroborationStatus.NO_SOURCE, run_id=37, key=KEY, input_sha256=INPUT_SHA
-        )
-        is not None
     )
     with pytest.raises(ValidationError, match="at least one typed evidence id"):
         routing.route_pair_draft(source_pair, key=KEY)
@@ -326,7 +267,6 @@ def test_agreeing_and_explained_pairs_create_no_draft(outcome: PairOutcome) -> N
         update={"attempt_ids": (), "evidence_interpretation_ids": (), "evidence_occurrence_ids": ()}
     )
     assert routing.route_pair_draft(source_pair, key=KEY) is None
-    assert routing.route_pair(source_pair, run_id=37, key=KEY, input_sha256=INPUT_SHA) is None
 
 
 @pytest.mark.parametrize(
@@ -342,4 +282,3 @@ def test_unavailability_and_nonproblematic_statuses_create_no_draft(
     status: ExtractionStatus | CorroborationStatus,
 ) -> None:
     assert routing.route_status_draft(status, key=KEY) is None
-    assert routing.route_status(status, run_id=37, key=KEY, input_sha256=INPUT_SHA) is None

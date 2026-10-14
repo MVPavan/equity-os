@@ -22,7 +22,6 @@ from pg_evidence_schema_support import (
     EXPECTED_TABLE_COUNT,
     NOW,
     PERIOD_END,
-    PROTECTED_REVIEW_TABLES,
     SHA_A,
     SHA_B,
     _attempt,
@@ -59,44 +58,6 @@ from fundamentals.pg.settings import MIGRATOR_ROLE_NAME, RUNTIME_ROLE_NAME, SCHE
 __all__ = ["runtime", "migrator", "seeded"]
 
 pytestmark = pytest.mark.pg
-
-
-def test_retained_witness_objects_grant_nothing_to_public(migrator: psycopg.Connection) -> None:
-    """New witness tables, sequences and functions expose no PUBLIC privileges."""
-    relations = migrator.execute(
-        "SELECT c.relname,a.privilege_type FROM pg_class c "
-        "JOIN pg_namespace n ON n.oid=c.relnamespace "
-        "CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,"
-        "acldefault((CASE WHEN c.relkind='S' THEN 's' ELSE 'r' END)::\"char\",c.relowner))) a "
-        "WHERE n.nspname='eqos' AND c.relname LIKE 'retained_intake_%' AND a.grantee=0"
-    ).fetchall()
-    expected_functions = {
-        "retained_intake_safe_label",
-        "retained_intake_json",
-        "retained_intake_hash",
-        "retained_intake_iso_utc",
-        "retained_intake_filed_at",
-        "require_retained_intake_read_committed",
-        "lock_unsealed_retained_intake",
-        "guard_retained_intake_evidence_input",
-        "guard_retained_intake_statement",
-        "guard_retained_intake_header",
-        "guard_retained_intake_child",
-        "guard_retained_intake_seal",
-    }
-    actual_functions = migrator.execute(
-        "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
-        "WHERE n.nspname='eqos' AND p.proname LIKE '%retained_intake%'"
-    ).fetchall()
-    assert {name for (name,) in actual_functions} == expected_functions
-    functions = migrator.execute(
-        "SELECT p.proname,a.privilege_type FROM pg_proc p "
-        "JOIN pg_namespace n ON n.oid=p.pronamespace "
-        "CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a "
-        "WHERE n.nspname='eqos' AND p.proname LIKE '%retained_intake%' AND a.grantee=0"
-    ).fetchall()
-    assert relations == []
-    assert functions == []
 
 
 def test_every_table_refuses_update_and_delete_for_both_roles(
@@ -151,7 +112,7 @@ def test_migrator_owns_schema_and_every_object(migrator: psycopg.Connection) -> 
             "has_table_privilege(%s, %s, 'TRUNCATE')",
             (RUNTIME_ROLE_NAME, qualified) * 5,
         ).fetchone()
-        assert granted == (True, table not in PROTECTED_REVIEW_TABLES, False, False, False), table
+        assert granted == (True, True, False, False, False), table
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
-"""Append-only review items, proposals, decisions and named as-of overlays.
+"""Append-only review items, dispositions and the as-of queue overlay (data spec §5).
 
-Review state is outside immutable run results. Runtime proposals contain no amounts;
-final dispositions require a protected, subject/proposal-bound approval receipt.
+Review state is outside immutable run results; recorded times are the store clock's.
 """
 
 from __future__ import annotations
@@ -14,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 from fundamentals.contracts.comparison import ReasonCode, SourceRef
 from fundamentals.contracts.measurement_key import MeasurementKey
+
+UNMAPPED = "UNMAPPED"
 
 
 class QueueSeverity(StrEnum):
@@ -31,18 +32,8 @@ class DispositionKind(StrEnum):
     DISMISSED = "DISMISSED"
 
 
-class ApprovalDecision(StrEnum):
-    ACCEPT = "ACCEPT"
-    REJECT = "REJECT"
-
-
-class ApprovalSubject(StrEnum):
-    QUEUE_DISPOSITION = "QUEUE_DISPOSITION"
-    INTERPRETATION = "INTERPRETATION"
-
-
 class QueueItemDraft(BaseModel):
-    """A routing payload whose identity, clocks and predecessor belong to queue SQL."""
+    """A routed issue with its typed evidence; identity, clocks and links belong to the store."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -65,7 +56,7 @@ class QueueItemDraft(BaseModel):
             self.evidence_interpretation_ids,
             self.evidence_occurrence_ids,
         )
-        if self.key is None and (self.outcome != "UNMAPPED" or not self.evidence_occurrence_ids):
+        if self.key is None and (self.outcome != UNMAPPED or not self.evidence_occurrence_ids):
             raise ValueError("only an evidenced UNMAPPED occurrence may lack a measurement key")
         if not any(associations):
             raise ValueError("a queue draft names at least one typed evidence id")
@@ -75,169 +66,46 @@ class QueueItemDraft(BaseModel):
 
 
 class QueueItem(BaseModel):
-    """An exact input/outcome issue; an unmapped occurrence has no invented measurement key."""
+    """A stored item: created by run ``run_id``, linked to the item it replaces, if any."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True)
 
-    item_id: int | None = None
+    item_id: int
     run_id: int
     key: MeasurementKey | None
-    pair_identity: str = Field(min_length=1)
-    outcome: str = Field(min_length=1)
-    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    pair_identity: str
+    outcome: str
+    input_sha256: str
     severity: QueueSeverity
-    diagnostic: bool = False
-    routing_reason: str = ""
-    reason_code: ReasonCode | None = None
-    source_refs: tuple[SourceRef, ...] = ()
-    attempt_ids: tuple[int, ...] = ()
-    evidence_interpretation_ids: tuple[int, ...] = ()
-    evidence_occurrence_ids: tuple[int, ...] = ()
-    predecessor_item_id: int | None = None
-    recorded_at: datetime | None = None
-
-    @model_validator(mode="after")
-    def _occurrence_identity(self) -> QueueItem:
-        if self.key is None and (self.outcome != "UNMAPPED" or not self.evidence_occurrence_ids):
-            raise ValueError("only an evidenced UNMAPPED occurrence may lack a measurement key")
-        return self
+    diagnostic: bool
+    routing_reason: str
+    reason_code: ReasonCode | None
+    source_refs: tuple[SourceRef, ...]
+    predecessor_item_id: int | None
+    recorded_at: datetime
 
 
 class QueueDisposition(BaseModel):
-    """A proposed or protected final disposition; recorded time belongs to the store."""
+    """A disposition record; it never edits results (data spec §5)."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True)
 
-    disposition_id: int | None = None
+    disposition_id: int
     item_id: int
     kind: DispositionKind
-    reason: str = Field(min_length=1)
-    proposer: str = Field(min_length=1)
-    decider: str | None = None
-    evidence_ref: str = Field(min_length=1)
-    explained_amount: Decimal | None = None
-    amount_trace_id: int | None = None
-    approval_receipt_id: int | None = None
-    recorded_at: datetime | None = None
-
-    @model_validator(mode="after")
-    def _amount_origin(self) -> QueueDisposition:
-        if (
-            self.explained_amount is not None
-            and self.amount_trace_id is None
-            and self.approval_receipt_id is None
-        ):
-            raise ValueError("an explained amount names its code trace or bound owner receipt")
-        return self
-
-
-class QueueRunMembership(BaseModel):
-    """One run's link to an item while preserving the item's creating run."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    run_id: PositiveInt
-    item_id: PositiveInt
-    origin_run_id: PositiveInt
+    reason: str
+    decider: str
+    evidence_ref: str
+    explained_amount: Decimal | None
     recorded_at: datetime
-
-    @model_validator(mode="after")
-    def _store_time(self) -> QueueRunMembership:
-        if self.recorded_at.tzinfo is None:
-            raise ValueError("queue membership recorded time is timezone-aware")
-        return self
-
-
-class QueueClosureFailure(BaseModel):
-    """One sealed disposition candidate that did not pass authenticated receipt replay."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    disposition_id: PositiveInt
-    item_id: PositiveInt
-    reason: str = Field(min_length=1)
 
 
 class QueueOverlay(BaseModel):
-    """Only the named run's queue state through this monotonic store position affects trust."""
+    """One run's queue as of a committed store-clock boundary: open items and dispositions."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True)
 
     run_id: int
-    recorded_position: int = Field(ge=0)
     as_of: datetime
-    open_items: tuple[QueueItem, ...] = ()
-    accepted_dispositions: tuple[QueueDisposition, ...] = ()
-    memberships: tuple[QueueRunMembership, ...] = Field(
-        default=(), exclude_if=lambda value: not value
-    )
-    closure_failures: tuple[QueueClosureFailure, ...] = Field(
-        default=(), exclude_if=lambda value: not value
-    )
-
-    @model_validator(mode="after")
-    def _named_run(self) -> QueueOverlay:
-        if self.as_of.tzinfo is None:
-            raise ValueError("queue overlay as-of time is timezone-aware")
-        if not self.memberships:
-            if self.closure_failures:
-                raise ValueError("queue closure failures require sealed run membership")
-            if any(item.run_id != self.run_id for item in self.open_items):
-                raise ValueError("queue overlay cannot mix named runs")
-            return self
-        if any(membership.run_id != self.run_id for membership in self.memberships):
-            raise ValueError("queue overlay membership belongs to another named run")
-        by_item = {membership.item_id: membership for membership in self.memberships}
-        if len(by_item) != len(self.memberships):
-            raise ValueError("queue overlay has duplicate item memberships")
-        visible_item_ids = {
-            item.item_id for item in self.open_items if item.item_id is not None
-        } | {disposition.item_id for disposition in self.accepted_dispositions}
-        if any(item.item_id is None for item in self.open_items) or visible_item_ids != set(
-            by_item
-        ):
-            raise ValueError("queue overlay items and dispositions require exact membership")
-        failure_dispositions = {failure.disposition_id for failure in self.closure_failures}
-        accepted_dispositions = {
-            disposition.disposition_id
-            for disposition in self.accepted_dispositions
-            if disposition.disposition_id is not None
-        }
-        if (
-            len(failure_dispositions) != len(self.closure_failures)
-            or any(failure.item_id not in by_item for failure in self.closure_failures)
-            or failure_dispositions & accepted_dispositions
-        ):
-            raise ValueError("queue closure proof outcomes require exact candidate membership")
-        for item in self.open_items:
-            assert item.item_id is not None
-            membership = by_item[item.item_id]
-            if membership.origin_run_id != item.run_id:
-                raise ValueError("queue item origin differs from its run membership")
-            if item.recorded_at is None or item.recorded_at > self.as_of:
-                raise ValueError("queue item is newer than the overlay position")
-        if any(membership.recorded_at > self.as_of for membership in self.memberships) or any(
-            disposition.recorded_at is None or disposition.recorded_at > self.as_of
-            for disposition in self.accepted_dispositions
-        ):
-            raise ValueError("queue overlay contains state newer than its position")
-        return self
-
-
-class ApprovalReceipt(BaseModel):
-    """Claims as stored by the privileged producer; claims alone are never verified approval."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    receipt_id: int
-    subject_kind: ApprovalSubject
-    subject_id: int
-    proposal_id: int
-    proposal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    decision: ApprovalDecision
-    review_evidence_id: int
-    review_evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    decider: str = Field(min_length=1)
-    producer_database_identity: str = Field(min_length=1)
-    recorded_at: datetime
+    open_items: tuple[QueueItem, ...]
+    dispositions: tuple[QueueDisposition, ...]

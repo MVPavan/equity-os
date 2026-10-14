@@ -389,19 +389,14 @@ class _TemplatesFile(BaseModel):
     templates: tuple[DimensionTemplate, ...]
 
 
-def load_dictionary(
-    root: Path,
-    version: str,
-    *,
-    read_bytes: Callable[[Path], bytes] | None = None,
-) -> CanonicalDictionary:
+def load_dictionary(root: Path, version: str) -> CanonicalDictionary:
     """Load and validate dictionary ``version`` from ``root/<version>/``.
 
     Raises :class:`DictionaryLoadError` with the first failing defect class and
     every offending id.
     """
     directory = root / version
-    metadata, rows, templates, rules, bodies = _read(directory, version, read_bytes=read_bytes)
+    metadata, rows, templates, rules, bodies = _read(directory, version)
     from fundamentals.canon.dictionary_validation import validate_dictionary
 
     validate_dictionary(rows, templates, rules)
@@ -421,10 +416,7 @@ _FamilyRow = tuple[_RowSpec, StatementFamily]
 
 
 def _read(
-    directory: Path,
-    version: str,
-    *,
-    read_bytes: Callable[[Path], bytes] | None,
+    directory: Path, version: str
 ) -> tuple[
     _Metadata,
     list[_FamilyRow],
@@ -437,24 +429,13 @@ def _read(
     Every failing file and row is collected before raising, each named by its canonical
     id (or ``file[index]`` when the row has none).
     """
-    present = (
-        {path.name for path in directory.glob(YAML_GLOB)}
-        if read_bytes is None
-        else set(KNOWN_FILES)
-    )
+    present = {path.name for path in directory.glob(YAML_GLOB)}
     unknown = present - KNOWN_FILES
     missing = KNOWN_FILES - present
     if unknown or missing:
         raise DictionaryLoadError(DictionaryDefect.SCHEMA, unknown | missing, _UNEXPECTED_FILES)
     try:
-        bodies = {
-            name: (
-                (directory / name).read_bytes()
-                if read_bytes is None
-                else read_bytes(directory / name)
-            )
-            for name in sorted(present)
-        }
+        bodies = {name: (directory / name).read_bytes() for name in sorted(present)}
     except OSError as error:
         raise DictionaryLoadError(DictionaryDefect.SCHEMA, present, str(error)) from error
     failures: dict[str, str] = {}

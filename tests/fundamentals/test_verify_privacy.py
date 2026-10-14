@@ -25,10 +25,7 @@ def _git(root: Path, *arguments: str) -> str:
 def gate(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("verify.sh", "verify_privacy_identifiers.py", "verify_privacy_proofs.json"):
-        source = REPO_ROOT / "scripts" / name
-        if source.exists():
-            shutil.copy2(source, scripts / name)
+    shutil.copy2(REPO_ROOT / "scripts/verify.sh", scripts / "verify.sh")
     (tmp_path / "tests/fundamentals").mkdir(parents=True)
     (tmp_path / "scratchpad/gate").mkdir(parents=True)
     (tmp_path / ".gitignore").write_text("scratchpad/\nbin/\n")
@@ -97,24 +94,6 @@ def test_indented_short_generic_metadata_is_not_a_pasted_capture(gate) -> None:
     assert "rails            OK" in result.stdout
 
 
-def test_exact_reviewed_financial_operands_are_not_private_identifiers(gate) -> None:
-    root, _ = gate
-    # These already-reviewed files contain financial values, not issuer/row IDs.
-    for name in (
-        "test_compare_corroboration.py",
-        "test_compare_diagnostic.py",
-        "vendor_retained_support.py",
-    ):
-        shutil.copy2(REPO_ROOT / "tests/fundamentals" / name, root / "tests/fundamentals" / name)
-    tokens = (str(1000 + 10), str(1000 + 12), str(1000 + 200))
-    _capture(root, "\n".join(f'<tr data-row-company-id="{token}">' for token in tokens))
-
-    result = _run(gate)
-
-    assert result.returncode == 0, result.stdout
-    assert "rails            OK" in result.stdout
-
-
 def test_historical_scope_replays_committed_identifiers_with_head_default(gate) -> None:
     root, environment = gate
     base = _git(root, "rev-parse", "HEAD")
@@ -149,39 +128,6 @@ def test_unknown_numeric_issuer_and_row_ids_still_stop(gate, template) -> None:
     (root / "tests/fundamentals/test_synthetic.py").write_text(template.format(token))
     environment["VERIFY_PRIVACY_ALLOW_IDS"] = token  # No runtime bypass is supported.
     _capture(root, f'<tr data-row-company-id="{token}">')
-
-    result = _run(gate)
-
-    assert result.returncode == 3
-    assert "real captured identifier" in result.stdout
-
-
-def test_approved_monetary_token_in_an_unapproved_context_still_stops(gate) -> None:
-    root, _ = gate
-    token = str(1000 + 12)
-    (root / "tests/fundamentals/test_synthetic.py").write_text(f'company_id = "{token}"')
-    _capture(root, f'<tr data-row-company-id="{token}">')
-
-    result = _run(gate)
-
-    assert result.returncode == 3
-    assert "real captured identifier" in result.stdout
-
-
-@pytest.mark.parametrize("change", ("file", "line", "path"))
-def test_collision_approval_revokes_on_any_file_line_or_path_change(gate, change) -> None:
-    root, _ = gate
-    original = REPO_ROOT / "tests/fundamentals/vendor_retained_support.py"
-    destination = root / "tests/fundamentals" / original.name
-    body = original.read_text()
-    if change == "file":
-        body += "\n# Different file content requires renewed review.\n"
-    elif change == "line":
-        body = body.replace('    "HFCL":', '   "HFCL":')
-    else:
-        destination = destination.with_name("test_other.py")
-    destination.write_text(body)
-    _capture(root, f'<tr data-row-company-id="{1000 + 12}">')
 
     result = _run(gate)
 
@@ -234,19 +180,6 @@ def test_invalid_historical_scope_is_rejected_before_quality_commands(gate, base
     assert result.returncode == 3
     assert "invalid verification scope base" in result.stdout
     assert not (root / "bin/calls.jsonl").exists()
-
-
-def test_absent_collision_registry_fails_closed(gate) -> None:
-    root, _ = gate
-    (root / "scripts/verify_privacy_proofs.json").unlink()
-    token = str(900_000 + 73)
-    (root / "tests/fundamentals/test_synthetic.py").write_text(f'company_id = "{token}"')
-    _capture(root, f"/company/id/{token}/")
-
-    result = _run(gate)
-
-    assert result.returncode == 3
-    assert "identifier scan failed closed" in result.stdout
 
 
 def test_default_gate_command_registry_and_bounded_output_are_preserved(gate) -> None:

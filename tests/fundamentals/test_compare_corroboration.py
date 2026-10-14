@@ -19,7 +19,6 @@ from fundamentals.contracts.evidence_tier import EvidenceTier
 from .compare_tables_support import EMPTY, POLICY, REVENUE, record, side
 
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
-INPUT = "a" * 64
 
 
 def qualified(
@@ -117,7 +116,7 @@ P = EvidenceTier.EQUIVALENCE_UNPROVEN
             "8",
             ApplicabilityStatus.APPLICABLE,
             V,
-            [(V, "1200", D), (V, "1000", D)],
+            [(V, "1250", D), (V, "1000", D)],
             "CONFLICT",
             None,
         ),
@@ -137,8 +136,8 @@ P = EvidenceTier.EQUIVALENCE_UNPROVEN
             "AGREES_UNQUALIFIED",
             None,
         ),
-        ("11", ApplicabilityStatus.APPLICABLE, V, [(V, "1200", P)], "ANOMALY", None),
-        ("12", ApplicabilityStatus.APPLICABLE, V, [(V, "1010", D)], "DEFINITION_DIFFERENCE", None),
+        ("11", ApplicabilityStatus.APPLICABLE, V, [(V, "1250", P)], "ANOMALY", None),
+        ("12", ApplicabilityStatus.APPLICABLE, V, [(V, "1020", D)], "DEFINITION_DIFFERENCE", None),
         (
             "13",
             ApplicabilityStatus.APPLICABLE,
@@ -183,7 +182,7 @@ def test_all_fifteen_first_match_conditions(
                         "synthetic-definition",
                         DefinitionScope.MAPPING,
                         "synthetic-vendor-1:metric",
-                        "10",
+                        "20",
                     ),
                 )
             }
@@ -197,7 +196,7 @@ def test_all_fifteen_first_match_conditions(
 def test_mismatch_dominates_agreement_and_both_pairs_survive():
     result = evaluate(
         qualified(role="FIRST_PARTY"),
-        (qualified("1200"), qualified("1000", source="synthetic-vendor-2")),
+        (qualified("1250"), qualified("1000", source="synthetic-vendor-2")),
     )
     assert result.status is CorroborationStatus.CONFLICT
     assert [pair.result.outcome for pair in result.pairs] == [
@@ -211,25 +210,20 @@ def test_agreement_does_not_hide_invalid_pair_routing():
     result = evaluate(
         qualified(role="FIRST_PARTY"),
         (
-            qualified(),
+            qualified(occurrence_ids=(1,)),
             qualified(
                 None,
                 source="synthetic-vendor-2",
                 state=INVALID,
                 reasons=(ReasonCode.UNREADABLE_CELL,),
+                occurrence_ids=(2,),
             ),
         ),
     )
     assert result.status is CorroborationStatus.CORROBORATED
     routing = import_module("fundamentals.compare.routing")
     items = tuple(
-        filter(
-            None,
-            (
-                routing.route_pair(pair, run_id=1, key=REVENUE, input_sha256=INPUT)
-                for pair in result.pairs
-            ),
-        )
+        filter(None, (routing.route_pair_draft(pair, key=REVENUE) for pair in result.pairs))
     )
     assert len(items) == 1
     assert items[0].severity.value == "MEDIUM"
@@ -242,8 +236,8 @@ def test_unavailable_vendor_remains_operational_when_another_vendor_agrees():
     assert result.status is CorroborationStatus.CORROBORATED
     assert result.unavailable_sources == (unavailable.ref,)
     assert (
-        import_module("fundamentals.compare.routing").route_status(
-            CorroborationStatus.UNAVAILABLE, run_id=1, key=REVENUE, input_sha256=INPUT
+        import_module("fundamentals.compare.routing").route_status_draft(
+            CorroborationStatus.UNAVAILABLE, key=REVENUE, evidence_occurrence_ids=(1,)
         )
         is None
     )
@@ -259,29 +253,29 @@ def test_unavailable_vendor_remains_operational_when_another_vendor_agrees():
     ],
 )
 def test_extraction_routing(extraction, severity):
-    item = import_module("fundamentals.compare.routing").route_status(
-        extraction, run_id=1, key=REVENUE, input_sha256=INPUT
+    item = import_module("fundamentals.compare.routing").route_status_draft(
+        extraction, key=REVENUE, evidence_occurrence_ids=(1,)
     )
     assert item is not None and item.severity.value == severity
 
 
 @pytest.mark.parametrize("status", [CorroborationStatus.VENDOR_ONLY, CorroborationStatus.NO_SOURCE])
 def test_missing_source_routes_to_alternate_read(status):
-    item = import_module("fundamentals.compare.routing").route_status(
-        status, run_id=1, key=REVENUE, input_sha256=INPUT
+    item = import_module("fundamentals.compare.routing").route_status_draft(
+        status, key=REVENUE, evidence_occurrence_ids=(1,)
     )
     assert item is not None
     assert item.severity.value == "MEDIUM" and item.routing_reason == "ALTERNATE_READ_REQUIRED"
 
 
 @pytest.mark.parametrize(
-    ("value", "severity"), [("10000", "HIGH"), ("1200", "MEDIUM"), ("1000.2", None)]
+    ("value", "severity"), [("10000", "HIGH"), ("1250", "MEDIUM"), ("1000.2", None)]
 )
 def test_independent_anomaly_routes_by_exact_triage(value, severity):
-    result = evaluate(qualified(role="FIRST_PARTY"), (qualified(value, tier=P),))
+    result = evaluate(
+        qualified(role="FIRST_PARTY"), (qualified(value, tier=P, occurrence_ids=(1,)),)
+    )
     (pair,) = result.pairs
     assert pair.result.outcome is PairOutcome.ANOMALY
-    item = import_module("fundamentals.compare.routing").route_pair(
-        pair, run_id=1, key=REVENUE, input_sha256=INPUT
-    )
+    item = import_module("fundamentals.compare.routing").route_pair_draft(pair, key=REVENUE)
     assert (None if item is None else item.severity.value) == severity

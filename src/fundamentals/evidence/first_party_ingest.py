@@ -16,11 +16,9 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING
 
 import structlog
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
@@ -44,11 +42,7 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.snapshot import SnapshotError, canonical_sha256
-from fundamentals.contracts.source_catalog import (
-    EvidenceRole,
-    SourceCatalog,
-    SourceClass,
-)
+from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.contracts.source_registration import SourceRegistrationError
 from fundamentals.evidence.capture_intake import (
     SURFACE_OF,
@@ -60,12 +54,6 @@ from fundamentals.evidence.capture_intake import (
     stage_retained_member,
 )
 from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
-from fundamentals.evidence.first_party_context import (
-    FirstPartyGenerationContext,
-    bind_first_party_generation_context,
-    capture_first_party_generation_context,
-    require_first_party_generation_context,
-)
 from fundamentals.evidence.first_party_extract import (
     IngestError,
     IngestRequest,
@@ -95,10 +83,6 @@ from fundamentals.evidence.selection import (
     select_key,
     select_package,
 )
-from fundamentals.evidence.vendor_config import (
-    VendorConfigPublicationError,
-    mapping_requires_publication,
-)
 from fundamentals.evidence.xbrl_adapter import (
     SEGMENT_DESCRIPTION_CONCEPT,
     XBRL_EXTRACTOR_VERSION,
@@ -108,10 +92,8 @@ from fundamentals.extract.pdf_statement_pages import StatementPageSpec
 from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.store.snapshot_store import SnapshotStore
 
-if TYPE_CHECKING:
-    from fundamentals.compare.run_config import LoadedConfig
+__all__ = ["IngestError", "IngestReport", "ingest_first_party"]
 
-__all__ = ["IngestError", "IngestMemberGeneration", "IngestReport", "ingest_first_party"]
 _LOG = structlog.get_logger(__name__)
 MAX_INTERPRETATION_RETRIES = 3
 MAPPING_SET_ARTIFACT = "mapping_set"
@@ -131,20 +113,6 @@ _SCOPE_CONFLICT = (
 )
 
 
-class IngestMemberGeneration(BaseModel):
-    """Stored ids of one package member's exact interpretation generation."""
-
-    model_config = ConfigDict(frozen=True)
-
-    representation: Representation
-    source_id: str
-    surface: str
-    capture_ref_id: int
-    extractor_version: str
-    occurrence_ids: tuple[int, ...]
-    interpretation_ids: tuple[int, ...]
-
-
 class IngestReport(BaseModel):
     """What one ingest invocation stored or reused."""
 
@@ -154,12 +122,6 @@ class IngestReport(BaseModel):
     occurrence_count: int
     interpretation_counts: Mapping[InterpretationStatus, int]
     attempts: tuple[AcquisitionAttempt, ...]
-    members: tuple[IngestMemberGeneration, ...] = Field(
-        default=(), exclude_if=lambda value: not value
-    )
-    generation_context: FirstPartyGenerationContext | None = Field(
-        default=None, exclude_if=lambda value: value is None
-    )
 
 
 def ingest_first_party(
@@ -180,34 +142,16 @@ def ingest_first_party(
     supersedes_package_id: int | None = None,
     replaced_statements: frozenset[StatementFamily] = frozenset(),
     extractor_versions: Mapping[Representation, str] | None = None,
-    config: LoadedConfig | None = None,
-    config_root: Path | None = None,
 ) -> IngestReport:
     """Stage, extract, interpret and package one filing's members (see module docstring).
 
     Raises ``VersionContentDriftError`` (nothing written) when the mapping set or policy
     version is already pinned to other content.
     """
-    versions = {**DEFAULT_EXTRACTOR_VERSIONS, **(extractor_versions or {})}
-    _guard_joined_mapping(
-        config=config,
-        config_root=config_root,
-        intake=intake,
-        catalog=catalog,
-        repository=repository,
-        dictionary=dictionary,
-        mapping_set=mapping_set,
-        policy=policy,
-        extractor_versions=versions,
-    )
-    generation_context = (
-        capture_first_party_generation_context(repository, entity_id)
-        if mapping_requires_publication(mapping_set)
-        else None
-    )
     # Share the comparison runner's source hash so ingest and replay enforce one pin.
     from fundamentals.compare.run_config import extractor_pin
 
+    versions = {**DEFAULT_EXTRACTOR_VERSIONS, **(extractor_versions or {})}
     extractor_pins = [
         VersionPin(
             artifact=f"extractor_{representation.value.lower()}",
@@ -237,11 +181,7 @@ def ingest_first_party(
         entity_id=entity_id, period_end=reporting_period_end, basis=basis, framework=framework
     )
     identifiers = repository.issuer_identifiers(entity_id)
-    fiscal_year_end_month = (
-        generation_context.fiscal_year_end_month
-        if generation_context is not None
-        else _fiscal_year_end_month(repository, entity_id)
-    )
+    fiscal_year_end_month = _fiscal_year_end_month(repository, entity_id)
     member_failures: list[AcquisitionAttempt] = []
     failed_staging: list[str] = []
     pending: list[MemberGeneration] = []
@@ -302,7 +242,6 @@ def ingest_first_party(
     extracted = [item.written(repository) for item in pending]
     usable = [item for item in extracted if item.outcome is ExtractionOutcome.COMPLETE]
     interpretations: list[Interpretation] = []
-    member_generations: list[IngestMemberGeneration] = []
     comparative = (
         _ComparativeCheck(
             repository=repository,
@@ -332,26 +271,8 @@ def ingest_first_party(
             fiscal_year_end_month=fiscal_year_end_month,
         )
         assert comparative is not None
-        member_interpretations = _interpretations(
-            item,
-            scope=scope,
-            repository=repository,
-            comparative=comparative,
-            generation_context=generation_context,
-        )
-        interpretations.extend(member_interpretations)
-        member_generations.append(
-            IngestMemberGeneration(
-                representation=item.binding.representation,
-                source_id=item.member.capture.source_id,
-                surface=item.member.capture.surface,
-                capture_ref_id=stored_capture(item.member.capture),
-                extractor_version=item.extractor_version,
-                occurrence_ids=tuple(sorted(_stored_id(row) for row in item.occurrences)),
-                interpretation_ids=tuple(
-                    sorted(_stored_interpretation_id(row) for row in member_interpretations)
-                ),
-            )
+        interpretations.extend(
+            _interpretations(item, scope=scope, repository=repository, comparative=comparative)
         )
     package_id = None
     occurrences = [occurrence for item in usable for occurrence in item.occurrences]
@@ -410,61 +331,7 @@ def ingest_first_party(
         occurrence_count=len(occurrences),
         interpretation_counts=dict(Counter(item.status for item in interpretations)),
         attempts=attempts,
-        members=tuple(sorted(member_generations, key=lambda item: item.representation.value)),
-        generation_context=generation_context,
     )
-
-
-def _guard_joined_mapping(
-    *,
-    config: LoadedConfig | None,
-    config_root: Path | None,
-    intake: RetainedIntake,
-    catalog: SourceCatalog,
-    repository: EvidenceRepository,
-    dictionary: CanonicalDictionary,
-    mapping_set: MappingSet,
-    policy: NormalisationPolicy,
-    extractor_versions: Mapping[Representation, str],
-) -> None:
-    """Verify and pin the joined publication before its mapping can reach any write."""
-    if not mapping_requires_publication(mapping_set):
-        return
-    if config is None or config_root is None or config.vendor_config is None:
-        raise VendorConfigPublicationError(
-            "vendor-containing first-party ingest requires a verified vendor publication"
-        )
-    expected_extractors = {
-        Representation.XBRL: config.pinned.extractor_xbrl.version,
-        Representation.PDF: config.pinned.extractor_pdf.version,
-    }
-    publication_catalog = config.vendor_config.catalog
-    publication_sources_match = all(
-        catalog.describe(item.source_id) == item for item in publication_catalog.entries
-    )
-    extra_sources = [item for item in catalog.entries if item not in publication_catalog.entries]
-    declared_pdf = intake.results_pdf_source_id
-    extras_are_retained_pdf = all(
-        item.source_id == declared_pdf
-        and item.source_class is SourceClass.FIRST_PARTY
-        and item.evidence_role is EvidenceRole.RECONCILABLE
-        and not item.is_namespace
-        for item in extra_sources
-    )
-    if (
-        dictionary != config.dictionary
-        or mapping_set != config.mapping_set
-        or policy != config.normalisation_policy
-        or not publication_sources_match
-        or not extras_are_retained_pdf
-        or dict(extractor_versions) != expected_extractors
-    ):
-        raise VendorConfigPublicationError(
-            "first-party ingest artifacts differ from the verified vendor publication"
-        )
-    from fundamentals.compare.run_config import pin_published_generation
-
-    pin_published_generation(config, config_root=config_root, repository=repository)
 
 
 def _fiscal_year_end_month(repository: EvidenceRepository, entity_id: int) -> int:
@@ -513,7 +380,6 @@ def _interpretations(
     scope: CaptureScope,
     repository: EvidenceRepository,
     comparative: _ComparativeCheck,
-    generation_context: FirstPartyGenerationContext | None,
 ) -> tuple[Interpretation, ...]:
     """Reuse the capture's rows under the current triple, else interpret and append (level 3).
 
@@ -530,8 +396,6 @@ def _interpretations(
             and row.normalisation_policy_version == scope.policy.version
             and row.extractor_version == item.extractor_version
         )
-        if generation_context is not None:
-            require_first_party_generation_context(current, generation_context)
         if any(
             (row.entity_id, row.basis, row.framework)
             != (scope.entity_id, scope.basis, scope.framework)
@@ -590,10 +454,6 @@ def _interpretations(
             ),
             registered_at=recorded_at,
         )
-        if generation_context is not None:
-            written = tuple(
-                bind_first_party_generation_context(row, generation_context) for row in written
-            )
         existing_constructions = {
             (row.construction_rule_id, row.input_digest): row for row in active_constructed
         }
@@ -791,10 +651,3 @@ def _stored_id(occurrence: Occurrence) -> int:
     if occurrence.occurrence_id is None:
         raise IngestError("occurrence is not stored")
     return occurrence.occurrence_id
-
-
-def _stored_interpretation_id(interpretation: Interpretation) -> int:
-    """A stored interpretation's id."""
-    if interpretation.interpretation_id is None:
-        raise IngestError("interpretation is not stored")
-    return interpretation.interpretation_id

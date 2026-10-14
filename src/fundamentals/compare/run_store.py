@@ -21,6 +21,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from fundamentals.compare.definitions import definition_record_ids
+from fundamentals.compare.queue import lock_queue, publish_queue_drafts
 from fundamentals.compare.run_models import (
     PairRecord,
     ResultRow,
@@ -92,11 +93,7 @@ _INPUT_COLUMNS: tuple[RunInputKind, ...] = (
     RunInputKind.PACKAGE_STATEMENT,
     RunInputKind.DEFINITION_SET,
 )
-_PIN_NAMES = tuple(
-    name
-    for name in PinnedVersions.model_fields
-    if name not in {"vendor_extractors", "source_authority", "vendor_publication"}
-)
+_PIN_NAMES = tuple(name for name in PinnedVersions.model_fields if name != "vendor_extractors")
 _UNREADABLE = "run {run_id} {detail}"
 _NO_RECORD = "definition record {record_id!r} is not in the run's published set"
 _EXHAUSTED = "run publication hit {count} serialisation failures"
@@ -230,7 +227,6 @@ class RunStore:
         queue_drafts: Sequence[QueueItemDraft] = (),
     ) -> tuple[int, bool]:
         """Publish a run atomically, or return the stored run of the same identity."""
-        _validate_vendor_manifest(manifest, rows)
         for _ in range(MAX_PUBLISH_ATTEMPTS):
             try:
                 return self._publish_once(
@@ -252,6 +248,8 @@ class RunStore:
         identity = manifest.identity_hash()
         stage = hook or _no_hook
         with self._pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            if queue_drafts:
+                lock_queue(cursor)
             inserted = cursor.execute(
                 _INSERT_RUN,
                 (
@@ -267,20 +265,7 @@ class RunStore:
             if inserted is None:
                 existing = cursor.execute(_RUN_BY_HASH, (identity,)).fetchone()
                 assert existing is not None
-                run_id = int(existing[0])
-                if queue_drafts or manifest.scope.vendor_sources:
-                    from fundamentals.compare.queue import publish_queue_drafts
-
-                    before = {
-                        int(item[0])
-                        for item in cursor.execute(
-                            "SELECT item_id FROM eqos.queue_run_items WHERE run_id = %s", (run_id,)
-                        ).fetchall()
-                    }
-                    items = publish_queue_drafts(cursor, run_id=run_id, drafts=queue_drafts)
-                    if before != {item.item_id for item in items}:
-                        raise RunReadError("existing vendor run has inconsistent exact queue links")
-                return run_id, False
+                return int(existing[0]), False
             run_id = int(inserted[0])
             stage(STAGE_RUNS)
             cursor.executemany(
@@ -352,9 +337,7 @@ class RunStore:
                 ],
             )
             stage(STAGE_ADJUSTMENTS)
-            if queue_drafts or manifest.scope.vendor_sources:
-                from fundamentals.compare.queue import publish_queue_drafts
-
+            if queue_drafts:
                 publish_queue_drafts(cursor, run_id=run_id, drafts=queue_drafts)
                 stage(STAGE_QUEUE)
             return run_id, True
@@ -420,15 +403,9 @@ class RunStore:
 
     def read_results(self, run_id: int) -> tuple[ResultRow, ...]:
         """A stored run's result rows with source values, surfaced restatements and pairs."""
-        manifest = self.read_manifest(run_id)
-        legacy_sources = (
-            not manifest.scope.vendor_sources
-            and not manifest.pinned.vendor_extractors
-            and manifest.pinned.source_authority is None
-        )
         values: dict[int, list[tuple[int, SourceValue]]] = defaultdict(list)
         for row in self._fetch(_VALUES, (run_id,)):
-            values[row["result_id"]].append((row["id"], _value_of(row, legacy=legacy_sources)))
+            values[row["result_id"]].append((row["id"], _value_of(row)))
         surfaced: dict[int, list[int]] = defaultdict(list)
         for row in self._fetch(_SURFACED, (run_id,)):
             surfaced[row["result_id"]].append(row["interpretation_id"])
@@ -481,21 +458,6 @@ def _no_hook(_: str) -> None:
     """The default publication hook: nothing."""
 
 
-def _validate_vendor_manifest(manifest: RunManifest, rows: Sequence[ResultRow]) -> None:
-    """Reject vendor values under a legacy request or unpinned vendor/authority identity."""
-    requested = {(item.source_id, item.surface) for item in manifest.scope.vendor_sources}
-    pinned = {(pin.source_id, pin.surface) for pin in manifest.pinned.vendor_extractors}
-    if requested and (not requested <= pinned or manifest.pinned.source_authority is None):
-        raise ValueError("requested vendor surfaces require extractor and source-authority pins")
-    for row in rows:
-        for value in row.source_values:
-            if value.source_role in (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC):
-                if (value.source_id, value.surface) not in requested:
-                    raise ValueError(
-                        "vendor result side is outside the manifest's requested sources"
-                    )
-
-
 def _returning(
     cursor: psycopg.Cursor[Any], query: LiteralString, params: list[tuple[object, ...]]
 ) -> list[int]:
@@ -531,12 +493,6 @@ def _version_params(run_id: int, pinned: PinnedVersions) -> list[tuple[object, .
         (run_id, "vendor_extractor", pin.version, pin.content_sha256, pin.source_id, pin.surface)
         for pin in pinned.vendor_extractors
     )
-    if pinned.source_authority is not None:
-        pin = pinned.source_authority
-        rows.append((run_id, "source_authority", pin.version, pin.content_sha256, None, None))
-    if pinned.vendor_publication is not None:
-        pin = pinned.vendor_publication
-        rows.append((run_id, "vendor_publication", pin.version, pin.content_sha256, None, None))
     return rows
 
 
@@ -642,17 +598,13 @@ def _value(member: Any) -> str | None:
     return None if member is None else str(member.value)
 
 
-def _value_of(row: dict[str, Any], *, legacy: bool = False) -> SourceValue:
+def _value_of(row: dict[str, Any]) -> SourceValue:
     """A stored source value."""
     state = row["calculation_state"]
-    first_party_legacy = legacy and row["source_role"] in (
-        SourceRole.FIRST_PARTY.value,
-        SourceRole.REPORTED_COUNTERPART.value,
-    )
     return SourceValue(
         source_role=SourceRole(row["source_role"]),
-        source_id=None if first_party_legacy else row["source_id"],
-        surface=None if first_party_legacy else row["surface"],
+        source_id=row["source_id"],
+        surface=row["surface"],
         representation=Representation(row["representation"]),
         state=SourceState(row["source_state"]),
         reason=row["reason"],

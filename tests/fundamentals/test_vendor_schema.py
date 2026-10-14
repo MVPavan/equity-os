@@ -1,4 +1,4 @@
-"""D1b source-qualified persistence and privileged queue boundaries.
+"""D1b source-qualified persistence of vendor values, pins and vendor-capture traces.
 
 All figures, sources and captures here are constructed plumbing fixtures. They are not
 vendor qualification evidence. PostgreSQL writes use only the guarded pg_db harness.
@@ -18,12 +18,6 @@ from psycopg import errors
 from selection_support import capture, interpretation, key, member, occurrence
 
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
-from fundamentals.compare.approval_receipts import (
-    ApprovalRefusedError,
-    VerifiedApprovalReceipt,
-    produce_receipt,
-    reload_verified_receipt,
-)
 from fundamentals.compare.run_config import load_run_config
 from fundamentals.compare.run_models import (
     DatabaseIdentity,
@@ -34,40 +28,15 @@ from fundamentals.compare.run_models import (
     RunStatus,
     SourceRef,
     SourceValue,
-    VendorSurfaceRequest,
     row_id,
 )
 from fundamentals.compare.run_store import RunStore
 from fundamentals.contracts.canonical import Basis, Representation, ValueIdentity
-from fundamentals.contracts.evidence import RunMode, VendorExtractorPin, VersionPin
+from fundamentals.contracts.evidence import RunMode, VendorExtractorPin
 from fundamentals.evidence.repository import EvidenceRepository
-from fundamentals.pg.settings import PgRole
 
 NOW = datetime(2026, 10, 13, tzinfo=UTC)
 END = date(2025, 9, 30)
-
-
-def test_vendor_scope_keeps_sorted_distinct_source_surface_requests() -> None:
-    """Two HTML providers and two surfaces of one provider cannot collapse in run identity."""
-    scope = RunScope.model_validate(
-        {
-            "entity_ids": [1],
-            "period_ends": [END],
-            "bases": ["CONSOLIDATED"],
-            "sources": ["NSE_XBRL_INSTANCE"],
-            "vendor_sources": [
-                {"source_id": "fixture-b", "surface": "HTML_B"},
-                {"source_id": "fixture-a", "surface": "HTML_A"},
-                {"source_id": "fixture-b", "surface": "JSON_B"},
-                {"source_id": "fixture-a", "surface": "HTML_A"},
-            ],
-        }
-    )
-    assert scope.model_dump(mode="json")["vendor_sources"] == [
-        {"source_id": "fixture-a", "surface": "HTML_A"},
-        {"source_id": "fixture-b", "surface": "HTML_B"},
-        {"source_id": "fixture-b", "surface": "JSON_B"},
-    ]
 
 
 def _seed(conn: psycopg.Connection) -> tuple[int, int]:
@@ -123,7 +92,7 @@ def _value(
 
 
 @pytest.mark.pg
-def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
+def test_two_html_vendors_and_two_diagnostic_surfaces_survive_runstore_roundtrip(
     pg_db: PgTestDatabase,
 ) -> None:
     with pg_db.migrator_connection() as conn:
@@ -133,7 +102,8 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
         sources = (
             ("fixture-a", "HTML_A", "HTML", "INDEPENDENT_VENDOR"),
             ("fixture-b", "HTML_B", "HTML", "INDEPENDENT_VENDOR"),
-            ("fixture-b", "JSON_B", "JSON", "DIAGNOSTIC"),
+            ("fixture-c", "JSON_C1", "JSON", "DIAGNOSTIC"),
+            ("fixture-c", "JSON_C2", "JSON", "DIAGNOSTIC"),
         )
         values = []
         for index, (source, surface, representation, role) in enumerate(sources, 1):
@@ -186,7 +156,7 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
             PairRecord.model_validate(
                 {
                     "pair_kind": "DIAGNOSTIC",
-                    "left": refs[2],
+                    "left": diagnostic,
                     "right": ref,
                     "outcome": "AGREE_UNQUALIFIED",
                     "reason": None,
@@ -196,6 +166,7 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
                     "definition_record_id": None,
                 }
             )
+            for diagnostic in refs[2:]
             for ref in refs[:2]
         )
         measurement = key().model_copy(update={"entity_id": entity})
@@ -230,7 +201,6 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
                     )
                     for source, surface, _, _ in sources
                 ),
-                "source_authority": VersionPin(version="constructed", content_sha256="4" * 64),
             }
         )
         manifest = RunManifest(
@@ -239,10 +209,6 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
                 period_ends=(END,),
                 bases=(Basis.CONSOLIDATED,),
                 sources=("NSE_XBRL_INSTANCE",),
-                vendor_sources=tuple(
-                    VendorSurfaceRequest(source_id=source, surface=surface)
-                    for source, surface, _, _ in sources
-                ),
             ),
             cutoff=repository.store_clock(),
             mode=RunMode.AS_KNOWN,
@@ -260,46 +226,12 @@ def test_two_html_sources_and_json_diagnostic_survive_runstore_roundtrip(
         assert {(v.source_id, v.surface) for v in loaded.source_values} == {
             ("fixture-a", "HTML_A"),
             ("fixture-b", "HTML_B"),
-            ("fixture-b", "JSON_B"),
+            ("fixture-c", "JSON_C1"),
+            ("fixture-c", "JSON_C2"),
         }
+        assert len(loaded.pairs) == 4
         assert store.read_manifest(run_id) == manifest
         assert store.read_versions(run_id) == pinned
-        with pytest.raises(ValueError, match="outside"):
-            store.publish(
-                manifest.model_copy(
-                    update={"scope": manifest.scope.model_copy(update={"vendor_sources": ()})}
-                ),
-                (result,),
-                definition_set_id=definition,
-            )
-
-
-@pytest.mark.pg
-def test_runtime_cannot_insert_final_receipt_claims(pg_db: PgTestDatabase) -> None:
-    """A runtime role cannot authorize a decision by sending a self-reported owner name."""
-    with psycopg.connect(
-        pg_db.settings.conninfo(PgRole.RUNTIME, dbname=pg_db.dbname), autocommit=True
-    ) as conn:
-        with pytest.raises(errors.InsufficientPrivilege):
-            conn.execute("INSERT INTO eqos.approval_receipts DEFAULT VALUES")
-        with pytest.raises(errors.InsufficientPrivilege):
-            conn.execute("INSERT INTO eqos.queue_dispositions DEFAULT VALUES")
-        with pytest.raises(errors.InsufficientPrivilege, match="amount"):
-            conn.execute(
-                "INSERT INTO eqos.queue_disposition_proposals (item_id,kind,reason,proposer,"
-                "evidence_ref,proposal_sha256,subject_sha256,explained_amount) "
-                "VALUES (1,'MAPPING_FIX','constructed','model','constructed',%s,%s,123)",
-                ("a" * 64, "b" * 64),
-            )
-        with pytest.raises(ApprovalRefusedError, match="authenticated migrator"):
-            produce_receipt(conn, proposal_id=1, evidence={"owner": True})
-        with pytest.raises(ApprovalRefusedError, match="protected"):
-            reload_verified_receipt(conn, 1)
-    with pytest.raises(ApprovalRefusedError, match="reloaded"):
-        VerifiedApprovalReceipt()
-    with pg_db.migrator_connection() as conn:
-        with pytest.raises(ApprovalRefusedError, match="verified review"):
-            produce_receipt(conn, proposal_id=1, evidence={"owner": True})
 
 
 @pytest.mark.pg

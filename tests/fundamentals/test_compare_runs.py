@@ -573,3 +573,61 @@ def test_every_enum_value_round_trips_through_its_check(runner: Runner) -> None:
             "INSERT INTO eqos.run_versions (run_id, pin, version, content_sha256) "
             "VALUES (0, 'NOT_AN_ARTIFACT', 'v', 'x')"
         )
+
+
+def test_by_id_reload_refuses_segment_link_outside_frozen_occurrences() -> None:
+    """Replay reads segment members only with the occurrences the manifest froze."""
+    from datetime import UTC, datetime
+    from unittest.mock import Mock
+
+    from selection_support import member, occurrence
+
+    from fundamentals.compare.resolve import ReplayMismatchError, load_inputs
+    from fundamentals.compare.resolve_models import ReplayReader
+    from fundamentals.compare.run_models import RunInput, RunInputDisposition, RunInputKind
+    from fundamentals.evidence.repository import SegmentMemberRecord
+
+    now = datetime(2025, 11, 1, tzinfo=UTC)
+    frozen = occurrence(101, member(Representation.XBRL, 1, now, now))
+    reader = Mock(spec=ReplayReader)
+    for name in (
+        "get_capture_refs",
+        "get_packages",
+        "get_package_statements",
+        "get_interpretations",
+        "get_attempts",
+        "get_alignment_proofs",
+        "get_calculation_traces",
+        "get_evidence_inputs",
+        "get_settings_records",
+        "get_basis_statuses",
+    ):
+        getattr(reader, name).return_value = ()
+    reader.get_occurrences.return_value = (frozen,)
+    segment = SegmentMemberRecord(
+        id=401,
+        entity_id=1,
+        axis="segment",
+        member="synthetic-segment",
+        display_name="Synthetic segment",
+        valid_from=date(2025, 7, 1),
+        valid_to=None,
+        recorded_at=now,
+        evidence_occurrence_ids=(101, 999),
+    )
+    reader.get_segment_members.return_value = (segment,)
+    tokens = tuple(
+        RunInput(kind=kind, ref_id=identifier, disposition=RunInputDisposition.SELECTED)
+        for kind, identifier in (
+            (RunInputKind.DEFINITION_SET, 1),
+            (RunInputKind.OCCURRENCE, 101),
+            (RunInputKind.SEGMENT_MEMBER, 401),
+        )
+    )
+    with pytest.raises(ReplayMismatchError, match="segment.*frozen"):
+        load_inputs(reader, tokens)
+    closed = segment.model_copy(update={"evidence_occurrence_ids": (101,)})
+    reader.get_segment_members.return_value = (closed,)
+    loaded = load_inputs(reader, tokens)
+    assert loaded.segment_members == (closed,)
+    assert loaded.occurrences == (frozen,)

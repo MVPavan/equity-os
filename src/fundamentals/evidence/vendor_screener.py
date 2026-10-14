@@ -1,8 +1,9 @@
-"""Offline raw Screener page/schedule extraction under explicit source and issuer bindings.
+"""Raw Screener page/schedule bytes to lossless occurrences under an explicit issuer binding.
 
-Parsing does not grant authority or register bytes. The public retained reader authorizes the
-exact surface before reading; callers supply an actual registered capture. HTML and schedule
-JSON remain separate captures, and legacy metadata is a claim, never a store-clock receipt.
+The capture's surface must be registered in the source catalog (else ``NOT_AUTHORISED``).
+Callers supply an actual registered capture. HTML and schedule JSON remain separate captures,
+and legacy metadata is a claim, never a store-clock receipt. Screener declares no publication
+time, so knowledge time is ``UNKNOWN``.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field
 
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
-from fundamentals.contracts.canonical import Representation, StatementFamily
+from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
 from fundamentals.contracts.evidence import (
     CaptureReference,
     KnowledgeTimeStatus,
@@ -27,9 +28,8 @@ from fundamentals.contracts.evidence import (
     RevisionCause,
 )
 from fundamentals.contracts.measurement_key import PeriodInterval
-from fundamentals.contracts.source_catalog import SourceCatalog, SurfaceAuthority
+from fundamentals.contracts.source_catalog import SurfaceNotAuthorisedError, surface_authority
 from fundamentals.evidence.interpret import input_digest
-from fundamentals.evidence.vendor_common import VendorRequest, authorize_vendor, load_vendor_bytes
 from fundamentals.ingest.screener_financials_models import (
     RESERVED_SUB_ROW_KEYS,
     Period,
@@ -54,7 +54,6 @@ from fundamentals.ingest.screener_session_models import (
     ScreenerSessionError,
 )
 from fundamentals.ingest.screener_session_page import parse_document, read_page_evidence
-from fundamentals.store.snapshot_store import DirectoryAnchor
 
 SOURCE = "screener-subscriber"
 PAGE_SURFACE = "SCREENER_FINANCIALS"
@@ -68,6 +67,8 @@ FAMILY_BY_SECTION = {
     Section.CASH_FLOW: StatementFamily.CASH_FLOW,
     Section.RATIOS: StatementFamily.DERIVED,
 }
+_REPRESENTATION = {PAGE_SURFACE: Representation.HTML, SCHEDULE_SURFACE: Representation.JSON}
+_SCHEMA = {PAGE_SURFACE: PAGE_SCHEMA, SCHEDULE_SURFACE: SCHEDULE_SCHEMA}
 _UNIT = {
     Unit.RS_CRORE: ("INR", 7),
     Unit.RUPEES: ("INR per share", 0),
@@ -108,48 +109,26 @@ class ScreenerExtraction(BaseModel):
     extraction_context_sha256: str
 
 
-def read_retained_screener_page(
-    request: VendorRequest,
-    *,
-    input_anchor: DirectoryAnchor,
-    capture: CaptureReference,
-    binding: ScreenerIssuerBinding,
-    section: Section,
-    catalog: SourceCatalog,
-    authority: SurfaceAuthority,
-) -> ScreenerExtraction:
-    """Authorize and hash-verify one retained raw page, then parse those same bytes."""
-    authorize_vendor(request, catalog=catalog, authority=authority)
-    return extract_screener_page(
-        request,
-        body=load_vendor_bytes(request, input_anchor=input_anchor),
-        capture=capture,
-        binding=binding,
-        section=section,
-    )
-
-
 def extract_screener_page(
-    request: VendorRequest,
-    *,
     body: bytes,
+    *,
     capture: CaptureReference,
     binding: ScreenerIssuerBinding,
+    basis: Basis,
     section: Section,
     extractor_version: str = "screener-v1",
 ) -> ScreenerExtraction:
     """Read one requested section from a registered, hash-pinned raw HTML capture."""
-    _scope(request, body, capture, section, Representation.HTML, PAGE_SURFACE, PAGE_SCHEMA)
-    root, table = _verified_table(request, body, binding, section, capture)
-    del root
+    _scope(body, capture, section, PAGE_SURFACE)
+    _, table = _verified_table(body, binding, basis, section, capture)
     occurrences: list[Occurrence] = []
     for row in table.rows:
         for cell in row.cells:
             period = next(p for p in table.periods if p.index == cell.period_index)
             occurrences.append(
                 _occurrence(
-                    request,
                     capture,
+                    basis,
                     section,
                     row.label,
                     cell.raw_text,
@@ -165,8 +144,8 @@ def extract_screener_page(
         for index, lexeme in enumerate(quarantined.raw_cells):
             occurrences.append(
                 _occurrence(
-                    request,
                     capture,
+                    basis,
                     section,
                     quarantined.label,
                     lexeme,
@@ -189,19 +168,18 @@ def extract_screener_page(
         occurrences=tuple(occurrences),
         outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
         reasons=reasons,
-        extraction_context_sha256=_context(request, binding, section),
+        extraction_context_sha256=_context(capture, binding, basis, section),
     )
 
 
 def extract_screener_schedule(
-    request: VendorRequest,
-    *,
     body: bytes,
+    *,
     capture: CaptureReference,
-    page_request: VendorRequest,
     page_body: bytes,
     page_capture: CaptureReference,
     binding: ScreenerIssuerBinding,
+    basis: Basis,
     section: Section,
     parent: str,
     metadata_body: bytes | None = None,
@@ -209,30 +187,13 @@ def extract_screener_schedule(
 ) -> ScreenerExtraction:
     """Revalidate a separately pinned raw schedule against its actual page expander.
 
-    Bare schedule JSON declares no issuer/basis. Its configured request and exact page capture
+    Bare schedule JSON declares no issuer/basis. Its binding, basis and exact page capture
     remain explicit supporting provenance; reconciliation never promotes its equivalence tier.
     All lexemes, source nulls and unknown periods survive even when reconciliation is refused.
     """
-    _scope(request, body, capture, section, Representation.JSON, SCHEDULE_SURFACE, SCHEDULE_SCHEMA)
-    _scope(
-        page_request,
-        page_body,
-        page_capture,
-        section,
-        Representation.HTML,
-        PAGE_SURFACE,
-        PAGE_SCHEMA,
-    )
-    if (request.entity_id, request.basis, request.framework) != (
-        page_request.entity_id,
-        page_request.basis,
-        page_request.framework,
-    ):
-        raise ScreenerExtractionError(
-            ExtractionOutcome.IDENTITY_REJECTED,
-            "schedule and supporting page have different issuer scopes",
-        )
-    root, table = _verified_table(page_request, page_body, binding, section, page_capture)
+    _scope(body, capture, section, SCHEDULE_SURFACE)
+    _scope(page_body, page_capture, section, PAGE_SURFACE)
+    root, table = _verified_table(page_body, binding, basis, section, page_capture)
     parents = schedule_parents(root)
     if (section, parent) not in parents:
         raise ScreenerExtractionError(
@@ -250,7 +211,7 @@ def extract_screener_schedule(
         binding.company_id,
         parent=parent,
         section=section,
-        basis=ScreenerBasis(request.basis.value.lower()),
+        basis=ScreenerBasis(basis.value.lower()),
     )
     reasons: list[str] = []
     raw = _unique_json(body)
@@ -259,18 +220,18 @@ def extract_screener_schedule(
             body,
             section=section,
             parent=parent,
-            basis=ScreenerBasis(request.basis.value.lower()),
+            basis=ScreenerBasis(basis.value.lower()),
             url=schedule_url(
                 binding.company_id,
                 parent=parent,
                 section=section,
-                basis=ScreenerBasis(request.basis.value.lower()),
+                basis=ScreenerBasis(basis.value.lower()),
             ),
             document_id=document_id,
             body_sha256=capture.blob_sha256,
             periods=table.periods,
             page_row=page_rows[0],
-            source_id=request.source_id,
+            source_id=capture.source_id,
             retrieved_at=capture.first_seen_at,
         )
         rows = family.sub_rows
@@ -287,12 +248,12 @@ def extract_screener_schedule(
             periods=table.periods,
             document_id=document_id,
             body_sha256=capture.blob_sha256,
-            source_id=request.source_id,
+            source_id=capture.source_id,
             retrieved_at=capture.first_seen_at,
         )
         reconciliation = "refused"
         reasons.append(str(error))
-    claim = _metadata_claim(metadata_body, binding, request, section, parent)
+    claim = _metadata_claim(metadata_body, binding, basis, section, parent)
     if claim.get("surface_unverified"):
         reasons.append("retained metadata marks this exact schedule surface unverified")
     occurrences: list[Occurrence] = []
@@ -309,8 +270,8 @@ def extract_screener_schedule(
             unit = Unit.PERCENT if row.percent else Unit.RS_CRORE
             occurrences.append(
                 _occurrence(
-                    request,
                     capture,
+                    basis,
                     section,
                     row.label,
                     lexeme,
@@ -342,8 +303,9 @@ def extract_screener_schedule(
         outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
         reasons=tuple(dict.fromkeys(reasons)),
         extraction_context_sha256=_context(
-            request,
+            capture,
             binding,
+            basis,
             section,
             parent=parent,
             page_sha256=page_capture.blob_sha256,
@@ -354,51 +316,34 @@ def extract_screener_schedule(
     )
 
 
-def _scope(
-    request: VendorRequest,
-    body: bytes,
-    capture: CaptureReference,
-    section: Section,
-    representation: Representation,
-    surface: str,
-    schema: str,
-) -> None:
-    if (request.source_id, request.surface, request.schema_identity, request.representation) != (
-        SOURCE,
-        surface,
-        schema,
-        representation,
-    ) or FAMILY_BY_SECTION.get(section) is not request.statement_family:
+def _scope(body: bytes, capture: CaptureReference, section: Section, surface: str) -> None:
+    """Refuse an unregistered surface, another surface or section, or drifted bytes."""
+    try:
+        surface_authority(capture.source_id, capture.surface)
+    except SurfaceNotAuthorisedError as error:
+        raise ScreenerExtractionError(ExtractionOutcome.NOT_AUTHORISED, str(error)) from error
+    if section not in FAMILY_BY_SECTION:
         raise ScreenerExtractionError(
-            ExtractionOutcome.UNSUPPORTED_SCHEMA,
-            "unsupported exact Screener source/surface/schema/section",
+            ExtractionOutcome.UNSUPPORTED_SCHEMA, "unsupported Screener section"
         )
     if capture.capture_ref_id is None or (capture.source_id, capture.surface) != (
-        request.source_id,
-        request.surface,
+        SOURCE,
+        surface,
     ):
         raise ScreenerExtractionError(
             ExtractionOutcome.IDENTITY_REJECTED,
             "capture is unregistered or belongs to another surface",
         )
-    if request.knowledge_time is not None:
-        raise ScreenerExtractionError(
-            ExtractionOutcome.FAILED,
-            "retained Screener page/schedule declares no verifiable publication time",
-        )
-    digest = hashlib.sha256(body).hexdigest()
-    if digest != capture.blob_sha256 or (
-        request.retained is not None and digest != request.retained.expected_sha256
-    ):
+    if hashlib.sha256(body).hexdigest() != capture.blob_sha256:
         raise ScreenerExtractionError(
             ExtractionOutcome.FAILED, "retained Screener content pin mismatch"
         )
 
 
 def _verified_table(
-    request: VendorRequest,
     body: bytes,
     binding: ScreenerIssuerBinding,
+    basis: Basis,
     section: Section,
     capture: CaptureReference,
 ) -> tuple[Any, SectionTable]:
@@ -406,7 +351,7 @@ def _verified_table(
         text = body.decode("utf-8")
         proof, outcome = read_page_evidence(
             text,
-            basis_requested=ScreenerBasis(request.basis.value.lower()),
+            basis_requested=ScreenerBasis(basis.value.lower()),
             topology=binding.topology,
         )
         if proof.company_id != binding.company_id or outcome is not PageOutcome.OK:
@@ -430,7 +375,7 @@ def _verified_table(
         table = read_section(
             root,
             section,
-            source_id=request.source_id,
+            source_id=capture.source_id,
             file_sha256=capture.blob_sha256,
             retrieved_at=capture.first_seen_at,
         )
@@ -461,8 +406,8 @@ def _period(native: Period | None, section: Section, fiscal_end: int) -> PeriodI
 
 
 def _occurrence(
-    request: VendorRequest,
     capture: CaptureReference,
+    basis: Basis,
     section: Section,
     label: str,
     lexeme: str | None,
@@ -517,7 +462,7 @@ def _occurrence(
     return Occurrence(
         occurrence_id=None,
         capture=capture,
-        representation=request.representation,
+        representation=_REPRESENTATION[capture.surface],
         extractor_version=extractor_version,
         native_field=label,
         raw_value_text=lexeme,
@@ -527,9 +472,9 @@ def _occurrence(
         precision_kind=precision,
         declared_precision=declared if precision is PrecisionKind.FINITE else None,
         native_context={
-            "schema_identity": request.schema_identity,
-            "basis": request.basis.value,
-            "statement_family": request.statement_family.value,
+            "schema_identity": _SCHEMA[capture.surface],
+            "basis": basis.value,
+            "statement_family": FAMILY_BY_SECTION[section].value,
             "label": label,
             "section": section_name or section.value,
             "header_months": 3 if section is Section.QUARTERS else 12,
@@ -542,21 +487,25 @@ def _occurrence(
         disclosure=disclosure,
         anchor=location,
         anchor_key=input_digest(location),
-        knowledge_time=request.knowledge_time,
-        knowledge_time_status=KnowledgeTimeStatus.KNOWN
-        if request.knowledge_time is not None
-        else KnowledgeTimeStatus.UNKNOWN,
+        knowledge_time=None,
+        knowledge_time_status=KnowledgeTimeStatus.UNKNOWN,
         first_seen_at=capture.first_seen_at,
         revision_cause=RevisionCause.ORIGINAL,
     )
 
 
 def _context(
-    request: VendorRequest, binding: ScreenerIssuerBinding, section: Section, **extra: object
+    capture: CaptureReference,
+    binding: ScreenerIssuerBinding,
+    basis: Basis,
+    section: Section,
+    **extra: object,
 ) -> str:
     return input_digest(
         {
-            "request": request.identity_sha256(),
+            "surface": capture.surface,
+            "capture_sha256": capture.blob_sha256,
+            "basis": basis.value,
             "binding": binding.model_dump(mode="json"),
             "section": section.value,
             **extra,
@@ -567,7 +516,7 @@ def _context(
 def _metadata_claim(
     body: bytes | None,
     binding: ScreenerIssuerBinding,
-    request: VendorRequest,
+    basis: Basis,
     section: Section,
     parent: str,
 ) -> dict[str, Any]:
@@ -577,7 +526,7 @@ def _metadata_claim(
     if (parsed.get("company_id"), parsed.get("symbol"), parsed.get("basis")) != (
         binding.company_id,
         binding.symbol,
-        request.basis.value.lower(),
+        basis.value.lower(),
     ):
         raise ScreenerExtractionError(
             ExtractionOutcome.IDENTITY_REJECTED, "retained metadata claims another issuer or basis"
