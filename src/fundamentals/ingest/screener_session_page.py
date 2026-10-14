@@ -120,7 +120,7 @@ def read_identity(root: Any) -> tuple[int, int | None]:
 
 def read_markers(root: Any) -> tuple[str, ...]:
     """Return the basis-related markers the page renders, in canonical order."""
-    text = root.text_content()
+    text = " ".join(root.text_content().split())  # the site wraps markers across lines
     return tuple(marker for marker in RECORDED_MARKERS if marker in text)
 
 

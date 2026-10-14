@@ -183,6 +183,19 @@ def test_a_consolidated_page_is_proven_by_its_own_marker_and_warehouse_id(
     assert opener.calls[0].full_url == "https://www.screener.in/company/FIXTURECO/consolidated/"
 
 
+def test_a_marker_wrapped_across_lines_still_declares_the_basis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live pages (2026-10-14) break "Consolidated Figures" over a newline in the HTML."""
+    wrapped = _body("consolidated").replace(b"Consolidated Figures", b"Consolidated\n      Figures")
+    _install(monkeypatch, _Opener(_Response(wrapped)))
+
+    metadata = _fetch(_source()).metadata
+
+    assert metadata.outcome is PageOutcome.OK
+    assert metadata.basis_observed is Basis.CONSOLIDATED
+
+
 def test_the_standalone_url_is_the_bare_company_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """The two bases are two URLs; a standalone request must not append /consolidated/."""
     opener = _Opener(_Response(_body("standalone")))
