@@ -798,11 +798,13 @@ status.
     published value, filing side is computed from first-party operands. The outcome equals the one
     pre-registered from a hand computation; without an evidenced definition record, any residual gap
     beyond tolerance is `ANOMALY` and routed, never `DEFINITION_DIFFERENCE`.
+    *Owner amendment 2026-10-14: "routed" means routed by the §5 review-routing table. A non-diagnostic `ANOMALY` routes by triage (`STRUCTURAL` HIGH, `MAGNITUDE` MEDIUM, `NOISE` no item, counted in the report), so no queue item is manufactured. The pre-registered hand computation: filing side 5,402.29 − 107.90 − 39.88 = 5,254.51 crore, interval [5,254.45, 5,254.57] (XBRL `Expenses` `decimals=-5`, `FinanceCosts` `decimals=-6`, D&A `decimals=-5`, context `OneD`); Screener "Expenses", Sep 2025, 5,250 [5,249.5, 5,250.5]. The intervals are disjoint by 3.95 crore, a relative difference of about 0.086 %, under the 0.5 % threshold: `ANOMALY`/`NOISE`, no queue item, corroboration `ANOMALY` (not trusted), never `DEFINITION_DIFFERENCE`. Manifest authoring verifies the PDF's quarter column header; arithmetic agreement alone does not establish column identity.*
   - Nine Q3 FY25 filings, Tijori `qt_c` "Net Profit": interpreted as
     `profit_continuing_after_tax`, never `profit_for_period`, so HFCL, LAURUSLABS, THERMAX and TITAN
     raise no profit-for-period conflict. The manifest pre-registers the displayed-precision
     re-measurement: ≥5 agreeing incl. a discriminating case → demonstrated, pairs `AGREE`;
     otherwise `AGREE_UNQUALIFIED`.
+    *Owner amendment 2026-10-14: at displayed precision only LAURUSLABS and HFCL discriminate (their rendered interval is disjoint from `profit_for_period`); THERMAX and TITAN discriminate only at island precision. The sample rule needs one discriminating case, so it is met. The condition proof (discontinued-operations profit zero) rests on reported zero: a directly filed numeric `0`/`0.00` establishes reported zero despite non-singleton precision; this does not assert exactness or narrow the interval. A constructed zero needs its own proof, and a nonzero value whose interval spans zero stays unproven.*
   - THERMAX revenue vs Screener and Tijori: `ANOMALY` (`MAGNITUDE` under the 0.5% v1 threshold),
     MEDIUM, cause unresolved.
   - Upstox: an Upstox statement value agreeing with the filing changes no status or trust; an
@@ -837,6 +839,7 @@ status.
     vector. The run is `INCOMPLETE` and exits with that status. A complete capture followed by a
     failed attempt for the same surface is also `UNAVAILABLE`, `INCOMPLETE`; followed by
     `NOT_PUBLISHED` it is no value and the run stays complete.
+    *Owner amendment 2026-10-14: No suitable independent-vendor complete→`NOT_PUBLISHED` sequence is currently retained or available on demand. This Stage 1 sub-case is satisfied by an explicitly marked acquisition fixture derived from the retained LAURUSLABS Tijori record. Preserve the original complete capture; stage a later same-source/surface/entity/basis/request-period attempt marked `not_offered`. At the later cutoff the Tijori cell is `NO_VALUE` with `NOT_PUBLISHED`, with no fallback to the earlier value; continuing-PAT corroboration is `FILING_ONLY`, the run is `COMPLETE`, its CLI exit is not `INCOMPLETE`, and replay reproduces it. The fixture is not evidence that Tijori actually withdrew publication.*
   - **Revision fixture:** a retained filing and a later filing's comparative for the same period.
     Before the later filing's cutoff only the original is visible; after it, the comparative is
     stored as `COMPARATIVE_RESTATEMENT` and surfaced, and the selection is unchanged. A Q4 = FY − 9M
@@ -852,22 +855,29 @@ status.
     `REVISION_INCOMPATIBLE` it is `NOT_COMPARABLE`, MEDIUM. One operand's explained tagging
     difference plus an unrelated operand discrepancy stays `DISAGREE`, HIGH. A computed pair
     matching numerically with one unproven operand is `AGREE_UNQUALIFIED`.
+    *Owner amendment 2026-10-14 (OPM fixture exception): Stage 1 has no mapped vendor-published OPM. The OPM `OPERAND_MISSING`→`VENDOR_ONLY`, and `UNDEFINED`/`REVISION_INCOMPATIBLE`→`NOT_COMPARABLE` MEDIUM cases are satisfied by explicit calculation-state, corroboration and routing unit cases. No vendor OPM mapping or qualification is invented. Retained mapped derived-row comparison remains covered by the Apar opex fixture.*
   - **Correction fixtures:** an original extraction and its manual correction in one package select
     the correction, but an `AS_KNOWN` run with a cutoff before the correction selects the original;
     two unsuperseded interpretations give `INTERPRETATION_AMBIGUOUS`. An issuer correction package
     omitting a line the original populated gives no value for it. **Family fixture:** a
     shareholding submission and a financial-results package sharing a period end date select
     independently; a later shareholding package never empties results keys (nor the reverse).
+    *Owner amendment 2026-10-14 (Family fixture exception): Stage 1 accepts the named package-selection unit test for independent financial-results/shareholding families because no retained shareholding submission is in its input set. The retained adapter→run family-isolation fixture is required in Stage 3, when that surface is implemented.*
   - **Dimensional fixture:** Apar segments align by evidenced member, never by ordinal; pre- and
     post-elimination segment assets are distinct keys and never paired.
   - An unmapped native line is kept as `UNMAPPED` and queued LOW.
   - **Diagnostic fixture:** a structural Upstox disagreement on an otherwise trusted cell leaves
     it trusted, with only a MEDIUM `PARSE_CHECK_DISAGREE` item.
     *Owner amendment 2026-10-14: with Upstox precision undocumented, the fixture's Upstox item is a MEDIUM diagnostic `NOT_COMPARABLE` (`PRECISION_UNSUPPORTED`) item; the cell stays trusted.*
+    *Owner amendment 2026-10-14 (split proof): The Stage 1 diagnostic criterion is satisfied by:
+    (1) a retained, demonstrated Q3 FY25 continuing-PAT cell that is `CORROBORATED` and trusted;
+    (2) an explicit rule test placing an open MEDIUM diagnostic `NOT_COMPARABLE/PRECISION_UNSUPPORTED` item on an otherwise trusted cell and showing unchanged trust; and
+    (3) retained Apar Upstox diagnostics against first-party values on correctly evidenced measurement keys, plus a retained Upstox–Screener precision diagnostic on an actual shared key. Freeze every endpoint, outcome, reason, severity and diagnostic flag. Adding/removing Upstox changes neither extraction nor corroboration. No pair is required where the sources share no key. The exception expires when a real Upstox value overlaps a trusted cell.*
   - Identical reruns, including two concurrent default-cutoff ones over unchanged evidence, yield
     one run and no duplicate rows. Replaying a run with a failed attempt reproduces `UNAVAILABLE`.
   - The runtime role cannot update or delete evidence rows.
   - An unreachable database fails the run (nonzero exit, no visible partial run).
+    *Owner amendment 2026-10-14 (Stage 1 coverage clarification): E1, E2, E4 and E8 are satisfied by the named decision-table/unit tests, with the source-availability or equal-key-boundary reason recorded in the coverage matrix. They are not represented as retained integration cases.*
 
 ### Stage 2: legacy store migration and cutover
 
