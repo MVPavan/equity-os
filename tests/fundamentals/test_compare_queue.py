@@ -22,7 +22,7 @@ from typing import Any
 import psycopg
 import pytest
 from evidence_support import BOTH, dictionary, ingest, mapping_set, policy
-from pg_evidence_schema_support import _seed_every_table, runtime
+from pg_evidence_schema_support import _insert, _seed_every_table, _trace, runtime
 from pg_support import PgTestDatabase
 from psycopg import errors
 from psycopg_pool import ConnectionPool
@@ -30,7 +30,12 @@ from retained_support import PdfRedaction, marked_pdf
 from run_support import Runner, config_copy, edit_yaml, runner
 
 from fundamentals.api.cli import main
-from fundamentals.compare.queue import overlay_boundary, read_overlay, record_disposition
+from fundamentals.compare.queue import (
+    item_inputs,
+    overlay_boundary,
+    read_overlay,
+    record_disposition,
+)
 from fundamentals.compare.run_config import ConfigVersions
 from fundamentals.compare.run_models import (
     DatabaseIdentity,
@@ -230,6 +235,7 @@ def test_queue_items_are_identifiable_filterable_and_show_their_dispositions(
     and prints each disposition with its reason; ``show`` resolves a key-less item's line."""
     _cli(runner, monkeypatch)
     runner.ingest.run(runner.ingest.intake(BOTH))
+    capsys.readouterr()  # ingestion's log lines precede the run id
     main(["compare", "run", *SCOPE])
     run_id = str(_run_id(capsys))
 
@@ -390,17 +396,47 @@ def test_identical_inputs_reuse_the_item_and_changed_inputs_link_a_new_one(
     assert {row[0] for row in inputs if row[2] is not None} == {items[0][0]}
 
 
+def _traced(queue: Fixture, *trace_ids: int) -> QueueItemDraft:
+    return queue.draft().model_copy(update={"calculation_trace_ids": trace_ids})
+
+
 def test_a_changed_calculation_trace_links_a_new_item(queue: Fixture) -> None:
     """Same attempts and interpretations, another trace: a new item, never the old one's."""
-    first, _ = queue.publish(1, (queue.draft().model_copy(update={"calculation_trace_ids": (7,)}),))
-    changed, _ = queue.publish(
-        2, (queue.draft().model_copy(update={"calculation_trace_ids": (8,)}),)
-    )
+    with queue.pool.connection() as conn:
+        other = _insert(conn, "calculation_traces", _trace("d" * 64))
+    first, _ = queue.publish(1, (_traced(queue, queue.ids["calculation_traces"]),))
+    changed, _ = queue.publish(2, (_traced(queue, other),))
     items = queue.rows("SELECT id, run_id, predecessor_item_id FROM eqos.queue_items ORDER BY id")
     assert [(run, predecessor) for _, run, predecessor in items] == [
         (first, None),
         (changed, items[0][0]),
     ]
+
+
+def test_a_queue_item_names_only_stored_calculation_traces(queue: Fixture) -> None:
+    """A trace id is evidence: one that does not exist is refused with the run."""
+    with pytest.raises(errors.ForeignKeyViolation):
+        queue.publish(1, (_traced(queue, 99999999),))
+    assert queue.rows("SELECT count(*) FROM eqos.queue_items") == [(0,)]
+
+
+def test_an_item_hash_is_reproducible_from_its_stored_inputs(queue: Fixture) -> None:
+    """The stored item and its stored evidence rebuild the draft: republishing it reuses the
+    item, so every hashed association, the traces included, is on record."""
+    run_id, _ = queue.publish(1, (_traced(queue, queue.ids["calculation_traces"]),))
+    (item,) = read_overlay(queue.pool, run_id=run_id, as_of=overlay_boundary(queue.pool)).open_items
+    inputs = item_inputs(queue.pool, item.item_id)
+    rebuilt = QueueItemDraft.model_validate(
+        item.model_dump(include=set(QueueItemDraft.model_fields))
+        | {
+            "evidence_occurrence_ids": inputs["occurrence_id"],
+            "evidence_interpretation_ids": inputs["interpretation_id"],
+            "attempt_ids": inputs["attempt_id"],
+            "calculation_trace_ids": inputs["calculation_trace_id"],
+        }
+    )
+    queue.publish(2, (rebuilt,))
+    assert queue.rows("SELECT count(*) FROM eqos.queue_items") == [(1,)]
 
 
 def test_items_are_append_only_sealed_and_timed_by_the_store_clock(queue: Fixture) -> None:

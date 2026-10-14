@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import stage1_provenance
 import yaml
 from retained_support import (
     MarkedEdit,
@@ -69,6 +70,7 @@ from fundamentals.contracts.comparison import (
     SourceState,
 )
 from fundamentals.contracts.evidence import Interpretation, RevisionCause
+from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.review_queue import QueueSeverity
 from fundamentals.contracts.snapshot import CAPTURE_ID_TIME_FORMAT
@@ -84,7 +86,7 @@ def stage(pg_db: Any, tmp_path: Path, request: pytest.FixtureRequest) -> Iterato
 @pytest.mark.pg
 @pytest.mark.retained
 @pytest.mark.parametrize("stage", list(RUNS), indirect=True)
-def test_run_matches_manifest(stage: Stage) -> None:
+def test_run_matches_manifest(stage: Stage, monkeypatch: pytest.MonkeyPatch) -> None:
     outcome = full_run(stage)
     lines = manifest_lines(outcome) + provenance(outcome)
     assert not lines, f"{len(lines)} differences:\n" + "\n".join(lines[:60])
@@ -113,6 +115,25 @@ def test_run_matches_manifest(stage: Stage) -> None:
         for row in outcome.rows
     )
     assert provenance(outcome, relabelled)
+    if not ids:
+        return  # NETWEB runs without a first-party package: no selection to mutate
+    # An unknown capture fails rather than skipping its locator check.
+    with monkeypatch.context() as patch:
+        patch.setattr(stage1_provenance, "SOURCES", {})
+        assert any("no manifest source" in line for line in provenance(outcome))
+    # An implicit (default) EQUIVALENCE_UNPROVEN tier is compared too: promotion is a difference.
+    read = stage.repository.get_interpretations
+    unproven = EvidenceTier.EQUIVALENCE_UNPROVEN
+    demonstrated = EvidenceTier.EQUIVALENCE_DEMONSTRATED
+    monkeypatch.setattr(
+        stage.repository,
+        "get_interpretations",
+        lambda ids: tuple(
+            item.model_copy(update={"tier": demonstrated}) if item.tier is unproven else item
+            for item in read(ids)
+        ),
+    )
+    assert any(f"want {unproven} got {demonstrated}" in line for line in provenance(outcome))
 
 
 # --- marked fixtures (header.fixtures) -------------------------------------------------------

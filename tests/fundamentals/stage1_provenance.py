@@ -7,6 +7,9 @@ from test_frozen_manifests import expanded_rows
 
 from fundamentals.compare.run_models import ResultRow
 from fundamentals.contracts.comparison import SourceRole
+from fundamentals.contracts.evidence_tier import EvidenceTier
+
+DEFAULT_TIER = EvidenceTier.EQUIVALENCE_UNPROVEN.value
 
 
 def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> list[str]:
@@ -35,17 +38,20 @@ def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> l
     lines = []
     for (key, name), interpretation_id in sorted(chosen.items()):
         side, item = want[key].get(name) or {}, found[interpretation_id]
-        if "tier" in side and side["tier"] != item.tier.value:
-            lines.append(f"{key} {name} tier: want {side['tier']} got {item.tier.value}")
+        tier = side.get("tier", DEFAULT_TIER)  # header.notation side: tier only if not UNPROVEN
+        if side and tier != item.tier.value:
+            lines.append(f"{key} {name} tier: want {tier} got {item.tier.value}")
         cell = cells.get(item.occurrence_id)
         if cell is None:
             continue
         src, anchor = SOURCES.get(cell.capture.blob_sha256), _json(cell.anchor)
-        if "at" in side:
+        if src is None:
+            lines.append(f"{key} {name} capture {cell.capture.blob_sha256} is no manifest source")
+        elif "at" in side:
             got = (src, cell.native_context.get("local_name"), anchor.get("context_ref"))
             if got not in {(at["src"], at["c"], at["ctx"]) for at in side["at"]}:
                 lines.append(f"{key} {name} at: want {side['at']} got {got}")
-        elif "pg" in side and src is not None:
+        elif "pg" in side:
             # header.notation pdf_locator: the label's tokens among the printed words; n its
             # top-down instance on the page
             label = set(side["label"].split())

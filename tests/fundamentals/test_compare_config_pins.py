@@ -68,7 +68,9 @@ def test_xbrl_semantic_sources_are_in_the_extractor_pin(
         ("screener-subscriber", "ingest/screener_financials_tables.py"),
         ("tijori", "ingest/tijori_tables.py"),
         ("tijori", "ingest/tijori_common.py"),
+        ("tijori", "ingest/tijori_page.py"),
         ("upstox", "ingest/upstox_source.py"),
+        ("upstox", "verify/crossfoot.py"),
     ],
 )
 def test_parser_and_identity_dependencies_are_in_the_extractor_pins(

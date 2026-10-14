@@ -97,6 +97,7 @@ VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
         (
             "evidence/vendor_tijori.py",
             "ingest/tijori_source.py",
+            "ingest/tijori_page.py",
             "ingest/tijori_tables.py",
             "ingest/tijori_common.py",
             _VENDOR_INGEST,
@@ -109,6 +110,7 @@ VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
             "ingest/upstox_statements.py",
             "ingest/upstox_source.py",
             "ingest/upstox_retention.py",
+            "verify/crossfoot.py",
             _VENDOR_INGEST,
         ),
     ),

@@ -29,8 +29,9 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-# 0001's 33 tables, 0003's version_pins and 0006's four queue tables.
-EXPECTED_TABLE_COUNT = 39
+# 0001's 33 tables, 0003's version_pins, 0006's four queue tables, 0007's construction_traces
+# and 0008's queue_item_traces.
+EXPECTED_TABLE_COUNT = 40
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -554,6 +555,11 @@ def seeded(runtime: psycopg.Connection) -> dict[str, int]:
             runtime,
             "queue_item_inputs",
             {"item_id": item, "interpretation_id": ids["interpretations"]},
+        )
+        ids["queue_item_traces"] = _insert(
+            runtime,
+            "queue_item_traces",
+            {"item_id": item, "calculation_trace_id": ids["calculation_traces"]},
         )
         ids["queue_run_items"] = _insert(
             runtime, "queue_run_items", {"run_id": ids["runs"], "item_id": item}

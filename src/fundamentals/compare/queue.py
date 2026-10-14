@@ -51,6 +51,9 @@ _INSERT_INPUT: LiteralString = (
     "INSERT INTO eqos.queue_item_inputs (item_id, occurrence_id, interpretation_id, attempt_id) "
     "VALUES (%s, %s, %s, %s)"
 )
+_INSERT_TRACE: LiteralString = (
+    "INSERT INTO eqos.queue_item_traces (item_id, calculation_trace_id) VALUES (%s, %s)"
+)
 _INSERT_MEMBERSHIP: LiteralString = (
     "INSERT INTO eqos.queue_run_items (run_id, item_id) VALUES (%s, %s) "
     "ON CONFLICT (run_id, item_id) DO NOTHING"
@@ -72,6 +75,9 @@ _OVERLAY: LiteralString = (
 _ITEM_INPUTS: LiteralString = (
     "SELECT occurrence_id, interpretation_id, attempt_id FROM eqos.queue_item_inputs "
     "WHERE item_id = %s ORDER BY id"
+)
+_ITEM_TRACES: LiteralString = (
+    "SELECT calculation_trace_id FROM eqos.queue_item_traces WHERE item_id = %s ORDER BY id"
 )
 
 
@@ -143,13 +149,14 @@ def read_overlay(pool: ConnectionPool, *, run_id: int, as_of: datetime) -> Queue
 
 
 def item_inputs(pool: ConnectionPool, item_id: int) -> dict[str, tuple[int, ...]]:
-    """One item's typed evidence ids: occurrences, interpretations and attempts."""
+    """One item's typed evidence ids: occurrences, interpretations, attempts and traces."""
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(_ITEM_INPUTS, (item_id,)).fetchall()
+        traces = cursor.execute(_ITEM_TRACES, (item_id,)).fetchall()
     return {
         name: tuple(row[name] for row in rows if row[name] is not None)
         for name in ("occurrence_id", "interpretation_id", "attempt_id")
-    }
+    } | {"calculation_trace_id": tuple(row["calculation_trace_id"] for row in traces)}
 
 
 def _publish_one(cursor: Cursor[Any], run_id: int, digest: str, draft: QueueItemDraft) -> int:
@@ -185,6 +192,9 @@ def _publish_one(cursor: Cursor[Any], run_id: int, digest: str, draft: QueueItem
             [(item_id, value, None, None) for value in draft.evidence_occurrence_ids]
             + [(item_id, None, value, None) for value in draft.evidence_interpretation_ids]
             + [(item_id, None, None, value) for value in draft.attempt_ids],
+        )
+        cursor.executemany(
+            _INSERT_TRACE, [(item_id, value) for value in draft.calculation_trace_ids]
         )
     cursor.execute(_INSERT_MEMBERSHIP, (run_id, item_id))
     return item_id

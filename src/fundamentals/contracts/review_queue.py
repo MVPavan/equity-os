@@ -48,7 +48,7 @@ class QueueItemDraft(BaseModel):
     attempt_ids: tuple[PositiveInt, ...] = ()
     evidence_interpretation_ids: tuple[PositiveInt, ...] = ()
     evidence_occurrence_ids: tuple[PositiveInt, ...] = ()
-    calculation_trace_ids: tuple[PositiveInt, ...] = ()  # hashed into the input identity only
+    calculation_trace_ids: tuple[PositiveInt, ...] = ()
 
     @model_validator(mode="after")
     def _evidenced_route(self) -> QueueItemDraft:
