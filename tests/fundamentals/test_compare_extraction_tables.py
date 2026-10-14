@@ -25,7 +25,9 @@ from fundamentals.compare.definitions import (
     load_definition_set,
     publish_definition_set,
 )
+from fundamentals.compare.engine_formula import FormulaRows
 from fundamentals.compare.policy import ComparisonPolicy
+from fundamentals.compare.run_config import load_run_config
 from fundamentals.compare.tables import (
     AdjustmentRejection,
     ComparisonSide,
@@ -38,7 +40,13 @@ from fundamentals.compare.tables import (
     validate_adjustment,
 )
 from fundamentals.compare.triage import structural_class, triage
-from fundamentals.contracts.canonical import ApplicabilityStatus, Basis, Representation, ValueKind
+from fundamentals.contracts.canonical import (
+    ApplicabilityStatus,
+    Basis,
+    Representation,
+    StatementFamily,
+    ValueKind,
+)
 from fundamentals.contracts.comparison import (
     CalculationState,
     CorroborationStatus,
@@ -76,7 +84,9 @@ from .compare_tables_support import (
     ROUNDING,
     SCOPE_CASES,
     TOTAL_RECORD,
+    ConstructedFormulaHost,
     DerivedCase,
+    MemoryTraces,
     OperandState,
     definitions,
     demonstrated_opex_row,
@@ -381,6 +391,46 @@ def test_tagging_difference_plus_unrelated_operand_discrepancy_disagrees() -> No
     result = case.status(PDF_FINANCE_DOWN)
     assert result.status is ExtractionStatus.DISAGREE
     assert result.rejected_adjustments == ()
+
+
+@pytest.mark.parametrize(
+    ("pdf_receivables", "xbrl_only", "expected"),
+    [
+        (None, frozenset({StatementFamily.BALANCE_SHEET}), ExtractionStatus.TAGGING_DIFFERENCE),
+        ("520.00", frozenset(), ExtractionStatus.DISAGREE),
+    ],
+    ids=["shared-receivables-reconcile", "unrelated-receivables-discrepancy"],
+)
+def test_adjustment_re_evaluation_keeps_shared_single_representation_operands(
+    pdf_receivables: str | None,
+    xbrl_only: frozenset[StatementFamily],
+    expected: ExtractionStatus,
+) -> None:
+    """Receivable days over XBRL-only receivables 500 and revenue 1,000 / PDF 1,010 crore with
+    an evidenced 10-crore revenue record: re-evaluation keeps the receivables shared, so the
+    adjusted sides meet (Sol r3 F1); a paired 500 / 520 receivables gap still disagrees."""
+    revenue = record(
+        "REV-1", DefinitionScope.MEASUREMENT, REVENUE.digest(), "100000000", operand_name="revenue"
+    )
+    config = load_run_config(REPO / "config").model_copy(
+        update={"definition_set": definitions(revenue)}
+    )
+    host = ConstructedFormulaHost(
+        {
+            "trade_receivables_current": ("500.00", pdf_receivables),
+            "revenue_from_operations": ("1000.00", "1010.00"),
+        },
+        xbrl_only,
+    )
+    rows = FormulaRows(host, config=config, traces=MemoryTraces(), proofs=())
+    output = key("receivable_days", Q2_FY26, ValueKind.DAYS)
+    evaluated = rows.evaluate(
+        DICTIONARY.row("receivable_days"), output, fiscal_month=3, currency=INR
+    )
+    assert evaluated.extraction.status is expected
+    # The revenue adjustment is accepted either way; only the unrelated gap keeps DISAGREE.
+    assert [item.operand_name for item in evaluated.extraction.adjustments] == ["revenue"]
+    assert evaluated.extraction.rejected_adjustments == ()
 
 
 @pytest.mark.parametrize(("adjustment", "reason"), REJECTED_ADJUSTMENTS)

@@ -7,13 +7,14 @@ evaluate real dictionary v1 formulas per representation from actual operand stat
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from fundamentals.canon.dictionary import DictionaryRow
-from fundamentals.canon.formula import CalculationResult, OperandValue
+from fundamentals.canon.formula import CalculationResult, CalculationTrace, OperandValue
 from fundamentals.canon.interval import Interval
 from fundamentals.compare.definitions import (
     DefinitionRecord,
@@ -21,6 +22,8 @@ from fundamentals.compare.definitions import (
     DefinitionSet,
     load_definition_set,
 )
+from fundamentals.compare.engine_attempts import bare_selection
+from fundamentals.compare.engine_rows import Cell
 from fundamentals.compare.policy import load_comparison_policy
 from fundamentals.compare.tables import (
     ComparisonSide,
@@ -30,17 +33,28 @@ from fundamentals.compare.tables import (
     derived_extraction_status,
     extraction_status,
 )
-from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, ValueKind
+from fundamentals.contracts.canonical import (
+    Basis,
+    PeriodKind,
+    Representation,
+    StatementFamily,
+    TemporalRole,
+    ValueKind,
+)
 from fundamentals.contracts.comparison import (
     ExtractionStatus,
     PairOutcome,
     ReasonCode,
+    SelectionSource,
     SourceState,
 )
+from fundamentals.contracts.evidence import FilingPackage, KeySelection, Occurrence, PackageMember
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.qualification import QualificationFixture, QualificationScope
+from fundamentals.evidence.repository import SegmentMemberRecord
+from fundamentals.evidence.selection import period_end
 
 from .canon_formula_support import (
     DEMONSTRATED,
@@ -55,6 +69,7 @@ from .canon_formula_support import (
     load_v1_policy,
     quarter_context,
 )
+from .selection_support import at, interpretation, member, package
 
 REPO = Path(__file__).resolve().parents[2]
 POLICY = load_comparison_policy(REPO / "config" / "comparison_policy" / "v1.yaml")
@@ -700,3 +715,92 @@ def demonstrated_opex_row() -> DictionaryRow:
     )
     formula = row.formula.model_copy(update={"tier": DEMONSTRATED, "qualification": scope})
     return row.model_copy(update={"formula": formula})
+
+
+class ConstructedFormulaHost:
+    """A run host over constructed selections: ``values`` holds each canonical id's XBRL and
+    PDF crore (``None`` unfiled); ``xbrl_only`` families are packaged with no PDF member."""
+
+    def __init__(
+        self,
+        values: Mapping[str, tuple[str, str | None]],
+        xbrl_only: frozenset[StatementFamily] = frozenset(),
+    ) -> None:
+        both = (
+            member(Representation.XBRL, 1, at(1), at(1)),
+            member(Representation.PDF, 2, at(1), at(1)),
+        )
+        self._values = values
+        self._xbrl_only = xbrl_only
+        self._paired = package(PACKAGE, *both)
+        self._single = package(PACKAGE + 1, both[0])
+
+    def cell(self, key: MeasurementKey, representation: Representation) -> Cell:
+        """The constructed value, or an unfiled ``NO_VALUE`` selection."""
+        family = DICTIONARY.row(key.canonical_id).family
+        owner = self.package(key.entity_id, key.basis, period_end(key.period), family)
+        on_pdf = representation is Representation.PDF
+        crore = self._values[key.canonical_id][on_pdf]
+        if crore is None or representation not in owner.members:
+            return Cell(
+                selection=bare_selection(key, representation, SourceState.NO_VALUE), attempt_id=None
+            )
+        chosen = interpretation(
+            2 * list(self._values).index(key.canonical_id)
+            + 1
+            + (representation is Representation.PDF),
+            owner.members[representation],
+            measurement=key,
+            crore=crore,
+        )
+        selection = KeySelection(
+            key=key,
+            representation=representation,
+            state=SourceState.VALUE,
+            interpretation=chosen,
+            package_id=owner.package_id,
+            source=SelectionSource.PACKAGE_AS_REPORTED,
+            reason=None,
+            considered_interpretation_ids=(),
+            surfaced_restatements=(),
+        )
+        return Cell(selection=selection, attempt_id=None)
+
+    def resolve(
+        self, key: MeasurementKey, role: TemporalRole, *, representation: Representation
+    ) -> KeySelection:
+        """The key's own selection."""
+        return self.cell(key, representation).selection
+
+    def package(
+        self, entity_id: int, basis: Basis, end: date, family: StatementFamily
+    ) -> FilingPackage:
+        """The XBRL-only package for ``xbrl_only`` families, else the paired one."""
+        return self._single if family in self._xbrl_only else self._paired
+
+    def member(
+        self, package: FilingPackage | None, representation: Representation
+    ) -> PackageMember | None:
+        """The package's member, if any."""
+        return None if package is None else package.members.get(representation)
+
+    def witness(
+        self, package: FilingPackage | None, representation: Representation
+    ) -> Occurrence | None:
+        """No witness occurrence."""
+        return None
+
+    def segment_members_of(self, entity_id: int) -> tuple[SegmentMemberRecord, ...]:
+        """No segment members."""
+        return ()
+
+
+class MemoryTraces:
+    """Traces stored in memory by content hash."""
+
+    def __init__(self) -> None:
+        self._ids: dict[str, int] = {}
+
+    def put_calculation_trace(self, trace: CalculationTrace) -> int:
+        """The trace's id, assigned on first sight."""
+        return self._ids.setdefault(trace.content_sha256(), len(self._ids) + 1)

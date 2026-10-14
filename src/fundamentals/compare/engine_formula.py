@@ -128,7 +128,7 @@ class FormulaRows:
         self._traces = traces
         self._proofs = proofs
         self._rows = {row.canonical_id: row for row in config.dictionary.rows}
-        self._evaluated: dict[str, FormulaEvaluation] = {}
+        self._evaluated: dict[tuple[str, bool], FormulaEvaluation] = {}
         self.bound_member_ids: set[int] = set()
         self.selected_condition_ids: set[int] = set()
 
@@ -142,12 +142,19 @@ class FormulaRows:
         return self._host.package(key.entity_id, key.basis, period_end(key.period), family)
 
     def evaluate(
-        self, row: DictionaryRow, key: MeasurementKey, *, fiscal_month: int, currency: str
+        self,
+        row: DictionaryRow,
+        key: MeasurementKey,
+        *,
+        fiscal_month: int,
+        currency: str,
+        shared: bool = False,
     ) -> FormulaEvaluation:
-        """Both representations' traced values and the derived extraction result."""
-        digest = key.digest()
-        if digest in self._evaluated:
-            return self._evaluated[digest]
+        """Both representations' traced values and the derived extraction result.
+
+        ``shared`` evaluates a nested operand as its parent did: sharing single-representation
+        operands even when every one of its own is single-representation.
+        """
         package = self.package(row, key)
         package_id = None if package is None else package.package_id
         # Every operand single-representation: NOT_APPLICABLE, and nothing is shared into a
@@ -156,7 +163,11 @@ class FormulaRows:
             self._sole_representation(leaf) is not None
             for leaf in self._leaf_keys(row, key, currency)
         )
-        resolve = self._host.resolve if single else self._resolve
+        shared = shared or not single
+        digest = (key.digest(), shared)
+        if digest in self._evaluated:
+            return self._evaluated[digest]
+        resolve = self._resolve if shared else self._host.resolve
         results: dict[Representation, DerivedSide] = {}
         sides: dict[Representation, Side] = {}
         contexts = {}
@@ -191,7 +202,11 @@ class FormulaRows:
                 trace_id=results[rep].trace_id,
                 package_id=package_id,
             )
-        operands = self._operand_extractions(row, key, fiscal_month=fiscal_month, currency=currency)
+        operands = (
+            None
+            if single
+            else self._operand_extractions(row, key, fiscal_month=fiscal_month, currency=currency)
+        )
         definitions = self._config.definition_set
         extraction = derived_extraction_status(
             row=row,
@@ -338,7 +353,8 @@ class FormulaRows:
     def _operand_extractions(
         self, row: DictionaryRow, key: MeasurementKey, *, fiscal_month: int, currency: str
     ) -> dict[str, OperandExtraction] | None:
-        """Every operand's two values and own extraction; ``None`` if one is not a plain pair.
+        """Every operand's two values, shared as evaluated, and own extraction; ``None`` if one is
+        not a plain pair.
 
         Aggregated, opening and averaged operands are not one reported pair, so a formula
         holding one is compared without adjustments.
@@ -354,7 +370,7 @@ class FormulaRows:
             nested = self._rows[operand.canonical_id]
             if nested.formula is not None:
                 inner = self.evaluate(
-                    nested, operand_key, fiscal_month=fiscal_month, currency=currency
+                    nested, operand_key, fiscal_month=fiscal_month, currency=currency, shared=True
                 )
                 values = {
                     rep: _computed(inner.results[rep], operand_key) for rep in REPRESENTATIONS
@@ -365,8 +381,9 @@ class FormulaRows:
                 package = self._host.package(key.entity_id, key.basis, end, nested.family)
                 package_id = None if package is None else package.package_id
                 cells = {rep: self._host.cell(operand_key, rep) for rep in REPRESENTATIONS}
+                sole = self._sole_representation(operand_key)
                 values = {
-                    rep: operand_value(cells[rep].selection, proofs=self._proofs)
+                    rep: operand_value(cells[sole or rep].selection, proofs=self._proofs)
                     for rep in REPRESENTATIONS
                 }
                 read = {
