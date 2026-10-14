@@ -86,7 +86,7 @@ def test_validate_watchlist_writes_per_wave_rollups_without_collision(tmp_path: 
     waves = validate_command(_validate_args(tmp_path, watchlist=True, report_dir=report_dir))
 
     # One roll-up per wave (in canonical order), each labelled by its own wave.
-    assert tuple(report.wave for report in waves) == (Wave.WAVE_1, Wave.WAVE_2)
+    assert tuple(report.wave for report in waves) == (Wave.WAVE_1, Wave.WAVE_2, Wave.PILOT)
 
     wave1_path = report_dir / "Wave-1-rollup.json"
     wave2_path = report_dir / "Wave-2-rollup.json"

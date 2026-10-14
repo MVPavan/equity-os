@@ -71,6 +71,7 @@ class Wave(StrEnum):
 
     WAVE_1 = "Wave-1"
     WAVE_2 = "Wave-2"
+    PILOT = "Pilot"
 
 
 class FilingTaxonomy(StrEnum):

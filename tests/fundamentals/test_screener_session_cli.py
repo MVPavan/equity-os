@@ -334,7 +334,7 @@ def test_the_watchlist_pins_both_screener_id_namespaces_for_every_stock() -> Non
     """Every watchlist stock carries a live-verified company id and at least one basis."""
     watchlist = load_watchlist_config(_WATCHLIST_PATH)
 
-    assert len(watchlist.stocks) == 10
+    assert len(watchlist.stocks) == 11
     for stock in watchlist.stocks:
         identifiers = stock.identifiers
         assert identifiers.screener_company_id > 0

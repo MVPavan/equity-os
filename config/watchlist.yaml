@@ -313,3 +313,32 @@ stocks:
     notes:
       - "Formerly Zomato Limited; renamed to Eternal, symbol ZOMATO -> ETERNAL effective 2025-04-09."
       - "ISSUER-RENAME EDGE CASE: the Q3FY25 NSE XBRL (filed Jan-2025) carries Symbol/NSESymbol='ZOMATO', but `financial_results` now keys the row under 'ETERNAL' and the old 'ZOMATO' symbol returns 0 rows (both verified live 2026-08-22). No single nse_symbol satisfies both listing lookup and issuer verification; NSE ingestion expected fail-closed. See wave-2-rollup.md."
+
+  # The pilot company (eqos-4j2), its own cohort so Wave-1/Wave-2 runs are unchanged.
+  # Identifiers live-verified 2026-10-14: Screener data-company-id 211 and warehouse ids
+  # 6594631 (consolidated) / 2446 (standalone) from /company/APARINDS/consolidated/ and
+  # /company/APARINDS/; Tijori company_details island symbol APARINDS, company_id 4290.
+  - name: "Apar Industries Limited"
+    domain: "Conductors / Cables / Oils"
+    wave: "Pilot"
+    identifiers:
+      nse_symbol: "APARINDS"
+      bse_scrip: "532259"
+      screener_slug: "APARINDS"
+      screener_company_id: 211
+      screener_warehouse_id_consolidated: 6594631
+      screener_warehouse_id_standalone: 2446
+      tijori_slug: "apar-industries-limited"
+      tijori_company_id: 4290
+      us_listed: false
+      news_aliases:
+        - "Apar Industries"
+      needs_verification: []
+    quarter:
+      label: "Q2FY26"
+      period_start: "2025-07-01"
+      period_end: "2025-09-30"
+      knowledge_cutoff: "2025-11-15T00:00:00Z"
+      filing_taxonomy: "in-capmkt"
+    notes:
+      - "Pilot company; first-party captures under data/raw/watchlist/aparinds (retrieval manifest there)."

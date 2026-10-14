@@ -622,9 +622,10 @@ def test_watchlist_config_tags_each_stock_with_its_wave() -> None:
 def test_watchlist_config_wave_helpers_partition_the_stocks() -> None:
     config = load_watchlist_config(_REPO_ROOT / "config" / "watchlist.yaml")
     # Waves are returned in canonical enum order regardless of stock ordering.
-    assert config.waves() == (Wave.WAVE_1, Wave.WAVE_2)
+    assert config.waves() == (Wave.WAVE_1, Wave.WAVE_2, Wave.PILOT)
     assert {s.symbol for s in config.stocks_for_wave(Wave.WAVE_1)} == _WAVE1_SYMBOLS
     assert {s.symbol for s in config.stocks_for_wave(Wave.WAVE_2)} == _WAVE2_SYMBOLS
+    assert {s.symbol for s in config.stocks_for_wave(Wave.PILOT)} == {"APARINDS"}
 
 
 # --- per-wave roll-up (no cross-wave clobber) ----------------------------------
