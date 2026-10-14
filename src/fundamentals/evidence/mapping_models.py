@@ -4,23 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from types import MappingProxyType
-from typing import Annotated, Literal
 
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
-    PlainSerializer,
     model_validator,
 )
 
-from fundamentals.canon.dictionary import FormulaNode
+from fundamentals.canon.dictionary import FormulaNode, FormulaOp
 from fundamentals.contracts.canonical import (
     Basis,
     PeriodKind,
-    PeriodNature,
     StatementFamily,
     ValueKind,
 )
@@ -30,16 +25,6 @@ from fundamentals.extract.pdf_header_text import normalize_text_tokens
 
 ALL_BASES = frozenset(Basis)
 ALL_PERIOD_KINDS = frozenset(PeriodKind)
-
-
-def _frozen_strings(values: Mapping[str, str]) -> Mapping[str, str]:
-    """Copy pinned selector metadata into a read-only mapping."""
-    return MappingProxyType(dict(values))
-
-
-FrozenStringMapping = Annotated[
-    Mapping[str, str], AfterValidator(_frozen_strings), PlainSerializer(dict)
-]
 
 
 class PeriodShape(StrEnum):
@@ -192,37 +177,8 @@ class MappingEntry(BaseModel):
         )
 
 
-class NativeOperandSpec(BaseModel):
-    """Evidence-scoped metadata for reading one source-native operand."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    selector: Selector
-    sign: Literal[-1, 1]
-    unit_transform: UnitTransform
-    precision_rule: PrecisionRule
-    value_kind: ValueKind
-    currency: str | None
-    period_nature: PeriodNature
-    dimension_members: FrozenStringMapping
-    bases: frozenset[Basis] = Field(min_length=1)
-    period_kinds: frozenset[PeriodKind] = Field(min_length=1)
-    evidence_ref: str = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _metadata(self) -> NativeOperandSpec:
-        if self.sign not in (1, -1):
-            raise ValueError("sign must be 1 or -1")
-        if self.value_kind in (ValueKind.CURRENCY_AMOUNT, ValueKind.PER_SHARE_AMOUNT):
-            if not self.currency:
-                raise ValueError("monetary native operands require currency")
-        elif self.currency is not None:
-            raise ValueError("non-monetary native operands do not carry currency")
-        return self
-
-
 class ConstructionOperand(BaseModel):
-    """One mapped-entry or source-native operand, never both."""
+    """One construction operand: a mapping entry or a selector over the capture's own rows."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -231,14 +187,14 @@ class ConstructionOperand(BaseModel):
         default=None, min_length=1, exclude_if=lambda value: value is None
     )
     dash_rule_id: str | None = None
-    native: NativeOperandSpec | None = Field(default=None, exclude_if=lambda value: value is None)
+    selector: Selector | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _one_branch(self) -> ConstructionOperand:
-        if (self.mapping_entry_id is None) == (self.native is None):
-            raise ValueError("exactly one of mapping_entry_id or native is required")
-        if self.native is not None and self.dash_rule_id is not None:
-            raise ValueError("native operands do not use dash-to-zero rules")
+        if (self.mapping_entry_id is None) == (self.selector is None):
+            raise ValueError("exactly one of mapping_entry_id or selector is required")
+        if self.selector is not None and self.dash_rule_id is not None:
+            raise ValueError("selector operands do not use dash-to-zero rules")
         return self
 
 
@@ -262,57 +218,35 @@ class ConstructionRule(BaseModel):
     evidence_ref: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def _one_operand_branch(self) -> ConstructionRule:
+    def _operands_cover_expression(self) -> ConstructionRule:
         names = [operand.name for operand in self.operands]
         if len(set(names)) != len(names) or self.expression.operand_names() != set(names):
             raise ValueError("operand names are distinct and exactly cover the expression")
-        native = [operand for operand in self.operands if operand.native is not None]
-        if native and len(native) != len(self.operands):
-            raise ValueError("mapped and native operands cannot be mixed")
-        if native:
-            native_specs = [operand.native for operand in native]
-            assert all(spec is not None for spec in native_specs)
-            specs = [spec for spec in native_specs if spec is not None]
+        selectors = [operand.selector for operand in self.operands if operand.selector]
+        if selectors:
             if self.source is None:
-                raise ValueError("native construction rules require a named source")
-            if self.bases is not None:
-                raise ValueError("native construction scope is declared by its operands")
-            if not set.intersection(*(set(spec.bases) for spec in specs)):
-                raise ValueError("native operands require a common basis scope")
-            if not set.intersection(*(set(spec.period_kinds) for spec in specs)):
-                raise ValueError("native operands require a common period-kind scope")
+                raise ValueError("selector constructions require a named source")
+            if not _additive(self.expression):
+                raise ValueError("selector constructions only add or subtract their operands")
             if self.tier is EvidenceTier.RELATED_NOT_EQUIVALENT:
-                raise ValueError("native constructions cannot claim a related tier")
+                raise ValueError("selector constructions cannot claim a related tier")
             if self.tier is EvidenceTier.EQUIVALENCE_DEMONSTRATED and self.qualification is None:
-                raise ValueError("demonstrated native constructions require qualification")
-            for left_index, left in enumerate(specs):
-                for right in specs[left_index + 1 :]:
-                    if left.selector.overlaps(right.selector):
-                        raise ValueError("native operand selectors cannot overlap")
+                raise ValueError("demonstrated selector constructions require qualification")
+            for index, left in enumerate(selectors):
+                if any(left.overlaps(right) for right in selectors[index + 1 :]):
+                    raise ValueError("selector operands cannot overlap")
         return self
 
-    @property
-    def is_native(self) -> bool:
-        """Whether every operand is source-native."""
-        return self.operands[0].native is not None
+    def operand_entry_id(self, operand: ConstructionOperand) -> str:
+        """The operand's mapping entry id, or its rule-scoped id for a selector operand."""
+        return operand.mapping_entry_id or f"{self.rule_id}#{operand.name}"
 
-    @property
-    def native_bases(self) -> frozenset[Basis]:
-        """The bases where every native operand is eligible."""
-        if not self.is_native:
-            return frozenset()
-        specs = [operand.native for operand in self.operands]
-        assert all(spec is not None for spec in specs)
-        return frozenset.intersection(*(spec.bases for spec in specs if spec is not None))
 
-    @property
-    def native_period_kinds(self) -> frozenset[PeriodKind]:
-        """The period kinds where every native operand is eligible."""
-        if not self.is_native:
-            return frozenset()
-        specs = [operand.native for operand in self.operands]
-        assert all(spec is not None for spec in specs)
-        return frozenset.intersection(*(spec.period_kinds for spec in specs if spec is not None))
+def _additive(node: FormulaNode) -> bool:
+    """Whether a formula only adds and subtracts operands."""
+    if node.op is FormulaOp.OPERAND:
+        return True
+    return node.op in (FormulaOp.ADD, FormulaOp.SUB) and all(_additive(arg) for arg in node.args)
 
 
 class StatementAnchor(BaseModel):

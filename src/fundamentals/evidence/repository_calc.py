@@ -50,6 +50,15 @@ OPERANDS_OF_TRACES: LiteralString = (
     "SELECT " + _OPERAND_COLUMNS + " FROM eqos.calculation_trace_operands "
     "WHERE calculation_trace_id = ANY(%s) ORDER BY calculation_trace_id, ordinal"
 )
+# A selector construction carries its trace in ``transform_trace`` under this key, as JSON.
+CONSTRUCTION_TRACE = "calculation_trace"
+INSERT_CONSTRUCTION_TRACE: LiteralString = (
+    "INSERT INTO eqos.construction_traces (interpretation_id, calculation_trace_id) VALUES (%s, %s)"
+)
+CONSTRUCTION_TRACES: LiteralString = (
+    "SELECT interpretation_id, calculation_trace_id FROM eqos.construction_traces "
+    "WHERE interpretation_id = ANY(%s)"
+)
 _PROOF_COLUMNS: LiteralString = (
     "package_id, key_digest, canonical_id, rule_id, rule_set_version, xbrl_interpretation_id, "
     "pdf_interpretation_id, participants_digest, holds"
@@ -207,6 +216,22 @@ def trace_of(row: Row, operands: Sequence[TraceOperand]) -> CalculationTrace:
         exact_value=_fraction(row["exact_value"]),
         exact_interval=_interval(row["exact_lower"], row["exact_upper"]),
         effective_tier=EvidenceTier(row["effective_tier"]),
+    )
+
+
+def trace_from_json(payload: Mapping[str, Any]) -> CalculationTrace:
+    """A trace from its ``model_dump(mode="json")`` form: rationals back from ``p/q`` text."""
+
+    def exact(item: Mapping[str, Any]) -> dict[str, Any]:
+        interval = item["exact_interval"]
+        return {
+            **item,
+            "exact_value": _fraction(item["exact_value"]),
+            "exact_interval": None if interval is None else _interval(**interval),
+        }
+
+    return CalculationTrace.model_validate(
+        {**exact(payload), "operands": [exact(operand) for operand in payload["operands"]]}
     )
 
 

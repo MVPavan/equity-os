@@ -366,11 +366,17 @@ class EvidenceRepository:
     def put_interpretations(self, interpretations: Sequence[Interpretation]) -> None:
         """Insert interpretations under their reserved ids, with operands and condition evidence.
 
-        One transaction. Direct rows go first so constructions can name them. An identity
+        One transaction. Direct rows go first so constructions can name them. A construction
+        carrying a calculation trace has it written by the trace writer and linked. An identity
         already stored by a concurrent ingest raises :class:`InterpretationConflictError`
         and nothing is written; the caller retries from a fresh read.
         """
         ordered = sorted(interpretations, key=lambda item: item.occurrence_id is None)
+        traces = {
+            item.interpretation_id: calc_sql.trace_from_json(payload)
+            for item in ordered
+            if isinstance(payload := item.transform_trace.get(calc_sql.CONSTRUCTION_TRACE), Mapping)
+        }
         try:
             with self._transaction() as conn, conn.cursor() as cursor:
                 cursor.executemany(
@@ -394,8 +400,20 @@ class EvidenceRepository:
                         for evidence_id in proof.evidence_interpretation_ids
                     ],
                 )
+                trace_ids = {
+                    item_id: _insert_trace(conn, trace) for item_id, trace in traces.items()
+                }
+                cursor.executemany(calc_sql.INSERT_CONSTRUCTION_TRACE, list(trace_ids.items()))
         except psycopg.errors.UniqueViolation as error:
             raise InterpretationConflictError(str(error)) from error
+        for item_id, trace_id in trace_ids.items():
+            (stored,) = self.get_calculation_traces([trace_id])
+            calc_sql.check_trace_digest(stored.trace, traces[item_id].content_sha256())
+
+    def get_construction_traces(self, ids: Sequence[int]) -> dict[int, int]:
+        """The calculation trace id of each given construction that has one."""
+        rows = self._fetch(calc_sql.CONSTRUCTION_TRACES, (list(ids),))
+        return {row["interpretation_id"]: row["calculation_trace_id"] for row in rows}
 
     def put_segment_members(self, members: Sequence[SegmentMemberWrite]) -> tuple[int, ...]:
         """Record segment members with their evidence occurrences, returning stored ids.
@@ -615,23 +633,10 @@ class EvidenceRepository:
         they are part of this trace's content hash. The stored trace is read back and its
         content hash checked before the id is returned.
         """
-        expected = trace.content_sha256()
         with self._transaction() as conn:
-            inserted = _rows(conn, calc_sql.INSERT_TRACE, calc_sql.trace_params(trace))
-            if inserted:
-                trace_id = int(inserted[0]["id"])
-                with conn.cursor() as cursor:
-                    cursor.executemany(
-                        calc_sql.INSERT_TRACE_OPERAND,
-                        [
-                            calc_sql.operand_params(trace_id, ordinal, operand)
-                            for ordinal, operand in enumerate(trace.operands)
-                        ],
-                    )
-            else:
-                trace_id = _one_id(conn, calc_sql.SELECT_TRACE_ID, (expected,))
+            trace_id = _insert_trace(conn, trace)
         (stored,) = self.get_calculation_traces([trace_id])
-        calc_sql.check_trace_digest(stored.trace, expected)
+        calc_sql.check_trace_digest(stored.trace, trace.content_sha256())
         return trace_id
 
     def get_calculation_traces(self, ids: Sequence[int]) -> tuple[StoredTrace, ...]:
@@ -703,6 +708,23 @@ def _rows(
     with conn.cursor(row_factory=dict_row) as cursor:
         cursor.execute(query, params)
         return cursor.fetchall()
+
+
+def _insert_trace(conn: psycopg.Connection[Any], trace: CalculationTrace) -> int:
+    """Insert one trace and its operand rows, or find it by content hash; its id."""
+    inserted = _rows(conn, calc_sql.INSERT_TRACE, calc_sql.trace_params(trace))
+    if not inserted:
+        return _one_id(conn, calc_sql.SELECT_TRACE_ID, (trace.content_sha256(),))
+    trace_id = int(inserted[0]["id"])
+    with conn.cursor() as cursor:
+        cursor.executemany(
+            calc_sql.INSERT_TRACE_OPERAND,
+            [
+                calc_sql.operand_params(trace_id, ordinal, operand)
+                for ordinal, operand in enumerate(trace.operands)
+            ],
+        )
+    return trace_id
 
 
 def _one_id(conn: psycopg.Connection[Any], query: LiteralString, params: tuple[object, ...]) -> int:

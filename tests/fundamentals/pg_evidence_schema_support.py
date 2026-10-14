@@ -30,7 +30,7 @@ PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 # 0001's 33 tables, 0003's version_pins and 0006's four queue tables.
-EXPECTED_TABLE_COUNT = 38
+EXPECTED_TABLE_COUNT = 39
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -389,6 +389,11 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
         {"alignment_proof_id": proof, "interpretation_id": direct, "representation": "XBRL"},
     )
     ids["calculation_traces"] = trace = _insert(conn, "calculation_traces", _trace())
+    ids["construction_traces"] = _insert(
+        conn,
+        "construction_traces",
+        {"interpretation_id": constructed, "calculation_trace_id": trace},
+    )
     ids["calculation_trace_operands"] = _insert(
         conn,
         "calculation_trace_operands",

@@ -1,4 +1,4 @@
-# Unpublished Screener source-native construction draft. Task 13 owns any shared v2 index,
+# Unpublished Screener construction draft. Task 13 owns any shared v2 index,
 # authority decision, final content pin and publication.
 constructions:
   - rule_id: screener.balance-sheet.liabilities_incl_nci
@@ -6,43 +6,18 @@ constructions:
     surface: SCREENER_FINANCIALS
     schema_identity: screener-financials-html-v1
     canonical_id: liabilities_incl_nci
+    bases: [CONSOLIDATED]
     operands:
       - name: borrowings
-        native:
-          selector:
-            statement_family: BALANCE_SHEET
-            labels: [Borrowings]
-            section_equals: balance-sheet
-          sign: 1
-          unit_transform: SCALE_TO_BASE_UNIT
-          precision_rule: DECLARED
-          value_kind: CURRENCY_AMOUNT
-          currency: INR
-          period_nature: INSTANT
-          dimension_members: {}
-          bases: [CONSOLIDATED]
-          period_kinds: [INSTANT]
-          evidence_ref: >-
-            Task 15 source oracle: original retained THERMAX and HFCL balance-sheet tables
-            print Borrowings on the consolidated Rs. Crores surface at Mar 2025.
+        selector:
+          statement_family: BALANCE_SHEET
+          labels: [Borrowings]
+          section_equals: balance-sheet
       - name: other_liabilities
-        native:
-          selector:
-            statement_family: BALANCE_SHEET
-            labels: [Other Liabilities]
-            section_equals: balance-sheet
-          sign: 1
-          unit_transform: SCALE_TO_BASE_UNIT
-          precision_rule: DECLARED
-          value_kind: CURRENCY_AMOUNT
-          currency: INR
-          period_nature: INSTANT
-          dimension_members: {}
-          bases: [CONSOLIDATED]
-          period_kinds: [INSTANT]
-          evidence_ref: >-
-            Task 15 source oracle: original retained THERMAX and HFCL balance-sheet tables
-            print Other Liabilities on the consolidated Rs. Crores surface at Mar 2025.
+        selector:
+          statement_family: BALANCE_SHEET
+          labels: [Other Liabilities]
+          section_equals: balance-sheet
     expression:
       op: ADD
       args:
@@ -51,5 +26,7 @@ constructions:
     evidence_ref: >-
       docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
       section 2 known trap; independently hand-read retained source oracle prepared before
-      implementation. Borrowings plus Other Liabilities emits liabilities_incl_nci only;
-      Total Liabilities and first-party NCI are excluded. Scope remains equivalence-unproven.
+      implementation: original retained THERMAX and HFCL balance-sheet tables print Borrowings
+      and Other Liabilities on the consolidated Rs. Crores surface at Mar 2025. Borrowings plus
+      Other Liabilities emits liabilities_incl_nci only; Total Liabilities and first-party NCI
+      are excluded. Scope remains equivalence-unproven.

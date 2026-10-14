@@ -10,20 +10,23 @@ comparative check).
 Constructions apply to the capture's source (a source-named rule to that source only) and
 group operands by (period, dimensions). An ``INVALID`` operand joins its group even without
 a key, so the construction is ``INVALID``, never "line absent"; an operand matched twice in
-one group makes the construction ``INVALID`` (``INTERPRETATION_AMBIGUOUS``).
+one group makes the construction ``INVALID`` (``INTERPRETATION_AMBIGUOUS``). A selector
+operand reads each matching row as if a one-off entry of its rule alone matched; the reading
+keeps the stored direct row's id, and the construction carries its calculation trace.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from functools import partial
+from types import MappingProxyType
 
 import structlog
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.contracts.canonical import Basis, PeriodKind
+from fundamentals.canon.interval import RoundingPolicy
+from fundamentals.contracts.canonical import Basis, PeriodKind, PeriodNature
 from fundamentals.contracts.evidence import (
     CaptureReference,
     Interpretation,
@@ -45,29 +48,27 @@ from fundamentals.contracts.qualification import (
 from fundamentals.evidence.interpret import (
     TRACE_MATCHED_ENTRY_IDS,
     construct,
+    construction_trace,
     interpret,
     prove_conditions,
 )
 from fundamentals.evidence.mapping import (
     CONTEXT_SCHEMA_IDENTITY,
+    ConstructionOperand,
     ConstructionRule,
+    MappingEntry,
     MappingSet,
     NormalisationPolicy,
+    PdfPeriodRule,
     applies_to_source,
+    selects,
 )
-from fundamentals.evidence.native_construction import (
-    NativeConstructionDefect,
-    NativeConstructionError,
-    NativeOperandReading,
-    construct_native,
-    native_selector_matches,
-    read_native_operand,
-    validate_generation_provenance,
-)
+from fundamentals.evidence.repository_calc import CONSTRUCTION_TRACE
 
 _LOG = structlog.get_logger(__name__)
 _DUPLICATE_OPERAND = "construction operand matched twice in one group; construction INVALID"
 _UNGROUPED = "invalid operand has no resolvable group; it joins no construction"
+_NO_ROUNDING = "construction {rule_id} has selector operands but no rounding policy for its trace"
 
 ReserveIds = Callable[[int], tuple[int, ...]]
 ProofKey = tuple[PeriodInterval, Basis]
@@ -89,6 +90,7 @@ class CaptureScope(BaseModel):
     dictionary: CanonicalDictionary
     fiscal_year_end_month: int
     expected_extractor_pin: VendorExtractorPin | None = None
+    rounding_policy: RoundingPolicy | None = None
 
 
 def interpret_generation(
@@ -298,22 +300,10 @@ def _constructions(
             or (rule.bases is not None and scope.basis not in rule.bases)
         ):
             continue
-        if rule.is_native:
-            if scope.basis not in rule.native_bases:
-                continue
-            readings = _native_readings(rule, occurrences, direct, scope)
-            built.extend(
-                construct_native(
-                    rule,
-                    readings,
-                    scope=scope,
-                    qualification_for=partial(_native_context, rule, scope=scope, proofs=proofs),
-                    recorded_at=recorded_at,
-                )
-            )
-            continue
+        readings = _selector_readings(rule, occurrences, direct, scope, proofs, recorded_at)
         for group_key, found in sorted(
-            _groups(rule, direct, alternatives).items(), key=lambda pair: _group_order(pair[0])
+            _groups(rule, [*direct, *readings], alternatives).items(),
+            key=lambda pair: _group_order(pair[0]),
         ):
             operands = {name: items[0] for name, items in found.items() if len(items) == 1}
             duplicates = {name: items for name, items in found.items() if len(items) > 1}
@@ -322,93 +312,99 @@ def _constructions(
                     _DUPLICATE_OPERAND, rule_id=rule.rule_id, period=group_key[0].canonical()
                 )
             context = _construction_context(rule, [*found.values()], scope, proofs)
-            built.append(
-                construct(
-                    rule,
-                    operands,
-                    dash_rules=scope.policy,
-                    qualification=context,
-                    recorded_at=recorded_at,
-                    duplicates=duplicates,
-                    group=group_key,
-                )
+            constructed = construct(
+                rule,
+                operands,
+                dash_rules=scope.policy,
+                qualification=context,
+                recorded_at=recorded_at,
+                duplicates=duplicates,
+                group=group_key,
             )
+            if readings and constructed.key is not None:
+                constructed = _with_trace(rule, constructed, found, scope)
+            built.append(constructed)
     return built
 
 
-def _native_readings(
+def _selector_readings(
     rule: ConstructionRule,
     occurrences: Sequence[Occurrence],
     direct: Sequence[Interpretation],
     scope: CaptureScope,
-) -> Mapping[str, tuple[NativeOperandReading, ...]]:
-    """Match current occurrence/direct pairs to each source-native operand."""
-    if scope.expected_extractor_pin is None:
-        raise NativeConstructionError(
-            NativeConstructionDefect.PROVENANCE_MISMATCH,
-            "native construction requires the current extractor content pin",
-        )
-    occurrence_ids = tuple(occurrence.occurrence_id for occurrence in occurrences)
-    direct_ids = tuple(item.interpretation_id for item in direct)
-    if (
-        len(occurrences) != len(direct)
-        or any(item is None for item in (*occurrence_ids, *direct_ids))
-        or len(set(occurrence_ids)) != len(occurrences)
-        or len(set(direct_ids)) != len(direct)
-    ):
-        raise NativeConstructionError(
-            NativeConstructionDefect.PROVENANCE_MISMATCH,
-            "native generation requires one current direct row per occurrence",
-        )
-    for occurrence, interpreted in zip(occurrences, direct, strict=True):
-        validate_generation_provenance(occurrence, interpreted, scope=scope)
-    rule_period_kinds = rule.native_period_kinds
-    operand_period_kinds = frozenset(
-        kind
-        for operand in rule.operands
-        for kind in (operand.native.period_kinds if operand.native is not None else ())
-    )
-    found: dict[str, tuple[NativeOperandReading, ...]] = {}
-    for operand in rule.operands:
-        spec = operand.native
-        assert spec is not None
-        if scope.basis not in spec.bases:
-            continue
-        for occurrence, interpreted in zip(occurrences, direct, strict=True):
-            if not native_selector_matches(occurrence, operand):
-                continue
-            period = occurrence.period
-            if period is not None:
-                period_kind = period.kind(scope.fiscal_year_end_month)
-                if period_kind in operand_period_kinds and period_kind not in rule_period_kinds:
-                    continue
-            reading = read_native_operand(
-                occurrence,
-                interpreted,
-                operand=operand,
-                rule=rule,
-                scope=scope,
-            )
-            found[operand.name] = (*found.get(operand.name, ()), reading)
-    return found
-
-
-def _native_context(
-    rule: ConstructionRule,
-    period: PeriodInterval,
-    dimensions: DimensionSet,
-    scope: CaptureScope,
     proofs: Mapping[ProofKey, Mapping[str, ProvenCondition]],
-) -> QualificationContext:
-    """The exact native group's qualification context under same-capture proofs."""
-    del dimensions
-    return QualificationContext(
+    recorded_at: datetime,
+) -> list[Interpretation]:
+    """Every row a selector operand matches, read under its one-off entry, never stored."""
+    readings: list[Interpretation] = []
+    for operand in rule.operands:
+        if operand.selector is None:
+            continue
+        entry = _operand_entry(rule, operand, scope)
+        for occurrence, item in zip(occurrences, direct, strict=True):
+            schema = occurrence.native_context.get(CONTEXT_SCHEMA_IDENTITY)
+            if schema != rule.schema_identity or not selects(entry, occurrence):
+                continue
+            unproven = _unproven(occurrence, scope)
+            proven = proofs.get((occurrence.period, scope.basis), {}) if occurrence.period else {}
+            reading = interpret(
+                occurrence,
+                entity_id=scope.entity_id,
+                basis=scope.basis,
+                framework=scope.framework,
+                mapping_set=scope.mapping_set,
+                policy=scope.policy,
+                dictionary=scope.dictionary,
+                fiscal_year_end_month=scope.fiscal_year_end_month,
+                qualification=unproven.model_copy(update={"proven": proven}),
+                recorded_at=recorded_at,
+                as_entry=entry,
+            )
+            readings.append(
+                reading.model_copy(update={"interpretation_id": item.interpretation_id})
+            )
+    return readings
+
+
+def _operand_entry(
+    rule: ConstructionRule, operand: ConstructionOperand, scope: CaptureScope
+) -> MappingEntry:
+    """A selector operand as an entry of its rule's scope, target, tier and qualification."""
+    assert operand.selector is not None
+    instant = scope.dictionary.row(rule.canonical_id).period_nature is PeriodNature.INSTANT
+    column_rule = PdfPeriodRule.COLUMN_INSTANT if instant else PdfPeriodRule.COLUMN_DURATION
+    return MappingEntry(
+        entry_id=rule.operand_entry_id(operand),
+        source=rule.source,
+        surface=rule.surface,
         schema_identity=rule.schema_identity,
-        surface=scope.capture.surface,
-        basis=scope.basis,
-        period_kind=period.kind(scope.fiscal_year_end_month),
-        proven=proofs.get((period, scope.basis), {}),
+        selector=operand.selector,
+        canonical_id=rule.canonical_id,
+        period_rule=None if operand.selector.native_field is not None else column_rule,
+        tier=rule.tier,
+        qualification=rule.qualification,
+        evidence_ref=rule.evidence_ref,
     )
+
+
+def _with_trace(
+    rule: ConstructionRule,
+    constructed: Interpretation,
+    found: Mapping[str, Sequence[Interpretation]],
+    scope: CaptureScope,
+) -> Interpretation:
+    """The construction with its calculation trace, written with it by the repository."""
+    if scope.rounding_policy is None:
+        raise ValueError(_NO_ROUNDING.format(rule_id=rule.rule_id))
+    trace = construction_trace(
+        rule,
+        constructed,
+        found,
+        formula_version=scope.mapping_set.version,
+        policy=scope.rounding_policy,
+    )
+    transform = {**constructed.transform_trace, CONSTRUCTION_TRACE: trace.model_dump(mode="json")}
+    return constructed.model_copy(update={"transform_trace": MappingProxyType(transform)})
 
 
 def _groups(
@@ -419,11 +415,7 @@ def _groups(
     An ambiguous line joins the group of every operand entry it matched, so the
     construction is ``INVALID`` (invalid beats missing), never built without it.
     """
-    names = {
-        operand.mapping_entry_id: operand.name
-        for operand in rule.operands
-        if operand.mapping_entry_id is not None
-    }
+    names = {rule.operand_entry_id(operand): operand.name for operand in rule.operands}
     groups: dict[GroupKey, dict[str, tuple[Interpretation, ...]]] = {}
 
     def join(group_key: GroupKey, name: str, item: Interpretation) -> None:

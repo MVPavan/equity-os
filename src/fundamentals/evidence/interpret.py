@@ -16,8 +16,22 @@ from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.canon.formula import _evaluate
-from fundamentals.contracts.canonical import Basis, PeriodKind, Representation, ValueKind
+from fundamentals.canon.formula import (
+    CalculationTrace,
+    OperandValue,
+    TraceKind,
+    _evaluate,
+    conclude,
+)
+from fundamentals.canon.interval import RoundingPolicy
+from fundamentals.contracts.canonical import (
+    Basis,
+    PeriodKind,
+    Representation,
+    TemporalRole,
+    ValueKind,
+)
+from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
 from fundamentals.contracts.evidence import (
     Interpretation,
     InterpretationOrigin,
@@ -38,6 +52,7 @@ from fundamentals.contracts.qualification import (
     ProvenCondition,
     QualificationCondition,
     QualificationContext,
+    ScopedTier,
     scoped_tier,
 )
 from fundamentals.evidence.mapping import (
@@ -77,6 +92,7 @@ _HEADER_KINDS = {
     12: PeriodKind.YEAR,
 }
 _NO_OPERANDS = "construction {rule_id} has no operand interpretation"
+_CROSS_CAPTURE = "construction {rule_id} has operands from more than one capture"
 TRACE_MATCHED_ENTRY_IDS = "matched_entry_ids"
 _AMBIGUOUS_ENTRIES = "entries {entry_ids} all match this native field"
 _AMBIGUOUS_OPERANDS = "operands matched more than once: {names}"
@@ -284,6 +300,8 @@ def construct(
     keyed = [item for item in present if item.key is not None]
     if not present:
         raise ValueError(_NO_OPERANDS.format(rule_id=rule.rule_id))
+    if len({item.capture_ref_id for item in present}) > 1:
+        raise ValueError(_CROSS_CAPTURE.format(rule_id=rule.rule_id))
     first = present[0]
     values: dict[str, tuple[Fraction, Interval]] = {}
     operand_trace: dict[str, object] = {}
@@ -329,6 +347,8 @@ def construct(
     value: Decimal | None = None
     interval: Interval | None = None
     status = InterpretationStatus.MAPPED
+    if len({item.key.currency for item in keyed if item.key is not None}) > 1:
+        invalid = invalid or InterpretationReason.UNIT_MISMATCH
     if extra:
         invalid = InterpretationReason.INTERPRETATION_AMBIGUOUS
         trace["duplicate_operands"] = {
@@ -375,6 +395,93 @@ def construct(
         revision_cause=RevisionCause.ORIGINAL,
         supersedes_interpretation_id=None,
         recorded_at=recorded_at,
+    )
+
+
+def construction_trace(
+    rule: ConstructionRule,
+    constructed: Interpretation,
+    found: Mapping[str, Sequence[Interpretation]],
+    *,
+    formula_version: str,
+    policy: RoundingPolicy,
+) -> CalculationTrace:
+    """The calculation trace of one keyed construction, through the D1a formula trace.
+
+    Every operand is traced with its interpretation id, value, bounds and scoped tier,
+    keyed as the output under the operand's entry id; a duplicated operand is ``INVALID``.
+    """
+    key = constructed.key
+    assert key is not None
+    role = TemporalRole.CLOSING if key.period.instant is not None else TemporalRole.DURATION
+    entries = [
+        (
+            operand.name,
+            role,
+            _trace_operand(
+                found.get(operand.name, ()),
+                key.model_copy(update={"canonical_id": rule.operand_entry_id(operand)}),
+            ),
+        )
+        for operand in rule.operands
+    ]
+    point: tuple[Fraction, Interval] | None = None
+    if constructed.status is InterpretationStatus.INVALID:
+        state = CalculationState.OPERAND_INVALID
+    elif constructed.value is None or constructed.interval is None:
+        state = CalculationState.OPERAND_MISSING
+    else:
+        state = CalculationState.COMPUTED
+        point = (Fraction(constructed.value), constructed.interval)
+    scoped = ScopedTier(
+        tier=constructed.tier,
+        qualification_ref=constructed.qualification_ref,
+        condition_evidence=constructed.condition_evidence,
+    )
+    return conclude(
+        TraceKind.FORMULA,
+        key,
+        entries,
+        state,
+        point,
+        policy,
+        formula_id=rule.rule_id,
+        formula_version=formula_version,
+        formula_scoped=scoped,
+    ).trace
+
+
+def _trace_operand(items: Sequence[Interpretation], key: MeasurementKey) -> OperandValue:
+    """One construction operand as a formula operand: a value, no value, or invalid."""
+    item = items[0] if len(items) == 1 else None
+    reasons: tuple[str, ...] = ()
+    if len(items) > 1:
+        state, reasons = SourceState.INVALID, (InterpretationReason.INTERPRETATION_AMBIGUOUS.value,)
+    elif item is not None and item.status is InterpretationStatus.INVALID:
+        state = SourceState.INVALID
+        reasons = () if item.reason is None else (item.reason.value,)
+    elif item is not None and item.value is not None:
+        state = SourceState.VALUE
+    else:
+        state = SourceState.NO_VALUE
+    point = item if state is SourceState.VALUE else None
+    return OperandValue(
+        key=key,
+        state=state,
+        exact=None if point is None or point.value is None else Fraction(point.value),
+        value=None if point is None else point.value,
+        interval=None if point is None else point.interval,
+        interpretation_id=None if item is None else item.interpretation_id,
+        package_id=None,
+        calculation_trace_id=None,
+        child_trace=None,
+        alignment_proof_id=None,
+        mapping_entry_id=None if item is None else item.mapping_entry_id,
+        qualification_ref=None if item is None else item.qualification_ref,
+        scoped_tier=EvidenceTier.EQUIVALENCE_UNPROVEN if item is None else item.tier,
+        selection_source=SelectionSource.VENDOR_CAPTURE,
+        precision_supported=True,
+        reasons=reasons,
     )
 
 

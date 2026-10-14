@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
-from fractions import Fraction
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -26,10 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from fundamentals.canon.dictionary import (
     CanonicalDictionary,
-    FormulaNode,
-    FormulaOp,
 )
-from fundamentals.canon.dictionary import MemberSource as DimensionMemberSource
 from fundamentals.contracts.canonical import (
     PeriodKind,
     PeriodNature,
@@ -44,7 +40,6 @@ from fundamentals.evidence.mapping_models import (
     DashRule,
     MappingEntry,
     MemberSource,
-    NativeOperandSpec,
     NormalisationPolicy,
     PdfPeriodRule,
     PeriodShape,
@@ -68,7 +63,6 @@ __all__ = [
     "MappingLoadError",
     "MappingSet",
     "MemberSource",
-    "NativeOperandSpec",
     "NormalisationPolicy",
     "PdfPeriodRule",
     "PeriodShape",
@@ -81,7 +75,7 @@ __all__ = [
     "applies_to_source",
     "load_mapping_set",
     "load_normalisation_policy",
-    "native_dimensions_compatible",
+    "selects",
 ]
 
 # Keys every adapter writes into ``Occurrence.native_context`` for matching.
@@ -177,7 +171,7 @@ class MappingSet(BaseModel):
             and basis in {member.value for member in entry.basis}
             and (period_kind is None or period_kind in entry.period_kinds)
         )
-        selected = tuple(entry for entry in candidates if _selects(entry, occurrence))
+        selected = tuple(entry for entry in candidates if selects(entry, occurrence))
         if selected or occurrence.representation is Representation.XBRL:
             return selected
         # A repeated label with explicit but unestablished section identities is
@@ -239,7 +233,7 @@ def matches_dimensions(
     )
 
 
-def _selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
+def selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
     """Whether one entry's selector matches one occurrence's native field and context."""
     selector = entry.selector
     context = occurrence.native_context
@@ -382,7 +376,7 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
         supported_schemas=frozenset(
             [
                 *(entry.schema_identity for entry in entries),
-                *(rule.schema_identity for rule in constructions if rule.is_native),
+                *(rule.schema_identity for rule in constructions),
             ]
         ),
     )
@@ -430,121 +424,12 @@ def _check_schema(
         names = [operand.name for operand in rule.operands]
         if len(set(names)) != len(names) or rule.expression.operand_names() != set(names):
             offenders.add(rule.rule_id)
-        if not rule.is_native:
-            continue
         row = known.get(rule.canonical_id)
-        specs = [operand.native for operand in rule.operands]
-        if row is None or any(spec is None for spec in specs):
-            continue
-        native_specs = [spec for spec in specs if spec is not None]
-        first = native_specs[0]
-        if (
-            row.value_kind is not first.value_kind
-            or row.period_nature is not first.period_nature
-            or not native_dimensions_compatible(
-                dictionary, rule.canonical_id, first.dimension_members
-            )
-            or _native_unit_power(rule.expression) != 1
-            or not _native_decimal_closed(rule.expression)
-            or any(
-                (spec.value_kind, spec.currency, spec.period_nature, spec.dimension_members)
-                != (first.value_kind, first.currency, first.period_nature, first.dimension_members)
-                for spec in native_specs[1:]
-            )
-            or any(
-                (kind is PeriodKind.INSTANT) != (spec.period_nature is PeriodNature.INSTANT)
-                for spec in native_specs
-                for kind in spec.period_kinds
-            )
-        ):
+        selector = any(operand.selector for operand in rule.operands)
+        if selector and row is not None and row.dimension_template is not None:
             offenders.add(rule.rule_id)
     if offenders:
         raise MappingLoadError(MappingDefect.SCHEMA, offenders)
-
-
-def _native_unit_power(node: FormulaNode) -> int | None:
-    """Return the shared operand unit's output power, or ``None`` for invalid algebra."""
-    if node.op is FormulaOp.OPERAND:
-        return 1
-    if node.op is FormulaOp.LITERAL:
-        return 0
-    powers = tuple(_native_unit_power(arg) for arg in node.args)
-    if any(power is None for power in powers):
-        return None
-    known = tuple(power for power in powers if power is not None)
-    if node.op in (FormulaOp.ADD, FormulaOp.SUB):
-        return known[0] if all(power == known[0] for power in known[1:]) else None
-    if node.op is FormulaOp.MUL:
-        return sum(known)
-    assert node.op is FormulaOp.DIV and len(known) == 2
-    return known[0] - known[1]
-
-
-def _native_decimal_closed(node: FormulaNode) -> bool:
-    """Whether every accepted division preserves Decimal-storable exact rationals."""
-    if node.op in (FormulaOp.OPERAND, FormulaOp.LITERAL):
-        return True
-    if not all(_native_decimal_closed(arg) for arg in node.args):
-        return False
-    if node.op is not FormulaOp.DIV:
-        return True
-    divisor = _constant_fraction(node.args[1])
-    return divisor not in (None, 0) and _terminates(Fraction(1, 1) / divisor)
-
-
-def _constant_fraction(node: FormulaNode) -> Fraction | None:
-    """Evaluate a literal-only formula, or return ``None`` for variables/undefined division."""
-    if node.op is FormulaOp.OPERAND:
-        return None
-    if node.op is FormulaOp.LITERAL:
-        assert node.value is not None
-        return Fraction(node.value)
-    values = tuple(_constant_fraction(arg) for arg in node.args)
-    if any(value is None for value in values):
-        return None
-    known = tuple(value for value in values if value is not None)
-    if node.op is FormulaOp.ADD:
-        return sum(known, Fraction(0))
-    if node.op is FormulaOp.SUB:
-        return known[0] - known[1]
-    if node.op is FormulaOp.MUL:
-        return known[0] * known[1]
-    if known[1] == 0:
-        return None
-    return known[0] / known[1]
-
-
-def _terminates(value: Fraction) -> bool:
-    """Whether a reduced rational has a finite base-10 representation."""
-    denominator = value.denominator
-    for prime in (2, 5):
-        while denominator % prime == 0:
-            denominator //= prime
-    return denominator == 1
-
-
-def native_dimensions_compatible(
-    dictionary: CanonicalDictionary,
-    canonical_id: str,
-    members: Mapping[str, str],
-) -> bool:
-    """Whether exact native axes/members fit the canonical target template."""
-    row = dictionary.row(canonical_id)
-    if row.dimension_template is None:
-        return not members
-    template = dictionary.template(row.dimension_template)
-    if set(members) != {axis.axis for axis in template.axes}:
-        return False
-    for axis in template.axes:
-        member = members[axis.axis]
-        if not member.strip():
-            return False
-        if axis.member_source is not DimensionMemberSource.CLOSED_LIST:
-            continue
-        allowed = {item.member for item in axis.members} | set(axis.aggregate_members)
-        if member not in allowed:
-            return False
-    return True
 
 
 def _check_dangling_canonical(
@@ -582,10 +467,9 @@ def _check_dangling_entries(
     by_id = {entry.entry_id: entry for entry in entries}
     offenders: set[str] = set()
     for rule in constructions:
-        if rule.is_native:
-            continue
         for operand in rule.operands:
-            assert operand.mapping_entry_id is not None
+            if operand.mapping_entry_id is None:
+                continue
             entry = by_id.get(operand.mapping_entry_id)
             if (
                 entry is None
