@@ -62,6 +62,17 @@ pdf_parse:
   label_overrides:
     # The scanned text layer garbles "Profit" in some quarters ("rroft after tax").
     ProfitLossForPeriod: ["Profit after tax", "after tax"]
+  statement_pages:
+    # The text layer of page 3 of the results PDF (SHA-256 17f5bc04…a377) prints the P&L
+    # unit as "(Rs. in crams)": declared as an exact variant, never matched fuzzily.
+    # Without it those rows carry no unit and interpret INVALID (UNIT_MISMATCH).
+    PL:
+      unit_markers:
+        - text: "Rs. in crams"
+          scope: "PAGE"
+          raw_unit: "INR"
+          raw_scale: 7
+          value_kind: "CURRENCY_AMOUNT"
 
 concepts:
   # Apar tags ProfitBeforeTax AFTER exceptional items but BEFORE the share of

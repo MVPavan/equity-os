@@ -1,0 +1,17 @@
+# Source-scoped constructions v2 (PREP-1): the in-capmkt 2026-01-31 counterpart of constructions/v1's
+# capmkt rule. Mapping set v5 lists this file beside constructions/v1.yaml.
+constructions:
+  - rule_id: capmkt.profit_before_tax_incl_associates.2026
+    surface: NSE_XBRL_INSTANCE
+    schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    canonical_id: profit_before_tax_incl_associates
+    operands:
+      - {name: pbt, mapping_entry_id: capmkt.profit_before_tax.2026}
+      - {name: associates, mapping_entry_id: capmkt.share_of_profit_associates_jv.2026}
+    expression:
+      op: ADD
+      args: [{op: OPERAND, operand: pbt}, {op: OPERAND, operand: associates}]
+    evidence_ref: >-
+      X-Q4 FY26 (sha256 be8ef651) OneD: ProfitBeforeTax 3,288,000,000 + ShareOfProfitLossOfAssociates...
+      1,200,000 = 3,289,200,000 = SegmentProfitBeforeTax and PDF p3 line 11 "Profit before tax (9+10)"
+      328.92 crore; X-Q1 FY27 (sha256 f76a131a) 6,223,400,000 + 2,600,000 = 6,226,000,000 = PDF 622.60.

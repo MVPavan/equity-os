@@ -1,0 +1,531 @@
+# in-capmkt 2026-01-31 entries (PREP-1). The SEBI 2026-01-31 taxonomy keeps the 2025-01-31 element
+# names Apar files: every entry repeats an xbrl/v1/in_capmkt.yaml selector under the new namespace,
+# kept only where the retained Apar Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) or
+# Q1 FY27 (INTEGRATED_FILING_INDAS_1701114, sha256 f76a131a) instance files the element in the same
+# period shape. Ids carry a .2026 suffix (alignment rules anchor on the entry-id family).
+# Meaning checked against the results PDFs' consolidated quarter column (p3 unless noted), Q4 FY26 /
+# Q1 FY27 crore: revenue 6,602.81 / 6,591.06; total income 6,622.53 / 6,624.71; total expenses
+# 6,286.19 / 6,002.37; ProfitBeforeTax = line 9 (before associates) 328.80 / 622.34; profit for the
+# period 253.44 / 467.45; basic EPS 63.09 / 116.37; Q4 total assets 13,711.29 (p6); segment
+# revenue gross 7,031.74, assets and liabilities post-elimination 13,711.29 / 7,477.40 (p4). Q4
+# CurrentTax 80.26 = (a) 88.84 + (c) (8.58), as the dictionary's current_tax row records.
+# Not carried over (stored UNMAPPED): ProfitOrLossAttributableToOwnersOfParent and
+# ...NonControllingInterests (Q4 files neither; Q1 files owners -138.56 crore = OCI, against the
+# PDF's owners 467.45, so the block's meaning is not evidenced); DeferredTaxAssetsNet,
+# CurrentTaxAssets, NoncurrentAssetsClassifiedAsHeldForSale,
+# RegulatoryDeferralAccountDebitBalancesAndRelatedDeferredTaxAssets, NonControllingInterest and
+# OtherNoncurrentLiabilities (filed in neither 2026 instance).
+surface: NSE_XBRL_INSTANCE
+schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+entries:
+  - entry_id: capmkt.revenue_from_operations.2026
+    selector: {native_field: RevenueFromOperations, period_shape: DURATION}
+    canonical_id: revenue_from_operations
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 66028100000; same element and period shape as capmkt.revenue_from_operations (2025-01-31)"
+  - entry_id: capmkt.other_income.2026
+    selector: {native_field: OtherIncome, period_shape: DURATION}
+    canonical_id: other_income
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 197200000; same element and period shape as capmkt.other_income (2025-01-31)"
+  - entry_id: capmkt.total_income.2026
+    selector: {native_field: Income, period_shape: DURATION}
+    canonical_id: total_income
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 66225300000; same element and period shape as capmkt.total_income (2025-01-31)"
+  - entry_id: capmkt.cost_of_materials_consumed.2026
+    selector: {native_field: CostOfMaterialsConsumed, period_shape: DURATION}
+    canonical_id: cost_of_materials_consumed
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 54645900000; same element and period shape as capmkt.cost_of_materials_consumed (2025-01-31)"
+  - entry_id: capmkt.purchases_of_stock_in_trade.2026
+    selector: {native_field: PurchasesOfStockInTrade, period_shape: DURATION}
+    canonical_id: purchases_of_stock_in_trade
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 238100000; same element and period shape as capmkt.purchases_of_stock_in_trade (2025-01-31)"
+  - entry_id: capmkt.changes_in_inventories.2026
+    selector: {native_field: ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade, period_shape: DURATION}
+    canonical_id: changes_in_inventories
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -3013200000; same element and period shape as capmkt.changes_in_inventories (2025-01-31)"
+  - entry_id: capmkt.employee_benefits_expense.2026
+    selector: {native_field: EmployeeBenefitExpense, period_shape: DURATION}
+    canonical_id: employee_benefits_expense
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 1142600000; same element and period shape as capmkt.employee_benefits_expense (2025-01-31)"
+  - entry_id: capmkt.finance_costs.2026
+    selector: {native_field: FinanceCosts, period_shape: DURATION}
+    canonical_id: finance_costs
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 1367900000; same element and period shape as capmkt.finance_costs (2025-01-31)"
+  - entry_id: capmkt.depreciation_amortisation.2026
+    selector: {native_field: DepreciationDepletionAndAmortisationExpense, period_shape: DURATION}
+    canonical_id: depreciation_amortisation
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 424800000; same element and period shape as capmkt.depreciation_amortisation (2025-01-31)"
+  - entry_id: capmkt.other_expenses.2026
+    selector: {native_field: OtherExpenses, period_shape: DURATION}
+    canonical_id: other_expenses
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 8055800000; same element and period shape as capmkt.other_expenses (2025-01-31)"
+  - entry_id: capmkt.total_expenses.2026
+    selector: {native_field: Expenses, period_shape: DURATION}
+    canonical_id: total_expenses
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 62861900000; same element and period shape as capmkt.total_expenses (2025-01-31)"
+  - entry_id: capmkt.profit_before_exceptional_items_and_tax.2026
+    selector: {native_field: ProfitBeforeExceptionalItemsAndTax, period_shape: DURATION}
+    canonical_id: profit_before_exceptional_items_and_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 3363400000; same element and period shape as capmkt.profit_before_exceptional_items_and_tax (2025-01-31)"
+  - entry_id: capmkt.exceptional_items_before_tax.2026
+    selector: {native_field: ExceptionalItemsBeforeTax, period_shape: DURATION}
+    canonical_id: exceptional_items_before_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -75400000; same element and period shape as capmkt.exceptional_items_before_tax (2025-01-31)"
+  - entry_id: capmkt.profit_before_tax.2026
+    selector: {native_field: ProfitBeforeTax, period_shape: DURATION}
+    canonical_id: profit_before_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 3288000000; same element and period shape as capmkt.profit_before_tax (2025-01-31)"
+  - entry_id: capmkt.current_tax.2026
+    selector: {native_field: CurrentTax, period_shape: DURATION}
+    canonical_id: current_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 802600000; same element and period shape as capmkt.current_tax (2025-01-31)"
+  - entry_id: capmkt.deferred_tax.2026
+    selector: {native_field: DeferredTax, period_shape: DURATION}
+    canonical_id: deferred_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -47800000; same element and period shape as capmkt.deferred_tax (2025-01-31)"
+  - entry_id: capmkt.tax_expense.2026
+    selector: {native_field: TaxExpense, period_shape: DURATION}
+    canonical_id: tax_expense
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 754800000; same element and period shape as capmkt.tax_expense (2025-01-31)"
+  - entry_id: capmkt.profit_continuing_after_tax.2026
+    selector: {native_field: ProfitLossForPeriodFromContinuingOperations, period_shape: DURATION}
+    canonical_id: profit_continuing_after_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 2533200000; same element and period shape as capmkt.profit_continuing_after_tax (2025-01-31)"
+  - entry_id: capmkt.profit_discontinued_before_tax.2026
+    selector: {native_field: ProfitLossFromDiscontinuedOperationsBeforeTax, period_shape: DURATION}
+    canonical_id: profit_discontinued_before_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.profit_discontinued_before_tax (2025-01-31)"
+  - entry_id: capmkt.tax_discontinued.2026
+    selector: {native_field: TaxExpenseOfDiscontinuedOperations, period_shape: DURATION}
+    canonical_id: tax_discontinued
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.tax_discontinued (2025-01-31)"
+  - entry_id: capmkt.profit_discontinued_after_tax.2026
+    selector: {native_field: ProfitLossFromDiscontinuedOperationsAfterTax, period_shape: DURATION}
+    canonical_id: profit_discontinued_after_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.profit_discontinued_after_tax (2025-01-31)"
+  - entry_id: capmkt.regulatory_deferral_net_movement.2026
+    selector: {native_field: NetMovementInRegulatoryDeferralAccountBalancesRelatedToProfitOrLossAndTheRelatedDeferredTaxMovement, period_shape: DURATION}
+    canonical_id: regulatory_deferral_net_movement
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.regulatory_deferral_net_movement (2025-01-31)"
+  - entry_id: capmkt.share_of_profit_associates_jv.2026
+    selector: {native_field: ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod, period_shape: DURATION}
+    canonical_id: share_of_profit_associates_jv
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 1200000; same element and period shape as capmkt.share_of_profit_associates_jv (2025-01-31)"
+  - entry_id: capmkt.profit_for_period.2026
+    selector: {native_field: ProfitLossForPeriod, period_shape: DURATION}
+    canonical_id: profit_for_period
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 2534400000; same element and period shape as capmkt.profit_for_period (2025-01-31)"
+  - entry_id: capmkt.oci_net.2026
+    selector: {native_field: OtherComprehensiveIncomeNetOfTaxes, period_shape: DURATION}
+    canonical_id: oci_net
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -30400000; same element and period shape as capmkt.oci_net (2025-01-31)"
+  - entry_id: capmkt.total_comprehensive_income.2026
+    selector: {native_field: ComprehensiveIncomeForThePeriod, period_shape: DURATION}
+    canonical_id: total_comprehensive_income
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 2504000000; same element and period shape as capmkt.total_comprehensive_income (2025-01-31)"
+  - entry_id: capmkt.oci_not_reclassified_items.2026
+    selector: {native_field: AmountOfItemThatWillNotBeReclassifiedToProfitAndLoss, period_shape: DURATION}
+    canonical_id: oci_not_reclassified_items
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -14000000; same element and period shape as capmkt.oci_not_reclassified_items (2025-01-31)"
+  - entry_id: capmkt.oci_reclassified_items.2026
+    selector: {native_field: AmountOfItemThatWillBeReclassifiedToProfitAndLoss, period_shape: DURATION}
+    canonical_id: oci_reclassified_items
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD -55500000; same element and period shape as capmkt.oci_reclassified_items (2025-01-31)"
+  - entry_id: capmkt.eps_basic.2026
+    selector: {native_field: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, period_shape: DURATION}
+    canonical_id: eps_basic
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 63.09; same element and period shape as capmkt.eps_basic (2025-01-31)"
+  - entry_id: capmkt.eps_basic_continuing.2026
+    selector: {native_field: BasicEarningsLossPerShareFromContinuingOperations, period_shape: DURATION}
+    canonical_id: eps_basic_continuing
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 63.09; same element and period shape as capmkt.eps_basic_continuing (2025-01-31)"
+  - entry_id: capmkt.eps_basic_discontinued.2026
+    selector: {native_field: BasicEarningsLossPerShareFromDiscontinuedOperations, period_shape: DURATION}
+    canonical_id: eps_basic_discontinued
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.eps_basic_discontinued (2025-01-31)"
+  - entry_id: capmkt.eps_diluted.2026
+    selector: {native_field: DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations, period_shape: DURATION}
+    canonical_id: eps_diluted
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 62.96; same element and period shape as capmkt.eps_diluted (2025-01-31)"
+  - entry_id: capmkt.eps_diluted_continuing.2026
+    selector: {native_field: DilutedEarningsLossPerShareFromContinuingOperations, period_shape: DURATION}
+    canonical_id: eps_diluted_continuing
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 62.96; same element and period shape as capmkt.eps_diluted_continuing (2025-01-31)"
+  - entry_id: capmkt.eps_diluted_discontinued.2026
+    selector: {native_field: DilutedEarningsLossPerShareFromDiscontinuedOperations, period_shape: DURATION}
+    canonical_id: eps_diluted_discontinued
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 0; same element and period shape as capmkt.eps_diluted_discontinued (2025-01-31)"
+  - entry_id: capmkt.ppe.2026
+    selector: {native_field: PropertyPlantAndEquipment, period_shape: INSTANT}
+    canonical_id: ppe
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 16085900000; same element and period shape as capmkt.ppe (2025-01-31)"
+  - entry_id: capmkt.cwip.2026
+    selector: {native_field: CapitalWorkInProgress, period_shape: INSTANT}
+    canonical_id: cwip
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 5394200000; same element and period shape as capmkt.cwip (2025-01-31)"
+  - entry_id: capmkt.goodwill.2026
+    selector: {native_field: Goodwill, period_shape: INSTANT}
+    canonical_id: goodwill
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.goodwill (2025-01-31)"
+  - entry_id: capmkt.other_intangible_assets.2026
+    selector: {native_field: OtherIntangibleAssets, period_shape: INSTANT}
+    canonical_id: other_intangible_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 1087000000; same element and period shape as capmkt.other_intangible_assets (2025-01-31)"
+  - entry_id: capmkt.intangibles_under_development.2026
+    selector: {native_field: IntangibleAssetsUnderDevelopment, period_shape: INSTANT}
+    canonical_id: intangibles_under_development
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 1200000; same element and period shape as capmkt.intangibles_under_development (2025-01-31)"
+  - entry_id: capmkt.investment_property.2026
+    selector: {native_field: InvestmentProperty, period_shape: INSTANT}
+    canonical_id: investment_property
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.investment_property (2025-01-31)"
+  - entry_id: capmkt.investments_equity_method.2026
+    selector: {native_field: InvestmentsAccountedForUsingEquityMethod, period_shape: INSTANT}
+    canonical_id: investments_equity_method
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.investments_equity_method (2025-01-31)"
+  - entry_id: capmkt.noncurrent_investments.2026
+    selector: {native_field: NoncurrentInvestments, period_shape: INSTANT}
+    canonical_id: noncurrent_investments
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.noncurrent_investments (2025-01-31)"
+  - entry_id: capmkt.trade_receivables_noncurrent.2026
+    selector: {native_field: TradeReceivablesNoncurrent, period_shape: INSTANT}
+    canonical_id: trade_receivables_noncurrent
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 32500000; same element and period shape as capmkt.trade_receivables_noncurrent (2025-01-31)"
+  - entry_id: capmkt.loans_noncurrent.2026
+    selector: {native_field: LoansNoncurrent, period_shape: INSTANT}
+    canonical_id: loans_noncurrent
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 29900000; same element and period shape as capmkt.loans_noncurrent (2025-01-31)"
+  - entry_id: capmkt.other_noncurrent_financial_assets.2026
+    selector: {native_field: OtherNoncurrentFinancialAssets, period_shape: INSTANT}
+    canonical_id: other_noncurrent_financial_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 445000000; same element and period shape as capmkt.other_noncurrent_financial_assets (2025-01-31)"
+  - entry_id: capmkt.noncurrent_financial_assets.2026
+    selector: {native_field: NoncurrentFinancialAssets, period_shape: INSTANT}
+    canonical_id: noncurrent_financial_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 507400000; same element and period shape as capmkt.noncurrent_financial_assets (2025-01-31)"
+  - entry_id: capmkt.other_noncurrent_assets.2026
+    selector: {native_field: OtherNoncurrentAssets, period_shape: INSTANT}
+    canonical_id: other_noncurrent_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 2069600000; same element and period shape as capmkt.other_noncurrent_assets (2025-01-31)"
+  - entry_id: capmkt.noncurrent_assets_total.2026
+    selector: {native_field: NoncurrentAssets, period_shape: INSTANT}
+    canonical_id: noncurrent_assets_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 25145300000; same element and period shape as capmkt.noncurrent_assets_total (2025-01-31)"
+  - entry_id: capmkt.inventories.2026
+    selector: {native_field: Inventories, period_shape: INSTANT}
+    canonical_id: inventories
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 41527900000; same element and period shape as capmkt.inventories (2025-01-31)"
+  - entry_id: capmkt.current_investments.2026
+    selector: {native_field: CurrentInvestments, period_shape: INSTANT}
+    canonical_id: current_investments
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 443100000; same element and period shape as capmkt.current_investments (2025-01-31)"
+  - entry_id: capmkt.trade_receivables_current.2026
+    selector: {native_field: TradeReceivablesCurrent, period_shape: INSTANT}
+    canonical_id: trade_receivables_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 53340900000; same element and period shape as capmkt.trade_receivables_current (2025-01-31)"
+  - entry_id: capmkt.cash_and_cash_equivalents.2026
+    selector: {native_field: CashAndCashEquivalents, period_shape: INSTANT}
+    canonical_id: cash_and_cash_equivalents
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 6687200000; same element and period shape as capmkt.cash_and_cash_equivalents (2025-01-31)"
+  - entry_id: capmkt.other_bank_balances.2026
+    selector: {native_field: BankBalanceOtherThanCashAndCashEquivalents, period_shape: INSTANT}
+    canonical_id: other_bank_balances
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 631600000; same element and period shape as capmkt.other_bank_balances (2025-01-31)"
+  - entry_id: capmkt.loans_current.2026
+    selector: {native_field: LoansCurrent, period_shape: INSTANT}
+    canonical_id: loans_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 11700000; same element and period shape as capmkt.loans_current (2025-01-31)"
+  - entry_id: capmkt.other_current_financial_assets.2026
+    selector: {native_field: OtherCurrentFinancialAssets, period_shape: INSTANT}
+    canonical_id: other_current_financial_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 2664000000; same element and period shape as capmkt.other_current_financial_assets (2025-01-31)"
+  - entry_id: capmkt.current_financial_assets.2026
+    selector: {native_field: CurrentFinancialAssets, period_shape: INSTANT}
+    canonical_id: current_financial_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 63778500000; same element and period shape as capmkt.current_financial_assets (2025-01-31)"
+  - entry_id: capmkt.other_current_assets.2026
+    selector: {native_field: OtherCurrentAssets, period_shape: INSTANT}
+    canonical_id: other_current_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 6661200000; same element and period shape as capmkt.other_current_assets (2025-01-31)"
+  - entry_id: capmkt.current_assets_total.2026
+    selector: {native_field: CurrentAssets, period_shape: INSTANT}
+    canonical_id: current_assets_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 111967600000; same element and period shape as capmkt.current_assets_total (2025-01-31)"
+  - entry_id: capmkt.total_assets.2026
+    selector: {native_field: Assets, period_shape: INSTANT}
+    canonical_id: total_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 137112900000; same element and period shape as capmkt.total_assets (2025-01-31)"
+  - entry_id: capmkt.equity_share_capital.2026
+    selector: {native_field: EquityShareCapital, period_shape: INSTANT}
+    canonical_id: equity_share_capital
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 401700000; same element and period shape as capmkt.equity_share_capital (2025-01-31)"
+  - entry_id: capmkt.other_equity.2026
+    selector: {native_field: OtherEquity, period_shape: INSTANT}
+    canonical_id: other_equity
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 53532100000; same element and period shape as capmkt.other_equity (2025-01-31)"
+  - entry_id: capmkt.equity_attributable_owners.2026
+    selector: {native_field: EquityAttributableToOwnersOfParent, period_shape: INSTANT}
+    canonical_id: equity_attributable_owners
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 53933800000; same element and period shape as capmkt.equity_attributable_owners (2025-01-31)"
+  - entry_id: capmkt.total_equity.2026
+    selector: {native_field: Equity, period_shape: INSTANT}
+    canonical_id: total_equity
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 53933800000; same element and period shape as capmkt.total_equity (2025-01-31)"
+  - entry_id: capmkt.borrowings_noncurrent.2026
+    selector: {native_field: BorrowingsNoncurrent, period_shape: INSTANT}
+    canonical_id: borrowings_noncurrent
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 4327800000; same element and period shape as capmkt.borrowings_noncurrent (2025-01-31)"
+  - entry_id: capmkt.other_noncurrent_financial_liabilities.2026
+    selector: {native_field: OtherNoncurrentFinancialLiabilities, period_shape: INSTANT}
+    canonical_id: other_noncurrent_financial_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 1072000000; same element and period shape as capmkt.other_noncurrent_financial_liabilities (2025-01-31)"
+  - entry_id: capmkt.noncurrent_financial_liabilities.2026
+    selector: {native_field: NoncurrentFinancialLiabilities, period_shape: INSTANT}
+    canonical_id: noncurrent_financial_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 5399800000; same element and period shape as capmkt.noncurrent_financial_liabilities (2025-01-31)"
+  - entry_id: capmkt.provisions_noncurrent.2026
+    selector: {native_field: ProvisionsNoncurrent, period_shape: INSTANT}
+    canonical_id: provisions_noncurrent
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 214400000; same element and period shape as capmkt.provisions_noncurrent (2025-01-31)"
+  - entry_id: capmkt.deferred_tax_liabilities_net.2026
+    selector: {native_field: DeferredTaxLiabilitiesNet, period_shape: INSTANT}
+    canonical_id: deferred_tax_liabilities_net
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 261100000; same element and period shape as capmkt.deferred_tax_liabilities_net (2025-01-31)"
+  - entry_id: capmkt.noncurrent_liabilities_total.2026
+    selector: {native_field: NoncurrentLiabilities, period_shape: INSTANT}
+    canonical_id: noncurrent_liabilities_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 5875300000; same element and period shape as capmkt.noncurrent_liabilities_total (2025-01-31)"
+  - entry_id: capmkt.borrowings_current.2026
+    selector: {native_field: BorrowingsCurrent, period_shape: INSTANT}
+    canonical_id: borrowings_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 4077300000; same element and period shape as capmkt.borrowings_current (2025-01-31)"
+  - entry_id: capmkt.trade_payables_msme.2026
+    selector: {native_field: TotalOutstandingDuesOfMicroEnterpriseAndSmallEnterpriseCurrent, period_shape: INSTANT}
+    canonical_id: trade_payables_msme
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 666800000; same element and period shape as capmkt.trade_payables_msme (2025-01-31)"
+  - entry_id: capmkt.trade_payables_others.2026
+    selector: {native_field: TotalOutstandingDuesOfCreditorsOtherThanMicroEnterpriseAndSmallEnterpriseCurrent, period_shape: INSTANT}
+    canonical_id: trade_payables_others
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 67892100000; same element and period shape as capmkt.trade_payables_others (2025-01-31)"
+  - entry_id: capmkt.trade_payables_current.2026
+    selector: {native_field: TradePayablesCurrent, period_shape: INSTANT}
+    canonical_id: trade_payables_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 68558900000; same element and period shape as capmkt.trade_payables_current (2025-01-31)"
+  - entry_id: capmkt.other_current_financial_liabilities.2026
+    selector: {native_field: OtherCurrentFinancialLiabilities, period_shape: INSTANT}
+    canonical_id: other_current_financial_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 1803600000; same element and period shape as capmkt.other_current_financial_liabilities (2025-01-31)"
+  - entry_id: capmkt.current_financial_liabilities.2026
+    selector: {native_field: CurrentFinancialLiabilities, period_shape: INSTANT}
+    canonical_id: current_financial_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 74439800000; same element and period shape as capmkt.current_financial_liabilities (2025-01-31)"
+  - entry_id: capmkt.other_current_liabilities.2026
+    selector: {native_field: OtherCurrentLiabilities, period_shape: INSTANT}
+    canonical_id: other_current_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 2189600000; same element and period shape as capmkt.other_current_liabilities (2025-01-31)"
+  - entry_id: capmkt.provisions_current.2026
+    selector: {native_field: ProvisionsCurrent, period_shape: INSTANT}
+    canonical_id: provisions_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 525500000; same element and period shape as capmkt.provisions_current (2025-01-31)"
+  - entry_id: capmkt.current_tax_liabilities.2026
+    selector: {native_field: CurrentTaxLiabilities, period_shape: INSTANT}
+    canonical_id: current_tax_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 148900000; same element and period shape as capmkt.current_tax_liabilities (2025-01-31)"
+  - entry_id: capmkt.current_liabilities_total.2026
+    selector: {native_field: CurrentLiabilities, period_shape: INSTANT}
+    canonical_id: current_liabilities_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 77303800000; same element and period shape as capmkt.current_liabilities_total (2025-01-31)"
+  - entry_id: capmkt.total_liabilities.2026
+    selector: {native_field: Liabilities, period_shape: INSTANT}
+    canonical_id: total_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 83179100000; same element and period shape as capmkt.total_liabilities (2025-01-31)"
+  - entry_id: capmkt.total_equity_and_liabilities.2026
+    selector: {native_field: EquityAndLiabilities, period_shape: INSTANT}
+    canonical_id: total_equity_and_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 137112900000; same element and period shape as capmkt.total_equity_and_liabilities (2025-01-31)"
+  - entry_id: capmkt.cf_adj_depreciation.2026
+    selector: {native_field: AdjustmentsForDepreciationAndAmortisationExpense, period_shape: DURATION}
+    canonical_id: cf_adj_depreciation
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 1611400000; same element and period shape as capmkt.cf_adj_depreciation (2025-01-31)"
+  - entry_id: capmkt.cf_adj_finance_costs.2026
+    selector: {native_field: AdjustmentsForFinanceCosts, period_shape: DURATION}
+    canonical_id: cf_adj_finance_costs
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 2853800000; same element and period shape as capmkt.cf_adj_finance_costs (2025-01-31)"
+  - entry_id: capmkt.cf_adj_interest_income.2026
+    selector: {native_field: AdjustmentsForInterestIncome, period_shape: DURATION}
+    canonical_id: cf_adj_interest_income
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 92000000; same element and period shape as capmkt.cf_adj_interest_income (2025-01-31)"
+  - entry_id: capmkt.cf_adj_unrealised_fx.2026
+    selector: {native_field: AdjustmentsForUnrealisedForeignExchangeLossesGains, period_shape: DURATION}
+    canonical_id: cf_adj_unrealised_fx
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 242200000; same element and period shape as capmkt.cf_adj_unrealised_fx (2025-01-31)"
+  - entry_id: capmkt.cf_adj_share_based_payments.2026
+    selector: {native_field: AdjustmentsForSharebasedPayments, period_shape: DURATION}
+    canonical_id: cf_adj_share_based_payments
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 277700000; same element and period shape as capmkt.cf_adj_share_based_payments (2025-01-31)"
+  - entry_id: capmkt.cf_adj_provisions_current.2026
+    selector: {native_field: AdjustmentsForProvisionsCurrent, period_shape: DURATION}
+    canonical_id: cf_adj_provisions_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 182200000; same element and period shape as capmkt.cf_adj_provisions_current (2025-01-31)"
+  - entry_id: capmkt.cf_wc_inventories.2026
+    selector: {native_field: AdjustmentsForDecreaseIncreaseInInventories, period_shape: DURATION}
+    canonical_id: cf_wc_inventories
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -8261000000; same element and period shape as capmkt.cf_wc_inventories (2025-01-31)"
+  - entry_id: capmkt.cf_wc_trade_receivables_current.2026
+    selector: {native_field: AdjustmentsForDecreaseIncreaseInTradeReceivablesCurrent, period_shape: DURATION}
+    canonical_id: cf_wc_trade_receivables_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -10411900000; same element and period shape as capmkt.cf_wc_trade_receivables_current (2025-01-31)"
+  - entry_id: capmkt.cf_wc_trade_payables_current.2026
+    selector: {native_field: AdjustmentsForIncreaseDecreaseInTradePayablesCurrent, period_shape: DURATION}
+    canonical_id: cf_wc_trade_payables_current
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 13873500000; same element and period shape as capmkt.cf_wc_trade_payables_current (2025-01-31)"
+  - entry_id: capmkt.cf_adjustments_total.2026
+    selector: {native_field: AdjustmentsForReconcileProfitLoss, period_shape: DURATION}
+    canonical_id: cf_adjustments_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 297500000; same element and period shape as capmkt.cf_adjustments_total (2025-01-31)"
+  - entry_id: capmkt.cf_cash_generated_from_operations.2026
+    selector: {native_field: CashFlowsFromUsedInOperations, period_shape: DURATION}
+    canonical_id: cf_cash_generated_from_operations
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 13396700000; same element and period shape as capmkt.cf_cash_generated_from_operations (2025-01-31)"
+  - entry_id: capmkt.cf_income_taxes_paid.2026
+    selector: {native_field: IncomeTaxesPaidRefundClassifiedAsOperatingActivities, period_shape: DURATION}
+    canonical_id: cf_income_taxes_paid
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 3720000000; same element and period shape as capmkt.cf_income_taxes_paid (2025-01-31)"
+  - entry_id: capmkt.cfo.2026
+    selector: {native_field: CashFlowsFromUsedInOperatingActivities, period_shape: DURATION}
+    canonical_id: cfo
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 9676700000; same element and period shape as capmkt.cfo (2025-01-31)"
+  - entry_id: capmkt.cf_capex_ppe.2026
+    selector: {native_field: PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities, period_shape: DURATION}
+    canonical_id: cf_capex_ppe
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 7366600000; same element and period shape as capmkt.cf_capex_ppe (2025-01-31)"
+  - entry_id: capmkt.cf_sale_ppe.2026
+    selector: {native_field: ProceedsFromSalesOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities, period_shape: DURATION}
+    canonical_id: cf_sale_ppe
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 36400000; same element and period shape as capmkt.cf_sale_ppe (2025-01-31)"
+  - entry_id: capmkt.cf_interest_received_investing.2026
+    selector: {native_field: InterestReceivedClassifiedAsInvestingActivities, period_shape: DURATION}
+    canonical_id: cf_interest_received_investing
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 43400000; same element and period shape as capmkt.cf_interest_received_investing (2025-01-31)"
+  - entry_id: capmkt.cfi.2026
+    selector: {native_field: CashFlowsFromUsedInInvestingActivities, period_shape: DURATION}
+    canonical_id: cfi
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -5580800000; same element and period shape as capmkt.cfi (2025-01-31)"
+  - entry_id: capmkt.cf_proceeds_borrowings.2026
+    selector: {native_field: ProceedsFromBorrowingsClassifiedAsFinancingActivities, period_shape: DURATION}
+    canonical_id: cf_proceeds_borrowings
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 1900000000; same element and period shape as capmkt.cf_proceeds_borrowings (2025-01-31)"
+  - entry_id: capmkt.cf_repayment_borrowings.2026
+    selector: {native_field: RepaymentsOfBorrowingsClassifiedAsFinancingActivities, period_shape: DURATION}
+    canonical_id: cf_repayment_borrowings
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 1304100000; same element and period shape as capmkt.cf_repayment_borrowings (2025-01-31)"
+  - entry_id: capmkt.cf_lease_payments.2026
+    selector: {native_field: PaymentsOfLeaseLiabilitiesClassifiedAsFinancingActivities, period_shape: DURATION}
+    canonical_id: cf_lease_payments
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 181700000; same element and period shape as capmkt.cf_lease_payments (2025-01-31)"
+  - entry_id: capmkt.cf_dividends_paid.2026
+    selector: {native_field: DividendsPaidClassifiedAsFinancingActivities, period_shape: DURATION}
+    canonical_id: cf_dividends_paid
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 2047200000; same element and period shape as capmkt.cf_dividends_paid (2025-01-31)"
+  - entry_id: capmkt.cf_interest_paid_financing.2026
+    selector: {native_field: InterestPaidClassifiedAsFinancingActivities, period_shape: DURATION}
+    canonical_id: cf_interest_paid_financing
+    sign: -1
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 2706100000; same element and period shape as capmkt.cf_interest_paid_financing (2025-01-31)"
+  - entry_id: capmkt.cff.2026
+    selector: {native_field: CashFlowsFromUsedInFinancingActivities, period_shape: DURATION}
+    canonical_id: cff
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -4339100000; same element and period shape as capmkt.cff (2025-01-31)"
+  - entry_id: capmkt.cf_net_change_before_fx.2026
+    selector: {native_field: IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges, period_shape: DURATION}
+    canonical_id: cf_net_change_before_fx
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -243200000; same element and period shape as capmkt.cf_net_change_before_fx (2025-01-31)"
+  - entry_id: capmkt.cf_fx_effect.2026
+    selector: {native_field: EffectOfExchangeRateChangesOnCashAndCashEquivalents, period_shape: DURATION}
+    canonical_id: cf_fx_effect
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD 58500000; same element and period shape as capmkt.cf_fx_effect (2025-01-31)"
+  - entry_id: capmkt.cf_net_change.2026
+    selector: {native_field: IncreaseDecreaseInCashAndCashEquivalents, period_shape: DURATION}
+    canonical_id: cf_net_change
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) FourD -184700000; same element and period shape as capmkt.cf_net_change (2025-01-31)"
+  - entry_id: capmkt.cf_cash_closing.2026
+    selector: {native_field: CashAndCashEquivalentsCashFlowStatement, period_shape: INSTANT}
+    canonical_id: cf_cash_closing
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 6687200000; same element and period shape as capmkt.cf_cash_closing (2025-01-31)"
+  - entry_id: capmkt.segment_revenue.2026
+    selector: {native_field: SegmentRevenue, period_shape: DURATION, dimension_axis: ReportableSegmentsAxis}
+    canonical_id: segment_revenue
+    member_source: XBRL_DESCRIPTION
+    dimension_members: {elimination_basis: PRE_ELIMINATION}
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneReportable1D 37641800000; same element and period shape as capmkt.segment_revenue (2025-01-31)"
+  - entry_id: capmkt.segment_revenue_total.2026
+    selector: {native_field: SegmentRevenue, period_shape: DURATION}
+    canonical_id: segment_revenue_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 70317400000; same element and period shape as capmkt.segment_revenue_total (2025-01-31)"
+  - entry_id: capmkt.inter_segment_revenue.2026
+    selector: {native_field: InterSegmentRevenue, period_shape: DURATION}
+    canonical_id: inter_segment_revenue
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 4289300000; same element and period shape as capmkt.inter_segment_revenue (2025-01-31)"
+  - entry_id: capmkt.segment_revenue_from_operations.2026
+    selector: {native_field: SegmentRevenueFromOperations, period_shape: DURATION}
+    canonical_id: segment_revenue_from_operations
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 66028100000; same element and period shape as capmkt.segment_revenue_from_operations (2025-01-31)"
+  - entry_id: capmkt.segment_result_total.2026
+    selector: {native_field: SegmentProfitLossBeforeTaxAndFinanceCosts, period_shape: DURATION}
+    canonical_id: segment_result_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 5541100000; same element and period shape as capmkt.segment_result_total (2025-01-31)"
+  - entry_id: capmkt.segment_finance_costs.2026
+    selector: {native_field: SegmentFinanceCosts, period_shape: DURATION}
+    canonical_id: segment_finance_costs
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 1367900000; same element and period shape as capmkt.segment_finance_costs (2025-01-31)"
+  - entry_id: capmkt.segment_unallocable_net.2026
+    selector: {native_field: OtherUnallocableExpenditureNetOffUnAllocableIncome, period_shape: DURATION}
+    canonical_id: segment_unallocable_net
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 884000000; same element and period shape as capmkt.segment_unallocable_net (2025-01-31)"
+  - entry_id: capmkt.segment_profit_before_tax.2026
+    selector: {native_field: SegmentProfitBeforeTax, period_shape: DURATION}
+    canonical_id: segment_profit_before_tax
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneD 3289200000; same element and period shape as capmkt.segment_profit_before_tax (2025-01-31)"
+  - entry_id: capmkt.segment_assets.2026
+    selector: {native_field: SegmentAssets, period_shape: INSTANT, dimension_axis: ReportableSegmentAssetsAxis}
+    canonical_id: segment_assets
+    member_source: XBRL_DESCRIPTION
+    dimension_members: {elimination_basis: POST_ELIMINATION}
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneReportable31I 67014400000; same element and period shape as capmkt.segment_assets (2025-01-31)"
+  - entry_id: capmkt.segment_assets_total.2026
+    selector: {native_field: SegmentAssets, period_shape: INSTANT}
+    canonical_id: segment_assets_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 137112900000; same element and period shape as capmkt.segment_assets_total (2025-01-31)"
+  - entry_id: capmkt.segment_unallocable_assets.2026
+    selector: {native_field: UnAllocableAssets, period_shape: INSTANT}
+    canonical_id: segment_unallocable_assets
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.segment_unallocable_assets (2025-01-31)"
+  - entry_id: capmkt.segment_assets_net.2026
+    selector: {native_field: NetSegmentAssets, period_shape: INSTANT}
+    canonical_id: segment_assets_net
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 137112900000; same element and period shape as capmkt.segment_assets_net (2025-01-31)"
+  - entry_id: capmkt.segment_liabilities.2026
+    selector: {native_field: SegmentLiabilities, period_shape: INSTANT, dimension_axis: ReportableSegmentLiabilitiesAxis}
+    canonical_id: segment_liabilities
+    member_source: XBRL_DESCRIPTION
+    dimension_members: {elimination_basis: POST_ELIMINATION}
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneReportable41I 30416500000; same element and period shape as capmkt.segment_liabilities (2025-01-31)"
+  - entry_id: capmkt.segment_liabilities_total.2026
+    selector: {native_field: SegmentLiabilities, period_shape: INSTANT}
+    canonical_id: segment_liabilities_total
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 74774000000; same element and period shape as capmkt.segment_liabilities_total (2025-01-31)"
+  - entry_id: capmkt.segment_unallocable_liabilities.2026
+    selector: {native_field: UnAllocableLiabilities, period_shape: INSTANT}
+    canonical_id: segment_unallocable_liabilities
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 0; same element and period shape as capmkt.segment_unallocable_liabilities (2025-01-31)"
+  - entry_id: capmkt.segment_liabilities_net.2026
+    selector: {native_field: NetSegmentLiabilities, period_shape: INSTANT}
+    canonical_id: segment_liabilities_net
+    evidence_ref: "X-Q4 FY26 (INTEGRATED_FILING_INDAS_1675395, sha256 be8ef651) OneI 74774000000; same element and period shape as capmkt.segment_liabilities_net (2025-01-31)"

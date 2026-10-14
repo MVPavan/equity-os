@@ -1,0 +1,24 @@
+# Structural statement anchors v2 (PREP-1): statement_anchors/v1's in-capmkt anchors under the
+# 2026-01-31 namespace; every native field is filed in the retained Apar Q4 FY26 instance
+# (sha256 be8ef651). Mapping set v5 lists this file beside statement_anchors/v1.yaml.
+statement_anchors:
+  - schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    statement_family: PL
+    native_fields: [RevenueFromOperations, ProfitBeforeTax]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    statement_family: BALANCE_SHEET
+    native_fields: [Assets, EquityAndLiabilities]
+    period_shape: INSTANT_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    statement_family: CASH_FLOW
+    native_fields: [CashFlowsFromUsedInOperatingActivities]
+    period_shape: DURATION_ENDING_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    statement_family: CASH_FLOW
+    native_fields: [CashAndCashEquivalentsCashFlowStatement]
+    period_shape: INSTANT_AT_PERIOD_END
+  - schema_identity: http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt
+    statement_family: SEGMENT
+    native_fields: [SegmentRevenue]
+    period_shape: DURATION_ENDING_AT_PERIOD_END

@@ -1,0 +1,20 @@
+# Mapping set v5 (PREP-1): v4 plus the SEBI in-capmkt 2026-01-31 taxonomy (xbrl/v5, constructions/v2,
+# statement_anchors/v2) for Apar Q4 FY26 and Q1 FY27.
+version: v5
+normalisation_policy_version: v1
+entry_files:
+- xbrl/v1/in_capmkt.yaml
+- xbrl/v5/in_capmkt.yaml
+- xbrl/v3/in_bse_fin.yaml
+- pdf/v1/results_layout.yaml
+- screener/v2/financials.yaml
+- tijori/v3/financials.yaml
+- upstox/v2/summary.yaml
+- upstox/v2/full_statement.yaml
+construction_files:
+- constructions/v1.yaml
+- constructions/v2.yaml
+- screener/v2/constructions.yaml
+statement_anchor_files:
+- statement_anchors/v1.yaml
+- statement_anchors/v2.yaml
