@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from fundamentals.compare import run_config
-from fundamentals.compare.run_config import EXTRACTOR_VERSIONS, extractor_pin
+from fundamentals.compare.run_config import EXTRACTOR_VERSIONS, extractor_pin, vendor_extractor_pin
 from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
 
 
@@ -58,3 +58,37 @@ def test_xbrl_semantic_sources_are_in_the_extractor_pin(
     before = extractor_pin(Representation.XBRL)
     (tmp_path / relative).write_bytes(b"changed semantic source\n")
     assert extractor_pin(Representation.XBRL) != before
+
+
+@pytest.mark.parametrize(
+    ("source", "relative"),
+    [
+        ("PDF", "extract/pdf_figure_columns.py"),
+        ("screener-subscriber", "ingest/screener_session_page.py"),
+        ("screener-subscriber", "ingest/screener_financials_tables.py"),
+        ("tijori", "ingest/tijori_tables.py"),
+        ("tijori", "ingest/tijori_common.py"),
+        ("upstox", "ingest/upstox_source.py"),
+    ],
+)
+def test_parser_and_identity_dependencies_are_in_the_extractor_pins(
+    source: str, relative: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Editing a file an extractor reads its occurrences or verifies identity through must
+    change that extractor's content pin (a stale extraction is otherwise silently reused)."""
+    real = Path(run_config.__file__).resolve().parents[1]
+    names = {name for paths in run_config.EXTRACTOR_SOURCES.values() for name in paths}
+    names |= {name for _, paths in run_config.VENDOR_EXTRACTORS.values() for name in paths}
+    for name in names | {relative}:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_bytes((real / name).read_bytes())
+    monkeypatch.setattr(run_config, "_SOURCE_ROOT", tmp_path)
+
+    def pin() -> str:
+        if source == "PDF":
+            return extractor_pin(Representation.PDF).content_sha256
+        return vendor_extractor_pin(source, "surface").content_sha256
+
+    before = pin()
+    (tmp_path / relative).write_bytes(b"mutated\n")
+    assert pin() != before

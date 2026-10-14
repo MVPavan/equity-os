@@ -56,24 +56,22 @@ from fundamentals.compare.engine_rows import (
     Side,
     as_counterpart,
     calculated_side,
+    extraction_pairs,
     family_has_pair,
     not_applicable_row,
-    pair_record,
-    pairable,
-    ref,
+    reported_vs_derived,
     selected_side,
     sorted_values,
 )
 from fundamentals.compare.resolve_models import ResolvedInputs
 from fundamentals.compare.run_config import LoadedConfig
 from fundamentals.compare.run_models import (
-    PairRecord,
     ResultRow,
     RunRequest,
     SourceRole,
     row_id,
 )
-from fundamentals.compare.tables import ExtractionResult, extraction_status, pair_outcome
+from fundamentals.compare.tables import ExtractionResult, extraction_status
 from fundamentals.compare.vendor_sides import VendorSides
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import (
@@ -90,7 +88,6 @@ from fundamentals.contracts.canonical import (
     ValueKind,
 )
 from fundamentals.contracts.comparison import (
-    PairKind,
     SourceState,
 )
 from fundamentals.contracts.evidence import (
@@ -187,7 +184,7 @@ class RunEngine:
         self._cells: dict[Key, Cell] = {}
         self._reported_sides: dict[str, dict[Representation, Side]] = {}
         self._formulas = FormulaRows(self, config=config, traces=traces, proofs=inputs.proofs)
-        self._vendors = VendorSides(inputs, request, config=config)
+        self._vendors = VendorSides(inputs, request, config=config, traces=traces)
         self.selected_package_ids: set[int] = set()
 
     @property
@@ -221,37 +218,36 @@ class RunEngine:
     ) -> list[tuple[FilingPackage, dict[Key, KeySelection]]]:
         """Every selected package with its reported keys' selections (for alignment proofs)."""
         found: dict[int, tuple[FilingPackage, dict[Key, KeySelection]]] = {}
-        for entity_id, basis, end in self._groups():
-            periods = fiscal_periods(end, self._fiscal_year_end(entity_id))
-            currency = self._currency(entity_id, basis, end)
-            for row in self._result_rows():
-                if row.formula is not None:
-                    continue
-                package = self.package(entity_id, basis, end, row.family)
-                if package is None or package.package_id is None:
-                    continue
-                entry = found.setdefault(package.package_id, (package, {}))
-                for key in self._keys(row, entity_id, basis, end, periods, currency):
-                    for representation in REPRESENTATIONS:
-                        selection = self.cell(key, representation).selection
-                        entry[1][(key.digest(), representation)] = selection
+        for row, key, _ in self._reported_keys():
+            package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
+            if package is None or package.package_id is None:
+                continue
+            entry = found.setdefault(package.package_id, (package, {}))
+            for representation in REPRESENTATIONS:
+                selection = self.cell(key, representation).selection
+                entry[1][(key.digest(), representation)] = selection
         return [found[package_id] for package_id in sorted(found)]
 
     def comparative_digests(self) -> set[str]:
         """Digests of every reported key the run selects, Q4 operands included."""
         found: set[str] = set()
+        for _, key, periods in self._reported_keys():
+            found.add(key.digest())
+            if len(periods) == 2 and key.period == periods[0]:
+                found.add(key.model_copy(update={"period": nine_months(periods)}).digest())
+        return found
+
+    def _reported_keys(
+        self,
+    ) -> Iterable[tuple[DictionaryRow, MeasurementKey, tuple[PeriodInterval, ...]]]:
+        """Every reported row's keys over the scope, with their group's fiscal periods."""
         for entity_id, basis, end in self._groups():
             periods = fiscal_periods(end, self._fiscal_year_end(entity_id))
             currency = self._currency(entity_id, basis, end)
             for row in self._result_rows():
-                if row.formula is not None:
-                    continue
-                for key in self._keys(row, entity_id, basis, end, periods, currency):
-                    found.add(key.digest())
-                    if len(periods) == 2 and key.period == periods[0]:
-                        nine = nine_months(periods)
-                        found.add(key.model_copy(update={"period": nine}).digest())
-        return found
+                if row.formula is None:
+                    for key in self._keys(row, entity_id, basis, end, periods, currency):
+                        yield row, key, periods
 
     def _groups(self) -> Iterable[tuple[int, Basis, date]]:
         """Every (entity, basis, period end) of the scope."""
@@ -282,6 +278,11 @@ class RunEngine:
                 contexts[families] = self._context(entity_id, basis, end, families, periods)
             for key in self._keys(row, entity_id, basis, end, periods, currency):
                 decision = decide_applicability(row, contexts[families])
+                if decision.status is ApplicabilityStatus.NOT_APPLICABLE:
+                    identity = ValueIdentity.DERIVED if row.formula else ValueIdentity.REPORTED
+                    version = self._config.dictionary.version
+                    rows.append(not_applicable_row(key, identity, decision, version))
+                    continue
                 if row.formula is not None:
                     rows.append(self._derived_row(row, key, decision, fiscal_month, currency))
                     continue
@@ -304,27 +305,24 @@ class RunEngine:
         chosen = (
             periods if row.period_nature is PeriodNature.DURATION else (PeriodInterval.at(end),)
         )
-        keys = []
-        for period in chosen:
-            dimension_sets = (
+        return [
+            MeasurementKey(
+                entity_id=entity_id,
+                canonical_id=row.canonical_id,
+                period=period,
+                basis=basis,
+                framework=RUN_FRAMEWORK,
+                currency=currency if row.value_kind in MONETARY else None,
+                value_kind=row.value_kind,
+                dimensions=dimensions,
+            )
+            for period in chosen
+            for dimensions in (
                 [DimensionSet()]
                 if row.dimension_template is None
                 else self._evidence_dimensions(row, entity_id, basis, end, period)
             )
-            for dimensions in dimension_sets:
-                keys.append(
-                    MeasurementKey(
-                        entity_id=entity_id,
-                        canonical_id=row.canonical_id,
-                        period=period,
-                        basis=basis,
-                        framework=RUN_FRAMEWORK,
-                        currency=currency if row.value_kind in MONETARY else None,
-                        value_kind=row.value_kind,
-                        dimensions=dimensions,
-                    )
-                )
-        return keys
+        ]
 
     def _evidence_dimensions(
         self, row: DictionaryRow, entity_id: int, basis: Basis, end: date, period: PeriodInterval
@@ -578,16 +576,18 @@ class RunEngine:
     def _comparatives(self, key: MeasurementKey) -> list[Interpretation]:
         """The current comparative of this key in each eligible other-period package."""
         end = period_end(key.period)
-        by_capture: dict[int, list[Interpretation]] = defaultdict(list)
-        for item in self._by_digest.get(key.digest(), ()):
-            packages = self._member_of.get(item.capture_ref_id, ())
-            if any(
+
+        def other(package: FilingPackage) -> bool:
+            return (
                 package.reporting_period_end != end
                 and package.entity_id == key.entity_id
                 and package.basis is key.basis
                 and package.eligible(self._boundary)
-                for package in packages
-            ):
+            )
+
+        by_capture: dict[int, list[Interpretation]] = defaultdict(list)
+        for item in self._by_digest.get(key.digest(), ()):
+            if any(other(package) for package in self._member_of.get(item.capture_ref_id, ())):
                 by_capture[item.capture_ref_id].append(item)
         found = []
         for capture in sorted(by_capture):
@@ -600,14 +600,7 @@ class RunEngine:
                 extractor=self._triple.extractor(representation),
             ):
                 continue
-            package = next(
-                package
-                for package in self._member_of[capture]
-                if package.reporting_period_end != end
-                and package.entity_id == key.entity_id
-                and package.basis is key.basis
-                and package.eligible(self._boundary)
-            )
+            package = next(package for package in self._member_of[capture] if other(package))
             witness = self._witness_occurrence.get(capture)
             selected = select_key(
                 key,
@@ -630,11 +623,7 @@ class RunEngine:
     def _reported_row(
         self, row: DictionaryRow, key: MeasurementKey, decision: ApplicabilityDecision
     ) -> ResultRow:
-        """A reported row: both representations, extraction and corroboration."""
-        if decision.status is ApplicabilityStatus.NOT_APPLICABLE:
-            return not_applicable_row(
-                key, ValueIdentity.REPORTED, decision, self._config.dictionary.version
-            )
+        """An applicable reported row: both representations, extraction and corroboration."""
         package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
         package_id = None if package is None else package.package_id
         cells = {rep: self.cell(key, rep) for rep in REPRESENTATIONS}
@@ -663,11 +652,7 @@ class RunEngine:
         fiscal_month: int,
         currency: str | None,
     ) -> ResultRow:
-        """A formula row evaluated per representation with stored traces (Task 7)."""
-        if decision.status is ApplicabilityStatus.NOT_APPLICABLE:
-            return not_applicable_row(
-                key, ValueIdentity.DERIVED, decision, self._config.dictionary.version
-            )
+        """An applicable formula row evaluated per representation with stored traces (Task 7)."""
         assert currency is not None
         evaluated = self._formulas.evaluate(row, key, fiscal_month=fiscal_month, currency=currency)
         return self._compared(
@@ -751,29 +736,16 @@ class RunEngine:
             for value in reported.source_values
             if value.source_role is SourceRole.FIRST_PARTY
         )
-        reported_sides = self._reported_sides[key.digest()]
-        pairs = list(derived.pairs)
-        for rep in REPRESENTATIONS:
-            left, right = reported_sides[rep].comparison, sides[rep].comparison
-            if pairable(left) and pairable(right):
-                outcome = pair_outcome(
-                    left,
-                    right,
-                    definitions=self._config.definition_set,
-                    policy=self._config.comparison_policy,
-                )
-                pairs.append(
-                    pair_record(
-                        PairKind.REPORTED_VS_DERIVED,
-                        ref(SourceRole.REPORTED_COUNTERPART, rep),
-                        ref(SourceRole.FIRST_PARTY, rep),
-                        outcome,
-                    )
-                )
+        pairs = reported_vs_derived(
+            self._reported_sides[key.digest()],
+            sides,
+            definitions=self._config.definition_set,
+            policy=self._config.comparison_policy,
+        )
         return derived.model_copy(
             update={
                 "source_values": sorted_values((*derived.source_values, *counterparts)),
-                "pairs": tuple(pairs),
+                "pairs": (*derived.pairs, *pairs),
             }
         )
 
@@ -808,17 +780,6 @@ class RunEngine:
             first_party={Representation.XBRL: xbrl, Representation.PDF: pdf},
             vendors=vendors,
         )
-        pairs: tuple[PairRecord, ...] = ()
-        if extraction.pair is not None:
-            pairs = (
-                pair_record(
-                    PairKind.EXTRACTION,
-                    ref(SourceRole.FIRST_PARTY, Representation.XBRL),
-                    ref(SourceRole.FIRST_PARTY, Representation.PDF),
-                    extraction.pair,
-                    extraction.adjustments,
-                ),
-            )
         return ResultRow(
             row_id=row_id(key, identity),
             key=key,
@@ -833,6 +794,6 @@ class RunEngine:
             source_values=sorted_values(
                 (*(side.stored for side in sides.values()), *vendor.values)
             ),
-            pairs=(*pairs, *vendor.pairs),
+            pairs=(*extraction_pairs(extraction), *vendor.pairs),
             surfaced_restatements=tuple(sorted(set(surfaced))),
         )

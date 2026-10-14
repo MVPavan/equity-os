@@ -60,6 +60,8 @@ from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.qualification import qualification_context, scoped_tier
 from fundamentals.contracts.source_catalog import surface_authority
+from fundamentals.evidence.derived import TraceStore
+from fundamentals.evidence.repository_calc import CONSTRUCTION_TRACE, trace_from_json
 from fundamentals.evidence.selection import (
     INTERPRETATION_AMBIGUOUS,
     NOT_INTERPRETED_UNDER_PINS,
@@ -99,9 +101,15 @@ class VendorSides:
     """Vendor selection over one run's loaded inputs (pure, so replay reproduces it)."""
 
     def __init__(
-        self, inputs: ResolvedInputs, request: RunRequest, *, config: LoadedConfig
+        self,
+        inputs: ResolvedInputs,
+        request: RunRequest,
+        *,
+        config: LoadedConfig,
+        traces: TraceStore,
     ) -> None:
         self._request = request
+        self._traces = traces
         self._config = config
         self._triple = request.pinned.triple()
         self._vendors = frozenset(request.scope.vendors)
@@ -286,14 +294,25 @@ class VendorSides:
             source_id=source_id,
             surface=label,
         )
+        stored = side.stored
+        payload = None if chosen is None else chosen.transform_trace.get(CONSTRUCTION_TRACE)
+        if isinstance(payload, Mapping):  # a construction names its trace, never its row
+            trace = trace_from_json(payload)
+            stored = stored.model_copy(
+                update={
+                    "interpretation_id": None,
+                    "calculation_trace_id": self._traces.put_calculation_trace(trace),
+                    "calculation_state": trace.state,
+                }
+            )
         return VendorSide(
             qualified=SourceQualifiedSide(
-                ref=SourceRef.model_validate(side.stored.model_dump(include=_REF_FIELDS)),
+                ref=SourceRef.model_validate(stored.model_dump(include=_REF_FIELDS)),
                 side=side.comparison,
                 interpretation_ids=() if chosen is None else (chosen.interpretation_id or 0,),
                 attempt_ids=() if attempt is None else (attempt.attempt_id or 0,),
             ),
-            stored=side.stored,
+            stored=stored,
             occurrence=None if chosen is None else self._occurrences.get(chosen.occurrence_id),
         )
 

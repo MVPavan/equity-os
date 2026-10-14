@@ -147,7 +147,7 @@ def select_interpretation(
         for item in candidates
         if _under(item, triple) and _known(item.recorded_at, boundary, mode)
     ]
-    current = _current(available)
+    current = current_interpretations(available)
     if not current:
         return SourceState.NO_VALUE, None, None
     if len(current) > 1:
@@ -193,8 +193,8 @@ def select_key(
     available = [
         item for item in owned if _under(item, triple) and _known(item.recorded_at, boundary, mode)
     ]
-    matched = [item for item in _current(available) if matches_key(item, key)]
-    candidates = _one_printed_cell(_specific(matched, key), occurrences)
+    matched = [item for item in current_interpretations(available) if matches_key(item, key)]
+    candidates = _one_printed_cell(_specific(matched, key, occurrences), occurrences)
     extractor = triple.extractor(representation)
     if not any(
         item.capture.capture_ref_id == capture_ref_id and item.extractor_version == extractor
@@ -304,34 +304,61 @@ def _triple(pinned: Pins) -> InterpretationTriple:
     return pinned.triple() if isinstance(pinned, PinnedVersions) else pinned
 
 
-def _current(items: Sequence[Interpretation]) -> list[Interpretation]:
+def current_interpretations(items: Sequence[Interpretation]) -> list[Interpretation]:
     """Remove superseded interpretations across the entire eligible pinned generation."""
     superseded = {item.supersedes_interpretation_id for item in items}
     return [item for item in items if item.interpretation_id not in superseded]
 
 
-def _specific(candidates: list[Interpretation], key: MeasurementKey) -> list[Interpretation]:
-    """A line read as only one of several rows (an unestablished section) never displaces the
-    key's own keyed reading; with no keyed reading it stays a candidate (ambiguous)."""
-    keyed = [item for item in candidates if item.key == key]
-    if not keyed:
-        return candidates
-    return [item for item in candidates if item.key is not None or item.canonical_id is not None]
+def _specific(
+    candidates: list[Interpretation], key: MeasurementKey, occurrences: Sequence[Occurrence]
+) -> list[Interpretation]:
+    """A line read as only one of several rows (an unestablished section) is dropped only when
+    printed above the keyed reading's own declared heading on its page: a section never reaches
+    above its heading. Anywhere else it stays a candidate (ambiguous)."""
+    by_id = {item.occurrence_id: item for item in occurrences}
+    keyed = [by_id.get(item.occurrence_id) for item in candidates if item.key == key]
+
+    def excluded(item: Interpretation) -> bool:
+        row = by_id.get(item.occurrence_id)
+        return (
+            item.key is None
+            and item.canonical_id is None
+            and row is not None
+            and any(_above_heading(row, reading) for reading in keyed if reading is not None)
+        )
+
+    return [item for item in candidates if not excluded(item)]
+
+
+def _above_heading(row: Occurrence, reading: Occurrence) -> bool:
+    """Whether ``row`` precedes the declared heading ``reading`` is printed under."""
+    heading = reading.native_context.get("section")
+    return (
+        bool(heading)
+        and row.native_context.get("section") != heading
+        and row.anchor.get("page") is not None
+        and row.anchor.get("page") == reading.anchor.get("page")
+        and cast(int, row.anchor.get("line", 0)) < cast(int, reading.anchor.get("line", 0))
+    )
 
 
 def _one_printed_cell(
     candidates: list[Interpretation], occurrences: Sequence[Occurrence]
 ) -> list[Interpretation]:
-    """One PDF line printing a key in several columns (a closing instant under both the quarter
-    and the half-year column) is one reading when every cell agrees: the leftmost is kept.
-    Cells that disagree, or candidates from different lines, stay ambiguous."""
+    """One PDF line printing a key's instant in several columns (a closing instant under both
+    the quarter and the half-year column) is one reading when every cell agrees: the leftmost
+    is kept. Cells that disagree, candidates from different lines, or several current readings
+    of one cell stay ambiguous."""
     anchors = {item.occurrence_id: item.anchor for item in occurrences}
     cells = [anchors.get(item.occurrence_id) for item in candidates]
     if (
         len(candidates) < 2
         or any(item.representation is not Representation.PDF for item in candidates)
+        or any(item.period is None or item.period.instant is None for item in candidates)
         or any(cell is None for cell in cells)
         or len({(cell["page"], cell["line"]) for cell in cells if cell}) != 1
+        or len({cell["column_index"] for cell in cells if cell}) != len(candidates)
         or len({(item.status, item.reason, item.value, item.interval) for item in candidates}) != 1
     ):
         return candidates

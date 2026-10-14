@@ -6,6 +6,8 @@
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
         [--as-of <ISO-8601 with offset>] [--config-root config]
     compare queue list --run <id> [--as-of <ISO-8601 with offset>]
+        [--severity HIGH|MEDIUM|LOW ...] [--status open|disposed|all]
+    compare queue show --run <id> --item <id> [--as-of <ISO-8601 with offset>]
     compare queue dispose --item <id> --kind <kind> --reason <text> --decider <name>
         --evidence-ref <ref> [--explained-amount <decimal>]
 
@@ -38,8 +40,19 @@ from fundamentals.canon.interval import RoundingPolicyError
 from fundamentals.compare.definitions import DefinitionSetError
 from fundamentals.compare.engine_attempts import RunResolutionError
 from fundamentals.compare.policy import ComparisonPolicyError
-from fundamentals.compare.queue import overlay_boundary, read_overlay, record_disposition
-from fundamentals.compare.report import queue_line, render_report, source_anchors
+from fundamentals.compare.queue import (
+    item_inputs,
+    overlay_boundary,
+    read_overlay,
+    record_disposition,
+)
+from fundamentals.compare.report import (
+    disposition_line,
+    evidence_lines,
+    queue_line,
+    render_report,
+    source_anchors,
+)
 from fundamentals.compare.resolve import ReplayMismatchError
 from fundamentals.compare.run import (
     DatabaseIdentity,
@@ -54,7 +67,7 @@ from fundamentals.compare.run_config import DEFAULT_VERSION, DICTIONARY_DIR, Con
 from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunReadError, RunStore
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import RunMode
-from fundamentals.contracts.review_queue import DispositionKind, QueueSeverity
+from fundamentals.contracts.review_queue import DispositionKind, QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.alignment import AlignmentLoadError
 from fundamentals.evidence.mapping import MappingLoadError
@@ -67,6 +80,7 @@ RUN_ACTION = "run"
 REPORT_ACTION = "report"
 QUEUE_ACTION = "queue"
 LIST_ACTION = "list"
+SHOW_ACTION = "show"
 DISPOSE_ACTION = "dispose"
 DEFAULT_CONFIG_ROOT = "config"
 UNKNOWN_CODE_VERSION = "UNKNOWN"
@@ -77,7 +91,10 @@ _HELP = "execute and report immutable comparison runs"
 _RUN_HELP = "resolve, compare and publish one run (prints the run id and status)"
 _REPORT_HELP = "print a stored run"
 _QUEUE_HELP = "list open review items and record dispositions"
-_LIST_HELP = "a run's open items as of a time, by severity"
+_LIST_HELP = "a run's items as of a time, by severity, with their dispositions"
+_SHOW_HELP = "one item of a run with its evidence and dispositions"
+_NO_ITEM = "item {item} is not in run {run_id}"
+OPEN, DISPOSED, ALL = _STATUSES = ("open", "disposed", "all")
 _DISPOSE_HELP = "record a disposition (prints its id)"
 _QUEUE_DEST = "queue_action"
 _LATE_AS_OF = "--as-of {as_of} is later than the overlay boundary {boundary}"
@@ -128,6 +145,12 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     listing = queue.add_parser(LIST_ACTION, help=_LIST_HELP)
     listing.add_argument("--run", type=int, required=True)
     listing.add_argument("--as-of", type=_aware_cutoff)
+    listing.add_argument("--severity", action="append", choices=[s.value for s in QueueSeverity])
+    listing.add_argument("--status", choices=_STATUSES, default=OPEN)
+    show = queue.add_parser(SHOW_ACTION, help=_SHOW_HELP)
+    show.add_argument("--run", type=int, required=True)
+    show.add_argument("--item", type=int, required=True)
+    show.add_argument("--as-of", type=_aware_cutoff)
     dispose = queue.add_parser(DISPOSE_ACTION, help=_DISPOSE_HELP)
     dispose.add_argument("--item", type=int, required=True)
     dispose.add_argument("--kind", required=True, choices=[kind.value for kind in DispositionKind])
@@ -145,7 +168,8 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         if args.compare_action == RUN_ACTION:
             return _run(args)
         if args.compare_action == QUEUE_ACTION:
-            return _list(args) if args.queue_action == LIST_ACTION else _dispose(args)
+            queue_actions = {LIST_ACTION: _list, SHOW_ACTION: _show, DISPOSE_ACTION: _dispose}
+            return queue_actions[args.queue_action](args)
         return _report(args)
     except (
         CompareCommandError,
@@ -224,17 +248,50 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _list(args: argparse.Namespace) -> int:
-    """Print one run's open queue items as of a time, HIGH first."""
+    """Print one run's items as of a time, HIGH first, each disposed one with its records."""
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
         RunStore(pool).read_manifest(args.run)
         overlay = read_overlay(pool, run_id=args.run, as_of=_as_of(pool, args.as_of))
+    status = {
+        OPEN: overlay.open_items,
+        DISPOSED: overlay.disposed_items,
+        ALL: (*overlay.open_items, *overlay.disposed_items),
+    }[args.status]
     items = sorted(
-        overlay.open_items, key=lambda item: (_SEVERITY_ORDER[item.severity], item.item_id)
+        (item for item in status if not args.severity or item.severity.value in args.severity),
+        key=lambda item: (_SEVERITY_ORDER[item.severity], item.item_id),
     )
     lines = [_LIST_HEADER.format(run_id=args.run, as_of=overlay.as_of.isoformat())]
-    lines.extend(queue_line(item) for item in items)
+    for item in items:
+        lines.append(queue_line(item))
+        lines.extend(_dispositions(overlay, item.item_id))
     sys.stdout.write("\n".join(lines) + "\n")
     return int(RunExitStatus.SUCCESS)
+
+
+def _show(args: argparse.Namespace) -> int:
+    """Print one item of a run with its evidence and dispositions."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        RunStore(pool).read_manifest(args.run)
+        overlay = read_overlay(pool, run_id=args.run, as_of=_as_of(pool, args.as_of))
+        found = [
+            item
+            for item in (*overlay.open_items, *overlay.disposed_items)
+            if item.item_id == args.item
+        ]
+        if not found:
+            raise CompareCommandError(_NO_ITEM.format(item=args.item, run_id=args.run))
+        inputs = item_inputs(pool, args.item)
+        occurrences = EvidenceRepository(pool).get_occurrences(inputs["occurrence_id"])
+    lines = [queue_line(found[0]), *evidence_lines(inputs, occurrences)]
+    lines.extend(_dispositions(overlay, args.item))
+    sys.stdout.write("\n".join(lines) + "\n")
+    return int(RunExitStatus.SUCCESS)
+
+
+def _dispositions(overlay: QueueOverlay, item_id: int) -> list[str]:
+    """One item's disposition records as of the overlay."""
+    return [disposition_line(item) for item in overlay.dispositions if item.item_id == item_id]
 
 
 def _dispose(args: argparse.Namespace) -> int:

@@ -33,6 +33,7 @@ from stage1_e2e_support import (
     VERSIONS,
     Outcome,
     Stage,
+    _name,
     cli,
     cli_run,
     fixture_side,
@@ -42,6 +43,7 @@ from stage1_e2e_support import (
     mark,
     stored,
 )
+from stage1_provenance import provenance
 from test_compare_run_rules import FINANCE_PLUS_ONE_CRORE
 from test_compare_vendor_runs import _key as vendor_key
 from test_compare_vendor_runs import _qualified as qualified
@@ -83,8 +85,34 @@ def stage(pg_db: Any, tmp_path: Path, request: pytest.FixtureRequest) -> Iterato
 @pytest.mark.retained
 @pytest.mark.parametrize("stage", list(RUNS), indirect=True)
 def test_run_matches_manifest(stage: Stage) -> None:
-    lines = manifest_lines(full_run(stage))
+    outcome = full_run(stage)
+    lines = manifest_lines(outcome) + provenance(outcome)
     assert not lines, f"{len(lines)} differences:\n" + "\n".join(lines[:60])
+    # Provenance is compared, not only numbers: relabelled selections and rules are caught.
+    ids = [
+        value.interpretation_id
+        for row in outcome.rows
+        for value in row.source_values
+        if value.source_role is SourceRole.FIRST_PARTY and value.interpretation_id
+    ]
+    relabel = dict(zip(ids, ids[1:] + ids[:1], strict=True))
+    relabelled = tuple(
+        row.model_copy(
+            update={
+                "applicability_rule_id": "relabelled",
+                "source_values": tuple(
+                    value.model_copy(
+                        update={"interpretation_id": relabel.get(value.interpretation_id)}
+                    )
+                    if value.source_role is SourceRole.FIRST_PARTY and value.interpretation_id
+                    else value
+                    for value in row.source_values
+                ),
+            }
+        )
+        for row in outcome.rows
+    )
+    assert provenance(outcome, relabelled)
 
 
 # --- marked fixtures (header.fixtures) -------------------------------------------------------
@@ -222,7 +250,9 @@ def test_upstox_screener_diagnostic_on_a_shared_key(stage: Stage) -> None:
         request = stage.request(end, vendors)
         loader = RunLoader(request, stage.repository)
         loader.load()
-        return VendorSides(loader.inputs(0), request, config=stage.config).row(
+        return VendorSides(
+            loader.inputs(0), request, config=stage.config, traces=stage.repository
+        ).row(
             key,
             fiscal_month=3,
             applicability=ApplicabilityStatus.APPLICABLE,
@@ -452,9 +482,12 @@ def test_unrelated_discrepancy_stays_high(stage: Stage) -> None:
 @pytest.mark.pg
 @pytest.mark.retained
 @pytest.mark.parametrize("stage", ["APARINDS-Q2FY26"], indirect=True)
-def test_screener_liabilities_construction(stage: Stage) -> None:
+def test_screener_liabilities_construction(
+    stage: Stage, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """E9: Screener Borrowings + Other Liabilities against the filing's Liabilities + NCI,
-    AGREE_UNQUALIFIED; Screener 'Total Liabilities' populates no row (FILING_ONLY)."""
+    AGREE_UNQUALIFIED; Screener 'Total Liabilities' populates no row (FILING_ONLY). The
+    construction is a computed side naming its stored trace, in results and in the report."""
     spec = MANIFEST["fixtures"]["E9"]
     fy25(stage, [SCR])
     stage.first_party(quarter="FY25_Q4", members=FY25_XBRL)
@@ -464,6 +497,18 @@ def test_screener_liabilities_construction(stage: Stage) -> None:
     xbrl, screener = row["sides"]["xbrl"], row["sides"][SCR]
     assert (xbrl["v"], xbrl["iv"]) == fixture_side(spec["first_party_liabilities_incl_nci"], True)
     assert (screener["v"], screener["iv"]) == fixture_side(spec["screener_construction"], False)
+    assert screener["calc"] == "COMPUTED"
+    (value,) = [
+        value
+        for value in outcome.row("liabilities_incl_nci|I|-|DERIVED").source_values
+        if _name(value) == SCR
+    ]
+    assert value.calculation_trace_id is not None and value.interpretation_id is None
+    capsys.readouterr()
+    assert cli(stage, monkeypatch, "report", "--run", str(outcome.record.run_id)) == 0
+    printed = capsys.readouterr().out.splitlines()
+    (line,) = [line for line in printed if f"\t{SCR}\t" in line and "6760.00 crore" in line]
+    assert "class=COMPUTED" in line and f"trace={value.calculation_trace_id}" in line
     assert (
         outcome.check(
             {

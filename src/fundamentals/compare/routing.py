@@ -28,11 +28,17 @@ from fundamentals.contracts.comparison import (
     SourceRole,
     Triage,
 )
-from fundamentals.contracts.evidence import InterpretationStatus, PinnedVersions
+from fundamentals.contracts.evidence import Interpretation, InterpretationStatus, PinnedVersions
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.review_queue import UNMAPPED, QueueItemDraft, QueueSeverity
 from fundamentals.contracts.snapshot import canonical_sha256
 from fundamentals.contracts.source_catalog import surface_authority
+from fundamentals.evidence.repository_calc import StoredTrace
+from fundamentals.evidence.selection import (
+    INTERPRETATION_AMBIGUOUS,
+    current_interpretations,
+    matches_key,
+)
 
 
 def route_run(
@@ -42,16 +48,19 @@ def route_run(
     occurrence and vendor native row of a selected capture interpreted under the run's pins.
 
     A side without an interpretation or attempt (``NO_VALUE`` from a complete capture, or a
-    calculation) is evidenced by the run's attempts.
+    calculation) is evidenced by the run's attempts. A calculation also names its trace and
+    every operand interpretation, and an ambiguous side every candidate, so changed inputs
+    hash to a new item.
     """
     run_attempts = tuple(
         sorted({item.attempt_id for item in inputs.attempts if item.attempt_id is not None})
     )
+    evidence = _Evidence(inputs, run_attempts)
     drafts = [
         draft
         for row in rows
         if row.applicability is not ApplicabilityStatus.NOT_APPLICABLE
-        for draft in _row_drafts(row, run_attempts)
+        for draft in _row_drafts(row, evidence)
     ]
     selected = {
         item.ref_id
@@ -61,29 +70,31 @@ def route_run(
     }
     occurrences = {item.occurrence_id: item for item in inputs.occurrences}
     triple = pinned.triple()
-    queued: dict[str, list[int]] = defaultdict(list)
-    refs: dict[str, SourceRef] = {}
-    for item in inputs.interpretations:
-        if (
-            item.status is not InterpretationStatus.UNMAPPED
-            or item.occurrence_id is None
-            or item.capture_ref_id not in selected
-        ):
-            continue
+
+    def under_pins(item: Interpretation) -> bool:
         capture = occurrences[item.occurrence_id].capture
-        pins = (
-            triple.mapping_set,
-            triple.normalisation_policy,
-            triple.extractor(
-                item.representation, source_id=capture.source_id, surface=capture.surface
-            ),
+        extractor = triple.extractor(
+            item.representation, source_id=capture.source_id, surface=capture.surface
         )
-        if (
+        return (
             item.mapping_set_version,
             item.normalisation_policy_version,
             item.extractor_version,
-        ) != pins:
+        ) == (triple.mapping_set, triple.normalisation_policy, extractor)
+
+    generation = [
+        item
+        for item in inputs.interpretations
+        if item.occurrence_id in occurrences
+        and item.capture_ref_id in selected
+        and under_pins(item)
+    ]
+    queued: dict[str, list[int]] = defaultdict(list)
+    refs: dict[str, SourceRef] = {}
+    for item in current_interpretations(generation):
+        if item.status is not InterpretationStatus.UNMAPPED or item.occurrence_id is None:
             continue
+        capture = occurrences[item.occurrence_id].capture
         if item.representation in (Representation.XBRL, Representation.PDF):
             identity = str(item.occurrence_id)
             ref = SourceRef(source_role=SourceRole.FIRST_PARTY, representation=item.representation)
@@ -124,7 +135,9 @@ def pair_identity(pair: SourceQualifiedPair) -> str:
     )
 
 
-def route_pair_draft(pair: SourceQualifiedPair, *, key: MeasurementKey) -> QueueItemDraft | None:
+def route_pair_draft(
+    pair: SourceQualifiedPair, *, key: MeasurementKey, calculation_trace_ids: tuple[int, ...] = ()
+) -> QueueItemDraft | None:
     """Route a problematic pair with exact evidence, leaving identity and clocks to SQL."""
     route = _pair_route(pair)
     if route is None:
@@ -142,6 +155,7 @@ def route_pair_draft(pair: SourceQualifiedPair, *, key: MeasurementKey) -> Queue
         attempt_ids=tuple(sorted(set(pair.attempt_ids))),
         evidence_interpretation_ids=tuple(sorted(set(pair.evidence_interpretation_ids))),
         evidence_occurrence_ids=tuple(sorted(set(pair.evidence_occurrence_ids))),
+        calculation_trace_ids=calculation_trace_ids,
     )
 
 
@@ -154,6 +168,7 @@ def route_status_draft(
     attempt_ids: tuple[int, ...] = (),
     evidence_interpretation_ids: tuple[int, ...] = (),
     evidence_occurrence_ids: tuple[int, ...] = (),
+    calculation_trace_ids: tuple[int, ...] = (),
 ) -> QueueItemDraft | None:
     """Route an evidenced nonnumeric status without a caller-supplied store identity."""
     route = _status_route(status)
@@ -172,6 +187,7 @@ def route_status_draft(
         attempt_ids=tuple(sorted(set(attempt_ids))),
         evidence_interpretation_ids=tuple(sorted(set(evidence_interpretation_ids))),
         evidence_occurrence_ids=tuple(sorted(set(evidence_occurrence_ids))),
+        calculation_trace_ids=calculation_trace_ids,
     )
 
 
@@ -193,50 +209,99 @@ def route_unmapped_occurrence_draft(
     )
 
 
-def _row_drafts(row: ResultRow, run_attempts: tuple[int, ...]) -> list[QueueItemDraft]:
+class _Evidence:
+    """The typed evidence ids of a row's sides, from the run's own loaded inputs."""
+
+    def __init__(self, inputs: ResolvedInputs, run_attempts: tuple[int, ...]) -> None:
+        self._run_attempts = run_attempts
+        self._interpretations = inputs.interpretations
+        self._surface = {
+            item.capture_ref_id: (item.source_id, item.surface) for item in inputs.capture_refs
+        }
+        self._traces: dict[int, StoredTrace] = {}
+        pending = list(inputs.traces)
+        while pending:
+            stored = pending.pop()
+            self._traces[stored.trace_id] = stored
+            pending.extend(stored.children)
+
+    def of(self, key: MeasurementKey, sides: Sequence[SourceValue]) -> dict[str, tuple[int, ...]]:
+        """Interpretations (selected, trace operands, ambiguous candidates), attempts, traces."""
+        traces = {s.calculation_trace_id for s in sides if s.calculation_trace_id}
+        interpretations = {s.interpretation_id for s in sides if s.interpretation_id}
+        interpretations |= {
+            item
+            for trace in traces
+            if trace in self._traces
+            for item in _operands(self._traces[trace])
+        }
+        for side in sides:
+            if side.interpretation_id is None and side.reason == INTERPRETATION_AMBIGUOUS:
+                interpretations |= self._candidates(key, side)
+        attempts = sorted({s.attempt_id for s in sides if s.attempt_id})
+        return {
+            "evidence_interpretation_ids": tuple(sorted(interpretations)),
+            "attempt_ids": tuple(attempts) or (() if interpretations else self._run_attempts),
+            "calculation_trace_ids": tuple(sorted(traces)),
+        }
+
+    def _candidates(self, key: MeasurementKey, side: SourceValue) -> set[int]:
+        """Every loaded interpretation of the key in the side's representation and surface."""
+        surface = (side.source_id, (side.surface or "").split(":")[0])
+        return {
+            item.interpretation_id
+            for item in self._interpretations
+            if item.interpretation_id is not None
+            and item.representation is side.representation
+            and matches_key(item, key)
+            and (side.source_id is None or self._surface.get(item.capture_ref_id) == surface)
+        }
+
+
+def _operands(stored: StoredTrace) -> set[int]:
+    """A trace's operand interpretations, its children's included."""
+    own = {item.interpretation_id for item in stored.trace.operands if item.interpretation_id}
+    return own.union(*(_operands(child) for child in stored.children))
+
+
+def _row_drafts(row: ResultRow, evidence: _Evidence) -> list[QueueItemDraft]:
     """Extraction by its status, every other pair on its own, then the corroboration status
     unless its ``NOT_COMPARABLE`` is already carried by a pair."""
     values = {_ref(value): value for value in row.source_values}
-
-    def evidence(sides: Sequence[SourceValue]) -> tuple[tuple[int, ...], tuple[int, ...]]:
-        interpretations = sorted({s.interpretation_id for s in sides if s.interpretation_id})
-        attempts = sorted({s.attempt_id for s in sides if s.attempt_id})
-        return tuple(interpretations), tuple(attempts) or (() if interpretations else run_attempts)
-
     first_party = [v for v in row.source_values if v.source_role is SourceRole.FIRST_PARTY]
-    interpretations, attempts = evidence(first_party)
     found = [
         route_status_draft(
             row.extraction_status,
             key=row.key,
             reason_code=row.extraction_reason,
             source_refs=tuple(_ref(value) for value in first_party),
-            evidence_interpretation_ids=interpretations,
-            attempt_ids=attempts,
+            **evidence.of(row.key, first_party),
         )
     ]
     pairs = [pair for pair in row.pairs if pair.pair_kind is not PairKind.EXTRACTION]
     for pair in pairs:
-        interpretations, attempts = evidence([values[pair.left], values[pair.right]])
+        ids = evidence.of(row.key, [values[pair.left], values[pair.right]])
         qualified = SourceQualifiedPair(
             pair_kind=pair.pair_kind,
             left=pair.left,
             right=pair.right,
             result=PairResult.model_validate(pair.model_dump(include=set(PairResult.model_fields))),
-            evidence_interpretation_ids=interpretations,
-            attempt_ids=attempts,
+            evidence_interpretation_ids=ids["evidence_interpretation_ids"],
+            attempt_ids=ids["attempt_ids"],
         )
-        found.append(route_pair_draft(qualified, key=row.key))
+        found.append(
+            route_pair_draft(
+                qualified, key=row.key, calculation_trace_ids=ids["calculation_trace_ids"]
+            )
+        )
     if not (row.corroboration_status is CorroborationStatus.NOT_COMPARABLE and pairs):
-        interpretations, attempts = evidence(row.source_values)
         found.append(
             route_status_draft(
                 row.corroboration_status,
                 key=row.key,
                 reason_code=row.corroboration_reason,
                 source_refs=tuple(values),
-                evidence_interpretation_ids=interpretations,
-                attempt_ids=attempts,
+                **evidence.of(row.key, row.source_values),
             )
         )
     return [draft for draft in found if draft is not None]

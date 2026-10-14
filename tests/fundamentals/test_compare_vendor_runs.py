@@ -282,7 +282,9 @@ class Issuer:
         request = self.request(Q4_END if key.period.end == Q4_END else Q3_END, vendors)
         loader = RunLoader(request, self.repository)
         loader.load()
-        return VendorSides(loader.inputs(0), request, config=self.config).row(
+        return VendorSides(
+            loader.inputs(0), request, config=self.config, traces=self.repository
+        ).row(
             key,
             fiscal_month=3,
             applicability=ApplicabilityStatus.APPLICABLE,

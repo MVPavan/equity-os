@@ -250,6 +250,44 @@ def test_two_unsuperseded_candidates_are_ambiguous() -> None:
     ) == (SourceState.INVALID, None, INTERPRETATION_AMBIGUOUS)
 
 
+def test_two_current_readings_of_one_pdf_cell_stay_ambiguous() -> None:
+    """Agreeing columns printing one instant are one reading; two current interpretations of
+    the same cell are never collapsed, even when their values agree."""
+    instant = key(period=PeriodInterval.at(PERIOD_END))
+    cells = [
+        occurrence(index, PDF_MEMBER, period=instant.period).model_copy(
+            update={"anchor": {"page": 3, "line": 14, "column_index": column}}
+        )
+        for index, column in ((1, 0), (2, 2))
+    ]
+    first = interpretation(1, PDF_MEMBER, measurement=instant)
+    columns = select_key(
+        instant,
+        PDF,
+        package=ORIGINAL,
+        occurrences=cells,
+        interpretations=[first, interpretation(2, PDF_MEMBER, measurement=instant)],
+        boundary=EligibilityBoundary.at(at(31)),
+        mode=RunMode.RETROSPECTIVE,
+        pinned=TRIPLE,
+    )
+    assert (columns.state, columns.interpretation) == (SourceState.VALUE, first)
+    twin = interpretation(2, PDF_MEMBER, measurement=instant).model_copy(
+        update={"occurrence_id": 1}
+    )
+    same_cell = select_key(
+        instant,
+        PDF,
+        package=ORIGINAL,
+        occurrences=cells,
+        interpretations=[first, twin],
+        boundary=EligibilityBoundary.at(at(31)),
+        mode=RunMode.RETROSPECTIVE,
+        pinned=TRIPLE,
+    )
+    assert (same_cell.state, same_cell.reason) == (SourceState.INVALID, INTERPRETATION_AMBIGUOUS)
+
+
 def test_nil_line_is_no_value_and_invalid_line_is_invalid() -> None:
     """A mapped line without a value is ``NO_VALUE``, never zero; an invalid one ``INVALID``."""
     boundary = EligibilityBoundary.at(at(31))

@@ -13,6 +13,7 @@ request (no consolidated page is retained).
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
@@ -22,9 +23,10 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import pytest
-from pg_evidence_schema_support import _insert
+from test_compare_runs import seed_netweb
 from test_evidence_vendor_screener import binding as screener_binding
-from vendor_retained_support import identifiers, retained_page, stage_registered
+from test_watchlist_xbrl_ingest import _seed
+from vendor_retained_support import RAW_ROOT, identifiers, retained_page, stage_registered
 
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.canon.interval import load_rounding_policy
@@ -40,8 +42,10 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.qualification import QualificationContext
 from fundamentals.contracts.snapshot import BlobRef, CaptureRecord
 from fundamentals.evidence import vendor_tijori, vendor_upstox
+from fundamentals.evidence.interpret import interpret
 from fundamentals.evidence.mapping import load_mapping_set, load_normalisation_policy
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.selection import is_eligible
@@ -107,6 +111,7 @@ class Case(NamedTuple):
     screener_symbol: str = ""
     units_in: str = ""  # Restage the Upstox capture with this ``units_in``.
     empty: bool = False  # Restage the Upstox capture as the empty ``OK_EMPTY`` response.
+    issuer: str = "THERMAX"  # The seeded entity the request names.
 
 
 def tijori(slug: str, symbol: str) -> Any:
@@ -225,6 +230,7 @@ CASES = (
                 PRECISION,
             ),
         ),
+        issuer="POLYCAB",
     ),
     Case(
         "netweb_degenerate_consolidated_screener_page_yields_no_values",
@@ -235,6 +241,7 @@ CASES = (
         "screener-v1",
         ExtractionOutcome.PARSE_FAILED,
         screener_symbol="NETWEB",
+        issuer="NETWEB",
     ),
     Case(
         "netweb_empty_upstox_consolidated_response_yields_no_values",
@@ -244,6 +251,7 @@ CASES = (
         lambda: upstox(Basis.CONSOLIDATED),
         vendor_upstox.EXTRACTOR_VERSION,
         ExtractionOutcome.IDENTITY_REJECTED,
+        issuer="NETWEB",
     ),
     Case(
         "unregistered_surface_not_authorised",
@@ -262,6 +270,7 @@ CASES = (
         lambda: upstox(Basis.STANDALONE),
         vendor_upstox.EXTRACTOR_VERSION,
         ExtractionOutcome.FAILED,
+        issuer="NETWEB",
     ),
     Case(
         "vendor_capture_never_eligible_before_registration",
@@ -284,6 +293,7 @@ CASES = (
                 PRECISION,
             ),
         ),
+        issuer="NETWEB",
     ),
     Case(
         "screener_total_liabilities_maps_to_no_liabilities_row",
@@ -317,6 +327,7 @@ CASES = (
         vendor_upstox.EXTRACTOR_VERSION,
         ExtractionOutcome.UNSUPPORTED_SCHEMA,
         units_in="lakh",
+        issuer="POLYCAB",
     ),
     Case(
         # Upstox answers an unknown ISIN with the same empty body: no evidenced absence.
@@ -328,6 +339,7 @@ CASES = (
         vendor_upstox.EXTRACTOR_VERSION,
         ExtractionOutcome.IDENTITY_REJECTED,
         empty=True,
+        issuer="POLYCAB",
     ),
     Case(
         "tijori_qt_c_net_profit_maps_to_continuing_pat",
@@ -381,6 +393,26 @@ CASES = (
             ),
         ),
     ),
+    Case(
+        # The adapter verified THERMAX; the request names POLYCAB: nothing is stored for it.
+        "foreign_issuer_capture_is_identity_rejected",
+        TIJORI_THERMAX,
+        Representation.HTML,
+        Basis.CONSOLIDATED,
+        lambda: tijori("thermax-limited", "THERMAX"),
+        vendor_tijori.EXTRACTOR_VERSION,
+        ExtractionOutcome.IDENTITY_REJECTED,
+        issuer="POLYCAB",
+    ),
+    Case(
+        "other_basis_capture_is_identity_rejected",
+        TIJORI_THERMAX,
+        Representation.HTML,
+        Basis.STANDALONE,
+        lambda: tijori("thermax-limited", "THERMAX"),
+        vendor_tijori.EXTRACTOR_VERSION,
+        ExtractionOutcome.IDENTITY_REJECTED,
+    ),
 )
 
 
@@ -400,7 +432,7 @@ def test_d1b1_vendor_claim(
     case: Case, pg_db: Any, tmp_path: Path, config: tuple[Any, Any, Any, Any]
 ) -> None:
     dictionary, mappings, policy, rounding = config
-    entity = _entity(pg_db)
+    entity = _entity(pg_db, case.issuer)
     with pg_db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
         started = repository.store_clock()
@@ -487,23 +519,14 @@ def test_d1b1_vendor_claim(
         )
 
 
-def _entity(pg_db: Any) -> int:
-    with pg_db.migrator_connection() as conn:
-        evidence = _insert(
-            conn,
-            "evidence_inputs",
-            {"kind": "ISSUER_IDENTITY", "label": "D1b.1 vendor test", "content_sha256": "b" * 64},
-        )
-        return _insert(
-            conn,
-            "reporting_entities",
-            {
-                "entity_key": "D1B1-VENDOR-TEST",
-                "market": "IN",
-                "display_name": "D1b.1 vendor test entity",
-                "evidence_input_id": evidence,
-            },
-        )
+def _entity(pg_db: Any, symbol: str) -> int:
+    """The seeded identity of the issuer the request names."""
+    with pg_db.runtime_pool() as pool:
+        if symbol == "NETWEB":
+            return seed_netweb(pool)
+        manifest = RAW_ROOT / symbol.lower() / "retrieval-manifest.json"
+        (entry,) = json.loads(manifest.read_bytes())["entries"]
+        return _seed(pool, symbol, entry)
 
 
 def _located(
@@ -604,6 +627,77 @@ def test_tijori_renders_retained_halves_as_its_script(
 def test_tijori_render_follows_both_javascript_branches(island: str, shown: str) -> None:
     """Expected texts are Node's ``toFixed(2)`` / ``String(Math.round(x))`` of ``JSON.parse``."""
     assert _TIJORI_DISPLAY.render(Decimal(island)) == shown
+
+
+def test_tijori_ttm_ending_at_the_fiscal_year_end_stays_a_typed_ambiguity(
+    monkeypatch: pytest.MonkeyPatch, config: tuple[Any, Any, Any, Any]
+) -> None:
+    """A final column footed "TTM Values as of Mar 2027" ends on the March year end: it keeps
+    its interval and TTM kind (never dropped, never read as fiscal year 2027) and is refused
+    ``PERIOD_AMBIGUOUS``. The retained THERMAX table is relabelled, a test-private edit."""
+    dictionary, mappings, policy, _ = config
+    store = SnapshotStore(RETAINED)
+    record, body = store.read_capture_verified(*TIJORI_THERMAX)
+    parse = TijoriSource.parse_all_tables_bytes
+
+    def at_year_end(*args: Any, **kwargs: Any) -> Any:
+        return [
+            table.model_copy(
+                update={
+                    "column_period_labels": (*table.column_period_labels[:-1], "Mar 2027"),
+                    "table_footer_json": '"TTM Values as of Mar 2027"',
+                }
+            )
+            if table.key.value == "pl_c_s"
+            else table
+            for table in parse(*args, **kwargs)
+        ]
+
+    monkeypatch.setattr(TijoriSource, "parse_all_tables_bytes", at_year_end)
+    capture = CaptureReference(
+        capture_ref_id=1,
+        source_id=TIJORI_THERMAX[0],
+        surface=TIJORI_THERMAX[1],
+        request_key=TIJORI_THERMAX[2],
+        capture_id=TIJORI_THERMAX[3],
+        blob_sha256=hashlib.sha256(body).hexdigest(),
+        record_sha256=record.record_sha256,
+        registered_at=record.retrieved_at,
+        first_seen_at=record.retrieved_at,
+    )
+    extraction = tijori("thermax-limited", "THERMAX")(
+        body, capture=capture, record=record, extractor_version=vendor_tijori.EXTRACTOR_VERSION
+    )
+    (sales,) = (
+        item
+        for item in extraction.occurrences
+        if (item.native_context["section"], item.native_field, item.anchor["column_label"])
+        == ("pl_c_s", "Sales", "Mar 2027")
+    )
+    assert sales.period == PeriodInterval.duration(date(2026, 4, 1), date(2027, 3, 31))
+    assert sales.native_context["header_kind"] == PeriodKind.TTM.value
+    read = interpret(
+        sales.model_copy(update={"occurrence_id": 1}),
+        entity_id=1,
+        basis=Basis.CONSOLIDATED,
+        framework=AccountingFramework.IND_AS,
+        mapping_set=mappings,
+        policy=policy,
+        dictionary=dictionary,
+        fiscal_year_end_month=3,
+        qualification=QualificationContext(
+            schema_identity=vendor_tijori.SCHEMA_IDENTITY,
+            surface=TIJORI_THERMAX[1],
+            basis=Basis.CONSOLIDATED,
+            period_kind=PeriodKind.TTM,
+            proven={},
+        ),
+        recorded_at=record.retrieved_at,
+    )
+    assert (read.status, read.canonical_id) == (
+        InterpretationStatus.PERIOD_AMBIGUOUS,
+        "revenue_from_operations",
+    )
 
 
 APAR_UPSTOX = (

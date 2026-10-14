@@ -50,6 +50,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 _LOG = structlog.get_logger(__name__)
 _DASHES = ("-", "—", "–")
 _NOT_RETAINED = "capture {capture_id} retained no complete body ({code})"
+_FOREIGN = "adapter bound issuer {issuer!r} {basis}, not entity {entity_id} {requested}"
 
 
 class VendorExtractionError(ValueError):
@@ -61,13 +62,19 @@ class VendorExtractionError(ValueError):
 
 
 class VendorExtraction(BaseModel):
-    """Lossless native occurrences plus the honest outcome and pinned extraction context."""
+    """Lossless native occurrences plus the honest outcome and pinned extraction context.
+
+    ``issuer`` (NSE symbol or ISIN) and ``basis`` are what the adapter verified the capture
+    against; occurrences are stored only when both match the request's seeded entity.
+    """
 
     model_config = ConfigDict(frozen=True)
     occurrences: tuple[Occurrence, ...]
     outcome: ExtractionOutcome
     reasons: tuple[str, ...] = ()
     extraction_context_sha256: str | None = None
+    issuer: str | None = None
+    basis: Basis | None = None
 
 
 class VendorIngestRequest(BaseModel):
@@ -146,6 +153,7 @@ def ingest_vendor(
         extraction = extract(
             body, capture=capture, record=record, extractor_version=extractor_version
         )
+        _bound(extraction, request, repository)
     except VendorExtractionError as error:
         extraction = VendorExtraction(occurrences=(), outcome=error.outcome, reasons=(str(error),))
     report = _store(
@@ -247,15 +255,44 @@ def month_period(label: str, months: int) -> PeriodInterval | None:
     return PeriodInterval.duration(date(offset // 12, offset % 12 + 1, 1), end)
 
 
+def _bound(
+    extraction: VendorExtraction, request: VendorIngestRequest, repository: EvidenceRepository
+) -> None:
+    """Refuse occurrences whose verified issuer or basis is not the request's (spec §3)."""
+    if not extraction.occurrences:
+        return
+    try:
+        seeded = repository.issuer_identifiers(request.entity_id)
+        known = extraction.issuer in (seeded.isin, seeded.nse_symbol)
+    except LookupError:
+        known = False
+    if not known or extraction.basis is not request.basis:
+        raise VendorExtractionError(
+            ExtractionOutcome.IDENTITY_REJECTED,
+            _FOREIGN.format(
+                issuer=extraction.issuer,
+                basis=extraction.basis,
+                entity_id=request.entity_id,
+                requested=request.basis,
+            ),
+        )
+
+
 def _interpretations(
     occurrences: tuple[Occurrence, ...],
     scope: CaptureScope,
     repository: EvidenceRepository,
     extractor_version: str,
 ) -> tuple[Interpretation, ...]:
-    """This generation's rows under the pinned triple: reused if stored, else appended."""
+    """This generation's rows under the pinned versions and scope: reused, else appended."""
     assert scope.capture.capture_ref_id is not None
-    triple = (scope.mapping_set.version, scope.policy.version, extractor_version)
+    pins = (
+        scope.mapping_set.version,
+        scope.policy.version,
+        extractor_version,
+        scope.entity_id,
+        scope.basis,
+    )
     ids = {item.occurrence_id for item in occurrences}
     stored = repository.list_capture_interpretations(scope.capture.capture_ref_id)
 
@@ -264,7 +301,9 @@ def _interpretations(
             row.mapping_set_version,
             row.normalisation_policy_version,
             row.extractor_version,
-        ) == triple
+            row.entity_id,
+            row.basis,
+        ) == pins
 
     current = tuple(row for row in stored if under(row) and row.occurrence_id in ids)
     if current or not occurrences:

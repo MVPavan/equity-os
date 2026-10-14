@@ -16,8 +16,10 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.ingest.pdf_source import PageWord
 
-# A printed figure with a fraction, optionally negative: never a Sr No or a note number.
-_FIGURE = re.compile(r"\(?-?\d[\d,]*\.\d+\)?")
+# A printed figure (integer, fraction or nil dash), optionally negative.
+_FIGURE = re.compile(r"\(?-?\d[\d,]*(\.\d+)?\)?|[-\u2013\u2014]")
+# A figure no Sr No or note number prints: a fraction, a thousands separator or 3+ digits.
+_AMOUNT = re.compile(r"\(?-?(\d[\d,]*\.\d+|\d*,[\d,]*|\d{3,})\)?")
 
 
 class HeaderColumn(BaseModel):
@@ -43,7 +45,7 @@ def unheaded_columns(
 
     A column must hold at least half as many figures as the sparsest header column, so
     a few formula references in the label column (``(11-12)`` read as ``(11.12)``) never
-    form one.
+    form one, and at least one amount, so a Sr No or note column never does.
     """
     figures = [word for word in words if _FIGURE.fullmatch(word.text)]
     placed = [column_of(word) for word in figures]
@@ -51,17 +53,18 @@ def unheaded_columns(
     loose = sorted(
         (word for word, index in zip(figures, placed, strict=True) if index is None), key=_x0
     )
-    bands: list[tuple[float, float, int]] = []
+    bands: list[tuple[float, float, int, bool]] = []
     for word in loose:
+        amount = _AMOUNT.fullmatch(word.text) is not None
         if bands and word.x0 <= bands[-1][1]:
-            x0, x1, count = bands.pop()
-            bands.append((x0, max(x1, word.x1), count + 1))
+            x0, x1, count, amounts = bands.pop()
+            bands.append((x0, max(x1, word.x1), count + 1, amounts or amount))
         else:
-            bands.append((word.x0, word.x1, 1))
+            bands.append((word.x0, word.x1, 1, amount))
     return [
         HeaderColumn(x0=x0, x1=x1, header_x0=x0, header_x1=x1, date_text="")
-        for x0, x1, count in bands
-        if counts and 2 * count >= min(counts.values())
+        for x0, x1, count, amounts in bands
+        if amounts and counts and 2 * count >= min(counts.values())
     ]
 
 

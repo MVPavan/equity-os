@@ -48,6 +48,7 @@ class QueueItemDraft(BaseModel):
     attempt_ids: tuple[PositiveInt, ...] = ()
     evidence_interpretation_ids: tuple[PositiveInt, ...] = ()
     evidence_occurrence_ids: tuple[PositiveInt, ...] = ()
+    calculation_trace_ids: tuple[PositiveInt, ...] = ()  # hashed into the input identity only
 
     @model_validator(mode="after")
     def _evidenced_route(self) -> QueueItemDraft:
@@ -101,7 +102,8 @@ class QueueDisposition(BaseModel):
 
 
 class QueueOverlay(BaseModel):
-    """One run's queue as of a committed store-clock boundary: open items and dispositions."""
+    """One run's queue as of a committed store-clock boundary: open and disposed items and
+    the dispositions."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -109,3 +111,4 @@ class QueueOverlay(BaseModel):
     as_of: datetime
     open_items: tuple[QueueItem, ...]
     dispositions: tuple[QueueDisposition, ...]
+    disposed_items: tuple[QueueItem, ...] = ()

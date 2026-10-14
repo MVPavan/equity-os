@@ -146,6 +146,8 @@ def extract_upstox(
         occurrences=occurrences,
         outcome=ExtractionOutcome.COMPLETE,
         reasons=document.anomalies,
+        issuer=params[PATH_PARAMETER].split("/")[3],  # /v2/fundamentals/{isin}/income-statement
+        basis=basis,
         extraction_context_sha256=input_digest(
             {
                 "surface": capture.surface,

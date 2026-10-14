@@ -61,7 +61,6 @@ class TijoriBinding(BaseModel):
     slug: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
     company_id: int = Field(gt=0)
-    fiscal_year_end_month: int = Field(default=3, ge=1, le=12)
 
 
 class TijoriDisplay(BaseModel):
@@ -148,7 +147,7 @@ def extract_tijori(
             for index, (lexeme, value) in enumerate(lexemes):
                 column = labels[index] if row.cells else None
                 shown = value if scoped_row else None
-                ttm = bool(row.cells) and _is_ttm(table, index, binding.fiscal_year_end_month)
+                ttm = bool(row.cells) and _is_ttm(table, index)
                 occurrences.append(
                     json_occurrence(
                         capture,
@@ -159,9 +158,7 @@ def extract_tijori(
                         raw_unit=display.raw_unit if scoped_row else UNKNOWN_UNIT,
                         raw_scale=display.raw_scale if scoped_row else 0,
                         declared_precision=None if shown is None else display.decimals(shown),
-                        period=_period(table, index, binding.fiscal_year_end_month)
-                        if row.cells
-                        else None,
+                        period=_period(table, index) if row.cells else None,
                         native_context={
                             "schema_identity": SCHEMA_IDENTITY,
                             "basis": basis.value,
@@ -197,6 +194,8 @@ def extract_tijori(
         occurrences=tuple(occurrences),
         outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
         reasons=reasons,
+        issuer=binding.symbol,
+        basis=basis,
         extraction_context_sha256=input_digest(
             {
                 "surface": capture.surface,
@@ -209,8 +208,12 @@ def extract_tijori(
     )
 
 
-def _period(table: TijoriTable, index: int, fiscal_year_end_month: int) -> PeriodInterval | None:
-    """The column's interval from its label; the final ``pl_*`` column only as evidenced TTM."""
+def _period(table: TijoriTable, index: int) -> PeriodInterval | None:
+    """The column's interval from its label; the final ``pl_*`` column only as evidenced TTM.
+
+    A TTM column ending at the fiscal year end keeps its interval and its TTM header kind;
+    interpretation refuses that pair as period-ambiguous rather than reading a fiscal year.
+    """
     label = table.column_period_labels[index]
     family = table.key.value[:2]
     if family == "fr":
@@ -221,19 +224,17 @@ def _period(table: TijoriTable, index: int, fiscal_year_end_month: int) -> Perio
     if family == "qt":
         return month_period(label, 3)
     if family == "pl" and index == len(table.column_period_labels) - 1:
-        return year if _is_ttm(table, index, fiscal_year_end_month) else None
+        return year if _is_ttm(table, index) else None
     return year
 
 
-def _is_ttm(table: TijoriTable, index: int, fiscal_year_end_month: int) -> bool:
-    """The final ``pl_*`` column whose footer evidences it as TTM, never a fiscal year."""
+def _is_ttm(table: TijoriTable, index: int) -> bool:
+    """The final ``pl_*`` column whose footer evidences it as TTM, whatever month it ends."""
     label = table.column_period_labels[index]
-    year = month_period(label, 12)
     footer = json.loads(table.table_footer_json) if table.table_footer_json else None
     return (
         table.key.value[:2] == "pl"
         and index == len(table.column_period_labels) - 1
         and footer == _TTM_FOOTER.format(label=label)
-        and year is not None
-        and year.kind(fiscal_year_end_month) is PeriodKind.TTM
+        and month_period(label, 12) is not None
     )

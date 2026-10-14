@@ -153,6 +153,8 @@ def extract_screener_page(
         occurrences=tuple(occurrences),
         outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
         reasons=reasons,
+        issuer=binding.symbol,
+        basis=basis,
         extraction_context_sha256=_context(capture, binding, basis, section),
     )
 
@@ -287,6 +289,8 @@ def extract_screener_schedule(
         occurrences=tuple(occurrences),
         outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
         reasons=tuple(dict.fromkeys(reasons)),
+        issuer=binding.symbol,
+        basis=basis,
         extraction_context_sha256=_context(
             capture,
             binding,

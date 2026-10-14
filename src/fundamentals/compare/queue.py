@@ -69,6 +69,11 @@ _OVERLAY: LiteralString = (
     "WHERE m.run_id = %(run_id)s AND m.recorded_at <= %(as_of)s ORDER BY i.id, d.id"
 )
 
+_ITEM_INPUTS: LiteralString = (
+    "SELECT occurrence_id, interpretation_id, attempt_id FROM eqos.queue_item_inputs "
+    "WHERE item_id = %s ORDER BY id"
+)
+
 
 def lock_queue(cursor: Cursor[Any]) -> None:
     """Take the shared queue lock; call it before the transaction's first store-clock read."""
@@ -133,7 +138,18 @@ def read_overlay(pool: ConnectionPool, *, run_id: int, as_of: datetime) -> Queue
         as_of=as_of,
         open_items=tuple(item for item_id, item in items.items() if item_id not in disposed),
         dispositions=dispositions,
+        disposed_items=tuple(item for item_id, item in items.items() if item_id in disposed),
     )
+
+
+def item_inputs(pool: ConnectionPool, item_id: int) -> dict[str, tuple[int, ...]]:
+    """One item's typed evidence ids: occurrences, interpretations and attempts."""
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(_ITEM_INPUTS, (item_id,)).fetchall()
+    return {
+        name: tuple(row[name] for row in rows if row[name] is not None)
+        for name in ("occurrence_id", "interpretation_id", "attempt_id")
+    }
 
 
 def _publish_one(cursor: Cursor[Any], run_id: int, digest: str, draft: QueueItemDraft) -> int:
@@ -177,7 +193,12 @@ def _publish_one(cursor: Cursor[Any], run_id: int, digest: str, draft: QueueItem
 def _input_sha256(draft: QueueItemDraft) -> str:
     """The hash of the routed payload and its sorted typed evidence ids."""
     document = draft.model_dump(mode="json")
-    for name in ("attempt_ids", "evidence_interpretation_ids", "evidence_occurrence_ids"):
+    for name in (
+        "attempt_ids",
+        "evidence_interpretation_ids",
+        "evidence_occurrence_ids",
+        "calculation_trace_ids",
+    ):
         document[name] = sorted(document[name])
     return canonical_sha256(document)
 

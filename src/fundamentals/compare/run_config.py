@@ -63,6 +63,7 @@ EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
     Representation.PDF: (
         "evidence/pdf_adapter.py",
         "extract/pdf_statement_pages.py",
+        "extract/pdf_figure_columns.py",
         "extract/pdf_header_text.py",
         "extract/pdf_printed_unit.py",
         "evidence/first_party_extract.py",
@@ -75,19 +76,41 @@ EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
     Representation.PDF: PDF_EXTRACTOR_VERSION,
 }
 _VENDOR_INGEST = "evidence/vendor_ingest.py"
-# Per vendor source: the extractor version and the adapter source files it hashes.
+# Per vendor source: the extractor version and the adapter, parser and identity/basis check
+# source files it hashes.
 VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
     vendor_screener.SOURCE: (
         vendor_screener.EXTRACTOR_VERSION,
-        ("evidence/vendor_screener.py", _VENDOR_INGEST),
+        (
+            "evidence/vendor_screener.py",
+            "ingest/screener_financials_models.py",
+            "ingest/screener_financials_schedules.py",
+            "ingest/screener_financials_shapes.py",
+            "ingest/screener_financials_tables.py",
+            "ingest/screener_session_models.py",
+            "ingest/screener_session_page.py",
+            _VENDOR_INGEST,
+        ),
     ),
     vendor_tijori.SOURCE_ID: (
         vendor_tijori.EXTRACTOR_VERSION,
-        ("evidence/vendor_tijori.py", _VENDOR_INGEST),
+        (
+            "evidence/vendor_tijori.py",
+            "ingest/tijori_source.py",
+            "ingest/tijori_tables.py",
+            "ingest/tijori_common.py",
+            _VENDOR_INGEST,
+        ),
     ),
     vendor_upstox.SOURCE_ID: (
         vendor_upstox.EXTRACTOR_VERSION,
-        ("evidence/vendor_upstox.py", "ingest/upstox_statements.py", _VENDOR_INGEST),
+        (
+            "evidence/vendor_upstox.py",
+            "ingest/upstox_statements.py",
+            "ingest/upstox_source.py",
+            "ingest/upstox_retention.py",
+            _VENDOR_INGEST,
+        ),
     ),
 }
 _PIN_FIELDS = (

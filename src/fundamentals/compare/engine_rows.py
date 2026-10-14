@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.canon.applicability import ApplicabilityDecision
 from fundamentals.canon.dictionary import DictionaryRow
 from fundamentals.canon.formula import CalculationResult
+from fundamentals.compare.definitions import DefinitionSet
+from fundamentals.compare.policy import ComparisonPolicy
 from fundamentals.compare.run_models import (
     PairRecord,
     ResultRow,
@@ -21,7 +23,13 @@ from fundamentals.compare.run_models import (
     SourceValue,
     row_id,
 )
-from fundamentals.compare.tables import ComparisonSide, PairResult, TaggingAdjustment
+from fundamentals.compare.tables import (
+    ComparisonSide,
+    ExtractionResult,
+    PairResult,
+    TaggingAdjustment,
+    pair_outcome,
+)
 from fundamentals.contracts.canonical import Representation, ValueIdentity, ValueKind
 from fundamentals.contracts.comparison import (
     CorroborationStatus,
@@ -234,6 +242,38 @@ def pair_record(
         definition_record_id=pair.definition_record_id,
         adjustments=tuple(adjustments),
     )
+
+
+def extraction_pairs(extraction: ExtractionResult) -> tuple[PairRecord, ...]:
+    """The XBRL-against-PDF pair an extraction status carries, if any."""
+    if extraction.pair is None:
+        return ()
+    xbrl, pdf = (ref(SourceRole.FIRST_PARTY, rep) for rep in REPRESENTATIONS)
+    return (pair_record(PairKind.EXTRACTION, xbrl, pdf, extraction.pair, extraction.adjustments),)
+
+
+def reported_vs_derived(
+    reported: Mapping[Representation, Side],
+    derived: Mapping[Representation, Side],
+    *,
+    definitions: DefinitionSet,
+    policy: ComparisonPolicy,
+) -> list[PairRecord]:
+    """Each representation's reported value against its derived one, where both pair."""
+    found = []
+    for rep in REPRESENTATIONS:
+        left, right = reported[rep].comparison, derived[rep].comparison
+        if pairable(left) and pairable(right):
+            outcome = pair_outcome(left, right, definitions=definitions, policy=policy)
+            found.append(
+                pair_record(
+                    PairKind.REPORTED_VS_DERIVED,
+                    ref(SourceRole.REPORTED_COUNTERPART, rep),
+                    ref(SourceRole.FIRST_PARTY, rep),
+                    outcome,
+                )
+            )
+    return found
 
 
 def ref(role: SourceRole, representation: Representation) -> SourceRef:

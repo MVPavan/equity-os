@@ -172,6 +172,7 @@ def test_pair_draft_preserves_route_and_all_typed_evidence(
         "attempt_ids",
         "evidence_interpretation_ids",
         "evidence_occurrence_ids",
+        "calculation_trace_ids",
     }
 
 

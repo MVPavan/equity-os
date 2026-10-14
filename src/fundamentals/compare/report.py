@@ -14,6 +14,7 @@ their rule id only. The dictionary must be the one the run pinned, by content.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Protocol
@@ -31,7 +32,7 @@ from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import ApplicabilityStatus, ValueKind
 from fundamentals.contracts.comparison import EpistemicClass, SourceRef, SourceRole, SourceState
 from fundamentals.contracts.evidence import Interpretation, Occurrence
-from fundamentals.contracts.review_queue import QueueItem, QueueOverlay
+from fundamentals.contracts.review_queue import QueueDisposition, QueueItem, QueueOverlay
 from fundamentals.contracts.versioning import VersionContentDriftError
 
 CRORE = Decimal(10) ** 7
@@ -65,7 +66,17 @@ _TRIAGE = "\ttriage={triage}"
 _DEFINITION = "\tdefinition={record}"
 _ADJUSTMENT = "\tadjust={operand}:{representation}:{direction}{amount}:{record}"
 _SURFACED = "  surfaced\t{ids}"
-_QUEUE = "queue\t{item}\t{severity}\t{outcome}\t{route}\treason={reason}\tkey={key}"
+_QUEUE = (
+    "queue\t{item}\t{severity}\t{outcome}\t{route}\treason={reason}\tkey={key}"
+    "\tsources={sources}{diagnostic}"
+)
+_DIAGNOSTIC = "\tdiagnostic"
+_DISPOSITION = (
+    "  disposition\t{id}\t{kind}\treason={reason}\tdecider={decider}\tevidence={evidence}"
+    "\tamount={amount}\tat={at}"
+)
+_OCCURRENCE = "  occurrence\t{id}\t{source}\tcapture={capture}\tlabel={label}\tlocator={locator}"
+_INPUT = "  {kind}\t{id}"
 _TRUST = "  trusted\t{trusted}"
 _CAPTURE_ANCHOR = "capture:{capture}:{anchor}"
 _CONSTRUCTION_ANCHOR = "construction:{rule}"
@@ -216,16 +227,63 @@ def _row_lines(
 
 
 def queue_line(item: QueueItem) -> str:
-    """One open queue item: id, severity, outcome, route, reason code and key."""
+    """One queue item: id, severity, outcome, route, reason code, the full measurement key
+    (canonical row, period, basis, dimension members), its sources and the diagnostic flag."""
     key = item.key
+    identity = NONE_TEXT
+    if key is not None:
+        members = ",".join(f"{axis}={member}" for axis, member in key.dimensions.pairs)
+        identity = ":".join(
+            part
+            for part in (key.canonical_id, period_text(key.period), key.basis.value, members)
+            if part
+        )
     return _QUEUE.format(
         item=item.item_id,
         severity=item.severity.value,
         outcome=item.outcome,
         route=item.routing_reason,
         reason=NONE_TEXT if item.reason_code is None else item.reason_code.value,
-        key=NONE_TEXT if key is None else f"{key.canonical_id}:{period_text(key.period)}",
+        key=identity,
+        sources=",".join(f"{ref.source_role.value}:{_source(ref)}" for ref in item.source_refs)
+        or NONE_TEXT,
+        diagnostic=_DIAGNOSTIC if item.diagnostic else "",
     )
+
+
+def disposition_line(disposition: QueueDisposition) -> str:
+    """One disposition record with its reason, decider, evidence, amount and time."""
+    return _DISPOSITION.format(
+        id=disposition.disposition_id,
+        kind=disposition.kind.value,
+        reason=disposition.reason,
+        decider=disposition.decider,
+        evidence=disposition.evidence_ref,
+        amount=NONE_TEXT if disposition.explained_amount is None else disposition.explained_amount,
+        at=disposition.recorded_at.isoformat(),
+    )
+
+
+def evidence_lines(
+    inputs: Mapping[str, Sequence[int]], occurrences: Sequence[Occurrence]
+) -> list[str]:
+    """An item's evidence: each occurrence's source, capture, native label and locator, then
+    its interpretation and attempt ids."""
+    lines = [
+        _OCCURRENCE.format(
+            id=occurrence.occurrence_id,
+            source=f"{occurrence.capture.source_id}/{occurrence.capture.surface}",
+            capture=occurrence.capture.capture_id,
+            label=occurrence.native_field,
+            locator=json.dumps(dict(occurrence.anchor), sort_keys=True, default=str),
+        )
+        for occurrence in occurrences
+    ]
+    for kind in ("interpretation_id", "attempt_id"):
+        lines.extend(
+            _INPUT.format(kind=kind.removesuffix("_id"), id=value) for value in inputs[kind]
+        )
+    return lines
 
 
 def _unit(result: ResultRow) -> str:

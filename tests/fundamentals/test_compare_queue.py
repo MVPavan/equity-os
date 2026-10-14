@@ -223,6 +223,43 @@ def test_failure_fixture_is_incomplete_and_replay_reproduces_unavailable(
     assert SourceState.UNAVAILABLE.value not in outcomes
 
 
+def test_queue_items_are_identifiable_filterable_and_show_their_dispositions(
+    runner: Runner, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A listed item names its full key and sources; ``list`` filters by severity and status
+    and prints each disposition with its reason; ``show`` resolves a key-less item's line."""
+    _cli(runner, monkeypatch)
+    runner.ingest.run(runner.ingest.intake(BOTH))
+    main(["compare", "run", *SCOPE])
+    run_id = str(_run_id(capsys))
+
+    def listed(*args: str) -> list[list[str]]:
+        assert main(["compare", "queue", "list", "--run", run_id, *args]) == 0
+        return [line.split("\t") for line in capsys.readouterr().out.splitlines()[2:]]
+
+    high = listed("--severity", "HIGH")
+    assert high and {line[2] for line in high} == {"HIGH"}
+    assert all(
+        ":CONSOLIDATED" in line[6] and line[7].startswith("sources=FIRST_PARTY:") for line in high
+    )
+    item = high[0][1]
+    assert _dispose(int(item), DispositionKind.FILER_INCONSISTENCY) == 0
+    capsys.readouterr()
+    disposed = listed("--status", "disposed")
+    assert [line[1] for line in disposed if line[0] == "queue"] == [item]
+    assert disposed[1][:3] == ["  disposition", disposed[1][1], "FILER_INCONSISTENCY"]
+    assert "reason=fixture" in disposed[1]
+    assert item not in {line[1] for line in listed()}
+    assert item in {line[1] for line in listed("--status", "all")}
+    unmapped = next(line for line in listed("--severity", "LOW") if line[3] == UNMAPPED)
+    assert unmapped[6] == "key=-" and unmapped[7].startswith("sources=FIRST_PARTY:")
+    assert main(["compare", "queue", "show", "--run", run_id, "--item", unmapped[1]]) == 0
+    shown = [line.split("\t") for line in capsys.readouterr().out.splitlines()]
+    occurrence = next(line for line in shown if line[0] == "  occurrence")
+    assert occurrence[4].startswith("label=") and len(occurrence[4]) > len("label=")
+    assert occurrence[5].startswith("locator={")
+
+
 def test_exit_statuses_separate_open_high_success_and_failure(
     runner: Runner, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -351,6 +388,19 @@ def test_identical_inputs_reuse_the_item_and_changed_inputs_link_a_new_one(
         "SELECT item_id, occurrence_id, interpretation_id FROM eqos.queue_item_inputs ORDER BY id"
     )
     assert {row[0] for row in inputs if row[2] is not None} == {items[0][0]}
+
+
+def test_a_changed_calculation_trace_links_a_new_item(queue: Fixture) -> None:
+    """Same attempts and interpretations, another trace: a new item, never the old one's."""
+    first, _ = queue.publish(1, (queue.draft().model_copy(update={"calculation_trace_ids": (7,)}),))
+    changed, _ = queue.publish(
+        2, (queue.draft().model_copy(update={"calculation_trace_ids": (8,)}),)
+    )
+    items = queue.rows("SELECT id, run_id, predecessor_item_id FROM eqos.queue_items ORDER BY id")
+    assert [(run, predecessor) for _, run, predecessor in items] == [
+        (first, None),
+        (changed, items[0][0]),
+    ]
 
 
 def test_items_are_append_only_sealed_and_timed_by_the_store_clock(queue: Fixture) -> None:
