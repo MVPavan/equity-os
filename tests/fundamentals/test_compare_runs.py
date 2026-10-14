@@ -7,6 +7,7 @@ from the run rules; altered inputs are marked copies under ``tmp_path``.
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from datetime import date
 from decimal import Decimal
@@ -30,6 +31,8 @@ from evidence_support import (
 from psycopg import errors
 from retained_support import MarkedEdit, PdfRedaction, apar_original, marked_copy, marked_pdf
 from run_support import (
+    CODE_VERSION,
+    CONFIG,
     FY25_Q2_END,
     Q2_END,
     Q2_FY25,
@@ -51,12 +54,20 @@ from run_support import (
 )
 
 from fundamentals.api.cli import main
+from fundamentals.canon.applicability import STANDALONE_ONLY_RULE_ID
 from fundamentals.canon.dictionary import DictionaryRow
 from fundamentals.compare.engine_attempts import RunResolutionError
-from fundamentals.compare.run import ResultRow, RunStatus, SourceValue, VersionContentDriftError
+from fundamentals.compare.run import (
+    ResultRow,
+    RunStatus,
+    SourceValue,
+    VersionContentDriftError,
+    request_for,
+)
 from fundamentals.compare.run_config import ConfigVersions, extractor_pin
 from fundamentals.compare.run_store import STAGE_RESULTS
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
@@ -75,7 +86,12 @@ from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.evidence.first_party_ingest import IngestError
 from fundamentals.evidence.mapping import load_mapping_set
 from fundamentals.evidence.selection import NOT_EXTRACTED_UNDER_PINS, NOT_INTERPRETED_UNDER_PINS
-from fundamentals.pg.identity_seed import SettingKey
+from fundamentals.pg.identity_seed import (
+    IdentityCitation,
+    IssuerIdentityInput,
+    SettingKey,
+    seed_issuer_identity,
+)
 
 __all__ = ["dictionary", "ingest", "mapping_set", "policy", "runner"]
 
@@ -99,6 +115,11 @@ Q4_NAMESPACE = MarkedEdit(
     find=b'xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt"',
     replace=b'xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt"',
 )
+# NETWEB's retained Q3 FY25 BSE filing (standalone results; p3: its one subsidiary is a
+# not-for-profit Section 8 company, so consolidation is not applicable) and the retained
+# Upstox instrument list carrying its ISIN.
+NETWEB_PDF = "122ca4cc7fafc72f3c96dce0f30d42b618f78b272bac2c64cde1589cc258ab3a"
+UPSTOX_INSTRUMENTS = "4e82c137a782b4e4d74c8821ce0b1271f3325e1d5f67c4d16ade57e688d278a5"
 NO_PL_TITLE = PdfRedaction(page=3, row_of="Statement", words=("financial",))
 NO_BS_TITLE = PdfRedaction(page=6, row_of="Statement", words=("Liabilities",))
 
@@ -253,6 +274,50 @@ def test_replay_closure_survives_four_evidence_changes(runner: Runner) -> None:
     assert fresh.run_id != record.run_id
     fresh_rows = runner.results(fresh.run_id)
     assert {item.applicability for item in fresh_rows} == {ApplicabilityStatus.NOT_APPLICABLE}
+    assert runner.replay(record.run_id) == stored
+
+
+def test_standalone_only_issuer_without_a_consolidated_package(runner: Runner) -> None:
+    """NETWEB files no consolidated results: a consolidated run is NOT_APPLICABLE throughout,
+    reads no value (none borrowed from standalone), completes and replays."""
+    pdf = {"capture_sha256": NETWEB_PDF}
+    identity = IssuerIdentityInput(
+        entity_key="NETWEB",
+        display_name="Netweb Technologies India Limited",
+        isin="INE0NT901020",
+        share_class="EQUITY",
+        nse_symbol="NETWEB",
+        bse_scrip="543945",
+        basis_status=BasisStatus.STANDALONE_ONLY,
+        fiscal_year_end_month=3,
+        citations=(
+            IdentityCitation(field="display_name", pages=(2,), **pdf),
+            IdentityCitation(field="isin", capture_sha256=UPSTOX_INSTRUMENTS, native_field="isin"),
+            IdentityCitation(field="nse_symbol", pages=(1,), **pdf),
+            IdentityCitation(field="bse_scrip", pages=(1,), **pdf),
+            IdentityCitation(field="basis_status", pages=(3,), **pdf),
+            IdentityCitation(field="fiscal_year_end_month", pages=(4,), **pdf),
+        ),
+        content_sha256=hashlib.sha256(b"NETWEB standalone-only test identity").hexdigest(),
+    )
+    with runner.pool.connection() as conn:
+        entity_id = seed_issuer_identity(conn, identity).entity_ids["NETWEB"]
+    request = request_for(
+        entity_id,
+        date(2024, 12, 31),
+        Basis.CONSOLIDATED,
+        cutoff=runner.now(),
+        config_root=CONFIG,
+        code_version=CODE_VERSION,
+        database_identity=runner.database,
+    )
+    record = runner.execute(request)
+    stored = runner.results(record.run_id)
+    assert stored and record.manifest.status is RunStatus.COMPLETE
+    assert {item.applicability_rule_id for item in stored} == {STANDALONE_ONLY_RULE_ID}
+    assert {item.extraction_status for item in stored} == {ExtractionStatus.NOT_APPLICABLE}
+    # No consolidated package evidences a currency, and none is taken from standalone.
+    assert all(not item.source_values and item.key.currency is None for item in stored)
     assert runner.replay(record.run_id) == stored
 
 
@@ -464,15 +529,37 @@ def test_generations_modes_and_isolation(runner: Runner) -> None:
 
 
 def test_one_member_package_is_not_applicable(runner: Runner) -> None:
-    """FY25 Q2 has only an XBRL member and no PDF attempt: no pair, so NOT_APPLICABLE (§5 row 1)."""
+    """FY25 Q2 has only an XBRL member and no PDF attempt: no pair, so NOT_APPLICABLE (§5 row 1),
+    for reported rows and for formula rows whose every operand family is single-representation.
+    """
     ingest = runner.ingest
     ingest.run(
         ingest.intake({Representation.XBRL: "xbrl-consolidated-comparator"}, Q2_FY25),
         FY25_Q2_END,
     )
     record = runner.run(FY25_Q2_END)
-    revenue = row(runner.results(record.run_id), REVENUE, FY25_Q2_QUARTER)
+    stored = runner.results(record.run_id)
+    revenue = row(stored, REVENUE, FY25_Q2_QUARTER)
     assert revenue.extraction_status is ExtractionStatus.NOT_APPLICABLE
+    formulas = {item.canonical_id for item in ingest.dictionary.rows if item.formula}
+    derived = [
+        item
+        for item in stored
+        if item.key.canonical_id in formulas
+        and item.applicability is ApplicabilityStatus.APPLICABLE
+        and any(
+            value.representation is Representation.XBRL and value.value is not None
+            for value in item.source_values
+        )
+    ]
+    assert derived
+    assert {item.extraction_status for item in derived} == {ExtractionStatus.NOT_APPLICABLE}
+    # Nothing is shared into the PDF representation the filing lacks.
+    assert not any(
+        value.representation is Representation.PDF and value.value is not None
+        for item in derived
+        for value in item.source_values
+    )
     assert record.manifest.status is RunStatus.COMPLETE
 
 

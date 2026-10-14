@@ -30,6 +30,7 @@ from fundamentals.compare.engine_rows import (
     family_has_pair,
     output_context,
     selected_side,
+    with_current_proofs,
 )
 from fundamentals.compare.run_config import LoadedConfig
 from fundamentals.compare.tables import (
@@ -54,9 +55,10 @@ from fundamentals.contracts.evidence import (
     PackageMember,
 )
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
-from fundamentals.contracts.qualification import QualificationContext
+from fundamentals.contracts.qualification import QualificationContext, QualificationScope
 from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.derived import DerivedSide, TraceStore, evaluate_derived, operand_value
+from fundamentals.evidence.interpret import prove_conditions
 from fundamentals.evidence.repository import SegmentMemberRecord
 from fundamentals.evidence.selection import period_end
 
@@ -148,6 +150,13 @@ class FormulaRows:
             return self._evaluated[digest]
         package = self.package(row, key)
         package_id = None if package is None else package.package_id
+        # Every operand single-representation: NOT_APPLICABLE, and nothing is shared into a
+        # representation the filing lacks.
+        single = all(
+            self._sole_representation(leaf) is not None
+            for leaf in self._leaf_keys(row, key, currency)
+        )
+        resolve = self._host.resolve if single else self._resolve
         results: dict[Representation, DerivedSide] = {}
         sides: dict[Representation, Side] = {}
         contexts = {}
@@ -163,7 +172,7 @@ class FormulaRows:
                 row,
                 key,
                 representation=rep,
-                resolve=partial(self._host.resolve, representation=rep),
+                resolve=partial(resolve, representation=rep),
                 proofs=self._proofs,
                 qualification=contexts[rep],
                 qualification_for=context_for,
@@ -187,7 +196,7 @@ class FormulaRows:
         extraction = derived_extraction_status(
             row=row,
             output=key,
-            every_operand_single_representation=False,
+            every_operand_single_representation=single,
             operands=operands or {},
             xbrl=sides[Representation.XBRL].comparison,
             pdf=sides[Representation.PDF].comparison,
@@ -224,9 +233,64 @@ class FormulaRows:
             self._host.member(package, representation),
             representation=representation,
             witness=self._host.witness(package, representation),
-            interpretations=self._condition_evidence(row, key, representation, currency),
+            interpretations=self.condition_evidence(
+                row.formula.qualification if row.formula is not None else None,
+                key,
+                representation,
+                currency,
+            ),
             fiscal_month=fiscal_month,
         )
+
+    def revalidated(self, side: Side, key: MeasurementKey, rep: Representation) -> Side:
+        """A reported side whose stored condition proofs are re-proven under the run."""
+        own = side.comparison
+        if not own.condition_evidence or not own.mapping_entry_ids:
+            return side
+        scope = self._config.mapping_set.entry(own.mapping_entry_ids[0]).qualification
+        conditions = () if scope is None else (*scope.conditions, *scope.exclusions)
+        evidence = self.condition_evidence(scope, key, rep, key.currency)
+        proven = prove_conditions(
+            conditions, interpretations=evidence, period=key.period, basis=key.basis
+        )
+        return side.model_copy(update={"comparison": with_current_proofs(own, proven)})
+
+    def _resolve(
+        self, key: MeasurementKey, role: TemporalRole, *, representation: Representation
+    ) -> KeySelection:
+        """An operand's selection; a single-representation family's is shared (spec §5)."""
+        shared = self._sole_representation(key)
+        return self._host.resolve(key, role, representation=shared or representation)
+
+    def _sole_representation(self, key: MeasurementKey) -> Representation | None:
+        """A reported key's only representation when its family has no paired one (table row 1).
+
+        A representation that was attempted (even failed) still pairs, unlike one never attempted.
+        """
+        family = self._rows[key.canonical_id].family
+        package = self._host.package(key.entity_id, key.basis, period_end(key.period), family)
+        cells = {rep: self._host.cell(key, rep) for rep in REPRESENTATIONS}
+        if package is None or family_has_pair(package, cells):
+            return None
+        return next(rep for rep in REPRESENTATIONS if rep in package.members)
+
+    def _leaf_keys(
+        self, row: DictionaryRow, key: MeasurementKey, currency: str
+    ) -> list[MeasurementKey]:
+        """Every reported operand key under a formula key: nested, aggregated and role keys."""
+        assert row.formula is not None
+        found: list[MeasurementKey] = []
+        for operand in row.formula.operands:
+            nested = self._rows[operand.canonical_id]
+            for operand_key in resolve_operand_keys(
+                key, operand, dictionary=self._config.dictionary, reporting_currency=currency
+            ):
+                found += (
+                    self._leaf_keys(nested, operand_key, currency)
+                    if nested.formula
+                    else [operand_key]
+                )
+        return found
 
     def _leaf_families(self, row: DictionaryRow) -> list[StatementFamily]:
         """Leaf operand families in formula order, depth first, each once."""
@@ -239,11 +303,14 @@ class FormulaRows:
                     found.append(family)
         return found
 
-    def _condition_evidence(
-        self, row: DictionaryRow, key: MeasurementKey, rep: Representation, currency: str
+    def condition_evidence(
+        self,
+        scope: QualificationScope | None,
+        key: MeasurementKey,
+        rep: Representation,
+        currency: str | None,
     ) -> list[Interpretation]:
         """Each condition key's selected interpretation under the pins, when it holds a value."""
-        scope = row.formula.qualification if row.formula is not None else None
         if scope is None:
             return []
         found = []

@@ -505,6 +505,16 @@ def _dash_reads_zero(
     )
 
 
+def _proven_zero(item: Interpretation) -> bool:
+    """A direct mapping of a filed numeric zero lexeme, or an exact zero interval."""
+    filed = (
+        item.origin is InterpretationOrigin.DIRECT
+        and item.value == 0
+        and item.transform_trace.get(TRACE_MISSING_STATE) == MissingValueState.ZERO_PRINTED.value
+    )
+    return filed or item.interval == Interval.exact(_ZERO)
+
+
 def prove_conditions(
     conditions: Sequence[QualificationCondition],
     *,
@@ -514,10 +524,11 @@ def prove_conditions(
 ) -> Mapping[str, ProvenCondition]:
     """Prove conditions from same-capture ``MAPPED`` interpretations of that period and basis.
 
-    Value 0 (a filed zero, at any declared precision; spec §4 ``ZERO_PRINTED``):
-    ``EQUALS_ZERO`` holds and ``NOT_EQUALS_ZERO`` fails; interval excluding 0: the reverse.
-    A nonzero value whose interval contains 0, no such interpretation, or one without a
-    value leaves the condition unproven and absent.
+    A direct filed zero (``ZERO_PRINTED``, at any declared precision; spec §4) or an exact
+    zero interval: ``EQUALS_ZERO`` holds and ``NOT_EQUALS_ZERO`` fails; interval excluding 0:
+    the reverse.
+    Any other interval containing 0 (a nonzero value, a constructed zero), no such
+    interpretation, or one without a value leaves the condition unproven and absent.
     """
     proofs: dict[str, ProvenCondition] = {}
     for condition in conditions:
@@ -536,7 +547,7 @@ def prove_conditions(
         ):
             continue
         intervals = [item.interval for item in evidence if item.interval is not None]
-        if all(item.value == 0 for item in evidence):
+        if all(_proven_zero(item) for item in evidence):
             is_zero = True
         elif all(not interval.contains(_ZERO) for interval in intervals):
             is_zero = False

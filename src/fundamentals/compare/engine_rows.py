@@ -38,8 +38,13 @@ from fundamentals.contracts.evidence import (
     PackageMember,
     exact_decimal,
 )
+from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
-from fundamentals.contracts.qualification import QualificationContext, qualification_context
+from fundamentals.contracts.qualification import (
+    ProvenCondition,
+    QualificationContext,
+    qualification_context,
+)
 from fundamentals.evidence.alignment import AlignmentProof
 from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.derived import operand_value
@@ -82,6 +87,30 @@ def family_has_pair(package: FilingPackage | None, cells: Mapping[Representation
     return package is None or all(
         rep in package.members or cells[rep].attempt_id is not None for rep in REPRESENTATIONS
     )
+
+
+def with_current_proofs(
+    side: ComparisonSide, proven: Mapping[str, ProvenCondition]
+) -> ComparisonSide:
+    """A side's stored condition proofs checked against the run's current condition selections.
+
+    Each stored proof must be re-proven with the same outcome from the condition keys selected
+    under the run's pins, cutoff and supersession; otherwise (missing, invalid, ambiguous or
+    changed) its qualification is withheld: no proofs and, unless proof-aligned, an unproven
+    tier. The current proofs replace the stored ones, so a vendor scoped on this filing reads them.
+    """
+    stored = side.condition_evidence
+    if not stored:
+        return side
+    if all(
+        proof.condition_id in proven and proven[proof.condition_id].holds == proof.holds
+        for proof in stored
+    ):
+        return side.model_copy(
+            update={"condition_evidence": tuple(proven[proof.condition_id] for proof in stored)}
+        )
+    tier = side.tier if side.aligned_by_proof else EvidenceTier.EQUIVALENCE_UNPROVEN
+    return side.model_copy(update={"condition_evidence": (), "tier": tier})
 
 
 def selected_side(

@@ -75,6 +75,7 @@ from fundamentals.compare.run_models import (
 )
 from fundamentals.compare.tables import ExtractionResult, extraction_status, pair_outcome
 from fundamentals.compare.vendor_sides import VendorSides
+from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
@@ -297,7 +298,7 @@ class RunEngine:
         basis: Basis,
         end: date,
         periods: tuple[PeriodInterval, ...],
-        currency: str,
+        currency: str | None,
     ) -> list[MeasurementKey]:
         """The row's keys: each fiscal period (or the instant), each evidenced member set."""
         chosen = (
@@ -418,8 +419,13 @@ class RunEngine:
         """The entity's segment members recorded by the cutoff."""
         return segment_members(self._inputs.segment_members, entity_id, self._cutoff)
 
-    def _currency(self, entity_id: int, basis: Basis, end: date) -> str:
-        """The one reporting currency the eligible packages' monetary lines evidence."""
+    def _currency(self, entity_id: int, basis: Basis, end: date) -> str | None:
+        """The one reporting currency the eligible packages' monetary lines evidence.
+
+        ``None`` for a consolidated request of an evidenced standalone-only entity with no
+        consolidated package: no currency is evidenced (none is borrowed from standalone) and
+        every row is ``NOT_APPLICABLE`` before any value is read.
+        """
         found = {
             item.key.currency
             for package in self._inputs.packages
@@ -432,6 +438,13 @@ class RunEngine:
             and item.key.currency is not None
             and (self._request.mode is RunMode.RETROSPECTIVE or item.recorded_at <= self._cutoff)
         }
+        if (
+            not found
+            and basis is Basis.CONSOLIDATED
+            and basis_status(self._inputs.basis_statuses, entity_id, self._cutoff)
+            is BasisStatus.STANDALONE_ONLY
+        ):
+            return None
         if len(found) != 1:
             raise RunResolutionError(
                 _CURRENCY.format(entity_id=entity_id, period_end=end, found=sorted(found))
@@ -627,7 +640,9 @@ class RunEngine:
         package_id = None if package is None else package.package_id
         cells = {rep: self.cell(key, rep) for rep in REPRESENTATIONS}
         sides = {
-            rep: selected_side(cells[rep], rep, proofs=self._proofs, package_id=package_id)
+            rep: self._formulas.revalidated(
+                selected_side(cells[rep], rep, proofs=self._proofs, package_id=package_id), key, rep
+            )
             for rep in REPRESENTATIONS
         }
         self._reported_sides[key.digest()] = sides
@@ -647,13 +662,14 @@ class RunEngine:
         key: MeasurementKey,
         decision: ApplicabilityDecision,
         fiscal_month: int,
-        currency: str,
+        currency: str | None,
     ) -> ResultRow:
         """A formula row evaluated per representation with stored traces (Task 7)."""
         if decision.status is ApplicabilityStatus.NOT_APPLICABLE:
             return not_applicable_row(
                 key, ValueIdentity.DERIVED, decision, self._config.dictionary.version
             )
+        assert currency is not None
         evaluated = self._formulas.evaluate(row, key, fiscal_month=fiscal_month, currency=currency)
         return self._compared(
             key,
