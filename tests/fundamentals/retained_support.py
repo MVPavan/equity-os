@@ -37,7 +37,8 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APAR_RAW_ROOT = REPO_ROOT / "data" / "raw" / "watchlist" / "aparinds"
-APAR_MANIFEST = APAR_RAW_ROOT / "retrieval-manifest.json"
+# v2 corrects the four comparator filed_at_nse values (IST mislabelled UTC); see its "correction" field.
+APAR_MANIFEST = APAR_RAW_ROOT / "retrieval-manifest-v2.json"
 APAR_IDENTITY = REPO_ROOT / "config" / "identity" / "aparinds.yaml"
 APAR_ISSUER_CONFIG = REPO_ROOT / "config" / "aparinds-fy26-q2.yaml"
 XBRL_DIR = "nse"
