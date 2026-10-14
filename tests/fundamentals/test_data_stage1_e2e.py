@@ -102,7 +102,6 @@ def test_run_matches_manifest(stage: Stage, monkeypatch: pytest.MonkeyPatch) -> 
     relabelled = tuple(
         row.model_copy(
             update={
-                "applicability_rule_id": "relabelled",
                 "source_values": tuple(
                     value.model_copy(
                         update={"interpretation_id": relabel.get(value.interpretation_id)}
@@ -115,7 +114,12 @@ def test_run_matches_manifest(stage: Stage, monkeypatch: pytest.MonkeyPatch) -> 
         )
         for row in outcome.rows
     )
-    assert provenance(outcome, relabelled)
+    lines = provenance(outcome, relabelled)
+    assert not ids or (lines and not any(" rule:" in line for line in lines))
+    ruled = tuple(
+        row.model_copy(update={"applicability_rule_id": "relabelled"}) for row in outcome.rows
+    )
+    assert any(" rule:" in line for line in provenance(outcome, ruled))
     if not ids:
         return  # NETWEB runs without a first-party package: no selection to mutate
     # An unknown capture fails rather than skipping its locator check.
