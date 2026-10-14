@@ -1,0 +1,31 @@
+# v2 (D1b.5): v1 copied forward; only Profit Before Tax changes (PBT incl. associates, not PBT).
+# Upstox income-statement full_statement block (D1b.1), diagnostic-only (spec §3). Annual
+# even on quarterly requests (spec §3). All unproven; API numerals declare no precision (spec §5).
+source: upstox
+surface: income-statement
+schema_identity: upstox-income-statement-full-statement-v2
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  period_rule: COLUMN_DURATION
+entries:
+- entry_id: upstox.full_statement.revenue_from_operations
+  selector: {statement_family: PL, labels: [Revenue], section_equals: full_statement}
+  canonical_id: revenue_from_operations
+  period_kinds: [YEAR]
+  evidence_ref: 'docs/research/upstox-api-schemas/fundamentals.md §4: full_statement Revenue
+    precedes Other Income and Total Revenue (Revenue + Other Income = Total Revenue).'
+- entry_id: upstox.full_statement.total_income
+  selector: {statement_family: PL, labels: [Total Revenue], section_equals: full_statement}
+  canonical_id: total_income
+  period_kinds: [YEAR]
+  evidence_ref: 'docs/research/upstox-api-schemas/fundamentals.md §3–§4: Total Revenue is
+    Revenue plus Other Income.'
+- entry_id: upstox.full_statement.profit_before_tax_incl_associates
+  selector: {statement_family: PL, labels: [Profit Before Tax], section_equals: full_statement}
+  canonical_id: profit_before_tax_incl_associates
+  period_kinds: [YEAR]
+  evidence_ref: 'Retained Apar consolidated captures (as upstox/v2/summary.yaml) against the
+    retained in-capmkt filings: full_statement Profit Before Tax equals ProfitBeforeTax + share of
+    associates/JV, not ProfitBeforeTax: FY26 1310.00 (PBT 1309.92), FY25 1105.64 (PBT 1105.76).
+    POLYCAB FY24 2359.30 agrees but does not discriminate. v1 mapped it to profit_before_tax
+    (falsified).'

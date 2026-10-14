@@ -18,6 +18,7 @@ import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from lxml import etree  # type: ignore[import-untyped]
 from nse import NSE  # type: ignore[import-untyped]
@@ -43,6 +44,7 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BACKOFF_SECONDS = 2.0
 ROW_DATE_FORMAT = "%d-%b-%Y"
 BROADCAST_DATE_FORMAT = "%d-%b-%Y %H:%M:%S"
+NSE_WALL_ZONE = ZoneInfo("Asia/Kolkata")  # NSE listings state wall time in IST.
 INDAS_MARKER = "Ind-AS"
 CONSOLIDATED_ROW_VALUE = "Consolidated"
 CONSOLIDATED_SOURCE_ID = "nse-indas-xbrl-consolidated"
@@ -139,16 +141,16 @@ class _FilingCandidate(BaseModel):
 
 
 def _parse_broadcast(raw: str | None) -> datetime | None:
-    """Parse a broadcast/filing timestamp; return ``None`` if unrecognised."""
+    """Parse an NSE broadcast/filing timestamp (IST wall time) to UTC; ``None`` if unrecognised."""
     if not raw:
         return None
-    try:
-        return datetime.strptime(raw.strip(), BROADCAST_DATE_FORMAT).replace(tzinfo=UTC)
-    except ValueError:
+    for shape in (BROADCAST_DATE_FORMAT, ROW_DATE_FORMAT):
         try:
-            return datetime.strptime(raw.strip(), ROW_DATE_FORMAT).replace(tzinfo=UTC)
+            wall = datetime.strptime(raw.strip(), shape)
         except ValueError:
-            return None
+            continue
+        return wall.replace(tzinfo=NSE_WALL_ZONE).astimezone(UTC)
+    return None
 
 
 class NseXbrlSource:

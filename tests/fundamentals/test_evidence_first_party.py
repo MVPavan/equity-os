@@ -64,6 +64,7 @@ from pydantic import BaseModel, ConfigDict
 from retained_support import APAR_MANIFEST, MarkedEdit
 
 from fundamentals.api.cli import main
+from fundamentals.api.evidence_cli import EXIT_INCOMPLETE
 from fundamentals.canon.formula import average_operand
 from fundamentals.contracts.acquisition_outcome import (
     ExtractionOutcome,
@@ -449,6 +450,16 @@ def test_cli_ingests_q2_fy26_and_is_idempotent(
     config_flag = argv.index("--issuer-config")
     assert main([*argv[:config_flag], *argv[config_flag + 2 :]]) == 2
     assert ingest.table_counts() == before
+    # The consolidated filing asked for as standalone is rejected: the ingest runs and records
+    # the attempt, but stores no package, so it must not exit as a success.
+    pdf_flag = argv.index(f"pdf={PDF_KIND}") - 1
+    standalone = [*argv[:pdf_flag], *argv[config_flag + 2 :]]
+    standalone[standalone.index("consolidated")] = "standalone"
+    capsys.readouterr()
+    assert main(standalone) == EXIT_INCOMPLETE
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "package\tNone"
+    assert "attempt\tEXTRACTION\tXBRL\t-\tIDENTITY_REJECTED" in out
 
 
 # --- outcome translation ----------------------------------------------------------------------
@@ -466,7 +477,8 @@ class _Captured(BaseModel):
 @pytest.mark.parametrize(
     ("code", "completeness", "flags", "expected"),
     [
-        (OutcomeCode.OK_EMPTY, BodyCompleteness.ABSENT, (), ExtractionOutcome.NOT_PUBLISHED),
+        # An empty payload proves nothing (Upstox answers an unknown ISIN the same way).
+        (OutcomeCode.OK_EMPTY, BodyCompleteness.COMPLETE, (), ExtractionOutcome.IDENTITY_REJECTED),
         (OutcomeCode.NOT_OFFERED, BodyCompleteness.ABSENT, (), ExtractionOutcome.NOT_PUBLISHED),
         (
             OutcomeCode.IDENTITY_MISMATCH,

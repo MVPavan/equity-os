@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from datetime import date, timedelta
+from decimal import Decimal
 from fractions import Fraction
 from functools import partial
 from pathlib import Path
@@ -31,6 +32,7 @@ from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, PeriodKind, Representation
 from fundamentals.contracts.evidence import (
     AttemptStage,
+    CaptureReference,
     EligibilityBoundary,
     InterpretationReason,
     InterpretationStatus,
@@ -46,6 +48,8 @@ from fundamentals.evidence.selection import is_eligible
 from fundamentals.evidence.vendor_ingest import VendorIngestRequest, ingest_vendor
 from fundamentals.evidence.vendor_screener import extract_screener_page
 from fundamentals.ingest.screener_financials_models import Section
+from fundamentals.ingest.tijori_source import TijoriSource
+from fundamentals.ingest.upstox_source import AcquisitionOutcome, to_outcome_record
 from fundamentals.store.snapshot_store import SnapshotStore
 
 REPO = Path(__file__).resolve().parents[2]
@@ -102,6 +106,7 @@ class Case(NamedTuple):
     rows: tuple[Row, ...] = ()
     screener_symbol: str = ""
     units_in: str = ""  # Restage the Upstox capture with this ``units_in``.
+    empty: bool = False  # Restage the Upstox capture as the empty ``OK_EMPTY`` response.
 
 
 def tijori(slug: str, symbol: str) -> Any:
@@ -314,6 +319,17 @@ CASES = (
         units_in="lakh",
     ),
     Case(
+        # Upstox answers an unknown ISIN with the same empty body: no evidenced absence.
+        "upstox_empty_response_is_not_evidence_of_absence",
+        ("upstox", "income-statement", STAGED, STAGED),
+        Representation.JSON,
+        Basis.CONSOLIDATED,
+        lambda: upstox(Basis.CONSOLIDATED),
+        vendor_upstox.EXTRACTOR_VERSION,
+        ExtractionOutcome.IDENTITY_REJECTED,
+        empty=True,
+    ),
+    Case(
         "tijori_qt_c_net_profit_maps_to_continuing_pat",
         TIJORI_THERMAX,
         Representation.HTML,
@@ -494,9 +510,13 @@ def _located(
     case: Case, repository: EvidenceRepository, tmp_path: Path
 ) -> tuple[SnapshotStore, tuple[str, str, str, str]]:
     """The retained store, or a private store a Screener page or altered body is staged into."""
-    if case.units_in:
+    if case.units_in or case.empty:
         record, body = SnapshotStore(RETAINED).read_capture_verified(*POLYCAB_QUARTERLY)
-        altered = body.replace(b'"units_in":"crore"', f'"units_in":"{case.units_in}"'.encode())
+        altered = (
+            b'{"status":"success","data":[]}'
+            if case.empty
+            else body.replace(b'"units_in":"crore"', f'"units_in":"{case.units_in}"'.encode())
+        )
         assert altered != body
         blob = BlobRef(
             source_id=record.request.source_id,
@@ -510,7 +530,7 @@ def _located(
             record.media_type,
             record.content_encoding,
             blob,
-            record.outcome,
+            to_outcome_record(AcquisitionOutcome.OK_EMPTY) if case.empty else record.outcome,
             record.rights,
         )
         (tmp_path / "snapshots").mkdir(mode=0o700)
@@ -525,3 +545,123 @@ def _located(
     request, _, _ = retained_page(case.screener_symbol)
     staged = stage_registered(request, repository, store)
     return store, (staged.source_id, staged.surface, staged.request_key, staged.capture_id)
+
+
+TIJORI_MTARTECH = (
+    RETAINED / "tijori/financials/mtar-technologies-ltd/20260905T113044.107142Z-24d2a2636128"
+)
+TIJORI_POLYCAB = (
+    RETAINED / "tijori/financials/polycab-india-ltd/20260905T113246.459386Z-9bc61e44e378"
+)
+_TIJORI_DISPLAY = vendor_tijori.load_tijori_display(REPO / "config/mappings/tijori/v1/display.yaml")
+
+
+@pytest.mark.parametrize(
+    ("capture", "slug", "symbol", "label", "island", "shown"),
+    [
+        # Retained Dec 2024 qt_c halves: toFixed rounds the binary double, not the decimal.
+        (TIJORI_MTARTECH, "mtar-technologies-ltd", "MTARTECH", "Raw Material", "96.005", "96.00"),
+        (TIJORI_MTARTECH, "mtar-technologies-ltd", "MTARTECH", "Employee Cost", "31.345", "31.34"),
+        (TIJORI_POLYCAB, "polycab-india-ltd", "POLYCAB", "Other Income", "25.005", "25.00"),
+    ],
+)
+def test_tijori_renders_retained_halves_as_its_script(
+    capture: Path, slug: str, symbol: str, label: str, island: str, shown: str
+) -> None:
+    """A Dec 2024 qt_c half shows what Tijori's page shows (Node-checked), not decimal half-up."""
+    ids = identifiers(symbol)
+    tables = TijoriSource.parse_all_tables_bytes(
+        (capture / "body.bin").read_bytes(),
+        slug=slug,
+        expected_symbol=symbol,
+        expected_company_id=ids["tijori_company_id"],
+    )
+    (table,) = (table for table in tables if table.key.value == "qt_c")
+    (row,) = (row for row in table.rows if row.label == label)
+    cell = row.cells[table.column_period_labels.index("Dec 2024")]
+    assert cell.raw_text == island and cell.value is not None
+    assert _TIJORI_DISPLAY.render(cell.value) == shown
+
+
+@pytest.mark.parametrize(
+    ("island", "shown"),
+    [
+        # toFixed(2) within |100|: exact binary value, ties away from zero.
+        ("1.005", "1.00"),
+        ("-1.005", "-1.00"),
+        ("0.125", "0.13"),
+        ("-0.125", "-0.13"),
+        ("-0.004", "-0.00"),
+        ("-0", "0.00"),
+        ("100", "100.00"),
+        # Math.round above |100|: ties toward +infinity.
+        ("100.5", "101"),
+        ("-100.5", "-100"),
+        ("-101.5", "-101"),
+        ("464.348", "464"),
+    ],
+)
+def test_tijori_render_follows_both_javascript_branches(island: str, shown: str) -> None:
+    """Expected texts are Node's ``toFixed(2)`` / ``String(Math.round(x))`` of ``JSON.parse``."""
+    assert _TIJORI_DISPLAY.render(Decimal(island)) == shown
+
+
+APAR_UPSTOX = (
+    (*UPSTOX, "default-3acbf55d982a3ba6440218b0", "20261014T092123.626790Z-c83a9f0b1b07"),
+    (*UPSTOX, "default-ed5494a26f80e4b52877950f", "20261014T092124.709964Z-a50f59581799"),
+)
+# Hand-read from the retained Apar in-capmkt filings (data/raw/watchlist/aparinds/nse), crore:
+# (ProfitBeforeTax, ShareOfProfitLossOfAssociatesAndJointVentures...) where the two PBTs differ.
+APAR_FILED_PBT = {
+    "Sep 2025": ("340.56", "-0.03"),
+    "Mar 2026": ("328.80", "0.12"),
+    "Jun 2026": ("622.34", "0.26"),
+}
+APAR_FILED_PBT_YEAR = {"Mar 2026": ("1309.92", "0.08"), "Mar 2025": ("1105.76", "-0.12")}
+
+
+def test_upstox_pbt_lines_are_pbt_including_associates() -> None:
+    """Mapping set v4 reads Upstox's PBT lines as PBT incl. associates: on every retained Apar
+    cell where filed PBT and PBT incl. associates differ, Upstox carries the latter."""
+    dictionary = load_dictionary(REPO / "config/dictionary", "v2")
+    mappings = load_mapping_set(REPO / "config/mappings", "v4", dictionary=dictionary)
+    compared = 0
+    for capture in APAR_UPSTOX:
+        record, body = SnapshotStore(RETAINED).read_capture_verified(*capture)
+        extraction = vendor_upstox.extract_upstox(
+            body,
+            capture=CaptureReference(
+                capture_ref_id=None,
+                source_id=record.request.source_id,
+                surface=record.request.surface,
+                request_key=record.request.request_key,
+                capture_id=record.capture_id,
+                blob_sha256=record.body.content_sha256,
+                record_sha256=record.record_sha256,
+                registered_at=record.retrieved_at,
+                first_seen_at=record.retrieved_at,
+            ),
+            record=record,
+            extractor_version=vendor_upstox.EXTRACTOR_VERSION,
+            basis=Basis.CONSOLIDATED,
+        )
+        params = {item.name: item.value for item in record.request.parameters}
+        quarterly = params["time_period"] == "quarterly"
+        for item in extraction.occurrences:
+            section, column = item.native_context["section"], item.anchor["column_label"]
+            filed = (
+                APAR_FILED_PBT.get(column)
+                if (section, item.native_field) == ("summary", "operating_profit") and quarterly
+                else APAR_FILED_PBT_YEAR.get(column)
+                if item.native_field in ("operating_profit", "Profit Before Tax")
+                else None
+            )
+            if filed is None:
+                continue
+            entry = mappings.match(item)
+            assert entry is not None
+            assert entry.canonical_id == "profit_before_tax_incl_associates"
+            pbt, associates = (Decimal(value) for value in filed)
+            assert Decimal(item.raw_value_text) == pbt + associates != pbt
+            compared += 1
+    assert compared == 9  # 3 quarters + FY26/FY25 in summary (yearly) and both full_statements

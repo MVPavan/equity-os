@@ -42,7 +42,7 @@ Q_START = date(2027, 4, 1)
 Q_END = date(2027, 6, 30)
 QE_DATE = "30-JUN-2027"
 BROADCAST_RAW = "24-Jul-2027 18:33:13"
-BROADCAST_AT = datetime(2027, 7, 24, 18, 33, 13, tzinfo=UTC)
+BROADCAST_AT = datetime(2027, 7, 24, 13, 3, 13, tzinfo=UTC)  # 18:33:13 IST
 
 PRIOR_Q_START = date(2027, 1, 1)
 PRIOR_Q_END = date(2027, 3, 31)

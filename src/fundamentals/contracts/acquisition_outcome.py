@@ -92,11 +92,12 @@ class ExtractionOutcome(StrEnum):
     PARSE_FAILED = "PARSE_FAILED"
 
 
-# Capture codes that say the source holds nothing for the request, as opposed to a failure.
-_NOT_PUBLISHED_CODES: frozenset[OutcomeCode] = frozenset(
-    {OutcomeCode.OK_EMPTY, OutcomeCode.NOT_OFFERED}
-)
+# An empty payload is not evidence of absence: Upstox answers an unknown ISIN with the same
+# empty body (``ingest/upstox_statements.py``), so it cannot establish whom it describes.
+# Only ``NOT_OFFERED`` evidences that the source holds nothing for the request.
 _CAPTURE_TRANSLATION: dict[OutcomeCode, ExtractionOutcome] = {
+    OutcomeCode.NOT_OFFERED: ExtractionOutcome.NOT_PUBLISHED,
+    OutcomeCode.OK_EMPTY: ExtractionOutcome.IDENTITY_REJECTED,
     OutcomeCode.IDENTITY_MISMATCH: ExtractionOutcome.IDENTITY_REJECTED,
     OutcomeCode.SCHEMA_DRIFT: ExtractionOutcome.UNSUPPORTED_SCHEMA,
 }
@@ -135,8 +136,6 @@ def extraction_outcome_for(
     from fundamentals.contracts.snapshot import BodyCompleteness
 
     code = record.outcome.code
-    if code in _NOT_PUBLISHED_CODES:
-        return ExtractionOutcome.NOT_PUBLISHED
     if code in _CAPTURE_TRANSLATION:
         return _CAPTURE_TRANSLATION[code]
     if code is not OutcomeCode.OK:

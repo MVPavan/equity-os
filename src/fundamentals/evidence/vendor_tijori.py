@@ -13,7 +13,7 @@ period.
 from __future__ import annotations
 
 import json
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import yaml
@@ -37,7 +37,7 @@ from fundamentals.ingest.tijori_tables import TijoriError, TijoriTable, TijoriTa
 SOURCE_ID = "tijori"
 SURFACE = "financials"
 SCHEMA_IDENTITY = "tijori-financials-island-v1"
-EXTRACTOR_VERSION = "tijori-v3"
+EXTRACTOR_VERSION = "tijori-v4"
 UNKNOWN_UNIT = "unknown"
 _TTM_FOOTER = "TTM Values as of {label}"
 _FAMILY = {
@@ -80,12 +80,25 @@ class TijoriDisplay(BaseModel):
 
     def decimals(self, value: Decimal) -> int:
         """Decimals Tijori's page displays for ``value``."""
-        above = abs(value) > self.rounding_threshold
+        above = abs(_double(value)) > self.rounding_threshold
         return self.decimals_above if above else self.decimals_within
 
     def render(self, value: Decimal) -> str:
-        """The number Tijori's page displays for ``value``, without digit grouping."""
-        return str(value.quantize(Decimal(1).scaleb(-self.decimals(value)), ROUND_HALF_UP))
+        """The number Tijori's page displays for ``value``, without digit grouping.
+
+        The script rounds the parsed JavaScript double: ``toFixed`` rounds its exact binary
+        value half away from zero (96.005 shows 96.00); ``Math.round`` rounds half toward
+        +infinity (-100.5 shows -100).
+        """
+        double = _double(value)
+        above = abs(double) > self.rounding_threshold
+        rounding = ROUND_HALF_DOWN if above and double < 0 else ROUND_HALF_UP
+        return str(double.quantize(Decimal(1).scaleb(-self.decimals(value)), rounding))
+
+
+def _double(value: Decimal) -> Decimal:
+    """The exact value of the IEEE double JavaScript parses ``value`` to (-0 as 0)."""
+    return Decimal(float(value)) or Decimal(0)
 
 
 def load_tijori_display(path: Path) -> TijoriDisplay:

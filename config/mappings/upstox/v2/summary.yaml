@@ -1,0 +1,31 @@
+# v2 (D1b.5): v1 copied forward; only operating_profit changes (PBT incl. associates, not PBT).
+# Upstox income-statement summary block (D1b.1), diagnostic-only (spec §3). Periods follow
+# the requested periodicity. All unproven; API numerals declare no precision (spec §5).
+source: upstox
+surface: income-statement
+schema_identity: upstox-income-statement-summary-v2
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  period_rule: COLUMN_DURATION
+entries:
+- entry_id: upstox.summary.total_income
+  selector: {statement_family: PL, labels: [revenue], section_equals: summary}
+  canonical_id: total_income
+  period_kinds: [QUARTER, YEAR]
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2: Upstox summary revenue → total income; docs/research/upstox-api-schemas/fundamentals.md
+    finding 3 (revenue equals full_statement Total Revenue).'
+- entry_id: upstox.summary.profit_before_tax_incl_associates
+  selector: {statement_family: PL, labels: [operating_profit], section_equals: summary}
+  canonical_id: profit_before_tax_incl_associates
+  period_kinds: [QUARTER, YEAR]
+  evidence_ref: 'Retained Apar consolidated captures (data/raw/snapshots/v1/upstox/income-statement,
+    capture ids 20261014T092123.626790Z-c83a9f0b1b07 quarterly, 20261014T092124.709964Z-a50f59581799
+    yearly) against the retained in-capmkt filings (data/raw/watchlist/aparinds/nse): operating_profit
+    equals ProfitBeforeTax + share of associates/JV, not ProfitBeforeTax, in every cell where they
+    differ by more than a rounding step: Sep 2025 340.53 (PBT 340.56, share -0.03), Mar 2026 328.92
+    (328.80, +0.12), Jun 2026 622.60 (622.34, +0.26), FY26 1310.00 (1309.92, +0.08), FY25 1105.64
+    (1105.76, -0.12); after exceptional items (Mar 2026 -7.54). Dec 2025 288.07 vs 288.08 (PBT
+    288.09) does not discriminate. POLYCAB FY24 2359.30 and NETWEB standalone FY24 101.96 agree
+    but do not discriminate. Discriminating evidence is one issuer; the tier stays unproven.
+    v1 mapped it to profit_before_tax (falsified).'

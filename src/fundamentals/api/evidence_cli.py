@@ -8,7 +8,8 @@
 The composition root: ``PgSettings``, the runtime pool, the retained intake and the
 source catalog (design decision 12) are built here and nowhere else. ``--issuer-config``
 supplies the PDF ``pdf_parse`` block and the results-PDF declaration and is required when a
-PDF member is named.
+PDF member is named. Exit 0 only when a package with occurrences is stored and no extraction
+attempt failed (``EXIT_INCOMPLETE`` otherwise; ``NOT_PUBLISHED`` is not a failure).
 """
 
 from __future__ import annotations
@@ -26,7 +27,9 @@ from pydantic import ValidationError
 from fundamentals.api.config import SourceFileConfig, load_config
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.canon.dictionary import load_dictionary
+from fundamentals.contracts.acquisition_outcome import outcome_source_state
 from fundamentals.contracts.canonical import Basis, Representation
+from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import FilingFamily
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.source_catalog import (
@@ -61,6 +64,9 @@ NORMALISATION_POLICY_DIR = "normalisation_policy"
 # The NSE surfaces this command reads are the Ind AS filings (``nse-indas-*``).
 FRAMEWORK = AccountingFramework.IND_AS
 MEMBER_SEPARATOR = "="
+# As ``compare run``'s INCOMPLETE: the ingest ran but stored no usable package, or an
+# extraction attempt failed.
+EXIT_INCOMPLETE = 4
 
 _ACTION_DEST = "evidence_action"
 _HELP = "ingest first-party filings into the evidence store"
@@ -185,7 +191,12 @@ def _ingest(args: argparse.Namespace) -> int:
         for attempt in report.attempts
     ]
     sys.stdout.write("\n".join(lines) + "\n")
-    return EXIT_OK
+    failed = any(
+        outcome_source_state(attempt.outcome) is SourceState.UNAVAILABLE
+        for attempt in report.attempts
+    )
+    usable = report.package_id is not None and report.occurrence_count > 0
+    return EXIT_OK if usable and not failed else EXIT_INCOMPLETE
 
 
 def _members(values: list[str]) -> Mapping[Representation, str]:
