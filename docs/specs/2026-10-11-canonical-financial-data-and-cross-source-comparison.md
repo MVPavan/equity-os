@@ -821,6 +821,10 @@ status.
   - A period, basis, framework, currency or kind mismatch: `NOT_COMPARABLE` with reason code.
   - NETWEB (standalone-only): consolidated rows `NOT_APPLICABLE`, never filled from standalone;
     the degenerate Screener page and empty Upstox consolidated response yield no values.
+    *Owner amendment 2026-10-14 (reviewer-approved split proof): no consolidated NETWEB Screener
+    page is retained, so this case is met by the actual no-package NETWEB consolidated run
+    (Tijori and Upstox requested) plus the retained standalone-page / consolidated-request adapter
+    refusal test. The adapter case is not an actual consolidated-page capture.*
   - Upstox summary vs `full_statement` (NETWEB, POLYCAB) with disjoint intervals: diagnostic pairs
     `NOT_COMPARABLE` with `VENDOR_INTERNAL_CONFLICT`, routed MEDIUM, both occurrences retained.
     Surface values within tolerance of each other raise no conflict.
