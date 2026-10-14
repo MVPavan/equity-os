@@ -1,5 +1,3 @@
-# Unpublished Screener construction draft. Task 13 owns any shared v2 index,
-# authority decision, final content pin and publication.
 constructions:
   - rule_id: screener.balance-sheet.liabilities_incl_nci
     source: screener-subscriber

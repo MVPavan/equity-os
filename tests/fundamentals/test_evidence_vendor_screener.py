@@ -375,9 +375,9 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
                 RAW_ROOT / "screener-financials/THERMAX/consolidated/screener_financials_meta.json"
             ).read_bytes(),
         )
-        for scope_request, scope_capture, extracted, extractor_pin in [
-            (page_request, page_capture, page, page_extractor_pin),
-            (request, schedule_capture, schedule, schedule_extractor_pin),
+        for scope_request, scope_capture, extracted in [
+            (page_request, page_capture, page),
+            (request, schedule_capture, schedule),
         ]:
             occurrences = repository.put_occurrences(extracted.occurrences)
             interpretations = interpret_generation(
@@ -391,7 +391,6 @@ def test_retained_page_and_schedule_generation_roundtrip_through_guarded_postgre
                     policy=policy,
                     dictionary=dictionary,
                     fiscal_year_end_month=3,
-                    expected_extractor_pin=extractor_pin,
                 ),
                 prior=(),
                 prior_anchor_keys={},

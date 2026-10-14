@@ -34,7 +34,6 @@ from fundamentals.contracts.evidence import (
     InterpretationStatus,
     Occurrence,
     RevisionCause,
-    VendorExtractorPin,
 )
 from fundamentals.contracts.measurement_key import DimensionSet, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
@@ -89,7 +88,6 @@ class CaptureScope(BaseModel):
     policy: NormalisationPolicy
     dictionary: CanonicalDictionary
     fiscal_year_end_month: int
-    expected_extractor_pin: VendorExtractorPin | None = None
     rounding_policy: RoundingPolicy | None = None
 
 

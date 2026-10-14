@@ -22,7 +22,6 @@ from pg_evidence_schema_support import _insert
 from vendor_retained_support import (
     REPO_ROOT,
     draft_config,
-    extractor_pin,
     identifiers,
     retained_page,
     stage_registered,
@@ -294,7 +293,6 @@ def test_thermax_selector_construction(
                     policy=policy,
                     dictionary=dictionary,
                     fiscal_year_end_month=3,
-                    expected_extractor_pin=extractor_pin("SCREENER_FINANCIALS"),
                     rounding_policy=load_rounding_policy(
                         REPO_ROOT / "config/rounding_policy/v1.yaml"
                     ),

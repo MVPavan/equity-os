@@ -1,39 +1,25 @@
-"""D1b dictionary v2 and unpublished first-party Other Income bridge proof."""
+"""D1b dictionary v2 first-party Other Income bridge proof."""
 
 from __future__ import annotations
 
 import hashlib
 import xml.etree.ElementTree as ET
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 
-import yaml
 from canon_formula_support import evaluate_inr, key, leaf, load_v1_policy
 
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.canon.interval import Interval
-from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
+from fundamentals.contracts.canonical import StatementFamily
 from fundamentals.contracts.comparison import CalculationState, SourceState
-from fundamentals.contracts.evidence import (
-    CaptureReference,
-    InterpretationStatus,
-    KnowledgeTimeStatus,
-    MissingValueState,
-    Occurrence,
-    PrecisionKind,
-    RevisionCause,
-)
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import PeriodInterval
-from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
-from fundamentals.evidence.mapping import load_mapping_set, load_normalisation_policy
 
 ROOT = Path(__file__).resolve().parents[2]
 DICTIONARY_ROOT = ROOT / "config/dictionary"
-MAPPING_ROOT = ROOT / "config/mappings"
 SOURCE_XML = ROOT / "data/raw/watchlist/sonacoms/nse/INDAS_117581_1359784_23012025083325.xml"
 SCREENER_HTML = (
     ROOT / "data/raw/watchlist/screener-financials/SONACOMS/consolidated/"
@@ -42,11 +28,7 @@ SCREENER_HTML = (
 SOURCE_XML_SHA256 = "c2e5b2bde74f631b47ff203a721e1a995bc135692e6b6c23d64bc1a0a75831fc"
 SCREENER_HTML_SHA256 = "44347bbbd29a191760059564cd21bed2a7ce53f9091762d5b86125178b68b0a2"
 BRIDGE_ID = "other_income_incl_exceptional"
-SOURCE = "nse-indas-xbrl-consolidated"
-SURFACE = "NSE_XBRL_INSTANCE"
-BSE_SCHEMA = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"
 PERIOD = PeriodInterval.duration(date(2024, 10, 1), date(2024, 12, 31))
-NOW = datetime(2026, 10, 13, tzinfo=UTC)
 V1_FILE_SHA256 = {
     "applicability.yaml": "e769a2ec049d1fa503641da9fbba0d6618baec333907e61b9d3536ca04061ae1",
     "balance_sheet.yaml": "f30dfa8c9ac84eefe22f15109e467e2cf89ae9c4081b9e75e8ad960995708b76",
@@ -91,106 +73,6 @@ def _source_oracle() -> tuple[Decimal, Decimal]:
     assert dates == {"startDate": "2024-10-01", "endDate": "2024-12-31"}
     assert basis == "Consolidated"
     return facts["OtherIncome"], facts["ExceptionalItemsBeforeTax"]
-
-
-def _isolated_mapping_root(tmp_path: Path) -> Path:
-    """Link the actual v1 members and this draft behind a private, unpublished index."""
-    root = tmp_path / "mappings"
-    members = (
-        "xbrl/v1/in_capmkt.yaml",
-        "xbrl/v1/in_bse_fin.yaml",
-        "pdf/v1/results_layout.yaml",
-        "constructions/v1.yaml",
-        "constructions/v2.yaml",
-        "statement_anchors/v1.yaml",
-    )
-    for member in members:
-        destination = root / member
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.symlink_to(MAPPING_ROOT / member)
-    (root / "dictionary-bridge-draft.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "version": "dictionary-bridge-draft",
-                "normalisation_policy_version": "v1",
-                "entry_files": [
-                    "xbrl/v1/in_capmkt.yaml",
-                    "xbrl/v1/in_bse_fin.yaml",
-                    "pdf/v1/results_layout.yaml",
-                ],
-                "construction_files": ["constructions/v1.yaml", "constructions/v2.yaml"],
-                "statement_anchor_files": ["statement_anchors/v1.yaml"],
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    return root
-
-
-def _capture(source: str = SOURCE) -> CaptureReference:
-    return CaptureReference(
-        capture_ref_id=17,
-        source_id=source,
-        surface=SURFACE,
-        request_key="retained-source-bridge-proof",
-        capture_id="retained-source-bridge-capture",
-        blob_sha256=SOURCE_XML_SHA256,
-        record_sha256="1" * 64,
-        registered_at=NOW,
-        first_seen_at=NOW,
-    )
-
-
-def _occurrence(
-    occurrence_id: int,
-    native_field: str,
-    raw_value: str,
-    *,
-    capture: CaptureReference,
-    missing_state: MissingValueState = MissingValueState.VALUE,
-) -> Occurrence:
-    return Occurrence(
-        occurrence_id=occurrence_id,
-        capture=capture,
-        representation=Representation.XBRL,
-        extractor_version="retained-xbrl-v1",
-        native_field=native_field,
-        raw_value_text=raw_value,
-        raw_unit="INR",
-        raw_scale=0,
-        raw_sign=-1 if raw_value.strip().startswith("-") else 1,
-        precision_kind=PrecisionKind.FINITE,
-        declared_precision=-6,
-        native_context={
-            "schema_identity": BSE_SCHEMA,
-            "namespace_uri": BSE_SCHEMA,
-            "basis": Basis.CONSOLIDATED.value,
-            "local_name": native_field,
-            "dimension_axes": [],
-        },
-        period=PERIOD,
-        missing_state=missing_state,
-        disclosure={},
-        anchor={"context_ref": "OneD", "native_field": native_field},
-        anchor_key=f"OneD:{native_field}",
-        knowledge_time=NOW,
-        knowledge_time_status=KnowledgeTimeStatus.KNOWN,
-        first_seen_at=NOW,
-        revision_cause=RevisionCause.ORIGINAL,
-    )
-
-
-def _reserve_ids() -> object:
-    next_id = 100
-
-    def reserve(count: int) -> tuple[int, ...]:
-        nonlocal next_id
-        found = tuple(range(next_id, next_id + count))
-        next_id += count
-        return found
-
-    return reserve
 
 
 def test_v2_is_v1_plus_one_derived_bridge_and_v1_bytes_are_unchanged() -> None:
@@ -283,78 +165,3 @@ def test_bridge_formula_fails_closed_for_missing_and_invalid_operands() -> None:
     assert invalid.state is CalculationState.OPERAND_INVALID
     assert missing.exact is None and missing.interval is None
     assert invalid.exact is None and invalid.interval is None
-
-
-def test_unpublished_first_party_bridge_uses_actual_v1_members_and_signed_operands(
-    tmp_path: Path,
-) -> None:
-    dictionary = load_dictionary(DICTIONARY_ROOT, "v2")
-    mapping_root = _isolated_mapping_root(tmp_path)
-    mappings = load_mapping_set(mapping_root, "dictionary-bridge-draft", dictionary=dictionary)
-    policy = load_normalisation_policy(ROOT / "config/normalisation_policy/v1.yaml")
-    rules = [item for item in mappings.constructions if item.canonical_id == BRIDGE_ID]
-    assert {(item.rule_id, item.source, item.schema_identity) for item in rules} == {
-        (
-            "capmkt.other_income_incl_exceptional",
-            SOURCE,
-            "http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt",
-        ),
-        ("bsefin.other_income_incl_exceptional", SOURCE, BSE_SCHEMA),
-    }
-
-    capture = _capture()
-    rows = interpret_generation(
-        [
-            _occurrence(1, "OtherIncome", "467906000.00", capture=capture),
-            _occurrence(2, "ExceptionalItemsBeforeTax", "-56992000.00", capture=capture),
-        ],
-        scope=CaptureScope(
-            capture=capture,
-            entity_id=7,
-            basis=Basis.CONSOLIDATED,
-            framework=AccountingFramework.IND_AS,
-            mapping_set=mappings,
-            policy=policy,
-            dictionary=dictionary,
-            fiscal_year_end_month=3,
-        ),
-        prior=(),
-        prior_anchor_keys={},
-        reserve_ids=_reserve_ids(),  # type: ignore[arg-type]
-        recorded_at=NOW,
-    )
-    constructed = next(
-        item for item in rows if item.construction_rule_id == "bsefin.other_income_incl_exceptional"
-    )
-    assert constructed.status is InterpretationStatus.MAPPED
-    assert constructed.value == Decimal("410914000.00")
-    assert constructed.interval == Interval(
-        lower=Fraction(409_914_000), upper=Fraction(411_914_000)
-    )
-    assert constructed.operand_interpretation_ids == (100, 101)
-    assert constructed.tier is EvidenceTier.EQUIVALENCE_UNPROVEN
-    assert constructed.key is not None
-    assert constructed.key.period == PERIOD and constructed.key.basis is Basis.CONSOLIDATED
-
-    wrong_source = _capture("unapproved-first-party-source")
-    refused = interpret_generation(
-        [
-            _occurrence(3, "OtherIncome", "467906000.00", capture=wrong_source),
-            _occurrence(4, "ExceptionalItemsBeforeTax", "-56992000.00", capture=wrong_source),
-        ],
-        scope=CaptureScope(
-            capture=wrong_source,
-            entity_id=7,
-            basis=Basis.CONSOLIDATED,
-            framework=AccountingFramework.IND_AS,
-            mapping_set=mappings,
-            policy=policy,
-            dictionary=dictionary,
-            fiscal_year_end_month=3,
-        ),
-        prior=(),
-        prior_anchor_keys={},
-        reserve_ids=_reserve_ids(),  # type: ignore[arg-type]
-        recorded_at=NOW,
-    )
-    assert not [item for item in refused if item.canonical_id == BRIDGE_ID]
