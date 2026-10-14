@@ -85,6 +85,7 @@ _NO_VALUE_STATES = frozenset(
     }
 )
 _MONETARY = frozenset({ValueKind.CURRENCY_AMOUNT, ValueKind.PER_SHARE_AMOUNT})
+CONTEXT_HEADER_KIND = "header_kind"
 _HEADER_KINDS = {
     3: PeriodKind.QUARTER,
     6: PeriodKind.HALF_YEAR,
@@ -616,6 +617,8 @@ def _key_period(
         return None
     months = context.get(CONTEXT_HEADER_MONTHS)
     expected = _HEADER_KINDS.get(months) if isinstance(months, int) else None
+    if context.get(CONTEXT_HEADER_KIND) == PeriodKind.TTM:  # an evidenced vendor TTM column
+        expected = PeriodKind.TTM
     kind = period.kind(fiscal_year_end_month)
     if kind is not expected:
         trace[TRACE_REASON] = f"header duration is {kind}, not the fiscal {months}-month period"

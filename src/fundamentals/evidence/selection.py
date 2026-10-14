@@ -46,8 +46,12 @@ SelectionOutcome = tuple[SourceState, Interpretation | None, str | None]
 def is_eligible(occurrence: Occurrence, boundary: EligibilityBoundary) -> bool:
     """Filed by the knowledge cutoff and stored by the first-seen cutoff.
 
-    An occurrence with no evidenced knowledge time is never eligible (fail closed).
+    A source with no publication time (knowledge time ``UNKNOWN``, spec §4) is available
+    from its verified capture registration time, never earlier.
     """
+    if occurrence.knowledge_time_status is KnowledgeTimeStatus.UNKNOWN:
+        available = max(occurrence.capture.registered_at, occurrence.first_seen_at)
+        return available <= min(boundary.knowledge_cutoff, boundary.first_seen_cutoff)
     return (
         occurrence.knowledge_time is not None
         and occurrence.knowledge_time_status is KnowledgeTimeStatus.KNOWN

@@ -1,41 +1,183 @@
-"""Tijori retained financials: pinned bytes to native tables (occurrence mapping is D1b.1)."""
+"""Tijori financials page to lossless occurrences for one basis (spec §2–§4).
 
-import hashlib
-from datetime import datetime
+Only tables whose own key scope is the requested basis are read; a page with none for that
+basis is rejected and yields no values (standalone is never stored as consolidated). The
+island's numerals declare neither unit nor displayed precision, so both stay unproven.
+Periods come from column labels: ``qt_*`` quarters, ``pl_*``/``cf_*`` years, ``bs_*``
+instants. The final ``pl_*`` column is TTM, evidenced by the table footer, never a fiscal
+period.
+"""
 
-from fundamentals.contracts.source_catalog import surface_authority
+from __future__ import annotations
+
+import json
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.canonical import Basis, PeriodKind, StatementFamily
+from fundamentals.contracts.evidence import CaptureReference, Occurrence
+from fundamentals.contracts.measurement_key import PeriodInterval
+from fundamentals.contracts.snapshot import CaptureRecord
+from fundamentals.evidence.interpret import input_digest
+from fundamentals.evidence.vendor_ingest import (
+    VendorExtraction,
+    VendorExtractionError,
+    json_occurrence,
+    month_period,
+)
 from fundamentals.ingest.tijori_source import TijoriSource
-from fundamentals.ingest.tijori_tables import TijoriTable
+from fundamentals.ingest.tijori_tables import TijoriError, TijoriTable, TijoriTableScope
 
 SOURCE_ID = "tijori"
-SURFACE = "TIJORI_FINANCIALS"
+SURFACE = "financials"
+SCHEMA_IDENTITY = "tijori-financials-island-v1"
+EXTRACTOR_VERSION = "tijori-v1"
+UNKNOWN_UNIT = "unknown"
+_TTM_FOOTER = "TTM Values as of {label}"
+_FAMILY = {
+    "bs": StatementFamily.BALANCE_SHEET,
+    "pl": StatementFamily.PL,
+    "qt": StatementFamily.PL,
+    "cf": StatementFamily.CASH_FLOW,
+    "fr": StatementFamily.DERIVED,
+}
+_SCOPE = {
+    Basis.CONSOLIDATED: TijoriTableScope.CONSOLIDATED,
+    Basis.STANDALONE: TijoriTableScope.STANDALONE,
+}
+_NO_BASIS = "page carries no {basis} financial table; a degenerate response yields no values"
 
 
-def read_financials(
+class TijoriBinding(BaseModel):
+    """Composition-root issuer identity for one Tijori slug (``config/watchlist.yaml``)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    slug: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    company_id: int = Field(gt=0)
+    fiscal_year_end_month: int = Field(default=3, ge=1, le=12)
+
+
+def extract_tijori(
     body: bytes,
     *,
-    expected_sha256: str,
-    slug: str,
-    expected_symbol: str,
-    expected_company_id: int,
-    source_url: str,
-    claimed_retrieved_at: datetime,
-) -> tuple[TijoriTable, ...]:
-    """Read pinned native tables through the existing offline parser, with no canonical claim.
+    capture: CaptureReference,
+    record: CaptureRecord,
+    extractor_version: str,
+    binding: TijoriBinding,
+    basis: Basis,
+) -> VendorExtraction:
+    """Read every cell of the requested basis's tables from one registered page."""
+    try:
+        tables = TijoriSource.parse_all_tables_bytes(
+            body,
+            slug=binding.slug,
+            expected_symbol=binding.symbol,
+            expected_company_id=binding.company_id,
+            retrieved_at=record.retrieved_at,
+        )
+    except TijoriError as error:
+        raise VendorExtractionError(ExtractionOutcome.PARSE_FAILED, str(error)) from error
+    scoped = [
+        table for table in tables if table.scope is _SCOPE[basis] and table.key.value[:2] in _FAMILY
+    ]
+    if not scoped:
+        raise VendorExtractionError(
+            ExtractionOutcome.IDENTITY_REJECTED, _NO_BASIS.format(basis=basis.value)
+        )
+    occurrences: list[Occurrence] = []
+    for table in scoped:
+        labels = table.column_period_labels
+        for row in table.rows:
+            lexemes = [(cell.raw_text, cell.value) for cell in row.cells] or [
+                (raw, None) for raw in row.unaligned_raw_values
+            ]
+            for index, (lexeme, value) in enumerate(lexemes):
+                column = labels[index] if row.cells else None
+                ttm = bool(row.cells) and _is_ttm(table, index, binding.fiscal_year_end_month)
+                occurrences.append(
+                    json_occurrence(
+                        capture,
+                        extractor_version=extractor_version,
+                        label=row.label,
+                        lexeme=lexeme,
+                        value=value,
+                        raw_unit=UNKNOWN_UNIT,
+                        raw_scale=0,
+                        period=_period(table, index, binding.fiscal_year_end_month)
+                        if row.cells
+                        else None,
+                        native_context={
+                            "schema_identity": SCHEMA_IDENTITY,
+                            "basis": basis.value,
+                            "statement_family": _FAMILY[table.key.value[:2]].value,
+                            "label": row.label,
+                            "section": table.key.value,
+                            "section_parent": "/".join(row.parent_labels),
+                            "field_id": row.field_id,
+                            "header_months": 3 if table.key.value[:2] == "qt" else 12,
+                            "header_kind": PeriodKind.TTM.value if ttm else None,
+                        },
+                        anchor={
+                            "anchor_type": "JSON_ISLAND",
+                            "table_key": table.key.value,
+                            "row_key": row.row_key,
+                            "column_index": index,
+                            "column_label": column,
+                        },
+                        disclosure={
+                            "alignment": row.alignment.value,
+                            "quarantined": not row.cells,
+                            "skipped_column": column in table.skipped_period_labels,
+                        },
+                    )
+                )
+    reasons = tuple(
+        f"{table.key.value}: {row_key} could not be aligned"
+        for table in scoped
+        for row_key in table.cardinality_mismatch_rows
+    )
+    return VendorExtraction(
+        occurrences=tuple(occurrences),
+        outcome=ExtractionOutcome.PARTIAL if reasons else ExtractionOutcome.COMPLETE,
+        reasons=reasons,
+        extraction_context_sha256=input_digest(
+            {
+                "surface": capture.surface,
+                "capture_sha256": capture.blob_sha256,
+                "basis": basis.value,
+                "binding": binding.model_dump(mode="json"),
+            }
+        ),
+    )
 
-    Table scope, raw cells, precision and final-column labels remain native evidence;
-    this function does not infer TTM intervals, qualification or first-seen timestamps.
-    """
-    surface_authority(SOURCE_ID, SURFACE)
-    if hashlib.sha256(body).hexdigest() != expected_sha256:
-        raise ValueError("Tijori body differs from its retained content pin")
-    if claimed_retrieved_at.tzinfo is None:
-        raise ValueError("retained retrieval claim must have an offset")
-    return TijoriSource.parse_all_tables_bytes(
-        body,
-        slug=slug,
-        expected_symbol=expected_symbol,
-        expected_company_id=expected_company_id,
-        source_url=source_url,
-        retrieved_at=claimed_retrieved_at,
+
+def _period(table: TijoriTable, index: int, fiscal_year_end_month: int) -> PeriodInterval | None:
+    """The column's interval from its label; the final ``pl_*`` column only as evidenced TTM."""
+    label = table.column_period_labels[index]
+    family = table.key.value[:2]
+    if family == "fr":
+        return None  # A ratio label does not settle its operands' temporal roles.
+    year = month_period(label, 12)
+    if family == "bs":
+        return PeriodInterval.at(year.end) if year is not None and year.end else None
+    if family == "qt":
+        return month_period(label, 3)
+    if family == "pl" and index == len(table.column_period_labels) - 1:
+        return year if _is_ttm(table, index, fiscal_year_end_month) else None
+    return year
+
+
+def _is_ttm(table: TijoriTable, index: int, fiscal_year_end_month: int) -> bool:
+    """The final ``pl_*`` column whose footer evidences it as TTM, never a fiscal year."""
+    label = table.column_period_labels[index]
+    year = month_period(label, 12)
+    footer = json.loads(table.table_footer_json) if table.table_footer_json else None
+    return (
+        table.key.value[:2] == "pl"
+        and index == len(table.column_period_labels) - 1
+        and footer == _TTM_FOOTER.format(label=label)
+        and year is not None
+        and year.kind(fiscal_year_end_month) is PeriodKind.TTM
     )

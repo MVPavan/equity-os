@@ -1,0 +1,22 @@
+# Upstox income-statement summary block (D1b.1), diagnostic-only (spec §3). Periods follow
+# the requested periodicity. All unproven; API numerals declare no precision (spec §5).
+source: upstox
+surface: income-statement
+schema_identity: upstox-income-statement-summary-v2
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  period_rule: COLUMN_DURATION
+entries:
+- entry_id: upstox.summary.total_income
+  selector: {statement_family: PL, labels: [revenue], section_equals: summary}
+  canonical_id: total_income
+  period_kinds: [QUARTER, YEAR]
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2: Upstox summary revenue → total income; docs/research/upstox-api-schemas/fundamentals.md
+    finding 3 (revenue equals full_statement Total Revenue).'
+- entry_id: upstox.summary.profit_before_tax
+  selector: {statement_family: PL, labels: [operating_profit], section_equals: summary}
+  canonical_id: profit_before_tax
+  period_kinds: [QUARTER, YEAR]
+  evidence_ref: 'docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md
+    §2: Upstox summary operating_profit → PBT (equals Screener PBT to the crore, 12/12).'

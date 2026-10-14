@@ -228,7 +228,7 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
     ),
     _surface(
         "tijori",
-        "TIJORI_FINANCIALS",
+        "financials",
         Representation.HTML,
         SourceRole.INDEPENDENT_VENDOR,
         _SUBSCRIBER_RIGHTS,

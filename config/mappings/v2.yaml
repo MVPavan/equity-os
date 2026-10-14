@@ -5,6 +5,9 @@ entry_files:
 - xbrl/v1/in_bse_fin.yaml
 - pdf/v1/results_layout.yaml
 - screener/v2/financials.yaml
+- tijori/v1/financials.yaml
+- upstox/v1/summary.yaml
+- upstox/v1/full_statement.yaml
 construction_files:
 - constructions/v1.yaml
 - screener/v2/constructions.yaml

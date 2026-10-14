@@ -22,7 +22,6 @@ from fundamentals.contracts.canonical import Basis, Representation, StatementFam
 from fundamentals.contracts.evidence import (
     CaptureReference,
     KnowledgeTimeStatus,
-    MissingValueState,
     Occurrence,
     PrecisionKind,
     RevisionCause,
@@ -30,6 +29,9 @@ from fundamentals.contracts.evidence import (
 from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.source_catalog import SurfaceNotAuthorisedError, surface_authority
 from fundamentals.evidence.interpret import input_digest
+from fundamentals.evidence.vendor_ingest import VendorExtraction as ScreenerExtraction
+from fundamentals.evidence.vendor_ingest import VendorExtractionError as ScreenerExtractionError
+from fundamentals.evidence.vendor_ingest import missing_state
 from fundamentals.ingest.screener_financials_models import (
     RESERVED_SUB_ROW_KEYS,
     Period,
@@ -79,14 +81,6 @@ _UNIT = {
 }
 
 
-class ScreenerExtractionError(ValueError):
-    """Typed refusal before any occurrence can be interpreted."""
-
-    def __init__(self, outcome: ExtractionOutcome, detail: str) -> None:
-        self.outcome = outcome
-        super().__init__(detail)
-
-
 class ScreenerIssuerBinding(BaseModel):
     """Composition-root issuer identity, already backed by its independently reviewed config."""
 
@@ -97,16 +91,6 @@ class ScreenerIssuerBinding(BaseModel):
     topology: BasisTopology
     identity_evidence_ref: str = Field(min_length=1)
     fiscal_year_end_month: int = Field(default=3, ge=1, le=12)
-
-
-class ScreenerExtraction(BaseModel):
-    """Lossless native occurrences plus the honest outcome and pinned extraction context."""
-
-    model_config = ConfigDict(frozen=True)
-    occurrences: tuple[Occurrence, ...]
-    outcome: ExtractionOutcome
-    reasons: tuple[str, ...] = ()
-    extraction_context_sha256: str
 
 
 def extract_screener_page(
@@ -422,19 +406,6 @@ def _occurrence(
     precision_supported: bool = True,
 ) -> Occurrence:
     value, _ = read_number(lexeme or "")
-    state = (
-        MissingValueState.SOURCE_NULL
-        if lexeme is None
-        else MissingValueState.BLANK
-        if not lexeme.strip()
-        else MissingValueState.DASH
-        if lexeme.strip() in ("-", "—", "–")
-        else MissingValueState.NIL
-        if lexeme.strip().lower() == "nil"
-        else MissingValueState.ZERO_PRINTED
-        if value == 0
-        else MissingValueState.VALUE
-    )
     # Actual printed decimal places; JSON numeric scalars alone declare no precision.
     printed = (lexeme or "").strip().rstrip("%").replace(",", "")
     declared = len(printed.rsplit(".", 1)[1]) if "." in printed else 0
@@ -483,7 +454,7 @@ def _occurrence(
             "identity_evidence_ref": binding.identity_evidence_ref,
         },
         period=period,
-        missing_state=state,
+        missing_state=missing_state(lexeme, value),
         disclosure=disclosure,
         anchor=location,
         anchor_key=input_digest(location),
