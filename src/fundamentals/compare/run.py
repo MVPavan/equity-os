@@ -45,7 +45,7 @@ from fundamentals.compare.run_models import (
 from fundamentals.compare.run_store import PublishHook, RunStore
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
-from fundamentals.contracts.evidence import RunMode, VersionPin
+from fundamentals.contracts.evidence import RunMode, VendorExtractorPin, VersionPin
 from fundamentals.contracts.review_queue import QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.repository import EvidenceRepository
@@ -75,6 +75,7 @@ __all__ = [
 DEFINITION_SET_ARTIFACT = "definition_set"
 NO_ATTEMPT = "-"
 _FAILURE = "{representation}\t{reason}\tattempt={attempt}"
+_NON_DIAGNOSTIC = (SourceRole.FIRST_PARTY, SourceRole.INDEPENDENT_VENDOR)
 
 
 def request_for(
@@ -88,15 +89,23 @@ def request_for(
     database_identity: DatabaseIdentity,
     mode: RunMode = RunMode.AS_KNOWN,
     sources: tuple[str, ...] = FIRST_PARTY_SOURCES,
+    vendors: tuple[tuple[str, str], ...] = (),
     versions: ConfigVersions | None = None,
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
 ) -> RunRequest:
     """A one-entity, one-period request pinned to the config root's artifacts at ``versions``."""
-    config = load_run_config(config_root, versions, extractor_pins=extractor_pins)
+    scope = RunScope(
+        entity_ids=(entity_id,),
+        period_ends=(period_end,),
+        bases=(basis,),
+        sources=sources,
+        vendors=vendors,
+    )
+    config = load_run_config(
+        config_root, versions, extractor_pins=extractor_pins, vendors=scope.vendors
+    )
     return RunRequest(
-        scope=RunScope(
-            entity_ids=(entity_id,), period_ends=(period_end,), bases=(basis,), sources=sources
-        ),
+        scope=scope,
         cutoff=cutoff,
         mode=mode,
         pinned=config.pinned,
@@ -174,7 +183,7 @@ def replay_run(
         code_version=manifest.code_version,
         database_identity=manifest.database_identity,
     )
-    config = _config(config_root, request, extractors)
+    config = _config(config_root, request, extractors, vendor_pins=pinned.vendor_extractors)
     by_id = reader if reader is not None else EvidenceRepository(pool)
     inputs = load_inputs(by_id, manifest.inputs)
     stored_set = by_id.get_definition_set(inputs.definition_set_id)
@@ -194,35 +203,31 @@ def load_results(run_id: int, *, pool: ConnectionPool) -> tuple[ResultRow, ...]:
 
 
 def run_status(rows: tuple[ResultRow, ...]) -> RunStatus:
-    """``INCOMPLETE`` when any first-party source state is ``UNAVAILABLE``."""
-    unavailable = any(
-        value.state is SourceState.UNAVAILABLE
-        for row in rows
-        for value in row.source_values
-        if value.source_role is SourceRole.FIRST_PARTY
-    )
-    return RunStatus.INCOMPLETE if unavailable else RunStatus.COMPLETE
+    """``INCOMPLETE`` when any non-diagnostic source state is ``UNAVAILABLE``."""
+    return RunStatus.INCOMPLETE if operational_failures(rows) else RunStatus.COMPLETE
 
 
 def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
-    """Each distinct failure behind a first-party ``UNAVAILABLE`` state, in sorted order.
+    """Each distinct failure behind a non-diagnostic ``UNAVAILABLE`` state, in sorted order.
 
-    A failure is the representation, the reason that decided the state and the attempt that
-    recorded it (``-`` when the state comes from the pins, e.g. nothing extracted under the
-    pinned extractor). Non-empty exactly when the run is ``INCOMPLETE``.
+    A failure is the representation (a vendor's ``source/surface``), the reason that decided
+    the state and the attempt that recorded it (``-`` when the state comes from the pins,
+    e.g. nothing extracted under the pinned extractor). Non-empty exactly when the run is
+    ``INCOMPLETE``.
     """
     return tuple(
         sorted(
             {
                 _FAILURE.format(
-                    representation=value.representation.value,
+                    representation=value.representation.value
+                    if value.source_id is None
+                    else f"{value.source_id}/{value.surface}",
                     reason=value.reason or NO_ATTEMPT,
                     attempt=NO_ATTEMPT if value.attempt_id is None else value.attempt_id,
                 )
                 for row in rows
                 for value in row.source_values
-                if value.source_role is SourceRole.FIRST_PARTY
-                and value.state is SourceState.UNAVAILABLE
+                if value.source_role in _NON_DIAGNOSTIC and value.state is SourceState.UNAVAILABLE
             }
         )
     )
@@ -242,10 +247,16 @@ def _config(
     config_root: Path,
     request: RunRequest,
     extractor_pins: Mapping[Representation, VersionPin] | None,
+    *,
+    vendor_pins: tuple[VendorExtractorPin, ...] | None = None,
 ) -> LoadedConfig:
     """The request's pinned artifacts, refused if any resolved content differs."""
     config = load_run_config(
-        config_root, ConfigVersions.of(request.pinned), extractor_pins=extractor_pins
+        config_root,
+        ConfigVersions.of(request.pinned),
+        extractor_pins=extractor_pins,
+        vendors=request.scope.vendors,
+        vendor_pins=vendor_pins,
     )
     require_pins(config, request.pinned)
     return config

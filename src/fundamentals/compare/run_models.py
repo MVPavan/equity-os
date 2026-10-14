@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import IntEnum, StrEnum
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from fundamentals.compare.tables import TaggingAdjustment
 from fundamentals.contracts.canonical import (
@@ -40,6 +40,7 @@ from fundamentals.contracts.comparison import (
 )
 from fundamentals.contracts.evidence import PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.contracts.source_catalog import SurfaceNotAuthorisedError, surface_authority
 from fundamentals.evidence.capture_intake import FirstPartySurface
 
 NO_DIMENSIONS = "-"
@@ -107,11 +108,12 @@ class RunInput(BaseModel):
 
 
 class RunScope(BaseModel):
-    """What a run covers: one entity, period ends, bases and first-party sources.
+    """What a run covers: one entity, period ends, bases, first-party sources and vendors.
 
     ``sources`` names the first-party surfaces the run reads (sorted, each once); members
-    and attempts on any other surface never decide a side. Row ids carry no entity, so a
-    run holds exactly one entity (D1a/D1b ruling).
+    and attempts on any other surface never decide a side. ``vendors`` names registered
+    vendor ``(source, surface)`` entries (omitted when empty, so first-party scopes serialize
+    as in D1a). Row ids carry no entity, so a run holds exactly one entity (D1a/D1b ruling).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -120,6 +122,7 @@ class RunScope(BaseModel):
     period_ends: tuple[date, ...]
     bases: tuple[Basis, ...]
     sources: tuple[str, ...]
+    vendors: tuple[tuple[str, str], ...] = Field(default=(), exclude_if=lambda value: not value)
 
     @field_validator("entity_ids")
     @classmethod
@@ -139,6 +142,19 @@ class RunScope(BaseModel):
         if unknown:
             raise ValueError(_UNKNOWN_SOURCES.format(unknown=unknown, known=FIRST_PARTY_SOURCES))
         return tuple(sorted(set(sources)))
+
+    @field_validator("vendors")
+    @classmethod
+    def _registered_vendors(
+        cls, vendors: tuple[tuple[str, str], ...]
+    ) -> tuple[tuple[str, str], ...]:
+        """Refuse an unregistered vendor surface; keep them sorted, each once."""
+        for source_id, surface in vendors:
+            try:
+                surface_authority(source_id, surface)
+            except SurfaceNotAuthorisedError as error:
+                raise ValueError(str(error)) from error
+        return tuple(sorted(set(vendors)))
 
 
 class DatabaseIdentity(BaseModel):

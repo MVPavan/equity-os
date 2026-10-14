@@ -36,9 +36,14 @@ TEXT_BLOCK_SUFFIX = "TextBlock"
 # block DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock@OneD (Q2 FY26 sha256 90baae0b,
 # Q3 FY26, FY25 Q2 sha256 c44ac376) and the results PDF page 5 note 1 (sha256 8be1b8de):
 # "... financial statements have been prepared in accordance with Indian Accounting Standard
-# notified under Section 133 of the Companies Act, 2013".
+# notified under Section 133 of the Companies Act, 2013". LAURUSLABS Q3 FY25 (sha256 2d50d29a,
+# same text block, note 2): "... have been prepared in accordance with the Indian Accounting
+# Standards ('IND AS') prescribed under Section 133 of the Companies Act, 2013".
 FRAMEWORK_DECLARATIONS: Mapping[AccountingFramework, tuple[str, ...]] = {
-    AccountingFramework.IND_AS: ("prepared in accordance with Indian Accounting Standard",),
+    AccountingFramework.IND_AS: (
+        "prepared in accordance with Indian Accounting Standard",
+        "prepared in accordance with the Indian Accounting Standards",
+    ),
 }
 _NO_FRAMEWORK = "the capture declares no accounting framework"
 _FRAMEWORKS_DISAGREE = "the capture declares several accounting frameworks {found}"

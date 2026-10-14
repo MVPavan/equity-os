@@ -1,15 +1,15 @@
 """Render a stored run as plain text (D1a Task 9).
 
 One header block from the run record (with its operational failures), then one block per
-result row keyed by ``row_id``: each source value with its unit, state and epistemic class
-(an interpretation is ``OBSERVED``, a calculation ``COMPUTED``), its provenance (the
-interpretation id and source anchor, the calculation trace, or the attempt that decided a
-failed side), extraction and corroboration, pair outcomes with reason, difference, gap,
-definition record and adjustments, the headline marker and surfaced restatements, then the
-row's open queue items and its trust at the overlay time the header states (items without a
-measurement key, i.e. ``UNMAPPED`` occurrences, list in the header). Currency amounts also
-print in crore, two decimals. ``NOT_APPLICABLE`` rows list their rule id only. The dictionary
-must be the one the run pinned, by content.
+result row keyed by ``row_id``: each source value (a vendor's as ``source/surface``) with its
+unit, state and epistemic class (an interpretation is ``OBSERVED``, a calculation
+``COMPUTED``), its provenance (the interpretation id and source anchor, the calculation trace,
+or the attempt that decided a failed side), extraction and corroboration, pair outcomes with
+reason, difference, gap, definition record and adjustments, the headline marker and
+surfaced restatements, then the row's open queue items and its trust at the overlay time the
+header states (items without a measurement key, i.e. ``UNMAPPED`` occurrences, list in the
+header). Currency amounts also print in crore, two decimals. ``NOT_APPLICABLE`` rows list
+their rule id only. The dictionary must be the one the run pinned, by content.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from fundamentals.compare.run_models import (
 from fundamentals.compare.tables import TaggingAdjustment
 from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import ApplicabilityStatus, ValueKind
-from fundamentals.contracts.comparison import EpistemicClass, SourceRole, SourceState
+from fundamentals.contracts.comparison import EpistemicClass, SourceRef, SourceRole, SourceState
 from fundamentals.contracts.evidence import Interpretation, Occurrence
 from fundamentals.contracts.review_queue import QueueItem, QueueOverlay
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -246,7 +246,7 @@ def _value_line(
     computed = value.calculation_trace_id is not None
     return _VALUE.format(
         role=value.source_role.value,
-        representation=value.representation.value,
+        representation=_source(value),
         state=value.state.value,
         value=NONE_TEXT if value.value is None else str(value.value),
         unit=unit,
@@ -277,8 +277,8 @@ def _pair_line(pair: PairRecord) -> str:
     """One pair outcome with reason, difference, gap, triage, record and adjustments."""
     return _PAIR.format(
         kind=pair.pair_kind.value,
-        left=f"{pair.left.source_role.value}:{pair.left.representation.value}",
-        right=f"{pair.right.source_role.value}:{pair.right.representation.value}",
+        left=f"{pair.left.source_role.value}:{_source(pair.left)}",
+        right=f"{pair.right.source_role.value}:{_source(pair.right)}",
         outcome=pair.outcome.value,
         reason=NONE_TEXT if pair.reason is None else pair.reason.value,
         difference=NONE_TEXT if pair.difference is None else str(pair.difference),
@@ -291,6 +291,11 @@ def _pair_line(pair: PairRecord) -> str:
         ),
         adjustments="".join(_adjustment(item) for item in pair.adjustments),
     )
+
+
+def _source(ref: SourceRef) -> str:
+    """A first-party side's representation, or a vendor side's ``source/surface``."""
+    return ref.representation.value if ref.source_id is None else f"{ref.source_id}/{ref.surface}"
 
 
 def _adjustment(adjustment: TaggingAdjustment) -> str:

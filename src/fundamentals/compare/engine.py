@@ -60,7 +60,6 @@ from fundamentals.compare.engine_rows import (
     pair_record,
     pairable,
     ref,
-    representative,
     selected_side,
     sorted_values,
 )
@@ -73,12 +72,8 @@ from fundamentals.compare.run_models import (
     SourceRole,
     row_id,
 )
-from fundamentals.compare.tables import (
-    ExtractionResult,
-    corroboration_status,
-    extraction_status,
-    pair_outcome,
-)
+from fundamentals.compare.tables import ExtractionResult, extraction_status, pair_outcome
+from fundamentals.compare.vendor_sides import VendorSides
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
@@ -158,7 +153,9 @@ class RunEngine:
             assert occurrence.occurrence_id is not None
             self._occurrences[occurrence.occurrence_id] = occurrence
             capture = occurrence.capture.capture_ref_id or 0
-            if occurrence.extractor_version == self._triple.extractor(occurrence.representation):
+            if occurrence.representation in REPRESENTATIONS and (
+                occurrence.extractor_version == self._triple.extractor(occurrence.representation)
+            ):
                 held = self._witness_occurrence.get(capture)
                 if held is None or (held.occurrence_id or 0) > occurrence.occurrence_id:
                     self._witness_occurrence[capture] = occurrence
@@ -188,12 +185,18 @@ class RunEngine:
         self._cells: dict[Key, Cell] = {}
         self._reported_sides: dict[str, dict[Representation, Side]] = {}
         self._formulas = FormulaRows(self, config=config, traces=traces, proofs=inputs.proofs)
+        self._vendors = VendorSides(inputs, request, config=config)
         self.selected_package_ids: set[int] = set()
 
     @property
     def bound_segment_member_ids(self) -> set[int]:
         """Segment-member records an entity-bound aggregation bound."""
         return self._formulas.bound_member_ids
+
+    @property
+    def selected_vendor_captures(self) -> set[int]:
+        """Vendor captures whose complete latest attempt decided a side."""
+        return self._vendors.selected_captures
 
     @property
     def selected_condition_ids(self) -> set[int]:
@@ -711,7 +714,9 @@ class RunEngine:
         decision = ApplicabilityDecision(
             status=reported.applicability, rule_id=reported.applicability_rule_id
         )
-        derived = self._compared(key, ValueIdentity.DERIVED, decision, sides, surfaced=surfaced)
+        derived = self._compared(
+            key, ValueIdentity.DERIVED, decision, sides, surfaced=surfaced, vendors=False
+        )
         counterparts = tuple(
             as_counterpart(value)
             for value in reported.source_values
@@ -752,8 +757,10 @@ class RunEngine:
         *,
         surfaced: Iterable[int],
         extraction: ExtractionResult | None = None,
+        vendors: bool = True,
     ) -> ResultRow:
-        """Extraction (unless already decided) and corroboration over the two sides."""
+        """Extraction (unless already decided), then corroboration with the vendor sides
+        (none for a Q4 derived from FY − 9M, which pairs with the reported Q4 instead)."""
         xbrl, pdf = sides[Representation.XBRL].comparison, sides[Representation.PDF].comparison
         if extraction is None:
             extraction = extraction_status(
@@ -763,8 +770,13 @@ class RunEngine:
                 definitions=self._config.definition_set,
                 policy=self._config.comparison_policy,
             )
-        corroboration, reason = corroboration_status(
-            applicability=decision.status, first_party=representative(xbrl, pdf)
+        vendor = self._vendors.row(
+            key,
+            fiscal_month=self._fiscal_year_end(key.entity_id),
+            applicability=decision.status,
+            extraction=extraction.status,
+            first_party={Representation.XBRL: xbrl, Representation.PDF: pdf},
+            vendors=vendors,
         )
         pairs: tuple[PairRecord, ...] = ()
         if extraction.pair is not None:
@@ -786,9 +798,11 @@ class RunEngine:
             applicability_rule_id=decision.rule_id,
             extraction_status=extraction.status,
             extraction_reason=extraction.reason,
-            corroboration_status=corroboration,
-            corroboration_reason=reason,
-            source_values=sorted_values(tuple(side.stored for side in sides.values())),
-            pairs=pairs,
+            corroboration_status=vendor.status,
+            corroboration_reason=vendor.reason,
+            source_values=sorted_values(
+                (*(side.stored for side in sides.values()), *vendor.values)
+            ),
+            pairs=(*pairs, *vendor.pairs),
             surfaced_restatements=tuple(sorted(set(surfaced))),
         )

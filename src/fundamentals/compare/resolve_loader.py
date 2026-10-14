@@ -6,7 +6,9 @@ reads the fiscal calendar, basis status and segment members recorded by the cuto
 nine-month package when a ``YEAR`` package is present), their member captures'
 interpretations under the pinned triple, the witness and selected occurrences, and the
 available attempts; and finally every eligible comparative of the selected keys. Only members
-and attempts on the scope's requested sources (first-party surfaces) are read.
+and attempts on the scope's requested sources (first-party surfaces) are read, plus the
+requested vendor surfaces' attempts of the scope's period end and their captures'
+interpretations.
 """
 
 from __future__ import annotations
@@ -19,7 +21,12 @@ from fundamentals.compare.engine_attempts import attempt_available, fiscal_perio
 from fundamentals.compare.resolve_models import ResolvedInputs
 from fundamentals.compare.run_models import RunRequest
 from fundamentals.compare.run_store import RunStore
-from fundamentals.contracts.canonical import Basis, PeriodKind, Representation
+from fundamentals.contracts.canonical import (
+    FIRST_PARTY_REPRESENTATIONS,
+    Basis,
+    PeriodKind,
+    Representation,
+)
 from fundamentals.contracts.evidence import (
     AcquisitionAttempt,
     CaptureReference,
@@ -49,6 +56,7 @@ class RunLoader:
         self._boundary = EligibilityBoundary.at(request.cutoff)
         self._triple = request.pinned.triple()
         self._surfaces = frozenset(request.scope.sources)
+        self._vendors = frozenset(request.scope.vendors)
         self._captures: dict[int, CaptureReference] = {}
         self._packages: dict[int, FilingPackage] = {}
         self._statements: dict[int, PackageStatementRecord] = {}
@@ -75,7 +83,7 @@ class RunLoader:
         candidates = [
             item
             for item in store.interpretations_by_key_digests(sorted(digests))
-            if self._current(item)
+            if item.representation in FIRST_PARTY_REPRESENTATIONS and self._current(item)
         ]
         captures = sorted({item.capture_ref_id for item in candidates})
         package_ids = store.package_ids_of_captures(captures) if captures else ()
@@ -149,21 +157,29 @@ class RunLoader:
         for period_end in ends:
             for package in self._eligible(entity_id, basis, period_end):
                 self._add_package(package, interpretations=True)
-            self._period_attempts(entity_id, basis, period_end)
+            self._period_attempts(entity_id, basis, period_end, vendors=period_end == end)
         self._occurrences_of_interpretations()
 
-    def _period_attempts(self, entity_id: int, basis: Basis, period_end: date) -> None:
-        """Attempts of one period end available under the cutoff, mode and pinned extractor."""
+    def _period_attempts(
+        self, entity_id: int, basis: Basis, period_end: date, *, vendors: bool = False
+    ) -> None:
+        """Attempts of one period end available under the cutoff, mode and pinned extractor;
+        with ``vendors``, the requested vendor surfaces' too, with their captures' evidence."""
         for attempt in self._repository.list_attempts(entity_id, period_end):
+            vendor = vendors and (attempt.source_id, attempt.surface) in self._vendors
             if (
-                attempt.surface in self._surfaces
+                (vendor or attempt.surface in self._surfaces)
                 and attempt.basis is basis
                 and attempt.framework is RUN_FRAMEWORK
                 and attempt_available(
                     attempt,
                     cutoff=self._request.cutoff,
                     mode=self._request.mode,
-                    extractor=self._triple.extractor(attempt.representation),
+                    extractor=self._triple.extractor(
+                        attempt.representation,
+                        source_id=attempt.source_id,
+                        surface=attempt.surface,
+                    ),
                 )
             ):
                 assert attempt.attempt_id is not None
@@ -171,6 +187,13 @@ class RunLoader:
                 capture = attempt.capture
                 if capture is not None and capture.capture_ref_id is not None:
                     self._captures[capture.capture_ref_id] = capture
+                    if vendor and capture.capture_ref_id not in self._loaded_captures:
+                        self._loaded_captures.add(capture.capture_ref_id)
+                        for item in self._repository.list_capture_interpretations(
+                            capture.capture_ref_id
+                        ):
+                            if self._known(item):
+                                self._add_interpretation(item)
 
     def _fiscal_month(self, entity_id: int) -> int | None:
         """The loaded fiscal-year-end month, if one was recorded by the cutoff."""

@@ -82,6 +82,8 @@ def selected_side(
     proofs: Sequence[AlignmentProof],
     package_id: int | None,
     role: SourceRole = SourceRole.FIRST_PARTY,
+    source_id: str | None = None,
+    surface: str | None = None,
 ) -> Side:
     """A reported side: the selection's value, scoped tier (or proof) and provenance."""
     selection = cell.selection
@@ -104,6 +106,8 @@ def selected_side(
     stored = SourceValue(
         source_role=role,
         representation=representation,
+        source_id=source_id,
+        surface=surface,
         state=selection.state,
         reason=selection.reason,
         value=operand.value if valued else None,

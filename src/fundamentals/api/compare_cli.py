@@ -2,6 +2,7 @@
 
     compare run --entity <entity_key> --period-end <YYYY-MM-DD> --basis consolidated
         [--cutoff <ISO-8601 with offset>] [--mode as_known|retrospective] [--config-root config]
+        [--vendor <source>/<surface> ...] [--dictionary v1] [--mapping-set v1]
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
         [--as-of <ISO-8601 with offset>] [--config-root config]
     compare queue list --run <id> [--as-of <ISO-8601 with offset>]
@@ -49,7 +50,7 @@ from fundamentals.compare.run import (
     load_results,
     request_for,
 )
-from fundamentals.compare.run_config import DICTIONARY_DIR
+from fundamentals.compare.run_config import DEFAULT_VERSION, DICTIONARY_DIR, ConfigVersions
 from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunReadError, RunStore
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import RunMode
@@ -82,6 +83,7 @@ _QUEUE_DEST = "queue_action"
 _LATE_AS_OF = "--as-of {as_of} is later than the overlay boundary {boundary}"
 _NO_AMOUNT = "ACCEPTED_AS_DEFINITION needs --explained-amount"
 _NOT_DECIMAL = "{value!r} is not a decimal amount"
+_NOT_VENDOR = "{value!r} is not <source>/<surface>"
 _LIST_HEADER = "run\t{run_id}\nas_of\t{as_of}"
 _DISPOSED = "disposition\t{disposition}"
 _SEVERITY_ORDER = {severity: index for index, severity in enumerate(QueueSeverity)}
@@ -110,6 +112,9 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     run.add_argument("--cutoff", type=_aware_cutoff)
     run.add_argument("--mode", choices=sorted(_MODES), default=RunMode.AS_KNOWN.value.lower())
     run.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    run.add_argument("--vendor", action="append", default=[], type=_vendor)
+    run.add_argument("--dictionary", default=DEFAULT_VERSION)
+    run.add_argument("--mapping-set", default=DEFAULT_VERSION)
     report = actions.add_parser(REPORT_ACTION, help=_REPORT_HELP)
     report.add_argument("--run", type=int)
     report.add_argument("--entity")
@@ -185,6 +190,8 @@ def _run(args: argparse.Namespace) -> int:
                 host=settings.host, port=settings.port, name=settings.db
             ),
             mode=_MODES[args.mode],
+            vendors=tuple(args.vendor),
+            versions=ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
         )
         record = execute_run(request, pool=pool, config_root=args.config_root)
         overlay = read_overlay(pool, run_id=record.run_id, as_of=overlay_boundary(pool))
@@ -286,6 +293,14 @@ def _aware_cutoff(value: str) -> datetime:
     if cutoff.tzinfo is None:
         raise argparse.ArgumentTypeError(_NAIVE_CUTOFF.format(value=value))
     return cutoff
+
+
+def _vendor(value: str) -> tuple[str, str]:
+    """A ``source/surface`` vendor entry."""
+    source_id, separator, surface = value.partition("/")
+    if not (source_id and separator and surface):
+        raise argparse.ArgumentTypeError(_NOT_VENDOR.format(value=value))
+    return source_id, surface
 
 
 def _amount(value: str) -> Decimal:

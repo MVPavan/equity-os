@@ -180,11 +180,11 @@ def select_key(
     capture_ref_id = member.capture.capture_ref_id
     triple = _triple(pinned)
     owned = [item for item in interpretations if item.capture_ref_id == capture_ref_id]
-    considered = _ids([item for item in owned if _matches(item, key)])
+    considered = _ids([item for item in owned if matches_key(item, key)])
     available = [
         item for item in owned if _under(item, triple) and _known(item.recorded_at, boundary, mode)
     ]
-    candidates = [item for item in _current(available) if _matches(item, key)]
+    candidates = [item for item in _current(available) if matches_key(item, key)]
     extractor = triple.extractor(representation)
     if not any(
         item.capture.capture_ref_id == capture_ref_id and item.extractor_version == extractor
@@ -300,7 +300,7 @@ def _current(items: Sequence[Interpretation]) -> list[Interpretation]:
     return [item for item in items if item.interpretation_id not in superseded]
 
 
-def _matches(item: Interpretation, key: MeasurementKey) -> bool:
+def matches_key(item: Interpretation, key: MeasurementKey) -> bool:
     """Match a complete key, or every evidenced part of an invalid incomplete key.
 
     Unknown unit semantics never become an invented currency or value kind. A partial

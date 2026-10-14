@@ -25,9 +25,10 @@ from fundamentals.compare.definitions import (
 )
 from fundamentals.compare.policy import ComparisonPolicy, load_comparison_policy
 from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
-from fundamentals.contracts.evidence import PinnedVersions
+from fundamentals.contracts.evidence import PinnedVersions, VendorExtractorPin
 from fundamentals.contracts.evidence import VersionPin as Pin
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence import vendor_screener, vendor_tijori, vendor_upstox
 from fundamentals.evidence.alignment import AlignmentRuleSet, load_alignment_rules
 from fundamentals.evidence.mapping import (
     MappingSet,
@@ -72,6 +73,22 @@ EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
 EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
     Representation.XBRL: XBRL_EXTRACTOR_VERSION,
     Representation.PDF: PDF_EXTRACTOR_VERSION,
+}
+_VENDOR_INGEST = "evidence/vendor_ingest.py"
+# Per vendor source: the extractor version and the adapter source files it hashes.
+VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
+    vendor_screener.SOURCE: (
+        vendor_screener.EXTRACTOR_VERSION,
+        ("evidence/vendor_screener.py", _VENDOR_INGEST),
+    ),
+    vendor_tijori.SOURCE_ID: (
+        vendor_tijori.EXTRACTOR_VERSION,
+        ("evidence/vendor_tijori.py", _VENDOR_INGEST),
+    ),
+    vendor_upstox.SOURCE_ID: (
+        vendor_upstox.EXTRACTOR_VERSION,
+        ("evidence/vendor_upstox.py", "ingest/upstox_statements.py", _VENDOR_INGEST),
+    ),
 }
 _PIN_FIELDS = (
     "dictionary",
@@ -135,11 +152,29 @@ def extractor_pin(representation: Representation, *, version: str | None = None)
     current adapter version. Both paths use the same content hashing contract.
     """
     chosen = EXTRACTOR_VERSIONS[representation] if version is None else version
-    digest = hashlib.sha256(chosen.encode("utf-8") + b"\0")
-    for relative in EXTRACTOR_SOURCES[representation]:
+    return Pin(
+        version=chosen, content_sha256=_sources_sha256(chosen, EXTRACTOR_SOURCES[representation])
+    )
+
+
+def vendor_extractor_pin(source_id: str, surface: str) -> VendorExtractorPin:
+    """A vendor surface's current extractor version plus its adapter source files' bytes."""
+    version, sources = VENDOR_EXTRACTORS[source_id]
+    return VendorExtractorPin(
+        source_id=source_id,
+        surface=surface,
+        version=version,
+        content_sha256=_sources_sha256(version, sources),
+    )
+
+
+def _sources_sha256(version: str, sources: tuple[str, ...]) -> str:
+    """SHA-256 over a version and each named source file's path and bytes."""
+    digest = hashlib.sha256(version.encode("utf-8") + b"\0")
+    for relative in sources:
         digest.update(relative.encode("utf-8") + b"\0")
         digest.update(hashlib.sha256((_SOURCE_ROOT / relative).read_bytes()).digest())
-    return Pin(version=chosen, content_sha256=digest.hexdigest())
+    return digest.hexdigest()
 
 
 def load_run_config(
@@ -147,8 +182,13 @@ def load_run_config(
     versions: ConfigVersions | None = None,
     *,
     extractor_pins: Mapping[Representation, Pin] | None = None,
+    vendors: tuple[tuple[str, str], ...] = (),
+    vendor_pins: tuple[VendorExtractorPin, ...] | None = None,
 ) -> LoadedConfig:
-    """Load every artifact at its version and compute its pin (nothing is stored here)."""
+    """Load every artifact at its version and compute its pin (nothing is stored here).
+
+    Vendor extractor pins are computed for ``vendors`` unless ``vendor_pins`` stand.
+    """
     chosen = versions or ConfigVersions()
     dictionary = load_dictionary(config_root / DICTIONARY_DIR, chosen.dictionary)
     mapping_set = load_mapping_set(
@@ -186,6 +226,11 @@ def load_run_config(
         definition_set=Pin(version=definitions.version, content_sha256=definitions.content_sha256),
         comparison_policy=Pin(version=comparison.version, content_sha256=comparison.content_sha256),
         alignment_rules=Pin(version=alignment.version, content_sha256=alignment.content_sha256),
+        vendor_extractors=(
+            tuple(vendor_extractor_pin(*vendor) for vendor in vendors)
+            if vendor_pins is None
+            else vendor_pins
+        ),
     )
     return LoadedConfig(
         dictionary=dictionary,
@@ -211,6 +256,13 @@ def require_pins(config: LoadedConfig, pinned: PinnedVersions) -> None:
                 pinned_sha256=expected.content_sha256,
                 actual_sha256=actual.content_sha256,
             )
+    if config.pinned.vendor_extractors != pinned.vendor_extractors:
+        raise VersionContentDriftError(
+            artifact="vendor_extractors",
+            version=",".join(pin.version for pin in pinned.vendor_extractors),
+            pinned_sha256=",".join(pin.content_sha256 for pin in pinned.vendor_extractors),
+            actual_sha256=",".join(pin.content_sha256 for pin in config.pinned.vendor_extractors),
+        )
 
 
 def pin_config(

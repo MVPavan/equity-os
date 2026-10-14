@@ -131,6 +131,7 @@ def resolve(
         definition_set_id=definition_set_id,
         sources=request.scope.sources,
         selected_interpretations=engine.selected_condition_ids,
+        selected_captures=engine.selected_vendor_captures,
     )
     return complete.model_copy(update={"inputs": inputs}), rows
 
@@ -192,21 +193,22 @@ def dispositions(
     definition_set_id: int,
     sources: Iterable[str],
     selected_interpretations: Iterable[int] = (),
+    selected_captures: Iterable[int] = (),
 ) -> tuple[RunInput, ...]:
     """Every input with what the run did with it; negative inputs included.
 
     A selected package's member on a source the scope does not request was never read, so
-    its capture is not selected.
+    its capture is not selected; ``selected_captures`` names vendor captures that decided.
     """
     chosen_packages = set(selected_packages)
     surfaces = frozenset(sources)
-    selected_captures = {
+    decided_captures = {
         member.capture.capture_ref_id
         for package in inputs.packages
         if package.package_id in chosen_packages
         for member in package.members.values()
         if member.capture.surface in surfaces
-    }
+    } | set(selected_captures)
     used = _used_interpretations(inputs, rows)
     used.update(selected_interpretations)
     by_id = {item.interpretation_id: item for item in inputs.interpretations}
@@ -238,7 +240,7 @@ def dispositions(
         add(
             RunInputKind.CAPTURE_REF,
             capture.capture_ref_id,
-            capture.capture_ref_id in selected_captures,
+            capture.capture_ref_id in decided_captures,
         )
     for package in inputs.packages:
         add(RunInputKind.PACKAGE, package.package_id, package.package_id in chosen_packages)

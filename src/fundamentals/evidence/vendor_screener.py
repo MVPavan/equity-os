@@ -62,6 +62,7 @@ PAGE_SURFACE = "SCREENER_FINANCIALS"
 PAGE_SCHEMA = "screener-financials-html-v1"
 SCHEDULE_SURFACE = "SCREENER_SCHEDULE"
 SCHEDULE_SCHEMA = "screener-financials-schedule-v1"
+EXTRACTOR_VERSION = "screener-v1"
 FAMILY_BY_SECTION = {
     Section.QUARTERS: StatementFamily.PL,
     Section.PROFIT_LOSS: StatementFamily.PL,
@@ -100,7 +101,7 @@ def extract_screener_page(
     binding: ScreenerIssuerBinding,
     basis: Basis,
     section: Section,
-    extractor_version: str = "screener-v1",
+    extractor_version: str = EXTRACTOR_VERSION,
 ) -> ScreenerExtraction:
     """Read one requested section from a registered, hash-pinned raw HTML capture."""
     _scope(body, capture, section, PAGE_SURFACE)
@@ -167,7 +168,7 @@ def extract_screener_schedule(
     section: Section,
     parent: str,
     metadata_body: bytes | None = None,
-    extractor_version: str = "screener-v1",
+    extractor_version: str = EXTRACTOR_VERSION,
 ) -> ScreenerExtraction:
     """Revalidate a separately pinned raw schedule against its actual page expander.
 
