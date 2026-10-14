@@ -1,7 +1,12 @@
-"""Review queue (data spec §5): item reuse and links, sealed evidence, run-transaction
-publication through ``RunStore.publish``, and a stable as-of overlay under concurrency.
+"""Review queue and run exit statuses (data spec §5; roadmap D1b.3).
 
-Rows are constructed plumbing fixtures on a disposable ``eqos_test_*`` database.
+The first half runs Apar Q2 FY26 consolidated from the retained first-party originals through
+``execute_run`` and the CLI: every run routes its outcomes (``UNMAPPED`` lines LOW, extraction
+``DISAGREE`` HIGH), dispositions never change results, a failed attempt makes the run
+``INCOMPLETE`` and replays as ``UNAVAILABLE``, and the four exit statuses are distinct. The
+second half publishes constructed drafts through ``RunStore.publish`` on an empty run: item
+reuse and links, sealed append-only evidence, rollback with the run, and a stable as-of
+overlay under concurrency. Each case has its own ``eqos_test_*`` database.
 """
 
 from __future__ import annotations
@@ -11,27 +16,239 @@ import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+from evidence_support import BOTH, dictionary, ingest, mapping_set, policy
 from pg_evidence_schema_support import _seed_every_table, runtime
 from pg_support import PgTestDatabase
 from psycopg import errors
 from psycopg_pool import ConnectionPool
+from retained_support import PdfRedaction, marked_pdf
+from run_support import Runner, config_copy, edit_yaml, runner
 
+from fundamentals.api.cli import main
 from fundamentals.compare.queue import overlay_boundary, read_overlay, record_disposition
-from fundamentals.compare.run_models import DatabaseIdentity, RunManifest, RunScope, RunStatus
+from fundamentals.compare.run_config import ConfigVersions
+from fundamentals.compare.run_models import (
+    DatabaseIdentity,
+    RunExitStatus,
+    RunManifest,
+    RunScope,
+    RunStatus,
+)
 from fundamentals.compare.run_store import STAGE_QUEUE, STAGE_RUNS, RunStore
 from fundamentals.contracts.canonical import Basis, Representation, ValueKind
-from fundamentals.contracts.comparison import SourceRef, SourceRole
-from fundamentals.contracts.evidence import PinnedVersions, RunMode, VersionPin
+from fundamentals.contracts.comparison import (
+    ExtractionStatus,
+    PairKind,
+    SourceRef,
+    SourceRole,
+    SourceState,
+)
+from fundamentals.contracts.evidence import (
+    InterpretationStatus,
+    PinnedVersions,
+    RunMode,
+    VersionPin,
+)
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.review_queue import DispositionKind, QueueItemDraft, QueueSeverity
+from fundamentals.contracts.review_queue import (
+    UNMAPPED,
+    DispositionKind,
+    QueueItemDraft,
+    QueueOverlay,
+    QueueSeverity,
+)
 
-__all__ = ["runtime"]
+__all__ = ["dictionary", "ingest", "mapping_set", "policy", "runner", "runtime"]
 pytestmark = pytest.mark.pg
+
+SCOPE = ("--entity", "APARINDS", "--period-end", "2025-09-30", "--basis", "consolidated")
+NO_PL_TITLE = PdfRedaction(page=3, row_of="Statement", words=("financial",))
+
+
+def _overlay(runner: Runner, run_id: int) -> QueueOverlay:
+    """The run's queue at the current boundary."""
+    return read_overlay(runner.pool, run_id=run_id, as_of=overlay_boundary(runner.pool))
+
+
+def _rows(runner: Runner, query: str, *params: object) -> list[tuple[Any, ...]]:
+    with runner.pool.connection() as conn:
+        return conn.execute(query, params).fetchall()  # type: ignore[arg-type]
+
+
+def _cli(runner: Runner, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the CLI at the runner's database."""
+    for name, value in runner.ingest.pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+
+
+def _run_id(capsys: pytest.CaptureFixture[str]) -> int:
+    """The run id ``compare run`` printed."""
+    return int(capsys.readouterr().out.splitlines()[0].split("\t")[1])
+
+
+def _dispose(item_id: int, kind: DispositionKind, *amount: str) -> int:
+    """Record one disposition through the CLI; returns its exit status."""
+    return main(
+        [
+            *("compare", "queue", "dispose", "--item", str(item_id), "--kind", kind.value),
+            *("--reason", "fixture", "--decider", "fixture-reviewer"),
+            *("--evidence-ref", "retained-apar-q2-fy26"),
+            *(("--explained-amount", *amount) if amount else ()),
+        ]
+    )
+
+
+# --- runs over retained Apar originals ------------------------------------------------------
+
+
+def test_a_first_party_run_routes_disagreements_high_and_unmapped_lines_low(
+    runner: Runner,
+) -> None:
+    """No vendor in the run, yet its outcomes reach the queue with the run."""
+    runner.ingest.run(runner.ingest.intake(BOTH))
+    record = runner.run()
+    rows = runner.results(record.run_id)
+    overlay = _overlay(runner, record.run_id)
+    assert {item.run_id for item in overlay.open_items} == {record.run_id}
+
+    disagree = {r.key.digest() for r in rows if r.extraction_status is ExtractionStatus.DISAGREE}
+    high = [item for item in overlay.open_items if item.severity is QueueSeverity.HIGH]
+    assert disagree and {item.key.digest() for item in high if item.key} == disagree
+    assert {(item.outcome, item.routing_reason) for item in high} == {
+        (ExtractionStatus.DISAGREE.value, "EXTRACTION_DISAGREE")
+    }
+
+    unmapped = [item for item in overlay.open_items if item.outcome == UNMAPPED]
+    assert unmapped and all(item.severity is QueueSeverity.LOW for item in unmapped)
+    statuses = _rows(
+        runner,
+        "SELECT q.item_id, i.status FROM eqos.queue_item_inputs q "
+        "JOIN eqos.interpretations i ON i.occurrence_id = q.occurrence_id "
+        "WHERE q.item_id = ANY(%s) AND i.mapping_set_version = %s",
+        [item.item_id for item in unmapped],
+        record.manifest.pinned.mapping_set.version,
+    )
+    assert {item for item, _ in statuses} == {item.item_id for item in unmapped}
+    assert {status for _, status in statuses} == {InterpretationStatus.UNMAPPED.value}
+
+
+def test_accepted_as_definition_changes_no_result_and_a_new_definition_set_makes_a_new_run(
+    runner: Runner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The disposition only proposes a record; its effect appears in a run pinning a new set."""
+    _cli(runner, monkeypatch)
+    runner.ingest.run(runner.ingest.intake(BOTH))
+    record = runner.run()
+    stored = runner.results(record.run_id)
+    before = _overlay(runner, record.run_id)
+    by_key = {row.key.digest(): row for row in stored}
+    item = min(
+        (i for i in before.open_items if i.severity is QueueSeverity.HIGH and i.key),
+        key=lambda i: i.item_id,
+    )
+    assert item.key is not None
+    cell = by_key[item.key.digest()]
+    (pair,) = [p for p in cell.pairs if p.pair_kind is PairKind.EXTRACTION]
+    assert pair.difference is not None
+    explained = str(abs(pair.difference))
+    assert _dispose(item.item_id, DispositionKind.ACCEPTED_AS_DEFINITION) == RunExitStatus.FAILURE
+    assert _dispose(item.item_id, DispositionKind.ACCEPTED_AS_DEFINITION, explained) == 0
+
+    after = _overlay(runner, record.run_id)
+    assert item not in after.open_items
+    assert [(d.item_id, d.kind) for d in after.dispositions] == [
+        (item.item_id, DispositionKind.ACCEPTED_AS_DEFINITION)
+    ]
+    again = runner.run()
+    assert (again.run_id, again.created) == (record.run_id, False)
+    assert runner.results(record.run_id) == stored == runner.replay(record.run_id)
+
+    root = config_copy(tmp_path)
+    record_yaml = {
+        "record_id": f"apar-{cell.key.canonical_id}",
+        "scope": "MEASUREMENT",
+        "scope_ref": item.key.digest(),
+        "canonical_id": cell.key.canonical_id,
+        "evidence_ref": f"queue-item:{item.item_id}",
+        "explained_amount": explained,
+        "unit": cell.key.value_kind.value,
+    }
+    edit_yaml(root / "definition_sets" / "v2.yaml", {"version": "v2", "records": [record_yaml]})
+    redefined = runner.run(config_root=root, versions=ConfigVersions(definition_set="v2"))
+    assert redefined.created and redefined.run_id != record.run_id
+    (new_cell,) = [r for r in runner.results(redefined.run_id) if r.row_id == cell.row_id]
+    assert new_cell.extraction_status is ExtractionStatus.TAGGING_DIFFERENCE
+    reused = _overlay(runner, redefined.run_id).open_items
+    assert all(i.key is None or i.key.digest() != item.key.digest() for i in reused)
+    assert {i.item_id for i in reused if i.outcome == UNMAPPED} == {
+        i.item_id for i in before.open_items if i.outcome == UNMAPPED
+    }
+    assert runner.results(record.run_id) == stored
+
+
+def test_failure_fixture_is_incomplete_and_replay_reproduces_unavailable(
+    runner: Runner, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A PDF without its P&L title: the failed attempt decides UNAVAILABLE, a run-level
+    failure that queues no cell item; ``INCOMPLETE`` wins over open HIGH items."""
+    _cli(runner, monkeypatch)
+    ingest = runner.ingest
+    no_pl = marked_pdf(ingest.tmp_path, "no-pl-title", NO_PL_TITLE)
+    ingest.run(ingest.intake(BOTH, marked={Representation.PDF: no_pl}))
+    assert main(["compare", "run", *SCOPE]) == RunExitStatus.INCOMPLETE
+    run_id = _run_id(capsys)
+    record = RunStore(runner.pool).read_manifest(run_id)
+    assert record.status is RunStatus.INCOMPLETE and record.operational_failures
+    stored = runner.results(run_id)
+    # A reported side names the failed attempt; a derived side, its operand trace.
+    unavailable = [
+        value
+        for row in stored
+        for value in row.source_values
+        if value.state is SourceState.UNAVAILABLE
+    ]
+    assert unavailable and all(
+        value.representation is Representation.PDF
+        and (value.attempt_id or value.calculation_trace_id)
+        for value in unavailable
+    )
+    assert runner.replay(run_id) == stored
+    outcomes = {item.outcome for item in _overlay(runner, run_id).open_items}
+    assert SourceState.UNAVAILABLE.value not in outcomes
+
+
+def test_exit_statuses_separate_open_high_success_and_failure(
+    runner: Runner, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Open HIGH items exit 3; once each is disposed the same run exits 0; an unreachable
+    database exits 5. With ``INCOMPLETE`` (4, above) the four statuses are distinct."""
+    _cli(runner, monkeypatch)
+    runner.ingest.run(runner.ingest.intake(BOTH))
+    assert main(["compare", "run", *SCOPE]) == RunExitStatus.SUCCESS_WITH_OPEN_HIGH
+    run_id = _run_id(capsys)
+    assert main(["compare", "queue", "list", "--run", str(run_id)]) == 0
+    listed = [line.split("\t") for line in capsys.readouterr().out.splitlines()[2:]]
+    severities = [line[2] for line in listed]
+    assert severities == sorted(severities, key=list(QueueSeverity).index)
+    for line in listed:
+        if line[2] == QueueSeverity.HIGH:
+            assert _dispose(int(line[1]), DispositionKind.FILER_INCONSISTENCY) == 0
+    assert main(["compare", "run", *SCOPE]) == RunExitStatus.SUCCESS
+    assert "created\tfalse" in capsys.readouterr().out
+    monkeypatch.setenv("EQOS_PG_HOST", "127.0.0.1")
+    monkeypatch.setenv("EQOS_PG_PORT", "9")
+    monkeypatch.setenv("EQOS_PG_CONNECT_TIMEOUT_S", "1")
+    assert main(["compare", "run", *SCOPE]) == RunExitStatus.FAILURE
+    assert len({int(status) for status in RunExitStatus}) == 4
+
+
+# --- constructed drafts over RunStore.publish -----------------------------------------------
 
 _PINS = PinnedVersions.model_validate(
     {
@@ -136,10 +353,16 @@ def test_identical_inputs_reuse_the_item_and_changed_inputs_link_a_new_one(
     assert {row[0] for row in inputs if row[2] is not None} == {items[0][0]}
 
 
-def test_item_evidence_is_sealed_and_times_are_the_store_clock(queue: Fixture) -> None:
-    """Evidence cannot be added to an item later; a caller-supplied time is overwritten."""
+def test_items_are_append_only_sealed_and_timed_by_the_store_clock(queue: Fixture) -> None:
+    """Items never change, evidence cannot be added later, a caller-supplied time is replaced."""
     run_id, _ = queue.publish(1, (queue.draft(),))
     ((item_id, recorded_at),) = queue.rows("SELECT id, recorded_at FROM eqos.queue_items")
+    for statement in (
+        "UPDATE eqos.queue_items SET severity = 'LOW'",
+        "DELETE FROM eqos.queue_run_items",
+    ):
+        with queue.pool.connection() as conn, pytest.raises(psycopg.Error):
+            conn.execute(statement)  # type: ignore[arg-type]
     ((created_at,),) = queue.rows("SELECT created_at FROM eqos.runs WHERE id = %s", run_id)
     assert recorded_at == created_at  # one transaction, one cached store-clock time
     with queue.pool.connection() as conn, pytest.raises(errors.CheckViolation, match="sealed"):

@@ -5,9 +5,11 @@ result row keyed by ``row_id``: each source value with its unit, state and epist
 (an interpretation is ``OBSERVED``, a calculation ``COMPUTED``), its provenance (the
 interpretation id and source anchor, the calculation trace, or the attempt that decided a
 failed side), extraction and corroboration, pair outcomes with reason, difference, gap,
-definition record and adjustments, the headline marker and surfaced restatements. Currency
-amounts also print in crore, two decimals. ``NOT_APPLICABLE`` rows list their rule id only.
-The dictionary must be the one the run pinned, by content.
+definition record and adjustments, the headline marker and surfaced restatements, then the
+row's open queue items and its trust at the overlay time the header states (items without a
+measurement key, i.e. ``UNMAPPED`` occurrences, list in the header). Currency amounts also
+print in crore, two decimals. ``NOT_APPLICABLE`` rows list their rule id only. The dictionary
+must be the one the run pinned, by content.
 """
 
 from __future__ import annotations
@@ -17,11 +19,19 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Protocol
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.compare.run_models import PairRecord, ResultRow, RunRecord, SourceValue
+from fundamentals.compare.run_models import (
+    PairRecord,
+    ResultRow,
+    RunRecord,
+    SourceValue,
+    period_text,
+)
 from fundamentals.compare.tables import TaggingAdjustment
+from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import ApplicabilityStatus, ValueKind
-from fundamentals.contracts.comparison import EpistemicClass
+from fundamentals.contracts.comparison import EpistemicClass, SourceRole, SourceState
 from fundamentals.contracts.evidence import Interpretation, Occurrence
+from fundamentals.contracts.review_queue import QueueItem, QueueOverlay
 from fundamentals.contracts.versioning import VersionContentDriftError
 
 CRORE = Decimal(10) ** 7
@@ -35,6 +45,7 @@ _HEADER = (
     "mode\t{mode}",
     "status\t{status}",
     "code\t{code}",
+    "overlay\t{as_of}",
 )
 _FAILURE = "failure\t{failure}"
 _ROW = "row\t{row_id}{headline}"
@@ -54,6 +65,8 @@ _TRIAGE = "\ttriage={triage}"
 _DEFINITION = "\tdefinition={record}"
 _ADJUSTMENT = "\tadjust={operand}:{representation}:{direction}{amount}:{record}"
 _SURFACED = "  surfaced\t{ids}"
+_QUEUE = "queue\t{item}\t{severity}\t{outcome}\t{route}\treason={reason}\tkey={key}"
+_TRUST = "  trusted\t{trusted}"
 _CAPTURE_ANCHOR = "capture:{capture}:{anchor}"
 _CONSTRUCTION_ANCHOR = "construction:{rule}"
 
@@ -109,8 +122,9 @@ def render_report(
     *,
     dictionary: CanonicalDictionary,
     anchors: Mapping[int, str],
+    overlay: QueueOverlay,
 ) -> str:
-    """The run header and one block per result row, in ``row_id`` order.
+    """The run header and one block per result row, in ``row_id`` order, at ``overlay``.
 
     Raises ``VersionContentDriftError`` when ``dictionary`` is not the run's pinned one.
     """
@@ -130,19 +144,34 @@ def render_report(
             mode=manifest.mode.value,
             status=manifest.status.value,
             code=manifest.code_version,
+            as_of=overlay.as_of.isoformat(),
         )
         for template in _HEADER
     ]
     lines.extend(_FAILURE.format(failure=failure) for failure in manifest.operational_failures)
+    lines.extend(queue_line(item) for item in overlay.open_items if item.key is None)
     headlines = {row.canonical_id for row in dictionary.rows if row.headline}
     for result in sorted(results, key=lambda item: item.row_id):
         lines.extend(
-            _row_lines(result, headline=result.key.canonical_id in headlines, anchors=anchors)
+            _row_lines(
+                result,
+                headline=result.key.canonical_id in headlines,
+                anchors=anchors,
+                run_id=record.run_id,
+                overlay=overlay,
+            )
         )
     return "\n".join(lines) + "\n"
 
 
-def _row_lines(result: ResultRow, *, headline: bool, anchors: Mapping[int, str]) -> list[str]:
+def _row_lines(
+    result: ResultRow,
+    *,
+    headline: bool,
+    anchors: Mapping[int, str],
+    run_id: int,
+    overlay: QueueOverlay,
+) -> list[str]:
     """One row's block."""
     lines = [_ROW.format(row_id=result.row_id, headline=HEADLINE_MARKER if headline else "")]
     if result.applicability is ApplicabilityStatus.NOT_APPLICABLE:
@@ -164,7 +193,39 @@ def _row_lines(result: ResultRow, *, headline: bool, anchors: Mapping[int, str])
     if result.surfaced_restatements:
         ids = ",".join(str(item) for item in result.surfaced_restatements)
         lines.append(_SURFACED.format(ids=ids))
+    digest = result.key.digest()
+    lines.extend(
+        "  " + queue_line(item)
+        for item in overlay.open_items
+        if item.key is not None and item.key.digest() == digest
+    )
+    first_party_value = any(
+        value.source_role is SourceRole.FIRST_PARTY and value.state is SourceState.VALUE
+        for value in result.source_values
+    )
+    trust = trusted(
+        run_id=run_id,
+        key=result.key,
+        extraction=result.extraction_status,
+        corroboration=result.corroboration_status,
+        first_party_state=SourceState.VALUE if first_party_value else SourceState.NO_VALUE,
+        overlay=overlay,
+    )
+    lines.append(_TRUST.format(trusted=str(trust.trusted).lower()))
     return lines
+
+
+def queue_line(item: QueueItem) -> str:
+    """One open queue item: id, severity, outcome, route, reason code and key."""
+    key = item.key
+    return _QUEUE.format(
+        item=item.item_id,
+        severity=item.severity.value,
+        outcome=item.outcome,
+        route=item.routing_reason,
+        reason=NONE_TEXT if item.reason_code is None else item.reason_code.value,
+        key=NONE_TEXT if key is None else f"{key.canonical_id}:{period_text(key.period)}",
+    )
 
 
 def _unit(result: ResultRow) -> str:

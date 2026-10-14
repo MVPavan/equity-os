@@ -18,6 +18,7 @@ from psycopg_pool import ConnectionPool
 
 from fundamentals.compare.resolve import load_inputs, recompute, resolve
 from fundamentals.compare.resolve_models import ReplayReader
+from fundamentals.compare.routing import route_run
 from fundamentals.compare.run_config import (
     ConfigVersions,
     LoadedConfig,
@@ -45,6 +46,7 @@ from fundamentals.compare.run_store import PublishHook, RunStore
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import RunMode, VersionPin
+from fundamentals.contracts.review_queue import QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.repository import EvidenceRepository
 
@@ -111,7 +113,8 @@ def execute_run(
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
     publish_hook: PublishHook | None = None,
 ) -> RunRecord:
-    """Resolve and publish one run, or return the stored run of the same identity."""
+    """Resolve and publish one run with its routed queue items, or return the stored run of
+    the same identity."""
     config = _config(config_root, request, extractor_pins)
     repository = EvidenceRepository(pool)
     definition_set_id = pin_config(config, repository=repository, pool=pool)
@@ -135,7 +138,11 @@ def execute_run(
         operational_failures=operational_failures(rows),
     )
     run_id, created = store.publish(
-        manifest, rows, definition_set_id=definition_set_id, publish_hook=publish_hook
+        manifest,
+        rows,
+        definition_set_id=definition_set_id,
+        publish_hook=publish_hook,
+        queue_drafts=route_run(inputs, rows, request.pinned),
     )
     stored = manifest if created else store.read_manifest(run_id)
     return RunRecord(run_id=run_id, manifest=stored, created=created)
@@ -221,10 +228,13 @@ def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
     )
 
 
-def exit_status(record: RunRecord) -> RunExitStatus:
-    """The CLI exit status of a published run (open-high is first emitted by D1b.3)."""
+def exit_status(record: RunRecord, overlay: QueueOverlay) -> RunExitStatus:
+    """The CLI exit status of a published run: ``INCOMPLETE`` first, then whether the
+    overlay holds an open ``HIGH`` item."""
     if record.manifest.status is RunStatus.INCOMPLETE:
         return RunExitStatus.INCOMPLETE
+    if any(item.severity is QueueSeverity.HIGH for item in overlay.open_items):
+        return RunExitStatus.SUCCESS_WITH_OPEN_HIGH
     return RunExitStatus.SUCCESS
 
 

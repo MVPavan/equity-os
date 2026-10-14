@@ -3,12 +3,18 @@
     compare run --entity <entity_key> --period-end <YYYY-MM-DD> --basis consolidated
         [--cutoff <ISO-8601 with offset>] [--mode as_known|retrospective] [--config-root config]
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
-        [--config-root config]
+        [--as-of <ISO-8601 with offset>] [--config-root config]
+    compare queue list --run <id> [--as-of <ISO-8601 with offset>]
+    compare queue dispose --item <id> --kind <kind> --reason <text> --decider <name>
+        --evidence-ref <ref> [--explained-amount <decimal>]
 
 The composition root: ``PgSettings`` and the runtime pool are built here and nowhere else.
 The default cutoff is the store clock, never the host clock. Any database, configuration or
 resolution failure before commit exits ``FAILURE`` with a structlog error that names no
 credential. A report refuses a dictionary whose content differs from the run's pin.
+``run`` exits ``SUCCESS_WITH_OPEN_HIGH`` when the run's queue holds an open ``HIGH`` item.
+Queue reads default to the current overlay boundary; ``--as-of`` may not be later. A
+disposition's time is the store clock's; role gating is D3's.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ import argparse
 import subprocess
 import sys
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import psycopg
@@ -30,7 +37,8 @@ from fundamentals.canon.interval import RoundingPolicyError
 from fundamentals.compare.definitions import DefinitionSetError
 from fundamentals.compare.engine_attempts import RunResolutionError
 from fundamentals.compare.policy import ComparisonPolicyError
-from fundamentals.compare.report import render_report, source_anchors
+from fundamentals.compare.queue import overlay_boundary, read_overlay, record_disposition
+from fundamentals.compare.report import queue_line, render_report, source_anchors
 from fundamentals.compare.resolve import ReplayMismatchError
 from fundamentals.compare.run import (
     DatabaseIdentity,
@@ -45,6 +53,7 @@ from fundamentals.compare.run_config import DICTIONARY_DIR
 from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunReadError, RunStore
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.review_queue import DispositionKind, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.alignment import AlignmentLoadError
 from fundamentals.evidence.mapping import MappingLoadError
@@ -55,6 +64,9 @@ from fundamentals.pg.settings import PgRole, PgSettings
 COMPARE_COMMAND = "compare"
 RUN_ACTION = "run"
 REPORT_ACTION = "report"
+QUEUE_ACTION = "queue"
+LIST_ACTION = "list"
+DISPOSE_ACTION = "dispose"
 DEFAULT_CONFIG_ROOT = "config"
 UNKNOWN_CODE_VERSION = "UNKNOWN"
 GIT_TIMEOUT_S = 5
@@ -63,6 +75,16 @@ _ACTION_DEST = "compare_action"
 _HELP = "execute and report immutable comparison runs"
 _RUN_HELP = "resolve, compare and publish one run (prints the run id and status)"
 _REPORT_HELP = "print a stored run"
+_QUEUE_HELP = "list open review items and record dispositions"
+_LIST_HELP = "a run's open items as of a time, by severity"
+_DISPOSE_HELP = "record a disposition (prints its id)"
+_QUEUE_DEST = "queue_action"
+_LATE_AS_OF = "--as-of {as_of} is later than the overlay boundary {boundary}"
+_NO_AMOUNT = "ACCEPTED_AS_DEFINITION needs --explained-amount"
+_NOT_DECIMAL = "{value!r} is not a decimal amount"
+_LIST_HEADER = "run\t{run_id}\nas_of\t{as_of}"
+_DISPOSED = "disposition\t{disposition}"
+_SEVERITY_ORDER = {severity: index for index, severity in enumerate(QueueSeverity)}
 _NAIVE_CUTOFF = "--cutoff {value!r} carries no UTC offset"
 _UNKNOWN_ENTITY = "entity {entity!r} is not seeded"
 _NO_RUN = "no run for {entity} {period_end} {basis}"
@@ -78,7 +100,7 @@ class CompareCommandError(ValueError):
 
 
 def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``compare`` with its ``run`` and ``report`` actions."""
+    """Register ``compare`` with its ``run``, ``report`` and ``queue`` actions."""
     parser = subparsers.add_parser(COMPARE_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     run = actions.add_parser(RUN_ACTION, help=_RUN_HELP)
@@ -93,7 +115,21 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     report.add_argument("--entity")
     report.add_argument("--period-end", type=date.fromisoformat)
     report.add_argument("--basis", choices=sorted(_BASES))
+    report.add_argument("--as-of", type=_aware_cutoff)
     report.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    queue = actions.add_parser(QUEUE_ACTION, help=_QUEUE_HELP).add_subparsers(
+        dest=_QUEUE_DEST, required=True
+    )
+    listing = queue.add_parser(LIST_ACTION, help=_LIST_HELP)
+    listing.add_argument("--run", type=int, required=True)
+    listing.add_argument("--as-of", type=_aware_cutoff)
+    dispose = queue.add_parser(DISPOSE_ACTION, help=_DISPOSE_HELP)
+    dispose.add_argument("--item", type=int, required=True)
+    dispose.add_argument("--kind", required=True, choices=[kind.value for kind in DispositionKind])
+    dispose.add_argument("--reason", required=True)
+    dispose.add_argument("--decider", required=True)
+    dispose.add_argument("--evidence-ref", required=True)
+    dispose.add_argument("--explained-amount", type=_amount)
 
 
 def dispatch_compare_command(args: argparse.Namespace) -> int | None:
@@ -103,6 +139,8 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
     try:
         if args.compare_action == RUN_ACTION:
             return _run(args)
+        if args.compare_action == QUEUE_ACTION:
+            return _list(args) if args.queue_action == LIST_ACTION else _dispose(args)
         return _report(args)
     except (
         CompareCommandError,
@@ -149,6 +187,7 @@ def _run(args: argparse.Namespace) -> int:
             mode=_MODES[args.mode],
         )
         record = execute_run(request, pool=pool, config_root=args.config_root)
+        overlay = read_overlay(pool, run_id=record.run_id, as_of=overlay_boundary(pool))
     sys.stdout.write(
         _SUMMARY.format(
             run_id=record.run_id,
@@ -157,7 +196,7 @@ def _run(args: argparse.Namespace) -> int:
         )
         + "\n"
     )
-    return int(exit_status(record))
+    return int(exit_status(record, overlay))
 
 
 def _report(args: argparse.Namespace) -> int:
@@ -168,12 +207,56 @@ def _report(args: argparse.Namespace) -> int:
         record = RunRecord(run_id=run_id, manifest=store.read_manifest(run_id), created=False)
         results = load_results(run_id, pool=pool)
         anchors = source_anchors(EvidenceRepository(pool), results)
+        overlay = read_overlay(pool, run_id=run_id, as_of=_as_of(pool, args.as_of))
     dictionary = load_dictionary(
         args.config_root / DICTIONARY_DIR, record.manifest.pinned.dictionary.version
     )
-    report = render_report(record, results, dictionary=dictionary, anchors=anchors)
+    report = render_report(record, results, dictionary=dictionary, anchors=anchors, overlay=overlay)
     sys.stdout.write(report)
     return int(RunExitStatus.SUCCESS)
+
+
+def _list(args: argparse.Namespace) -> int:
+    """Print one run's open queue items as of a time, HIGH first."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        RunStore(pool).read_manifest(args.run)
+        overlay = read_overlay(pool, run_id=args.run, as_of=_as_of(pool, args.as_of))
+    items = sorted(
+        overlay.open_items, key=lambda item: (_SEVERITY_ORDER[item.severity], item.item_id)
+    )
+    lines = [_LIST_HEADER.format(run_id=args.run, as_of=overlay.as_of.isoformat())]
+    lines.extend(queue_line(item) for item in items)
+    sys.stdout.write("\n".join(lines) + "\n")
+    return int(RunExitStatus.SUCCESS)
+
+
+def _dispose(args: argparse.Namespace) -> int:
+    """Record one disposition at the store clock's time."""
+    kind = DispositionKind(args.kind)
+    if kind is DispositionKind.ACCEPTED_AS_DEFINITION and args.explained_amount is None:
+        raise CompareCommandError(_NO_AMOUNT)
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        disposition = record_disposition(
+            pool,
+            item_id=args.item,
+            kind=kind,
+            reason=args.reason,
+            decider=args.decider,
+            evidence_ref=args.evidence_ref,
+            explained_amount=args.explained_amount,
+        )
+    sys.stdout.write(_DISPOSED.format(disposition=disposition) + "\n")
+    return int(RunExitStatus.SUCCESS)
+
+
+def _as_of(pool: ConnectionPool, requested: datetime | None) -> datetime:
+    """The requested overlay time, refused past the current boundary; else the boundary."""
+    boundary = overlay_boundary(pool)
+    if requested is None:
+        return boundary
+    if requested > boundary:
+        raise CompareCommandError(_LATE_AS_OF.format(as_of=requested, boundary=boundary))
+    return requested
 
 
 def _latest(pool: ConnectionPool, args: argparse.Namespace) -> int:
@@ -203,6 +286,17 @@ def _aware_cutoff(value: str) -> datetime:
     if cutoff.tzinfo is None:
         raise argparse.ArgumentTypeError(_NAIVE_CUTOFF.format(value=value))
     return cutoff
+
+
+def _amount(value: str) -> Decimal:
+    """A finite decimal amount."""
+    try:
+        amount = Decimal(value)
+    except InvalidOperation as error:
+        raise argparse.ArgumentTypeError(_NOT_DECIMAL.format(value=value)) from error
+    if not amount.is_finite():
+        raise argparse.ArgumentTypeError(_NOT_DECIMAL.format(value=value))
+    return amount
 
 
 def _code_version() -> str:

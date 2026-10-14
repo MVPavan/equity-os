@@ -149,7 +149,9 @@ def test_tracer_reports_the_spec_stated_q2_fy26_values(
     assert main(ingest_argv) == 0
     capsys.readouterr()
 
-    assert main(["compare", "run", "--entity", "APARINDS", *scope]) == RunExitStatus.SUCCESS
+    # Six Apar cells (cash flow and balance sheet) are extraction DISAGREE: open HIGH items.
+    run = main(["compare", "run", "--entity", "APARINDS", *scope])
+    assert run == RunExitStatus.SUCCESS_WITH_OPEN_HIGH
     summary = _header(capsys.readouterr().out)
     assert summary["status"] == RunStatus.COMPLETE.value
     assert main(["compare", "report", "--entity", "APARINDS", *scope]) == RunExitStatus.SUCCESS

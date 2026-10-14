@@ -18,7 +18,7 @@ from pg_support import (
 from run_support import Runner, row
 
 from fundamentals.canon.dictionary import CanonicalDictionary
-from fundamentals.compare import run_store
+from fundamentals.compare import run, run_store
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -52,7 +52,7 @@ def old_db(tmp_path: Path) -> Iterator[PgTestDatabase]:
 def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     """The small unchanged SQL producer seam from source commit 22a3c78.
 
-    It omits only columns added in 0006. The real retained intake, comparison,
+    It omits only columns and queue tables added in 0006. The real retained intake, comparison,
     financial rows, manifests and digests are never rewritten. The committed
     producer was independently exercised as the witness for this portable seam.
     """
@@ -89,6 +89,8 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         run_store, "_value_of", lambda row: value_of({"source_id": None, "surface": None} | row)
     )
+    # The queue tables arrive in 0006; the old producer routed nothing.
+    monkeypatch.setattr(run, "route_run", lambda *_: ())
 
 
 def test_0005_retained_run_keeps_manifest_and_results_after_0006(

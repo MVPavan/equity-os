@@ -6,7 +6,17 @@ cell queue proposal; callers retain it in the run's failure evidence.
 
 from __future__ import annotations
 
-from fundamentals.compare.tables import SourceQualifiedPair
+from collections.abc import Sequence
+
+from fundamentals.compare.resolve_models import ResolvedInputs
+from fundamentals.compare.run_models import (
+    ResultRow,
+    RunInputDisposition,
+    RunInputKind,
+    SourceValue,
+)
+from fundamentals.compare.tables import PairResult, SourceQualifiedPair
+from fundamentals.contracts.canonical import ApplicabilityStatus, Representation
 from fundamentals.contracts.comparison import (
     CorroborationStatus,
     ExtractionStatus,
@@ -17,9 +27,59 @@ from fundamentals.contracts.comparison import (
     SourceRole,
     Triage,
 )
+from fundamentals.contracts.evidence import InterpretationStatus, PinnedVersions
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.review_queue import UNMAPPED, QueueItemDraft, QueueSeverity
 from fundamentals.contracts.snapshot import canonical_sha256
+
+
+def route_run(
+    inputs: ResolvedInputs, rows: Sequence[ResultRow], pinned: PinnedVersions
+) -> tuple[QueueItemDraft, ...]:
+    """Every draft of one run: each applicable row's routes, then each ``UNMAPPED`` occurrence
+    of a selected capture interpreted under the run's pins.
+
+    A side without an interpretation or attempt (``NO_VALUE`` from a complete capture, or a
+    calculation) is evidenced by the run's attempts.
+    """
+    run_attempts = tuple(
+        sorted({item.attempt_id for item in inputs.attempts if item.attempt_id is not None})
+    )
+    drafts = [
+        draft
+        for row in rows
+        if row.applicability is not ApplicabilityStatus.NOT_APPLICABLE
+        for draft in _row_drafts(row, run_attempts)
+    ]
+    selected = {
+        item.ref_id
+        for item in inputs.inputs
+        if item.kind is RunInputKind.CAPTURE_REF
+        and item.disposition is RunInputDisposition.SELECTED
+    }
+    extractors = {
+        Representation.XBRL: pinned.extractor_xbrl.version,
+        Representation.PDF: pinned.extractor_pdf.version,
+    }
+    drafts.extend(
+        route_unmapped_occurrence_draft(
+            occurrence_id=item.occurrence_id,
+            source_ref=SourceRef(
+                source_role=SourceRole.FIRST_PARTY, representation=item.representation
+            ),
+        )
+        for item in inputs.interpretations
+        if item.status is InterpretationStatus.UNMAPPED
+        and item.occurrence_id is not None
+        and item.capture_ref_id in selected
+        and (item.mapping_set_version, item.normalisation_policy_version, item.extractor_version)
+        == (
+            pinned.mapping_set.version,
+            pinned.normalisation_policy.version,
+            extractors.get(item.representation),
+        )
+    )
+    return tuple(drafts)
 
 
 def pair_identity(pair: SourceQualifiedPair) -> str:
@@ -96,6 +156,60 @@ def route_unmapped_occurrence_draft(*, occurrence_id: int, source_ref: SourceRef
         source_refs=(source_ref,),
         evidence_occurrence_ids=(occurrence_id,),
     )
+
+
+def _row_drafts(row: ResultRow, run_attempts: tuple[int, ...]) -> list[QueueItemDraft]:
+    """Extraction by its status, every other pair on its own, then the corroboration status
+    unless its ``NOT_COMPARABLE`` is already carried by a pair."""
+    values = {_ref(value): value for value in row.source_values}
+
+    def evidence(sides: Sequence[SourceValue]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        interpretations = sorted({s.interpretation_id for s in sides if s.interpretation_id})
+        attempts = sorted({s.attempt_id for s in sides if s.attempt_id})
+        return tuple(interpretations), tuple(attempts) or (() if interpretations else run_attempts)
+
+    first_party = [v for v in row.source_values if v.source_role is SourceRole.FIRST_PARTY]
+    interpretations, attempts = evidence(first_party)
+    found = [
+        route_status_draft(
+            row.extraction_status,
+            key=row.key,
+            reason_code=row.extraction_reason,
+            source_refs=tuple(_ref(value) for value in first_party),
+            evidence_interpretation_ids=interpretations,
+            attempt_ids=attempts,
+        )
+    ]
+    pairs = [pair for pair in row.pairs if pair.pair_kind is not PairKind.EXTRACTION]
+    for pair in pairs:
+        interpretations, attempts = evidence([values[pair.left], values[pair.right]])
+        qualified = SourceQualifiedPair(
+            pair_kind=pair.pair_kind,
+            left=pair.left,
+            right=pair.right,
+            result=PairResult.model_validate(pair.model_dump(include=set(PairResult.model_fields))),
+            evidence_interpretation_ids=interpretations,
+            attempt_ids=attempts,
+        )
+        found.append(route_pair_draft(qualified, key=row.key))
+    if not (row.corroboration_status is CorroborationStatus.NOT_COMPARABLE and pairs):
+        interpretations, attempts = evidence(row.source_values)
+        found.append(
+            route_status_draft(
+                row.corroboration_status,
+                key=row.key,
+                reason_code=row.corroboration_reason,
+                source_refs=tuple(values),
+                evidence_interpretation_ids=interpretations,
+                attempt_ids=attempts,
+            )
+        )
+    return [draft for draft in found if draft is not None]
+
+
+def _ref(value: SourceRef) -> SourceRef:
+    """A source value's plain reference."""
+    return SourceRef.model_validate(value.model_dump(include=set(SourceRef.model_fields)))
 
 
 def _pair_route(pair: SourceQualifiedPair) -> tuple[QueueSeverity, str] | None:
