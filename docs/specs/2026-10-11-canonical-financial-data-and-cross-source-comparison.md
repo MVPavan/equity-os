@@ -788,6 +788,8 @@ status.
 
 - **Happy path**
   - Apar and the ten watchlist companies: every applicable manifest row matches; run `COMPLETE`.
+    *Owner amendment 2026-10-14: SONACOMS is dropped from the Stage 1 set (its retained filing
+    lacks the framework declaration and publication-time evidence), leaving Apar and nine companies.*
   - Apar Q2 FY26 consolidated: revenue, total income, total expenses, `profit_for_period` and basic
     EPS have extraction `AGREE` (by demonstrated mapping or filing-specific alignment proof);
     `profit_before_tax` = 340.56 crore, `profit_before_tax_incl_associates` = 340.53 crore, headline

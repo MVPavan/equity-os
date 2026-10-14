@@ -17,7 +17,7 @@ section is the human summary.
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In progress. Only D1b.4 (register amendment) is accepted. The Codex run's scaffolding was audited and deleted per [D1b-cleanup.md](plans/D1b-cleanup.md) (about −26,000 lines net across G1–G2). D1b.1–D1b.3, D1b.5 and D1b.6 remain. Acceptance blockers: no retained Upstox statement captures (needs the owner's token, bead `eqos-rdb`) and no SONACOMS evidence (bead `eqos-u0u.28`). |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In progress. Only D1b.4 (register amendment) is accepted. The Codex run's scaffolding was audited and deleted per [D1b-cleanup.md](plans/D1b-cleanup.md) (about −26,000 lines net across G1–G2). D1b.1–D1b.3, D1b.5 and D1b.6 remain. Upstox statement captures are still to be acquired (the token exists, bead `eqos-rdb`). SONACOMS is dropped from Stage 1 (owner, 2026-10-14). |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -132,7 +132,7 @@ phase builds on its contracts.
 ## D1b: Vendors, corroboration, queue and Stage 1 acceptance (dS1, part 2)
 
 **Goal.** Add the vendor adapters and source authority, corroboration and trust, the review queue
-and dispositions, then run the canonical comparison for Apar and the ten watchlist companies and
+and dispositions, then run the canonical comparison for Apar and the watchlist companies (nine; SONACOMS dropped by the owner 2026-10-14) and
 match the frozen Stage 1 manifest.
 
 | # | Stage | Create/modify paths | Verify |
@@ -142,7 +142,7 @@ match the frozen Stage 1 manifest.
 | 3 | Review queue, dispositions and run exit statuses | `src/fundamentals/compare/queue.py`, `src/fundamentals/compare/run.py`, `src/fundamentals/api/compare_cli.py` (queue commands), `migrations/0002_review_queue.sql` | `uv run pytest tests/fundamentals/test_compare_queue.py`: queue items are append-only and keyed per the spec; `ACCEPTED_AS_DEFINITION` changes no result, and a new definition set produces a new run; the failure fixture makes the run `INCOMPLETE`, and replay of a run with a failed attempt reproduces `UNAVAILABLE`; an `UNMAPPED` line is queued LOW; exit statuses separate success, success with open HIGH items, `INCOMPLETE` and failure |
 | 4 | Register amendment (§G last bullet; first-release target for the data layer) | `docs/blueprint/amendments/2026-10-11-data-layer-postgresql.md`, `tests/fundamentals/test_amendment_records.py` | `uv run pytest tests/fundamentals/test_amendment_records.py -k data_layer`: the record cites the data spec, lists exactly the two changed items, records panel approval (reviewers, verdicts, date), and its doc links resolve |
 | 5 | Frozen Stage 1 manifest | `tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml`, `tests/fundamentals/test_frozen_manifests.py` | `uv run pytest tests/fundamentals/test_frozen_manifests.py -k stage1`: the header records the hand verification against named source documents and the panel approval; the manifest pre-registers the Apar opex-vs-Screener outcome and the Tijori `qt_c` re-measurement rule; its first commit precedes the first commit of `test_data_stage1_e2e.py` |
-| 6 | Stage 1 end-to-end | `tests/fundamentals/test_data_stage1_e2e.py` | `uv run pytest tests/fundamentals/test_data_stage1_e2e.py` matches the manifest exactly: every applicable row for Apar and the ten companies; the Apar opex-vs-Screener outcome equals the pre-registered one; THERMAX revenue is `ANOMALY`/`MAGNITUDE`; the failure fixture makes the run `INCOMPLETE`; the diagnostic fixture's cell stays trusted with only a MEDIUM `PARSE_CHECK_DISAGREE` item |
+| 6 | Stage 1 end-to-end | `tests/fundamentals/test_data_stage1_e2e.py` | `uv run pytest tests/fundamentals/test_data_stage1_e2e.py` matches the manifest exactly: every applicable row for Apar and the nine companies (SONACOMS dropped, owner 2026-10-14); the Apar opex-vs-Screener outcome equals the pre-registered one; THERMAX revenue is `ANOMALY`/`MAGNITUDE`; the failure fixture makes the run `INCOMPLETE`; the diagnostic fixture's cell stays trusted with only a MEDIUM `PARSE_CHECK_DISAGREE` item |
 
 **Spec refs.** Data spec §2 vendor mappings and qualification, §3 (source authority, basis), §5
 (source roles, corroboration, trust, routing, queue, analyst interface), §8 component boundaries,

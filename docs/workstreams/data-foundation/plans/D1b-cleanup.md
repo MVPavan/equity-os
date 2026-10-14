@@ -201,24 +201,18 @@ Same rules, one stage at a time, straight from the roadmap Verify cells.
 
 ## Acceptance blockers (recorded, not worked around)
 
-- **Upstox.** No retained Upstox statement captures exist, so these cases cannot pass over
-  retained evidence:
+- **Upstox.** No retained Upstox statement captures exist yet. These cases need them:
   - D1b.1: the annual and empty-response cases;
   - D1b.2: the NETWEB/POLYCAB internal-conflict cases;
   - D1b.6: the diagnostic fixture.
-  
-  Acquiring them is a prerequisite, and it needs the owner's Upstox token (live fetch; `eqos-rdb`).
-  Until then, the synthetic decision-table tests stay. They do not claim retained acceptance, and
-  D1b acceptance stays blocked.
-- **SONACOMS.** Its retained XML lacks the framework declaration, so the first-party extractor
-  refuses it (`first_party_extract.py:402`). No original publication-time evidence exists.
-  - The spec (§4) gives vendor captures registration-time availability.
-  - The accepted first-party selector is stricter: it requires KNOWN publication time (`selection.py:46`).
-  - Record the framework refusal and the clock evidence separately, and keep failing closed.
-  
-  Stage 1 requires Apar plus all ten companies to run COMPLETE (spec Success Criteria), so D1b
-  acceptance stays blocked until SONACOMS evidence suffices. Dropping SONACOMS from the set would be
-  a requirement change, and that is the owner's decision.
+
+  The owner's Analytics Token exists outside the repo, and `fundamentals upstox` is the existing
+  acquisition CLI. D1b.1 acquires the needed statement captures through the snapshot store, as a
+  live fetch the owner authorised on 2026-10-14. Until then, the synthetic decision-table tests stay
+  and do not claim retained acceptance.
+- **SONACOMS: dropped by the owner (2026-10-14).** Its retained XML lacks the framework declaration
+  and original publication-time evidence. Stage 1 now covers Apar plus nine companies. The spec
+  Success Criteria records this amendment.
 
 ## Expected size (audit estimates; re-measured in G4)
 
