@@ -11,6 +11,7 @@ Core harness is stable; repo-specific facts live in `.codex/project/`.
 - When I ask you to assess something, do so critically and avoid grade inflation.
 - Distinguish certain knowledge from inference from speculation.
 - If unsure, say so. Never fabricate citations, data, or examples.
+- Owner preference (2026-10-14): crisp, minimal, to-the-point code over lots of code. Smallest solution that meets the spec; delete what is not needed.
 
 ## Read Order
 
