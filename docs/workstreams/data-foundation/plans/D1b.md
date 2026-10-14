@@ -1,5 +1,7 @@
 # D1b Implementation Plan
 
+> **Partly superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): its stage list (D1b.1–D1b.6) and Verify cells in the roadmap still apply; its handoff, witness and publication design was deleted.
+
 Status: approved-for-implementation
 Prepared: 2026-10-13, Codex session (handoff run)
 Revision: r2; independent re-review APPROVE, 2026-10-13, Codex session (handoff run).

@@ -1,5 +1,7 @@
 # D1b native construction preparation
 
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: approved-for-implementation, r3, 2026-10-13. Independent Codex session (handoff run) re-review APPROVE; all original/r2 Important findings addressed. Formal historical gate prerequisite passed before dispatch.
 
 **Origin:** approved `docs/workstreams/data-foundation/plans/D1b.md` Tasks 3/13 and data spec §2 known Screener traps. Code-read finding: existing constructions require mapped canonical operands, but required source-native Borrowings and Other Liabilities are deliberately not canonical standalone mappings.

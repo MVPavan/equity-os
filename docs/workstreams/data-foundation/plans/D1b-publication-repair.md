@@ -1,5 +1,7 @@
 # D1b Task 13 publication repair plan
 
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: approved-for-implementation, r3, 2026-10-13. Fresh independent Codex session (handoff run) R3 APPROVE. Actual release authority and evidence remain pending.
 
 ## Owned patch files

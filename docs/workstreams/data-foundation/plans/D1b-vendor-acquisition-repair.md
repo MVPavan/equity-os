@@ -1,5 +1,7 @@
 # D1b vendor acquisition pin repair
 
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: APPROVE, 2026-10-13, fresh independent Codex session (handoff run). Supplements vendor-run Task 2;
 tracked under `eqos-u0u.19`. Root owns the additive SQL migration and its focused tests.
 

@@ -1,4 +1,7 @@
 # D1b Task 6 Vendor-Run Integration Plan
+
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: R4 APPROVE, 2026-10-13; supplements Task 6 of [D1b.md](D1b.md). Source-independent queue SQL may start; authoritative generation/run dispatch still waits for the gates below.
 
 **Origin:** approved D1b Task 6 and [publication repair r3](D1b-publication-repair.md); current seams inspected 2026-10-13; native `cd8151b`, dictionary `95dd442`; Screener authority pending.

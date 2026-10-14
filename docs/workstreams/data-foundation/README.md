@@ -43,5 +43,4 @@ unresolved-originals preflight, Stage 2 cutover) are also reviewer-approved unde
 
 **Execution.** `/phase-execution <phase-id>` runs one phase. `/run-phases` walks the remaining phases.
 
-**Current handoff.** [`handoff-codex-2026-10-13.md`](handoff-codex-2026-10-13.md): work queue, authority and stop
-conditions for the autonomous run; D1a review findings in [`reviews/`](reviews/).
+**Current D1b plan.** [`plans/D1b-cleanup.md`](plans/D1b-cleanup.md).

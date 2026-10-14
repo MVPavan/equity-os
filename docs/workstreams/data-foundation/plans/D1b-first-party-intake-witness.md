@@ -1,5 +1,7 @@
 # D1b retained first-party intake witness implementation plan
 
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: R2 APPROVE, 2026-10-13, fresh independent Codex session. All W01–W03 from
 [R1](../reviews/D1b-retained-intake-witness-plan-r1.md) are addressed; fresh
 [R2](../reviews/D1b-retained-intake-witness-plan-r2.md) approves bounded implementation.

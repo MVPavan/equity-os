@@ -11,13 +11,13 @@ Specs: [data spec](../../specs/2026-10-11-canonical-financial-data-and-cross-sou
 
 ## Progress
 
-Last updated 2026-10-13. bd (`bd list --label ws-data-foundation`) holds the live state; this
+Last updated 2026-10-14. bd (`bd list --label ws-data-foundation`) holds the live state; this
 section is the human summary.
 
 | Phase | Stages | State |
 |---|---|---|
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
-| D1b Vendors, corroboration, queue, Stage 1 acceptance |6| Paused at owner request. D1b amendment stage is complete; source/schema/native/publication/vendor producer/immutable queue mechanisms are committed. Actual reviewed joined v2 release C=a4002bb and current SONACOMS identity3df9421 are accepted within scope. Public exact vendor execution cd76f3a and atomic retained-intake witness/shared replay209e4ad are committed with independent R2/R3 approval; technical producer/consumer/witness beads `.15`, `.20`, `.24` closed. Final full behavior suite3398PASS/8existing skips and fullRuff/strictmypyPASS. Formal wrapper STOP for old review path-pattern prose is preserved; corrected prose and exact unchanged full-scope privacy rails recheck exit0. Marker-only test classification separately proved/resealed; no duplicate full suite or formal-wrapper PASS claimed. Actual SONACOMS, missing vendors, authenticated review CLI `.29`, frozen source manifest and Stage1 e2e remain open. Resume from the [new checkpoint](resume-2026-10-13-paused-checkpoint.md). |
+| D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | In progress. Only D1b.4 (register amendment) is accepted. The Codex run's scaffolding was audited and deleted per [D1b-cleanup.md](plans/D1b-cleanup.md) (about −26,000 lines net across G1–G2). D1b.1–D1b.3, D1b.5 and D1b.6 remain. Acceptance blockers: no retained Upstox statement captures (needs the owner's token, bead `eqos-rdb`) and no SONACOMS evidence (bead `eqos-u0u.28`). |
 | D2 Legacy store migration and cutover | 8 | Not started |
 | D3 Report ledger | 9 | Not started |
 | D4 Long-term memory | 5 | Not started |
@@ -53,7 +53,7 @@ Riskiest: D1b (live vendor data for ten companies), D2 (real legacy migration an
 - `eqos-uqu.10`: amend the specs' panel wording to single-reviewer approval, before D3.
 - The two former `test_source_intake_store` failures are resolved (`3e966cb`); 42 cases passed.
 - The schema-test size issue is resolved (`6077ca3`); original case inventory preserved.
-- Migration numbering: committed `0001`–`0010` are immutable; D1b uses `0006_review_queue.sql`, `0007_vendor_publication_pin.sql`, `0008_vendor_acquisition_context.sql` and accepted `0009_queue_overlay_snapshots.sql` (`f8eba1c`,62 focused cases PASS). Accepted `0010_retained_intake_witness.sql` (`209e4ad`) is also immutable; future schema takes `0011` or the next free number. The proposed `0002_review_queue.sql` below is stale.
+- Migration numbering: `0001`–`0007` are committed; `0006_vendor_and_queue.sql` and `0007_construction_traces.sql` replaced Codex's `0006`–`0010` on 2026-10-14 (the real `equity_os` database had never applied any migration). Once a migration is applied to `equity_os` it is immutable; new SQL takes the next free number (`0008`+). Later phases' planned names (e.g. `0006_views_readonly.sql`) must be renumbered when planned.
 - The dev host's wall clock steps backwards (WSL2). Store time comes from the monotonic
   `eqos.store_now()`.
 

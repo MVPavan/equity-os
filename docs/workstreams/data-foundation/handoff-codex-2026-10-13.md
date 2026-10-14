@@ -1,5 +1,7 @@
 # Handoff: autonomous Codex run on the backend core (2026-10-13)
 
+> **Historical (2026-10-14).** The current plan is [plans/D1b-cleanup.md](plans/D1b-cleanup.md); much of the work described here was deleted as unneeded.
+
 Brief for one long, unattended Codex session. It continues the backend core from where the Claude
 session paused. Read this file first, then follow the repo read order in `AGENTS.md`.
 

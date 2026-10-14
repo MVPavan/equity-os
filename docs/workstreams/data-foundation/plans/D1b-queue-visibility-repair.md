@@ -1,5 +1,7 @@
 # D1b Task 6 queue visibility and provenance repair
 
+> **Superseded 2026-10-14** by [D1b-cleanup.md](D1b-cleanup.md): the design this plan describes was deleted or simplified; kept as history.
+
 Status: R2 APPROVE, 2026-10-13, fresh independent Codex session (handoff run). Supplements the approved
 [vendor-run plan](D1b-vendor-runs.md). All R1 findings are addressed; bounded implementation
 is authorized. Owner: `eqos-u0u.17`. Existing migrations 0001–0007 remain immutable.

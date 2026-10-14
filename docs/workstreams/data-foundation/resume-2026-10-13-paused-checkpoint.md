@@ -1,5 +1,7 @@
 # Equity-OS resume checkpoint — 2026-10-13
 
+> **Historical (2026-10-14).** The current plan is [plans/D1b-cleanup.md](plans/D1b-cleanup.md); much of the work described here was deleted as unneeded.
+
 Owner requested: finish the already-started group, commit it, save progress and pause.
 No new implementation batch may start before an explicit resume.
 This file is the current resume pointer; historical pause notes retain their original dates.
