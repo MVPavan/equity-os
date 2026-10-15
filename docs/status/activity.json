@@ -1,14 +1,19 @@
 {
   "now": {
-    "title": "D5 generated views: phase plan",
-    "detail": "D4 long-term memory is complete on test databases and approved by Sol. Opus is writing the D5 phase plan (status notes and memory export, a read-only role over views, optional Obsidian export, frozen ledger Stage 3 manifest and its e2e); Sol reviews the plan before any code.",
-    "stage": "eqos-tfb"
+    "title": "D5.1 + D5.2: Markdown export and read-only role",
+    "detail": "D5 plan approved by Sol (two review rounds plus a fresh critical review; 1bedf24). Two Opus workers run in parallel on disjoint files: the `ledger export --stock` Markdown export (narratives, status notes, promoted memory), and migration 0021 with the eqos_reader role and two status views. The optional Obsidian vault is dropped.",
+    "stage": "eqos-tfb.1, eqos-tfb.2"
   },
   "next": [
-    "D5 stages after plan approval",
-    "Follow-ups: eqos-d60 evidence knowledge time, F1 reviewer adapter (eqos-tqf, incl. panel RETIRE), eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
+    "D5.4 frozen ledger Stage 3 manifest (Sol approval), then D5.5 e2e",
+    "D5 phase review",
+    "Follow-ups: eqos-d60, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D5 plan approved (Sol r2 + critical re-review; 1bedf24). Vault stage eqos-tfb.3 closed as not built. Tasks 1 and 2 dispatched in parallel."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 complete (epic eqos-4hi closed): critical review REJECT (4) → fixes 92491c4, 607bb67 (migrations 0019–0020) → re-review APPROVE; full suite 3578 passed. Evidence-layer knowledge-time gaps parked as eqos-d60. Roadmap 35/66 stages. D5 planning started."
