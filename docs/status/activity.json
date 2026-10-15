@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: fixing the plan after the fresh critical review",
-    "detail": "A fresh Sol session rejected the plan (2 blockers): a promotion could commit after its own transaction withdrew the evidence, and the Apar quotes would be checked with their guidance meaning (metric, scope, horizon) stripped. Fixes: a commit-time re-check of every promotion, and binding drafted quotes to the guidance contract the import already approved for the same quote (folds in eqos-0eu). Plus 6 smaller fixes.",
+    "title": "D4: Sol re-reviewing the plan's critical fixes",
+    "detail": "Opus fixed all 9 critical findings (plan r3): a commit-time re-check of every promotion; drafted quotes get their guidance contract only by recomputing it from the panel-sealed management-ledger source of the import that cites the same quote (no new table); consistent-snapshot retrieval; content-based duplicate-quote detection; full evidence references. Transcript registration remains a go/no-go probe.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 plan critical fix round done (9/9, plan r3); Sol critical re-review dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 plan fresh critical review: Sol REJECT (2 P1, 6 P2, 1 P3); fix round dispatched, folding in eqos-0eu's guidance-contract binding."
