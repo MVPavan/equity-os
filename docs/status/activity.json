@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 phase review: fix round 1",
-    "detail": "Sol rejected the phase with 12 reproduced findings, mainly validation holes: unit/currency not checked against the cited result, an import-only override usable on ordinary versions, guidance-contract checks passing when evidence is missing, plus e2e oracle gaps. Opus is fixing all 12 with regression tests; then Sol re-reviews.",
+    "title": "D3 phase review: Sol re-review (round 2)",
+    "detail": "Opus fixed all 12 round-1 findings with regression tests and one forward migration (0014, no new tables); the frozen manifest is unchanged and the e2e still matches it. Full suite 3,431 passed. Sol is checking each fix against its findings.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 fix round 1 done: units checked against measurement keys, import-only overrides locked down, guidance contracts fail closed, e2e dereferences citations; full suite green. Clock failure traced to host clock oscillation (eqos-bhy), not code."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 phase review round 1: Sol REJECT (6 P1, 6 P2, all reproduced); fix round dispatched. Separate bug filed: order-dependent 'derivation clock moved backwards' in the D2 pipeline test."
