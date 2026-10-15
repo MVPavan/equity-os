@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: plan critical-review fix round",
-    "detail": "Fresh Sol critical review of the plan: REJECT, 13 findings (9 P1) — lock self-deadlock and owner-precedence race on proposals, multiple approved roots, interpretation amount provenance, run-input membership too loose, 9.5–10% range rendering, hollow manifest checks, missing resolver dependencies. Opus is fixing all 13 with the smallest rules; Sol re-reviews next.",
+    "title": "D3 report ledger: Sol re-review of critical-review fixes",
+    "detail": "All 13 critical-review findings addressed in the plan (lock ordering, one approved root per report, owner-only manual corrections, exact range rendering proven 13/13, real per-claim oracle checks). Sol is verifying each fix.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan critical fixes: 13/13 addressed (plan 1,051 lines); Sol re-review dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan fresh critical review: Sol REJECT, 13 findings. Fix round dispatched."
