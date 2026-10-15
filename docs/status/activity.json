@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3.4: approval panel and queue role gating",
-    "detail": "D3.6 committed (dff5d1a): `ledger export` reproduces all five imported Apar content hashes byte for byte. Opus is building D3.4: single-reviewer panel (fake adapter), disposition proposals bound to the exact queued pair, owner precedence, migration 0013.",
-    "stage": "eqos-uqu.4"
+    "title": "D3.8: frozen ledger Stage 1 manifest",
+    "detail": "D3.4 committed (a0ed84e): single-reviewer panel, disposition proposals bound to the exact queued pair, owner precedence, migration 0013; 199 tests incl. Stage 1/2 e2e pass. Now the frozen ledger manifest: a mechanical helper move first (Sonnet), then Opus hand-authors the manifest from source bytes; Sol must approve it before the e2e.",
+    "stage": "eqos-uqu.8"
   },
   "next": [
-    "D3.7 amendments and CONTEXT.md",
-    "D3.8 frozen ledger manifest (Sol-approved) → D3.9 e2e → D3 phase review",
+    "Sol review loop on the ledger manifest; commit before the e2e",
+    "D3.9 ledger Stage 1 e2e → D3.7 amendments → D3 phase review",
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.4 approval panel and queue role gating committed (a0ed84e); 199 tests pass."
+    },
     {
       "date": "2026-10-15",
       "text": "D3.6 narrative export committed (dff5d1a); all five content hashes reproduced."
