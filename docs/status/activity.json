@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: Sol plan re-review r2",
-    "detail": "Plan revision 3 addresses all 18 r1 findings (legacy acquisition times, trigger-enforced approval rules, explicit import mapping proven on every retained Apar version, full typed frozen oracle). Sol is re-checking and ruling on three spec readings.",
+    "title": "D3 report ledger: plan fix round 2",
+    "detail": "Sol r2: 17/18 fixed; spec readings (trim style, report-scoped policy, proposal as subject) accepted. One P1 left: a disposition proposal must bind the exact queued source pair. Sonnet is making that and three small edits; Sol r3 next.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan Sol r2: REJECT on 1 residual P1 (pair binding); 17/18 fixed, G8–G10 accepted."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan fix round 1: 18/18 addressed; filed eqos-z53 (admin creds in runtime .env). Sol r2 dispatched."
