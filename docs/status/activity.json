@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3: fresh critical review",
-    "detail": "Sol approved the phase fixes in round 3 (all 12 findings addressed; committed 25be9bb). A fresh Sol session with no prior context is now doing the closing critical review of the whole phase.",
+    "title": "D3: fixing the critical review's findings",
+    "detail": "The fresh critical review found trust holes: approval could rest on a validation written by the drafting role, a bound validation could change before commit, declared citation hashes weren't checked, and direct SQL could skip the narrative-hash and predecessor checks. Opus is fixing these plus unit families and a numeral-scan gap (migration 0015); one finding parked (eqos-0eu).",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 fresh critical review: Sol REJECT (5 P1, 3 P2, all reproduced); 7 sent to a fix round, 1 parked as eqos-0eu (guidance contracts for new drafts)."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 phase review loop closed: Sol APPROVE in round 3; fixes and migration 0014 committed (25be9bb)."
