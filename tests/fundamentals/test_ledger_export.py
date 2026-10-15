@@ -21,7 +21,6 @@ from test_ledger_lifecycle import POLICY, SECTION, policy_claim
 
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_OK
-from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     DecisionKind,
     ReportKind,
@@ -45,7 +44,7 @@ def _export(version_id: int, out: Path) -> bytes:
 
 
 def _approve_successor(cited: Cited, predecessor: int) -> int:
-    """A successor of ``predecessor`` drafted, submitted, checked and approved by the owner."""
+    """A successor of ``predecessor`` drafted, submitted and approved (so checked) by the owner."""
     paths = {"catalog": cited.catalog, "snapshots": cited.snapshots}
     owner = cited.pools[PgRole.OWNER]
     (report_id,) = cited.query(
@@ -72,13 +71,13 @@ def _approve_successor(cited: Cited, predecessor: int) -> int:
     with cited.runtime() as cursor:
         successor = store.create_version(cursor, draft)
     lifecycle.submit(cited.pools[PgRole.RUNTIME], successor, **paths)
-    lifecycle.validate(cited.pools[PgRole.RUNTIME], successor, mode=RunMode.AS_KNOWN, **paths)
     lifecycle.decide(
         owner,
         subject_kind=SubjectKind.REPORT_VERSION,
         subject_id=successor,
         kind=DecisionKind.APPROVE,
         ruling=RULING,
+        **paths,
     )
     return successor
 

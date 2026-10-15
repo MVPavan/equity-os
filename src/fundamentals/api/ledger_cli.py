@@ -1,7 +1,8 @@
 """The ``ledger`` command: decisions, claim checks, imports and export (plan D3 Tasks 3, 5, 6).
 
     ledger decide <subject kind> <subject id> <kind> [--key K --value V --unit U]
-        (the verbatim ruling is read from stdin)
+        [--stock <symbol> --snapshot-root <dir> [--watchlist config/watchlist.yaml]]
+        (the verbatim ruling is read from stdin; an APPROVE checks the version's claims)
     ledger check --version <id> --stock <symbol> --snapshot-root <dir>
         [--mode as_known|retrospective] [--watchlist config/watchlist.yaml]
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
@@ -10,7 +11,8 @@
 
 The composition root: ``decide`` runs as the owner login from its credential file; ``check``
 and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
-``check`` and ``import`` get the stock's source catalog and the snapshot store. Any refusal, or a
+``check``, ``import`` and an approving ``decide`` get the stock's source catalog and the
+snapshot store. Any refusal, or a
 version that does not import, exits ``EXIT_REFUSED`` with a structlog error that names no
 credential.
 """
@@ -22,6 +24,7 @@ import os
 import sys
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import structlog
@@ -72,6 +75,9 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     decision.add_argument("--key")
     decision.add_argument("--value", type=Decimal)
     decision.add_argument("--unit")
+    decision.add_argument("--stock")
+    decision.add_argument("--snapshot-root", type=Path)
+    decision.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
     check = actions.add_parser(CHECK_ACTION, help=_CHECK_HELP)
     check.add_argument("--version", type=int, required=True)
     check.add_argument("--stock", required=True)
@@ -120,6 +126,7 @@ def _decide(args: argparse.Namespace) -> int:
     fields = {name: getattr(args, name) for name in _POLICY_FIELDS}
     policy = None if fields["key"] is None else PolicyValue.model_validate(fields)
     ruling = sys.stdin.read()
+    sources = _sources(args) if args.stock and args.snapshot_root else {}
     login = load_login(PgRole.OWNER, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.OWNER, login=login) as pool:
         record = decide(
@@ -129,6 +136,7 @@ def _decide(args: argparse.Namespace) -> int:
             kind=args.kind,
             ruling=ruling,
             policy=policy,
+            **sources,
         )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")
     return EXIT_OK
@@ -136,17 +144,21 @@ def _decide(args: argparse.Namespace) -> int:
 
 def _check(args: argparse.Namespace) -> int:
     """Check one version as the runtime role and print each claim's state."""
-    catalog = stock_catalog(load_watchlist_config(args.watchlist).stock(args.stock))
-    snapshots = SnapshotStore(args.snapshot_root.resolve())
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
-        validation = validate(
-            pool, args.version, mode=_MODES[args.mode], catalog=catalog, snapshots=snapshots
-        )
+        validation = validate(pool, args.version, mode=_MODES[args.mode], **_sources(args))
     lines = [_VALIDATION.format(id=validation.id, mode=validation.mode)]
     lines += [_STATE.format(key=key, state=state) for key, state in validation.claim_states]
     lines += [str(state) for state in validation.version_states]
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
+
+
+def _sources(args: argparse.Namespace) -> dict[str, Any]:
+    """The ``--stock`` source catalog and the ``--snapshot-root`` store."""
+    return {
+        "catalog": stock_catalog(load_watchlist_config(args.watchlist).stock(args.stock)),
+        "snapshots": SnapshotStore(args.snapshot_root.resolve()),
+    }
 
 
 def _import(args: argparse.Namespace) -> int:

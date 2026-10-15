@@ -2,10 +2,11 @@
 D4, D11, D12).
 
 Status is derived from the decision log, never stored (P1). Each command runs in one
-transaction that takes the subject lock (after the queue lock, for a disposition proposal)
-before any read it decides on; the checks here give a readable refusal, and the decision
-trigger stays authoritative. Accepting a proposal appends its disposition with the stored
-amount.
+transaction that takes the subject lock (after the queue lock, for a disposition proposal or an
+approval) before any read it decides on; the checks here give a readable refusal, and the
+decision trigger stays authoritative. An approval binds only the check its decider makes in the
+deciding transaction; a runtime ``validate`` is advisory. Accepting a proposal appends its
+disposition with the stored amount.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from fundamentals.contracts.ledger import (
     ResolvedCitation,
     SubjectKind,
     Validation,
+    VersionDraft,
     VersionStatus,
 )
 from fundamentals.contracts.review_queue import DispositionKind
@@ -96,6 +98,7 @@ _ROLES = {
     "eqos_owner": DeciderRole.OWNER,
 }
 _LOCK: LiteralString = "SELECT eqos.lock_subject(%s, %s)"
+_NOW: LiteralString = "SELECT eqos.store_now()"
 _ROLE: LiteralString = "SELECT current_user"
 _ENTITY: LiteralString = "SELECT entity_id FROM eqos.reports WHERE id = %s"
 _PROPOSAL: LiteralString = (
@@ -115,7 +118,7 @@ SELECT (SELECT kind FROM known WHERE subject_id = %(version)s ORDER BY sequence 
     EXISTS (SELECT 1 FROM known WHERE kind IN ('APPROVE', 'IMPORTED_APPROVAL')
             AND subject_id IN (SELECT id FROM descendants))"""
 _ILLEGAL = "illegal decision: {kind} by {role} on {subject_kind} {subject_id} after {head}"
-_UNBOUND = "approval must bind the latest passing AS_KNOWN validation of version {version_id}"
+_UNBOUND = "approval must bind a passing AS_KNOWN check of version {version_id} by its decider"
 _STALE_HASH = "version {version_id} content hash does not match its narrative"
 _OPEN_PREDECESSOR = "version {version_id}'s predecessor {predecessor_id} is {status}"
 _BLOCKED = "version {version_id} has version-level findings: {states}"
@@ -143,9 +146,7 @@ def submit(
     section raises a version-level state."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(_LOCK, (V.value, version_id))
-        draft = store.read_version(cursor, version_id)
-        if content_hash(draft.sections, draft.claims) != draft.content_hash:
-            raise DecisionRefusedError(_STALE_HASH.format(version_id=version_id))
+        draft = _sound(cursor, version_id)
         if draft.predecessor_id is not None:
             status = version_status(cursor, draft.predecessor_id)
             if status in OPEN:
@@ -171,69 +172,129 @@ def validate(
     snapshots: SnapshotStore,
     bound: Mapping[str, GuidanceContract] | None = None,
 ) -> Validation:
-    """Check every claim at the current overlay boundary and append the validation. ``bound``
-    (imports only) is, per quote claim key, the guidance contract its import sources bind."""
+    """Check every claim at the current overlay boundary and append the validation (advisory:
+    no approval binds it). ``bound`` (imports only) is, per quote claim key, the guidance
+    contract its import sources bind."""
     boundary = overlay_boundary(pool)
-    bound = bound or {}
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(_LOCK, (V.value, version_id))
-        draft = store.read_version(cursor, version_id)
-        row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
-        assert row is not None
-        imported = bool(draft.import_sources)
-        quotes = {c.claim_key for c in draft.claims if c.citation.kind is CitationKind.SOURCE_QUOTE}
-        if bound and (not imported or bound.keys() - quotes):
-            raise DecisionRefusedError(_UNBINDABLE.format(version_id=version_id))
-        resolved = {
-            claim.claim_key: _bind(
-                resolve_citation(
-                    cursor,
-                    claim,
-                    entity_id=row[0],
-                    overlay_position=boundary,
-                    catalog=catalog,
-                    snapshots=snapshots,
-                ),
-                bound.get(claim.claim_key),
-            )
-            for claim in draft.claims
-        }
-        resolves = partial(resolve_location, cursor, catalog=catalog, snapshots=snapshots)
-        found = (
-            set()
-            if imported
-            else {
-                state for s in draft.sections for state in scan_section(s.body, resolves=resolves)
-            }
-        )
-        validation = Validation(
-            version_id=version_id,
-            checker_version=CHECKER_VERSION,
+        validation = check_version(
+            cursor,
+            version_id,
             mode=mode,
-            overlay_position=boundary,
-            pinned_input_sha256=canonical_sha256(
-                {k: None if r is None else r.model_dump(mode="json") for k, r in resolved.items()}
-            ),
-            sealed_digest=store.sealed_digest(cursor, version_id),
-            claim_states=tuple(
-                (
-                    claim.claim_key,
-                    check_claim(
-                        claim,
-                        resolved[claim.claim_key],
-                        mode=mode,
-                        cutoff=draft.knowledge_cutoff,
-                        imported=imported,
-                    ),
-                )
-                for claim in draft.claims
-            ),
-            version_states=tuple(sorted(found)),
+            boundary=boundary,
+            catalog=catalog,
+            snapshots=snapshots,
+            bound=bound,
         )
         validation_id = store.insert_validation(cursor, validation)
         stored = store.latest_validation(cursor, version_id)
     assert stored is not None and stored.id == validation_id
     return stored
+
+
+def approval_check(
+    cursor: Cursor[Any], version_id: int, *, catalog: SourceCatalog, snapshots: SnapshotStore
+) -> Validation:
+    """The ``AS_KNOWN`` check an approval binds (D4), made in the deciding transaction under
+    the queue and subject locks at that store-clock time; refuses a narrative that does not
+    reproduce the version's content hash."""
+    lock_queue(cursor)
+    cursor.execute(_LOCK, (V.value, version_id))
+    row = cursor.execute(_NOW).fetchone()
+    assert row is not None
+    _sound(cursor, version_id)
+    return check_version(
+        cursor,
+        version_id,
+        mode=RunMode.AS_KNOWN,
+        boundary=row[0],
+        catalog=catalog,
+        snapshots=snapshots,
+    )
+
+
+def passes(validation: Validation, digest: str) -> bool:
+    """Whether a check of the version sealed as ``digest`` can bind its approval (D4)."""
+    return (
+        validation.sealed_digest == digest
+        and not validation.version_states
+        and all(state in PASSING for _, state in validation.claim_states)
+    )
+
+
+def check_version(
+    cursor: Cursor[Any],
+    version_id: int,
+    *,
+    mode: RunMode,
+    boundary: datetime,
+    catalog: SourceCatalog,
+    snapshots: SnapshotStore,
+    bound: Mapping[str, GuidanceContract] | None = None,
+) -> Validation:
+    """Every claim's state and the sections' version-level states at ``boundary``, in the
+    caller's transaction under its subject lock; nothing is written."""
+    bound = bound or {}
+    draft = store.read_version(cursor, version_id)
+    row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
+    assert row is not None
+    imported = bool(draft.import_sources)
+    quotes = {c.claim_key for c in draft.claims if c.citation.kind is CitationKind.SOURCE_QUOTE}
+    if bound and (not imported or bound.keys() - quotes):
+        raise DecisionRefusedError(_UNBINDABLE.format(version_id=version_id))
+    resolved = {
+        claim.claim_key: _bind(
+            resolve_citation(
+                cursor,
+                claim,
+                entity_id=row[0],
+                overlay_position=boundary,
+                catalog=catalog,
+                snapshots=snapshots,
+            ),
+            bound.get(claim.claim_key),
+        )
+        for claim in draft.claims
+    }
+    resolves = partial(resolve_location, cursor, catalog=catalog, snapshots=snapshots)
+    found = (
+        set()
+        if imported
+        else {state for s in draft.sections for state in scan_section(s.body, resolves=resolves)}
+    )
+    return Validation(
+        version_id=version_id,
+        checker_version=CHECKER_VERSION,
+        mode=mode,
+        overlay_position=boundary,
+        pinned_input_sha256=canonical_sha256(
+            {k: None if r is None else r.model_dump(mode="json") for k, r in resolved.items()}
+        ),
+        sealed_digest=store.sealed_digest(cursor, version_id),
+        claim_states=tuple(
+            (
+                claim.claim_key,
+                check_claim(
+                    claim,
+                    resolved[claim.claim_key],
+                    mode=mode,
+                    cutoff=draft.knowledge_cutoff,
+                    imported=imported,
+                ),
+            )
+            for claim in draft.claims
+        ),
+        version_states=tuple(sorted(found)),
+    )
+
+
+def _sound(cursor: Cursor[Any], version_id: int) -> VersionDraft:
+    """The stored version, if its narrative reproduces its declared content hash; else refuse."""
+    draft = store.read_version(cursor, version_id)
+    if content_hash(draft.sections, draft.claims) != draft.content_hash:
+        raise DecisionRefusedError(_STALE_HASH.format(version_id=version_id))
+    return draft
 
 
 def _bind(
@@ -253,11 +314,28 @@ def decide(
     kind: DecisionKind,
     ruling: str,
     policy: PolicyValue | None = None,
+    catalog: SourceCatalog | None = None,
+    snapshots: SnapshotStore | None = None,
 ) -> DecisionRecord:
-    """Record one decision with its verbatim ruling as the pool's role; an ``APPROVE`` binds
-    the version's latest validation, which must pass (D4)."""
+    """Record one decision with its verbatim ruling as the pool's role; an ``APPROVE`` of a
+    version binds the check this transaction makes with ``catalog`` and ``snapshots``, which
+    must pass (D4)."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        return append_decision(cursor, subject_kind, subject_id, kind, ruling=ruling, policy=policy)
+        approving = subject_kind is V and kind is DecisionKind.APPROVE
+        validation = (
+            approval_check(cursor, subject_id, catalog=catalog, snapshots=snapshots)
+            if approving and catalog is not None and snapshots is not None
+            else None
+        )
+        return append_decision(
+            cursor,
+            subject_kind,
+            subject_id,
+            kind,
+            validation=validation,
+            ruling=ruling,
+            policy=policy,
+        )
 
 
 def append_decision(
@@ -265,10 +343,13 @@ def append_decision(
     subject_kind: SubjectKind,
     subject_id: int,
     kind: DecisionKind,
+    *,
+    validation: Validation | None = None,
     **fields: Any,
 ) -> DecisionRecord:
-    """Pre-check D3 (and D4 for an approval) under the queue lock (proposals) and the subject
-    lock, then insert; an ``ACCEPT`` on a proposal appends its disposition (D11)."""
+    """Pre-check D3 under the queue lock (proposals) and the subject lock, then insert; an
+    ``APPROVE`` first appends ``validation``, the decider's own passing check (D4), and an
+    ``ACCEPT`` on a proposal appends its disposition (D11)."""
     if subject_kind is P:
         lock_queue(cursor)
     cursor.execute(_LOCK, (subject_kind.value, subject_id))
@@ -295,7 +376,9 @@ def append_decision(
     if subject_kind is not SubjectKind.REPORT:
         fields["sealed_digest"] = store.subject_digest(cursor, subject_kind, subject_id)
     if subject_kind is V and kind is DecisionKind.APPROVE:
-        fields["validation_id"] = bound_validation(cursor, subject_id, fields["sealed_digest"])
+        if validation is None or not passes(validation, fields["sealed_digest"]):
+            raise DecisionRefusedError(_UNBOUND.format(version_id=subject_id))
+        fields["validation_id"] = store.insert_validation(cursor, validation)
     decision = store.insert_decision(
         cursor,
         subject_kind=subject_kind,
@@ -317,21 +400,3 @@ def append_decision(
             explained_amount=row[3],
         )
     return decision
-
-
-def bound_validation(cursor: Cursor[Any], version_id: int, digest: str) -> int:
-    """The latest validation's id if it can bind an approval (D4), else refuse."""
-    latest = store.latest_validation(cursor, version_id)
-    claims = {claim.claim_key for claim in store.read_version(cursor, version_id).claims}
-    states = dict(latest.claim_states) if latest else {}
-    if (
-        latest is None
-        or latest.id is None
-        or latest.mode is not RunMode.AS_KNOWN
-        or latest.sealed_digest != digest
-        or latest.version_states
-        or states.keys() != claims
-        or not set(states.values()) <= PASSING
-    ):
-        raise DecisionRefusedError(_UNBOUND.format(version_id=version_id))
-    return latest.id

@@ -55,6 +55,7 @@ from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     ClaimState,
     DecisionKind,
+    NumericClaim,
     PanelReview,
     ReportSection,
     ReviewOutput,
@@ -185,9 +186,12 @@ class Desk:
             pair_outcome_id=pair_id,
         )
 
-    def version(self, *, submit: bool = True, validate: bool = True) -> int:
-        """A runtime draft on a new report citing the cell, optionally submitted and checked."""
-        claims = (self.claim,)
+    def version(
+        self, *, submit: bool = True, validate: bool = True, claim: NumericClaim | None = None
+    ) -> int:
+        """A runtime draft on a new report citing the cell (``claim``, else the matching
+        one), optionally submitted and checked."""
+        claims = (claim or self.claim,)
         draft = self.ledger.version_draft(
             self.ledger.report(),
             knowledge_cutoff=self.cutoff,
@@ -210,7 +214,9 @@ class Desk:
 
     def review(self, kind: SubjectKind, subject_id: int, reviewer: FakeReviewer) -> Any:
         pool = self.pools[PgRole.PANEL]
-        return panel.review(pool, subject_kind=kind, subject_id=subject_id, reviewer=reviewer)
+        return panel.review(
+            pool, subject_kind=kind, subject_id=subject_id, reviewer=reviewer, **self.paths
+        )
 
     def review_row(self, kind: SubjectKind, subject_id: int, **update: Any) -> PanelReview:
         """A panel review of the subject's current digest, with any field replaced."""
@@ -307,18 +313,27 @@ def test_verdict_rules(kind: SubjectKind, verdict: Verdict, decision: DecisionKi
 def test_panel_approves_a_version_and_an_overlay_change_leaves_the_approval_bound(
     desk: Desk,
 ) -> None:
-    """A reviewer APPROVE approves, its text, provider and model stored as data. A blocking
-    HIGH item later linked to the cited run makes a new validation MATCH_UNTRUSTED; the
-    original validation, its trust at its overlay position and the approval stand."""
+    """A reviewer APPROVE approves, binding the panel's own check written in the deciding
+    transaction; its text, provider and model are stored as data. A blocking HIGH item later
+    linked to the cited run makes a new validation MATCH_UNTRUSTED; the bound validation, its
+    trust at its overlay position and the approval stand."""
     version = desk.version()
     with desk.cursor(PgRole.RUNTIME) as cursor:
-        validation = store.latest_validation(cursor, version)
+        advisory = store.latest_validation(cursor, version)
         draft = store.read_version(cursor, version)
-    assert validation is not None and validation.claim_states == (("fact.cited", ClaimState.MATCH),)
     reviewer = FakeReviewer()
     decision = desk.review(V, version, reviewer)
     assert (decision.kind, decision.decider.value) == (DecisionKind.APPROVE, "PANEL")
-    assert decision.validation_id == validation.id
+    with desk.cursor(PgRole.RUNTIME) as cursor:
+        validation = store.latest_validation(cursor, version)
+    assert advisory is not None and validation is not None
+    assert decision.validation_id == validation.id != advisory.id
+    assert validation.claim_states == (("fact.cited", ClaimState.MATCH),)
+    assert desk.rows(
+        "SELECT v.creator, v.created_xid = d.created_xid FROM eqos.validations v "
+        "JOIN eqos.decisions d ON d.validation_id = v.id WHERE d.id = %s",
+        decision.id,
+    ) == [("PANEL", True)]
     assert reviewer.calls == [
         (narrative(draft.sections, draft.claims).decode(), decision.sealed_digest)
     ]
@@ -355,21 +370,37 @@ def test_panel_approves_a_version_and_an_overlay_change_leaves_the_approval_boun
 
 
 def test_version_gates_refuse_before_and_after_the_reviewer_call(desk: Desk) -> None:
-    """A version with no passing validation is refused with no reviewer call; a validation
-    appended during the call refuses the review with no review or decision row."""
-    unchecked = desk.version(validate=False)
+    """The cited cell holds 340.56, the claim 999999.99: the panel's own check fails and the
+    review is refused with no reviewer call, though the runtime wrote a newer forged MATCH
+    validation. A check result that changes during the call (a blocking item makes the cell
+    untrusted) refuses the review with no review or decision row."""
+    wrong = desk.claim.model_copy(update={"value": Decimal("999999.99")})
+    unchecked = desk.version(claim=wrong)
+    genuine = store_latest(desk, unchecked)
+    assert genuine.claim_states == (("fact.cited", ClaimState.VALUE_MISMATCH),)
+    forged = genuine.model_copy(
+        update={"claim_states": (("fact.cited", ClaimState.MATCH),), "id": None}
+    )
+    with desk.cursor(PgRole.RUNTIME) as cursor:
+        store.insert_validation(cursor, forged)
     reviewer = FakeReviewer()
-    with pytest.raises(DecisionRefusedError, match="latest passing"):
+    with pytest.raises(DecisionRefusedError, match="claim check does not pass"):
         desk.review(V, unchecked, reviewer)
     assert reviewer.calls == []
 
-    version = desk.version()
-    stale = FakeReviewer(during=lambda: desk.validate(version))
+    version = desk.version(validate=False)
+    stale = FakeReviewer(during=desk.item)
     with pytest.raises(panel.ReviewStaleError):
         desk.review(V, version, stale)
     assert len(stale.calls) == 1
     assert desk.ledger.head(version).kind is DecisionKind.SUBMIT
     assert desk.rows("SELECT count(*) FROM eqos.panel_reviews") == [(0,)]
+
+
+def store_latest(desk: Desk, version: int) -> Any:
+    """The version's latest validation."""
+    with desk.cursor(PgRole.RUNTIME) as cursor:
+        return store.latest_validation(cursor, version)
 
 
 def test_direct_panel_decisions_need_their_own_fresh_review(desk: Desk) -> None:
@@ -437,7 +468,9 @@ def test_panel_accepts_a_proposal_with_its_derived_amount_under_a_lock_timeout(
     with pg_db.panel_pool() as pool:
         with pool.connection() as conn:
             assert conn.execute("SHOW lock_timeout").fetchone() == ("5s",)
-        decision = panel.review(pool, subject_kind=P, subject_id=proposal, reviewer=reviewer)
+        decision = panel.review(
+            pool, subject_kind=P, subject_id=proposal, reviewer=reviewer, **desk.paths
+        )
     assert (decision.kind, decision.decider.value, len(reviewer.calls)) == (
         DecisionKind.ACCEPT,
         "PANEL",

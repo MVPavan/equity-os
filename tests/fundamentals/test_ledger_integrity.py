@@ -17,7 +17,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_support import LEDGER_TABLES, RULING, Ledger, ledger
+from ledger_support import LEDGER_TABLES, RULING, Ledger, ledger, validation
 from pg_evidence_schema_support import _insert, _update_column, runtime, seeded
 from pg_support import PgTestDatabase
 from psycopg import errors, sql
@@ -48,6 +48,7 @@ SEALED = "is sealed"
 ILLEGAL = "illegal decision"
 UNBOUND = "latest passing AS_KNOWN validation"
 RUNTIME_ROLE, PANEL_ROLE, OWNER_ROLE = "eqos_runtime", "eqos_panel", "eqos_owner"
+OWNER = PgRole.OWNER
 
 
 # --- D1 encoding and the chain digest (test-local recompute)
@@ -280,9 +281,8 @@ def test_a_stale_head_is_refused_and_trigger_fields_are_never_caller_supplied(
 def test_illegal_transitions_are_refused(ledger: Ledger) -> None:
     """Approve before submit, a repeated SUBMIT and SUBMIT of a version with import sources."""
     version = ledger.draft(ledger.report())
-    validation = ledger.validate(version)
     with pytest.raises(errors.CheckViolation, match=ILLEGAL):
-        ledger.approve(version, validation)
+        ledger.approve(version)
     ledger.submit(version)
     with pytest.raises(errors.CheckViolation, match=ILLEGAL):
         ledger.submit(version)
@@ -299,7 +299,7 @@ def test_nothing_follows_a_terminal_decision(ledger: Ledger, terminal: DecisionK
     version = ledger.draft(ledger.report())
     ledger.submit(version)
     if terminal is DecisionKind.WITHDRAW:
-        ledger.approve(version, ledger.validate(version))
+        ledger.approve(version)
     ledger.decide(PgRole.OWNER, version, terminal)
     for kind in (DecisionKind.APPROVE, DecisionKind.REJECT, DecisionKind.WITHDRAW):
         extra = {"validation_id": ledger.validate(version)} if kind is DecisionKind.APPROVE else {}
@@ -317,7 +317,7 @@ def test_withdrawing_an_unapproved_import_needs_an_approved_successor(ledger: Le
         ledger.decide(PgRole.OWNER, imported, DecisionKind.WITHDRAW)
     successor = ledger.draft(report, imported)
     ledger.submit(successor)
-    ledger.approve(successor, ledger.validate(successor))
+    ledger.approve(successor)
     withdrawn = ledger.decide(PgRole.OWNER, imported, DecisionKind.WITHDRAW)
     assert withdrawn.decider.value == "OWNER"
 
@@ -383,7 +383,6 @@ def test_two_concurrent_roots_commit_exactly_one(ledger: Ledger, pg_db: PgTestDa
 UNBINDABLE = {
     "non-latest": {},
     "retrospective": {"mode": RunMode.RETROSPECTIVE},
-    "digest-mismatched": {},
     "version-level-flagged": {"version_states": (VersionState.UNREGISTERED_NUMBER,)},
     "incomplete": {"state": None},
     "failing": {"state": ClaimState.VALUE_MISMATCH},
@@ -394,25 +393,62 @@ UNBINDABLE = {
 def test_approval_binds_only_the_latest_passing_as_known_validation(
     ledger: Ledger, case: str
 ) -> None:
-    """Each unbindable validation refuses APPROVE; the same version then approves on a
-    passing one."""
+    """Each unbindable validation the owner writes in its approving transaction refuses
+    APPROVE; the same version then approves on a passing one."""
+    version = ledger.draft(ledger.report())
+    ledger.submit(version)
+    with pytest.raises(errors.CheckViolation, match=UNBOUND), ledger._cursor(OWNER) as cursor:  # noqa: SLF001
+        bad = validation(cursor, version, **UNBINDABLE[case])
+        if case == "non-latest":
+            validation(cursor, version)
+        ledger._decide(cursor, OWNER, version, DecisionKind.APPROVE, validation_id=bad)  # noqa: SLF001
+    assert ledger.approve(version).kind is DecisionKind.APPROVE
+
+
+@pytest.mark.parametrize("writer", ["runtime", "earlier owner transaction"])
+def test_an_approval_binds_only_its_deciders_own_validation(ledger: Ledger, writer: str) -> None:
+    """A passing latest validation the runtime wrote, or the owner wrote in an earlier
+    transaction, cannot establish eligibility: the trigger refuses the APPROVE naming it."""
+    version = ledger.draft(ledger.report())
+    ledger.submit(version)
+    passing = ledger.validate(version, PgRole.RUNTIME if writer == "runtime" else OWNER)
+    with pytest.raises(errors.CheckViolation, match="its decider wrote in this transaction"):
+        ledger.decide(OWNER, version, DecisionKind.APPROVE, validation_id=passing)
+    assert ledger.head(version).kind is DecisionKind.SUBMIT
+
+
+def test_a_bound_validation_takes_no_further_state(ledger: Ledger) -> None:
+    """The decider writes a passing validation, approves on it, then appends a failing state
+    to it in the same transaction: refused, and nothing commits."""
+    version = ledger.draft(ledger.report())
+    ledger.submit(version)
+    with (
+        pytest.raises(errors.CheckViolation, match="is bound by a decision"),
+        ledger._cursor(OWNER) as cursor,  # noqa: SLF001
+    ):
+        bound = validation(cursor, version)
+        ledger._decide(cursor, OWNER, version, DecisionKind.APPROVE, validation_id=bound)  # noqa: SLF001
+        cursor.execute(
+            "INSERT INTO eqos.validation_claim_states (validation_id, version_id, state) "
+            "VALUES (%s, %s, 'UNREGISTERED_NUMBER')",
+            (bound, version),
+        )
+    assert ledger.head(version).kind is DecisionKind.SUBMIT
+
+
+def test_submit_needs_a_terminal_predecessor(ledger: Ledger) -> None:
+    """By direct SQL: a successor's SUBMIT while its predecessor is a draft or in review is
+    refused; once the predecessor is rejected it is sealed."""
     report = ledger.report()
-    if case == "digest-mismatched":
-        version = ledger.draft(report)
-        bad = ledger.validate(version)
-        with ledger.pools[PgRole.RUNTIME].connection() as conn:
-            _add_claim(conn, version)
-        ledger.submit(version)
-    else:
-        version = ledger.draft(report)
-        ledger.submit(version)
-        bad = ledger.validate(version, **UNBINDABLE[case])
-    if case == "non-latest":
-        ledger.validate(version)
-    with pytest.raises(errors.CheckViolation, match=UNBOUND):
-        ledger.approve(version, bad)
-    approved = ledger.approve(version, ledger.validate(version))
-    assert approved.kind is DecisionKind.APPROVE
+    v1 = ledger.draft(report)
+    v2 = ledger.draft(report, v1)
+    with pytest.raises(errors.CheckViolation, match="predecessor is not terminal"):
+        ledger.submit(v2)
+    ledger.submit(v1)
+    with pytest.raises(errors.CheckViolation, match="predecessor is not terminal"):
+        ledger.submit(v2)
+    ledger.decide(OWNER, v1, DecisionKind.REJECT)
+    assert ledger.submit(v2).kind is DecisionKind.SUBMIT
 
 
 def test_a_failing_validation_committed_after_the_read_refuses_the_approval(
@@ -493,7 +529,7 @@ INSERTERS = {
     RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions", "panel_reviews"})
     | {"queue_dispositions"},
     PANEL_ROLE: (LEDGER_TABLES - {"disposition_proposals"}) | {"queue_dispositions"},
-    OWNER_ROLE: {"decisions", "queue_dispositions"},
+    OWNER_ROLE: {"decisions", "queue_dispositions", "validations", "validation_claim_states"},
 }
 
 

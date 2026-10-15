@@ -3,7 +3,8 @@
 ``resolve_citation`` returns ``None`` (row 1, ``UNRESOLVED``) unless the cited record exists
 and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
 behind them), a quote only a non-vendor capture, a ``COMPARISON`` its own run and key, a
-``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity. A capture's
+``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, and a declared
+``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
 Run-store values (cells, pair differences, traces) are base units, stated in the claim's
 scale (``scale`` 10^7 for crore); display never rescales.
@@ -29,7 +30,13 @@ from fundamentals.compare.queue import overlay_at
 from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import Basis, ValueKind
 from fundamentals.contracts.comparison import CorroborationStatus, ExtractionStatus, SourceState
-from fundamentals.contracts.ledger import CitationKind, InputTime, NumericClaim, ResolvedCitation
+from fundamentals.contracts.ledger import (
+    Citation,
+    CitationKind,
+    InputTime,
+    NumericClaim,
+    ResolvedCitation,
+)
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
@@ -77,6 +84,12 @@ _COMPARISON: LiteralString = (
 JOIN eqos.results r ON r.id = p.result_id JOIN eqos.runs run ON run.id = r.run_id
 WHERE p.id = %s AND r.run_id = %s AND r.key_digest = %s"""
 )
+# The cited fact's file, or the cited interpretation's or quote's capture blob.
+_SOURCE: LiteralString = """SELECT coalesce(
+    (SELECT file_sha256 FROM eqos.fact_rows WHERE origin = %s AND origin_id = %s),
+    (SELECT c.blob_sha256 FROM eqos.interpretations i
+     JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
+    (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
 _TRACE: LiteralString = (
     "SELECT value, key_digest FROM eqos.calculation_traces WHERE id = %s AND state = 'COMPUTED'"
 )
@@ -134,6 +147,8 @@ def resolve_citation(
     """
     citation = claim.citation
     with cursor.connection.cursor(row_factory=dict_row) as own:
+        if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
+            return None
         if citation.kind is CitationKind.FIGURE and citation.fact_origin_id is not None:
             return _fact(own, citation.fact_origin, citation.fact_origin_id, catalog)
         if citation.kind is CitationKind.FIGURE and citation.interpretation_id is not None:
@@ -191,6 +206,15 @@ def _first_party_capture(
     """The capture row with its D8 first-seen time, if it exists and is first-party."""
     row = own.execute(_CAPTURE, (capture_ref_id,)).fetchone()
     return row if row is not None and _first_party(row["source_id"], catalog) else None
+
+
+def _source(own: Cursor[Any], citation: Citation) -> str | None:
+    """The SHA-256 of the file or capture the citation names, if it names one."""
+    fields = ("fact_origin", "fact_origin_id", "interpretation_id", "capture_ref_id")
+    row = own.execute(_SOURCE, tuple(getattr(citation, name) for name in fields)).fetchone()
+    assert row is not None
+    sha256: str | None = row["sha256"]
+    return sha256
 
 
 def _fact(

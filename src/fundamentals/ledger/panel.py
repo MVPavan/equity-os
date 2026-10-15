@@ -1,15 +1,18 @@
 """The approval panel: one reviewer's verdict decides a sealed subject (ledger spec §1; plan D10).
 
 ``review`` runs the deterministic gates, calls the reviewer outside any transaction only if they
-pass, then re-runs them in the deciding transaction under the queue lock (proposals) and the
-subject lock and inserts the review and its decision there; a change between the two runs
-refuses with no row. The reviewer returns a verdict and rationale, never an amount (D11). The
-panel decides report versions and disposition proposals; interpretations are owner-only.
+pass, then re-runs them in the deciding transaction under the queue lock and the subject lock
+and inserts the review and its decision there; a change between the two runs refuses with no
+row. A version's gate is the panel's own claim check, which its approval binds (D4). The
+reviewer returns a verdict and rationale, never an amount (D11). The panel decides report
+versions and disposition proposals; interpretations are owner-only.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 from typing import Any, LiteralString, Protocol
 
 from psycopg import Cursor
@@ -23,16 +26,20 @@ from fundamentals.contracts.ledger import (
     PanelReview,
     ReviewOutput,
     SubjectKind,
+    Validation,
     Verdict,
 )
 from fundamentals.contracts.snapshot import canonical_json
+from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
 from fundamentals.ledger.display import narrative
 from fundamentals.ledger.lifecycle import (
     DecisionRefusedError,
     append_decision,
-    bound_validation,
+    approval_check,
+    passes,
 )
+from fundamentals.store.snapshot_store import SnapshotStore
 
 V, P = SubjectKind.REPORT_VERSION, SubjectKind.DISPOSITION_PROPOSAL
 _VERDICTS = {
@@ -55,6 +62,7 @@ _NO_VERDICT = "verdict {verdict} has no decision on {subject_kind}"
 _GATE = "{kind} {id} fails its panel gate: {reason}"
 _STALE = "{subject_kind} {subject_id} changed during its review"
 _NOT_SUBMITTED = "its head is not SUBMIT"
+_FAILS = "its AS_KNOWN claim check does not pass"
 _SETTLED = "it is decided, its item has an owner decision, or its amount source is invalid"
 _NOT_OPEN = "its queue item is not open"
 
@@ -85,24 +93,31 @@ def verdict_decision(subject_kind: SubjectKind, verdict: Verdict) -> DecisionKin
 
 
 def review(
-    pool: ConnectionPool, *, subject_kind: SubjectKind, subject_id: int, reviewer: Reviewer
+    pool: ConnectionPool,
+    *,
+    subject_kind: SubjectKind,
+    subject_id: int,
+    reviewer: Reviewer,
+    catalog: SourceCatalog,
+    snapshots: SnapshotStore,
 ) -> DecisionRecord:
     """Decide one report version or disposition proposal by the reviewer's verdict, as the
-    pool's (panel) role."""
+    pool's (panel) role; a version's claims are checked with ``catalog`` and ``snapshots``."""
     if subject_kind not in _VERDICTS:
         raise DecisionRefusedError(_NOT_PANEL.format(subject_kind=subject_kind))
+    check = partial(approval_check, catalog=catalog, snapshots=snapshots)
     as_of = overlay_boundary(pool) if subject_kind is P else None
     with pool.connection() as conn, conn.cursor() as cursor:
-        text, gated = _gate(cursor, subject_kind, subject_id, as_of)
+        text, gated, _ = _gate(cursor, subject_kind, subject_id, as_of, check)
     output = reviewer.review(text, gated[0])
     kind = verdict_decision(subject_kind, output.verdict)
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        if subject_kind is P:
-            lock_queue(cursor)
+        lock_queue(cursor)
         cursor.execute(_LOCK, (subject_kind.value, subject_id))
-        now = cursor.execute(_NOW).fetchone() if subject_kind is P else None
+        now = cursor.execute(_NOW).fetchone()
+        assert now is not None
         try:
-            _, final = _gate(cursor, subject_kind, subject_id, None if now is None else now[0])
+            _, final, validation = _gate(cursor, subject_kind, subject_id, now[0], check)
         except DecisionRefusedError as refused:
             raise ReviewStaleError(str(refused)) from refused
         if final != gated:
@@ -115,22 +130,32 @@ def review(
             **{name: getattr(reviewer, name) for name in _REVIEWER_DATA},
         )
         review_id = store.insert_panel_review(cursor, recorded)
-        return append_decision(cursor, subject_kind, subject_id, kind, panel_review_id=review_id)
+        return append_decision(
+            cursor, subject_kind, subject_id, kind, validation=validation, panel_review_id=review_id
+        )
 
 
 def _gate(
-    cursor: Cursor[Any], subject_kind: SubjectKind, subject_id: int, as_of: datetime | None
-) -> tuple[str, tuple[str, int | None]]:
-    """The reviewed text and the gated state (digest, bound validation) if every D10 gate
-    holds, else refuse. A proposal's overlay is read at ``as_of``."""
+    cursor: Cursor[Any],
+    subject_kind: SubjectKind,
+    subject_id: int,
+    as_of: datetime | None,
+    check: Callable[[Cursor[Any], int], Validation],
+) -> tuple[str, tuple[str, object], Validation | None]:
+    """The reviewed text, the gated state (digest, a version's check result) and a version's
+    passing check if every D10 gate holds, else refuse. A proposal's overlay is read at
+    ``as_of``."""
     digest = store.subject_digest(cursor, subject_kind, subject_id)
     head = store.chain_head(cursor, subject_kind, subject_id)
     if subject_kind is V:
         if head is None or head.kind is not DecisionKind.SUBMIT:
             raise _refused(subject_kind, subject_id, _NOT_SUBMITTED)
-        validation_id = bound_validation(cursor, subject_id, digest)
+        validation = check(cursor, subject_id)
+        if not passes(validation, digest):
+            raise _refused(subject_kind, subject_id, _FAILS)
         draft = store.read_version(cursor, subject_id)
-        return narrative(draft.sections, draft.claims).decode(), (digest, validation_id)
+        result = validation.model_dump(exclude={"overlay_position"})
+        return narrative(draft.sections, draft.claims).decode(), (digest, result), validation
     with cursor.connection.cursor(row_factory=dict_row) as own:
         row = own.execute(_PROPOSAL, (subject_id,)).fetchone()
     assert row is not None and as_of is not None
@@ -141,7 +166,7 @@ def _gate(
     if row["proposal"]["item_id"] not in open_ids:
         raise _refused(subject_kind, subject_id, _NOT_OPEN)
     payload = {key: row[key] for key in ("proposal", "item", "pair")}
-    return canonical_json(payload), (digest, None)
+    return canonical_json(payload), (digest, None), None
 
 
 def _refused(subject_kind: SubjectKind, subject_id: int, reason: str) -> DecisionRefusedError:

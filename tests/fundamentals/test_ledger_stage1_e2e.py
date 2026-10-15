@@ -41,6 +41,7 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.ledger import lifecycle, store
+from fundamentals.ledger.citations import resolve_citation
 from fundamentals.ledger.display import (
     content_hash,
     parse_style,
@@ -363,6 +364,19 @@ def test_ledger_stage1_end_to_end(
             successor = store.create_version(conn.cursor(), draft)
         lifecycle.submit(pool, successor, **paths)
         checked = lifecycle.validate(pool, successor, mode=RunMode(corrective["mode"]), **paths)
+        # The same stored claim declaring another source file's hash cites nothing.
+        forged = revenue.citation.model_copy(update={"source_sha256": "0" * 64})
+        with pool.connection() as conn:
+            assert (
+                resolve_citation(
+                    conn.cursor(),
+                    revenue.model_copy(update={"citation": forged}),
+                    entity_id=entity_id,
+                    overlay_position=checked.overlay_position,
+                    **paths,
+                )
+                is None
+            )
     assert checked.claim_states == ((corrective["claim"], ClaimState(corrective["expect"])),)
 
     # 5. Export reproduces every imported content hash.

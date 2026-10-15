@@ -29,7 +29,9 @@ _STRUCTURAL = re.compile(
             r"\bFY\d{2,4}(?:_Q[1-4])?\b|\b[QH][1-4]\b",  # period labels
             r"\[\^\d+\]",  # footnote markers
             r"\bp\d+\.b\d+\.\d+:\d+\b",  # source-location coordinates
-            r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b",  # hashes
+            # provenance hashes, never a number in scientific notation
+            r"\b(?:hash|sha256|commit|digest)[ \t:=]+(?!\d+(?:\.\d+)?e[+-]?\d+\b)"
+            r"(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b",
             r"\b[a-z][a-z_]*[-:#]\d+\b|\b[A-Z]\d{1,2}\b",  # ids: run-12, decision:42, F1
             r"× 100\b",  # registered formula literal
         )

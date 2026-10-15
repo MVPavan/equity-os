@@ -200,6 +200,39 @@ def test_claim_check_rows(
     assert state is expected
 
 
+@pytest.mark.parametrize(
+    ("kind", "canonical_id", "value"),
+    [
+        (ValueKind.DAYS, "receivable_days", "45.62"),
+        (ValueKind.COUNT, "shares_outstanding", "35"),
+        (ValueKind.RATIO, "debt_to_equity", "0.42"),
+    ],
+)
+def test_unitless_kinds_are_typed_without_a_unit(
+    kind: ValueKind, canonical_id: str, value: str
+) -> None:
+    """The dictionary's DAYS, COUNT and RATIO values carry no unit, currency or scale: a keyed
+    claim so typed matches its trace (row 3 does not block it); one stating a unit, currency or
+    scale is ``UNIT_MISMATCH``."""
+    family_key = key(canonical_id).model_copy(update={"value_kind": kind, "currency": None})
+    claim = FIGURE.model_copy(
+        update={
+            "citation": Citation(kind=CitationKind.CALCULATION, calculation_trace_id=1),
+            "measurement_key": family_key,
+            "value_kind": kind,
+            "value": Decimal(value),
+        }
+        | dict.fromkeys(("unit", "currency", "scale"))
+    )
+    record = ResolvedCitation(
+        value=Decimal(value), key_digest=family_key.digest(), times=FIGURE_CITED.times
+    )
+    check = partial(check_claim, resolved=record, mode=RunMode.AS_KNOWN, cutoff=CUTOFF)
+    assert check(claim, imported=False) is ClaimState.MATCH
+    for mistyped in ({"unit": "days"}, {"currency": "INR"}, {"scale": 1}):
+        assert check(claim.model_copy(update=mistyped), imported=False) is UNIT
+
+
 @pytest.mark.parametrize("name", ["RECORDED", "SELECTED", "POLICY"])
 def test_as_known_only_times(name: str) -> None:
     """Interpretation recorded-at, selection time and policy recorded-at count only as known."""
@@ -321,6 +354,31 @@ def test_interpretation_figure_resolves_only_through_its_run_cell(cited: Cited) 
     assert any(name is InputTime.RECORDED for name, _ in resolved.times)
     assert cited.resolve(cited.interpretation_figure(not_selected=True)) is None
     assert cited.resolve(cited.interpretation_figure(other_key=True)) is None
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_declared_source_hash_must_be_the_cited_records(cited: Cited) -> None:
+    """A declared source SHA-256 must be the cited fact's file or the cited capture's blob:
+    the FY27_Q1 revenue fact and a run-cell figure resolve under their own hash and are
+    ``UNRESOLVED`` under another; a trace, which names no one source, under any."""
+
+    def declaring(claim: NumericClaim, sha256: str) -> NumericClaim:
+        citation = claim.citation.model_copy(update={"source_sha256": sha256})
+        return claim.model_copy(update={"citation": citation})
+
+    figure = cited.interpretation_figure()
+    ((blob,),) = cited.query(
+        "SELECT c.blob_sha256 FROM eqos.interpretations i "
+        "JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s",
+        figure.citation.interpretation_id,
+    )
+    revenue = cited.legacy_revenue()
+    assert cited.resolve(declaring(revenue, cited.revenue_file_sha256)) is not None
+    assert cited.resolve(declaring(figure, blob)) is not None
+    for claim in (revenue, figure, cited.first_party_trace()):
+        assert cited.resolve(claim) is not None
+        assert cited.resolve(declaring(claim, "0" * 64)) is None
 
 
 @pytest.mark.pg

@@ -178,22 +178,28 @@ class Ledger:
     ) -> DecisionRecord:
         """A decision on a version naming its current head and digest, unless ``fields`` say
         otherwise; owner decisions carry a ruling."""
-        subject_kind = fields.pop("subject_kind", SubjectKind.REPORT_VERSION)
         with self._cursor(role) as cursor:
-            head = store.chain_head(cursor, subject_kind, subject_id)
-            defaults: dict[str, Any] = {
-                "predecessor_id": None if head is None else head.id,
-                "ruling": RULING if role is PgRole.OWNER else None,
-            }
-            if subject_kind is SubjectKind.REPORT_VERSION:
-                defaults["sealed_digest"] = store.sealed_digest(cursor, subject_id)
-            return store.insert_decision(
-                cursor,
-                subject_kind=subject_kind,
-                subject_id=subject_id,
-                kind=kind,
-                **(defaults | fields),
-            )
+            return self._decide(cursor, role, subject_id, kind, **fields)
+
+    def _decide(
+        self, cursor: Cursor[Any], role: PgRole, subject_id: int, kind: DecisionKind, **fields: Any
+    ) -> DecisionRecord:
+        """:meth:`decide` in the caller's transaction."""
+        subject_kind = fields.pop("subject_kind", SubjectKind.REPORT_VERSION)
+        head = store.chain_head(cursor, subject_kind, subject_id)
+        defaults: dict[str, Any] = {
+            "predecessor_id": None if head is None else head.id,
+            "ruling": RULING if role is PgRole.OWNER else None,
+        }
+        if subject_kind is SubjectKind.REPORT_VERSION:
+            defaults["sealed_digest"] = store.sealed_digest(cursor, subject_id)
+        return store.insert_decision(
+            cursor,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            kind=kind,
+            **(defaults | fields),
+        )
 
     def head(self, version_id: int) -> DecisionRecord:
         """The version's latest decision."""
@@ -206,44 +212,52 @@ class Ledger:
         """The runtime's ``SUBMIT``."""
         return self.decide(PgRole.RUNTIME, version_id, DecisionKind.SUBMIT)
 
-    def validate(
-        self,
-        version_id: int,
-        *,
-        mode: RunMode = RunMode.AS_KNOWN,
-        state: ClaimState | None = ClaimState.MATCH,
-        version_states: tuple[VersionState, ...] = (),
-    ) -> int:
-        """A runtime validation giving every claim ``state`` (none when ``None``)."""
-        with self._cursor(PgRole.RUNTIME) as cursor:
-            keys = cursor.execute(
-                "SELECT claim_key FROM eqos.numeric_claims WHERE version_id = %s", (version_id,)
-            ).fetchall()
-            return store.insert_validation(
-                cursor,
-                Validation(
-                    version_id=version_id,
-                    checker_version="fixture-checker",
-                    mode=mode,
-                    overlay_position=CUTOFF,
-                    pinned_input_sha256=PINNED_INPUTS,
-                    sealed_digest=store.sealed_digest(cursor, version_id),
-                    claim_states=() if state is None else tuple((k, state) for (k,) in keys),
-                    version_states=version_states,
-                ),
-            )
+    def validate(self, version_id: int, role: PgRole = PgRole.RUNTIME, **result: Any) -> int:
+        """A validation by ``role`` in its own transaction (see :func:`validation`)."""
+        with self._cursor(role) as cursor:
+            return validation(cursor, version_id, **result)
 
-    def approve(self, version_id: int, validation_id: int) -> DecisionRecord:
-        """The owner's ``APPROVE`` binding ``validation_id``."""
-        return self.decide(
-            PgRole.OWNER, version_id, DecisionKind.APPROVE, validation_id=validation_id
-        )
+    def approve(self, version_id: int, **result: Any) -> DecisionRecord:
+        """The owner's ``APPROVE`` binding the validation it writes in the same transaction."""
+        with self._cursor(PgRole.OWNER) as cursor:
+            bound = validation(cursor, version_id, **result)
+            return self._decide(
+                cursor, PgRole.OWNER, version_id, DecisionKind.APPROVE, validation_id=bound
+            )
 
     @contextmanager
     def _cursor(self, role: PgRole) -> Iterator[Cursor[Any]]:
         """A cursor in one committed transaction of the role's pool."""
         with self.pools[role].connection() as conn, conn.transaction(), conn.cursor() as cursor:
             yield cursor
+
+
+def validation(
+    cursor: Cursor[Any],
+    version_id: int,
+    *,
+    mode: RunMode = RunMode.AS_KNOWN,
+    state: ClaimState | None = ClaimState.MATCH,
+    version_states: tuple[VersionState, ...] = (),
+) -> int:
+    """A validation in the caller's transaction giving every claim ``state`` (none when
+    ``None``)."""
+    keys = cursor.execute(
+        "SELECT claim_key FROM eqos.numeric_claims WHERE version_id = %s", (version_id,)
+    ).fetchall()
+    return store.insert_validation(
+        cursor,
+        Validation(
+            version_id=version_id,
+            checker_version="fixture-checker",
+            mode=mode,
+            overlay_position=CUTOFF,
+            pinned_input_sha256=PINNED_INPUTS,
+            sealed_digest=store.sealed_digest(cursor, version_id),
+            claim_states=() if state is None else tuple((k, state) for (k,) in keys),
+            version_states=version_states,
+        ),
+    )
 
 
 @pytest.fixture

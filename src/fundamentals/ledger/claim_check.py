@@ -39,6 +39,9 @@ UNITS: Mapping[str, tuple[ValueKind, str | None, int | None]] = {
     PER_SHARE: (ValueKind.PER_SHARE_AMOUNT, "INR", 1),
     PERCENT: (ValueKind.PERCENTAGE, None, None),
 }
+# The dictionary's other value kinds carry no unit: a keyed claim of one states none, nor a
+# currency or scale.
+UNITLESS = frozenset({ValueKind.COUNT, ValueKind.RATIO, ValueKind.DAYS})
 NO_CONTRACT = GuidanceContract(
     metric=None, scope=None, horizon=None, unit=None, constant_currency=None
 )
@@ -121,13 +124,14 @@ def _differs(claimed: tuple[object, ...], cited: tuple[object, ...]) -> bool:
 
 
 def _typed(claim: NumericClaim) -> bool:
-    """Whether a keyed claim's unit, by the unit table, is its value kind, currency and scale,
-    and its value kind and currency are its measurement key's (row 3, before any comparison)."""
+    """Whether a keyed claim's unit, by the unit table (or none, for a unitless kind), is its
+    value kind, currency and scale, and its value kind and currency are its measurement key's
+    (row 3, before any comparison)."""
     key = claim.measurement_key
     typed = (claim.value_kind, claim.currency, claim.scale)
-    return key is None or (
-        UNITS.get(claim.unit or "") == typed and typed[:2] == (key.value_kind, key.currency)
-    )
+    unitless = claim.unit is None and claim.value_kind in UNITLESS
+    expected = (claim.value_kind, None, None) if unitless else UNITS.get(claim.unit or "")
+    return key is None or (expected == typed and typed[:2] == (key.value_kind, key.currency))
 
 
 def _quote_means_claim(claim: NumericClaim, quote: str, contract: GuidanceContract | None) -> bool:

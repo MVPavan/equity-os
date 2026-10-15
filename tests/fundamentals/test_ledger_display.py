@@ -165,6 +165,10 @@ STRUCTURAL = (
             (VersionState.UNREGISTERED_NUMBER,),
         ),
         ("{{e:computed}} Revenue was Rs 6,591 crore.", _never, (VersionState.UNREGISTERED_NUMBER,)),
+        ("{{e:computed}} Revenue was INR 100000e3.", _never, (VersionState.UNREGISTERED_NUMBER,)),
+        ("{{e:computed}} It was hash 100000e3.", _never, (VersionState.UNREGISTERED_NUMBER,)),
+        ("{{e:computed}} Ref 3f9a2c1d7e, unlabelled.", _never, (VersionState.UNREGISTERED_NUMBER,)),
+        ("{{e:computed}} Built at commit 4f0afa25cd, sha256 " + "ab12" * 16 + ".", _never, ()),
         (
             "Revenue grew {{c:cmp.revenue.yoy.pct|plus,unit}}.",
             _never,
@@ -182,7 +186,8 @@ STRUCTURAL = (
     ],
 )
 def test_scan_section(text: str, resolves: Any, expected: tuple[VersionState, ...]) -> None:
-    """Narrative numbers come only from claims; ids, hashes, ``× 100``, period labels, dates,
-    footnote markers, coordinates, list numbering and quotes are structural. Every paragraph
+    """Narrative numbers come only from claims; ids, labelled provenance hashes, ``× 100``,
+    period labels, dates, footnote markers, coordinates, list numbering and quotes are
+    structural; a number in scientific notation never passes as a hash. Every paragraph
     carries a class; an observed one is backed by a claim or a resolving location."""
     assert scan_section(text, resolves=resolves) == expected

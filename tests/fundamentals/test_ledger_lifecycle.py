@@ -127,7 +127,7 @@ class Flow:
 
     def decide(self, subject_id: int, kind: DecisionKind, **fields: Any) -> DecisionRecord:
         """An owner decision on a version unless ``fields`` name another subject kind."""
-        fields = {"subject_kind": V, "ruling": RULING} | fields
+        fields = {"subject_kind": V, "ruling": RULING} | self.paths | fields
         return lifecycle.decide(
             self.pools[PgRole.OWNER], subject_id=subject_id, kind=kind, **fields
         )
@@ -282,21 +282,68 @@ def test_illegal_transitions_are_refused_through_decide(
     assert (None if not before else flow.ledger.head(version_id)) == head
 
 
-def test_approval_binds_only_the_latest_passing_as_known_validation(flow: Flow) -> None:
-    """A latest ``RETROSPECTIVE`` validation cannot bind an approval, even after a passing
-    ``AS_KNOWN`` one; a fresh ``AS_KNOWN`` validation then binds."""
+def test_approval_binds_the_deciders_own_check(flow: Flow) -> None:
+    """Runtime validations are advisory: with a latest ``RETROSPECTIVE`` one, the owner's
+    APPROVE binds the ``AS_KNOWN`` check the owner writes in the deciding transaction. With no
+    catalog and snapshots to check with, an APPROVE is refused."""
     report, policy = flow.report()
     version_id = flow.draft(report, policy)
     flow.submit(version_id)
-    flow.validate(version_id)
     retrospective = flow.validate(version_id, RunMode.RETROSPECTIVE)
-    assert retrospective.claim_states == (("policy.cap", ClaimState.MATCH),)
-    with pytest.raises(DecisionRefusedError, match="latest passing AS_KNOWN"):
-        flow.decide(version_id, DecisionKind.APPROVE)
-    as_known = flow.validate(version_id)
+    with pytest.raises(DecisionRefusedError, match="passing AS_KNOWN check"):
+        flow.decide(version_id, DecisionKind.APPROVE, catalog=None)
     approval = flow.decide(version_id, DecisionKind.APPROVE)
-    assert approval.validation_id == as_known.id
-    assert flow.status(version_id) is VersionStatus.APPROVED
+    with flow.pools[PgRole.RUNTIME].connection() as conn:
+        bound = store.latest_validation(conn.cursor(), version_id)
+        written = conn.execute(
+            "SELECT v.creator, v.created_xid = d.created_xid FROM eqos.validations v "
+            "JOIN eqos.decisions d ON d.validation_id = v.id WHERE d.id = %s",
+            (approval.id,),
+        ).fetchone()
+    assert bound is not None and bound.id == approval.validation_id != retrospective.id
+    assert (bound.mode, bound.claim_states) == (
+        RunMode.AS_KNOWN,
+        (("policy.cap", ClaimState.MATCH),),
+    )
+    assert written == ("OWNER", True)
+
+
+def test_a_forged_runtime_validation_cannot_make_a_version_eligible(flow: Flow) -> None:
+    """The claim states 999999.99 against a policy of 0.5: its check is ``VALUE_MISMATCH``. A
+    newer ``MATCH`` validation the runtime writes does not let the owner approve it."""
+    report, policy = flow.report()
+    wrong = policy_claim(policy.id).model_copy(update={"value": Decimal("999999.99")})
+    version_id = flow.draft(report, policy, claims=(wrong,))
+    flow.submit(version_id)
+    genuine = flow.validate(version_id)
+    assert genuine.claim_states == (("policy.cap", ClaimState.VALUE_MISMATCH),)
+    forged = genuine.model_copy(
+        update={"claim_states": (("policy.cap", ClaimState.MATCH),), "id": None}
+    )
+    with flow.pools[PgRole.RUNTIME].connection() as conn, conn.transaction():
+        store.insert_validation(conn.cursor(), forged)
+    with pytest.raises(DecisionRefusedError, match="passing AS_KNOWN check"):
+        flow.decide(version_id, DecisionKind.APPROVE)
+    assert flow.status(version_id) is VersionStatus.IN_REVIEW
+
+
+def test_a_narrative_that_misses_its_content_hash_cannot_be_approved(flow: Flow) -> None:
+    """A version with a false content hash, sealed by direct SQL past ``lifecycle.submit``,
+    is refused at the owner's APPROVE: its narrative does not reproduce the hash."""
+    report, policy = flow.report()
+    draft = flow.ledger.version_draft(
+        report,
+        knowledge_cutoff=policy.recorded_at,
+        sections=(SECTION,),
+        claims=(policy_claim(policy.id),),
+        content_hash="f" * 64,
+    )
+    with flow.pools[PgRole.RUNTIME].connection() as conn, conn.transaction():
+        version_id = store.create_version(conn.cursor(), draft)
+    flow.ledger.submit(version_id)
+    with pytest.raises(DecisionRefusedError, match="content hash"):
+        flow.decide(version_id, DecisionKind.APPROVE)
+    assert flow.status(version_id) is VersionStatus.IN_REVIEW
 
 
 def test_a_draft_with_an_unresolved_claim_cannot_be_submitted(flow: Flow) -> None:
