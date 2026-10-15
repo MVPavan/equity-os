@@ -26,18 +26,20 @@ import pytest
 import yaml
 from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
-from manifest_support import check_ledger
+from manifest_support import check_ledger, check_ledger_stage3
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
 STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml"
 LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
 LEDGER2 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml"
+LEDGER3 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml"
 E2E = {
     "stage1": "tests/fundamentals/test_data_stage1_e2e.py",
     "stage2": "tests/fundamentals/test_data_stage2_e2e.py",
     "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
     "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
+    "ledger_stage3": "tests/fundamentals/test_ledger_stage3_e2e.py",
 }
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"
@@ -661,7 +663,15 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
 @per_manifest
 def test_values_follow_from_their_lexemes(path: Path) -> None:
     manifest = load(path)
-    (check_ledger if "versions" in manifest else check_values)(manifest)
+    if path == LEDGER3:
+        check_stage3(manifest)
+    else:
+        (check_ledger if "versions" in manifest else check_values)(manifest)
+
+
+def check_stage3(manifest: dict[str, Any]) -> None:
+    """The ledger Stage 3 check over the approved Stage 1/2 manifests it cites."""
+    check_ledger_stage3(manifest, lambda label, at: field_at(source(manifest, label)[0], at))
 
 
 def claim_of(manifest: dict[str, Any], version: str, key: str) -> dict[str, Any]:
@@ -748,3 +758,43 @@ def test_manifest_is_approved(path: Path) -> None:
     assert approval["verdict"] == "APPROVE"
     assert isinstance(approval["date"], date), "an approval records its date (YYYY-MM-DD)"
     assert approval["payload_sha256"] == payload, "the approval covers another payload"
+
+
+def stage3_file(manifest: dict[str, Any], stem: str) -> dict[str, Any]:
+    (found,) = [f for f in manifest["files"] if f["stem"] == stem]
+    return cast(dict[str, Any], found)
+
+
+def drop_version(manifest: dict[str, Any]) -> None:
+    """FY26_Q4 dropped from the files and, consistently, from the reader rows."""
+    manifest["files"].remove(stage3_file(manifest, "FY26_Q4-EARNINGS_UPDATE-v1"))
+    manifest["reader"]["report_status_view"] = [
+        row for row in manifest["reader"]["report_status_view"] if row["period"] != "FY26_Q4"
+    ]
+    manifest["header"]["size"]["files"] -= 1
+
+
+LEDGER3_MUTATIONS: dict[str, Mutation] = {
+    "status-changed-locator-intact": lambda m: stage3_file(m, "FY27_Q1-EARNINGS_UPDATE-v1").update(
+        status="HISTORICAL"
+    ),
+    "version-dropped": drop_version,
+    "view-deleted-with-refusals": lambda m: [
+        m["reader"][k].pop(i) for k, i in (("views", 1), ("refused", 1))
+    ],
+    "view-duplicated-with-refusals": lambda m: m["reader"].update(
+        views=m["reader"]["views"][:1] * 2,
+        refused=m["reader"]["refused"][:1] * 2 + m["reader"]["refused"][2:],
+    ),
+    "rules-removed": lambda m: m["header"].pop("rules"),
+}
+
+
+@pytest.mark.parametrize("name", LEDGER3_MUTATIONS)
+def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
+    """The Stage 3 check passes on the frozen manifest and fails once an expectation drifts."""
+    manifest = copy.deepcopy(load(LEDGER3))
+    check_stage3(manifest)
+    LEDGER3_MUTATIONS[name](manifest)
+    with pytest.raises(AssertionError):
+        check_stage3(manifest)
