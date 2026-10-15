@@ -19,7 +19,14 @@ import structlog
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.pg.settings import MIGRATOR_ROLE_NAME, RUNTIME_ROLE_NAME, PgSettings
+from fundamentals.pg.role_secrets import RoleLogin
+from fundamentals.pg.settings import (
+    GROUP_ROLES,
+    MIGRATOR_ROLE_NAME,
+    RUNTIME_ROLE_NAME,
+    PgRole,
+    PgSettings,
+)
 
 MIGRATION_SUFFIX = ".sql"
 MIGRATION_NAME_PATTERN = re.compile(r"^\d{4}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$")
@@ -42,6 +49,11 @@ _RECORD_APPLIED = (
 _LOCK = "SELECT pg_advisory_lock(%s)"
 _UNLOCK = "SELECT pg_advisory_unlock(%s)"
 _ROLE_EXISTS = "SELECT 1 FROM pg_roles WHERE rolname = %s"
+_IS_MEMBER = (
+    "SELECT 1 FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid "
+    "JOIN pg_roles u ON u.oid = m.member WHERE g.rolname = %s AND u.rolname = %s"
+)
+_FOREIGN_LOGIN = "role {login} exists and is not a member of {group}"
 _BAD_NAME = "migration file names must match NNNN_<snake>.sql: {names}"
 _CHECKSUM_DRIFT = "applied migration {filename} changed: recorded {recorded}, on disk {actual}"
 
@@ -66,13 +78,46 @@ class MigrationNameError(ValueError):
     """A file in the migrations directory is not named ``NNNN_<snake>.sql``."""
 
 
+class LoginRoleError(ValueError):
+    """A credential file names an existing role that is not a member of its group."""
+
+
+def ensure_group_roles(admin: psycopg.Connection) -> None:
+    """Create the NOLOGIN ``eqos_panel`` and ``eqos_owner`` group roles if missing; never alter."""
+    for group in GROUP_ROLES.values():
+        if admin.execute(_ROLE_EXISTS, (group,)).fetchone() is None:
+            admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(group)))
+            _log.info("pg_role_created", role=group)
+
+
+def create_login(admin: psycopg.Connection, role: PgRole, login: RoleLogin) -> None:
+    """Create ``login`` as a member of the role's group; an existing member is a no-op.
+
+    An existing role outside the group is refused, never altered or granted.
+    """
+    group = GROUP_ROLES[role]
+    if admin.execute(_ROLE_EXISTS, (login.login,)).fetchone() is not None:
+        if admin.execute(_IS_MEMBER, (group, login.login)).fetchone() is None:
+            raise LoginRoleError(_FOREIGN_LOGIN.format(login=login.login, group=group))
+        return
+    admin.execute(
+        sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} IN ROLE {}").format(
+            sql.Identifier(login.login),
+            sql.Literal(login.password.get_secret_value()),
+            sql.Identifier(group),
+        )
+    )
+    _log.info("pg_role_created", role=login.login, group=group)
+
+
 def bootstrap_roles(admin: psycopg.Connection, settings: PgSettings, dbname: str) -> None:
-    """Create the migrator and runtime roles if missing and grant them the database.
+    """Create the migrator, runtime and group roles if missing and grant them the database.
 
     An existing role is never altered — not its password, not its attributes —
     so bootstrap is safe to repeat and cannot reset an operator's change.
     """
     with admin.transaction():
+        ensure_group_roles(admin)
         for role_name, password in (
             (MIGRATOR_ROLE_NAME, settings.migrator_password),
             (RUNTIME_ROLE_NAME, settings.runtime_password),
@@ -90,11 +135,12 @@ def bootstrap_roles(admin: psycopg.Connection, settings: PgSettings, dbname: str
                 database, sql.Identifier(MIGRATOR_ROLE_NAME)
             )
         )
-        admin.execute(
-            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                database, sql.Identifier(RUNTIME_ROLE_NAME)
+        for role_name in (RUNTIME_ROLE_NAME, *GROUP_ROLES.values()):
+            admin.execute(
+                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                    database, sql.Identifier(role_name)
+                )
             )
-        )
 
 
 def apply_migrations(

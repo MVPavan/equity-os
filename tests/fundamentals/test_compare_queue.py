@@ -504,7 +504,9 @@ def test_concurrent_reversed_batches_share_items_without_deadlock(queue: Fixture
     assert dict(links) == dict.fromkeys(run_ids, 2)
 
 
-def test_overlay_boundary_waits_for_writers_and_rereads_identically(queue: Fixture) -> None:
+def test_overlay_boundary_waits_for_writers_and_rereads_identically(
+    queue: Fixture, pg_db: PgTestDatabase
+) -> None:
     """A boundary taken while a run is publishing waits for it; later writes never leak in."""
     started, release = threading.Event(), threading.Event()
 
@@ -526,14 +528,15 @@ def test_overlay_boundary_waits_for_writers_and_rereads_identically(queue: Fixtu
     before = read_overlay(queue.pool, run_id=run_id, as_of=as_of)
     (item,) = before.open_items
     assert item.run_id == run_id and item.recorded_at <= as_of and before.dispositions == ()
-    disposition = record_disposition(
-        queue.pool,
-        item_id=item.item_id,
-        kind=DispositionKind.PARSER_DEFECT,
-        reason="fixture",
-        decider="fixture-reviewer",
-        evidence_ref="fixture-evidence",
-    )
+    with pg_db.owner_pool() as owner:
+        disposition = record_disposition(
+            owner,
+            item_id=item.item_id,
+            kind=DispositionKind.PARSER_DEFECT,
+            reason="fixture",
+            decider="fixture-reviewer",
+            evidence_ref="fixture-evidence",
+        )
     later_run, _ = queue.publish(2, (queue.draft(),))
     assert read_overlay(queue.pool, run_id=run_id, as_of=as_of) == before
     assert read_overlay(queue.pool, run_id=later_run, as_of=as_of).open_items == ()

@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 import yaml
+from ledger_support import LEDGER_TABLES
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
 from retained_support import APAR_ISSUER_CONFIG
@@ -42,6 +43,9 @@ MANIFEST = load(REPO / "tests/fundamentals/fixtures/data_foundation/stage2_manif
 (STORE,) = MANIFEST["import"]["stores"]
 CUTOFFS = [(datetime.fromisoformat(cut["at"]), cut["row_ids"]) for cut in MANIFEST["cutoffs"]]
 RESULT_COUNT = 441
+# The frozen backup inventory is 0001-0011's; the tables later migrations add, by name (plan D3,
+# finding 14). Each migration adding a table extends this in the same reviewed change.
+POST_0011_TABLES = LEDGER_TABLES
 # The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
 EXCLUDED = {
     "excise_duty|Q|-|REPORTED": "NOT_SINGLE_REPRESENTATION",
@@ -256,7 +260,7 @@ def test_stage2_end_to_end(
     )
     backup, written = MANIFEST["backup"], verify_set(sets)
     assert (len(written.captures), len(written.run_ids)) == (backup["captures"], backup["runs"])
-    assert sorted(written.table_counts) == backup["tables"]
+    assert sorted(written.table_counts) == sorted([*backup["tables"], *POST_0011_TABLES])
     fresh = mint_name(rig.settings)
     try:
         check = restore_backup(

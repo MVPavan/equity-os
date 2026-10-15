@@ -17,12 +17,14 @@ resolution failure before commit exits ``FAILURE`` with a structlog error that n
 credential. A report refuses a dictionary whose content differs from the run's pin.
 ``run`` exits ``SUCCESS_WITH_OPEN_HIGH`` when the run's queue holds an open ``HIGH`` item.
 Queue reads default to the current overlay boundary; ``--as-of`` may not be later. A
-disposition's time is the store clock's; role gating is D3's.
+disposition's time is the store clock's; ``dispose`` runs as the owner role, its login read
+from the owner credential file (plan D3, D2 and D11).
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from datetime import date, datetime
@@ -73,6 +75,7 @@ from fundamentals.evidence.alignment import AlignmentLoadError
 from fundamentals.evidence.mapping import MappingLoadError
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
+from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
 
 COMPARE_COMMAND = "compare"
@@ -184,6 +187,7 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         DefinitionSetError,
         DictionaryLoadError,
         RoundingPolicyError,
+        RoleSecretError,
         MappingLoadError,
         AlignmentLoadError,
         yaml.YAMLError,
@@ -295,11 +299,12 @@ def _dispositions(overlay: QueueOverlay, item_id: int) -> list[str]:
 
 
 def _dispose(args: argparse.Namespace) -> int:
-    """Record one disposition at the store clock's time."""
+    """Record one disposition as the owner role at the store clock's time."""
     kind = DispositionKind(args.kind)
     if kind is DispositionKind.ACCEPTED_AS_DEFINITION and args.explained_amount is None:
         raise CompareCommandError(_NO_AMOUNT)
-    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+    login = load_login(PgRole.OWNER, secrets_dir(os.environ))
+    with open_pool(PgSettings(), PgRole.OWNER, login=login) as pool:
         disposition = record_disposition(
             pool,
             item_id=args.item,

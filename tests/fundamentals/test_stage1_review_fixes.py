@@ -162,7 +162,7 @@ def test_identical_concurrent_ingests_both_reuse_one_generation(
 
 @LAURUS
 def test_queue_writes_serialize_at_the_database(stage: Stage) -> None:
-    """C5: a runtime-role disposition inserted by plain SQL holds the queue lock until commit,
+    """C5: an owner-role disposition inserted by plain SQL holds the queue lock until commit,
     so a boundary taken meanwhile waits and then sees it; a transaction that read the store
     clock first cannot write the queue at all."""
     outcome = full_run(stage)
@@ -171,7 +171,7 @@ def test_queue_writes_serialize_at_the_database(stage: Stage) -> None:
         "INSERT INTO eqos.queue_dispositions (item_id,kind,reason,decider,evidence_ref) "
         "VALUES (%s,'DISMISSED','c5','test','test-only')"
     )
-    conninfo = stage.pg_db.settings.conninfo(PgRole.RUNTIME, dbname=stage.pg_db.dbname)
+    conninfo = stage.pg_db.conninfo(PgRole.OWNER)
     with psycopg.connect(conninfo) as writer:
         writer.execute("SELECT eqos.store_now()")
         with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState):

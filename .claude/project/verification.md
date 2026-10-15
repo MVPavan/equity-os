@@ -66,5 +66,17 @@ needs `scripts/stage2_recreation_check.sh` to exit 0. On its own throwaway compo
 rehearses runbook steps 6–9 on copies (step 10's report run is covered by the e2e instead), proves an identical inventory across `down`/`up`, runs
 `test_data_stage2_e2e.py` there and restores onto a fresh instance with replay.
 
+### Panel and owner credentials (D3)
+
+`0012_report_ledger.sql` grants to two NOLOGIN group roles, `eqos_panel` and `eqos_owner`, which
+`fundamentals db bootstrap` creates if missing (run it before `db migrate` applies 0012). Ledger
+commands, `compare queue dispose` and `db bootstrap` read the member logins from 0600 files
+outside every runtime config, in `${EQOS_SECRETS_DIR:-~/.secrets}`: `eqos_panel.login` and
+`eqos_owner.login`, each one line
+`<login>:<password>` (login `[a-z_][a-z0-9_]*`; the file owned by you, no group or other
+permission bits). After creating them, re-run `fundamentals db bootstrap` to create the logins;
+a missing file skips that login and refuses only the commands that need it. Tests create their
+own randomized logins and files in a temporary directory and never read `~/.secrets`.
+
 No completion claim without fresh evidence: run the command, read the output
 and exit status, report the actual result.

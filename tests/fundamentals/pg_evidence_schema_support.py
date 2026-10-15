@@ -15,6 +15,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from ledger_support import LEDGER_TABLES
 from pg_support import REPO_ROOT, PgTestDatabase
 from psycopg import sql
 from psycopg.rows import dict_row
@@ -529,8 +530,9 @@ def _seed_every_table(conn: psycopg.Connection) -> dict[str, int]:
 
 
 @pytest.fixture
-def seeded(runtime: psycopg.Connection) -> dict[str, int]:
-    """One row in every table, the queue's included, written by the runtime role."""
+def seeded(pg_db: PgTestDatabase, runtime: psycopg.Connection) -> dict[str, int]:
+    """One row in every evidence table, the queue's included, written by the runtime role
+    (the disposition by the owner role, plan D3 D11)."""
     ids = _seed_every_table(runtime)
     from selection_support import key
 
@@ -565,8 +567,9 @@ def seeded(runtime: psycopg.Connection) -> dict[str, int]:
         ids["queue_run_items"] = _insert(
             runtime, "queue_run_items", {"run_id": ids["runs"], "item_id": item}
         )
+    with psycopg.connect(pg_db.conninfo(PgRole.OWNER), autocommit=True) as owner:
         ids["queue_dispositions"] = _insert(
-            runtime,
+            owner,
             "queue_dispositions",
             {
                 "item_id": item,
@@ -625,11 +628,12 @@ def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
 
 
 def _tables(conn: psycopg.Connection) -> list[str]:
+    """The evidence tables: the ledger's have their own matrix in test_ledger_integrity."""
     rows = conn.execute(
         "SELECT tablename FROM pg_tables WHERE schemaname = %s ORDER BY tablename",
         (SCHEMA_NAME,),
     ).fetchall()
-    return [row[0] for row in rows]
+    return [row[0] for row in rows if row[0] not in LEDGER_TABLES]
 
 
 def _update_column(conn: psycopg.Connection, table: str) -> str:

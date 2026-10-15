@@ -9,10 +9,14 @@ field can never echo a credential into a log or a test report.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from psycopg.conninfo import make_conninfo
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from fundamentals.pg.role_secrets import RoleLogin
 
 MIGRATOR_ROLE_NAME = "eqos_migrator"
 RUNTIME_ROLE_NAME = "eqos_runtime"
@@ -22,14 +26,23 @@ ENV_PREFIX = "EQOS_PG_"
 ENV_FILE = ".env"
 APPLICATION_NAME = "equity-os"
 _STATEMENT_TIMEOUT_OPTION = "-c statement_timeout={ms}"
+_ROLE_OPTION = " -c role={group}"
+_LOGIN_MISMATCH = "role {role} {verb} a login from a credential file"
 
 
 class PgRole(StrEnum):
-    """Which of the three database roles a connection authenticates as."""
+    """Which database role a connection authenticates as."""
 
     ADMIN = "ADMIN"
     MIGRATOR = "MIGRATOR"
     RUNTIME = "RUNTIME"
+    PANEL = "PANEL"
+    OWNER = "OWNER"
+
+
+# NOLOGIN group roles; a member login connects with ``role=<group>``, so ``current_user`` is the
+# group inside the session (plan D3, D2).
+GROUP_ROLES: dict[PgRole, str] = {PgRole.PANEL: "eqos_panel", PgRole.OWNER: "eqos_owner"}
 
 
 class PgSettings(BaseSettings):
@@ -60,9 +73,24 @@ class PgSettings(BaseSettings):
     pool_max_size: int = 4
     test_db_prefix: str = "eqos_test_"
 
-    def conninfo(self, role: PgRole, *, dbname: str | None = None) -> str:
-        """A libpq connection string for one role, with both timeouts applied."""
-        user, password = self._credentials(role)
+    def conninfo(
+        self, role: PgRole, *, dbname: str | None = None, login: RoleLogin | None = None
+    ) -> str:
+        """A libpq connection string for one role, with both timeouts applied.
+
+        ``PANEL`` and ``OWNER`` need a member ``login`` and act as their group role; the other
+        roles refuse one.
+        """
+        group = GROUP_ROLES.get(role)
+        if (group is None) != (login is None):
+            verb = "needs" if login is None else "refuses"
+            raise ValueError(_LOGIN_MISMATCH.format(role=role.value, verb=verb))
+        options = _STATEMENT_TIMEOUT_OPTION.format(ms=self.statement_timeout_ms)
+        if login is not None:
+            user, password = login.login, login.password
+            options += _ROLE_OPTION.format(group=group)
+        else:
+            user, password = self._credentials(role)
         return make_conninfo(
             host=self.host,
             port=self.port,
@@ -70,7 +98,7 @@ class PgSettings(BaseSettings):
             user=user,
             password=password.get_secret_value(),
             connect_timeout=self.connect_timeout_s,
-            options=_STATEMENT_TIMEOUT_OPTION.format(ms=self.statement_timeout_ms),
+            options=options,
             application_name=APPLICATION_NAME,
         )
 

@@ -306,14 +306,15 @@ def test_open_high_refuses_until_disposed(apar: Ran) -> None:
     refused = admit_run(run_id, pool=pool, store_id=store_id)
     assert dict(refused.refusals)[row.row_id] is AdmissionRefusal.OPEN_HIGH
 
-    record_disposition(
-        pool,
-        item_id=item_id,
-        kind=DispositionKind.DISMISSED,
-        reason="test: closes the HIGH",
-        decider="test",
-        evidence_ref="test-only",
-    )
+    with stage.pg_db.owner_pool() as owner:
+        record_disposition(
+            owner,
+            item_id=item_id,
+            kind=DispositionKind.DISMISSED,
+            reason="test: closes the HIGH",
+            decider="test",
+            evidence_ref="test-only",
+        )
     (disposition,) = read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool)).dispositions
     record = _record(admit_run(run_id, pool=pool, store_id=store_id).records, row)
     assert record.overlay_position > disposition.recorded_at

@@ -17,6 +17,7 @@ matched set of ``EQOS_PG_DB``; ``restore --database`` only names the new
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -28,12 +29,20 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.backup import BackupError, restore_backup, write_backup
 from fundamentals.pg.migrations import (
+    LoginRoleError,
     MigrationChecksumError,
     MigrationNameError,
     apply_migrations,
     bootstrap_roles,
+    create_login,
 )
-from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.pg.role_secrets import (
+    MissingRoleSecretError,
+    RoleSecretError,
+    load_login,
+    secrets_dir,
+)
+from fundamentals.pg.settings import GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import HarnessGuardError, create_test_database
 
 DB_COMMAND = "db"
@@ -49,7 +58,10 @@ DEFAULT_CONFIG_ROOT = "config"
 _ACTION_DEST = "db_action"
 _MIGRATIONS_DIR_FLAG = "--migrations-dir"
 _HELP = "bootstrap PostgreSQL roles or apply evidence-schema migrations"
-_BOOTSTRAP_HELP = "create the migrator and runtime roles if missing and grant the database"
+_BOOTSTRAP_HELP = (
+    "create the migrator, runtime and group roles if missing, grant the database, and create "
+    "the panel and owner logins named in the credential files"
+)
 _MIGRATE_HELP = "apply every unrecorded migration as the migrator role"
 _MIGRATIONS_DIR_HELP = "directory of NNNN_<snake>.sql migration files"
 _BACKUP_HELP = "write a matched backup set of EQOS_PG_DB and its referenced captures"
@@ -117,6 +129,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
                 settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB), autocommit=True
             ) as admin:
                 bootstrap_roles(admin, settings, settings.db)
+                _create_logins(admin)
             sys.stdout.write(_BOOTSTRAPPED.format(dbname=settings.db) + "\n")
             return EXIT_OK
         with psycopg.connect(settings.conninfo(PgRole.MIGRATOR), autocommit=True) as migrator:
@@ -127,6 +140,8 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
         MigrationNameError,
         BackupError,
         HarnessGuardError,
+        RoleSecretError,
+        LoginRoleError,
     ) as refusal:
         structlog.get_logger("fundamentals.db").warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=str(refusal)
@@ -135,3 +150,18 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
     lines = [_APPLIED_HEADER.format(count=len(applied)), *(item.filename for item in applied)]
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
+
+
+def _create_logins(admin: psycopg.Connection) -> None:
+    """Create each panel or owner login whose credential file exists; skip a missing file."""
+    directory = secrets_dir(os.environ)
+    for role in GROUP_ROLES:
+        try:
+            login = load_login(role, directory)
+        except MissingRoleSecretError as missing:
+            structlog.get_logger("fundamentals.db").info(
+                "pg_role_login_skipped", role=role.value, detail=str(missing)
+            )
+            continue
+        with admin.transaction():
+            create_login(admin, role, login)
