@@ -1,0 +1,25 @@
+{
+  "now": {
+    "title": "D2.7: frozen Stage 2 manifest",
+    "detail": "Sol approved with changes (the ETR line needs source locators and an automated rounding check, plus a comment fix). Opus fix round r1 is running; then a Sol re-check, then the manifest is committed alone before D2.8.",
+    "stage": "eqos-01q.7"
+  },
+  "next": [
+    "D2.8: Stage 2 end-to-end test and container recreation script",
+    "D2 phase-end Sol review, then one fresh critical review",
+    "D3: report ledger (plan written just in time, Sol-reviewed)"
+  ],
+  "log": [
+    {"date": "2026-10-15", "text": "D2.7 manifest authored from source bytes; Sol: APPROVE WITH CHANGES (all frozen values verified)."},
+    {"date": "2026-10-15", "text": "D2.6 cutover, reconciliation and frozen-window rollback committed (f92671b)."},
+    {"date": "2026-10-15", "text": "D2.5 matched backup and test-only restore committed (7b824f4)."},
+    {"date": "2026-10-15", "text": "D2.4 admission policy; Apar Q2 FY26 tax 88.83, ETR 26.08%, headline PBT 340.53 (59290d2)."},
+    {"date": "2026-10-15", "text": "D2.3 PostgreSQL fact store committed (c91e635)."},
+    {"date": "2026-10-15", "text": "pipeline.py split under the 800-line cap (7a07317)."},
+    {"date": "2026-10-15", "text": "D2.2 legacy import committed (a0ef1e3)."},
+    {"date": "2026-10-15", "text": "D2.1 SQLite baseline characterization committed (5041970)."},
+    {"date": "2026-10-15", "text": "D2 plan committed after 3 Sol rounds plus orchestrator rulings (d663877)."},
+    {"date": "2026-10-14", "text": "PREP-1 mapping set v5 for the SEBI 2026-01-31 taxonomy (ba1c068)."},
+    {"date": "2026-10-14", "text": "D1b phase closed: Stage 1 e2e matches the Sol-approved frozen manifest."}
+  ]
+}
