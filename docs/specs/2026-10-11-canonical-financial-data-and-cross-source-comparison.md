@@ -690,23 +690,21 @@ multi-user deployment requires the secrets manager first.
    SQLite and PostgreSQL at several cutoffs; source fingerprints are unchanged after import.
 5. **Repeatability.** Re-importing the same fingerprint changes nothing. A different fingerprint is
    refused unless started as a new import.
-6. **Cutover.** After reconciliation and owner approval, consumers switch configuration to
-   PostgreSQL, and a cutover marker records the last imported ids. Legacy files stay read-only.
+6. **Cutover.** After reconciliation and owner approval, a cutover marker records the last
+   imported ids with fact-store writers still frozen (the rollback window, step 7); consumers then
+   switch configuration to PostgreSQL and writers reopen. Legacy files stay read-only.
    Post-cutover writes allocate ids in a PostgreSQL-native origin and record their target legacy
    store.
-7. **Rollback.** Allowed until the owner retires the legacy files; every post-marker write is
-   identifiable. Rollback freezes fact-store writers (writes are refused), seals a high-water mark,
-   replays writes through it in order into a copy of each target legacy file via the legacy write
-   path, which re-allocates ids. Ids are not preserved: PostgreSQL-native ids may collide with
-   legacy ids, and the selection digest binds `row_id`, `predecessor_id` and predecessor SHA-256, so
-   the legacy copy holds a **translated chain**: each selection is re-appended in order with
-   translated ids, so its digest is recomputed by the legacy path. A recorded correspondence
-   (native id/digest ↔ legacy id/digest) resolves every reference, and an independent verifier
-   recomputes each legacy digest from its translated fields and checks it equals the recorded legacy
-   digest, with counts and value hashes unchanged; native digests are not expected to equal legacy
-   ones. It then switches
-   configuration while frozen and resumes writers. If anything fails to replay or reconcile, nothing switches and
-   writers resume on PostgreSQL.
+7. **Rollback.** SQLite rollback is supported only during a frozen cutover window before
+   PostgreSQL writers reopen. The cutover marker is recorded with fact-store writers still frozen;
+   while frozen, every fact-store write is refused and persists nothing. Rollback inside the window
+   checks that each target store holds no row or selection beyond the marker's last imported ids
+   and that each legacy file still has its import fingerprint, then switches configuration back to
+   the legacy files for all target stores in one transaction; if any check fails, nothing switches.
+   Reopening PostgreSQL writers closes the window. Once post-cutover writes are accepted,
+   PostgreSQL remains authoritative; recovery uses verified matched backups and forward repair.
+   *Amendment 2026-10-14 (D2 plan ruling R1, orchestrator ruling after Sol r3, 2026-10-15): replaces the translated-chain
+   replay; the 43 legacy rows are all re-derivable from retained originals.*
 
 ### 7. New source: exchange shareholding filing (Stage 3)
 
@@ -896,16 +894,21 @@ status.
 - A vendor observation cannot be admitted as a fact (API-document bar holds).
 - The Stage 1 diagnostic fixture's cell remains admissible; the open `PARSE_CHECK_DISAGREE` item
   does not block admission.
+  *Amendment 2026-10-14 (ruling R3/OQ2, orchestrator ruling after Sol r3, 2026-10-15): under the Stage 1 Upstox amendment no
+  `PARSE_CHECK_DISAGREE` item can arise. The criterion is met by the amended diagnostic fixture: a
+  retained first-party cell with extraction `AGREE` and an open MEDIUM diagnostic
+  `NOT_COMPARABLE`/`PRECISION_UNSUPPORTED` Upstox item (Apar Q2 FY26 `total_income`, quarter) is
+  admitted; the same cell with an open non-diagnostic `HIGH` item is refused (control).*
 - A matched backup restores into a fresh instance and empty snapshot-store directory; every
   referenced capture resolves with a matching hash, and one stored run replays identically.
 - Data survives container recreation; the service listens only on `127.0.0.1`, configured port.
-- A rollback rehearsal with post-cutover fact writes interleaved across two stores replays and
-  reconciles them (translated chain) into the legacy copies, then reproduces post-write behaviour
-  on SQLite. **Digest fixture:** ids change on replay and ≥2 successive canonical decisions for one
-  content identity verify as a chain in the legacy copy (recomputed digests match the old/new
-  correspondence). A write that cannot be
-  replayed causes rollback to be refused with no configuration change. A write attempted during
-  rollback is refused while frozen, never lost.
+- A rollback rehearsal inside the frozen cutover window: a fact write attempted after the cutover
+  marker and before writers reopen is refused and persists nothing, and succeeds when retried on
+  the backend that is authoritative afterwards (never lost); rollback restores SQLite authority
+  (configuration routes to the unchanged legacy files, and cutoff queries equal the SQLite
+  baseline); a rollback whose checks fail (changed legacy fingerprint, or rows beyond the marker)
+  switches nothing, across all target stores. After writers reopen, rollback is refused.
+  *Amendment 2026-10-14 (ruling R1, orchestrator ruling after Sol r3, 2026-10-15).*
 
 ### Stage 3: shareholding filing
 
