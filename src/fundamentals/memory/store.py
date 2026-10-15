@@ -41,7 +41,7 @@ class MemoryStore(Protocol):
         self,
         query: str,
         *,
-        stock: int,
+        stock: int | None,
         kinds: frozenset[MemoryKind] | None,
         statuses: frozenset[MemoryStatus],
         cutoff: datetime | None,

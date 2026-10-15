@@ -58,7 +58,8 @@ _ITEMS: LiteralString = """SELECT to_jsonb(i) - 'statement_search' AS item,
     eqos.memory_item_supported(i.id, %(cutoff)s) AS supported
 FROM eqos.memory_items i WHERE {where} ORDER BY {order}"""
 _MATCHING: LiteralString = """(%(cutoff)s::timestamptz IS NULL OR i.recorded_at <= %(cutoff)s)
-    AND i.entity_id = %(stock)s AND (%(kinds)s::text[] IS NULL OR i.kind = ANY (%(kinds)s))
+    AND i.entity_id IS NOT DISTINCT FROM %(stock)s::bigint
+    AND (%(kinds)s::text[] IS NULL OR i.kind = ANY (%(kinds)s))
     AND (%(query)s = '' OR i.statement_search @@ websearch_to_tsquery('english', %(query)s))"""
 _BY_RANK: LiteralString = (
     "ts_rank(i.statement_search, websearch_to_tsquery('english', %(query)s)) DESC, i.id"
@@ -87,13 +88,14 @@ def retrieve(
     cursor: Cursor[Any],
     *,
     query: str,
-    stock: int,
+    stock: int | None,
     kinds: frozenset[MemoryKind] | None,
     statuses: frozenset[MemoryStatus],
     cutoff: datetime | None,
 ) -> tuple[RetrievedItem, ...]:
-    """The stock's items matching ``query`` (all when empty) and ``kinds`` (all when ``None``)
-    whose status at ``cutoff`` is in ``statuses``, best match first, then by id."""
+    """The stock's items (cross-stock ones when ``stock`` is ``None``) matching ``query`` (all
+    when empty) and ``kinds`` (all when ``None``) whose status at ``cutoff`` is in
+    ``statuses``, best match first, then by id."""
     kind_values = None if kinds is None else sorted(kind.value for kind in kinds)
     params = {"query": query, "stock": stock, "kinds": kind_values, "cutoff": cutoff}
     found = _items(cursor, _MATCHING, _BY_RANK if query else "i.id", params)

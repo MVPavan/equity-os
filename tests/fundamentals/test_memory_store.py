@@ -389,3 +389,30 @@ def test_promote_runs_at_read_committed_only(memory: Memory) -> None:
                 ruling=RULING,
             )
     assert memory.decide(OWNER, item, PROMOTE).kind is PROMOTE
+
+
+@pg
+def test_a_stale_snapshot_cannot_retire_an_item_its_successor_retired(memory: Memory) -> None:
+    """M2: an owner transaction whose REPEATABLE READ snapshot predates a successor's PROMOTE
+    cannot RETIRE the predecessor that PROMOTE already retired; every memory decision runs at
+    READ COMMITTED."""
+    earlier = memory.stage()
+    promotion = memory.decide(OWNER, earlier, PROMOTE)
+    correction = memory.stage(supersedes_item_id=earlier)
+    with (
+        pytest.raises(errors.CheckViolation, match="READ COMMITTED"),
+        memory.ledger._cursor(OWNER) as cursor,
+    ):
+        cursor.execute(b"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        digest = store.subject_digest(cursor, SubjectKind.MEMORY_ITEM, earlier)
+        memory.decide(OWNER, correction, PROMOTE)
+        store.insert_decision(
+            cursor,
+            subject_kind=SubjectKind.MEMORY_ITEM,
+            subject_id=earlier,
+            kind=RETIRE,
+            predecessor_id=promotion.id,
+            sealed_digest=digest,
+            ruling=RULING,
+        )
+    assert memory.one("SELECT count(*) FROM eqos.decisions WHERE kind = 'RETIRE'") == 0

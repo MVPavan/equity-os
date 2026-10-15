@@ -83,7 +83,7 @@ class PgMemoryStore:
         self,
         query: str,
         *,
-        stock: int,
+        stock: int | None,
         kinds: frozenset[MemoryKind] | None = None,
         statuses: frozenset[MemoryStatus] = frozenset({MemoryStatus.PROMOTED}),
         cutoff: datetime | None = None,

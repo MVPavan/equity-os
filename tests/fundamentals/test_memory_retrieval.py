@@ -111,6 +111,24 @@ def test_search_finds_the_item_and_the_filters_select(memory: Memory) -> None:
     }
 
 
+def test_stock_none_searches_the_cross_stock_items(memory: Memory) -> None:
+    """A promoted null-entity source quirk is found with no stock and not with a stock id; a
+    stock's item is not found with no stock (M6 correction)."""
+    quirk = promoted(
+        memory,
+        kind=MemoryKind.SOURCE_QUIRK,
+        entity_id=None,
+        statement="Transcript pagination restarts each section",
+        supports=cites((SupportTarget.CAPTURE, capture_of_blob(memory))),
+    )
+    promoted(memory)
+    assert [item.id for item in memory.store.retrieve("transcript pagination", stock=None)] == [
+        quirk
+    ]
+    assert [item.id for item in memory.store.retrieve("", stock=None)] == [quirk]
+    assert found(memory, "transcript pagination") == {}
+
+
 # --- cutoffs
 
 

@@ -18,8 +18,9 @@ from ledger_support import RULING, SECTION, claim, ledger, validation
 from memory_support import Memory, memory, promote
 from pg_evidence_schema_support import SHA_A, _capture, _insert, runtime, seeded
 from pg_support import PgTestDatabase
-from psycopg import errors
+from psycopg import errors, sql
 from test_ledger_claim_check import ANCHOR, CONTRACT, QUOTE, QUOTED, import_quote
+from test_ledger_lifecycle import POLICY
 from test_ledger_panel import FakeReviewer
 
 from fundamentals.contracts.evidence import RunMode
@@ -85,6 +86,29 @@ def no_promotion(memory: Memory, item_id: int) -> bool:
     return bool(memory.one(query, item_id) == 0)
 
 
+def stage_open(
+    cursor: psycopg.Cursor[Any], memory: Memory, support: tuple[str, int], **update: Any
+) -> int:
+    """Insert :meth:`Memory.draft`'s item with one ``(column, target)`` support in the caller's
+    open runtime transaction; returns the item id."""
+    draft = memory.draft(**update)
+    row = cursor.execute(
+        "INSERT INTO eqos.memory_items (entity_id, kind, statement, epistemic_class, valid_from) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (draft.entity_id, draft.kind, draft.statement, draft.epistemic_class, draft.valid_from),
+    ).fetchone()
+    assert row is not None
+    column, target = support
+    add_support(cursor, int(row[0]), column, target)
+    return int(row[0])
+
+
+def add_support(cursor: psycopg.Cursor[Any], item_id: int, column: str, target: int) -> None:
+    """A support on ``column``'s ``target`` in the caller's transaction."""
+    statement = sql.SQL("INSERT INTO eqos.memory_supports (item_id, {}) VALUES (%s, %s)")
+    cursor.execute(statement.format(sql.Identifier(column)), (item_id, target))
+
+
 # --- the support predicate at staging (M3)
 
 
@@ -93,6 +117,54 @@ def test_staging_refuses_a_historical_version(memory: Memory) -> None:
     historical = memory.ledger.imported(memory.ledger.report())
     with pytest.raises(errors.CheckViolation, match=REFUSED):
         memory.stage(supports=cites((VERSION, historical)))
+
+
+@pytest.mark.parametrize("appended", ["capture", "historical", "non_match"])
+def test_a_support_appended_after_the_items_check_ran_is_checked(
+    memory: Memory, appended: str
+) -> None:
+    """A forbidden support appended after SET CONSTRAINTS ALL IMMEDIATE ran the item's check is
+    refused: a capture on a company-understanding item, a HISTORICAL or a non-MATCH version."""
+    if appended == "capture":
+        column, target = "capture_ref_id", capture_of_blob(memory)
+    elif appended == "historical":
+        column, target = "version_id", memory.ledger.imported(memory.ledger.report())
+    else:
+        column, target = "version_id", memory.approved()
+        memory.ledger.validate(target, state=ClaimState.VALUE_MISMATCH)
+    with (
+        pytest.raises(errors.CheckViolation, match=REFUSED),
+        memory.ledger._cursor(RUNTIME) as cursor,
+    ):
+        item = stage_open(cursor, memory, ("version_id", memory.version_id))
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        add_support(cursor, item, column, target)
+    assert memory.one("SELECT count(*) FROM eqos.memory_items") == 0
+
+
+def test_a_support_recorded_after_its_item_is_refused(memory: Memory) -> None:
+    """An owner ruling item cites an owner decision recorded before it, but not the owner's
+    SET_POLICY another transaction commits after the item's store time: an item known at a
+    cutoff rests only on targets known by then (M3)."""
+    earlier = memory.ledger.head(memory.version_id).id
+    report = memory.ledger.report()
+    with (
+        pytest.raises(errors.CheckViolation, match="predates its support target"),
+        memory.ledger._cursor(RUNTIME) as cursor,
+    ):
+        item = stage_open(
+            cursor, memory, ("decision_id", earlier), kind=MemoryKind.OWNER_RULING, entity_id=None
+        )
+        later = memory.ledger.decide(
+            OWNER,
+            report,
+            DecisionKind.SET_POLICY,
+            subject_kind=SubjectKind.REPORT,
+            policy=POLICY,
+            ruling="future knowledge",
+        )
+        add_support(cursor, item, "decision_id", later.id)
+    assert memory.one("SELECT count(*) FROM eqos.memory_items") == 0
 
 
 @pytest.mark.parametrize(
