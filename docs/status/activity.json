@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: Long-term memory — writing the phase plan",
-    "detail": "D3 is closed. Opus writes the D4 plan (MemoryStore, promotion with its support predicate, search and cutoff retrieval, frozen ledger Stage 2 manifest, Stage 2 e2e); Sol reviews it before any build.",
+    "title": "D4: Sol reviewing the phase plan",
+    "detail": "Opus drafted plans/D4.md: two new tables (memory items, supports), decisions reuse D3's chain, one SQL support predicate, lock-ordered PROMOTE race guard, store-clock cutoffs, Postgres full-text search. Open rulings for Sol: SERIALIZABLE wording (C1), dropped fields, and how the Apar cables-margin quotes get registered and approved for the Stage 2 e2e.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 plan drafted by Opus (plans/D4.md, 5 tasks, migrations 0016–0017); Sol plan review r1 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 Report ledger complete: critical-review fixes (migration 0015) committed 483b7c6, Sol re-review APPROVE (7/7 resolved). Full suite 3,450 passed. Epic eqos-uqu closed; 30 of 66 stages built."
