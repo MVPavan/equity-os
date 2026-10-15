@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D4.3: search, cutoff retrieval and revalidation flags",
-    "detail": "D4.2 committed (195bff5): the SQL support rule, queue-lock race guard (proven by observing blocked backends), commit-time re-check, PROMOTE-last rule, and sealed-import guidance-contract binding; D3 suites unchanged; full suite 3,531 passed. Opus is building retrieval: full-text search, as-of-cutoff results on store time, NEEDS_REVALIDATION flags and full provenance, all from one consistent snapshot.",
-    "stage": "eqos-4hi.3"
+    "title": "D4.4: transcript go/no-go probe, then the frozen Stage 2 manifest",
+    "detail": "D4.3 committed (c382308): full-text search, as-of-cutoff retrieval on store time, NEEDS_REVALIDATION flags and provenance from one consistent snapshot; 3,544 passed (one known pool-timeout flake, passes on rerun). Opus first checks whether existing product code can register the two Apar call transcripts as first-party sources; if not, it stops and reports. If yes, it authors the Stage 2 manifest from source bytes for Sol's approval.",
+    "stage": "eqos-4hi.4"
   },
   "next": [
-    "Transcript-registration go/no-go probe → D4.4 frozen ledger Stage 2 manifest (Sol-approved)",
+    "Sol approves the Stage 2 manifest; commit it before the e2e",
     "D4.5 Stage 2 e2e: Apar cables-margin guidance promoted only after a panel PROMOTE",
     "D4 phase review loop and fresh critical review; close eqos-4hi"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4.3 committed (c382308): search, cutoff retrieval, revalidation flags, provenance. Transcript probe + Stage 2 manifest dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4.2 committed (195bff5): support predicate, PROMOTE race guard, guidance-contract binding; 3,531 passed. D4.3 dispatched."
