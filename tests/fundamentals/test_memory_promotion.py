@@ -10,6 +10,7 @@ are authoritative, so each refusal is provoked by the stager, the store or a dir
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 
 import psycopg
@@ -164,6 +165,60 @@ def test_a_support_recorded_after_its_item_is_refused(memory: Memory) -> None:
             ruling="future knowledge",
         )
         add_support(cursor, item, "decision_id", later.id)
+    assert memory.one("SELECT count(*) FROM eqos.memory_items") == 0
+
+
+@pytest.mark.parametrize("column", ["claim_id", "version_id"])
+def test_a_claim_appended_to_a_version_after_its_item_is_refused(
+    memory: Memory, column: str
+) -> None:
+    """A claim another transaction appends to an unsealed version after the item's store time,
+    and that version, are known only from its SUBMIT, so neither supports the item even once the
+    version is approved (M3)."""
+    version = memory.ledger.draft(memory.ledger.report())
+    section = memory.one("SELECT id FROM eqos.report_sections WHERE version_id = %s", version)
+    with (
+        pytest.raises(errors.CheckViolation, match="predates its support target"),
+        memory.ledger._cursor(RUNTIME) as cursor,
+    ):
+        item = stage_open(cursor, memory, ("version_id", memory.version_id))
+        with memory.ledger._cursor(RUNTIME) as other:
+            row = store._claim_row(
+                claim(memory.ledger.trace_id, "future.claim"),
+                version,
+                {SECTION.section_key: section},
+            )
+            future = store._insert(other, "numeric_claims", row)
+        memory.ledger.submit(version)
+        memory.ledger.approve(version)
+        add_support(cursor, item, column, future if column == "claim_id" else version)
+    assert memory.one("SELECT count(*) FROM eqos.memory_items") == 0
+
+
+def test_a_capture_first_seen_after_its_item_is_refused(memory: Memory) -> None:
+    """A capture registered before the item's store time but first seen after it is known only
+    from first sight, as the evidence layer selects it (M3)."""
+    with (
+        pytest.raises(errors.CheckViolation, match="predates its support target"),
+        memory.ledger._cursor(RUNTIME) as cursor,
+    ):
+        item = stage_open(
+            cursor,
+            memory,
+            ("capture_ref_id", capture_of_blob(memory)),
+            kind=MemoryKind.SOURCE_QUIRK,
+            entity_id=None,
+        )
+        query = "SELECT recorded_at FROM eqos.memory_items WHERE id = %s"
+        (known,) = cursor.execute(query, (item,)).fetchone() or ()
+        with memory.ledger._cursor(RUNTIME) as other:
+            (seen,) = other.execute("SELECT eqos.store_now()").fetchone() or ()
+            row = _capture("cap-late") | {
+                "registered_at": known - timedelta(days=1),
+                "first_seen_at": seen,
+            }
+            late = _insert(other.connection, "capture_refs", row)
+        add_support(cursor, item, "capture_ref_id", late)
     assert memory.one("SELECT count(*) FROM eqos.memory_items") == 0
 
 
