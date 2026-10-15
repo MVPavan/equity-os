@@ -1,15 +1,18 @@
 {
   "now": {
-    "title": "D5.5: ledger Stage 3 end-to-end (D5 exit)",
-    "detail": "Stage 3 manifest approved by Sol (r2, after two checker fixes; values verified by hand incl. 193 untrusted claim states) and committed (d913827). Opus is writing the e2e: build the Stage 2 state, run `ledger export --stock APARINDS --status-notes --memory`, and check every file, note, hash, view row and refused write against the manifest.",
-    "stage": "eqos-tfb.5"
+    "title": "D5 phase-end review (Sol)",
+    "detail": "All D5 stages are built and committed; the Stage 3 e2e (1150ab7) exports Apar's narratives, status notes and promoted memory, checks every hash, note and view row against the approved manifest, and shows the read-only role writes nothing. Sol is reviewing the whole D5 diff in one exhaustive pass.",
+    "stage": "eqos-tfb"
   },
   "next": [
-    "D5 phase review: Sol exhaustive review, fixes, fresh critical review",
     "Then D6 identifier-only onboarding",
     "Follow-ups: eqos-d60, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D5.5 ledger Stage 3 e2e committed (1150ab7): stage 2+3 e2e pass, frozen manifests 76/76 incl. ancestry, full suite 3595 passed. D5 phase review dispatched to Sol."
+    },
     {
       "date": "2026-10-15",
       "text": "D5.4 frozen ledger Stage 3 manifest approved by Sol (r2) and committed (d913827). D5.5 e2e dispatched."
