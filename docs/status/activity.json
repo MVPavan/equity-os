@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: transcript sources can't be admitted yet — amendment in Sol review",
-    "detail": "The go/no-go probe failed: the issuer configs declare both Apar call transcripts as first-party with pinned hashes, but capture intake binds every PDF to the results PDF and no catalog reads the transcript declaration. The quote anchors themselves check out on the bytes. Rather than stop D4, the plan gains Task 3b (admit transcripts by pinned hash; catalog them first-party, quotes only, never reconciled). Sol is reviewing the amendment.",
+    "title": "D4 Task 3b: admitting the Apar call transcripts as first-party sources",
+    "detail": "Sol approved amendment T1 after three rounds. Opus is building capture-only transcript admission by pinned hash (no figures extracted, comparison untouched), a first-party quotes-only catalog entry read from the committed issuer configs via --issuer-config on the ledger commands, and an asserting acceptance test that replaces the go/no-go probe.",
     "stage": "eqos-4hi.4"
   },
   "next": [
@@ -10,6 +10,10 @@
     "D4 phase review loop and fresh critical review; close eqos-4hi"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 amendment T1 (transcript admission) approved by Sol in round 3 and committed (d012d33); Task 3b build dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 transcript go/no-go probe: NO-GO (admission + catalog gaps). Plan amendment T1 (Task 3b) written and sent to Sol."
