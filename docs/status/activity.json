@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "D4 phase-end review (Sol)",
-    "detail": "Sol's round 1 found 5 issues (guidance-contract check not failing closed, ambiguous contracts, PROMOTE-last rule only partly enforced, a reviewer RETIRE becoming PROMOTE, untested trigger pair); Opus fixed all (078a99b, migration 0018) and Sol approved round 2. A fresh Sol session is doing the final critical review.",
-    "stage": "eqos-4hi"
+    "title": "D5 generated views: phase plan",
+    "detail": "D4 long-term memory is complete on test databases and approved by Sol. Opus is writing the D5 phase plan (status notes and memory export, a read-only role over views, optional Obsidian export, frozen ledger Stage 3 manifest and its e2e); Sol reviews the plan before any code.",
+    "stage": "eqos-tfb"
   },
   "next": [
-    "Close epic eqos-4hi; then D5 generated views",
-    "Follow-ups: F1 reviewer adapter (eqos-tqf, incl. panel RETIRE), eqos-0eu, G3 bead; flakes eqos-1kq, eqos-bhy"
+    "D5 stages after plan approval",
+    "Follow-ups: eqos-d60 evidence knowledge time, F1 reviewer adapter (eqos-tqf, incl. panel RETIRE), eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 complete (epic eqos-4hi closed): critical review REJECT (4) → fixes 92491c4, 607bb67 (migrations 0019–0020) → re-review APPROVE; full suite 3578 passed. Evidence-layer knowledge-time gaps parked as eqos-d60. Roadmap 35/66 stages. D5 planning started."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 phase review: r1 REJECT (1 P1, 3 P2, 1 P3) → fix 078a99b (full suite 3569 passed) → r2 APPROVE. Fresh critical review dispatched."
