@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D4.1: building the memory schema and MemoryStore interface",
-    "detail": "D4 plan approved by Sol (after a 7-finding review, a 9-finding fresh critical review and three fix re-reviews) and committed with six ledger-spec amendments. Opus is building stage 1: migration 0016 (memory items, supports, decisions on the D3 chain), the MemoryStore interface, and an import-graph check that comparison code never reads memory.",
-    "stage": "eqos-4hi.1"
+    "title": "D4.2: support predicate, promotion race guard, guidance-contract binding",
+    "detail": "D4.1 committed (14d3d74): migration 0016, MemoryStore interface, staging; full suite 3,473 passed. Opus is building D4.2: the SQL support rule shared by staging and PROMOTE, the queue-lock race guard proven by observing blocked backends, the commit-time re-check and PROMOTE-last rule, and binding drafted quotes to the sealed import's guidance contract.",
+    "stage": "eqos-4hi.2"
   },
   "next": [
-    "D4.2 support predicate, PROMOTE race guard, supersession (migration 0017)",
-    "D4.3 search, cutoff retrieval, revalidation flags; then the transcript-registration go/no-go probe",
-    "D4.4 frozen ledger Stage 2 manifest (Sol-approved) → D4.5 Stage 2 e2e; phase review"
+    "D4.3 search, cutoff retrieval, revalidation flags",
+    "Transcript-registration go/no-go probe → D4.4 frozen ledger Stage 2 manifest (Sol-approved)",
+    "D4.5 Stage 2 e2e; D4 phase review loop and fresh critical review"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4.1 committed (14d3d74): memory schema, decisions on the ledger chain, MemoryStore + stage; 3,473 passed. D4.2 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 plan approved by Sol and committed (361807d) with ledger-spec amendments A1, A2, C2, C3, R, M9; D4.1 build dispatched."
