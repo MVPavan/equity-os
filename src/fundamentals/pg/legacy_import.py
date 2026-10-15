@@ -127,13 +127,14 @@ SELECT handle, origin, origin_id AS row_id, content_identity, value_hash, revisi
     revision_ordinal, canonical_status, canonical_selected_at, canonical_reason, source_id,
     file_sha256, anchor, valid_time_start, valid_time_end, knowledge_time, first_seen_time,
     fact_json, created_at
-FROM eqos.fact_rows WHERE target_store = %s ORDER BY handle
+FROM eqos.fact_rows WHERE target_store = %s AND origin = target_store ORDER BY handle
 """
 _STORE_SELECTIONS = """
 SELECT handle, origin, origin_id AS selection_id, content_identity, row_handle AS row_id,
     sequence, predecessor_handle AS predecessor_id, selected_at, reason,
     legacy_baseline::int AS legacy_baseline, selection_sha256, synthesized
-FROM eqos.fact_selections WHERE target_store = %s ORDER BY handle
+FROM eqos.fact_selections WHERE target_store = %s AND origin = target_store
+ORDER BY handle
 """
 _STORE_BINDINGS = """
 SELECT b.row_handle, b.file_sha256, b.anchor, c.source_id, c.surface, c.request_key,
@@ -369,7 +370,8 @@ def import_legacy(
 def verify_import(
     conn: psycopg.Connection[Any], store_id: str, file: Path, *, snapshots: SnapshotStore
 ) -> ImportCheck:
-    """Prove a store equals its source file: chains, rows, identities, bindings, captures."""
+    """Prove a store's imported rows equal its source file: chains, rows, identities, bindings,
+    captures. Native rows (written after reopen) are not read."""
     with conn.cursor(row_factory=dict_row) as cursor:
         found = cursor.execute(_FINGERPRINT, (store_id,)).fetchone()
         if found is None:

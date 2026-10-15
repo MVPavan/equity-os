@@ -37,6 +37,7 @@ from fundamentals.pg.approvals import (
     check_gate,
     is_test_database,
 )
+from fundamentals.pg.cutover import LEGAL_COMMANDS, FactStoreState
 from fundamentals.pg.legacy_import import (
     ImportRefusal,
     LegacyImportRefusedError,
@@ -405,4 +406,6 @@ def test_cli_preflight_import_status(
     assert main(["legacy", "import", "--manifest", manifest, "--preflight", str(report)]) == 0
     capsys.readouterr()
     assert main(["legacy", "status", "--manifest", manifest]) == 0
-    assert capsys.readouterr().out == f"aparinds\t{origin_id_for(LEGACY_SHA256)}\tIMPORTED\n"
+    commands = LEGAL_COMMANDS[FactStoreState.IMPORTED]
+    expected = f"aparinds\t{origin_id_for(LEGACY_SHA256)}\tIMPORTED\t{commands}\n"
+    assert capsys.readouterr().out == expected

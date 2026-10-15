@@ -12,7 +12,6 @@ from tests.fundamentals.test_pipeline_temporal_admission import inputs
 from fundamentals.api.cli import main, run_command
 from fundamentals.api.cli_parser import build_parser
 from fundamentals.ingest.pdf_source import load_pdf
-from fundamentals.store.fact_store import FactStore
 
 
 def cli_fixture(tmp_path: Path, *, future: bool = False) -> tuple[Path, Path, list[str]]:
@@ -153,13 +152,13 @@ def test_public_flags_reach_native_proof_refusal_before_constructor(
             connection.execute("INSERT INTO old_facts VALUES ('2024-07-18')")
     before = db.read_bytes() if legacy else None
     constructions = []
-    real_store = FactStore
+    real_store = cli.open_fact_store
 
     def observed_store(*a: Any, **kw: Any) -> Any:
         constructions.append(a)
         return real_store(*a, **kw)
 
-    monkeypatch.setattr(cli, "FactStore", observed_store)
+    monkeypatch.setattr(cli, "open_fact_store", observed_store)
     with pytest.raises(SourceAdmissionError, match="completion/first-seen/registration proof"):
         main(
             argv
@@ -201,13 +200,13 @@ def test_each_ineligible_cli_source_has_no_initialization_side_effects(
             conn.execute("INSERT INTO old_facts VALUES ('2024-07-18')")
     before = db.read_bytes() if legacy else None
     calls = []
-    real_store = FactStore
+    real_store = cli.open_fact_store
 
     def observed(*a: Any, **kw: Any) -> Any:
         calls.append(a)
         return real_store(*a, **kw)
 
-    monkeypatch.setattr(cli, "FactStore", observed)
+    monkeypatch.setattr(cli, "open_fact_store", observed)
     with pytest.raises(SourceAdmissionError):
         main(argv)
     assert calls == []

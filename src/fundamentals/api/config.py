@@ -535,6 +535,8 @@ class FundamentalsConfig(BaseModel):
     quarter: QuarterConfig
     raw_dir: str
     store_db: str
+    # The PostgreSQL fact store this issuer routes to once reopened (plan D2, Task 6).
+    fact_store_id: str | None = None
     ledger_path: str | None = None
     results_pdf: SourceFileConfig
     transcript_pdf: SourceFileConfig

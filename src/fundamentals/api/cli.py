@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -69,7 +70,9 @@ from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_
 from fundamentals.api.validate_cli import dispatch_validate_command
 from fundamentals.contracts.source_registration import SourceRegistrationError, SourceRole
 from fundamentals.ingest.xbrl_source import NseXbrlSource
-from fundamentals.store.fact_store import FactStore
+from fundamentals.pg.cutover import open_fact_store
+from fundamentals.pg.pool import open_pool
+from fundamentals.pg.settings import PgRole, PgSettings
 
 
 class _LazyStderrLoggerFactory:
@@ -225,8 +228,13 @@ def run_command(
         store_db_path = config.store_db_path(config_path)
         if store_db_path != ":memory:":
             Path(store_db_path).parent.mkdir(parents=True, exist_ok=True)
-        store = FactStore(store_db_path)
-        try:
+        with ExitStack() as stack:
+            store = open_fact_store(
+                config.fact_store_id,
+                store_db_path,
+                pool_factory=lambda: stack.enter_context(open_pool(PgSettings(), PgRole.RUNTIME)),
+            )
+            stack.callback(store.close)
             return run_pipeline(
                 config=config,
                 config_path=config_path,
@@ -238,8 +246,6 @@ def run_command(
                 store=store,
                 admitted_inputs=prepared,
             )
-        finally:
-            store.close()
 
 
 def main(

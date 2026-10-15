@@ -4,24 +4,28 @@
     db migrate [--migrations-dir migrations]
     db backup --out DIR --snapshot-root R
     db restore --set DIR --database D --snapshot-root R [--replay-runs] [--config-root config]
+    db create-test --suffix S
 
 All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as
 the admin role over the ``postgres`` maintenance database; ``migrate`` runs as
 the migrator role, which owns every object it creates. ``backup`` writes a
 matched set of ``EQOS_PG_DB``; ``restore --database`` only names the new
 ``eqos_test_*`` database to create, and exits nonzero unless every check passes.
+``create-test`` creates a guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 import psycopg
 import structlog
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.backup import BackupError, restore_backup, write_backup
 from fundamentals.pg.migrations import (
     MigrationChecksumError,
@@ -30,13 +34,14 @@ from fundamentals.pg.migrations import (
     bootstrap_roles,
 )
 from fundamentals.pg.settings import PgRole, PgSettings
-from fundamentals.pg.test_databases import HarnessGuardError
+from fundamentals.pg.test_databases import HarnessGuardError, create_test_database
 
 DB_COMMAND = "db"
 BOOTSTRAP_ACTION = "bootstrap"
 MIGRATE_ACTION = "migrate"
 BACKUP_ACTION = "backup"
 RESTORE_ACTION = "restore"
+CREATE_TEST_ACTION = "create-test"
 MAINTENANCE_DB = "postgres"
 DEFAULT_MIGRATIONS_DIR = "migrations"
 DEFAULT_CONFIG_ROOT = "config"
@@ -49,6 +54,7 @@ _MIGRATE_HELP = "apply every unrecorded migration as the migrator role"
 _MIGRATIONS_DIR_HELP = "directory of NNNN_<snake>.sql migration files"
 _BACKUP_HELP = "write a matched backup set of EQOS_PG_DB and its referenced captures"
 _RESTORE_HELP = "restore a verified set into a new eqos_test_* database and check it"
+_CREATE_TEST_HELP = "create a guarded eqos_test_<suffix>_<hex> database and print its name"
 _BOOTSTRAPPED = "bootstrapped\t{dbname}"
 _PUBLISHED = "published\t{path}"
 _APPLIED_HEADER = "applied\t{count}"
@@ -73,6 +79,8 @@ def add_db_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser
     restore.add_argument("--snapshot-root", required=True, type=Path)
     restore.add_argument("--replay-runs", action="store_true")
     restore.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    create_test = actions.add_parser(CREATE_TEST_ACTION, help=_CREATE_TEST_HELP)
+    create_test.add_argument("--suffix", required=True)
 
 
 def dispatch_db_command(args: argparse.Namespace) -> int | None:
@@ -82,6 +90,11 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
     settings = PgSettings()
     action = getattr(args, _ACTION_DEST)
     try:
+        if action == CREATE_TEST_ACTION:
+            name = f"{TEST_DATABASE_PREFIX}{args.suffix}_{uuid.uuid4().hex[:12]}"
+            create_test_database(settings, name)
+            sys.stdout.write(name + "\n")
+            return EXIT_OK
         if action == BACKUP_ACTION:
             published = write_backup(
                 settings, database=settings.db, snapshot_root=args.snapshot_root, out_dir=args.out
