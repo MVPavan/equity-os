@@ -6,6 +6,17 @@ Builds on: [canonical financial data and cross-source comparison](2026-10-11-can
 (the "data spec"); same PostgreSQL database, roles and integrity rules (data spec §6). Amends
 the data spec's retention and replay assumptions (§6 below).
 
+*Amendment 2026-10-15 (`eqos-uqu.10`, owner directive 2026-10-12): the approval panel is a single
+model reviewer; its verdict decides, and the owner may override. Withdrawn: two blind reviewers of
+distinct model families, the adjudicator, and `ESCALATE` on disagreement (with the `ESCALATE` kind
+and `ESCALATED` status, which had no other source). The reviewer's provider and model are data on
+its panel review row (amendment 8). Changed: Solution, O10, §1 entities, rules and lifecycle, §2
+decision kinds and lifecycle, §6 item 11, Success Criteria Stage 1. Also (D3 plan G8, G9): the
+Display style list gains `trim`, and an owner `SET_POLICY` decision takes the report as subject.
+Also (D3 plan, critical review): interpretation decisions are owner-only until follow-up F2
+adds panel acceptance with deterministic-provenance replay (a revision cause is descriptive, not
+proof that code produced the value); nothing consumes interpretation approvals before F2.*
+
 ## Problem Statement
 
 Reports, approvals, the management ledger and the thesis are loose files whose numbers cite
@@ -23,8 +34,8 @@ PostgreSQL holds two append-only stores next to the data spec's evidence schema:
   and status `CANDIDATE → PROMOTED → RETIRED`, linked to supporting claims and versions, full-text
   searchable, reached only through the D-01 `MemoryStore` interface.
 
-Report approval and memory promotion are separate decisions by an **approval panel** of
-independent model reviewers after deterministic checks; the owner may override any. Humans read
+Report approval and memory promotion are separate decisions by an **approval panel** (a
+single model reviewer) after deterministic checks; the owner may override any. Humans read
 generated views (O5); views never flow back.
 
 Coverage is three nested sets: a **universe registry** of all ~5,000 Indian listed stocks
@@ -68,7 +79,7 @@ As the operator, I want:
 | O7 | Capture is on demand from an owner-chosen screen; never a whole-market sync | §4 |
 | O8 | Reports only for an owner-chosen watchlist (~50–200) | §4 |
 | O9 | Retention: filing figures, reports, approvals, memory, comparison outcomes forever; covered-stock exchange originals forever; other results PDFs/XBRL deleted one quarter after verification (address + hash kept; re-fetch must hash-match); vendor pages and readings 4 quarters plus open-review holds, never extended by coverage, purged at licence end. Its clause "old comparison runs dropped unless cited" is withdrawn (2026-10-12): on-demand results are kilobytes | §5, §6 |
-| O10 | Report versions, theses, memory decisions, interpretations and review-queue items are decided by the approval panel (≥2 blind reviewers, different model families); the owner is never waited on and keeps override/withdraw, escalations, watchlist, screens and financial decisions | §1, §2, §6 |
+| O10 | Report versions, theses, memory decisions and review-queue items are decided by the approval panel (one reviewer's verdict; amended 2026-10-15); interpretations are owner-decided until F2 (amended 2026-10-15); the owner is never waited on and keeps override/withdraw, watchlist, screens and financial decisions | §1, §2, §6 |
 
 Decided defaults (adopted 2026-10-12):
 
@@ -137,8 +148,8 @@ and DELETE, as data spec §6):
 | Numeric claim | Version id, section id, claim key; measurement key (metric, entity, period, basis, dimensions, framework); value kind, unit, currency, scale; value, or bounds and horizon for guidance; qualifiers ("plus", "about"); display precision and rounding; epistemic class; citation. No display text |
 | Validation | Version id, checker version, run mode, queue-overlay position, pinned-input hash, per-claim and version-level states, result digest, recorded-at |
 | QA record | Imported automated gate results (e.g. XBRL↔PDF cross-check). Never a decision |
-| Panel review | Decision id, role (`REVIEWER`/`ADJUDICATOR`), provider, model, model family, effort, brief version, reviewed sealed digest, verdict, full rationale text and hash; inserted with its decision |
-| Decision | Subject (report version, memory item, queue item or interpretation), kind, sequence, predecessor id, sealed digest, validation id (`APPROVE`), original approval hash (`IMPORTED_APPROVAL`), owner's verbatim ruling, decider and recorded-at (set by trigger), decided-on (imports, at stated precision), decision digest |
+| Panel review | Provider, model, effort, brief version, reviewed sealed digest, verdict, full rationale text and hash; inserted in its decision's transaction |
+| Decision | Subject (report version, memory item, queue item or interpretation; the report for an owner `SET_POLICY` decision, amended 2026-10-15), kind, sequence, predecessor id, sealed digest, validation id (`APPROVE`), panel review id (panel verdicts), original approval hash (`IMPORTED_APPROVAL`), owner's verbatim ruling, decider and recorded-at (set by trigger), decided-on (imports, at stated precision), decision digest |
 
 `EARNINGS_UPDATE` section keys follow the existing artifact.
 
@@ -152,7 +163,8 @@ and DELETE, as data spec §6):
 - **Display:** a placeholder `{{c:<claim key>|<style>}}` renders deterministically from the
   claim's typed value, unit, scale, qualifiers, precision and rounding, shaped by a closed-enum
   style: grouping (none, Indian, international), explicit `+`, unit shown/omitted, qualifier
-  shown/omitted, range form (`9.5–10%` or `9.5%, 10%`). Style `quote` (`SOURCE_QUOTE` only)
+  shown/omitted, range form (`9.5–10%` or `9.5%, 10%`), trailing fractional zeros kept or trimmed
+  (`trim`; amended 2026-10-15). Style `quote` (`SOURCE_QUOTE` only)
   renders the verified verbatim quote, exempt from the numeral scan. No free display text; styles
   sit in section text, so the seal covers them.
 - **Prose labels and locations** (invariants 7–8, until B-06; at `SUBMIT`, imports exempt):
@@ -174,13 +186,10 @@ and DELETE, as data spec §6):
   amounts come from deterministic code (e.g. a measured difference) or the owner; a panel
   decision supplying an amount (explained amount, `MANUAL_CORRECTION` value) is refused.
 - **Approval panel:** the `panel` command first runs the subject's deterministic gates (claim
-  check, support eligibility); any failure refuses with no model call. Two reviewers of
-  different model families (configured per model) review the same artifact and brief, blind to
-  each other; equal verdicts decide. Unequal → one adjudicator of a third model, given both
-  outputs, decides if it agrees with either; otherwise `ESCALATE` (status `ESCALATED`), resolved
-  only by the owner. The trigger enforces this in the decision's transaction: exactly two reviewer
-  rows of distinct families, each naming the decision's sealed digest, and an adjudicator row
-  only when they differ. Reviewers return verdicts and rationale only. The panel role is refused
+  check, support eligibility); any failure refuses with no model call. One reviewer (configured)
+  reviews the artifact and brief; its verdict decides (amended 2026-10-15). The trigger refuses
+  a panel verdict without its own panel review naming the decision's sealed digest. Reviewers
+  return verdicts and rationale only. The panel role is refused
   on a subject whose chain holds an owner decision.
 - **Decision chain** (as FactStore `canonical_selections`): per subject, unique sequence,
   predecessor id and digest = SHA-256(row fields + predecessor digest); an insert naming a stale
@@ -231,13 +240,12 @@ an approval. A later failing validation never alters an approval; it shows and m
 | `DRAFT` | `SUBMIT` | `IN_REVIEW` |
 | `IN_REVIEW` | `APPROVE` (sealed digest and validation as above) | `APPROVED` |
 | `IN_REVIEW` | `REQUEST_CHANGES` / `REJECT` | `CHANGES_REQUESTED` / `REJECTED` |
-| `IN_REVIEW` | `ESCALATE` (panel); then an owner decision above | `ESCALATED` → its result |
 | `APPROVED` / `HISTORICAL` | a descendant approved (every such ancestor) | `SUPERSEDED` |
 | `APPROVED` / `SUPERSEDED` | `WITHDRAW` | `WITHDRAWN` |
 
 A correction is always a new version of the **same report** (same stock, period, kind) naming an
 earlier version as predecessor; each version has at most one successor, so lineage is acyclic.
-The predecessor must be terminal (not `DRAFT`, `IN_REVIEW`, `ESCALATED`) at the successor's
+The predecessor must be terminal (not `DRAFT`, `IN_REVIEW`) at the successor's
 `SUBMIT`; supersession goes to every `APPROVED` or `HISTORICAL` ancestor
 (one approved version per report) and commits with the successor's approval. Approving a
 report changes no memory item.
@@ -271,7 +279,7 @@ report changes no memory item.
 |---|---|
 | Memory item | Stock (entity id, or none for cross-stock kinds), kind, statement (short plain text, length-capped), epistemic class, valid-from, valid-to (open allowed), recorded-at (knowledge time for C-15), supersedes-item id, content hash, small JSONB extras |
 | Memory support | Item id → numeric claim, report version, definition record (data spec §5), queue disposition, decision, or capture. Every item has ≥1 support, inserted with the item |
-| Decision | As §1; kinds `PROMOTE`, `REJECT_CANDIDATE`, `RETIRE`, `ESCALATE` (panel or owner role) |
+| Decision | As §1; kinds `PROMOTE`, `REJECT_CANDIDATE`, `RETIRE` (panel or owner role) |
 
 **Kinds.** The data spec's definition records and mapping facts are the sole authority for how a
 source's number is defined; memory never restates them.
@@ -297,7 +305,6 @@ claim in such a version; an unsuperseded disposition. Checked at staging and in 
 | — | item staged (agent or human) | `CANDIDATE` |
 | `CANDIDATE` | `PROMOTE` | `PROMOTED` |
 | `CANDIDATE` | `REJECT_CANDIDATE` | `REJECTED` |
-| `CANDIDATE` | `ESCALATE`; then an owner decision | `ESCALATED` → its result |
 | `PROMOTED` | `RETIRE`, or a superseding item promoted (same transaction) | `RETIRED` |
 
 A correction supersedes a `PROMOTED` item of the same stock and kind; its `PROMOTE` refuses
@@ -480,8 +487,9 @@ while any intent is `PURGE_PENDING` or a run is open, naming the purge command.
     panel-approved cross-spec amendments, not a later stage relaxing it.
 11. §5 review queue and analyst interface ("record dispositions"): items routed to a human are
     dispositioned by the approval panel (§1: `ACCEPT`/`REJECT` of a proposed disposition,
-    amounts from code or the owner), escalating only conflicts; owner dispositions remain and outrank. Interpretations
-    needing approval follow the same rule.
+    amounts from code or the owner); owner dispositions remain and outrank. Interpretations
+    needing approval are owner-decided until F2 adds panel acceptance with deterministic-provenance
+    replay (amended 2026-10-15).
 12. §2 qualification and Stage 1 acceptance: a demonstrated mapping keeps its recorded
     measurement after its vendor fixtures expire but cannot be re-measured; a rerun over expired
     vendor fixtures reports `ORIGINAL_EXPIRED` for those rows.
@@ -527,11 +535,10 @@ generated by the tested code.
 - The runtime role cannot insert any decision but `SUBMIT`, nor an unproposed or amount-bearing disposition, nor update/delete
   ledger rows; owner and panel decisions record their role and DB recorded-at; a
   decision naming a stale head is refused.
-- Panel (fake adapters): both approve → `APPROVED`, both reviews' text recorded; disagreement →
-  a matching adjudicator decides; else `ESCALATED`, panel refused, owner resolves. Refused: one
-  reviewer, two of one family, an adjudicator alone, with agreeing reviewers or sharing a
-  reviewer's model, a review of another digest, a panel-supplied amount; a failing claim check
-  refuses with no model call.
+- Panel (fake adapter; amended 2026-10-15): a reviewer `APPROVE` → `APPROVED`, its text,
+  provider and model recorded. Refused: a panel verdict without its review, a review of another
+  digest, a panel-supplied amount, a panel decision on a subject whose chain holds an owner
+  decision; a failing claim check refuses with no model call.
 - A disposition making a cited cell untrusted appends a new validation; the approval still binds
   its original validation.
 - A correction supersedes the old version, which can still be withdrawn; v1 approved, v2
