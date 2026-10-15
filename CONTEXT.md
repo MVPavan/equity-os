@@ -66,7 +66,7 @@ The daily/event-driven persistence of index membership, prices, announcements, c
 _Avoid_: backfill (capture prevents future loss; it does not recreate the past)
 
 **Source-of-truth hierarchy**:
-The authority table proposed by the blueprint: immutable object store for originals, SQL for facts/claims/events/approvals, registered calculation store for traces, versioned Markdown for the approved narrative, rebuildable indices for retrieval. Formal acceptance is register item B-03 (open).
+The authority table proposed by the blueprint: immutable object store for originals, SQL for facts/claims/events/approvals, registered calculation store for traces, PostgreSQL rows for the approved narrative (Markdown is a generated view; versioned files stay the record until the Stage 1 cutover is approved), rebuildable indices for retrieval. Formal acceptance is register item B-03 (open); its narrative row is amended by the report-ledger record.
 _Avoid_: single source of truth (there are several, by role)
 
 ### Analysis & review
@@ -88,8 +88,12 @@ The tracked record of management promises: new, modified, due, and outcomes.
 _Avoid_: guidance tracker
 
 **Memory promotion**:
-The separate, approved action that lets a drafted claim or narrative change affect the canonical thesis. Agents draft, validators attach QA, and the reviewer's approval or the analyst promotes; the analyst may override (owner directive 2026-10-12).
+The separate, approved action that lets a drafted claim or narrative change affect the canonical thesis. Agents draft, validators attach QA, and promotion is a separate decision by the approval panel or the owner role (override kept) (owner directive 2026-10-12).
 _Avoid_: auto-save, sync
+
+**Approval panel / owner role / runtime role**:
+The product's decision roles. The **runtime role** (drafting agents) inserts drafts, content and submissions, never approvals. The **approval panel** is one configured model reviewer acting after deterministic checks; its verdict decides. The **owner role** records verbatim rulings and may override the panel. Docs name these roles; models are configuration.
+_Avoid_: model names, the analyst (as approver)
 
 **Golden set**:
 The owned, expert-labeled evaluation fixtures (~20 cases to start), grown continuously from observed failures (register A-08).

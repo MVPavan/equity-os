@@ -43,9 +43,9 @@ blueprint field lists as accepted contracts.
    the fact applies) and **knowledge time** (when the system could have known).
 10. **Missing inputs fail closed.** No silently fabricated numbers or filled
     gaps.
-11. **Memory promotion is a separate, approved action** — by the reviewer's
-    approval (`.claude/rules/core/04-agent-stack.md`) or the owner, who may override
-    (owner directive 2026-10-12). Agents draft;
+11. **Memory promotion is a separate, approved action** — a decision by the
+    approval panel or the owner role, who may override (owner directive
+    2026-10-12; panel models are configuration, never named). Agents draft;
     only approved claims affect the canonical thesis; corrections create new
     versions and invalidated items stay auditable.
 12. **Research and execution live in separate trust domains.** No order APIs,
