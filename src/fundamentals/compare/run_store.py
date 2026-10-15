@@ -22,6 +22,7 @@ from psycopg_pool import ConnectionPool
 
 from fundamentals.compare.definitions import definition_record_ids
 from fundamentals.compare.queue import lock_queue, publish_queue_drafts
+from fundamentals.compare.routing import pair_identity
 from fundamentals.compare.run_models import (
     PairRecord,
     ResultRow,
@@ -160,8 +161,8 @@ _SURFACED: LiteralString = (
 )
 _INSERT_PAIR: LiteralString = (
     "INSERT INTO eqos.pair_outcomes (result_id, pair_kind, left_value_id, right_value_id, "
-    "outcome, reason, triage, difference, interval_gap, definition_record_id) "
-    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+    "outcome, reason, triage, difference, interval_gap, definition_record_id, pair_identity) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
 )
 _PAIRS: LiteralString = (
     "SELECT p.*, d.record_id FROM eqos.pair_outcomes p JOIN eqos.results r ON r.id = p.result_id "
@@ -584,6 +585,7 @@ def _pair_params(
         pair.difference,
         pair.interval_gap,
         record,
+        pair_identity(pair.pair_kind, pair.left, pair.right),
     )
 
 

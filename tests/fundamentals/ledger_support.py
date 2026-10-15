@@ -39,9 +39,11 @@ from fundamentals.contracts.ledger import (
 from fundamentals.ledger import store
 from fundamentals.pg.settings import PgRole
 
-# The tables 0012 creates; 0013 extends this with its own.
+# The tables 0012 and 0013 create.
 LEDGER_TABLES = frozenset(
     {
+        "panel_reviews",
+        "disposition_proposals",
         "reports",
         "report_versions",
         "import_sources",

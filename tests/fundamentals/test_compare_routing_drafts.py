@@ -150,7 +150,9 @@ def test_pair_draft_preserves_route_and_all_typed_evidence(
     draft = routing.route_pair_draft(source_pair, key=KEY)
     assert draft is not None
     assert draft.key == KEY
-    assert draft.pair_identity == routing.pair_identity(source_pair)
+    assert draft.pair_identity == routing.pair_identity(
+        source_pair.pair_kind, source_pair.left, source_pair.right
+    )
     assert draft.outcome == outcome.value
     assert draft.severity is severity
     assert draft.routing_reason == reason

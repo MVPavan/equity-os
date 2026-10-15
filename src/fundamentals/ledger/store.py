@@ -24,6 +24,7 @@ from fundamentals.contracts.ledger import (
     DecisionKind,
     DecisionRecord,
     NumericClaim,
+    PanelReview,
     PolicyValue,
     ReportKind,
     SubjectKind,
@@ -35,6 +36,7 @@ from fundamentals.contracts.snapshot import canonical_sha256
 
 _SCHEMA = "eqos"
 _SEALED_DIGEST: LiteralString = "SELECT eqos.version_sealed_digest(%s)"
+_SUBJECT_DIGEST: LiteralString = "SELECT eqos.subject_digest(%s, %s)"
 _HEAD: LiteralString = (
     "SELECT * FROM eqos.decisions WHERE subject_kind = %s AND subject_id = %s "
     "ORDER BY sequence DESC LIMIT 1"
@@ -70,6 +72,7 @@ _SOURCES: LiteralString = (
     "SELECT source_path, body FROM eqos.import_sources WHERE version_id = %s ORDER BY id"
 )
 _NO_VERSION = "no report version {version_id}"
+_NO_SUBJECT = "no {subject_kind} {subject_id}"
 _UNKNOWN_CLAIM = "version {version_id} has no claim {claim_key!r}"
 _ACQUISITION: LiteralString = (
     "INSERT INTO eqos.legacy_acquisitions (blob_sha256, retrieved_at, manifest_sha256, "
@@ -156,6 +159,14 @@ def sealed_digest(cursor: Cursor[Any], version_id: int) -> str:
     return str(row[0])
 
 
+def subject_digest(cursor: Cursor[Any], subject_kind: SubjectKind, subject_id: int) -> str:
+    """The digest a decision on the subject must carry, as the database computes it (D1)."""
+    row = cursor.execute(_SUBJECT_DIGEST, (subject_kind.value, subject_id)).fetchone()
+    if row is None or row[0] is None:
+        raise LookupError(_NO_SUBJECT.format(subject_kind=subject_kind, subject_id=subject_id))
+    return str(row[0])
+
+
 def chain_head(
     cursor: Cursor[Any], subject_kind: SubjectKind, subject_id: int
 ) -> DecisionRecord | None:
@@ -204,6 +215,11 @@ def insert_decision(
         row = own.execute(_DECISION, (decision_id,)).fetchone()
     assert row is not None
     return _decision(row)
+
+
+def insert_panel_review(cursor: Cursor[Any], review: PanelReview) -> int:
+    """Append one reviewer verdict in the deciding transaction; returns its id."""
+    return _insert(cursor, "panel_reviews", review.model_dump())
 
 
 def insert_validation(cursor: Cursor[Any], validation: Validation) -> int:

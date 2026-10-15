@@ -124,13 +124,14 @@ _COLUMN_FIELDS = frozenset({"column_index", "column_label"})
 """Anchor fields that place a vendor cell in its row; the row without them is one native row."""
 
 
-def pair_identity(pair: SourceQualifiedPair) -> str:
-    """The ordered pair of actual source/surface references, independent of its outcome."""
+def pair_identity(pair_kind: PairKind, left: SourceRef, right: SourceRef) -> str:
+    """The ordered pair of actual source/surface references, independent of its outcome; the
+    queue item and the stored pair outcome both carry it (plan D11)."""
     return canonical_sha256(
         {
-            "kind": pair.pair_kind.value,
-            "left": pair.left.model_dump(mode="json"),
-            "right": pair.right.model_dump(mode="json"),
+            "kind": pair_kind.value,
+            "left": left.model_dump(mode="json"),
+            "right": right.model_dump(mode="json"),
         }
     )
 
@@ -145,7 +146,7 @@ def route_pair_draft(
     severity, reason = route
     return QueueItemDraft(
         key=key,
-        pair_identity=pair_identity(pair),
+        pair_identity=pair_identity(pair.pair_kind, pair.left, pair.right),
         outcome=pair.result.outcome.value,
         severity=severity,
         diagnostic=pair.pair_kind is PairKind.DIAGNOSTIC,

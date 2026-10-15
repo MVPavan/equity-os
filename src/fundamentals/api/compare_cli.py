@@ -10,6 +10,8 @@
     compare queue show --run <id> --item <id> [--as-of <ISO-8601 with offset>]
     compare queue dispose --item <id> --kind <kind> --reason <text> --decider <name>
         --evidence-ref <ref> [--explained-amount <decimal>]
+    compare queue propose --item <id> --kind <kind> --reason <text> --evidence-ref <ref>
+        [--pair-outcome <id>]
 
 The composition root: ``PgSettings`` and the runtime pool are built here and nowhere else.
 The default cutoff is the store clock, never the host clock. Any database, configuration or
@@ -18,7 +20,8 @@ credential. A report refuses a dictionary whose content differs from the run's p
 ``run`` exits ``SUCCESS_WITH_OPEN_HIGH`` when the run's queue holds an open ``HIGH`` item.
 Queue reads default to the current overlay boundary; ``--as-of`` may not be later. A
 disposition's time is the store clock's; ``dispose`` runs as the owner role, its login read
-from the owner credential file (plan D3, D2 and D11).
+from the owner credential file (plan D3, D2 and D11). ``propose`` runs as the runtime role and
+leaves the decision to the panel or the owner; it carries no amount (D11).
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from fundamentals.compare.policy import ComparisonPolicyError
 from fundamentals.compare.queue import (
     item_inputs,
     overlay_boundary,
+    propose_disposition,
     read_overlay,
     record_disposition,
 )
@@ -85,6 +89,7 @@ QUEUE_ACTION = "queue"
 LIST_ACTION = "list"
 SHOW_ACTION = "show"
 DISPOSE_ACTION = "dispose"
+PROPOSE_ACTION = "propose"
 DEFAULT_CONFIG_ROOT = "config"
 UNKNOWN_CODE_VERSION = "UNKNOWN"
 GIT_TIMEOUT_S = 5
@@ -99,6 +104,8 @@ _SHOW_HELP = "one item of a run with its evidence and dispositions"
 _NO_ITEM = "item {item} is not in run {run_id}"
 OPEN, DISPOSED, ALL = _STATUSES = ("open", "disposed", "all")
 _DISPOSE_HELP = "record a disposition (prints its id)"
+_PROPOSE_HELP = "propose a disposition for the panel or owner (prints its id)"
+_PROPOSED = "proposal\t{proposal}"
 _QUEUE_DEST = "queue_action"
 _LATE_AS_OF = "--as-of {as_of} is later than the overlay boundary {boundary}"
 _NO_AMOUNT = "ACCEPTED_AS_DEFINITION needs --explained-amount"
@@ -161,6 +168,12 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     dispose.add_argument("--decider", required=True)
     dispose.add_argument("--evidence-ref", required=True)
     dispose.add_argument("--explained-amount", type=_amount)
+    propose = queue.add_parser(PROPOSE_ACTION, help=_PROPOSE_HELP)
+    propose.add_argument("--item", type=int, required=True)
+    propose.add_argument("--kind", required=True, choices=[kind.value for kind in DispositionKind])
+    propose.add_argument("--reason", required=True)
+    propose.add_argument("--evidence-ref", required=True)
+    propose.add_argument("--pair-outcome", type=int)
 
 
 def dispatch_compare_command(args: argparse.Namespace) -> int | None:
@@ -171,7 +184,12 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         if args.compare_action == RUN_ACTION:
             return _run(args)
         if args.compare_action == QUEUE_ACTION:
-            queue_actions = {LIST_ACTION: _list, SHOW_ACTION: _show, DISPOSE_ACTION: _dispose}
+            queue_actions = {
+                LIST_ACTION: _list,
+                SHOW_ACTION: _show,
+                DISPOSE_ACTION: _dispose,
+                PROPOSE_ACTION: _propose,
+            }
             return queue_actions[args.queue_action](args)
         return _report(args)
     except (
@@ -315,6 +333,21 @@ def _dispose(args: argparse.Namespace) -> int:
             explained_amount=args.explained_amount,
         )
     sys.stdout.write(_DISPOSED.format(disposition=disposition) + "\n")
+    return int(RunExitStatus.SUCCESS)
+
+
+def _propose(args: argparse.Namespace) -> int:
+    """Record one disposition proposal as the runtime role."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        proposal = propose_disposition(
+            pool,
+            item_id=args.item,
+            kind=DispositionKind(args.kind),
+            reason=args.reason,
+            evidence_ref=args.evidence_ref,
+            pair_outcome_id=args.pair_outcome,
+        )
+    sys.stdout.write(_PROPOSED.format(proposal=proposal) + "\n")
     return int(RunExitStatus.SUCCESS)
 
 

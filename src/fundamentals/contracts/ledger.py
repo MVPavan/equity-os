@@ -303,3 +303,28 @@ class ResolvedCitation(BaseModel):
     quote_text: str | None = None
     guidance: GuidanceContract | None = None
     trusted: bool | None = None
+
+
+class ReviewOutput(BaseModel):
+    """What a reviewer returns: a verdict and its rationale, nothing else (no amount, D10)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    verdict: Verdict
+    rationale: str
+
+
+class PanelReview(BaseModel):
+    """One reviewer verdict on a sealed subject; provider and model are data (amendment 8)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    subject_kind: SubjectKind
+    subject_id: int
+    sealed_digest: str
+    provider: str
+    model: str
+    effort: str
+    brief_version: str
+    verdict: Verdict
+    rationale: str

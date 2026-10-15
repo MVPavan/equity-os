@@ -1,9 +1,11 @@
 """Report version lifecycle: status, submit, claim check and decisions (ledger spec §1; plan D3,
-D4, D12).
+D4, D11, D12).
 
 Status is derived from the decision log, never stored (P1). Each command runs in one
-transaction that takes the subject lock before any read it decides on; the checks here give a
-readable refusal, and the decision trigger stays authoritative.
+transaction that takes the subject lock (after the queue lock, for a disposition proposal)
+before any read it decides on; the checks here give a readable refusal, and the decision
+trigger stays authoritative. Accepting a proposal appends its disposition with the stored
+amount.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import Any, LiteralString
 from psycopg import Cursor
 from psycopg_pool import ConnectionPool
 
-from fundamentals.compare.queue import overlay_boundary
+from fundamentals.compare.queue import insert_disposition, lock_queue, overlay_boundary
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     ClaimState,
@@ -29,6 +31,7 @@ from fundamentals.contracts.ledger import (
     Validation,
     VersionStatus,
 )
+from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.contracts.snapshot import canonical_sha256
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
@@ -39,9 +42,11 @@ from fundamentals.ledger.numeral_scan import scan_section
 from fundamentals.store.snapshot_store import SnapshotStore
 
 CHECKER_VERSION = "ledger-claim-check-v1"
-V = SubjectKind.REPORT_VERSION
+V, P = SubjectKind.REPORT_VERSION, SubjectKind.DISPOSITION_PROPOSAL
+DECISION_REF = "decision:{decision_id}"
 _DECIDERS = frozenset({DeciderRole.PANEL, DeciderRole.OWNER})
 _ANY_HEAD = frozenset({None, *DecisionKind})
+_SETTLE = (DecisionKind.ACCEPT, DecisionKind.REJECT)
 # D3: who may make each decision, after which chain head. The trigger also holds the import
 # rules (import sources, same transaction) and refuses WITHDRAW after IMPORT_SEAL unless the
 # version is superseded.
@@ -63,6 +68,12 @@ TRANSITIONS: dict[
         frozenset({DecisionKind.APPROVE, DecisionKind.IMPORTED_APPROVAL, DecisionKind.IMPORT_SEAL}),
     ),
     (SubjectKind.REPORT, DecisionKind.SET_POLICY): (frozenset({DeciderRole.OWNER}), _ANY_HEAD),
+    # 0013: one decision per proposal (panel or owner) and per interpretation (owner only).
+    **{(P, kind): (_DECIDERS, frozenset({None})) for kind in _SETTLE},
+    **{
+        (SubjectKind.INTERPRETATION, kind): (frozenset({DeciderRole.OWNER}), frozenset({None}))
+        for kind in _SETTLE
+    },
 }
 _HEAD_STATUS = {
     None: VersionStatus.DRAFT,
@@ -85,6 +96,10 @@ _ROLES = {
 _LOCK: LiteralString = "SELECT eqos.lock_subject(%s, %s)"
 _ROLE: LiteralString = "SELECT current_user"
 _ENTITY: LiteralString = "SELECT entity_id FROM eqos.reports WHERE id = %s"
+_PROPOSAL: LiteralString = (
+    "SELECT item_id, kind, reason, eqos.proposal_amount(id) FROM eqos.disposition_proposals "
+    "WHERE id = %s"
+)
 # The version's head and whether a descendant's chain holds an approval, both as of a time.
 _STATUS: LiteralString = """WITH RECURSIVE descendants (id) AS (
     SELECT id FROM eqos.report_versions WHERE predecessor_id = %(version)s
@@ -141,7 +156,7 @@ def submit(
         if found:
             states = ", ".join(sorted(found))
             raise DecisionRefusedError(_BLOCKED.format(version_id=version_id, states=states))
-        return _decide(cursor, V, version_id, DecisionKind.SUBMIT)
+        return append_decision(cursor, V, version_id, DecisionKind.SUBMIT)
 
 
 def validate(
@@ -236,17 +251,20 @@ def decide(
     """Record one decision with its verbatim ruling as the pool's role; an ``APPROVE`` binds
     the version's latest validation, which must pass (D4)."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        return _decide(cursor, subject_kind, subject_id, kind, ruling=ruling, policy=policy)
+        return append_decision(cursor, subject_kind, subject_id, kind, ruling=ruling, policy=policy)
 
 
-def _decide(
+def append_decision(
     cursor: Cursor[Any],
     subject_kind: SubjectKind,
     subject_id: int,
     kind: DecisionKind,
     **fields: Any,
 ) -> DecisionRecord:
-    """Pre-check D3 (and D4 for an approval) under the subject lock, then insert."""
+    """Pre-check D3 (and D4 for an approval) under the queue lock (proposals) and the subject
+    lock, then insert; an ``ACCEPT`` on a proposal appends its disposition (D11)."""
+    if subject_kind is P:
+        lock_queue(cursor)
     cursor.execute(_LOCK, (subject_kind.value, subject_id))
     head = store.chain_head(cursor, subject_kind, subject_id)
     head_kind = None if head is None else head.kind
@@ -268,11 +286,11 @@ def _decide(
                 head=head_kind or "nothing",
             )
         )
-    if subject_kind is V:
-        fields["sealed_digest"] = store.sealed_digest(cursor, subject_id)
+    if subject_kind is not SubjectKind.REPORT:
+        fields["sealed_digest"] = store.subject_digest(cursor, subject_kind, subject_id)
     if subject_kind is V and kind is DecisionKind.APPROVE:
-        fields["validation_id"] = _bound_validation(cursor, subject_id, fields["sealed_digest"])
-    return store.insert_decision(
+        fields["validation_id"] = bound_validation(cursor, subject_id, fields["sealed_digest"])
+    decision = store.insert_decision(
         cursor,
         subject_kind=subject_kind,
         subject_id=subject_id,
@@ -280,9 +298,22 @@ def _decide(
         predecessor_id=None if head is None else head.id,
         **fields,
     )
+    if subject_kind is P and kind is DecisionKind.ACCEPT:
+        row = cursor.execute(_PROPOSAL, (subject_id,)).fetchone()
+        assert row is not None
+        insert_disposition(
+            cursor,
+            item_id=row[0],
+            kind=DispositionKind(row[1]),
+            reason=row[2],
+            decider=decision.decider.value,
+            evidence_ref=DECISION_REF.format(decision_id=decision.id),
+            explained_amount=row[3],
+        )
+    return decision
 
 
-def _bound_validation(cursor: Cursor[Any], version_id: int, digest: str) -> int:
+def bound_validation(cursor: Cursor[Any], version_id: int, digest: str) -> int:
     """The latest validation's id if it can bind an approval (D4), else refuse."""
     latest = store.latest_validation(cursor, version_id)
     claims = {claim.claim_key for claim in store.read_version(cursor, version_id).claims}

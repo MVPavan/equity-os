@@ -60,6 +60,10 @@ _INSERT_DISPOSITION: LiteralString = (
     "INSERT INTO eqos.queue_dispositions (item_id, kind, reason, decider, evidence_ref, "
     "explained_amount) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id"
 )
+_INSERT_PROPOSAL: LiteralString = (
+    "INSERT INTO eqos.disposition_proposals (item_id, kind, reason, evidence_ref, "
+    "pair_outcome_id) VALUES (%s, %s, %s, %s, %s) RETURNING id"
+)
 _OVERLAY: LiteralString = (
     "SELECT i.id AS item_id, i.run_id, i.measurement_key AS key, i.pair_identity, i.outcome, "
     "i.input_sha256, i.severity, i.diagnostic, i.routing_reason, i.reason_code, i.source_refs, "
@@ -108,9 +112,49 @@ def record_disposition(
     """Append one disposition; its recorded time is the store clock's."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         lock_queue(cursor)
+        return insert_disposition(
+            cursor,
+            item_id=item_id,
+            kind=kind,
+            reason=reason,
+            decider=decider,
+            evidence_ref=evidence_ref,
+            explained_amount=explained_amount,
+        )
+
+
+def insert_disposition(
+    cursor: Cursor[Any],
+    *,
+    item_id: int,
+    kind: DispositionKind,
+    reason: str,
+    decider: str,
+    evidence_ref: str,
+    explained_amount: Decimal | None,
+) -> int:
+    """Append one disposition in the caller's transaction, which holds :func:`lock_queue`."""
+    row = cursor.execute(
+        _INSERT_DISPOSITION, (item_id, kind.value, reason, decider, evidence_ref, explained_amount)
+    ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def propose_disposition(
+    pool: ConnectionPool,
+    *,
+    item_id: int,
+    kind: DispositionKind,
+    reason: str,
+    evidence_ref: str,
+    pair_outcome_id: int | None = None,
+) -> int:
+    """Append one disposition proposal for the panel or owner to decide (plan D11); an
+    ``ACCEPTED_AS_DEFINITION`` names the pair outcome its amount comes from."""
+    with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         row = cursor.execute(
-            _INSERT_DISPOSITION,
-            (item_id, kind.value, reason, decider, evidence_ref, explained_amount),
+            _INSERT_PROPOSAL, (item_id, kind.value, reason, evidence_ref, pair_outcome_id)
         ).fetchone()
         assert row is not None
         return int(row[0])

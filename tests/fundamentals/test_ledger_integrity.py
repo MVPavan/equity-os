@@ -422,8 +422,9 @@ def test_the_runtime_role_may_submit_only(ledger: Ledger, seeded: dict[str, int]
 
 GATED = LEDGER_TABLES | {"queue_dispositions"}
 INSERTERS = {
-    RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions"}) | {"queue_dispositions"},
-    PANEL_ROLE: LEDGER_TABLES | {"queue_dispositions"},
+    RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions", "panel_reviews"})
+    | {"queue_dispositions"},
+    PANEL_ROLE: (LEDGER_TABLES - {"disposition_proposals"}) | {"queue_dispositions"},
     OWNER_ROLE: {"decisions", "queue_dispositions"},
 }
 
