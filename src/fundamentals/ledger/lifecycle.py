@@ -2,11 +2,11 @@
 D4, D11, D12).
 
 Status is derived from the decision log, never stored (P1). Each command runs in one
-transaction that takes the subject lock (after the queue lock, for a disposition proposal or an
-approval) before any read it decides on; the checks here give a readable refusal, and the
-decision trigger stays authoritative. An approval binds only the check its decider makes in the
-deciding transaction; a runtime ``validate`` is advisory. Accepting a proposal appends its
-disposition with the stored amount.
+transaction that takes the subject lock (after the queue lock, for a disposition proposal, a
+memory item, an approval, a withdrawal or a validation; plan D4 M4) before any read it decides
+on; the checks here give a readable refusal, and the decision trigger stays authoritative. An
+approval binds only the check its decider makes in the deciding transaction; a runtime
+``validate`` is advisory. Accepting a proposal appends its disposition with the stored amount.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.contracts.snapshot import canonical_sha256
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
-from fundamentals.ledger.citations import resolve_citation, resolve_location
+from fundamentals.ledger.citations import bound_contract, resolve_citation, resolve_location
 from fundamentals.ledger.claim_check import check_claim
 from fundamentals.ledger.display import content_hash
 from fundamentals.ledger.numeral_scan import scan_section
@@ -47,6 +47,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 CHECKER_VERSION = "ledger-claim-check-v1"
 V, P = SubjectKind.REPORT_VERSION, SubjectKind.DISPOSITION_PROPOSAL
+M = SubjectKind.MEMORY_ITEM
 DECISION_REF = "decision:{decision_id}"
 _DECIDERS = frozenset({DeciderRole.PANEL, DeciderRole.OWNER})
 _ANY_HEAD = frozenset({None, *DecisionKind})
@@ -78,6 +79,12 @@ TRANSITIONS: dict[
         (SubjectKind.INTERPRETATION, kind): (frozenset({DeciderRole.OWNER}), frozenset({None}))
         for kind in _SETTLE
     },
+    # 0016 (plan D4, M2): promotion or rejection of a candidate; retirement by the owner only.
+    **{
+        (M, kind): (_DECIDERS, frozenset({None}))
+        for kind in (DecisionKind.PROMOTE, DecisionKind.REJECT_CANDIDATE)
+    },
+    (M, DecisionKind.RETIRE): (frozenset({DeciderRole.OWNER}), frozenset({DecisionKind.PROMOTE})),
 }
 _HEAD_STATUS = {
     None: VersionStatus.DRAFT,
@@ -177,6 +184,7 @@ def validate(
     contract its import sources bind."""
     boundary = overlay_boundary(pool)
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+        lock_queue(cursor)
         cursor.execute(_LOCK, (V.value, version_id))
         validation = check_version(
             cursor,
@@ -234,7 +242,8 @@ def check_version(
     bound: Mapping[str, GuidanceContract] | None = None,
 ) -> Validation:
     """Every claim's state and the sections' version-level states at ``boundary``, in the
-    caller's transaction under its subject lock; nothing is written."""
+    caller's transaction under its subject lock; nothing is written. A drafted quote claim is
+    compared with the contract a sealed import binds to its quote (plan D4, M9)."""
     bound = bound or {}
     draft = store.read_version(cursor, version_id)
     row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
@@ -253,7 +262,9 @@ def check_version(
                 catalog=catalog,
                 snapshots=snapshots,
             ),
-            bound.get(claim.claim_key),
+            bound.get(claim.claim_key)
+            if imported or claim.citation.kind is not CitationKind.SOURCE_QUOTE
+            else bound_contract(cursor, claim, row[0]),
         )
         for claim in draft.claims
     }
@@ -347,10 +358,10 @@ def append_decision(
     validation: Validation | None = None,
     **fields: Any,
 ) -> DecisionRecord:
-    """Pre-check D3 under the queue lock (proposals) and the subject lock, then insert; an
-    ``APPROVE`` first appends ``validation``, the decider's own passing check (D4), and an
-    ``ACCEPT`` on a proposal appends its disposition (D11)."""
-    if subject_kind is P:
+    """Pre-check D3 under the queue lock (proposals, memory items, withdrawals) and the subject
+    lock, then insert; an ``APPROVE`` first appends ``validation``, the decider's own passing
+    check (D4), and an ``ACCEPT`` on a proposal appends its disposition (D11)."""
+    if subject_kind in (P, M) or kind is DecisionKind.WITHDRAW:
         lock_queue(cursor)
     cursor.execute(_LOCK, (subject_kind.value, subject_id))
     head = store.chain_head(cursor, subject_kind, subject_id)

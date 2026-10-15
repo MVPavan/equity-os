@@ -6,6 +6,8 @@ behind them), a quote only a non-vendor capture, a ``COMPARISON`` its own run an
 ``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
+A drafted quote's guidance contract is the one a sealed import binds to the same quote
+(``bound_contract``, plan D4 M9).
 Run-store values (cells, pair differences, traces) are base units, stated in the claim's
 scale (``scale`` 10^7 for crore); display never rescales.
 """
@@ -18,7 +20,7 @@ import tempfile
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, LiteralString
 
 import pymupdf
@@ -33,6 +35,7 @@ from fundamentals.contracts.comparison import CorroborationStatus, ExtractionSta
 from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
+    GuidanceContract,
     InputTime,
     NumericClaim,
     ResolvedCitation,
@@ -44,6 +47,7 @@ from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
 from fundamentals.evidence.repository_rows import period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
+from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.verify.quote_anchor import (
     SourceDocument,
@@ -119,9 +123,35 @@ FROM interps x JOIN eqos.interpretations i ON i.id = x.id
 JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
 LEFT JOIN eqos.occurrences oc ON oc.id = i.occurrence_id"""
 )
+# M9: the imported quote claims of the entity at the drafted quote's location, with every import
+# source of their versions; only a version its panel IMPORT_SEAL sealed as it stands counts.
+_IMPORTED_QUOTES: LiteralString = """SELECT c.id, c.claim_key, i.source_path, i.sha256, i.body
+FROM eqos.numeric_claims c
+JOIN eqos.report_versions v ON v.id = c.version_id
+JOIN eqos.reports r ON r.id = v.report_id
+JOIN eqos.import_sources i ON i.version_id = v.id
+WHERE r.entity_id = %(entity)s AND c.citation_kind = 'SOURCE_QUOTE' AND c.quote = %(quote)s
+    AND eqos.quote_location(c.source_sha256, c.anchor)
+        = eqos.quote_location(%(capture)s::bigint, %(anchor)s)
+    AND EXISTS (SELECT 1 FROM eqos.decisions d
+                WHERE d.subject_kind = 'REPORT_VERSION' AND d.subject_id = v.id
+                  AND d.kind = 'IMPORT_SEAL' AND d.decider = 'PANEL'
+                  AND d.sealed_digest = eqos.version_sealed_digest(v.id))
+ORDER BY c.id, i.id"""
 
 _Row = Mapping[str, Any]
 _Times = tuple[tuple[InputTime, datetime | None], ...]
+
+
+class ContractBinding(BaseModel):
+    """One sealed import's guidance contract for a quote: its claim and management-ledger
+    source; ``contract`` is ``None`` when that ledger has no entry at the claim's key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    claim_id: int
+    source_sha256: str
+    contract: GuidanceContract | None
 
 
 class _Located(BaseModel):
@@ -171,6 +201,42 @@ def resolve_citation(
         if citation.kind is CitationKind.POLICY:
             return _policy(own, claim, entity_id)
     return None
+
+
+def contract_bindings(
+    cursor: Cursor[Any], claim: NumericClaim, entity_id: int
+) -> tuple[ContractBinding, ...]:
+    """What each sealed import of ``entity_id`` quoting the claim's capture location and quote
+    binds, from its management-ledger source (plan D4, M9)."""
+    citation = claim.citation
+    if citation.kind is not CitationKind.SOURCE_QUOTE or citation.capture_ref_id is None:
+        return ()
+    params = {
+        "entity": entity_id,
+        "quote": citation.quote,
+        "capture": citation.capture_ref_id,
+        "anchor": citation.anchor,
+    }
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        rows = own.execute(_IMPORTED_QUOTES, params).fetchall()
+    return tuple(
+        ContractBinding(
+            claim_id=row["id"],
+            source_sha256=row["sha256"],
+            contract=ledger_contracts(bytes(row["body"])).get(row["claim_key"]),
+        )
+        for row in rows
+        if PurePosixPath(row["source_path"]).name not in UPDATE_FILES
+    )
+
+
+def bound_contract(
+    cursor: Cursor[Any], claim: NumericClaim, entity_id: int
+) -> GuidanceContract | None:
+    """The one guidance contract the sealed imports bind to the quote claim; none or several
+    distinct bind nothing (fail closed)."""
+    contracts = {binding.contract for binding in contract_bindings(cursor, claim, entity_id)}
+    return contracts.pop() if len(contracts) == 1 else None
 
 
 def resolve_location(

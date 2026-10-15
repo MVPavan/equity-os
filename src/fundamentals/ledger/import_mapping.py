@@ -63,6 +63,8 @@ from fundamentals.output.management_ledger import (
 )
 
 PREAMBLE = "preamble"
+# An earnings update's own source files; its other import source is the management ledger.
+UPDATE_FILES = ("earnings-update.md", "earnings-update.json")
 HEADING = "## "
 # The approved exception to "every twin field maps" (D3 phase review, finding 6): bookkeeping
 # with no slot, alias or literal, kept byte-for-byte in the stored import source and never read.
@@ -249,9 +251,7 @@ def map_earnings_update(
             ("cross_foot", update.cross_foot.model_dump()),
             ("sec_cross_check", {"note": update.sec_cross_check_note}),
         ),
-        bound=tuple(
-            (_ledger_key(e), _contract(e)) for e in managed.entries if _ledger_key(e) in claims
-        ),
+        bound=tuple((k, c) for k, c in ledger_contracts(ledger).items() if k in claims),
         ledger=book.entries,
     )
 
@@ -431,6 +431,12 @@ def _change_claims(
             rounding=Rounding.ROUND_HALF_EVEN,
         ),
     }
+
+
+def ledger_contracts(ledger: bytes) -> dict[str, GuidanceContract]:
+    """Each management-ledger entry's guidance contract by its quote claim's key."""
+    entries = ManagementLedger.model_validate_json(ledger).entries
+    return {_ledger_key(entry): _contract(entry) for entry in entries}
 
 
 def _ledger_key(entry: LedgerEntry) -> str:

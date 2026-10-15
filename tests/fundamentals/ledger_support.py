@@ -18,6 +18,7 @@ from psycopg import Cursor
 from psycopg_pool import ConnectionPool
 from selection_support import key
 
+from fundamentals.compare.queue import lock_queue
 from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.guidance_claim import EpistemicClass
@@ -144,7 +145,8 @@ class Ledger:
         digest: str | None = None,
     ) -> int:
         """An imported version sealed by ``IMPORT_SEAL`` (with ``digest``, else its own) and
-        optionally approved, in one panel transaction."""
+        optionally approved, in one panel transaction; a successor's approval supersedes, so it
+        takes the queue lock before the version's store-clock read (plan D4, M4)."""
         draft = self.version_draft(
             report_id,
             predecessor_id,
@@ -152,6 +154,8 @@ class Ledger:
             import_sources=(("q0-approved-thesis.md", b"# Q0\n"),),
         )
         with self._cursor(PgRole.PANEL) as cursor:
+            if predecessor_id is not None:
+                lock_queue(cursor)
             version_id = store.create_version(cursor, draft)
             seal = store.insert_decision(
                 cursor,

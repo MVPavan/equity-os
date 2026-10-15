@@ -5,7 +5,8 @@ pass, then re-runs them in the deciding transaction under the queue lock and the
 and inserts the review and its decision there; a change between the two runs refuses with no
 row. A version's gate is the panel's own claim check, which its approval binds (D4). The
 reviewer returns a verdict and rationale, never an amount (D11). The panel decides report
-versions and disposition proposals; interpretations are owner-only.
+versions, disposition proposals and memory candidates (plan D4, M2), whose text the caller's
+``describe`` renders; interpretations are owner-only.
 """
 
 from __future__ import annotations
@@ -42,9 +43,11 @@ from fundamentals.ledger.lifecycle import (
 from fundamentals.store.snapshot_store import SnapshotStore
 
 V, P = SubjectKind.REPORT_VERSION, SubjectKind.DISPOSITION_PROPOSAL
+M = SubjectKind.MEMORY_ITEM
 _VERDICTS = {
     V: {verdict: DecisionKind(verdict.value) for verdict in Verdict},
     P: {Verdict.APPROVE: DecisionKind.ACCEPT, Verdict.REJECT: DecisionKind.REJECT},
+    M: {Verdict.APPROVE: DecisionKind.PROMOTE, Verdict.REJECT: DecisionKind.REJECT_CANDIDATE},
 }
 _REVIEWER_DATA = ("provider", "model", "effort", "brief_version")
 _LOCK: LiteralString = "SELECT eqos.lock_subject(%s, %s)"
@@ -57,7 +60,15 @@ _PROPOSAL: LiteralString = """SELECT to_jsonb(p) AS proposal, to_jsonb(q) AS ite
               AND s.item_id = p.item_id) AS owner_decided
 FROM eqos.disposition_proposals p JOIN eqos.queue_items q ON q.id = p.item_id
 LEFT JOIN eqos.pair_outcomes o ON o.id = p.pair_outcome_id WHERE p.id = %s"""
+# A candidate's support predicate (0017) and whether its predecessor, if any, is still promoted.
+_MEMORY: LiteralString = """SELECT eqos.memory_item_supported(i.id, NULL),
+    i.supersedes_item_id IS NULL OR (coalesce((SELECT kind FROM eqos.decisions
+        WHERE subject_kind = 'MEMORY_ITEM' AND subject_id = i.supersedes_item_id
+        ORDER BY sequence DESC LIMIT 1) = 'PROMOTE', false)
+        AND NOT eqos.memory_promoted_successor(i.supersedes_item_id))
+FROM eqos.memory_items i WHERE i.id = %s"""
 _NOT_PANEL = "the panel does not decide {subject_kind} subjects"
+_NEEDS = "{subject_kind} reviews need {what}"
 _NO_VERDICT = "verdict {verdict} has no decision on {subject_kind}"
 _GATE = "{kind} {id} fails its panel gate: {reason}"
 _STALE = "{subject_kind} {subject_id} changed during its review"
@@ -65,6 +76,9 @@ _NOT_SUBMITTED = "its head is not SUBMIT"
 _FAILS = "its AS_KNOWN claim check does not pass"
 _SETTLED = "it is decided, its item has an owner decision, or its amount source is invalid"
 _NOT_OPEN = "its queue item is not open"
+_DECIDED = "it is already decided"
+_UNSUPPORTED = "a support fails its predicate"
+_PREDECESSOR = "its predecessor is not promoted"
 
 
 class Reviewer(Protocol):
@@ -98,17 +112,26 @@ def review(
     subject_kind: SubjectKind,
     subject_id: int,
     reviewer: Reviewer,
-    catalog: SourceCatalog,
-    snapshots: SnapshotStore,
+    catalog: SourceCatalog | None = None,
+    snapshots: SnapshotStore | None = None,
+    describe: Callable[[Cursor[Any], int], str] | None = None,
 ) -> DecisionRecord:
-    """Decide one report version or disposition proposal by the reviewer's verdict, as the
-    pool's (panel) role; a version's claims are checked with ``catalog`` and ``snapshots``."""
+    """Decide one report version, disposition proposal or memory candidate by the reviewer's
+    verdict, as the pool's (panel) role; a version's claims are checked with ``catalog`` and
+    ``snapshots``, and a candidate's text is ``describe(cursor, item_id)``."""
     if subject_kind not in _VERDICTS:
         raise DecisionRefusedError(_NOT_PANEL.format(subject_kind=subject_kind))
-    check = partial(approval_check, catalog=catalog, snapshots=snapshots)
+    check = None
+    if catalog is not None and snapshots is not None:
+        check = partial(approval_check, catalog=catalog, snapshots=snapshots)
+    if subject_kind is V and check is None:
+        raise DecisionRefusedError(_NEEDS.format(subject_kind=V, what="catalog and snapshots"))
+    if subject_kind is M and describe is None:
+        raise DecisionRefusedError(_NEEDS.format(subject_kind=M, what="describe"))
+    gate = partial(_gate, check=check, describe=describe)
     as_of = overlay_boundary(pool) if subject_kind is P else None
     with pool.connection() as conn, conn.cursor() as cursor:
-        text, gated, _ = _gate(cursor, subject_kind, subject_id, as_of, check)
+        text, gated, _ = gate(cursor, subject_kind, subject_id, as_of)
     output = reviewer.review(text, gated[0])
     kind = verdict_decision(subject_kind, output.verdict)
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
@@ -117,7 +140,7 @@ def review(
         now = cursor.execute(_NOW).fetchone()
         assert now is not None
         try:
-            _, final, validation = _gate(cursor, subject_kind, subject_id, now[0], check)
+            _, final, validation = gate(cursor, subject_kind, subject_id, now[0])
         except DecisionRefusedError as refused:
             raise ReviewStaleError(str(refused)) from refused
         if final != gated:
@@ -140,16 +163,31 @@ def _gate(
     subject_kind: SubjectKind,
     subject_id: int,
     as_of: datetime | None,
-    check: Callable[[Cursor[Any], int], Validation],
+    *,
+    check: Callable[[Cursor[Any], int], Validation] | None,
+    describe: Callable[[Cursor[Any], int], str] | None,
 ) -> tuple[str, tuple[str, object], Validation | None]:
-    """The reviewed text, the gated state (digest, a version's check result) and a version's
-    passing check if every D10 gate holds, else refuse. A proposal's overlay is read at
-    ``as_of``."""
+    """The reviewed text, the gated state (digest, a version's check result or a candidate's
+    text) and a version's passing check if every D10 gate holds, else refuse. A proposal's
+    overlay is read at ``as_of``."""
     digest = store.subject_digest(cursor, subject_kind, subject_id)
     head = store.chain_head(cursor, subject_kind, subject_id)
+    if subject_kind is M:
+        assert describe is not None
+        row = cursor.execute(_MEMORY, (subject_id,)).fetchone()
+        assert row is not None
+        if head is not None:
+            raise _refused(subject_kind, subject_id, _DECIDED)
+        if not row[0]:
+            raise _refused(subject_kind, subject_id, _UNSUPPORTED)
+        if not row[1]:
+            raise _refused(subject_kind, subject_id, _PREDECESSOR)
+        text = describe(cursor, subject_id)
+        return text, (digest, text), None
     if subject_kind is V:
         if head is None or head.kind is not DecisionKind.SUBMIT:
             raise _refused(subject_kind, subject_id, _NOT_SUBMITTED)
+        assert check is not None
         validation = check(cursor, subject_id)
         if not passes(validation, digest):
             raise _refused(subject_kind, subject_id, _FAILS)

@@ -3,7 +3,9 @@
 ``check_claim`` is a pure function over a claim and what its citation resolved to, tested per
 spec row in both modes (ledger spec §1). ``resolve_citation`` and ``resolve_location`` run on
 an ``eqos_test_*`` database holding the D2 legacy import, acquisitions and cited runs (plan
-D8, D9).
+D8, D9). ``bound_contract`` (plan D4, M9) runs on raw fixtures: imported versions whose import
+sources hold a small management-ledger JSON and an unresolved quote claim, and capture rows of
+the quote's blob.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import psycopg
 import pytest
 from ledger_cited_support import Cited, cited
 from ledger_support import SELF_CITED, Ledger, ledger
-from pg_evidence_schema_support import runtime, seeded
+from pg_evidence_schema_support import SHA_A, _capture, _insert, runtime, seeded
 from selection_support import key
 
 from fundamentals.contracts.canonical import ValueKind
@@ -27,17 +29,28 @@ from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
     ClaimState,
+    DecisionKind,
     GuidanceContract,
     InputTime,
     NumericClaim,
+    ReportSection,
     ResolvedCitation,
     Rounding,
+    SubjectKind,
     VersionState,
 )
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ledger import store
-from fundamentals.ledger.citations import resolve_location
+from fundamentals.ledger.citations import bound_contract, resolve_location
 from fundamentals.ledger.claim_check import check_claim, cutoff_instant, quote_qualifiers
 from fundamentals.ledger.numeral_scan import scan_section
+from fundamentals.output.management_ledger import (
+    LedgerAnchor,
+    LedgerEntry,
+    LedgerStatus,
+    ManagementLedger,
+)
+from fundamentals.pg.settings import PgRole
 
 __all__ = ["cited", "ledger", "runtime", "seeded"]
 
@@ -436,3 +449,121 @@ def test_location_markers(cited: Cited, which: str, anchor: str, holds: bool) ->
             f"{{{{e:observed}}}} Said so {{{{s:{capture_id}|{span}}}}}.", resolves=resolves
         )
     assert states == (() if holds else (VersionState.UNCITED_PROSE,))
+
+
+# --- the guidance contract a sealed import binds to a drafted quote (plan D4, M9)
+
+LEDGER_SECTION = ReportSection(ordinal=0, section_key="ledger", body="{{e:forecast}} Guidance.")
+ANCHOR = "p1.b0.0:23"
+
+
+def _ledger_json(contract: GuidanceContract) -> bytes:
+    """A one-entry management ledger stating ``contract`` for :data:`QUOTED`'s quote."""
+    source = Provenance(
+        source_id="transcript",
+        file_sha256=SHA_A,
+        anchor_type=SourceAnchorType.PDF_SPAN,
+        page=1,
+        block=0,
+        span="0:23",
+        retrieved_at=CUTOFF,
+    )
+    anchor = LedgerAnchor(issuer_quarter="FY27_Q1", quote=QUOTE, source=source)
+    entry = LedgerEntry(
+        claim_key="ebitda_margin|FY27|company",
+        lower_bound=Decimal("9.5"),
+        upper_bound=Decimal("10"),
+        first=anchor,
+        latest=anchor,
+        status=LedgerStatus.NEW,
+        history=(),
+        **contract.model_dump(),
+    )
+    ledger = ManagementLedger(symbol="X", version=1, updated_quarter="FY27_Q1", entries=(entry,))
+    return ledger.model_dump_json().encode()
+
+
+def import_quote(ledger: Ledger, contract: GuidanceContract, *, sealed: bool = True) -> None:
+    """A version holding the quote, unresolved, with a management ledger stating ``contract``
+    and an earnings-update file stating another (never read as a ledger): imported and sealed
+    by the panel, else a runtime draft."""
+    citation = Citation(
+        kind=CitationKind.SOURCE_QUOTE, source_sha256=SHA_A, anchor=ANCHOR, quote=QUOTE
+    )
+    imported = QUOTED.model_copy(update={"citation": citation, "unresolved": True})
+    sources = (
+        ("reports/FY27_Q1/earnings-update.json", _ledger_json(OTHER_CONTRACT)),
+        ("reports/management-ledger.json", _ledger_json(contract)),
+    )
+    draft = ledger.version_draft(
+        ledger.report(), sections=(LEDGER_SECTION,), claims=(imported,), import_sources=sources
+    )
+    with ledger._cursor(PgRole.PANEL if sealed else PgRole.RUNTIME) as cursor:
+        version_id = store.create_version(cursor, draft)
+        if sealed:
+            store.insert_decision(
+                cursor,
+                subject_kind=SubjectKind.REPORT_VERSION,
+                subject_id=version_id,
+                kind=DecisionKind.IMPORT_SEAL,
+                predecessor_id=None,
+                sealed_digest=store.sealed_digest(cursor, version_id),
+            )
+
+
+def _bound(ledger: Ledger, runtime: psycopg.Connection, **citation: Any) -> Any:
+    """The contract bound to :data:`QUOTED` cited to the seeded capture of the quote's blob,
+    with any citation field replaced."""
+    (capture,) = (
+        runtime.execute(
+            "SELECT min(id) FROM eqos.capture_refs WHERE blob_sha256 = %s", (SHA_A,)
+        ).fetchone()
+        or ()
+    )
+    drafted = QUOTED.model_copy(
+        update={
+            "citation": QUOTED.citation.model_copy(
+                update={"capture_ref_id": capture, "anchor": ANCHOR} | citation
+            )
+        }
+    )
+    with ledger._cursor(PgRole.RUNTIME) as cursor:
+        return bound_contract(cursor, drafted, ledger.entity_id)
+
+
+OTHER_CONTRACT = CONTRACT.model_copy(update={"scope": "cables"})
+
+
+@pytest.mark.pg
+def test_a_sealed_import_binds_the_contract_at_the_quotes_location(
+    ledger: Ledger, runtime: psycopg.Connection
+) -> None:
+    """The import's management-ledger entry binds the drafted quote at an equal blob, anchor
+    coordinates and quote (equivalent spellings and a duplicate capture row of the blob too); a
+    different anchor, blob or quote binds nothing, and the earnings-update files never bind."""
+    import_quote(ledger, CONTRACT)
+    assert _bound(ledger, runtime) == CONTRACT
+    assert _bound(ledger, runtime, anchor="p001.b00.000:023") == CONTRACT
+    with runtime.transaction():
+        duplicate = _insert(runtime, "capture_refs", _capture("cap-duplicate"))
+        other_blob = _insert(
+            runtime, "capture_refs", _capture("cap-other") | {"blob_sha256": "c" * 64}
+        )
+    assert _bound(ledger, runtime, capture_ref_id=duplicate) == CONTRACT
+    assert _bound(ledger, runtime, capture_ref_id=other_blob) is None
+    assert _bound(ledger, runtime, anchor="p1.b0.0:24") is None
+    assert _bound(ledger, runtime, quote="guiding about 10%") is None
+
+
+@pytest.mark.pg
+def test_disagreeing_imports_bind_nothing_and_unsealed_drafts_never_count(
+    ledger: Ledger, runtime: psycopg.Connection
+) -> None:
+    """An unsealed runtime draft holding a conflicting ledger neither binds alone nor makes a
+    sealed import ambiguous; two sealed imports that disagree bind nothing (fail closed)."""
+    import_quote(ledger, OTHER_CONTRACT, sealed=False)
+    assert _bound(ledger, runtime) is None
+    import_quote(ledger, CONTRACT)
+    assert _bound(ledger, runtime) == CONTRACT
+    import_quote(ledger, OTHER_CONTRACT)
+    assert _bound(ledger, runtime) is None

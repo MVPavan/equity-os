@@ -39,6 +39,7 @@ from fundamentals.ledger import store
 from fundamentals.ledger.claim_check import cutoff_instant
 from fundamentals.ledger.display import content_hash
 from fundamentals.ledger.import_mapping import (
+    UPDATE_FILES,
     LosslessError,
     MappedVersion,
     map_earnings_update,
@@ -49,7 +50,6 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 IMPORT_AUTHOR = "ledger-import"
 GIT_TIMEOUT_SECONDS = 30
-UPDATE_FILES = ("earnings-update.md", "earnings-update.json")
 _ENTITY: LiteralString = "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s"
 # A reported value's fact: its key's translation, in the claim's source file.
 _FACT: LiteralString = """SELECT f.origin, f.origin_id FROM eqos.fact_rows f
