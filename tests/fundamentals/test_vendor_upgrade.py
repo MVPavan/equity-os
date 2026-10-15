@@ -85,6 +85,14 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         run_store, "_value_params", lambda result_id, value: value_params(result_id, value)[:12]
     )
+    # pair_outcomes.pair_identity arrives in 0013.
+    pair_params = run_store._pair_params
+    monkeypatch.setattr(
+        run_store,
+        "_INSERT_PAIR",
+        run_store._INSERT_PAIR.replace(", pair_identity", "").replace(", %s)", ")"),
+    )
+    monkeypatch.setattr(run_store, "_pair_params", lambda *args: pair_params(*args)[:-1])
     value_of = run_store._value_of
     monkeypatch.setattr(
         run_store, "_value_of", lambda row: value_of({"source_id": None, "surface": None} | row)
