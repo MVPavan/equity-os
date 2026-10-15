@@ -46,6 +46,7 @@ from fundamentals.contracts.observation import (
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.output.earnings_update import FactRole, RenderError, render_earnings_update
+from fundamentals.output.pnl_lines import ETR_LABEL, HEADLINE_LABEL, OPERAND_MISSING, TAX_LABEL
 
 _PERIOD_START = date(2024, 10, 1)
 _PERIOD_END = date(2024, 12, 31)
@@ -314,10 +315,12 @@ def test_calculations_are_code_derived_from_sourced_inputs() -> None:
     build = build_report(_report(_full_sources()), _stock())
     labels = {calc.label: calc for calc in build.update.calculations}
 
-    # Effective tax rate = (PBT - PAT) / PBT = (120 - 90) / 120 = 25.0%.
-    tax = next(calc for label, calc in labels.items() if "tax rate" in label.lower())
-    assert tax.result == "25.0"
-    assert "120" in tax.trace and "90" in tax.trace
+    # §1: tax is the filed figure, never PBT − PAT, and the report path has no filed tax or
+    # associates share, so tax, ETR and headline PBT are OPERAND_MISSING, not 30 or 25.0%.
+    assert not any("net tax" in label.lower() for label in labels)
+    for label in (TAX_LABEL, ETR_LABEL, HEADLINE_LABEL):
+        assert labels[label].result == OPERAND_MISSING
+        assert labels[label].trace.startswith(OPERAND_MISSING)
 
     # Other-income gap = Total income - Revenue = 600 - 580 = 20 (crore).
     gap = next(calc for label, calc in labels.items() if "income" in label.lower())

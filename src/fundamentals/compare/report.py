@@ -32,6 +32,7 @@ from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import ApplicabilityStatus, ValueKind
 from fundamentals.contracts.comparison import EpistemicClass, SourceRef, SourceRole, SourceState
 from fundamentals.contracts.evidence import Interpretation, Occurrence
+from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.review_queue import QueueDisposition, QueueItem, QueueOverlay
 from fundamentals.contracts.versioning import VersionContentDriftError
 
@@ -195,7 +196,7 @@ def _row_lines(
             corroboration=result.corroboration_status.value,
         )
     )
-    unit = _unit(result)
+    unit = key_unit(result.key)
     amount = result.key.value_kind is ValueKind.CURRENCY_AMOUNT
     lines.extend(
         _value_line(value, unit, in_crore=amount, anchors=anchors) for value in result.source_values
@@ -286,9 +287,8 @@ def evidence_lines(
     return lines
 
 
-def _unit(result: ResultRow) -> str:
-    """The row's unit: its currency for amounts, else its value kind."""
-    key = result.key
+def key_unit(key: MeasurementKey) -> str:
+    """A key's unit: its currency for amounts, else its value kind."""
     if key.currency is not None and key.value_kind is ValueKind.PER_SHARE_AMOUNT:
         return f"{key.currency}/share"
     return key.currency if key.currency is not None else key.value_kind.value

@@ -42,6 +42,12 @@ _DEFAULT_XBRL_ALIASES: dict[str, str] = {
 # filing under another taxonomy (e.g. a SEBI Integrated Filing, ``in-capmkt``) uses
 # the same local names, so declaring the prefix is enough to retarget them.
 _DEFAULT_TAXONOMY_PREFIX = "in-bse-fin"
+# Optional report operands (plan D2 design decision 8), appended to the resolved ``aux``
+# by ``report_aux`` under the issuer prefix: issuer configs are digest-pinned, never edited.
+TAX_EXPENSE_CONCEPT = "TaxExpense"
+ASSOCIATES_SHARE_CONCEPT = (
+    "ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod"
+)
 _UNKNOWN_OVERRIDE_ERROR = (
     "pdf_parse.label_overrides key {key!r} matches no configured target-line concept"
 )
@@ -552,6 +558,23 @@ class FundamentalsConfig(BaseModel):
                 "concepts": _reprefixed_concepts(self.concepts, self.taxonomy_prefix),
                 "pdf_parse": _reprefixed_pdf_parse(self.pdf_parse, self.taxonomy_prefix),
             }
+        )
+
+    def report_operand(self, local_name: str) -> str:
+        """A report operand's qname under this issuer's taxonomy prefix."""
+        return f"{self.taxonomy_prefix}:{local_name}"
+
+    def report_aux(self) -> tuple[AuxConceptConfig, ...]:
+        """The resolved ``aux`` plus each optional report operand it does not already list."""
+        listed = {aux.concept_qname for aux in self.concepts.aux}
+        operands = (
+            self.report_operand(TAX_EXPENSE_CONCEPT),
+            self.report_operand(ASSOCIATES_SHARE_CONCEPT),
+        )
+        return self.concepts.aux + tuple(
+            AuxConceptConfig(concept_qname=qname, required=False)
+            for qname in operands
+            if qname not in listed
         )
 
     def repo_root(self, config_path: Path) -> Path:

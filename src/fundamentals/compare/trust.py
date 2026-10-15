@@ -41,18 +41,22 @@ def trusted(
         ExtractionStatus.AGREE,
         ExtractionStatus.NOT_APPLICABLE,
     )
-    blocked = any(
-        item.key is not None
-        and item.key.digest() == key.digest()
-        and item.severity is QueueSeverity.HIGH
-        and not item.diagnostic
-        for item in overlay.open_items
-    )
     return TrustResult(
         run_id=run_id,
         key_digest=key.digest(),
         overlay_as_of=overlay.as_of,
         trusted=extraction_holds
         and corroboration is CorroborationStatus.CORROBORATED
-        and not blocked,
+        and not open_high(overlay, key),
+    )
+
+
+def open_high(overlay: QueueOverlay, key: MeasurementKey) -> bool:
+    """Whether an open non-diagnostic HIGH item names ``key`` in ``overlay``."""
+    return any(
+        item.key is not None
+        and item.key.digest() == key.digest()
+        and item.severity is QueueSeverity.HIGH
+        and not item.diagnostic
+        for item in overlay.open_items
     )

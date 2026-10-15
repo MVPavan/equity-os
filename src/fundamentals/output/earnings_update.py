@@ -58,7 +58,7 @@ _ROLE_LABELS: dict[FactRole, str] = {
     FactRole.REVENUE: "Revenue from operations",
     FactRole.TOTAL_INCOME: "Total income",
     FactRole.TOTAL_EXPENSES: "Total expenses",
-    FactRole.PROFIT_BEFORE_TAX: "Profit before tax",
+    FactRole.PROFIT_BEFORE_TAX: "Profit before tax (before share of associates/JV)",
     FactRole.PROFIT_FOR_PERIOD: "Profit for the period (PAT)",
     FactRole.BASIC_EPS: "EPS basic (₹)",
 }

@@ -26,7 +26,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 
 import structlog
@@ -46,6 +45,7 @@ from fundamentals.api.pipeline_steps import (
     _run_sec_cross_check,
     _select_optional,
     _source_document,
+    build_calculations,
 )
 from fundamentals.api.source_admission import (
     AdmittedPipelineInputs,
@@ -83,7 +83,6 @@ from fundamentals.ingest.pdf_source import load_pdf
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
     FactRole,
-    RenderedCalculation,
     RenderedFact,
     RenderedGuidance,
     VerificationOutcome,
@@ -106,12 +105,6 @@ from fundamentals.verify.quote_anchor import (
 )
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
-
-# Render roles whose sourced value the calculations section derives from.
-_REVENUE_ROLE = FactRole.REVENUE
-_TOTAL_INCOME_ROLE = FactRole.TOTAL_INCOME
-_PBT_ROLE = FactRole.PROFIT_BEFORE_TAX
-_PAT_ROLE = FactRole.PROFIT_FOR_PERIOD
 
 
 class _PlannedWrite(BaseModel):
@@ -303,7 +296,7 @@ def _run_admitted(
             continue
         role_obs[role_concept.role] = obs
         concept_obs[role_concept.concept_qname] = obs
-    for aux in config.concepts.aux:
+    for aux in config.report_aux():
         obs = _select_optional(xbrl_obs, aux.concept_qname, config, required=aux.required)
         if obs is not None:
             concept_obs[aux.concept_qname] = obs
@@ -513,7 +506,7 @@ def _run_admitted(
 
     # 9. Build the derived calculations and render the sourced 11-section update.
     #    Both must succeed before anything is committed (fail-closed transaction).
-    calculations = _build_calculations(role_obs)
+    calculations = build_calculations(role_obs, concept_obs, config)
     update = EarningsUpdate(
         issuer_name=config.issuer.name,
         nse_symbol=config.issuer.nse_symbol,
@@ -595,42 +588,5 @@ def _run_admitted(
             transcript_extracted_at=transcript_extracted_at,
             reconciled_at=reconciled_at,
             facts=tuple(audits),
-        ),
-    )
-
-
-def _build_calculations(
-    role_obs: dict[FactRole, Observation],
-) -> tuple[RenderedCalculation, ...]:
-    """Derive sourced calculations, each traced over stored consolidated facts."""
-    total_income = role_obs[_TOTAL_INCOME_ROLE].normalized_value
-    revenue = role_obs[_REVENUE_ROLE].normalized_value
-    pbt = role_obs[_PBT_ROLE].normalized_value
-    pat = role_obs[_PAT_ROLE].normalized_value
-
-    if pbt == 0:
-        raise PipelineError(
-            "cannot derive the effective tax rate: profit before tax is zero (division guard)"
-        )
-
-    other_income = total_income - revenue
-    net_tax = pbt - pat
-    effective_tax = (net_tax / pbt * Decimal(100)).quantize(Decimal("0.1"))
-
-    return (
-        RenderedCalculation(
-            label="Non-operating / other income gap (₹ crore)",
-            result=f"{int(other_income):,}",
-            trace=f"Total income {int(total_income):,} − Revenue {int(revenue):,}",
-        ),
-        RenderedCalculation(
-            label="Net tax expense (₹ crore)",
-            result=f"{int(net_tax):,}",
-            trace=f"Profit before tax {int(pbt):,} − Profit for the period {int(pat):,}",
-        ),
-        RenderedCalculation(
-            label="Effective tax rate (%)",
-            result=f"{effective_tax}",
-            trace=f"(PBT {int(pbt):,} − PAT {int(pat):,}) / PBT {int(pbt):,}",
         ),
     )

@@ -128,8 +128,14 @@ def overlay_boundary(pool: ConnectionPool) -> datetime:
 
 def read_overlay(pool: ConnectionPool, *, run_id: int, as_of: datetime) -> QueueOverlay:
     """The run's items and dispositions as of ``as_of`` (a :func:`overlay_boundary` time)."""
-    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(_OVERLAY, {"run_id": run_id, "as_of": as_of}).fetchall()
+    with pool.connection() as conn, conn.cursor() as cursor:
+        return overlay_at(cursor, run_id=run_id, as_of=as_of)
+
+
+def overlay_at(cursor: Cursor[Any], *, run_id: int, as_of: datetime) -> QueueOverlay:
+    """The run's items and dispositions as of ``as_of``, read in the caller's transaction."""
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        rows = own.execute(_OVERLAY, {"run_id": run_id, "as_of": as_of}).fetchall()
     items = {row["item_id"]: QueueItem.model_validate(row) for row in rows}
     dispositions = tuple(
         QueueDisposition.model_validate(row | {"recorded_at": row["disposed_at"]})

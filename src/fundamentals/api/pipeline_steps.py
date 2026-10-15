@@ -9,7 +9,11 @@ from decimal import Decimal
 
 import structlog
 
-from fundamentals.api.config import FundamentalsConfig
+from fundamentals.api.config import (
+    ASSOCIATES_SHARE_CONCEPT,
+    TAX_EXPENSE_CONCEPT,
+    FundamentalsConfig,
+)
 from fundamentals.api.source_admission import SourceAdmissionError, utc_time
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import AccountingFramework, Observation, PeriodType, Scope
@@ -18,7 +22,9 @@ from fundamentals.extract.pdf_number_parser import PdfParseSpec
 from fundamentals.extract.xbrl_parser import FactSelectionError, select_observation
 from fundamentals.ingest.pdf_source import LoadedPdf
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
+from fundamentals.output.earnings_update import FactRole, RenderedCalculation, anchor_label
 from fundamentals.output.management_ledger import ManagementLedger, reconcile_ledger
+from fundamentals.output.pnl_lines import headline_line, tax_lines
 from fundamentals.verify.quote_anchor import SourceBlock, SourceDocument
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
@@ -235,3 +241,49 @@ def _reconcile_current_guidance(
                 prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=prior.quarter_claims
             )
     return reconcile_ledger(prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=claims)
+
+
+# Render roles whose sourced value the calculations section derives from.
+_REVENUE_ROLE = FactRole.REVENUE
+_TOTAL_INCOME_ROLE = FactRole.TOTAL_INCOME
+_PBT_ROLE = FactRole.PROFIT_BEFORE_TAX
+_XBRL_PARSE = "the filed XBRL parse"
+
+
+def build_calculations(
+    role_obs: dict[FactRole, Observation],
+    concept_obs: dict[str, Observation],
+    config: FundamentalsConfig,
+) -> tuple[RenderedCalculation, ...]:
+    """Derive sourced calculations over stored facts and the filed XBRL report operands."""
+    total_income = role_obs[_TOTAL_INCOME_ROLE].normalized_value
+    revenue = role_obs[_REVENUE_ROLE].normalized_value
+    pbt = role_obs[_PBT_ROLE].normalized_value
+    if pbt == 0:
+        raise PipelineError(
+            "cannot derive the effective tax rate: profit before tax is zero (division guard)"
+        )
+    tax, share = (
+        concept_obs.get(config.report_operand(name))
+        for name in (TAX_EXPENSE_CONCEPT, ASSOCIATES_SHARE_CONCEPT)
+    )
+    other_income = total_income - revenue
+    return (
+        RenderedCalculation(
+            label="Non-operating / other income gap (₹ crore)",
+            result=f"{int(other_income):,}",
+            trace=f"Total income {int(total_income):,} − Revenue {int(revenue):,}",
+        ),
+        *tax_lines(pbt=pbt, tax=_operand(tax), sources=_operand_source(tax)),
+        headline_line(pbt=pbt, share_of_associates=_operand(share), sources=_operand_source(share)),
+    )
+
+
+def _operand(obs: Observation | None) -> Decimal | None:
+    """A filed report operand's value, if the parse carried it."""
+    return None if obs is None else obs.normalized_value
+
+
+def _operand_source(obs: Observation | None) -> str:
+    """Where a report operand was read: its XBRL anchor, else the parse that lacked it."""
+    return _XBRL_PARSE if obs is None else anchor_label(obs.provenance)

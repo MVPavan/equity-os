@@ -30,9 +30,9 @@ PERIOD_START = date(2025, 7, 1)
 PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-# 0001's 33 tables, 0003's version_pins, 0006's four queue tables, 0007's construction_traces
-# and 0008's queue_item_traces.
-EXPECTED_TABLE_COUNT = 47
+# 0001's 33 tables, 0003's version_pins, 0006's four queue tables, 0007's construction_traces,
+# 0008's queue_item_traces, 0010's seven fact-store tables and 0011's fact_admissions.
+EXPECTED_TABLE_COUNT = 48
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -581,7 +581,7 @@ def seeded(runtime: psycopg.Connection) -> dict[str, int]:
 
 
 def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
-    """One row in each D2 fact-store table (composite keys, so no returned id)."""
+    """One row in each D2 fact-store table (composite keys return no id; 0 stands in)."""
     store, row = {"target_store": "sqlite-seed"}, {"target_store": "sqlite-seed", "row_handle": 1}
     origin = store | {"handle": 1, "origin": "sqlite-seed", "origin_id": 1, "content_identity": "c"}
     rows: dict[str, dict[str, Any]] = {
@@ -613,6 +613,14 @@ def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
             "fact_store_events",
             {"store_id": "sqlite-seed", "operation_id": uuid.uuid4(), "state": "IMPORTED"}
             | {"recorded_at": NOW},
+        )
+        ids["fact_admissions"] = _insert(
+            conn,
+            "fact_admissions",
+            {"store_id": "sqlite-seed", "row_handle": 1, "fact_origin": "sqlite-seed"}
+            | {"fact_origin_id": 1, "run_id": ids["runs"], "result_id": ids["results"]}
+            | {"interpretation_id": ids["interpretations"], "occurrence_id": ids["occurrences"]}
+            | {"overlay_position": NOW, "bridge_version": "admission-bridge/1"},
         )
 
 

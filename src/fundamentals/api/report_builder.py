@@ -45,6 +45,7 @@ from fundamentals.output.earnings_update import (
     VerificationOutcome,
     render_earnings_update,
 )
+from fundamentals.output.pnl_lines import format_crore, headline_line, tax_lines
 from fundamentals.reconcile.agreement import (
     AgreementResult,
     AgreementStatus,
@@ -58,7 +59,8 @@ from fundamentals.reconcile.report import StockReport
 
 _LOGGER = structlog.get_logger("fundamentals.report_builder")
 
-_PERCENT_QUANTUM = Decimal("0.1")
+# The reconciled report carries the six render roles only, never filed tax or associates.
+_NO_FILED_OPERANDS = "the reconciled stock report"
 
 REASON_NO_OBSERVATION = "no first-party observation carries this required concept"
 REASON_NO_RETAINED_VALUE = "cross-source {status}: no first-party value retained (fail-closed)"
@@ -120,19 +122,12 @@ def _rendered_fact(role: FactRole, concept: str, result: AgreementResult) -> Ren
     )
 
 
-def _format_crore(value: Decimal) -> str:
-    """Format a crore value with thousands grouping, preserving real decimals."""
-    if value == value.to_integral_value():
-        return f"{value.to_integral_value():,}"
-    return f"{value.normalize():,}"
-
-
 def _calculations(role_values: dict[FactRole, Decimal]) -> tuple[RenderedCalculation, ...]:
-    """Derive the sourced P&L identities in code, skipping any missing an input.
+    """Derive the sourced P&L identities in code; tax, ETR and headline are OPERAND_MISSING.
 
-    Each calculation is deterministic arithmetic over already-sourced role values
-    and carries a trace; the model is never the calculator. A calculation whose
-    inputs are not all present is omitted rather than guessed.
+    Each calculation is deterministic arithmetic over already-sourced role values and
+    carries a trace; the model is never the calculator. The report has no filed tax or
+    associates share, and PBT − PAT is never used in their place (data spec §1).
     """
     calculations: list[RenderedCalculation] = []
 
@@ -143,36 +138,19 @@ def _calculations(role_values: dict[FactRole, Decimal]) -> tuple[RenderedCalcula
         calculations.append(
             RenderedCalculation(
                 label="Non-operating / other income gap (₹ crore)",
-                result=_format_crore(gap),
+                result=format_crore(gap),
                 trace=(
-                    f"Total income {_format_crore(income)} − "
-                    f"Revenue from operations {_format_crore(revenue)}"
+                    f"Total income {format_crore(income)} − "
+                    f"Revenue from operations {format_crore(revenue)}"
                 ),
             )
         )
 
     pbt = role_values.get(FactRole.PROFIT_BEFORE_TAX)
-    pat = role_values.get(FactRole.PROFIT_FOR_PERIOD)
-    if pbt is not None and pat is not None and pbt != 0:
-        net_tax = pbt - pat
-        effective_tax = (net_tax / pbt * Decimal(100)).quantize(_PERCENT_QUANTUM)
-        pbt_str = _format_crore(pbt)
-        pat_str = _format_crore(pat)
-        calculations.append(
-            RenderedCalculation(
-                label="Net tax expense (₹ crore)",
-                result=_format_crore(net_tax),
-                trace=f"Profit before tax {pbt_str} − Profit for the period {pat_str}",
-            )
-        )
-        calculations.append(
-            RenderedCalculation(
-                label="Effective tax rate (%)",
-                result=f"{effective_tax}",
-                trace=f"(PBT {pbt_str} − PAT {pat_str}) / PBT {pbt_str}",
-            )
-        )
-
+    calculations.extend(tax_lines(pbt=pbt, tax=None, sources=_NO_FILED_OPERANDS))
+    calculations.append(
+        headline_line(pbt=pbt, share_of_associates=None, sources=_NO_FILED_OPERANDS)
+    )
     return tuple(calculations)
 
 

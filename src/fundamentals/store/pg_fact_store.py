@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime
 from typing import Any, LiteralString, TypeVar
 
@@ -148,6 +148,31 @@ def create_native_store(pool: ConnectionPool, label: str) -> str:
     return store_id
 
 
+def run_serializable[T](
+    pool: ConnectionPool, store_id: str, operation: Callable[[_DictCursor], T]
+) -> T:
+    """Run ``operation`` at SERIALIZABLE after the clock lock on an ``OPEN`` store, retrying
+    serialisation failures at most ``MAX_RETRIES`` times (design decision 9)."""
+    for _ in range(MAX_RETRIES + 1):
+        try:
+            with _transaction(pool, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE") as cursor:
+                lock_queue(cursor)
+                require_open(cursor, store_id)
+                return operation(cursor)
+        except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
+            continue
+    raise FactStoreRetryError(f"fact store write failed {MAX_RETRIES + 1} times")
+
+
+@contextmanager
+def _transaction(pool: ConnectionPool, mode: LiteralString | None) -> Iterator[_DictCursor]:
+    """A dict cursor inside one transaction, optionally set to ``mode``."""
+    with pool.connection() as conn, conn.transaction(), conn.cursor(row_factory=dict_row) as cursor:
+        if mode is not None:
+            cursor.execute(mode)
+        yield cursor
+
+
 def _store_now(cursor: Cursor[Any]) -> str:
     """The store clock as the SQLite store writes times (UTC ``isoformat``)."""
     row = cursor.connection.execute(_NOW).fetchone()
@@ -273,29 +298,13 @@ class PgFactStore:
             found = [self._canonical(cursor, row["content_identity"], stamp) for row in identities]
         return tuple(sorted((row for row in found if row is not None), key=lambda row: row.row_id))
 
-    @contextmanager
-    def _read(self, mode: LiteralString | None = None) -> Iterator[_DictCursor]:
+    def _read(self, mode: LiteralString | None = None) -> AbstractContextManager[_DictCursor]:
         """A dict cursor inside one transaction, optionally set to ``mode``."""
-        with (
-            self._pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor(row_factory=dict_row) as cursor,
-        ):
-            if mode is not None:
-                cursor.execute(mode)
-            yield cursor
+        return _transaction(self._pool, mode)
 
     def _write(self, operation: Callable[[_DictCursor], _T]) -> _T:
-        """Run ``operation`` in design decision 9's transaction, retrying serialisation."""
-        for _ in range(MAX_RETRIES + 1):
-            try:
-                with self._read("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE") as cursor:
-                    lock_queue(cursor)
-                    require_open(cursor, self._store_id)
-                    return operation(cursor)
-            except (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected):
-                continue
-        raise FactStoreRetryError(f"fact store write failed {MAX_RETRIES + 1} times")
+        """Run ``operation`` in design decision 9's transaction on this store."""
+        return run_serializable(self._pool, self._store_id, operation)
 
     def _row(self, cursor: _DictCursor, row_id: int) -> dict[str, Any]:
         """The stored row for handle ``row_id``."""

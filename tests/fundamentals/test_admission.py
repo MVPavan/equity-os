@@ -1,0 +1,309 @@
+"""D2.4 admission (plan D2 Task 4): the §4 policy over real Stage 1 runs, the admission record,
+idempotence and atomicity, the bridge, and the separate selection and read steps."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+import psycopg
+import pytest
+from retained_support import APAR_ISSUER_CONFIG
+from stage1_e2e_support import RUNS, Stage, row_key
+
+from fundamentals.api.config import load_config
+from fundamentals.compare.queue import (
+    lock_queue,
+    overlay_boundary,
+    publish_queue_drafts,
+    read_overlay,
+    record_disposition,
+)
+from fundamentals.compare.run import load_results
+from fundamentals.compare.run_models import ResultRow
+from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.comparison import ExtractionStatus, SourceRole
+from fundamentals.contracts.evidence import InterpretationOrigin, PrecisionKind, RunMode
+from fundamentals.contracts.fact import ReconciliationStatus
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.review_queue import DispositionKind, QueueItemDraft, QueueSeverity
+from fundamentals.evidence.admission import (
+    AdmissionRecord,
+    AdmissionRefusal,
+    BridgeError,
+    admit_run,
+    fact_for,
+    key_identity,
+    read_selected,
+    select_admitted,
+)
+from fundamentals.store.fact_store import (
+    BarredAnchorFactError,
+    CanonicalSelectionError,
+    FactRef,
+)
+from fundamentals.store.pg_fact_store import PgFactStore, create_native_store
+
+pytestmark = [pytest.mark.pg, pytest.mark.retained]
+
+PAT, EPS = "profit_for_period|Q|-|REPORTED", "eps_basic|Q|-|REPORTED"
+INCOME, TAX = "total_income|Q|-|REPORTED", "tax_expense|Q|-|REPORTED"
+REFUSED = {
+    TAX: AdmissionRefusal.EXTRACTION_NOT_AGREE,  # AGREE_UNQUALIFIED
+    "profit_attributable_owners|Q|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # INVALID
+    "tax_earlier_years|Q|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # no value
+    "cf_profit_before_tax|Y|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # one-sided
+    "opm_pct|Q|-|DERIVED": AdmissionRefusal.NOT_REPORTED,
+}
+CONFIRMED = ReconciliationStatus.CROSS_SOURCE_CONFIRMED
+COUNT_ROWS = "SELECT count(*) FROM eqos.fact_rows WHERE target_store = %s"
+RESULT_ID = (
+    "SELECT id FROM eqos.results WHERE run_id = %s AND key_digest = %s AND value_identity = %s"
+)
+REFUSE_TRIGGER = (
+    "CREATE FUNCTION eqos.test_refuse() RETURNS trigger LANGUAGE plpgsql AS "
+    "$$BEGIN RAISE EXCEPTION 'test refusal'; END$$",
+    "CREATE TRIGGER test_refuse BEFORE INSERT ON eqos.fact_admissions "
+    "FOR EACH ROW EXECUTE FUNCTION eqos.test_refuse()",
+)
+
+Ran = tuple[Stage, int, dict[str, ResultRow]]
+
+
+def _ran(pg_db: Any, tmp_path: Path, run: str) -> Iterator[Ran]:
+    """One manifest run executed over its retained first-party and vendor inputs."""
+    with pg_db.runtime_pool() as pool:
+        stage = Stage(pg_db, pool, tmp_path, RUNS[run])
+        stage.first_party()
+        stage.vendors()
+        run_id = stage.execute().run_id
+        rows = {row_key(stage.run, row): row for row in load_results(run_id, pool=pool)}
+        yield stage, run_id, rows
+
+
+@pytest.fixture
+def apar(pg_db: Any, tmp_path: Path) -> Iterator[Ran]:
+    """The Apar Q2 FY26 Stage 1 run."""
+    yield from _ran(pg_db, tmp_path, "APARINDS-Q2FY26")
+
+
+def _side(row: ResultRow, representation: Representation) -> int:
+    """The interpretation the run selected for one first-party side of a row."""
+    (value,) = [
+        value
+        for value in row.source_values
+        if value.source_role is SourceRole.FIRST_PARTY and value.representation is representation
+    ]
+    assert value.interpretation_id is not None
+    return value.interpretation_id
+
+
+def _record(records: tuple[AdmissionRecord, ...], row: ResultRow) -> AdmissionRecord:
+    """The admission record of a row's XBRL side."""
+    xbrl = _side(row, Representation.XBRL)
+    (found,) = [item for item in records if item.interpretation_id == xbrl]
+    return found
+
+
+def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
+    stage, run_id, rows = apar
+    pool, repository = stage.pool, stage.repository
+    store_id = create_native_store(pool, "admit")
+    store = PgFactStore(pool, store_id)
+
+    # Atomic: a failing admission insert leaves the store without any revision.
+    with stage.pg_db.migrator_connection() as conn:
+        for statement in REFUSE_TRIGGER:
+            conn.execute(statement)
+    with pytest.raises(psycopg.errors.RaiseException):
+        admit_run(run_id, pool=pool, store_id=store_id)
+    with stage.pg_db.migrator_connection() as conn:
+        conn.execute("DROP TRIGGER test_refuse ON eqos.fact_admissions")
+        assert conn.execute(COUNT_ROWS, (store_id,)).fetchone() == (0,)
+
+    outcome = admit_run(run_id, pool=pool, store_id=store_id)
+    refusals = dict(outcome.refusals)
+    assert {key: refusals[rows[key].row_id] for key in REFUSED} == REFUSED
+    assert len(outcome.records) + len(refusals) == len(rows)
+    assert outcome.created == len(outcome.records)
+
+    # PAT (decimals -6) and EPS (decimals="INF") are admitted in the same run.
+    pat, eps = _record(outcome.records, rows[PAT]), _record(outcome.records, rows[EPS])
+    facts = {
+        key: next(
+            revision.fact
+            for revision in store.get_revisions(key_identity(rows[key].key))
+            if revision.row_id == record.handle
+        )
+        for key, record in ((PAT, pat), (EPS, eps))
+    }
+    observed = {
+        key: (
+            fact.observation.normalized_value,
+            fact.observation.normalized_unit,
+            fact.observation.decimals,
+            fact.observation.provenance.anchor_type,
+            fact.observation.provenance.context_ref,
+        )
+        for key, fact in facts.items()
+    }
+    assert observed == {
+        PAT: (Decimal(2_517_000_000), "INR", -6, SourceAnchorType.XBRL_CONTEXT, "OneD"),
+        EPS: (Decimal("62.66"), "INR/share", 15, SourceAnchorType.XBRL_CONTEXT, "OneD"),
+    }
+
+    # Each record names exactly its source rows, at one overlay position.
+    for key, record in ((PAT, pat), (EPS, eps)):
+        row = rows[key]
+        with pool.connection() as conn:
+            result = conn.execute(RESULT_ID, (run_id, row.key.digest(), row.value_identity.value))
+            (result_id,) = result.fetchone() or ()
+        (interpretation,) = repository.get_interpretations([record.interpretation_id])
+        assert (record.run_id, record.result_id, record.occurrence_id) == (
+            run_id,
+            result_id,
+            interpretation.occurrence_id,
+        )
+        assert record.ref == store.fact_ref(record.handle)
+    assert len({record.overlay_position for record in outcome.records}) == 1
+
+    # Vendor values are never admitted, and an API-document fact cannot enter the store.
+    vendor = {
+        value.interpretation_id
+        for row in rows.values()
+        for value in row.source_values
+        if value.source_role is not SourceRole.FIRST_PARTY
+    }
+    assert vendor.isdisjoint(record.interpretation_id for record in outcome.records)
+    api = Provenance(
+        source_id="upstox",
+        file_sha256="ab" * 32,
+        anchor_type=SourceAnchorType.API_DOCUMENT,
+        document_id="doc",
+        context_ref="ctx",
+        table_key="table",
+        row_label="row",
+        column_label="column",
+        retrieved_at=facts[PAT].observation.provenance.retrieved_at,
+    )
+    observation = facts[PAT].observation.model_copy(update={"provenance": api})
+    with pytest.raises(BarredAnchorFactError):
+        store.put(facts[PAT].model_copy(update={"observation": observation}))
+
+    # Idempotent, and admission never selects.
+    again = admit_run(run_id, pool=pool, store_id=store_id)
+    assert (again.created, again.records) == (0, outcome.records)
+    assert store.get_selection_history(key_identity(rows[PAT].key)) == ()
+
+    # Bridge: a constructed interpretation is refused; a PDF crore cell keeps its precision.
+    (constructed,) = repository.get_interpretations([_side(rows[TAX], Representation.PDF)])
+    assert constructed.origin is InterpretationOrigin.CONSTRUCTED
+    with pytest.raises(BridgeError):
+        fact_for(constructed, None, rows[TAX].key, run_id=run_id, reconciliation=CONFIRMED)
+    (pdf,) = repository.get_interpretations([_side(rows[PAT], Representation.PDF)])
+    assert pdf.occurrence_id is not None
+    (occurrence,) = repository.get_occurrences([pdf.occurrence_id])
+    assert (occurrence.precision_kind, occurrence.declared_precision, occurrence.raw_scale) == (
+        PrecisionKind.FINITE,
+        2,
+        7,
+    )
+    bridged = fact_for(
+        pdf, occurrence, rows[PAT].key, run_id=run_id, reconciliation=CONFIRMED
+    ).observation
+    assert (bridged.scale, bridged.decimals, bridged.raw_value) == (1, -5, "251.70")
+
+    # Selection is a separate step; the read honours cutoff and mode.
+    before = repository.store_clock()
+    selected = select_admitted(
+        pool,
+        store_id=store_id,
+        admission_id=pat.admission_id,
+        reason="test: admitted PAT",
+        expected_selection_id=0,
+    )
+    assert selected.canonical_selected_at is not None
+    assert read_selected(store, rows[PAT].key, cutoff=before, mode=RunMode.AS_KNOWN) is None
+    after = selected.canonical_selected_at + timedelta(microseconds=1)
+    known = read_selected(store, rows[PAT].key, cutoff=after, mode=RunMode.AS_KNOWN)
+    assert known is not None
+    assert (known.value, known.unit, known.ref, known.provenance.context_ref) == (
+        Decimal(2_517_000_000),
+        "INR",
+        FactRef(store_id=store_id, origin="pg-native", origin_id=pat.ref.origin_id),
+        "OneD",
+    )
+    # Retrospective reads today's selection back to when its fact was known and first seen:
+    # there, as-known has no selection yet. The test ingest stamps first-seen today, so the
+    # quarter's own cutoff precedes it and even a retrospective read finds nothing.
+    seen = max(facts[PAT].knowledge_time, facts[PAT].first_seen_time)
+    assert read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.AS_KNOWN) is None
+    assert read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.RETROSPECTIVE) == known
+    cutoff = load_config(APAR_ISSUER_CONFIG).quarter.knowledge_cutoff
+    assert read_selected(store, rows[PAT].key, cutoff=cutoff, mode=RunMode.RETROSPECTIVE) is None
+    with pytest.raises(CanonicalSelectionError):
+        select_admitted(
+            pool,
+            store_id=store_id,
+            admission_id=pat.admission_id,
+            reason="test: stale",
+            expected_selection_id=0,
+        )
+
+
+def test_open_high_refuses_until_disposed(apar: Ran) -> None:
+    """The amended D1b diagnostic-fixture cell: an open MEDIUM diagnostic Upstox item does not
+    block admission; an open non-diagnostic HIGH on the same key does, until disposed."""
+    stage, run_id, rows = apar
+    pool, row = stage.pool, rows[INCOME]
+    overlay = read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool))
+    assert [
+        (item.severity, item.diagnostic)
+        for item in overlay.open_items
+        if item.key is not None and item.key.digest() == row.key.digest()
+    ] == [(QueueSeverity.MEDIUM, True)]
+    admitted = admit_run(run_id, pool=pool, store_id=create_native_store(pool, "diagnostic"))
+    assert _record(admitted.records, row).run_id == run_id
+
+    draft = QueueItemDraft(
+        key=row.key,
+        pair_identity="test-high",
+        outcome="MISMATCH",
+        severity=QueueSeverity.HIGH,
+        evidence_interpretation_ids=(_side(row, Representation.XBRL),),
+    )
+    with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+        lock_queue(cursor)
+        (item_id,) = publish_queue_drafts(cursor, run_id=run_id, drafts=[draft])
+    store_id = create_native_store(pool, "high")
+    refused = admit_run(run_id, pool=pool, store_id=store_id)
+    assert dict(refused.refusals)[row.row_id] is AdmissionRefusal.OPEN_HIGH
+
+    record_disposition(
+        pool,
+        item_id=item_id,
+        kind=DispositionKind.DISMISSED,
+        reason="test: closes the HIGH",
+        decider="test",
+        evidence_ref="test-only",
+    )
+    (disposition,) = read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool)).dispositions
+    record = _record(admit_run(run_id, pool=pool, store_id=store_id).records, row)
+    assert record.overlay_position > disposition.recorded_at
+
+
+def test_single_representation_not_applicable_is_admitted(pg_db: Any, tmp_path: Path) -> None:
+    """LAURUSLABS Q3 FY25 files XBRL only: its continuing PAT is admitted on one value."""
+    for stage, run_id, rows in _ran(pg_db, tmp_path, "LAURUSLABS-Q3FY25"):
+        row = rows["profit_continuing_after_tax|Q|-|REPORTED"]
+        assert row.extraction_status is ExtractionStatus.NOT_APPLICABLE
+        store_id = create_native_store(stage.pool, "laurus")
+        record = _record(admit_run(run_id, pool=stage.pool, store_id=store_id).records, row)
+        (revision,) = PgFactStore(stage.pool, store_id).get_revisions(key_identity(row.key))
+        fact = revision.fact
+        assert revision.row_id == record.handle
+        assert fact.reconciliation_status is ReconciliationStatus.UNRECONCILED
+        assert fact.observation.normalized_value == Decimal(906_100_000)

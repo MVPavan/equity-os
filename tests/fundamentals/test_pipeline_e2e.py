@@ -36,11 +36,13 @@ from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
     FactRole,
+    RenderedCalculation,
     RenderedFact,
     RenderError,
     VerificationOutcome,
     render_earnings_update,
 )
+from fundamentals.output.pnl_lines import ETR_LABEL, HEADLINE_LABEL, OPERAND_MISSING, TAX_LABEL
 from fundamentals.store.fact_store import FactStore, FactStoreLike
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -265,6 +267,66 @@ def test_no_bare_unsourced_prior_period_numbers(store: FactStoreLike) -> None:
     # Guard against an accidental stray percent-growth inference in the facts area.
     facts_section = re.search(r"## 2\. facts(.*?)## 3\.", result.markdown, re.DOTALL)
     assert facts_section is not None
+
+
+_APAR_CONFIG = _REPO_ROOT / "config" / "aparinds-fy26-q2.yaml"
+_CALCULATION_LABELS = ("Non-operating / other income gap (₹ crore)", TAX_LABEL, ETR_LABEL)
+
+
+def test_missing_report_operands_render_operand_missing(store: FactStoreLike) -> None:
+    """The synthetic filing tags no tax or associates share: never PBT − PAT in their place."""
+    calculations = _run_deterministic(store).update.calculations
+    assert [calc.label for calc in calculations] == [*_CALCULATION_LABELS, HEADLINE_LABEL]
+    assert [calc.result for calc in calculations[1:]] == [OPERAND_MISSING] * 3
+
+
+@pytest.mark.retained
+def test_apar_q2_fy26_filed_tax_etr_and_headline(store: FactStoreLike, tmp_path: Path) -> None:
+    """Design decision 8 through the real issuer config: filed tax, ETR and headline PBT
+    come from the pipeline's own XBRL parse; only the ledger is redirected off ``data/``."""
+    loaded = load_config(_APAR_CONFIG)
+    config = loaded.model_copy(update={"ledger_path": str(tmp_path / "ledger.json")})
+    xml = config.xbrl_local_path(_APAR_CONFIG).read_bytes()
+    digest = hashlib.sha256(xml).hexdigest()
+    result = run_trusted_fixture_pipeline(
+        config=config,
+        config_path=_APAR_CONFIG,
+        xbrl_input=XbrlInput(
+            xml_bytes=xml,
+            file_sha256=digest,
+            source_id=config.xbrl.source_id,
+            retrieved_at=FIXTURE_ACQUIRED_AT,
+        ),
+        results_pdf_path=str(config.results_pdf_path(_APAR_CONFIG)),
+        results_pdf_sha256=config.results_pdf.sha256,
+        transcript_pdf_path=str(config.transcript_pdf_path(_APAR_CONFIG)),
+        transcript_pdf_sha256=config.transcript_pdf.sha256,
+        store=store,
+    )
+    source = f"[nse-indas-xbrl-consolidated: context OneD (file sha256 {digest[:12]}…)]"
+    assert result.update.calculations[1:] == (
+        RenderedCalculation(label=TAX_LABEL, result="88.83", trace=f"filed tax expense {source}"),
+        RenderedCalculation(
+            label=ETR_LABEL, result="26.08", trace=f"filed tax 88.83 ÷ PBT 340.56 × 100 {source}"
+        ),
+        RenderedCalculation(
+            label=HEADLINE_LABEL,
+            result="340.53",
+            trace=f"PBT 340.56 + share of associates/JV -0.03 {source}",
+        ),
+    )
+    facts = {fact.role: fact for fact in result.update.facts}
+    for role, label, value in (
+        (FactRole.PROFIT_FOR_PERIOD, "Profit for the period (PAT)", "251.70"),
+        (FactRole.PROFIT_BEFORE_TAX, "Profit before tax (before share of associates/JV)", "340.56"),
+    ):
+        assert facts[role].value == Decimal(value)
+        assert [(item.source_id, item.context_ref) for item in facts[role].sources][0] == (
+            "nse-indas-xbrl-consolidated",
+            "OneD",
+        )
+        assert f"| {label} | {value.rstrip('0')} |" in result.markdown
+    assert "Net tax expense" not in result.markdown
 
 
 @pytest.fixture(autouse=True)
