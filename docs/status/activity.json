@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D2 phase-end review: fresh Sol critical review",
-    "detail": "Sol re-review r2 APPROVED all 14 findings (13 fixed, #6 ruling accepted). A fresh Sol session with no prior context is now doing the closing critical review of all of D2.",
+    "title": "D2 critical-review fix round",
+    "detail": "Fresh Sol critical review: REJECT, 3 P1 + 4 P2 (unresolved originals in backup, approval not bound to host/port, configurable test-DB prefix could reach equity_os, SQLite WAL sidecar, capture archive completeness, missing high-water test, runbook backup flag). Opus is fixing all seven; Sol re-reviews next.",
     "stage": "eqos-01q"
   },
   "next": [
-    "Fix and re-review any critical-review findings",
+    "Sol re-review of the critical-review fixes",
     "Close D2; production cutover stays owner-gated (eqos-3zl)",
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 fresh critical review: Sol REJECT, 7 findings (3 P1). Fix round dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 phase re-review r2: Sol APPROVE (14/14 dispositioned); runbook wording aligned (2128a1c)."
