@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: Sol re-reviewing the revised plan (r2)",
-    "detail": "Opus fixed all 7 plan findings: support-breaking writes and PROMOTE now serialize on the queue lock, enforced by a SQL trigger; cross-stock evidence refused; spec's latest-validation rule kept; distinct claims for track records; Stage 2 manifest reuses the ledger claim structure; reviewer sees resolved quotes and sources.",
+    "title": "D4: fresh critical review of the approved plan",
+    "detail": "Sol approved the revised D4 plan in round 2 (all 7 findings resolved; the single queue lock covers every support-breaking write, including raw SQL). Per the review loop, a fresh Sol session with no prior context now does one critical review before any build.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 plan review r2: Sol APPROVE (7/7 resolved). Fresh critical review dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 plan fix r1 done (all 7 findings); Sol re-review r2 dispatched."
