@@ -33,6 +33,7 @@ from fundamentals.contracts.ledger import (
     ClaimState,
     DecisionKind,
     DecisionRecord,
+    GuidanceContract,
     NumericClaim,
     PolicyValue,
     ReportSection,
@@ -183,6 +184,18 @@ def test_approved_successor_supersedes_approved_and_historical_ancestors(flow: F
     ]
 
 
+def test_owner_withdraws_an_imported_version_an_imported_successor_approved(flow: Flow) -> None:
+    """v1 HISTORICAL (imported), v2 imported with ``IMPORTED_APPROVAL``: v1 is SUPERSEDED in
+    both the Python status and the trigger's ``version_superseded``, so the owner may withdraw
+    it."""
+    report = flow.ledger.report()
+    v1 = flow.ledger.imported(report)
+    flow.ledger.imported(report, v1, approve=True)
+    assert flow.status(v1) is VersionStatus.SUPERSEDED
+    assert flow.decide(v1, DecisionKind.WITHDRAW).kind is DecisionKind.WITHDRAW
+    assert flow.status(v1) is VersionStatus.WITHDRAWN
+
+
 # --- successor refusals
 
 
@@ -286,6 +299,43 @@ def test_approval_binds_only_the_latest_passing_as_known_validation(flow: Flow) 
     assert flow.status(version_id) is VersionStatus.APPROVED
 
 
+def test_a_draft_with_an_unresolved_claim_cannot_be_submitted(flow: Flow) -> None:
+    """An unresolved claim (imports only) blocks ``SUBMIT``: the trigger refuses it."""
+    report, policy = flow.report()
+    unresolved = policy_claim(policy.id).model_copy(
+        update={
+            "claim_key": "calc.open",
+            "citation": Citation(kind=CitationKind.CALCULATION),
+            "measurement_key": key("open"),
+            "unresolved": True,
+        }
+    )
+    version_id = flow.draft(report, policy, claims=(policy_claim(policy.id), unresolved))
+    with pytest.raises(errors.CheckViolation, match="illegal decision: SUBMIT"):
+        flow.submit(version_id)
+    assert flow.status(version_id) is VersionStatus.DRAFT
+
+
+def test_only_an_import_binds_a_guidance_contract(flow: Flow) -> None:
+    """``validate`` refuses a binding on a drafted version: it could replace what the claim
+    is checked against. No validation is written."""
+    report, policy = flow.report()
+    version_id = flow.draft(report, policy)
+    contract = GuidanceContract(
+        metric=None, scope=None, horizon=None, unit=POLICY.unit, constant_currency=None
+    )
+    with pytest.raises(DecisionRefusedError, match="only an import binds"):
+        lifecycle.validate(
+            flow.pools[PgRole.RUNTIME],
+            version_id,
+            mode=RunMode.AS_KNOWN,
+            bound={"policy.cap": contract},
+            **flow.paths,
+        )
+    with flow.pools[PgRole.RUNTIME].connection() as conn:
+        assert store.latest_validation(conn.cursor(), version_id) is None
+
+
 # --- D12 owner policy and AS_KNOWN times
 
 
@@ -320,7 +370,8 @@ def test_interpretation_run_cell_in_crore(
     """A crore claim on a run cell compares the cell's base-INR value at the claim's display
     scale and precision. The cell's interpretation was recorded after the draft's cutoff:
     ``POST_CUTOFF`` as known, while in hindsight the right figure matches (untrusted: filing
-    only) and a wrong one is ``VALUE_MISMATCH``."""
+    only) and a wrong one is ``VALUE_MISMATCH``. The same number stated in USD crore is a
+    ``UNIT_MISMATCH``: the cell carries no unit, so the claim's unit must be its key's."""
     cell_key = key("profit_before_tax", PeriodInterval.duration(PERIOD_START, PERIOD_END))
     cell_key = cell_key.model_copy(update={"entity_id": seeded["_entity"]})
     with runtime.transaction():
@@ -351,6 +402,7 @@ def test_interpretation_run_cell_in_crore(
         epistemic_class=EpistemicClass.OBSERVED,
     )
     wrong = crore.model_copy(update={"claim_key": "fact.pbt_wrong", "value": Decimal("340.57")})
+    usd = crore.model_copy(update={"claim_key": "fact.pbt_usd", "unit": "USD crore"})
     report, policy = flow.report()
     (recorded,) = (
         runtime.execute(
@@ -361,15 +413,17 @@ def test_interpretation_run_cell_in_crore(
     )
     cutoff = recorded - timedelta(microseconds=1)
     version_id = flow.draft(
-        report, policy, section=CELL_SECTION, claims=(crore, wrong), cutoff=cutoff
+        report, policy, section=CELL_SECTION, claims=(crore, wrong, usd), cutoff=cutoff
     )
     assert dict(flow.validate(version_id).claim_states) == {
         "fact.pbt": ClaimState.POST_CUTOFF,
         "fact.pbt_wrong": ClaimState.POST_CUTOFF,
+        "fact.pbt_usd": ClaimState.POST_CUTOFF,
     }
     assert dict(flow.validate(version_id, RunMode.RETROSPECTIVE).claim_states) == {
         "fact.pbt": ClaimState.MATCH_UNTRUSTED,
         "fact.pbt_wrong": ClaimState.VALUE_MISMATCH,
+        "fact.pbt_usd": ClaimState.UNIT_MISMATCH,
     }
 
 

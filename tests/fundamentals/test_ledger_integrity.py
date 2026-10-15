@@ -124,6 +124,74 @@ def test_the_chain_digest_recomputes_from_read_back_rows(ledger: Ledger) -> None
         predecessor = row["decision_sha256"]
 
 
+def test_a_subject_decision_takes_the_one_chain_stamp(
+    ledger: Ledger, seeded: dict[str, int]
+) -> None:
+    """An owner decision on an interpretation (0013's trigger) carries the same chain digest
+    as a report decision (0012's): one stamp for every subject."""
+    interpretation = seeded["interpretations"]
+    accepted = ledger.decide(
+        PgRole.OWNER,
+        interpretation,
+        DecisionKind.ACCEPT,
+        subject_kind=SubjectKind.INTERPRETATION,
+        sealed_digest=_subject_digest(ledger, SubjectKind.INTERPRETATION, interpretation),
+    )
+    pool = ledger.pools[PgRole.RUNTIME]
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        row = cur.execute("SELECT * FROM eqos.decisions WHERE id = %s", (accepted.id,)).fetchone()
+    assert row is not None and chain_digest(row, None) == row["decision_sha256"]
+
+
+def _subject_digest(ledger: Ledger, kind: SubjectKind, subject_id: int) -> str:
+    with ledger.pools[PgRole.OWNER].connection() as conn:
+        return store.subject_digest(conn.cursor(), kind, subject_id)
+
+
+def test_version_numbers_and_validation_result_digests(ledger: Ledger) -> None:
+    """A version's number is its place in its report's chain; a validation's result digest is
+    the D1 digest of its row and its states (claim keys in order, version-level states last),
+    so another result digests differently."""
+    report, other = ledger.report(), ledger.report()
+    v1 = ledger.draft(report)
+    v2 = ledger.draft(report, v1)
+    v3 = ledger.draft(other)
+    passing = ledger.validate(v1)
+    blocked = ledger.validate(
+        v1,
+        state=ClaimState.VALUE_MISMATCH,
+        version_states=(VersionState.UNREGISTERED_NUMBER,),
+    )
+    pool = ledger.pools[PgRole.RUNTIME]
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        numbers = [
+            cur.execute("SELECT eqos.version_number(%s) AS n", (v,)).fetchone()
+            for v in (v1, v2, v3, 10**9)
+        ]
+        digests = {}
+        for validation in (passing, blocked):
+            row = cur.execute(
+                "SELECT *, eqos.validation_result_digest(id) AS digest FROM eqos.validations "
+                "WHERE id = %s",
+                (validation,),
+            ).fetchone()
+            states = cur.execute(
+                "SELECT c.claim_key, s.state FROM eqos.validation_claim_states s "
+                "LEFT JOIN eqos.numeric_claims c ON c.id = s.claim_id WHERE s.validation_id = %s "
+                'ORDER BY c.claim_key COLLATE "C" NULLS LAST, s.state COLLATE "C"',
+                (validation,),
+            ).fetchall()
+            assert row is not None
+            header = [_text(row[name]) for name in ("id", "version_id", "checker_version", "mode")]
+            header += [_utc(row["overlay_position"]), row["pinned_input_sha256"]]
+            header += [row["sealed_digest"], _utc(row["recorded_at"]), str(len(states))]
+            pairs = [field for state in states for field in (state["claim_key"], state["state"])]
+            assert _sha(*header, *pairs) == row["digest"]
+            digests[validation] = row["digest"]
+    assert [n and n["n"] for n in numbers] == [1, 2, 1, None]
+    assert digests[passing] != digests[blocked]
+
+
 # --- Seal
 
 
@@ -467,7 +535,7 @@ def test_load_login_reads_the_harness_file_and_refuses_unsafe_ones(
     pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The randomized login and password come back from their 0600 file. A missing, foreign,
-    group-readable, symlinked or malformed file is refused, naming the path only."""
+    group-readable, symlinked, FIFO or malformed file is refused, naming the path only."""
     assert pg_db.secrets_dir is not None
     for role, expected in pg_db.logins.items():
         assert load_login(role, pg_db.secrets_dir) == expected
@@ -497,6 +565,11 @@ def test_load_login_reads_the_harness_file_and_refuses_unsafe_ones(
     (linked / "eqos_owner.login").symlink_to(path)
     with pytest.raises(RoleSecretError, match="unsafe"):
         load_login(PgRole.OWNER, linked)
+    piped = tmp_path / "piped"
+    piped.mkdir()
+    os.mkfifo(piped / "eqos_owner.login", 0o600)  # a blocking open would hang here
+    with pytest.raises(RoleSecretError, match="unsafe"):
+        load_login(PgRole.OWNER, piped)
 
 
 def test_queue_dispose_runs_as_the_owner_login(

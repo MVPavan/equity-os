@@ -9,11 +9,14 @@ legacy import and its acquisitions (``ledger_cited_support``), through the panel
 
 from __future__ import annotations
 
+import copy
+import fnmatch
 import hashlib
 import json
+import re
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -40,6 +43,7 @@ from fundamentals.contracts.ledger import (
 from fundamentals.ledger import store
 from fundamentals.ledger.display import content_hash, narrative, render_section
 from fundamentals.ledger.import_mapping import (
+    UNMAPPED_FIELDS,
     LosslessError,
     MappedVersion,
     map_earnings_update,
@@ -102,17 +106,40 @@ def update_paths(quarter: str) -> tuple[str, str]:
     return UPDATE.format(quarter, "md"), UPDATE.format(quarter, "json")
 
 
+def retained() -> frozenset[str]:
+    """The blob SHA-256s of the retrieval manifest the config pins."""
+    return frozenset(entry["sha256"] for entry in json.loads(read_manifest())["entries"])
+
+
 def map_all(
     alter: Callable[[str, bytes, bytes], tuple[bytes, bytes]] = lambda _, md, twin: (md, twin),
+    ledger: bytes | None = None,
 ) -> dict[str, MappedVersion]:
     """Every earnings update mapped in quarter order, after ``alter`` edits one's bytes."""
     mapped: dict[str, MappedVersion] = {}
     for quarter in QUARTERS:
         md, twin = alter(quarter, *(read(path) for path in update_paths(quarter)))
-        mapped[quarter] = map_earnings_update(
-            md, twin, read(LEDGER), period=quarter, entity_id=ENTITY, mapped_quarters=mapped
-        )
+        mapped[quarter] = map_one(quarter, md, twin, mapped, ledger)
     return mapped
+
+
+def map_one(
+    quarter: str,
+    md: bytes,
+    twin: bytes,
+    mapped: dict[str, MappedVersion],
+    ledger: bytes | None = None,
+) -> MappedVersion:
+    """One earnings update mapped after the earlier quarters in ``mapped``."""
+    return map_earnings_update(
+        md,
+        twin,
+        read(LEDGER) if ledger is None else ledger,
+        period=quarter,
+        entity_id=ENTITY,
+        mapped_quarters=dict(mapped),
+        retained=retained(),
+    )
 
 
 @pytest.mark.retained
@@ -180,7 +207,7 @@ def test_q0_yaml_only_content_becomes_sections_and_policy_claims() -> None:
         c.citation.kind is CitationKind.POLICY and c.citation.policy_decision_id is None
         for c in claims.values()
     )
-    assert dict(mapped.bound)["falsifier.F1"].value == Decimal("11.55")
+    assert mapped.bound == ()
 
 
 def _alter_md(quarter: str, md: bytes, twin: bytes) -> tuple[bytes, bytes]:
@@ -224,6 +251,102 @@ def test_an_altered_numeral_or_unmapped_field_fails_the_mapping(
     no slot, alias or literal fails that version's lossless check."""
     with pytest.raises(LosslessError, match="FY26_Q3"):
         map_all(alter)
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    ("lexeme", "bad"),
+    [
+        (b'"5479.73"', b'"n/a"'),
+        # FY26_Q3's period_start, period_end and knowledge_cutoff (their first occurrences).
+        (b'"2025-10-01"', b'"not-a-date"'),
+        (b'"2025-12-31"', b'"not-a-date"'),
+        (b'"2026-02-04"', b'"not-a-date"'),
+    ],
+)
+def test_a_source_that_does_not_parse_fails_only_its_version(lexeme: bytes, bad: bytes) -> None:
+    """A nonnumeric twin value or an unparsable date is that version's lossless failure, not an
+    import-wide error: the earlier quarter still maps."""
+
+    def alter(quarter: str, md: bytes, twin: bytes) -> tuple[bytes, bytes]:
+        return md, (twin.replace(lexeme, bad, 1) if quarter == "FY26_Q3" else twin)
+
+    with pytest.raises(LosslessError, match="FY26_Q3: not lossless: does not parse"):
+        map_all(alter)
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("yaml_body", [b"", b"- a\n- b\n", b"thesis\n"])
+def test_a_q0_yaml_root_that_is_not_a_mapping_fails_only_q0(yaml_body: bytes) -> None:
+    """An empty, list-root or scalar-root Q0 YAML fails the Q0 version, not the import."""
+    with pytest.raises(LosslessError, match="Q0: not lossless"):
+        map_q0(read(Q0_MD), yaml_body, cutoff=date(2025, 11, 6))
+
+
+@pytest.mark.retained
+def test_management_ledger_revisions_alias_the_whole_guidance_contract() -> None:
+    """A management-ledger entry whose unit differs from its quarters' claims fails: a revision
+    aliases a claim with its entry's whole guidance contract, not only its key and bounds."""
+    body = json.loads(read(LEDGER))
+    body["entries"][0]["unit"] = "USD per MT"
+    with pytest.raises(LosslessError, match="revision of conductor_ebitda_per_mt"):
+        map_all(ledger=json.dumps(body).encode())
+
+
+def _leaves(node: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], Any]]:
+    """Every scalar of a parsed twin with its path."""
+    items = node.items() if isinstance(node, dict) else enumerate(node)
+    for key, value in items:
+        if isinstance(value, dict | list):
+            yield from _leaves(value, (*path, str(key)))
+        else:
+            yield (*path, str(key)), value
+
+
+def _changed(value: Any) -> Any:
+    """Another value of the same lexical shape (an ISO time one second on)."""
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int | float):
+        return value + 1
+    if re.fullmatch(r"\d{4}-\d\d-\d\dT.*", value):
+        return re.sub(r":(\d\d)(?=[.Z+])", lambda m: f":{(int(m[1]) + 1) % 60:02d}", value, count=1)
+    if value in QUARTERS[1:]:  # a valid quarter, the one before (FY26_Q3 to FY26_Q2)
+        return QUARTERS[QUARTERS.index(value) - 1]
+    return value + ("7" if re.fullmatch(r"-?\d+(\.\d+)?", value) else "~")
+
+
+def _content(mapped: MappedVersion) -> dict[str, Any]:
+    """What an import stores of a mapped version (``ledger`` is only the next quarters' check)."""
+    return mapped.model_dump(exclude={"ledger"})
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("quarter", QUARTERS)
+def test_every_twin_field_maps_but_the_approved_bookkeeping(quarter: str) -> None:
+    """Changing any twin scalar changes the mapped version or fails it, unless it is one of the
+    approved ``UNMAPPED_FIELDS`` (finding 6), which never change the mapped content."""
+    mapped = map_all()
+    earlier = {q: mapped[q] for q in QUARTERS[: QUARTERS.index(quarter)]}
+    md, twin = (read(path) for path in update_paths(quarter))
+    raw = json.loads(twin)
+    for path, value in _leaves(raw):
+        if value is None:
+            continue
+        tree = copy.deepcopy(raw)
+        *parents, leaf = path
+        node: Any = tree
+        for key in parents:
+            node = node[int(key) if isinstance(node, list) else key]
+        node[int(leaf) if isinstance(node, list) else leaf] = _changed(value)
+        try:
+            out = map_one(quarter, md, json.dumps(tree).encode(), earlier)
+            changed = _content(out) != _content(mapped[quarter])
+        except LosslessError:
+            changed = None  # refused: an alias or check holds the field
+        exempt = any(fnmatch.fnmatchcase(".".join(path), field) for field in UNMAPPED_FIELDS)
+        # An exempt field never changes the mapped content; no other passes unchanged.
+        assert changed is not exempt, ".".join(path)
 
 
 @pytest.mark.retained
@@ -371,9 +494,11 @@ def _states(cited: Cited, version_id: int) -> tuple[tuple[str, ClaimState], ...]
 def test_failed_version_persists_nothing_and_other_bytes_give_historical(
     cited: Cited, pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Through ``ledger import`` as the panel login: an update with one altered numeral fails and
-    persists no rows, the command exits refused, and the others still import; Q0's evidence
-    commit holding other bytes gives ``HISTORICAL`` with no ``IMPORTED_APPROVAL``."""
+    """Through ``ledger import`` as the panel login: an update with one altered numeral, and one
+    with a nonnumeric value, fail and persist no rows, the command exits refused, and the others
+    still import; a backdated report ``retrieved_at`` is kept byte-for-byte in its import source
+    and sets no acquisition time; Q0's evidence commit holding other bytes gives ``HISTORICAL``
+    with no ``IMPORTED_APPROVAL``."""
     repo = tmp_path / "repo"
     config = load_import_config(CONFIG)
     for path in [*PINNED, config.retrieval_manifest]:
@@ -385,6 +510,14 @@ def test_failed_version_persists_nothing_and_other_bytes_give_historical(
     (repo / Q0_MD).write_bytes(read(Q0_MD))
     altered = repo / update_paths("FY27_Q1")[0]
     altered.write_bytes(altered.read_bytes().replace(b"6,591.06", b"6,591.07", 1))
+    nonnumeric = repo / update_paths("FY26_Q4")[1]
+    nonnumeric.write_bytes(nonnumeric.read_bytes().replace(b'"6602.81"', b'"n/a"', 1))
+    # An approved bookkeeping field: a report-written retrieval time, backdated.
+    stamped = repo / update_paths("FY26_Q3")[1]
+    backdated = re.sub(
+        rb'"retrieved_at": "\d{4}', b'"retrieved_at": "1999', stamped.read_bytes(), count=1
+    )
+    stamped.write_bytes(backdated)
     body = yaml.safe_load(CONFIG.read_text())
     body["q0"]["evidence_commit"] = commit
     config_path = tmp_path / "ledger_import.yaml"
@@ -401,9 +534,22 @@ def test_failed_version_persists_nothing_and_other_bytes_give_historical(
         "JOIN eqos.report_versions v ON v.report_id = r.id ORDER BY v.id"
     )
     assert [(period, kind) for period, kind, _ in rows] == [
-        *((q, "EARNINGS_UPDATE") for q in QUARTERS[:3]),
+        *((q, "EARNINGS_UPDATE") for q in QUARTERS[:2]),
         ("FY26_Q2", "BOOTSTRAP_THESIS"),
     ]
+    stored = cited.query(
+        "SELECT sha256 FROM eqos.import_sources WHERE version_id = %s AND source_path = %s",
+        rows[1][2],
+        update_paths("FY26_Q3")[1],
+    )
+    assert (
+        stored
+        == [(hashlib.sha256(backdated).hexdigest(),)]
+        != [(PINNED[update_paths("FY26_Q3")[1]],)]
+    )
+    assert cited.query(
+        "SELECT count(*) FROM eqos.legacy_acquisitions WHERE retrieved_at < '2000-01-01'"
+    ) == [(0,)]
     with cited.runtime() as cursor:
         assert {version_status(cursor, vid) for _, _, vid in rows} == {VersionStatus.HISTORICAL}
     q0_id = rows[-1][2]

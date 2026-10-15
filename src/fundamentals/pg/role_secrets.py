@@ -50,10 +50,12 @@ def load_login(role: PgRole, secrets_dir: Path) -> RoleLogin:
 
     Refuses a missing file, a symlink or other non-regular file, a file not owned by this
     process's user, any group or other permission bit, and anything but one well-formed line.
+    The open never blocks (a FIFO is refused, not waited on), and the file is judged by its open
+    descriptor before any read.
     """
     path = secrets_dir / f"{GROUP_ROLES[role]}{LOGIN_SUFFIX}"
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as missing:
         raise MissingRoleSecretError(f"credential file missing: {path}") from missing
     except OSError as unreadable:

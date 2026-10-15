@@ -21,10 +21,12 @@ from psycopg_pool import ConnectionPool
 from fundamentals.compare.queue import insert_disposition, lock_queue, overlay_boundary
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
+    CitationKind,
     ClaimState,
     DeciderRole,
     DecisionKind,
     DecisionRecord,
+    GuidanceContract,
     PolicyValue,
     ResolvedCitation,
     SubjectKind,
@@ -117,6 +119,7 @@ _UNBOUND = "approval must bind the latest passing AS_KNOWN validation of version
 _STALE_HASH = "version {version_id} content hash does not match its narrative"
 _OPEN_PREDECESSOR = "version {version_id}'s predecessor {predecessor_id} is {status}"
 _BLOCKED = "version {version_id} has version-level findings: {states}"
+_UNBINDABLE = "version {version_id}: only an import binds guidance, and only to its quote claims"
 
 
 class DecisionRefusedError(ValueError):
@@ -166,18 +169,21 @@ def validate(
     mode: RunMode,
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
-    bound: Mapping[str, ResolvedCitation] | None = None,
+    bound: Mapping[str, GuidanceContract] | None = None,
 ) -> Validation:
     """Check every claim at the current overlay boundary and append the validation. ``bound``
-    (imports only) replaces, per claim key, the resolved fields its source binds: a quote's
-    parsed guidance contract, a self-cited policy's parsed source field."""
+    (imports only) is, per quote claim key, the guidance contract its import sources bind."""
     boundary = overlay_boundary(pool)
+    bound = bound or {}
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(_LOCK, (V.value, version_id))
         draft = store.read_version(cursor, version_id)
         row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
         assert row is not None
         imported = bool(draft.import_sources)
+        quotes = {c.claim_key for c in draft.claims if c.citation.kind is CitationKind.SOURCE_QUOTE}
+        if bound and (not imported or bound.keys() - quotes):
+            raise DecisionRefusedError(_UNBINDABLE.format(version_id=version_id))
         resolved = {
             claim.claim_key: _bind(
                 resolve_citation(
@@ -188,7 +194,7 @@ def validate(
                     catalog=catalog,
                     snapshots=snapshots,
                 ),
-                (bound or {}).get(claim.claim_key),
+                bound.get(claim.claim_key),
             )
             for claim in draft.claims
         }
@@ -231,12 +237,12 @@ def validate(
 
 
 def _bind(
-    resolved: ResolvedCitation | None, bound: ResolvedCitation | None
+    resolved: ResolvedCitation | None, contract: GuidanceContract | None
 ) -> ResolvedCitation | None:
-    """``resolved`` with the fields ``bound`` sets; an unresolved citation stays unresolved."""
-    if resolved is None or bound is None:
+    """``resolved`` with its bound guidance contract; an unresolved citation stays unresolved."""
+    if resolved is None or contract is None:
         return resolved
-    return resolved.model_copy(update={k: getattr(bound, k) for k in bound.model_fields_set})
+    return resolved.model_copy(update={"guidance": contract})
 
 
 def decide(

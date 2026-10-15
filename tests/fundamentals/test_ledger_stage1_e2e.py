@@ -29,6 +29,7 @@ from fundamentals.api.cli import main
 from fundamentals.api.ledger_cli import DEFAULT_WATCHLIST
 from fundamentals.api.screener_cli_dispatch import EXIT_OK
 from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog
+from fundamentals.contracts.canonical import Basis, ValueKind
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     CitationKind,
@@ -37,7 +38,8 @@ from fundamentals.contracts.ledger import (
     ReportSection,
     VersionDraft,
 )
-from fundamentals.contracts.measurement_key import MeasurementKey
+from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
+from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.ledger import lifecycle, store
 from fundamentals.ledger.display import (
     content_hash,
@@ -66,6 +68,23 @@ _DECISIONS = (
 )
 _QA = "SELECT gate, result FROM eqos.qa_records WHERE version_id = %s ORDER BY id"
 _FIRST_SEEN = "SELECT min(retrieved_at) FROM eqos.legacy_acquisitions WHERE blob_sha256 = %s"
+_REPORT = (
+    "SELECT e.entity_key, r.period, r.kind FROM eqos.report_versions v "
+    "JOIN eqos.reports r ON r.id = v.report_id "
+    "JOIN eqos.reporting_entities e ON e.id = r.entity_id WHERE v.id = %s"
+)
+_REPORTS = (
+    "SELECT e.entity_key, r.period, r.kind FROM eqos.reports r "
+    "JOIN eqos.reporting_entities e ON e.id = r.entity_id"
+)
+# The record a claim's foreign key cites: a legacy fact's file and translated key, a capture's
+# blob.
+_CITED_FACT = """SELECT f.file_sha256, t.entity_id, t.canonical_id, t.period_start, t.period_end,
+    t.period_instant, t.basis, t.framework, t.currency, t.value_kind, t.dimension_set
+FROM eqos.fact_rows f JOIN eqos.legacy_fact_translations t
+    ON t.target_store = f.target_store AND t.row_handle = f.handle
+WHERE f.origin = %s AND f.origin_id = %s"""
+_CITED_CAPTURE = "SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s"
 
 
 def differences(expected: Any, actual: Any, path: str = "") -> list[str]:
@@ -124,9 +143,12 @@ def expected_version(version: dict[str, Any], entity_ids: dict[str, int]) -> dic
     }
 
 
-def stored_claim(item: NumericClaim, state: ClaimState) -> dict[str, Any]:
-    """One stored claim and its state in the manifest's claim shape, nulls dropped."""
-    citation, key = item.citation, item.measurement_key
+def stored_claim(rig: Rig, item: NumericClaim, state: ClaimState) -> dict[str, Any]:
+    """One stored claim and its state in the manifest's claim shape, nulls dropped. A resolved
+    citation's source SHA-256 and key are the cited record's, so a claim whose declared ones
+    differ from what it cites shows the difference."""
+    citation = item.citation
+    sha, key = cited(rig, item)
     shaped = {
         "section": item.section_key,
         "kind": citation.kind.value,
@@ -146,8 +168,8 @@ def stored_claim(item: NumericClaim, state: ClaimState) -> dict[str, Any]:
         "metric_label": item.metric_label,
         "scope": item.scope,
         "constant_currency": item.constant_currency,
-        "mkey": None if key is None else _key(key),
-        "source_sha256": citation.source_sha256,
+        "mkey": _agreed(item.measurement_key and _key(item.measurement_key), key and _key(key)),
+        "source_sha256": _agreed(citation.source_sha256, sha),
         "anchor": citation.anchor,
         "quote": citation.quote,
         "citation": SELF_CITED
@@ -156,6 +178,37 @@ def stored_claim(item: NumericClaim, state: ClaimState) -> dict[str, Any]:
         "state": state.value,
     }
     return {k: v for k, v in shaped.items() if v is not None}
+
+
+def cited(rig: Rig, item: NumericClaim) -> tuple[str | None, MeasurementKey | None]:
+    """The source SHA-256 and measurement key of the record the claim's foreign key names; an
+    unresolved claim names none and keeps its declared ones."""
+    citation = item.citation
+    if citation.fact_origin_id is not None:
+        ((sha, entity, canonical, start, end, instant, *kinds, pairs),) = rig.query(
+            _CITED_FACT, citation.fact_origin, citation.fact_origin_id
+        )
+        basis, framework, currency, value_kind = kinds
+        period = PeriodInterval.at(instant) if instant else PeriodInterval.duration(start, end)
+        return sha, MeasurementKey(
+            entity_id=entity,
+            canonical_id=canonical,
+            period=period,
+            basis=Basis(basis),
+            framework=AccountingFramework(framework),
+            currency=currency,
+            value_kind=ValueKind(value_kind),
+            dimensions=DimensionSet(pairs=tuple(tuple(pair) for pair in pairs)),
+        )
+    if citation.capture_ref_id is not None:
+        ((sha,),) = rig.query(_CITED_CAPTURE, citation.capture_ref_id)
+        return sha, item.measurement_key
+    return citation.source_sha256, item.measurement_key
+
+
+def _agreed(declared: Any, cited_value: Any) -> Any:
+    """The cited value when the claim declares the same, else both, so the comparison names it."""
+    return cited_value if declared == cited_value else {"declared": declared, "cited": cited_value}
 
 
 def _key(key: MeasurementKey) -> dict[str, Any]:
@@ -180,8 +233,9 @@ def _key(key: MeasurementKey) -> dict[str, Any]:
     }
 
 
-def stored_version(rig: Rig, version_id: int, report: dict[str, str]) -> dict[str, Any]:
-    """One stored version in the shape :func:`expected_version` gives."""
+def stored_version(rig: Rig, version_id: int) -> dict[str, Any]:
+    """One stored version in the shape :func:`expected_version` gives, its report identity and
+    every claim's cited source read from the stored rows."""
     with rig.pg_db.runtime_pool() as pool, pool.connection() as conn:
         cursor = conn.cursor()
         draft = store.read_version(cursor, version_id)
@@ -192,8 +246,9 @@ def stored_version(rig: Rig, version_id: int, report: dict[str, str]) -> dict[st
     decisions = rig.query(_DECISIONS, version_id)
     approval = next((d for d in decisions if d[0] == "IMPORTED_APPROVAL"), None)
     blobs = {c.citation.source_sha256 for c in draft.claims} - {None}
+    ((stock, period, kind),) = rig.query(_REPORT, version_id)
     return {
-        "report": report,
+        "report": {"stock": stock, "period": period, "kind": kind},
         "cutoff": draft.knowledge_cutoff,
         "status": status.value,
         "decisions": [d[0] for d in decisions],
@@ -215,7 +270,7 @@ def stored_version(rig: Rig, version_id: int, report: dict[str, str]) -> dict[st
             s.section_key: {"ordinal": s.ordinal, "sha256": _rendered_sha256(s, draft.claims)}
             for s in draft.sections
         },
-        "claims": {c.claim_key: stored_claim(c, states[c.claim_key]) for c in draft.claims},
+        "claims": {c.claim_key: stored_claim(rig, c, states[c.claim_key]) for c in draft.claims},
     }
 
 
@@ -256,8 +311,12 @@ def test_ledger_stage1_end_to_end(
         version_id = ids.pop((report["period"], report["kind"]))
         by_name[version["id"]] = version_id
         expected = expected_version(version, {"APARINDS": entity_id})
-        assert differences(expected, stored_version(rig, version_id, report)) == [], version["id"]
+        assert differences(expected, stored_version(rig, version_id)) == [], version["id"]
     assert ids == {}
+    reports = [
+        (r["stock"], r["period"], r["kind"]) for r in (v["report"] for v in MANIFEST["versions"])
+    ]
+    assert sorted(rig.query(_REPORTS)) == sorted(reports)
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         claims = {
             name: {c.claim_key: c for c in store.read_version(conn.cursor(), vid).claims}

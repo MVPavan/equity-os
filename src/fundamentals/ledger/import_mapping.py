@@ -7,15 +7,19 @@ explicit ``{{c:<claim key>|<style>}}`` placeholder. The mapping is lossless or i
 :class:`LosslessError`: the twin round-trips through the generator's typed model (no field the
 model does not hold), the generator renders the twin to the Markdown bytes (every literal byte
 comes from the twin), each rebuilt line renders to its bytes, and every twin value with no line
-of its own (guidance, ledger history) is a verified alias of a claim. Q0's YAML-only content
-follows its Markdown as sections, its falsifier thresholds as self-cited ``POLICY`` claims.
+of its own (guidance, ledger anchors and history) is a verified alias of a claim. Every source
+file is a blob of the hash-pinned retrieval manifest (its footnote shows the SHA-256 prefix).
+Only :data:`UNMAPPED_FIELDS` map to nothing. Q0's YAML-only content follows its Markdown as
+sections, its falsifier thresholds as self-cited ``POLICY`` claims. A source that does not parse
+fails its version like any other loss.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -33,14 +37,13 @@ from fundamentals.contracts.ledger import (
     GuidanceContract,
     NumericClaim,
     ReportSection,
-    ResolvedCitation,
     Rounding,
 )
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.role import FactRole
-from fundamentals.ledger.claim_check import quote_qualifiers
+from fundamentals.ledger.claim_check import CRORE, PER_SHARE, PERCENT, UNITS, quote_qualifiers
 from fundamentals.ledger.display import narrative, render_section
 from fundamentals.output.earnings_update import (
     _ROLE_LABELS,
@@ -51,18 +54,20 @@ from fundamentals.output.earnings_update import (
     _format_bounds,
     render_earnings_update,
 )
-from fundamentals.output.management_ledger import LedgerEntry, LedgerStatus, ManagementLedger
+from fundamentals.output.management_ledger import (
+    LedgerAnchor,
+    LedgerEntry,
+    LedgerRevision,
+    LedgerStatus,
+    ManagementLedger,
+)
 
 PREAMBLE = "preamble"
 HEADING = "## "
-CRORE, PER_SHARE, PERCENT = "INR crore", "INR per share", "%"
-CURRENCY = "INR"
-# Value kind, currency and scale of each value unit (legacy facts carry the same).
-UNITS: Mapping[str, tuple[ValueKind, str | None, int | None]] = {
-    CRORE: (ValueKind.CURRENCY_AMOUNT, CURRENCY, 10_000_000),
-    PER_SHARE: (ValueKind.PER_SHARE_AMOUNT, CURRENCY, 1),
-    PERCENT: (ValueKind.PERCENTAGE, None, None),
-}
+# The approved exception to "every twin field maps" (D3 phase review, finding 6): bookkeeping
+# with no slot, alias or literal, kept byte-for-byte in the stored import source and never read.
+# A report's ``retrieved_at`` is never an acquisition or first-seen time (D8: the manifest's is).
+UNMAPPED_FIELDS = ("*.retrieved_at", "ledger.version", "comparatives_attempted")
 TABLE_STYLE = {CRORE: "group-intl,trim", PER_SHARE: ""}
 BOUNDS_STYLE = "range-dash,unit,trim"
 PERCENT_STYLE = "plus,unit"
@@ -88,8 +93,9 @@ class LosslessError(ValueError):
 class MappedVersion(BaseModel):
     """One version's content as mapped from its sources, before citations are looked up.
 
-    ``bound`` holds what the import's claim check compares against for claims that cite their
-    own source: a quote's parsed guidance contract, a self-cited policy's parsed source field.
+    ``bound`` is each quote claim's guidance contract from the management ledger, a source
+    apart from the twin the claim maps from; ``ledger`` the twin's entries, the snapshot later
+    quarters' history revisions are checked against.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -98,7 +104,8 @@ class MappedVersion(BaseModel):
     claims: tuple[NumericClaim, ...]
     cutoff: date
     qa_records: tuple[tuple[str, dict[str, int | str]], ...] = ()
-    bound: tuple[tuple[str, ResolvedCitation], ...] = ()
+    bound: tuple[tuple[str, GuidanceContract], ...] = ()
+    ledger: tuple[LedgerEntry, ...] = ()
 
 
 def map_earnings_update(
@@ -109,19 +116,26 @@ def map_earnings_update(
     period: str,
     entity_id: int,
     mapped_quarters: Mapping[str, MappedVersion],
+    retained: frozenset[str],
 ) -> MappedVersion:
-    """Map one earnings update; ``ledger`` is the management ledger and ``mapped_quarters`` the
-    earlier quarters' versions, whose claims the ledger history must alias."""
-    text, raw = md.decode(), json.loads(twin)
-    update = EarningsUpdate.model_validate(raw)
+    """Map one earnings update; ``ledger`` is the management ledger, ``mapped_quarters`` the
+    earlier quarters' versions, whose claims the ledger anchors and history must alias, and
+    ``retained`` the blob SHA-256s of the retrieval manifest."""
+    with _parsing(period):
+        text, raw = md.decode(), json.loads(twin)
+        update = EarningsUpdate.model_validate(raw)
+        managed = ManagementLedger.model_validate_json(ledger)
+        results = [Decimal(calculation.result) for calculation in update.calculations]
+        start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
+        cutoff = date.fromisoformat(update.knowledge_cutoff)
     _require(json.loads(update.model_dump_json(exclude_unset=True)) == raw, period, "twin field")
+    _require({s["file_sha256"] for s in _sources(raw)} <= retained, period, "source file")
     generated = render_earnings_update(update).replace(*LABEL_THEN)
     _require(generated == text, period, "the twin does not render to the Markdown")
     book = update.ledger
     _require(book is not None and book.updated_quarter == period, period, "ledger quarter")
     assert book is not None
     _require(book.symbol == update.nse_symbol, period, "ledger symbol")
-    start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     claims: dict[str, NumericClaim] = {}
     lines: list[str] = []
     notes = _Footnotes()
@@ -130,6 +144,7 @@ def map_earnings_update(
     for role in REQUIRED_ROLES:
         fact = facts[role]
         name = f"fact.{role.value}"
+        _require(fact.unit in TABLE_STYLE, period, f"{name} unit")
         key = _key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
         claims[name] = _valued(name, "facts", fact.value, fact.unit, key, fact.sources[0])
         lines.append(
@@ -140,7 +155,8 @@ def map_earnings_update(
     by_concept = {fact.concept_qname: fact for fact in update.facts}
     for comparative in update.comparatives:
         fact = by_concept[comparative.concept_qname]
-        _require(comparative.current_value == fact.value, period, "comparative alias")
+        aliased = (comparative.current_value, comparative.unit)
+        _require(aliased == (fact.value, fact.unit), period, "comparative alias")
         current, style = f"fact.{fact.role.value}", TABLE_STYLE[fact.unit]
         current_marks = notes.markers(comparative.current_sources)
         cells = []
@@ -180,56 +196,76 @@ def map_earnings_update(
         )
         claims[name], line = _ledger_entry(entry, metric_labels.get(name), notes, period)
         lines.append(line)
-    for number, calculation in enumerate(update.calculations, start=1):
+    for number, (calculation, result) in enumerate(
+        zip(update.calculations, results, strict=True), start=1
+    ):
         name = f"calc.{number}"
         unit = next((u for s, u in CALC_UNITS.items() if calculation.label.endswith(s)), None)
         _require(unit is not None, period, f"{name} unit")
         assert unit is not None
         key = _key(calculation.label, unit, entity_id, start, end)
-        claims[name] = _valued(name, "calculations", Decimal(calculation.result), unit, key)
+        claims[name] = _valued(name, "calculations", result, unit, key)
         lines.append(
             f"- **{calculation.label}** = {_slot(name, '')}. "
             f"[computed — trace: {calculation.trace}]\n"
         )
-    # Each history revision (the twin's; the management ledger's of this quarter) aliases its
-    # quarter's claim with equal bounds; its status is the ledger's, not that quarter's line.
+    # Each entry's first and latest quote is its quarter's claim's citation. Each history
+    # revision (the twin's; the management ledger's of this quarter) aliases its quarter's claim
+    # with equal bounds and contract. A twin revision of this quarter records the entry carried
+    # as it stands; of an earlier quarter, a snapshot an earlier mapped ledger held (never this
+    # quarter's). The management ledger is the snapshot of its own quarter.
     known = {q: {c.claim_key: c for c in m.claims} for q, m in mapped_quarters.items()}
     known[period] = claims
-    revisions = [(e, r) for e in book.entries for r in e.history]
-    revisions += [
-        (e, r)
-        for e in ManagementLedger.model_validate_json(ledger).entries
-        for r in e.history
-        if r.issuer_quarter == period
+    books = {q: m.ledger for q, m in mapped_quarters.items()}
+    for entry in book.entries:
+        for anchor in (entry.first, entry.latest):
+            claim = _held(known, anchor.issuer_quarter, entry)
+            cited = None if claim is None else claim.citation
+            quoted = (anchor.source.file_sha256, _anchor(anchor), anchor.quote)
+            held = cited is not None and (cited.source_sha256, cited.anchor, cited.quote) == quoted
+            _require(held, period, f"{anchor.issuer_quarter} quote of {entry.claim_key}")
+    held = managed.updated_quarter != period or managed.entries == book.entries
+    _require(held, period, "management ledger is not this quarter's ledger")
+    own = [(e, r) for e in book.entries for r in e.history]
+    once = {(e.claim_key, r.issuer_quarter) for e, r in own}
+    _require(len(once) == len(own), period, "a history records a quarter twice")
+    revisions = own + [
+        (e, r) for e in managed.entries for r in e.history if r.issuer_quarter == period
     ]
     for entry, revision in revisions:
-        claim = known.get(revision.issuer_quarter, {}).get(_ledger_key(entry))
-        bounds = None if claim is None else (claim.lower_bound, claim.upper_bound)
-        held = bounds == (revision.lower_bound, revision.upper_bound)
+        claim = _held(known, revision.issuer_quarter, entry)
+        bounds = (revision.lower_bound, revision.upper_bound)
+        held = claim is not None and (claim.lower_bound, claim.upper_bound) == bounds
+        held = held and ((entry, revision) not in own or _snapshot(entry, revision, period, books))
         _require(held, period, f"{revision.issuer_quarter} revision of {entry.claim_key}")
     sections = _sections(_bind(text, lines, claims.values(), period))
     _require(narrative(sections, claims.values()) == md, period, "sections do not render")
     return MappedVersion(
         sections=tuple(sections),
         claims=tuple(claims.values()),
-        cutoff=date.fromisoformat(update.knowledge_cutoff),
+        cutoff=cutoff,
         qa_records=(
             ("cross_check", update.cross_check.model_dump()),
             ("cross_foot", update.cross_foot.model_dump()),
             ("sec_cross_check", {"note": update.sec_cross_check_note}),
         ),
-        bound=tuple((_ledger_key(e), _contract(e)) for e in book.entries),
+        bound=tuple(
+            (_ledger_key(e), _contract(e)) for e in managed.entries if _ledger_key(e) in claims
+        ),
+        ledger=book.entries,
     )
 
 
 def map_q0(md: bytes, twin: bytes, *, cutoff: date) -> MappedVersion:
     """Map the Q0 thesis: its Markdown sections, then one section per top-level YAML list in
     YAML order; every YAML scalar outside them is stated in the Markdown."""
-    text = md.decode()
+    with _parsing(Q0):
+        text, root = md.decode(), yaml.compose(twin.decode())
+    _require(isinstance(root, yaml.MappingNode), Q0, "YAML root is not a mapping")
+    tree = _lexemes(root)
     flat = " ".join(text.split())
     sections = _sections(text)
     claims: list[NumericClaim] = []
-    tree = _lexemes(yaml.compose(twin.decode()))
     for name, value in tree.items():
         if isinstance(value, str):
             _require(" ".join(value.split()) in flat, Q0, f"{name} is not in the Markdown")
@@ -240,18 +276,34 @@ def map_q0(md: bytes, twin: bytes, *, cutoff: date) -> MappedVersion:
         body = f"{HEADING}{name}\n\n" + "".join(f"- {item}\n" for item in items)
         sections.append(ReportSection(ordinal=len(sections), section_key=name, body=body))
     _require(narrative(sections, claims).startswith(md), Q0, "sections do not render")
-    return MappedVersion(
-        sections=tuple(sections),
-        claims=tuple(claims),
-        cutoff=cutoff,
-        bound=tuple((c.claim_key, ResolvedCitation(value=c.value)) for c in claims),
-    )
+    return MappedVersion(sections=tuple(sections), claims=tuple(claims), cutoff=cutoff)
 
 
 def _require(holds: bool, version: str, what: str) -> None:
     """Fail the version's import unless ``holds``."""
     if not holds:
         raise LosslessError(f"{version}: not lossless: {what}")
+
+
+@contextmanager
+def _parsing(version: str) -> Iterator[None]:
+    """Fail the version's import when a source does not decode or parse."""
+    try:
+        yield
+    except (ValueError, ArithmeticError, yaml.YAMLError) as failure:
+        raise LosslessError(f"{version}: not lossless: does not parse: {failure}") from failure
+
+
+def _sources(node: Any) -> Iterator[Mapping[str, Any]]:
+    """Every provenance object (one with a ``file_sha256``) in a parsed twin."""
+    if isinstance(node, dict):
+        if "file_sha256" in node:
+            yield node
+        for value in node.values():
+            yield from _sources(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _sources(value)
 
 
 def _slot(claim_key: str, style: str) -> str:
@@ -407,9 +459,43 @@ def _guidance_aliases(
     return labels
 
 
-def _contract(entry: LedgerEntry) -> ResolvedCitation:
-    """The parsed entry's guidance contract, which the import's claim check compares."""
-    return ResolvedCitation(guidance=GuidanceContract.model_validate(entry, from_attributes=True))
+def _contract(guidance: LedgerEntry | NumericClaim) -> GuidanceContract:
+    """A ledger entry's or quote claim's guidance contract."""
+    return GuidanceContract.model_validate(guidance, from_attributes=True)
+
+
+def _held(
+    known: Mapping[str, Mapping[str, NumericClaim]], quarter: str, entry: LedgerEntry
+) -> NumericClaim | None:
+    """``quarter``'s claim under the entry's key, if it states the entry's guidance contract."""
+    claim = known.get(quarter, {}).get(_ledger_key(entry))
+    return claim if claim is not None and _contract(claim) == _contract(entry) else None
+
+
+def _snapshot(
+    entry: LedgerEntry,
+    revision: LedgerRevision,
+    version: str,
+    books: Mapping[str, Iterable[LedgerEntry]],
+) -> bool:
+    """Whether the revision is a snapshot: of ``version``, the entry carried (its bounds are its
+    claim's, checked by the caller); of an earlier quarter, an earlier ``books`` entry under its
+    key with its bounds and status, in the revision's quarter or last quoted then."""
+    if revision.issuer_quarter == version:
+        return revision.status is entry.status is LedgerStatus.CARRIED
+    snapshot = (entry.claim_key, revision.lower_bound, revision.upper_bound, revision.status)
+    return any(
+        revision.issuer_quarter in (quarter, held.latest.issuer_quarter)
+        and (held.claim_key, held.lower_bound, held.upper_bound, held.status) == snapshot
+        for quarter, entries in books.items()
+        for held in entries
+    )
+
+
+def _anchor(quoted: LedgerAnchor) -> str:
+    """A ledger quote's ``p<page>.b<block>.<span>`` anchor."""
+    source = quoted.source
+    return f"p{source.page}.b{source.block}.{source.span}"
 
 
 def _ledger_entry(
@@ -428,7 +514,7 @@ def _ledger_entry(
         citation=Citation(
             kind=CitationKind.SOURCE_QUOTE,
             source_sha256=source.file_sha256,
-            anchor=f"p{source.page}.b{source.block}.{source.span}",
+            anchor=_anchor(latest),
             quote=latest.quote,
         ),
         value_kind=UNITS.get(entry.unit, (ValueKind.CURRENCY_AMOUNT,))[0],

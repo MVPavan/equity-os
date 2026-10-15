@@ -7,11 +7,13 @@ and times are :mod:`fundamentals.ledger.citations`' job; this module only compar
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     CitationKind,
@@ -28,6 +30,17 @@ IST_OFFSET = timedelta(hours=5, minutes=30)
 AS_KNOWN_ONLY = frozenset({InputTime.RECORDED, InputTime.SELECTED, InputTime.POLICY})
 VALUED = frozenset(
     {CitationKind.FIGURE, CitationKind.CALCULATION, CitationKind.POLICY, CitationKind.COMPARISON}
+)
+CRORE, PER_SHARE, PERCENT = "INR crore", "INR per share", "%"
+# The closed unit table of keyed claims: each unit's value kind, currency and scale. A run-store
+# value is in base units and converts by the claim's scale, so row 3 holds all three to its key.
+UNITS: Mapping[str, tuple[ValueKind, str | None, int | None]] = {
+    CRORE: (ValueKind.CURRENCY_AMOUNT, "INR", 10_000_000),
+    PER_SHARE: (ValueKind.PER_SHARE_AMOUNT, "INR", 1),
+    PERCENT: (ValueKind.PERCENTAGE, None, None),
+}
+NO_CONTRACT = GuidanceContract(
+    metric=None, scope=None, horizon=None, unit=None, constant_currency=None
 )
 # The closed qualifier lexicon: each qualifier and the whole word that states it.
 QUALIFIER_WORDS = {"plus": re.compile(r"\bplus\b"), "about": re.compile(r"\babout\b")}
@@ -75,7 +88,7 @@ def check_claim(
         if mode is RunMode.AS_KNOWN or name not in AS_KNOWN_ONLY
     ):
         return ClaimState.POST_CUTOFF
-    if _differs(
+    if not _typed(claim) or _differs(
         (claim.value_kind, claim.unit, claim.currency, claim.scale),
         (resolved.value_kind, resolved.unit, resolved.currency, resolved.scale),
     ):
@@ -107,9 +120,20 @@ def _differs(claimed: tuple[object, ...], cited: tuple[object, ...]) -> bool:
     )
 
 
+def _typed(claim: NumericClaim) -> bool:
+    """Whether a keyed claim's unit, by the unit table, is its value kind, currency and scale,
+    and its value kind and currency are its measurement key's (row 3, before any comparison)."""
+    key = claim.measurement_key
+    typed = (claim.value_kind, claim.currency, claim.scale)
+    return key is None or (
+        UNITS.get(claim.unit or "") == typed and typed[:2] == (key.value_kind, key.currency)
+    )
+
+
 def _quote_means_claim(claim: NumericClaim, quote: str, contract: GuidanceContract | None) -> bool:
     """Row 7: the guidance gate holds for the bounds, the quote states exactly the claim's
-    qualifiers, and the guidance contract agrees field by field."""
+    qualifiers, and the bound guidance contract agrees field by field. A claim asserting any
+    contract field fails closed when no contract is bound."""
     lower = claim.lower_bound if claim.value is None else claim.value
     upper = claim.upper_bound if claim.value is None else claim.value
     if lower is None or upper is None:
@@ -126,4 +150,4 @@ def _quote_means_claim(claim: NumericClaim, quote: str, contract: GuidanceContra
         unit=claim.unit,
         constant_currency=claim.constant_currency,
     )
-    return contract is None or asserted == contract
+    return asserted == (contract or NO_CONTRACT)

@@ -8,6 +8,8 @@ must be refused before any connection is attempted.
 from __future__ import annotations
 
 import os
+import secrets
+import uuid
 from pathlib import Path
 
 import psycopg
@@ -19,15 +21,18 @@ from pg_support import (
     create_database,
     drop_database,
 )
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
 from fundamentals.api.cli import main
+from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.pg.migrations import (
     MigrationChecksumError,
     MigrationNameError,
     apply_migrations,
 )
-from fundamentals.pg.settings import ENV_PREFIX, PgSettings
+from fundamentals.pg.role_secrets import LOGIN_SUFFIX, SECRETS_DIR_ENV
+from fundamentals.pg.settings import ENV_PREFIX, GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import MAINTENANCE_DB, HarnessGuardError
 
 _SCHEMA = "mig_probe"
@@ -217,3 +222,45 @@ def test_db_cli_bootstraps_and_migrates_the_configured_database(
     assert main(["db", "bootstrap"]) == 0
     assert main(["db", "migrate", "--migrations-dir", str(MIGRATIONS_DIR)]) == 0
     assert capsys.readouterr().out.splitlines()[-1] == "applied\t0"
+
+
+@pytest.mark.pg
+def test_db_bootstrap_creates_file_named_logins_and_refuses_a_foreign_one(
+    pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``db bootstrap`` creates a login its credential file names, in its group, able to log in;
+    a file naming an existing role outside the group is refused and the role is never granted."""
+    settings = pg_db.settings
+    fresh, foreign = (
+        f"{settings.test_db_prefix}{name}_{uuid.uuid4().hex[:12]}" for name in ("boot", "foreign")
+    )
+    password = secrets.token_urlsafe(32)
+    for key, value in {**pg_db.cli_env(), SECRETS_DIR_ENV: str(tmp_path)}.items():
+        monkeypatch.setenv(key, value)
+
+    def credential(role: PgRole, login: str) -> None:
+        path = tmp_path / f"{GROUP_ROLES[role]}{LOGIN_SUFFIX}"
+        path.unlink(missing_ok=True)
+        path.write_text(f"{login}:{password}\n")
+        path.chmod(0o600)
+
+    member = "SELECT pg_has_role(%s, %s, 'MEMBER')"
+    admin_info = settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)
+    try:
+        credential(PgRole.PANEL, fresh)
+        assert main(["db", "bootstrap"]) == EXIT_OK
+        with psycopg.connect(admin_info, autocommit=True) as admin:
+            assert admin.execute(member, (fresh, GROUP_ROLES[PgRole.PANEL])).fetchone() == (True,)
+            admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(foreign)))
+        login = conninfo_to_dict(settings.conninfo(PgRole.RUNTIME, dbname=pg_db.dbname))
+        with psycopg.connect(**{**login, "user": fresh, "password": password}) as conn:
+            assert conn.execute("SELECT current_user").fetchone() == (fresh,)
+        credential(PgRole.OWNER, foreign)
+        assert main(["db", "bootstrap"]) == EXIT_REFUSED
+        with psycopg.connect(admin_info, autocommit=True) as admin:
+            owner = GROUP_ROLES[PgRole.OWNER]
+            assert admin.execute(member, (foreign, owner)).fetchone() == (False,)
+    finally:
+        with psycopg.connect(admin_info, autocommit=True) as admin:
+            for role in (fresh, foreign):
+                admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))

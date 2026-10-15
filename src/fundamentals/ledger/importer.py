@@ -11,6 +11,7 @@ map persists nothing.
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
@@ -124,11 +125,12 @@ def import_versions(
         return tuple((path, (repo / path).read_bytes()) for path in paths)
 
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        ((manifest, body),) = sources(config.retrieval_manifest)
+        ((_, body),) = sources(config.retrieval_manifest)
         store.insert_acquisitions(cursor, body, expected_sha256=config.retrieval_manifest_sha256)
         row = cursor.execute(_ENTITY, (config.stock,)).fetchone()
         assert row is not None, config.stock
         entity_id = int(row[0])
+    retained = frozenset(entry["sha256"] for entry in json.loads(body)["entries"])
     ((_, ledger),) = sources(config.management_ledger)
     mapped: dict[str, MappedVersion] = {}
     outcomes: list[tuple[str, ReportKind, _Files, MappedVersion | LosslessError]] = []
@@ -143,6 +145,7 @@ def import_versions(
                 period=period,
                 entity_id=entity_id,
                 mapped_quarters=mapped,
+                retained=retained,
             )
             outcomes.append((period, ReportKind.EARNINGS_UPDATE, files, mapped[period]))
         except LosslessError as failure:

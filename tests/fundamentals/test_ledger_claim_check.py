@@ -122,6 +122,8 @@ def case(
 
 
 UNIT, MEANING = ClaimState.UNIT_MISMATCH, ClaimState.QUOTE_MEANING_MISMATCH
+UNCARRIED = dict.fromkeys(("value_kind", "unit", "currency", "scale"))
+UNCONTRACTED = dict.fromkeys(("metric", "scope", "horizon", "unit", "constant_currency"))
 HALF_EVEN_29 = {"precision": 1, "rounding": Rounding.ROUND_HALF_EVEN, "value": Decimal("29.0")}
 ROWS = [
     case("1-unresolved", ClaimState.UNRESOLVED, cited_record=None),
@@ -137,7 +139,12 @@ ROWS = [
     case("3-scale", UNIT, mine={"scale": 100_000}),
     case("3-currency", UNIT, mine={"currency": "USD"}),
     case("3-value-kind", UNIT, mine={"value_kind": ValueKind.COUNT}),
-    case("3-not-carried", ClaimState.MATCH, mine={"unit": "%"}, theirs={"unit": None}),
+    # A run cell or trace carries no unit or scale (a trace no value kind or currency either):
+    # the claim's own unit, by the closed table, must be its key's kind, currency and scale.
+    case("3-not-carried", ClaimState.MATCH, theirs=UNCARRIED),
+    case("3-unit-not-its-key", UNIT, mine={"unit": "%"}, theirs=UNCARRIED),
+    case("3-usd-crore", UNIT, mine={"unit": "USD crore", "currency": "USD"}, theirs=UNCARRIED),
+    case("3-scale-not-its-unit", UNIT, mine={"scale": 100_000}, theirs=UNCARRIED),
     case("4-key", ClaimState.KEY_MISMATCH, mine={"measurement_key": key("profit_before_tax")}),
     case("5-value", ClaimState.VALUE_MISMATCH, mine={"value": Decimal("6591.07")}),
     case("5-at-precision", ClaimState.MATCH, theirs={"value": Decimal("6591.0649")}),
@@ -168,6 +175,16 @@ ROWS = [
     case("7-scope", MEANING, QUOTED, QUOTE_CITED, mine={"scope": "cables"}),
     case("7-constant-currency", MEANING, QUOTED, QUOTE_CITED, mine={"constant_currency": True}),
     case("7-horizon", MEANING, QUOTED, QUOTE_CITED, mine={"horizon": "FY28"}),
+    # Fail closed: an asserted contract with none bound to compare is no match.
+    case("7-no-contract", MEANING, QUOTED, QUOTE_CITED, theirs={"guidance": None}),
+    case(
+        "7-none-asserted",
+        ClaimState.MATCH,
+        QUOTED,
+        QUOTE_CITED,
+        mine=UNCONTRACTED,
+        theirs={"guidance": None},
+    ),
     case("8-untrusted", ClaimState.MATCH_UNTRUSTED, theirs={"trusted": False}),
     case("8-no-run-cell", ClaimState.MATCH, theirs={"trusted": None}),
 ]
