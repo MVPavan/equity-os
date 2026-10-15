@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D2 phase-end review: fix round 1",
-    "detail": "Sol rejected D2 with 14 findings (6 P1: reopen/rollback approval binding, owner identity, translation contents, PDF locator, backup metadata trust, recreation script bypassing the real admission path). Opus is fixing all 14; then a Sol re-review. Full suite before fixes: 3,180 passed, 8 skipped.",
+    "title": "D2 phase-end review: Sol re-review round 2",
+    "detail": "Fix round 1 committed (222f796): 13 of 14 findings fixed; #6 ruled — the recreation script no longer runs `fundamentals run`, because the real path is refused by the temporal rule (sources registered after Q2 FY26's cutoff). Sol is checking the fixes and the ruling.",
     "stage": "eqos-01q"
   },
   "next": [
@@ -10,6 +10,10 @@
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 phase fix round 1 committed (222f796): 13 fixed, #6 ruled and recorded in the D2 plan."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 phase review r1: Sol REJECT, 14 findings; full suite 3,180 passed. Fix round 1 dispatched."
