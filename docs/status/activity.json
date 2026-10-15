@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4.4: transcript go/no-go probe, then the frozen Stage 2 manifest",
-    "detail": "D4.3 committed (c382308): full-text search, as-of-cutoff retrieval on store time, NEEDS_REVALIDATION flags and provenance from one consistent snapshot; 3,544 passed (one known pool-timeout flake, passes on rerun). Opus first checks whether existing product code can register the two Apar call transcripts as first-party sources; if not, it stops and reports. If yes, it authors the Stage 2 manifest from source bytes for Sol's approval.",
+    "title": "D4: transcript sources can't be admitted yet — amendment in Sol review",
+    "detail": "The go/no-go probe failed: the issuer configs declare both Apar call transcripts as first-party with pinned hashes, but capture intake binds every PDF to the results PDF and no catalog reads the transcript declaration. The quote anchors themselves check out on the bytes. Rather than stop D4, the plan gains Task 3b (admit transcripts by pinned hash; catalog them first-party, quotes only, never reconciled). Sol is reviewing the amendment.",
     "stage": "eqos-4hi.4"
   },
   "next": [
@@ -10,6 +10,10 @@
     "D4 phase review loop and fresh critical review; close eqos-4hi"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 transcript go/no-go probe: NO-GO (admission + catalog gaps). Plan amendment T1 (Task 3b) written and sent to Sol."
+    },
     {
       "date": "2026-10-15",
       "text": "D4.3 committed (c382308): search, cutoff retrieval, revalidation flags, provenance. Transcript probe + Stage 2 manifest dispatched."
