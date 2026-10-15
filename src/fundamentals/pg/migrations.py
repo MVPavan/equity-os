@@ -83,7 +83,7 @@ class LoginRoleError(ValueError):
 
 
 def ensure_group_roles(admin: psycopg.Connection) -> None:
-    """Create the NOLOGIN ``eqos_panel`` and ``eqos_owner`` group roles if missing; never alter."""
+    """Create each NOLOGIN group role in ``GROUP_ROLES`` if missing; never alter."""
     for group in GROUP_ROLES.values():
         if admin.execute(_ROLE_EXISTS, (group,)).fetchone() is None:
             admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(group)))

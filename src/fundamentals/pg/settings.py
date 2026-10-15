@@ -38,11 +38,16 @@ class PgRole(StrEnum):
     RUNTIME = "RUNTIME"
     PANEL = "PANEL"
     OWNER = "OWNER"
+    READER = "READER"
 
 
 # NOLOGIN group roles; a member login connects with ``role=<group>``, so ``current_user`` is the
-# group inside the session (plan D3, D2).
-GROUP_ROLES: dict[PgRole, str] = {PgRole.PANEL: "eqos_panel", PgRole.OWNER: "eqos_owner"}
+# group inside the session (plan D3, D2; the reader: plan D5, D2).
+GROUP_ROLES: dict[PgRole, str] = {
+    PgRole.PANEL: "eqos_panel",
+    PgRole.OWNER: "eqos_owner",
+    PgRole.READER: "eqos_reader",
+}
 
 
 class PgSettings(BaseSettings):
@@ -78,8 +83,8 @@ class PgSettings(BaseSettings):
     ) -> str:
         """A libpq connection string for one role, with both timeouts applied.
 
-        ``PANEL`` and ``OWNER`` need a member ``login`` and act as their group role; the other
-        roles refuse one.
+        The ``GROUP_ROLES`` need a member ``login`` and act as their group role; the other roles
+        refuse one.
         """
         group = GROUP_ROLES.get(role)
         if (group is None) != (login is None):

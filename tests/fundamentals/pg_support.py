@@ -1,9 +1,9 @@
 """Isolated PostgreSQL databases for tests (D1a design decision 3).
 
 Per session the harness creates ``<prefix>tpl_<hex>``, migrates it as the
-migrator role and closes every connection to it. It also creates randomized panel and owner
-logins (members of ``eqos_panel``/``eqos_owner``), writes their 0600 credential files to a
-temporary secrets directory, and drops both logins at session end (plan D3, D2). Per test
+migrator role and closes every connection to it. It also creates one randomized login per
+group role (``GROUP_ROLES``), writes their 0600 credential files to a temporary secrets
+directory, and drops the logins at session end (plan D3, D2). Per test
 it clones a fresh ``<prefix><hex>`` from that template and drops it afterwards. Nothing ever
 deletes rows: the evidence triggers forbid it, and dropping the clone is the
 cleanup.

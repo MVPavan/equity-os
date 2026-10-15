@@ -563,6 +563,8 @@ def test_privileges_match_the_d2_matrix(ledger: Ledger) -> None:
                     "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, function)
                 ).fetchone() == (True,)
     for role, group in GROUP_ROLES.items():
+        if role not in ledger.pools:
+            continue  # the reader: test_views_readonly_role.py
         with ledger.pools[role].connection() as conn:
             assert conn.execute("SELECT current_user").fetchone() == (group,)
 

@@ -153,7 +153,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
 
 
 def _create_logins(admin: psycopg.Connection) -> None:
-    """Create each panel or owner login whose credential file exists; skip a missing file."""
+    """Create each group-role login whose credential file exists; skip a missing file."""
     directory = secrets_dir(os.environ)
     for role in GROUP_ROLES:
         try:
