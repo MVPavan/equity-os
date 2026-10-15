@@ -69,6 +69,11 @@ def anchor_label(provenance: Provenance) -> str:
     sha = provenance.file_sha256[:_SHA_PREFIX_LEN]
     if provenance.anchor_type is SourceAnchorType.PDF_SPAN:
         location = f"page {provenance.page}, block {provenance.block}, span {provenance.span}"
+    elif provenance.anchor_type is SourceAnchorType.PDF_CELL:
+        location = (
+            f"page {provenance.page}, line {provenance.row_path}, "
+            f"column {provenance.column_index} ({provenance.table_key})"
+        )
     elif provenance.anchor_type is SourceAnchorType.XBRL_CONTEXT:
         location = f"context {provenance.context_ref}"
     elif provenance.anchor_type is SourceAnchorType.JSON_ISLAND:

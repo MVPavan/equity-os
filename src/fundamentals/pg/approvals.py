@@ -3,7 +3,7 @@
 An approved file is a YAML payload plus one ``approval: {reviewer, verdict, date,
 payload_sha256}`` line; the payload is the file's bytes without that line. Outside a test
 database, an owner authorization record must also name the database, the operation and the
-approved payload's hash.
+approved payload's hash, and be signed by the one designated owner.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ TEST_DATABASE_PREFIX = "eqos_test_"
 SOL_REVIEWER = "gpt-6.1-sol"
 FIXTURE_REVIEWER = "test-fixture"
 APPROVE_VERDICT = "APPROVE"
+OWNER = "PavanMV"
 APPROVAL_KEY = "approval"
 DATABASE_KEY = "database"
 _APPROVAL_LINE = APPROVAL_KEY.encode() + b":"
@@ -48,6 +49,7 @@ class GateRefusal(StrEnum):
     WRONG_DATABASE = "WRONG_DATABASE"
     OWNER_RECORD_MISSING = "OWNER_RECORD_MISSING"
     OWNER_RECORD_MISMATCH = "OWNER_RECORD_MISMATCH"
+    NOT_OWNER = "NOT_OWNER"
     REVIEWER_NOT_ALLOWED = "REVIEWER_NOT_ALLOWED"
     APPROVAL_STALE = "APPROVAL_STALE"
 
@@ -127,6 +129,8 @@ def check_gate(
         if is_test_database(database):
             return
         raise GateRefusedError(GateRefusal.OWNER_RECORD_MISSING)
+    if owner.by != OWNER:
+        raise GateRefusedError(GateRefusal.NOT_OWNER)
     if owner.database != database:
         raise GateRefusedError(GateRefusal.WRONG_DATABASE)
     if op not in owner.operations or owner.approved_payload_sha256 != approval.payload_sha256:

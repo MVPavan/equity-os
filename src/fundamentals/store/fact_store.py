@@ -140,7 +140,7 @@ class CanonicalSelection(BaseModel):
     selection_sha256: str
 
 
-def _utc(value: datetime) -> datetime:
+def require_utc(value: datetime) -> datetime:
     """Reject naive/non-UTC temporal inputs instead of guessing their meaning."""
     if value.tzinfo is None or value.utcoffset() != timedelta(0):
         raise ValueError("temporal timestamps must be aware UTC")
@@ -221,6 +221,15 @@ def _anchor_payload(observation: Observation) -> dict[str, object]:
     }
     if prov.anchor_type is SourceAnchorType.PDF_SPAN:
         payload.update({"page": prov.page, "block": prov.block, "span": prov.span})
+    elif prov.anchor_type is SourceAnchorType.PDF_CELL:
+        payload.update(
+            {
+                "page": prov.page,
+                "row_path": prov.row_path,
+                "column_index": prov.column_index,
+                "table_key": prov.table_key,
+            }
+        )
     elif prov.anchor_type is SourceAnchorType.XBRL_CONTEXT:
         pass
     elif prov.anchor_type is SourceAnchorType.JSON_ISLAND:
@@ -367,7 +376,7 @@ def effective_revision(
     if not eligible:
         return None
     selected = fact(eligible[-1].row_id)
-    if max(_utc(selected.knowledge_time), _utc(selected.first_seen_time)) > cutoff:
+    if max(require_utc(selected.knowledge_time), require_utc(selected.first_seen_time)) > cutoff:
         return None
     return eligible[-1]
 
@@ -392,8 +401,8 @@ def fact_columns(fact: Fact) -> dict[str, str | None]:
     """Validate ``fact`` for storage and return its stored text as a new ``CANDIDATE`` row."""
     observation = fact.observation
     _require_provenance(observation)
-    _utc(fact.knowledge_time)
-    _utc(fact.first_seen_time)
+    require_utc(fact.knowledge_time)
+    require_utc(fact.first_seen_time)
     prov = observation.provenance
     stored = fact.model_copy(update={"canonical_status": CanonicalStatus.CANDIDATE})
     return {
@@ -561,9 +570,9 @@ class FactStore:
                 raise CanonicalSelectionError("multiple legacy canonical rows in one family")
             seen.add(identity)
             fact = Fact.model_validate_json(row["fact_json"])
-            known = max(_utc(fact.knowledge_time), _utc(fact.first_seen_time))
+            known = max(require_utc(fact.knowledge_time), require_utc(fact.first_seen_time))
             raw = row["canonical_selected_at"]
-            stamp = _utc(datetime.fromisoformat(raw)) if raw else datetime.now(UTC)
+            stamp = require_utc(datetime.fromisoformat(raw)) if raw else datetime.now(UTC)
             if stamp < known:
                 raise CanonicalSelectionError("legacy selection precedes fact knowledge")
             self._append_selection(
@@ -676,11 +685,11 @@ class FactStore:
             raise KeyError(f"no revision with row_id={row_id}")
 
         content_identity = target["content_identity"]
-        stamp = _utc(selected_at if selected_at is not None else datetime.now(UTC))
+        stamp = require_utc(selected_at if selected_at is not None else datetime.now(UTC))
         if not reason.strip():
             raise CanonicalSelectionError("selection reason must be non-empty")
         fact = Fact.model_validate_json(target["fact_json"])
-        if stamp < max(_utc(fact.knowledge_time), _utc(fact.first_seen_time)):
+        if stamp < max(require_utc(fact.knowledge_time), require_utc(fact.first_seen_time)):
             raise CanonicalSelectionError("selection precedes fact knowledge/first-seen time")
         history = self.get_selection_history(content_identity)
         expected = expected_selection_id
@@ -713,7 +722,7 @@ class FactStore:
                 row_id=row["row_id"],
                 sequence=row["sequence"],
                 predecessor_id=row["predecessor_id"],
-                selected_at=_utc(datetime.fromisoformat(row["selected_at"])),
+                selected_at=require_utc(datetime.fromisoformat(row["selected_at"])),
                 reason=row["reason"],
                 legacy_baseline=bool(row["legacy_baseline"]),
                 selection_sha256=row["selection_sha256"],
@@ -735,7 +744,7 @@ class FactStore:
         cutoff: datetime | None = None,
     ) -> StoredRevision | None:
         """Return the decision effective at cutoff, with eligible recorded fact times."""
-        stamp = _utc(cutoff) if cutoff is not None else datetime.now(UTC)
+        stamp = require_utc(cutoff) if cutoff is not None else datetime.now(UTC)
         decision = effective_revision(
             self.get_selection_history(content_identity),
             stamp,
@@ -752,7 +761,7 @@ class FactStore:
 
     def query_canonical(self, *, cutoff: datetime | None = None) -> tuple[StoredRevision, ...]:
         """Return one cutoff-eligible selected revision per existing content identity."""
-        stamp = _utc(cutoff) if cutoff is not None else datetime.now(UTC)
+        stamp = require_utc(cutoff) if cutoff is not None else datetime.now(UTC)
         # A read transaction gives all families the same database snapshot.
         with self._conn:
             self._conn.execute("BEGIN")

@@ -15,6 +15,7 @@ from typing import Any
 
 import psycopg
 import pytest
+import yaml
 from pg_support import PgTestDatabase, create_database, drop_database, mint_name
 from stage1_e2e_support import CONFIG, RUNS, Stage
 from test_legacy_import import Rig
@@ -25,6 +26,7 @@ from fundamentals.pg.backup import (
     CAPTURES_DIR,
     DEFAULT_CLIENT_PREFIX,
     DUMP_FILE,
+    MANIFEST_FILE,
     BackupError,
     restore_backup,
     verify_set,
@@ -135,6 +137,37 @@ def test_round_trip_snapshot_and_tamper(
         assert fresh not in databases(settings)
     with pytest.raises(BackupError, match="unpublished"):
         verify_set(shutil.copytree(set_dir, tmp_path / f".{set_dir.name}.partial"))
+    nested = shutil.copytree(set_dir, tmp_path / "nested-manifest")
+    (nested / CAPTURES_DIR / MANIFEST_FILE).write_text("smuggled")
+    with pytest.raises(BackupError, match="files differ"):
+        verify_set(nested)
+
+    # The manifest's own metadata is not hashed: dropping run ids alone is inconsistent, and an
+    # ABSENT claim with empty inventories is caught by reading the restored database itself.
+    for name, changes in (
+        ("runs", {"run_ids": []}),
+        ("absent", {"schema_state": "ABSENT", "table_counts": {}, "run_ids": [], "captures": []}),
+    ):
+        copy = shutil.copytree(set_dir, tmp_path / f"meta-{name}")
+        data = yaml.safe_load((copy / MANIFEST_FILE).read_text()) | changes
+        (copy / MANIFEST_FILE).write_text(yaml.safe_dump(data))
+        if name == "runs":
+            with pytest.raises(BackupError, match="inventories disagree"):
+                verify_set(copy)
+            continue
+        fresh = mint_name(settings)
+        try:
+            check = restore_backup(
+                copy,
+                settings,
+                database=fresh,
+                snapshot_root=tmp_path / f"meta-store-{name}",
+                replay_runs=True,
+                config_root=CONFIG,
+            )
+        finally:
+            drop_database(settings, fresh)
+        assert not check.ok and not check.schema_equal and not check.run_ids_equal, check
 
 
 def test_absent_schema_restores_through_the_cli(

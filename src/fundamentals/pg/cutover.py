@@ -76,7 +76,7 @@ FROM eqos.fact_selections WHERE target_store = %(s)s AND origin = %(s)s
 ORDER BY content_identity, sequence
 """
 _LATEST = (
-    "SELECT state, operation_id, last_row_handle, last_selection_handle "
+    "SELECT state, operation_id, last_row_handle, last_selection_handle, approval_sha256 "
     "FROM eqos.fact_store_events WHERE store_id = %s ORDER BY id DESC LIMIT 1"
 )
 _LAST_HANDLES = (
@@ -140,6 +140,7 @@ class TransitionRefusal(StrEnum):
     FINGERPRINT_CHANGED = "FINGERPRINT_CHANGED"
     ROWS_BEYOND_MARKER = "ROWS_BEYOND_MARKER"
     RECONCILIATION_DRIFTED = "RECONCILIATION_DRIFTED"
+    NOT_THE_CUTOVER_REPORT = "NOT_THE_CUTOVER_REPORT"
 
 
 class TransitionRefusedError(Exception):
@@ -238,6 +239,8 @@ def transition(
                 raise TransitionRefusedError(TransitionRefusal.ROLLBACK_WINDOW_CLOSED)
             if state not in sources:
                 raise TransitionRefusedError(TransitionRefusal.ILLEGAL_STATE)
+        if op is not GatedOperation.CUTOVER:
+            _check_cutover_report(stores, latest, payload)
         if op is not GatedOperation.REOPEN:
             for file, store in zip(files, stores, strict=True):
                 found = cursor.execute(_FINGERPRINT, (store,)).fetchone()
@@ -250,7 +253,7 @@ def transition(
             if not report.equal():
                 raise TransitionRefusedError(TransitionRefusal.RECONCILIATION_DRIFTED)
         if op is GatedOperation.ROLLBACK and any(
-            _last_handles(cursor, store) != tuple(event[2:])
+            _last_handles(cursor, store) != tuple(event[2:4])
             for store, event in latest.items()
             if event is not None
         ):
@@ -386,6 +389,19 @@ def _sqlite_rows(store: FactStore, cutoff: datetime) -> list[tuple[Any, ...]]:
              decision.selection_id, decision.selection_sha256)
         )  # fmt: skip
     return sorted(found)
+
+
+def _check_cutover_report(stores: Sequence[str], latest: Mapping[str, Any], payload: bytes) -> None:
+    """Refuse unless ``payload`` is the reconciliation report every store's cutover recorded,
+    over exactly the manifest's stores; cutover bound that report to its whole store set."""
+    try:
+        report = ReconciliationReport.model_validate(yaml.safe_load(payload))
+    except ValueError as error:
+        raise TransitionRefusedError(TransitionRefusal.NOT_THE_CUTOVER_REPORT) from error
+    if {store.store_id for store in report.stores} != set(stores) or any(
+        event[4] != _sha(payload) for event in latest.values()
+    ):
+        raise TransitionRefusedError(TransitionRefusal.NOT_THE_CUTOVER_REPORT)
 
 
 def _last_handles(cursor: psycopg.Cursor[Any], store: str) -> tuple[int | None, int | None]:

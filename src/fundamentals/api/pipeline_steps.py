@@ -34,7 +34,7 @@ class PipelineError(RuntimeError):
     """Raised when a material fact cannot be verified — the pipeline fails closed."""
 
 
-def _normalize_entity(
+def normalize_entity(
     obs: Observation,
     scheme_aliases: dict[str, str],
     id_aliases: dict[str, str],
@@ -72,7 +72,7 @@ def _select_consolidated_quarter(
     )
 
 
-def _select_optional(
+def select_optional(
     observations: tuple[Observation, ...],
     concept: str,
     config: FundamentalsConfig,
@@ -93,7 +93,7 @@ def _select_optional(
         return None
 
 
-def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
+def pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
     """Assemble the PDF-parse spec from per-issuer config + run identity."""
     return PdfParseSpec(
         scope_marker=config.pdf_parse.scope_marker,
@@ -114,7 +114,7 @@ def _pdf_parse_spec(config: FundamentalsConfig) -> PdfParseSpec:
     )
 
 
-def _claim_range_quote(claim: GuidanceClaim) -> str:
+def claim_range_quote(claim: GuidanceClaim) -> str:
     """Independent expected quote: the claim's own asserted range or bound.
 
     Used to actually test the quote anchor — the resolved span must carry the
@@ -134,7 +134,7 @@ def _claim_range_quote(claim: GuidanceClaim) -> str:
     return grouped if grouped in quote and plain not in quote else plain
 
 
-def _required_concepts(config: FundamentalsConfig) -> frozenset[str]:
+def required_concepts(config: FundamentalsConfig) -> frozenset[str]:
     """The concept set the XBRL parse must prove present (per-statement completeness)."""
     required: set[str] = {role.concept_qname for role in config.concepts.roles if role.required}
     required.update(aux.concept_qname for aux in config.concepts.aux if aux.required)
@@ -142,7 +142,7 @@ def _required_concepts(config: FundamentalsConfig) -> frozenset[str]:
     return frozenset(required)
 
 
-def _guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool:
+def guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool:
     """Verify the anchored span still carries the claim captured at extraction.
 
     The resolved span must equal the ``source_quote`` stored at extraction (so a
@@ -161,7 +161,7 @@ def _guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool
     return claim.lower_bound in numbers and claim.upper_bound in numbers
 
 
-def _source_document(pdf: LoadedPdf) -> SourceDocument:
+def source_document(pdf: LoadedPdf) -> SourceDocument:
     """Reconstruct a page/block-addressable SourceDocument from a loaded PDF."""
     blocks = tuple(
         SourceBlock(page=page.page_number, block=block.number, text=block.text)
@@ -171,7 +171,7 @@ def _source_document(pdf: LoadedPdf) -> SourceDocument:
     return SourceDocument(blocks=blocks)
 
 
-def _run_sec_cross_check(config: FundamentalsConfig) -> str:
+def run_sec_cross_check(config: FundamentalsConfig) -> str:
     """Run the optional SEC 20-F annual cross-check; never foot it against Q1."""
     if not config.sec.enabled:
         return "not run (disabled; retrospective annual adapter only)"
@@ -198,7 +198,7 @@ def _run_sec_cross_check(config: FundamentalsConfig) -> str:
     )
 
 
-def _reconcile_current_guidance(
+def reconcile_current_guidance(
     prior: ManagementLedger | None,
     *,
     symbol: str,

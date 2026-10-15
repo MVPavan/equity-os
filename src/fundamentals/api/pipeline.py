@@ -36,16 +36,16 @@ from fundamentals.api.pipeline_steps import (
     PipelineError as PipelineError,
 )
 from fundamentals.api.pipeline_steps import (
-    _claim_range_quote,
-    _guidance_quote_holds,
-    _normalize_entity,
-    _pdf_parse_spec,
-    _reconcile_current_guidance,
-    _required_concepts,
-    _run_sec_cross_check,
-    _select_optional,
-    _source_document,
     build_calculations,
+    claim_range_quote,
+    guidance_quote_holds,
+    normalize_entity,
+    pdf_parse_spec,
+    reconcile_current_guidance,
+    required_concepts,
+    run_sec_cross_check,
+    select_optional,
+    source_document,
 )
 from fundamentals.api.source_admission import (
     AdmittedPipelineInputs,
@@ -259,7 +259,7 @@ def _run_admitted(
 
     # 2. Parse both first-party sources into context-bound Observations.
     xbrl_obs = tuple(
-        _normalize_entity(
+        normalize_entity(
             obs,
             config.xbrl.entity_scheme_aliases,
             config.xbrl.entity_id_aliases,
@@ -271,12 +271,12 @@ def _run_admitted(
             file_sha256=prepared.xbrl.source_sha256,
             retrieved_at=prepared.xbrl.acquired_at,
             taxonomies=_ALL_TAXONOMIES,
-            required_concepts=_required_concepts(config),
+            required_concepts=required_concepts(config),
         )
     )
     xbrl_extracted_at = completed()
     pdf_obs = extract_consolidated_pl(
-        results_pdf, spec=_pdf_parse_spec(config), retrieved_at=prepared.results_pdf.acquired_at
+        results_pdf, spec=pdf_parse_spec(config), retrieved_at=prepared.results_pdf.acquired_at
     )
     results_extracted_at = completed()
     xbrl_obs = tuple(bind_observation(obs, prepared.xbrl) for obs in xbrl_obs)
@@ -289,7 +289,7 @@ def _run_admitted(
     role_obs: dict[FactRole, Observation] = {}
     concept_obs: dict[str, Observation] = {}
     for role_concept in config.concepts.roles:
-        obs = _select_optional(
+        obs = select_optional(
             xbrl_obs, role_concept.concept_qname, config, required=role_concept.required
         )
         if obs is None:
@@ -297,7 +297,7 @@ def _run_admitted(
         role_obs[role_concept.role] = obs
         concept_obs[role_concept.concept_qname] = obs
     for aux in config.report_aux():
-        obs = _select_optional(xbrl_obs, aux.concept_qname, config, required=aux.required)
+        obs = select_optional(xbrl_obs, aux.concept_qname, config, required=aux.required)
         if obs is not None:
             concept_obs[aux.concept_qname] = obs
 
@@ -364,7 +364,7 @@ def _run_admitted(
         )
         for claim in guidance_claims
     ]
-    source_document = _source_document(transcript_pdf)
+    transcript_document = source_document(transcript_pdf)
     rendered_guidance: list[RenderedGuidance] = []
     for claim in guidance_claims:
         try:
@@ -376,14 +376,14 @@ def _run_admitted(
         # The resolved span must still equal the quote captured at extraction and
         # represent the claim's numeric bounds, so re-pointing provenance or
         # mutating the range (e.g. 3–4% to 8–10%) fails closed.
-        if not _guidance_quote_holds(claim, quote):
+        if not guidance_quote_holds(claim, quote):
             raise PipelineError(
                 f"guidance quote-anchor failed for {claim.metric!r}: the anchored span no "
                 "longer carries the claim captured at extraction"
             )
         # Verify against the claim's OWN asserted range (not a re-read of the same
         # span), so a span that does not actually contain the claim fails closed.
-        anchor = verify_quote_anchor(claim, _claim_range_quote(claim), source_document)
+        anchor = verify_quote_anchor(claim, claim_range_quote(claim), transcript_document)
         if not anchor.anchored:
             raise PipelineError(
                 f"guidance quote-anchor failed for {claim.metric!r}: {anchor.reason}"
@@ -411,7 +411,7 @@ def _run_admitted(
         else None
     )
     ledger = (
-        _reconcile_current_guidance(
+        reconcile_current_guidance(
             load_ledger(
                 ledger_path,
                 issuer_quarter=config.quarter.issuer_quarter,
@@ -489,7 +489,7 @@ def _run_admitted(
         )
 
     # 8. Optional SEC retrospective annual cross-check (never footed against Q1).
-    sec_note = _run_sec_cross_check(config)
+    sec_note = run_sec_cross_check(config)
 
     comparatives: tuple[ConceptComparative, ...] = ()
     if config.comparators is not None:

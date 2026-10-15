@@ -11,7 +11,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from retained_support import APAR_ISSUER_CONFIG
+from retained_support import APAR_ISSUER_CONFIG, apar_original
 from stage1_e2e_support import RUNS, Stage, row_key
 
 from fundamentals.api.config import load_config
@@ -24,7 +24,7 @@ from fundamentals.compare.queue import (
 )
 from fundamentals.compare.run import load_results
 from fundamentals.compare.run_models import ResultRow
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
 from fundamentals.contracts.comparison import ExtractionStatus, SourceRole
 from fundamentals.contracts.evidence import InterpretationOrigin, PrecisionKind, RunMode
 from fundamentals.contracts.fact import ReconciliationStatus
@@ -40,6 +40,12 @@ from fundamentals.evidence.admission import (
     read_selected,
     select_admitted,
 )
+from fundamentals.extract.pdf_statement_pages import (
+    extract_statement_rows,
+    locate_statement_pages,
+    specs_from_config,
+)
+from fundamentals.ingest.pdf_source import load_pdf
 from fundamentals.store.fact_store import (
     BarredAnchorFactError,
     CanonicalSelectionError,
@@ -215,6 +221,24 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
         pdf, occurrence, rows[PAT].key, run_id=run_id, reconciliation=CONFIRMED
     ).observation
     assert (bridged.scale, bridged.decimals, bridged.raw_value) == (1, -5, "251.70")
+    # The native cell locator re-finds the printed value in the retained original by re-banding.
+    cell = bridged.provenance
+    assert (cell.anchor_type, cell.page, cell.block) == (SourceAnchorType.PDF_CELL, 3, None)
+    assert cell.table_key == occurrence.anchor_key and cell.row_path is not None
+    original = apar_original("FY26_Q2", "results")
+    pdf = load_pdf(source_id=cell.source_id, path=original, expected_sha256=cell.file_sha256)
+    specs = specs_from_config(load_config(APAR_ISSUER_CONFIG).pdf_parse)
+    family = StatementFamily(cell.table_key.split(":")[1])
+    location = locate_statement_pages(pdf, specs, basis=Basis.CONSOLIDATED)[family]
+    assert location is not None
+    (printed,) = (
+        found.raw_text.strip()
+        for row in extract_statement_rows(pdf, location)
+        if (row.page, row.line) == (cell.page, int(cell.row_path))
+        for found in row.cells
+        if found.column_index == cell.column_index
+    )
+    assert printed == "251.70"
 
     # Selection is a separate step; the read honours cutoff and mode.
     before = repository.store_clock()

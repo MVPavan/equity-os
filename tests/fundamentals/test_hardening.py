@@ -29,7 +29,7 @@ from fundamentals.api.config import (
     XbrlMode,
 )
 from fundamentals.api.pipeline import PipelineError, XbrlInput
-from fundamentals.api.pipeline_steps import _guidance_quote_holds
+from fundamentals.api.pipeline_steps import guidance_quote_holds
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
     AccountingFramework,
@@ -502,19 +502,19 @@ def _guidance_claim(lower: str, upper: str, source_quote: str | None) -> Guidanc
 
 def test_m9_original_claim_quote_holds() -> None:
     claim = _guidance_claim("3", "4", _SOURCE_QUOTE)
-    assert _guidance_quote_holds(claim, _SOURCE_QUOTE) is True
+    assert guidance_quote_holds(claim, _SOURCE_QUOTE) is True
 
 
 def test_m9_mutated_bounds_with_old_provenance_fails() -> None:
     # 3–4% changed to 8–10% while keeping the extraction-time quote.
     claim = _guidance_claim("8", "10", _SOURCE_QUOTE)
-    assert _guidance_quote_holds(claim, _SOURCE_QUOTE) is False
+    assert guidance_quote_holds(claim, _SOURCE_QUOTE) is False
 
 
 def test_m9_repointed_span_fails() -> None:
     # Provenance re-pointed to a span whose text differs from the stored quote.
     claim = _guidance_claim("3", "4", _SOURCE_QUOTE)
-    assert _guidance_quote_holds(claim, "some other sentence with 3% to 4%") is False
+    assert guidance_quote_holds(claim, "some other sentence with 3% to 4%") is False
 
 
 # --------------------------------------------------------------------------- #

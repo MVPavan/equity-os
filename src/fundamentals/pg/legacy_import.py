@@ -46,6 +46,7 @@ from fundamentals.pg.settings import PgSettings
 from fundamentals.store.fact_store import (
     CanonicalSelection,
     FactStore,
+    require_utc,
     selection_digest,
     verify_chain,
 )
@@ -142,7 +143,11 @@ SELECT b.row_handle, b.file_sha256, b.anchor, c.source_id, c.surface, c.request_
 FROM eqos.legacy_evidence_bindings b JOIN eqos.capture_refs c ON c.id = b.capture_ref_id
 WHERE b.target_store = %s ORDER BY b.row_handle
 """
-_TRANSLATED = "SELECT count(*) AS n FROM eqos.legacy_fact_translations WHERE target_store = %s"
+_STORE_TRANSLATIONS = """
+SELECT target_store, row_handle, translation_version, entity_id, canonical_id, period_start,
+    period_end, period_instant, basis, framework, currency, value_kind, dimension_set
+FROM eqos.legacy_fact_translations WHERE target_store = %s ORDER BY row_handle
+"""
 _STATE = "SELECT state FROM eqos.fact_store_events WHERE store_id = %s ORDER BY id DESC LIMIT 1"
 
 _log = structlog.get_logger("fundamentals.pg.legacy_import")
@@ -159,6 +164,7 @@ class ImportRefusal(StrEnum):
     MULTIPLE_BASELINES = "MULTIPLE_BASELINES"
     ROW_MISMATCH = "ROW_MISMATCH"
     CHAIN_INVALID = "CHAIN_INVALID"
+    NO_SELECTIONS = "NO_SELECTIONS"
 
 
 class LegacyImportRefusedError(Exception):
@@ -316,6 +322,8 @@ def import_legacy(
         if not approved.clean():
             raise LegacyImportRefusedError(ImportRefusal.PREFLIGHT_NOT_CLEAN)
         manifest, report, surveyed = _survey(manifest_path, root=root, conn=conn, settings=settings)
+        if any(not selections for _, _, _, selections, _ in surveyed):  # no reconcile cutoffs
+            raise LegacyImportRefusedError(ImportRefusal.NO_SELECTIONS)
         snapshots = SnapshotStore(root / manifest.snapshot_root)
         captures = {binding.file_sha256: binding.capture_ref_id for binding in report.bindings}
         owner_sha = _sha(owner_path.read_bytes()) if owner_path is not None else None
@@ -336,7 +344,11 @@ def import_legacy(
                     [item | {"store": store, "synthesized": synthesized} for item in selections],
                 )
                 cursor.executemany(
-                    _INSERT_TRANSLATION, [_translation(store, h, k) for h, k in keys.items()]
+                    _INSERT_TRANSLATION,
+                    [
+                        (*params[:-1], Jsonb(params[-1]))
+                        for params in (_translation(store, h, k) for h, k in keys.items())
+                    ],
                 )
                 cursor.executemany(
                     _INSERT_BINDING,
@@ -380,15 +392,17 @@ def verify_import(
         stored = cursor.execute(_STORE_ROWS, (store_id,)).fetchall()
         chosen = cursor.execute(_STORE_SELECTIONS, (store_id,)).fetchall()
         bound = cursor.execute(_STORE_BINDINGS, (store_id,)).fetchall()
-        translated = cursor.execute(_TRANSLATED, (store_id,)).fetchone()
+        translated = cursor.execute(_STORE_TRANSLATIONS, (store_id,)).fetchall()
+    entities: dict[str, int | None] = {}
+    keys = [(row["row_id"], _translate_row(conn, row, entities)) for row in rows]
+    expected = [None if key is None else _translation(store_id, h, key) for h, key in keys]
     _check_chains(stored, chosen)
     synthesized = kind is SchemaKind.PRE_SELECTION
     if not (
         _same(rows, stored, FACT_COLUMNS, store_id)
         and _same(selections, chosen, SELECTION_COLUMNS, store_id)
         and all(item["synthesized"] is synthesized for item in chosen)
-        and translated is not None
-        and translated["n"] == len(rows)
+        and [tuple(row.values()) for row in translated] == expected
         and all(_identity_holds(row) for row in rows)
         and _bindings_hold(rows, bound, snapshots)
     ):
@@ -415,13 +429,7 @@ def _survey(
         kind, rows, selections = _read(root / file.path, file.sha256)
         keys: dict[int, MeasurementKey] = {}
         for row in rows:
-            fact = Fact.model_validate_json(row["fact_json"])
-            entity_key = fact.observation.entity_id
-            if entity_key not in entities:
-                found = conn.execute(_ENTITY, (entity_key,)).fetchone()
-                entities[entity_key] = None if found is None else int(found[0])
-            entity_id = entities[entity_key]
-            key = None if entity_id is None else translate(fact, entity_id=entity_id)
+            key = _translate_row(conn, row, entities)
             if key is not None:
                 keys[row["row_id"]] = key
         originals = sorted({row["file_sha256"] for row in rows})
@@ -458,6 +466,19 @@ def _survey(
     return manifest, report, surveyed
 
 
+def _translate_row(
+    conn: psycopg.Connection[Any], row: Mapping[str, Any], entities: dict[str, int | None]
+) -> MeasurementKey | None:
+    """The row's role translation, or None if untranslatable; ``entities`` caches entity ids."""
+    fact = Fact.model_validate_json(row["fact_json"])
+    entity_key = fact.observation.entity_id
+    if entity_key not in entities:
+        found = conn.execute(_ENTITY, (entity_key,)).fetchone()
+        entities[entity_key] = None if found is None else int(found[0])
+    entity_id = entities[entity_key]
+    return None if entity_id is None else translate(fact, entity_id=entity_id)
+
+
 def _read(path: Path, sha256: str) -> tuple[SchemaKind, _Rows, _Rows]:
     """Open read-only between two fingerprint checks; selections verbatim or synthesized."""
     if _sha(path.read_bytes()) != sha256:
@@ -491,12 +512,16 @@ def _synthesize(rows: _Rows) -> _Rows:
             raise LegacyImportRefusedError(ImportRefusal.MULTIPLE_BASELINES)
         if not row["canonical_selected_at"]:
             raise LegacyImportRefusedError(ImportRefusal.NO_BASELINE_TIME)
+        try:  # FactStore stores and hashes the parsed time's isoformat(), not the row's text.
+            stamp = require_utc(datetime.fromisoformat(row["canonical_selected_at"])).isoformat()
+        except ValueError as error:
+            raise LegacyImportRefusedError(ImportRefusal.CHAIN_INVALID) from error
         decision = {
             "content_identity": identity,
             "row_id": row["row_id"],
             "sequence": 1,
             "predecessor_id": None,
-            "selected_at": row["canonical_selected_at"],
+            "selected_at": stamp,
             "reason": row["canonical_reason"] or LEGACY_BASELINE_REASON,
         }
         digest = selection_digest(
@@ -576,12 +601,12 @@ def _bindings_hold(rows: _Rows, bound: _Rows, snapshots: SnapshotStore) -> bool:
 
 
 def _translation(store: str, handle: int, key: MeasurementKey) -> tuple[object, ...]:
-    """One translation row's parameters."""
+    """One translation row's columns; the insert wraps the dimension set as JSONB."""
     period = key.period
     return (
         store, handle, TRANSLATION_VERSION, key.entity_id, key.canonical_id, period.start,
         period.end, period.instant, key.basis.value, key.framework.value, key.currency,
-        key.value_kind.value, Jsonb([list(pair) for pair in key.dimensions.pairs]),
+        key.value_kind.value, [list(pair) for pair in key.dimensions.pairs],
     )  # fmt: skip
 
 

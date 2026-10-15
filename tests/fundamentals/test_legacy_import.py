@@ -166,13 +166,13 @@ class Rig:
         with psycopg.connect(conninfo) as conn:
             return [tuple(row) for row in conn.execute(statement, params).fetchall()]
 
-    def corrupt(self, table: str, column: str, value: str) -> Attempt:
+    def corrupt(self, table: str, column: str, value: str, *, key: str = "handle") -> Attempt:
         """Import, then (admin only, trigger bypassed) change one column of handle 1."""
         self.run(*self.pair())
         admin = self.settings.conninfo(PgRole.ADMIN, dbname=self.pg_db.dbname)
         with psycopg.connect(admin, autocommit=True) as conn:
             conn.execute(f"ALTER TABLE eqos.{table} DISABLE TRIGGER reject_row_mutation")
-            conn.execute(f"UPDATE eqos.{table} SET {column} = %s WHERE handle = 1", (value,))
+            conn.execute(f"UPDATE eqos.{table} SET {column} = %s WHERE {key} = 1", (value,))
             conn.execute(f"ALTER TABLE eqos.{table} ENABLE TRIGGER reject_row_mutation")
         store, snapshots = origin_id_for(LEGACY_SHA256), SnapshotStore(self.snapshots)
 
@@ -229,6 +229,12 @@ def _conflict(rig: Rig) -> Attempt:
     return lambda: rig.run(*pair)
 
 
+def _no_selections(rig: Rig) -> Attempt:
+    edit_copy(rig.legacy, "UPDATE facts SET canonical_status = 'candidate'")
+    pair = rig.pair()
+    return lambda: rig.run(*pair)
+
+
 CASES: dict[str, tuple[Callable[[Rig], Attempt], str]] = {
     "unapproved-manifest": (_unapproved(0), GateRefusal.UNAPPROVED),
     "unapproved-preflight": (_unapproved(1), GateRefusal.UNAPPROVED),
@@ -268,8 +274,21 @@ CASES: dict[str, tuple[Callable[[Rig], Attempt], str]] = {
         ImportRefusal.MULTIPLE_BASELINES,
     ),
     "new-fingerprint-under-label": (_conflict, ImportRefusal.FINGERPRINT_CONFLICT),
+    "store-without-selections": (_no_selections, ImportRefusal.NO_SELECTIONS),
     "row-column-changed": (
         lambda rig: rig.corrupt("fact_rows", "canonical_reason", "edited"),
+        ImportRefusal.ROW_MISMATCH,
+    ),
+    "translation-key-changed": (
+        lambda rig: rig.corrupt(
+            "legacy_fact_translations", "canonical_id", "wrong", key="row_handle"
+        ),
+        ImportRefusal.ROW_MISMATCH,
+    ),
+    "translation-version-changed": (
+        lambda rig: rig.corrupt(
+            "legacy_fact_translations", "translation_version", "v0", key="row_handle"
+        ),
         ImportRefusal.ROW_MISMATCH,
     ),
     "selection-time-changed": (
@@ -308,6 +327,8 @@ GATE_TABLE: list[tuple[str, Approval, OwnerAuthorization | None, GateRefusal | N
     ("equity_os", SOL, _owner(), None),
     ("equity_os", SOL, None, GateRefusal.OWNER_RECORD_MISSING),
     ("equity_os", SOL, _owner(database="eqos_other"), GateRefusal.WRONG_DATABASE),
+    ("equity_os", SOL, _owner(by="someone-else"), GateRefusal.NOT_OWNER),
+    ("equity_os", SOL, _owner(by=""), GateRefusal.NOT_OWNER),
     ("equity_os", SOL, _owner(operations=("CUTOVER",)), MISMATCH),
     ("equity_os", SOL, _owner(approved_payload_sha256="1"), MISMATCH),
     # An IMPORT record must cite the preflight's payload hash, never the manifest's.
@@ -370,6 +391,21 @@ def test_import_is_lossless_separate_and_repeatable(rig: Rig, tmp_path: Path) ->
     assert (again.created, again.rows, again.selections) == (False, 86, 48)
     assert rig.query("SELECT count(*) FROM eqos.fact_rows") == [(86,)]
     assert file_sha256(rig.legacy) == file_sha256(LEGACY_PATH) == LEGACY_SHA256
+
+
+def test_z_spelled_baseline_time_imports_and_verifies(rig: Rig) -> None:
+    """A synthesized selection hashes FactStore's isoformat(), not the row's "Z" spelling."""
+    rig.register()
+    edit_copy(
+        rig.legacy,
+        "UPDATE facts SET canonical_selected_at = replace(canonical_selected_at, '+00:00', 'Z') "
+        "WHERE canonical_status = 'canonical'",
+    )
+    assert rig.run(*rig.pair()).created
+    spelled = "SELECT count(*) FROM eqos.fact_rows WHERE canonical_selected_at LIKE '%%Z'"
+    assert rig.query(spelled) == [(24,)]
+    stored = "SELECT count(*) FROM eqos.fact_selections WHERE selected_at LIKE '%%+00:00'"
+    assert rig.query(stored) == [(24,)]
 
 
 def test_role_translation_maps_six_roles_to_dictionary_v2(tmp_path: Path) -> None:

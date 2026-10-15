@@ -30,10 +30,10 @@ from fundamentals.store.fact_store import (
     FactRef,
     FactStore,
     StoredRevision,
-    _utc,
     effective_revision,
     fact_columns,
     project_revision,
+    require_utc,
     selection_digest,
     verify_chain,
 )
@@ -228,7 +228,7 @@ class PgFactStore:
         ``expected_selection_id=0`` expects an empty chain; omission captures the head before
         the write transaction, as SQLite does.
         """
-        stamp = _utc(selected_at) if selected_at is not None else None
+        stamp = require_utc(selected_at) if selected_at is not None else None
         if not reason.strip():
             raise CanonicalSelectionError("selection reason must be non-empty")
         expected = expected_selection_id
@@ -245,7 +245,7 @@ class PgFactStore:
                 raise CanonicalSelectionError("stale canonical selection predecessor")
             when = stamp or datetime.fromisoformat(_store_now(cursor))
             fact = Fact.model_validate_json(target["fact_json"])
-            if when < max(_utc(fact.knowledge_time), _utc(fact.first_seen_time)):
+            if when < max(require_utc(fact.knowledge_time), require_utc(fact.first_seen_time)):
                 raise CanonicalSelectionError("selection precedes fact knowledge/first-seen time")
             if head is not None and when <= head.selected_at:
                 raise CanonicalSelectionError("selection time must strictly follow predecessor")
@@ -286,13 +286,13 @@ class PgFactStore:
         self, content_identity: str, *, cutoff: datetime | None = None
     ) -> StoredRevision | None:
         """The decision effective at ``cutoff`` (default: the overlay boundary)."""
-        stamp = _utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
+        stamp = require_utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
         with self._read() as cursor:
             return self._canonical(cursor, content_identity, stamp)
 
     def query_canonical(self, *, cutoff: datetime | None = None) -> tuple[StoredRevision, ...]:
         """One effective selection per identity, read from one snapshot."""
-        stamp = _utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
+        stamp = require_utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
         with self._read("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY") as cursor:
             identities = cursor.execute(_IDENTITIES, (self._store_id,)).fetchall()
             found = [self._canonical(cursor, row["content_identity"], stamp) for row in identities]
@@ -320,7 +320,7 @@ class PgFactStore:
         rows = cursor.execute(_HISTORY, (self._store_id, content_identity)).fetchall()
         decisions = tuple(
             CanonicalSelection.model_validate(
-                row | {"selected_at": _utc(datetime.fromisoformat(row["selected_at"]))}
+                row | {"selected_at": require_utc(datetime.fromisoformat(row["selected_at"]))}
             )
             for row in rows
         )

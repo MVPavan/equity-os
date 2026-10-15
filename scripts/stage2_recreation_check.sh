@@ -1,48 +1,64 @@
 #!/usr/bin/env bash
 # Stage 2 recreation and fresh-instance check (plan D2, Task 8). Exits 0 only when every step passes.
 # Works only on its own compose projects and data dirs under a mktemp root; every guard runs
-# before the first lifecycle call, and cleanup never touches the live project or any volume.
+# before the first lifecycle call, container cleanup is armed only after the guards pass, and
+# cleanup never touches the live project or any volume. Every docker call is time-bounded.
 set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$REPO"
 MAIN_DB=eqos_stage2_main
 APAR=data/raw/watchlist/aparinds
-LEDGER=data/ledger/aparinds-management-ledger.json
-STAGE2=tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml
 die() { echo "stage2-check: FAIL: $*" >&2; exit 1; }
 say() { echo "stage2-check: $*" >&2; }
 hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
 dotenv() { grep -E "^$1=" .env | tail -n1 | cut -d= -f2-; }  # read, never sourced
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 # Run a child with only PATH, HOME and one instance's env file (process env outranks .env).
+# Values are exported by builtins in a subshell, so no credential reaches any process argv.
 in_env() {
-  local vars
-  mapfile -t vars <"$ROOT/$1.env"
-  shift
-  env -i "PATH=$PATH" "HOME=$HOME" "${vars[@]}" "$@"
+  (
+    for name in $(compgen -e); do
+      case "$name" in PATH | HOME) ;; *) unset "$name" 2>/dev/null || true ;; esac
+    done
+    while IFS= read -r line; do export "${line?}"; done <"$ROOT/$1.env"
+    shift
+    "$@"
+  )
 }
-dc() { in_env "$1" docker compose -p "$1" --env-file "$ROOT/$1.env" -f compose.yaml "${@:2}"; }
+# Run "$2..." killed after $1 seconds; a timeout is reported, never silent.
+bounded() {
+  local secs=$1 status=0
+  shift
+  timeout -k 10 "$secs" "$@" || status=$?
+  [ "$status" != 124 ] || say "TIMEOUT after ${secs}s: $1 ${2:-}"
+  return "$status"
+}
+dc() {
+  in_env "$1" bounded "${DC_TIMEOUT:-120}" \
+    docker compose -p "$1" --env-file "$ROOT/$1.env" -f compose.yaml "${@:2}"
+}
 
 # Guard 1: owned root, outside the live data dir and the repo.
 ROOT=$(mktemp -d -t eqos-stage2.XXXXXXXX)
 TOKEN=$(hex 16)
 printf '%s\n' "$TOKEN" >"$ROOT/.owner"
 P="eqos-stage2-${TOKEN:0:8}" F="eqos-stage2-${TOKEN:0:8}-fresh"
+# Until every guard passes nothing has started and the owned dirs hold only this script's files.
+trap 'status=$?; rm -rf -- "$ROOT"; say "exit $status"' EXIT
 cleanup() {
   local status=$?
   for project in "$P" "$F"; do
-    [ -f "$ROOT/$project.validated" ] && dc "$project" down >/dev/null 2>&1 || true
+    dc "$project" down >/dev/null 2>&1 || say "down $project failed"
   done
   if [ "$(cat "$ROOT/.owner" 2>/dev/null)" = "$TOKEN" ]; then
-    docker run --rm -v "$ROOT:/owned" postgres:18.6 sh -c \
+    in_env "$P" bounded 120 docker run --rm -v "$ROOT:/owned" postgres:18.6 sh -c \
       '[ "$(cat /owned/.owner)" = "$1" ] && rm -rf /owned/data /owned/data-fresh' sh "$TOKEN" \
-      >/dev/null 2>&1 || true
+      >/dev/null 2>&1 || say "container-owned data dirs not removed under $ROOT"
     rm -rf "$ROOT"
   fi
   say "exit $status"
   exit "$status"
 }
-trap cleanup EXIT
 [ "$(realpath "$ROOT")" = "$ROOT" ] || die "owned root is an alias"
 LIVE_DATA=$(dotenv EQOS_PG_DATA_DIR) LIVE_PORT=$(dotenv EQOS_PG_PORT)
 [ -n "$LIVE_DATA" ] && [ -n "$LIVE_PORT" ] || die ".env lacks EQOS_PG_DATA_DIR or EQOS_PG_PORT"
@@ -96,13 +112,14 @@ assert pg["environment"]["POSTGRES_DB"] == db, "POSTGRES_DB"' "$1" "$2" "$3" "$M
   [ "$(in_env "$1" uv run python -c 'from fundamentals.pg.settings import PgSettings
 s = PgSettings(); print(s.host, s.port, s.db, s.test_db_prefix)')" = "127.0.0.1 $2 $MAIN_DB eqos_test_" ] ||
     die "resolved PgSettings of $1"
-  touch "$ROOT/$1.validated"  # cleanup runs `down` only on a validated project
 }
 validate "$P" "$PORT" "$ROOT/data"
 validate "$F" "$FRESH_PORT" "$ROOT/data-fresh"
+trap cleanup EXIT  # every guard passed: cleanup of the two owned projects is now armed
 
 up() {
-  dc "$1" up -d --wait >/dev/null 2>&1 || { dc "$1" logs --tail 40 >&2; die "$1 is not healthy"; }
+  DC_TIMEOUT=240 dc "$1" up -d --wait >/dev/null 2>&1 ||
+    { dc "$1" logs --tail 40 >&2 || true; die "$1 is not healthy within 240s"; }
   [ "$(dc "$1" port postgres 5432)" = "127.0.0.1:$2" ] || die "$1 is not published on 127.0.0.1:$2"
 }
 
@@ -114,10 +131,10 @@ up "$P" "$PORT"
 D=$(in_env "$P" uv run fundamentals db create-test --suffix rehearsal)
 renv() { in_env "$P" env "EQOS_PG_DB=$D" "$@"; }
 fundamentals() { renv uv run fundamentals "$@"; }
-mkdir -m 700 "$ROOT/legacy" "$ROOT/config" "$ROOT/ledger" "$ROOT/inputs" "$ROOT/snap"
+mkdir -m 700 "$ROOT/legacy" "$ROOT/inputs" "$ROOT/snap"
 cp data/store/aparinds.sqlite "$ROOT/legacy/aparinds.sqlite"
 cp -r "$APAR/nse" "$APAR/nse_pdf" "$ROOT/inputs/"
-LEGACY_SHA=$(sha data/store/aparinds.sqlite) LEDGER_SHA=$(sha "$LEDGER")
+LEGACY_SHA=$(sha data/store/aparinds.sqlite)
 [ "$(sha "$ROOT/legacy/aparinds.sqlite")" = "$LEGACY_SHA" ] || die "legacy copy SHA-256"
 approve() {
   printf 'approval: {reviewer: test-fixture, verdict: APPROVE, date: %s, payload_sha256: "%s"}\n' \
@@ -127,23 +144,6 @@ M="$ROOT/legacy_import_manifest.yaml"
 printf 'files:\n- label: aparinds\n  path: %s\n  sha256: %s\nsnapshot_root: %s\n' \
   "$ROOT/legacy/aparinds.sqlite" "$LEGACY_SHA" "$ROOT/snap" >"$M"
 approve "$M"
-renv uv run python - "$ROOT" "sqlite-${LEGACY_SHA:0:16}" <<'PY'
-# The issuer config copy: repo-absolute paths, the copied store, a fresh ledger (the production
-# ledger is past Q2 FY26, so a replay refuses a copy of it) and the imported store id.
-import sys
-from pathlib import Path
-import yaml
-root, store = Path(sys.argv[1]), sys.argv[2]
-repo, name = Path.cwd(), "aparinds-fy26-q2.yaml"
-body = yaml.safe_load((repo / "config" / name).read_text(encoding="utf-8"))
-body["raw_dir"] = str(repo / body["raw_dir"])
-body["xbrl"]["local_path"] = str(repo / body["xbrl"]["local_path"])
-for comparator in body["comparators"].values():
-    comparator["local_path"] = str(repo / comparator["local_path"])
-body |= {"store_db": str(root / "legacy/aparinds.sqlite"), "fact_store_id": store,
-         "ledger_path": str(root / "ledger/ledger.json")}
-(root / "config" / name).write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
-PY
 fundamentals db bootstrap >/dev/null
 fundamentals db migrate >/dev/null
 renv uv run python -c 'import psycopg
@@ -181,30 +181,10 @@ fundamentals legacy reconcile --manifest "$M" --out "$ROOT/reconcile-again.yaml"
 cmp -s "$ROOT/reconcile-again.yaml" "$ROOT/reconciliation.payload" || die "re-reconcile differs"
 legacy cutover
 legacy reopen
-renv uv run python - "$ROOT" "$STAGE2" <<'PY'
-# `fundamentals run` through the CLI composition root. A shell `run` refuses a retrieval after
-# the quarter cutoff without an approved intake, so this admits the e2e's trusted fixture proof.
-import json, sys
-from pathlib import Path
-import pytest, yaml
-sys.path.insert(0, "tests/fundamentals")
-from temporal_fixture_support import install_trusted_fixture_cli
-from fundamentals.api.cli import main
-root, manifest = Path(sys.argv[1]), yaml.safe_load(Path(sys.argv[2]).read_text(encoding="utf-8"))
-install_trusted_fixture_cli(pytest.MonkeyPatch())
-out, md = root / "run.json", root / "run.md"
-argv = ["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", "--out", str(md),
-        "--config", str(root / "config/aparinds-fy26-q2.yaml"), "--out-json", str(out)]
-assert main(argv) == 0
-results = {c["label"]: c["result"] for c in json.loads(out.read_text())["calculations"]}
-for line in manifest["consumer_report"]:
-    if line["line"] in results:
-        assert results[line["line"]] == line.get("rendered", line.get("v")), line["line"]
-    else:
-        assert f"| {line['line']} | {line['v']} |" in md.read_text(encoding="utf-8"), line["line"]
-PY
+# `fundamentals run` is not rehearsed here: a shell run of Q2 FY26 refuses sources registered
+# after the quarter's knowledge cutoff (the committed approved-intake proof records exactly that
+# refusal), and this script never synthesizes possession evidence. Step 6's e2e covers the run.
 [ "$(sha data/store/aparinds.sqlite)" = "$LEGACY_SHA" ] || die "production SQLite changed"
-[ "$(sha "$LEDGER")" = "$LEDGER_SHA" ] || die "production ledger changed"
 say "rehearsal passed on $D"
 
 # 3-5. Identical deterministic inventory across down/up.
@@ -213,7 +193,7 @@ inventory() {
   fundamentals db backup --out "$ROOT/B$1" --snapshot-root "$ROOT/snap" | cut -f2
 }
 B1=$(inventory 1)
-dc "$P" down >/dev/null
+dc "$P" down >/dev/null || die "down $P"
 up "$P" "$PORT"
 B2=$(inventory 2)
 cmp -s "$ROOT/R1.yaml" "$ROOT/R2.yaml" || die "reconciliation differs after down/up"

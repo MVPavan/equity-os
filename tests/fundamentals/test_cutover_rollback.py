@@ -210,6 +210,34 @@ def test_a_failed_rollback_switches_no_store(rig: Rig, tmp_path: Path) -> None:
     assert window.states() == dict.fromkeys(window.stores, FactStoreState.CUTOVER_FROZEN)
 
 
+@pytest.mark.parametrize("op", [REOPEN, ROLLBACK])
+def test_reopen_and_rollback_need_the_whole_sets_cutover_report(
+    rig: Rig, tmp_path: Path, op: GatedOperation
+) -> None:
+    """Another approved payload on the same database, or a subset manifest, switches nothing."""
+    second = second_store(tmp_path)
+    window = Window(rig, ("aparinds", rig.legacy), ("aparinds-migrated", second))
+    window.move(CUTOVER)
+    subset = rig.manifest(("aparinds", rig.legacy))
+    for manifest, report in (
+        (window.manifest, rig.preflight(window.manifest)),
+        (subset, window.report),
+    ):
+        with rig.pg_db.runtime_pool() as pool, pytest.raises(TransitionRefusedError) as refused:
+            transition(
+                op,
+                manifest,
+                report_path=report,
+                owner_path=None,
+                pool=pool,
+                settings=rig.settings,
+                root=rig.tmp_path,
+            )
+        assert refused.value.reason == TransitionRefusal.NOT_THE_CUTOVER_REPORT
+    assert window.states() == dict.fromkeys(window.stores, FactStoreState.CUTOVER_FROZEN)
+    window.move(op)
+
+
 def test_cli_reopen_closes_the_window_and_reconcile_ignores_native_writes(
     rig: Rig, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -59,6 +59,8 @@ _UNRESOLVED_BINDINGS = (
     "JOIN eqos.capture_refs c ON c.id = b.capture_ref_id WHERE c.blob_sha256 <> b.file_sha256 "
     "OR c.id = ANY(%s) ORDER BY 1, 2"
 )
+_SCHEMA_PRESENT = "SELECT to_regnamespace('eqos') IS NOT NULL"
+_RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
 _PUBLISHED = "backup_published"
 
 Capture = tuple[int, str, str, str, str, str, str]
@@ -95,6 +97,8 @@ class RestoreCheck(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    schema_equal: bool
+    run_ids_equal: bool
     counts_equal: bool
     fk_valid: bool
     missing_captures: tuple[int, ...]
@@ -107,7 +111,9 @@ class RestoreCheck(BaseModel):
     def ok(self) -> bool:
         """Whether every check passed."""
         return (
-            self.counts_equal
+            self.schema_equal
+            and self.run_ids_equal
+            and self.counts_equal
             and self.fk_valid
             and not self.missing_captures
             and not self.extra_captures
@@ -135,9 +141,9 @@ def write_backup(
             conn.isolation_level, conn.read_only = IsolationLevel.REPEATABLE_READ, True
             with conn.transaction():
                 snapshot = _scalar(conn, "SELECT pg_export_snapshot()")
-                present = _scalar(conn, "SELECT to_regnamespace('eqos') IS NOT NULL")
+                present = _scalar(conn, _SCHEMA_PRESENT)
                 counts = _counts(conn) if present else {}
-                run_ids = _column(conn, "SELECT id FROM eqos.runs ORDER BY id") if present else ()
+                run_ids = _column(conn, _RUN_IDS) if present else ()
                 captures = _captures(conn) if present else ()
                 with (staging / DUMP_FILE).open("wb") as dump:
                     _client(
@@ -206,25 +212,30 @@ def restore_backup(
     counts: dict[str, int] = {}
     captures: tuple[Capture, ...] = ()
     unresolved: tuple[tuple[str, int], ...] = ()
+    run_ids: tuple[int, ...] = ()
     replayed: tuple[int, ...] = ()
     fk_valid = True
-    if manifest.schema_state is SchemaState.PRESENT:
-        conninfo = settings.conninfo(PgRole.ADMIN, dbname=database)
-        with psycopg.connect(conninfo, autocommit=True) as conn:
+    conninfo = settings.conninfo(PgRole.ADMIN, dbname=database)
+    with psycopg.connect(conninfo, autocommit=True) as conn:
+        present = bool(_scalar(conn, _SCHEMA_PRESENT))
+        if present:
             fk_valid = _validate_foreign_keys(conn)
             counts, captures = _counts(conn), _captures(conn)
+            run_ids = _column(conn, _RUN_IDS)
             rows = conn.execute(_UNRESOLVED_BINDINGS, (list(bad),)).fetchall()
             unresolved = tuple((str(row[0]), int(row[1])) for row in rows)
-        if replay_runs:
-            with open_pool(settings, PgRole.RUNTIME, dbname=database) as pool:
-                replayed = tuple(
-                    run_id
-                    for run_id in manifest.run_ids
-                    if replay_run(run_id, pool=pool, config_root=config_root)
-                    != load_results(run_id, pool=pool)
-                )
+    if present and replay_runs:
+        with open_pool(settings, PgRole.RUNTIME, dbname=database) as pool:
+            replayed = tuple(
+                run_id
+                for run_id in run_ids
+                if replay_run(run_id, pool=pool, config_root=config_root)
+                != load_results(run_id, pool=pool)
+            )
     expected, restored = set(manifest.captures), set(captures)
     return RestoreCheck(
+        schema_equal=(manifest.schema_state is SchemaState.PRESENT) == present,
+        run_ids_equal=run_ids == manifest.run_ids,
         counts_equal=counts == manifest.table_counts,
         fk_valid=fk_valid,
         missing_captures=tuple(sorted(item[0] for item in expected - restored)),
@@ -275,7 +286,19 @@ def _verify(set_dir: Path) -> BackupManifest:
         raise BackupError(f"{set_dir.name} files differ from its manifest")
     if dict(manifest.files).get(DUMP_FILE) != manifest.dump_sha256:
         raise BackupError(f"{set_dir.name} dump differs from its manifest")
+    if not _inventories_consistent(manifest):
+        raise BackupError(f"{set_dir.name} manifest inventories disagree")
     return manifest
+
+
+def _inventories_consistent(manifest: BackupManifest) -> bool:
+    """Whether the run and capture inventories agree with the table counts and schema state."""
+    if manifest.schema_state is SchemaState.ABSENT:
+        return not (manifest.table_counts or manifest.run_ids or manifest.captures)
+    counts = manifest.table_counts
+    return counts.get("runs") == len(manifest.run_ids) and counts.get("capture_refs") == len(
+        manifest.captures
+    )
 
 
 def _client(
@@ -330,11 +353,11 @@ def _scalar(conn: psycopg.Connection[Any], query: str | sql.Composed) -> Any:
 
 
 def _hash_files(root: Path) -> tuple[tuple[str, str], ...]:
-    """``(relative path, sha256)`` of every file under ``root`` except the manifest."""
+    """``(relative path, sha256)`` of every file under ``root`` except its root manifest."""
     return tuple(
         (path.relative_to(root).as_posix(), _sha256(path.read_bytes()))
         for path in sorted(root.rglob("*"))
-        if path.is_file() and path.name != MANIFEST_FILE
+        if path.is_file() and path != root / MANIFEST_FILE
     )
 
 

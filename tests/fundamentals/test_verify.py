@@ -333,7 +333,7 @@ _GUIDANCE_TEXT = (
 _QUOTE = "3-4% in constant currency"
 
 
-def _source_document() -> SourceDocument:
+def source_document() -> SourceDocument:
     return SourceDocument(
         blocks=(
             SourceBlock(page=8, block=0, text="Management outlook"),
@@ -368,7 +368,7 @@ def test_quote_anchor_passes_for_real_span() -> None:
     span = f"{start}:{start + len(_QUOTE)}"
     claim = _guidance_claim(page=8, block=2, span=span)
 
-    result = verify_quote_anchor(claim, _QUOTE, _source_document())
+    result = verify_quote_anchor(claim, _QUOTE, source_document())
 
     assert result.anchored is True
     assert result.resolved_text == _QUOTE
@@ -378,7 +378,7 @@ def test_quote_anchor_fails_for_wrong_span() -> None:
     # Points at the start of the block, where the quote does not live.
     claim = _guidance_claim(page=8, block=2, span="0:17")
 
-    result = verify_quote_anchor(claim, _QUOTE, _source_document())
+    result = verify_quote_anchor(claim, _QUOTE, source_document())
 
     assert result.anchored is False
     assert result.reason is not None
@@ -388,7 +388,7 @@ def test_quote_anchor_fails_for_wrong_span() -> None:
 def test_quote_anchor_fails_for_absent_block() -> None:
     claim = _guidance_claim(page=99, block=0, span="0:5")
 
-    result = verify_quote_anchor(claim, _QUOTE, _source_document())
+    result = verify_quote_anchor(claim, _QUOTE, source_document())
 
     assert result.anchored is False
     assert result.reason is not None
@@ -412,5 +412,5 @@ def test_quote_anchor_works_on_an_observation_too() -> None:
         ),
     )
 
-    result = verify_quote_anchor(pdf_observation, _QUOTE, _source_document())
+    result = verify_quote_anchor(pdf_observation, _QUOTE, source_document())
     assert result.anchored is True

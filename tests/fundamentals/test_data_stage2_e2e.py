@@ -41,6 +41,12 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 MANIFEST = load(REPO / "tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml")
 (STORE,) = MANIFEST["import"]["stores"]
 CUTOFFS = [(datetime.fromisoformat(cut["at"]), cut["row_ids"]) for cut in MANIFEST["cutoffs"]]
+RESULT_COUNT = 441
+# The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
+EXCLUDED = {
+    "excise_duty|Q|-|REPORTED": "NOT_SINGLE_REPRESENTATION",
+    "excise_duty|Y|-|REPORTED": "NOT_SINGLE_REPRESENTATION",
+}
 ROWS = "SELECT handle, content_identity, value_hash FROM eqos.fact_rows WHERE target_store = %s"
 SELECTIONS = (
     "SELECT handle, row_handle, selected_at, selection_sha256, sequence, predecessor_handle, "
@@ -164,15 +170,25 @@ def test_stage2_end_to_end(
         run_id = stage.execute(vendors=[]).run_id
         # Cells as Stage 1 projects them: not-applicable-by-rule rows are not manifest cells.
         rules = stage.run["applicability"]["not_applicable_by_rule"].values()
-        excluded = {canonical_id for ids in rules for canonical_id in ids}
-        results = {
-            row.row_id: row
-            for row in load_results(run_id, pool=pool)
-            if not (
-                row.key.canonical_id in excluded and row.applicability.value == "NOT_APPLICABLE"
-            )
+        ruled = {canonical_id for ids in rules for canonical_id in ids}
+        actual = {row.row_id: row for row in load_results(run_id, pool=pool)}
+        excluded = {
+            row_id
+            for row_id, row in actual.items()
+            if row.key.canonical_id in ruled and row.applicability.value == "NOT_APPLICABLE"
         }
+        results = {row_id: row for row_id, row in actual.items() if row_id not in excluded}
         outcome = admit_run(run_id, pool=pool, store_id=legacy)
+        # Every actual result gets exactly one outcome; the excluded cells are refused as pinned.
+        by_side = {v.interpretation_id: row for row in actual.values() for v in row.source_values}
+        outcomes = [row_id for row_id, _ in outcome.refusals]
+        outcomes += [by_side[record.interpretation_id].row_id for record in outcome.records]
+        assert len(actual) == RESULT_COUNT and sorted(outcomes) == sorted(actual)
+        assert {
+            row_key(stage.run, actual[row_id]): reason.value
+            for row_id, reason in outcome.refusals
+            if row_id in excluded
+        } == EXCLUDED
         admission = MANIFEST["admission"]
         assert (len(results), len(outcome.records)) == (
             admission["counts"]["cells"],
@@ -186,7 +202,6 @@ def test_stage2_end_to_end(
             reason: sorted(keys) for reason, keys in admission["refused"].items()
         }
         store = PgFactStore(pool, legacy)
-        by_side = {v.interpretation_id: row for row in results.values() for v in row.source_values}
         read: dict[str, Any] = {}
         for record in outcome.records:
             row = by_side[record.interpretation_id]

@@ -16,7 +16,7 @@ from fundamentals.api.comparatives import (
     _unavailable,
 )
 from fundamentals.api.config import ComparatorInstanceConfig, FundamentalsConfig
-from fundamentals.api.pipeline_steps import _normalize_entity
+from fundamentals.api.pipeline_steps import normalize_entity
 from fundamentals.contracts.comparative import (
     TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,
@@ -81,7 +81,7 @@ def _load_instance(
             f"cannot parse {kind.value} comparator {path}: {error}"
         ) from error
     return tuple(
-        _normalize_entity(
+        normalize_entity(
             observation,
             config.xbrl.entity_scheme_aliases,
             config.xbrl.entity_id_aliases,

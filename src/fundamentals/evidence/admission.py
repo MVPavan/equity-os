@@ -375,15 +375,16 @@ def _decimals(occurrence: Occurrence) -> int:
 
 
 def _location(occurrence: Occurrence) -> dict[str, Any]:
-    """The provenance anchor fields: an XBRL context, or a PDF page, line and cell key."""
+    """The provenance anchor fields: an XBRL context, or the PDF cell's native locator."""
     anchor = occurrence.anchor
     if occurrence.representation is Representation.XBRL:
         return {"anchor_type": SourceAnchorType.XBRL_CONTEXT, "context_ref": anchor["context_ref"]}
-    if anchor.get("page") is None or anchor.get("line") is None:
-        raise BridgeError(f"PDF occurrence {occurrence.occurrence_id} lacks its span fields")
+    if None in (anchor.get("page"), anchor.get("line"), anchor.get("column_index")):
+        raise BridgeError(f"PDF occurrence {occurrence.occurrence_id} lacks its cell locator")
     return {
-        "anchor_type": SourceAnchorType.PDF_SPAN,
+        "anchor_type": SourceAnchorType.PDF_CELL,
         "page": anchor["page"],
-        "block": anchor["line"],
-        "span": occurrence.anchor_key,
+        "row_path": str(anchor["line"]),
+        "column_index": anchor["column_index"],
+        "table_key": occurrence.anchor_key,
     }

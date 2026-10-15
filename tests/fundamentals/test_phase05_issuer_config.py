@@ -25,7 +25,7 @@ from fundamentals.api.config import (
     PdfParseConfig,
     load_config,
 )
-from fundamentals.api.pipeline_steps import _normalize_entity, _pdf_parse_spec
+from fundamentals.api.pipeline_steps import normalize_entity, pdf_parse_spec
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,
@@ -303,7 +303,7 @@ def test_entity_id_alias_applies_after_scheme_alias() -> None:
     """The XBRL scrip id and PDF symbol must collapse to one entity, else no cross-check runs."""
     obs = _observation(_SCRIP_SCHEME, _SYNTH_SCRIP)
 
-    normalized = _normalize_entity(
+    normalized = normalize_entity(
         obs,
         {_SCRIP_SCHEME: _ISSUER_SCHEME},
         {_SYNTH_SCRIP: _SYNTH_SYMBOL},
@@ -317,7 +317,7 @@ def test_entity_id_alias_ignored_for_other_scheme() -> None:
     """Aliasing outside the issuer scheme would let a wrong company's file pass the cross-check."""
     obs = _observation(_OTHER_SCHEME, _SYNTH_SCRIP)
 
-    normalized = _normalize_entity(
+    normalized = normalize_entity(
         obs,
         {_OTHER_SCHEME: "other-identifier"},
         {_SYNTH_SCRIP: _SYNTH_SYMBOL},
@@ -346,7 +346,7 @@ def test_pipeline_spec_carries_unit_and_effective_lines(tmp_path: Path) -> None:
         )
     )
 
-    spec = _pdf_parse_spec(config)
+    spec = pdf_parse_spec(config)
 
     assert spec.printed_unit is PdfPrintedUnit.CRORE
     assert _line_by_local_name(spec.target_lines, _NET_PROFIT_LOCAL).labels[-1] == _OVERRIDE_LABEL

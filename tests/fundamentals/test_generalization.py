@@ -39,7 +39,7 @@ from fundamentals.api.config import (
     XbrlMode,
 )
 from fundamentals.api.pipeline import XbrlInput
-from fundamentals.api.pipeline_steps import _claim_range_quote
+from fundamentals.api.pipeline_steps import claim_range_quote
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
@@ -307,7 +307,7 @@ def test_quote_anchor_gate_can_actually_fail() -> None:
     # fails — the check is no longer a tautological re-read of the same span.
     text = "For the year the company guides revenue growth guidance of 3% to 4%."
     document = SourceDocument(blocks=(SourceBlock(page=1, block=0, text=text),))
-    quote = _claim_range_quote(_guidance_claim("0:0"))
+    quote = claim_range_quote(_guidance_claim("0:0"))
     assert quote == "3% to 4%"
 
     good_start = text.index("3% to 4%")

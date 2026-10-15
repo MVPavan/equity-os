@@ -25,6 +25,10 @@ issuer's figure. The type states which file the position is a position *in*.
 a human typed into a committed YAML file, addressed by the stock's NSE symbol
 (``row_label``) and the identifier field (``column_label``). It is an assertion,
 not evidence, and the fact store bars it for exactly that reason.
+
+``PDF_CELL`` is a banded statement cell, re-found by re-banding the page: ``page``, the
+banded line (``row_path``, decimal text), ``column_index`` and the occurrence's
+``anchor_key`` (``table_key``). A banded line is not a ``PDF_SPAN`` text block.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ class SourceAnchorType(StrEnum):
     """Discriminant for the kind of typed source anchor a Provenance carries."""
 
     PDF_SPAN = "PDF_SPAN"
+    PDF_CELL = "PDF_CELL"
     XBRL_CONTEXT = "XBRL_CONTEXT"
     JSON_ISLAND = "JSON_ISLAND"
     API_DOCUMENT = "API_DOCUMENT"
@@ -58,6 +63,14 @@ class SourceAnchorType(StrEnum):
 # carrying a page, an island or a row position would claim to address a
 # position inside a document it never read.
 _FOREIGN_ANCHOR_FIELDS: dict[SourceAnchorType, tuple[str, ...]] = {
+    SourceAnchorType.PDF_CELL: (
+        "block",
+        "span",
+        "context_ref",
+        "island_id",
+        "document_id",
+        "table_id",
+    ),
     SourceAnchorType.JSON_ISLAND: ("document_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.API_DOCUMENT: ("island_id", "table_id", "row_path", "column_index"),
     SourceAnchorType.HTML_TABLE: ("document_id", "island_id", "table_key"),
@@ -122,6 +135,13 @@ class Provenance(BaseModel):
         if self.anchor_type is SourceAnchorType.PDF_SPAN:
             if self.page is None or self.block is None or self.span is None:
                 raise ValueError("PDF_SPAN anchor requires page, block, and span to be set")
+        elif self.anchor_type is SourceAnchorType.PDF_CELL:
+            if None in (self.page, self.row_path, self.table_key) or not (
+                self.column_index is not None and self.column_index >= 0
+            ):
+                raise ValueError(
+                    "PDF_CELL anchor requires page, row_path, table_key and column_index"
+                )
         elif self.anchor_type is SourceAnchorType.XBRL_CONTEXT:
             if self.context_ref is None:
                 raise ValueError("XBRL_CONTEXT anchor requires context_ref to be set")
