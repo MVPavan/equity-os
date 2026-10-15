@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 phase review: fix round 2",
-    "detail": "Sol round 2 confirmed 9 of 12 fixes. Two gaps remain in the importer: a quarter's history could vouch for itself using its own current snapshot, and bad dates or malformed YAML still abort the whole import. Opus is fixing both; then Sol re-checks.",
+    "title": "D3: fresh critical review",
+    "detail": "Sol approved the phase fixes in round 3 (all 12 findings addressed; committed 25be9bb). A fresh Sol session with no prior context is now doing the closing critical review of the whole phase.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 phase review loop closed: Sol APPROVE in round 3; fixes and migration 0014 committed (25be9bb)."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 phase review round 2: Sol REJECT, 9/12 addressed; 2 importer gaps (self-witnessing history, parse failures) sent to fix round 2."
