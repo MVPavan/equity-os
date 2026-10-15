@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: plan fix round 1",
-    "detail": "Sol plan review r1: REJECT, 18 findings (15 P1) — e.g. legacy first-seen time not recorded (blocks the POST_CUTOFF case), panel disposition bypass, lifecycle transitions, validation/approval race, import matcher on shared displays, frozen oracle too weak, Stage 2 inventory gate. Opus is fixing all 18 in the plan.",
+    "title": "D3 report ledger: Sol plan re-review r2",
+    "detail": "Plan revision 3 addresses all 18 r1 findings (legacy acquisition times, trigger-enforced approval rules, explicit import mapping proven on every retained Apar version, full typed frozen oracle). Sol is re-checking and ruling on three spec readings.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan fix round 1: 18/18 addressed; filed eqos-z53 (admin creds in runtime .env). Sol r2 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan Sol r1: REJECT (18 findings); single-reviewer amendment found consistent. Fix round 1 dispatched."
