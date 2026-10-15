@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3: fixing the critical review's findings",
-    "detail": "The fresh critical review found trust holes: approval could rest on a validation written by the drafting role, a bound validation could change before commit, declared citation hashes weren't checked, and direct SQL could skip the narrative-hash and predecessor checks. Opus is fixing these plus unit families and a numeral-scan gap (migration 0015); one finding parked (eqos-0eu).",
-    "stage": "eqos-uqu"
+    "title": "D4: Long-term memory — writing the phase plan",
+    "detail": "D3 is closed. Opus writes the D4 plan (MemoryStore, promotion with its support predicate, search and cutoff retrieval, frozen ledger Stage 2 manifest, Stage 2 e2e); Sol reviews it before any build.",
+    "stage": "eqos-4hi"
   },
   "next": [
-    "Fix rounds on Sol's phase findings, then one fresh critical review",
-    "Close epic eqos-uqu; update the roadmap; then D4",
-    "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
+    "Sol reviews the D4 plan; then build D4.1–D4.5 stage by stage",
+    "D4 phase review loop, then a fresh critical review; close epic eqos-4hi",
+    "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 Report ledger complete: critical-review fixes (migration 0015) committed 483b7c6, Sol re-review APPROVE (7/7 resolved). Full suite 3,450 passed. Epic eqos-uqu closed; 30 of 66 stages built."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 fresh critical review: Sol REJECT (5 P1, 3 P2, all reproduced); 7 sent to a fix round, 1 parked as eqos-0eu (guidance contracts for new drafts)."

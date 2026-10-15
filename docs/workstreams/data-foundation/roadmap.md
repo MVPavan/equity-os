@@ -19,7 +19,7 @@ section is the human summary.
 | D1a Canonical comparison tracer | 7 | Complete. Review fixes committed `22a3c78`; all original and subsequent findings addressed; independent r3 and fresh critical re-review APPROVE. Stable suite 2,787 passed / 8 existing optional skips, strict mypy and Ruff lint/format green. Tracer exit green; epic `eqos-3f9` closed. |
 | D1b Vendors, corroboration, queue, Stage 1 acceptance | 6 | Complete. Exit `tests/fundamentals/test_data_stage1_e2e.py` matches the frozen Stage 1 manifest exactly (10 runs, every fixture; manifest Sol-approved and payload-bound, `a5bbba1`). Phase review: three Sol rounds, then a fresh critical review and re-review, APPROVE 2026-10-14 (fixes `a9caa2b`, `5b5cb73`, `241e530`, `e02ba87`). PDF extractor `pdf-occurrences/2`; migrations 0008–0009. SONACOMS dropped (owner, 2026-10-14); eight companies XBRL-only (reviewer ruling D2). Epic `eqos-u0u` closed. |
 | D2 Legacy store migration and cutover | 8 | Complete on test databases. Exit `tests/fundamentals/test_data_stage2_e2e.py` matches the frozen Stage 2 manifest (Sol-approved, payload-bound, `c44ec4b`) and `scripts/stage2_recreation_check.sh` exits 0; migrations 0010–0011. Phase review: Sol r1 REJECT (14), fixes `222f796`, r2 APPROVE; fresh critical review REJECT (7), fixes `c4ce74d`, re-review APPROVE 2026-10-15. Full suite 3,268 passed. Epic `eqos-01q` closed. Production import and cutover remain the owner-gated `eqos-3zl`. |
-| D3 Report ledger | 9 | Not started |
+| D3 Report ledger | 9 | Complete on test databases. Exit `tests/fundamentals/test_ledger_stage1_e2e.py` green against the frozen ledger manifest (Sol-approved, payload-bound, `ed1ebce`); `ledger export` reproduces every imported Apar version's content hash. Amendments recorded and Sol-approved (`5b5eb5e`); migrations 0012–0015. Phase review: Sol r1 REJECT (12), fixes, r2, r3 APPROVE (`25be9bb`); fresh critical review REJECT (8; finding 6 parked as `eqos-0eu`), fixes `483b7c6`, re-review APPROVE 2026-10-15. Full suite 3,450 passed. Epic `eqos-uqu` closed. |
 | D4 Long-term memory | 5 | Not started |
 | D5 Generated views | 5 | Not started |
 | D6 Identifier-only onboarding | 6 | Not started |
@@ -27,7 +27,7 @@ section is the human summary.
 | D8 Shareholding filing source | 5 | Not started |
 | D9 Retention and replay | 9 | Not started |
 
-21 of 66 stages are built (D1a 7; D1b 6; D2 8). D1a's stages are the shared foundation (schema, dictionary, formula
+30 of 66 stages are built (D1a 7; D1b 6; D2 8; D3 9). D1a's stages are the shared foundation (schema, dictionary, formula
 engine, evidence model, decision tables, runs), so their share of the effort exceeds their count.
 
 **Execution loop per phase** (`.claude/rules/core/04-agent-stack.md`):
