@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3 report ledger: writing the phase plan",
-    "detail": "D2 closed. Opus is writing the just-in-time D3 plan (ledger schema, seal and decision chain, claim checks, version lifecycle, approval panel, imports, narrative export, frozen ledger Stage 1 manifest, e2e). Sol reviews the plan next.",
+    "title": "D3 report ledger: plan revision",
+    "detail": "Draft D3 plan written (9 tasks, migrations 0012–0013). Revising per rulings: product approval is single-reviewer (eqos-uqu.10, with the ledger spec amended alongside), DB role passwords use the existing settings env file. Sol reviews plan + amendment next.",
     "stage": "eqos-uqu"
   },
   "next": [
-    "Sol review loop on the D3 plan",
+    "Sol review loop on the D3 plan and spec amendment",
     "Execute D3.1–D3.9",
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 draft plan written; rulings: single-reviewer approval (eqos-uqu.10), no new secrets file."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 closed: critical-review fixes approved by Sol; full suite 3,268 passed; recreation check PASS. Epic eqos-01q closed."
