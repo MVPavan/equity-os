@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D4.4: Sol reviewing the frozen Stage 2 manifest",
-    "detail": "Opus authored the Stage 2 manifest from source bytes: two corrective quote claims (cables EBITDA margin guidance 9.5–10% in FY26_Q3, 10–11% in FY27_Q1) with their five guidance-contract fields, a MANAGEMENT_TRACK_RECORD stating that management modified the guidance, and the expected retrievals. All 12 ledger mutations fail as required; only the approval check is pending. Sol is verifying it against the source bytes.",
-    "stage": "eqos-4hi.4"
+    "title": "D4.5: ledger Stage 2 end-to-end (D4 exit)",
+    "detail": "Stage 2 manifest approved by Sol (after one fix: decision chains SUBMIT → APPROVE) and committed (bc4eaae). Opus is writing the e2e: admit both Apar transcripts, draft and panel-approve one corrective per quarter whose quote binds its guidance contract from the sealed import, stage the cables-margin MANAGEMENT_TRACK_RECORD, and show it is retrieved only after a panel PROMOTE, exactly as the manifest states.",
+    "stage": "eqos-4hi.5"
   },
   "next": [
-    "Sol approves the Stage 2 manifest; commit it before the e2e",
-    "D4.5 Stage 2 e2e: Apar cables-margin guidance promoted only after a panel PROMOTE",
-    "D4 phase review loop and fresh critical review; close eqos-4hi"
+    "D4 phase review: Sol exhaustive review, fix rounds, fresh critical review",
+    "Close epic eqos-4hi; then D5 generated views",
+    "Follow-ups: F1 reviewer adapter (eqos-tqf, incl. panel RETIRE), eqos-0eu, G3 bead; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4.4 frozen ledger Stage 2 manifest approved by Sol (r2) and committed (bc4eaae). D4.5 e2e dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4.4 Stage 2 manifest authored from source bytes; Sol approval review dispatched."
