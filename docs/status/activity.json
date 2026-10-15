@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3.1: ledger schema, seal, decision chain and roles",
-    "detail": "D3 plan approved by Sol and committed (8bac068) with the ledger spec amendments. Opus is building D3.1: migration 0012, append-only ledger tables, seal and decision-chain triggers, transition rules, owner/panel roles with credentials outside runtime config.",
-    "stage": "eqos-uqu.1"
+    "title": "D3.2: claim check, numeral and prose scans, display",
+    "detail": "D3.1 committed (0044441): migration 0012, append-only ledger, seal and decision-chain triggers, one-root lineage, owner/panel roles; 90 targeted tests pass. Opus is building D3.2 test-first: the claim check against stored figures, numeral/prose scans and display rendering.",
+    "stage": "eqos-uqu.2"
   },
   "next": [
-    "D3.2 claim check, scans, display",
-    "D3.3 lifecycle → D3.5 imports → D3.6 export → D3.4 panel → D3.7–D3.9",
-    "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); owner-gated cutover eqos-3zl"
+    "D3.3 lifecycle and decision commands",
+    "D3.5 imports → D3.6 export → D3.4 panel → D3.7–D3.9",
+    "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.1 ledger schema, seal, chain and roles committed (0044441); 90 tests pass. Filed eqos-1kq (intermittent fixture errors)."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan approved (Sol, after 3 rounds + critical review) and committed (8bac068); eqos-uqu.10 closed; D3.4 acceptance re-seeded; F1/F2 filed."
