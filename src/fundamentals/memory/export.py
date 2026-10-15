@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from fundamentals.contracts.memory import RetrievedItem, SupportRef
+from fundamentals.contracts.memory import RetrievedItem, SupportRef, SupportTarget
 
 _TITLE = "# Promoted memory"
 _NONE = "none"
@@ -26,6 +26,8 @@ _ITEM = """## Memory item {id}: {kind}
 {supports}"""
 _SUPPORT = "  - {}"
 _TARGET = "{target} {target_id}"
+_VERSION_ID = "(version {})"
+_CLAIM_ID = "(version {}, claim {})"
 
 
 def format_memory(items: Sequence[RetrievedItem]) -> str:
@@ -49,8 +51,12 @@ def format_memory(items: Sequence[RetrievedItem]) -> str:
 
 
 def _support(ref: SupportRef) -> str:
-    """A support as ``period kind claim_key`` (a version: ``period kind``), else its target
-    kind and id."""
+    """A support as ``period kind claim_key (version id, claim id)`` (a version: ``period kind
+    (version id)``), else its target kind and id."""
     if ref.version_id is None:
         return _TARGET.format(target=ref.target, target_id=ref.target_id)
-    return " ".join(part for part in (ref.period, ref.report_kind, ref.claim_key) if part)
+    if ref.target is SupportTarget.CLAIM:
+        ids = _CLAIM_ID.format(ref.version_id, ref.target_id)
+    else:
+        ids = _VERSION_ID.format(ref.version_id)
+    return " ".join(part for part in (ref.period, ref.report_kind, ref.claim_key, ids) if part)

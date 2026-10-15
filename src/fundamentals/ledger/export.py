@@ -9,36 +9,35 @@ latest validation and the revalidation flags at read time and carries no narrati
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, LiteralString
 
-from psycopg import Cursor, sql
+from psycopg import Cursor
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.ledger import ClaimState, ReportKind
-from fundamentals.contracts.memory import MemoryStatus
+from fundamentals.contracts.memory import RetrievedItem
 from fundamentals.ledger import store
 from fundamentals.ledger.display import narrative
 from fundamentals.ledger.lifecycle import version_status
-from fundamentals.memory import retrieval
 
-# Each version with its stock, report and position in its report's chain (root 1).
-_VERSIONS: LiteralString = """WITH RECURSIVE chain (id, position) AS (
-    SELECT id, 1 FROM eqos.report_versions WHERE predecessor_id IS NULL
-    UNION ALL
-    SELECT v.id, c.position + 1 FROM eqos.report_versions v JOIN chain c ON v.predecessor_id = c.id
-)
-SELECT v.id AS version_id, r.entity_id, e.entity_key AS stock, r.period, r.kind AS report_kind,
-    c.position
-FROM chain c JOIN eqos.report_versions v ON v.id = c.id JOIN eqos.reports r ON r.id = v.report_id
+# Each version with its stock, report and chain position (root 1). A report's chain is linear
+# with increasing ids (0012), so a version's position is its rank by id within its report.
+_VERSIONS: LiteralString = """SELECT v.id AS version_id, r.entity_id, e.entity_key AS stock,
+    r.period, r.kind AS report_kind,
+    (SELECT count(*) FROM eqos.report_versions p WHERE p.report_id = v.report_id AND p.id <= v.id)
+        AS position
+FROM eqos.report_versions v JOIN eqos.reports r ON r.id = v.report_id
 JOIN eqos.reporting_entities e ON e.id = r.entity_id
-WHERE {} ORDER BY r.period, r.kind, c.position"""
+WHERE r.entity_id = %s ORDER BY r.period, r.kind, position"""
+_ENTITY: LiteralString = "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s"
 _DECISIONS: LiteralString = (
     "SELECT kind, decider, recorded_at FROM eqos.decisions "
     "WHERE subject_kind = 'REPORT_VERSION' AND subject_id = %s ORDER BY sequence"
 )
 _CREATOR: LiteralString = "SELECT creator FROM eqos.validations WHERE id = %s"
-_NO_VERSIONS = "no report versions for stock {stock!r}"
+_UNKNOWN = "unknown stock {stock!r}"
 _NONE = "none"
 _TITLE = "# {stock} {period} {report_kind} v{position}"
 _IDENTITY = "- version: {version_id}\n- chain position: {position}\n- status: {status}"
@@ -69,18 +68,27 @@ def export_version(cursor: Cursor[Any], version_id: int) -> bytes:
     return narrative(draft.sections, draft.claims)
 
 
-def stock_versions(cursor: Cursor[Any], stock: str) -> tuple[VersionIdentity, ...]:
-    """Every version of the stock, by period, kind and chain position."""
-    found = _identities(cursor, "e.entity_key", stock)
+def stock_entity(cursor: Cursor[Any], stock: str) -> int:
+    """The stock's reporting entity id; an unknown stock raises ``LookupError``."""
+    found = cursor.execute(_ENTITY, (stock,)).fetchall()
     if not found:
-        raise LookupError(_NO_VERSIONS.format(stock=stock))
-    return found
+        raise LookupError(_UNKNOWN.format(stock=stock))
+    return int(found[0][0])
 
 
-def status_note(cursor: Cursor[Any], version_id: int) -> str:
+def stock_versions(cursor: Cursor[Any], entity_id: int) -> tuple[VersionIdentity, ...]:
+    """Every version of the entity's reports, by period, kind and chain position."""
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        rows = own.execute(_VERSIONS, (entity_id,)).fetchall()
+    return tuple(VersionIdentity.model_validate(row) for row in rows)
+
+
+def status_note(
+    cursor: Cursor[Any], identity: VersionIdentity, promoted: Sequence[RetrievedItem]
+) -> str:
     """The version's Markdown status note: identity, derived status, decisions in order, latest
-    validation, untrusted claims and the promoted items citing it that need revalidation."""
-    (identity,) = _identities(cursor, "v.id", version_id)
+    validation, untrusted claims and the ``promoted`` items citing it that need revalidation."""
+    version_id = identity.version_id
     status = version_status(cursor, version_id)
     with cursor.connection.cursor(row_factory=dict_row) as own:
         decisions = own.execute(_DECISIONS, (version_id,)).fetchall()
@@ -97,14 +105,6 @@ def status_note(cursor: Cursor[Any], version_id: int) -> str:
             for key, state in check.claim_states
             if state is not ClaimState.MATCH
         ] or [_NONE]
-    promoted = retrieval.retrieve(
-        cursor,
-        query="",
-        stock=identity.entity_id,
-        kinds=None,
-        statuses=frozenset({MemoryStatus.PROMOTED}),
-        cutoff=None,
-    )
     flags = [
         _FLAG.format(id=item.id, statement=item.statement)
         for item in promoted
@@ -125,12 +125,3 @@ def status_note(cursor: Cursor[Any], version_id: int) -> str:
         ),
     ]
     return "\n\n".join(parts) + "\n"
-
-
-def _identities(
-    cursor: Cursor[Any], column: LiteralString, value: object
-) -> tuple[VersionIdentity, ...]:
-    """The identities of the versions where ``column`` is ``value``."""
-    query = sql.SQL(_VERSIONS).format(sql.SQL(column + " = %s"))
-    with cursor.connection.cursor(row_factory=dict_row) as own:
-        return tuple(VersionIdentity.model_validate(row) for row in own.execute(query, (value,)))

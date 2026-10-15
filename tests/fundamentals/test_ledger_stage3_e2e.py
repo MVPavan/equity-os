@@ -11,6 +11,7 @@ expected values.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import Counter
 from operator import itemgetter
 from pathlib import Path
@@ -103,7 +104,8 @@ def note_shown(text: str) -> dict[str, Any]:
 
 
 def memory_shown(text: str) -> list[dict[str, Any]]:
-    """Each ``memory.md`` item: kind, statement, epistemic class, valid range, flag, supports."""
+    """Each ``memory.md`` item: kind, statement, epistemic class, valid range, flag, supports
+    (each claim id dropped: the manifest names the claim by key)."""
     _, *items = text.split("\n## Memory item ")
     shown = []
     for item in items:
@@ -117,7 +119,7 @@ def memory_shown(text: str) -> list[dict[str, Any]]:
                 "valid": values["valid"],
                 "needs_revalidation": values["needs revalidation"],
                 "supports": [
-                    line.strip().removeprefix("- ")
+                    re.sub(r", claim \d+\)$", ")", line.strip().removeprefix("- "))
                     for line in listed.splitlines()
                     if line.startswith("  - ")
                 ],
@@ -126,8 +128,10 @@ def memory_shown(text: str) -> list[dict[str, Any]]:
     return shown
 
 
-def expected_memory(files: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """The manifest's items in :func:`memory_shown`'s shape."""
+def expected_memory(
+    files: dict[str, dict[str, Any]], version_ids: dict[str, int]
+) -> list[dict[str, Any]]:
+    """The manifest's items in :func:`memory_shown`'s shape, each support with its version id."""
     return [
         {
             "kind": item["kind"],
@@ -137,7 +141,7 @@ def expected_memory(files: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
             "needs_revalidation": "yes" if item["needs_revalidation"] else "no",
             "supports": [
                 f"{files[s['stem']]['report']['period']} {files[s['stem']]['report']['kind']} "
-                f"{s['claim']}"
+                f"{s['claim']} (version {version_ids[s['stem']]})"
                 for s in item["supports"]
             ],
         }
@@ -188,7 +192,9 @@ def test_ledger_stage3_end_to_end(
             assert shown == expected | {"version": version_id}, stem
 
         # 3. memory.md holds exactly the manifest's item.
-        assert memory_shown((written / "memory.md").read_text()) == expected_memory(files)
+        version_ids = {stem: version_id for stem, (version_id, _) in stems.items()}
+        shown_memory = memory_shown((written / "memory.md").read_text())
+        assert shown_memory == expected_memory(files, version_ids)
 
     # 4. The reader sees exactly the manifest's view rows, every write is refused and no table
     # changes.
