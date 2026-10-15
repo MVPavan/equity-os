@@ -26,7 +26,7 @@ from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.canon.role_translation import translate
 from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.fact import Fact
-from fundamentals.evidence.capture_intake import stage_retained_member
+from fundamentals.evidence.capture_intake import SURFACE_OF, stage_retained_member
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.approvals import (
     Approval,
@@ -122,7 +122,11 @@ class Rig:
                 for kind in members:
                     if (quarter, kind) != (skip, Representation.PDF):
                         staged = stage_retained_member(
-                            store, intake, kind, clock=repository.store_clock
+                            store,
+                            intake,
+                            kind,
+                            surface=SURFACE_OF[kind].value,
+                            clock=repository.store_clock,
                         )
                         repository.put_capture_ref(staged)
 

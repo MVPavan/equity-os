@@ -42,10 +42,11 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.snapshot import SnapshotError, canonical_sha256
-from fundamentals.contracts.source_catalog import SourceCatalog
+from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
 from fundamentals.contracts.source_registration import SourceRegistrationError
 from fundamentals.evidence.capture_intake import (
     SURFACE_OF,
+    TRANSCRIPT_SURFACE,
     IntakeError,
     RetainedCaptureBinding,
     RetainedIntake,
@@ -92,7 +93,7 @@ from fundamentals.extract.pdf_statement_pages import StatementPageSpec
 from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.store.snapshot_store import SnapshotStore
 
-__all__ = ["IngestError", "IngestReport", "ingest_first_party"]
+__all__ = ["IngestError", "IngestReport", "admit_transcript", "ingest_first_party"]
 
 _LOG = structlog.get_logger(__name__)
 MAX_INTERPRETATION_RETRIES = 3
@@ -104,6 +105,7 @@ DEFAULT_EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
 }
 _MEMBER_ORDER = (Representation.XBRL, Representation.PDF)
 _NOT_AUTHORISED = "source {source_id!r} is not an authorised first-party {representation} source"
+_NOT_TRANSCRIPT = "source {source_id!r} is not a declared diagnostic-only first-party source"
 _NO_FISCAL_YEAR_END = "entity {entity_id} has no evidenced fiscal-year-end month"
 _STAGING_FAILED = "members failed to stage: {members}"
 _RETRIES_EXHAUSTED = "interpretations of capture {capture} conflicted {count} times"
@@ -204,7 +206,13 @@ def ingest_first_party(
             )
             continue
         try:
-            capture = _registered(repository, snapshot_store, intake, binding)
+            capture = _registered(
+                repository,
+                snapshot_store,
+                intake,
+                binding,
+                SURFACE_OF[binding.representation].value,
+            )
         except (SourceRegistrationError, IntakeError, SnapshotError, OSError) as error:
             failed_staging.append(binding.representation.value)
             member_failures.append(
@@ -349,16 +357,38 @@ def _registered(
     store: SnapshotStore,
     intake: RetainedIntake,
     binding: RetainedCaptureBinding,
+    surface: str,
 ) -> CaptureReference:
     """The stored registration of these bytes, staging them only when none exists (level 1)."""
-    surface = SURFACE_OF[binding.representation].value
     existing = repository.find_capture_ref(binding.source_id, surface, binding.expected_sha256)
     if existing is not None:
         return existing
     staged = stage_retained_member(
-        store, intake, binding.representation, clock=repository.store_clock
+        store, intake, binding.representation, surface=surface, clock=repository.store_clock
     )
     return repository.put_capture_ref(staged)
+
+
+def admit_transcript(
+    repository: EvidenceRepository,
+    store: SnapshotStore,
+    intake: RetainedIntake,
+    *,
+    catalog: SourceCatalog,
+) -> CaptureReference:
+    """Register a transcript PDF intake as a diagnostic first-party capture (plan D4, Task 3b).
+
+    Capture only: no package, extraction or interpretation, so comparison never reads it.
+    The source must be declared first-party and diagnostic-only, else ``IngestError``.
+    """
+    binding = intake.binding(Representation.PDF)
+    try:
+        descriptor = catalog.describe(binding.source_id)
+    except UnknownSourceError as error:
+        raise IngestError(_NOT_TRANSCRIPT.format(source_id=binding.source_id)) from error
+    if descriptor.source_class is not SourceClass.FIRST_PARTY or descriptor.may_reconcile:
+        raise IngestError(_NOT_TRANSCRIPT.format(source_id=binding.source_id))
+    return _registered(repository, store, intake, binding, TRANSCRIPT_SURFACE)
 
 
 def _present(

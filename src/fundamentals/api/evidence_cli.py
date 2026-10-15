@@ -24,20 +24,16 @@ import psycopg
 import structlog
 from pydantic import ValidationError
 
-from fundamentals.api.config import SourceFileConfig, load_config
+from fundamentals.api.config import load_config
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.api.watchlist_config import with_issuer_pdfs
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.contracts.acquisition_outcome import outcome_source_state
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import FilingFamily
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.source_catalog import (
-    BUILTIN_SOURCES,
-    EvidenceRole,
-    SourceCatalog,
-    SourceDescriptor,
-)
+from fundamentals.contracts.source_catalog import BUILTIN_SOURCES
 from fundamentals.evidence.capture_intake import IntakeError, retained_intake_from_manifest
 from fundamentals.evidence.first_party_ingest import IngestError, ingest_first_party
 from fundamentals.evidence.mapping import (
@@ -153,7 +149,7 @@ def _ingest(args: argparse.Namespace) -> int:
     pdf_specs = None
     if args.issuer_config is not None:
         issuer_config = load_config(args.issuer_config)
-        catalog = _with_results_pdf(catalog, issuer_config.results_pdf)
+        catalog = with_issuer_pdfs(catalog, issuer_config)
         pdf_specs = specs_from_config(issuer_config.pdf_parse)
     settings = PgSettings()
     with open_pool(settings, PgRole.RUNTIME) as pool:
@@ -214,14 +210,3 @@ def _members(values: list[str]) -> Mapping[Representation, str]:
             raise EvidenceCommandError(_BAD_MEMBER.format(value=value))
         members[representation] = kind
     return members
-
-
-def _with_results_pdf(catalog: SourceCatalog, results_pdf: SourceFileConfig) -> SourceCatalog:
-    """The catalog plus the issuer config's own results-PDF declaration."""
-    return catalog.extend(
-        SourceDescriptor(
-            source_id=results_pdf.source_id,
-            source_class=results_pdf.source_class,
-            evidence_role=EvidenceRole.RECONCILABLE,
-        )
-    )

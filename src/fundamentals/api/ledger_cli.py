@@ -1,18 +1,21 @@
 """The ``ledger`` command: decisions, claim checks, imports and export (plan D3 Tasks 3, 5, 6).
 
     ledger decide <subject kind> <subject id> <kind> [--key K --value V --unit U]
-        [--stock <symbol> --snapshot-root <dir> [--watchlist config/watchlist.yaml]]
+        [--stock <symbol> --snapshot-root <dir> [--watchlist config/watchlist.yaml]
+        [--issuer-config <yaml>]...]
         (the verbatim ruling is read from stdin; an APPROVE checks the version's claims)
     ledger check --version <id> --stock <symbol> --snapshot-root <dir>
         [--mode as_known|retrospective] [--watchlist config/watchlist.yaml]
+        [--issuer-config <yaml>]...
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
-        [--watchlist config/watchlist.yaml]
+        [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]...
     ledger export <version id> [--out PATH]   (narrative bytes; stdout unless --out)
 
 The composition root: ``decide`` runs as the owner login from its credential file; ``check``
 and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
 ``check``, ``import`` and an approving ``decide`` get the stock's source catalog and the
-snapshot store. Any refusal, or a
+snapshot store; each ``--issuer-config`` adds that config's PDF declarations to the catalog
+(plan D4, Task 3b). Any refusal, or a
 version that does not import, exits ``EXIT_REFUSED`` with a structlog error that names no
 credential.
 """
@@ -22,6 +25,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -30,10 +34,12 @@ import psycopg
 import structlog
 from pydantic import ValidationError
 
+from fundamentals.api.config import load_config
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
-from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog
+from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog, with_issuer_pdfs
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind
+from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger.export import export_version
 from fundamentals.ledger.importer import import_versions, load_import_config
 from fundamentals.ledger.lifecycle import decide, validate
@@ -49,6 +55,7 @@ IMPORT_ACTION = "import"
 EXPORT_ACTION = "export"
 DEFAULT_WATCHLIST = Path("config") / "watchlist.yaml"
 DEFAULT_IMPORT_CONFIG = Path("config") / "ledger_import.yaml"
+ISSUER_CONFIG_FLAG = "--issuer-config"
 _ACTION_DEST = "ledger_action"
 _HELP = "decide report-ledger subjects and check report versions"
 _DECIDE_HELP = "record an owner decision; the verbatim ruling is read from stdin"
@@ -78,17 +85,20 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     decision.add_argument("--stock")
     decision.add_argument("--snapshot-root", type=Path)
     decision.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    decision.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     check = actions.add_parser(CHECK_ACTION, help=_CHECK_HELP)
     check.add_argument("--version", type=int, required=True)
     check.add_argument("--stock", required=True)
     check.add_argument("--snapshot-root", type=Path, required=True)
     check.add_argument("--mode", choices=sorted(_MODES), default=RunMode.AS_KNOWN.value.lower())
     check.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    check.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     imports = actions.add_parser(IMPORT_ACTION, help=_IMPORT_HELP)
     imports.add_argument("--snapshot-root", type=Path, required=True)
     imports.add_argument("--config", type=Path, default=DEFAULT_IMPORT_CONFIG)
     imports.add_argument("--repo", type=Path, default=Path())
     imports.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    imports.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     export = actions.add_parser(EXPORT_ACTION, help=_EXPORT_HELP)
     export.add_argument("version_id", type=int)
     export.add_argument("--out", type=Path)
@@ -153,10 +163,18 @@ def _check(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def ledger_catalog(watchlist: Path, stock: str, issuer_configs: Sequence[Path]) -> SourceCatalog:
+    """The stock's source catalog plus each issuer config's results and transcript PDFs."""
+    catalog = stock_catalog(load_watchlist_config(watchlist).stock(stock))
+    for path in issuer_configs:
+        catalog = with_issuer_pdfs(catalog, load_config(path))
+    return catalog
+
+
 def _sources(args: argparse.Namespace) -> dict[str, Any]:
     """The ``--stock`` source catalog and the ``--snapshot-root`` store."""
     return {
-        "catalog": stock_catalog(load_watchlist_config(args.watchlist).stock(args.stock)),
+        "catalog": ledger_catalog(args.watchlist, args.stock, args.issuer_config),
         "snapshots": SnapshotStore(args.snapshot_root.resolve()),
     }
 
@@ -164,7 +182,7 @@ def _sources(args: argparse.Namespace) -> dict[str, Any]:
 def _import(args: argparse.Namespace) -> int:
     """Import the configured versions as the panel login and print each outcome."""
     config = load_import_config(args.config)
-    catalog = stock_catalog(load_watchlist_config(args.watchlist).stock(config.stock))
+    catalog = ledger_catalog(args.watchlist, config.stock, args.issuer_config)
     snapshots = SnapshotStore(args.snapshot_root.resolve())
     login = load_login(PgRole.PANEL, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.PANEL, login=login) as pool:

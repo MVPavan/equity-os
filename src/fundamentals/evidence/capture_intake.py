@@ -45,8 +45,8 @@ MEDIA_TYPES: Mapping[Representation, str] = {
 _FILED_AT_REFUSED = "filed-at {raw!r} is neither 'DD-Mon-YYYY HH:MM:SS' nor ISO with an offset"
 _NO_ENTRY = "retrieval manifest has {count} entries for {issuer} {quarter} {kind}, expected 1"
 _WRONG_ISSUER = "retrieval manifest is for {found!r}, not {issuer!r}"
-_NO_ISSUER_CONFIG = "a PDF member needs the issuer config's results_pdf declaration"
-_PDF_PIN_CONFLICT = "issuer config pins the results PDF to {config}, the manifest to {manifest}"
+_NO_ISSUER_CONFIG = "a PDF member needs the issuer config's PDF declaration"
+_PDF_PIN_CONFLICT = "issuer config pins the PDF to {config}, the manifest to {manifest}"
 _STORE_MISMATCH = "snapshot store differs from the intake's pinned store anchor"
 _NOT_A_BINDING = "intake has no {representation} binding"
 
@@ -70,6 +70,9 @@ SURFACE_OF: Mapping[Representation, FirstPartySurface] = {
     Representation.XBRL: FirstPartySurface.NSE_XBRL_INSTANCE,
     Representation.PDF: FirstPartySurface.NSE_RESULTS_PDF,
 }
+# A diagnostic transcript capture's surface (plan D4, Task 3b): deliberately not a
+# FirstPartySurface, so no comparison run can request or select it.
+TRANSCRIPT_SURFACE = "NSE_TRANSCRIPT_PDF"
 
 
 class RetainedCaptureBinding(BaseModel):
@@ -113,7 +116,7 @@ class RetainedIntake(BaseModel):
 
 
 class _ResultsPdf(BaseModel):
-    """The issuer config's ``results_pdf`` block, as far as intake needs it."""
+    """An issuer config PDF block (``results_pdf`` or ``transcript_pdf``), as intake needs it."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -145,13 +148,19 @@ def retained_intake_from_manifest(
     store_root: Path,
     input_root: Path,
     issuer_config: Path | None,
+    pdf_declaration: str = "results_pdf",
 ) -> RetainedIntake:
-    """Bind one package's members from the retrieval manifest; nothing is staged here."""
+    """Bind one package's members from the retrieval manifest; nothing is staged here.
+
+    ``pdf_declaration`` names the issuer-config block that pins the PDF member.
+    """
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
     if manifest.get("issuer") != issuer:
         raise IntakeError(_WRONG_ISSUER.format(found=manifest.get("issuer"), issuer=issuer))
-    results_pdf = _results_pdf(issuer_config) if issuer_config is not None else None
+    results_pdf = (
+        _results_pdf(issuer_config, pdf_declaration) if issuer_config is not None else None
+    )
     bindings = []
     for representation, kind in kinds.items():
         entry = _manifest_entry(manifest["entries"], issuer=issuer, quarter=quarter, kind=kind)
@@ -213,21 +222,21 @@ def stage_retained_member(
     intake: RetainedIntake,
     representation: Representation,
     *,
+    surface: str,
     clock: Callable[[], datetime],
 ) -> CaptureReference:
-    """Stage one authorised member's pinned bytes as a capture (no database write).
+    """Stage one admitted member's pinned bytes as a capture on ``surface`` (no database write).
 
     ``clock`` stamps the capture and so its registered and first-seen times; production
     passes the evidence store's monotonic clock, never the host wall clock.
     """
     _check_store(store, intake.store_anchor)
     binding = intake.binding(representation)
-    surface = SURFACE_OF[representation]
     record = capture_local_original(
         store,
         input_anchor=intake.input_anchor,
         source_id=binding.source_id,
-        surface=surface.value,
+        surface=surface,
         request_key=request_key_for(binding),
         expected_sha256=binding.expected_sha256,
         media_type=MEDIA_TYPES[representation],
@@ -238,7 +247,7 @@ def stage_retained_member(
     return CaptureReference(
         capture_ref_id=None,
         source_id=binding.source_id,
-        surface=surface.value,
+        surface=surface,
         request_key=record.request.request_key,
         capture_id=record.capture_id,
         blob_sha256=binding.expected_sha256,
@@ -281,10 +290,10 @@ def _manifest_entry(
     return {key: str(value) for key, value in matches[0].items()}
 
 
-def _results_pdf(issuer_config: Path) -> _ResultsPdf:
-    """The issuer config's results-PDF declaration."""
+def _results_pdf(issuer_config: Path, declaration: str) -> _ResultsPdf:
+    """The issuer config's PDF declaration named ``declaration``."""
     raw = yaml.safe_load(issuer_config.read_bytes())
-    return _ResultsPdf.model_validate(raw["results_pdf"])
+    return _ResultsPdf.model_validate(raw[declaration])
 
 
 def _source_id(

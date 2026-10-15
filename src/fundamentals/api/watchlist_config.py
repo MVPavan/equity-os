@@ -26,7 +26,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from fundamentals.api.config import ConceptsConfig, SourceFileConfig
+from fundamentals.api.config import ConceptsConfig, FundamentalsConfig, SourceFileConfig
 from fundamentals.contracts.source_catalog import (
     BUILTIN_SOURCES,
     EvidenceRole,
@@ -319,5 +319,23 @@ def stock_catalog(stock: StockConfig) -> SourceCatalog:
             source_id=stock.results_pdf.source_id,
             source_class=stock.results_pdf.source_class,
             evidence_role=EvidenceRole.RECONCILABLE,
+        )
+    )
+
+
+def with_issuer_pdfs(catalog: SourceCatalog, config: FundamentalsConfig) -> SourceCatalog:
+    """The catalog plus the issuer config's own PDF declarations (plan D4, Task 3b).
+
+    The results PDF is reconcilable; the transcript is diagnostic-only, cited, never reconciled.
+    """
+    return catalog.extend(
+        *(
+            SourceDescriptor(
+                source_id=pdf.source_id, source_class=pdf.source_class, evidence_role=role
+            )
+            for pdf, role in (
+                (config.results_pdf, EvidenceRole.RECONCILABLE),
+                (config.transcript_pdf, EvidenceRole.DIAGNOSTIC_ONLY),
+            )
         )
     )

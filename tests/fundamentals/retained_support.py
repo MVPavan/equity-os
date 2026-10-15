@@ -212,6 +212,7 @@ def apar_intake(
     *,
     marked: Mapping[Representation, Path] | None = None,
     issuer_config: Path = APAR_ISSUER_CONFIG,
+    pdf_declaration: str = "results_pdf",
 ) -> RetainedIntake:
     """A retained intake over private copies of the originals (and any marked copies).
 
@@ -236,6 +237,7 @@ def apar_intake(
         store_root=(tmp_path / STORE_DIR).absolute(),
         input_root=inputs.absolute(),
         issuer_config=issuer_config if Representation.PDF in members else None,
+        pdf_declaration=pdf_declaration,
     )
     if not marked:
         return intake
