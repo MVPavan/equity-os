@@ -13,9 +13,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from pg_support import (
-    MAINTENANCE_DB,
     MIGRATIONS_DIR,
-    HarnessGuardError,
     PgTestDatabase,
     check_prefix,
     create_database,
@@ -30,6 +28,7 @@ from fundamentals.pg.migrations import (
     apply_migrations,
 )
 from fundamentals.pg.settings import ENV_PREFIX, PgSettings
+from fundamentals.pg.test_databases import MAINTENANCE_DB, HarnessGuardError
 
 _SCHEMA = "mig_probe"
 
