@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: Sol reviewing the phase plan",
-    "detail": "Opus drafted plans/D4.md: two new tables (memory items, supports), decisions reuse D3's chain, one SQL support predicate, lock-ordered PROMOTE race guard, store-clock cutoffs, Postgres full-text search. Open rulings for Sol: SERIALIZABLE wording (C1), dropped fields, and how the Apar cables-margin quotes get registered and approved for the Stage 2 e2e.",
+    "title": "D4: fixing the plan after Sol's review",
+    "detail": "Sol rejected the D4 plan (1 blocker, 6 must-fix). Blocker: a ledger approval made by raw SQL could supersede a supporting report mid-promotion without taking the promotion's locks, so the lock protocol moves into SQL. Also: refuse cross-stock evidence, enforce the spec's latest-validation rule, distinct quotes for track records, a concrete Stage 2 manifest schema, and a reviewer payload with the actual quoted evidence.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 plan review r1: Sol REJECT (1 P1, 6 P2); Apar transcript quotes independently verified; plan fix round 1 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 plan drafted by Opus (plans/D4.md, 5 tasks, migrations 0016–0017); Sol plan review r1 dispatched."
