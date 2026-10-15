@@ -10,6 +10,9 @@
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
         [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]...
     ledger export <version id> [--out PATH]   (narrative bytes; stdout unless --out)
+    ledger export --stock <symbol> --out <dir> [--status-notes] [--memory]
+        (every version's narrative, and its status note, and the promoted memory, under
+        <dir>/<symbol>/)
 
 The composition root: ``decide`` runs as the owner login from its credential file; ``check``
 and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from collections.abc import Sequence
 from decimal import Decimal
@@ -39,10 +43,13 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog, with_issuer_pdfs
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind
+from fundamentals.contracts.memory import MemoryStatus
 from fundamentals.contracts.source_catalog import SourceCatalog
-from fundamentals.ledger.export import export_version
+from fundamentals.ledger.export import export_version, status_note, stock_versions
 from fundamentals.ledger.importer import import_versions, load_import_config
 from fundamentals.ledger.lifecycle import decide, validate
+from fundamentals.memory.export import format_memory
+from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -61,7 +68,7 @@ _HELP = "decide report-ledger subjects and check report versions"
 _DECIDE_HELP = "record an owner decision; the verbatim ruling is read from stdin"
 _CHECK_HELP = "check every claim of a version and append the validation"
 _IMPORT_HELP = "import the configured retained versions as the panel role"
-_EXPORT_HELP = "write a version's deterministic narrative bytes"
+_EXPORT_HELP = "write a version's narrative bytes, or a stock's narratives, notes and memory"
 _POLICY_FIELDS = ("key", "value", "unit")
 _DECISION = "decision\t{id}"
 _VALIDATION = "validation\t{id}\nmode\t{mode}"
@@ -69,6 +76,16 @@ _STATE = "{key}\t{state}"
 _IMPORTED = "{period}\t{kind}\t{version_id}\t{outcome}"
 _FAILED_EVENT = "ledger_command_failed"
 _MODES = {mode.value.lower(): mode for mode in RunMode}
+_SNAPSHOT = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+_SAFE_NAME = re.compile(r"[A-Za-z0-9._-]+")
+_STEM = "{period}-{report_kind}-v{position}"
+_NARRATIVE = "{stem}.md"
+_NOTE = "{stem}.status.md"
+_MEMORY_FILE = "memory.md"
+_NEEDS_OUT = "ledger export --stock needs --out <dir>"
+_NEEDS_STOCK = "--status-notes and --memory need --stock"
+_UNSAFE = "{name!r} is not a safe filename component"
+_ESCAPES = "{path} is not under {out}"
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -100,8 +117,12 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     imports.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
     imports.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     export = actions.add_parser(EXPORT_ACTION, help=_EXPORT_HELP)
-    export.add_argument("version_id", type=int)
+    target = export.add_mutually_exclusive_group(required=True)
+    target.add_argument("version_id", type=int, nargs="?")
+    target.add_argument("--stock")
     export.add_argument("--out", type=Path)
+    export.add_argument("--status-notes", action="store_true")
+    export.add_argument("--memory", action="store_true")
 
 
 def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
@@ -200,11 +221,55 @@ def _import(args: argparse.Namespace) -> int:
 
 
 def _export(args: argparse.Namespace) -> int:
-    """Write one version's narrative bytes as the runtime role, to ``--out`` or stdout."""
+    """Write one version's narrative bytes as the runtime role, to ``--out`` or stdout, or with
+    ``--stock`` the stock's files under ``--out``."""
+    if args.stock is not None:
+        return _export_stock(args)
+    if args.status_notes or args.memory:
+        raise ValueError(_NEEDS_STOCK)
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
         body = export_version(conn.cursor(), args.version_id)
     if args.out is None:
         sys.stdout.buffer.write(body)
     else:
         args.out.write_bytes(body)
+    return EXIT_OK
+
+
+def _export_stock(args: argparse.Namespace) -> int:
+    """Write every version's narrative (and status note) from one read-only snapshot, and the
+    stock's promoted memory, under ``<out>/<stock>/``; refuse an unsafe name before any write."""
+    if args.out is None:
+        raise ValueError(_NEEDS_OUT)
+    files: dict[str, bytes] = {}
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            cursor.execute(_SNAPSHOT)
+            versions = stock_versions(cursor, args.stock)
+            for version in versions:
+                stem = _STEM.format(**version.model_dump())
+                files[_NARRATIVE.format(stem=stem)] = export_version(cursor, version.version_id)
+                if args.status_notes:
+                    note = status_note(cursor, version.version_id)
+                    files[_NOTE.format(stem=stem)] = note.encode()
+        if args.memory:
+            items = PgMemoryStore(pool).retrieve(
+                "",
+                stock=versions[0].entity_id,
+                kinds=None,
+                statuses=frozenset({MemoryStatus.PROMOTED}),
+                cutoff=None,
+            )
+            files[_MEMORY_FILE] = format_memory(items).encode()
+    out = args.out.resolve()
+    for name in (args.stock, *(version.period for version in versions)):
+        if not _SAFE_NAME.fullmatch(name) or name in (".", ".."):
+            raise ValueError(_UNSAFE.format(name=name))
+    paths = {name: (out / args.stock / name).resolve() for name in files}
+    for path in paths.values():
+        if not path.is_relative_to(out):
+            raise ValueError(_ESCAPES.format(path=path, out=out))
+    (out / args.stock).mkdir(parents=True, exist_ok=True)
+    for name, path in paths.items():
+        path.write_bytes(files[name])
     return EXIT_OK
