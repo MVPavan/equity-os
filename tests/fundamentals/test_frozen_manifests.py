@@ -575,7 +575,7 @@ def test_every_lexeme_is_at_its_locator(path: Path) -> None:
     assert located
     for loc in located:
         check_locator(manifest, loc)
-    for run in manifest["runs"]:
+    for run in manifest.get("runs", []):
         check_vendor_unmapped(manifest, run)
 
 
@@ -687,6 +687,16 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
         if "expr" in node and "v" in node:
             assert evaluate(node["expr"]) == (Fraction(node["v"]),) * 2, node["expr"]
             checked += 1
+        if "rendered" in node:
+            literals = [Fraction(lit) for lit in re.findall(r"\d+(?:\.\d+)?", node["expr"])]
+            bound = [sum(reading(op["at"][0])) / 2 for op in node["operands"]]
+            assert literals[: len(bound)] == bound, node["expr"]
+            exact = Fraction(node["exact"])
+            assert evaluate(node["expr"]) == (exact, exact), node["expr"]
+            value = Decimal(exact.numerator) / exact.denominator
+            quantized = value.quantize(Decimal(node["quantum"]), ROUND_HALF_UP)
+            assert quantized == Decimal(node["rendered"]), node
+            checked += 1
         if "lo_expr" in node:
             bounds = [evaluate(node["lo_expr"])[0], evaluate(node["hi_expr"])[1]]
             assert bounds == list(interval(node)), node["expr"]
@@ -698,7 +708,11 @@ def test_values_follow_from_their_lexemes(path: Path) -> None:
     check_values(load(path))
 
 
-@per_manifest
+@pytest.mark.parametrize(
+    "path",
+    [p for p in MANIFESTS if "runs" in load(p)],
+    ids=lambda p: p.name.removesuffix("_manifest.yaml"),
+)
 def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
     manifest = load(path)
     check_inventory(manifest)
