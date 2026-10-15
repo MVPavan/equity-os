@@ -8,6 +8,7 @@ refuse an insert after a seal, a stale head, an illegal transition or an unbound
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from datetime import date
 from enum import StrEnum
@@ -29,6 +30,7 @@ from fundamentals.contracts.ledger import (
     VersionDraft,
     VersionState,
 )
+from fundamentals.contracts.snapshot import canonical_sha256
 
 _SCHEMA = "eqos"
 _SEALED_DIGEST: LiteralString = "SELECT eqos.version_sealed_digest(%s)"
@@ -55,6 +57,11 @@ _VERSION_STATE: LiteralString = (
     "VALUES (%s, %s, %s)"
 )
 _UNKNOWN_CLAIM = "version {version_id} has no claim {claim_key!r}"
+_ACQUISITION: LiteralString = (
+    "INSERT INTO eqos.legacy_acquisitions (blob_sha256, retrieved_at, manifest_sha256, "
+    "entry_sha256) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING"
+)
+_MANIFEST_PIN = "retrieval manifest SHA-256 {actual} is not the pinned {expected}"
 
 
 def create_report(cursor: Cursor[Any], *, entity_id: int, period: str, kind: ReportKind) -> int:
@@ -200,6 +207,19 @@ def latest_validation(cursor: Cursor[Any], version_id: int) -> Validation | None
             ),
         }
     )
+
+
+def insert_acquisitions(cursor: Cursor[Any], manifest_bytes: bytes, *, expected_sha256: str) -> int:
+    """Record each retrieval-manifest entry's retrieval time for its blob (D8); returns how
+    many rows were new. Refuses bytes other than the pinned manifest's."""
+    actual = hashlib.sha256(manifest_bytes).hexdigest()
+    if actual != expected_sha256:
+        raise ValueError(_MANIFEST_PIN.format(actual=actual, expected=expected_sha256))
+    inserted = 0
+    for entry in json.loads(manifest_bytes)["entries"]:
+        params = (entry["sha256"], entry["retrieved_at"], actual, canonical_sha256(entry))
+        inserted += cursor.execute(_ACQUISITION, params).rowcount
+    return inserted
 
 
 def _claim_row(

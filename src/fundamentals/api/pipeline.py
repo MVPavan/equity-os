@@ -38,14 +38,12 @@ from fundamentals.api.pipeline_steps import (
 from fundamentals.api.pipeline_steps import (
     build_calculations,
     claim_range_quote,
-    guidance_quote_holds,
     normalize_entity,
     pdf_parse_spec,
     reconcile_current_guidance,
     required_concepts,
     run_sec_cross_check,
     select_optional,
-    source_document,
 )
 from fundamentals.api.source_admission import (
     AdmittedPipelineInputs,
@@ -101,6 +99,8 @@ from fundamentals.verify.crossfoot import (
     check_identity,
 )
 from fundamentals.verify.quote_anchor import (
+    guidance_quote_holds,
+    source_document,
     verify_quote_anchor,
 )
 

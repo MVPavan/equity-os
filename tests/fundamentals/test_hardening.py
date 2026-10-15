@@ -29,7 +29,6 @@ from fundamentals.api.config import (
     XbrlMode,
 )
 from fundamentals.api.pipeline import PipelineError, XbrlInput
-from fundamentals.api.pipeline_steps import guidance_quote_holds
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
     AccountingFramework,
@@ -62,6 +61,7 @@ from fundamentals.output.earnings_update import (
 from fundamentals.store.fact_store import FactStore
 from fundamentals.verify.comparison_key import explain_comparability
 from fundamentals.verify.crossfoot import Identity, SignedTerm, check_identity
+from fundamentals.verify.quote_anchor import guidance_quote_holds
 
 _RETRIEVED_AT = datetime(2024, 7, 18, tzinfo=UTC)
 _NS = "http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin"

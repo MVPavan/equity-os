@@ -98,6 +98,29 @@ class VersionStatus(StrEnum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class Grouping(StrEnum):
+    NONE = "group-none"
+    INDIAN = "group-indian"
+    INTERNATIONAL = "group-intl"
+
+
+class RangeForm(StrEnum):
+    DASH = "range-dash"
+    COMMA = "range-comma"
+
+
+class InputTime(StrEnum):
+    """An input time the claim check holds against the cutoff (spec row 2); the last three
+    count in ``AS_KNOWN`` only."""
+
+    KNOWLEDGE = "KNOWLEDGE"
+    FIRST_SEEN = "FIRST_SEEN"
+    RUN = "RUN"
+    RECORDED = "RECORDED"
+    SELECTED = "SELECTED"
+    POLICY = "POLICY"
+
+
 class Verdict(StrEnum):
     APPROVE = "APPROVE"
     REQUEST_CHANGES = "REQUEST_CHANGES"
@@ -232,3 +255,51 @@ class DecisionRecord(BaseModel):
     decider: DeciderRole
     recorded_at: datetime
     decision_sha256: str
+
+
+class DisplayStyle(BaseModel):
+    """A placeholder's closed-enum display style (plan D5); the defaults are the empty style."""
+
+    model_config = ConfigDict(frozen=True)
+
+    grouping: Grouping = Grouping.NONE
+    plus: bool = False
+    unit: bool = False
+    qualifier: bool = False
+    range_form: RangeForm = RangeForm.DASH
+    trim: bool = False
+    quote: bool = False
+
+
+class GuidanceContract(BaseModel):
+    """The guidance fields a quote claim is compared with field by field (spec row 7)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    metric: str | None
+    scope: str | None
+    horizon: str | None
+    unit: str | None
+    constant_currency: bool | None
+
+
+class ResolvedCitation(BaseModel):
+    """What a claim's cited record says, read at the validation's overlay position.
+
+    A ``None`` field is one the cited record does not carry, so the check skips it. ``times``
+    are the inputs row 2 holds against the cutoff (``None``: missing); ``trusted`` is the
+    cited run cell's trust view, ``None`` when no run cell is cited.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    value: Decimal | None = None
+    key_digest: str | None = None
+    value_kind: ValueKind | None = None
+    unit: str | None = None
+    currency: str | None = None
+    scale: int | None = None
+    times: tuple[tuple[InputTime, datetime | None], ...] = ()
+    quote_text: str | None = None
+    guidance: GuidanceContract | None = None
+    trusted: bool | None = None

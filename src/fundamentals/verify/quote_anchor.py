@@ -10,11 +10,14 @@ out-of-range span, or a quote absent from the resolved span all fail closed.
 
 from __future__ import annotations
 
+import re
+from decimal import Decimal
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.ingest.pdf_source import LoadedPdf
 
 
 class HasProvenance(Protocol):
@@ -22,6 +25,19 @@ class HasProvenance(Protocol):
 
     @property
     def provenance(self) -> Provenance: ...
+
+
+class QuotedBounds(Protocol):
+    """Anything quoting a range: a GuidanceClaim, or a ledger quote claim."""
+
+    @property
+    def source_quote(self) -> str | None: ...
+
+    @property
+    def lower_bound(self) -> Decimal: ...
+
+    @property
+    def upper_bound(self) -> Decimal: ...
 
 
 class SourceBlock(BaseModel):
@@ -114,3 +130,32 @@ def verify_quote_anchor(
             resolved_text=resolved,
         )
     return QuoteAnchorResult(anchored=True, resolved_text=resolved)
+
+
+def guidance_quote_holds(claim: QuotedBounds, resolved_span_text: str) -> bool:
+    """Verify the anchored span still carries the claim captured at extraction.
+
+    The resolved span must equal the ``source_quote`` stored at extraction (so a
+    re-pointed provenance fails), and the claim's numeric bounds must be
+    represented in that quote (so mutating 3–4% to 8–10% while keeping the old
+    provenance fails).
+    """
+    if claim.source_quote is None:
+        return False
+    if resolved_span_text != claim.source_quote:
+        return False
+    numbers = {
+        Decimal(value.replace(",", ""))
+        for value in re.findall(r"\d[\d,]*(?:\.\d+)?", claim.source_quote)
+    }
+    return claim.lower_bound in numbers and claim.upper_bound in numbers
+
+
+def source_document(pdf: LoadedPdf) -> SourceDocument:
+    """Reconstruct a page/block-addressable SourceDocument from a loaded PDF."""
+    blocks = tuple(
+        SourceBlock(page=page.page_number, block=block.number, text=block.text)
+        for page in pdf.pages
+        for block in page.blocks
+    )
+    return SourceDocument(blocks=blocks)

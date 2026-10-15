@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
@@ -20,12 +19,10 @@ from fundamentals.contracts.observation import AccountingFramework, Observation,
 from fundamentals.extract.guidance_extractor import PERCENT_UNIT
 from fundamentals.extract.pdf_number_parser import PdfParseSpec
 from fundamentals.extract.xbrl_parser import FactSelectionError, select_observation
-from fundamentals.ingest.pdf_source import LoadedPdf
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
 from fundamentals.output.earnings_update import FactRole, RenderedCalculation, anchor_label
 from fundamentals.output.management_ledger import ManagementLedger, reconcile_ledger
 from fundamentals.output.pnl_lines import headline_line, tax_lines
-from fundamentals.verify.quote_anchor import SourceBlock, SourceDocument
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
 
@@ -140,35 +137,6 @@ def required_concepts(config: FundamentalsConfig) -> frozenset[str]:
     required.update(aux.concept_qname for aux in config.concepts.aux if aux.required)
     required.update(config.concepts.cross_check)
     return frozenset(required)
-
-
-def guidance_quote_holds(claim: GuidanceClaim, resolved_span_text: str) -> bool:
-    """Verify the anchored span still carries the claim captured at extraction.
-
-    The resolved span must equal the ``source_quote`` stored at extraction (so a
-    re-pointed provenance fails), and the claim's numeric bounds must be
-    represented in that quote (so mutating 3–4% to 8–10% while keeping the old
-    provenance fails).
-    """
-    if claim.source_quote is None:
-        return False
-    if resolved_span_text != claim.source_quote:
-        return False
-    numbers = {
-        Decimal(value.replace(",", ""))
-        for value in re.findall(r"\d[\d,]*(?:\.\d+)?", claim.source_quote)
-    }
-    return claim.lower_bound in numbers and claim.upper_bound in numbers
-
-
-def source_document(pdf: LoadedPdf) -> SourceDocument:
-    """Reconstruct a page/block-addressable SourceDocument from a loaded PDF."""
-    blocks = tuple(
-        SourceBlock(page=page.page_number, block=block.number, text=block.text)
-        for page in pdf.pages
-        for block in page.blocks
-    )
-    return SourceDocument(blocks=blocks)
 
 
 def run_sec_cross_check(config: FundamentalsConfig) -> str:

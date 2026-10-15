@@ -1,0 +1,353 @@
+"""Citation resolution: what a claim's cited record says, if it has authority (plan D8, D9).
+
+``resolve_citation`` returns ``None`` (row 1, ``UNRESOLVED``) unless the cited record exists
+and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
+behind them), a quote only a non-vendor capture, a ``COMPARISON`` its own run and key, a
+``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity. A capture's
+first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import tempfile
+from collections.abc import Iterable, Mapping
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, LiteralString
+
+import pymupdf
+from psycopg import Cursor
+from psycopg.rows import dict_row
+from pydantic import BaseModel, ConfigDict
+
+from fundamentals.compare.queue import overlay_at
+from fundamentals.compare.trust import trusted
+from fundamentals.contracts.canonical import Basis, ValueKind
+from fundamentals.contracts.comparison import CorroborationStatus, ExtractionStatus, SourceState
+from fundamentals.contracts.ledger import CitationKind, InputTime, NumericClaim, ResolvedCitation
+from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
+from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.snapshot import SnapshotError
+from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
+from fundamentals.evidence.repository_rows import period_of
+from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
+from fundamentals.store.snapshot_store import SnapshotStore
+from fundamentals.verify.quote_anchor import (
+    SourceDocument,
+    source_document,
+    verify_quote_anchor,
+)
+
+ANCHOR = re.compile(r"p(\d+)\.b(\d+)\.(\d+:\d+)")
+PDF_MAGIC = b"%PDF-"
+_FIRST_SEEN: LiteralString = """least(c.first_seen_at, (SELECT min(a.retrieved_at)
+    FROM eqos.legacy_acquisitions a WHERE a.blob_sha256 = c.blob_sha256))"""
+_CAPTURE: LiteralString = (
+    "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
+)
+_FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, t.*, b.capture_ref_id,
+    (SELECT min(s.selected_at) FROM eqos.fact_selections s
+     WHERE s.target_store = f.target_store AND s.row_handle = f.handle) AS selected_at
+FROM eqos.fact_rows f
+JOIN eqos.legacy_fact_translations t
+    ON t.target_store = f.target_store AND t.row_handle = f.handle
+JOIN eqos.legacy_evidence_bindings b
+    ON b.target_store = f.target_store AND b.row_handle = f.handle
+WHERE f.origin = %s AND f.origin_id = %s"""
+_RUN_CELL: LiteralString = """SELECT r.key_digest, r.value_kind, r.currency, run.created_at,
+    r.extraction_status, r.corroboration_status, EXISTS (SELECT 1 FROM eqos.result_source_values f
+    WHERE f.result_id = r.id AND f.source_role = 'FIRST_PARTY' AND f.source_state = 'VALUE')
+    AS first_party_value, """
+_CELL: LiteralString = (
+    _RUN_CELL
+    + """v.value FROM eqos.result_source_values v
+JOIN eqos.results r ON r.id = v.result_id JOIN eqos.runs run ON run.id = r.run_id
+WHERE v.interpretation_id = %s AND v.source_state = 'VALUE' AND r.run_id = %s
+    AND r.key_digest = %s"""
+)
+_COMPARISON: LiteralString = (
+    _RUN_CELL
+    + """p.difference AS value FROM eqos.pair_outcomes p
+JOIN eqos.results r ON r.id = p.result_id JOIN eqos.runs run ON run.id = r.run_id
+WHERE p.id = %s AND r.run_id = %s AND r.key_digest = %s"""
+)
+_TRACE: LiteralString = (
+    "SELECT value, key_digest FROM eqos.calculation_traces WHERE id = %s AND state = 'COMPUTED'"
+)
+_POLICY: LiteralString = """SELECT d.policy_value, d.policy_unit, d.recorded_at
+FROM eqos.decisions d JOIN eqos.reports r ON r.id = d.subject_id
+WHERE d.id = %s AND d.subject_kind = 'REPORT' AND d.kind = 'SET_POLICY'
+    AND d.decider = 'OWNER' AND r.entity_id = %s"""
+# Every interpretation behind the cited traces and interpretations, through trace operands,
+# nested traces and constructed interpretations' operands.
+_INPUTS: LiteralString = (
+    """WITH RECURSIVE traces(id) AS (
+    SELECT unnest(%(traces)s::bigint[])
+    UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
+        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
+), interps(id) AS (
+    SELECT unnest(%(interpretations)s::bigint[])
+    UNION SELECT o.interpretation_id FROM eqos.calculation_trace_operands o
+        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.interpretation_id IS NOT NULL
+    UNION SELECT o.operand_interpretation_id FROM eqos.interpretation_operands o
+        JOIN interps i ON o.interpretation_id = i.id
+)
+SELECT c.source_id, i.recorded_at, i.occurrence_id, oc.knowledge_time,
+    oc.first_seen_at AS occurrence_first_seen, """
+    + _FIRST_SEEN
+    + """ AS first_seen
+FROM interps x JOIN eqos.interpretations i ON i.id = x.id
+JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
+LEFT JOIN eqos.occurrences oc ON oc.id = i.occurrence_id"""
+)
+
+_Row = Mapping[str, Any]
+_Times = tuple[tuple[InputTime, datetime | None], ...]
+
+
+class _Located(BaseModel):
+    """A capture span in the shape the quote-anchor verifier reads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    provenance: Provenance
+
+
+def resolve_citation(
+    cursor: Cursor[Any],
+    claim: NumericClaim,
+    *,
+    entity_id: int,
+    overlay_position: datetime,
+    catalog: SourceCatalog,
+    snapshots: SnapshotStore,
+) -> ResolvedCitation | None:
+    """What the claim's citation resolves to at ``overlay_position``, or ``None``.
+
+    ``entity_id`` is the stock of the claim's report, which a ``POLICY`` decision must share.
+    """
+    citation = claim.citation
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        if citation.kind is CitationKind.FIGURE and citation.fact_origin_id is not None:
+            return _fact(own, citation.fact_origin, citation.fact_origin_id, catalog)
+        if citation.kind is CitationKind.FIGURE and citation.interpretation_id is not None:
+            times = _input_times(own, (), (citation.interpretation_id,), catalog)
+            if times is None:
+                return None
+            return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
+        if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
+            return _trace(own, citation.calculation_trace_id, catalog)
+        if citation.kind is CitationKind.SOURCE_QUOTE and citation.capture_ref_id is not None:
+            capture = _first_party_capture(own, citation.capture_ref_id, catalog)
+            if capture is None:
+                return None
+            return ResolvedCitation(
+                times=((InputTime.FIRST_SEEN, capture["first_seen"]),),
+                quote_text=_span(capture, citation.anchor or "", snapshots),
+            )
+        if citation.kind is CitationKind.COMPARISON:
+            return _run_cell(own, _COMPARISON, citation.pair_outcome_id, claim, overlay_position)
+        if citation.kind is CitationKind.POLICY:
+            return _policy(own, claim, entity_id)
+    return None
+
+
+def resolve_location(
+    cursor: Cursor[Any],
+    capture_id: str,
+    anchor: str,
+    *,
+    catalog: SourceCatalog,
+    snapshots: SnapshotStore,
+) -> bool:
+    """Whether ``{{s:<capture id>|<anchor>}}`` names a non-empty span of a non-vendor capture."""
+    if not capture_id.isdigit():
+        return False
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        capture = _first_party_capture(own, int(capture_id), catalog)
+    if capture is None:
+        return False
+    span = _span(capture, anchor, snapshots)
+    return span is not None and span.strip() != ""
+
+
+def _first_party(source_id: str, catalog: SourceCatalog) -> bool:
+    """Whether the catalog declares ``source_id`` first-party (undeclared: no)."""
+    try:
+        return catalog.classify(source_id) is SourceClass.FIRST_PARTY
+    except UnknownSourceError:
+        return False
+
+
+def _first_party_capture(
+    own: Cursor[Any], capture_ref_id: int, catalog: SourceCatalog
+) -> _Row | None:
+    """The capture row with its D8 first-seen time, if it exists and is first-party."""
+    row = own.execute(_CAPTURE, (capture_ref_id,)).fetchone()
+    return row if row is not None and _first_party(row["source_id"], catalog) else None
+
+
+def _fact(
+    own: Cursor[Any], origin: str | None, origin_id: int, catalog: SourceCatalog
+) -> ResolvedCitation | None:
+    """A legacy fact, through its translation and its bound capture."""
+    row = own.execute(_FACT, (origin, origin_id)).fetchone()
+    if row is None:
+        return None
+    capture = _first_party_capture(own, row["capture_ref_id"], catalog)
+    period = period_of(row)
+    if capture is None or period is None:
+        return None
+    observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
+    key = MeasurementKey(
+        entity_id=row["entity_id"],
+        canonical_id=row["canonical_id"],
+        period=period,
+        basis=Basis(row["basis"]),
+        framework=AccountingFramework(row["framework"]),
+        currency=row["currency"],
+        value_kind=ValueKind(row["value_kind"]),
+        dimensions=DimensionSet(pairs=tuple(tuple(pair) for pair in row["dimension_set"])),
+    )
+    return ResolvedCitation(
+        value=Decimal(str(observation["normalized_value"])),
+        key_digest=key.digest(),
+        value_kind=key.value_kind,
+        unit=observation["normalized_unit"],
+        currency=observation["currency"],
+        scale=observation["scale"],
+        times=(
+            (InputTime.KNOWLEDGE, _instant(row["knowledge_time"])),
+            (InputTime.FIRST_SEEN, capture["first_seen"]),
+            (InputTime.SELECTED, _instant(row["selected_at"])),
+        ),
+    )
+
+
+def _trace(own: Cursor[Any], trace_id: int, catalog: SourceCatalog) -> ResolvedCitation | None:
+    """A computed trace whose every operand is first-party."""
+    row = own.execute(_TRACE, (trace_id,)).fetchone()
+    times = _input_times(own, (trace_id,), (), catalog)
+    if row is None or row["value"] is None or times is None:
+        return None
+    return ResolvedCitation(value=row["value"], key_digest=row["key_digest"], times=times)
+
+
+def _run_cell(
+    own: Cursor[Any],
+    query: LiteralString,
+    record_id: int | None,
+    claim: NumericClaim,
+    overlay_position: datetime,
+    times: _Times | None = None,
+) -> ResolvedCitation | None:
+    """A value of a result of the named run under the claim's key: an interpretation's
+    ``VALUE`` source value (D9), or a pair difference whose input time is the run's."""
+    run_id, key = claim.citation.run_id, claim.measurement_key
+    if record_id is None or run_id is None or key is None:
+        return None
+    row = own.execute(query, (record_id, run_id, key.digest())).fetchone()
+    if row is None or row["value"] is None:
+        return None
+    first_party = SourceState.VALUE if row["first_party_value"] else SourceState.NO_VALUE
+    trust = trusted(
+        run_id=run_id,
+        key=key,
+        extraction=ExtractionStatus(row["extraction_status"]),
+        corroboration=CorroborationStatus(row["corroboration_status"]),
+        first_party_state=first_party,
+        overlay=overlay_at(own, run_id=run_id, as_of=overlay_position),
+    )
+    return ResolvedCitation(
+        value=row["value"],
+        key_digest=row["key_digest"],
+        value_kind=ValueKind(row["value_kind"]),
+        currency=row["currency"],
+        times=((InputTime.RUN, row["created_at"]),) if times is None else times,
+        trusted=trust.trusted,
+    )
+
+
+def _policy(own: Cursor[Any], claim: NumericClaim, entity_id: int) -> ResolvedCitation | None:
+    """An owner ``SET_POLICY`` value; a self-citation is its own imported record, whose value
+    the importer's lossless mapping binds to the parsed source field (D7)."""
+    decision_id = claim.citation.policy_decision_id
+    if decision_id is None:
+        return ResolvedCitation(value=claim.value)
+    row = own.execute(_POLICY, (decision_id, entity_id)).fetchone()
+    if row is None:
+        return None
+    return ResolvedCitation(
+        value=row["policy_value"],
+        unit=row["policy_unit"],
+        times=((InputTime.POLICY, row["recorded_at"]),),
+    )
+
+
+def _input_times(
+    own: Cursor[Any],
+    traces: Iterable[int],
+    interpretations: Iterable[int],
+    catalog: SourceCatalog,
+) -> _Times | None:
+    """Every input time behind the traces and interpretations, or ``None`` when any capture
+    behind them is not first-party."""
+    rows = own.execute(
+        _INPUTS, {"traces": list(traces), "interpretations": list(interpretations)}
+    ).fetchall()
+    if not rows or not all(_first_party(row["source_id"], catalog) for row in rows):
+        return None
+    times: list[tuple[InputTime, datetime | None]] = []
+    for row in rows:
+        times.append((InputTime.FIRST_SEEN, row["first_seen"]))
+        times.append((InputTime.RECORDED, row["recorded_at"]))
+        if row["occurrence_id"] is not None:
+            times.append((InputTime.KNOWLEDGE, row["knowledge_time"]))
+            times.append((InputTime.FIRST_SEEN, row["occurrence_first_seen"]))
+    return tuple(times)
+
+
+def _span(capture: _Row, anchor: str, snapshots: SnapshotStore) -> str | None:
+    """The text at a ``p<page>.b<block>.<start>:<end>`` anchor of a PDF capture, or ``None``."""
+    parsed = ANCHOR.fullmatch(anchor)
+    document = _document(capture, snapshots)
+    if parsed is None or document is None:
+        return None
+    provenance = Provenance(
+        source_id=capture["source_id"],
+        file_sha256=capture["blob_sha256"],
+        anchor_type=SourceAnchorType.PDF_SPAN,
+        page=int(parsed.group(1)),
+        block=int(parsed.group(2)),
+        span=parsed.group(3),
+        retrieved_at=capture["first_seen"],
+    )
+    result = verify_quote_anchor(_Located(provenance=provenance), "", document)
+    return result.resolved_text if result.anchored else None
+
+
+def _document(capture: _Row, snapshots: SnapshotStore) -> SourceDocument | None:
+    """The capture's retained PDF as addressable blocks, or ``None`` if it has none."""
+    identity = (capture[name] for name in ("source_id", "surface", "request_key", "capture_id"))
+    try:
+        _, body = snapshots.read_capture_verified(*identity)
+        if not body.startswith(PDF_MAGIC):
+            return None
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "capture.pdf"
+            path.write_bytes(body)
+            pdf = load_pdf(
+                source_id=capture["source_id"], path=path, expected_sha256=capture["blob_sha256"]
+            )
+    except (SnapshotError, PdfIntegrityError, pymupdf.FileDataError):
+        return None
+    return source_document(pdf)
+
+
+def _instant(text: str | None) -> datetime | None:
+    """A stored legacy ISO time, or ``None``."""
+    return None if text is None else datetime.fromisoformat(text)
