@@ -297,7 +297,7 @@ def test_interpretation_figure_resolves_only_through_its_run_cell(cited: Cited) 
     resolved = cited.resolve(cited.interpretation_figure())
     assert resolved is not None
     assert (resolved.value, resolved.key_digest, resolved.trusted) == (
-        cited.cell_value,
+        cited.cell_value.scaleb(-7),  # the base-INR cell in the crore claim's scale
         cited.cell_key.digest(),
         False,
     )
@@ -320,8 +320,8 @@ def test_vendor_records_do_not_resolve(cited: Cited, case: str) -> None:
 @pytest.mark.parametrize(
     ("case", "value", "time"),
     [
-        ("first_party_trace", Decimal("12.34"), InputTime.KNOWLEDGE),
-        ("comparison", -200, InputTime.RUN),
+        ("first_party_trace", Decimal("12.34").scaleb(-7), InputTime.KNOWLEDGE),
+        ("comparison", Decimal(-200).scaleb(-7), InputTime.RUN),
     ],
 )
 def test_first_party_trace_and_comparison_resolve(

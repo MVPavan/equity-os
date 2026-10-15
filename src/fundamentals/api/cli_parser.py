@@ -11,6 +11,7 @@ from fundamentals.api.config import XbrlMode
 from fundamentals.api.db_cli import add_db_parser
 from fundamentals.api.entity_map_cli import add_entity_map_parser
 from fundamentals.api.evidence_cli import add_evidence_parser
+from fundamentals.api.ledger_cli import add_ledger_parser
 from fundamentals.api.legacy_cli import add_legacy_parser
 from fundamentals.api.news_cli import add_news_parser
 from fundamentals.api.review_cli import add_review_parser
@@ -186,6 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_evidence_parser(subparsers)
     add_legacy_parser(subparsers)
     add_compare_parser(subparsers)
+    add_ledger_parser(subparsers)
     add_upstox_parser(subparsers)
     add_upstox_crosscheck_parser(subparsers)
     add_upstox_sensitivity_parser(subparsers)

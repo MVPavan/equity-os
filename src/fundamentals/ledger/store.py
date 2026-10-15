@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from fundamentals.contracts.ledger import (
+    Citation,
     ClaimState,
     DecisionKind,
     DecisionRecord,
@@ -56,6 +57,19 @@ _VERSION_STATE: LiteralString = (
     "INSERT INTO eqos.validation_claim_states (validation_id, version_id, state) "
     "VALUES (%s, %s, %s)"
 )
+_VERSION: LiteralString = "SELECT * FROM eqos.report_versions WHERE id = %s"
+_SECTIONS: LiteralString = (
+    "SELECT ordinal, section_key, body FROM eqos.report_sections WHERE version_id = %s "
+    "ORDER BY ordinal"
+)
+_CLAIMS: LiteralString = (
+    "SELECT c.*, s.section_key FROM eqos.numeric_claims c "
+    "JOIN eqos.report_sections s ON s.id = c.section_id WHERE c.version_id = %s ORDER BY c.id"
+)
+_SOURCES: LiteralString = (
+    "SELECT source_path, body FROM eqos.import_sources WHERE version_id = %s ORDER BY id"
+)
+_NO_VERSION = "no report version {version_id}"
 _UNKNOWN_CLAIM = "version {version_id} has no claim {claim_key!r}"
 _ACQUISITION: LiteralString = (
     "INSERT INTO eqos.legacy_acquisitions (blob_sha256, retrieved_at, manifest_sha256, "
@@ -106,6 +120,33 @@ def create_version(cursor: Cursor[Any], draft: VersionDraft) -> int:
     for claim in draft.claims:
         _insert(cursor, "numeric_claims", _claim_row(claim, version_id, section_ids))
     return version_id
+
+
+def read_version(cursor: Cursor[Any], version_id: int) -> VersionDraft:
+    """A stored version's content, as :func:`create_version` was given it."""
+    with cursor.connection.cursor(row_factory=dict_row) as own:
+        row = own.execute(_VERSION, (version_id,)).fetchone()
+        if row is None:
+            raise LookupError(_NO_VERSION.format(version_id=version_id))
+        sections = own.execute(_SECTIONS, (version_id,)).fetchall()
+        claims = own.execute(_CLAIMS, (version_id,)).fetchall()
+        sources = own.execute(_SOURCES, (version_id,)).fetchall()
+    return VersionDraft.model_validate(
+        {
+            **row,
+            "pinned_run_ids": tuple(row["pinned_run_ids"]),
+            "sections": sections,
+            "claims": tuple(
+                {
+                    **claim,
+                    "citation": Citation.model_validate({**claim, "kind": claim["citation_kind"]}),
+                    "qualifiers": tuple(claim["qualifiers"]),
+                }
+                for claim in claims
+            ),
+            "import_sources": tuple((s["source_path"], bytes(s["body"])) for s in sources),
+        }
+    )
 
 
 def sealed_digest(cursor: Cursor[Any], version_id: int) -> str:

@@ -37,6 +37,7 @@ from fundamentals.api.env_credentials import (
     _upstox_credentials_from_env,
 )
 from fundamentals.api.evidence_cli import dispatch_evidence_command
+from fundamentals.api.ledger_cli import dispatch_ledger_command
 from fundamentals.api.legacy_cli import dispatch_legacy_command
 from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
@@ -322,6 +323,10 @@ def main(
     compare_exit_code = dispatch_compare_command(args)
     if compare_exit_code is not None:
         return compare_exit_code
+
+    ledger_exit_code = dispatch_ledger_command(args)
+    if ledger_exit_code is not None:
+        return ledger_exit_code
 
     news_exit_code = dispatch_news_command(args)
     if news_exit_code is not None:

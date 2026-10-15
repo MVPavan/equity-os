@@ -5,6 +5,8 @@ and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every
 behind them), a quote only a non-vendor capture, a ``COMPARISON`` its own run and key, a
 ``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
+Run-store values (cells, pair differences, traces) are base units, stated in the claim's
+scale (``scale`` 10^7 for crore); display never rescales.
 """
 
 from __future__ import annotations
@@ -140,7 +142,7 @@ def resolve_citation(
                 return None
             return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
-            return _trace(own, citation.calculation_trace_id, catalog)
+            return _trace(own, citation.calculation_trace_id, claim, catalog)
         if citation.kind is CitationKind.SOURCE_QUOTE and citation.capture_ref_id is not None:
             capture = _first_party_capture(own, citation.capture_ref_id, catalog)
             if capture is None:
@@ -228,13 +230,17 @@ def _fact(
     )
 
 
-def _trace(own: Cursor[Any], trace_id: int, catalog: SourceCatalog) -> ResolvedCitation | None:
+def _trace(
+    own: Cursor[Any], trace_id: int, claim: NumericClaim, catalog: SourceCatalog
+) -> ResolvedCitation | None:
     """A computed trace whose every operand is first-party."""
     row = own.execute(_TRACE, (trace_id,)).fetchone()
     times = _input_times(own, (trace_id,), (), catalog)
     if row is None or row["value"] is None or times is None:
         return None
-    return ResolvedCitation(value=row["value"], key_digest=row["key_digest"], times=times)
+    return ResolvedCitation(
+        value=_claim_scaled(row["value"], claim), key_digest=row["key_digest"], times=times
+    )
 
 
 def _run_cell(
@@ -263,13 +269,19 @@ def _run_cell(
         overlay=overlay_at(own, run_id=run_id, as_of=overlay_position),
     )
     return ResolvedCitation(
-        value=row["value"],
+        value=_claim_scaled(row["value"], claim),
         key_digest=row["key_digest"],
         value_kind=ValueKind(row["value_kind"]),
         currency=row["currency"],
         times=((InputTime.RUN, row["created_at"]),) if times is None else times,
         trusted=trust.trusted,
     )
+
+
+def _claim_scaled(value: Decimal, claim: NumericClaim) -> Decimal:
+    """A run-store value, held in base units (INR, not crore), in the claim's scale, so row 5
+    compares it at the claim's display precision. Legacy facts carry their own scale."""
+    return value / (claim.scale or 1)
 
 
 def _policy(own: Cursor[Any], claim: NumericClaim, entity_id: int) -> ResolvedCitation | None:
