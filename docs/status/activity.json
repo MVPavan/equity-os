@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4: fresh critical review of the approved plan",
-    "detail": "Sol approved the revised D4 plan in round 2 (all 7 findings resolved; the single queue lock covers every support-breaking write, including raw SQL). Per the review loop, a fresh Sol session with no prior context now does one critical review before any build.",
+    "title": "D4: fixing the plan after the fresh critical review",
+    "detail": "A fresh Sol session rejected the plan (2 blockers): a promotion could commit after its own transaction withdrew the evidence, and the Apar quotes would be checked with their guidance meaning (metric, scope, horizon) stripped. Fixes: a commit-time re-check of every promotion, and binding drafted quotes to the guidance contract the import already approved for the same quote (folds in eqos-0eu). Plus 6 smaller fixes.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh), eqos-0eu; flakes eqos-1kq, eqos-bhy; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 plan fresh critical review: Sol REJECT (2 P1, 6 P2, 1 P3); fix round dispatched, folding in eqos-0eu's guidance-contract binding."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 plan review r2: Sol APPROVE (7/7 resolved). Fresh critical review dispatched."
