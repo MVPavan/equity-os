@@ -1,15 +1,18 @@
 {
   "now": {
-    "title": "D2 critical-review fix round",
-    "detail": "Fresh Sol critical review: REJECT, 3 P1 + 4 P2 (unresolved originals in backup, approval not bound to host/port, configurable test-DB prefix could reach equity_os, SQLite WAL sidecar, capture archive completeness, missing high-water test, runbook backup flag). Opus is fixing all seven; Sol re-reviews next.",
+    "title": "D2: Sol re-review of critical-review fixes",
+    "detail": "All 7 critical-review findings fixed (c4ce74d); 79 targeted PostgreSQL tests pass, lint and types clean, legacy file unchanged. Sol is checking each fix.",
     "stage": "eqos-01q"
   },
   "next": [
-    "Sol re-review of the critical-review fixes",
     "Close D2; production cutover stays owner-gated (eqos-3zl)",
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 critical-review fixes committed (c4ce74d): 7/7 fixed, 79 targeted tests pass."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 fresh critical review: Sol REJECT, 7 findings (3 P1). Fix round dispatched."
