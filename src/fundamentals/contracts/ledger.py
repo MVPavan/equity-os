@@ -28,6 +28,7 @@ class SubjectKind(StrEnum):
     REPORT = "REPORT"
     DISPOSITION_PROPOSAL = "DISPOSITION_PROPOSAL"
     INTERPRETATION = "INTERPRETATION"
+    MEMORY_ITEM = "MEMORY_ITEM"
 
 
 class DecisionKind(StrEnum):
@@ -40,6 +41,9 @@ class DecisionKind(StrEnum):
     WITHDRAW = "WITHDRAW"
     ACCEPT = "ACCEPT"
     SET_POLICY = "SET_POLICY"
+    PROMOTE = "PROMOTE"
+    REJECT_CANDIDATE = "REJECT_CANDIDATE"
+    RETIRE = "RETIRE"
 
 
 class DeciderRole(StrEnum):

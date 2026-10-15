@@ -56,6 +56,8 @@ LEDGER_TABLES = frozenset(
         "legacy_acquisitions",
     }
 )
+# The tables 0016 creates (plan D4, M1).
+MEMORY_TABLES = frozenset({"memory_items", "memory_supports"})
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64
 PINNED_INPUTS = "1" * 64
