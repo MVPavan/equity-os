@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: plan fix round 2",
-    "detail": "Sol r2: 17/18 fixed; spec readings (trim style, report-scoped policy, proposal as subject) accepted. One P1 left: a disposition proposal must bind the exact queued source pair. Sonnet is making that and three small edits; Sol r3 next.",
+    "title": "D3 report ledger: Sol plan re-review r3 (final round)",
+    "detail": "Pair-binding fix applied: proposals must bind the exact queued source pair, enforced by a stored pair_identity on each outcome. Spec records the trim style and report-level policy decisions. Sol's third round decides; any residue is ruled by the orchestrator.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan fix round 2 done (pair binding + spec G8/G9); Sol r3 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan Sol r2: REJECT on 1 residual P1 (pair binding); 17/18 fixed, G8–G10 accepted."
