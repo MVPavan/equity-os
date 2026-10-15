@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D4 Task 3b: admitting the Apar call transcripts as first-party sources",
-    "detail": "Sol approved amendment T1 after three rounds. Opus is building capture-only transcript admission by pinned hash (no figures extracted, comparison untouched), a first-party quotes-only catalog entry read from the committed issuer configs via --issuer-config on the ledger commands, and an asserting acceptance test that replaces the go/no-go probe.",
+    "title": "D4.4: authoring the frozen ledger Stage 2 manifest",
+    "detail": "Task 3b committed (60ed5c1): both Apar call transcripts are now admitted as first-party, quotes-only captures; the acceptance test proves honest first-seen, exact quote resolution and unchanged comparison identity; 3,546 passed. Opus is writing the Stage 2 manifest from source bytes only (two corrective quote claims with their guidance contracts, the memory item, expected retrievals) for Sol's approval.",
     "stage": "eqos-4hi.4"
   },
   "next": [
@@ -10,6 +10,10 @@
     "D4 phase review loop and fresh critical review; close eqos-4hi"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "Task 3b committed (60ed5c1): first-party transcript admission; O1 gate passes. D4.4 manifest authoring dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4 amendment T1 (transcript admission) approved by Sol in round 3 and committed (d012d33); Task 3b build dispatched."
