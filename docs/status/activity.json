@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "D5 phase-end review (Sol)",
-    "detail": "All D5 stages are built and committed; the Stage 3 e2e (1150ab7) exports Apar's narratives, status notes and promoted memory, checks every hash, note and view row against the approved manifest, and shows the read-only role writes nothing. Sol is reviewing the whole D5 diff in one exhaustive pass.",
-    "stage": "eqos-tfb"
+    "title": "D6 identifier-only onboarding: phase plan",
+    "detail": "D5 generated views is complete on test databases and approved by Sol. Next: Opus writes the D6 phase plan; Sol reviews it before any code.",
+    "stage": "D6"
   },
   "next": [
-    "Then D6 identifier-only onboarding",
-    "Follow-ups: eqos-d60, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
+    "D6 stages after plan approval",
+    "Follow-ups: eqos-d60, eqos-7pr, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D5 complete (epic eqos-tfb closed): critical review REJECT (3) → fixes fde6b16 → re-review APPROVE; full suite 3601 passed. SQL-level SUBMIT hash gap filed as eqos-7pr. Roadmap 40/66 stages."
+    },
     {
       "date": "2026-10-15",
       "text": "D5.5 ledger Stage 3 e2e committed (1150ab7): stage 2+3 e2e pass, frozen manifests 76/76 incl. ancestry, full suite 3595 passed. D5 phase review dispatched to Sol."
