@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D2.7: frozen Stage 2 manifest",
-    "detail": "Fix round r1 done: the ETR line now carries its tax and PBT source locators and an exact-value rounding check (tampering probes fail as they should). Sol re-check r2 is running; on APPROVE the manifest is committed alone, then D2.8 starts.",
-    "stage": "eqos-01q.7"
+    "title": "D2.8: Stage 2 end-to-end test and recreation script",
+    "detail": "Opus is writing the Stage 2 e2e (import → reconcile → cutover → frozen write refused → rollback → re-cutover → reopen → Apar run, admission, report, backup/restore) asserted against the Sol-approved manifest, plus the isolated container recreation and fresh-instance check script.",
+    "stage": "eqos-01q.8"
   },
   "next": [
-    "D2.8: Stage 2 end-to-end test and container recreation script",
-    "D2 phase-end Sol review, then one fresh critical review",
+    "D2 phase-end Sol review (scoped to the D2 commit range), fix rounds, then one fresh critical review",
+    "Close D2; production cutover stays owner-gated (eqos-3zl)",
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2.7 frozen Stage 2 manifest committed after Sol APPROVE r2 (c44ec4b)."
+    },
     {
       "date": "2026-10-15",
       "text": "D2.7 manifest fix r1: ETR bound to source locators; payload 2842ba14…; sent to Sol r2."
