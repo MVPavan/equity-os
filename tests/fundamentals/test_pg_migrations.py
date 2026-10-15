@@ -154,6 +154,19 @@ def test_harness_refuses_prefix_matching_main_database_before_connecting() -> No
     assert spy.targets == []
 
 
+def test_harness_refuses_a_configured_prefix_outside_the_literal_test_namespace() -> None:
+    """Config cannot widen the namespace: prefix ``equity_`` would otherwise reach equity_os."""
+    settings = _synthetic_settings(db="eqos_stage2_main", test_db_prefix="equity_")
+    spy = _ConnectSpy()
+    with pytest.raises(HarnessGuardError):
+        create_database(settings, "equity_os", connect=spy)
+    with pytest.raises(HarnessGuardError):
+        create_database(settings, "equity_x", template="equity_os", connect=spy)
+    with pytest.raises(HarnessGuardError):
+        drop_database(settings, "equity_os", connect=spy)
+    assert spy.targets == []
+
+
 def test_harness_lifecycle_connection_names_the_maintenance_database() -> None:
     """CREATE and DROP go over an admin connection to ``postgres``, never ``EQOS_PG_DB``."""
     settings = _synthetic_settings()

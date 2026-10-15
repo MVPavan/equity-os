@@ -165,6 +165,7 @@ class ImportRefusal(StrEnum):
     ROW_MISMATCH = "ROW_MISMATCH"
     CHAIN_INVALID = "CHAIN_INVALID"
     NO_SELECTIONS = "NO_SELECTIONS"
+    JOURNAL_PENDING = "JOURNAL_PENDING"
 
 
 class LegacyImportRefusedError(Exception):
@@ -314,7 +315,6 @@ def import_legacy(
             GatedOperation.IMPORT,
             approval_path=preflight_path,
             owner_path=owner_path,
-            settings=settings,
         )
         approved = PreflightReport.model_validate(yaml.safe_load(payload))
         if approved.manifest_sha256 != manifest_approval.payload_sha256:
@@ -483,6 +483,11 @@ def _read(path: Path, sha256: str) -> tuple[SchemaKind, _Rows, _Rows]:
     """Open read-only between two fingerprint checks; selections verbatim or synthesized."""
     if _sha(path.read_bytes()) != sha256:
         raise LegacyImportRefusedError(ImportRefusal.FINGERPRINT_CHANGED)
+    # Committed rows in an uncheckpointed journal would bypass the main file's fingerprint.
+    for suffix in ("-wal", "-journal"):
+        sidecar = path.with_name(path.name + suffix)
+        if sidecar.exists() and sidecar.stat().st_size:
+            raise LegacyImportRefusedError(ImportRefusal.JOURNAL_PENDING)
     with closing(sqlite3.connect(f"{path.absolute().as_uri()}?mode=ro", uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute("SELECT * FROM facts ORDER BY row_id")]

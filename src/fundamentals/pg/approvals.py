@@ -19,8 +19,6 @@ import psycopg
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.pg.settings import PgSettings
-
 TEST_DATABASE_PREFIX = "eqos_test_"
 SOL_REVIEWER = "gpt-6.1-sol"
 FIXTURE_REVIEWER = "test-fixture"
@@ -150,11 +148,10 @@ def authorize(
     *,
     approval_path: Path,
     owner_path: Path | None,
-    settings: PgSettings,
 ) -> bytes:
     """Gate ``op`` on the connection it will use; return the approved payload.
 
-    The payload must also record this database's identity (name, host, port).
+    The payload must also record this connection's own identity (name, host, port).
     """
     payload, approval = load_approved(approval_path)
     owner = (
@@ -164,7 +161,7 @@ def authorize(
     )
     database = current_database(conn)
     check_gate(op, database=database, approval=approval, owner=owner)
-    identity = {"name": database, "host": settings.host, "port": settings.port}
+    identity = {"name": database, "host": conn.info.host, "port": conn.info.port}
     if yaml.safe_load(payload).get(DATABASE_KEY) != identity:
         raise GateRefusedError(GateRefusal.WRONG_DATABASE)
     return payload

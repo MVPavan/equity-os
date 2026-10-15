@@ -221,9 +221,7 @@ def transition(
     stores = [origin_id_for(file.sha256) for file in files]
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-        payload = authorize(
-            conn, op, approval_path=report_path, owner_path=owner_path, settings=settings
-        )
+        payload = authorize(conn, op, approval_path=report_path, owner_path=owner_path)
         lock_queue(cursor)
         latest = {store: cursor.execute(_LATEST, (store,)).fetchone() for store in stores}
         if op not in _RULES:

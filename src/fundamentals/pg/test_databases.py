@@ -14,6 +14,7 @@ from collections.abc import Callable
 import psycopg
 from psycopg import sql
 
+from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.migrations import bootstrap_roles
 from fundamentals.pg.settings import PgRole, PgSettings
 
@@ -29,9 +30,9 @@ class HarnessGuardError(RuntimeError):
 
 
 def check_prefix(settings: PgSettings) -> None:
-    """Refuse a prefix that is unsafe or would match the configured main database."""
+    """Refuse a prefix outside the literal ``eqos_test_`` namespace or matching EQOS_PG_DB."""
     prefix = settings.test_db_prefix
-    if not prefix or not SAFE_NAME.match(prefix):
+    if not prefix.startswith(TEST_DATABASE_PREFIX) or not SAFE_NAME.match(prefix):
         raise HarnessGuardError(f"unsafe test database prefix {prefix!r}")
     if settings.db.startswith(prefix) or prefix.startswith(settings.db):
         raise HarnessGuardError(

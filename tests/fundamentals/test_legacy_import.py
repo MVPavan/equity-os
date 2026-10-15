@@ -221,6 +221,35 @@ def _edited_source(statement: str, *, after_manifest: bool = False) -> Callable[
     return case
 
 
+def _pending_wal(rig: Rig) -> Attempt:
+    """A committed edit left in the copy's ``-wal`` while the main file's bytes are pinned."""
+    with closing(sqlite3.connect(rig.legacy)) as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
+    manifest = rig.manifest()
+    writer = sqlite3.connect(rig.legacy)
+    writer.execute("PRAGMA wal_autocheckpoint = 0")
+    with writer:
+        writer.execute("UPDATE facts SET canonical_reason = 'from-wal'")
+    return lambda: (writer, rig.preflight(manifest))
+
+
+def _other_server(rig: Rig) -> Attempt:
+    """Approval and settings name another port; the pool's connection is on this one."""
+    other = rig.settings.model_copy(update={"port": rig.settings.port + 1})
+    manifest = rig.manifest()
+    with rig.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        report = preflight(manifest, root=rig.tmp_path, conn=conn, settings=other)
+    path = rig.tmp_path / "preflight-other.yaml"
+    path.write_bytes(report.to_yaml())
+    approve(path)
+
+    def attempt() -> object:
+        with rig.pg_db.runtime_pool() as pool:
+            return import_legacy(manifest, path, root=rig.tmp_path, pool=pool, settings=other)
+
+    return attempt
+
+
 def _conflict(rig: Rig) -> Attempt:
     rig.run(*rig.pair())
     (rig.tmp_path / "other").mkdir()
@@ -250,6 +279,7 @@ CASES: dict[str, tuple[Callable[[Rig], Attempt], str]] = {
         _edited_preflight(b"rows: 43", b"rows: 42", reapprove=True),
         GateRefusal.APPROVAL_STALE,
     ),
+    "pool-on-another-server-than-settings": (_other_server, GateRefusal.WRONG_DATABASE),
     "missing-original": (
         lambda rig: lambda: rig.run(*rig.pair()),
         ImportRefusal.PREFLIGHT_NOT_CLEAN,
@@ -275,6 +305,7 @@ CASES: dict[str, tuple[Callable[[Rig], Attempt], str]] = {
     ),
     "new-fingerprint-under-label": (_conflict, ImportRefusal.FINGERPRINT_CONFLICT),
     "store-without-selections": (_no_selections, ImportRefusal.NO_SELECTIONS),
+    "uncheckpointed-wal": (_pending_wal, ImportRefusal.JOURNAL_PENDING),
     "row-column-changed": (
         lambda rig: rig.corrupt("fact_rows", "canonical_reason", "edited"),
         ImportRefusal.ROW_MISMATCH,

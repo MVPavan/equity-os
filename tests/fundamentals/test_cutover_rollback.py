@@ -210,6 +210,40 @@ def test_a_failed_rollback_switches_no_store(rig: Rig, tmp_path: Path) -> None:
     assert window.states() == dict.fromkeys(window.stores, FactStoreState.CUTOVER_FROZEN)
 
 
+BEYOND = {
+    "row": (
+        "INSERT INTO eqos.fact_rows SELECT target_store, handle + 1, origin, origin_id + 1, "
+        "content_identity, 'beyond', revision_family, revision_ordinal + 1000, canonical_status, "
+        "canonical_selected_at, canonical_reason, source_id, file_sha256, anchor, "
+        "valid_time_start, valid_time_end, knowledge_time, first_seen_time, fact_json, created_at "
+        "FROM eqos.fact_rows WHERE target_store = %s ORDER BY handle DESC LIMIT 1"
+    ),
+    "selection": (
+        "INSERT INTO eqos.fact_selections SELECT target_store, handle + 1, origin, origin_id + 1, "
+        "content_identity, row_handle, sequence + 1, handle, 'beyond', reason, false, "
+        "synthesized, selection_sha256 FROM eqos.fact_selections WHERE target_store = %s "
+        "ORDER BY handle DESC LIMIT 1"
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", list(BEYOND))
+def test_rollback_refuses_rows_beyond_the_marker(rig: Rig, tmp_path: Path, kind: str) -> None:
+    """A row or selection written past one store's cutover marker refuses rollback for all."""
+    second = second_store(tmp_path)
+    window = Window(rig, ("aparinds", rig.legacy), ("aparinds-migrated", second))
+    window.move(CUTOVER)
+    admin = rig.settings.conninfo(PgRole.ADMIN, dbname=rig.pg_db.dbname)
+    with psycopg.connect(admin) as conn:
+        conn.execute(BEYOND[kind], (window.stores[1],))
+    before = rig.query(COUNTS)
+    with pytest.raises(TransitionRefusedError) as refused:
+        window.move(ROLLBACK)
+    assert refused.value.reason == TransitionRefusal.ROWS_BEYOND_MARKER
+    assert rig.query(COUNTS) == before
+    assert window.states() == dict.fromkeys(window.stores, FactStoreState.CUTOVER_FROZEN)
+
+
 @pytest.mark.parametrize("op", [REOPEN, ROLLBACK])
 def test_reopen_and_rollback_need_the_whole_sets_cutover_report(
     rig: Rig, tmp_path: Path, op: GatedOperation

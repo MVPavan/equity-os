@@ -19,6 +19,7 @@ import yaml
 from pg_support import PgTestDatabase, create_database, drop_database, mint_name
 from stage1_e2e_support import CONFIG, RUNS, Stage
 from test_legacy_import import Rig
+from test_store import _fact
 
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
@@ -33,6 +34,7 @@ from fundamentals.pg.backup import (
     write_backup,
 )
 from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.store.pg_fact_store import PgFactStore, create_native_store
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -137,6 +139,15 @@ def test_round_trip_snapshot_and_tamper(
         assert fresh not in databases(settings)
     with pytest.raises(BackupError, match="unpublished"):
         verify_set(shutil.copytree(set_dir, tmp_path / f".{set_dir.name}.partial"))
+    # A declared capture missing from both the archive and the file list is still caught.
+    missing = shutil.copytree(set_dir, tmp_path / "missing-capture")
+    blob = next(p for p in (missing / CAPTURES_DIR / "blobs").rglob("*") if p.is_file())
+    blob.unlink()
+    data = yaml.safe_load((missing / MANIFEST_FILE).read_text())
+    data["files"] = [f for f in data["files"] if f[0] != blob.relative_to(missing).as_posix()]
+    (missing / MANIFEST_FILE).write_text(yaml.safe_dump(data))
+    with pytest.raises(BackupError, match="captures differ"):
+        verify_set(missing)
     nested = shutil.copytree(set_dir, tmp_path / "nested-manifest")
     (nested / CAPTURES_DIR / MANIFEST_FILE).write_text("smuggled")
     with pytest.raises(BackupError, match="files differ"):
@@ -168,6 +179,18 @@ def test_round_trip_snapshot_and_tamper(
         finally:
             drop_database(settings, fresh)
         assert not check.ok and not check.schema_equal and not check.run_ids_equal, check
+
+
+def test_backup_refuses_a_native_fact_whose_original_was_never_registered(
+    pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """A restore could not resolve that original, so no set is published."""
+    with pg_db.runtime_pool() as pool:
+        PgFactStore(pool, create_native_store(pool, "orphan")).put(_fact())
+    out = tmp_path / "sets"
+    with pytest.raises(BackupError, match="not registered"):
+        write_backup(pg_db.settings, database=pg_db.dbname, snapshot_root=tmp_path, out_dir=out)
+    assert [path.name for path in out.iterdir() if not path.name.startswith(".")] == []
 
 
 def test_absent_schema_restores_through_the_cli(

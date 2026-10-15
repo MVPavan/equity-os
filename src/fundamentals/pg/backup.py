@@ -54,10 +54,12 @@ _FOREIGN_KEYS = (
     "SELECT conrelid::regclass::text, conname FROM pg_constraint "
     "WHERE contype = 'f' AND connamespace = 'eqos'::regnamespace ORDER BY 1, 2"
 )
-_UNRESOLVED_BINDINGS = (
+_UNRESOLVED = (
     "SELECT b.target_store, b.row_handle FROM eqos.legacy_evidence_bindings b "
     "JOIN eqos.capture_refs c ON c.id = b.capture_ref_id WHERE c.blob_sha256 <> b.file_sha256 "
-    "OR c.id = ANY(%s) ORDER BY 1, 2"
+    "OR c.id = ANY(%(bad)s) UNION SELECT r.target_store, r.handle FROM eqos.fact_rows r "
+    "WHERE NOT EXISTS (SELECT 1 FROM eqos.capture_refs c WHERE c.blob_sha256 = r.file_sha256 "
+    "AND c.id <> ALL(%(bad)s)) ORDER BY 1, 2"
 )
 _SCHEMA_PRESENT = "SELECT to_regnamespace('eqos') IS NOT NULL"
 _RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
@@ -145,6 +147,8 @@ def write_backup(
                 counts = _counts(conn) if present else {}
                 run_ids = _column(conn, _RUN_IDS) if present else ()
                 captures = _captures(conn) if present else ()
+                if present and conn.execute(_UNRESOLVED, {"bad": []}).fetchone() is not None:
+                    raise BackupError(f"{database} has a fact whose original is not registered")
                 with (staging / DUMP_FILE).open("wb") as dump:
                     _client(
                         client_prefix, settings, database,
@@ -222,7 +226,7 @@ def restore_backup(
             fk_valid = _validate_foreign_keys(conn)
             counts, captures = _counts(conn), _captures(conn)
             run_ids = _column(conn, _RUN_IDS)
-            rows = conn.execute(_UNRESOLVED_BINDINGS, (list(bad),)).fetchall()
+            rows = conn.execute(_UNRESOLVED, {"bad": list(bad)}).fetchall()
             unresolved = tuple((str(row[0]), int(row[1])) for row in rows)
     if present and replay_runs:
         with open_pool(settings, PgRole.RUNTIME, dbname=database) as pool:
@@ -275,7 +279,7 @@ def _validate_foreign_keys(conn: psycopg.Connection[Any]) -> bool:
 
 
 def _verify(set_dir: Path) -> BackupManifest:
-    """Load the manifest and check every listed file, and only those, by hash."""
+    """Load the manifest, check every listed file (and only those) and every capture by hash."""
     try:
         manifest = BackupManifest.model_validate(
             yaml.safe_load((set_dir / MANIFEST_FILE).read_text())
@@ -288,6 +292,9 @@ def _verify(set_dir: Path) -> BackupManifest:
         raise BackupError(f"{set_dir.name} dump differs from its manifest")
     if not _inventories_consistent(manifest):
         raise BackupError(f"{set_dir.name} manifest inventories disagree")
+    archive = SnapshotStore(set_dir / CAPTURES_DIR)
+    if not all(_restored(archive, capture) for capture in manifest.captures):
+        raise BackupError(f"{set_dir.name} captures differ from its manifest")
     return manifest
 
 
