@@ -26,19 +26,18 @@ import pytest
 import yaml
 from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
+from manifest_support import check_ledger
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
 STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml"
 LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
-MKEY_FIELDS = {  # contracts.measurement_key.MeasurementKey
-    *("entity_id", "canonical_id", "period", "basis", "framework"),
-    *("currency", "value_kind", "dimensions"),
-}
+LEDGER2 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml"
 E2E = {
     "stage1": "tests/fundamentals/test_data_stage1_e2e.py",
     "stage2": "tests/fundamentals/test_data_stage2_e2e.py",
     "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
+    "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
 }
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"
@@ -483,45 +482,6 @@ def check_values(manifest: dict[str, Any]) -> None:
     assert checked
 
 
-def check_ledger_claims(manifest: dict[str, Any]) -> None:
-    """Every claim's value or bounds, source SHA-256 and quote (and any other bound field) equal
-    the lexemes its locators name, and each alias equals the claim (plan D6). A FIGURE's or
-    CALCULATION's canonical id is a located lexeme (a mapping entry's, plus its change suffix)."""
-    checked = 0
-    for version in manifest["versions"]:
-        for claim in version["claims"]:
-            values = {"lo", "hi"} if "lo" in claim else {"v"}
-            cited = {
-                "FIGURE": {"source_sha256", "canonical_id"},
-                "CALCULATION": {"canonical_id"},
-                "SOURCE_QUOTE": {"source_sha256", "quote"},
-            }
-            assert values | cited.get(claim["kind"], set()) <= claim["from"].keys(), claim["key"]
-            if "canonical_id" in claim["from"]:
-                key = claim["mkey"]
-                assert key.keys() == MKEY_FIELDS and not key["dimensions"], claim["key"]
-                assert (key["currency"], key["value_kind"]) == (
-                    claim["currency"],
-                    claim["value_kind"],
-                ), claim["key"]
-            for binding in [claim["from"], *claim.get("aliases", [])]:
-                for name, loc in binding.items():
-                    assert loc.keys() in ({"src", "line", "lex"}, {"src", "path", "lex"}), loc
-                    if name == "canonical_id":
-                        parts = [loc["lex"], claim.get("change")]
-                        assert claim["mkey"][name] == ".".join(filter(None, parts)), claim["key"]
-                    elif name == "native_field":
-                        entry = binding["canonical_id"]["path"].removesuffix(".canonical_id")
-                        assert loc["path"] == f"{entry}.selector.native_field", claim["key"]
-                        assert claim["concept"].partition(":")[2] == loc["lex"], claim["key"]
-                    elif name in ("v", "lo", "hi"):
-                        assert Decimal(claim[name]) == Decimal(loc["lex"]), (claim["key"], name)
-                    else:
-                        assert str(claim[name]) == loc["lex"], (claim["key"], name)
-            checked += 1
-    assert checked == manifest["header"]["size"]["claims"]
-
-
 def payload_sha256(content: bytes) -> str:
     """sha256 of the manifest without its one header approval line (header.notation.approval)."""
     lines = content.splitlines(keepends=True)
@@ -675,6 +635,7 @@ def test_stage1_checks_reject_mutations(name: str) -> None:
 
 @per_manifest
 def test_recorded_arithmetic_is_exact(path: Path) -> None:
+    """Every expr is exact; a manifest with none must declare ``arithmetic: none``."""
     checked = 0
     for node in walk(load(path)):
         if "expr" in node and "v" in node:
@@ -694,13 +655,13 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
         if "lo_expr" in node:
             bounds = [evaluate(node["lo_expr"])[0], evaluate(node["hi_expr"])[1]]
             assert bounds == list(interval(node)), node["expr"]
-    assert checked
+    assert checked or load(path)["header"].get("arithmetic") == "none"
 
 
 @per_manifest
 def test_values_follow_from_their_lexemes(path: Path) -> None:
     manifest = load(path)
-    (check_ledger_claims if "versions" in manifest else check_values)(manifest)
+    (check_ledger if "versions" in manifest else check_values)(manifest)
 
 
 def claim_of(manifest: dict[str, Any], version: str, key: str) -> dict[str, Any]:
@@ -710,26 +671,46 @@ def claim_of(manifest: dict[str, Any], version: str, key: str) -> dict[str, Any]
 
 
 MARGIN = "ledger.cables_ebitda_margin.annual.consolidated"
-LEDGER_MUTATIONS: dict[str, Mutation] = {
-    "claim-value": lambda m: claim_of(m, "FY27_Q1", "fact.revenue").update(v="6591.07"),
-    "bound": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(hi="11"),
-    "source-sha256": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(source_sha256="0" * 64),
-    "quote": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(quote="guiding about 9.5%, 11%"),
-    "from-binding-removed": lambda m: claim_of(m, "FY27_Q1", "fact.revenue")["from"].pop("v"),
-    "canonical-id": lambda m: claim_of(m, "FY27_Q1", "cmp.revenue.qoq.abs")["mkey"].update(
-        canonical_id="total_income.qoq.abs"
-    ),
+
+
+def altered(version: str, key: str, **fields: str) -> Mutation:
+    return lambda m: claim_of(m, version, key).update(fields)
+
+
+def unbound(version: str, key: str, field: str) -> Mutation:
+    return lambda m: claim_of(m, version, key)["from"].pop(field)
+
+
+LEDGER_MUTATIONS: dict[tuple[Path, str], Mutation] = {
+    (LEDGER, "claim-value"): altered("FY27_Q1", "fact.revenue", v="6591.07"),
+    (LEDGER, "bound"): altered("FY26_Q3", MARGIN, hi="11"),
+    (LEDGER, "source-sha256"): altered("FY26_Q3", MARGIN, source_sha256="0" * 64),
+    (LEDGER, "quote"): altered("FY26_Q3", MARGIN, quote="guiding about 9.5%, 11%"),
+    (LEDGER, "from-binding-removed"): unbound("FY27_Q1", "fact.revenue", "v"),
+    (LEDGER, "canonical-id"): lambda m: claim_of(m, "FY27_Q1", "cmp.revenue.qoq.abs")[
+        "mkey"
+    ].update(canonical_id="total_income.qoq.abs"),
+    (LEDGER2, "bound"): altered("FY27_Q1", MARGIN, hi="12"),
+    (LEDGER2, "quote"): altered("FY26_Q3", MARGIN, quote="guiding about 9.5%, 11%"),
+    (LEDGER2, "source-sha256"): altered("FY27_Q1", MARGIN, source_sha256="0" * 64),
+    (LEDGER2, "metric"): altered("FY26_Q3", MARGIN, metric="cables_revenue_growth"),
+    (LEDGER2, "from-binding-removed"): unbound("FY26_Q3", MARGIN, "lo"),
+    (LEDGER2, "contract-binding-removed"): unbound("FY27_Q1", MARGIN, "constant_currency"),
 }
 
 
-@pytest.mark.parametrize("name", LEDGER_MUTATIONS)
-def test_ledger_checks_reject_mutations(name: str) -> None:
-    """The ledger claim check passes on the frozen manifest and fails once a claim is altered."""
-    manifest = copy.deepcopy(load(LEDGER))
-    check_ledger_claims(manifest)
-    LEDGER_MUTATIONS[name](manifest)
+@pytest.mark.parametrize(
+    ("path", "name"),
+    LEDGER_MUTATIONS,
+    ids=[f"{p.name.removesuffix('_manifest.yaml')}-{n}" for p, n in LEDGER_MUTATIONS],
+)
+def test_ledger_checks_reject_mutations(path: Path, name: str) -> None:
+    """The ledger check passes on the frozen manifest and fails once a claim is altered."""
+    manifest = copy.deepcopy(load(path))
+    check_ledger(manifest)
+    LEDGER_MUTATIONS[path, name](manifest)
     with pytest.raises((AssertionError, KeyError)):
-        check_ledger_claims(manifest)
+        check_ledger(manifest)
 
 
 @pytest.mark.parametrize(
