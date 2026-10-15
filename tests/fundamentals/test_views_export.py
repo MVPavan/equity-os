@@ -4,7 +4,9 @@ the stock's promoted memory (ledger spec §3, P2; plan D5, D3).
 Status never alters narrative bytes: the narrative file hashes to the version's content hash
 before and after a later decision and a status-note export. A note derives status, decisions,
 the latest validation, its untrusted (non-``MATCH``) claims and the promoted items flagged for
-revalidation that cite the version. Stored free-text periods that are not a safe filename
+revalidation that cite the version. Only sealed versions export (plan D5, V6): a draft is
+skipped, and a sealed version whose narrative does not hash to its stored hash refuses the whole
+export. Stored free-text periods that are not a safe filename
 component, and any existing destination (a link included), are refused before anything is
 written. A stock with promoted memory and no report version exports its memory alone.
 """
@@ -52,6 +54,14 @@ def _export(out: Path, *flags: str) -> dict[str, bytes]:
     return {path.name: path.read_bytes() for path in sorted((out / STOCK).iterdir())}
 
 
+def _sealed(ledger: Ledger, report_id: int) -> int:
+    """A submitted version on ``report_id`` whose narrative hashes to its content hash."""
+    hashed = content_hash((SECTION,), (claim(ledger.trace_id),))
+    version_id = ledger.draft(report_id, content_hash=hashed)
+    ledger.submit(version_id)
+    return version_id
+
+
 def _file(version: str) -> str:
     """The narrative file name of the root version of the fixture's ``version`` period."""
     return f"{version}-{ReportKind.EARNINGS_UPDATE}-v1.md"
@@ -66,7 +76,7 @@ def test_export_writes_narratives_status_notes_and_promoted_memory(
     ledger = memory.ledger
     hashed = content_hash((SECTION,), (claim(ledger.trace_id),))
     good = memory.approved(content_hash=hashed)
-    untrusted = memory.approved()
+    untrusted = memory.approved(content_hash=hashed)
     ledger.validate(untrusted, mode=RunMode.RETROSPECTIVE, state=ClaimState.VALUE_MISMATCH)
     good_support = (SupportDraft(target=SupportTarget.VERSION, target_id=good),)
     flagged, kept = memory.stage(), memory.stage(statement="Held", supports=good_support)
@@ -124,8 +134,8 @@ def test_export_refuses_an_unsafe_period_before_writing(
         escaped = store.create_report(
             cursor, entity_id=ledger.entity_id, period="../escaped", kind=ReportKind.EARNINGS_UPDATE
         )
-    ledger.draft(ledger.report())
-    ledger.draft(escaped)
+    _sealed(ledger, ledger.report())
+    _sealed(ledger, escaped)
     out = tmp_path / "out"
     assert main(["ledger", "export", "--stock", STOCK, "--out", str(out)]) == EXIT_REFUSED
     assert list(tmp_path.iterdir()) == []
@@ -138,7 +148,7 @@ def test_export_refuses_linked_destinations_before_writing(
     """A status note pre-linked to its narrative, or a narrative hard-linked to a file outside
     ``<dir>``, is refused before any write: the narrative, the outside file and ``<dir>`` are
     unchanged (writing through either link would replace narrative or outside bytes)."""
-    ledger.draft(ledger.report())
+    _sealed(ledger, ledger.report())
     folder = tmp_path / "out" / STOCK
     folder.mkdir(parents=True)
     narrative_path, outside = folder / _file("FY27_Q1"), tmp_path / "outside.md"
@@ -198,3 +208,37 @@ def test_export_forms_are_mutually_exclusive(ledger: Ledger, cli: None, tmp_path
     with ledger.pools[PgRole.RUNTIME].connection() as conn:
         draft = store.read_version(conn.cursor(), version)
     assert out.read_bytes() == narrative(draft.sections, draft.claims)
+
+
+def test_export_skips_drafts_and_refuses_a_sealed_hash_mismatch(
+    ledger: Ledger, cli: None, tmp_path: Path
+) -> None:
+    """A draft whose stored hash disagrees with its narrative is not exported; once that version
+    is sealed (the store does not recheck the hash), the whole export is refused, nothing
+    written."""
+    _sealed(ledger, ledger.report())
+    draft = ledger.draft(ledger.report())
+    assert list(_export(tmp_path / "drafted")) == [_file("FY27_Q1")]
+    ledger.submit(draft)
+    out = tmp_path / "sealed"
+    assert main(["ledger", "export", "--stock", STOCK, "--out", str(out)]) == EXIT_REFUSED
+    assert not out.exists()
+
+
+def test_export_refuses_a_stock_directory_swapped_for_a_link(
+    ledger: Ledger, cli: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``<dir>/<stock>`` replaced by a link to an outside directory after the containment check
+    is refused and nothing is written outside ``<dir>``."""
+    _sealed(ledger, ledger.report())
+    out, outside = tmp_path / "out", tmp_path / "outside"
+    outside.mkdir()
+    real_mkdir = Path.mkdir
+
+    def swap(path: Path, *args: object, **kwargs: object) -> None:
+        real_mkdir(path.parent)
+        path.symlink_to(outside)
+
+    monkeypatch.setattr(Path, "mkdir", swap)
+    assert main(["ledger", "export", "--stock", STOCK, "--out", str(out)]) == EXIT_REFUSED
+    assert list(outside.iterdir()) == []

@@ -13,7 +13,7 @@ from datetime import date
 from typing import Any
 
 import pytest
-from ledger_support import RULING, Ledger, validation
+from ledger_support import RULING, SECTION, Ledger, claim, validation
 from psycopg import Cursor
 
 from fundamentals.compare.queue import insert_disposition
@@ -34,6 +34,7 @@ from fundamentals.contracts.memory import (
 )
 from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.ledger import store
+from fundamentals.ledger.display import content_hash
 from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.memory.status import derive_status
 from fundamentals.pg.settings import PgRole
@@ -54,11 +55,13 @@ SNAPSHOT = (
 
 
 class Memory:
-    """One seeded ledger's memory: an approved version, a stager and decisions by role."""
+    """One seeded ledger's memory: an approved version (its narrative hashing to its content
+    hash), a stager and decisions by role."""
 
     def __init__(self, ledger: Ledger) -> None:
         self.ledger = ledger
-        self.version_id = ledger.draft(ledger.report())
+        hashed = content_hash((SECTION,), (claim(ledger.trace_id),))
+        self.version_id = ledger.draft(ledger.report(), content_hash=hashed)
         ledger.submit(self.version_id)
         ledger.approve(self.version_id)
         self.claim_id = self.one(

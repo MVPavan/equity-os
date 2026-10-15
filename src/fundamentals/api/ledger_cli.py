@@ -26,6 +26,7 @@ credential.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import sys
@@ -90,6 +91,9 @@ _NEEDS_STOCK = "--status-notes and --memory need --stock"
 _UNSAFE = "{name!r} is not a safe filename component"
 _ESCAPES = "{path} is not under {out}"
 _EXISTS = "{path} already exists"
+_MISMATCH = "version {version_id} narrative does not hash to its stored content hash"
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+_FILE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -241,10 +245,10 @@ def _export(args: argparse.Namespace) -> int:
 
 
 def _export_stock(args: argparse.Namespace) -> int:
-    """Write every version's narrative (and status note) and the stock's promoted memory from one
-    read-only snapshot under ``<out>/<stock>/``. Refuse an unsafe name or any existing destination
-    before any write and never write through a link, so re-export needs a fresh or empty
-    ``<out>/<stock>/``."""
+    """Write every sealed version's narrative (and status note) and the stock's promoted memory
+    from one read-only snapshot under ``<out>/<stock>/``. Refuse a narrative that does not hash to
+    its stored content hash, an unsafe name or any existing destination before any write, and
+    never write through a link, so re-export needs a fresh or empty ``<out>/<stock>/``."""
     if args.out is None:
         raise ValueError(_NEEDS_OUT)
     files: dict[str, bytes] = {}
@@ -263,7 +267,10 @@ def _export_stock(args: argparse.Namespace) -> int:
             )
             for version in versions:
                 stem = _STEM.format(**version.model_dump())
-                files[_NARRATIVE.format(stem=stem)] = export_version(cursor, version.version_id)
+                body = export_version(cursor, version.version_id)
+                if hashlib.sha256(body).hexdigest() != version.content_hash:
+                    raise ValueError(_MISMATCH.format(version_id=version.version_id))
+                files[_NARRATIVE.format(stem=stem)] = body
                 if args.status_notes:
                     note = status_note(cursor, version, promoted)
                     files[_NOTE.format(stem=stem)] = note.encode()
@@ -280,7 +287,11 @@ def _export_stock(args: argparse.Namespace) -> int:
         if os.path.lexists(folder / name):
             raise FileExistsError(_EXISTS.format(path=folder / name))
     folder.mkdir(parents=True, exist_ok=True)
-    for name, body in files.items():
-        with (folder / name).open("xb") as destination:
-            destination.write(body)
+    directory = os.open(folder, _DIR_FLAGS)
+    try:
+        for name, body in files.items():
+            with open(os.open(name, _FILE_FLAGS, 0o644, dir_fd=directory), "wb") as destination:
+                destination.write(body)
+    finally:
+        os.close(directory)
     return EXIT_OK

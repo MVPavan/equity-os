@@ -22,15 +22,19 @@ from fundamentals.ledger import store
 from fundamentals.ledger.display import narrative
 from fundamentals.ledger.lifecycle import version_status
 
-# Each version with its stock, report and chain position (root 1). A report's chain is linear
-# with increasing ids (0012), so a version's position is its rank by id within its report.
+# Each sealed version with its stock, report, chain position (root 1) and stored hash. A report's
+# chain is linear with increasing ids (0012), so a version's position is its rank by id within
+# its report. A draft's content is not yet bound to its hash (plan D5, V6).
 _VERSIONS: LiteralString = """SELECT v.id AS version_id, r.entity_id, e.entity_key AS stock,
-    r.period, r.kind AS report_kind,
+    r.period, r.kind AS report_kind, v.content_hash,
     (SELECT count(*) FROM eqos.report_versions p WHERE p.report_id = v.report_id AND p.id <= v.id)
         AS position
 FROM eqos.report_versions v JOIN eqos.reports r ON r.id = v.report_id
 JOIN eqos.reporting_entities e ON e.id = r.entity_id
-WHERE r.entity_id = %s ORDER BY r.period, r.kind, position"""
+WHERE r.entity_id = %s AND EXISTS (SELECT 1 FROM eqos.decisions d
+    WHERE d.subject_kind = 'REPORT_VERSION' AND d.subject_id = v.id
+        AND d.kind IN ('SUBMIT', 'IMPORT_SEAL'))
+ORDER BY r.period, r.kind, position"""
 _ENTITY: LiteralString = "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s"
 _DECISIONS: LiteralString = (
     "SELECT kind, decider, recorded_at FROM eqos.decisions "
@@ -50,7 +54,7 @@ _HEADINGS = ("Decisions", "Latest validation", "Untrusted claims", "Revalidation
 
 
 class VersionIdentity(BaseModel):
-    """A report version's stock, report and chain position (root 1)."""
+    """A report version's stock, report, chain position (root 1) and stored content hash."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -60,6 +64,7 @@ class VersionIdentity(BaseModel):
     period: str
     report_kind: ReportKind
     position: int
+    content_hash: str
 
 
 def export_version(cursor: Cursor[Any], version_id: int) -> bytes:
@@ -77,7 +82,7 @@ def stock_entity(cursor: Cursor[Any], stock: str) -> int:
 
 
 def stock_versions(cursor: Cursor[Any], entity_id: int) -> tuple[VersionIdentity, ...]:
-    """Every version of the entity's reports, by period, kind and chain position."""
+    """Every sealed version of the entity's reports, by period, kind and chain position."""
     with cursor.connection.cursor(row_factory=dict_row) as own:
         rows = own.execute(_VERSIONS, (entity_id,)).fetchall()
     return tuple(VersionIdentity.model_validate(row) for row in rows)

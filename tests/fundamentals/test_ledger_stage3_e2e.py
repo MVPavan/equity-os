@@ -11,8 +11,8 @@ expected values.
 from __future__ import annotations
 
 import hashlib
-import re
 from collections import Counter
+from collections.abc import Callable
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -42,6 +42,7 @@ _MEMORY_ROWS = (
     "SELECT kind, stock, statement, epistemic_class, valid_from, valid_to "
     "FROM eqos.promoted_memory_view"
 )
+_CLAIM_ID = "SELECT id FROM eqos.numeric_claims WHERE version_id = %s AND claim_key = %s"
 _TABLES = "SELECT tablename FROM pg_tables WHERE schemaname = 'eqos'"
 _WRITES = {
     "INSERT": "INSERT INTO {target} DEFAULT VALUES",
@@ -104,8 +105,7 @@ def note_shown(text: str) -> dict[str, Any]:
 
 
 def memory_shown(text: str) -> list[dict[str, Any]]:
-    """Each ``memory.md`` item: kind, statement, epistemic class, valid range, flag, supports
-    (each claim id dropped: the manifest names the claim by key)."""
+    """Each ``memory.md`` item: kind, statement, epistemic class, valid range, flag, supports."""
     _, *items = text.split("\n## Memory item ")
     shown = []
     for item in items:
@@ -119,7 +119,7 @@ def memory_shown(text: str) -> list[dict[str, Any]]:
                 "valid": values["valid"],
                 "needs_revalidation": values["needs revalidation"],
                 "supports": [
-                    re.sub(r", claim \d+\)$", ")", line.strip().removeprefix("- "))
+                    line.strip().removeprefix("- ")
                     for line in listed.splitlines()
                     if line.startswith("  - ")
                 ],
@@ -129,9 +129,12 @@ def memory_shown(text: str) -> list[dict[str, Any]]:
 
 
 def expected_memory(
-    files: dict[str, dict[str, Any]], version_ids: dict[str, int]
+    files: dict[str, dict[str, Any]],
+    version_ids: dict[str, int],
+    claim_id: Callable[[int, str], int],
 ) -> list[dict[str, Any]]:
-    """The manifest's items in :func:`memory_shown`'s shape, each support with its version id."""
+    """The manifest's items in :func:`memory_shown`'s shape, each support with its version id and
+    the database id ``claim_id(version_id, claim_key)`` of the claim the manifest names."""
     return [
         {
             "kind": item["kind"],
@@ -141,7 +144,8 @@ def expected_memory(
             "needs_revalidation": "yes" if item["needs_revalidation"] else "no",
             "supports": [
                 f"{files[s['stem']]['report']['period']} {files[s['stem']]['report']['kind']} "
-                f"{s['claim']} (version {version_ids[s['stem']]})"
+                f"{s['claim']} (version {version_ids[s['stem']]}, "
+                f"claim {claim_id(version_ids[s['stem']], s['claim'])})"
                 for s in item["supports"]
             ],
         }
@@ -194,7 +198,12 @@ def test_ledger_stage3_end_to_end(
         # 3. memory.md holds exactly the manifest's item.
         version_ids = {stem: version_id for stem, (version_id, _) in stems.items()}
         shown_memory = memory_shown((written / "memory.md").read_text())
-        assert shown_memory == expected_memory(files, version_ids)
+
+        def claim_id(version_id: int, claim_key: str) -> int:
+            ((found,),) = built.rig.query(_CLAIM_ID, version_id, claim_key)
+            return int(found)
+
+        assert shown_memory == expected_memory(files, version_ids, claim_id)
 
     # 4. The reader sees exactly the manifest's view rows, every write is refused and no table
     # changes.
