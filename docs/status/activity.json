@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3 report ledger: plan fix round 2 (rulings)",
-    "detail": "Sol re-review: 11/13 fixed; residuals ruled by orchestrator — predecessor must have a lower id (no lineage cycles), and in D3 interpretations are owner-decided only (panel approval of interpretations deferred to F2 with real provenance). Sonnet is applying; Sol re-checks next.",
-    "stage": "eqos-uqu"
+    "title": "D3.1: ledger schema, seal, decision chain and roles",
+    "detail": "D3 plan approved by Sol and committed (8bac068) with the ledger spec amendments. Opus is building D3.1: migration 0012, append-only ledger tables, seal and decision-chain triggers, transition rules, owner/panel roles with credentials outside runtime config.",
+    "stage": "eqos-uqu.1"
   },
   "next": [
-    "Commit the D3 plan and spec amendments; re-seed D3.4 acceptance",
-    "Execute D3.1–D3.9",
-    "Production cutover stays owner-gated (eqos-3zl)"
+    "D3.2 claim check, scans, display",
+    "D3.3 lifecycle → D3.5 imports → D3.6 export → D3.4 panel → D3.7–D3.9",
+    "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan approved (Sol, after 3 rounds + critical review) and committed (8bac068); eqos-uqu.10 closed; D3.4 acceptance re-seeded; F1/F2 filed."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan critical re-review: 11/13 fixed; residuals ruled (lineage CHECK, owner-only interpretations)."
