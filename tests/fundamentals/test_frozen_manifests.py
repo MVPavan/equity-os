@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import re
 import subprocess
 from collections import Counter
@@ -29,7 +30,16 @@ from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_r
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
 STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml"
-E2E = "tests/fundamentals/test_data_{stage}_e2e.py"
+LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
+MKEY_FIELDS = {  # contracts.measurement_key.MeasurementKey
+    *("entity_id", "canonical_id", "period", "basis", "framework"),
+    *("currency", "value_kind", "dimensions"),
+}
+E2E = {
+    "stage1": "tests/fundamentals/test_data_stage1_e2e.py",
+    "stage2": "tests/fundamentals/test_data_stage2_e2e.py",
+    "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
+}
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"
 TOKEN = re.compile(r"\{[^}]*\}|\d+(?:\.\d+)?|[-+*/()]")
@@ -48,6 +58,8 @@ SHAPES = {  # locator shape -> (required, optional) fields besides VALUE_FIELDS 
     "screener_html": ({"src", "sec", "row", "cols"}, set()),  # vendor UNMAPPED row groups
     "tijori_island": ({"src", "tbl", "row", "cols"}, set()),
     "upstox_json": ({"src", "block", "item", "cols", "diag"}, set()),
+    "text": ({"src", "line", "lex"}, set()),  # lexeme verbatim on that 1-based line
+    "field": ({"src", "path", "lex"}, set()),  # JSON/YAML value at the path, as text
 }
 GROUP_FIELDS = {
     "screener_html": ("sec", "row"),
@@ -282,6 +294,24 @@ def check_locator(manifest: dict[str, Any], loc: dict[str, Any]) -> None:
         assert tijori_shown(loc["island"]) == loc["shown"], loc
     elif shape == "upstox":
         assert upstox_cell(path, loc["block"], loc["item"], loc["col"]) == loc["lex"], loc
+    elif shape == "text":
+        assert loc["lex"] in path.read_bytes().decode().split("\n")[loc["line"] - 1], loc
+    elif shape == "field":
+        assert str(field_at(path, loc["path"])) == loc["lex"], loc
+
+
+@cache
+def parsed(path: Path) -> Any:
+    raw = path.read_bytes()
+    return json.loads(raw) if path.suffix == ".json" else yaml.safe_load(raw)
+
+
+def field_at(path: Path, dotted: str) -> Any:
+    """The JSON or YAML value at a path such as ``ledger.entries[2].latest.quote``."""
+    node = parsed(path)
+    for name, index in re.findall(r"(\w+)|\[(\d+)\]", dotted):
+        node = node[name] if name else node[int(index)]
+    return node
 
 
 def check_vendor_unmapped(manifest: dict[str, Any], run: dict[str, Any]) -> None:
@@ -453,6 +483,45 @@ def check_values(manifest: dict[str, Any]) -> None:
     assert checked
 
 
+def check_ledger_claims(manifest: dict[str, Any]) -> None:
+    """Every claim's value or bounds, source SHA-256 and quote (and any other bound field) equal
+    the lexemes its locators name, and each alias equals the claim (plan D6). A FIGURE's or
+    CALCULATION's canonical id is a located lexeme (a mapping entry's, plus its change suffix)."""
+    checked = 0
+    for version in manifest["versions"]:
+        for claim in version["claims"]:
+            values = {"lo", "hi"} if "lo" in claim else {"v"}
+            cited = {
+                "FIGURE": {"source_sha256", "canonical_id"},
+                "CALCULATION": {"canonical_id"},
+                "SOURCE_QUOTE": {"source_sha256", "quote"},
+            }
+            assert values | cited.get(claim["kind"], set()) <= claim["from"].keys(), claim["key"]
+            if "canonical_id" in claim["from"]:
+                key = claim["mkey"]
+                assert key.keys() == MKEY_FIELDS and not key["dimensions"], claim["key"]
+                assert (key["currency"], key["value_kind"]) == (
+                    claim["currency"],
+                    claim["value_kind"],
+                ), claim["key"]
+            for binding in [claim["from"], *claim.get("aliases", [])]:
+                for name, loc in binding.items():
+                    assert loc.keys() in ({"src", "line", "lex"}, {"src", "path", "lex"}), loc
+                    if name == "canonical_id":
+                        parts = [loc["lex"], claim.get("change")]
+                        assert claim["mkey"][name] == ".".join(filter(None, parts)), claim["key"]
+                    elif name == "native_field":
+                        entry = binding["canonical_id"]["path"].removesuffix(".canonical_id")
+                        assert loc["path"] == f"{entry}.selector.native_field", claim["key"]
+                        assert claim["concept"].partition(":")[2] == loc["lex"], claim["key"]
+                    elif name in ("v", "lo", "hi"):
+                        assert Decimal(claim[name]) == Decimal(loc["lex"]), (claim["key"], name)
+                    else:
+                        assert str(claim[name]) == loc["lex"], (claim["key"], name)
+            checked += 1
+    assert checked == manifest["header"]["size"]["claims"]
+
+
 def payload_sha256(content: bytes) -> str:
     """sha256 of the manifest without its one header approval line (header.notation.approval)."""
     lines = content.splitlines(keepends=True)
@@ -618,7 +687,8 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
             exact = Fraction(node["exact"])
             assert evaluate(node["expr"]) == (exact, exact), node["expr"]
             value = Decimal(exact.numerator) / exact.denominator
-            quantized = value.quantize(Decimal(node["quantum"]), ROUND_HALF_UP)
+            rounding = node.get("rounding", ROUND_HALF_UP)
+            quantized = value.quantize(Decimal(node["quantum"]), rounding)
             assert quantized == Decimal(node["rendered"]), node
             checked += 1
         if "lo_expr" in node:
@@ -629,7 +699,37 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
 
 @per_manifest
 def test_values_follow_from_their_lexemes(path: Path) -> None:
-    check_values(load(path))
+    manifest = load(path)
+    (check_ledger_claims if "versions" in manifest else check_values)(manifest)
+
+
+def claim_of(manifest: dict[str, Any], version: str, key: str) -> dict[str, Any]:
+    (claims,) = [v["claims"] for v in manifest["versions"] if v["id"] == version]
+    (found,) = [c for c in claims if c["key"] == key]
+    return cast(dict[str, Any], found)
+
+
+MARGIN = "ledger.cables_ebitda_margin.annual.consolidated"
+LEDGER_MUTATIONS: dict[str, Mutation] = {
+    "claim-value": lambda m: claim_of(m, "FY27_Q1", "fact.revenue").update(v="6591.07"),
+    "bound": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(hi="11"),
+    "source-sha256": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(source_sha256="0" * 64),
+    "quote": lambda m: claim_of(m, "FY26_Q3", MARGIN).update(quote="guiding about 9.5%, 11%"),
+    "from-binding-removed": lambda m: claim_of(m, "FY27_Q1", "fact.revenue")["from"].pop("v"),
+    "canonical-id": lambda m: claim_of(m, "FY27_Q1", "cmp.revenue.qoq.abs")["mkey"].update(
+        canonical_id="total_income.qoq.abs"
+    ),
+}
+
+
+@pytest.mark.parametrize("name", LEDGER_MUTATIONS)
+def test_ledger_checks_reject_mutations(name: str) -> None:
+    """The ledger claim check passes on the frozen manifest and fails once a claim is altered."""
+    manifest = copy.deepcopy(load(LEDGER))
+    check_ledger_claims(manifest)
+    LEDGER_MUTATIONS[name](manifest)
+    with pytest.raises((AssertionError, KeyError)):
+        check_ledger_claims(manifest)
 
 
 @pytest.mark.parametrize(
@@ -647,7 +747,7 @@ def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
 @per_manifest
 def test_approved_payload_preceded_its_e2e(path: Path) -> None:
     """The e2e's first commit is a child of a commit whose manifest payload is the approved one."""
-    e2e = E2E.format(stage=path.name.removesuffix("_manifest.yaml"))
+    e2e = E2E[path.name.removesuffix("_manifest.yaml")]
     if not (REPO / e2e).exists():
         return
 
