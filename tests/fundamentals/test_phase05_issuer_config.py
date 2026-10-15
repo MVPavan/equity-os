@@ -25,7 +25,7 @@ from fundamentals.api.config import (
     PdfParseConfig,
     load_config,
 )
-from fundamentals.api.pipeline import _normalize_entity, _pdf_parse_spec
+from fundamentals.api.pipeline_steps import _normalize_entity, _pdf_parse_spec
 from fundamentals.contracts.observation import (
     AccountingFramework,
     Observation,

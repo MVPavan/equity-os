@@ -28,11 +28,8 @@ from fundamentals.api.config import (
     XbrlConfig,
     XbrlMode,
 )
-from fundamentals.api.pipeline import (
-    PipelineError,
-    XbrlInput,
-    _guidance_quote_holds,
-)
+from fundamentals.api.pipeline import PipelineError, XbrlInput
+from fundamentals.api.pipeline_steps import _guidance_quote_holds
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
     AccountingFramework,

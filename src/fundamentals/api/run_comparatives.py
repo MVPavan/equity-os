@@ -16,7 +16,7 @@ from fundamentals.api.comparatives import (
     _unavailable,
 )
 from fundamentals.api.config import ComparatorInstanceConfig, FundamentalsConfig
-from fundamentals.api.pipeline import _normalize_entity
+from fundamentals.api.pipeline_steps import _normalize_entity
 from fundamentals.contracts.comparative import (
     TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,

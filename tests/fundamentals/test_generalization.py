@@ -38,7 +38,8 @@ from fundamentals.api.config import (
     XbrlConfig,
     XbrlMode,
 )
-from fundamentals.api.pipeline import XbrlInput, _claim_range_quote
+from fundamentals.api.pipeline import XbrlInput
+from fundamentals.api.pipeline_steps import _claim_range_quote
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
