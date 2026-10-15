@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: fresh Sol critical review of the plan",
-    "detail": "Sol r3 confirmed the pair-binding fix; its one new finding (Stage 2 pinned to the 0011 schema vs the new writer column) was ruled by the orchestrator: Stage 2 runs on the full schema with an exact, reviewed list of post-0011 tables. A fresh Sol session is doing the closing critical review.",
+    "title": "D3 report ledger: plan critical-review fix round",
+    "detail": "Fresh Sol critical review of the plan: REJECT, 13 findings (9 P1) — lock self-deadlock and owner-precedence race on proposals, multiple approved roots, interpretation amount provenance, run-input membership too loose, 9.5–10% range rendering, hollow manifest checks, missing resolver dependencies. Opus is fixing all 13 with the smallest rules; Sol re-reviews next.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan fresh critical review: Sol REJECT, 13 findings. Fix round dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan Sol r3: #6 fixed; residual Stage 2 schema issue ruled by orchestrator. Fresh critical review dispatched."
