@@ -1,14 +1,19 @@
 {
   "now": {
-    "title": "D2: Sol re-review of critical-review fixes",
-    "detail": "All 7 critical-review findings fixed (c4ce74d); 79 targeted PostgreSQL tests pass, lint and types clean, legacy file unchanged. Sol is checking each fix.",
-    "stage": "eqos-01q"
+    "title": "D3 report ledger: writing the phase plan",
+    "detail": "D2 closed. Opus is writing the just-in-time D3 plan (ledger schema, seal and decision chain, claim checks, version lifecycle, approval panel, imports, narrative export, frozen ledger Stage 1 manifest, e2e). Sol reviews the plan next.",
+    "stage": "eqos-uqu"
   },
   "next": [
-    "Close D2; production cutover stays owner-gated (eqos-3zl)",
-    "D3: report ledger (plan written just in time, Sol-reviewed)"
+    "Sol review loop on the D3 plan",
+    "Execute D3.1–D3.9",
+    "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 closed: critical-review fixes approved by Sol; full suite 3,268 passed; recreation check PASS. Epic eqos-01q closed."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 critical-review fixes committed (c4ce74d): 7/7 fixed, 79 targeted tests pass."
