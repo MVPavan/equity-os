@@ -63,7 +63,7 @@ service up.
 D2 adds migrations `0010_legacy_fact_store.sql` and `0011_fact_admissions.sql`. Its exit also
 needs `scripts/stage2_recreation_check.sh` to exit 0. On its own throwaway compose projects
 (mktemp root, free loopback ports, isolated env, never the live project or `equity_os`) it
-rehearses runbook steps 6–10 on copies, proves an identical inventory across `down`/`up`, runs
+rehearses runbook steps 6–9 on copies (step 10's report run is covered by the e2e instead), proves an identical inventory across `down`/`up`, runs
 `test_data_stage2_e2e.py` there and restores onto a fresh instance with replay.
 
 No completion claim without fresh evidence: run the command, read the output
