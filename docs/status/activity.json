@@ -1,15 +1,23 @@
 {
   "now": {
-    "title": "D3.9: ledger Stage 1 end-to-end",
-    "detail": "Opus is building the e2e: import all five reports into a test database and compare every section, claim, measurement key and state against the approved manifest; FY27_Q1 revenue POST_CUTOFF then a corrective version MATCH; export and backup checks.",
-    "stage": "eqos-uqu.9"
+    "title": "D3 phase-end review (Sol, round 1)",
+    "detail": "All D3 stages are built: schema, claim check, lifecycle, imports, export, approval panel, frozen manifest, Stage 1 e2e and the four register amendments. Sol is reviewing the whole phase (~8,400 lines); the full test gate is running alongside.",
+    "stage": "eqos-uqu"
   },
   "next": [
-    "Commit the e2e, then D3.7 amendments 3/5/7/8 + glossary",
-    "D3 phase-end Sol review loop and fresh critical review",
+    "Fix rounds on Sol's phase findings, then one fresh critical review",
+    "Close epic eqos-uqu; update the roadmap; then D4",
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.9 ledger Stage 1 e2e passes against the approved manifest (84fc9fc); a D3.4 regression in the vendor-upgrade test was found and fixed (e665080)."
+    },
+    {
+      "date": "2026-10-15",
+      "text": "D3.7 amendments 3, 5, 7, 8 approved by Sol in round 1; glossary and invariant 11 updated (5b5eb5e)."
+    },
     {
       "date": "2026-10-15",
       "text": "D3.8 ledger manifest approved by Sol in round 2 (complete measurement keys frozen) and committed (ed1ebce)."
