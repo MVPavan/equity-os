@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: Sol re-review of critical-review fixes",
-    "detail": "All 13 critical-review findings addressed in the plan (lock ordering, one approved root per report, owner-only manual corrections, exact range rendering proven 13/13, real per-claim oracle checks). Sol is verifying each fix.",
+    "title": "D3 report ledger: plan fix round 2 (rulings)",
+    "detail": "Sol re-review: 11/13 fixed; residuals ruled by orchestrator — predecessor must have a lower id (no lineage cycles), and in D3 interpretations are owner-decided only (panel approval of interpretations deferred to F2 with real provenance). Sonnet is applying; Sol re-checks next.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan critical re-review: 11/13 fixed; residuals ruled (lineage CHECK, owner-only interpretations)."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan critical fixes: 13/13 addressed (plan 1,051 lines); Sol re-review dispatched."
