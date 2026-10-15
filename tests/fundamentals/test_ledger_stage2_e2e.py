@@ -13,10 +13,12 @@ only source of expected values; the fake reviewer only returns a verdict.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 from pg_support import PgTestDatabase
@@ -125,11 +127,27 @@ def successor(predecessor: tuple[int, int], claim: NumericClaim, cutoff: datetim
     )
 
 
-@pytest.mark.pg
-@pytest.mark.retained
-def test_ledger_stage2_end_to_end(
+class Stage2(NamedTuple):
+    """The ledger Stage 2 state's handles and ids, valid while its pools are open."""
+
+    rig: Rig
+    entity_id: int
+    memory: MemoryStore
+    item_id: int
+    promotion_id: int
+    correctives: dict[str, int]
+    claim_ids: dict[str, int]
+    captures: dict[str, int]
+    cutoffs: dict[str | None, datetime | None]
+    check_retrievals: Callable[[str], None]
+
+
+@contextmanager
+def stage2_state(
     pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+) -> Iterator[Stage2]:
+    """Build the ledger Stage 2 state through the panel ``PROMOTE``, checking each step, and
+    yield its ids with its pools open."""
     # 1. The ledger Stage 1 state: Stage 1 captures and run, legacy import, ``ledger import``.
     rig = Rig(pg_db, tmp_path)
     rig.register()
@@ -375,10 +393,44 @@ def test_ledger_stage2_end_to_end(
             assert payload["bound_contract"] == payload["contract"] == contract_of(spec)
             bound = {b["source_sha256"] for b in payload["bindings"]}
             assert bound == {SOURCES["MLEDGER"]["sha256"]}
+        yield Stage2(
+            rig,
+            entity_id,
+            memory,
+            item_id,
+            promotion.id,
+            correctives,
+            claim_ids,
+            captures,
+            cutoffs,
+            check_retrievals,
+        )
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_ledger_stage2_end_to_end(
+    pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item_spec = MANIFEST["item"]
+    specs = {v["id"]: v["claims"][0] for v in MANIFEST["versions"]}
+    with stage2_state(pg_db, tmp_path, monkeypatch) as built:
+        (
+            rig,
+            entity_id,
+            memory,
+            item_id,
+            promotion_id,
+            correctives,
+            claim_ids,
+            captures,
+            cutoffs,
+            check_retrievals,
+        ) = built
 
         # 6. Retrieved after PROMOTE with its supports and provenance; absent before it.
         table = {
-            "before-promote": ("decisions", promotion.id),
+            "before-promote": ("decisions", promotion_id),
             "before-item": ("memory_items", item_id),
         }
         for name, (source, row_id) in table.items():
