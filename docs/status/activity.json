@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D5.1 + D5.2: Markdown export and read-only role",
-    "detail": "D5 plan approved by Sol (two review rounds plus a fresh critical review; 1bedf24). Two Opus workers run in parallel on disjoint files: the `ledger export --stock` Markdown export (narratives, status notes, promoted memory), and migration 0021 with the eqos_reader role and two status views. The optional Obsidian vault is dropped.",
-    "stage": "eqos-tfb.1, eqos-tfb.2"
+    "title": "D5.4: frozen ledger Stage 3 manifest",
+    "detail": "D5.1 Markdown export (5ccd92d) and D5.2 read-only role with two status views (4df8c5c, migration 0021) are committed; full suite 3583 passed. Opus is authoring the Stage 3 manifest from the two approved ledger manifests; Sol approves it before the e2e is written.",
+    "stage": "eqos-tfb.4"
   },
   "next": [
-    "D5.4 frozen ledger Stage 3 manifest (Sol approval), then D5.5 e2e",
+    "D5.5 ledger Stage 3 e2e",
     "D5 phase review",
     "Follow-ups: eqos-d60, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D5.1 export (5ccd92d) and D5.2 reader role + views (4df8c5c, 0021) committed; full suite 3583 passed. D5.4 manifest dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D5 plan approved (Sol r2 + critical re-review; 1bedf24). Vault stage eqos-tfb.3 closed as not built. Tasks 1 and 2 dispatched in parallel."
