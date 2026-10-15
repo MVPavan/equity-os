@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3.2: claim check, numeral and prose scans, display",
-    "detail": "D3.1 committed (0044441): migration 0012, append-only ledger, seal and decision-chain triggers, one-root lineage, owner/panel roles; 90 targeted tests pass. Opus is building D3.2 test-first: the claim check against stored figures, numeral/prose scans and display rendering.",
-    "stage": "eqos-uqu.2"
+    "title": "D3.3: version lifecycle and decision commands",
+    "detail": "D3.2 committed (da3b72d): claim check in both modes, byte-identical display (6,591.06, 9.5–10%, +29.1%), numeral/prose scans, citation resolver with authority checks and legacy first-seen times. Opus is building D3.3: submit/validate/decide, supersession, owner policy values.",
+    "stage": "eqos-uqu.3"
   },
   "next": [
-    "D3.3 lifecycle and decision commands",
-    "D3.5 imports → D3.6 export → D3.4 panel → D3.7–D3.9",
+    "D3.5 imports (Apar earnings updates, Q0 thesis, management ledger)",
+    "D3.6 export → D3.4 panel → D3.7–D3.9",
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.2 claim check, scans, display and citation resolver committed (da3b72d); 143 tests pass."
+    },
     {
       "date": "2026-10-15",
       "text": "D3.1 ledger schema, seal, chain and roles committed (0044441); 90 tests pass. Filed eqos-1kq (intermittent fixture errors)."
