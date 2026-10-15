@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D2 phase-end review",
-    "detail": "All 8 D2 stages are built. Sol is reviewing everything D2 built (commit range d663877–f1d1e6e), and the full test suite is running as phase evidence. Next: fix rounds on Sol's findings, then one fresh critical review, then D2 closes.",
+    "title": "D2 phase-end review: fix round 1",
+    "detail": "Sol rejected D2 with 14 findings (6 P1: reopen/rollback approval binding, owner identity, translation contents, PDF locator, backup metadata trust, recreation script bypassing the real admission path). Opus is fixing all 14; then a Sol re-review. Full suite before fixes: 3,180 passed, 8 skipped.",
     "stage": "eqos-01q"
   },
   "next": [
@@ -10,6 +10,10 @@
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 phase review r1: Sol REJECT, 14 findings; full suite 3,180 passed. Fix round 1 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D2.8 Stage 2 e2e matches the approved manifest; recreation script exit 0 incl. fresh-instance restore (f1d1e6e). All D2 stages built."
