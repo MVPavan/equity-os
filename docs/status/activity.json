@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 phase review: Sol re-review (round 2)",
-    "detail": "Opus fixed all 12 round-1 findings with regression tests and one forward migration (0014, no new tables); the frozen manifest is unchanged and the e2e still matches it. Full suite 3,431 passed. Sol is checking each fix against its findings.",
+    "title": "D3 phase review: fix round 2",
+    "detail": "Sol round 2 confirmed 9 of 12 fixes. Two gaps remain in the importer: a quarter's history could vouch for itself using its own current snapshot, and bad dates or malformed YAML still abort the whole import. Opus is fixing both; then Sol re-checks.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 phase review round 2: Sol REJECT, 9/12 addressed; 2 importer gaps (self-witnessing history, parse failures) sent to fix round 2."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 fix round 1 done: units checked against measurement keys, import-only overrides locked down, guidance contracts fail closed, e2e dereferences citations; full suite green. Clock failure traced to host clock oscillation (eqos-bhy), not code."
