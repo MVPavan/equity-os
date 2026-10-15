@@ -1,7 +1,7 @@
 {
   "now": {
     "title": "D4 phase-end review (Sol)",
-    "detail": "All five D4 stages built and committed; the Stage 2 e2e (3832a89) proves a cables-margin memory item is retrieved only after a panel PROMOTE over transcript-bound corrective versions. Sol is reviewing the whole D4 diff in one exhaustive pass; fix rounds follow, then a fresh critical review.",
+    "detail": "Sol's round 1 found 5 issues (guidance-contract check not failing closed, ambiguous contracts, PROMOTE-last rule only partly enforced, a reviewer RETIRE becoming PROMOTE, untested trigger pair); Opus fixed all (078a99b, migration 0018) and Sol approved round 2. A fresh Sol session is doing the final critical review.",
     "stage": "eqos-4hi"
   },
   "next": [
@@ -9,6 +9,10 @@
     "Follow-ups: F1 reviewer adapter (eqos-tqf, incl. panel RETIRE), eqos-0eu, G3 bead; flakes eqos-1kq, eqos-bhy"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D4 phase review: r1 REJECT (1 P1, 3 P2, 1 P3) → fix 078a99b (full suite 3569 passed) → r2 APPROVE. Fresh critical review dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D4.5 ledger Stage 2 e2e committed (3832a89): e2e passes, frozen manifests 64/64, full suite 3559 passed. D4 phase review dispatched to Sol."
