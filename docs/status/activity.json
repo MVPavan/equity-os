@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 report ledger: Sol plan review r1",
-    "detail": "Plan revised (single-reviewer approval; panel module ≤120 lines) and ledger spec amended for eqos-uqu.10. Owner/panel DB credentials re-ruled to ~/.secrets, read only by owner/panel commands. Sol is reviewing plan + amendment.",
+    "title": "D3 report ledger: plan fix round 1",
+    "detail": "Sol plan review r1: REJECT, 18 findings (15 P1) — e.g. legacy first-seen time not recorded (blocks the POST_CUTOFF case), panel disposition bypass, lifecycle transitions, validation/approval race, import matcher on shared displays, frozen oracle too weak, Stage 2 inventory gate. Opus is fixing all 18 in the plan.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Production cutover stays owner-gated (eqos-3zl)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 plan Sol r1: REJECT (18 findings); single-reviewer amendment found consistent. Fix round 1 dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D3 plan r2 + eqos-uqu.10 spec amendment drafted; Sol plan review r1 dispatched."
