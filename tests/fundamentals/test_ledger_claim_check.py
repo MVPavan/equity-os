@@ -43,6 +43,7 @@ from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ledger import store
 from fundamentals.ledger.citations import bound_contract, resolve_location
 from fundamentals.ledger.claim_check import check_claim, cutoff_instant, quote_qualifiers
+from fundamentals.ledger.import_mapping import ledger_contracts
 from fundamentals.ledger.numeral_scan import scan_section
 from fundamentals.output.management_ledger import (
     LedgerAnchor,
@@ -188,11 +189,12 @@ ROWS = [
     case("7-scope", MEANING, QUOTED, QUOTE_CITED, mine={"scope": "cables"}),
     case("7-constant-currency", MEANING, QUOTED, QUOTE_CITED, mine={"constant_currency": True}),
     case("7-horizon", MEANING, QUOTED, QUOTE_CITED, mine={"horizon": "FY28"}),
-    # Fail closed: an asserted contract with none bound to compare is no match.
+    # Fail closed (M9): a drafted quote no sealed import binds a contract to is no match,
+    # whatever contract it asserts.
     case("7-no-contract", MEANING, QUOTED, QUOTE_CITED, theirs={"guidance": None}),
     case(
         "7-none-asserted",
-        ClaimState.MATCH,
+        MEANING,
         QUOTED,
         QUOTE_CITED,
         mine=UNCONTRACTED,
@@ -211,6 +213,16 @@ def test_claim_check_rows(
     """The first matching spec row wins, identically in both modes for these inputs."""
     state = check_claim(claim, resolved, mode=mode, cutoff=CUTOFF, imported=False)
     assert state is expected
+
+
+def test_an_imported_quote_with_no_bound_contract_must_assert_none() -> None:
+    """An import's own quote claim keeps the row-7 comparison: asserting no contract with none
+    bound matches; asserting one with none bound does not."""
+    unbound = QUOTE_CITED.model_copy(update={"guidance": None})
+    check = {"mode": RunMode.AS_KNOWN, "cutoff": CUTOFF, "imported": True}
+    none_asserted = QUOTED.model_copy(update=UNCONTRACTED)
+    assert check_claim(none_asserted, unbound, **check) is ClaimState.MATCH
+    assert check_claim(QUOTED, unbound, **check) is MEANING
 
 
 @pytest.mark.parametrize(
@@ -457,8 +469,8 @@ LEDGER_SECTION = ReportSection(ordinal=0, section_key="ledger", body="{{e:foreca
 ANCHOR = "p1.b0.0:23"
 
 
-def _ledger_json(contract: GuidanceContract) -> bytes:
-    """A one-entry management ledger stating ``contract`` for :data:`QUOTED`'s quote."""
+def _ledger_json(*contracts: GuidanceContract) -> bytes:
+    """A management ledger with one entry per contract, each for :data:`QUOTED`'s quote."""
     source = Provenance(
         source_id="transcript",
         file_sha256=SHA_A,
@@ -469,17 +481,20 @@ def _ledger_json(contract: GuidanceContract) -> bytes:
         retrieved_at=CUTOFF,
     )
     anchor = LedgerAnchor(issuer_quarter="FY27_Q1", quote=QUOTE, source=source)
-    entry = LedgerEntry(
-        claim_key="ebitda_margin|FY27|company",
-        lower_bound=Decimal("9.5"),
-        upper_bound=Decimal("10"),
-        first=anchor,
-        latest=anchor,
-        status=LedgerStatus.NEW,
-        history=(),
-        **contract.model_dump(),
+    entries = tuple(
+        LedgerEntry(
+            claim_key="ebitda_margin|FY27|company",
+            lower_bound=Decimal("9.5"),
+            upper_bound=Decimal("10"),
+            first=anchor,
+            latest=anchor,
+            status=LedgerStatus.NEW,
+            history=(),
+            **contract.model_dump(),
+        )
+        for contract in contracts
     )
-    ledger = ManagementLedger(symbol="X", version=1, updated_quarter="FY27_Q1", entries=(entry,))
+    ledger = ManagementLedger(symbol="X", version=1, updated_quarter="FY27_Q1", entries=entries)
     return ledger.model_dump_json().encode()
 
 
@@ -531,7 +546,18 @@ def _bound(ledger: Ledger, runtime: psycopg.Connection, **citation: Any) -> Any:
         return bound_contract(cursor, drafted, ledger.entity_id)
 
 
-OTHER_CONTRACT = CONTRACT.model_copy(update={"scope": "cables"})
+# Same lookup key as CONTRACT, so the two are distinct non-null contracts for one quote.
+OTHER_CONTRACT = CONTRACT.model_copy(update={"constant_currency": True})
+
+
+@pytest.mark.parametrize("order", [(CONTRACT, OTHER_CONTRACT), (OTHER_CONTRACT, CONTRACT)])
+def test_a_ledger_stating_two_contracts_for_one_key_binds_nothing(
+    order: tuple[GuidanceContract, GuidanceContract],
+) -> None:
+    """Entries of one sealed ledger disagreeing on a key's contract bind nothing, in either
+    order; agreeing duplicates bind their contract."""
+    assert ledger_contracts(_ledger_json(*order)) == {}
+    assert ledger_contracts(_ledger_json(CONTRACT, CONTRACT)) == {QUOTED.claim_key: CONTRACT}
 
 
 @pytest.mark.pg

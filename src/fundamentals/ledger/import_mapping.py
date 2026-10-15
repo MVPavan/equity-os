@@ -434,9 +434,12 @@ def _change_claims(
 
 
 def ledger_contracts(ledger: bytes) -> dict[str, GuidanceContract]:
-    """Each management-ledger entry's guidance contract by its quote claim's key."""
-    entries = ManagementLedger.model_validate_json(ledger).entries
-    return {_ledger_key(entry): _contract(entry) for entry in entries}
+    """Each management-ledger entry's guidance contract by its quote claim's key; a key whose
+    entries disagree binds nothing (plan D4, M9)."""
+    contracts: dict[str, set[GuidanceContract]] = {}
+    for entry in ManagementLedger.model_validate_json(ledger).entries:
+        contracts.setdefault(_ledger_key(entry), set()).add(_contract(entry))
+    return {key: found.pop() for key, found in contracts.items() if len(found) == 1}
 
 
 def _ledger_key(entry: LedgerEntry) -> str:

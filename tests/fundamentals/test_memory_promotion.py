@@ -17,6 +17,7 @@ import pytest
 from ledger_support import RULING, SECTION, claim, ledger, validation
 from memory_support import Memory, memory, promote
 from pg_evidence_schema_support import SHA_A, _capture, _insert, runtime, seeded
+from pg_support import PgTestDatabase
 from psycopg import errors
 from test_ledger_claim_check import ANCHOR, CONTRACT, QUOTE, QUOTED, import_quote
 from test_ledger_panel import FakeReviewer
@@ -27,6 +28,7 @@ from fundamentals.contracts.ledger import (
     DecisionKind,
     NumericClaim,
     ReportKind,
+    SubjectKind,
     VersionStatus,
 )
 from fundamentals.contracts.memory import (
@@ -35,7 +37,7 @@ from fundamentals.contracts.memory import (
     SupportDraft,
     SupportTarget,
 )
-from fundamentals.ledger import store
+from fundamentals.ledger import lifecycle, store
 from fundamentals.ledger.panel import ReviewStaleError
 from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.memory.retrieval import support_refs
@@ -274,6 +276,17 @@ def test_a_support_falling_during_the_review_makes_it_stale(memory: Memory, fall
     assert memory.one("SELECT count(*) FROM eqos.panel_reviews WHERE subject_id = %s", item) == 0
 
 
+@pytest.mark.parametrize("kind", [DecisionKind.RETIRE, DecisionKind.APPROVE])
+def test_a_reviewer_decides_only_a_candidates_review(memory: Memory, kind: DecisionKind) -> None:
+    """A reviewer's verdict maps to PROMOTE or REJECT_CANDIDATE; asking it for any other kind
+    is refused before the reviewer runs, leaving no review or decision."""
+    item, reviewer = memory.stage(), FakeReviewer()
+    with pytest.raises(lifecycle.DecisionRefusedError, match=kind.value):
+        PgMemoryStore(memory.ledger.pools[PgRole.PANEL]).decide(item, kind, reviewer=reviewer)
+    assert reviewer.calls == [] and no_promotion(memory, item)
+    assert memory.one("SELECT count(*) FROM eqos.panel_reviews WHERE subject_id = %s", item) == 0
+
+
 def test_the_owner_promotes_and_retires_with_a_ruling(memory: Memory) -> None:
     """The owner's PROMOTE then RETIRE through the store; a decision needs a reviewer or a
     ruling."""
@@ -387,3 +400,50 @@ def test_a_disposition_or_a_state_after_promote_is_refused_with_constraints_flus
         _flush(cursor, True)
         promote(cursor, item)
     assert memory.status(item) == (MemoryStatus.PROMOTED, False)
+
+
+@pytest.mark.parametrize("flushed", [False, True], ids=["deferred", "flushed"])
+def test_no_decision_follows_promote_in_its_transaction(memory: Memory, flushed: bool) -> None:
+    """A1: PROMOTE is the last ledger or queue write of its transaction, so the owner's RETIRE
+    of the item it just promoted is refused, also with the deferred checks fired early."""
+    item = memory.stage()
+    with (
+        pytest.raises(errors.CheckViolation, match="follow a memory PROMOTE"),
+        memory.ledger._cursor(OWNER) as cursor,
+    ):
+        _flush(cursor, flushed)
+        promotion = promote(cursor, item)
+        _flush(cursor, flushed)
+        store.insert_decision(
+            cursor,
+            subject_kind=SubjectKind.MEMORY_ITEM,
+            subject_id=item,
+            kind=DecisionKind.RETIRE,
+            predecessor_id=promotion.id,
+            sealed_digest=promotion.sealed_digest,
+            ruling=RULING,
+        )
+    assert no_promotion(memory, item)
+
+
+@pytest.mark.parametrize("immediate", [True, False], ids=["at-insert", "at-commit"])
+def test_promote_on_a_fallen_support_is_refused_at_insert_and_again_at_commit(
+    memory: Memory, pg_db: PgTestDatabase, immediate: bool
+) -> None:
+    """The BEFORE-insert check refuses the PROMOTE statement itself; with it dropped (on this
+    test database only) the deferred re-check still refuses the transaction at commit."""
+    item = memory.stage()
+    with memory.ledger._cursor(OWNER) as cursor:
+        memory.writer("withdraw", memory.version_id)(cursor)
+    if not immediate:
+        with pg_db.migrator_connection() as migrator:
+            migrator.execute("DROP TRIGGER check_memory_promotion ON eqos.decisions")
+    inserted: list[int] = []
+    with (
+        pytest.raises(errors.CheckViolation, match=REFUSED),
+        memory.ledger._cursor(OWNER) as cursor,
+    ):
+        promote(cursor, item)
+        inserted.append(item)
+    assert inserted == ([] if immediate else [item])
+    assert no_promotion(memory, item)

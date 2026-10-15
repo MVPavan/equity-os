@@ -79,7 +79,8 @@ def check_claim(
 ) -> ClaimState:
     """The claim's state: the first spec row (1-9) whose condition holds.
 
-    A self-cited ``POLICY`` claim resolves only on an import, from its own version's record.
+    A self-cited ``POLICY`` claim resolves only on an import, from its own version's record. A
+    drafted quote claim no sealed import binds a unique contract to fails row 7 (plan D4, M9).
     """
     citation = claim.citation
     self_cited = citation.kind is CitationKind.POLICY and citation.policy_decision_id is None
@@ -109,7 +110,8 @@ def check_claim(
     if citation.kind is CitationKind.SOURCE_QUOTE:
         if resolved.quote_text is None or resolved.quote_text != citation.quote:
             return ClaimState.QUOTE_NOT_FOUND
-        if not _quote_means_claim(claim, resolved.quote_text, resolved.guidance):
+        unbound = resolved.guidance is None and not imported
+        if unbound or not _quote_means_claim(claim, resolved.quote_text, resolved.guidance):
             return ClaimState.QUOTE_MEANING_MISMATCH
     if resolved.trusted is False:
         return ClaimState.MATCH_UNTRUSTED

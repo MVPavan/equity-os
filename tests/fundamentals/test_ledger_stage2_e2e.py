@@ -41,6 +41,7 @@ from fundamentals.contracts.ledger import (
     DecisionKind,
     GuidanceContract,
     NumericClaim,
+    ReportKind,
     ReportSection,
     SubjectKind,
     VersionDraft,
@@ -57,6 +58,7 @@ from fundamentals.evidence.first_party_ingest import admit_transcript
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger import lifecycle, panel, store
 from fundamentals.ledger.display import content_hash
+from fundamentals.ledger.import_mapping import UPDATE_FILES
 from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.memory.store import MemoryStore
 from fundamentals.pg.backup import verify_set, write_backup
@@ -89,6 +91,14 @@ def expected_claim(claim: dict[str, Any]) -> dict[str, Any]:
 def contract_of(claim: dict[str, Any]) -> dict[str, Any]:
     """The manifest claim's five guidance-contract fields."""
     return {field: claim[field] for field in CONTRACT_FIELDS}
+
+
+def flipped(ledger: bytes) -> bytes:
+    """A management ledger with every entry's constant_currency negated."""
+    book = json.loads(ledger)
+    for entry in book["entries"]:
+        entry["constant_currency"] = not entry["constant_currency"]
+    return json.dumps(book).encode()
 
 
 def section(claim: NumericClaim) -> ReportSection:
@@ -236,6 +246,47 @@ def test_ledger_stage2_end_to_end(
                     cursor, version_id, mode=RunMode.AS_KNOWN, boundary=now, **paths
                 )
             assert checked.claim_states == ((claim.claim_key, expected),), name
+
+        # 3a'. A rival sealed import binding the quote the other constant_currency leaves no
+        # unique contract, so even an all-null drafted contract fails closed.
+        claim = corrective(first["id"], **dict.fromkeys(CONTRACT_FIELDS))
+        with panel_pool.connection() as conn, conn.transaction(force_rollback=True):
+            cursor = conn.cursor()
+            source = store.read_version(cursor, imported[first["id"]][0])
+            rival_report = store.create_report(
+                cursor,
+                entity_id=entity_id,
+                period="FY99_Q1",
+                kind=ReportKind(first["report"]["kind"]),
+            )
+            rival = store.create_version(
+                cursor,
+                source.model_copy(
+                    update={
+                        "report_id": rival_report,
+                        "import_sources": tuple(
+                            (path, body if Path(path).name in UPDATE_FILES else flipped(body))
+                            for path, body in source.import_sources
+                        ),
+                    }
+                ),
+            )
+            store.insert_decision(
+                cursor,
+                subject_kind=SubjectKind.REPORT_VERSION,
+                subject_id=rival,
+                kind=DecisionKind.IMPORT_SEAL,
+                predecessor_id=None,
+                sealed_digest=store.sealed_digest(cursor, rival),
+            )
+            version_id = store.create_version(
+                cursor, successor(imported[first["id"]], claim, cutoff)
+            )
+            ((now,),) = cursor.execute(_NOW).fetchall()
+            checked = lifecycle.check_version(
+                cursor, version_id, mode=RunMode.AS_KNOWN, boundary=now, **paths
+            )
+        assert checked.claim_states == ((claim.claim_key, ClaimState.QUOTE_MEANING_MISMATCH),)
 
         # 3b. One corrective per quarter, submitted and approved by the panel.
         correctives: dict[str, int] = {}

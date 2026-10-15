@@ -26,6 +26,8 @@ _ITEM: LiteralString = (
 _SUPPORT: LiteralString = "INSERT INTO eqos.memory_supports (item_id, {}) VALUES (%s, %s)"
 _SNAPSHOT: LiteralString = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
 _NO_DECIDER = "a memory decision needs a reviewer (panel) or a ruling (owner)"
+_NOT_REVIEWED = "a reviewer decides only a candidate's PROMOTE or REJECT_CANDIDATE, not {kind}"
+_REVIEWED = frozenset({DecisionKind.PROMOTE, DecisionKind.REJECT_CANDIDATE})
 
 
 class PgMemoryStore:
@@ -56,8 +58,10 @@ class PgMemoryStore:
         ruling: str | None = None,
     ) -> DecisionRecord:
         """The panel's decision by ``reviewer``'s verdict on the item's review text, else the
-        owner's ``kind`` with its verbatim ``ruling``."""
+        owner's ``kind`` with its verbatim ``ruling``. A reviewer decides only candidate review."""
         if reviewer is not None:
+            if kind not in _REVIEWED:
+                raise lifecycle.DecisionRefusedError(_NOT_REVIEWED.format(kind=kind.value))
             return panel.review(
                 self._pool,
                 subject_kind=SubjectKind.MEMORY_ITEM,
