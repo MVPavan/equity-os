@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D3 phase-end review (Sol, round 1)",
-    "detail": "All D3 stages are built: schema, claim check, lifecycle, imports, export, approval panel, frozen manifest, Stage 1 e2e and the four register amendments. Sol is reviewing the whole phase (~8,400 lines); the full test gate is running alongside.",
+    "title": "D3 phase review: fix round 1",
+    "detail": "Sol rejected the phase with 12 reproduced findings, mainly validation holes: unit/currency not checked against the cited result, an import-only override usable on ordinary versions, guidance-contract checks passing when evidence is missing, plus e2e oracle gaps. Opus is fixing all 12 with regression tests; then Sol re-reviews.",
     "stage": "eqos-uqu"
   },
   "next": [
@@ -10,6 +10,10 @@
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3 phase review round 1: Sol REJECT (6 P1, 6 P2, all reproduced); fix round dispatched. Separate bug filed: order-dependent 'derivation clock moved backwards' in the D2 pipeline test."
+    },
     {
       "date": "2026-10-15",
       "text": "D3.9 ledger Stage 1 e2e passes against the approved manifest (84fc9fc); a D3.4 regression in the vendor-upgrade test was found and fixed (e665080)."
