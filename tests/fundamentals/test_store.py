@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -27,6 +26,7 @@ from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.store.fact_store import (
     BarredAnchorFactError,
     FactStore,
+    FactStoreLike,
     UnprovenancedFactError,
 )
 
@@ -84,14 +84,7 @@ def _fact(observation: Observation | None = None) -> Fact:
     )
 
 
-@pytest.fixture
-def store(tmp_path: Path) -> FactStore:
-    fact_store = FactStore(tmp_path / "facts.db")
-    yield fact_store
-    fact_store.close()
-
-
-def test_round_trip_put_and_get(store: FactStore) -> None:
+def test_round_trip_put_and_get(store: FactStoreLike) -> None:
     stored = store.put(_fact())
     revisions = store.get_revisions(stored.content_identity)
 
@@ -105,7 +98,7 @@ def test_round_trip_put_and_get(store: FactStore) -> None:
     assert only.canonical_status is CanonicalStatus.CANDIDATE
 
 
-def test_reput_identical_fact_is_idempotent(store: FactStore) -> None:
+def test_reput_identical_fact_is_idempotent(store: FactStoreLike) -> None:
     first = store.put(_fact())
     second = store.put(_fact())
 
@@ -113,7 +106,7 @@ def test_reput_identical_fact_is_idempotent(store: FactStore) -> None:
     assert len(store.get_revisions(first.content_identity)) == 1
 
 
-def test_same_identity_different_value_appends_revision(store: FactStore) -> None:
+def test_same_identity_different_value_appends_revision(store: FactStoreLike) -> None:
     original = store.put(_fact())
     canonical = store.select_canonical(original.row_id, reason="initial extraction")
     assert canonical.canonical_status is CanonicalStatus.CANONICAL
@@ -140,7 +133,7 @@ def test_same_identity_different_value_appends_revision(store: FactStore) -> Non
     assert len(after) == 2  # nothing overwritten or removed
 
 
-def test_unprovenanced_fact_is_rejected(store: FactStore) -> None:
+def test_unprovenanced_fact_is_rejected(store: FactStoreLike) -> None:
     unprovenanced = _fact(_observation(provenance=_provenance(file_sha256="")))
     with pytest.raises(UnprovenancedFactError):
         store.put(unprovenanced)
@@ -150,7 +143,7 @@ def test_unprovenanced_fact_is_rejected(store: FactStore) -> None:
     assert store.get_revisions(identity) == ()
 
 
-def test_query_returns_canonical_revision(store: FactStore) -> None:
+def test_query_returns_canonical_revision(store: FactStoreLike) -> None:
     original = store.put(_fact())
     store.select_canonical(original.row_id, reason="initial extraction")
     restated = store.put(_fact(_observation(normalized_value="6400", raw_value="64000000000")))
@@ -196,7 +189,7 @@ def _html_table_provenance(*, row_path: str, column_index: int) -> Provenance:
     ],
 )
 def test_anchor_location_fields_participate_in_the_value_hash(
-    left: Provenance, right: Provenance
+    store: FactStoreLike, left: Provenance, right: Provenance
 ) -> None:
     """Two values read from different cells are different values, not one.
 
@@ -204,17 +197,15 @@ def test_anchor_location_fields_participate_in_the_value_hash(
     hash ignored row_path or column_index the store would treat distinct
     observations as one revision and silently drop all but the first.
     """
-    store = FactStore(":memory:")
-    try:
-        first = store.put(_fact(_observation(provenance=left)))
-        second = store.put(_fact(_observation(provenance=right)))
-        assert first.value_hash != second.value_hash
-        assert first.row_id != second.row_id
-    finally:
-        store.close()
+    first = store.put(_fact(_observation(provenance=left)))
+    second = store.put(_fact(_observation(provenance=right)))
+    assert first.value_hash != second.value_hash
+    assert first.row_id != second.row_id
 
 
-def test_json_island_anchor_location_fields_participate_in_the_value_hash() -> None:
+def test_json_island_anchor_location_fields_participate_in_the_value_hash(
+    store: FactStoreLike,
+) -> None:
     """The same omission would have collapsed two Tijori island cells onto one row."""
 
     def island(row_label: str) -> Provenance:
@@ -230,16 +221,12 @@ def test_json_island_anchor_location_fields_participate_in_the_value_hash() -> N
             retrieved_at=_RETRIEVED_AT,
         )
 
-    store = FactStore(":memory:")
-    try:
-        first = store.put(_fact(_observation(provenance=island("Net Sales"))))
-        second = store.put(_fact(_observation(provenance=island("Net Profit"))))
-        assert first.value_hash != second.value_hash
-    finally:
-        store.close()
+    first = store.put(_fact(_observation(provenance=island("Net Sales"))))
+    second = store.put(_fact(_observation(provenance=island("Net Profit"))))
+    assert first.value_hash != second.value_hash
 
 
-def test_api_document_anchored_facts_are_barred_from_the_store(store: FactStore) -> None:
+def test_api_document_anchored_facts_are_barred_from_the_store(store: FactStoreLike) -> None:
     """These responses carry no identity field, so the id in the request URL is the
     only thing binding the value to an issuer — not enough to join the canonical
     revision chain, where content identity is assumed to be source-corroborated."""
@@ -261,7 +248,7 @@ def test_api_document_anchored_facts_are_barred_from_the_store(store: FactStore)
     assert store.query_canonical() == ()
 
 
-def test_config_pin_anchored_facts_are_barred_from_the_store(store: FactStore) -> None:
+def test_config_pin_anchored_facts_are_barred_from_the_store(store: FactStoreLike) -> None:
     """Entity-map amendment A5: a hand-edited YAML pin is an assertion, not evidence.
 
     ``CONFIG_PIN`` exists so the entity identity map can record where a pinned

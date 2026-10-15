@@ -37,7 +37,7 @@ import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol, assert_never
+from typing import Any, Protocol, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
@@ -88,7 +88,10 @@ INSERT INTO {_TABLE} (
     source_id, file_sha256, anchor,
     valid_time_start, valid_time_end, knowledge_time, first_seen_time,
     fact_json, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (:content_identity, :value_hash, :revision_family, :revision_ordinal,
+    :canonical_status, NULL, NULL, :source_id, :file_sha256, :anchor,
+    :valid_time_start, :valid_time_end, :knowledge_time, :first_seen_time,
+    :fact_json, :created_at)
 """
 
 _CREATE_SELECTIONS = """
@@ -369,6 +372,83 @@ def effective_revision(
     return eligible[-1]
 
 
+def _require_provenance(observation: Observation) -> None:
+    """Fail closed on any un-provenanced observation."""
+    provenance = getattr(observation, "provenance", None)
+    if provenance is None:
+        raise UnprovenancedFactError("observation is missing provenance")
+    if not provenance.file_sha256:
+        raise UnprovenancedFactError("provenance.file_sha256 must be non-empty")
+    if provenance.anchor_type in _BARRED_ANCHOR_TYPES:
+        raise BarredAnchorFactError(
+            _BARRED_ANCHOR_REASON.format(
+                anchor=provenance.anchor_type.value,
+                why=_BARRED_ANCHOR_WHY[provenance.anchor_type],
+            )
+        )
+
+
+def fact_columns(fact: Fact) -> dict[str, str | None]:
+    """Validate ``fact`` for storage and return its stored text as a new ``CANDIDATE`` row."""
+    observation = fact.observation
+    _require_provenance(observation)
+    _utc(fact.knowledge_time)
+    _utc(fact.first_seen_time)
+    prov = observation.provenance
+    stored = fact.model_copy(update={"canonical_status": CanonicalStatus.CANDIDATE})
+    return {
+        "content_identity": _content_identity(observation),
+        "value_hash": _value_hash(observation),
+        "canonical_status": str(CanonicalStatus.CANDIDATE),
+        "source_id": prov.source_id,
+        "file_sha256": prov.file_sha256,
+        "anchor": _stable_json(_anchor_payload(observation)),
+        "valid_time_start": fact.valid_time_start.isoformat(),
+        "valid_time_end": fact.valid_time_end.isoformat() if fact.valid_time_end else None,
+        "knowledge_time": fact.knowledge_time.isoformat(),
+        "first_seen_time": fact.first_seen_time.isoformat(),
+        "fact_json": stored.model_dump_json(),
+    }
+
+
+def project_revision(
+    row: Mapping[str, Any] | sqlite3.Row,
+    history: Sequence[CanonicalSelection],
+    decision: CanonicalSelection | None = None,
+) -> StoredRevision:
+    """A stored row with its status projected from ``history``, or as ``decision`` selects it."""
+    status = CanonicalStatus(row["canonical_status"])
+    selected_raw = row["canonical_selected_at"]
+    selected_at = datetime.fromisoformat(selected_raw) if selected_raw else None
+    reason = row["canonical_reason"]
+    if decision is None:
+        own = [item for item in history if item.row_id == row["row_id"]]
+        if own:
+            decision = own[-1]
+            status = (
+                CanonicalStatus.CANONICAL if history[-1] == decision else CanonicalStatus.SUPERSEDED
+            )
+    else:
+        status = CanonicalStatus.CANONICAL
+    if decision is not None:
+        selected_at = decision.selected_at
+        reason = decision.reason
+    fact = Fact.model_validate_json(row["fact_json"]).model_copy(
+        update={"canonical_status": status}
+    )
+    return StoredRevision(
+        row_id=int(row["row_id"]),
+        content_identity=row["content_identity"],
+        value_hash=row["value_hash"],
+        revision_family=row["revision_family"],
+        revision_ordinal=int(row["revision_ordinal"]),
+        canonical_status=status,
+        canonical_selected_at=selected_at,
+        canonical_reason=reason,
+        fact=fact,
+    )
+
+
 class FactRef(BaseModel):
     """A row's preserved origin-qualified reference within its store."""
 
@@ -552,46 +632,25 @@ class FactStore:
         already present (idempotent); otherwise appends a new ``CANDIDATE``
         revision under the content-identity's revision family and returns it.
         """
-        observation = fact.observation
-        self._require_provenance(observation)
-        _utc(fact.knowledge_time)
-        _utc(fact.first_seen_time)
-
-        content_identity = _content_identity(observation)
-        value_hash = _value_hash(observation)
-
-        prov = observation.provenance
-        stored_fact = fact.model_copy(update={"canonical_status": CanonicalStatus.CANDIDATE})
+        columns = fact_columns(fact)
         with self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             existing = self._conn.execute(
-                _SELECT_BY_IDENTITY_VALUE, (content_identity, value_hash)
+                _SELECT_BY_IDENTITY_VALUE, (columns["content_identity"], columns["value_hash"])
             ).fetchone()
             if existing is not None:
                 return self._row_to_revision(existing)
+            content_identity = columns["content_identity"]
             siblings = self._conn.execute(_SELECT_BY_IDENTITY, (content_identity,)).fetchall()
             revision_family = siblings[0]["revision_family"] if siblings else fact.revision_family
-            next_ordinal = self._next_ordinal(content_identity)
             cursor = self._conn.execute(
                 _INSERT,
-                (
-                    content_identity,
-                    value_hash,
-                    revision_family,
-                    next_ordinal,
-                    str(CanonicalStatus.CANDIDATE),
-                    None,
-                    None,
-                    prov.source_id,
-                    prov.file_sha256,
-                    _stable_json(_anchor_payload(observation)),
-                    fact.valid_time_start.isoformat(),
-                    fact.valid_time_end.isoformat() if fact.valid_time_end else None,
-                    fact.knowledge_time.isoformat(),
-                    fact.first_seen_time.isoformat(),
-                    stored_fact.model_dump_json(),
-                    datetime.now(UTC).isoformat(),
-                ),
+                columns
+                | {
+                    "revision_family": revision_family,
+                    "revision_ordinal": self._next_ordinal(str(content_identity)),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
             )
         row_id = int(cursor.lastrowid or 0)
         inserted = self._conn.execute(_SELECT_BY_ROW_ID, (row_id,)).fetchone()
@@ -713,22 +772,6 @@ class FactStore:
         current = row["max_ordinal"] if row is not None else None
         return 1 if current is None else int(current) + 1
 
-    @staticmethod
-    def _require_provenance(observation: Observation) -> None:
-        """Fail closed on any un-provenanced observation."""
-        provenance = getattr(observation, "provenance", None)
-        if provenance is None:
-            raise UnprovenancedFactError("observation is missing provenance")
-        if not provenance.file_sha256:
-            raise UnprovenancedFactError("provenance.file_sha256 must be non-empty")
-        if provenance.anchor_type in _BARRED_ANCHOR_TYPES:
-            raise BarredAnchorFactError(
-                _BARRED_ANCHOR_REASON.format(
-                    anchor=provenance.anchor_type.value,
-                    why=_BARRED_ANCHOR_WHY[provenance.anchor_type],
-                )
-            )
-
     def _row_to_revision(
         self,
         row: sqlite3.Row,
@@ -736,36 +779,5 @@ class FactStore:
         decision: CanonicalSelection | None = None,
     ) -> StoredRevision:
         """Project current status without mutating fact or historical decision rows."""
-        status = CanonicalStatus(row["canonical_status"])
-        selected_raw = row["canonical_selected_at"]
-        selected_at = datetime.fromisoformat(selected_raw) if selected_raw else None
-        reason = row["canonical_reason"]
-        if decision is None:
-            history = self.get_selection_history(row["content_identity"])
-            own = [item for item in history if item.row_id == row["row_id"]]
-            if own:
-                decision = own[-1]
-                status = (
-                    CanonicalStatus.CANONICAL
-                    if history[-1] == decision
-                    else CanonicalStatus.SUPERSEDED
-                )
-        else:
-            status = CanonicalStatus.CANONICAL
-        if decision is not None:
-            selected_at = decision.selected_at
-            reason = decision.reason
-        fact = Fact.model_validate_json(row["fact_json"]).model_copy(
-            update={"canonical_status": status}
-        )
-        return StoredRevision(
-            row_id=int(row["row_id"]),
-            content_identity=row["content_identity"],
-            value_hash=row["value_hash"],
-            revision_family=row["revision_family"],
-            revision_ordinal=int(row["revision_ordinal"]),
-            canonical_status=status,
-            canonical_selected_at=selected_at,
-            canonical_reason=reason,
-            fact=fact,
-        )
+        history = () if decision else self.get_selection_history(row["content_identity"])
+        return project_revision(row, history, decision)

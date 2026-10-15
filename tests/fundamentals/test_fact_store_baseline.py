@@ -7,8 +7,10 @@ or cutoff rules shows up here as a changed selection hash or count.
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from legacy_support import (
     BASELINE_CUTOFFS,
     LEGACY_PATH,
@@ -18,8 +20,11 @@ from legacy_support import (
     legacy_copy,
     second_store,
 )
+from pg_support import PgTestDatabase
+from test_pg_fact_store import imported_store
 
-from fundamentals.store.fact_store import FactRef, FactStore
+from fundamentals.store.fact_store import FactRef, FactStore, FactStoreLike
+from fundamentals.store.pg_fact_store import PgFactStore
 
 FIXTURE = Path(__file__).parent / "fixtures" / "data_foundation" / "fact_store_baseline.json"
 
@@ -33,18 +38,33 @@ def _column(path: Path, sql: str) -> list[object]:
         conn.close()
 
 
-def test_legacy_canonical_baseline_is_unchanged(tmp_path: Path) -> None:
+@pytest.fixture(params=["sqlite", pytest.param("pg", marks=[pytest.mark.pg, pytest.mark.retained])])
+def legacy_store(
+    request: pytest.FixtureRequest, tmp_path: Path
+) -> Iterator[tuple[FactStoreLike, FactRef]]:
+    """The legacy copy opened by ``FactStore``, or imported into PostgreSQL; and row 1's ref."""
+    if request.param == "sqlite":
+        path = legacy_copy(tmp_path)
+        store = FactStore(path)
+        yield store, FactRef(store_id=str(path), origin="sqlite-local", origin_id=1)
+        store.close()
+        return
+    database: PgTestDatabase = request.getfixturevalue("pg_db")
+    store_id = imported_store(database, tmp_path)
+    with database.runtime_pool() as pool:
+        yield PgFactStore(pool, store_id), FactRef(store_id=store_id, origin=store_id, origin_id=1)
+
+
+def test_legacy_canonical_baseline_is_unchanged(
+    legacy_store: tuple[FactStoreLike, FactRef],
+) -> None:
     """Every cutoff returns the recorded selections; the original file is untouched."""
     expected = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    path = legacy_copy(tmp_path)
-    store = FactStore(path)
-    try:
-        assert store.fact_ref(1) == FactRef(store_id=str(path), origin="sqlite-local", origin_id=1)
-        cutoffs = {cutoff.isoformat(): baseline_rows(store, cutoff) for cutoff in BASELINE_CUTOFFS}
-        identities = {row["content_identity"] for row in cutoffs[BASELINE_CUTOFFS[-1].isoformat()]}
-        counts = {str(key): len(store.get_revisions(str(key))) for key in sorted(identities)}
-    finally:
-        store.close()
+    store, ref = legacy_store
+    assert store.fact_ref(1) == ref
+    cutoffs = {cutoff.isoformat(): baseline_rows(store, cutoff) for cutoff in BASELINE_CUTOFFS}
+    identities = {row["content_identity"] for row in cutoffs[BASELINE_CUTOFFS[-1].isoformat()]}
+    counts = {str(key): len(store.get_revisions(str(key))) for key in sorted(identities)}
     assert [len(rows) for rows in cutoffs.values()] == [0, 0, 12, 24, 24]
     assert {"cutoffs": cutoffs, "revision_counts": counts} == expected
     assert file_sha256(LEGACY_PATH) == LEGACY_SHA256

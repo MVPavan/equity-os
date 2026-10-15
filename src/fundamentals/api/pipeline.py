@@ -93,7 +93,7 @@ from fundamentals.output.management_ledger import (
     load_ledger,
     save_ledger,
 )
-from fundamentals.store.fact_store import CanonicalSelectionError, FactStore, StoredRevision
+from fundamentals.store.fact_store import CanonicalSelectionError, FactStoreLike, StoredRevision
 from fundamentals.verify.cross_check import CrossCheckResult, cross_check
 from fundamentals.verify.crossfoot import (
     CrossFootResult,
@@ -182,7 +182,7 @@ def run_pipeline(
     results_pdf_sha256: str,
     transcript_pdf_path: str,
     transcript_pdf_sha256: str,
-    store: FactStore,
+    store: FactStoreLike,
     source_refs: PipelineSourceRefs | None = None,
     evidence_resolver: SourceEvidenceResolver | None = None,
     clock: Callable[[], datetime] | None = None,
@@ -236,7 +236,7 @@ def _run_admitted(
     *,
     config: FundamentalsConfig,
     config_path: Path | None,
-    store: FactStore,
+    store: FactStoreLike,
     prepared: AdmittedPipelineInputs,
 ) -> PipelineResult:
     completed = monotonic_clock(prepared)

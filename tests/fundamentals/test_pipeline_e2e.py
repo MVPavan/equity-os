@@ -20,7 +20,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
 
@@ -42,7 +41,7 @@ from fundamentals.output.earnings_update import (
     VerificationOutcome,
     render_earnings_update,
 )
-from fundamentals.store.fact_store import FactStore
+from fundamentals.store.fact_store import FactStore, FactStoreLike
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
@@ -69,7 +68,7 @@ def _synthetic_xbrl_input(config: FundamentalsConfig) -> XbrlInput:
     )
 
 
-def _run_deterministic(store: FactStore) -> PipelineResult:
+def _run_deterministic(store: FactStoreLike) -> PipelineResult:
     config = _config()
     return run_trusted_fixture_pipeline(
         config=config,
@@ -105,7 +104,7 @@ def _facts_table_values(markdown: str) -> list[str]:
     return values
 
 
-def _stored_value_strings(store: FactStore) -> set[str]:
+def _stored_value_strings(store: FactStoreLike) -> set[str]:
     strings: set[str] = set()
     for revision in store.query_canonical():
         obs = revision.fact.observation
@@ -114,20 +113,13 @@ def _stored_value_strings(store: FactStore) -> set[str]:
     return strings
 
 
-@pytest.fixture()
-def store() -> Iterator[FactStore]:
-    fact_store = FactStore(":memory:")
-    yield fact_store
-    fact_store.close()
-
-
-def test_pipeline_produces_headline_figures(store: FactStore) -> None:
+def test_pipeline_produces_headline_figures(store: FactStoreLike) -> None:
     result = _run_deterministic(store)
     for headline in _EXPECTED_HEADLINES:
         assert headline in result.markdown, headline
 
 
-def test_single_issuer_pipeline_says_comparatives_were_not_attempted(store: FactStore) -> None:
+def test_single_issuer_pipeline_says_comparatives_were_not_attempted(store: FactStoreLike) -> None:
     """The legacy single-issuer path must not imply that it searched for comparators."""
     result = _run_deterministic(store)
 
@@ -138,7 +130,7 @@ def test_single_issuer_pipeline_says_comparatives_were_not_attempted(store: Fact
     assert "No prior-period comparator filings were collected" not in result.markdown
 
 
-def test_every_facts_table_number_resolves_to_a_stored_fact(store: FactStore) -> None:
+def test_every_facts_table_number_resolves_to_a_stored_fact(store: FactStoreLike) -> None:
     result = _run_deterministic(store)
     stored_values = _stored_value_strings(store)
 
@@ -148,21 +140,21 @@ def test_every_facts_table_number_resolves_to_a_stored_fact(store: FactStore) ->
         assert value in stored_values, f"un-sourced number in output: {value!r}"
 
 
-def test_cross_check_passed_on_headline_figures(store: FactStore) -> None:
+def test_cross_check_passed_on_headline_figures(store: FactStoreLike) -> None:
     result = _run_deterministic(store)
     assert len(result.cross_check_results) == 5
     assert all(check.matched for check in result.cross_check_results)
     assert all(check.keys_compatible for check in result.cross_check_results)
 
 
-def test_cross_foot_identities_hold(store: FactStore) -> None:
+def test_cross_foot_identities_hold(store: FactStoreLike) -> None:
     result = _run_deterministic(store)
     assert result.cross_foot_results
     assert all(identity.passed for identity in result.cross_foot_results)
     assert all(identity.residual == Decimal(0) for identity in result.cross_foot_results)
 
 
-def test_two_independent_sources_share_one_revision_family(store: FactStore) -> None:
+def test_two_independent_sources_share_one_revision_family(store: FactStoreLike) -> None:
     _run_deterministic(store)
     revenue = next(
         revision
@@ -176,7 +168,7 @@ def test_two_independent_sources_share_one_revision_family(store: FactStore) -> 
     assert source_ids == {"nse-indas-xbrl-consolidated", "infy-q1-fy25-results-pdf"}
 
 
-def test_render_fails_closed_when_a_required_fact_is_missing(store: FactStore) -> None:
+def test_render_fails_closed_when_a_required_fact_is_missing(store: FactStoreLike) -> None:
     result = _run_deterministic(store)
 
     # Reconstruct the render inputs from the stored canonical facts, then drop one.
@@ -244,7 +236,7 @@ def test_cli_rejects_mismatched_issuer() -> None:
     os.environ.get("RUN_NSE_LIVE") != "1",
     reason="live NSE fetch is opt-in; set RUN_NSE_LIVE=1 to run",
 )
-def test_pipeline_e2e_live_nse(store: FactStore) -> None:
+def test_pipeline_e2e_live_nse() -> None:
     from fundamentals.api.cli import _build_xbrl_input
     from fundamentals.api.config import XbrlMode
 
@@ -257,14 +249,14 @@ def test_pipeline_e2e_live_nse(store: FactStore) -> None:
         results_pdf_sha256=config.results_pdf.sha256,
         transcript_pdf_path=str(config.transcript_pdf_path(_CONFIG_PATH)),
         transcript_pdf_sha256=config.transcript_pdf.sha256,
-        store=store,
+        store=FactStore(":memory:"),
     )
     for headline in _EXPECTED_HEADLINES:
         assert headline in result.markdown
     assert all(check.matched for check in result.cross_check_results)
 
 
-def test_no_bare_unsourced_prior_period_numbers(store: FactStore) -> None:
+def test_no_bare_unsourced_prior_period_numbers(store: FactStoreLike) -> None:
     # The pipeline must not emit inferred comparatives (e.g. prior-quarter revenue
     # 37,923) that do not resolve to a stored Q1 fact.
     result = _run_deterministic(store)

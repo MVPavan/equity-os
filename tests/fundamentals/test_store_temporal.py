@@ -8,15 +8,15 @@ from pathlib import Path
 from threading import Barrier
 
 import pytest
+from conftest import StoreOpener
 from test_store import _fact, _observation
 
-from fundamentals.store.fact_store import CanonicalSelectionError, FactStore
+from fundamentals.store.fact_store import CanonicalSelectionError, FactStore, FactStoreLike
 
 
-def test_later_selection_preserves_earlier_cutoff_after_reopen(tmp_path: Path) -> None:
+def test_later_selection_preserves_earlier_cutoff_after_reopen(open_store: StoreOpener) -> None:
     """A restatement changes current results without changing the July result."""
-    path = tmp_path / "temporal.db"
-    store = FactStore(path)
+    store = open_store()
     original = store.put(_fact())
     store.select_canonical(original.row_id, "original", datetime(2024, 7, 19, tzinfo=UTC))
     restated = store.put(
@@ -30,7 +30,7 @@ def test_later_selection_preserves_earlier_cutoff_after_reopen(tmp_path: Path) -
     store.select_canonical(restated.row_id, "restated", datetime(2024, 8, 2, tzinfo=UTC))
     store.close()
 
-    reopened = FactStore(path)
+    reopened = open_store()
     try:
         past = reopened.get_canonical(
             original.content_identity, cutoff=datetime(2024, 7, 31, tzinfo=UTC)
@@ -49,85 +49,74 @@ def test_later_selection_preserves_earlier_cutoff_after_reopen(tmp_path: Path) -
 
 @pytest.mark.parametrize("field", ["knowledge_time", "first_seen_time"])
 def test_unselected_and_future_known_facts_are_not_historical_evidence(
-    tmp_path: Path, field: str
+    store: FactStoreLike, field: str
 ) -> None:
     """A value alone is not a decision, and first-seen bounds cannot be bypassed."""
-    store = FactStore(tmp_path / "eligibility.db")
-    try:
-        candidate = store.put(_fact())
-        assert store.get_canonical(candidate.content_identity) is None
-        future = store.put(
-            _fact(_observation(normalized_value="6500", raw_value="65000000000")).model_copy(
-                update={field: datetime(2024, 8, 1, tzinfo=UTC)}
-            )
+    candidate = store.put(_fact())
+    assert store.get_canonical(candidate.content_identity) is None
+    future = store.put(
+        _fact(_observation(normalized_value="6500", raw_value="65000000000")).model_copy(
+            update={field: datetime(2024, 8, 1, tzinfo=UTC)}
         )
-        with pytest.raises(CanonicalSelectionError):
-            store.select_canonical(future.row_id, "too early", datetime(2024, 7, 31, tzinfo=UTC))
-        assert store.get_selection_history(candidate.content_identity) == ()
-        store.select_canonical(future.row_id, "eligible", datetime(2024, 8, 1, tzinfo=UTC))
-        assert store.query_canonical(cutoff=datetime(2024, 7, 31, tzinfo=UTC)) == ()
-        assert [
-            row.fact.observation.normalized_value
-            for row in store.query_canonical(cutoff=datetime(2024, 8, 1, tzinfo=UTC))
-        ] == [Decimal("6500")]
-    finally:
-        store.close()
+    )
+    with pytest.raises(CanonicalSelectionError):
+        store.select_canonical(future.row_id, "too early", datetime(2024, 7, 31, tzinfo=UTC))
+    assert store.get_selection_history(candidate.content_identity) == ()
+    store.select_canonical(future.row_id, "eligible", datetime(2024, 8, 1, tzinfo=UTC))
+    assert store.query_canonical(cutoff=datetime(2024, 7, 31, tzinfo=UTC)) == ()
+    assert [
+        row.fact.observation.normalized_value
+        for row in store.query_canonical(cutoff=datetime(2024, 8, 1, tzinfo=UTC))
+    ] == [Decimal("6500")]
 
 
 @pytest.mark.parametrize("field", ["knowledge_time", "first_seen_time"])
-def test_put_rejects_naive_fact_times_without_writing(tmp_path: Path, field: str) -> None:
+def test_put_rejects_naive_fact_times_without_writing(store: FactStoreLike, field: str) -> None:
     """A timezone guess must not silently make a fact eligible for historical use."""
-    store = FactStore(tmp_path / "naive.db")
-    try:
-        fact = _fact().model_copy(update={field: datetime(2024, 7, 18)})
-        with pytest.raises(ValueError, match="aware UTC"):
-            store.put(fact)
-        assert store.get_revisions(FactStore.content_identity_for(fact.observation)) == ()
-    finally:
-        store.close()
+    fact = _fact().model_copy(update={field: datetime(2024, 7, 18)})
+    with pytest.raises(ValueError, match="aware UTC"):
+        store.put(fact)
+    assert store.get_revisions(FactStore.content_identity_for(fact.observation)) == ()
 
 
-def test_invalid_and_stale_decisions_leave_chain_and_reasons_unchanged(tmp_path: Path) -> None:
+def test_invalid_and_stale_decisions_leave_chain_and_reasons_unchanged(
+    store: FactStoreLike,
+) -> None:
     """Rejected decisions neither demote the prior revision nor replace its reason."""
-    store = FactStore(tmp_path / "invalid.db")
-    try:
-        original = store.put(_fact())
-        stamp = datetime(2024, 7, 19, tzinfo=UTC)
-        store.select_canonical(original.row_id, "original", stamp)
-        before = store.get_selection_history(original.content_identity)
-        restated = store.put(_fact(_observation("6400", "64000000000")))
-        for invalid_time in (stamp, datetime(2024, 7, 18, tzinfo=UTC), datetime(2024, 7, 20)):
-            with pytest.raises(ValueError):
-                store.select_canonical(restated.row_id, "invalid", invalid_time)
-        with pytest.raises(KeyError):
-            store.select_canonical(999, "missing", datetime(2024, 7, 20, tzinfo=UTC))
-        with pytest.raises(CanonicalSelectionError):
-            store.select_canonical(
-                restated.row_id, "stale", datetime(2024, 7, 20, tzinfo=UTC), expected_selection_id=0
-            )
-        assert store.get_selection_history(original.content_identity) == before
-        current = store.get_canonical(original.content_identity)
-        assert current is not None and current.row_id == original.row_id
+    original = store.put(_fact())
+    stamp = datetime(2024, 7, 19, tzinfo=UTC)
+    store.select_canonical(original.row_id, "original", stamp)
+    before = store.get_selection_history(original.content_identity)
+    restated = store.put(_fact(_observation("6400", "64000000000")))
+    for invalid_time in (stamp, datetime(2024, 7, 18, tzinfo=UTC), datetime(2024, 7, 20)):
+        with pytest.raises(ValueError):
+            store.select_canonical(restated.row_id, "invalid", invalid_time)
+    with pytest.raises(KeyError):
+        store.select_canonical(999, "missing", datetime(2024, 7, 20, tzinfo=UTC))
+    with pytest.raises(CanonicalSelectionError):
         store.select_canonical(
-            restated.row_id,
-            "restated",
-            datetime(2024, 7, 20, tzinfo=UTC),
-            expected_selection_id=before[0].selection_id,
+            restated.row_id, "stale", datetime(2024, 7, 20, tzinfo=UTC), expected_selection_id=0
         )
-        history = store.get_selection_history(original.content_identity)
-        assert [item.reason for item in history] == ["original", "restated"]
-        assert history[1].predecessor_id == history[0].selection_id
-        retained = store.get_revisions(original.content_identity)
-        assert retained[0].canonical_reason == "original"
-        assert retained[0].canonical_selected_at == stamp
-    finally:
-        store.close()
+    assert store.get_selection_history(original.content_identity) == before
+    current = store.get_canonical(original.content_identity)
+    assert current is not None and current.row_id == original.row_id
+    store.select_canonical(
+        restated.row_id,
+        "restated",
+        datetime(2024, 7, 20, tzinfo=UTC),
+        expected_selection_id=before[0].selection_id,
+    )
+    history = store.get_selection_history(original.content_identity)
+    assert [item.reason for item in history] == ["original", "restated"]
+    assert history[1].predecessor_id == history[0].selection_id
+    retained = store.get_revisions(original.content_identity)
+    assert retained[0].canonical_reason == "original"
+    assert retained[0].canonical_selected_at == stamp
 
 
-def test_concurrent_compare_and_append_has_one_winner(tmp_path: Path) -> None:
+def test_concurrent_compare_and_append_has_one_winner(open_store: StoreOpener) -> None:
     """Two writers naming the same predecessor cannot fork the selection history."""
-    path = tmp_path / "concurrent.db"
-    store = FactStore(path)
+    store = open_store()
     original = store.put(_fact())
     restated = store.put(_fact(_observation("6400", "64000000000")))
     store.select_canonical(original.row_id, "root", datetime(2024, 7, 19, tzinfo=UTC))
@@ -136,8 +125,8 @@ def test_concurrent_compare_and_append_has_one_winner(tmp_path: Path) -> None:
     barrier = Barrier(2)
 
     def select(row_id: int) -> str:
-        """Compete through separate real SQLite connections after a deterministic barrier."""
-        writer = FactStore(path)
+        """Compete through separate real connections after a deterministic barrier."""
+        writer = open_store()
         try:
             barrier.wait(timeout=5)
             try:
@@ -156,7 +145,7 @@ def test_concurrent_compare_and_append_has_one_winner(tmp_path: Path) -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(select, [original.row_id, restated.row_id]))
     assert sorted(results) == ["selected", "stale"]
-    reopened = FactStore(path)
+    reopened = open_store()
     try:
         history = reopened.get_selection_history(original.content_identity)
         assert [item.sequence for item in history] == [1, 2]
@@ -169,17 +158,13 @@ def test_concurrent_compare_and_append_has_one_winner(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "cutoff", [datetime(2024, 7, 20), datetime(2024, 7, 20, tzinfo=timezone(timedelta(hours=5)))]
 )
-def test_canonical_reads_require_aware_utc_cutoff(tmp_path: Path, cutoff: datetime) -> None:
+def test_canonical_reads_require_aware_utc_cutoff(store: FactStoreLike, cutoff: datetime) -> None:
     """Neither read interface silently translates an ambiguous caller cutoff."""
-    store = FactStore(tmp_path / "cutoff.db")
-    try:
-        candidate = store.put(_fact())
-        with pytest.raises(ValueError, match="aware UTC"):
-            store.get_canonical(candidate.content_identity, cutoff=cutoff)
-        with pytest.raises(ValueError, match="aware UTC"):
-            store.query_canonical(cutoff=cutoff)
-    finally:
-        store.close()
+    candidate = store.put(_fact())
+    with pytest.raises(ValueError, match="aware UTC"):
+        store.get_canonical(candidate.content_identity, cutoff=cutoff)
+    with pytest.raises(ValueError, match="aware UTC"):
+        store.query_canonical(cutoff=cutoff)
 
 
 def test_database_failure_rolls_back_selection_and_allows_a_later_append(tmp_path: Path) -> None:
@@ -248,14 +233,13 @@ def test_audit_digest_detects_changed_decision_even_if_trigger_is_bypassed(tmp_p
         store.close()
 
 
-def test_concurrent_put_is_idempotent_and_ordinals_are_unique(tmp_path: Path) -> None:
+def test_concurrent_put_is_idempotent_and_ordinals_are_unique(open_store: StoreOpener) -> None:
     """A locked append prevents duplicate rows and duplicate revision ordinals."""
-    path = tmp_path / "concurrent-put.db"
     barrier = Barrier(2)
 
     def put(value: str) -> int:
         """Append using separate connections, without sharing a thread-bound store."""
-        writer = FactStore(path)
+        writer = open_store()
         try:
             barrier.wait(timeout=5)
             return writer.put(_fact(_observation(value, value))).row_id
@@ -267,7 +251,7 @@ def test_concurrent_put_is_idempotent_and_ordinals_are_unique(tmp_path: Path) ->
         distinct = list(pool.map(put, ["6400", "6500"]))
     assert duplicate[0] == duplicate[1]
     assert distinct[0] != distinct[1]
-    store = FactStore(path)
+    store = open_store()
     try:
         identity = FactStore.content_identity_for(_observation())
         assert [row.revision_ordinal for row in store.get_revisions(identity)] == [1, 2, 3]
