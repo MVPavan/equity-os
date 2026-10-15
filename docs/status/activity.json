@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D2 phase-end review: Sol re-review round 2",
-    "detail": "Fix round 1 committed (222f796): 13 of 14 findings fixed; #6 ruled — the recreation script no longer runs `fundamentals run`, because the real path is refused by the temporal rule (sources registered after Q2 FY26's cutoff). Sol is checking the fixes and the ruling.",
+    "title": "D2 phase-end review: fresh Sol critical review",
+    "detail": "Sol re-review r2 APPROVED all 14 findings (13 fixed, #6 ruling accepted). A fresh Sol session with no prior context is now doing the closing critical review of all of D2.",
     "stage": "eqos-01q"
   },
   "next": [
-    "Fix rounds on Sol's D2 findings (max 3), then one fresh Sol critical review",
+    "Fix and re-review any critical-review findings",
     "Close D2; production cutover stays owner-gated (eqos-3zl)",
     "D3: report ledger (plan written just in time, Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D2 phase re-review r2: Sol APPROVE (14/14 dispositioned); runbook wording aligned (2128a1c)."
+    },
     {
       "date": "2026-10-15",
       "text": "D2 phase fix round 1 committed (222f796): 13 fixed, #6 ruled and recorded in the D2 plan."
