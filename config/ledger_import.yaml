@@ -1,0 +1,19 @@
+# Report-ledger import of the Apar versions (plan D3 Task 5; decisions D6-D8). Read by
+# `fundamentals ledger import` at the composition root. Paths are repo-relative; every file is
+# read-only and stored byte-for-byte as an import source.
+stock: APARINDS
+retrieval_manifest: data/raw/watchlist/aparinds/retrieval-manifest-v2.json
+retrieval_manifest_sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b
+management_ledger: data/ledger/aparinds-management-ledger.json
+# One earnings update per period, in issuer-quarter order: <reports_dir>/<period>/earnings-update.{md,json}
+reports_dir: data/reports/aparinds
+earnings_updates: [FY26_Q2, FY26_Q3, FY26_Q4, FY27_Q1]
+q0:
+  period: FY26_Q2
+  markdown: docs/evidence/phase-0.5/q0-approved-thesis.md
+  twin: docs/evidence/phase-0.5/q0-approved-thesis.yaml
+  cutoff: 2025-11-06
+  # The commit that recorded the owner's ruling with the approved files (evidence rule).
+  evidence_commit: 4f0afa25cd1156b2d867e967367e7a2db1805d54
+  decided_on: 2026-09-07
+  ruling: accept all

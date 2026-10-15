@@ -250,6 +250,15 @@ def latest_validation(cursor: Cursor[Any], version_id: int) -> Validation | None
     )
 
 
+def insert_qa_record(
+    cursor: Cursor[Any], *, version_id: int, gate: str, result: Mapping[str, Any]
+) -> int:
+    """Append one imported automated gate result (never a decision); returns its id."""
+    return _insert(
+        cursor, "qa_records", {"version_id": version_id, "gate": gate, "result": Jsonb(result)}
+    )
+
+
 def insert_acquisitions(cursor: Cursor[Any], manifest_bytes: bytes, *, expected_sha256: str) -> int:
     """Record each retrieval-manifest entry's retrieval time for its blob (D8); returns how
     many rows were new. Refuses bytes other than the pinned manifest's."""

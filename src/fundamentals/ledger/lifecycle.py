@@ -8,6 +8,7 @@ readable refusal, and the decision trigger stays authoritative.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from functools import partial
 from typing import Any, LiteralString
@@ -23,6 +24,7 @@ from fundamentals.contracts.ledger import (
     DecisionKind,
     DecisionRecord,
     PolicyValue,
+    ResolvedCitation,
     SubjectKind,
     Validation,
     VersionStatus,
@@ -149,8 +151,11 @@ def validate(
     mode: RunMode,
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
+    bound: Mapping[str, ResolvedCitation] | None = None,
 ) -> Validation:
-    """Check every claim at the current overlay boundary and append the validation."""
+    """Check every claim at the current overlay boundary and append the validation. ``bound``
+    (imports only) replaces, per claim key, the resolved fields its source binds: a quote's
+    parsed guidance contract, a self-cited policy's parsed source field."""
     boundary = overlay_boundary(pool)
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(_LOCK, (V.value, version_id))
@@ -159,13 +164,16 @@ def validate(
         assert row is not None
         imported = bool(draft.import_sources)
         resolved = {
-            claim.claim_key: resolve_citation(
-                cursor,
-                claim,
-                entity_id=row[0],
-                overlay_position=boundary,
-                catalog=catalog,
-                snapshots=snapshots,
+            claim.claim_key: _bind(
+                resolve_citation(
+                    cursor,
+                    claim,
+                    entity_id=row[0],
+                    overlay_position=boundary,
+                    catalog=catalog,
+                    snapshots=snapshots,
+                ),
+                (bound or {}).get(claim.claim_key),
             )
             for claim in draft.claims
         }
@@ -205,6 +213,15 @@ def validate(
         stored = store.latest_validation(cursor, version_id)
     assert stored is not None and stored.id == validation_id
     return stored
+
+
+def _bind(
+    resolved: ResolvedCitation | None, bound: ResolvedCitation | None
+) -> ResolvedCitation | None:
+    """``resolved`` with the fields ``bound`` sets; an unresolved citation stays unresolved."""
+    if resolved is None or bound is None:
+        return resolved
+    return resolved.model_copy(update={k: getattr(bound, k) for k in bound.model_fields_set})
 
 
 def decide(
