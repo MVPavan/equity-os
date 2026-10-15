@@ -540,6 +540,11 @@ class FactStore:
         """Public helper: the content-identity key for an observation."""
         return _content_identity(observation)
 
+    @staticmethod
+    def value_hash_for(observation: Observation) -> str:
+        """Public helper: the value hash for an observation."""
+        return _value_hash(observation)
+
     def put(self, fact: Fact) -> StoredRevision:
         """Store ``fact`` append-only; never overwrite an existing revision.
 

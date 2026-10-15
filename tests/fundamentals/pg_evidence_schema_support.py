@@ -7,6 +7,7 @@ grant (SELECT and INSERT) that the refusals then bound.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -31,7 +32,7 @@ SHA_A = "a" * 64
 SHA_B = "b" * 64
 # 0001's 33 tables, 0003's version_pins, 0006's four queue tables, 0007's construction_traces
 # and 0008's queue_item_traces.
-EXPECTED_TABLE_COUNT = 40
+EXPECTED_TABLE_COUNT = 47
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -575,7 +576,44 @@ def seeded(runtime: psycopg.Connection) -> dict[str, int]:
                 "evidence_ref": "constructed-only",
             },
         )
+    _seed_legacy_store(runtime, ids)
     return ids
+
+
+def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
+    """One row in each D2 fact-store table (composite keys, so no returned id)."""
+    store, row = {"target_store": "sqlite-seed"}, {"target_store": "sqlite-seed", "row_handle": 1}
+    origin = store | {"handle": 1, "origin": "sqlite-seed", "origin_id": 1, "content_identity": "c"}
+    rows: dict[str, dict[str, Any]] = {
+        "fact_stores": {"store_id": "sqlite-seed", "kind": "LEGACY_SQLITE", "file_label": "seed"}
+        | {"file_sha256": SHA_A},
+        "fact_rows": origin
+        | {"value_hash": "v", "revision_family": "f", "revision_ordinal": 1}
+        | {"canonical_status": "canonical", "source_id": "s", "file_sha256": SHA_A, "anchor": "{}"}
+        | {"valid_time_start": "2025-07-01", "knowledge_time": "t", "first_seen_time": "t"}
+        | {"fact_json": "{}", "created_at": "t"},
+        "fact_selections": origin
+        | {"row_handle": 1, "sequence": 1, "selected_at": "t", "reason": "r"}
+        | {"legacy_baseline": True, "synthesized": True, "selection_sha256": SHA_B},
+        "legacy_fact_translations": row
+        | {"translation_version": "v", "entity_id": ids["_entity"], "canonical_id": "revenue"}
+        | {"basis": "CONSOLIDATED", "framework": "IND_AS", "value_kind": "CURRENCY_AMOUNT"}
+        | {"dimension_set": Jsonb([])},
+        "legacy_evidence_bindings": row
+        | {"capture_ref_id": ids["_capture"], "file_sha256": SHA_A, "anchor": "{}"},
+        "legacy_imports": {"store_id": "sqlite-seed", "manifest_sha256": SHA_A}
+        | {"preflight_sha256": SHA_B, "file_sha256": SHA_A},
+    }
+    with conn.transaction():
+        for table, values in rows.items():
+            _insert_ignoring_conflict(conn, table, values)
+            ids[table] = 0
+        ids["fact_store_events"] = _insert(
+            conn,
+            "fact_store_events",
+            {"store_id": "sqlite-seed", "operation_id": uuid.uuid4(), "state": "IMPORTED"}
+            | {"recorded_at": NOW},
+        )
 
 
 def _tables(conn: psycopg.Connection) -> list[str]:

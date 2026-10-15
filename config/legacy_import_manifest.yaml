@@ -1,0 +1,8 @@
+# Production legacy import manifest (plan D2, Task 2; spec §6 step 1). Unapproved: Sol appends
+# the approval line, and the owner's IMPORT record cites the approved preflight (bead eqos-3zl).
+files:
+- label: aparinds
+  new_import: false
+  path: data/store/aparinds.sqlite
+  sha256: cb02b0f12a1708d07f4e8f1dbaefd59bb89762897b6de242c03da9f9a8157bd8
+snapshot_root: data/raw/snapshots/v1

@@ -70,14 +70,14 @@ def test_every_table_refuses_update_and_delete_for_both_roles(
     for table in tables:
         target = sql.Identifier(SCHEMA_NAME, table)
         column = sql.Identifier(_update_column(migrator, table))
-        update = sql.SQL("UPDATE {} SET {} = {} WHERE id = %s").format(target, column, column)
-        delete = sql.SQL("DELETE FROM {} WHERE id = %s").format(target)
-        row_id = (seeded[table],)
+        # Every row, not one id: the D2 fact-store tables have composite keys.
+        update = sql.SQL("UPDATE {} SET {} = {}").format(target, column, column)
+        delete = sql.SQL("DELETE FROM {}").format(target)
         for statement in (update, delete):
             with pytest.raises(errors.InsufficientPrivilege):
-                runtime.execute(statement, row_id)
+                runtime.execute(statement)
             with pytest.raises(errors.RaiseException, match="immutable"):
-                migrator.execute(statement, row_id)
+                migrator.execute(statement)
         with pytest.raises(errors.InsufficientPrivilege):
             runtime.execute(sql.SQL("TRUNCATE {} CASCADE").format(target))
         with pytest.raises(errors.RaiseException, match="immutable"):
