@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3.6: deterministic narrative export",
-    "detail": "D3.5 committed (031db00): four Apar earnings updates import as HISTORICAL, the Q0 thesis as APPROVED (its commit holds the same bytes on its decided date); guidance checked against the management ledger. Opus is building D3.6: `ledger export` must reproduce every imported version's content hash.",
-    "stage": "eqos-uqu.6"
+    "title": "D3.4: approval panel and queue role gating",
+    "detail": "D3.6 committed (dff5d1a): `ledger export` reproduces all five imported Apar content hashes byte for byte. Opus is building D3.4: single-reviewer panel (fake adapter), disposition proposals bound to the exact queued pair, owner precedence, migration 0013.",
+    "stage": "eqos-uqu.4"
   },
   "next": [
-    "D3.4 approval panel and queue role gating",
-    "D3.7 amendments → D3.8 frozen manifest → D3.9 e2e → phase review",
+    "D3.7 amendments and CONTEXT.md",
+    "D3.8 frozen ledger manifest (Sol-approved) → D3.9 e2e → D3 phase review",
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.6 narrative export committed (dff5d1a); all five content hashes reproduced."
+    },
     {
       "date": "2026-10-15",
       "text": "D3.5 lossless Apar imports committed (031db00); 245 tests incl. Stage 1/2 e2e pass."
