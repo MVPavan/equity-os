@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D3.8: Sol review of the frozen ledger manifest",
-    "detail": "Manifest hand-authored from source bytes (aid never imports product code): 5 versions, 56 sections, 198 claims, every value bound to a source locator; mutation checks fail as they should. Sol is recomputing samples from the raw files before approval.",
-    "stage": "eqos-uqu.8"
+    "title": "D3.9: ledger Stage 1 end-to-end",
+    "detail": "Opus is building the e2e: import all five reports into a test database and compare every section, claim, measurement key and state against the approved manifest; FY27_Q1 revenue POST_CUTOFF then a corrective version MATCH; export and backup checks.",
+    "stage": "eqos-uqu.9"
   },
   "next": [
-    "Sol review loop on the ledger manifest; commit before the e2e",
-    "D3.9 ledger Stage 1 e2e → D3.7 amendments → D3 phase review",
+    "Commit the e2e, then D3.7 amendments 3/5/7/8 + glossary",
+    "D3 phase-end Sol review loop and fresh critical review",
     "Follow-ups F1 (eqos-tqf), F2 (eqos-hsh); flake eqos-1kq; owner-gated cutover eqos-3zl"
   ],
   "log": [
+    {
+      "date": "2026-10-15",
+      "text": "D3.8 ledger manifest approved by Sol in round 2 (complete measurement keys frozen) and committed (ed1ebce)."
+    },
     {
       "date": "2026-10-15",
       "text": "Helper move committed (d1a886d); ledger Stage 1 manifest authored (payload cfb10c99…), Sol review r1 dispatched."
