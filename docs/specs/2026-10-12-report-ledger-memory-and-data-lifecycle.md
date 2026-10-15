@@ -15,7 +15,10 @@ decision kinds and lifecycle, §6 item 11, Success Criteria Stage 1. Also (D3 pl
 Display style list gains `trim`, and an owner `SET_POLICY` decision takes the report as subject.
 Also (D3 plan, critical review): interpretation decisions are owner-only until follow-up F2
 adds panel acceptance with deterministic-provenance replay (a revision cause is descriptive, not
-proof that code produced the value); nothing consumes interpretation approvals before F2.*
+proof that code produced the value); nothing consumes interpretation approvals before F2.
+Also (D4 plan amendments A1, A2, C2, C3, R, M9; 2026-10-15, approved by Sol): §2 support predicate and
+`RETIRE`, `MemoryStore` operations, memory item fields, the `LESSON` exception, and the quote
+guidance-contract binding.*
 
 ## Problem Statement
 
@@ -226,6 +229,8 @@ manifest), never a time written inside a report. A date-only cutoff ends at 24:0
 | 8 | Cited cell untrusted (data spec §5) at the validation's overlay position | `MATCH_UNTRUSTED` |
 | 9 | Otherwise | `MATCH` |
 
+A drafted quote claim's guidance contract is bound only by deterministic recomputation from the panel `IMPORT_SEAL`-sealed management-ledger source of an import citing the same quote (same capture blob hash, parsed anchor and quote): exactly one distinct contract, or none (fail closed). Contracts for quotes no sealed import covers remain open (bead `eqos-0eu`) (amended 2026-10-15, D4 plan M9/G1).
+
 Each check appends a validation. Approval binds the latest, which must be `AS_KNOWN`, cover the
 sealed digest, have no version-level state, and every claim `MATCH` or `MATCH_UNTRUSTED` (listed
 in the status note); else it blocks. `RETROSPECTIVE` validations (imports, hindsight) never bind
@@ -277,9 +282,9 @@ report changes no memory item.
 
 | Entity | Holds |
 |---|---|
-| Memory item | Stock (entity id, or none for cross-stock kinds), kind, statement (short plain text, length-capped), epistemic class, valid-from, valid-to (open allowed), recorded-at (knowledge time for C-15), supersedes-item id, content hash, small JSONB extras |
+| Memory item | Stock (entity id, or none for cross-stock kinds), kind, statement (short plain text, length-capped), epistemic class, valid-from, valid-to (open allowed), recorded-at (knowledge time for C-15), supersedes-item id, content hash, small JSONB extras (content hash and extras are not stored: the recomputed sealed digest is the content hash and nothing needs extras; amended 2026-10-15, D4 plan C3) |
 | Memory support | Item id → numeric claim, report version, definition record (data spec §5), queue disposition, decision, or capture. Every item has ≥1 support, inserted with the item |
-| Decision | As §1; kinds `PROMOTE`, `REJECT_CANDIDATE`, `RETIRE` (panel or owner role) |
+| Decision | As §1; kinds `PROMOTE`, `REJECT_CANDIDATE`, `RETIRE` (panel or owner role). Until the real reviewer adapter (F1) ships, `RETIRE` is owner-only; F1 delivers panel retirement (amended 2026-10-15, D4 plan A2) |
 
 **Kinds.** The data spec's definition records and mapping facts are the sole authority for how a
 source's number is defined; memory never restates them.
@@ -296,7 +301,9 @@ source's number is defined; memory never restates them.
 **Support predicate:** every support meets its kind's requirement: a version in the stated status
 (`APPROVED` for "approved"; `SUPERSEDED` fails) whose latest validation is `AS_KNOWN`, covers its
 sealed digest, has no version-level state and has every claim `MATCH` (an imported `APPROVED` version only once one exists); a
-claim in such a version; an unsuperseded disposition. Checked at staging and in the `PROMOTE` transaction (SERIALIZABLE); any failure refuses.
+claim in such a version; an unsuperseded disposition. Checked at staging and in the `PROMOTE` transaction at READ COMMITTED under the queue lock, which every write that can falsify a support (a validation, a withdrawal, a superseding approval, a disposition) also holds from before its first store-clock read; any failure refuses, and a `PROMOTE` at REPEATABLE READ or SERIALIZABLE is refused. It is re-checked when the `PROMOTE` transaction commits, so `PROMOTE` cannot itself falsify a support afterwards; `PROMOTE` must be the last ledger or queue write of its transaction (amended 2026-10-15, D4 plan A1).
+
+**`LESSON` exception:** a `LESSON` may cite a version whose head is `REJECT` as evidence that a mistake occurred, never that version's claims, which stay untrusted (amended 2026-10-15, D4 plan R).
 
 **Lifecycle** (status derived from decisions, P1):
 
@@ -323,7 +330,7 @@ misses full-text search causes.
 
 **`MemoryStore` interface (D-01).** Engine-neutral: retrieve (query, stock, kinds, cutoff →
 promoted items with supports and flags, as known at cutoff); stage; promote; correct; retire;
-export; provenance (item → supports → figures and captures). PostgreSQL is D-02's
+export; provenance (item → supports → figures and captures). In D4 these map to `decide` (promote, retire), `stage(supersedes_item_id=…)` (correct) and, for export, D5.1 (amended 2026-10-15, D4 plan C2). PostgreSQL is D-02's
 "Git/Markdown/SQL" arm; a GBrain arm implements the same interface. The comparator and report
 checks never read memory.
 
