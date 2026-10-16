@@ -1,14 +1,19 @@
 {
   "now": {
-    "title": "D6 identifier-only onboarding: phase plan",
-    "detail": "D5 generated views is complete on test databases and approved by Sol. Next: Opus writes the D6 phase plan; Sol reviews it before any code.",
-    "stage": "D6"
+    "title": "D6 Task 0b: capability evidence before the held-out draw",
+    "detail": "D6 plan approved by Sol after three review rounds, a fresh critical review (13 findings) and its re-review (82a84db). Scope ruling: no generic PDF parser in D6 (bead eqos-yqi); the held-out company's expected outcome is PARTIAL with the results PDF excluded, fixed by rule before the draw. Opus is pinning the Nifty 500 frame, the financial-sector signal and the exchange lookups; then an isolated worker draws the held-out company.",
+    "stage": "eqos-h4h.1"
   },
   "next": [
-    "D6 stages after plan approval",
-    "Follow-ups: eqos-d60, eqos-7pr, eqos-tqf, eqos-0eu, G3; flakes eqos-1kq, eqos-bhy"
+    "D6.1 held-out draw and record (Sol approves)",
+    "D6.2–D6.4 implementation, Sol review, freeze, acquisition, manifest, e2e",
+    "Follow-ups: eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60, eqos-7pr, eqos-tqf, eqos-0eu"
   ],
   "log": [
+    {
+      "date": "2026-10-16",
+      "text": "D6 plan approved (82a84db) after capability probe, three Sol rounds, fresh critical review and re-review. Owner allowed additive writes to new D6 data/ subfolders. Task 0b dispatched."
+    },
     {
       "date": "2026-10-15",
       "text": "D5 complete (epic eqos-tfb closed): critical review REJECT (3) → fixes fde6b16 → re-review APPROVE; full suite 3601 passed. SQL-level SUBMIT hash gap filed as eqos-7pr. Roadmap 40/66 stages."
