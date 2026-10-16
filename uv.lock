@@ -464,7 +464,9 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pymupdf" },
     { name = "pyyaml" },
+    { name = "requests" },
     { name = "structlog" },
+    { name = "urllib3" },
 ]
 
 [package.optional-dependencies]
@@ -498,7 +500,9 @@ requires-dist = [
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rapidocr-onnxruntime", marker = "extra == 'ocr'", specifier = ">=1.4.0" },
+    { name = "requests", specifier = ">=2" },
     { name = "structlog", specifier = ">=26.1.0" },
+    { name = "urllib3", specifier = ">=2" },
 ]
 provides-extras = ["ocr"]
 
