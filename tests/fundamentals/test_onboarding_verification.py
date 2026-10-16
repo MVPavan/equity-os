@@ -144,13 +144,14 @@ def test_filing_window_counts_distinct_periods_after_collapse() -> None:
 
 
 def test_filing_window_counts_a_listed_twice_row_once_and_drops_empty_broadcasts() -> None:
-    """D1.3 clarification, one reading with the holdout oracle: identical rows are one filing
-    (no tie), and a missing or empty broadcast time leaves its period out."""
+    """D1.3 clarification, one reading with the holdout oracle: rows identical but for an
+    ignored field (``seq_Id``) are one filing (no tie), and a missing, empty or blank broadcast
+    time leaves its period out."""
     jun = _row("30-JUN-2026", "Consolidated", "24-Jul-2026 18:33:13")
     mar = _row("31-MAR-2026", "Consolidated", "28-May-2026 20:51:11")
-    twice = _window(jun, dict(jun), mar)
-    assert not twice.tied
-    assert [f.period_end for f in twice.filings] == [date(2026, 6, 30), date(2026, 3, 31)]
+    for twice in (_window(jun, dict(jun), mar), _window(jun, jun | {"seq_Id": "2"}, mar)):
+        assert not twice.tied
+        assert [f.period_end for f in twice.filings] == [date(2026, 6, 30), date(2026, 3, 31)]
     for empty in (None, "", "  "):
         dropped = _window(_row("30-JUN-2026", "Consolidated", empty), mar)
         assert [f.period_end for f in dropped.filings] == [date(2026, 3, 31)], empty

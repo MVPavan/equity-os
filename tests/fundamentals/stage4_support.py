@@ -253,16 +253,23 @@ def qualifying_periods(rows: Iterable[dict[str, Any]], as_of: date) -> int | Non
     """D1.3 filing-window rule over rows of both NSE listings: collapse each (period_end, basis)
     to its latest broadcast, count distinct period ends of collapsed consolidated in-capmkt rows;
     None when a group's latest broadcast is tied. Broadcast is the listing's own field only: a
-    group with a row that has none cannot be ordered and yields no qualifying period."""
+    group with a row that has none (missing, empty or blank) cannot be ordered and yields no
+    qualifying period. Rows equal on the parsed fields (period end, basis, broadcast, listing,
+    type, XBRL link) are one filing; any other field, e.g. ``seq_Id``, is ignored."""
     window = quarter_ends(as_of)
     groups: dict[tuple[date, str], list[tuple[datetime | None, bool]]] = defaultdict(list)
-    for row in {json.dumps(r, sort_keys=True): r for r in rows}.values():  # identical rows once
-        integrated, end = "qe_Date" in row, period_end(row)
-        when = row.get("broadcast_Date" if integrated else "broadCastDate") or None  # "" is none
-        basis = row.get("consolidated")
+    parsed = {}
+    for row in rows:
+        integrated = "qe_Date" in row
+        text = (row.get("broadcast_Date" if integrated else "broadCastDate") or "").strip()
+        when = datetime.strptime(text, MOMENT) if text else None
+        xbrl = (row.get("xbrl") or "").strip() or None
+        key = (period_end(row), row.get("consolidated"), when, integrated, row.get("type"), xbrl)
+        parsed[key] = None
+    for end, basis, when, integrated, kind, _ in parsed:
         if end in window and basis:
-            qualifies = integrated and row.get("type") == FINANCIALS and basis == CONSOLIDATED
-            groups[end, basis].append((when and datetime.strptime(when, MOMENT), qualifies))
+            qualifies = integrated and kind == FINANCIALS and basis == CONSOLIDATED
+            groups[end, basis].append((when, qualifies))
     periods = set()
     for (end, _), filings in groups.items():
         times = [when for when, _ in filings]
@@ -607,7 +614,7 @@ def check_ordering(repo: Path) -> None:
     need(len(attempts) - 1 <= len(burns) <= len(attempts), "current attempt")
     entries = introductions(repo, RECORD, "attempts", "n")
     burned = introductions(repo, RECORD, "burns", "attempt")
-    frozen = introductions(repo, FREEZE, "freezes", "attempt") if frozen_entries else {}
+    frozen = introductions(repo, FREEZE, "freezes", "attempt")  # an emptied list is a removal
     for entry, intro in [
         *((a, entries[a["n"]]) for a in attempts),
         *((b, burned[b["attempt"]]) for b in burns),

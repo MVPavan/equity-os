@@ -169,6 +169,11 @@ def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
         commit(repo, {FREEZE: frozen((impl, one), (fix, two))})
     if violation == "impl-after-freeze":
         commit(repo, {"src/app.py": "x = 4\n"})
+    if violation in REMOVALS:
+        commit(repo, {FREEZE: REMOVALS[violation]})
+
+
+REMOVALS = {"freeze-list-emptied": "freezes: []\n", "freeze-file-deleted": None}
 
 
 @pytest.mark.parametrize("redraw", [False, True], ids=["initial", "burn-refreeze-redraw"])
@@ -189,6 +194,7 @@ def test_ordering_accepts_the_d15_sequence(repo: Path, redraw: bool) -> None:
             for kind in ("attempt", "burn", "freeze")
             for how in ("edited-then-restored", "appended-then-deleted")
         ),
+        *((removal, "entry changed after its commit") for removal in REMOVALS),
     ],
 )
 def test_ordering_refuses_violations(repo: Path, violation: str, step: str) -> None:
@@ -197,6 +203,12 @@ def test_ordering_refuses_violations(repo: Path, violation: str, step: str) -> N
     with pytest.raises(FAILED) as failed:
         CHECKS["ordering"](repo)
     assert str(failed.value) == f"stage4_holdout ordering: {step}"
+
+
+def test_ordering_accepts_a_repository_never_frozen(repo: Path) -> None:
+    """No freeze file in any commit: there is no freeze history to remove."""
+    leak_repo(repo)
+    CHECKS["ordering"](repo)
 
 
 def leak_repo(repo: Path) -> None:
@@ -291,12 +303,14 @@ JUN, MAR, T1, T2 = "30-JUN-2026", "31-MAR-2026", "01-Aug-2026 10:00:00", "05-Aug
     [
         ([listing_row(JUN, T1), listing_row(JUN, T2, seq_Id="2")], 1),
         ([listing_row(JUN, T1), listing_row(MAR, T1)], 2),
-        ([listing_row(JUN, T1), listing_row(JUN, T1, seq_Id="2"), listing_row(MAR, T1)], None),
+        ([listing_row(JUN, T1), listing_row(JUN, T1, xbrl="b.xml"), listing_row(MAR, T1)], None),
         ([listing_row(JUN, T1), listing_row("31-MAR-2025", T1)], 1),
         ([listing_row(JUN, T2, consolidated="Standalone"), listing_row(MAR, T1)], 1),
         ([listing_row(JUN, T1), listing_row(JUN, None, seq_Id="2"), listing_row(MAR, T1)], 1),
         ([listing_row(JUN, T1), listing_row(JUN, "", seq_Id="2"), listing_row(MAR, T1)], 1),
         ([listing_row(JUN, T1), listing_row(JUN, T1), listing_row(MAR, T1)], 2),
+        ([listing_row(JUN, T1), listing_row(JUN, T1, seq_Id="2"), listing_row(MAR, T1)], 2),
+        ([listing_row(JUN, " ", seq_Id="2"), listing_row(MAR, T1)], 1),
     ],
     ids=[
         "two-revisions-one-period",
@@ -307,6 +321,8 @@ JUN, MAR, T1, T2 = "30-JUN-2026", "31-MAR-2026", "01-Aug-2026 10:00:00", "05-Aug
         "unbroadcast-row-voids-its-period",
         "empty-broadcast-voids-its-period",
         "identical-rows-collapse-once",
+        "rows-differing-only-in-seq-id-collapse-once",
+        "blank-broadcast-voids-its-period",
     ],
 )
 def test_filing_window_rule(rows: list[dict[str, Any]], expected: int | None) -> None:

@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 import requests
+import urllib3
 import yaml
 from onboarding_support import (
     APAR,
@@ -55,12 +56,13 @@ from fundamentals.api.onboard_cli import RETRIEVAL_NAME
 from fundamentals.contracts.source_catalog import VENDOR_SURFACES
 from fundamentals.entity.discovery import (
     MANIFEST_NAME,
+    Capture,
     Request,
     acquiring_fetch,
     authorised,
 )
 from fundamentals.ingest.http_session import ResponseTooLargeError
-from fundamentals.ingest.nse_filings import listing_url
+from fundamentals.ingest.nse_filings import NSE_API, listing_url
 
 __all__ = ["cli"]
 
@@ -364,13 +366,15 @@ def _no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 class _NseResponse:
     """A fake streamed ``requests`` response."""
 
-    def __init__(self, status: int, body: bytes = b"") -> None:
+    def __init__(self, status: int, body: bytes | Exception = b"") -> None:
         self.status_code = status
         self.raw = self
         self.body = body
 
     def read(self, amount: int, decode_content: bool) -> bytes:
         assert decode_content
+        if isinstance(self.body, Exception):
+            raise self.body  # the streamed body read fails after the 200
         return self.body[:amount]
 
     def __enter__(self) -> _NseResponse:
@@ -393,6 +397,8 @@ class _NseSession:
         return self.reply
 
 
+BODY_TIMEOUT = urllib3.exceptions.ReadTimeoutError(None, "/", "read timed out")  # type: ignore[arg-type]
+_STALLED = _NseResponse(200, BODY_TIMEOUT)
 NSE_LISTING = Request(
     unit=U.EXCHANGE,
     source_id="nse",
@@ -408,20 +414,51 @@ NSE_LISTING = Request(
         (_NseResponse(403), "HTTP_403"),
         (_NseResponse(302), "HTTP_302"),
         (requests.ReadTimeout(), "TIMEOUT"),
+        (_NseResponse(200, BODY_TIMEOUT), "TIMEOUT"),
+        (
+            _NseResponse(200, urllib3.exceptions.ProtocolError("connection broken")),
+            "TRANSPORT_ERROR",
+        ),
     ],
 )
 def test_the_nse_boundary_keeps_the_http_status_and_follows_no_redirect(
     reply: _NseResponse | Exception, expected: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The installed client's session is called without redirects and streamed: a 403 is
-    HTTP_403 (not a transport error), a redirect is its own status, a timeout TIMEOUT."""
-    session = _NseSession(reply)
+    HTTP_403 (not a transport error), a redirect is its own status, a timeout TIMEOUT — also
+    when the streamed body read fails after the 200 — and each failure is a logged entry."""
+    session, log = _NseSession(reply), list[Capture]()
     monkeypatch.setattr(onboard_cli, "nse_session", lambda: nullcontext(session))
     _no_credentials(monkeypatch)
-    fetch = acquiring_fetch(onboard_cli.live_transport(), lambda: CLOCK, [])
+    fetch = acquiring_fetch(onboard_cli.live_transport(), lambda: CLOCK, log)
     assert fetch(NSE_LISTING, True).outcome == expected
+    assert [item.response.outcome for item in log] == [expected]
     options = {"timeout": onboard_cli.TIMEOUT_SECONDS, "allow_redirects": False, "stream": True}
     assert session.options == [options]
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_listing_body_timing_out_is_retained_and_exits_cleanly(
+    cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The NSE listing answers 200 and its streamed body read times out: the acquisition keeps
+    the request as a TIMEOUT entry and the command fails with exit 5, no record."""
+    repo, _, entry = freeze_repo(tmp_path)
+    monkeypatch.setattr(onboard_cli, "nse_session", lambda: nullcontext(_NseSession(_STALLED)))
+    _no_credentials(monkeypatch)
+    nse, served = onboard_cli.live_transport(), serving_transport(world(APAR))
+    monkeypatch.setattr(
+        onboard_cli,
+        "live_transport",
+        lambda: lambda request: (nse if request.url.startswith(NSE_API) else served)(request),
+    )
+    monkeypatch.setattr(onboard_cli, "now", lambda: CLOCK)
+    raw = tmp_path / "raw"
+    assert cli(APAR, raw, "--acquire", "--freeze-descriptor", str(freeze(repo, entry))) == FAILURE
+    last = _manifest_entries(raw / "gen-1")[-1]
+    assert last["url"].startswith(NSE_API) and last["outcome"] == "TIMEOUT"
+    assert count(pg_db, "onboarding_records") == 0
 
 
 def test_the_nse_boundary_refuses_an_oversized_body(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -239,6 +239,12 @@ def table_counts(db: PgTestDatabase) -> tuple[int, int, int]:
 
 def seed(db: PgTestDatabase, key: str, isin: str, nse: str, bse: str) -> int:
     """A synthetic D1a issuer; returns its entity id."""
+    with db.runtime_pool() as pool, pool.connection() as conn:
+        return seed_on(conn, key, isin, nse, bse)
+
+
+def seed_on(conn: Any, key: str, isin: str, nse: str, bse: str) -> int:
+    """:func:`seed` on ``conn`` (inside its open transaction, if any)."""
     identity = IssuerIdentityInput(
         entity_key=key,
         display_name=f"{key} Synthetic Limited",
@@ -251,8 +257,7 @@ def seed(db: PgTestDatabase, key: str, isin: str, nse: str, bse: str) -> int:
         citations=(),
         content_sha256=hashlib.sha256(key.encode()).hexdigest(),
     )
-    with db.runtime_pool() as pool, pool.connection() as conn:
-        return seed_issuer_identity(conn, identity).entity_ids[key]
+    return seed_issuer_identity(conn, identity).entity_ids[key]
 
 
 def event(

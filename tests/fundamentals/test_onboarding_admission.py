@@ -40,6 +40,7 @@ from onboarding_support import (
     rename,
     rows,
     seed,
+    seed_on,
     synthetic_isin,
     table_counts,
     world,
@@ -333,6 +334,47 @@ def test_an_identity_event_during_onboarding_refuses_the_stale_resolution(
         refs,
         lambda conn: event(conn, IdentityEventKind.SYMBOL_CHANGE, CHANGED_ON, change, NEW_SYMBOL),
     )
+    assert isinstance(result, OnboardingAbortError)
+    assert count(pg_db, "onboarding_records") == 0
+
+
+def _new_issuer_with_history(conn: Any) -> None:
+    """A concurrent creation of Apar whose symbol was ``ZZOLD`` until a SYMBOL_CHANGE between
+    the two filing dates, ending at today's APARINDS."""
+    seed_on(conn, "ZZRACE", APAR_ISIN, "ZZOLD", APAR_SCRIP)
+    event(
+        conn,
+        IdentityEventKind.SYMBOL_CHANGE,
+        CHANGED_ON,
+        (IdentifierNamespace.NSE_SYMBOL, "ZZOLD"),
+        APAR,
+    )
+
+
+def _history_rewritten(conn: Any) -> None:
+    """Apar's symbol was ``ZZOLD`` around the Mar filing date; its current symbol is unchanged."""
+    symbol = IdentifierNamespace.NSE_SYMBOL
+    event(conn, IdentityEventKind.SYMBOL_CHANGE, date(2026, 5, 1), (symbol, APAR), "ZZOLD")
+    event(conn, IdentityEventKind.SYMBOL_CHANGE, CHANGED_ON, (symbol, "ZZOLD"), APAR)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize("existing", [False, True])
+def test_a_dated_identity_change_during_onboarding_refuses_the_older_filing(
+    existing: bool, pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """D3.4/C8 under the locks: the owner resolved at recording (created concurrently, or the
+    existing one) holds today's values but held another symbol at the Mar filing's date, so
+    that filing conflicts — recording refuses (no record) instead of reusing the owner."""
+    if existing:
+        seed_apar(pg_db)
+    found, refs = _discovered(pg_db, tmp_path)
+    assert all(
+        state == S.VERIFIED for state, _ in (found.states[U.EXCHANGE], found.states[U.XBRL_ENTITY])
+    )
+    holder = _history_rewritten if existing else _new_issuer_with_history
+    result = _record_while_held(pg_db, found, refs, holder)
     assert isinstance(result, OnboardingAbortError)
     assert count(pg_db, "onboarding_records") == 0
 

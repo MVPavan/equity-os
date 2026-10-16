@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import gzip
 import hashlib
 import json
 import re
@@ -339,7 +340,11 @@ VALUE_RULES = {  # the complete inventory: name -> (transform, located field) (T
     "ROUNDING_LEVEL": ("identity", "LevelOfRounding"),
     "REPORTING_FRAMEWORK": ("framework_of_entry_point", "schemaRef namespace"),
     "BASIS_STATUS": ("basis_of_inventory", "consolidated"),
+    "DOCUMENT_URL": ("identity", "url"),  # DOCUMENT_LOCATION of the ingested instance
+    "DOCUMENT_SHA256": ("identity", "sha256"),
 }
+DISCOVERY = "discovery_manifest"  # header source kind of the discovery generation's manifest
+XBRL_SURFACE = "NSE_XBRL_INSTANCE"  # contracts.source_catalog.NSE_XBRL_INSTANCE
 PDF_VERDICT = (VerificationState.UNAVAILABLE, OnboardingReason.EXCLUDED_BY_RULE)  # R-PDF
 EXCLUDED_REASONS: dict[str, set[str] | None] = {  # a PARTIAL attempt's excluded vendor (D4.3)
     VerificationState.UNAVAILABLE: {OnboardingReason.NO_CANDIDATE, OnboardingReason.ACCESS_FAILED},
@@ -382,11 +387,47 @@ def check_value(
         as_of = date.fromisoformat(node["as_of"]["lex"])
         need(located == basis_rows(repo, manifest, as_of), "basis inventory")
         return
+    if name.startswith("DOCUMENT_"):
+        check_document(repo, manifest, field, locators)
+        return
     filings = {s["label"] for s in manifest["header"]["sources"] if s["kind"] == XBRL}
     key = "ref" if transform == "framework_of_entry_point" else "c"
     at_field = all(loc.get(key) in field.split() for loc in locators)
     need(at_field and {loc["src"] for loc in locators} == filings != set(), f"{name} locators")
     need(name != "SYMBOL" or node["v"] == attempt["identifier"], "identifier")
+
+
+def check_document(repo: Path, manifest: dict[str, Any], field: str, locators: Locators) -> None:
+    """D5 DOCUMENT_LOCATION: the field of the discovery-manifest entry of the ingested instance
+    (the OK NSE XBRL instance of the latest listed period), whose SHA-256 is a retained
+    filing's bytes."""
+    sources = manifest["header"]["sources"]
+    found = {s["label"]: s["path"] for s in sources if s["kind"] == DISCOVERY}
+    need(len(locators) == len(found) == 1, "document locator")
+    (loc,), ((label, path),) = locators, found.items()
+    entries = json.loads((repo / path).read_bytes())["entries"]
+    listed = {
+        row["xbrl"]: period_end(row)
+        for s in sources
+        if s["kind"] == LISTING
+        for row in listing_items(json.loads((repo / s["path"]).read_bytes()))[0]
+        if row.get("xbrl")
+    }
+    instances = [e for e in entries if e["surface"] == XBRL_SURFACE and e["outcome"] == "OK"]
+    latest = max(instances, key=lambda entry: listed[entry["url"]])
+    at = f"entries[{entries.index(latest)}].{field}"
+    need(loc["src"] == label and loc["path"] == at, "document locator")
+    retained = {
+        hashlib.sha256((repo / s["path"]).read_bytes()).hexdigest()
+        for s in sources
+        if s["kind"] == XBRL
+    }
+    need(latest["sha256"] in retained, "document bytes")
+
+
+def listing_items(doc: Any) -> tuple[list[dict[str, Any]], str]:
+    """A listing file's rows and their path prefix (integrated ``data``, legacy a list)."""
+    return (doc["data"], "data") if isinstance(doc, dict) else (doc, "")
 
 
 def basis_rows(repo: Path, manifest: dict[str, Any], as_of: date) -> set[tuple[str, str]]:
@@ -397,8 +438,7 @@ def basis_rows(repo: Path, manifest: dict[str, Any], as_of: date) -> set[tuple[s
     need(len(listings) == 2, "listing sources")
     window, found = quarter_ends(as_of), set()
     for label, path in listings.items():
-        doc = json.loads((repo / path).read_bytes())
-        rows, prefix = (doc["data"], "data") if isinstance(doc, dict) else (doc, "")
+        rows, prefix = listing_items(json.loads((repo / path).read_bytes()))
         found |= {
             (label, f"{prefix}[{i}].consolidated")
             for i, row in enumerate(rows)
@@ -458,12 +498,14 @@ INSTANCE = f"""<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
 <in-capmkt:LevelOfRounding contextRef="c1">Crores</in-capmkt:LevelOfRounding>
 </xbrli:xbrl>"""
 LISTED = {"symbol": DEV_SYMBOL, "type": FINANCIALS, "broadcast_Date": "24-Jul-2026 18:34:26"}
+XBRL_URL = "https://nsearchives.nseindia.com/corporate/xbrl/APAR_JUN.xml"
+OLD_URL = "https://nsearchives.nseindia.com/corporate/xbrl/APAR_OLD.xml"
 INTEGRATED = {
     "data": [
-        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": CONSOLIDATED},
+        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": CONSOLIDATED, "xbrl": XBRL_URL},
         LISTED | {"qe_Date": "30-Jun-2026", "consolidated": "Non-Consolidated"},
         LISTED | {"qe_Date": "30-Jun-2026", "type": "Integrated Filing- Governance"},
-        LISTED | {"qe_Date": "31-Mar-2023", "consolidated": CONSOLIDATED},  # before the window
+        LISTED | {"qe_Date": "31-Mar-2023", "consolidated": CONSOLIDATED, "xbrl": OLD_URL},
     ]
 }
 LEGACY = [{"symbol": DEV_SYMBOL, "toDate": "31-Mar-2026", "consolidated": "Non-Consolidated"}]
@@ -482,6 +524,8 @@ FAILURES = {
     "TIJORI": "tijori/financials\t-\tattempt=-",
 }
 VERSIONS = {"dictionary": "v2", "mapping_set": "v5"}
+ROWS = [{"isin": DEV_ISIN, "trading_symbol": DEV_SYMBOL}]  # Upstox instruments (gzip)
+INSTRUMENT_ISIN = {"src": "INSTRUMENTS", "path": "[0].isin", "lex": DEV_ISIN, "gz": True}
 FACT = "{src: INSTANCE, c: %s, ctx: c1, u: null, d: null, per: '2026-06-30', lex: '%s'}"
 VALUES = (
     f"""
@@ -501,6 +545,10 @@ VALUES = (
 - {name: REPORTING_FRAMEWORK, transform: framework_of_entry_point, v: IND_AS, at: [
    {src: INSTANCE, ref: schemaRef, lex: in-capmkt-ent-2026-01-31.xsd},
    {src: INSTANCE, ref: namespace, lex: '%(entry)s'}]}
+- {name: DOCUMENT_URL, transform: identity, v: '%(url)s',
+   at: [{src: DISCOVERY, path: 'entries[0].url', lex: '%(url)s'}]}
+- {name: DOCUMENT_SHA256, transform: identity, v: '%(sha)s',
+   at: [{src: DISCOVERY, path: 'entries[0].sha256', lex: '%(sha)s'}]}
 - {name: BASIS_STATUS, transform: basis_of_inventory, v: CONSOLIDATED_AND_STANDALONE,
    as_of: {src: DISCOVERY, path: as_of, lex: '2026-08-01'}, at: [
    {src: INTEGRATED, path: 'data[0].consolidated', lex: Consolidated},
@@ -520,13 +568,15 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
         "INSTANCE": ("instance.xml", "xbrl", INSTANCE.encode()),
         "INTEGRATED": ("integrated.json", LISTING, json.dumps(INTEGRATED).encode()),
         "LEGACY": ("legacy.json", LISTING, json.dumps(LEGACY).encode()),
-        "DISCOVERY": ("discovery.json", "json", b'{"as_of": "2026-08-01"}'),
+        "DISCOVERY": ("discovery.json", DISCOVERY, json.dumps(discovery_doc()).encode()),
+        "INSTRUMENTS": ("instruments.json.gz", "json", gzip.compress(json.dumps(ROWS).encode())),
     }
     for file, _, data in files.values():
         (root / file).write_bytes(data)
     excluded = EXCLUSIONS[base]
     failures = [FAILURES[u] for u in excluded if u in FAILURES]
-    values = yaml.safe_load(VALUES % {"entry": ENTRY})
+    sha = hashlib.sha256(INSTANCE.encode()).hexdigest()
+    values = yaml.safe_load(VALUES % {"entry": ENTRY, "url": XBRL_URL, "sha": sha})
     sources = [
         {"label": label, "path": str(root / file), "kind": kind}
         for label, (file, kind, _) in files.items()
@@ -558,8 +608,29 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
     attempt = {"n": 1, "identifier": DEV_SYMBOL, "prediction": prediction}
     freeze = {"attempt": 1, "onboarding_versions": dict(VERSIONS)}
     case = {"root": root, "manifest": manifest, "attempt": attempt, "freeze": freeze}
+    unit_of(case, UPSTOX)["at"] = [dict(INSTRUMENT_ISIN)]  # a compressed ``field`` locator (T5a)
     mutate(case)
     return case | {"fails": fails, "check": lambda: check_stage4(root, manifest, attempt, freeze)}
+
+
+def discovery_doc(sha: str | None = None) -> dict[str, Any]:
+    """The synthetic discovery manifest: the ingested Jun instance, then an older one."""
+    entry = {"surface": XBRL_SURFACE, "outcome": "OK"}
+    jun = sha or hashlib.sha256(INSTANCE.encode()).hexdigest()
+    return {
+        "as_of": "2026-08-01",
+        "entries": [
+            entry | {"url": XBRL_URL, "sha256": jun},
+            entry | {"url": OLD_URL, "sha256": "0" * 64},
+        ],
+    }
+
+
+def document_sha_wrong(case: dict[str, Any]) -> None:
+    """The entry, value and lexeme agree on a hash that is no retained filing's bytes."""
+    (case["root"] / "discovery.json").write_text(json.dumps(discovery_doc("f" * 64)))
+    node = value_node(case, "DOCUMENT_SHA256")
+    node["v"] = node["at"][0]["lex"] = "f" * 64
 
 
 def value_node(case: dict[str, Any], name: str) -> dict[str, Any]:
@@ -678,6 +749,24 @@ STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] =
         lambda case: unit_of(case, "TIJORI").pop("reason"),
         {"stage4"},
     ),
+    "document-location-omitted": (
+        "pdf-only",
+        lambda case: values_of(case).remove(value_node(case, "DOCUMENT_SHA256")),
+        {"stage4"},
+    ),
+    "document-url-of-an-older-instance": (
+        "pdf-only",
+        lambda case: value_node(case, "DOCUMENT_URL").update(
+            v=OLD_URL, at=[{"src": "DISCOVERY", "path": "entries[1].url", "lex": OLD_URL}]
+        ),
+        {"stage4"},
+    ),
+    "document-url-wrong": (
+        "pdf-only",
+        lambda case: value_node(case, "DOCUMENT_URL").update(v=OLD_URL),
+        {"stage4"},
+    ),
+    "document-sha-not-the-retained-bytes": ("pdf-only", document_sha_wrong, {"stage4"}),
     "vendor-state-conflict": (
         "mixed",
         lambda case: unit_of(case, "TIJORI").update(state="CONFLICT"),

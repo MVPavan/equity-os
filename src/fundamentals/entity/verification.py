@@ -222,12 +222,21 @@ def exchange_state(
     found = _LI_SCRIP.search(candidates[0])
     scrip = found.group(1) if found else ""
     for filing, expected in filings:
-        want = expected.scrip or scrip
-        if filing.scrip != {scrip} or want != scrip:
-            return differs("scrip", sorted(filing.scrip | {scrip}), want), None
-        if filing.symbol != {expected.symbol}:
-            return differs("filing symbol", sorted(filing.symbol), expected.symbol), None
+        verdict = filing_codes(filing, expected, scrip)
+        if verdict != VERIFIED:
+            return verdict, None
     return VERIFIED, scrip
+
+
+def filing_codes(filing: FilingIdentity, expected: Expected, scrip: str) -> Verdict:
+    """The filing's ``ScripCode`` the verified ``scrip`` (and the one expected at its date) and
+    its ``Symbol`` the expected symbol."""
+    want = expected.scrip or scrip
+    if filing.scrip != {scrip} or want != scrip:
+        return differs("scrip", sorted(filing.scrip | {scrip}), want)
+    if filing.symbol != {expected.symbol}:
+        return differs("filing symbol", sorted(filing.symbol), expected.symbol)
+    return VERIFIED
 
 
 def screener_candidate(search: bytes, symbol: str) -> Verdict | int:

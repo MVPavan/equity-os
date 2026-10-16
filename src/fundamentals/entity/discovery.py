@@ -7,8 +7,9 @@ URL's approved origin before its request. A denied request is kept as a capture-
 Anchor requests that fail or are not authorised abort with no record; a conflict or an anchor
 refusal stops discovery and leaves the remaining units stopped. ``record`` keeps every fetched
 body as a capture under one ``DISCOVERY`` input per unit and, in one transaction, locks the
-verified identifier values, re-resolves them, and writes a new issuer's identity rows, the
-onboarding record and its unit states.
+verified identifier values, re-resolves them, re-checks each filing's identity at its filed
+date against the owner, and writes a new issuer's identity rows, the onboarding record and its
+unit states.
 """
 
 from __future__ import annotations
@@ -63,14 +64,16 @@ from fundamentals.contracts.source_catalog import (
 from fundamentals.entity.identity_layers import (
     IdentifierRef,
     issuer_values,
-    latest_slice,
     lock_identifiers,
+    resolve_owner,
 )
 from fundamentals.entity.verification import (
     VERIFIED,
     Expected,
+    FilingIdentity,
     conflict,
     exchange_state,
+    filing_codes,
     filing_identity,
     financial_rule,
     instance_state,
@@ -145,9 +148,7 @@ _MEDIA_TYPE = "application/octet-stream"
 _NATIVE_KIND = "onboarding-discovery"
 _INPUT_LABEL = "discovery:{symbol}:{unit}"
 _HIGH = "HIGH"
-_HELD = "ISIN {isin}, symbol {symbol} or scrip {scrip} is held by another issuer"
 _MOVED = "the identity layers changed during onboarding; re-run"
-_ONCE_HELD = "symbol {symbol} was held by another listing and no SYMBOL_REUSE gave it this one"
 _MANY_MASTER = "the NSE master lists {count} EQ rows for {symbol}"
 _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
@@ -250,6 +251,7 @@ class Discovery(BaseModel):
     entity_id: int | None
     states: dict[VerificationUnit, Verdict]
     captures: tuple[Capture, ...]
+    filings: tuple[tuple[FilingIdentity, date | None], ...] = ()
 
 
 def request_key(surface: str, url: str) -> str:
@@ -385,6 +387,7 @@ class _Run:
         self.isin: str | None = None
         self.scrip: str | None = None
         self.entity_id: int | None = None
+        self.filings: list[tuple[FilingIdentity, date | None]] = []
 
     def get(self, unit: VerificationUnit, pair: tuple[str, str], url: str) -> bytes:
         """The body of one authorised, successful request."""
@@ -449,6 +452,7 @@ class _Run:
             entity_id=self.entity_id,
             states=states,
             captures=tuple(self.captures),
+            filings=tuple(self.filings),
         )
 
 
@@ -505,12 +509,13 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
         instances = [parse_instance(body, mapping_set=mapping_set) for body in bodies]
     except UnsupportedSchemaError:
         run.refuse(xbrl, OnboardingReason.UNSUPPORTED_SCHEMA)
-    checked = [
-        (
-            filing_identity(instance),
-            _expected(run, conn, row.broadcast.date() if row.broadcast else None),
-        )
+    run.filings = [
+        (filing_identity(instance), row.broadcast.date() if row.broadcast else None)
         for instance, row in zip(instances, filings, strict=True)
+    ]
+    checked = [
+        (filing, _expected(conn, run.entity_id, run.isin, run.symbol, filed))
+        for filing, filed in run.filings
     ]
     for instance, row, (filing, expected) in zip(instances, filings, checked, strict=True):
         for verdict in (
@@ -567,40 +572,17 @@ def _vendors(run: _Run) -> None:
 
 def _resolve(run: _Run, conn: psycopg.Connection[Any], scrip: str | None) -> int | None:
     """D3.4 after the master (``scrip`` None) and again once the BSE scrip is verified."""
-    owner, detail, _ = _owner(conn, run.symbol, run.isin or "", scrip)
+    owner, detail, _ = resolve_owner(conn, run.symbol, run.isin or "", scrip)
     if detail is not None:
         run.set(VerificationUnit.EXCHANGE, conflict(detail))
     return owner
 
 
-def _owner(
-    conn: psycopg.Connection[Any], symbol: str, isin: str, scrip: str | None
-) -> tuple[int | None, str | None, set[IdentifierRef]]:
-    """The entity whose current ISIN, NSE symbol and (once known) BSE scrip all sit on one
-    security, ``None`` when none is held, with the targets hit. A partial or split hit, or a
-    symbol once held by another listing that no ``SYMBOL_REUSE`` gave this one, is a conflict
-    detail."""
-    wanted = {(IdentifierNamespace.ISIN, isin), (IdentifierNamespace.NSE_SYMBOL, symbol)}
-    if scrip is not None:
-        wanted.add((IdentifierNamespace.BSE_SCRIP, scrip))
-    hits = [v for v in latest_slice(conn) if (v.namespace, v.value) in wanted]
-    targets = {
-        IdentifierRef(namespace=v.namespace, target_id=v.listing_id or v.security_id) for v in hits
-    }
-    split = sorted(v.namespace for v in hits) != sorted(ns for ns, _ in wanted)
-    if hits and (split or len({v.security_id for v in hits}) > 1):
-        return None, _HELD.format(isin=isin, symbol=symbol, scrip=scrip), targets
-    nse = next((v.listing_id for v in hits if v.namespace is IdentifierNamespace.NSE_SYMBOL), None)
-    others = {row[0] for row in conn.execute(_ONCE_HELD_SQL, (symbol, symbol))} - {nse}
-    if others and not conn.execute(_REUSED_SQL, (nse, symbol)).fetchall():
-        return None, _ONCE_HELD.format(symbol=symbol), targets
-    return (hits[0].entity_id if hits else None), None, targets
-
-
 def _locked_owner(conn: psycopg.Connection[Any], found: Discovery) -> int | None:
     """D3.4 inside the writing transaction: lock the verified values and every target holding
     them (as the identity writers do), re-resolve, and refuse a resolution that moved since
-    discovery. A new issuer's ids created meanwhile by a concurrent onboarding are reused."""
+    discovery. Every filing is re-checked against the resolved owner's identity at its filed
+    date; only then are a new issuer's ids created meanwhile by a concurrent onboarding reused."""
     isin, scrip = found.isin or "", found.scrip or ""
     values = [
         (IdentifierNamespace.ISIN, isin),
@@ -610,21 +592,38 @@ def _locked_owner(conn: psycopg.Connection[Any], found: Discovery) -> int | None
     locked: set[IdentifierRef] = set()
     while True:
         lock_identifiers(conn, list(locked), values)
-        owner, detail, held = _owner(conn, found.symbol, isin, scrip)
+        owner, detail, held = resolve_owner(conn, found.symbol, isin, scrip)
         if held <= locked:
             break
         locked |= held
     if detail is not None or found.entity_id not in (None, owner):
         raise OnboardingAbortError(_MOVED)
+    for filing, filed in found.filings if owner is not None else ():
+        try:
+            expected = _expected(conn, owner, isin, found.symbol, filed)
+        except LookupError as error:
+            raise OnboardingAbortError(_MOVED) from error
+        verdicts = (
+            xbrl_entity_state(filing, found.name or "", expected),
+            filing_codes(filing, expected, scrip),
+        )
+        if any(verdict != VERIFIED for verdict in verdicts):
+            raise OnboardingAbortError(_MOVED)
     return owner
 
 
-def _expected(run: _Run, conn: psycopg.Connection[Any], filed: date | None) -> Expected:
+def _expected(
+    conn: psycopg.Connection[Any],
+    entity_id: int | None,
+    isin: str | None,
+    symbol: str,
+    filed: date | None,
+) -> Expected:
     """The identity a filing must carry on its filed date (C8); a new issuer's from the master."""
-    if run.entity_id is None or filed is None:
-        return Expected(isin=run.isin or "", symbol=run.symbol, scrip=None)
-    isin, nse, bse = issuer_values(conn, run.entity_id, filed)
-    return Expected(isin=isin.value, symbol=nse.value, scrip=bse.value)
+    if entity_id is None or filed is None:
+        return Expected(isin=isin or "", symbol=symbol, scrip=None)
+    held = issuer_values(conn, entity_id, filed)
+    return Expected(isin=held[0].value, symbol=held[1].value, scrip=held[2].value)
 
 
 def store_captures(
@@ -754,17 +753,6 @@ def _one(conn: psycopg.Connection[Any], query: LiteralString, params: tuple[obje
     return int(row[0])
 
 
-_ONCE_HELD_SQL: LiteralString = (
-    "SELECT id FROM eqos.listings WHERE venue = 'NSE' AND symbol = %s "
-    "UNION SELECT listing_id FROM eqos.identifier_relationships "
-    "WHERE namespace = 'NSE_SYMBOL' AND value = %s"
-)
-_REUSED_SQL: LiteralString = (
-    "SELECT 1 FROM eqos.identity_events e "
-    "JOIN eqos.identity_event_edges g ON g.event_id = e.id AND g.role = 'STARTS' "
-    "JOIN eqos.identifier_relationships r ON r.id = g.relationship_id "
-    "WHERE e.kind = 'SYMBOL_REUSE' AND r.listing_id = %s AND r.value = %s"
-)
 _INPUT_SQL: LiteralString = (
     "INSERT INTO eqos.evidence_inputs (kind, label, content_sha256) VALUES (%s, %s, %s) "
     "ON CONFLICT (kind, content_sha256) DO NOTHING"

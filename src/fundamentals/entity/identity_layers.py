@@ -36,6 +36,10 @@ _ONCE_HELD = "{namespace} {value!r} was held by another listing; only SYMBOL_REU
 _STILL_HELD = "{namespace} {value!r} is still held by another listing at {at}"
 _SHAPE = "{kind} needs {shape}"
 _EARLY = "{kind} effective {at} precedes the start {start} of the value it ends"
+_OWNER_HELD = "ISIN {isin}, symbol {symbol} or scrip {scrip} is held by another issuer"
+_OWNER_ONCE_HELD = (
+    "symbol {symbol} was held by another listing and no SYMBOL_REUSE gave it this one"
+)
 _ALIAS = "{kind} refused: ISIN {isin} is a registry alias (ACCEPTED_ENTITY_IDS_BY_ISIN)"
 
 
@@ -160,6 +164,30 @@ def issuer_values(
         raise LookupError(_AMBIGUOUS_IDENTIFIERS.format(entity_id=entity_id, count=len(complete)))
     (isin,), (nse,), (bse,) = complete[0]
     return isin, nse, bse
+
+
+def resolve_owner(
+    conn: psycopg.Connection[Any], symbol: str, isin: str, scrip: str | None
+) -> tuple[int | None, str | None, set[IdentifierRef]]:
+    """The entity whose current ISIN, NSE symbol and (once known) BSE scrip all sit on one
+    security, ``None`` when none is held, with the targets hit. A partial or split hit, or a
+    symbol once held by another listing that no ``SYMBOL_REUSE`` gave this one, is a conflict
+    detail."""
+    wanted = {(IdentifierNamespace.ISIN, isin), (IdentifierNamespace.NSE_SYMBOL, symbol)}
+    if scrip is not None:
+        wanted.add((IdentifierNamespace.BSE_SCRIP, scrip))
+    hits = [v for v in latest_slice(conn) if (v.namespace, v.value) in wanted]
+    targets = {
+        IdentifierRef(namespace=v.namespace, target_id=v.listing_id or v.security_id) for v in hits
+    }
+    split = sorted(v.namespace for v in hits) != sorted(ns for ns, _ in wanted)
+    if hits and (split or len({v.security_id for v in hits}) > 1):
+        return None, _OWNER_HELD.format(isin=isin, symbol=symbol, scrip=scrip), targets
+    nse = next((v.listing_id for v in hits if v.namespace is IdentifierNamespace.NSE_SYMBOL), None)
+    others = {row[0] for row in conn.execute(_OWNER_ONCE_HELD_SQL, (symbol, symbol))} - {nse}
+    if others and not conn.execute(_OWNER_REUSED_SQL, (nse, symbol)).fetchall():
+        return None, _OWNER_ONCE_HELD.format(symbol=symbol), targets
+    return (hits[0].entity_id if hits else None), None, targets
 
 
 def record_relationship(
@@ -478,4 +506,15 @@ _INSERT_EVENT: LiteralString = (
 _INSERT_EDGE: LiteralString = (
     "INSERT INTO eqos.identity_event_edges (event_id, role, relationship_id, entity_id) "
     "VALUES (%s, %s, %s, %s)"
+)
+_OWNER_ONCE_HELD_SQL: LiteralString = (
+    "SELECT id FROM eqos.listings WHERE venue = 'NSE' AND symbol = %s "
+    "UNION SELECT listing_id FROM eqos.identifier_relationships "
+    "WHERE namespace = 'NSE_SYMBOL' AND value = %s"
+)
+_OWNER_REUSED_SQL: LiteralString = (
+    "SELECT 1 FROM eqos.identity_events e "
+    "JOIN eqos.identity_event_edges g ON g.event_id = e.id AND g.role = 'STARTS' "
+    "JOIN eqos.identifier_relationships r ON r.id = g.relationship_id "
+    "WHERE e.kind = 'SYMBOL_REUSE' AND r.listing_id = %s AND r.value = %s"
 )
