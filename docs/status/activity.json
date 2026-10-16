@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D6 Task 5c: live identifier-only acquisition",
-    "detail": "Implementation frozen at f2437ca (descriptor bc1915a) after Sol approved the critical-review fixes. Next: one live onboarding run of the held-out company from its identifier alone, on a scratch test database.",
+    "title": "D6 Task 5d: Stage 4 manifest for the held-out company",
+    "detail": "Attempt 3 live acquisition met its pre-registered prediction (PARTIAL, PDF excluded by rule, compare run INCOMPLETE). An Opus author is writing the independent Stage 4 manifest; Sol approves it before the end-to-end test.",
     "stage": "eqos-h4h.5"
   },
   "next": [
-    "D6 Task 5d: Stage 4 manifest, Sol approval",
     "D6 Task 6: end-to-end test and phase-end Sol review",
-    "Follow-ups: eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60, eqos-7pr, eqos-tqf, eqos-0eu"
+    "Extractor v2: structural Ind AS signal (identifier-only onboarding supports few issuers until then)",
+    "Follow-ups: NSE pagination, NSE priming timeout, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-16",
+      "text": "D6 held-out attempts: attempt 1 burned (BSE refused the custom User-Agent; fixed adf6e78), attempt 2 burned (ingest rejected Ind AS filings discovery admitted; owner chose clean refusal now, extractor v2 later; fixed ba0f47e, 97ce112 after Sol r1 REJECT/r2 APPROVE). Attempt 3 drawn, frozen (62698aa) and acquired live: PARTIAL / [RESULTS_PDF] / INCOMPLETE as predicted. Full suite 3816 passed, 8 skipped."
+    },
     {
       "date": "2026-10-16",
       "text": "D6 Tasks 3-5b done: onboarding discovery/verification/admission, derived settings, Stage 4 oracle; pre-freeze review closed, fresh critical review REJECT (8 findings) fixed in f2437ca and re-approved by Sol. Full suite 3798 passed, 8 skipped. Implementation frozen (bc1915a)."
