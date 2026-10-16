@@ -474,19 +474,33 @@ APAR_LATEST = {  # Apar's two latest integrated instances, by period end
 }
 
 
+XBRL_DEFECTS = {  # SYNTHETIC: case -> {period end: (old, new)}
+    "declared": {},
+    "no_phrase": {JUN: (b"Indian Accounting Standard", b"Zz Accounting Standard")},
+    # discovery refuses on the older instance's financial signal before parsing either, so the
+    # latest one's unreadable report nature (a parse failure) is never reached
+    "paired": {
+        JUN: (b">Consolidated</in-capmkt:NatureOf", b">Zz</in-capmkt:NatureOf"),
+        MAR: (b"IntegratedFinance_IndAS", b"IntegratedFinance_ZZ"),
+    },
+}
+
+
 @pytest.mark.retained
-@pytest.mark.parametrize("declared", [False, True])
-def test_draw_skips_a_candidate_discovery_would_refuse(repo: Path, declared: bool) -> None:
+@pytest.mark.parametrize("case", XBRL_DEFECTS)
+def test_draw_skips_a_candidate_discovery_would_refuse(repo: Path, case: str) -> None:
     """D1.3 amendment (eqos-h4h.10), attempt 3 on: a candidate whose two latest qualifying
-    instances do not all pass discovery's XBRL step (here Apar's, ingest's Ind AS phrase removed
-    from the June one) is skipped XBRL_NOT_ADMITTED, from its envelope and from retained bytes
-    alike; the original instances reproduce no such skip."""
+    instances fail the XBRL prefilter (Apar's, with ingest's Ind AS phrase removed from the June
+    one, or a non-financial signal missing from the March one) is skipped XBRL_NOT_ADMITTED, from
+    its envelope and from retained bytes alike; the original instances reproduce no such skip."""
     private = (repo / "data/holdout/attempt-1").rename(repo / "data/holdout/attempt-3")
     bodies, rows = {}, []
     for end, name in APAR_LATEST.items():
         body = (APAR_XBRL / name).read_bytes()
-        if end == JUN and not declared:
-            body = body.replace(b"Indian Accounting Standard", b"Zz Accounting Standard")
+        if end in XBRL_DEFECTS[case]:
+            old, new = XBRL_DEFECTS[case][end]
+            assert old in body
+            body = body.replace(old, new)
         (private / name).write_bytes(body)
         bodies[f"x/{name}"] = body.decode()
         rows.append(listing_row(end, T1, symbol="ZZSKIP", xbrl=f"x/{name}"))
@@ -497,7 +511,7 @@ def test_draw_skips_a_candidate_discovery_would_refuse(repo: Path, declared: boo
         "xbrl": ok(bodies),
         "bse": ok(bse("ZZSKIP", "INE000Z01052")),
     }
-    if declared:
+    if case == "declared":
         with pytest.raises(RefusedError, match="skip reason"):
             draw_check(repo, state)
     else:

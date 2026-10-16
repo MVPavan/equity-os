@@ -72,10 +72,13 @@ from fundamentals.entity.verification import (
     Expected,
     FilingIdentity,
     conflict,
+    deciding,
     exchange_state,
     filing_codes,
     filing_identity,
     financial_rule,
+    framework_state,
+    ingest_identity_state,
     instance_state,
     master_rows,
     outcome,
@@ -523,14 +526,16 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
         (filing, _expected(conn, run.entity_id, run.isin, run.symbol, filed))
         for filing, filed in run.filings
     ]
-    for instance, row, (filing, expected) in zip(instances, filings, checked, strict=True):
+    verdicts = [
+        verdict
+        for instance, row, (filing, expected) in zip(instances, filings, checked, strict=True)
         for verdict in (
             instance_state(instance, row.period_end),
             xbrl_entity_state(filing, run.name, expected),
-        ):
-            if verdict != VERIFIED:
-                run.set(xbrl, verdict)
-    run.states[xbrl] = VERIFIED
+            ingest_identity_state(instance, filing, expected),
+        )
+    ] + [framework_state(instance) for instance in instances]
+    run.set(xbrl, deciding(verdicts))
     peer = run.anchor(exchange, BSE_PEER_SEARCH, _BSE_URL.format(isin=run.isin))
     verdict, run.scrip = exchange_state(peer, run.isin, checked)
     run.set(exchange, verdict)

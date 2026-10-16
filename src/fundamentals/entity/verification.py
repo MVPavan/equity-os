@@ -19,6 +19,7 @@ from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.acquisition_outcome import OutcomeCode
+from fundamentals.contracts.canonical import Basis as PackageBasis
 from fundamentals.contracts.observation import AccountingFramework, Scope
 from fundamentals.contracts.onboarding import (
     ANCHOR_UNITS,
@@ -29,7 +30,13 @@ from fundamentals.contracts.onboarding import (
     VerificationUnit,
 )
 from fundamentals.entity.entity_map import isin_check_digit
-from fundamentals.evidence.member_identity import verify_xbrl_framework, verify_xbrl_period
+from fundamentals.evidence.member_identity import (
+    _NO_BASIS_DECLARATION,
+    IssuerIdentifiers,
+    verify_xbrl_framework,
+    verify_xbrl_identity,
+    verify_xbrl_period,
+)
 from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.screener_session_models import (
     AnonymousPageError,
@@ -182,17 +189,50 @@ def filing_identity(instance: RawXbrlInstance) -> FilingIdentity:
 
 
 def instance_state(instance: RawXbrlInstance, period_end: date) -> Verdict:
-    """The instance's own declarations against its listing row: the consolidated file scope,
-    every declared reporting-period end, and the Ind AS declaration first-party ingest requires
-    (its own period and framework predicates, so discovery admits only what ingest accepts)."""
+    """The instance's own declarations against its listing row: the consolidated file scope
+    and every declared reporting-period end (first-party ingest's own period predicate)."""
     if instance.scope is not Scope.CONSOLIDATED:
         return differs("instance scope", instance.scope.value, Scope.CONSOLIDATED.value)
     period = verify_xbrl_period(instance, period_end)
-    if not period.verified:
-        return conflict(period.reason or "")
-    if not verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified:
-        return VerificationState.UNVERIFIED, OnboardingReason.NO_FRAMEWORK_DECLARATION.value
-    return VERIFIED
+    return VERIFIED if period.verified else conflict(period.reason or "")
+
+
+def ingest_identity_state(
+    instance: RawXbrlInstance, filing: FilingIdentity, expected: Expected
+) -> Verdict:
+    """First-party ingest's own identity predicate (``verify_xbrl_identity``, consolidated
+    basis) over the identifiers expected at the filed date (an unresolved issuer's scrip: the
+    filing's own, which ``exchange_state`` then checks). No context-bound report-nature
+    declaration → UNVERIFIED (``BASIS_UNVERIFIED``); any other rejection is a contradiction."""
+    identifiers = IssuerIdentifiers(  # ids are not read by the predicate
+        entity_id=0,
+        isin=expected.isin,
+        nse_symbol=expected.symbol,
+        bse_scrip=expected.scrip or _one(filing.scrip) or "",
+        evidence_input_id=0,
+    )
+    verdict = verify_xbrl_identity(instance, identifiers, basis=PackageBasis.CONSOLIDATED)
+    if verdict.verified:
+        return VERIFIED
+    if verdict.reason == _NO_BASIS_DECLARATION.format(concept=instance.taxonomy.scope_concept):
+        return VerificationState.UNVERIFIED, OnboardingReason.BASIS_UNVERIFIED.value
+    return conflict(verdict.reason or "")
+
+
+def framework_state(instance: RawXbrlInstance) -> Verdict:
+    """First-party ingest's own Ind AS framework predicate; rejected → UNVERIFIED
+    (``NO_FRAMEWORK_DECLARATION``)."""
+    if verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified:
+        return VERIFIED
+    return VerificationState.UNVERIFIED, OnboardingReason.NO_FRAMEWORK_DECLARATION.value
+
+
+def deciding(verdicts: Sequence[Verdict]) -> Verdict:
+    """The verdict that decides a unit judged on several checks: the first conflict, else the
+    first other non-verified verdict in the given order, else VERIFIED."""
+    refusals = [verdict for verdict in verdicts if verdict != VERIFIED]
+    conflicts = [verdict for verdict in refusals if verdict[0] is VerificationState.CONFLICT]
+    return (conflicts or refusals or [VERIFIED])[0]
 
 
 def xbrl_entity_state(filing: FilingIdentity, name: str, expected: Expected) -> Verdict:

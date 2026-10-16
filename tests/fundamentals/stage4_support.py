@@ -30,7 +30,12 @@ import yaml
 
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
-from fundamentals.entity.verification import VERIFIED, financial_rule, instance_state
+from fundamentals.entity.verification import (
+    VERIFIED,
+    financial_rule,
+    framework_state,
+    instance_state,
+)
 from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError, load_mapping_set
 from fundamentals.evidence.xbrl_adapter import parse_instance
 
@@ -312,17 +317,25 @@ def onboarding_mapping_set() -> MappingSet:
     )
 
 
-def xbrl_admitted(body: bytes, period_end: date) -> bool:
-    """Discovery's XBRL step for one instance of a qualifying period (D4.2 steps 3-4): the
-    financial rule, the onboarding mapping set's schema, then ``instance_state`` (scope, period
-    and first-party ingest's own framework predicate)."""
-    if not financial_rule(body):
+def xbrl_admitted(instances: Iterable[tuple[bytes, date]]) -> bool:
+    """The D1.3 XBRL prefilter over a candidate's ``(instance, period end)`` pairs, discovery's
+    issuer-independent XBRL gates in its order (D4.2 steps 3-4): every financial rule before any
+    instance is parsed, the onboarding mapping set's schema, then each instance's scope and
+    period (``instance_state``) and ingest's framework predicate (``framework_state``). Issuer
+    identity, name and report-nature declarations are left to discovery."""
+    pairs = list(instances)
+    if not all(financial_rule(body) for body, _ in pairs):
         return False
     try:
-        instance = parse_instance(body, mapping_set=onboarding_mapping_set())
+        parsed = [
+            (parse_instance(body, mapping_set=onboarding_mapping_set()), end) for body, end in pairs
+        ]
     except UnsupportedSchemaError:
         return False
-    return instance_state(instance, period_end) == VERIFIED
+    return all(
+        instance_state(instance, end) == VERIFIED == framework_state(instance)
+        for instance, end in parsed
+    )
 
 
 def csv_rows(data: bytes) -> list[dict[str, str]]:
@@ -509,7 +522,7 @@ class Selection:
             else:
                 bodies = {link: text.encode() for link, text in body("xbrl").items()}
             need(bodies.keys() == {link for _, link in latest}, "skip evidence")
-            if not all(xbrl_admitted(bodies[link], end) for end, link in latest):
+            if not xbrl_admitted((bodies[link], end) for end, link in latest):
                 return NO_XBRL
         bse = self.bse(isin) if evidence is None else bse_candidates(body("bse"), isin)
         if len(bse) != 1:

@@ -125,8 +125,8 @@ def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> 
         }
         ingest = verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified
         non_financial += financial_rule(body)
-        assert xbrl_admitted(body, end) == (financial_rule(body) and ingest), path
-        if xbrl_admitted(body, end):
+        assert xbrl_admitted([(body, end)]) == (financial_rule(body) and ingest), path
+        if xbrl_admitted([(body, end)]):
             admitted.append(path.parts[-3] if "dev-entry-points" in path.parts else APAR)
     assert non_financial == 16 and len(admitted) == 7
     assert set(admitted) == {APAR, "LAURUSLABS"}
@@ -407,7 +407,16 @@ def test_unsupported_issuers_get_a_reason_and_no_entity(
     record, states = recorded(pg_db)
     assert record[1:5] == (OC.UNSUPPORTED.value, None, reason.value, None)
     assert S.CONFLICT.value not in {state for state, _ in states.values()}
-    assert count(pg_db, "reporting_entities") == count(pg_db, "entity_basis_status") == 0
+    _nothing_admitted(pg_db)
+
+
+def _nothing_admitted(db: PgTestDatabase) -> None:
+    """D4.6: a refused issuer keeps its record and rejection evidence (captures under DISCOVERY
+    inputs) but gets no entity, basis status, setting, package, attempt or evidence."""
+    assert count(db, "evidence_input_captures") == count(db, "capture_refs") > 0
+    admitted = ("reporting_entities", "entity_basis_status", "settings_records", "filing_packages")
+    assert [count(db, table) for table in (*admitted, "acquisition_attempts")] == [0] * 5
+    assert evidence_counts(db) == (0, 0)
 
 
 UPSTOX_CASES = {
@@ -492,3 +501,104 @@ def test_an_instance_must_declare_its_rows_period_and_consolidated_basis(
     assert record[1] == OC.IDENTITY_CONFLICT.value and record[4] is None
     assert states[U.XBRL_ENTITY][0] == S.CONFLICT.value
     assert count(pg_db, "reporting_entities") == 0
+
+
+NATURE = "NatureOfReportStandaloneConsolidated"
+NIL = ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true"'
+Change = Callable[[list[dict[str, Any]]], None]
+
+
+def _append(url_part: str, concept: str, value: str, extra: str) -> Change:
+    """SYNTHETIC: a second context-bound ``concept`` fact (``extra``: its text, or NIL) after
+    the instance's ``value`` declaration."""
+    old = f"{value}</in-capmkt:{concept}>".encode()
+    attrs, text = (NIL, "") if extra == NIL else ("", extra)
+    fact = f'<in-capmkt:{concept} contextRef="OneD"{attrs}>{text}</in-capmkt:{concept}>'
+    return partial(edit, url_part=url_part, old=old, new=old + fact.encode())
+
+
+def _both(*changes: Change) -> Change:
+    """SYNTHETIC: several changes in order."""
+
+    def change(served: list[dict[str, Any]]) -> None:
+        for each in changes:
+            each(served)
+
+    return change
+
+
+_NO_PHRASE = partial(
+    edit, url_part=JUN, old=b"Indian Accounting Standard", new=b"Zz Accounting Standard"
+)
+
+
+def _unbound_nature(url_part: str, *contexts: str) -> Change:
+    """SYNTHETIC: the report-nature declarations lose their ``contextRef``: the file scope still
+    reads, but no context-bound fact declares the nature."""
+    return _both(
+        *(
+            partial(
+                edit,
+                url_part=url_part,
+                old=f'<in-capmkt:{NATURE} contextRef="{context}">'.encode(),
+                new=f"<in-capmkt:{NATURE}>".encode(),
+            )
+            for context in contexts
+        )
+    )
+
+
+IDENTITY = {"ISIN": APAR_ISIN, "Symbol": APAR, "ScripCode": APAR_SCRIP}
+DECLARATION_DEFECTS = {  # name: (synthetic change, XBRL_ENTITY state, refusal reason)
+    **{
+        f"{concept}_{kind}": (_append(JUN, concept, value, extra), S.CONFLICT, None)
+        for concept, value in IDENTITY.items()
+        for kind, extra in (("blank", " \t"), ("nil", NIL))
+    },
+    "nature_contradicted": (_append(JUN, NATURE, "Consolidated", "Standalone"), S.CONFLICT, None),
+    "nature_blank": (_append(JUN, NATURE, "Consolidated", " "), S.CONFLICT, None),
+    "nature_nil": (_append(JUN, NATURE, "Consolidated", NIL), S.CONFLICT, None),
+    "nature_unbound": (_unbound_nature(JUN, "OneD"), S.UNVERIFIED, R.BASIS_UNVERIFIED),
+    # precedence: identity verdicts of both instances before the framework refusal
+    "framework_and_isin_one_instance": (
+        _both(_NO_PHRASE, partial(edit, url_part=JUN, old=b">INE372A01015<", new=b">ZZ<")),
+        S.CONFLICT,
+        None,
+    ),
+    "framework_latest_symbol_older": (
+        _both(_NO_PHRASE, _append(MAR, "Symbol", APAR, " ")),
+        S.CONFLICT,
+        None,
+    ),
+    "framework_latest_nature_older": (
+        _both(_NO_PHRASE, _unbound_nature(MAR, "OneD", "FourD")),
+        S.UNVERIFIED,
+        R.BASIS_UNVERIFIED,
+    ),
+}
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize("case", DECLARATION_DEFECTS)
+def test_discovery_applies_ingest_identity_check_to_both_instances(
+    case: str, cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """eqos-h4h.10 r1: every declaration first-party ingest rejects is refused before admission.
+    A blank or nil ISIN/Symbol/ScripCode beside the true one, or a contradicting, blank or nil
+    context-bound report nature, contradicts the issuer (IDENTITY_CONFLICT, HIGH); no
+    context-bound report nature leaves the basis unproven (UNSUPPORTED BASIS_UNVERIFIED). Both
+    instances are judged before a missing framework declaration decides: a conflict anywhere
+    wins, then ingest's order (identity before framework)."""
+    change, state, reason = DECLARATION_DEFECTS[case]
+    served = world(APAR)
+    change(served)
+    assert cli(APAR, write_root(tmp_path / "raw", served, APAR)) == FAILURE
+    record, states = recorded(pg_db)
+    if state is S.CONFLICT:
+        assert record[1:3] == (OC.IDENTITY_CONFLICT.value, "HIGH")
+        assert states[U.XBRL_ENTITY][0] == S.CONFLICT.value
+    else:
+        assert reason is not None and record[1:4] == (OC.UNSUPPORTED.value, None, reason.value)
+        assert states[U.XBRL_ENTITY] == (state.value, reason.value)
+    _nothing_admitted(pg_db)
