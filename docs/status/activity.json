@@ -1,15 +1,19 @@
 {
   "now": {
-    "title": "D6 Task 1b: holdout checks",
-    "detail": "Held-out company drawn and pre-registered (record 9e7d407, Sol APPROVE, opaque). The first draw exhausted its universe because two whole-market instrument maps matched almost every company; the plan's D1.2 now exempts exactly those two files by content hash (Sol r2 APPROVE, e6a6532). Opus is writing the checkers that guard the record, its ordering and the leak scan.",
-    "stage": "eqos-h4h.1"
+    "title": "D6 Task 3: discovery, verification and the gate",
+    "detail": "Temporal identity (migration 0022) committed with full suite green. Opus is building onboarding from an NSE symbol: discover filings, verify each source separately, refuse financial-sector companies by the filing's namespace, and record the outcome. Project explainer page added (docs/status/project-explainer.html).",
+    "stage": "eqos-h4h.3"
   },
   "next": [
-    "D6.2 temporal identity and settings (migration 0022)",
-    "D6.3–D6.4 discovery, verification, derived settings; Sol review; freeze; acquisition; manifest; e2e",
+    "D6.4 derived settings, ingest, comparison",
+    "D6 oracle readiness, Sol review loop, freeze, acquisition, manifest, e2e",
     "Follow-ups: eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60, eqos-7pr, eqos-tqf, eqos-0eu"
   ],
   "log": [
+    {
+      "date": "2026-10-16",
+      "text": "D6.2 done: Task 1b holdout checks (1249c07) and Task 2 temporal identity with migration 0022 (5f98c02); full suite exit 0. Roadmap 42/66 stages. Task 3 dispatched; project explainer committed (7a3dcf3)."
+    },
     {
       "date": "2026-10-16",
       "text": "D6.1 done: Task 0b capability committed (6d07b9f, no HALT); D1.2 catalogue-exemption amendment (Sol r1 REJECT → r2 APPROVE, e6a6532); attempt 1 drawn (universe 174, 0 skips) and record committed with Sol APPROVE (9e7d407). Task 1b dispatched."
