@@ -3,17 +3,19 @@
 The identifier is the current attempt's, read from the record at runtime; this file holds no
 company value. Onboarding replays the attempt's retained root (no socket) into a fresh
 ``eqos_test_*`` database and the manifest's ``cli`` runs through ``main``; the D6 step 4 freeze
-assertions follow. Every failure is an opaque ``pytest.fail`` naming the check (D1.7).
+assertions follow. Every failure is an opaque ``pytest.fail`` naming the check (D1.7); a
+mutation's differences are counted, never printed.
 """
 
 from __future__ import annotations
 
 import json
 import shlex
+import shutil
 import subprocess
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import date
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -25,16 +27,18 @@ from manifest_support import SETTINGS, check_stage4, failure_surface
 from onboarding_support import recorded, rows
 from pg_support import PgTestDatabase
 from stage1_e2e_support import actual, manifest_lines
+from stage1_provenance import provenance
 from stage4_support import (
     DISCOVERY,
     FREEZE,
     IMPL,
-    RefusedError,
     commits,
     current,
     git,
     is_ancestor,
     need,
+    opaque,
+    refused,
     sha256,
 )
 from test_frozen_manifests import REPO, load
@@ -43,7 +47,21 @@ from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
 from fundamentals.compare.queue import overlay_boundary, read_overlay
 from fundamentals.compare.run import load_results
+from fundamentals.compare.run_config import LoadedConfig, load_run_config
+from fundamentals.compare.run_models import (
+    FIRST_PARTY_SOURCES,
+    ResultRow,
+    RunExitStatus,
+    RunManifest,
+    RunScope,
+)
 from fundamentals.compare.run_store import RunStore
+from fundamentals.contracts.canonical import Basis
+from fundamentals.contracts.comparison import SourceRole
+from fundamentals.contracts.config_versions import ConfigVersions
+from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.evidence_tier import EvidenceTier
+from fundamentals.entity.discovery import MANIFEST_NAME
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.identity_seed import SettingKey
 
@@ -61,21 +79,15 @@ SETTING_KEYS = dict(
         strict=True,
     )
 )
+RETRIEVAL = "retrieval_manifest"
 FROZEN = ("implementation_commit", "descriptor_commit", "acquisition_head")
-RECORDED = (*FROZEN, "freeze_descriptor_sha256", "generation")
+RECORDED = (*FROZEN, "freeze_descriptor_sha256", "generation", "attempt")
+# onboard's exit per predicted outcome (D4: an admitted PARTIAL is an incomplete success)
+ONBOARD_EXIT = {"ONBOARDED": RunExitStatus.SUCCESS, "PARTIAL": RunExitStatus.INCOMPLETE}
 
 
-@contextmanager
-def opaque(check: str) -> Iterator[None]:
-    """Fail the check by name and step only, never a value or traceback (D1.7)."""
-    try:
-        yield
-        return
-    except RefusedError as refused:
-        step = str(refused)
-    except Exception as error:  # opaque: the type only, a message may carry a value
-        step = type(error).__name__
-    pytest.fail(f"stage4_e2e {check}: {step}", pytrace=False)
+class StoppedError(Exception):
+    """Raised by a replay seam to stop onboarding once its generation is chosen."""
 
 
 def inputs() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -103,6 +115,161 @@ def source(manifest: dict[str, Any], kind: str) -> Any:
     return json.loads((REPO / path).read_bytes())
 
 
+def replayed(folders: list[Path], root: Path, header: dict[str, Any], n: int) -> None:
+    """Replay read exactly the manifest's generation (D2: none named, so the highest complete
+    one), whose acquisition record names this attempt and the header's freeze fields and hashes
+    the discovery and retrieval manifests the replay consumed."""
+    paths = {s["kind"]: Path(s["path"]) for s in header["sources"]}
+    names = {ACQUISITION: onboard_cli.ACQUISITION_NAME, DISCOVERY_KIND: MANIFEST_NAME}
+    names[RETRIEVAL] = onboard_cli.RETRIEVAL_NAME
+    pinned = paths[ACQUISITION].parent
+    need(pinned.name == f"{onboard_cli.GENERATION_PREFIX}{header['generation']}", "generation")
+    need(all(paths[kind] == pinned / name for kind, name in names.items()), "generation sources")
+    need(folders == [root / pinned.name], "replayed generation")
+    acquisition = json.loads((folders[0] / onboard_cli.ACQUISITION_NAME).read_bytes())
+    need(all(acquisition[f] == header[f] for f in RECORDED), "acquisition record")
+    need(acquisition["attempt"] == n, "acquisition attempt")
+    consumed = {
+        f"{kind}_sha256": sha256((folders[0] / names[kind]).read_bytes())
+        for kind in (DISCOVERY_KIND, RETRIEVAL)
+    }
+    need(all(acquisition[f] == sha for f, sha in consumed.items()), "acquisition hashes")
+
+
+def onboarded(code: int, out: list[str], cli: str, outcome: str) -> None:
+    """onboard exits as its outcome does and prints exactly the manifest's command."""
+    need(code == ONBOARD_EXIT[outcome], "onboard exit")
+    commands = [
+        line.removeprefix(onboard_cli.COMPARE_PREFIX)
+        for line in out
+        if line.startswith(onboard_cli.COMPARE_PREFIX)
+    ]
+    need(commands == [cli], "printed command")
+
+
+def ran(
+    record: RunManifest, cli: str, onboarding: dict[str, Any], entity_id: int, frozen: Any
+) -> LoadedConfig:
+    """The stored run is the manifest's ``cli``: its entity, period, basis and vendor scope,
+    its mode, and every pin of the configuration at the freeze's ``onboarding_versions``."""
+    args = shlex.split(cli)
+    need(args[:3] == ["fundamentals", "compare", "run"] and len(args) % 2 == 1, "cli")
+    opts: dict[str, list[str]] = {}
+    for flag, value in zip(args[3::2], args[4::2], strict=True):
+        opts.setdefault(flag, []).append(value)
+    versions = ConfigVersions.model_validate(frozen)
+    need(opts["--entity"] == [onboarding["entity_key"]], "cli entity")
+    need(opts["--period-end"] == [str(onboarding["period_end"])], "cli period")
+    pins = [versions.dictionary], [versions.mapping_set]
+    need((opts["--dictionary"], opts["--mapping-set"]) == pins, "cli versions")
+    scope = RunScope(
+        entity_ids=(entity_id,),
+        period_ends=(date.fromisoformat(str(onboarding["period_end"])),),
+        bases=(Basis(opts["--basis"][0].upper()),),
+        sources=FIRST_PARTY_SOURCES,
+        vendors=tuple((v.split("/", 1)[0], v.split("/", 1)[1]) for v in opts["--vendor"]),
+    )
+    need(record.scope == scope, "run scope")
+    need(record.mode == RunMode(opts["--mode"][0].upper()), "run mode")
+    config = load_run_config(REPO / "config", versions, vendors=scope.vendors)
+    need(record.pinned == config.pinned, "run pins")
+    return config
+
+
+def selected(rows: tuple[ResultRow, ...]) -> list[int]:
+    """The first-party interpretation ids the rows selected."""
+    return [
+        v.interpretation_id
+        for row in rows
+        for v in row.source_values
+        if v.source_role is SourceRole.FIRST_PARTY and v.interpretation_id
+    ]
+
+
+def relabelled(rows: tuple[ResultRow, ...]) -> tuple[ResultRow, ...]:
+    """The rows with their first-party selections rotated, numbers untouched."""
+    ids = selected(rows)
+    need(len(set(ids)) > 1, "selections to relabel")
+    rotate = dict(zip(ids, ids[1:] + ids[:1], strict=True))
+    return tuple(
+        row.model_copy(
+            update={
+                "source_values": tuple(
+                    v.model_copy(update={"interpretation_id": rotate[v.interpretation_id]})
+                    if v.source_role is SourceRole.FIRST_PARTY and v.interpretation_id
+                    else v
+                    for v in row.source_values
+                )
+            }
+        )
+        for row in rows
+    )
+
+
+def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[..., Any]) -> None:
+    """Each mutation that leaves every number unchanged is caught: a relabelled selection or
+    rule, a moved locator, a promoted tier, a broken construction operand (provenance), a
+    wrong recorded mode or pin (``check``, the run-identity check)."""
+    repository, rows, record = outcome.stage.repository, outcome.rows, outcome.record
+    read, cells = repository.get_interpretations, repository.get_occurrences
+    chosen = read(selected(rows))
+    direct = [i.interpretation_id for i in chosen if i.occurrence_id]
+    need(len(direct) > 1 and any(i.operand_interpretation_ids for i in chosen), "targets")
+
+    def moved(ids: list[int]) -> tuple[Any, ...]:
+        found = cells(ids)
+        return tuple(
+            cell.model_copy(update={"anchor": o.anchor, "native_context": o.native_context})
+            for cell, o in zip(found, found[1:] + found[:1], strict=True)
+        )
+
+    def promoted(ids: list[int]) -> tuple[Any, ...]:
+        unproven = EvidenceTier.EQUIVALENCE_UNPROVEN
+        tier = {"tier": EvidenceTier.EQUIVALENCE_DEMONSTRATED}
+        return tuple(i.model_copy(update=tier) if i.tier is unproven else i for i in read(ids))
+
+    def broken(ids: list[int]) -> tuple[Any, ...]:
+        found = read(ids)
+        operands = {o for i in found for o in i.operand_interpretation_ids}
+        other = next(i for i in direct if i not in operands)
+        return tuple(
+            i.model_copy(
+                update={"operand_interpretation_ids": (other, *i.operand_interpretation_ids[1:])}
+            )
+            if i.operand_interpretation_ids
+            else i
+            for i in found
+        )
+
+    ruled = tuple(row.model_copy(update={"applicability_rule_id": "relabelled"}) for row in rows)
+    missed = [
+        name
+        for name, mutated in (
+            ("relabelled selection", relabelled(rows)),
+            ("relabelled rule", ruled),
+        )
+        if not provenance(outcome, mutated, manifest)
+    ]
+    for name, method, seam in (
+        ("moved locator", "get_occurrences", moved),
+        ("promoted tier", "get_interpretations", promoted),
+        ("broken operand", "get_interpretations", broken),
+    ):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(repository, method, seam)
+            if not provenance(outcome, None, manifest):
+                missed.append(name)
+    wrong_pin = record.pinned.model_copy(update={"mapping_set": record.pinned.dictionary})
+    wrong: dict[str, dict[str, Any]] = {
+        "wrong mode": {"mode": RunMode.RETROSPECTIVE},
+        "wrong pin": {"pinned": wrong_pin},
+    }
+    for name, update in wrong.items():
+        if not refused(partial(check, record.model_copy(update=update))):
+            missed.append(name)
+    need(not missed, f"mutations uncaught: {', '.join(missed)}")
+
+
 @pytest.mark.pg
 @pytest.mark.retained
 def test_stage4_onboards_and_compares_as_its_manifest(
@@ -111,11 +278,12 @@ def test_stage4_onboards_and_compares_as_its_manifest(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Replay onboarding records the manifest's (and prediction's) outcome, unit states,
-    captures, settings, entity key and period; the printed ``compare run`` is the manifest's
-    ``cli`` and, through ``main``, yields its rows, status and projected failures."""
-    with opaque("inputs"):
-        attempt, _, manifest = inputs()
+    """Replay onboarding of the manifest's generation exits as and records the manifest's (and
+    prediction's) outcome, unit states, captures, settings, entity key and period; the printed
+    ``compare run`` is the manifest's ``cli`` and, through ``main``, stores that run (scope,
+    mode, pins) with its rows, provenance, status and projected failures."""
+    with opaque("stage4_e2e inputs"):
+        attempt, freeze, manifest = inputs()
         header, onboarding, (run,) = manifest["header"], manifest["onboarding"], manifest["runs"]
         prediction = attempt["prediction"]
         root = REPO / f"data/raw/onboarding/attempt-{attempt['n']}"
@@ -123,21 +291,28 @@ def test_stage4_onboards_and_compares_as_its_manifest(
     monkeypatch.chdir(REPO)  # the manifest's ``cli`` names the checkout's ``config``
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
-    opened = "stage4_e2e onboard: replay opened a transport"
-    monkeypatch.setattr(onboard_cli, "live_transport", lambda: pytest.fail(opened, pytrace=False))
+    monkeypatch.setattr(onboard_cli, "live_transport", lambda: need(False, "transport opened"))
+    folders: list[Path] = []
+    replay = onboard_cli.replay_fetch
 
-    with opaque("onboard"):
+    def spy(folder: Path) -> Any:
+        folders.append(folder)
+        return replay(folder)
+
+    monkeypatch.setattr(onboard_cli, "replay_fetch", spy)
+
+    with opaque("stage4_e2e onboard"):
         snapshots = str(tmp_path / "snapshots")
         argv = ["onboard", attempt["identifier"], "--raw-root", str(root)]
-        _, out = printed(capsys, [*argv, "--snapshot-root", snapshots])
-        commands = [
-            line.removeprefix(onboard_cli.COMPARE_PREFIX)
-            for line in out
-            if line.startswith(onboard_cli.COMPARE_PREFIX)
-        ]
-        need(commands == [header["cli"]], "printed command")
+        code, out = printed(capsys, [*argv, "--snapshot-root", snapshots])
+        onboarded(code, out, header["cli"], onboarding["outcome"])
+        need(
+            refused(lambda: onboarded(RunExitStatus.FAILURE, out, header["cli"], "PARTIAL")),
+            "wrong exit",
+        )
+        replayed(folders, root, header, attempt["n"])
 
-    with opaque("onboarding"):
+    with opaque("stage4_e2e onboarding"):
         (_, outcome, _, _, entity_id), states = recorded(pg_db)
         need(outcome == onboarding["outcome"] == prediction["outcome"], "outcome")
         units = {u: (unit["state"], unit.get("reason")) for u, unit in onboarding["units"].items()}
@@ -153,20 +328,18 @@ def test_stage4_onboards_and_compares_as_its_manifest(
         )
         need(period == [(date.fromisoformat(str(onboarding["period_end"])),)], "period")
 
-    with opaque("evidence"):
+    with opaque("stage4_e2e evidence"):
         need(
             all(sha256((REPO / s["path"]).read_bytes()) == s["sha256"] for s in header["sources"]),
             "source hashes",
         )
-        acquisition = source(manifest, ACQUISITION)
-        need(all(acquisition[f] == header[f] for f in RECORDED), "acquisition record")
         captured = {
             e["sha256"] for e in source(manifest, DISCOVERY_KIND)["entries"] if e["outcome"] == "OK"
         }
         stored = {sha for (sha,) in rows(pg_db, "SELECT blob_sha256 FROM eqos.capture_refs")}
         need(stored == captured, "capture hashes")
 
-    with opaque("settings"):
+    with opaque("stage4_e2e settings"):
         values = {node["name"]: node for node in onboarding["values"]}
         location = {"url": values["DOCUMENT_URL"]["v"], "sha256": values["DOCUMENT_SHA256"]["v"]}
         want = {
@@ -194,35 +367,84 @@ def test_stage4_onboards_and_compares_as_its_manifest(
         )
         need(basis == [(values["BASIS_STATUS"]["v"],)], "basis status")
 
-    with opaque("compare"):
+    with opaque("stage4_e2e compare"):
         code, out = printed(capsys, shlex.split(header["cli"])[1:])
         (run_id,) = [int(line.split("\t", 1)[1]) for line in out if line.startswith("run\t")]
         with pg_db.runtime_pool() as pool:
             results = load_results(run_id, pool=pool)
             items = list(read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool)).open_items)
             record = RunStore(pool).read_manifest(run_id)
+
+            def identity(stored: RunManifest) -> LoadedConfig:
+                return ran(
+                    stored, header["cli"], onboarding, entity_id, freeze["onboarding_versions"]
+                )
+
             stage = SimpleNamespace(
-                run=run, entity_id=entity_id, pool=pool, repository=EvidenceRepository(pool)
+                run=run,
+                entity_id=entity_id,
+                pool=pool,
+                repository=EvidenceRepository(pool),
+                config=identity(record),
             )
             got_run = SimpleNamespace(
                 stage=stage,
+                rows=results,
+                record=record,
                 got=actual(run, results, items),
                 items=items,
                 status=record.status.value,
                 exit=code,
             )
             lines = manifest_lines(got_run, manifest)  # type: ignore[arg-type]
-        need(not lines, f"{len(lines)} run differences")
+            need(not lines, f"{len(lines)} run differences")
+            lines = provenance(got_run, None, manifest)  # type: ignore[arg-type]
+            need(not lines, f"{len(lines)} provenance differences")
+            mutations_caught(got_run, manifest, identity)
         need(record.status.value == prediction["run_status"], "run status")
         projected = {failure_surface(f) for f in record.operational_failures}
         need(projected == {failure_surface(f) for f in run["operational_failures"]}, "failures")
+
+
+@pytest.mark.retained
+def test_stage4_later_generation_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later complete generation with identical bodies is what replay would choose; the
+    generation binding refuses it and accepts the manifest's own (no database is reached)."""
+    with opaque("stage4_e2e generation"):
+        attempt, _, manifest = inputs()
+        header, root = manifest["header"], tmp_path / "root"
+        shutil.copytree(REPO / f"data/raw/onboarding/attempt-{attempt['n']}", root)
+        pinned = root / f"{onboard_cli.GENERATION_PREFIX}{header['generation']}"
+        later = root / f"{onboard_cli.GENERATION_PREFIX}{header['generation'] + 1}"
+        shutil.copytree(pinned, later)
+        document = json.loads((later / MANIFEST_NAME).read_bytes())
+        (later / MANIFEST_NAME).write_text(
+            json.dumps(document | {"generation": header["generation"] + 1})
+        )
+        folders: list[Path] = []
+
+        def stop(folder: Path) -> None:
+            folders.append(folder)
+            raise StoppedError
+
+        monkeypatch.setattr(onboard_cli, "replay_fetch", stop)
+        argv = ["onboard", attempt["identifier"], "--raw-root", str(root)]
+        try:
+            main([*argv, "--snapshot-root", str(tmp_path / "snapshots")])
+        except StoppedError:
+            pass
+        need(folders == [later], "later generation chosen")
+        need(refused(lambda: replayed(folders, root, header, attempt["n"])), "later refused")
+        replayed([pinned], root, header, attempt["n"])
 
 
 def test_stage4_freeze_holds_at_head() -> None:
     """D6 step 4: implementation ⊑ descriptor ⊑ acquisition head ⊑ HEAD; the acquisition
     head's descriptor holds the recorded entry; no implementation change since the freeze,
     committed or not; ``discovery.py`` exists at the freeze."""
-    with opaque("freeze"):
+    with opaque("stage4_e2e freeze"):
         _, freeze, manifest = inputs()
         implementation, descriptor, head = (manifest["header"][f] for f in FROZEN)
         need(freeze["implementation_commit"] == implementation, "freeze entry")

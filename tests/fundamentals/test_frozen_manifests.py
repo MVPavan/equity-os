@@ -38,9 +38,7 @@ from manifest_support import (
     read_binding,
     xml_refs,
 )
-from stage4_cases import STAGE4_CASES, stage4_case
-from stage4_support import CHECKS as HOLDOUT_CHECKS
-from stage4_support import current, refused
+from stage4_support import current
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
@@ -48,6 +46,9 @@ STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yam
 LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
 LEDGER2 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml"
 LEDGER3 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml"
+STAGE4 = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
+# Stage 4 runs behind an opaque boundary (test_stage4_manifest), never loaded at collection.
+PUBLIC = [path for path in MANIFESTS if path != STAGE4]
 E2E = {
     "stage1": "tests/fundamentals/test_data_stage1_e2e.py",
     "stage2": "tests/fundamentals/test_data_stage2_e2e.py",
@@ -87,7 +88,7 @@ GROUP_FIELDS = {
 Interval = tuple[Fraction, Fraction]
 
 per_manifest = pytest.mark.parametrize(
-    "path", MANIFESTS, ids=[p.name.removesuffix("_manifest.yaml") for p in MANIFESTS]
+    "path", PUBLIC, ids=[p.name.removesuffix("_manifest.yaml") for p in PUBLIC]
 )
 
 
@@ -680,7 +681,7 @@ def test_values_follow_from_their_lexemes(path: Path) -> None:
         check_stage3(manifest)
     else:
         (check_ledger if "versions" in manifest else check_values)(manifest)
-    if path.name == "stage4_manifest.yaml":
+    if path == STAGE4:
         check_stage4(REPO, manifest, *current(REPO))
 
 
@@ -740,7 +741,7 @@ def test_ledger_checks_reject_mutations(path: Path, name: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [p for p in MANIFESTS if "runs" in load(p)],
+    [p for p in PUBLIC if "runs" in load(p)],
     ids=lambda p: p.name.removesuffix("_manifest.yaml"),
 )
 def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
@@ -780,20 +781,3 @@ def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
     LEDGER3_MUTATIONS[name](manifest)
     with pytest.raises(AssertionError):
         check_stage3(manifest)
-
-
-@pytest.mark.parametrize("check", HOLDOUT_CHECKS)
-def test_stage4_holdout(check: str) -> None:
-    """The held-out record passes each D1 check; a failure names only the check (plan D6 D1.7)."""
-    HOLDOUT_CHECKS[check](REPO)
-
-
-@pytest.mark.parametrize("name", STAGE4_CASES)
-def test_stage4_check(name: str, tmp_path: Path) -> None:
-    """Each exclusion case passes; each mutation, locators intact, fails just its checks (T5a)."""
-    case = stage4_case(name, tmp_path, run_of(load(STAGE1), "APARINDS-Q2FY26"))
-    manifest = case["manifest"]
-    for loc in [node for node in walk(manifest["onboarding"]) if "src" in node]:
-        check_locator(manifest, loc)
-    checks = {"run": lambda: check_run(manifest["runs"][0]), "stage4": case["check"]}
-    assert {key for key, check in checks.items() if refused(check)} == case["fails"]

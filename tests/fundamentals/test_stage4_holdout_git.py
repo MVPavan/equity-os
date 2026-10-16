@@ -430,6 +430,25 @@ DRAW_MUTATIONS: dict[str, tuple[Callable[[Path, dict[str, Any]], object], str]] 
         lambda r, s: s["responses"].update(legacy={"status": 503, "body": []}),
         "skip evidence",
     ),
+    # an HTTP-200 listing that is not the listing's own envelope is no inventory: it refuses
+    # rather than skip (an empty list, as ``legacy`` above, is evidence)
+    "skip-integrated-error-object": (
+        lambda r, s: s["responses"].update(integrated=ok({"error": "x"})),
+        "listing",
+    ),
+    "skip-integrated-bare-list": (lambda r, s: s["responses"].update(integrated=ok([])), "listing"),
+    "skip-legacy-error-object": (
+        lambda r, s: s["responses"].update(legacy=ok({"data": []})),
+        "listing",
+    ),
+    "skip-row-not-an-object": (
+        lambda r, s: s["responses"].update(integrated=ok({"data": ["row"]})),
+        "listing",
+    ),
+    "skip-row-without-period": (
+        lambda r, s: s["responses"].update(integrated=ok({"data": [{"symbol": "ZZSKIP"}]})),
+        "listing",
+    ),
     "skip-evidence-another-file": (
         lambda r, s: s.update(evidence=sha256(FRAME.encode())),
         "skip evidence",

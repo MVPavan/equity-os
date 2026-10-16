@@ -19,7 +19,8 @@ import json
 import re
 import subprocess
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta, timezone
 from functools import cache
 from pathlib import Path
@@ -99,19 +100,30 @@ def need(ok: bool, step: str) -> None:
         raise RefusedError(step)
 
 
+@contextmanager
+def opaque(check: str) -> Iterator[None]:
+    """Fail the check by name and step only, never a value or traceback (D1.7): any outcome
+    but success, ``SystemExit`` and a pytest skip, xfail or fail included, is one named
+    failure; a user interrupt still interrupts."""
+    try:
+        yield
+        return
+    except KeyboardInterrupt:
+        raise
+    except RefusedError as refused:
+        step = str(refused)
+    except BaseException as error:  # opaque: the type only, a message may carry a value
+        step = type(error).__name__
+    pytest.fail(f"{check}: {step}", pytrace=False)
+
+
 def holdout_check(name: str) -> Callable[[Callable[[Path], None]], Callable[[Path], None]]:
     """Register a check whose every failure is an opaque ``pytest.fail`` naming it (D1.7)."""
 
     def register(check: Callable[[Path], None]) -> Callable[[Path], None]:
         def run(repo: Path) -> None:
-            try:
+            with opaque(f"stage4_holdout {name}"):
                 check(repo)
-                return
-            except RefusedError as refused:
-                step = str(refused)
-            except Exception as error:  # opaque: the type only, a message may carry a value
-                step = type(error).__name__
-            pytest.fail(f"stage4_holdout {name}: {step}", pytrace=False)
 
         CHECKS[name] = run
         return run
@@ -497,6 +509,18 @@ class Selection:
             need(response.get("status") == 200, "skip evidence")
             return response["body"]
 
+        def listed(name: str, doc: Any) -> list[dict[str, Any]]:
+            """A served listing's rows, refused unless its envelope is the listing's own (the
+            integrated ``data`` list, the legacy list) and each symbol row carries a period: an
+            error object is no evidence of an empty inventory (an empty list is)."""
+            items: Any = doc
+            if name == "integrated":
+                items = doc.get("data") if isinstance(doc, dict) else None
+            need(isinstance(items, list) and all(isinstance(r, dict) for r in items), "listing")
+            rows = listing_rows(items, symbol)
+            need(len(rows) == sum(r.get("symbol") == symbol for r in items), "listing")
+            return rows
+
         isin = self.isin(symbol)
         if isin is None:
             return NOT_EQ
@@ -505,10 +529,7 @@ class Selection:
         rows = (
             self.listing(symbol)
             if evidence is None
-            else [
-                *listing_rows(body("integrated"), symbol),
-                *listing_rows(body("legacy"), symbol),
-            ]
+            else [*listed("integrated", body("integrated")), *listed("legacy", body("legacy"))]
         )
         filings = qualifying_filings(rows, date.fromisoformat(str(self.sel["as_of"])))
         if filings is None or len(filings) < 2:

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from stage1_e2e_support import (
     BLOCKS,
+    MANIFEST,
     SOURCES,
     Outcome,
     _column,
@@ -33,11 +34,17 @@ DEMONSTRATED = EvidenceTier.EQUIVALENCE_DEMONSTRATED
 VENDOR_ROLES = (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC)
 
 
-def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> list[str]:
-    """Where the manifest records them: each selected first-party interpretation's capture and
-    native locator (XBRL element and context, PDF page, label and column) and tier, and each
-    row's applicability rule id."""
+def provenance(
+    outcome: Outcome,
+    rows: tuple[ResultRow, ...] | None = None,
+    manifest: dict[str, Any] | None = None,
+) -> list[str]:
+    """Where the manifest (Stage 1 unless given) records them: each selected first-party
+    interpretation's capture and native locator (XBRL element and context, PDF page, label and
+    column), or a construction's rule and operands' locators, and tier, and each row's
+    applicability rule id."""
     run, repository = outcome.stage.run, outcome.stage.repository
+    sources = SOURCES if manifest is None else labels(manifest)
     want = expanded_rows(run)
     keys = {row_key(run, row): row.key for row in rows or outcome.rows}
     chosen = {
@@ -73,10 +80,12 @@ def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> l
             outcome, rows or outcome.rows, keys[key], item, item
         ):
             lines.append(f"{key} {name} tier {item.tier.value} is not qualified")
+        if all("at" in op for op in side.get("operands", [{}])):  # an XBRL construction
+            lines += _operands(repository, sources, f"{key} {name}", side, item)
         cell = cells.get(item.occurrence_id)
         if cell is None:
             continue
-        src, anchor = SOURCES.get(cell.capture.blob_sha256), _json(cell.anchor)
+        src, anchor = sources.get(cell.capture.blob_sha256), _json(cell.anchor)
         if src is None:
             lines.append(f"{key} {name} capture {cell.capture.blob_sha256} is no manifest source")
         elif "at" in side:
@@ -98,11 +107,11 @@ def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> l
             )
             line = anchor.get("line")
             n = instances.index(line) + 1 if line in instances else None
-            column = _column(src, anchor) if "column_x0" in anchor else None
+            column = _column(src, anchor, manifest or MANIFEST) if "column_x0" in anchor else None
             located = (src, anchor.get("page"), n, column)
             if located != (side["src"], side["pg"], side.get("n", 1), side["col"]):
                 lines.append(f"{key} {name} locator: want {side} got {located} {cell.native_field}")
-    lines += _vendor_provenance(outcome, rows or outcome.rows)
+    lines += _vendor_provenance(outcome, rows or outcome.rows, sources)
     # applicability.*_by_rule keys read '<rule id>[:] <note>'; a row's own rule overrides
     rules = {
         canonical: rule.split()[0].rstrip(":")
@@ -119,7 +128,44 @@ def provenance(outcome: Outcome, rows: tuple[ResultRow, ...] | None = None) -> l
     return lines
 
 
-def _vendor_provenance(outcome: Outcome, rows: tuple[ResultRow, ...]) -> list[str]:
+def labels(manifest: dict[str, Any]) -> dict[str, str]:
+    """A manifest's source labels by SHA-256."""
+    return {entry["sha256"]: entry["label"] for entry in manifest["header"]["sources"]}
+
+
+def _operands(
+    repository: Any, sources: dict[str, str], where: str, side: dict[str, Any], item: Any
+) -> list[str]:
+    """A first-party construction: its rule, and its operands' cells exactly the manifest
+    operands' XBRL locators (an operand may list alternative ``at`` locators)."""
+    lines = []
+    if item.construction_rule_id != side["construction"]:
+        lines.append(f"{where} construction: want {side['construction']}")
+    ids = list(item.operand_interpretation_ids)
+    found = repository.get_interpretations(ids)
+    cells = repository.get_occurrences([o.occurrence_id for o in found if o.occurrence_id])
+    got = sorted(
+        (
+            sources.get(c.capture.blob_sha256),
+            c.native_context.get("local_name"),
+            _json(c.anchor).get("context_ref"),
+        )
+        for c in cells
+    )
+    alternatives = [{(at["src"], at["c"], at["ctx"]) for at in op["at"]} for op in side["operands"]]
+    if (
+        len(found) != len(ids)
+        or len(got) != len(alternatives)
+        or not all(any(loc in alts for loc in got) for alts in alternatives)
+        or not all(any(loc in alts for alts in alternatives) for loc in got)
+    ):
+        lines.append(f"{where} operands: want {side['operands']} got {got}")
+    return lines
+
+
+def _vendor_provenance(
+    outcome: Outcome, rows: tuple[ResultRow, ...], sources: dict[str, str]
+) -> list[str]:
     """Each selected vendor interpretation, or each construction trace's operands, resolved to
     its manifest capture and native locator (Screener sec/row/col, Tijori tbl/row/col, Upstox
     block/item/col), its tier and its stored condition evidence; an unknown id fails."""
@@ -158,6 +204,8 @@ def _vendor_provenance(outcome: Outcome, rows: tuple[ResultRow, ...]) -> list[st
                         f" got {trace.trace.formula_id}"
                     )
                 ids = [o.interpretation_id for o in trace.trace.operands if o.interpretation_id]
+                if len(ids) != len(side.get("operands", ids)):
+                    lines.append(f"{key} {name} operands: want {side['operands']} got {ids}")
             found = {item.interpretation_id: item for item in repository.get_interpretations(ids)}
             lines += [
                 f"{key} {name} interpretation {id_} is unknown" for id_ in ids if id_ not in found
@@ -172,6 +220,7 @@ def _vendor_provenance(outcome: Outcome, rows: tuple[ResultRow, ...]) -> list[st
                     item,
                     filing,
                     value.interpretation_id is not None,
+                    sources,
                 )
     return lines
 
@@ -185,8 +234,10 @@ def _vendor_cell(
     item: Any,
     filing: tuple[Any, ...],
     direct: bool,
+    sources: dict[str, str],
 ) -> list[str]:
-    """One vendor interpretation against its manifest side (a direct side: locator and tier).
+    """One vendor interpretation against its manifest side: a direct side's locator and tier, a
+    construction operand's locator among the side's ``operands`` (else its capture only).
 
     Spec §2 keeps known non-equivalence apart from unproven equivalence: the only tier the
     stored one may differ from is a DEMONSTRATED raised from a stored EQUIVALENCE_UNPROVEN,
@@ -203,10 +254,10 @@ def _vendor_cell(
     if item.tier is DEMONSTRATED and not _qualified(outcome, rows, row.key, item, item):
         lines.append(f"{key} {name} tier {item.tier.value} is not qualified")
     (cell,) = repository.get_occurrences([item.occurrence_id])
-    src, anchor = SOURCES.get(cell.capture.blob_sha256), _json(cell.anchor)
-    if src != side["src"]:
-        lines.append(f"{key} {name} capture: want {side['src']} got {src}")
-    if not direct:
+    src, anchor = sources.get(cell.capture.blob_sha256), _json(cell.anchor)
+    if not direct and "operands" not in side:  # a construction side naming its capture only
+        if src != side["src"]:
+            lines.append(f"{key} {name} capture: want {side['src']} got {src}")
         return lines
     if cell.capture.source_id == "tijori":
         got = {"tbl": anchor["table_key"], "row": anchor["row_key"]}
@@ -217,8 +268,9 @@ def _vendor_cell(
         }
     else:
         got = {"sec": anchor["table_id"].split(":")[0], "row": anchor["row_path"].split(":", 1)[1]}
-    got["col"] = anchor["column_label"]
-    if got != {field: side.get(field) for field in got}:
+    got |= {"col": anchor["column_label"], "src": src}
+    places = side["operands"] if "operands" in side and not direct else [side]
+    if all(got != {field: place.get(field) for field in got} for place in places):
         lines.append(f"{key} {name} locator: want {side} got {got}")
     return lines
 
