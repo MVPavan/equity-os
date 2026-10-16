@@ -73,6 +73,83 @@ attempts:
     verdict: APPROVE
     date: '2026-10-16'
     payload_sha256: 7556645a12fcd63fda2d456b524f03f073c92abcc343f04b8b4da6631741d20a
+- identifier: BHEL
+  n: 3
+  prediction:
+    capability_commit: 6d07b9fa702f1e50439ffa6bacabb22ab7651375
+    capability_sha256: 8cf774148bce3571a458d6bb5fc97655cdfa152392a6f8a3ddd67de491617832
+    diagnostic_excluded: []
+    excluded_units:
+    - RESULTS_PDF
+    outcome: PARTIAL
+    run_status: INCOMPLETE
+  selection:
+    as_of: 2026-10-16
+    catalogue_exemptions:
+    - path: scratchpad/upstox/entity-map-2026-09-04/entity_map.json
+      sha256: c2f81973797cb4d362c76061c41dd7d17579ba244ebf20f28119ef0c23c911f7
+    - path: scratchpad/upstox/entity-map-v2/entity_map.json
+      sha256: 9f61287c82e46244b0823a5fac25da7313a5d0ba39c325b434139ce5aafbbc2a
+    exclusion_inventory_sha256: 3fbfbebd490309ebea3d7dfd998831c19015523f5cec23e076d06e665b8ffd97
+    frame:
+      column: Industry
+      excluded_values:
+      - Financial Services
+      retrieved_at: '2026-10-16T18:19:28.802431+00:00'
+      sha256: 2959bf206239284e145f7aecc65095b18d11556d2642323a70f2d26efe0f5cb3
+      url: https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv
+    n_universe: 171
+    seed_commit: 06a22e12889dd39fbbb0fe72026b76f0cbce5406
+    selected_index: 31
+    selection_commit: 97ce11245c9f0a7b9226891ef50471c6bfa08931
+    skips:
+    - evidence_sha256: 9e508e8d07f181f1dd4a8118ecd7b10fe2b57c950b49a7bf3ea9de1c54542392
+      index: 21
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: 435a1c3da25c8da2dd8db4ae637775b92bdd7aca793e7728125dfd19ebf192c7
+    - evidence_sha256: f66f7a95d5318663fe31b3e6c84be6880ff15a068c172693ab7f8bf5255b3b2e
+      index: 22
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: 3d97cde8da8265a6f176e9fe3f0cc563d4ffa1307ce1e7b129ceb64be09c05d4
+    - evidence_sha256: d8fc80f28f46361b17795c7d6399c1c693dee4103119b9588a10a7e386c19151
+      index: 23
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: ef3a65863aeecbf0a8304686acf9fd130c7d0ddf3ee21385607c22cd6348c0cd
+    - evidence_sha256: de15ba917834e1bc60e6983be40b320a896f495ff34c0640bcb6ab90688357dd
+      index: 24
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: ed4d3165718df66e8022caecc53b29ac4d80c8431eb1fedcae608742c0d7345e
+    - evidence_sha256: 474ad748f65c9ffa4cf9aa2e483117dfd0f68ccafd6c4c8a0cca02583556f765
+      index: 25
+      reason: NOT_EQ
+      symbol_sha256: 402202cf2c750d8a4b3e0a0e0865791e9933d9b51d7741d694dd28b4c7e28a44
+    - evidence_sha256: 62b760745c8268808de601f9570334eb0c6331cbcd1bff1b277ccdda571f2fc6
+      index: 26
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: 4297d3a7a00ef89468fc856a8f093b82ceaea3ce551484f8a67fc44dcd933cce
+    - evidence_sha256: 2c972d80b290854c9e0048e4653b5fd0e85e52d3a062ea5a3abe9facd6541b2a
+      index: 27
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: ef5929117a34a680eff4bfe412f4798437aee2f1577cc8ae92f6669d20de3f81
+    - evidence_sha256: 42b24bcf2d2ad108cadfa96ab25046935f9a15e0f31196f01729332c7b7f737c
+      index: 28
+      reason: XBRL_NOT_ADMITTED
+      symbol_sha256: 7d6366bccd3fe217a0ffb2f742ac586e5d3c33d27b140c25282f216c321cd7a2
+    - evidence_sha256: 3323bbf219842ac754294534bf585f9c89cf263d424427d57e6c82717f824fd3
+      index: 29
+      reason: NO_CONSOLIDATED_INCAPMKT
+      symbol_sha256: b61e2d45f129128f7472ac53c6e151e4ea6d35892331af6fecf54ec3b623ec2e
+    - evidence_sha256: 4b974d6487c58104b38bc0993df6b0abf3893cec0dd299335d79f760e59e4cfc
+      index: 30
+      reason: NO_CONSOLIDATED_INCAPMKT
+      symbol_sha256: 8da9c6326264dd807be65c18bdb45cfdee7d6db63f5478fc9572d5ead98ac9aa
+    start_index: 21
+    universe_sha256: 5fbc2576448dcd8cf36620435ca970c190084675852b1c538f902f3993e2d437
+  approval:
+    reviewer: gpt-6.1-sol
+    verdict: APPROVE
+    date: '2026-10-16'
+    payload_sha256: a0960dd05ddb451aca9cd62676cf2bb1e5b5d557ca7bd22fed9080ff582e397c
 burns:
 - attempt: 1
   reason_code: ACQUISITION_DEFECT
