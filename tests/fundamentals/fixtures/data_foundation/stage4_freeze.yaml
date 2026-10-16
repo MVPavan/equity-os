@@ -28,3 +28,32 @@ freezes:
     reviewer: gpt-6.1-sol
     verdict: APPROVE
     date: '2026-10-16'
+- attempt: 2
+  implementation_commit: 1fda249946ff14a7ee03aa5b6d8b7aacf5dde6e6
+  inputs:
+  - src
+  - config
+  - migrations
+  - scripts
+  - pyproject.toml
+  - uv.lock
+  tree:
+    config: 573dcd68536c8d821b119db82cbe89b98bc1b6df
+    migrations: aa94239298ca411742b51b26a6d01a66ffc34ee9
+    pyproject.toml: 7ff1a42f0309a91fd335ac4c268cd220d14f3373
+    scripts: 52e19dd69f6fce497ea491ef20bf2d0fb4123153
+    src: 4e6fdfd79630add08b72433d665f59a0b335bb42
+    uv.lock: 919b9967369e5bb2099dbd13c91e991fd9fff087
+  holdout_payload_sha256: 7556645a12fcd63fda2d456b524f03f073c92abcc343f04b8b4da6631741d20a
+  onboarding_versions:
+    dictionary: v2
+    mapping_set: v5
+    normalisation_policy: v1
+    rounding_policy: v1
+    definition_set: v1
+    comparison_policy: v1
+    alignment_rules: v1
+  review:
+    reviewer: gpt-6.1-sol
+    verdict: APPROVE
+    date: '2026-10-16'
