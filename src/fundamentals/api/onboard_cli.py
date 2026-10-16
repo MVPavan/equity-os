@@ -158,7 +158,7 @@ _ENTRY_KEYS = frozenset(
 )
 _REVIEW_KEYS = frozenset({"reviewer", "verdict", "date"})
 _APPROVE = "APPROVE"
-_AGENT = "Mozilla/5.0 (equity-os onboarding)"
+_AGENT = "Mozilla/5.0 (X11; Linux x86_64)"  # Task 0b probe UA; BSE refuses a custom one (403)
 # Task 0b (d6-capability.md §7): the exchange page's own same-origin headers; the bse library's
 # request shape is refused (§8).
 _BSE_HEADERS = {
