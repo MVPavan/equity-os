@@ -1,0 +1,30 @@
+freezes:
+- attempt: 1
+  implementation_commit: f2437ca3bf8875d5c2b487a6f45d4c57b42e083c
+  inputs:
+  - src
+  - config
+  - migrations
+  - scripts
+  - pyproject.toml
+  - uv.lock
+  tree:
+    config: 573dcd68536c8d821b119db82cbe89b98bc1b6df
+    migrations: aa94239298ca411742b51b26a6d01a66ffc34ee9
+    pyproject.toml: 7ff1a42f0309a91fd335ac4c268cd220d14f3373
+    scripts: 52e19dd69f6fce497ea491ef20bf2d0fb4123153
+    src: d00f7158d324a9efbc427846f292a1ee3ff97756
+    uv.lock: 919b9967369e5bb2099dbd13c91e991fd9fff087
+  holdout_payload_sha256: 2b153148842c308fbb69e1541203ef3aa1fd8d0b5171114f36886d1ca3b28cd0
+  onboarding_versions:
+    dictionary: v2
+    mapping_set: v5
+    normalisation_policy: v1
+    rounding_policy: v1
+    definition_set: v1
+    comparison_policy: v1
+    alignment_rules: v1
+  review:
+    reviewer: gpt-6.1-sol
+    verdict: APPROVE
+    date: '2026-10-16'
