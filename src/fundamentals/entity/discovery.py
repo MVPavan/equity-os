@@ -86,6 +86,7 @@ from fundamentals.ingest.nse_filings import (
     listing_rows,
     listing_url,
 )
+from fundamentals.ingest.upstox_retention import request_identity as upstox_request_identity
 from fundamentals.pg.identity_seed import (
     MARKET_IN,
     SHARE_CLASS_EQUITY,
@@ -96,6 +97,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 MANIFEST_NAME = "discovery-manifest.json"
 OK = "OK"
+UPSTOX_ROUTE = "default"
 TIMEOUT = "TIMEOUT"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 FILINGS_CHECKED = 2
@@ -122,6 +124,17 @@ _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
 _ABORT_AUTH = "{surface} is not authorised"
 _BAD_REPLAY = "replay generation {folder}: {why}"
+
+
+class Recorded(BaseModel):
+    """What ``record`` wrote: the outcome, an admitted issuer's entity and each unit's input."""
+
+    model_config = ConfigDict(frozen=True)
+
+    outcome: OnboardingOutcome
+    reason: str | None
+    entity_id: int | None
+    inputs: dict[VerificationUnit, int]
 
 
 class OnboardingAbortError(RuntimeError):
@@ -535,20 +548,26 @@ def _expected(run: _Run, conn: psycopg.Connection[Any], filed: date | None) -> E
 
 def store_captures(
     store: SnapshotStore, repository: EvidenceRepository, captures: Sequence[Capture]
-) -> list[tuple[VerificationUnit, int]]:
-    """Publish each body to the snapshot store and register it; ``(unit, capture_ref_id)``."""
+) -> list[tuple[VerificationUnit, CaptureReference]]:
+    """Publish each body to the snapshot store and register it, in order: ``(unit, ref)``.
+
+    The Upstox statement keeps its route and query parameters, which ``vendor_upstox`` reads
+    at ingest; every other request is keyed by the digest of its manifest key."""
     registered = []
     for item in captures:
         body = item.response.body or b""
         request, sha = item.request, hashlib.sha256(body).hexdigest()
         authority = surface_authority(request.source_id, request.surface)
+        identity = RequestIdentity(
+            source_id=request.source_id,
+            surface=request.surface,
+            request_key=hashlib.sha256(request.key.encode()).hexdigest(),
+        )
+        if (request.source_id, request.surface) == UPSTOX_STATEMENT:
+            identity = upstox_request_identity(request.surface, UPSTOX_ROUTE, request.url)
         record = store.put_capture(
             CaptureRecord.make(
-                request=RequestIdentity(
-                    source_id=request.source_id,
-                    surface=request.surface,
-                    request_key=hashlib.sha256(request.key.encode()).hexdigest(),
-                ),
+                request=identity,
                 retrieved_at=item.response.retrieved_at,
                 http_status=200,
                 media_type=_MEDIA_TYPE,
@@ -577,21 +596,21 @@ def store_captures(
                 first_seen_at=now,
             )
         )
-        registered.append((request.unit, ref.capture_ref_id or 0))
+        registered.append((request.unit, ref))
     return registered
 
 
 def record(
     conn: psycopg.Connection[Any],
     found: Discovery,
-    captures: Sequence[tuple[VerificationUnit, int]],
-) -> tuple[OnboardingOutcome, str | None]:
+    captures: Sequence[tuple[VerificationUnit, CaptureReference]],
+) -> Recorded:
     """Write the record, its unit states and inputs, and a new issuer's identity, atomically."""
     result, reason = outcome(found.states)
     with conn.transaction():
         inputs: dict[VerificationUnit, int] = {}
         for unit in VerificationUnit:
-            ids = sorted(ref for owner, ref in captures if owner is unit)
+            ids = sorted(ref.capture_ref_id or 0 for owner, ref in captures if owner is unit)
             if not ids:
                 continue
             content = json.dumps([found.symbol, unit.value, ids]).encode()
@@ -620,7 +639,9 @@ def record(
             conn.execute(
                 _VERIFICATION_SQL, (record_id, unit.value, state.value, why, inputs.get(unit))
             )
-    return result, reason
+    return Recorded(
+        outcome=result, reason=reason, entity_id=entity_id if admitted else None, inputs=inputs
+    )
 
 
 def _new_issuer(conn: psycopg.Connection[Any], found: Discovery, input_id: int) -> int:

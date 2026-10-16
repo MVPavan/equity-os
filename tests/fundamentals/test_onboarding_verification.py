@@ -427,7 +427,6 @@ def test_apar_onboards_partial_with_only_the_pdf_excluded(
     assert unlinked == [(0,)]
     kinds = rows(pg_db, "SELECT DISTINCT kind FROM eqos.evidence_inputs")
     assert kinds == [(EvidenceInputKind.DISCOVERY.value,)]
-    assert evidence_counts(pg_db) == (0, 0)
 
 
 def _two_bse(served: list[dict[str, Any]]) -> None:
@@ -1004,7 +1003,12 @@ def test_gate_refuses_conflicted_and_identity_captures_and_admits_partial_ones(
         )
         writers = _writers(db, tmp_path / "b", tmp_path / "snap2")
         assert writers["xbrl"]().package_id is not None
-        assert writers["screener_page"]().occurrences
+        admitted = rows(  # onboarding's own ingest of the verified page (D5)
+            db,
+            "SELECT count(*) FROM eqos.occurrences o JOIN eqos.capture_refs c "
+            "ON c.id = o.capture_ref_id WHERE c.surface = 'SCREENER_FINANCIALS'",
+        )
+        assert admitted[0][0] > 0
         before = evidence_counts(db)
         with pytest.raises(IneligibleCaptureError):
             writers["screener_search"]()

@@ -51,6 +51,8 @@ _NAIVE_CUTOFF = "a run cutoff carries its UTC offset"
 _ONE_ENTITY = "a D1a run covers exactly one entity, got {count}: run each entity on its own"
 _NO_SOURCES = "a run requests at least one first-party source"
 _UNKNOWN_SOURCES = "requested sources {unknown} are not first-party surfaces {known}"
+_NOT_A_VENDOR = "{vendor} has role {role}, not a comparison vendor role"
+_VENDOR_ROLES = (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC)
 FIRST_PARTY_SOURCES = tuple(sorted(surface.value for surface in FirstPartySurface))
 
 
@@ -148,12 +150,15 @@ class RunScope(BaseModel):
     def _registered_vendors(
         cls, vendors: tuple[tuple[str, str], ...]
     ) -> tuple[tuple[str, str], ...]:
-        """Refuse an unregistered vendor surface; keep them sorted, each once."""
+        """Refuse an unregistered or non-vendor surface (identity and first-party surfaces of
+        the catalog are not comparison vendors); keep them sorted, each once."""
         for source_id, surface in vendors:
             try:
-                surface_authority(source_id, surface)
+                role = surface_authority(source_id, surface).role
             except SurfaceNotAuthorisedError as error:
                 raise ValueError(str(error)) from error
+            if role not in _VENDOR_ROLES:
+                raise ValueError(_NOT_A_VENDOR.format(vendor=f"{source_id}/{surface}", role=role))
         return tuple(sorted(set(vendors)))
 
 
