@@ -19,7 +19,7 @@ from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.acquisition_outcome import OutcomeCode
-from fundamentals.contracts.observation import Scope
+from fundamentals.contracts.observation import AccountingFramework, Scope
 from fundamentals.contracts.onboarding import (
     ANCHOR_UNITS,
     OnboardingOutcome,
@@ -29,7 +29,7 @@ from fundamentals.contracts.onboarding import (
     VerificationUnit,
 )
 from fundamentals.entity.entity_map import isin_check_digit
-from fundamentals.evidence.member_identity import verify_xbrl_period
+from fundamentals.evidence.member_identity import verify_xbrl_framework, verify_xbrl_period
 from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.screener_session_models import (
     AnonymousPageError,
@@ -182,12 +182,17 @@ def filing_identity(instance: RawXbrlInstance) -> FilingIdentity:
 
 
 def instance_state(instance: RawXbrlInstance, period_end: date) -> Verdict:
-    """The instance's own declarations against its listing row: the consolidated file scope
-    and every declared reporting-period end (first-party ingest's own period predicate)."""
+    """The instance's own declarations against its listing row: the consolidated file scope,
+    every declared reporting-period end, and the Ind AS declaration first-party ingest requires
+    (its own period and framework predicates, so discovery admits only what ingest accepts)."""
     if instance.scope is not Scope.CONSOLIDATED:
         return differs("instance scope", instance.scope.value, Scope.CONSOLIDATED.value)
     period = verify_xbrl_period(instance, period_end)
-    return VERIFIED if period.verified else conflict(period.reason or "")
+    if not period.verified:
+        return conflict(period.reason or "")
+    if not verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified:
+        return VerificationState.UNVERIFIED, OnboardingReason.NO_FRAMEWORK_DECLARATION.value
+    return VERIFIED
 
 
 def xbrl_entity_state(filing: FilingIdentity, name: str, expected: Expected) -> Verdict:

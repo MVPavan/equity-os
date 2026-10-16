@@ -5,9 +5,9 @@ under ``data/holdout/attempt-<n>/`` at runtime. Private files are located by con
 SHA-256 or shape), except the selector's hit inventory ``exclusion_hits.txt`` (lines
 ``<symbol_sha256> token<i> <object|file> <git object id|repo path>``). A skip's evidence is
 the master CSV for ``NOT_EQ``/``NON_IN_ISIN``, otherwise a JSON envelope
-``{"symbol": ..., "responses": {"integrated"|"legacy"|"bse": {"status": 200, "body": ...}}}``
-holding every response its rules read. A failure names only the check and its step, plus a
-redacted path for a leak, and never a recorded value (D1.7).
+``{"symbol": ..., "responses": {"integrated"|"legacy"|"bse"|"xbrl": {"status": 200, "body": ...}}}``
+holding every response its rules read (``xbrl``: listing link → instance text). A failure names
+only the check and its step, plus a redacted path for a leak, and never a recorded value (D1.7).
 """
 
 from __future__ import annotations
@@ -21,11 +21,18 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, timedelta, timezone
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import yaml
+
+from fundamentals.canon.dictionary import load_dictionary
+from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
+from fundamentals.entity.verification import VERIFIED, financial_rule, instance_state
+from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError, load_mapping_set
+from fundamentals.evidence.xbrl_adapter import parse_instance
 
 RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yaml"
 FREEZE = "tests/fundamentals/fixtures/data_foundation/stage4_freeze.yaml"
@@ -47,8 +54,10 @@ CATALOGUE = {  # D1.2 amendment: exempt only while the bytes match the pin
 FINANCIAL, INDUSTRY = "Financial Services", "Industry"
 REVIEWER, APPROVE, UPSTOX = "gpt-6.1-sol", "APPROVE", "UPSTOX"
 NOT_EQ, NON_IN_ISIN, NO_FILINGS = "NOT_EQ", "NON_IN_ISIN", "NO_CONSOLIDATED_INCAPMKT"
-BSE_NOT_ONE, TOKEN_HIT = "BSE_NOT_ONE", "TOKEN_HIT"
-SKIP_REASONS = (NOT_EQ, NON_IN_ISIN, NO_FILINGS, BSE_NOT_ONE, TOKEN_HIT)
+BSE_NOT_ONE, TOKEN_HIT, NO_XBRL = "BSE_NOT_ONE", "TOKEN_HIT", "XBRL_NOT_ADMITTED"
+SKIP_REASONS = (NOT_EQ, NON_IN_ISIN, NO_FILINGS, NO_XBRL, BSE_NOT_ONE, TOKEN_HIT)
+XBRL_RULE_FROM = 3  # D1.3 amendment 2026-10-16 (eqos-h4h.10): attempts drawn after burn 2
+CONFIG = Path(__file__).resolve().parents[2] / "config"
 KEYS = {  # D1.1
     "record": {"attempts", "burns"},
     "attempt": {"n", "identifier", "selection", "prediction", "approval"},
@@ -250,14 +259,24 @@ def quarter_ends(as_of: date) -> set[date]:
 
 
 def qualifying_periods(rows: Iterable[dict[str, Any]], as_of: date) -> int | None:
+    """The number of distinct qualifying period ends (``qualifying_filings``)."""
+    filings = qualifying_filings(rows, as_of)
+    return None if filings is None else len(filings)
+
+
+def qualifying_filings(
+    rows: Iterable[dict[str, Any]], as_of: date
+) -> dict[date, str | None] | None:
     """D1.3 filing-window rule over rows of both NSE listings: collapse each (period_end, basis)
-    to its latest broadcast, count distinct period ends of collapsed consolidated in-capmkt rows;
-    None when a group's latest broadcast is tied. Broadcast is the listing's own field only: a
-    group with a row that has none (missing, empty or blank) cannot be ordered and yields no
-    qualifying period. Rows equal on the parsed fields (period end, basis, broadcast, listing,
-    type, XBRL link) are one filing; any other field, e.g. ``seq_Id``, is ignored."""
+    to its latest broadcast; each distinct period end of a collapsed consolidated in-capmkt row
+    with that row's XBRL link; None when a group's latest broadcast is tied. Broadcast is the
+    listing's own field only: a group with a row that has none (missing, empty or blank) cannot
+    be ordered and yields no qualifying period. Rows equal on the parsed fields (period end,
+    basis, broadcast, listing, type, XBRL link) are one filing; any other field, e.g. ``seq_Id``,
+    is ignored."""
     window = quarter_ends(as_of)
-    groups: dict[tuple[date, str], list[tuple[datetime | None, bool]]] = defaultdict(list)
+    groups: dict[tuple[date, str], list[tuple[datetime | None, bool, str | None]]]
+    groups = defaultdict(list)
     parsed = {}
     for row in rows:
         integrated = "qe_Date" in row
@@ -266,21 +285,44 @@ def qualifying_periods(rows: Iterable[dict[str, Any]], as_of: date) -> int | Non
         xbrl = (row.get("xbrl") or "").strip() or None
         key = (period_end(row), row.get("consolidated"), when, integrated, row.get("type"), xbrl)
         parsed[key] = None
-    for end, basis, when, integrated, kind, _ in parsed:
+    for end, basis, when, integrated, kind, xbrl in parsed:
         if end in window and basis:
             qualifies = integrated and kind == FINANCIALS and basis == CONSOLIDATED
-            groups[end, basis].append((when, qualifies))
-    periods = set()
+            groups[end, basis].append((when, qualifies, xbrl))
+    periods = {}
     for (end, _), filings in groups.items():
-        times = [when for when, _ in filings]
+        times = [when for when, *_ in filings]
         if None in times:
             continue
-        top = [qualifies for when, qualifies in filings if when == max(cast(list[datetime], times))]
+        latest = max(cast(list[datetime], times))
+        top = [(qualifies, xbrl) for when, qualifies, xbrl in filings if when == latest]
         if len(top) > 1:
             return None
-        if top[0]:
-            periods.add(end)
-    return len(periods)
+        if top[0][0]:
+            periods[end] = top[0][1]
+    return periods
+
+
+@cache
+def onboarding_mapping_set() -> MappingSet:
+    """The mapping set discovery parses instances under (``ONBOARDING_VERSIONS``)."""
+    dictionary = load_dictionary(CONFIG / "dictionary", ONBOARDING_VERSIONS.dictionary)
+    return load_mapping_set(
+        CONFIG / "mappings", ONBOARDING_VERSIONS.mapping_set, dictionary=dictionary
+    )
+
+
+def xbrl_admitted(body: bytes, period_end: date) -> bool:
+    """Discovery's XBRL step for one instance of a qualifying period (D4.2 steps 3-4): the
+    financial rule, the onboarding mapping set's schema, then ``instance_state`` (scope, period
+    and first-party ingest's own framework predicate)."""
+    if not financial_rule(body):
+        return False
+    try:
+        instance = parse_instance(body, mapping_set=onboarding_mapping_set())
+    except UnsupportedSchemaError:
+        return False
+    return instance_state(instance, period_end) == VERIFIED
 
 
 def csv_rows(data: bytes) -> list[dict[str, str]]:
@@ -410,6 +452,14 @@ class Selection:
         need(len(found) <= 1, "bse evidence")
         return bse_candidates("".join(found), isin)
 
+    def instance(self, link: str) -> bytes:
+        """The one retained instance named by a listing link's file name (names carry no
+        identifier)."""
+        name = link.rsplit("/", 1)[-1]
+        found = [p for p in self.root.rglob("*") if p.is_file() and p.name == name]
+        need(len(found) == 1, "instance bytes")
+        return found[0].read_bytes()
+
     def frame_tokens(self, symbol: str) -> list[str]:
         """D1.2 tokens of a frame row: symbol, ISIN, normalised name."""
         row = self.frame[symbol]
@@ -447,9 +497,20 @@ class Selection:
                 *listing_rows(body("legacy"), symbol),
             ]
         )
-        periods = qualifying_periods(rows, date.fromisoformat(str(self.sel["as_of"])))
-        if periods is None or periods < 2:
+        filings = qualifying_filings(rows, date.fromisoformat(str(self.sel["as_of"])))
+        if filings is None or len(filings) < 2:
             return NO_FILINGS
+        if self.attempt["n"] >= XBRL_RULE_FROM:
+            latest = sorted(filings.items(), reverse=True)[:2]
+            if any(link is None for _, link in latest):
+                return NO_XBRL
+            if evidence is None:
+                bodies = {link: self.instance(cast(str, link)) for _, link in latest}
+            else:
+                bodies = {link: text.encode() for link, text in body("xbrl").items()}
+            need(bodies.keys() == {link for _, link in latest}, "skip evidence")
+            if not all(xbrl_admitted(bodies[link], end) for end, link in latest):
+                return NO_XBRL
         bse = self.bse(isin) if evidence is None else bse_candidates(body("bse"), isin)
         if len(bse) != 1:
             return BSE_NOT_ONE

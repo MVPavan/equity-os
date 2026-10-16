@@ -6,6 +6,7 @@ in replay over ``tmp_path`` roots built by ``onboarding_support``. No socket is 
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import date
@@ -41,11 +42,15 @@ from onboarding_support import (
     write_root,
 )
 from pg_support import PgTestDatabase
+from stage4_support import onboarding_mapping_set, xbrl_admitted
 
 from fundamentals.contracts.entity_identity import IdentifierNamespace
+from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.onboarding import OnboardingOutcome, VerificationState, VerificationUnit
 from fundamentals.entity.identity_layers import latest_slice
 from fundamentals.entity.verification import financial_rule, normalise_name, outcome
+from fundamentals.evidence.member_identity import verify_xbrl_framework
+from fundamentals.evidence.xbrl_adapter import parse_instance
 from fundamentals.ingest.nse_filings import filing_window, listing_rows
 from fundamentals.pg.identity_seed import EvidenceInputKind
 
@@ -93,6 +98,38 @@ def test_financial_rule_admits_every_development_filing() -> None:
     ind_as = b"IntegratedFinance_IndAS"
     unknown = bodies[0].replace(ind_as, b"IntegratedFinance_ZZ")
     assert not financial_rule(unknown)  # unknown entry point fails closed
+
+
+@pytest.mark.retained
+def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> None:
+    """eqos-h4h.10: attempt 2 was burned because discovery admitted an Ind AS filing (Task 0b
+    entry-point signal) whose XBRL ingest then rejected for declaring no framework. Over every
+    distinct retained integrated instance, discovery's XBRL step admits an instance iff the
+    financial rule holds and ingest's own framework check (``first_party_extract._read_xbrl``)
+    accepts it. Most development filings carry no notes phrase, so only Apar (six instances) and
+    LAURUSLABS are supported."""
+    paths = sorted(DEV.rglob("nse/INTEGRATED_FILING*.xml"))
+    paths += sorted((DEV.parent / "watchlist/aparinds/nse").glob("INTEGRATED_FILING*.xml"))
+    bodies = {hashlib.sha256(path.read_bytes()).hexdigest(): path for path in reversed(paths)}
+    admitted: list[str] = []
+    non_financial = 0
+    for path in bodies.values():
+        body = path.read_bytes()
+        instance = parse_instance(body, mapping_set=onboarding_mapping_set())
+        spec = instance.taxonomy
+        (end,) = {
+            date.fromisoformat((fact.raw_text or "").strip())
+            for fact in instance.facts
+            if fact.namespace_uri == spec.namespace
+            and fact.concept_qname.endswith(f":{spec.reporting_period_end_concept}")
+        }
+        ingest = verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified
+        non_financial += financial_rule(body)
+        assert xbrl_admitted(body, end) == (financial_rule(body) and ingest), path
+        if xbrl_admitted(body, end):
+            admitted.append(path.parts[-3] if "dev-entry-points" in path.parts else APAR)
+    assert non_financial == 16 and len(admitted) == 7
+    assert set(admitted) == {APAR, "LAURUSLABS"}
 
 
 def _row(
@@ -340,6 +377,16 @@ REFUSALS = {
         R.FOREIGN_ISIN,
     ),
     "two_revisions_one_period": (APAR, _two_revisions, R.INSUFFICIENT_FILINGS),
+    "no_framework_declaration": (  # SYNTHETIC: the latest instance's notes phrase removed
+        APAR,
+        partial(
+            edit,
+            url_part="INTEGRATED_FILING_INDAS_1701114",
+            old=b"Indian Accounting Standard",
+            new=b"Zz Accounting Standard",
+        ),
+        R.NO_FRAMEWORK_DECLARATION,
+    ),
 }
 
 

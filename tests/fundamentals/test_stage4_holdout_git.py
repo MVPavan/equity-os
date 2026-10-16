@@ -21,6 +21,7 @@ from stage4_support import (
     DISCOVERY,
     FREEZE,
     NO_FILINGS,
+    NO_XBRL,
     RECORD,
     TOKEN_HIT,
     RefusedError,
@@ -369,9 +370,9 @@ def draw_state(repo: Path) -> dict[str, Any]:
     }
 
 
-def draw_check(repo: Path, state: dict[str, Any]) -> None:
+def draw_check(repo: Path, state: dict[str, Any]) -> Selection:
     """Write the state's private bytes, then recompute the universe and ZZSKIP's skip."""
-    private = repo / "data/holdout/attempt-1"
+    private = repo / f"data/holdout/attempt-{state.get('n', 1)}"
     inventory = "".join(sorted(f"{sha256(s.encode())} {r}\n" for s, r in state["reasons"].items()))
     hits = "".join(f"{sha256(s.encode())} token0 {at}\n" for s, at in state["hits"].items())
     envelope = json.dumps({"symbol": "ZZSKIP", "responses": state["responses"]})
@@ -391,11 +392,12 @@ def draw_check(repo: Path, state: dict[str, Any]) -> None:
         "universe_sha256": sha256("".join(f"{s}\n" for s in universe).encode()),
         "n_universe": len(universe),
     }
-    drawn = Selection(repo, {"n": 1, "identifier": ID, "selection": selection})
+    drawn = Selection(repo, {"n": state.get("n", 1), "identifier": ID, "selection": selection})
     assert drawn.universe() == universe
     evidence = state["evidence"] or sha256(envelope.encode())
     skip = {"symbol_sha256": sha256(b"ZZSKIP"), "reason": state["reason"]}
     drawn.check_skip("ZZSKIP", skip | {"evidence_sha256": evidence})
+    return drawn
 
 
 def later_hit(repo: Path, state: dict[str, Any]) -> None:
@@ -463,3 +465,40 @@ def test_draw_refuses_unsupported_exclusions_and_skips(repo: Path, name: str) ->
     with pytest.raises(RefusedError) as refused:
         draw_check(repo, state)
     assert str(refused.value) == step
+
+
+APAR_XBRL = Path(__file__).resolve().parents[2] / "data/raw/watchlist/aparinds/nse"
+APAR_LATEST = {  # Apar's two latest integrated instances, by period end
+    JUN: "INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml",
+    MAR: "INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml",
+}
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("declared", [False, True])
+def test_draw_skips_a_candidate_discovery_would_refuse(repo: Path, declared: bool) -> None:
+    """D1.3 amendment (eqos-h4h.10), attempt 3 on: a candidate whose two latest qualifying
+    instances do not all pass discovery's XBRL step (here Apar's, ingest's Ind AS phrase removed
+    from the June one) is skipped XBRL_NOT_ADMITTED, from its envelope and from retained bytes
+    alike; the original instances reproduce no such skip."""
+    private = (repo / "data/holdout/attempt-1").rename(repo / "data/holdout/attempt-3")
+    bodies, rows = {}, []
+    for end, name in APAR_LATEST.items():
+        body = (APAR_XBRL / name).read_bytes()
+        if end == JUN and not declared:
+            body = body.replace(b"Indian Accounting Standard", b"Zz Accounting Standard")
+        (private / name).write_bytes(body)
+        bodies[f"x/{name}"] = body.decode()
+        rows.append(listing_row(end, T1, symbol="ZZSKIP", xbrl=f"x/{name}"))
+    (private / "listing.json").write_text(json.dumps({"data": rows}))
+    state = draw_state(repo) | {"n": 3, "reason": NO_XBRL}
+    state["responses"] |= {
+        "integrated": ok({"data": rows}),
+        "xbrl": ok(bodies),
+        "bse": ok(bse("ZZSKIP", "INE000Z01052")),
+    }
+    if declared:
+        with pytest.raises(RefusedError, match="skip reason"):
+            draw_check(repo, state)
+    else:
+        assert draw_check(repo, state).failed_rule("ZZSKIP") == NO_XBRL
