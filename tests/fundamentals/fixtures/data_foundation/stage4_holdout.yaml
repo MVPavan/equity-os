@@ -36,4 +36,6 @@ attempts:
     verdict: APPROVE
     date: '2026-10-16'
     payload_sha256: 2b153148842c308fbb69e1541203ef3aa1fd8d0b5171114f36886d1ca3b28cd0
-burns: []
+burns:
+  - {attempt: 1, reason_code: ACQUISITION_DEFECT, bead: eqos-h4h.7, freeze_descriptor_sha256: edd4b9bcd853e54af315e147a3a319956b9d26ab584d70d220140da6da31d037,
+  date: '2026-10-16'}
