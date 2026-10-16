@@ -204,24 +204,26 @@ def _vendor_provenance(
                         f" got {trace.trace.formula_id}"
                     )
                 ids = [o.interpretation_id for o in trace.trace.operands if o.interpretation_id]
-                if len(ids) != len(side.get("operands", ids)):
-                    lines.append(f"{key} {name} operands: want {side['operands']} got {ids}")
+            direct = value.interpretation_id is not None
             found = {item.interpretation_id: item for item in repository.get_interpretations(ids)}
-            lines += [
-                f"{key} {name} interpretation {id_} is unknown" for id_ in ids if id_ not in found
-            ]
-            for item in found.values():
-                lines += _vendor_cell(
-                    outcome,
-                    rows,
-                    row,
-                    name,
-                    side,
-                    item,
-                    filing,
-                    value.interpretation_id is not None,
-                    sources,
+            located = []
+            for id_ in ids:  # per trace operand, so a duplicated operand counts twice
+                if id_ not in found:
+                    lines.append(f"{key} {name} interpretation {id_} is unknown")
+                    continue
+                more, got = _vendor_cell(
+                    outcome, rows, row, name, side, found[id_], filing, direct, sources
                 )
+                lines += more
+                located.append(got)
+            if not direct and "operands" in side:  # each manifest operand matched exactly once
+                left = list(side["operands"])
+                for got in located:
+                    hit = next((p for p in left if got == {f: p.get(f) for f in got}), None)
+                    if hit is not None:
+                        left.remove(hit)
+                if left or len(located) != len(side["operands"]):
+                    lines.append(f"{key} {name} operands: want {side['operands']} got {located}")
     return lines
 
 
@@ -235,9 +237,10 @@ def _vendor_cell(
     filing: tuple[Any, ...],
     direct: bool,
     sources: dict[str, str],
-) -> list[str]:
-    """One vendor interpretation against its manifest side: a direct side's locator and tier, a
-    construction operand's locator among the side's ``operands`` (else its capture only).
+) -> tuple[list[str], dict[str, Any]]:
+    """One vendor interpretation against its manifest side, with its native locator: a direct
+    side's locator and tier, a construction operand's capture when the side lists no
+    ``operands`` (the caller matches listed operands as a collection).
 
     Spec §2 keeps known non-equivalence apart from unproven equivalence: the only tier the
     stored one may differ from is a DEMONSTRATED raised from a stored EQUIVALENCE_UNPROVEN,
@@ -258,7 +261,7 @@ def _vendor_cell(
     if not direct and "operands" not in side:  # a construction side naming its capture only
         if src != side["src"]:
             lines.append(f"{key} {name} capture: want {side['src']} got {src}")
-        return lines
+        return lines, {"src": src}
     if cell.capture.source_id == "tijori":
         got = {"tbl": anchor["table_key"], "row": anchor["row_key"]}
     elif cell.capture.source_id == "upstox":
@@ -269,10 +272,9 @@ def _vendor_cell(
     else:
         got = {"sec": anchor["table_id"].split(":")[0], "row": anchor["row_path"].split(":", 1)[1]}
     got |= {"col": anchor["column_label"], "src": src}
-    places = side["operands"] if "operands" in side and not direct else [side]
-    if all(got != {field: place.get(field) for field in got} for place in places):
+    if direct and got != {field: side.get(field) for field in got}:
         lines.append(f"{key} {name} locator: want {side} got {got}")
-    return lines
+    return lines, got
 
 
 def _qualified(

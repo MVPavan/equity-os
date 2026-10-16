@@ -208,13 +208,25 @@ def relabelled(rows: tuple[ResultRow, ...]) -> tuple[ResultRow, ...]:
 
 def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[..., Any]) -> None:
     """Each mutation that leaves every number unchanged is caught: a relabelled selection or
-    rule, a moved locator, a promoted tier, a broken construction operand (provenance), a
-    wrong recorded mode or pin (``check``, the run-identity check)."""
+    rule, a moved locator, a promoted tier, a broken construction operand, a vendor trace
+    operand replaced by another of its operands (provenance), a wrong recorded mode or pin
+    (``check``, the run-identity check)."""
     repository, rows, record = outcome.stage.repository, outcome.rows, outcome.record
     read, cells = repository.get_interpretations, repository.get_occurrences
+    traces = repository.get_calculation_traces
     chosen = read(selected(rows))
     direct = [i.interpretation_id for i in chosen if i.occurrence_id]
     need(len(direct) > 1 and any(i.operand_interpretation_ids for i in chosen), "targets")
+    vendor = [
+        v.calculation_trace_id
+        for row in rows
+        for v in row.source_values
+        if v.source_role is not SourceRole.FIRST_PARTY and v.calculation_trace_id
+    ]
+    need(
+        any(len({o.interpretation_id for o in t.trace.operands}) > 1 for t in traces(vendor)),
+        "vendor trace targets",
+    )
 
     def moved(ids: list[int]) -> tuple[Any, ...]:
         found = cells(ids)
@@ -241,6 +253,18 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
             for i in found
         )
 
+    def duplicated(ids: list[int]) -> tuple[Any, ...]:
+        mutated = []
+        for stored in traces(ids):
+            operands = list(stored.trace.operands)
+            a = operands[0].interpretation_id if operands else None
+            b = next((n for n, o in enumerate(operands) if o.interpretation_id != a), None)
+            if b is not None:
+                operands[b] = operands[b].model_copy(update={"interpretation_id": a})
+            trace = stored.trace.model_copy(update={"operands": tuple(operands)})
+            mutated.append(stored.model_copy(update={"trace": trace}))
+        return tuple(mutated)
+
     ruled = tuple(row.model_copy(update={"applicability_rule_id": "relabelled"}) for row in rows)
     missed = [
         name
@@ -254,6 +278,7 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
         ("moved locator", "get_occurrences", moved),
         ("promoted tier", "get_interpretations", promoted),
         ("broken operand", "get_interpretations", broken),
+        ("duplicated vendor operand", "get_calculation_traces", duplicated),
     ):
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(repository, method, seam)
