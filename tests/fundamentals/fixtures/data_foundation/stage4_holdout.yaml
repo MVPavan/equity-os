@@ -79,3 +79,8 @@ burns:
   bead: eqos-h4h.7
   freeze_descriptor_sha256: edd4b9bcd853e54af315e147a3a319956b9d26ab584d70d220140da6da31d037
   date: '2026-10-16'
+- attempt: 2
+  reason_code: ACQUISITION_DEFECT
+  bead: eqos-h4h.10
+  freeze_descriptor_sha256: e59a040df1b0fc4cf313a910db32ce7ff959e8232f06adab8712d725ca51793b
+  date: '2026-10-16'
