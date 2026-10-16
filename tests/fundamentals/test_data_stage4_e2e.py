@@ -66,6 +66,9 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.identity_seed import SettingKey
 
 MANIFEST = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
+CLOSURE = (
+    "8e720897ecd6f2c60e13f7b2f3bddc0797b4178b"  # last D6 change; IMPL unchanged since the freeze
+)
 ACQUISITION = "acquisition"  # header source kind of the generation's acquisition.json
 SETTING_KEYS = dict(
     zip(
@@ -498,24 +501,30 @@ def test_stage4_later_generation_is_refused(
         replayed([pinned], root, header, attempt["n"])
 
 
-def test_stage4_freeze_holds_at_head() -> None:
-    """D6 step 4: implementation ⊑ descriptor ⊑ acquisition head ⊑ HEAD; the acquisition
-    head's descriptor holds the recorded entry; no implementation change since the freeze,
-    committed or not; ``discovery.py`` exists at the freeze."""
+def test_stage4_freeze_held_to_closure() -> None:
+    """D6 step 4, pinned at the phase's closure (owner ruling 2026-10-16, D6.md Q2 amendment):
+    implementation ⊑ descriptor ⊑ acquisition head ⊑ ``CLOSURE`` ⊑ HEAD; the acquisition head's
+    descriptor holds the recorded entry; no implementation change from the freeze to ``CLOSURE``;
+    ``discovery.py`` exists at the freeze. Later phases may change the implementation."""
     with opaque("stage4_e2e freeze"):
         _, freeze, manifest = inputs()
         implementation, descriptor, head = (manifest["header"][f] for f in FROZEN)
         need(freeze["implementation_commit"] == implementation, "freeze entry")
-        ancestry = [(implementation, descriptor), (descriptor, head), (head, "HEAD")]
-        need(all(is_ancestor(REPO, old, new) for old, new in ancestry), "ancestry")
+        chain = [
+            (implementation, descriptor),
+            (descriptor, head),
+            (head, CLOSURE),
+            (CLOSURE, "HEAD"),
+        ]
+        need(all(is_ancestor(REPO, old, new) for old, new in chain), "ancestry")
         entries = yaml.safe_load(git(REPO, "show", f"{head}:{FREEZE}"))["freezes"]
         hashes = {sha256(yaml.safe_dump(e, sort_keys=True).encode()) for e in entries}
         need(manifest["header"]["freeze_descriptor_sha256"] in hashes, "descriptor entry")
-        need(not commits(REPO, f"{implementation}..HEAD", "--", *IMPL), "implementation commits")
+        span = f"{implementation}..{CLOSURE}"
+        need(not commits(REPO, span, "--", *IMPL), "implementation commits")
         diff = subprocess.run(
-            ["git", "diff", "--quiet", implementation, "--", "src", "config"], cwd=REPO
+            ["git", "diff", "--quiet", implementation, CLOSURE, "--", "src", "config"], cwd=REPO
         )
         need(diff.returncode == 0, "src/config diff")
-        need(not git(REPO, "status", "--porcelain", "--", *IMPL), "uncommitted implementation")
         found = subprocess.run(["git", "cat-file", "-e", f"{implementation}:{DISCOVERY}"], cwd=REPO)
         need(found.returncode == 0, "discovery at the freeze")
