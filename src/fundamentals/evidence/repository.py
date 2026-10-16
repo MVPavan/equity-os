@@ -39,6 +39,7 @@ from fundamentals.entity.identity_layers import issuer_values
 from fundamentals.evidence import repository_calc as calc_sql
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.alignment import AlignmentProof
+from fundamentals.evidence.discovery_gate import refuse_ineligible
 from fundamentals.evidence.member_identity import IssuerIdentifiers
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.evidence.repository_rows import PackageStatementRecord, SegmentMemberWrite
@@ -348,9 +349,6 @@ class EvidenceRepository:
         self, occurrences: Sequence[Occurrence], attempts: Sequence[AcquisitionAttempt]
     ) -> tuple[tuple[Occurrence, ...], tuple[AcquisitionAttempt, ...]]:
         """One adapter invocation's occurrences and attempts, in one transaction (D6 D4.5 gate)."""
-        # Local: the gate's onboarding contract reaches compare.run_config, which imports us.
-        from fundamentals.evidence.discovery_gate import refuse_ineligible
-
         cited = [item.capture for item in occurrences] + [item.capture for item in attempts]
         with self._transaction() as conn:
             refuse_ineligible(conn, [capture.capture_ref_id for capture in cited if capture])

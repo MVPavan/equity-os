@@ -1,16 +1,21 @@
 """The ``onboard`` command: discover, verify and record one NSE symbol (plan D6 D4).
 
     onboard <SYMBOL> --raw-root <dir> --snapshot-root <dir> [--config-root config]
-        [--acquire --freeze-descriptor <path>]
+        [--acquire --freeze-descriptor <path> | --generation <n>]
 
-Replay (the default) reads the latest ``gen-<n>`` discovery generation under ``--raw-root`` and
-never opens a socket. ``--acquire`` writes the next generation through the live transport, and
-only on a checkout that satisfies the freeze protocol (C5): the descriptor's current entry
-committed at ``HEAD``, its implementation commit an ancestor of the first commit holding the
-entry, and no implementation path changed since or uncommitted. An admitted issuer
+Replay (the default) reads ``gen-<n>`` under ``--raw-root`` (``--generation``, else the highest
+complete one: its manifest present, valid and naming it) and never opens a socket.
+``--acquire`` writes the next generation through the live transport, and only on a checkout
+that satisfies the freeze protocol (C5): the descriptor's current entry complete, approved,
+bound to the current held-out attempt and committed at ``HEAD``, its implementation commit an
+ancestor of the first commit holding the entry, and no implementation path changed since or
+uncommitted. The live transport keeps the real HTTP status, follows no redirect and bounds
+every body. An admitted issuer
 (``ONBOARDED``/``PARTIAL``) then gets its derived settings, the latest verified filing as an
 XBRL-only package, each verified vendor capture, the R-PDF exclusion attempt (D5) and the
-printed ``compare run`` command under ``ONBOARDING_VERSIONS``. Exit: ``ONBOARDED`` 0,
+printed ``compare run`` command under ``ONBOARDING_VERSIONS``; an ingest that does not complete
+fails the command. The record is written before settings and ingest, so such a failure leaves
+admitted identity evidence without completed ingest (D4.6 orders them). Exit: ``ONBOARDED`` 0,
 ``PARTIAL`` 4, anything else (including an abort) 5. Failures never echo a transport message,
 so a credential a server reflects lands nowhere.
 """
@@ -26,9 +31,11 @@ import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, LiteralString
 
 import psycopg
@@ -45,6 +52,7 @@ from fundamentals.compare.run_config import LoadedConfig, load_run_config
 from fundamentals.compare.run_models import RunExitStatus
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, Representation
+from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import (
     AcquisitionAttempt,
     AttemptStage,
@@ -61,6 +69,7 @@ from fundamentals.contracts.onboarding import (
 )
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import (
+    BSE_PEER_SEARCH,
     BUILTIN_SOURCES,
     SCREENER_PAGE,
     TIJORI_PAGE,
@@ -117,6 +126,7 @@ DEFAULT_CONFIG_ROOT = "config"
 ACQUISITION_NAME = "acquisition.json"
 GENERATION_PREFIX = "gen-"
 IMPLEMENTATION_PATHS = ("src", "config", "migrations", "scripts", "pyproject.toml", "uv.lock")
+HOLDOUT_RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yaml"
 TIMEOUT_SECONDS = 30
 RETRIEVAL_NAME = "retrieval-manifest.json"
 XBRL_KIND = "xbrl-consolidated"
@@ -141,18 +151,43 @@ _EVIDENCE_REF = "evidence_input:{id}"
 _ENTITY_KEY_SQL: LiteralString = "SELECT entity_key FROM eqos.reporting_entities WHERE id = %s"
 _FREEZES = "freezes"
 _IMPLEMENTATION = "implementation_commit"
+_ENTRY_KEYS = frozenset(
+    {
+        *("attempt", "implementation_commit", "inputs", "tree", "holdout_payload_sha256"),
+        *("onboarding_versions", "review"),
+    }
+)
+_REVIEW_KEYS = frozenset({"reviewer", "verdict", "date"})
+_APPROVE = "APPROVE"
 _AGENT = "Mozilla/5.0 (equity-os onboarding)"
+# Task 0b (d6-capability.md §7): the exchange page's own same-origin headers; the bse library's
+# request shape is refused (§8).
+_BSE_HEADERS = {
+    "Referer": "https://www.bseindia.com/",
+    "Origin": "https://www.bseindia.com",
+    "Accept": "application/json, text/plain, */*",
+}
 _SESSION_COOKIE = "sessionid={value}"
 _HELP = "discover, verify and record one NSE symbol (D6)"
 _NEEDS_DESCRIPTOR = "--acquire needs --freeze-descriptor"
+_ACQUIRE_GENERATION = "--acquire writes the next generation; --generation selects a replay"
+_WRONG_GENERATION = "gen-{n}'s manifest does not name generation {n}"
+_INGEST_FAILED = "onboarding ingest of {what} did not complete: {outcome}"
 _UNFROZEN = "the checkout does not satisfy the freeze protocol: {why}"
 _SEVERITY_HIGH = "HIGH"
 _EXIT = {
     OnboardingOutcome.ONBOARDED: RunExitStatus.SUCCESS,
     OnboardingOutcome.PARTIAL: RunExitStatus.INCOMPLETE,
 }
+
+
+class OnboardingIngestError(RuntimeError):
+    """An admitted issuer's ingest did not complete."""
+
+
 _FAILURES = (
     OnboardingAbortError,
+    OnboardingIngestError,
     OSError,
     LookupError,
     ValueError,
@@ -172,9 +207,35 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+@contextmanager
+def nse_session() -> Iterator[Any]:
+    """The ``nse`` client's ``requests`` session, primed with its cookies."""
+    from nse import NSE  # type: ignore[import-untyped]
+
+    with tempfile.TemporaryDirectory() as folder, NSE(folder, timeout=TIMEOUT_SECONDS) as client:
+        yield client._session
+
+
+def _nse_send(url: str) -> tuple[int, bytes]:
+    """One NSE API GET on the primed session: the real status, no redirect, a bounded body."""
+    import requests
+
+    with nse_session() as session:
+        try:
+            response = session.get(url, timeout=TIMEOUT_SECONDS, allow_redirects=False, stream=True)
+        except requests.Timeout as error:
+            raise TimeoutError from error
+        with response:
+            if response.status_code != 200:
+                return int(response.status_code), b""
+            body = SimpleNamespace(read=partial(response.raw.read, decode_content=True))
+            return 200, read_bounded(body, MAX_BODY_BYTES)
+
+
 def live_transport() -> Send:
     """``send(request) -> (status, body)`` over HTTPS with each source's own credential;
-    redirects are refused (a login bounce is a failure, not a page)."""
+    redirects are refused (a login bounce is a failure, not a page). Discovery has already
+    checked each URL against its surface's origin."""
     screener, tijori, upstox = (
         _screener_credentials_from_env(),
         _tijori_credentials_from_env(),
@@ -188,15 +249,10 @@ def live_transport() -> Send:
 
     def send(request: Request) -> tuple[int, bytes]:
         if request.url.startswith(NSE_API):  # the NSE API needs the client's primed session
-            from nse import NSE  # type: ignore[import-untyped]
-
-            with (
-                tempfile.TemporaryDirectory() as folder,
-                NSE(folder, timeout=TIMEOUT_SECONDS) as client,
-            ):
-                response = client._req(request.url)
-                return int(response.status_code), bytes(response.content)
+            return _nse_send(request.url)
         headers = {"User-Agent": _AGENT}
+        if (request.source_id, request.surface) == BSE_PEER_SEARCH:
+            headers |= _BSE_HEADERS
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
@@ -222,6 +278,7 @@ def add_onboard_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     parser.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     parser.add_argument("--acquire", action="store_true")
     parser.add_argument("--freeze-descriptor", type=Path)
+    parser.add_argument("--generation", type=int)
 
 
 def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
@@ -238,6 +295,8 @@ def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
 def _onboard(args: argparse.Namespace) -> int:
     """Acquire or replay, discover, record; an admitted issuer's settings, ingest and the
     ``compare run`` command follow (D5)."""
+    if args.acquire and args.generation is not None:
+        raise ValueError(_ACQUIRE_GENERATION)
     acquisition = _frozen(args.freeze_descriptor) if args.acquire else None
     config = load_run_config(args.config_root, ONBOARDING_VERSIONS)
     root: Path = args.raw_root
@@ -247,16 +306,18 @@ def _onboard(args: argparse.Namespace) -> int:
     )
     log: list[discovery.Capture] = []
     if acquisition is None:
-        folder = root / f"{GENERATION_PREFIX}{taken[-1]}"
+        generation = args.generation
+        if generation is None:
+            generation = max(n for n in taken if _complete(root, n))
+        folder = root / f"{GENERATION_PREFIX}{generation}"
+        authorization = _manifest(root, generation).authorization
         fetch = replay_fetch(folder)
-        authorization = DiscoveryManifest.model_validate_json(
-            (folder / MANIFEST_NAME).read_bytes()
-        ).authorization
     else:
         generation = (taken[-1] if taken else 0) + 1
         folder = root / f"{GENERATION_PREFIX}{generation}"
         fetch = acquiring_fetch(live_transport(), now, log)
         authorization = f"freeze {acquisition['descriptor_commit']}"
+        acquisition = {"generation": generation, **acquisition, "argv": _argv(args)}
     derived, package = None, None
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
         try:
@@ -294,6 +355,33 @@ def _onboard(args: argparse.Namespace) -> int:
     if command is not None:
         sys.stdout.write(f"{COMPARE_PREFIX}{command}\n")
     return _EXIT.get(result, RunExitStatus.FAILURE)
+
+
+def _manifest(root: Path, generation: int) -> DiscoveryManifest:
+    """A generation's discovery manifest, which must name that generation."""
+    folder = root / f"{GENERATION_PREFIX}{generation}"
+    manifest = DiscoveryManifest.model_validate_json((folder / MANIFEST_NAME).read_bytes())
+    if manifest.generation != generation:
+        raise ValueError(_WRONG_GENERATION.format(n=generation))
+    return manifest
+
+
+def _complete(root: Path, generation: int) -> bool:
+    """Its manifest is present and valid (an interrupted write leaves none)."""
+    try:
+        _manifest(root, generation)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _argv(args: argparse.Namespace) -> list[str]:
+    """The acquiring command line, as parsed."""
+    return [
+        *(ONBOARD_COMMAND, args.symbol, "--raw-root", str(args.raw_root)),
+        *("--snapshot-root", str(args.snapshot_root), "--config-root", str(args.config_root)),
+        *("--acquire", "--freeze-descriptor", str(args.freeze_descriptor)),
+    ]
 
 
 def package_manifest(issuer: str, authorization: str, filings: Sequence[Filing]) -> bytes:
@@ -353,7 +441,7 @@ def _ingest(
             input_root=inputs.absolute(),
             issuer_config=None,
         )
-        ingest_first_party(
+        report = ingest_first_party(
             intake=intake,
             catalog=BUILTIN_SOURCES,
             snapshot_store=SnapshotStore(args.snapshot_root),
@@ -368,6 +456,9 @@ def _ingest(
             reporting_period_end=period,
             pdf_specs=None,
         )
+    failed = [a.outcome for a in report.attempts if a.outcome is not ExtractionOutcome.COMPLETE]
+    if report.package_id is None or failed:
+        raise OnboardingIngestError(_INGEST_FAILED.format(what=XBRL_KIND, outcome=failed))
     stored = {
         (item.request.source_id, item.request.surface): (item.response.body or b"", ref)
         for item, (_, ref) in zip(found.captures, refs, strict=True)
@@ -377,7 +468,7 @@ def _ingest(
         args.config_root, found, stored, verified, month, recorded.inputs
     ):
         ref = stored[pair][1]
-        ingest_vendor(
+        vendor = ingest_vendor(
             VendorIngestRequest(
                 source_id=pair[0],
                 surface=pair[1],
@@ -399,6 +490,10 @@ def _ingest(
             rounding_policy=config.rounding,
             fiscal_year_end_month=month,
         )
+        if vendor.attempt.outcome is not ExtractionOutcome.COMPLETE:
+            raise OnboardingIngestError(
+                _INGEST_FAILED.format(what="/".join(pair), outcome=vendor.attempt.outcome)
+            )
     exclude_pdf(repository, entity_id, period, _sha256((folder / MANIFEST_NAME).read_bytes()))
     vendors = "".join(
         f" --vendor {surface}"
@@ -533,29 +628,64 @@ def _sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def _frozen(descriptor: Path | None) -> dict[str, str]:
-    """C5: the freeze protocol's checks, and what the acquisition records of them."""
+def _frozen(descriptor: Path | None) -> dict[str, Any]:
+    """C5: the freeze protocol's checks over ``HEAD``'s committed descriptor entry, and what the
+    acquisition records of them (``freeze_descriptor_sha256`` hashes the entry as
+    ``yaml.safe_dump(sort_keys=True)``, the D1.1 payload rule)."""
     if descriptor is None:
         raise ValueError(_NEEDS_DESCRIPTOR)
     repo = Path(_git(descriptor.resolve().parent, "rev-parse", "--show-toplevel"))
     path = str(descriptor.resolve().relative_to(repo.resolve()))
-    if _git(repo, "status", "--porcelain", "--", *IMPLEMENTATION_PATHS, path):
+    if _git(repo, "status", "--porcelain", "--", *IMPLEMENTATION_PATHS, path, HOLDOUT_RECORD):
         raise ValueError(_UNFROZEN.format(why="uncommitted changes"))
-    entry = yaml.safe_load(descriptor.read_text())[_FREEZES][-1]
     head = _git(repo, "rev-parse", "HEAD")
+    entry = _freezes(repo, head, path)[-1]
+    _check_entry(repo, head, entry)
     commits = _git(repo, "log", "--reverse", "--format=%H", "--", path).split()
     holding = [commit for commit in commits if entry in _freezes(repo, commit, path)]
-    if not holding or entry not in _freezes(repo, head, path):
-        raise ValueError(_UNFROZEN.format(why="entry not committed at HEAD"))
     implementation = str(entry[_IMPLEMENTATION])
     _git(repo, "merge-base", "--is-ancestor", implementation, holding[0])
     _git(repo, "diff", "--quiet", implementation, head, "--", *IMPLEMENTATION_PATHS)
     return {
-        "acquisition_head": head,
+        "attempt": entry["attempt"],
+        "freeze_descriptor_sha256": _sha256(yaml.safe_dump(entry, sort_keys=True).encode()),
         "descriptor_commit": holding[0],
+        "acquisition_head": head,
         "implementation_commit": implementation,
-        "freeze_descriptor": path,
     }
+
+
+def _check_entry(repo: Path, head: str, entry: Any) -> None:
+    """D6 step 2: every descriptor field present, an ``APPROVE`` review, the inputs, tree and
+    configuration pin of the implementation commit, and the current unburned held-out attempt
+    with its payload hash (D1.1)."""
+
+    def need(ok: bool, why: str) -> None:
+        if not ok:
+            raise ValueError(_UNFROZEN.format(why=why))
+
+    need(isinstance(entry, dict) and set(entry) == _ENTRY_KEYS, "descriptor entry fields")
+    review = entry["review"]
+    need(isinstance(review, dict) and set(review) == _REVIEW_KEYS, "review fields")
+    need(review["verdict"] == _APPROVE, "review is not APPROVE")
+    need(entry["inputs"] == list(IMPLEMENTATION_PATHS), "inputs")
+    need(entry["tree"] == _tree(repo, str(entry[_IMPLEMENTATION])), "tree")
+    pinned = ConfigVersions.model_validate(entry["onboarding_versions"])
+    need(pinned == ONBOARDING_VERSIONS, "onboarding_versions")
+    record = yaml.safe_load(_git(repo, "show", f"{head}:{HOLDOUT_RECORD}"))
+    attempts, burns = record["attempts"], record["burns"] or []
+    current = attempts[-1]
+    need(len(burns) == len(attempts) - 1, "no current attempt")
+    need(entry["attempt"] == current["n"], "not the current attempt")
+    payload = {key: value for key, value in current.items() if key != "approval"}
+    digest = _sha256(yaml.safe_dump(payload, sort_keys=True).encode())
+    need(entry["holdout_payload_sha256"] == digest, "holdout payload")
+
+
+def _tree(repo: Path, commit: str) -> dict[str, str]:
+    """``{path: git object id}`` of each implementation path at ``commit``."""
+    listing = _git(repo, "ls-tree", commit, "--", *IMPLEMENTATION_PATHS).splitlines()
+    return {line.split("\t")[1]: line.split()[2] for line in listing}
 
 
 def _freezes(repo: Path, commit: str, path: str) -> list[Any]:

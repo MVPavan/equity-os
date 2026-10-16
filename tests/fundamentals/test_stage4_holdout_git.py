@@ -6,6 +6,7 @@ Every company value here is invented (``ZZ`` prefix); the real record is checked
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Callable
 from datetime import date
@@ -15,10 +16,15 @@ from typing import Any
 import pytest
 import yaml
 from stage4_support import (
+    BSE_NOT_ONE,
     CHECKS,
     DISCOVERY,
     FREEZE,
+    NO_FILINGS,
     RECORD,
+    TOKEN_HIT,
+    RefusedError,
+    Selection,
     attempt_payload_sha256,
     matcher,
     qualifying_periods,
@@ -27,14 +33,20 @@ from stage4_support import (
 )
 
 ID, ISIN, SCRIP = "ZZHOLD", "INE000Z01011", "999123"
-FRAME = (
-    "Company Name,Industry,Symbol,Series,ISIN Code\n"
-    f"Zz Holdout Widgets Ltd.,Capital Goods,{ID},EQ,{ISIN}\n"
+COMPANIES = [  # symbol, name, Industry, ISIN
+    (ID, "Zz Holdout Widgets", "Capital Goods", ISIN),
+    ("ZZBANK", "Zz Bank", "Financial Services", "INE000Z01029"),
+    ("ZZUSED", "Zz Used", "Chemicals", "INE000Z01037"),
+    ("ZZDATA", "Zz Data", "Chemicals", "INE000Z01045"),
+    ("ZZSKIP", "Zz Skip", "Chemicals", "INE000Z01052"),
+]
+FRAME = "Company Name,Industry,Symbol,Series,ISIN Code\n" + "".join(
+    f"{name} Ltd.,{industry},{symbol},EQ,{isin}\n" for symbol, name, industry, isin in COMPANIES
 )
 MASTER = (
     "SYMBOL,NAME OF COMPANY, SERIES, DATE OF LISTING, PAID UP VALUE, MARKET LOT, ISIN NUMBER,"
-    f" FACE VALUE\n{ID},Zz Holdout Widgets Limited,EQ,01-JAN-2000,10,1,{ISIN},10\n"
-)
+    " FACE VALUE\n"
+) + "".join(f"{s},{n} Limited,EQ,01-JAN-2000,10,1,{i},10\n" for s, n, _, i in COMPANIES)
 BSE = (
     f"\"<li class='q'><a>ZZ HOLDOUT<br /><span>{ID}&nbsp;"
     f'<strong>{ISIN}</strong>&nbsp;{SCRIP}</span></a></li>"'
@@ -110,6 +122,15 @@ def frozen(*entries: tuple[str, dict[str, Any]]) -> str:
     )
 
 
+def churn(repo: Path, violation: str, kind: str, path: str, *versions: str) -> None:
+    """For the kind's churn violation, commit its edited (or appended) version, then the
+    original ``versions[0]`` back."""
+    for i, how in enumerate(("edited-then-restored", "appended-then-deleted"), start=1):
+        if violation == f"{kind}-{how}":
+            commit(repo, {path: versions[i]})
+            commit(repo, {path: versions[0]})
+
+
 def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
     """Attempt 1 drawn, implemented and frozen; then burned, fixed, redrawn and refrozen."""
     seed = git(repo, "rev-parse", "HEAD")
@@ -122,12 +143,26 @@ def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
     commit(repo, {RECORD: dump([one])})
     impl = commit(repo, {DISCOVERY: "d = 1\n"})
     commit(repo, {FREEZE: frozen((impl, one))})
+    other = one | {"identifier": "ZZOTHER"}
+    churn(repo, violation, "attempt", RECORD, dump([one]), dump([other]), dump([one, other]))
+    churn(
+        repo,
+        violation,
+        "freeze",
+        FREEZE,
+        frozen((impl, one)),
+        frozen((impl, other)),
+        frozen((impl, one), (impl, other)),
+    )
     if violation == "record-edited":
         one = one | {"identifier": "ZZOTHER"}
         commit(repo, {RECORD: dump([one])})
     if redraw:
         burns = [{"attempt": 1, "reason_code": "E2E_DEFECT", "bead": "eqos-zz"}]
         burn = commit(repo, {RECORD: dump([one], burns)})
+        edited, extra = burns[0] | {"bead": "eqos-yy"}, burns[0] | {"attempt": 2}
+        texts = (dump([one], burns), dump([one], [edited]), dump([one], [*burns, extra]))
+        churn(repo, violation, "burn", RECORD, *texts)
         fix = commit(repo, {"src/app.py": "x = 3\n"})
         two = approved(2, burn, fix)
         commit(repo, {RECORD: dump([one, two], burns)})
@@ -149,6 +184,11 @@ def test_ordering_accepts_the_d15_sequence(repo: Path, redraw: bool) -> None:
         ("record-edited", "entry changed after its commit"),
         ("impl-after-freeze", "IMPL change after freeze"),
         ("record-parent", "record parent is not selection_commit"),
+        *(
+            (f"{kind}-{how}", "entry changed after its commit")
+            for kind in ("attempt", "burn", "freeze")
+            for how in ("edited-then-restored", "appended-then-deleted")
+        ),
     ],
 )
 def test_ordering_refuses_violations(repo: Path, violation: str, step: str) -> None:
@@ -187,6 +227,14 @@ LEAKS: dict[str, Callable[[Path], object]] = {
     ],
     "merge-resolution-only": merge_only,
     "untracked-file": lambda r: untracked(r / "src/scratch.py", f"{ID}\n"),
+    "copied-blob-then-deleted-in-scope-copy": lambda r: [
+        commit(r, {"docs/a.md": f"{ISIN}\n", "src/a.py": f"{ISIN}\n"}),
+        commit(r, {"src/a.py": None}),
+    ],
+    "record-blob-copied-then-deleted": lambda r: [
+        commit(r, {"tests/copy.yaml": (r / RECORD).read_bytes()}),
+        commit(r, {"tests/copy.yaml": None}),
+    ],
 }
 
 
@@ -247,6 +295,8 @@ JUN, MAR, T1, T2 = "30-JUN-2026", "31-MAR-2026", "01-Aug-2026 10:00:00", "05-Aug
         ([listing_row(JUN, T1), listing_row("31-MAR-2025", T1)], 1),
         ([listing_row(JUN, T2, consolidated="Standalone"), listing_row(MAR, T1)], 1),
         ([listing_row(JUN, T1), listing_row(JUN, None, seq_Id="2"), listing_row(MAR, T1)], 1),
+        ([listing_row(JUN, T1), listing_row(JUN, "", seq_Id="2"), listing_row(MAR, T1)], 1),
+        ([listing_row(JUN, T1), listing_row(JUN, T1), listing_row(MAR, T1)], 2),
     ],
     ids=[
         "two-revisions-one-period",
@@ -255,6 +305,8 @@ JUN, MAR, T1, T2 = "30-JUN-2026", "31-MAR-2026", "01-Aug-2026 10:00:00", "05-Aug
         "period-outside-window",
         "standalone-not-counted",
         "unbroadcast-row-voids-its-period",
+        "empty-broadcast-voids-its-period",
+        "identical-rows-collapse-once",
     ],
 )
 def test_filing_window_rule(rows: list[dict[str, Any]], expected: int | None) -> None:
@@ -273,3 +325,125 @@ def test_draw_refuses_an_as_of_not_from_retrieved_at(repo: Path, as_of: str) -> 
     with pytest.raises(FAILED) as failed:
         CHECKS["draw"](repo)
     assert str(failed.value) == "stage4_holdout draw: as_of"
+
+
+def ok(body: object) -> dict[str, object]:
+    """A retained successful response."""
+    return {"status": 200, "body": body}
+
+
+def bse(symbol: str, isin: str) -> str:
+    """A ``PeerSmartSearch`` body with one exact-ISIN candidate."""
+    return f"<li class='q'><a>{symbol}<br /><span>{symbol}&nbsp;<strong>{isin}</strong></span></li>"
+
+
+def draw_state(repo: Path) -> dict[str, Any]:
+    """Attempt 1's private draw inputs: ZZBANK financial, ZZUSED hit by a committed object,
+    ZZDATA by a ``data/`` name, ZZSKIP skipped NO_CONSOLIDATED_INCAPMKT, ZZHOLD drawn."""
+    selection = commit(repo, {"docs/used.md": "uses ZZUSED\n"})
+    hits = {"ZZUSED": f"object {git(repo, 'rev-parse', f'{selection}:docs/used.md')}"}
+    integrated = {"data": [listing_row(JUN, T1, symbol="ZZSKIP")]}
+    return {
+        "selection": selection,
+        "reasons": {"ZZBANK": "FINANCIAL", "ZZUSED": TOKEN_HIT, "ZZDATA": TOKEN_HIT},
+        "hits": hits | {"ZZDATA": "file data/raw/zzdata"},
+        "responses": {"integrated": ok(integrated), "legacy": ok([])},
+        "reason": NO_FILINGS,
+        "evidence": None,
+    }
+
+
+def draw_check(repo: Path, state: dict[str, Any]) -> None:
+    """Write the state's private bytes, then recompute the universe and ZZSKIP's skip."""
+    private = repo / "data/holdout/attempt-1"
+    inventory = "".join(sorted(f"{sha256(s.encode())} {r}\n" for s, r in state["reasons"].items()))
+    hits = "".join(f"{sha256(s.encode())} token0 {at}\n" for s, at in state["hits"].items())
+    envelope = json.dumps({"symbol": "ZZSKIP", "responses": state["responses"]})
+    for name, text in (
+        ("inventory.txt", inventory),
+        ("exclusion_hits.txt", hits),
+        ("e.json", envelope),
+    ):
+        (private / name).write_text(text)
+    universe = sorted(s for s, *_ in COMPANIES if s not in state["reasons"])
+    selection = {
+        "selection_commit": state["selection"],
+        "as_of": "2026-10-16",
+        "frame": {"sha256": sha256(FRAME.encode()), "column": "Industry"}
+        | {"excluded_values": ["Financial Services"]},
+        "exclusion_inventory_sha256": sha256(inventory.encode()),
+        "universe_sha256": sha256("".join(f"{s}\n" for s in universe).encode()),
+        "n_universe": len(universe),
+    }
+    drawn = Selection(repo, {"n": 1, "identifier": ID, "selection": selection})
+    assert drawn.universe() == universe
+    evidence = state["evidence"] or sha256(envelope.encode())
+    skip = {"symbol_sha256": sha256(b"ZZSKIP"), "reason": state["reason"]}
+    drawn.check_skip("ZZSKIP", skip | {"evidence_sha256": evidence})
+
+
+def later_hit(repo: Path, state: dict[str, Any]) -> None:
+    """ZZUSED's hit cites an object committed after ``selection_commit``."""
+    later = commit(repo, {"docs/later.md": "later ZZUSED\n"})
+    state["hits"]["ZZUSED"] = f"object {git(repo, 'rev-parse', f'{later}:docs/later.md')}"
+
+
+DRAW_MUTATIONS: dict[str, tuple[Callable[[Path, dict[str, Any]], object], str]] = {
+    "financial-relabelled": (
+        lambda r, s: s["reasons"].update(ZZBANK=TOKEN_HIT),
+        "exclusion reasons",
+    ),
+    "eligible-company-excluded": (
+        lambda r, s: s["reasons"].update(ZZSKIP=TOKEN_HIT),
+        "token exclusions",
+    ),
+    "file-hit-line-dropped": (lambda r, s: s["hits"].pop("ZZDATA"), "token exclusions"),
+    "file-hit-out-of-scope": (
+        lambda r, s: s["hits"].update(ZZDATA="file data/holdout/attempt-1/x"),
+        "hit files",
+    ),
+    "hit-object-without-token": (
+        lambda r, s: s["hits"].update(ZZUSED=f"object {git(r, 'rev-parse', 'HEAD:src/app.py')}"),
+        "hit objects",
+    ),
+    "hit-object-after-selection": (later_hit, "hit objects"),
+    "skip-response-missing": (lambda r, s: s["responses"].pop("legacy"), "skip evidence"),
+    "skip-response-failed": (
+        lambda r, s: s["responses"].update(legacy={"status": 503, "body": []}),
+        "skip evidence",
+    ),
+    "skip-evidence-another-file": (
+        lambda r, s: s.update(evidence=sha256(FRAME.encode())),
+        "skip evidence",
+    ),
+    "skip-reason-not-reproduced": (lambda r, s: s.update(reason=BSE_NOT_ONE), "skip reason"),
+    "token-hit-skip-unsupported": (
+        lambda r, s: s.update(
+            reason=TOKEN_HIT,
+            responses={
+                "integrated": ok(
+                    {"data": [listing_row(e, T1, symbol="ZZSKIP") for e in (JUN, MAR)]}
+                ),
+                "legacy": ok([]),
+                "bse": ok(bse("ZZSKIP", "INE000Z01052")),
+            },
+        ),
+        "skip reason",
+    ),
+}
+
+
+def test_draw_recomputes_exclusions_and_skips(repo: Path) -> None:
+    """Each exclusion's reason and the skip's evidence-bound reason recompute (D1.2, D1.3)."""
+    draw_check(repo, draw_state(repo))
+
+
+@pytest.mark.parametrize("name", DRAW_MUTATIONS)
+def test_draw_refuses_unsupported_exclusions_and_skips(repo: Path, name: str) -> None:
+    """An unproven exclusion, or a skip whose response is missing, failed or unbound, refuses."""
+    state = draw_state(repo)
+    mutate, step = DRAW_MUTATIONS[name]
+    mutate(repo, state)
+    with pytest.raises(RefusedError) as refused:
+        draw_check(repo, state)
+    assert str(refused.value) == step

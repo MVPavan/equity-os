@@ -1,11 +1,14 @@
 """Onboarding discovery: fetch, verify, record (plan D6 D4.2-D4.4, D3.4).
 
 ``discover`` walks the fixed request sequence for one NSE symbol through a ``Fetch`` (replay of
-a discovery generation, or an acquiring transport), checking each surface's authority before
-its request. Anchor requests that fail or are not authorised abort with no record; a conflict
-or an anchor refusal stops discovery and leaves the remaining units stopped. ``record`` keeps
-every fetched body as a capture under one ``DISCOVERY`` input per unit and writes the
-onboarding record, its unit states and, for a new issuer, its identity rows, in one transaction.
+a discovery generation, or an acquiring transport), checking each surface's authority and the
+URL's approved origin before its request. A denied request is kept as a capture-less
+``NOT_AUTHORISED`` entry, and replay serves that recorded denial rather than today's table.
+Anchor requests that fail or are not authorised abort with no record; a conflict or an anchor
+refusal stops discovery and leaves the remaining units stopped. ``record`` keeps every fetched
+body as a capture under one ``DISCOVERY`` input per unit and, in one transaction, locks the
+verified identifier values, re-resolves them, and writes a new issuer's identity rows, the
+onboarding record and its unit states.
 """
 
 from __future__ import annotations
@@ -57,7 +60,12 @@ from fundamentals.contracts.source_catalog import (
     SurfaceNotAuthorisedError,
     surface_authority,
 )
-from fundamentals.entity.identity_layers import issuer_values, latest_slice
+from fundamentals.entity.identity_layers import (
+    IdentifierRef,
+    issuer_values,
+    latest_slice,
+    lock_identifiers,
+)
 from fundamentals.entity.verification import (
     VERIFIED,
     Expected,
@@ -65,6 +73,7 @@ from fundamentals.entity.verification import (
     exchange_state,
     filing_identity,
     financial_rule,
+    instance_state,
     master_rows,
     outcome,
     screener_candidate,
@@ -97,12 +106,31 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 MANIFEST_NAME = "discovery-manifest.json"
 OK = "OK"
+NOT_AUTHORISED = "NOT_AUTHORISED"
 UPSTOX_ROUTE = "default"
 TIMEOUT = "TIMEOUT"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 FILINGS_CHECKED = 2
 INDIA = ZoneInfo("Asia/Kolkata")
 _IN = "IN"
+_HTTPS = "https"
+_NSE_WWW, _NSE_ARCHIVES = "www.nseindia.com", "nsearchives.nseindia.com"
+_SCREENER, _TIJORI = "www.screener.in", "www.tijorifinance.com"
+# The only origin each surface may be requested from (https, exact host): a listing's XBRL link
+# or any other evidenced URL cannot send an authorised request elsewhere.
+ORIGINS = {
+    NSE_MASTER: _NSE_ARCHIVES,
+    NSE_RESULTS_LISTING: _NSE_WWW,
+    NSE_INTEGRATED_LISTING: _NSE_WWW,
+    NSE_XBRL_INSTANCE: _NSE_ARCHIVES,
+    BSE_PEER_SEARCH: "api.bseindia.com",
+    SCREENER_SEARCH: _SCREENER,
+    SCREENER_PAGE: _SCREENER,
+    TIJORI_SEARCH: _TIJORI,
+    TIJORI_PAGE: _TIJORI,
+    UPSTOX_INSTRUMENTS: "assets.upstox.com",
+    UPSTOX_STATEMENT: "api.upstox.com",
+}
 _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text={isin}"
 _SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?q={symbol}&v=3&fts=1"
 _SCREENER_PAGE_URL = "https://www.screener.in/company/{symbol}/consolidated/"
@@ -117,7 +145,8 @@ _MEDIA_TYPE = "application/octet-stream"
 _NATIVE_KIND = "onboarding-discovery"
 _INPUT_LABEL = "discovery:{symbol}:{unit}"
 _HIGH = "HIGH"
-_HELD = "{what} is held by another issuer"
+_HELD = "ISIN {isin}, symbol {symbol} or scrip {scrip} is held by another issuer"
+_MOVED = "the identity layers changed during onboarding; re-run"
 _ONCE_HELD = "symbol {symbol} was held by another listing and no SYMBOL_REUSE gave it this one"
 _MANY_MASTER = "the NSE master lists {count} EQ rows for {symbol}"
 _TIED = "two filings tie on the latest broadcast"
@@ -167,7 +196,7 @@ class Response(BaseModel):
     retrieved_at: datetime
 
 
-Fetch = Callable[[Request], Response]
+Fetch = Callable[[Request, bool], Response]  # (request, authorised) -> response
 Send = Callable[[Request], tuple[int, bytes]]
 
 
@@ -235,8 +264,20 @@ def as_of_for(retrieved_at: datetime) -> date:
     return retrieved_at.astimezone(INDIA).date()
 
 
+def authorised(request: Request, table: tuple[SurfaceAuthority, ...]) -> bool:
+    """The surface is registered in ``table`` and the URL is on its approved https origin."""
+    pair = (request.source_id, request.surface)
+    try:
+        surface_authority(*pair, table=table)
+    except SurfaceNotAuthorisedError:
+        return False
+    parts = urlsplit(request.url)
+    return parts.scheme == _HTTPS and parts.netloc == ORIGINS.get(pair)
+
+
 def replay_fetch(folder: Path) -> Fetch:
-    """Serve a generation's responses by request key; every body is checked before any use."""
+    """Serve a generation's responses by request key, a recorded denial included (today's
+    authority table is not consulted); every body is checked before any use."""
     manifest = DiscoveryManifest.model_validate_json((folder / MANIFEST_NAME).read_bytes())
     served: dict[str, Response] = {}
     for entry in manifest.entries:
@@ -254,23 +295,27 @@ def replay_fetch(folder: Path) -> Fetch:
     if len(master) != 1 or as_of_for(master[0].retrieved_at) != manifest.as_of:
         raise ValueError(_BAD_REPLAY.format(folder=folder, why="as_of"))
 
-    def fetch(request: Request) -> Response:
+    def fetch(request: Request, allowed: bool) -> Response:
+        del allowed
         return served[request.key]
 
     return fetch
 
 
 def acquiring_fetch(send: Send, clock: Callable[[], datetime], log: list[Capture]) -> Fetch:
-    """Fetch through a live transport, logging every exchange (failures keep no body)."""
+    """Fetch through a live transport, logging every exchange (failures keep no body); a request
+    not authorised is logged ``NOT_AUTHORISED`` and never sent."""
 
-    def fetch(request: Request) -> Response:
-        try:
-            status, body = send(request)
-            result = OK if status == 200 else f"HTTP_{status}"
-        except TimeoutError:
-            result = TIMEOUT
-        except OSError:
-            result = TRANSPORT_ERROR
+    def fetch(request: Request, allowed: bool) -> Response:
+        body, result = None, NOT_AUTHORISED
+        if allowed:
+            try:
+                status, body = send(request)
+                result = OK if status == 200 else f"HTTP_{status}"
+            except TimeoutError:
+                result = TIMEOUT
+            except OSError:
+                result = TRANSPORT_ERROR
         response = Response(
             outcome=result, body=body if result == OK else None, retrieved_at=clock()
         )
@@ -344,9 +389,10 @@ class _Run:
     def get(self, unit: VerificationUnit, pair: tuple[str, str], url: str) -> bytes:
         """The body of one authorised, successful request."""
         anchor = unit in ANCHOR_UNITS
-        surface_authority(*pair, table=self.table)
         request = Request(unit=unit, source_id=pair[0], surface=pair[1], url=url)
-        response = self.fetch(request)
+        response = self.fetch(request, authorised(request, self.table))
+        if response.outcome == NOT_AUTHORISED:
+            raise SurfaceNotAuthorisedError(_ABORT_AUTH.format(surface=pair[1]))
         if response.outcome != OK or response.body is None:
             if anchor:
                 detail = _ABORT_HTTP.format(surface=pair[1], outcome=response.outcome)
@@ -434,7 +480,7 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
     run.name, run.isin = rows[0]
     if not run.isin.startswith(_IN):
         run.refuse(exchange, OnboardingReason.FOREIGN_ISIN)
-    run.entity_id = _resolve(run, conn, run.isin)
+    run.entity_id = _resolve(run, conn, None)
     listings = [
         run.anchor(exchange, pair, listing_url(path, run.symbol, period))
         for pair, (path, period) in (
@@ -456,21 +502,28 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
     if not all(financial_rule(body) for body in bodies):
         run.refuse(xbrl, OnboardingReason.FINANCIAL_OR_UNKNOWN_SECTOR)
     try:
-        parsed = [filing_identity(parse_instance(body, mapping_set=mapping_set)) for body in bodies]
+        instances = [parse_instance(body, mapping_set=mapping_set) for body in bodies]
     except UnsupportedSchemaError:
         run.refuse(xbrl, OnboardingReason.UNSUPPORTED_SCHEMA)
     checked = [
-        (filing, _expected(run, conn, row.broadcast.date() if row.broadcast else None))
-        for filing, row in zip(parsed, filings, strict=True)
+        (
+            filing_identity(instance),
+            _expected(run, conn, row.broadcast.date() if row.broadcast else None),
+        )
+        for instance, row in zip(instances, filings, strict=True)
     ]
-    for filing, expected in checked:
-        verdict = xbrl_entity_state(filing, run.name, expected)
-        if verdict != VERIFIED:
-            run.set(xbrl, verdict)
+    for instance, row, (filing, expected) in zip(instances, filings, checked, strict=True):
+        for verdict in (
+            instance_state(instance, row.period_end),
+            xbrl_entity_state(filing, run.name, expected),
+        ):
+            if verdict != VERIFIED:
+                run.set(xbrl, verdict)
     run.states[xbrl] = VERIFIED
     peer = run.anchor(exchange, BSE_PEER_SEARCH, _BSE_URL.format(isin=run.isin))
     verdict, run.scrip = exchange_state(peer, run.isin, checked)
     run.set(exchange, verdict)
+    _resolve(run, conn, run.scrip)
 
 
 def _vendors(run: _Run) -> None:
@@ -512,30 +565,58 @@ def _vendors(run: _Run) -> None:
     run.vendor(upstox, upstox_check)
 
 
-def _resolve(run: _Run, conn: psycopg.Connection[Any], isin: str) -> int | None:
-    """D3.4: the entity holding both the ISIN and the symbol now, or ``None`` for a new
-    issuer; any partial or split hit, or a once-held symbol not reused here, conflicts."""
-    current = latest_slice(conn)
-    by_isin = {
-        v.security_id
-        for v in current
-        if v.namespace is IdentifierNamespace.ISIN and v.value == isin
+def _resolve(run: _Run, conn: psycopg.Connection[Any], scrip: str | None) -> int | None:
+    """D3.4 after the master (``scrip`` None) and again once the BSE scrip is verified."""
+    owner, detail, _ = _owner(conn, run.symbol, run.isin or "", scrip)
+    if detail is not None:
+        run.set(VerificationUnit.EXCHANGE, conflict(detail))
+    return owner
+
+
+def _owner(
+    conn: psycopg.Connection[Any], symbol: str, isin: str, scrip: str | None
+) -> tuple[int | None, str | None, set[IdentifierRef]]:
+    """The entity whose current ISIN, NSE symbol and (once known) BSE scrip all sit on one
+    security, ``None`` when none is held, with the targets hit. A partial or split hit, or a
+    symbol once held by another listing that no ``SYMBOL_REUSE`` gave this one, is a conflict
+    detail."""
+    wanted = {(IdentifierNamespace.ISIN, isin), (IdentifierNamespace.NSE_SYMBOL, symbol)}
+    if scrip is not None:
+        wanted.add((IdentifierNamespace.BSE_SCRIP, scrip))
+    hits = [v for v in latest_slice(conn) if (v.namespace, v.value) in wanted]
+    targets = {
+        IdentifierRef(namespace=v.namespace, target_id=v.listing_id or v.security_id) for v in hits
     }
-    on_symbol = [
-        v
-        for v in current
-        if v.namespace is IdentifierNamespace.NSE_SYMBOL and v.value == run.symbol
+    split = sorted(v.namespace for v in hits) != sorted(ns for ns, _ in wanted)
+    if hits and (split or len({v.security_id for v in hits}) > 1):
+        return None, _HELD.format(isin=isin, symbol=symbol, scrip=scrip), targets
+    nse = next((v.listing_id for v in hits if v.namespace is IdentifierNamespace.NSE_SYMBOL), None)
+    others = {row[0] for row in conn.execute(_ONCE_HELD_SQL, (symbol, symbol))} - {nse}
+    if others and not conn.execute(_REUSED_SQL, (nse, symbol)).fetchall():
+        return None, _ONCE_HELD.format(symbol=symbol), targets
+    return (hits[0].entity_id if hits else None), None, targets
+
+
+def _locked_owner(conn: psycopg.Connection[Any], found: Discovery) -> int | None:
+    """D3.4 inside the writing transaction: lock the verified values and every target holding
+    them (as the identity writers do), re-resolve, and refuse a resolution that moved since
+    discovery. A new issuer's ids created meanwhile by a concurrent onboarding are reused."""
+    isin, scrip = found.isin or "", found.scrip or ""
+    values = [
+        (IdentifierNamespace.ISIN, isin),
+        (IdentifierNamespace.NSE_SYMBOL, found.symbol),
+        (IdentifierNamespace.BSE_SCRIP, scrip),
     ]
-    exchange = VerificationUnit.EXCHANGE
-    if (by_isin or on_symbol) and not (
-        len(on_symbol) == 1 and by_isin == {on_symbol[0].security_id}
-    ):
-        run.set(exchange, conflict(_HELD.format(what=f"ISIN {isin} or symbol {run.symbol}")))
-    listing = on_symbol[0].listing_id if on_symbol else None
-    others = {row[0] for row in conn.execute(_ONCE_HELD_SQL, (run.symbol, run.symbol))} - {listing}
-    if others and not conn.execute(_REUSED_SQL, (listing, run.symbol)).fetchall():
-        run.set(exchange, conflict(_ONCE_HELD.format(symbol=run.symbol)))
-    return on_symbol[0].entity_id if on_symbol else None
+    locked: set[IdentifierRef] = set()
+    while True:
+        lock_identifiers(conn, list(locked), values)
+        owner, detail, held = _owner(conn, found.symbol, isin, scrip)
+        if held <= locked:
+            break
+        locked |= held
+    if detail is not None or found.entity_id not in (None, owner):
+        raise OnboardingAbortError(_MOVED)
+    return owner
 
 
 def _expected(run: _Run, conn: psycopg.Connection[Any], filed: date | None) -> Expected:
@@ -605,9 +686,12 @@ def record(
     found: Discovery,
     captures: Sequence[tuple[VerificationUnit, CaptureReference]],
 ) -> Recorded:
-    """Write the record, its unit states and inputs, and a new issuer's identity, atomically."""
+    """Write the record, its unit states and inputs, and a new issuer's identity, atomically;
+    an admitted issuer's identity is re-resolved under lock first."""
     result, reason = outcome(found.states)
+    admitted = result in (OnboardingOutcome.ONBOARDED, OnboardingOutcome.PARTIAL)
     with conn.transaction():
+        entity_id = _locked_owner(conn, found) if admitted else None
         inputs: dict[VerificationUnit, int] = {}
         for unit in VerificationUnit:
             ids = sorted(ref.capture_ref_id or 0 for owner, ref in captures if owner is unit)
@@ -618,8 +702,6 @@ def record(
             inputs[unit] = _input(conn, label, hashlib.sha256(content).hexdigest())
             for ref in ids:
                 conn.execute(_LINK_SQL, (inputs[unit], ref))
-        entity_id = found.entity_id
-        admitted = result in (OnboardingOutcome.ONBOARDED, OnboardingOutcome.PARTIAL)
         if admitted and entity_id is None:
             entity_id = _new_issuer(conn, found, inputs[VerificationUnit.EXCHANGE])
         record_id = _one(

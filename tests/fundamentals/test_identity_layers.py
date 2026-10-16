@@ -410,6 +410,36 @@ def test_identity_tables_are_append_only(
                 migrator.execute(statement)
 
 
+@pytest.mark.parametrize(
+    ("state", "reason", "accepted"),
+    [
+        ("UNAVAILABLE", None, False),
+        ("CONFLICT", "", False),
+        ("NOT_AUTHORISED", "NOT_AUTHORISED", True),
+        ("VERIFIED", None, True),
+    ],
+)
+def test_a_unit_not_verified_must_say_why(
+    conn: psycopg.Connection, state: str, reason: str | None, accepted: bool
+) -> None:
+    """D3.1 (0023): a NULL or empty reason is refused unless the unit is VERIFIED; a CHECK
+    passes NULL, so the reason must be required explicitly."""
+    record = conn.execute(
+        "INSERT INTO eqos.onboarding_records (identifier, identifier_namespace, outcome) "
+        "VALUES ('ZZA', 'NSE_SYMBOL', 'UNSUPPORTED') RETURNING id"
+    ).fetchone()
+    assert record is not None
+    insert = (
+        "INSERT INTO eqos.namespace_verifications (onboarding_record_id, unit, state, reason) "
+        "VALUES (%s, 'TIJORI', %s, %s)"
+    )
+    if accepted:
+        conn.execute(insert, (record[0], state, reason))
+    else:
+        with pytest.raises(errors.CheckViolation):
+            conn.execute(insert, (record[0], state, reason))
+
+
 # --- R-MAP: the entity map and the current slice agree --------------------------------------
 
 

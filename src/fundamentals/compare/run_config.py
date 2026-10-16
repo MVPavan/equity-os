@@ -25,6 +25,8 @@ from fundamentals.compare.definitions import (
 )
 from fundamentals.compare.policy import ComparisonPolicy, load_comparison_policy
 from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
+from fundamentals.contracts.config_versions import DEFAULT_VERSION as DEFAULT_VERSION
+from fundamentals.contracts.config_versions import ConfigVersions as ConfigVersions
 from fundamentals.contracts.evidence import PinnedVersions, VendorExtractorPin
 from fundamentals.contracts.evidence import VersionPin as Pin
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -48,7 +50,6 @@ DEFINITION_SETS_DIR = "definition_sets"
 COMPARISON_POLICY_DIR = "comparison_policy"
 ALIGNMENT_DIR = "alignment"
 YAML_SUFFIX = ".yaml"
-DEFAULT_VERSION = "v1"
 _SOURCE_ROOT = Path(__file__).resolve().parents[1]
 # Extractor content sources (design decision 7), relative to the ``fundamentals`` package.
 EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
@@ -138,33 +139,6 @@ _PIN_FIELDS = (
 
 class ComparisonSemanticsError(ValueError):
     """A run's recorded comparison semantics are not the ones this code computes."""
-
-
-class ConfigVersions(BaseModel):
-    """Which version of each file-backed artifact a run loads."""
-
-    model_config = ConfigDict(frozen=True)
-
-    dictionary: str = DEFAULT_VERSION
-    mapping_set: str = DEFAULT_VERSION
-    normalisation_policy: str = DEFAULT_VERSION
-    rounding_policy: str = DEFAULT_VERSION
-    definition_set: str = DEFAULT_VERSION
-    comparison_policy: str = DEFAULT_VERSION
-    alignment_rules: str = DEFAULT_VERSION
-
-    @classmethod
-    def of(cls, pinned: PinnedVersions) -> ConfigVersions:
-        """The file versions a pinned-version set names."""
-        return cls(
-            dictionary=pinned.dictionary.version,
-            mapping_set=pinned.mapping_set.version,
-            normalisation_policy=pinned.normalisation_policy.version,
-            rounding_policy=pinned.rounding_policy.version,
-            definition_set=pinned.definition_set.version,
-            comparison_policy=pinned.comparison_policy.version,
-            alignment_rules=pinned.alignment_rules.version,
-        )
 
 
 class LoadedConfig(BaseModel):

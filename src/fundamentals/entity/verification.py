@@ -13,12 +13,13 @@ import io
 import json
 import re
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.acquisition_outcome import OutcomeCode
+from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.onboarding import (
     ANCHOR_UNITS,
     OnboardingOutcome,
@@ -28,6 +29,7 @@ from fundamentals.contracts.onboarding import (
     VerificationUnit,
 )
 from fundamentals.entity.entity_map import isin_check_digit
+from fundamentals.evidence.member_identity import verify_xbrl_period
 from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.screener_session_models import (
     AnonymousPageError,
@@ -175,6 +177,15 @@ def filing_identity(instance: RawXbrlInstance) -> FilingIdentity:
         names=frozenset(names),
         pairs=frozenset((f.entity_scheme, f.entity_id.strip()) for f in instance.facts),
     )
+
+
+def instance_state(instance: RawXbrlInstance, period_end: date) -> Verdict:
+    """The instance's own declarations against its listing row: the consolidated file scope
+    and every declared reporting-period end (first-party ingest's own period predicate)."""
+    if instance.scope is not Scope.CONSOLIDATED:
+        return differs("instance scope", instance.scope.value, Scope.CONSOLIDATED.value)
+    period = verify_xbrl_period(instance, period_end)
+    return VERIFIED if period.verified else conflict(period.reason or "")
 
 
 def xbrl_entity_state(filing: FilingIdentity, name: str, expected: Expected) -> Verdict:

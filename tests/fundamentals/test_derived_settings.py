@@ -1,7 +1,7 @@
 """D6 Task 4 (T4): derived settings, onboarding ingest, the PDF exclusion and the comparison.
 
-Development fixtures only (APARINDS, served by ``test_onboarding_verification``'s replay roots
-and fake transport); synthetic edits are labelled. No socket is opened.
+Development fixtures only (APARINDS, served by ``onboarding_support``'s replay roots and fake
+transport); synthetic edits are labelled. No socket is opened.
 """
 
 from __future__ import annotations
@@ -17,25 +17,26 @@ from typing import Any
 
 import pytest
 from evidence_support import XBRL_ONLY, Ingest, dictionary, ingest, mapping_set, policy
-from pg_support import PgTestDatabase
-from pydantic import ValidationError
-from retained_support import APAR_IDENTITY, REPO_ROOT
-from test_onboarding_verification import (
+from onboarding_support import (
     APAR,
     APAR_ISIN,
     APAR_SCRIP,
     INCOMPLETE,
     JUN,
     MAR,
-    _repo,
-    _transport,
     cli,
     edit,
+    freeze,
+    freeze_repo,
     fresh_db,
     rows,
+    serving_transport,
     world,
     write_root,
 )
+from pg_support import PgTestDatabase
+from pydantic import ValidationError
+from retained_support import APAR_IDENTITY, REPO_ROOT
 
 from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
@@ -55,7 +56,6 @@ from fundamentals.contracts.onboarding import VerificationState, VerificationUni
 from fundamentals.contracts.source_catalog import (
     TIJORI_SEARCH,
     UPSTOX_INSTRUMENTS,
-    VENDOR_SURFACES,
 )
 from fundamentals.entity.derived_settings import derive
 from fundamentals.entity.discovery import Capture, Discovery, Request, Response
@@ -216,9 +216,10 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
     (EXCLUDED_BY_RULE) and no Screener schedule side. Controls: without the exclusion attempt
     PDF is NO_VALUE and the run COMPLETE; Tijori also excluded adds exactly tijori/financials;
     only Upstox excluded leaves exactly PDF; the CLI's v1 defaults fail or diverge."""
-    _, descriptor, _ = _repo(tmp_path)
+    repo, _, entry = freeze_repo(tmp_path)
+    descriptor = freeze(repo, entry)
     raw = tmp_path / "raw"
-    monkeypatch.setattr(onboard_cli, "live_transport", lambda: _transport(world(APAR)))
+    monkeypatch.setattr(onboard_cli, "live_transport", lambda: serving_transport(world(APAR)))
     monkeypatch.setattr(onboard_cli, "now", lambda: datetime(2026, 10, 16, 2, 20, 24, tzinfo=UTC))
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
@@ -237,8 +238,8 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
     assert JUN in entries[0]["filename"] and MAR in entries[1]["filename"]
     monkeypatch.setattr(onboard_cli, "live_transport", lambda: pytest.fail("replay opened"))
 
-    def replayed(tag: str, **patches: Any) -> tuple[PgTestDatabase, str, Any]:
-        """Onboard by replay into a fresh database (``patches`` on ``onboard_cli``)."""
+    def replayed(tag: str, root: Path = raw, **patches: Any) -> tuple[PgTestDatabase, str, Any]:
+        """Onboard by replay of ``root`` into a fresh database (``patches`` on ``onboard_cli``)."""
         context = fresh_db(pg_template)
         db = context.__enter__()
         for name, value in db.cli_env().items():
@@ -246,7 +247,7 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
         with monkeypatch.context() as patch:
             for name, value in patches.items():
                 patch.setattr(onboard_cli, name, value)
-            code, command = _onboard(db, raw, tmp_path / f"snap-{tag}", capsys)
+            code, command = _onboard(db, root, tmp_path / f"snap-{tag}", capsys)
         assert code == INCOMPLETE
         return db, command, context
 
@@ -284,17 +285,18 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
     finally:
         context.__exit__(None, None, None)
 
-    controls: list[tuple[str, dict[str, Any], tuple[str, set[str]]]] = [
-        ("no-exclusion", {"exclude_pdf": lambda *args: None}, ("COMPLETE", set())),
+    controls: list[tuple[str, Path, dict[str, Any], tuple[str, set[str]]]] = [
+        ("no-exclusion", raw, {"exclude_pdf": lambda *args: None}, ("COMPLETE", set())),
         (
             "no-tijori",
-            {"SURFACES": _without(TIJORI_SEARCH)},
+            _denied(tmp_path, TIJORI_SEARCH),
+            {},
             ("INCOMPLETE", {"PDF", "tijori/financials"}),
         ),
-        ("no-upstox", {"SURFACES": _without(UPSTOX_INSTRUMENTS)}, ("INCOMPLETE", {"PDF"})),
+        ("no-upstox", _denied(tmp_path, UPSTOX_INSTRUMENTS), {}, ("INCOMPLETE", {"PDF"})),
     ]
-    for tag, patches, expected in controls:
-        db, command, context = replayed(tag, **patches)
+    for tag, root, patches, expected in controls:
+        db, command, context = replayed(tag, root, **patches)
         try:
             _, run_id = _compare(command, capsys)
             assert run_id is not None
@@ -305,8 +307,14 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
             context.__exit__(None, None, None)
 
 
-def _without(pair: tuple[str, str]) -> tuple[Any, ...]:
-    return tuple(a for a in VENDOR_SURFACES if (a.source_id, a.surface) != pair)
+def _denied(tmp_path: Path, pair: tuple[str, str]) -> Path:
+    """A replay root whose ``pair`` request was recorded NOT_AUTHORISED (replay serves the
+    recorded denial)."""
+    served = world(APAR)
+    for item in served:
+        if (item["source_id"], item["surface"]) == pair:
+            item["outcome"] = "NOT_AUTHORISED"
+    return write_root(tmp_path / f"raw-{pair[1]}", served, APAR)
 
 
 def _comparable(db: PgTestDatabase, run_id: int) -> list[tuple[Any, ...]]:

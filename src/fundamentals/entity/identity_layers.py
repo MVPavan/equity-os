@@ -176,7 +176,7 @@ def record_relationship(
     interval, raises :class:`IdentityConflictError`: a change needs an event.
     """
     with conn.transaction():
-        _lock(conn, [ref], [(ref.namespace, value)])
+        lock_identifiers(conn, [ref], [(ref.namespace, value)])
         holdings = _holdings(conn)
         _target(holdings, conn, ref)
         own = [held for held in holdings if held.ref == ref and held.end is None]
@@ -206,7 +206,9 @@ def record_event(
     """Record one identity event with its edges and started relationships, atomically."""
     _refuse_shape(kind, ends, starts, predecessors, successors)
     with conn.transaction():
-        _lock(conn, [*ends, *(ref for ref, _ in starts)], [(r.namespace, v) for r, v in starts])
+        lock_identifiers(
+            conn, [*ends, *(ref for ref, _ in starts)], [(r.namespace, v) for r, v in starts]
+        )
         holdings = _holdings(conn)
         ended = [_open(holdings, conn, ref, effective_date, kind) for ref in ends]
         for ref, value in starts:
@@ -405,7 +407,7 @@ def _holdings(conn: psycopg.Connection[Any]) -> list[_Holding]:
     return found
 
 
-def _lock(
+def lock_identifiers(
     conn: psycopg.Connection[Any],
     refs: Sequence[IdentifierRef],
     values: Sequence[tuple[IdentifierNamespace, str]],

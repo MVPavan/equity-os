@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import gzip
 import hashlib
 import json
 import re
@@ -21,8 +20,10 @@ from fundamentals.compare.run_models import RunExitStatus
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.onboarding import (
+    ANCHOR_UNITS,
     ONBOARDING_VERSIONS,
     UNIT_SURFACES,
+    OnboardingReason,
     VerificationState,
     VerificationUnit,
 )
@@ -327,6 +328,67 @@ TRANSFORMS: dict[str, Callable[[Locators], Any]] = {  # the closed set
 }
 
 
+XBRL = "xbrl"  # header source kind of a retained filing instance
+VALUE_RULES = {  # the complete inventory: name -> (transform, located field) (T5a, D5)
+    "SYMBOL": ("identity", "Symbol"),
+    "ISIN": ("identity", "ISIN"),
+    "BSE_SCRIP": ("identity", "ScripCode"),
+    "NAME": ("identity", "NameOfTheCompany"),
+    "FISCAL_YEAR_END": ("month_of_date", "DateOfEndOfFinancialYear"),
+    "PRESENTATION_CURRENCY": ("identity", "DescriptionOfPresentationCurrency"),
+    "ROUNDING_LEVEL": ("identity", "LevelOfRounding"),
+    "REPORTING_FRAMEWORK": ("framework_of_entry_point", "schemaRef namespace"),
+    "BASIS_STATUS": ("basis_of_inventory", "consolidated"),
+}
+PDF_VERDICT = (VerificationState.UNAVAILABLE, OnboardingReason.EXCLUDED_BY_RULE)  # R-PDF
+EXCLUDED_REASONS: dict[str, set[str] | None] = {  # a PARTIAL attempt's excluded vendor (D4.3)
+    VerificationState.UNAVAILABLE: {OnboardingReason.NO_CANDIDATE, OnboardingReason.ACCESS_FAILED},
+    VerificationState.NOT_AUTHORISED: {OnboardingReason.NOT_AUTHORISED},
+    VerificationState.UNVERIFIED: None,  # any recorded reason, e.g. a basis gate's own code
+}
+
+
+def check_unit(name: str, unit: dict[str, Any], excluded: list[str]) -> None:
+    """The unit's exact verdict: R-PDF's for ``RESULTS_PDF``; ``VERIFIED`` without a reason
+    unless predicted excluded; else a non-anchor state a ``PARTIAL`` outcome permits, with a
+    reason it permits."""
+    state, reason = unit["state"], unit.get("reason")
+    if name == VerificationUnit.RESULTS_PDF:
+        need((state, reason) == PDF_VERDICT, f"{name} verdict")
+    elif name not in excluded:
+        need((state, reason) == (VerificationState.VERIFIED, None), f"{name} verdict")
+    else:
+        allowed = EXCLUDED_REASONS.get(state, set())
+        permitted = (
+            isinstance(reason, str) and bool(reason) and (allowed is None or reason in allowed)
+        )
+        need(
+            name not in ANCHOR_UNITS and state in EXCLUDED_REASONS and permitted, f"{name} verdict"
+        )
+
+
+def check_value(
+    repo: Path, manifest: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any]
+) -> None:
+    """One onboarding value: its name's transform, every locator at its name's field, the
+    filing values covering every retained filing, the symbol the current attempt's."""
+    name, locators = node["name"], node["at"]
+    transform, field = VALUE_RULES[name]
+    need(node["transform"] == transform, f"{name} transform")
+    got = TRANSFORMS[transform](locators)
+    need(got is not None and str(got) == str(node["v"]), f"value {name}")
+    if transform == "basis_of_inventory":
+        located = {(loc["src"], loc["path"]) for loc in locators}
+        as_of = date.fromisoformat(node["as_of"]["lex"])
+        need(located == basis_rows(repo, manifest, as_of), "basis inventory")
+        return
+    filings = {s["label"] for s in manifest["header"]["sources"] if s["kind"] == XBRL}
+    key = "ref" if transform == "framework_of_entry_point" else "c"
+    at_field = all(loc.get(key) in field.split() for loc in locators)
+    need(at_field and {loc["src"] for loc in locators} == filings != set(), f"{name} locators")
+    need(name != "SYMBOL" or node["v"] == attempt["identifier"], "identifier")
+
+
 def basis_rows(repo: Path, manifest: dict[str, Any], as_of: date) -> set[tuple[str, str]]:
     """(label, path) of the basis lexeme of every window row (D1.3) of both listing files."""
     listings = {
@@ -349,9 +411,10 @@ def check_stage4(
     repo: Path, manifest: dict[str, Any], attempt: dict[str, Any], freeze: dict[str, Any]
 ) -> None:
     """The Stage 4 manifest against the current attempt's prediction, its freeze entry and
-    ``ONBOARDING_VERSIONS``; operational failures projected to the non-diagnostic excluded
-    units' surfaces; every onboarding value equal to its located lexemes after its transform.
-    Lexemes at their locators are ``check_locator``'s; failures name the step only (D1.7)."""
+    ``ONBOARDING_VERSIONS``; each unit's exact verdict; operational failures projected to the
+    non-diagnostic excluded units' surfaces; the complete value inventory, each value equal to
+    its located lexemes after its name's transform. Lexemes at their locators are
+    ``check_locator``'s; failures name the step only (D1.7)."""
     onboarding, prediction, (run,) = manifest["onboarding"], attempt["prediction"], manifest["runs"]
     versions = ONBOARDING_VERSIONS.model_dump(exclude_defaults=True)
     need(manifest["header"]["onboarding_versions"] == versions, "onboarding_versions")
@@ -364,17 +427,15 @@ def check_stage4(
     need(excluded == sorted(prediction["excluded_units"]), "unit states")
     need(onboarding["outcome"] == prediction["outcome"], "outcome")
     need(run["status"] == prediction["run_status"], "run_status")
+    for name, unit in units.items():
+        check_unit(name, unit, prediction["excluded_units"])
     surfaces = {UNIT_SURFACES[VerificationUnit(u)] for u in excluded if u != UPSTOX}
     failed = {failure_surface(f) for f in run.get("operational_failures", [])}
     need(failed == surfaces, "operational failures")
+    names = sorted(node["name"] for node in onboarding["values"])
+    need(names == sorted(VALUE_RULES), "value inventory")
     for node in onboarding["values"]:
-        need(node["transform"] in TRANSFORMS, "transform")
-        got = TRANSFORMS[node["transform"]](node["at"])
-        need(got is not None and str(got) == str(node["v"]), f"value {node['name']}")
-        if node["transform"] == "basis_of_inventory":
-            located = {(loc["src"], loc["path"]) for loc in node["at"]}
-            as_of = date.fromisoformat(node["as_of"]["lex"])
-            need(located == basis_rows(repo, manifest, as_of), "basis inventory")
+        check_value(repo, manifest, node, attempt)
 
 
 # Synthetic Stage 4 cases over a development company (Apar), files under ``tmp_path``.
@@ -388,6 +449,13 @@ INSTANCE = f"""<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
 <xbrli:context id="c1"><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant></xbrli:period>
 </xbrli:context>
 <in-capmkt:DateOfEndOfFinancialYear contextRef="c1">2027-03-31</in-capmkt:DateOfEndOfFinancialYear>
+<in-capmkt:Symbol contextRef="c1">APARINDS</in-capmkt:Symbol>
+<in-capmkt:ISIN contextRef="c1">INE372A01015</in-capmkt:ISIN>
+<in-capmkt:ScripCode contextRef="c1">532259</in-capmkt:ScripCode>
+<in-capmkt:NameOfTheCompany contextRef="c1">APAR INDUSTRIES LIMITED</in-capmkt:NameOfTheCompany>
+<in-capmkt:DescriptionOfPresentationCurrency contextRef="c1">INR\
+</in-capmkt:DescriptionOfPresentationCurrency>
+<in-capmkt:LevelOfRounding contextRef="c1">Crores</in-capmkt:LevelOfRounding>
 </xbrli:xbrl>"""
 LISTED = {"symbol": DEV_SYMBOL, "type": FINANCIALS, "broadcast_Date": "24-Jul-2026 18:34:26"}
 INTEGRATED = {
@@ -399,21 +467,37 @@ INTEGRATED = {
     ]
 }
 LEGACY = [{"symbol": DEV_SYMBOL, "toDate": "31-Mar-2026", "consolidated": "Non-Consolidated"}]
-EXCLUSIONS = {
+EXCLUSIONS = {  # R-PDF always excludes RESULTS_PDF
     "pdf-only": ["RESULTS_PDF"],
-    "upstox-only": ["UPSTOX"],
+    "upstox-diagnostic": ["RESULTS_PDF", "UPSTOX"],
     "mixed": ["RESULTS_PDF", "TIJORI", "UPSTOX"],
+}
+VERDICTS = {  # an excluded unit's (state, reason)
+    "RESULTS_PDF": ("UNAVAILABLE", "EXCLUDED_BY_RULE"),
+    "TIJORI": ("UNAVAILABLE", "ACCESS_FAILED"),
+    "UPSTOX": ("UNVERIFIED", "BASIS_UNVERIFIED"),
 }
 FAILURES = {
     "RESULTS_PDF": "PDF\tEXCLUDED_BY_RULE\tattempt=7",
     "TIJORI": "tijori/financials\t-\tattempt=-",
 }
 VERSIONS = {"dictionary": "v2", "mapping_set": "v5"}
-VALUES = """
-- {name: ISIN, transform: identity, v: INE372A01015,
-   at: [{src: INSTRUMENTS, path: '[0].isin', lex: INE372A01015, gz: true}]}
-- {name: FISCAL_YEAR_END, transform: month_of_date, v: 3, at: [{src: INSTANCE,
-   c: DateOfEndOfFinancialYear, ctx: c1, u: null, d: null, per: '2026-06-30', lex: '2027-03-31'}]}
+FACT = "{src: INSTANCE, c: %s, ctx: c1, u: null, d: null, per: '2026-06-30', lex: '%s'}"
+VALUES = (
+    f"""
+- {{name: SYMBOL, transform: identity, v: APARINDS, at: [{FACT % ("Symbol", "APARINDS")}]}}
+- {{name: ISIN, transform: identity, v: INE372A01015, at: [{FACT % ("ISIN", "INE372A01015")}]}}
+- {{name: BSE_SCRIP, transform: identity, v: '532259', at: [{FACT % ("ScripCode", "532259")}]}}
+- {{name: NAME, transform: identity, v: APAR INDUSTRIES LIMITED,
+   at: [{FACT % ("NameOfTheCompany", "APAR INDUSTRIES LIMITED")}]}}
+- {{name: PRESENTATION_CURRENCY, transform: identity, v: INR,
+   at: [{FACT % ("DescriptionOfPresentationCurrency", "INR")}]}}
+- {{name: ROUNDING_LEVEL, transform: identity, v: Crores,
+   at: [{FACT % ("LevelOfRounding", "Crores")}]}}
+- {{name: FISCAL_YEAR_END, transform: month_of_date, v: 3,
+   at: [{FACT % ("DateOfEndOfFinancialYear", "2027-03-31")}]}}
+"""
+    + """
 - {name: REPORTING_FRAMEWORK, transform: framework_of_entry_point, v: IND_AS, at: [
    {src: INSTANCE, ref: schemaRef, lex: in-capmkt-ent-2026-01-31.xsd},
    {src: INSTANCE, ref: namespace, lex: '%(entry)s'}]}
@@ -423,6 +507,7 @@ VALUES = """
    {src: INTEGRATED, path: 'data[1].consolidated', lex: Non-Consolidated},
    {src: LEGACY, path: '[0].consolidated', lex: Non-Consolidated}]}
 """
+)
 
 
 def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
@@ -436,17 +521,11 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
         "INTEGRATED": ("integrated.json", LISTING, json.dumps(INTEGRATED).encode()),
         "LEGACY": ("legacy.json", LISTING, json.dumps(LEGACY).encode()),
         "DISCOVERY": ("discovery.json", "json", b'{"as_of": "2026-08-01"}'),
-        "INSTRUMENTS": (
-            "instruments.json.gz",
-            "json",
-            gzip.compress(json.dumps([{"isin": DEV_ISIN, "trading_symbol": DEV_SYMBOL}]).encode()),
-        ),
     }
     for file, _, data in files.values():
         (root / file).write_bytes(data)
     excluded = EXCLUSIONS[base]
     failures = [FAILURES[u] for u in excluded if u in FAILURES]
-    status = {"status": "INCOMPLETE", "exit": 4} if failures else {}
     values = yaml.safe_load(VALUES % {"entry": ENTRY})
     sources = [
         {"label": label, "path": str(root / file), "kind": kind}
@@ -458,12 +537,17 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
             "outcome": "PARTIAL",
             "excluded_units": list(excluded),
             "units": {
-                u.value: {"state": "UNVERIFIED" if u in excluded else "VERIFIED"}
+                u: dict(zip(("state", "reason"), VERDICTS[u], strict=True))
+                if u in excluded
+                else {"state": "VERIFIED"}
                 for u in VerificationUnit
             },
             "values": values,
         },
-        "runs": [copy.deepcopy(run) | {"operational_failures": failures} | status],
+        "runs": [
+            copy.deepcopy(run)
+            | {"operational_failures": failures, "status": "INCOMPLETE", "exit": 4}
+        ],
     }
     prediction = {
         "outcome": "PARTIAL",
@@ -480,8 +564,8 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
 
 def value_node(case: dict[str, Any], name: str) -> dict[str, Any]:
     """One onboarding value of a case."""
-    (node,) = [n for n in case["manifest"]["onboarding"]["values"] if n["name"] == name]
-    return cast(dict[str, Any], node)
+    (node,) = [n for n in values_of(case) if n["name"] == name]
+    return node
 
 
 def banking(case: dict[str, Any]) -> None:
@@ -490,6 +574,16 @@ def banking(case: dict[str, Any]) -> None:
     instance.write_text(instance.read_text().replace("_IndAS/", "_Banking/"))
     for loc in value_node(case, "REPORTING_FRAMEWORK")["at"]:
         loc["lex"] = loc["lex"].replace("_IndAS/", "_Banking/")
+
+
+def values_of(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """The case's onboarding values."""
+    return cast(list[dict[str, Any]], case["manifest"]["onboarding"]["values"])
+
+
+def unit_of(case: dict[str, Any], unit: str) -> dict[str, Any]:
+    """One unit's verdict of a case."""
+    return cast(dict[str, Any], case["manifest"]["onboarding"]["units"][unit])
 
 
 def run_of_case(case: dict[str, Any]) -> dict[str, Any]:
@@ -507,7 +601,7 @@ STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] =
         {"run", "stage4"},
     ),
     "upstox-failure-projected": (
-        "upstox-only",
+        "upstox-diagnostic",
         lambda case: run_of_case(case)["operational_failures"].append(UPSTOX_FAILURE),
         {"stage4"},
     ),
@@ -535,6 +629,58 @@ STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] =
     "onboarding-versions-wrong": (
         "pdf-only",
         lambda case: case["manifest"]["header"]["onboarding_versions"].update(mapping_set="v4"),
+        {"stage4"},
+    ),
+    "values-deleted": ("pdf-only", lambda case: values_of(case).clear(), {"stage4"}),
+    "value-duplicated": (
+        "pdf-only",
+        lambda case: values_of(case).append(copy.deepcopy(value_node(case, "ISIN"))),
+        {"stage4"},
+    ),
+    "framework-as-identity-of-isin": (
+        "pdf-only",
+        lambda case: value_node(case, "REPORTING_FRAMEWORK").update(
+            transform="identity", v=DEV_ISIN, at=copy.deepcopy(value_node(case, "ISIN")["at"])
+        ),
+        {"stage4"},
+    ),
+    "currency-at-rounding-field": (
+        "pdf-only",
+        lambda case: value_node(case, "PRESENTATION_CURRENCY").update(
+            v="Crores", at=copy.deepcopy(value_node(case, "ROUNDING_LEVEL")["at"])
+        ),
+        {"stage4"},
+    ),
+    "filing-unlocated": (
+        "pdf-only",
+        lambda case: case["manifest"]["header"]["sources"].append(
+            {"label": "OLDER", "path": str(case["root"] / "instance.xml"), "kind": XBRL}
+        ),
+        {"stage4"},
+    ),
+    "symbol-not-the-attempts": (
+        "pdf-only",
+        lambda case: case["attempt"].update(identifier="ZZOTHER"),
+        {"stage4"},
+    ),
+    "pdf-state-conflict": (
+        "pdf-only",
+        lambda case: unit_of(case, "RESULTS_PDF").update(state="CONFLICT"),
+        {"stage4"},
+    ),
+    "pdf-reason-changed": (
+        "pdf-only",
+        lambda case: unit_of(case, "RESULTS_PDF").update(reason="ACCESS_FAILED"),
+        {"stage4"},
+    ),
+    "vendor-reason-missing": (
+        "mixed",
+        lambda case: unit_of(case, "TIJORI").pop("reason"),
+        {"stage4"},
+    ),
+    "vendor-state-conflict": (
+        "mixed",
+        lambda case: unit_of(case, "TIJORI").update(state="CONFLICT"),
         {"stage4"},
     ),
 }

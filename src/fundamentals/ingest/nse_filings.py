@@ -4,8 +4,9 @@ Both listings are requested raw for every basis: the legacy ``corporates-financi
 and the ``integrated-filing-results`` listing. The filing-window rule, shared in reading with
 selection and the holdout checker (D1.3 and its 2026-10-16 clarification): the window is the
 six latest calendar quarter-ends on or before ``as_of``; rows of both listings with a basis and
-a period end in the window collapse to the latest broadcast per ``(period_end, basis)``; a group
-holding a row with no broadcast time is left out; a tie on the latest broadcast is reported.
+a period end in the window, identical parsed rows counted once, collapse to the latest broadcast
+per ``(period_end, basis)``; a group holding a row with a missing or empty broadcast time is left
+out; a tie on the latest broadcast is reported.
 Qualifying filings are collapsed integrated ``Financials`` rows on the consolidated basis.
 """
 
@@ -77,7 +78,7 @@ def listing_rows(legacy: bytes, integrated: bytes) -> list[ListingRow]:
             end = row.get("qe_Date" if is_integrated else "toDate")
             if not basis or not end:
                 continue
-            when = row.get("broadcast_Date" if is_integrated else "broadCastDate")
+            when = (row.get("broadcast_Date" if is_integrated else "broadCastDate") or "").strip()
             found.append(
                 ListingRow(
                     period_end=datetime.strptime(end, _DAY).date(),
@@ -95,7 +96,7 @@ def filing_window(rows: Sequence[ListingRow], as_of: date) -> FilingWindow:
     """Collapse the rows in the window and keep the qualifying ones (D1.3)."""
     window = quarter_ends(as_of)
     groups: dict[tuple[date, str], list[ListingRow]] = defaultdict(list)
-    for row in rows:
+    for row in dict.fromkeys(rows):  # an identical row listed twice is one filing
         if row.period_end in window:
             groups[row.period_end, row.basis].append(row)
     latest: list[ListingRow] = []

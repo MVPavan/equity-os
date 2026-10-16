@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import StrEnum
 
-from fundamentals.compare.run_config import ConfigVersions
 from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.config_versions import ConfigVersions
 
 
 class VerificationUnit(StrEnum):
