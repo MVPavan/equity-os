@@ -347,8 +347,13 @@ class EvidenceRepository:
     def put_generation(
         self, occurrences: Sequence[Occurrence], attempts: Sequence[AcquisitionAttempt]
     ) -> tuple[tuple[Occurrence, ...], tuple[AcquisitionAttempt, ...]]:
-        """One adapter invocation's occurrences and attempts, in one transaction."""
+        """One adapter invocation's occurrences and attempts, in one transaction (D6 D4.5 gate)."""
+        # Local: the gate's onboarding contract reaches compare.run_config, which imports us.
+        from fundamentals.evidence.discovery_gate import refuse_ineligible
+
+        cited = [item.capture for item in occurrences] + [item.capture for item in attempts]
         with self._transaction() as conn:
+            refuse_ineligible(conn, [capture.capture_ref_id for capture in cited if capture])
             stored_occurrences = _insert_occurrences(conn, occurrences)
             stored_attempts = tuple(_insert_attempt(conn, attempt) for attempt in attempts)
         return stored_occurrences, stored_attempts

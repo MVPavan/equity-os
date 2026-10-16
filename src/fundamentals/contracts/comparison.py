@@ -46,6 +46,8 @@ class SourceRole(StrEnum):
     REPORTED_COUNTERPART = "REPORTED_COUNTERPART"
     INDEPENDENT_VENDOR = "INDEPENDENT_VENDOR"
     DIAGNOSTIC = "DIAGNOSTIC"
+    # Identity evidence only (plan D6 D4.4): never interpreted, never corroborating.
+    IDENTITY = "IDENTITY"
 
 
 class SourceRef(BaseModel):

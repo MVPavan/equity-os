@@ -1,0 +1,120 @@
+# D6 Task 3 onboarding replay fixtures (plan D6 T3). One list of responses per development or
+# financial-fixture company, each served at its request URL by the test's replay root.
+#   file:      committed here. master.csv holds rows copied verbatim from the retained NSE
+#              EQUITY_L.csv (data/raw/onboarding-dev/master/EQUITY_L.csv, sha256 474ad748...);
+#              aparinds-upstox-instruments.json the APARINDS rows of the probe's instrument-file
+#              extract (probe-evidence/q4_upstox_instruments.json); the two search files the
+#              probe's APARINDS candidates (probe-evidence/vendor_search.json).
+#              SYNTHETIC: aparinds-peersmartsearch.json (no APARINDS response was retained; the
+#              shape of the retained HDFCBANK one, values from config/identity/aparinds.yaml) and
+#              empty-listing.json (an empty legacy listing, as the retained HDFCLIFE one is).
+#   retained:  a gitignored original, read only under the `retained` marker and pinned by
+#              SHA-256; vendor and exchange bytes are not redistributed.
+retrieved_at: "2026-10-16T02:20:24+00:00"
+companies:
+  APARINDS:
+    - {unit: EXCHANGE, source_id: nse, surface: EQUITY_L, file: master.csv,
+       url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"}
+    - {unit: EXCHANGE, source_id: nse, surface: FINANCIAL_RESULTS_LISTING,
+       url: "https://www.nseindia.com/api/corporates-financial-results?index=equities&period=quarterly&symbol=APARINDS",
+       retained: {path: data/raw/watchlist/aparinds/nse-listing/financial-results-quarterly-20261014T102019Z.json,
+                  sha256: 3d8ff42d2632f2386ce1906ac5a2029fc3426a95b487b17dabc9b07cda281109}}
+    - {unit: EXCHANGE, source_id: nse, surface: INTEGRATED_FILING_LISTING,
+       url: "https://www.nseindia.com/api/integrated-filing-results?index=equities&period=Quarterly&symbol=APARINDS",
+       retained: {path: data/raw/onboarding-dev/dev-entry-points/APARINDS/nse-listing/integrated-filing-quarterly.json,
+                  sha256: 8e4e3bb019dd50466959cd4f44f28a57429242211b7df8816befa295adac68af}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml",
+       retained: {path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml,
+                  sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml",
+       retained: {path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml,
+                  sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01}}
+    - {unit: EXCHANGE, source_id: bse, surface: PEER_SMART_SEARCH, file: aparinds-peersmartsearch.json,
+       url: "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text=INE372A01015"}
+    - {unit: SCREENER, source_id: screener-subscriber, surface: SCREENER_SEARCH,
+       file: aparinds-screener-search.json,
+       url: "https://www.screener.in/api/company/search/?q=APARINDS&v=3&fts=1"}
+    - {unit: SCREENER, source_id: screener-subscriber, surface: SCREENER_FINANCIALS,
+       url: "https://www.screener.in/company/APARINDS/consolidated/",
+       retained: {path: data/raw/watchlist/screener-financials/APARINDS/consolidated/screener_financials_page.raw.html,
+                  sha256: 34f46c0ea9e37d58a5c23c5fd4fd6f2d3bee93cd37a819e79a41d14b2a4768bc}}
+    - {unit: TIJORI, source_id: tijori, surface: company_search, file: aparinds-tijori-search.json,
+       url: "https://www.tijorifinance.com/api/v1/ind/company_search/?q=INE372A01015"}
+    - {unit: TIJORI, source_id: tijori, surface: financials,
+       url: "https://www.tijorifinance.com/company/apar-industries-limited/financials/",
+       retained: {path: data/raw/snapshots/v1/tijori/financials/apar-industries-limited/20261014T092203.484096Z-ea59098cc0df/body.bin,
+                  sha256: ea59098cc0df17eea9ce408f319e84332176c2f84479649357bd026f8c992a08}}
+    - {unit: UPSTOX, source_id: upstox, surface: instruments, file: aparinds-upstox-instruments.json,
+       gzip: true, url: "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz"}
+    - {unit: UPSTOX, source_id: upstox, surface: income-statement,
+       url: "https://api.upstox.com/v2/fundamentals/INE372A01015/income-statement?fs=true&time_period=quarterly&type=consolidated",
+       retained: {path: data/raw/snapshots/v1/upstox/income-statement/default-3acbf55d982a3ba6440218b0/20261014T092123.626790Z-c83a9f0b1b07/body.json,
+                  sha256: c83a9f0b1b072f6168e40a53555e8759e683585136763365432bf50a29c21e62}}
+  HDFCBANK:
+    - {unit: EXCHANGE, source_id: nse, surface: EQUITY_L, file: master.csv,
+       url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"}
+    - {unit: EXCHANGE, source_id: nse, surface: FINANCIAL_RESULTS_LISTING,
+       url: "https://www.nseindia.com/api/corporates-financial-results?index=equities&period=quarterly&symbol=HDFCBANK",
+       retained: {path: data/raw/onboarding-dev/bank-HDFCBANK/nse-listing/financial-results-quarterly.json,
+                  sha256: 6eb918bdac37aba23950b11b34352a0b2266f6637533851bc98dd73a1a1c0531}}
+    - {unit: EXCHANGE, source_id: nse, surface: INTEGRATED_FILING_LISTING,
+       url: "https://www.nseindia.com/api/integrated-filing-results?index=equities&period=Quarterly&symbol=HDFCBANK",
+       retained: {path: data/raw/onboarding-dev/bank-HDFCBANK/nse-listing/integrated-filing-quarterly.json,
+                  sha256: af7184cdd549d802978f824fad8685bbd949eaf19f744eca568c76f677beb845}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_BANKING_1696123_18072026040126_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/bank-HDFCBANK/nse/INTEGRATED_FILING_BANKING_1696123_18072026040126_WEB.xml,
+                  sha256: 7c5f4cfae145b0ac20dcbb7081c6a76488fb1ffea1b42e49ddd4a6f46d6cf38b}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_BANKING_1654391_18042026073048_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/bank-HDFCBANK/nse/INTEGRATED_FILING_BANKING_1654391_18042026073048_WEB.xml,
+                  sha256: de471a6c3e9af6fa4b93c229f53ce77244eaf664db91b9f0039b6d93472ee3f1}}
+  BAJFINANCE:
+    - {unit: EXCHANGE, source_id: nse, surface: EQUITY_L, file: master.csv,
+       url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"}
+    - {unit: EXCHANGE, source_id: nse, surface: FINANCIAL_RESULTS_LISTING,
+       url: "https://www.nseindia.com/api/corporates-financial-results?index=equities&period=quarterly&symbol=BAJFINANCE",
+       retained: {path: data/raw/onboarding-dev/nbfc-BAJFINANCE/nse-listing/financial-results-quarterly.json,
+                  sha256: 6b23ff2c2b8790351aec1a6fde1cf160292b574082e39fa53224953c321d0f8e}}
+    - {unit: EXCHANGE, source_id: nse, surface: INTEGRATED_FILING_LISTING,
+       url: "https://www.nseindia.com/api/integrated-filing-results?index=equities&period=Quarterly&symbol=BAJFINANCE",
+       retained: {path: data/raw/onboarding-dev/nbfc-BAJFINANCE/nse-listing/integrated-filing-quarterly.json,
+                  sha256: f7be96764b43c335486d5de5b847fb327ad4aaf027f29ca18827f4422b0515a5}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_NBFC_INDAS_1705543_30072026070233_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/nbfc-BAJFINANCE/nse/INTEGRATED_FILING_NBFC_INDAS_1705543_30072026070233_WEB.xml,
+                  sha256: 6673a4352cbba97633148e64caa8cd803eafc2fefb118e9318ceaf02cae248ba}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_NBFC_INDAS_1661603_29042026104724_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/nbfc-BAJFINANCE/nse/INTEGRATED_FILING_NBFC_INDAS_1661603_29042026104724_WEB.xml,
+                  sha256: 88a56b7b0ff07e0dd596e8760eddc24d19389ba1a0db205e14ea7e3228b8c7f5}}
+  HDFCLIFE:
+    - {unit: EXCHANGE, source_id: nse, surface: EQUITY_L, file: master.csv,
+       url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"}
+    - {unit: EXCHANGE, source_id: nse, surface: FINANCIAL_RESULTS_LISTING,
+       url: "https://www.nseindia.com/api/corporates-financial-results?index=equities&period=quarterly&symbol=HDFCLIFE",
+       retained: {path: data/raw/onboarding-dev/insurer-HDFCLIFE/nse-listing/financial-results-quarterly.json,
+                  sha256: 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945}}
+    - {unit: EXCHANGE, source_id: nse, surface: INTEGRATED_FILING_LISTING,
+       url: "https://www.nseindia.com/api/integrated-filing-results?index=equities&period=Quarterly&symbol=HDFCLIFE",
+       retained: {path: data/raw/onboarding-dev/insurer-HDFCLIFE/nse-listing/integrated-filing-quarterly.json,
+                  sha256: 8b016fac431f8ba1d50641f666d2b24ad9ad64c5eaaeeb205d01bc2cd8837d9e}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_LI_1739360_15102026072721_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/insurer-HDFCLIFE/nse/INTEGRATED_FILING_LI_1739360_15102026072721_WEB.xml,
+                  sha256: d6058876141b32251fdc2d557b2987ca31fffc89ffaddeb472d7ad6288897b54}}
+    - {unit: XBRL_ENTITY, source_id: nse-indas-xbrl-consolidated, surface: NSE_XBRL_INSTANCE,
+       url: "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_LI_1693455_15072026055112_WEB.xml",
+       retained: {path: data/raw/onboarding-dev/insurer-HDFCLIFE/nse/INTEGRATED_FILING_LI_1693455_15072026055112_WEB.xml,
+                  sha256: 5108d044540e7ec29c99d16effc4524cec669117cf424a9577904df1cf292903}}
+  NETWEB:
+    - {unit: EXCHANGE, source_id: nse, surface: EQUITY_L, file: master.csv,
+       url: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"}
+    - {unit: EXCHANGE, source_id: nse, surface: FINANCIAL_RESULTS_LISTING, file: empty-listing.json,
+       url: "https://www.nseindia.com/api/corporates-financial-results?index=equities&period=quarterly&symbol=NETWEB"}
+    - {unit: EXCHANGE, source_id: nse, surface: INTEGRATED_FILING_LISTING,
+       url: "https://www.nseindia.com/api/integrated-filing-results?index=equities&period=Quarterly&symbol=NETWEB",
+       retained: {path: data/raw/onboarding-dev/dev-entry-points/NETWEB/nse-listing/integrated-filing-quarterly.json,
+                  sha256: b2598920e4b160af8a80c7c456fda5b1f2c4169c92c1e9f7a3f91aaec71a8fcd}}

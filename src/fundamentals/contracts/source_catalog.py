@@ -90,9 +90,11 @@ class SurfaceNotAuthorisedError(LookupError):
     """The ``(source, surface)`` is not registered; capture and interpretation are refused."""
 
 
-def surface_authority(source_id: str, surface: str) -> SurfaceAuthority:
-    """The registered authority of one vendor surface, or ``SurfaceNotAuthorisedError``."""
-    for authority in VENDOR_SURFACES:
+def surface_authority(
+    source_id: str, surface: str, table: tuple[SurfaceAuthority, ...] | None = None
+) -> SurfaceAuthority:
+    """The registered authority of one surface in ``table`` (default ``VENDOR_SURFACES``)."""
+    for authority in VENDOR_SURFACES if table is None else table:
         if (authority.source_id, authority.surface) == (source_id, surface):
             return authority
     raise SurfaceNotAuthorisedError(f"{source_id}/{surface} is not a registered vendor surface")
@@ -193,7 +195,9 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     _derived("news-store"),
 )
 
+_EXCHANGE_RIGHTS = "docs/evidence/phase-0a/a-05-rights-decision-004-private-use.md"
 _SUBSCRIBER_RIGHTS = "docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md"
+_UPSTOX_RIGHTS = "docs/research/upstox-rights-record.md"
 # Owner decision 2026-09-03 (data spec §3): Upstox statements are a diagnostic parse-check only.
 _UPSTOX_DIAGNOSTIC = "docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md"
 
@@ -210,6 +214,28 @@ def _surface(
         retention_authority=authority,
     )
 
+
+# Onboarding discovery surfaces (plan D6 D4.4), as (source_id, surface).
+NSE_MASTER = ("nse", "EQUITY_L")
+NSE_RESULTS_LISTING = ("nse", "FINANCIAL_RESULTS_LISTING")
+NSE_INTEGRATED_LISTING = ("nse", "INTEGRATED_FILING_LISTING")
+NSE_XBRL_INSTANCE = ("nse-indas-xbrl-consolidated", "NSE_XBRL_INSTANCE")
+BSE_PEER_SEARCH = ("bse", "PEER_SMART_SEARCH")
+SCREENER_SEARCH = ("screener-subscriber", "SCREENER_SEARCH")
+SCREENER_PAGE = ("screener-subscriber", "SCREENER_FINANCIALS")
+TIJORI_SEARCH = ("tijori", "company_search")
+TIJORI_PAGE = ("tijori", "financials")
+UPSTOX_INSTRUMENTS = ("upstox", "instruments")
+UPSTOX_STATEMENT = ("upstox", "income-statement")
+_IDENTITY_SURFACES = (
+    (NSE_MASTER, Representation.HTML, _EXCHANGE_RIGHTS),
+    (NSE_RESULTS_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
+    (NSE_INTEGRATED_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
+    (BSE_PEER_SEARCH, Representation.HTML, _EXCHANGE_RIGHTS),
+    (SCREENER_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
+    (TIJORI_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
+    (UPSTOX_INSTRUMENTS, Representation.JSON, _UPSTOX_RIGHTS),
+)
 
 VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
     _surface(
@@ -237,4 +263,9 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
         _surface("upstox", surface, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC)
         for surface in ("income-statement", "balance-sheet", "cash-flow", "key-ratios")
     ),
+    *(
+        _surface(*pair, representation, SourceRole.IDENTITY, authority)
+        for pair, representation, authority in _IDENTITY_SURFACES
+    ),
+    _surface(*NSE_XBRL_INSTANCE, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS),
 )

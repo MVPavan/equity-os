@@ -21,6 +21,7 @@ from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.compare import run, run_config, run_store
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.entity import identity_layers
+from fundamentals.evidence import discovery_gate
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -107,12 +108,18 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def pre_0022_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Today's reads on a schema before 0022: settings carry no ``valid_from`` (every row
-    governs every period) and no identifier relationship exists."""
+    governs every period), no identifier relationship exists and no capture is discovery's."""
     for name in ("SETTINGS_AS_OF", "SETTINGS_BY_ID"):
         monkeypatch.setattr(
             rows_sql, name, getattr(rows_sql, name).replace("valid_from", "NULL::date")
         )
     monkeypatch.setattr(identity_layers, "_RELATIONSHIPS", "SELECT 1 WHERE false")
+    monkeypatch.setattr(
+        discovery_gate,
+        "_ELIGIBILITY",
+        "SELECT id, source_id, surface, false, false FROM eqos.capture_refs "
+        "WHERE id = ANY(%(ids)s)",
+    )
 
 
 def test_0005_retained_run_keeps_manifest_and_results_after_0006(

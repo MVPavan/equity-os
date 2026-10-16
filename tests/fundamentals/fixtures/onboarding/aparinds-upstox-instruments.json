@@ -1,0 +1,35 @@
+[
+ {
+  "segment": "BSE_EQ",
+  "name": "APAR INDUSTRIES LTD.",
+  "exchange": "BSE",
+  "isin": "INE372A01015",
+  "instrument_type": "A",
+  "instrument_key": "BSE_EQ|INE372A01015",
+  "lot_size": 1,
+  "freeze_quantity": 100000.0,
+  "exchange_token": "532259",
+  "tick_size": 5.0,
+  "trading_symbol": "APARINDS",
+  "short_name": "APAR INDUSTRIES",
+  "qty_multiplier": 1.0
+ },
+ {
+  "segment": "NSE_EQ",
+  "name": "APAR INDUSTRIES LTD.",
+  "exchange": "NSE",
+  "isin": "INE372A01015",
+  "instrument_type": "EQ",
+  "instrument_key": "NSE_EQ|INE372A01015",
+  "lot_size": 1,
+  "freeze_quantity": 100000.0,
+  "exchange_token": "11491",
+  "tick_size": 100.0,
+  "trading_symbol": "APARINDS",
+  "short_name": "Apar Industries",
+  "qty_multiplier": 1.0,
+  "mtf_enabled": true,
+  "mtf_bracket": 37.03,
+  "security_type": "NORMAL"
+ }
+]
