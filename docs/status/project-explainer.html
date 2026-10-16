@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Equity-OS — what is being built, stage by stage</title>
+<style>
+:root{
+  --bg:#fafaf8;--panel:#ffffff;--ink:#1d1d1f;--muted:#5f6368;--line:#e3e3df;--soft:#f2f2ee;
+  --accent:#2f5bd3;--accent-soft:#e8eefc;
+  --ok:#1f7a45;--ok-soft:#e3f3e9;--warn:#9a6200;--warn-soft:#fbf0d9;--plan:#6b6b6b;--plan-soft:#efefec;--bad:#b3261e;--bad-soft:#fbe5e3;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#141416;--panel:#1c1c1f;--ink:#e8e8ea;--muted:#a0a0a8;--line:#2e2e33;--soft:#232327;
+  --accent:#8aa8ff;--accent-soft:#232c45;--ok:#6fcf97;--ok-soft:#1d3226;--warn:#f0b35a;--warn-soft:#3a2e18;
+  --plan:#a8a8a8;--plan-soft:#2a2a2d;--bad:#f28b82;--bad-soft:#3d2120;}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:40px;max-width:1240px;margin:0 auto;padding:32px 24px 80px}
+nav.toc{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow:auto;font-size:14px;border-right:1px solid var(--line);padding-right:16px}
+nav.toc b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+nav.toc a{display:block;color:var(--ink);text-decoration:none;padding:3px 0}
+nav.toc a:hover{color:var(--accent)}
+nav.toc a.sub{padding-left:14px;color:var(--muted);font-size:13px}
+main{max-width:900px}
+h1{font-size:32px;line-height:1.2;margin:0 0 8px}
+h2{font-size:24px;margin:56px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
+h2 .n{color:var(--muted);font-weight:400;font-size:20px;font-variant-numeric:tabular-nums}
+h3{font-size:19px;margin:32px 0 8px}
+h4{font-size:15px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+p{margin:8px 0}
+.lede{color:var(--muted);font-size:17px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.88em;background:var(--soft);padding:1px 5px;border-radius:4px}
+pre{font-family:var(--mono);font-size:13px;line-height:1.5;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;margin:8px 0}
+pre code{background:none;padding:0}
+.cap{font-size:12px;color:var(--muted);margin:12px 0 -4px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:10px 0;background:var(--panel)}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:600}
+td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.tldr{background:var(--accent-soft);border-left:4px solid var(--accent);border-radius:6px;padding:12px 18px;margin:20px 0}
+.tldr ul{margin:4px 0;padding-left:18px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .v{font-size:26px;font-weight:650;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:13px;color:var(--muted)}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap;vertical-align:1px}
+.done{background:var(--ok-soft);color:var(--ok)}
+.prog{background:var(--warn-soft);color:var(--warn)}
+.plan{background:var(--plan-soft);color:var(--plan)}
+.bad{background:var(--bad-soft);color:var(--bad)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:18px 0}
+.card h3{margin-top:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:130px minmax(0,1fr);gap:4px 14px;font-size:15px}
+.grid>div:nth-child(odd){color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}
+details{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:10px 0;background:var(--panel)}
+details>summary{cursor:pointer;font-weight:600;color:var(--muted)}
+details[open]>summary{margin-bottom:6px}
+.note{font-size:14px;color:var(--muted)}
+.inf{color:var(--warn);font-style:italic;font-size:.92em}
+.callout{border-left:4px solid var(--warn);background:var(--warn-soft);padding:10px 14px;border-radius:6px;margin:12px 0}
+dl.gl{display:grid;grid-template-columns:220px minmax(0,1fr);gap:6px 18px}
+dl.gl dt{font-weight:650}
+dl.gl dd{margin:0;color:var(--muted)}
+svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.svgbox{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:8px}
+@media (max-width:720px){
+  .wrap{grid-template-columns:1fr;padding:16px}
+  nav.toc{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line);padding-bottom:12px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .grid,dl.gl{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <b>Contents</b>
+  <a href="#tldr">TL;DR</a>
+  <a href="#what">01 What is being built</a>
+  <a href="#flow">02 The end-to-end flow</a>
+  <a href="#stages">03 Every component, in order</a>
+  <a class="sub" href="#c-capture">Sources &amp; raw capture</a>
+  <a class="sub" href="#c-xbrl">XBRL extraction</a>
+  <a class="sub" href="#c-pdf">Results-PDF extraction</a>
+  <a class="sub" href="#c-screener">Screener</a>
+  <a class="sub" href="#c-tijori">Tijori</a>
+  <a class="sub" href="#c-upstox">Upstox</a>
+  <a class="sub" href="#c-dict">Dictionary &amp; mappings</a>
+  <a class="sub" href="#c-run">Comparison run &amp; queue</a>
+  <a class="sub" href="#c-facts">Fact store &amp; admission</a>
+  <a class="sub" href="#c-ledger">Report ledger</a>
+  <a class="sub" href="#c-memory">Long-term memory</a>
+  <a class="sub" href="#c-views">Generated views</a>
+  <a class="sub" href="#c-onboard">Onboarding (D6)</a>
+  <a class="sub" href="#c-coverage">Coverage &amp; screens (D7)</a>
+  <a class="sub" href="#c-share">Shareholding (D8)</a>
+  <a class="sub" href="#c-retention">Retention (D9)</a>
+  <a class="sub" href="#c-workflow">Earnings-review workflow &amp; pilot</a>
+  <a class="sub" href="#c-legacy">The older pipeline</a>
+  <a href="#compare">04 Comparison explained</a>
+  <a href="#d6">05 Identifier-only onboarding</a>
+  <a href="#timeline">06 Timeline</a>
+  <a href="#gloss">07 Glossary</a>
+  <a href="#unknown">08 What this page could not determine</a>
+</nav>
+
+<main>
+<h1>Equity-OS: what is being built, stage by stage</h1>
+<p class="lede">An explainer for the owner. Every statement is taken from the repository as of 2026-10-16 (specs, roadmaps, plans, code, config, tests and <code>git log</code>). Anything inferred is marked <span class="inf">(inferred)</span>. Company examples use Apar Industries (the development company) and the watchlist companies already named in the docs.</p>
+
+<div class="tldr" id="tldr">
+<b>TL;DR</b>
+<ul>
+<li><b>What:</b> a research back-end for Indian listed companies. It reads the same financial figures from up to six sources, keeps every original byte, compares the sources line by line under fixed rules, and only lets cross-checked first-party numbers become "facts". Reports and long-term memory are then built on those facts, and every number in a report must cite one.</li>
+<li><b>Why it matters:</b> the eventual product is a quarterly earnings-review workflow where you can trace every number to a filing and see where the sources disagree. The back-end is "complete" only when a four-quarter Apar pilot passes on it.</li>
+<li><b>Gotcha:</b> PDF parsing works only for Apar. On 10 other companies' results PDFs it extracted <b>nothing</b> (0/10), so the onboarding of new companies (D6) deliberately leaves the PDF out. New companies are checked with exchange XBRL plus vendors, and the expected outcome is <code>PARTIAL</code>.</li>
+</ul>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">6 / 10</div><div class="l">core phases complete on test databases (D1a–D5)</div></div>
+  <div class="kpi"><div class="v">40 / 66</div><div class="l">roadmap stages closed (roadmap progress table)</div></div>
+  <div class="kpi"><div class="v">D6</div><div class="l">current phase: tasks 0b, 1a, 1b done; Task 2 in progress</div></div>
+  <div class="kpi"><div class="v">NO</div><div class="l"><code>PILOT_PROVEN</code>: the pilot hasn't run yet</div></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="what"><span class="n">01</span> What is being built</h2>
+<p>The project's doctrine (<code>.claude/project/brief.md</code>): <i>"SQL records what happened. Curated memory preserves what was learned. Deterministic code calculates implications. Agents investigate, challenge, and explain."</i> The product is an evidence-governed research system, not a stock-picking chatbot. Language models never compute numbers. They draft prose and review work, and every figure comes from code.</p>
+<p>The work is split into three parts (<code>docs/backend-roadmap.md</code>):</p>
+<table>
+<tr><th>Part</th><th>What it is</th><th>State</th></tr>
+<tr><td><b>Backend core</b> ("data foundation", phases D1a–D9)</td><td>A shared PostgreSQL store, a canonical dictionary of financial line items, a comparator, a report ledger, long-term memory, read-only views, onboarding by identifier, coverage lists, a shareholding source, and retention</td><td><span class="pill done">D1a–D5 done</span> <span class="pill prog">D6 in progress</span> <span class="pill plan">D7–D9 planned</span></td></tr>
+<tr><td><b>Pilot prerequisites</b> (PREP-1…PREP-8)</td><td>Workflow pieces the pilot needs that the core doesn't build: 2026-taxonomy mappings, a resumable workflow, a source-of-truth matrix, a rework path, review telemetry, the frozen pilot manifest and a whole-project verifier</td><td><span class="pill plan">mostly open</span> (PREP-1 mappings exist as mapping set v5; PREP-8 has a verifier foundation)</td></tr>
+<tr><td><b>Pilot</b> (PILOT-1…PILOT-13)</td><td>Apar consolidated over four quarters (Q2 FY26 baseline plus three assisted updates), run entirely on the back-end</td><td><span class="pill plan">planned</span></td></tr>
+</table>
+<p>The order is fixed: D1a → D1b → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → PREP → Pilot. Only one worker runs at a time.</p>
+
+<!-- ============================================================ -->
+<h2 id="flow"><span class="n">02</span> The end-to-end flow</h2>
+<p>Each box is a component. Green ones are built, amber is in progress, grey dashed is planned. Arrows show what each component hands to the next.</p>
+<div class="svgbox">
+<svg viewBox="0 0 1000 560" width="100%" role="img" aria-label="Flow from sources through capture, extraction, interpretation, comparison, facts, ledger, memory, views and the workflow">
+<defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+<style>
+.bx{stroke-width:1.5;rx:8}
+.d{fill:var(--ok-soft);stroke:var(--ok)}
+.p{fill:var(--warn-soft);stroke:var(--warn)}
+.q{fill:var(--plan-soft);stroke:var(--plan);stroke-dasharray:5 4}
+.t{font-size:13px;font-weight:650;fill:var(--ink)}
+.s{font-size:11px;fill:var(--muted)}
+.ln{stroke:var(--muted);stroke-width:1.4;fill:none;color:var(--muted)}
+.lnd{stroke:var(--muted);stroke-width:1.2;fill:none;stroke-dasharray:4 4;color:var(--muted)}
+</style>
+</defs>
+<!-- row 0: control -->
+<rect class="bx q" x="20" y="20" width="170" height="66" rx="8"/><text class="t" x="32" y="44">Coverage (D7)</text><text class="s" x="32" y="62">universe registry, screen CSV,</text><text class="s" x="32" y="76">watchlist decisions</text>
+<rect class="bx p" x="215" y="20" width="170" height="66" rx="8"/><text class="t" x="227" y="44">Onboarding (D6)</text><text class="s" x="227" y="62">NSE symbol → verified identity</text><text class="s" x="227" y="76">per unit, derived settings</text>
+<rect class="bx q" x="410" y="20" width="170" height="66" rx="8"/><text class="t" x="422" y="44">Retention (D9)</text><text class="s" x="422" y="62">classes, holds, purge,</text><text class="s" x="422" y="76">re-fetch with hash check</text>
+<rect class="bx q" x="605" y="20" width="170" height="66" rx="8"/><text class="t" x="617" y="44">Shareholding (D8)</text><text class="s" x="617" y="62">exchange filing as a new</text><text class="s" x="617" y="76">first-party source</text>
+<!-- row 1 -->
+<rect class="bx d" x="20" y="150" width="170" height="78" rx="8"/><text class="t" x="32" y="174">Sources</text><text class="s" x="32" y="192">NSE XBRL · results PDF</text><text class="s" x="32" y="206">Screener · Tijori</text><text class="s" x="32" y="220">Upstox (diagnostic)</text>
+<rect class="bx d" x="215" y="150" width="170" height="78" rx="8"/><text class="t" x="227" y="174">Raw capture</text><text class="s" x="227" y="192">snapshot store: bytes + hash</text><text class="s" x="227" y="206">retrieval manifests</text><text class="s" x="227" y="220">authority check first</text>
+<rect class="bx d" x="410" y="150" width="170" height="78" rx="8"/><text class="t" x="422" y="174">Extraction adapters</text><text class="s" x="422" y="192">XBRL (lxml) · PDF (PyMuPDF)</text><text class="s" x="422" y="206">Screener HTML · Tijori JSON</text><text class="s" x="422" y="220">Upstox JSON</text>
+<rect class="bx d" x="605" y="150" width="170" height="78" rx="8"/><text class="t" x="617" y="174">Occurrences</text><text class="s" x="617" y="192">what the source said,</text><text class="s" x="617" y="206">raw text, anchor, unit,</text><text class="s" x="617" y="220">immutable</text>
+<rect class="bx d" x="800" y="150" width="180" height="78" rx="8"/><text class="t" x="812" y="174">Interpretations</text><text class="s" x="812" y="192">dictionary v2 + mapping v5</text><text class="s" x="812" y="206">→ measurement key,</text><text class="s" x="812" y="220">normalised value ± interval</text>
+<!-- row 2 -->
+<rect class="bx d" x="800" y="290" width="180" height="78" rx="8"/><text class="t" x="812" y="314">Comparison run</text><text class="s" x="812" y="332">extraction (XBRL vs PDF)</text><text class="s" x="812" y="346">corroboration (vs vendors)</text><text class="s" x="812" y="360">immutable manifest</text>
+<rect class="bx d" x="605" y="290" width="170" height="78" rx="8"/><text class="t" x="617" y="314">Review queue</text><text class="s" x="617" y="332">HIGH / MEDIUM / LOW items,</text><text class="s" x="617" y="346">dispositions (append-only)</text>
+<rect class="bx d" x="410" y="290" width="170" height="78" rx="8"/><text class="t" x="422" y="314">Admission → facts</text><text class="s" x="422" y="332">only first-party, extraction</text><text class="s" x="422" y="346">AGREE, no open HIGH</text><text class="s" x="422" y="360">PostgreSQL fact store (D2)</text>
+<rect class="bx d" x="215" y="290" width="170" height="78" rx="8"/><text class="t" x="227" y="314">Report ledger (D3)</text><text class="s" x="227" y="332">draft → submit → claim check</text><text class="s" x="227" y="346">→ panel approve / reject</text><text class="s" x="227" y="360">every number cites a fact</text>
+<rect class="bx d" x="20" y="290" width="170" height="78" rx="8"/><text class="t" x="32" y="314">Memory (D4)</text><text class="s" x="32" y="332">candidate → PROMOTE</text><text class="s" x="32" y="346">(separate decision),</text><text class="s" x="32" y="360">cutoff retrieval</text>
+<!-- row 3 -->
+<rect class="bx d" x="20" y="440" width="170" height="78" rx="8"/><text class="t" x="32" y="464">Views (D5)</text><text class="s" x="32" y="482">Markdown export, status</text><text class="s" x="32" y="496">notes, read-only role</text>
+<rect class="bx q" x="215" y="440" width="170" height="78" rx="8"/><text class="t" x="227" y="464">Earnings-review</text><text class="t" x="227" y="480">workflow (PREP)</text><text class="s" x="227" y="498">resumable steps, rework,</text><text class="s" x="227" y="512">telemetry</text>
+<rect class="bx q" x="410" y="440" width="170" height="78" rx="8"/><text class="t" x="422" y="464">Pilot</text><text class="s" x="422" y="482">Apar × 4 quarters,</text><text class="s" x="422" y="496">PILOT-1…13 →</text><text class="s" x="422" y="510">PILOT_PROVEN</text>
+<rect class="bx q" x="605" y="440" width="170" height="78" rx="8"/><text class="t" x="617" y="464">Later releases</text><text class="s" x="617" y="482">Phase 1: 2–3 companies;</text><text class="s" x="617" y="496">memory evaluation;</text><text class="s" x="617" y="510">debate, backtests (gated)</text>
+<!-- arrows -->
+<path class="ln" d="M190 53 H215" marker-end="url(#ar)"/>
+<path class="ln" d="M300 86 V150" marker-end="url(#ar)"/>
+<path class="lnd" d="M440 86 L330 150" marker-end="url(#ar)"/>
+<path class="lnd" d="M690 86 L130 150" marker-end="url(#ar)"/>
+<path class="ln" d="M190 189 H215" marker-end="url(#ar)"/>
+<path class="ln" d="M385 189 H410" marker-end="url(#ar)"/>
+<path class="ln" d="M580 189 H605" marker-end="url(#ar)"/>
+<path class="ln" d="M775 189 H800" marker-end="url(#ar)"/>
+<path class="ln" d="M890 228 V290" marker-end="url(#ar)"/>
+<path class="ln" d="M800 329 H775" marker-end="url(#ar)"/>
+<path class="ln" d="M605 329 H580" marker-end="url(#ar)"/>
+<path class="ln" d="M410 329 H385" marker-end="url(#ar)"/>
+<path class="ln" d="M215 329 H190" marker-end="url(#ar)"/>
+<path class="ln" d="M105 368 V440" marker-end="url(#ar)"/>
+<path class="ln" d="M190 479 H215" marker-end="url(#ar)"/>
+<path class="ln" d="M385 479 H410" marker-end="url(#ar)"/>
+<path class="ln" d="M580 479 H605" marker-end="url(#ar)"/>
+<path class="lnd" d="M300 368 C300 410 120 410 110 440" marker-end="url(#ar)"/>
+<text class="s" x="232" y="132">verified captures only</text>
+<text class="s" x="790" y="270">run results</text>
+</svg>
+</div>
+<p class="note">The ledger also takes comparison results and calculation traces directly as citations (<code>COMPARISON</code>, <code>CALCULATION</code>), not only facts. D8 adds a source, and D9 acts on the capture store. Both dashed arrows are planned.</p>
+
+<details><summary>How data moves between components (the "contract" between boxes)</summary>
+<p>Components talk only through three things (data spec, "Component boundaries"): <b>occurrences</b>, <b>interpretations</b> and the <b>measurement key</b>. The measurement key is a fixed grain of <i>entity × canonical line item × exact period interval × basis (consolidated/standalone) × accounting framework × currency and value kind × dimension set</i> (segment member, elimination basis, shareholding category…). Every adapter produces values at this grain, the comparator lines them up at this grain, and a report claim cites this grain.</p>
+<p>Everything is append-only in PostgreSQL (the runtime database role can't UPDATE or DELETE). Corrections are new rows that name what they supersede. Raw bytes stay in the file-based snapshot store and are referenced by SHA-256.</p>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="stages"><span class="n">03</span> Every component, in order</h2>
+<p>Each card follows the same pattern: purpose, input, processing, output, handoff, limits and status. Deep detail is in the collapsible sections.</p>
+
+<!-- capture -->
+<div class="card" id="c-capture">
+<h3>Sources and raw capture <span class="pill done">done · D1a/D1b</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Fetch documents from each authorised source and keep the exact bytes forever (until D9 adds retention), with a hash and a first-seen time. Nothing is parsed at this point.</div>
+<div>Input</div><div>
+<ul>
+<li><b>NSE XBRL instance</b> (SEBI Integrated Filing, Ind AS): <code>https://nsearchives.nseindia.com/corporate/xbrl/…xml</code>, found through the NSE <code>integrated-filing-results</code> listing (and the legacy <code>corporates-financial-results</code> listing for older <code>in-bse-fin</code> filings).</li>
+<li><b>Results PDF</b> (the outcome-of-board-meeting PDF). For Apar these are retained as <code>nse_pdf/APARINDS-FY26_Q2-results.pdf</code> and similar files. Transcripts are retained too.</li>
+<li><b>Screener</b> consolidated company page <code>https://www.screener.in/company/&lt;SYM&gt;/consolidated/</code> (logged-in session).</li>
+<li><b>Tijori</b> financials page <code>https://www.tijorifinance.com/company/&lt;slug&gt;/financials/</code>.</li>
+<li><b>Upstox</b> <code>https://api.upstox.com/v2/fundamentals/&lt;ISIN&gt;/income-statement?type=consolidated&amp;time_period=quarterly&amp;fs=true</code> (bearer token) and the public instrument file <code>complete.json.gz</code>.</li>
+</ul></div>
+<div>Processing</div><div>Before any request, the source catalog checks that the source and surface are registered with a role and a retention authority (the rights records are A05-DECISION-004 for exchanges, A05-DECISION-005 for Screener/Tijori subscriber use, and the Upstox rights record §7). An unregistered surface gives <code>NOT_AUTHORISED</code>. Each fetch is recorded as an <b>acquisition attempt</b> with an outcome (<code>COMPLETE</code>, <code>NOT_PUBLISHED</code>, <code>PARTIAL</code>, <code>FAILED</code>, <code>NOT_AUTHORISED</code>, <code>IDENTITY_REJECTED</code>, <code>UNSUPPORTED_SCHEMA</code>, <code>PARSE_FAILED</code>), including failed ones.</div>
+<div>Output</div><div>A capture record plus a content-addressed body in the snapshot store, for example <code>data/raw/snapshots/v1/tijori/financials/apar-industries-limited/&lt;timestamp&gt;-&lt;hash&gt;/body.bin</code>. Filing bundles have a <code>retrieval-manifest.json</code> recording URL, SHA-256 and NSE filing time per file (<code>data/raw/watchlist/aparinds/</code>). The <code>data/raw/</code> folders include <code>watchlist/</code> (one folder per development company plus <code>screener-financials/</code>), <code>snapshots/</code> (blobs, tijori, upstox), <code>upstox/</code>, <code>onboarding-dev/</code> and <code>news/</code>.</div>
+<div>Handoff</div><div>The extraction adapters read the retained bytes, never the live web.</div>
+<div>Limits</div><div>Vendor pages and Upstox carry no publication time, so their "knowledge time" is <code>UNKNOWN</code> and they count only from when they were captured. Nothing is scheduled: there's no market-wide or unattended capture (a register deferral).</div>
+</div>
+</div>
+
+<!-- XBRL -->
+<div class="card" id="c-xbrl">
+<h3>XBRL extraction (the main first-party source) <span class="pill done">done · D1a</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Turn an exchange XBRL filing into a lossless list of "what the filing said", one record per fact.</div>
+<div>Input</div><div>An NSE XBRL instance file. Three schemas are supported, each identified by its namespace URI rather than its prefix: the SEBI <code>in-capmkt</code> 2025-01-31 taxonomy (mapping <code>xbrl/v1</code>), the 2026-01-31 taxonomy <code>http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt</code> (mapping <code>xbrl/v5</code>, added for Apar Q4 FY26 and Q1 FY27), and the older BSE <code>in-bse-fin</code> (mapping <code>xbrl/v3</code>). The entry point declares the industry type. For a non-financial Ind AS company it's <code>http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/&lt;date&gt;/in-capmkt/in-capmkt-ent</code>. Banks, NBFCs and insurers use <code>IntegratedFinance_Banking</code>, <code>_NBFC</code> and <code>_LI</code>.</div>
+<div>Processing</div><div>Parsed with <code>lxml</code> (<code>extract/xbrl_parser.py</code>, <code>evidence/xbrl_adapter.py</code>). The adapter keeps every numeric and text fact, and a nil fact becomes <code>NIL</code>. Values stay as filed: XBRL amounts are already in rupees, so the raw scale is 0. The <code>decimals</code> attribute gives the precision (for example <code>decimals=-5</code> means "to the nearest 1 lakh"). The period, scope (consolidated/standalone) and dimensions (such as segment members) come from the fact's context. An unknown taxonomy is refused as <code>UNSUPPORTED_SCHEMA</code> rather than read on a best-effort basis. Identity is checked too: the filing's ISIN, company name and context identifiers (NSE symbol scheme, BSE scrip scheme) must match the expected company. Otherwise the result is <code>IDENTITY_REJECTED</code>.</div>
+<div>Output</div><div>Occurrences such as <code>native_field=Expenses</code>, context <code>OneD</code>, raw value with <code>decimals=-5</code> (Apar Q2 FY26: 5,402.29 crore). They are later interpreted through about 124–132 mapping entries per taxonomy into canonical ids like <code>revenue_from_operations</code> and <code>profit_before_tax</code>.</div>
+<div>Handoff</div><div>Interpretation (dictionary plus mappings), then the comparison run. XBRL is the <b>representative first-party value</b> when present.</div>
+<div>Limits</div><div>Mappings exist only for non-financial Ind AS issuers. Some Apar folding and tagging quirks stay <code>ANOMALY</code> or <code>UNMAPPED</code> (for example the owners/NCI split in the 2026 filings, whose meaning isn't evidenced). Legacy <code>in-bse-fin</code> filings carry no ISIN.</div>
+<div>Status</div><div>Built in D1a, extended in D1b, and 2026 taxonomy added as mapping set v5 (PREP-1). The extractor version is pinned (<code>XBRL_EXTRACTOR_VERSION</code>).</div>
+</div>
+</div>
+
+<!-- PDF -->
+<div class="card" id="c-pdf">
+<h3>Results-PDF extraction (the second first-party representation) <span class="pill done">done for Apar</span> <span class="pill bad">not general</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Read the same filing from its printed PDF, so it can be checked against the XBRL. This is the "extraction check": it proves the reading is consistent, not that the filing is correct.</div>
+<div>Input</div><div>A retained results PDF. For Apar Q2 FY26 that's <code>APARINDS-FY26_Q2-results.pdf</code> (sha256 <code>8be1b8de…</code>), with the consolidated P&amp;L on page 3, segments on page 4, the balance sheet on page 6 and the cash flow on page 7 (Stage 1 manifest). An issuer config (<code>config/aparinds-fy26-q2.yaml</code> and the other quarters) adds the printed unit, label overrides for garbled text and unit-marker variants.</div>
+<div>Processing</div><div>
+<ol>
+<li><b>Library:</b> PyMuPDF (<code>pymupdf</code>) reads the PDF's text layer as words with coordinates (<code>ingest/pdf_source.py</code>). The new path runs <b>no OCR</b>. The older pipeline has an OCR recovery module using <code>rapidocr</code>.</li>
+<li><b>Find the statement page</b> for each family (P&amp;L, balance sheet, cash flow, segments). A page qualifies when it contains the basis marker, a title marker and every confirmation phrase as <i>exact token sequences</i>, with no fuzzy matching (<code>extract/pdf_statement_pages.py</code>).</li>
+<li><b>Bind columns to basis:</b> consolidated and standalone columns are often printed side by side, so each numeric column belongs to the one super-header above it. A column under zero or two super-headers fails the family.</li>
+<li><b>Band rows</b> by vertical position (4 pt tolerance) and keep each cell's raw text.</li>
+<li><b>Period</b> comes from the column header text: a date (e.g. 30-Sep-2025) plus "quarter ended", "half year" or "nine months" gives the exact interval.</li>
+<li><b>Unit and scale</b> come from each row's own unit marker (e.g. "Rs. in crores"), never from one value for the whole page. Garbled markers are declared per issuer as exact variants (Apar page 6 prints "Rs. in crones").</li>
+<li><b>Number grammar</b>: Indian and international digit grouping, parentheses or minus for negatives, and the printed decimals give the precision. A dash becomes <code>DASH</code> (no value), an empty cell <code>BLANK</code>, a printed 0 <code>ZERO_PRINTED</code>. Anything else that doesn't parse becomes <code>INVALID</code>.</li>
+<li><b>Mapping</b> by printed label: 126 entries in <code>config/mappings/pdf/v1/results_layout.yaml</code>, keyed to Apar's labels such as "1 Sales" and "3 Revenue from operations (1+2)" (which equals the XBRL value of 5,715.42 crore).</li>
+</ol></div>
+<div>Output</div><div>One occurrence per banded row × requested-basis column, with anchor (page, line), raw text, unit context and missing-value state. Extractor version <code>pdf-occurrences/2</code>.</div>
+<div>Handoff</div><div>Paired with the XBRL value of the same filing package in the comparison run (extraction status).</div>
+<div>Limits</div><div>
+<ul>
+<li><b>It only works on Apar.</b> In the D6 capability probe (Q6), the generic, config-free path was run on 14 retained PDFs. For 10 non-Apar results PDFs (CGPOWER, ETERNAL, HFCL, LAURUSLABS, MTARTECH, NETWEB, POLYCAB, SONACOMS, THERMAX and TITAN, all Q3 FY25 BSE PDFs) it produced <b>0 occurrences on either basis</b>. There are three reasons: identity is checked from a page-1 "Scrip Symbol :" line that only Apar prints; the P&amp;L title must read exactly "Statement of financial results", while others print variants or no title; and the unit markers are Apar's exact strings, while others print "(INR crores)", "(Rs in Crore)" or "Rs. million".</li>
+<li>Even for Apar, 17–97% of consolidated cells carry no resolved unit (Q2 17%, Q3 46%, Q4 36%, FY27 Q1 97%). The FY27 Q1 PDF declares no accounting framework. The Q4 FY26 revenue rows extract <code>INVALID</code>, an open item found in D1a and listed under PREP-1.</li>
+<li><b>Ruling R-PDF</b> (2026-10-16) followed from this: there's no generic PDF parser. During onboarding, <code>RESULTS_PDF</code> is always <code>UNAVAILABLE</code> with reason <code>EXCLUDED_BY_RULE</code>, and no PDF is fetched. A generic PDF parse is the follow-up bead <code>eqos-yqi</code>.</li>
+</ul></div>
+<div>Status</div><div>Done for Apar (D1a, D1b). Generalising it is open (<code>eqos-yqi</code>).</div>
+</div>
+</div>
+
+<!-- Screener -->
+<div class="card" id="c-screener">
+<h3>Screener (independent vendor) <span class="pill done">company page done · D1b</span> <span class="pill plan">screen CSV planned · D7</span></h3>
+<div class="grid">
+<div>Purpose</div><div>An independent second opinion on the filing's figures (corroboration). In D7 it will also supply the owner's own screen as a list of stocks.</div>
+<div>Input</div><div><b>Company page (built):</b> the authenticated consolidated page HTML, retained as <code>data/raw/watchlist/screener-financials/APARINDS/consolidated/screener_financials_page.raw.html</code>. <b>Screen (planned, D7):</b> a results CSV that <i>you</i> export from a Screener custom screen. The system will never call Screener's <code>?q=</code> screen URLs itself.</div>
+<div>Processing</div><div>Company page: four sections of the page are read: <code>quarters</code>, <code>profit-loss</code>, <code>balance-sheet</code> and <code>cash-flow</code>. Each table row × column header becomes one occurrence, TTM included. The mapping (31 entries in <code>config/mappings/screener/v2/financials.yaml</code>) covers these labels: Sales, Expenses, Operating Profit, Other Income, Other income normal, Exceptional items, Interest, Depreciation, Profit before tax, Net Profit, Minority share, Profit for EPS, EPS in Rs, Equity Capital, Total Assets and the three cash-flow totals. Precision is the displayed decimals at the displayed scale, so "5,250" means ±0.5 crore. Some vendor definitions are recorded as known traps: Screener "Expenses" excludes finance cost and D&amp;A, "Other Income" = other income + exceptional items, "Total Liabilities" is the balance-sheet total and maps to nothing, and EPS is vendor-derived, so it's related to filed EPS but not equivalent. Identity and basis are checked: the page's company id and BSE/NSE codes must match, and a degenerate or standalone page is refused.</div>
+<div>What's not pulled</div><div>The schedule expansions (the "+" drill-downs) aren't requested by the comparison. Any other row in those four sections is kept as an <code>UNMAPPED</code> occurrence. Other page areas, such as ratios, peers and shareholding, aren't part of the comparison ingest <span class="inf">(inferred from the four-section rule; the older pipeline has separate Screener shareholding and segment readers)</span>.</div>
+<div>Output</div><div>Vendor occurrences with knowledge time <code>UNKNOWN</code>. Screen (D7): a screen-run record with who ran it, when, the CSV capture and its members, each resolved to a universe-registry row or marked <code>UNRESOLVED</code>.</div>
+<div>Handoff</div><div>The vendor side of corroboration pairs. A screen run feeds an owner-launched capture batch (D7), where each chosen member goes through onboarding (D6) and a comparison run.</div>
+<div>Limits</div><div>A vendor value never becomes a fact. It enters a report only as a <code>COMPARISON</code> difference. Most mappings are still <code>EQUIVALENCE_UNPROVEN</code>, which means agreement shows as <code>AGREE_UNQUALIFIED</code> and disagreement as <code>ANOMALY</code> rather than <code>MISMATCH</code>.</div>
+</div>
+</div>
+
+<!-- Tijori -->
+<div class="card" id="c-tijori">
+<h3>Tijori (independent vendor) <span class="pill done">done · D1b</span></h3>
+<div class="grid">
+<div>Purpose</div><div>A second independent vendor for corroboration.</div>
+<div>Input</div><div>The financials page, whose data sits in an embedded JSON "island" (<code>fin_tables_data</code>). It's retained as <code>body.bin</code> in the snapshot store.</div>
+<div>Processing</div><div>Only consolidated tables are read (<code>qt_c</code>, <code>pl_c_*</code>, <code>bs_c_*</code>, <code>cf_c</code>, <code>fr_c</code>). Each row × reporting-date column becomes an occurrence, nulls included. Only four mapping entries are selected: <code>qt_c</code> "Net Sales" (and <code>qt_s</code>), <code>qt_c</code> "Net Profit" and <code>pl_c_s</code> "Sales". Tijori's "Net Profit" maps to <i>continuing</i> profit after tax, never to profit for the period, and only when discontinued operations are zero. Its final date-labelled <code>pl_*</code> column is TTM, never a fiscal period. Precision was re-measured at displayed decimals (owner decision D4 withdrew an earlier 0.5-crore assumption).</div>
+<div>Output / handoff</div><div>Vendor occurrences go to corroboration pairs.</div>
+<div>Limits</div><div>Very narrow coverage (four mapped lines). Tijori shareholding is unverified: its only fixture is synthetic.</div>
+</div>
+</div>
+
+<!-- Upstox -->
+<div class="card" id="c-upstox">
+<h3>Upstox (diagnostic only) <span class="pill done">done · D1b</span></h3>
+<div class="grid">
+<div>Purpose</div><div>A parse-check on our Screener reading, never a vote. Upstox values were shown to share Screener's upstream lineage (its operating profit equals Screener's PBT to the crore, 12/12), so they aren't independent.</div>
+<div>Input</div><div>The <code>income-statement</code> JSON (a summary of 3-month points plus a <code>full_statement</code> of 12-month points, annual even on a quarterly request) and the instrument file used for identity.</div>
+<div>Processing</div><div>Five mapping entries: summary <code>revenue</code> → total income, summary <code>operating_profit</code> → PBT incl. associates, and full-statement Revenue, Total Revenue and Profit Before Tax. All are unproven. Because Upstox precision is undocumented, Upstox pairs are <code>NOT_COMPARABLE</code> / <code>PRECISION_UNSUPPORTED</code> (owner amendment 2026-10-14).</div>
+<div>Output / handoff</div><div>Diagnostic pairs that are shown in the report but never enter a status, trust, admission or run completeness. A disagreement routes MEDIUM <code>PARSE_CHECK_DISAGREE</code>.</div>
+<div>Limits</div><div>An Upstox failure never makes a run <code>INCOMPLETE</code>.</div>
+</div>
+</div>
+
+<!-- Dictionary -->
+<div class="card" id="c-dict">
+<h3>Canonical dictionary and mappings → interpretations <span class="pill done">done · D1a</span></h3>
+<div class="grid">
+<div>Purpose</div><div>One list of every financial line item, so that "revenue" means the same thing from every source. Each source is mapped into it once per surface and schema version, never per company.</div>
+<div>Input</div><div>Occurrences, the dictionary (<code>config/dictionary/v1</code>, <code>v2</code>) and a mapping set (<code>config/mappings/v1…v5.yaml</code>). Mapping set v5 = XBRL (both <code>in-capmkt</code> taxonomies and <code>in-bse-fin</code>), PDF, Screener, Tijori and Upstox entries, plus "constructions" (vendor formula rows).</div>
+<div>Processing</div><div>Each occurrence is matched by its selector (element name, or label plus section) to a canonical id, then normalised to exact base-unit decimals with its sign convention, given an uncertainty interval (value ± half its declared precision) and an evidence tier. Derived rows (OPM, EBITDA excluding other income, PBT margin, effective tax rate, <code>opex_excl_finance_and_da</code>) are computed by a formula engine with exact rational arithmetic, half-even rounding and outward-rounded bounds, and each stores a <b>calculation trace</b>. Applicability is decided before any value is looked at. For example, balance-sheet rows are <code>NOT_APPLICABLE</code> for a Q1 or Q3 package that has no balance sheet. Nothing is zero-filled.</div>
+<div>Output</div><div>Interpretations at the measurement key. The resolved v1 dictionary has <b>259 rows</b> (P&amp;L 53, balance sheet 68, cash flow 96, segment 20, shareholding 4, derived 18; <code>docs/specs/artifacts/dictionary-v1-manifest.md</code>). Unmapped native lines are kept as <code>UNMAPPED</code> and queued LOW as candidates for addition.</div>
+<div>Handoff</div><div>The comparison run.</div>
+<div>Limits</div><div>The dictionary covers non-financial Ind AS issuers only. Two PBT concepts are kept on purpose: <code>profit_before_tax</code> (before associates, used for the tax rate) and <code>profit_before_tax_incl_associates</code> (the headline). For Apar Q2 FY26 these are 340.56 and 340.53 crore.</div>
+</div>
+</div>
+
+<!-- Run -->
+<div class="card" id="c-run">
+<h3>Comparison run, report and review queue <span class="pill done">done · D1a/D1b</span></h3>
+<div class="grid">
+<div>Purpose</div><div>For one company, period and basis, line up every source's value per line item and give each line two separate verdicts: extraction (XBRL vs PDF) and corroboration (first-party vs vendors). There's no blended score. Full rules are in <a href="#compare">section 04</a>.</div>
+<div>Input</div><div>Interpretations, the selected filing package (latest eligible at the cutoff, with corrections superseding originals), acquisition attempts, and pinned versions of the dictionary, mappings, normalisation, rounding, definition set and comparison policy. Command: <code>fundamentals compare run --entity &lt;key&gt; --period-end &lt;date&gt; --basis consolidated --mode as_known …</code></div>
+<div>Output</div><div>An immutable <b>run manifest</b> (cutoff, mode, every pinned version, the code commit, exact input ids and capture hashes, attempts including failed ones) plus one result per applicable line: the source-state vector, pair outcomes with difference and gap, extraction status, corroboration status, and queue items. The run status is <code>COMPLETE</code>, or <code>INCOMPLETE</code> with its listed operational failures. The CLI exits with one of: success, success with open HIGH items, <code>INCOMPLETE</code>, or failure. <code>fundamentals compare report</code> prints it all.</div>
+<div>Handoff</div><div>The queue (dispositions by the approval panel), admission to facts (D2), and ledger citations (D3).</div>
+<div>Limits</div><div>A run is reproducible from its manifest alone (replay). Queue dispositions never edit a result; their effect appears only in a new run that pins a new definition set or mapping. Stage 1 acceptance covered Apar plus nine watchlist companies (SONACOMS dropped, eight of them XBRL-only), matched to a hand-verified frozen manifest.</div>
+</div>
+</div>
+
+<!-- Facts -->
+<div class="card" id="c-facts">
+<h3>Fact store and admission <span class="pill done">done on test DBs · D2</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Move the older SQLite fact store into PostgreSQL losslessly and decide which compared values become <b>facts</b>.</div>
+<div>Input</div><div>The legacy SQLite fact-store files (<code>config/legacy_import_manifest.yaml</code>) and comparison run results.</div>
+<div>Processing</div><div>The import is checked by counts, per-row hashes and selection digests. An <b>admission</b> rule then applies: only a first-party value whose extraction is <code>AGREE</code> (or <code>NOT_APPLICABLE</code> for single-representation families), with no open non-diagnostic HIGH queue item, is admitted. Vendor values never are. The phase also builds cutover with a frozen window and rollback, and a matched backup (<code>pg_dump</code> plus a capture archive) with a restore test.</div>
+<div>Output</div><div>Fact rows plus an admission record (run id, result id, interpretation, occurrence, queue-overlay position). The Apar Q2 FY26 consumer report from facts shows filed tax 88.83, ETR 26.08%, headline PBT incl. associates 340.53 and PAT 251.70 crore. Tax is never computed as PBT − PAT.</div>
+<div>Handoff</div><div><code>FIGURE</code> citations in the report ledger.</div>
+<div>Limits</div><div>Done and rehearsed on test databases only. The <b>production cutover</b> of the real database is the owner-gated bead <code>eqos-3zl</code> and must happen before the pilot (PILOT-3).</div>
+</div>
+</div>
+
+<!-- Ledger -->
+<div class="card" id="c-ledger">
+<h3>Report ledger <span class="pill done">done on test DBs · D3</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Store reports, approvals, the Q0 thesis and the management ledger as append-only database rows, with every number in a report checked against the stored figure it cites.</div>
+<div>Input</div><div>Drafted report versions (sections in Markdown with placeholders, plus one typed row per numeric claim). Imports come from <code>config/ledger_import.yaml</code>: Apar earnings updates FY26_Q2–FY27_Q1 (<code>data/reports/aparinds/&lt;period&gt;/earnings-update.{md,json}</code>), the Q0 thesis (<code>docs/evidence/phase-0.5/q0-approved-thesis.md</code> plus its YAML twin) and <code>data/ledger/aparinds-management-ledger.json</code>.</div>
+<div>Processing</div><div>
+<ul>
+<li>Numbers appear in text only as placeholders <code>{{c:&lt;claim key&gt;|&lt;style&gt;}}</code>, rendered deterministically from the typed claim. A bare analytical numeral blocks submission (<code>UNREGISTERED_NUMBER</code>).</li>
+<li>Each claim has one citation: <code>FIGURE</code> (fact or interpretation + run), <code>CALCULATION</code> (trace), <code>SOURCE_QUOTE</code> (verbatim quote at a capture anchor, used for guidance), <code>COMPARISON</code> (a cross-source delta) or <code>POLICY</code> (an owner-set threshold).</li>
+<li>The <b>claim check</b> gives each claim <code>MATCH</code>, <code>MATCH_UNTRUSTED</code>, <code>POST_CUTOFF</code>, <code>UNIT_MISMATCH</code>, <code>KEY_MISMATCH</code>, <code>VALUE_MISMATCH</code>, <code>QUOTE_NOT_FOUND</code>, <code>QUOTE_MEANING_MISMATCH</code> or <code>UNRESOLVED</code>.</li>
+<li>Lifecycle: <code>DRAFT</code> → <code>SUBMIT</code> (content sealed by SHA-256) → <code>IN_REVIEW</code> → the <b>approval panel</b> (one configured model reviewer, run only after the deterministic checks pass) gives <code>APPROVE</code>, <code>REQUEST_CHANGES</code> or <code>REJECT</code>. The owner can override. A correction is a new version that supersedes the old one.</li>
+</ul></div>
+<div>Output</div><div>Report, version, section, claim, validation, panel-review and decision rows, each decision chained by digest. Examples from the Stage 1 test: FY27_Q1 revenue 6,591.06 is <code>POST_CUTOFF</code> under a retrospective check, and a corrective version with an honest cutoff gives <code>MATCH</code>. The Q0 falsifier F1 11.55 is a self-cited <code>POLICY</code> claim (<code>MATCH</code>). FY26_Q3 cables growth displays as "**20%**". <code>fundamentals ledger export</code> reproduces every imported version's content hash byte for byte.</div>
+<div>Handoff</div><div>Memory supports (D4) and views (D5).</div>
+<div>Limits</div><div>Imported Apar updates are <code>HISTORICAL</code>, not approved. Non-numeric claims stay prose until register item B-06 freezes a claim schema. A drafted quote's guidance contract binds only through a sealed import (open bead <code>eqos-0eu</code>). There's a SQL-level SUBMIT hash gap, bead <code>eqos-7pr</code>.</div>
+</div>
+</div>
+
+<!-- Memory -->
+<div class="card" id="c-memory">
+<h3>Long-term memory <span class="pill done">done on test DBs · D4</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Keep short, supported statements per stock that persist between quarters. They're promoted only by a separate decision, so approving a report never silently changes memory.</div>
+<div>Input</div><div>A staged candidate item (kind, statement, validity interval) plus at least one support: an approved version, a <code>MATCH</code> claim, a definition record, a queue disposition, a decision or a capture. The kinds are <code>COMPANY_UNDERSTANDING</code>, <code>MANAGEMENT_TRACK_RECORD</code>, <code>THESIS_AND_WARNING</code>, <code>SOURCE_QUIRK</code>, <code>OWNER_RULING</code> and <code>LESSON</code>.</div>
+<div>Processing</div><div>A support predicate is checked when the item is staged and again inside the <code>PROMOTE</code> transaction, with locking against concurrent withdrawals. The status runs <code>CANDIDATE</code> → <code>PROMOTED</code> → <code>RETIRED</code>. An item derives <code>NEEDS_REVALIDATION</code> if a support later fails. Search uses PostgreSQL full-text search, and retrieval is "as known at a cutoff".</div>
+<div>Output</div><div>Example from the Stage 2 test: an Apar <code>MANAGEMENT_TRACK_RECORD</code> on cables EBITDA margin (9.5–10% guided in FY26_Q3, 10–11% in FY27_Q1), supported by both quote claims, is returned by <code>MemoryStore.retrieve("cables margin", stock=Apar, cutoff=…)</code> only after a panel <code>PROMOTE</code>.</div>
+<div>Handoff</div><div>Views (D5). In future, drafting agents read it in the earnings-review workflow (PILOT-5).</div>
+<div>Limits</div><div>The comparator and claim check never read memory. Vector search is deferred until measured. Evidence-layer knowledge-time gaps are parked as <code>eqos-d60</code>.</div>
+</div>
+</div>
+
+<!-- Views -->
+<div class="card" id="c-views">
+<h3>Generated views <span class="pill done">done on test DBs · D5</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Read-only Markdown for people. Nothing flows back from the views.</div>
+<div>Input → output</div><div><code>fundamentals ledger export --stock …</code> writes each sealed narrative (hashing to its content hash), one status note per report (derived status, decisions, latest validation, untrusted claims, revalidation flags) and the promoted memory per stock. A database role, <code>eqos_reader</code>, can SELECT two status views and write nothing.</div>
+<div>Limits</div><div>The optional Obsidian vault (D5.3) was <b>not built</b> (ruling V1). The dashboard tool is deferred.</div>
+</div>
+</div>
+
+<!-- Onboarding short -->
+<div class="card" id="c-onboard">
+<h3>Identifier-only onboarding <span class="pill prog">in progress · D6</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Add a new company given only its NSE symbol, verifying its identity separately in each source before any of its data can be compared.</div>
+<div>Input → output</div><div><code>fundamentals onboard &lt;SYMBOL&gt; …</code> → an onboarding record (<code>ONBOARDED</code> / <code>PARTIAL</code> / <code>IDENTITY_CONFLICT</code> / <code>UNSUPPORTED</code>), per-unit verification rows, derived settings, ingested XBRL and vendor data, and the exact <code>compare run</code> command to execute.</div>
+<div>Detail</div><div>See <a href="#d6">section 05</a>.</div>
+</div>
+</div>
+
+<!-- Coverage -->
+<div class="card" id="c-coverage">
+<h3>Coverage model: universe, screens and watchlist <span class="pill plan">planned · D7</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Three nested sets. A <b>universe registry</b> of about 5,000 listed stocks holds identity only. Stocks that come out of your <b>screen</b> are captured and compared on demand. Your <b>watchlist</b> (about 50–200) are the only stocks that get reports.</div>
+<div>Input</div><div>The Upstox instrument list (registry refresh, identity-only role), a CSV you export from a Screener custom screen, and your <code>ADD</code>/<code>REMOVE</code> decisions with a verbatim reason.</div>
+<div>Processing</div><div>A registry reload is idempotent, and an ISIN seen under a new symbol records only a <i>candidate</i> identity event. A screen run resolves CSV members to registry rows. A capture batch over the members you choose onboards (D6) and compares exactly those, and nothing is scheduled. Watchlist decisions are owner-only. Drafting for a stock that isn't on the watchlist is refused, and a new member's first report must be a <code>BOOTSTRAP_THESIS</code>.</div>
+<div>Output</div><div>Registry rows, screen and screen-run records, batch results, and a per-stock watchlist decision chain.</div>
+<div>Limits</div><div>The ten "watchlist companies" used for development are a comparison set, not the product watchlist. None is on the watchlist without an owner <code>ADD</code>.</div>
+</div>
+</div>
+
+<!-- Shareholding -->
+<div class="card" id="c-share">
+<h3>Shareholding filing source <span class="pill plan">planned · D8</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Add the exchange shareholding-pattern filing as the first-party source for promoter, public and institution holdings, compared against Screener and Tijori (Upstox as a diagnostic).</div>
+<div>Processing</div><div>The source is registered in the catalog before any capture. The value is an instant (the shareholding date). The category hierarchy is versioned per regulatory format. The denominator (total shares, voting rights, or promoter holding for pledge %) and share class are part of the key, so values on different denominators are never paired. Vendor "Public" maps only to the matching aggregate. Holder drill-downs are <code>THRESHOLDED</code>, and an absent holder is unknown, never zero.</div>
+<div>Output</div><div>Shareholding occurrences and comparison rows. The exit test shows Apar's promoter, public and institution aggregates against each vendor.</div>
+<div>Limits</div><div>The extraction check applies only if the filing has two representations, which will be settled at the start of D8.</div>
+</div>
+</div>
+
+<!-- Retention -->
+<div class="card" id="c-retention">
+<h3>Retention and replay <span class="pill plan">planned · D9</span></h3>
+<div class="grid">
+<div>Purpose</div><div>Make storage grow with coverage, not with the whole market.</div>
+<div>Rules (ledger spec O9)</div><div>Kept forever: filing figures, reports, approvals, memory, comparison outcomes and covered stocks' exchange originals. Other results PDFs and XBRL are deleted three months after verification (the address and hash are kept, and a re-fetch must hash-match). Vendor pages are kept for four quarters plus any open-review hold, and purged at licence end. Purges run only on an explicit command, with a dry run first, and are never scheduled.</div>
+<div>Output</div><div>Retention classes, holds, tombstones, re-fetch outcomes (<code>RESTORED</code> or <code>REFETCH_MISMATCH</code>), and replay reporting <code>ORIGINAL_EXPIRED</code> for expired vendor captures.</div>
+<div>Limits</div><div>The roadmap rates this a deep-risk phase because it physically deletes evidence under concurrency.</div>
+</div>
+</div>
+
+<!-- Workflow -->
+<div class="card" id="c-workflow">
+<h3>Earnings-review workflow and the pilot <span class="pill plan">planned · PREP, PILOT</span></h3>
+<div class="grid">
+<div>Purpose</div><div>The first product workflow: given a company's new quarterly package and the approved prior thesis, produce a reviewable, source-backed update of what changed in facts, management commitments, calculations, uncertainties and thesis.</div>
+<div>Pilot scope</div><div>Apar consolidated: PQ0 = Q2 FY26 (manual baseline and bootstrap thesis), then PQ1 = Q3 FY26, PQ2 = Q4 FY26 and PQ3 = Q1 FY27 as assisted updates.</div>
+<div>Checks</div><div>PILOT-1 ingest and extraction (PBT 340.56 / 340.53, OPM 8.06%); 2 corroboration; 3 PostgreSQL only; 4 every material number cites a fact or trace; 5 memory promoted after PQ1 is retrieved in PQ2–PQ3; 6 views; 7 a held-out second company onboards; 8 watchlist gating; 9 shareholding; 10 purge, restore and replay; 11 interrupt-and-resume, rework producing v(N+1), seeded-error drill; 12 your review time recorded per quarter; 13 reproducibility. The verdict is PASS only if every D-phase exit and all 13 checks pass and <code>scripts/verify_project.sh</code> exits 0.</div>
+<div>Owner time</div><div>PILOT-12 needs you to review four reports. It's the one step that can't run autonomously.</div>
+</div>
+</div>
+
+<!-- Legacy -->
+<div class="card" id="c-legacy">
+<h3>The older pipeline (before the data foundation)</h3>
+<p>Before D1a, the repo already had a working SQLite-based pipeline (about 58k lines across <code>ingest</code>, <code>store</code>, <code>extract</code>, <code>reconcile</code>, <code>thesis</code>, <code>output</code> and <code>verify</code>). Its <code>api/pipeline.py</code> loads hash-verified PDFs, parses XBRL and the results PDF, cross-foots P&amp;L identities, cross-checks XBRL against the PDF, quote-anchors guidance and renders an 11-section sourced Markdown earnings update. <code>thesis/</code> drafts a thesis with two models and cross-verifies the drafts. The Apar earnings updates and the Q0 thesis that D3 imported were produced in that era. The roadmap <code>docs/workstreams/fundamentals-pilot/roadmap.md</code> is that era's original Infosys Q1 FY25 plan. The owner replaced Infosys with Apar on 2026-09-06 (<code>phase-0.5-assisted-updates-plan.md</code>).</p>
+<p class="note">Unclear from the repo: which parts of the older pipeline the PREP workflow will reuse and which it will retire. PREP-2 only says no pilot code path may open the legacy SQLite store.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="compare"><span class="n">04</span> Comparison explained</h2>
+<h3>What is compared against what?</h3>
+<table>
+<tr><th>Check</th><th>Left side</th><th>Right side</th><th>What agreement means</th></tr>
+<tr><td><b>Extraction check</b></td><td>XBRL value</td><td>PDF value <i>of the same filing package</i></td><td>Our reading of the filing is consistent. It doesn't prove the filing is right.</td></tr>
+<tr><td><b>Independent corroboration</b></td><td>First-party "representative": the XBRL value if present, else the PDF value</td><td>Each vendor separately: Screener, Tijori</td><td>An independent source agrees, under a mapping whose equivalence has been demonstrated or not.</td></tr>
+<tr><td><b>Diagnostic</b> (no vote)</td><td>Upstox</td><td>Screener on the same key, and the first-party value</td><td>A parse-check on our Screener scraping. It never affects status, trust or admission.</td></tr>
+<tr><td>Derived rows</td><td>The formula evaluated over XBRL operands, and separately over PDF operands</td><td>A vendor's <i>published</i> value (for example Screener "Expenses", "Operating Profit")</td><td>The vendor side never uses our first-party operands, which would make the corroboration circular.</td></tr>
+</table>
+<p><b>Grain:</b> one measurement key, meaning the same entity × canonical line item × exact period interval × basis × framework × currency/kind × dimensions. Different periods, bases, frameworks or dimension members are never paired. They come out as <code>NOT_COMPARABLE</code> with a reason.</p>
+
+<h3>The tolerance rule</h3>
+<p>Every value carries an <b>interval</b> of value ± half its declared precision. For XBRL the precision is the <code>decimals</code> attribute, for the PDF the printed decimals at the printed scale, and for vendor HTML the displayed decimals. A vendor API with no documented precision is <code>PRECISION_UNSUPPORTED</code>. Derived values propagate intervals by interval arithmetic, with bounds rounded outward. <b>Two sides agree if and only if their intervals overlap.</b> Precision is never invented, and exact counts are single points, so adjacent integers never agree.</p>
+<p>When sides don't agree, triage applies: <code>STRUCTURAL</code> for a ×10/×100/×1000 factor or a sign flip, <code>MAGNITUDE</code> for a relative difference ≥ <b>0.5%</b> (comparison policy v1, which replaced the old comparator's 20%), and otherwise <code>NOISE</code>.</p>
+
+<h3>The verdicts</h3>
+<details open><summary>Pair outcome: one first-party side against one other side (the first matching row wins)</summary>
+<table>
+<tr><th>#</th><th>Condition</th><th>Outcome</th></tr>
+<tr><td>1</td><td>Keys incompatible, period ambiguous, precision unsupported, a side <code>INVALID</code>, or a vendor internal conflict</td><td><code>NOT_COMPARABLE</code> + reason</td></tr>
+<tr><td>2</td><td>Intervals overlap, and the mapping is <code>EQUIVALENCE_DEMONSTRATED</code> within scope (or there's a filing-specific alignment proof)</td><td><code>AGREE</code></td></tr>
+<tr><td>3</td><td>Intervals overlap, otherwise</td><td><code>AGREE_UNQUALIFIED</code></td></tr>
+<tr><td>4</td><td>Outside tolerance, but a recorded definition explains the gap</td><td><code>DEFINITION_DIFFERENCE</code></td></tr>
+<tr><td>5</td><td>Outside tolerance, mapping demonstrated</td><td><code>MISMATCH</code></td></tr>
+<tr><td>6</td><td>Outside tolerance, otherwise</td><td><code>ANOMALY</code> (cause unknown)</td></tr>
+</table>
+</details>
+<details><summary>Extraction status per line</summary>
+<p><code>NOT_APPLICABLE</code> (family has only one representation) · <code>UNAVAILABLE</code> · <code>NOT_COMPARABLE</code> · <code>NONE</code> · <code>ONE_SIDE_XBRL</code> / <code>ONE_SIDE_PDF</code> · <code>AGREE</code> · <code>AGREE_UNQUALIFIED</code> · <code>TAGGING_DIFFERENCE</code> · <code>DISAGREE</code> (HIGH).</p>
+</details>
+<details><summary>Corroboration status per line</summary>
+<p><code>NOT_APPLICABLE</code> · <code>UNAVAILABLE</code> (first-party or a vendor failed) · <code>NOT_COMPARABLE</code> · <code>VENDOR_ONLY</code> (only a vendor has a value) · <code>NO_SOURCE</code> (applicable but nobody has it) · <code>FILING_ONLY</code> (no vendor carries it, e.g. the September half-year balance sheet, OCI lines, diluted EPS) · <code>CONFLICT</code> (any <code>MISMATCH</code>, even if another vendor agrees) · <code>CORROBORATED</code> · <code>AGREES_UNQUALIFIED</code> · <code>ANOMALY</code> · <code>DEFINITION_DIFFERENCE</code>.</p>
+</details>
+<details><summary>Trust, and where problems go (review routing)</summary>
+<p>A line is <b>trusted</b> only when extraction is <code>AGREE</code> (or <code>NOT_APPLICABLE</code> with a first-party value), corroboration is <code>CORROBORATED</code>, and no non-diagnostic HIGH queue item is open on it. Trust is a view at a stated time, not a stored score.</p>
+<table>
+<tr><th>Outcome</th><th>Queue severity</th></tr>
+<tr><td>Extraction <code>DISAGREE</code>; corroboration <code>CONFLICT</code>; triage <code>STRUCTURAL</code>; onboarding <code>IDENTITY_CONFLICT</code></td><td>HIGH</td></tr>
+<tr><td>Triage <code>MAGNITUDE</code>; any <code>NOT_COMPARABLE</code>; <code>VENDOR_ONLY</code>, <code>NO_SOURCE</code>; Upstox <code>PARSE_CHECK_DISAGREE</code></td><td>MEDIUM</td></tr>
+<tr><td><code>ONE_SIDE_*</code>; <code>UNMAPPED</code> line</td><td>LOW</td></tr>
+<tr><td>Triage <code>NOISE</code>; <code>AGREE_UNQUALIFIED</code></td><td>no item (counted, or recorded as qualification evidence)</td></tr>
+<tr><td><code>UNAVAILABLE</code></td><td>run-level: the run is <code>INCOMPLETE</code></td></tr>
+</table>
+<p>Dispositions are <code>ACCEPTED_AS_DEFINITION</code>, <code>MAPPING_FIX</code>, <code>PARSER_DEFECT</code>, <code>FILER_INCONSISTENCY</code>, <code>ALTERNATE_READ_REQUIRED</code> or <code>DISMISSED</code>. They are decided by the approval panel (or you), and the runtime role can only propose them.</p>
+</details>
+
+<h3>Worked example: Apar Q2 FY26 operating expenses vs Screener</h3>
+<p>This is the "~4.5 crore Apar opex gap against Screener" that motivated the data spec. It's pre-registered in the Stage 1 manifest (owner amendment 2026-10-14).</p>
+<table>
+<tr><th>Side</th><th>Value (crore)</th><th>How</th><th>Interval</th></tr>
+<tr><td>Filing (derived <code>opex_excl_finance_and_da</code>)</td><td class="num">5,254.51</td><td>XBRL <code>Expenses</code> 5,402.29 (decimals −5) − <code>FinanceCosts</code> 107.90 (decimals −6) − D&amp;A 39.88 (decimals −5)</td><td class="num">[5,254.45, 5,254.57]</td></tr>
+<tr><td>Screener "Expenses", Sep 2025</td><td class="num">5,250</td><td>displayed to the crore</td><td class="num">[5,249.5, 5,250.5]</td></tr>
+</table>
+<p>The intervals don't overlap: the gap is 3.95 crore, about 0.086% relative. The mapping is unproven and no recorded definition explains the gap, so the pair is <code>ANOMALY</code>. The difference is below 0.5%, so triage gives <code>NOISE</code>. The result is corroboration <code>ANOMALY</code>, <b>not trusted</b>, and <b>no queue item</b>. It's never labelled <code>DEFINITION_DIFFERENCE</code> without an evidenced definition record.</p>
+<p class="note">Other frozen Stage 1 outcomes: THERMAX revenue vs vendor is <code>ANOMALY/MAGNITUDE</code> (MEDIUM, about 0.84%, which the old 20% rule had dismissed); LAURUSLABS revenue <code>AGREES_UNQUALIFIED</code>; THERMAX (5.4%) and ETERNAL (14.3%) vendor EPS <code>ANOMALY/MAGNITUDE</code>; NETWEB (standalone-only) has every consolidated row <code>NOT_APPLICABLE</code>.</p>
+
+<details><summary>Snippet: shape of one result row (illustrative, fields from the spec; not a dump)</summary>
+<pre><code>key:   entity=APARINDS  canonical_id=opex_excl_finance_and_da
+       period=2025-07-01..2025-09-30  basis=CONSOLIDATED  framework=IND_AS
+       currency=INR  kind=CURRENCY_AMOUNT  dimensions={}
+sources:  first_party=VALUE (XBRL rep, computed, trace id …)
+          screener-subscriber/SCREENER_FINANCIALS=VALUE   tijori/financials=no mapping
+pairs:    first_party vs screener → ANOMALY / NOISE   diff 4.51  gap 3.95
+extraction:     NOT_APPLICABLE or per-representation (derived)   <span class="inf">(inferred for this row)</span>
+corroboration:  ANOMALY          queue: none          trusted: no</code></pre>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="d6"><span class="n">05</span> Identifier-only onboarding (D6), in plain terms</h2>
+<h3>What "give it only an NSE symbol" means</h3>
+<p>Today every company in the repo was set up by hand: a config file per quarter (<code>config/aparinds-fy26-q2.yaml</code>), declared units and an identity file. D6 removes that. You type <code>fundamentals onboard &lt;SYMBOL&gt;</code>, and the system discovers the company's ISIN, BSE code and filings and the matching vendor pages by itself. It checks that they are all the <b>same company</b>, works out the settings from the filings, ingests what it could verify, and prints the exact comparison command. The comparison then has to work with <b>no code or configuration change</b>. The point is that adding company number 11, or company number 500, shouldn't need an engineer.</p>
+<div class="callout"><b>The core risk:</b> getting identity wrong silently attaches figures to the wrong company. Every step therefore fails closed. The system never guesses a vendor slug, never picks one of several candidates, and never infers a rename. Anything it captures during discovery stays "identity evidence" and can't be compared until its unit is verified.</div>
+
+<h3>The verification units</h3>
+<table>
+<tr><th>Unit</th><th>Input (request)</th><th>Check</th><th>Output state</th></tr>
+<tr><td><b>EXCHANGE</b> (anchor)</td><td>NSE <code>EQUITY_L.csv</code> (one <code>EQ</code> row → name, ISIN); NSE legacy and integrated filing listings; BSE <code>PeerSmartSearch</code> by ISIN</td><td>Exactly one master row; an Indian ISIN with a valid check digit; exactly one BSE candidate whose ISIN matches and whose scrip equals each filing's <code>ScripCode</code>; each filing's symbol equals the expected symbol at its date</td><td><code>VERIFIED</code> or <code>CONFLICT</code>. A failed request aborts the run (no record).</td></tr>
+<tr><td><b>XBRL_ENTITY</b> (anchor)</td><td>The latest two qualifying consolidated <code>in-capmkt</code> XBRL instances</td><td>The filing's ISIN equals the expected ISIN at its date; <code>NameOfTheCompany</code> equals the master name after normalisation; every context (scheme, identifier) pair matches; the schema is supported under mapping set v5</td><td><code>VERIFIED</code>, <code>CONFLICT</code>, or <code>UNVERIFIED (UNSUPPORTED_SCHEMA)</code> → <code>UNSUPPORTED</code></td></tr>
+<tr><td><b>SCREENER</b></td><td>Search API <code>?q=&lt;symbol&gt;</code>, then the consolidated company page</td><td>Exactly one result whose URL is <code>/company/&lt;SYMBOL&gt;/</code>; the page's company id and BSE/NSE codes equal the anchors; the consolidated basis gate passes</td><td><code>VERIFIED</code>, <code>UNAVAILABLE</code> (none or access failure), <code>CONFLICT</code> (two, or a mismatch), <code>UNVERIFIED</code></td></tr>
+<tr><td><b>TIJORI</b></td><td>Search API by ISIN, then the financials page</td><td>Exactly one company result; <code>company_details.symbol</code> equals the NSE symbol; basis gate</td><td>as above</td></tr>
+<tr><td><b>UPSTOX</b> (diagnostic)</td><td>Instrument file rows by (segment, ISIN); the consolidated <code>income-statement</code> request</td><td>One <code>NSE_EQ</code> row with the symbol and one <code>BSE_EQ</code> row with the scrip; the statement passes the existing response gate (type consolidated, non-empty)</td><td><code>VERIFIED</code> or <code>UNVERIFIED</code> (<code>EMPTY_STATEMENT</code> / <code>BASIS_UNVERIFIED</code>). Excluding it never makes a run incomplete.</td></tr>
+<tr><td><b>RESULTS_PDF</b></td><td>Never requested</td><td>None, because of ruling R-PDF</td><td>Always <code>UNAVAILABLE</code>, reason <code>EXCLUDED_BY_RULE</code></td></tr>
+</table>
+<p class="note">Any <code>CONFLICT</code> stops all further requests, and the remaining units become <code>UNVERIFIED (STOPPED_ON_CONFLICT)</code>. A surface that isn't registered gives a per-unit <code>NOT_AUTHORISED</code>, which aborts the run if the unit is an anchor. Each request is authority-checked before it is sent.</p>
+
+<h3>The four outcomes</h3>
+<table>
+<tr><th>Outcome</th><th>When</th><th>Effect</th><th>Exit</th></tr>
+<tr><td><code>ONBOARDED</code></td><td>Every unit is <code>VERIFIED</code></td><td>Entity ids resolved or created, settings derived, XBRL and vendors ingested; run expected <code>COMPLETE</code></td><td>success</td></tr>
+<tr><td><code>PARTIAL</code></td><td>Anchors verified, some other unit not</td><td>The same, with the excluded units listed; their sources are <code>UNAVAILABLE</code>, so the run is <code>INCOMPLETE</code> (unless only Upstox is excluded)</td><td>4</td></tr>
+<tr><td><code>IDENTITY_CONFLICT</code></td><td>Any contradiction (for example two BSE candidates, a wrong name in the filing, or a vendor page with another symbol)</td><td>Discovery captures are kept as rejection evidence and nothing becomes comparable. A HIGH record is written and no entity is created.</td><td>5</td></tr>
+<tr><td><code>UNSUPPORTED</code></td><td>Not listed (<code>NOT_LISTED</code>), foreign ISIN, standalone-only (<code>STANDALONE_BASIS</code>), no Ind AS filing, fewer than two qualifying filings, a financial-sector or unknown sector, or an unsupported schema</td><td>A record with the reason; nothing is ingested</td><td>5</td></tr>
+</table>
+
+<h3>Why financial-sector companies are refused</h3>
+<p>Banks, NBFCs and insurers file different statement formats, and the dictionary and mappings cover only non-financial Ind AS issuers (data spec "Out of Scope"; bead <code>eqos-hvh</code> for the bank row set). The refusal is <b>fail-closed</b>: a company is supported only if it shows a positive non-financial signal. The signal pinned in Task 0b is the XBRL entry-point namespace <code>…/IntegratedFinance_IndAS/&lt;date&gt;/in-capmkt/in-capmkt-ent</code>, which every one of the 11 development companies carries. The bank (HDFCBANK), NBFC (BAJFINANCE) and life-insurer (HDFCLIFE) samples carry <code>_Banking</code>, <code>_NBFC</code> and <code>_LI</code> instead. Anything else, or a missing namespace, gives <code>UNSUPPORTED (FINANCIAL_OR_UNKNOWN_SECTOR)</code>. The <code>schemaRef</code> file name was rejected as a signal because banks use the same one.</p>
+
+<h3>Temporal identity: renames and symbol events</h3>
+<p>Identifiers change over time. ETERNAL, for example, was formerly ZOMATO, and the repo already carries that rename as a legacy registry alias. Task 2 (migration <code>0022_identity_events.sql</code>, <code>entity/identity_layers.py</code>) adds:</p>
+<ul>
+<li><b>Identifier relationships</b> with a valid-from date and evidence, attaching an ISIN to a security and an NSE symbol or BSE scrip to a listing.</li>
+<li><b>Identity events</b> that end or start relationships, never inferred from data: <code>ISIN_CHANGE</code>, <code>SYMBOL_CHANGE</code>, <code>SYMBOL_REUSE</code> (only after the old holder's relationship ended), <code>MERGER</code>, <code>DEMERGER</code> and <code>DELISTING</code>.</li>
+<li>A <code>latest_slice(as_of)</code> view that gives the identity valid on a date. With no events it returns exactly today's seeded values, so existing companies are unaffected. A filing is checked against the identity expected <i>on its filing date</i>, so a pre-rename filing still verifies after a rename is recorded.</li>
+</ul>
+<p class="note">Stable internal entity, security and listing ids never change. Re-onboarding after a rename resolves to the same ids. Task 2's code is currently being written by another worker and isn't committed yet.</p>
+
+<h3>Derived settings</h3>
+<p>Settings are read from the verified XBRL, never typed by hand, and each one cites its discovery evidence: fiscal year end (from <code>DateOfEndOfFinancialYear</code>), rounding level (<code>LevelOfRounding</code>), presentation currency, framework (Ind AS from the entry point), basis status (consolidated-and-standalone from the filing listings) and document locations (URL plus SHA-256 per ingested instance). Each setting has a <code>valid_from</code>, so a change such as a new fiscal year end governs only later periods and never rewrites stored observations. For Apar the expected values are fiscal year end March, <code>CONSOLIDATED_AND_STANDALONE</code>, INR and Ind AS.</p>
+
+<h3>The held-out company discipline</h3>
+<p>To prove onboarding works on a company nobody tuned the code for, one company was chosen <b>before</b> any D6 code was written, and it is kept out of all development files:</p>
+<ul>
+<li><b>Seeded draw.</b> The frame was the NSE Nifty 500 list with <code>Financial Services</code> excluded. Every company whose symbol, ISIN or name appears anywhere in the repo's history, untracked files or data folders was also excluded. The start index is <code>sha256(seed_commit : frame_sha256 : attempt)</code> mod the universe size, and the draw walks forward to the first candidate that passes the eligibility rules (EQ series, Indian ISIN, at least two consolidated integrated filings, exactly one BSE match). The seed proves the choice wasn't steered. It doesn't make the choice secret.</li>
+<li><b>Hidden until the run.</b> The symbol appears only in <code>stage4_holdout.yaml</code> and the future Stage 4 manifest. A leak scan (Task 1b) checks every git object and untracked file under <code>src/</code>, <code>config/</code> and <code>tests/</code>. Checks fail opaquely, never printing the value, and any disclosure before the freeze "burns" the attempt.</li>
+<li><b>Predicted outcome: <code>PARTIAL</code>, run <code>INCOMPLETE</code>, excluded exactly <code>RESULTS_PDF</code>.</b> This is computed from the committed capability table, where every unit is reachable except <code>RESULTS_PDF: {excluded: R-PDF}</code>, so it's the same prediction for any candidate. A different result is a failed attempt, followed by a fix under a bead, a new freeze and a new draw. The prediction is never revised.</li>
+<li><b>Implementation freeze.</b> After review, a descriptor commit pins the code. The final test asserts that nothing under <code>src/</code> or <code>config/</code> changed between the freeze and the run.</li>
+</ul>
+<p class="note">Attempt history: the first draw ran out of candidates at 3, because two whole-market Upstox instrument maps in <code>scratchpad/</code> matched nearly every company. An amendment (approved 2026-10-16) exempts exactly those two files by content hash. Nothing had been selected, so nothing was burned. Attempt 1 was then drawn and committed with reviewer approval (<code>9e7d407</code>).</p>
+
+<h3>Task list</h3>
+<table>
+<tr><th>Task</th><th>What</th><th>State</th></tr>
+<tr><td>0b</td><td>Capability report: frame and its <code>Industry</code> column, financial-sector signal, unit table and prediction, request shapes and rights per surface (<code>d6-capability.md</code>)</td><td><span class="pill done">done</span> <code>6d07b9f</code></td></tr>
+<tr><td>1a</td><td>Seeded draw of the held-out company; record reviewed and committed</td><td><span class="pill done">done</span> <code>9e7d407</code> (amendment <code>e6a6532</code>)</td></tr>
+<tr><td>1b</td><td>Holdout checks: schema, payload hash, draw and prediction recompute, commit ordering, leak scan</td><td><span class="pill done">done</span> <code>1249c07</code></td></tr>
+<tr><td>2</td><td>Temporal identity tables and events; period-ordered settings</td><td><span class="pill prog">in progress</span> (uncommitted)</td></tr>
+<tr><td>3</td><td>Discovery, per-unit verification, eligibility gate, <code>onboard</code> CLI</td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>4</td><td>Derived settings, onboarding ingest, PDF exclusion attempt, the printed <code>compare run</code></td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>5a</td><td>Test oracle readiness (run status from operational failures)</td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>5b</td><td>Reviewer loop over 1b–5a, then the implementation freeze</td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>5c</td><td>Live acquisition of the held-out company on the freeze commit</td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>5d</td><td>Hand-verified, reviewer-approved Stage 4 manifest</td><td><span class="pill plan">to do</span></td></tr>
+<tr><td>6</td><td>Stage 4 end-to-end on the held-out company, then the phase-end review</td><td><span class="pill plan">to do</span></td></tr>
+</table>
+<details><summary>Deep detail: acquisition, replay and the eligibility gate</summary>
+<ul>
+<li>Every onboarding writes an immutable generation <code>&lt;raw-root&gt;/gen-&lt;n&gt;/</code> with a <code>discovery-manifest.json</code> (each request's key, URL, SHA-256, time and outcome, failures included), a <code>retrieval-manifest.json</code> (XBRL only) and an <code>acquisition.json</code> tying it to the freeze commit. Replay reads only these files, never opens a network socket, and gets the same outcome even with the clock moved three years ahead.</li>
+<li>An eligibility gate at the database insertion point refuses any occurrence from an identity-only surface, or from a capture linked to discovery unless its unit was verified in an <code>ONBOARDED</code>/<code>PARTIAL</code> record. Captures from an attempt that later hit a conflict therefore stay ineligible.</li>
+<li>The PDF exclusion is written as a capture-less acquisition attempt with outcome <code>EXCLUDED_BY_RULE</code>. Without it the run would wrongly read the PDF as "no value" and report <code>COMPLETE</code>. That case is a negative-control test.</li>
+<li>Onboarding pins <code>ONBOARDING_VERSIONS</code> = dictionary v2, mapping set v5, because the CLI defaults (v1) can't read the 2026 taxonomy.</li>
+<li>Follow-up beads: <code>eqos-yqi</code> (generic PDF), <code>eqos-9sn</code> (vendor identity date), <code>eqos-g2q</code> (symbol reuse for an issuer not yet onboarded).</li>
+</ul>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="timeline"><span class="n">06</span> Timeline</h2>
+<table>
+<tr><th>Phase</th><th>Delivers</th><th>State</th></tr>
+<tr><td>D1a</td><td>Comparison tracer: PostgreSQL evidence schema, dictionary v1, formula engine, XBRL/PDF adapters, extraction tables, runs, report CLI (Apar Q2 FY26)</td><td><span class="pill done">done</span></td></tr>
+<tr><td>D1b</td><td>Screener, Tijori and Upstox adapters; corroboration; review queue; frozen Stage 1 manifest (Apar + 9 companies)</td><td><span class="pill done">done</span></td></tr>
+<tr><td>D2</td><td>Lossless legacy SQLite import, PostgreSQL fact store, admission, backup/restore, cutover/rollback</td><td><span class="pill done">done on test DBs</span>; production cutover <code>eqos-3zl</code> open</td></tr>
+<tr><td>D3</td><td>Report ledger, claim check, approval panel, Apar imports, deterministic export</td><td><span class="pill done">done on test DBs</span></td></tr>
+<tr><td>D4</td><td>Long-term memory with separate promotion and cutoff retrieval</td><td><span class="pill done">done on test DBs</span></td></tr>
+<tr><td>D5</td><td>Read-only Markdown views, status notes, reader role (vault not built)</td><td><span class="pill done">done on test DBs</span></td></tr>
+<tr><td>D6</td><td>Identifier-only onboarding with a held-out company</td><td><span class="pill prog">in progress</span> (0b, 1a, 1b done)</td></tr>
+<tr><td>D7</td><td>Universe registry, screen CSV runs, capture batches, watchlist and drafting gate</td><td><span class="pill plan">planned</span></td></tr>
+<tr><td>D8</td><td>Exchange shareholding filing as a first-party source</td><td><span class="pill plan">planned</span></td></tr>
+<tr><td>D9</td><td>Retention classes, holds, purge, re-fetch, restore</td><td><span class="pill plan">planned</span></td></tr>
+<tr><td>PREP-1…8</td><td>2026-taxonomy mappings and Q4 PDF fix; PostgreSQL-only workflow; resumable workflow (B-01); source-of-truth matrix (B-03); rework path (B-14); review telemetry and seeded-error drill; frozen pilot manifest; <code>verify_project.sh</code></td><td><span class="pill plan">mostly open</span></td></tr>
+<tr><td>Pilot</td><td>Apar, four quarters, PILOT-1…13 → <code>PILOT_PROVEN</code></td><td><span class="pill plan">planned</span></td></tr>
+<tr><td>After</td><td>Release Phase 1 (2–3 companies, analyst-effort gates), Phase 2 (memory evaluation), then conditional GBrain, debate, backtesting and execution</td><td><span class="pill plan">gated</span></td></tr>
+</table>
+<p class="note">The roadmap's estimate is an inference from D1a only: 2–3 days per phase of wall-clock time, about 3–6 weeks for D1a–D9 and 1–2 weeks more for PREP and the pilot. API rate limits are named as the biggest schedule risk.</p>
+
+<!-- ============================================================ -->
+<h2 id="gloss"><span class="n">07</span> Glossary</h2>
+<dl class="gl">
+<dt>Occurrence</dt><dd>What one source literally said for one cell: raw text, unit, scale, anchor (page/line, XBRL fact, JSON path) and capture hash. Immutable.</dd>
+<dt>Interpretation</dt><dd>An occurrence mapped under a named mapping version to a canonical line item, with a normalised value, an interval and an evidence tier.</dd>
+<dt>Measurement key</dt><dd>The comparison grain: entity × line item × exact period × basis × framework × currency/kind × dimensions.</dd>
+<dt>Canonical dictionary</dt><dd>The versioned list of every financial line item (259 rows in v1) with meaning, kind, sign, applicability and formulas.</dd>
+<dt>Evidence tier</dt><dd><code>EQUIVALENCE_DEMONSTRATED</code> (measured on at least 5 companies including a discriminating case), <code>RELATED_NOT_EQUIVALENT</code>, or <code>EQUIVALENCE_UNPROVEN</code>. Only demonstrated mappings can produce <code>AGREE</code> or <code>MISMATCH</code>.</dd>
+<dt>Extraction check</dt><dd>XBRL vs PDF of the same filing: consistency of reading.</dd>
+<dt>Corroboration</dt><dd>First-party vs independent vendors (Screener, Tijori).</dd>
+<dt>Fact</dt><dd>A first-party value admitted after extraction <code>AGREE</code> with no open HIGH item. Append-only and revision-aware.</dd>
+<dt>Claim</dt><dd>A typed number in a report with exactly one citation (figure, calculation, quote, comparison, policy).</dd>
+<dt>Approval panel / owner role / runtime role</dt><dd>One configured model reviewer decides after deterministic checks. The owner records verbatim rulings and can override. Drafting agents can only insert drafts and <code>SUBMIT</code>.</dd>
+<dt>Memory promotion</dt><dd>A separate decision that lets a supported statement into long-term memory.</dd>
+<dt>Run manifest</dt><dd>The immutable record of everything a comparison run used. Replay uses only this.</dd>
+<dt>Frozen manifest</dt><dd>Expected results hand-verified from source documents, reviewer-approved and committed before the end-to-end test that must match them.</dd>
+<dt>Verification unit</dt><dd>One source whose identity onboarding verifies separately (EXCHANGE, XBRL_ENTITY, SCREENER, TIJORI, UPSTOX, RESULTS_PDF).</dd>
+<dt>Onboarding outcome</dt><dd><code>ONBOARDED</code>, <code>PARTIAL</code>, <code>IDENTITY_CONFLICT</code> or <code>UNSUPPORTED</code>.</dd>
+<dt>Held-out company / attempt / freeze</dt><dd>The company drawn before D6 code was written and kept out of development; one pre-registered draw and its prediction; the committed code revision that must not change before the run.</dd>
+<dt>Valid time / knowledge time / cutoff</dt><dd>When a figure applies; when it became public; the time a run or check is "as of". <code>AS_KNOWN</code> mode reproduces exactly what was known then.</dd>
+<dt>Consolidated / standalone basis</dt><dd>Group accounts vs the parent company alone. The two are never compared with each other. Onboarding supports consolidated only.</dd>
+</dl>
+
+<!-- ============================================================ -->
+<h2 id="unknown"><span class="n">08</span> What this page could not determine</h2>
+<ul>
+<li><b>Live bead state.</b> The brief forbade running <code>bd</code>. Status comes from the roadmap, the D6 plan and <code>git log</code>. The roadmap's progress table (last updated 2026-10-14) still says "D6 Not started" and <code>docs/workstreams/status.md</code> was generated 2026-10-12, so both are stale against the commits.</li>
+<li><b>Task 2 internals.</b> Its code is uncommitted and being written by another worker. It's described here from the plan only.</li>
+<li><b>Exactly which Screener page areas are ignored.</b> The four ingested sections and mapped labels are certain. That ratios, peers and shareholding sit outside comparison ingest is inferred.</li>
+<li><b>The older Screener screen-query code.</b> <code>ingest/screener_screen.py</code> acquires an authenticated screen query, while the ledger spec says the system will never request <code>?q=</code> URLs and screens come only from your CSV export. Whether that module is retired in D7 isn't stated.</li>
+<li><b>What the PREP workflow reuses.</b> It's unclear how much of the older pipeline (<code>api/pipeline.py</code>, <code>thesis/</code>) the earnings-review workflow will reuse.</li>
+<li><b>Exact raw XBRL lexemes.</b> Values in the examples are quoted from specs and manifests in crore. The literal raw strings in the XBRL files weren't opened.</li>
+<li><b>D7–D9 dates.</b> Only the roadmap's inferred estimate exists.</li>
+<li><b>Whether every financial issuer is tagged <code>Financial Services</code></b> in the NSE frame. The capability doc says this wasn't verified. A mis-tagged one would be refused at onboarding and count as a failed attempt.</li>
+</ul>
+<p class="note">Sources read: CONTEXT.md, brief, repo map, both specs, the data-foundation roadmap, the D6 plan, d6-capability.md, the backend roadmap, the Phase 0.5 plan, the Stage 1 manifest header, config/ mappings and dictionary, src/ module docstrings, the D6 capability probe report and git log. The held-out record, the Stage 4 manifest and data/holdout/ were not opened.</p>
+</main>
+</div>
+</body>
+</html>
