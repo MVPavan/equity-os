@@ -600,7 +600,8 @@ def check_stage4(
     versions = ONBOARDING_VERSIONS.model_dump(exclude_defaults=True)
     need(manifest["header"]["onboarding_versions"] == versions, "onboarding_versions")
     need(freeze["attempt"] == attempt["n"], "freeze attempt")
-    need(freeze["onboarding_versions"] == versions, "freeze onboarding_versions")
+    frozen_versions = type(ONBOARDING_VERSIONS).model_validate(freeze["onboarding_versions"])
+    need(frozen_versions == ONBOARDING_VERSIONS, "freeze onboarding_versions")
     units = onboarding["units"]
     need(units.keys() == set(VerificationUnit), "units")
     excluded = sorted(u for u, unit in units.items() if unit["state"] != VerificationState.VERIFIED)
