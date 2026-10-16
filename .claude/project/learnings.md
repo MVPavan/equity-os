@@ -285,3 +285,8 @@ Format per entry:
 - Apply: before freezing for a live one-shot, run the real transport against a development
   company on a scratch `eqos_test_*` DB and require every surface OK
   (`scratchpad/execution/d6/live_smoke.py` pattern: `discover` + `live_transport`).
+- Follow-up (attempt 2 burn, same day): a transport-only smoke on one company still missed an
+  ingest-time framework rejection that 9 of 11 dev companies hit. Smoke the FULL path (discover,
+  admission, ingest, printed compare) over several dev companies, and test that every admission
+  predicate agrees with the ingest predicate it precedes
+  (`scratchpad/execution/d6/live_onboard_smoke.py`).
