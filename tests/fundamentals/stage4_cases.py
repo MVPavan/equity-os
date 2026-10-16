@@ -23,7 +23,7 @@ from manifest_support import (
 )
 from stage4_support import CONSOLIDATED, FINANCIALS, UPSTOX
 
-from fundamentals.contracts.onboarding import VerificationUnit
+from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS, VerificationUnit
 
 DEV_SYMBOL, DEV_ISIN, DEV_SCRIP = "APARINDS", "INE372A01015", "532259"  # aparinds.yaml
 NAME, MASTER_NAME, SLUG = "APAR INDUSTRIES LIMITED", "Apar Industries Limited", "apar-industries"
@@ -308,6 +308,7 @@ FAILURES = {
     "TIJORI": "tijori/financials\t-\tattempt=-",
 }
 VERSIONS = {"dictionary": "v2", "mapping_set": "v5"}
+FULL_VERSIONS = ONBOARDING_VERSIONS.model_dump(mode="json")  # the freeze's seven-field form
 INSTRUMENT_ISIN = {"src": "INSTRUMENTS", "path": "[0].isin", "lex": DEV_ISIN, "gz": True}
 
 
@@ -525,6 +526,18 @@ STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] =
     "onboarding-versions-wrong": (
         "pdf-only",
         lambda case: case["manifest"]["header"]["onboarding_versions"].update(mapping_set="v4"),
+        {"stage4"},
+    ),
+    "freeze-versions-seven-fields": (
+        "pdf-only",
+        lambda case: case["freeze"].update(onboarding_versions=dict(FULL_VERSIONS)),
+        set(),
+    ),
+    "freeze-default-version-changed": (
+        "pdf-only",
+        lambda case: case["freeze"].update(
+            onboarding_versions=FULL_VERSIONS | {"rounding_policy": "v2"}
+        ),
         {"stage4"},
     ),
     "values-deleted": ("pdf-only", lambda case: values_of(case).clear(), {"stage4"}),

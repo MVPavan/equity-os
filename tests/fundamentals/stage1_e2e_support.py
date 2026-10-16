@@ -528,28 +528,33 @@ def _json(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
-def _column(src: str, anchor: dict[str, Any]) -> str:
+def _column(src: str, anchor: dict[str, Any], manifest: dict[str, Any] = MANIFEST) -> str:
     """The manifest column id whose x band holds the cell's centre."""
     centre = (anchor["column_x0"] + anchor["column_x1"]) / 2
-    columns = MANIFEST["header"]["pdf_columns"][src][anchor["page"]]["cols"]
+    columns = manifest["header"]["pdf_columns"][src][anchor["page"]]["cols"]
     return next(
         str(name) for name, band in columns.items() if band["x"][0] <= centre < band["x"][1]
     )
 
 
 def unmapped(
-    cells: list[Occurrence], instances: dict[Any, list[int]]
+    cells: list[Occurrence], instances: dict[Any, list[int]], manifest: dict[str, Any]
 ) -> tuple[tuple[str, Any], ...]:
     """One key-less queue item's occurrences as the manifest's unmapped entry."""
     first = cells[0]
-    src = SOURCES[first.capture.blob_sha256]
+    sources = {entry["sha256"]: entry["label"] for entry in manifest["header"]["sources"]}
+    src = sources[first.capture.blob_sha256]
     anchor, context = _json(first.anchor), _json(first.native_context)
     cols = [cell.anchor.get("column_label") for cell in cells]
     entry: dict[str, Any]
     if first.representation is Representation.XBRL:
         entry = {"c": context["local_name"], "ctx": anchor["context_ref"]}
     elif first.representation is Representation.PDF:
-        entry = {"pg": anchor["page"], "label": first.native_field, "col": _column(src, anchor)}
+        entry = {
+            "pg": anchor["page"],
+            "label": first.native_field,
+            "col": _column(src, anchor, manifest),
+        }
         entry |= {"lex": first.raw_value_text or ""}
         lines = instances[(anchor["page"], first.native_field)]
         if len(lines) > 1:
@@ -565,7 +570,9 @@ def unmapped(
     return tuple(sorted((key, json.dumps(value)) for key, value in (entry | {"src": src}).items()))
 
 
-def unmapped_items(stage: Stage, items: list[Any]) -> list[tuple[tuple[str, Any], ...]]:
+def unmapped_items(
+    stage: Stage, items: list[Any], manifest: dict[str, Any] = MANIFEST
+) -> list[tuple[tuple[str, Any], ...]]:
     """Every open key-less item of the run, in the manifest's unmapped shape."""
     with stage.pool.connection() as conn:
         captures = [row[0] for row in conn.execute("SELECT id FROM eqos.capture_refs")]
@@ -604,7 +611,7 @@ def unmapped_items(stage: Stage, items: list[Any]) -> list[tuple[tuple[str, Any]
                 stage.repository.get_occurrences(ids),
                 key=lambda cell: int(_json(cell.anchor).get("column_index", 0)),
             )
-            found.append(unmapped(list(cells), instances))
+            found.append(unmapped(list(cells), instances, manifest))
     return sorted(found)
 
 
@@ -684,15 +691,15 @@ def _at(row: dict[str, Any] | None, path: str) -> Any:
     return value
 
 
-def manifest_lines(outcome: Outcome) -> list[str]:
+def manifest_lines(outcome: Outcome, manifest: dict[str, Any] = MANIFEST) -> list[str]:
     """Every difference between one run and its manifest entry (rows, UNMAPPED, run)."""
     stage, run = outcome.stage, outcome.stage.run
-    lines = diff(expected(run, stage.entity_id), outcome.got)
+    lines = diff(expected(run, stage.entity_id, manifest), outcome.got)
     want = Counter(
         tuple(sorted((key, json.dumps(value)) for key, value in entry.items()))
         for entry in run["unmapped"]
     )
-    got = Counter(unmapped_items(stage, outcome.items))
+    got = Counter(unmapped_items(stage, outcome.items, manifest))
     lines += [f"missing unmapped {dict(entry)} x{n}" for entry, n in (want - got).items()]
     lines += [f"extra unmapped {dict(entry)} x{n}" for entry, n in (got - want).items()]
     severities = Counter(
