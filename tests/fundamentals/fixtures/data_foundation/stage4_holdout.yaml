@@ -1,0 +1,39 @@
+attempts:
+- identifier: SHYAMMETL
+  n: 1
+  prediction:
+    capability_commit: 6d07b9fa702f1e50439ffa6bacabb22ab7651375
+    capability_sha256: 8cf774148bce3571a458d6bb5fc97655cdfa152392a6f8a3ddd67de491617832
+    diagnostic_excluded: []
+    excluded_units:
+    - RESULTS_PDF
+    outcome: PARTIAL
+    run_status: INCOMPLETE
+  selection:
+    as_of: 2026-10-16
+    catalogue_exemptions:
+    - path: scratchpad/upstox/entity-map-2026-09-04/entity_map.json
+      sha256: c2f81973797cb4d362c76061c41dd7d17579ba244ebf20f28119ef0c23c911f7
+    - path: scratchpad/upstox/entity-map-v2/entity_map.json
+      sha256: 9f61287c82e46244b0823a5fac25da7313a5d0ba39c325b434139ce5aafbbc2a
+    exclusion_inventory_sha256: 3420ac7f65ef7ed17c9bab6da48e16276606a342e52b6fd4849061d8b882e501
+    frame:
+      column: Industry
+      excluded_values:
+      - Financial Services
+      retrieved_at: '2026-10-16T02:37:32.994782+00:00'
+      sha256: 2959bf206239284e145f7aecc65095b18d11556d2642323a70f2d26efe0f5cb3
+      url: https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv
+    n_universe: 174
+    seed_commit: 82a84dbcc452840eeb35fa019808673c496bdfc4
+    selected_index: 144
+    selection_commit: e6a6532305369585d95d3735edb5376e36f0e123
+    skips: []
+    start_index: 144
+    universe_sha256: e818bdf604e71bff5e0da49f0b73f36ed817b8f1ebd83123dd154e530a6b15b2
+  approval:
+    reviewer: gpt-6.1-sol
+    verdict: APPROVE
+    date: '2026-10-16'
+    payload_sha256: 2b153148842c308fbb69e1541203ef3aa1fd8d0b5171114f36886d1ca3b28cd0
+burns: []
