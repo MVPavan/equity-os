@@ -139,6 +139,13 @@ def record(repo: Path) -> dict[str, Any]:
     return cast(dict[str, Any], yaml.safe_load((repo / RECORD).read_bytes()))
 
 
+def freezes(repo: Path) -> list[dict[str, Any]]:
+    """The freeze descriptor entries, ``freezes: [...]`` with the last current (D6 step 2)."""
+    path = repo / FREEZE
+    doc = (yaml.safe_load(path.read_bytes()) or {}) if path.exists() else {}
+    return cast(list[dict[str, Any]], doc.get("freezes") or [])
+
+
 def attempt_payload_sha256(attempt: dict[str, Any]) -> str:
     """SHA-256 of the attempt without ``approval``, ``yaml.safe_dump(sort_keys=True)`` (D1.1)."""
     body = {key: value for key, value in attempt.items() if key != "approval"}
@@ -222,6 +229,11 @@ def selection_hits(repo: Path, commit: str, pattern: re.Pattern[bytes]) -> list[
     ]
 
 
+def period_end(row: dict[str, Any]) -> date:
+    """A listing row's period end (integrated ``qe_Date``, legacy ``toDate``)."""
+    return datetime.strptime(row["qe_Date"] if "qe_Date" in row else row["toDate"], DAY).date()
+
+
 def quarter_ends(as_of: date) -> set[date]:
     """The six latest calendar quarter-ends on or before ``as_of``."""
     ends = [
@@ -240,8 +252,7 @@ def qualifying_periods(rows: Iterable[dict[str, Any]], as_of: date) -> int | Non
     window = quarter_ends(as_of)
     groups: dict[tuple[date, str], list[tuple[datetime | None, bool]]] = defaultdict(list)
     for row in {json.dumps(r, sort_keys=True): r for r in rows}.values():
-        integrated = "qe_Date" in row
-        end = datetime.strptime(row["qe_Date" if integrated else "toDate"], DAY).date()
+        integrated, end = "qe_Date" in row, period_end(row)
         when = row.get("broadcast_Date" if integrated else "broadCastDate")
         basis = row.get("consolidated")
         if end in window and basis:
@@ -488,22 +499,18 @@ def check_ordering(repo: Path) -> None:
     """D1.5: append-only entries, ``record_k^ == selection_commit``, seeds, IMPL ordering around
     ``record_1``, freeze descriptors after their record and no IMPL change after the current
     freeze."""
-    doc = record(repo)
+    doc, frozen_entries = record(repo), freezes(repo)
     attempts, burns = doc["attempts"], doc["burns"] or []
-    freeze = repo / FREEZE
-    freezes = ((yaml.safe_load(freeze.read_bytes()) or {}) if freeze.exists() else {}).get(
-        "freezes"
-    ) or []
     need([a["n"] for a in attempts] == list(range(1, len(attempts) + 1)), "attempt numbering")
     need([b["attempt"] for b in burns] == list(range(1, len(burns) + 1)), "burn numbering")
     need(len(attempts) - 1 <= len(burns) <= len(attempts), "current attempt")
     entries = introductions(repo, RECORD, "attempts", "n")
     burned = introductions(repo, RECORD, "burns", "attempt")
-    frozen = introductions(repo, FREEZE, "freezes", "attempt") if freezes else {}
+    frozen = introductions(repo, FREEZE, "freezes", "attempt") if frozen_entries else {}
     for entry, intro in [
         *((a, entries[a["n"]]) for a in attempts),
         *((b, burned[b["attempt"]]) for b in burns),
-        *((f, frozen[f["attempt"]]) for f in freezes),
+        *((f, frozen[f["attempt"]]) for f in frozen_entries),
     ]:
         need(intro[1] == entry, "entry changed after its commit")
     for attempt in attempts:
@@ -517,13 +524,13 @@ def check_ordering(repo: Path) -> None:
     later = commits(repo, "HEAD", "--not", record_1, "--", *IMPL)
     added = git(repo, "log", "--diff-filter=A", "--format=%H", "--", DISCOVERY).decode().split()
     need(all(is_ancestor(repo, record_1, c) and c != record_1 for c in [*later, *added]), "IMPL")
-    for entry in freezes:
+    for entry in frozen_entries:
         k, commit = entry["attempt"], frozen[entry["attempt"]][0]
         record_k = entries[k][0]
         need(is_ancestor(repo, record_k, commit) and commit != record_k, "freeze before record")
         payload = attempt_payload_sha256(attempts[k - 1])
         need(entry["holdout_payload_sha256"] == payload, "freeze payload")
-    current = [f for f in freezes if f["attempt"] == len(attempts) > len(burns)]
+    current = [f for f in frozen_entries if f["attempt"] == len(attempts) > len(burns)]
     for entry in current:
         change = commits(repo, f"{entry['implementation_commit']}..HEAD", "--", *IMPL)
         need(not change, "IMPL change after freeze")
@@ -552,3 +559,17 @@ def check_leaks(repo: Path) -> None:
     ]
     for path in hits:
         need(False, f"leak at {pattern.sub(b'<token>', path.encode()).decode()}")
+
+
+def current(repo: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The current attempt and its freeze entry (the last of each)."""
+    return record(repo)["attempts"][-1], freezes(repo)[-1]
+
+
+def refused(check: Callable[[], None]) -> bool:
+    """Whether a check refuses (an assertion or a refused step)."""
+    try:
+        check()
+    except (AssertionError, RefusedError):
+        return True
+    return False

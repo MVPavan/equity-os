@@ -8,6 +8,7 @@ engine code. Approval is asserted separately: it fails until the reviewer's verd
 from __future__ import annotations
 
 import copy
+import gzip
 import hashlib
 import json
 import re
@@ -28,12 +29,18 @@ from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
 from manifest_support import (
     LEDGER3_MUTATIONS,
+    STAGE4_CASES,
     Mutation,
     check_ledger,
     check_ledger_stage3,
+    check_stage4,
+    expected_status,
     payload_sha256,
+    stage4_case,
+    xml_refs,
 )
 from stage4_support import CHECKS as HOLDOUT_CHECKS
+from stage4_support import current, refused
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
@@ -47,6 +54,7 @@ E2E = {
     "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
     "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
     "ledger_stage3": "tests/fundamentals/test_ledger_stage3_e2e.py",
+    "stage4": "tests/fundamentals/test_data_stage4_e2e.py",
 }
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"
@@ -67,7 +75,8 @@ SHAPES = {  # locator shape -> (required, optional) fields besides VALUE_FIELDS 
     "tijori_island": ({"src", "tbl", "row", "cols"}, set()),
     "upstox_json": ({"src", "block", "item", "cols", "diag"}, set()),
     "text": ({"src", "line", "lex"}, set()),  # lexeme verbatim on that 1-based line
-    "field": ({"src", "path", "lex"}, set()),  # JSON/YAML value at the path, as text
+    "field": ({"src", "path", "lex"}, {"gz"}),  # JSON/YAML value at the path, as text
+    "xml_ref": ({"src", "ref", "lex"}, set()),  # an instance's schemaRef href or namespace
 }
 GROUP_FIELDS = {
     "screener_html": ("sec", "row"),
@@ -305,18 +314,20 @@ def check_locator(manifest: dict[str, Any], loc: dict[str, Any]) -> None:
     elif shape == "text":
         assert loc["lex"] in path.read_bytes().decode().split("\n")[loc["line"] - 1], loc
     elif shape == "field":
-        assert str(field_at(path, loc["path"])) == loc["lex"], loc
+        assert str(field_at(path, loc["path"], loc.get("gz", False))) == loc["lex"], loc
+    elif shape == "xml_ref":
+        assert loc["lex"] in xml_refs(path.read_bytes())[loc["ref"]], loc
 
 
 @cache
-def parsed(path: Path) -> Any:
-    raw = path.read_bytes()
-    return json.loads(raw) if path.suffix == ".json" else yaml.safe_load(raw)
+def parsed(path: Path, gz: bool = False) -> Any:
+    raw = gzip.decompress(path.read_bytes()) if gz else path.read_bytes()
+    return json.loads(raw) if ".json" in path.suffixes else yaml.safe_load(raw)
 
 
-def field_at(path: Path, dotted: str) -> Any:
+def field_at(path: Path, dotted: str, gz: bool = False) -> Any:
     """The JSON or YAML value at a path such as ``ledger.entries[2].latest.quote``."""
-    node = parsed(path)
+    node = parsed(path, gz)
     for name, index in re.findall(r"(\w+)|\[(\d+)\]", dotted):
         node = node[name] if name else node[int(index)]
     return node
@@ -468,7 +479,7 @@ def check_run(run: dict[str, Any]) -> None:
         assert items == routed(row, vector), key
         queue.update(item["sev"] + "_diagnostic" * bool(item.get("diag")) for item in items)
     assert queue == Counter(counts["queue"]), run["run"]
-    assert (run["status"], run["exit"]) == ("COMPLETE", 3 if queue["HIGH"] else 0), run["run"]
+    assert (run["status"], run["exit"]) == expected_status(run), run["run"]
 
 
 def check_inventory(manifest: dict[str, Any]) -> None:
@@ -666,6 +677,8 @@ def test_values_follow_from_their_lexemes(path: Path) -> None:
         check_stage3(manifest)
     else:
         (check_ledger if "versions" in manifest else check_values)(manifest)
+    if path.name == "stage4_manifest.yaml":
+        check_stage4(REPO, manifest, *current(REPO))
 
 
 def check_stage3(manifest: dict[str, Any]) -> None:
@@ -773,3 +786,14 @@ def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
 def test_stage4_holdout(check: str) -> None:
     """The held-out record passes each D1 check; a failure names only the check (plan D6 D1.7)."""
     HOLDOUT_CHECKS[check](REPO)
+
+
+@pytest.mark.parametrize("name", STAGE4_CASES)
+def test_stage4_check(name: str, tmp_path: Path) -> None:
+    """Each exclusion case passes; each mutation, locators intact, fails just its checks (T5a)."""
+    case = stage4_case(name, tmp_path, run_of(load(STAGE1), "APARINDS-Q2FY26"))
+    manifest = case["manifest"]
+    for loc in [node for node in walk(manifest["onboarding"]) if "src" in node]:
+        check_locator(manifest, loc)
+    checks = {"run": lambda: check_run(manifest["runs"][0]), "stage4": case["check"]}
+    assert {key for key, check in checks.items() if refused(check)} == case["fails"]

@@ -314,13 +314,15 @@ def stored(value: Any, unit: tuple[int, int], how: str = "exact") -> Fraction | 
     return Fraction(rounding[how](units)) / scale
 
 
-def expected(run: dict[str, Any], entity_id: int) -> dict[str, Any]:
+def expected(
+    run: dict[str, Any], entity_id: int, manifest: dict[str, Any] = MANIFEST
+) -> dict[str, Any]:
     """The manifest's rows, projected onto the compared fields in stored units; the key's
     entity is the run's seeded entity, its basis and framework the header pins'."""
     found: dict[str, Any] = {}
-    pins, kinds = MANIFEST["header"]["pins"], MANIFEST["header"]["units"]
+    pins, kinds = manifest["header"]["pins"], manifest["header"]["units"]
     for key, row in expanded_rows(run).items():
-        unit_name = MANIFEST["header"]["row_units"][key.split("|")[0]]
+        unit_name = manifest["header"]["row_units"][key.split("|")[0]]
         unit = UNITS[unit_name]
         sides = {name: row[name] for name in run["source_vector"]["first_party"]}
         sides |= row.get("vendors", {})

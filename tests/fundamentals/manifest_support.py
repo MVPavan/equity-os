@@ -2,10 +2,38 @@
 
 from __future__ import annotations
 
+import copy
+import gzip
 import hashlib
+import json
+import re
 from collections.abc import Callable
+from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, cast
+
+import yaml
+from lxml import etree  # type: ignore[import-untyped]
+from stage4_support import CONSOLIDATED, FINANCIALS, UPSTOX, need, period_end, quarter_ends
+
+from fundamentals.compare.run_models import RunExitStatus
+from fundamentals.contracts.basis_status import BasisStatus
+from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.onboarding import (
+    ONBOARDING_VERSIONS,
+    UNIT_SURFACES,
+    VerificationState,
+    VerificationUnit,
+)
+
+# Oracle-owned copy of the Task 0b framework rule (d6-capability.md §3); deliberately not
+# imported from entity.verification, so a wrong rule in src cannot agree with itself.
+ENTRY_POINT_PREFIX = "in-capmkt-ent-"
+IND_AS_ENTRY_POINT = re.compile(
+    rb"^http://www\.sebi\.gov\.in/xbrl/IntegratedFinance_IndAS/\d{4}-\d{2}-\d{2}"
+    rb"/in-capmkt/in-capmkt-ent$"
+)
 
 CONTRACT_FIELDS = ("metric", "scope", "horizon", "unit", "constant_currency")  # plan D4 M9
 MKEY_FIELDS = {  # contracts.measurement_key.MeasurementKey
@@ -21,6 +49,32 @@ IMPORTED_VALIDATION = {"mode": "RETROSPECTIVE", "creator": "PANEL"}  # ledger/im
 READER_VIEWS = ("eqos.report_status_view", "eqos.promoted_memory_view")  # migrations/0021
 REFUSED_OPS = ["INSERT", "UPDATE", "DELETE"]
 Mutation = Callable[[dict[str, Any]], None]
+SCHEMA_REF = "{http://www.xbrl.org/2003/linkbase}schemaRef"
+XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
+
+
+def failure_surface(failure: str) -> str:
+    """An operational failure's representation (``compare/run.py`` ``_FAILURE``), or a vendor
+    name, without its ``:<schema>`` surface suffix (``vendor_sides.py``)."""
+    return failure.partition("\t")[0].partition(":")[0]
+
+
+def expected_status(run: dict[str, Any]) -> tuple[str, int]:
+    """(status, exit) as ``compare/run.py`` assigns them: INCOMPLETE iff a non-diagnostic
+    operational failure is listed, else whether an open HIGH item exists."""
+    vendors = run["source_vector"]["vendors"]
+    diagnostic = {failure_surface(v) for v, spec in vendors.items() if spec["role"] == "DIAGNOSTIC"}
+    if {failure_surface(f) for f in run.get("operational_failures", [])} - diagnostic:
+        return "INCOMPLETE", RunExitStatus.INCOMPLETE
+    high = run["counts"]["queue"].get("HIGH")
+    return "COMPLETE", RunExitStatus.SUCCESS_WITH_OPEN_HIGH if high else RunExitStatus.SUCCESS
+
+
+def xml_refs(data: bytes) -> dict[str, list[str]]:
+    """An XBRL instance's ``schemaRef`` hrefs and root namespace declarations (shape xml_ref)."""
+    root = etree.fromstring(data)
+    hrefs = [ref.get(XLINK_HREF) for ref in root.iter(SCHEMA_REF)]
+    return {"schemaRef": hrefs, "namespace": list(root.nsmap.values())}
 
 
 def check_ledger_claims(manifest: dict[str, Any]) -> None:
@@ -232,4 +286,255 @@ LEDGER3_MUTATIONS: dict[str, Mutation] = {
         refused=m["reader"]["refused"][:1] * 2 + m["reader"]["refused"][2:],
     ),
     "rules-removed": lambda m: m["header"].pop("rules"),
+}
+
+
+# --- Stage 4 manifest oracle (plan T5a) ------------------------------------------------------
+
+LISTING = "nse_listing"  # header source kind of the two pinned NSE listing files
+Locators = list[dict[str, Any]]
+
+
+def one(values: set[Any]) -> Any:
+    """The single value every located lexeme yields, else None."""
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def framework_of_entry_point(locators: Locators) -> str | None:
+    """IND_AS iff every located ``schemaRef`` file name has the pinned ``in-capmkt-ent-`` prefix
+    and every located namespace is the IntegratedFinance_IndAS entry point; the file name alone
+    also matches bank and NBFC filings (``entity/verification.py`` pins, Task 0b §2-3)."""
+    hrefs = [loc["lex"] for loc in locators if loc["ref"] == "schemaRef"]
+    spaces = [loc["lex"] for loc in locators if loc["ref"] == "namespace"]
+    names = (href.rsplit("/", 1)[-1] for href in hrefs)
+    held = all(name.startswith(ENTRY_POINT_PREFIX) for name in names) and all(
+        IND_AS_ENTRY_POINT.match(space.encode()) for space in spaces
+    )
+    return AccountingFramework.IND_AS.value if hrefs and spaces and held else None
+
+
+TRANSFORMS: dict[str, Callable[[Locators], Any]] = {  # the closed set
+    "identity": lambda locs: one({loc["lex"] for loc in locs}),
+    "month_of_date": lambda locs: one({date.fromisoformat(loc["lex"]).month for loc in locs}),
+    "basis_of_inventory": lambda locs: (
+        (
+            BasisStatus.CONSOLIDATED_AND_STANDALONE
+            if any(loc["lex"] == CONSOLIDATED for loc in locs)
+            else BasisStatus.STANDALONE_ONLY
+        ).value
+    ),
+    "framework_of_entry_point": framework_of_entry_point,
+}
+
+
+def basis_rows(repo: Path, manifest: dict[str, Any], as_of: date) -> set[tuple[str, str]]:
+    """(label, path) of the basis lexeme of every window row (D1.3) of both listing files."""
+    listings = {
+        s["label"]: s["path"] for s in manifest["header"]["sources"] if s["kind"] == LISTING
+    }
+    need(len(listings) == 2, "listing sources")
+    window, found = quarter_ends(as_of), set()
+    for label, path in listings.items():
+        doc = json.loads((repo / path).read_bytes())
+        rows, prefix = (doc["data"], "data") if isinstance(doc, dict) else (doc, "")
+        found |= {
+            (label, f"{prefix}[{i}].consolidated")
+            for i, row in enumerate(rows)
+            if row.get("consolidated") and period_end(row) in window
+        }
+    return found
+
+
+def check_stage4(
+    repo: Path, manifest: dict[str, Any], attempt: dict[str, Any], freeze: dict[str, Any]
+) -> None:
+    """The Stage 4 manifest against the current attempt's prediction, its freeze entry and
+    ``ONBOARDING_VERSIONS``; operational failures projected to the non-diagnostic excluded
+    units' surfaces; every onboarding value equal to its located lexemes after its transform.
+    Lexemes at their locators are ``check_locator``'s; failures name the step only (D1.7)."""
+    onboarding, prediction, (run,) = manifest["onboarding"], attempt["prediction"], manifest["runs"]
+    versions = ONBOARDING_VERSIONS.model_dump(exclude_defaults=True)
+    need(manifest["header"]["onboarding_versions"] == versions, "onboarding_versions")
+    need(freeze["attempt"] == attempt["n"], "freeze attempt")
+    need(freeze["onboarding_versions"] == versions, "freeze onboarding_versions")
+    units = onboarding["units"]
+    need(units.keys() == set(VerificationUnit), "units")
+    excluded = sorted(u for u, unit in units.items() if unit["state"] != VerificationState.VERIFIED)
+    need(excluded == sorted(onboarding["excluded_units"]), "excluded_units")
+    need(excluded == sorted(prediction["excluded_units"]), "unit states")
+    need(onboarding["outcome"] == prediction["outcome"], "outcome")
+    need(run["status"] == prediction["run_status"], "run_status")
+    surfaces = {UNIT_SURFACES[VerificationUnit(u)] for u in excluded if u != UPSTOX}
+    failed = {failure_surface(f) for f in run.get("operational_failures", [])}
+    need(failed == surfaces, "operational failures")
+    for node in onboarding["values"]:
+        need(node["transform"] in TRANSFORMS, "transform")
+        got = TRANSFORMS[node["transform"]](node["at"])
+        need(got is not None and str(got) == str(node["v"]), f"value {node['name']}")
+        if node["transform"] == "basis_of_inventory":
+            located = {(loc["src"], loc["path"]) for loc in node["at"]}
+            as_of = date.fromisoformat(node["as_of"]["lex"])
+            need(located == basis_rows(repo, manifest, as_of), "basis inventory")
+
+
+# Synthetic Stage 4 cases over a development company (Apar), files under ``tmp_path``.
+DEV_SYMBOL, DEV_ISIN = "APARINDS", "INE372A01015"  # config/identity/aparinds.yaml
+ENTRY = "http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/in-capmkt-ent"
+HREF = "in-capmkt-ent-2026-01-31.xsd"
+INSTANCE = f"""<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
+ xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink"
+ xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt" xmlns:in-capmkt-ent="{ENTRY}">
+<link:schemaRef xlink:type="simple" xlink:href="{HREF}"/>
+<xbrli:context id="c1"><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant></xbrli:period>
+</xbrli:context>
+<in-capmkt:DateOfEndOfFinancialYear contextRef="c1">2027-03-31</in-capmkt:DateOfEndOfFinancialYear>
+</xbrli:xbrl>"""
+LISTED = {"symbol": DEV_SYMBOL, "type": FINANCIALS, "broadcast_Date": "24-Jul-2026 18:34:26"}
+INTEGRATED = {
+    "data": [
+        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": CONSOLIDATED},
+        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": "Non-Consolidated"},
+        LISTED | {"qe_Date": "30-Jun-2026", "type": "Integrated Filing- Governance"},
+        LISTED | {"qe_Date": "31-Mar-2023", "consolidated": CONSOLIDATED},  # before the window
+    ]
+}
+LEGACY = [{"symbol": DEV_SYMBOL, "toDate": "31-Mar-2026", "consolidated": "Non-Consolidated"}]
+EXCLUSIONS = {
+    "pdf-only": ["RESULTS_PDF"],
+    "upstox-only": ["UPSTOX"],
+    "mixed": ["RESULTS_PDF", "TIJORI", "UPSTOX"],
+}
+FAILURES = {
+    "RESULTS_PDF": "PDF\tEXCLUDED_BY_RULE\tattempt=7",
+    "TIJORI": "tijori/financials\t-\tattempt=-",
+}
+VERSIONS = {"dictionary": "v2", "mapping_set": "v5"}
+VALUES = """
+- {name: ISIN, transform: identity, v: INE372A01015,
+   at: [{src: INSTRUMENTS, path: '[0].isin', lex: INE372A01015, gz: true}]}
+- {name: FISCAL_YEAR_END, transform: month_of_date, v: 3, at: [{src: INSTANCE,
+   c: DateOfEndOfFinancialYear, ctx: c1, u: null, d: null, per: '2026-06-30', lex: '2027-03-31'}]}
+- {name: REPORTING_FRAMEWORK, transform: framework_of_entry_point, v: IND_AS, at: [
+   {src: INSTANCE, ref: schemaRef, lex: in-capmkt-ent-2026-01-31.xsd},
+   {src: INSTANCE, ref: namespace, lex: '%(entry)s'}]}
+- {name: BASIS_STATUS, transform: basis_of_inventory, v: CONSOLIDATED_AND_STANDALONE,
+   as_of: {src: DISCOVERY, path: as_of, lex: '2026-08-01'}, at: [
+   {src: INTEGRATED, path: 'data[0].consolidated', lex: Consolidated},
+   {src: INTEGRATED, path: 'data[1].consolidated', lex: Non-Consolidated},
+   {src: LEGACY, path: '[0].consolidated', lex: Non-Consolidated}]}
+"""
+
+
+def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
+    """A synthetic Stage 4 manifest, attempt and freeze entry, consistent for the case's
+    exclusion set and then mutated; its Stage 1-schema run a copy of a development run carrying
+    the excluded failures; ``check`` runs ``check_stage4`` on it, ``fails`` names the checks that
+    must refuse (``run`` = ``check_run``)."""
+    base, mutate, fails = STAGE4_CASES[name]
+    files = {
+        "INSTANCE": ("instance.xml", "xbrl", INSTANCE.encode()),
+        "INTEGRATED": ("integrated.json", LISTING, json.dumps(INTEGRATED).encode()),
+        "LEGACY": ("legacy.json", LISTING, json.dumps(LEGACY).encode()),
+        "DISCOVERY": ("discovery.json", "json", b'{"as_of": "2026-08-01"}'),
+        "INSTRUMENTS": (
+            "instruments.json.gz",
+            "json",
+            gzip.compress(json.dumps([{"isin": DEV_ISIN, "trading_symbol": DEV_SYMBOL}]).encode()),
+        ),
+    }
+    for file, _, data in files.values():
+        (root / file).write_bytes(data)
+    excluded = EXCLUSIONS[base]
+    failures = [FAILURES[u] for u in excluded if u in FAILURES]
+    status = {"status": "INCOMPLETE", "exit": 4} if failures else {}
+    values = yaml.safe_load(VALUES % {"entry": ENTRY})
+    sources = [
+        {"label": label, "path": str(root / file), "kind": kind}
+        for label, (file, kind, _) in files.items()
+    ]
+    manifest = {
+        "header": {"manifest": "stage4", "onboarding_versions": dict(VERSIONS), "sources": sources},
+        "onboarding": {
+            "outcome": "PARTIAL",
+            "excluded_units": list(excluded),
+            "units": {
+                u.value: {"state": "UNVERIFIED" if u in excluded else "VERIFIED"}
+                for u in VerificationUnit
+            },
+            "values": values,
+        },
+        "runs": [copy.deepcopy(run) | {"operational_failures": failures} | status],
+    }
+    prediction = {
+        "outcome": "PARTIAL",
+        "excluded_units": list(excluded),
+        "diagnostic_excluded": [u for u in excluded if u == UPSTOX],
+        "run_status": "INCOMPLETE" if set(excluded) - {UPSTOX} else "COMPLETE",
+    }
+    attempt = {"n": 1, "identifier": DEV_SYMBOL, "prediction": prediction}
+    freeze = {"attempt": 1, "onboarding_versions": dict(VERSIONS)}
+    case = {"root": root, "manifest": manifest, "attempt": attempt, "freeze": freeze}
+    mutate(case)
+    return case | {"fails": fails, "check": lambda: check_stage4(root, manifest, attempt, freeze)}
+
+
+def value_node(case: dict[str, Any], name: str) -> dict[str, Any]:
+    """One onboarding value of a case."""
+    (node,) = [n for n in case["manifest"]["onboarding"]["values"] if n["name"] == name]
+    return cast(dict[str, Any], node)
+
+
+def banking(case: dict[str, Any]) -> None:
+    """The filing re-declared under IntegratedFinance_Banking: same xsd file name (Task 0b §2)."""
+    instance = case["root"] / "instance.xml"
+    instance.write_text(instance.read_text().replace("_IndAS/", "_Banking/"))
+    for loc in value_node(case, "REPORTING_FRAMEWORK")["at"]:
+        loc["lex"] = loc["lex"].replace("_IndAS/", "_Banking/")
+
+
+def run_of_case(case: dict[str, Any]) -> dict[str, Any]:
+    """The case's one run."""
+    return cast(dict[str, Any], case["manifest"]["runs"][0])
+
+
+UPSTOX_FAILURE = "upstox/income-statement:upstox-income-statement-summary-v2\t-\tattempt=-"
+STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] = {
+    # name: (exclusion set, mutation, the checks that must refuse)
+    **{base: (base, lambda case: None, set()) for base in EXCLUSIONS},
+    "incomplete-to-complete": (
+        "pdf-only",
+        lambda case: run_of_case(case).update(status="COMPLETE", exit=3),
+        {"run", "stage4"},
+    ),
+    "upstox-failure-projected": (
+        "upstox-only",
+        lambda case: run_of_case(case)["operational_failures"].append(UPSTOX_FAILURE),
+        {"stage4"},
+    ),
+    "mixed-failure-dropped": (
+        "mixed",
+        lambda case: run_of_case(case)["operational_failures"].pop(),
+        {"stage4"},
+    ),
+    "unit-state-wrong": (
+        "pdf-only",
+        lambda case: case["manifest"]["onboarding"]["units"]["TIJORI"].update(state="UNVERIFIED"),
+        {"stage4"},
+    ),
+    "basis-wrong": (
+        "pdf-only",
+        lambda case: value_node(case, "BASIS_STATUS").update(v="STANDALONE_ONLY"),
+        {"stage4"},
+    ),
+    "basis-row-unlocated": (
+        "pdf-only",
+        lambda case: value_node(case, "BASIS_STATUS")["at"].pop(),
+        {"stage4"},
+    ),
+    "framework-banking-namespace": ("pdf-only", banking, {"stage4"}),
+    "onboarding-versions-wrong": (
+        "pdf-only",
+        lambda case: case["manifest"]["header"]["onboarding_versions"].update(mapping_set="v4"),
+        {"stage4"},
+    ),
 }
