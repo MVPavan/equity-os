@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 CONTRACT_FIELDS = ("metric", "scope", "horizon", "unit", "constant_currency")  # plan D4 M9
 MKEY_FIELDS = {  # contracts.measurement_key.MeasurementKey
@@ -19,6 +20,7 @@ FLAGS = {"flags": "flags"}
 IMPORTED_VALIDATION = {"mode": "RETROSPECTIVE", "creator": "PANEL"}  # ledger/importer.py
 READER_VIEWS = ("eqos.report_status_view", "eqos.promoted_memory_view")  # migrations/0021
 REFUSED_OPS = ["INSERT", "UPDATE", "DELETE"]
+Mutation = Callable[[dict[str, Any]], None]
 
 
 def check_ledger_claims(manifest: dict[str, Any]) -> None:
@@ -194,3 +196,40 @@ def check_ledger_stage3(manifest: dict[str, Any], value_at: Callable[[str, str],
     rules = manifest["header"].get("rules", {})
     assert all(rules.get(r) for e in files for r in e["derived"].values())  # named rules declared
     assert manifest["header"]["vault_in_scope"] is False and manifest["vault"] == []
+
+
+def payload_sha256(content: bytes) -> str:
+    """sha256 of the manifest without its one header approval line (header.notation.approval)."""
+    lines = content.splitlines(keepends=True)
+    (index,) = [i for i, line in enumerate(lines) if line.startswith(b"  approval:")]
+    return hashlib.sha256(b"".join(lines[:index] + lines[index + 1 :])).hexdigest()
+
+
+def stage3_file(manifest: dict[str, Any], stem: str) -> dict[str, Any]:
+    (found,) = [f for f in manifest["files"] if f["stem"] == stem]
+    return cast(dict[str, Any], found)
+
+
+def drop_version(manifest: dict[str, Any]) -> None:
+    """FY26_Q4 dropped from the files and, consistently, from the reader rows."""
+    manifest["files"].remove(stage3_file(manifest, "FY26_Q4-EARNINGS_UPDATE-v1"))
+    manifest["reader"]["report_status_view"] = [
+        row for row in manifest["reader"]["report_status_view"] if row["period"] != "FY26_Q4"
+    ]
+    manifest["header"]["size"]["files"] -= 1
+
+
+LEDGER3_MUTATIONS: dict[str, Mutation] = {
+    "status-changed-locator-intact": lambda m: stage3_file(m, "FY27_Q1-EARNINGS_UPDATE-v1").update(
+        status="HISTORICAL"
+    ),
+    "version-dropped": drop_version,
+    "view-deleted-with-refusals": lambda m: [
+        m["reader"][k].pop(i) for k, i in (("views", 1), ("refused", 1))
+    ],
+    "view-duplicated-with-refusals": lambda m: m["reader"].update(
+        views=m["reader"]["views"][:1] * 2,
+        refused=m["reader"]["refused"][:1] * 2 + m["reader"]["refused"][2:],
+    ),
+    "rules-removed": lambda m: m["header"].pop("rules"),
+}

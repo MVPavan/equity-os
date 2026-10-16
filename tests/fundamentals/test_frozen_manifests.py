@@ -26,7 +26,14 @@ import pytest
 import yaml
 from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
-from manifest_support import check_ledger, check_ledger_stage3
+from manifest_support import (
+    LEDGER3_MUTATIONS,
+    Mutation,
+    check_ledger,
+    check_ledger_stage3,
+    payload_sha256,
+)
+from stage4_support import CHECKS as HOLDOUT_CHECKS
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFESTS = sorted((REPO / "tests/fundamentals/fixtures/data_foundation").glob("*_manifest.yaml"))
@@ -484,13 +491,6 @@ def check_values(manifest: dict[str, Any]) -> None:
     assert checked
 
 
-def payload_sha256(content: bytes) -> str:
-    """sha256 of the manifest without its one header approval line (header.notation.approval)."""
-    lines = content.splitlines(keepends=True)
-    (index,) = [i for i, line in enumerate(lines) if line.startswith(b"  approval:")]
-    return hashlib.sha256(b"".join(lines[:index] + lines[index + 1 :])).hexdigest()
-
-
 @pytest.mark.parametrize("expr", ["1 + 2) + 50", "(1 + 2", "1 2", "()", "1 +", "1 + (2 * 3"])
 def test_evaluator_rejects_malformed_expressions(expr: str) -> None:
     with pytest.raises((AssertionError, IndexError, ValueError)):
@@ -577,7 +577,6 @@ def drop_routed_item(manifest: dict[str, Any]) -> None:
     run["counts"]["queue"][item["sev"]] -= 1
 
 
-Mutation = Callable[[dict[str, Any]], None]
 MUTATIONS: dict[str, tuple[Mutation, Callable[[dict[str, Any]], None]]] = {
     "value-not-its-lexeme": (
         lambda m: row_of(m, "LAURUSLABS-Q3FY25", "total_income|Q|-|REPORTED")["xbrl"].update(
@@ -760,36 +759,6 @@ def test_manifest_is_approved(path: Path) -> None:
     assert approval["payload_sha256"] == payload, "the approval covers another payload"
 
 
-def stage3_file(manifest: dict[str, Any], stem: str) -> dict[str, Any]:
-    (found,) = [f for f in manifest["files"] if f["stem"] == stem]
-    return cast(dict[str, Any], found)
-
-
-def drop_version(manifest: dict[str, Any]) -> None:
-    """FY26_Q4 dropped from the files and, consistently, from the reader rows."""
-    manifest["files"].remove(stage3_file(manifest, "FY26_Q4-EARNINGS_UPDATE-v1"))
-    manifest["reader"]["report_status_view"] = [
-        row for row in manifest["reader"]["report_status_view"] if row["period"] != "FY26_Q4"
-    ]
-    manifest["header"]["size"]["files"] -= 1
-
-
-LEDGER3_MUTATIONS: dict[str, Mutation] = {
-    "status-changed-locator-intact": lambda m: stage3_file(m, "FY27_Q1-EARNINGS_UPDATE-v1").update(
-        status="HISTORICAL"
-    ),
-    "version-dropped": drop_version,
-    "view-deleted-with-refusals": lambda m: [
-        m["reader"][k].pop(i) for k, i in (("views", 1), ("refused", 1))
-    ],
-    "view-duplicated-with-refusals": lambda m: m["reader"].update(
-        views=m["reader"]["views"][:1] * 2,
-        refused=m["reader"]["refused"][:1] * 2 + m["reader"]["refused"][2:],
-    ),
-    "rules-removed": lambda m: m["header"].pop("rules"),
-}
-
-
 @pytest.mark.parametrize("name", LEDGER3_MUTATIONS)
 def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
     """The Stage 3 check passes on the frozen manifest and fails once an expectation drifts."""
@@ -798,3 +767,9 @@ def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
     LEDGER3_MUTATIONS[name](manifest)
     with pytest.raises(AssertionError):
         check_stage3(manifest)
+
+
+@pytest.mark.parametrize("check", HOLDOUT_CHECKS)
+def test_stage4_holdout(check: str) -> None:
+    """The held-out record passes each D1 check; a failure names only the check (plan D6 D1.7)."""
+    HOLDOUT_CHECKS[check](REPO)
