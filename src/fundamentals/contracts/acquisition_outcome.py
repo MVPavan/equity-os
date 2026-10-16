@@ -90,6 +90,7 @@ class ExtractionOutcome(StrEnum):
     IDENTITY_REJECTED = "IDENTITY_REJECTED"
     UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
     PARSE_FAILED = "PARSE_FAILED"
+    EXCLUDED_BY_RULE = "EXCLUDED_BY_RULE"
 
 
 # An empty payload is not evidence of absence: Upstox answers an unknown ISIN with the same

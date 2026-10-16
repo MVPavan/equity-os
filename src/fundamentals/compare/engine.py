@@ -242,7 +242,7 @@ class RunEngine:
     ) -> Iterable[tuple[DictionaryRow, MeasurementKey, tuple[PeriodInterval, ...]]]:
         """Every reported row's keys over the scope, with their group's fiscal periods."""
         for entity_id, basis, end in self._groups():
-            periods = fiscal_periods(end, self._fiscal_year_end(entity_id))
+            periods = fiscal_periods(end, self._fiscal_year_end(entity_id, end))
             currency = self._currency(entity_id, basis, end)
             for row in self._result_rows():
                 if row.formula is None:
@@ -265,7 +265,7 @@ class RunEngine:
 
     def _group_rows(self, entity_id: int, basis: Basis, end: date) -> list[ResultRow]:
         """Every row of one (entity, basis, period end)."""
-        fiscal_month = self._fiscal_year_end(entity_id)
+        fiscal_month = self._fiscal_year_end(entity_id, end)
         periods = fiscal_periods(end, fiscal_month)
         currency = self._currency(entity_id, basis, end)
         contexts: dict[frozenset[StatementFamily], ApplicabilityContext] = {}
@@ -356,7 +356,7 @@ class RunEngine:
             closing = operand.temporal_role is TemporalRole.CLOSING
             periods = [PeriodInterval.at(end)] if closing else [period]
             if operand.aggregation is not None and not closing:
-                periods = list(fiscal_periods(end, self._fiscal_year_end(entity_id)))
+                periods = list(fiscal_periods(end, self._fiscal_year_end(entity_id, end)))
             for at in periods:
                 for dimensions in self._evidence_dimensions(operand_row, entity_id, basis, end, at):
                     if operand.aggregation is not None:
@@ -377,7 +377,7 @@ class RunEngine:
         """What the families' selected packages tell before any value is read."""
         selected = (self.package(entity_id, basis, end, family) for family in sorted(families))
         packages = [package for package in selected if package is not None]
-        fiscal_month = self._fiscal_year_end(entity_id)
+        fiscal_month = self._fiscal_year_end(entity_id, end)
         kinds = sorted({package.reporting_kind for package in packages})
         if len(kinds) > 1:
             raise RunResolutionError(_KINDS.format(families=sorted(families), kinds=kinds))
@@ -409,9 +409,9 @@ class RunEngine:
             disclosed_rows=frozenset(disclosed),
         )
 
-    def _fiscal_year_end(self, entity_id: int) -> int:
-        """The fiscal-year-end month recorded latest by the cutoff."""
-        return fiscal_year_end(self._inputs.settings, entity_id, self._cutoff)
+    def _fiscal_year_end(self, entity_id: int, period_end: date) -> int:
+        """The fiscal-year-end month governing the period by the cutoff."""
+        return fiscal_year_end(self._inputs.settings, entity_id, self._cutoff, period_end)
 
     def segment_members_of(self, entity_id: int) -> tuple[SegmentMemberRecord, ...]:
         """The entity's segment members recorded by the cutoff."""
@@ -771,7 +771,7 @@ class RunEngine:
             )
         vendor = self._vendors.row(
             key,
-            fiscal_month=self._fiscal_year_end(key.entity_id),
+            fiscal_month=self._fiscal_year_end(key.entity_id, period_end(key.period)),
             applicability=decision.status,
             extraction=extraction.status,
             first_party={Representation.XBRL: xbrl, Representation.PDF: pdf},

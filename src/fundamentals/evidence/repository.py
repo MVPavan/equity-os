@@ -35,6 +35,7 @@ from fundamentals.contracts.evidence import (
 )
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.entity.identity_layers import issuer_values
 from fundamentals.evidence import repository_calc as calc_sql
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.alignment import AlignmentProof
@@ -43,8 +44,6 @@ from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.evidence.repository_rows import PackageStatementRecord, SegmentMemberWrite
 from fundamentals.pg.identity_seed import EvidenceInputKind, SettingKey
 
-_NO_IDENTIFIERS = "entity {entity_id} has no seeded security with ISIN, NSE and BSE listings"
-_AMBIGUOUS_IDENTIFIERS = "entity {entity_id} has {count} seeded securities; identity is ambiguous"
 _UNSTORED = "{what} has no stored id"
 _OCCURRENCE_CONFLICT = (
     "occurrence {anchor} is already stored (id {occurrence_id}) with another payload; "
@@ -105,6 +104,7 @@ class SettingsRecord(BaseModel):
     value_text: str
     evidence_input_id: int
     recorded_at: datetime
+    valid_from: date | None = None
 
 
 class SegmentMemberRecord(BaseModel):
@@ -136,15 +136,6 @@ _BASIS_AS_OF: LiteralString = (
     "ORDER BY recorded_at DESC, id DESC LIMIT 1"
 )
 _BASIS_BY_ID: LiteralString = _BASIS_COLUMNS + "WHERE id = ANY(%s) ORDER BY id"
-_SETTINGS_COLUMNS: LiteralString = (
-    "SELECT id, entity_id, setting_key, value_text, evidence_input_id, recorded_at "
-    "FROM eqos.settings_records "
-)
-_SETTINGS_AS_OF: LiteralString = (
-    _SETTINGS_COLUMNS + "WHERE entity_id = %s AND setting_key = %s AND recorded_at <= %s "
-    "ORDER BY recorded_at DESC, id DESC LIMIT 1"
-)
-_SETTINGS_BY_ID: LiteralString = _SETTINGS_COLUMNS + "WHERE id = ANY(%s) ORDER BY id"
 _SEGMENT_COLUMNS: LiteralString = (
     "SELECT m.id, m.entity_id, m.axis, m.member, m.display_name, m.valid_from, m.valid_to, "
     "m.recorded_at, "
@@ -179,10 +170,12 @@ class EvidenceRepository:
         return record.id, record.basis_status
 
     def settings_as_of(
-        self, entity_id: int, key: SettingKey, cutoff: datetime
+        self, entity_id: int, key: SettingKey, cutoff: datetime, period_end: date | None = None
     ) -> SettingsRecord | None:
-        """The latest value of one setting recorded at or before the cutoff."""
-        rows = self._fetch(_SETTINGS_AS_OF, (entity_id, key.value, cutoff))
+        """The row of one setting governing ``period_end`` (any period if ``None``) by the
+        cutoff: latest ``valid_from`` (null last), then latest recorded (D6 D5)."""
+        params = (entity_id, key.value, cutoff, period_end, period_end)
+        rows = self._fetch(rows_sql.SETTINGS_AS_OF, params)
         return SettingsRecord.model_validate(rows[0]) if rows else None
 
     def segment_members_as_of(
@@ -204,7 +197,7 @@ class EvidenceRepository:
 
     def get_settings_records(self, ids: Sequence[int]) -> tuple[SettingsRecord, ...]:
         """Stored settings rows by id."""
-        rows = self._fetch(_SETTINGS_BY_ID, (list(ids),))
+        rows = self._fetch(rows_sql.SETTINGS_BY_ID, (list(ids),))
         return tuple(SettingsRecord.model_validate(row) for row in rows)
 
     def get_segment_members(self, ids: Sequence[int]) -> tuple[SegmentMemberRecord, ...]:
@@ -229,12 +222,17 @@ class EvidenceRepository:
             return _one_id(conn, rows_sql.SELECT_EVIDENCE_INPUT, (kind.value, content_sha256))
 
     def put_settings_record(
-        self, entity_id: int, key: SettingKey, value_text: str, evidence_input_id: int
+        self,
+        entity_id: int,
+        key: SettingKey,
+        value_text: str,
+        evidence_input_id: int,
+        valid_from: date | None = None,
     ) -> int:
         """Record one evidenced setting value, returning the stored id."""
         params = (entity_id, key.value, value_text, evidence_input_id)
         with self._transaction() as conn:
-            conn.execute(rows_sql.INSERT_SETTING, params)
+            conn.execute(rows_sql.INSERT_SETTING, (*params, valid_from))
             return _one_id(conn, rows_sql.SELECT_SETTING, params)
 
     def put_capture_ref(self, ref: CaptureReference) -> CaptureReference:
@@ -452,23 +450,16 @@ class EvidenceRepository:
         found = self._fetch(rows_sql.ENTITY_BY_KEY, (entity_key,))
         return int(found[0]["id"]) if found else None
 
-    def issuer_identifiers(self, entity_id: int) -> IssuerIdentifiers:
-        """The seeded ISIN, NSE symbol and BSE scrip of one entity."""
-        found = self._fetch(rows_sql.ISSUER_IDENTIFIERS, (entity_id,))
-        complete = [row for row in found if row["nse"] and row["bse"]]
-        if not complete:
-            raise LookupError(_NO_IDENTIFIERS.format(entity_id=entity_id))
-        if len(complete) > 1 or len(complete[0]["nse"]) > 1 or len(complete[0]["bse"]) > 1:
-            raise LookupError(
-                _AMBIGUOUS_IDENTIFIERS.format(entity_id=entity_id, count=len(complete))
-            )
-        row = complete[0]
+    def issuer_identifiers(self, entity_id: int, as_of: date | None = None) -> IssuerIdentifiers:
+        """The ISIN, NSE symbol and BSE scrip one entity holds at ``as_of`` (``None``: today)."""
+        with self._pool.connection() as conn:
+            isin, nse, bse = issuer_values(conn, entity_id, as_of)
         return IssuerIdentifiers(
             entity_id=entity_id,
-            isin=row["isin"],
-            nse_symbol=row["nse"][0],
-            bse_scrip=row["bse"][0],
-            evidence_input_id=row["evidence_input_id"],
+            isin=isin.value,
+            nse_symbol=nse.value,
+            bse_scrip=bse.value,
+            evidence_input_id=isin.evidence_input_id,
         )
 
     def list_packages(

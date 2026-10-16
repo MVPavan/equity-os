@@ -121,13 +121,9 @@ class RunLoader:
     # --- scope ----------------------------------------------------------------------------
 
     def _entity(self, entity_id: int) -> None:
-        """The entity's fiscal calendar, basis status and segment members by the cutoff."""
+        """The entity's basis status and segment members by the cutoff."""
         cutoff = self._request.cutoff
         repository = self._repository
-        settings = repository.settings_as_of(entity_id, SettingKey.FISCAL_YEAR_END_MONTH, cutoff)
-        if settings is not None:
-            self._settings[settings.id] = settings
-            self._evidence_ids.add(settings.evidence_input_id)
         basis = repository.basis_status_as_of(entity_id, cutoff)
         if basis is not None:
             for record in repository.get_basis_statuses([basis[0]]):
@@ -145,7 +141,7 @@ class RunLoader:
         """Eligible packages (and a ``YEAR`` package's nine-month package) and attempts."""
         ends = [end]
         packages = self._eligible(entity_id, basis, end)
-        fiscal_month = self._fiscal_month(entity_id)
+        fiscal_month = self._fiscal_month(entity_id, end)
         if fiscal_month is not None and any(
             package.reporting_kind is PeriodKind.YEAR for package in packages
         ):
@@ -154,6 +150,7 @@ class RunLoader:
                 nine = nine_months(periods)
                 assert nine.end is not None
                 ends.append(nine.end)
+                self._fiscal_month(entity_id, nine.end)
         for period_end in ends:
             for package in self._eligible(entity_id, basis, period_end):
                 self._add_package(package, interpretations=True)
@@ -195,12 +192,16 @@ class RunLoader:
                             if self._known(item):
                                 self._add_interpretation(item)
 
-    def _fiscal_month(self, entity_id: int) -> int | None:
-        """The loaded fiscal-year-end month, if one was recorded by the cutoff."""
-        for record in self._settings.values():
-            if record.entity_id == entity_id:
-                return int(record.value_text)
-        return None
+    def _fiscal_month(self, entity_id: int, period_end: date) -> int | None:
+        """Load the fiscal-year-end row governing the period by the cutoff; its month, if any."""
+        record = self._repository.settings_as_of(
+            entity_id, SettingKey.FISCAL_YEAR_END_MONTH, self._request.cutoff, period_end
+        )
+        if record is None:
+            return None
+        self._settings[record.id] = record
+        self._evidence_ids.add(record.evidence_input_id)
+        return int(record.value_text)
 
     def _eligible(self, entity_id: int, basis: Basis, period_end: date) -> list[FilingPackage]:
         """Eligible results packages of one basis, framework and period end."""

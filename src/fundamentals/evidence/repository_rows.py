@@ -109,25 +109,28 @@ SELECT_EVIDENCE_INPUT: LiteralString = (
     "SELECT id FROM eqos.evidence_inputs WHERE kind = %s AND content_sha256 = %s"
 )
 INSERT_SETTING: LiteralString = (
-    "INSERT INTO eqos.settings_records (entity_id, setting_key, value_text, evidence_input_id) "
-    "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING"
+    "INSERT INTO eqos.settings_records "
+    "(entity_id, setting_key, value_text, evidence_input_id, valid_from) "
+    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING"
 )
 SELECT_SETTING: LiteralString = (
     "SELECT id FROM eqos.settings_records "
     "WHERE entity_id = %s AND setting_key = %s AND value_text = %s AND evidence_input_id = %s"
 )
 
-ENTITY_BY_KEY: LiteralString = "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s"
-
-# --- issuer identifiers ---------------------------------------------------------------
-
-ISSUER_IDENTIFIERS: LiteralString = (
-    "SELECT s.isin, s.evidence_input_id, "
-    "array_agg(l.symbol ORDER BY l.id) FILTER (WHERE l.venue = 'NSE') AS nse, "
-    "array_agg(l.symbol ORDER BY l.id) FILTER (WHERE l.venue = 'BSE') AS bse "
-    "FROM eqos.securities s JOIN eqos.listings l ON l.security_id = s.id "
-    "WHERE s.entity_id = %s AND s.isin IS NOT NULL GROUP BY s.id ORDER BY s.id"
+_SETTINGS_COLUMNS: LiteralString = (
+    "SELECT id, entity_id, setting_key, value_text, evidence_input_id, recorded_at, valid_from "
+    "FROM eqos.settings_records "
 )
+# The governing rule (plan D6 D5): null valid_from governs every period and ranks last.
+SETTINGS_AS_OF: LiteralString = (
+    _SETTINGS_COLUMNS + "WHERE entity_id = %s AND setting_key = %s AND recorded_at <= %s "
+    "AND (%s::date IS NULL OR valid_from IS NULL OR valid_from <= %s::date) "
+    "ORDER BY valid_from DESC NULLS LAST, recorded_at DESC, id DESC LIMIT 1"
+)
+SETTINGS_BY_ID: LiteralString = _SETTINGS_COLUMNS + "WHERE id = ANY(%s) ORDER BY id"
+
+ENTITY_BY_KEY: LiteralString = "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s"
 
 # --- packages -------------------------------------------------------------------------
 

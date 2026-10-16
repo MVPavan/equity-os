@@ -45,6 +45,7 @@ from fundamentals.contracts.snapshot import SnapshotError, canonical_sha256
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
 from fundamentals.contracts.source_registration import SourceRegistrationError
 from fundamentals.evidence.capture_intake import (
+    NSE_WALL_ZONE,
     SURFACE_OF,
     TRANSCRIPT_SURFACE,
     IntakeError,
@@ -182,8 +183,7 @@ def ingest_first_party(
     request = IngestRequest(
         entity_id=entity_id, period_end=reporting_period_end, basis=basis, framework=framework
     )
-    identifiers = repository.issuer_identifiers(entity_id)
-    fiscal_year_end_month = _fiscal_year_end_month(repository, entity_id)
+    fiscal_year_end_month = _fiscal_year_end_month(repository, entity_id, reporting_period_end)
     member_failures: list[AcquisitionAttempt] = []
     failed_staging: list[str] = []
     pending: list[MemberGeneration] = []
@@ -232,6 +232,7 @@ def ingest_first_party(
             knowledge_time_raw=binding.filed_at_raw,
             knowledge_time_status=KnowledgeTimeStatus.KNOWN,
         )
+        filed_on = member.knowledge_time.astimezone(NSE_WALL_ZONE).date()
         pending.append(
             extract_member(
                 binding,
@@ -239,7 +240,7 @@ def ingest_first_party(
                 intake=intake,
                 repository=repository,
                 request=request,
-                identifiers=identifiers,
+                identifiers=repository.issuer_identifiers(entity_id, as_of=filed_on),
                 mapping_set=mapping_set,
                 pdf_specs=pdf_specs,
                 extractor_version=versions[binding.representation],
@@ -342,10 +343,10 @@ def ingest_first_party(
     )
 
 
-def _fiscal_year_end_month(repository: EvidenceRepository, entity_id: int) -> int:
-    """The evidenced fiscal-year-end month as of the store clock."""
+def _fiscal_year_end_month(repository: EvidenceRepository, entity_id: int, period_end: date) -> int:
+    """The evidenced fiscal-year-end month governing the period, as of the store clock."""
     record = repository.settings_as_of(
-        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock()
+        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock(), period_end
     )
     if record is None:
         raise IngestError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))

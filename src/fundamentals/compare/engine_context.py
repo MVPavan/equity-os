@@ -1,14 +1,15 @@
 """Entity facts a run reads before any value: calendar, basis status, segments (D1a Task 9).
 
 Pure over the run's loaded records and cutoff, so execution and replay decide them alike.
-Each read takes the record recorded latest by the cutoff; none is recorded → the run fails
+Each read takes the record recorded latest by the cutoff (the fiscal year end: the one
+governing the period); none is recorded → the run fails
 closed with ``RunResolutionError``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import date, datetime
 
 from fundamentals.compare.engine_attempts import RunResolutionError
 from fundamentals.contracts.basis_status import BasisStatus
@@ -28,18 +29,32 @@ _NO_BASIS_STATUS = "entity {entity_id} has no basis status recorded by the cutof
 _BASES = frozenset(basis.value for basis in Basis)
 
 
-def fiscal_year_end(settings: Sequence[SettingsRecord], entity_id: int, cutoff: datetime) -> int:
-    """The fiscal-year-end month recorded latest by the cutoff."""
+def fiscal_year_end(
+    settings: Sequence[SettingsRecord], entity_id: int, cutoff: datetime, period_end: date
+) -> int:
+    """The fiscal-year-end month governing the period by the cutoff: latest ``valid_from``
+    on or before it (null last), then latest recorded (``settings_as_of``'s rule, D6 D5)."""
     records = [
         record
         for record in settings
         if record.entity_id == entity_id
         and record.setting_key is SettingKey.FISCAL_YEAR_END_MONTH
         and record.recorded_at <= cutoff
+        and (record.valid_from is None or record.valid_from <= period_end)
     ]
     if not records:
         raise RunResolutionError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
-    return int(max(records, key=lambda record: (record.recorded_at, record.id)).value_text)
+    return int(
+        max(
+            records,
+            key=lambda record: (
+                record.valid_from is not None,
+                record.valid_from or date.min,
+                record.recorded_at,
+                record.id,
+            ),
+        ).value_text
+    )
 
 
 def basis_status(

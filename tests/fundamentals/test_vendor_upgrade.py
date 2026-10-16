@@ -20,6 +20,8 @@ from run_support import Runner, row
 from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.compare import run, run_config, run_store
 from fundamentals.contracts.evidence import PinnedVersions
+from fundamentals.entity import identity_layers
+from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.migrations import apply_migrations
@@ -103,6 +105,16 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(run_config, "COMPARISON_SEMANTICS", None)
 
 
+def pre_0022_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Today's reads on a schema before 0022: settings carry no ``valid_from`` (every row
+    governs every period) and no identifier relationship exists."""
+    for name in ("SETTINGS_AS_OF", "SETTINGS_BY_ID"):
+        monkeypatch.setattr(
+            rows_sql, name, getattr(rows_sql, name).replace("valid_from", "NULL::date")
+        )
+    monkeypatch.setattr(identity_layers, "_RELATIONSHIPS", "SELECT 1 WHERE false")
+
+
 def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     old_db: PgTestDatabase,
     tmp_path: Path,
@@ -111,6 +123,7 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     policy: NormalisationPolicy,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pre_0022_reads(monkeypatch)
     upgrade_migrations = tmp_path / "through-0006-migrations"
     upgrade_migrations.mkdir()
     for source in sorted(MIGRATIONS_DIR.glob("000[1-6]_*.sql")):

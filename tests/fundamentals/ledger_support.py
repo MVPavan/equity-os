@@ -59,6 +59,16 @@ LEDGER_TABLES = frozenset(
 )
 # The tables 0016 creates (plan D4, M1).
 MEMORY_TABLES = frozenset({"memory_items", "memory_supports"})
+# 0022's identity and onboarding tables (plan D6 D3.1).
+IDENTITY_TABLES = frozenset(
+    {
+        "identifier_relationships",
+        "identity_events",
+        "identity_event_edges",
+        "onboarding_records",
+        "namespace_verifications",
+    }
+)
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64
 PINNED_INPUTS = "1" * 64

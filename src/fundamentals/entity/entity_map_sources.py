@@ -24,7 +24,12 @@ import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fundamentals.api.watchlist_config import StockConfig, load_watchlist_config
+from fundamentals.api.watchlist_config import (
+    SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD,
+    SCREENER_WAREHOUSE_ID_STANDALONE_FIELD,
+    StockConfig,
+    load_watchlist_config,
+)
 from fundamentals.contracts.entity_identity import (
     IdentifierNamespace,
     IncompleteEvidenceError,
@@ -92,7 +97,9 @@ _PIN_TIJORI_COMPANY_ID_FIELD = "tijori_company_id"
 
 # The namespaces every pinned stock carries a field for. ``isin`` is absent by
 # design: the field defaults to null and no stock populates it, so an unpinned
-# ISIN is "no source looked", never "the config says there is none".
+# ISIN is "no source looked", never "the config says there is none". A warehouse
+# id is per basis and optional: an explicit null is reported absent (NETWEB has no
+# consolidated basis), an omitted field is not supplied.
 _S2_FIELDS: tuple[tuple[IdentifierNamespace, str], ...] = (
     (IdentifierNamespace.NSE_SYMBOL, _PIN_NSE_FIELD),
     (IdentifierNamespace.BSE_SCRIP, _PIN_BSE_FIELD),
@@ -100,6 +107,11 @@ _S2_FIELDS: tuple[tuple[IdentifierNamespace, str], ...] = (
     (IdentifierNamespace.SCREENER_COMPANY_ID, _PIN_SCREENER_COMPANY_ID_FIELD),
     (IdentifierNamespace.TIJORI_SLUG, _PIN_TIJORI_SLUG_FIELD),
     (IdentifierNamespace.TIJORI_COMPANY_ID, _PIN_TIJORI_COMPANY_ID_FIELD),
+    (
+        IdentifierNamespace.SCREENER_WAREHOUSE_ID_CONSOLIDATED,
+        SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD,
+    ),
+    (IdentifierNamespace.SCREENER_WAREHOUSE_ID_STANDALONE, SCREENER_WAREHOUSE_ID_STANDALONE_FIELD),
 )
 
 
@@ -212,11 +224,17 @@ def _s2_record(stock: StockConfig, *, digest: str, retrieved_at: datetime) -> So
         _PIN_SCREENER_COMPANY_ID_FIELD: str(identifiers.screener_company_id),
         _PIN_TIJORI_SLUG_FIELD: identifiers.tijori_slug,
         _PIN_TIJORI_COMPANY_ID_FIELD: str(identifiers.tijori_company_id),
+        SCREENER_WAREHOUSE_ID_CONSOLIDATED_FIELD: _text(
+            identifiers.screener_warehouse_id_consolidated
+        ),
+        SCREENER_WAREHOUSE_ID_STANDALONE_FIELD: _text(identifiers.screener_warehouse_id_standalone),
     }
     unconfirmed = set(identifiers.needs_verification)
     assertions: list[SourceAssertion] = []
     absent: list[IdentifierNamespace] = []
     for namespace, field in _S2_FIELDS:
+        if field not in identifiers.model_fields_set:
+            continue
         value = (stated[field] or "").strip()
         if not value:
             absent.append(namespace)
@@ -251,6 +269,11 @@ def _s2_record(stock: StockConfig, *, digest: str, retrieved_at: datetime) -> So
         assertions=tuple(assertions),
         reported_absent=tuple(absent),
     )
+
+
+def _text(value: int | None) -> str | None:
+    """An optional numeric id as text."""
+    return None if value is None else str(value)
 
 
 def _pin_assertion(
