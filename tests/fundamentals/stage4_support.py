@@ -22,23 +22,12 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta, timezone
-from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import yaml
-
-from fundamentals.canon.dictionary import load_dictionary
-from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
-from fundamentals.entity.verification import (
-    VERIFIED,
-    financial_rule,
-    framework_state,
-    instance_state,
-)
-from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError, load_mapping_set
-from fundamentals.evidence.xbrl_adapter import parse_instance
+from stage4_filings import qualifying_filings, xbrl_admitted
 
 RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yaml"
 FREEZE = "tests/fundamentals/fixtures/data_foundation/stage4_freeze.yaml"
@@ -63,7 +52,6 @@ NOT_EQ, NON_IN_ISIN, NO_FILINGS = "NOT_EQ", "NON_IN_ISIN", "NO_CONSOLIDATED_INCA
 BSE_NOT_ONE, TOKEN_HIT, NO_XBRL = "BSE_NOT_ONE", "TOKEN_HIT", "XBRL_NOT_ADMITTED"
 SKIP_REASONS = (NOT_EQ, NON_IN_ISIN, NO_FILINGS, NO_XBRL, BSE_NOT_ONE, TOKEN_HIT)
 XBRL_RULE_FROM = 3  # D1.3 amendment 2026-10-16 (eqos-h4h.10): attempts drawn after burn 2
-CONFIG = Path(__file__).resolve().parents[2] / "config"
 KEYS = {  # D1.1
     "record": {"attempts", "burns"},
     "attempt": {"n", "identifier", "selection", "prediction", "approval"},
@@ -83,10 +71,9 @@ KEYS = {  # D1.1
     "burn": {"attempt", "reason_code", "bead", "freeze_descriptor_sha256", "date"},
 }
 SHA1, SHA256 = re.compile(r"[0-9a-f]{40}"), re.compile(r"[0-9a-f]{64}")
+WORD = re.compile(rb"[a-z0-9]+")  # an alphanumeric run of lowered bytes (D1.6 boundaries)
 IST = timezone(timedelta(hours=5, minutes=30))  # Asia/Kolkata, no DST
 MASTER_HEADER = b"SYMBOL,NAME OF COMPANY"
-FINANCIALS, CONSOLIDATED = "Integrated Filing- Financials", "Consolidated"
-DAY, MOMENT, WINDOW = "%d-%b-%Y", "%d-%b-%Y %H:%M:%S", 6
 CHECKS: dict[str, Callable[[Path], None]] = {}
 
 
@@ -176,6 +163,23 @@ def freezes(repo: Path) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], doc.get("freezes") or [])
 
 
+def freezes_at(repo: Path, commit: str | None) -> list[dict[str, Any]]:
+    """The freeze descriptor entries at a commit (None: as checked out)."""
+    if commit is None:
+        return freezes(repo)
+    data = (
+        git(repo, "show", f"{commit}:{FREEZE}")
+        if git(repo, "ls-tree", commit, "--", FREEZE)
+        else b""
+    )
+    return cast(list[dict[str, Any]], (yaml.safe_load(data) or {}).get("freezes") or [])
+
+
+def descriptor_sha256(entry: dict[str, Any]) -> str:
+    """SHA-256 of a freeze descriptor entry, ``yaml.safe_dump(sort_keys=True)``."""
+    return sha256(yaml.safe_dump(entry, sort_keys=True).encode())
+
+
 def attempt_payload_sha256(attempt: dict[str, Any]) -> str:
     """SHA-256 of the attempt without ``approval``, ``yaml.safe_dump(sort_keys=True)`` (D1.1)."""
     body = {key: value for key, value in attempt.items() if key != "approval"}
@@ -229,6 +233,30 @@ def object_hits(repo: Path, commit: str, pattern: re.Pattern[bytes]) -> list[str
     return [listed[oid] for oid, body in bodies.items() if pattern.search(body)]
 
 
+def history_hits(repo: Path, commit: str, tokens: dict[str, list[str]]) -> set[str]:
+    """Keys whose D1.6 tokens hit an object reachable from the commit (``object_hits`` for many
+    companies in one read): a token is searched for only in bodies holding each of its words,
+    since the matcher's boundaries make every word of a hit a whole alphanumeric run there."""
+    bodies = contents(repo, list(reachable(repo, commit)))
+    words = {
+        (key, token): set(WORD.findall(token.lower().encode()))
+        for key, listed in tokens.items()
+        for token in listed
+        if token.strip()
+    }
+    held: dict[bytes, set[str]] = defaultdict(set)
+    vocabulary = set().union(*words.values())
+    for oid, body in bodies.items():
+        for word in vocabulary.intersection(WORD.findall(body.lower())):
+            held[word].add(oid)
+    hits = set()
+    for (key, token), wanted in words.items():
+        oids = set.intersection(*(held[w] for w in wanted)) if wanted else set(bodies)
+        if key not in hits and any(matcher([token]).search(bodies[o]) for o in oids):
+            hits.add(key)
+    return hits
+
+
 def file_hits(repo: Path, files: Iterable[str], pattern: re.Pattern[bytes]) -> list[str]:
     """Working-tree files whose path or bytes match."""
     return [
@@ -258,96 +286,6 @@ def selection_hits(repo: Path, commit: str, pattern: re.Pattern[bytes]) -> list[
         *file_hits(repo, others, pattern),
         *(d for d in dirs if pattern.search(d.encode())),
     ]
-
-
-def period_end(row: dict[str, Any]) -> date:
-    """A listing row's period end (integrated ``qe_Date``, legacy ``toDate``)."""
-    return datetime.strptime(row["qe_Date"] if "qe_Date" in row else row["toDate"], DAY).date()
-
-
-def quarter_ends(as_of: date) -> set[date]:
-    """The six latest calendar quarter-ends on or before ``as_of``."""
-    ends = [
-        date(year, month, day)
-        for year in range(as_of.year - 2, as_of.year + 1)
-        for month, day in ((3, 31), (6, 30), (9, 30), (12, 31))
-    ]
-    return set([end for end in ends if end <= as_of][-WINDOW:])
-
-
-def qualifying_periods(rows: Iterable[dict[str, Any]], as_of: date) -> int | None:
-    """The number of distinct qualifying period ends (``qualifying_filings``)."""
-    filings = qualifying_filings(rows, as_of)
-    return None if filings is None else len(filings)
-
-
-def qualifying_filings(
-    rows: Iterable[dict[str, Any]], as_of: date
-) -> dict[date, str | None] | None:
-    """D1.3 filing-window rule over rows of both NSE listings: collapse each (period_end, basis)
-    to its latest broadcast; each distinct period end of a collapsed consolidated in-capmkt row
-    with that row's XBRL link; None when a group's latest broadcast is tied. Broadcast is the
-    listing's own field only: a group with a row that has none (missing, empty or blank) cannot
-    be ordered and yields no qualifying period. Rows equal on the parsed fields (period end,
-    basis, broadcast, listing, type, XBRL link) are one filing; any other field, e.g. ``seq_Id``,
-    is ignored."""
-    window = quarter_ends(as_of)
-    groups: dict[tuple[date, str], list[tuple[datetime | None, bool, str | None]]]
-    groups = defaultdict(list)
-    parsed = {}
-    for row in rows:
-        integrated = "qe_Date" in row
-        text = (row.get("broadcast_Date" if integrated else "broadCastDate") or "").strip()
-        when = datetime.strptime(text, MOMENT) if text else None
-        xbrl = (row.get("xbrl") or "").strip() or None
-        key = (period_end(row), row.get("consolidated"), when, integrated, row.get("type"), xbrl)
-        parsed[key] = None
-    for end, basis, when, integrated, kind, xbrl in parsed:
-        if end in window and basis:
-            qualifies = integrated and kind == FINANCIALS and basis == CONSOLIDATED
-            groups[end, basis].append((when, qualifies, xbrl))
-    periods = {}
-    for (end, _), filings in groups.items():
-        times = [when for when, *_ in filings]
-        if None in times:
-            continue
-        latest = max(cast(list[datetime], times))
-        top = [(qualifies, xbrl) for when, qualifies, xbrl in filings if when == latest]
-        if len(top) > 1:
-            return None
-        if top[0][0]:
-            periods[end] = top[0][1]
-    return periods
-
-
-@cache
-def onboarding_mapping_set() -> MappingSet:
-    """The mapping set discovery parses instances under (``ONBOARDING_VERSIONS``)."""
-    dictionary = load_dictionary(CONFIG / "dictionary", ONBOARDING_VERSIONS.dictionary)
-    return load_mapping_set(
-        CONFIG / "mappings", ONBOARDING_VERSIONS.mapping_set, dictionary=dictionary
-    )
-
-
-def xbrl_admitted(instances: Iterable[tuple[bytes, date]]) -> bool:
-    """The D1.3 XBRL prefilter over a candidate's ``(instance, period end)`` pairs, discovery's
-    issuer-independent XBRL gates in its order (D4.2 steps 3-4): every financial rule before any
-    instance is parsed, the onboarding mapping set's schema, then each instance's scope and
-    period (``instance_state``) and ingest's framework predicate (``framework_state``). Issuer
-    identity, name and report-nature declarations are left to discovery."""
-    pairs = list(instances)
-    if not all(financial_rule(body) for body, _ in pairs):
-        return False
-    try:
-        parsed = [
-            (parse_instance(body, mapping_set=onboarding_mapping_set()), end) for body, end in pairs
-        ]
-    except UnsupportedSchemaError:
-        return False
-    return all(
-        instance_state(instance, end) == VERIFIED == framework_state(instance)
-        for instance, end in parsed
-    )
 
 
 def csv_rows(data: bytes) -> list[dict[str, str]]:
@@ -390,6 +328,7 @@ class Selection:
         self.files = {sha256(data): data for data in files}
         need(self.sel["frame"]["sha256"] in self.files, "frame bytes")
         self.frame = {r["Symbol"]: r for r in csv_rows(self.files[self.sel["frame"]["sha256"]])}
+        self.by_hash = {sha256(s.encode()): s for s in self.frame}
         masters = [data for data in self.files.values() if data.startswith(MASTER_HEADER)]
         need(len(masters) == 1, "master bytes")
         self.master_bytes = masters[0]
@@ -398,7 +337,8 @@ class Selection:
     def universe(self) -> list[str]:
         """Frame symbols outside the hashed exclusion inventory, ASCII-sorted and hash-checked.
         Each exclusion is recomputed: the financials from the frame (one reason), every other
-        (one other reason) from the hit inventory (``token_hits``)."""
+        (one other reason) from the hit inventory (``token_hits``), which must hold every
+        non-financial company with a hit in the history at ``selection_commit``."""
         sel, frame = self.sel, self.sel["frame"]
         need(sel["exclusion_inventory_sha256"] in self.files, "inventory bytes")
         lines = self.files[sel["exclusion_inventory_sha256"]].decode().splitlines()
@@ -415,6 +355,9 @@ class Selection:
         need(all(len(r) <= 1 for r in reasons) and not reasons[0] & reasons[1], "exclusion reasons")
         hit = self.token_hits()
         need(inventory.keys() - financial <= hit <= inventory.keys(), "token exclusions")
+        others = {h: self.frame_tokens(s) for h, s in self.by_hash.items() if h not in financial}
+        used = history_hits(self.repo, sel["selection_commit"], others)
+        need(used <= hit, "historical exclusions")
         universe = sorted(
             (s for s in self.frame if sha256(s.encode()) not in inventory), key=str.encode
         )
@@ -428,7 +371,7 @@ class Selection:
         """Symbol hashes of the hit inventory, every line refused unless it holds: an object hit
         is recomputed against that object, reachable from ``selection_commit``; an untracked file
         or ``data/`` name is not reproducible after selection, so its line must lie in scope."""
-        by_hash = {sha256(s.encode()): s for s in self.frame}
+        by_hash = self.by_hash
         text = (self.root / "exclusion_hits.txt").read_text()
         lines = [line.split(" ", 3) for line in text.splitlines() if line]
         need(
@@ -585,6 +528,14 @@ def check_schema(repo: Path) -> None:
     doc = keyed(record(repo), "record")
     for burn in doc["burns"] or []:
         keyed(burn, "burn")
+        texts = [burn[f] for f in ("reason_code", "bead", "freeze_descriptor_sha256")]
+        need(
+            isinstance(burn["attempt"], int)
+            and all(isinstance(t, str) and t for t in texts)
+            and bool(SHA256.fullmatch(burn["freeze_descriptor_sha256"]))
+            and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(burn["date"]))),
+            "burn fields",
+        )
     for attempt in doc["attempts"]:
         sel, prediction = keyed(attempt, "attempt")["selection"], attempt["prediction"]
         keyed(sel, "selection")
@@ -699,9 +650,9 @@ def introductions(
 
 @holdout_check("ordering")
 def check_ordering(repo: Path) -> None:
-    """D1.5: append-only entries, ``record_k^ == selection_commit``, seeds, IMPL ordering around
-    ``record_1``, freeze descriptors after their record and no IMPL change after the current
-    freeze."""
+    """D1.5: append-only entries, ``record_k^ == selection_commit``, seeds, each burn's descriptor
+    hash that of its attempt's freeze entry at the burn commit, IMPL ordering around ``record_1``,
+    freeze descriptors after their record and no IMPL change after the current freeze."""
     doc, frozen_entries = record(repo), freezes(repo)
     attempts, burns = doc["attempts"], doc["burns"] or []
     need([a["n"] for a in attempts] == list(range(1, len(attempts) + 1)), "attempt numbering")
@@ -722,6 +673,11 @@ def check_ordering(repo: Path) -> None:
         need(parent == sel["selection_commit"], "record parent is not selection_commit")
         need(is_ancestor(repo, sel["seed_commit"], sel["selection_commit"]), "seed ancestry")
         need(k == 1 or sel["seed_commit"] == burned[k - 1][0], "seed is not the burn commit")
+    for burn in burns:  # the burned attempt's descriptor as it stood at the burn
+        k = burn["attempt"]
+        descriptors = [f for f in freezes_at(repo, burned[k][0]) if f["attempt"] == k]
+        hashes = [descriptor_sha256(f) for f in descriptors]
+        need(hashes == [burn["freeze_descriptor_sha256"]], "burn descriptor")
     record_1, seed_1 = entries[1][0], attempts[0]["selection"]["seed_commit"]
     need(not commits(repo, f"{seed_1}..{record_1}", "--", *IMPL), "IMPL commit before record")
     later = commits(repo, "HEAD", "--not", record_1, "--", *IMPL)

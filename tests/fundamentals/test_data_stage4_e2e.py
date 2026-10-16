@@ -206,11 +206,28 @@ def relabelled(rows: tuple[ResultRow, ...]) -> tuple[ResultRow, ...]:
     )
 
 
+def deleted(rows: tuple[ResultRow, ...], target: int) -> tuple[ResultRow, ...]:
+    """The rows with one first-party selection's interpretation id dropped, numbers untouched."""
+    return tuple(
+        row.model_copy(
+            update={
+                "source_values": tuple(
+                    v.model_copy(update={"interpretation_id": None})
+                    if v.source_role is SourceRole.FIRST_PARTY and v.interpretation_id == target
+                    else v
+                    for v in row.source_values
+                )
+            }
+        )
+        for row in rows
+    )
+
+
 def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[..., Any]) -> None:
     """Each mutation that leaves every number unchanged is caught: a relabelled selection or
-    rule, a moved locator, a promoted tier, a broken construction operand, a vendor trace
-    operand replaced by another of its operands (provenance), a wrong recorded mode or pin
-    (``check``, the run-identity check)."""
+    rule, each selection's id or direct occurrence deleted, a moved locator, a promoted tier, a
+    broken construction operand, a vendor trace operand replaced by another of its operands
+    (provenance), a wrong recorded mode or pin (``check``, the run-identity check)."""
     repository, rows, record = outcome.stage.repository, outcome.rows, outcome.record
     read, cells = repository.get_interpretations, repository.get_occurrences
     traces = repository.get_calculation_traces
@@ -274,6 +291,22 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
         )
         if not provenance(outcome, mutated, manifest)
     ]
+    missed += [
+        f"deleted id {n}"
+        for n, target in enumerate(sorted(set(selected(rows))))
+        if not provenance(outcome, deleted(rows, target), manifest)
+    ]
+    for n, occurrence in enumerate(sorted({i.occurrence_id for i in chosen if i.occurrence_id})):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                repository,
+                "get_occurrences",
+                lambda ids, gone=occurrence: tuple(
+                    c for c in cells(ids) if c.occurrence_id != gone
+                ),
+            )
+            if not provenance(outcome, None, manifest):
+                missed.append(f"deleted occurrence {n}")
     for name, method, seam in (
         ("moved locator", "get_occurrences", moved),
         ("promoted tier", "get_interpretations", promoted),

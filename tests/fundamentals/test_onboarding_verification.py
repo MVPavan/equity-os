@@ -42,7 +42,7 @@ from onboarding_support import (
     write_root,
 )
 from pg_support import PgTestDatabase
-from stage4_support import onboarding_mapping_set, xbrl_admitted
+from stage4_filings import onboarding_mapping_set, xbrl_admitted
 
 from fundamentals.contracts.entity_identity import IdentifierNamespace
 from fundamentals.contracts.observation import AccountingFramework

@@ -16,7 +16,8 @@ from typing import Any, cast
 
 import yaml
 from lxml import etree, html  # type: ignore[import-untyped]
-from stage4_support import CONSOLIDATED, UPSTOX, need, period_end, quarter_ends
+from stage4_filings import CONSOLIDATED, period_end, qualifying_filings, quarter_ends
+from stage4_support import UPSTOX, need
 
 from fundamentals.compare.run_models import RunExitStatus
 from fundamentals.contracts.basis_status import BasisStatus
@@ -471,7 +472,8 @@ def check_unit(name: str, unit: dict[str, Any], excluded: list[str]) -> None:
 
 
 class Retained:
-    """The manifest's retained sources, its discovery entries and its two filings' periods."""
+    """The manifest's retained sources, its discovery entries and its two filings' periods: the
+    latest two the D1.3 filing-window rule selects over both listings at discovery's ``as_of``."""
 
     def __init__(self, repo: Path, manifest: dict[str, Any]) -> None:
         sources = manifest["header"]["sources"]
@@ -479,20 +481,22 @@ class Retained:
         found = [s["label"] for s in sources if s["kind"] == DISCOVERY]
         need(len(found) == 1, "discovery source")
         self.discovery = found[0]
-        self.entries = json.loads(self.paths[self.discovery].read_bytes())["entries"]
-        listed = {
-            row["xbrl"]: period_end(row)
+        document = json.loads(self.paths[self.discovery].read_bytes())
+        self.entries = document["entries"]
+        rows = [
+            row
             for s in sources
             if s["kind"] == LISTING
             for row in listing_items(json.loads(self.paths[s["label"]].read_bytes()))[0]
-            if row.get("xbrl")
-        }
+        ]
+        window = qualifying_filings(rows, date.fromisoformat(document["as_of"])) or {}
+        selected = {url: end for end, url in sorted(window.items())[-FILINGS:] if url}
         instances = {e["sha256"]: e["url"] for e in self.ok(XBRL_SURFACE)}
         filings = {s["label"]: self.sha(s["label"]) for s in sources if s["kind"] == XBRL}
-        need(len(instances) == len(filings) == FILINGS, "filings")
+        need(len(instances) == len(filings) == len(selected) == FILINGS, "filings")
         need(sorted(filings.values()) == sorted(instances), "filings")
-        need(set(instances.values()) <= listed.keys(), "filings")
-        self.periods = {label: listed[instances[sha]] for label, sha in filings.items()}
+        need(sorted(instances.values()) == sorted(selected), "filing window")
+        self.periods = {label: selected[instances[sha]] for label, sha in filings.items()}
 
     def ok(self, surface: str) -> list[dict[str, Any]]:
         """The generation's successful entries of one surface."""
@@ -631,6 +635,8 @@ def check_values(
     }
     single = all(names.count(n) == 1 for n in names if n not in SETTINGS)
     need(set(names) == required and single, "value inventory")
+    latest = max(retained.periods.values())
+    need(str(manifest["onboarding"]["period_end"]) == latest.isoformat(), "period end")
     values = {node["name"]: node["v"] for node in nodes} | {"SYMBOL": attempt["identifier"]}
     for node in nodes:
         check_value(repo, manifest, node, retained, verified, values)

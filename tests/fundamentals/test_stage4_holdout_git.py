@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 import yaml
+from stage4_filings import qualifying_periods
 from stage4_support import (
     BSE_NOT_ONE,
     CHECKS,
@@ -27,8 +28,8 @@ from stage4_support import (
     RefusedError,
     Selection,
     attempt_payload_sha256,
+    descriptor_sha256,
     matcher,
-    qualifying_periods,
     selection_hits,
     sha256,
 )
@@ -159,7 +160,15 @@ def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
         one = one | {"identifier": "ZZOTHER"}
         commit(repo, {RECORD: dump([one])})
     if redraw:
-        burns = [{"attempt": 1, "reason_code": "E2E_DEFECT", "bead": "eqos-zz"}]
+        (entry,) = yaml.safe_load(frozen((impl, one)))["freezes"]
+        cited = {  # the descriptor hash a burn cites: its own attempt's entry, unless violated
+            "burn-wrong-hash": "f" * 64,
+            "burn-another-attempt": descriptor_sha256(entry | {"attempt": 2}),
+        }.get(violation, descriptor_sha256(entry))
+        burns = [
+            {"attempt": 1, "reason_code": "E2E_DEFECT", "bead": "eqos-zz"}
+            | {"freeze_descriptor_sha256": cited, "date": "2026-10-16"}
+        ]
         burn = commit(repo, {RECORD: dump([one], burns)})
         edited, extra = burns[0] | {"bead": "eqos-yy"}, burns[0] | {"attempt": 2}
         texts = (dump([one], burns), dump([one], [edited]), dump([one], [*burns, extra]))
@@ -190,6 +199,8 @@ def test_ordering_accepts_the_d15_sequence(repo: Path, redraw: bool) -> None:
         ("record-edited", "entry changed after its commit"),
         ("impl-after-freeze", "IMPL change after freeze"),
         ("record-parent", "record parent is not selection_commit"),
+        ("burn-wrong-hash", "burn descriptor"),
+        ("burn-another-attempt", "burn descriptor"),
         *(
             (f"{kind}-{how}", "entry changed after its commit")
             for kind in ("attempt", "burn", "freeze")
@@ -416,6 +427,10 @@ DRAW_MUTATIONS: dict[str, tuple[Callable[[Path, dict[str, Any]], object], str]] 
         "token exclusions",
     ),
     "file-hit-line-dropped": (lambda r, s: s["hits"].pop("ZZDATA"), "token exclusions"),
+    "used-company-omitted": (  # from both inventories, the universe recomputed around it
+        lambda r, s: [s["reasons"].pop("ZZUSED"), s["hits"].pop("ZZUSED")],
+        "historical exclusions",
+    ),
     "file-hit-out-of-scope": (
         lambda r, s: s["hits"].update(ZZDATA="file data/holdout/attempt-1/x"),
         "hit files",

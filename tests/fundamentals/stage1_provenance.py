@@ -54,17 +54,25 @@ def provenance(
         for value in row.source_values
         if value.source_role is SourceRole.FIRST_PARTY and value.interpretation_id is not None
     }
-    found = {
-        item.interpretation_id: item
-        for item in repository.get_interpretations(sorted(set(chosen.values())))
-    }
+    # every manifest first-party VALUE side not COMPUTED is read from a selected interpretation
+    lines = [
+        f"{key} {name} has no selected interpretation"
+        for key, row in sorted(want.items())
+        for name in ("xbrl", "pdf")
+        if (side := row.get(name))
+        and side["s"] == "VALUE"
+        and side.get("calc") != "COMPUTED"
+        and (key, name) not in chosen
+    ]
+    read = repository.get_interpretations
+    found = {item.interpretation_id: item for item in read(sorted(set(chosen.values())))}
     cells = {
         cell.occurrence_id: cell
         for cell in repository.get_occurrences(
             sorted({item.occurrence_id for item in found.values() if item.occurrence_id})
         )
     }
-    lines = [
+    lines += [
         f"{key} {name} interpretation {id_} is unknown"
         for (key, name), id_ in sorted(chosen.items())
         if id_ not in found
@@ -82,8 +90,17 @@ def provenance(
             lines.append(f"{key} {name} tier {item.tier.value} is not qualified")
         if all("at" in op for op in side.get("operands", [{}])):  # an XBRL construction
             lines += _operands(repository, sources, f"{key} {name}", side, item)
+        if item.occurrence_id is None:
+            ids = set(item.operand_interpretation_ids)
+            ops = {o.interpretation_id: o.occurrence_id for o in read(sorted(ids))}
+            cited = sorted({o for o in ops.values() if o is not None})
+            held = {c.occurrence_id for c in repository.get_occurrences(cited)}
+            if not ids or ops.keys() != ids or not held >= set(ops.values()):
+                lines.append(f"{key} {name} interpretation {interpretation_id} is unresolved")
+            continue
         cell = cells.get(item.occurrence_id)
         if cell is None:
+            lines.append(f"{key} {name} occurrence {item.occurrence_id} is missing")
             continue
         src, anchor = sources.get(cell.capture.blob_sha256), _json(cell.anchor)
         if src is None:

@@ -21,7 +21,8 @@ from manifest_support import (
     XBRL_SURFACE,
     check_stage4,
 )
-from stage4_support import CONSOLIDATED, FINANCIALS, UPSTOX
+from stage4_filings import CONSOLIDATED, FINANCIALS
+from stage4_support import UPSTOX
 
 from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS, VerificationUnit
 
@@ -29,7 +30,7 @@ DEV_SYMBOL, DEV_ISIN, DEV_SCRIP = "APARINDS", "INE372A01015", "532259"  # aparin
 NAME, MASTER_NAME, SLUG = "APAR INDUSTRIES LIMITED", "Apar Industries Limited", "apar-industries"
 ENTRY = "http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/in-capmkt-ent"
 HREF = "in-capmkt-ent-2026-01-31.xsd"
-FILED = {"INSTANCE": "2026-06-30", "OLDER": "2023-03-31"}  # each filing's listed period end
+FILED = {"INSTANCE": "2026-06-30", "OLDER": "2026-03-31"}  # each filing's listed period end
 
 
 def instance(period: str, year_end: str, name: str, entry: str = ENTRY) -> bytes:
@@ -61,7 +62,7 @@ INTEGRATED = {
         LISTED | {"qe_Date": "30-Jun-2026", "consolidated": CONSOLIDATED, "xbrl": XBRL_URL},
         LISTED | {"qe_Date": "30-Jun-2026", "consolidated": "Non-Consolidated"},
         LISTED | {"qe_Date": "30-Jun-2026", "type": "Integrated Filing- Governance"},
-        LISTED | {"qe_Date": "31-Mar-2023", "consolidated": CONSOLIDATED, "xbrl": OLD_URL},
+        LISTED | {"qe_Date": "31-Mar-2026", "consolidated": CONSOLIDATED, "xbrl": OLD_URL},
     ]
 }
 LEGACY = [{"symbol": DEV_SYMBOL, "toDate": "31-Mar-2026", "consolidated": "Non-Consolidated"}]
@@ -108,7 +109,7 @@ def initial_bytes() -> dict[str, bytes]:
     """Every source's bytes but the discovery manifest's."""
     return {
         "INSTANCE": instance(FILED["INSTANCE"], "2027-03-31", NAME),
-        "OLDER": instance(FILED["OLDER"], "2023-03-31", NAME),
+        "OLDER": instance(FILED["OLDER"], "2026-03-31", NAME),
         "INTEGRATED": json.dumps(INTEGRATED).encode(),
         "LEGACY": json.dumps(LEGACY).encode(),
         "MASTER": MASTER.encode(),
@@ -218,7 +219,7 @@ def values(sha: str) -> list[dict[str, Any]]:
             3,
             [
                 fact("INSTANCE", "DateOfEndOfFinancialYear", "2027-03-31"),
-                fact("OLDER", "DateOfEndOfFinancialYear", "2023-03-31"),
+                fact("OLDER", "DateOfEndOfFinancialYear", "2026-03-31"),
             ],
             **start,
         ),
@@ -242,6 +243,7 @@ def values(sha: str) -> list[dict[str, Any]]:
             [
                 {"src": "INTEGRATED", "path": "data[0].consolidated", "lex": CONSOLIDATED},
                 {"src": "INTEGRATED", "path": "data[1].consolidated", "lex": "Non-Consolidated"},
+                {"src": "INTEGRATED", "path": "data[3].consolidated", "lex": CONSOLIDATED},
                 {"src": "LEGACY", "path": "[0].consolidated", "lex": "Non-Consolidated"},
             ],
             as_of={"src": discovery, "path": "as_of", "lex": "2026-08-01"},
@@ -329,6 +331,7 @@ def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
     manifest = {
         "header": {"manifest": "stage4", "onboarding_versions": dict(VERSIONS), "sources": sources},
         "onboarding": {
+            "period_end": FILED["INSTANCE"],
             "outcome": "PARTIAL",
             "excluded_units": list(excluded),
             "units": {
@@ -386,7 +389,7 @@ def locator(case: dict[str, Any], name: str, src: str) -> dict[str, Any]:
     return cast(dict[str, Any], found)
 
 
-def older(case: dict[str, Any], year_end: str = "2023-03-31", name: str = NAME) -> None:
+def older(case: dict[str, Any], year_end: str = "2026-03-31", name: str = NAME) -> None:
     """SYNTHETIC: the older filing re-declared, its locators following (still captured)."""
     case["bytes"]["OLDER"] = instance(FILED["OLDER"], year_end, name)
     materialise(case)
@@ -397,7 +400,7 @@ def older(case: dict[str, Any], year_end: str = "2023-03-31", name: str = NAME) 
 def year_end_change(case: dict[str, Any], split: bool = True) -> None:
     """A December year end in the older filing, a March one in the latest: one node per value,
     each valid from its earliest filing (D5), unless ``split`` is off."""
-    older(case, year_end="2022-12-31")
+    older(case, year_end="2025-12-31")
     if split:
         node_ = value_node(case, "FISCAL_YEAR_END")
         values_of(case).remove(node_)
@@ -451,13 +454,39 @@ def banking(case: dict[str, Any]) -> None:
     """The older filing re-declared under IntegratedFinance_Banking: same xsd file name
     (Task 0b §2)."""
     banked = ENTRY.replace("_IndAS/", "_Banking/")
-    case["bytes"]["OLDER"] = instance(FILED["OLDER"], "2023-03-31", NAME, banked)
+    case["bytes"]["OLDER"] = instance(FILED["OLDER"], "2026-03-31", NAME, banked)
     materialise(case)
     for loc in value_node(case, "REPORTING_FRAMEWORK")["at"]:
         if loc["src"] == "OLDER":
             loc["lex"] = loc["lex"].replace("_IndAS/", "_Banking/")
 
 
+def relisted(case: dict[str, Any], rows: list[dict[str, Any]], located: list[int]) -> None:
+    """The older filing's listing rows replaced, the basis inventory locating ``located``."""
+    document = json.loads(case["bytes"]["INTEGRATED"])
+    document["data"][3:] = rows
+    case["bytes"]["INTEGRATED"] = json.dumps(document).encode()
+    materialise(case)
+    at = value_node(case, "BASIS_STATUS")["at"]
+    at[:] = [loc for loc in at if loc["path"] != "data[3].consolidated"] + [
+        {"src": "INTEGRATED", "path": f"data[{i}].consolidated", "lex": CONSOLIDATED}
+        for i in located
+    ]
+
+
+def out_of_window(case: dict[str, Any]) -> None:
+    """Sol's counterexample: the older filing listed before the window, its settings following."""
+    relisted(case, [OLD_ROW | {"qe_Date": "31-Mar-2023"}], [])
+    for item in values_of(case):
+        if "valid_from" in item:
+            item["valid_from"] = "2023-03-31"
+
+
+OLD_ROW = LISTED | {"consolidated": CONSOLIDATED, "xbrl": OLD_URL}
+REVISION = {  # the retained filing superseded by a later broadcast of its period
+    "broadcast_Date": "25-Jul-2026 10:00:00",
+    "xbrl": OLD_URL.replace("OLD", "REV"),
+}
 UPSTOX_FAILURE = "upstox/income-statement:upstox-income-statement-summary-v2\t-\tattempt=-"
 STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] = {
     # name: (exclusion set, mutation, the checks that must refuse)
@@ -484,6 +513,21 @@ STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] =
         {"stage4"},
     ),
     "second-instance-deleted": ("pdf-only", drop_older, {"stage4"}),
+    "second-filing-out-of-window": ("pdf-only", out_of_window, {"stage4"}),
+    "period-end-not-the-latest": (
+        "pdf-only",
+        lambda case: case["manifest"]["onboarding"].update(period_end=FILED["OLDER"]),
+        {"stage4"},
+    ),
+    "second-filing-not-the-latest-revision": (
+        "pdf-only",
+        lambda case: relisted(
+            case,
+            [OLD_ROW | {"qe_Date": "31-Mar-2026"}, OLD_ROW | REVISION | {"qe_Date": "31-Mar-2026"}],
+            [3, 4],
+        ),
+        {"stage4"},
+    ),
     "screener-evidence-deleted": ("pdf-only", drop_screener, {"stage4"}),
     "binding-deleted": (
         "pdf-only",
