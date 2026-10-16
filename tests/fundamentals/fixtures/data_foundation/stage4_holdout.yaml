@@ -36,6 +36,46 @@ attempts:
     verdict: APPROVE
     date: '2026-10-16'
     payload_sha256: 2b153148842c308fbb69e1541203ef3aa1fd8d0b5171114f36886d1ca3b28cd0
+- identifier: NLCINDIA
+  n: 2
+  prediction:
+    capability_commit: 6d07b9fa702f1e50439ffa6bacabb22ab7651375
+    capability_sha256: 8cf774148bce3571a458d6bb5fc97655cdfa152392a6f8a3ddd67de491617832
+    diagnostic_excluded: []
+    excluded_units:
+    - RESULTS_PDF
+    outcome: PARTIAL
+    run_status: INCOMPLETE
+  selection:
+    as_of: 2026-10-16
+    catalogue_exemptions:
+    - path: scratchpad/upstox/entity-map-2026-09-04/entity_map.json
+      sha256: c2f81973797cb4d362c76061c41dd7d17579ba244ebf20f28119ef0c23c911f7
+    - path: scratchpad/upstox/entity-map-v2/entity_map.json
+      sha256: 9f61287c82e46244b0823a5fac25da7313a5d0ba39c325b434139ce5aafbbc2a
+    exclusion_inventory_sha256: 1b36ba1dadc1bad0e540e30aed2fc310718ca49e8fad77a92976a81c752c4b10
+    frame:
+      column: Industry
+      excluded_values:
+      - Financial Services
+      retrieved_at: '2026-10-16T15:21:24.374619+00:00'
+      sha256: 2959bf206239284e145f7aecc65095b18d11556d2642323a70f2d26efe0f5cb3
+      url: https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv
+    n_universe: 172
+    seed_commit: f7f2812558da28a9a745413949de2f21b2be7740
+    selected_index: 116
+    selection_commit: 95b9953b4041ad69ef8a0461b588f76568c24e65
+    skips: []
+    start_index: 116
+    universe_sha256: c5d7b452df9eebd811b0cb2583235bb96341e6f6a5952768ab1d45ca12c5cb5b
+  approval:
+    reviewer: gpt-6.1-sol
+    verdict: APPROVE
+    date: '2026-10-16'
+    payload_sha256: 7556645a12fcd63fda2d456b524f03f073c92abcc343f04b8b4da6631741d20a
 burns:
-  - {attempt: 1, reason_code: ACQUISITION_DEFECT, bead: eqos-h4h.7, freeze_descriptor_sha256: edd4b9bcd853e54af315e147a3a319956b9d26ab584d70d220140da6da31d037,
-  date: '2026-10-16'}
+- attempt: 1
+  reason_code: ACQUISITION_DEFECT
+  bead: eqos-h4h.7
+  freeze_descriptor_sha256: edd4b9bcd853e54af315e147a3a319956b9d26ab584d70d220140da6da31d037
+  date: '2026-10-16'
