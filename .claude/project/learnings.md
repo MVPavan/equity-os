@@ -275,3 +275,13 @@ Format per entry:
   tree path (a few seconds), then park the file in `scratchpad/phase05/staged/` until that
   slice is dispatched; moving it back restores the proof hash. Test authors write to the
   staged path directly and locate the repo root by walking up to `config/fundamentals.yaml`.
+
+## Live smoke before any one-shot live run  (2026-10-16)
+- Observed: D6 attempt 1 was frozen with every test green, then the live acquisition hit
+  BSE `PeerSmartSearch` 403. The transport's custom User-Agent was refused; the Task 0b probe's
+  `Mozilla/5.0 (X11; Linux x86_64)` was accepted. Tests replace the transport, so request
+  headers were never exercised. The fix touched `src/` after the freeze, so the attempt burned.
+- Why it matters: a header- or session-level defect costs a held-out draw and a re-review cycle.
+- Apply: before freezing for a live one-shot, run the real transport against a development
+  company on a scratch `eqos_test_*` DB and require every surface OK
+  (`scratchpad/execution/d6/live_smoke.py` pattern: `discover` + `live_transport`).
