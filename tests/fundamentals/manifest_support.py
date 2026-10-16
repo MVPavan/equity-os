@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import copy
+import csv
 import gzip
 import hashlib
+import io
 import json
 import re
 from collections.abc import Callable
@@ -14,8 +15,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
-from lxml import etree  # type: ignore[import-untyped]
-from stage4_support import CONSOLIDATED, FINANCIALS, UPSTOX, need, period_end, quarter_ends
+from lxml import etree, html  # type: ignore[import-untyped]
+from stage4_support import CONSOLIDATED, UPSTOX, need, period_end, quarter_ends
 
 from fundamentals.compare.run_models import RunExitStatus
 from fundamentals.contracts.basis_status import BasisStatus
@@ -261,6 +262,15 @@ def payload_sha256(content: bytes) -> str:
     return hashlib.sha256(b"".join(lines[:index] + lines[index + 1 :])).hexdigest()
 
 
+def approved(manifest: bytes, current: bytes) -> None:
+    """``manifest`` carries its own dated APPROVE over its own payload, the ``current`` one."""
+    approval = yaml.safe_load(manifest)["header"]["approval"]
+    assert approval["verdict"] == "APPROVE"
+    assert isinstance(approval["date"], date), "an approval records its date (YYYY-MM-DD)"
+    assert approval["payload_sha256"] == payload_sha256(manifest), "approval of another payload"
+    assert payload_sha256(manifest) == payload_sha256(current), "the payload changed since"
+
+
 def stage3_file(manifest: dict[str, Any], stem: str) -> dict[str, Any]:
     (found,) = [f for f in manifest["files"] if f["stem"] == stem]
     return cast(dict[str, Any], found)
@@ -315,8 +325,16 @@ def framework_of_entry_point(locators: Locators) -> str | None:
     return AccountingFramework.IND_AS.value if hrefs and spaces and held else None
 
 
+def normalise_name(name: str) -> str:
+    """The D4.3 pinned name normalisation, restated: casefold, drop ``.`` and ``,``, collapse
+    whitespace, trailing ``ltd`` -> ``limited``."""
+    folded = " ".join(name.casefold().replace(".", "").replace(",", "").split())
+    return re.sub(r"\bltd$", "limited", folded)
+
+
 TRANSFORMS: dict[str, Callable[[Locators], Any]] = {  # the closed set
-    "identity": lambda locs: one({loc["lex"] for loc in locs}),
+    "identity": lambda locs: one({str(loc["lex"]) for loc in locs}),
+    "normalised_name": lambda locs: one({normalise_name(loc["lex"]) for loc in locs}),
     "month_of_date": lambda locs: one({date.fromisoformat(loc["lex"]).month for loc in locs}),
     "basis_of_inventory": lambda locs: (
         (
@@ -330,11 +348,13 @@ TRANSFORMS: dict[str, Callable[[Locators], Any]] = {  # the closed set
 
 
 XBRL = "xbrl"  # header source kind of a retained filing instance
-VALUE_RULES = {  # the complete inventory: name -> (transform, located field) (T5a, D5)
+FILINGS = 2  # D4.2 step 3: the latest two qualifying consolidated instances
+SETTINGS = ("FISCAL_YEAR_END", "PRESENTATION_CURRENCY", "ROUNDING_LEVEL", "REPORTING_FRAMEWORK")
+VALUE_RULES = {  # the complete inventory: name -> (transform, located filing field) (T5a, D5)
     "SYMBOL": ("identity", "Symbol"),
     "ISIN": ("identity", "ISIN"),
     "BSE_SCRIP": ("identity", "ScripCode"),
-    "NAME": ("identity", "NameOfTheCompany"),
+    "NAME": ("normalised_name", "NameOfTheCompany"),
     "FISCAL_YEAR_END": ("month_of_date", "DateOfEndOfFinancialYear"),
     "PRESENTATION_CURRENCY": ("identity", "DescriptionOfPresentationCurrency"),
     "ROUNDING_LEVEL": ("identity", "LevelOfRounding"),
@@ -342,6 +362,35 @@ VALUE_RULES = {  # the complete inventory: name -> (transform, located field) (T
     "BASIS_STATUS": ("basis_of_inventory", "consolidated"),
     "DOCUMENT_URL": ("identity", "url"),  # DOCUMENT_LOCATION of the ingested instance
     "DOCUMENT_SHA256": ("identity", "sha256"),
+    "SCREENER_COMPANY_ID": ("identity", ""),  # vendor-own ids: binding locators only
+    "SCREENER_WAREHOUSE_ID": ("identity", ""),
+    "TIJORI_SLUG": ("identity", ""),
+    "TIJORI_COMPANY_ID": ("identity", ""),
+}
+SURFACE_UNITS = {  # discovery surfaces of the identity bindings and their units (D4.2)
+    "EQUITY_L": "EXCHANGE",
+    "PEER_SMART_SEARCH": "EXCHANGE",
+    "SCREENER_SEARCH": "SCREENER",
+    "SCREENER_FINANCIALS": "SCREENER",
+    "company_search": "TIJORI",
+    "financials": "TIJORI",
+    "instruments": "UPSTOX",
+}
+BINDINGS = {  # binding locator ``fld`` -> (surface, value its ``key`` must be, value it locates)
+    "master_isin": ("EQUITY_L", "SYMBOL", "ISIN"),
+    "master_name": ("EQUITY_L", "SYMBOL", "NAME"),
+    "peer_scrip": ("PEER_SMART_SEARCH", "ISIN", "BSE_SCRIP"),
+    "screener_search_id": ("SCREENER_SEARCH", "SYMBOL", "SCREENER_COMPANY_ID"),
+    "screener_page_id": ("SCREENER_FINANCIALS", None, "SCREENER_COMPANY_ID"),
+    "screener_warehouse_id": ("SCREENER_FINANCIALS", None, "SCREENER_WAREHOUSE_ID"),
+    "screener_nse": ("SCREENER_FINANCIALS", None, "SYMBOL"),
+    "screener_bse": ("SCREENER_FINANCIALS", None, "BSE_SCRIP"),
+    "tijori_search_slug": ("company_search", None, "TIJORI_SLUG"),
+    "tijori_page_slug": ("financials", None, "TIJORI_SLUG"),
+    "tijori_company_id": ("financials", None, "TIJORI_COMPANY_ID"),
+    "tijori_symbol": ("financials", None, "SYMBOL"),
+    "upstox_nse_symbol": ("instruments", "ISIN", "SYMBOL"),
+    "upstox_bse_token": ("instruments", "ISIN", "BSE_SCRIP"),
 }
 DISCOVERY = "discovery_manifest"  # header source kind of the discovery generation's manifest
 XBRL_SURFACE = "NSE_XBRL_INSTANCE"  # contracts.source_catalog.NSE_XBRL_INSTANCE
@@ -351,6 +400,55 @@ EXCLUDED_REASONS: dict[str, set[str] | None] = {  # a PARTIAL attempt's excluded
     VerificationState.NOT_AUTHORISED: {OnboardingReason.NOT_AUTHORISED},
     VerificationState.UNVERIFIED: None,  # any recorded reason, e.g. a basis gate's own code
 }
+COMPANY_DETAILS = re.compile(
+    rb'<script id="company_details" type="application/json">(.*?)</script>', re.S
+)
+TIJORI_DETAILS = {"tijori_page_slug": "slug", "tijori_company_id": "company_id"}
+SCREENER_IDS = {"screener_page_id": "company", "screener_warehouse_id": "warehouse"}
+
+
+def read_binding(path: Path, fld: str, key: str | None) -> str:
+    """The identity value a binding locator names in its retained bytes, by the D4.3 rule
+    restated here: exactly one record (for ``key``), else the unpacking fails."""
+    raw = path.read_bytes()
+    if fld.startswith("master_"):
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        rows = [{k.strip(): (v or "").strip() for k, v in r.items() if k} for r in reader]
+        (row,) = [r for r in rows if r.get("SYMBOL") == key and r.get("SERIES") == "EQ"]
+        return row["ISIN NUMBER" if fld == "master_isin" else "NAME OF COMPANY"]
+    if fld == "peer_scrip":
+        items = re.findall(r"<li\b.*?</li>", json.loads(raw), re.S)
+        (item,) = [li for li in items if f"<strong>{key}</strong>" in li]
+        (scrip,) = re.findall(r"</strong>(?:&nbsp;|\s)*(\d+)", item)
+        return str(scrip)
+    if fld == "screener_search_id":
+        urls = {f"/company/{key}/", f"/company/{key}/consolidated/"}
+        (found,) = [
+            i["id"] for i in json.loads(raw) if i.get("id") is not None and i["url"] in urls
+        ]
+        return str(found)
+    if fld == "tijori_search_slug":
+        (slug,) = [item["slug"] for item in json.loads(raw) if item.get("type") == "companies"]
+        return str(slug)
+    if fld.startswith("upstox_"):
+        segment, column = {
+            "upstox_nse_symbol": ("NSE_EQ", "trading_symbol"),
+            "upstox_bse_token": ("BSE_EQ", "exchange_token"),
+        }[fld]
+        rows = json.loads(gzip.decompress(raw))
+        (row,) = [r for r in rows if r.get("isin") == key and r.get("segment") == segment]
+        return str(row[column])
+    if fld.startswith("tijori_"):
+        (island,) = COMPANY_DETAILS.findall(raw)
+        return str(json.loads(island)[TIJORI_DETAILS.get(fld, "symbol")])
+    root = html.fromstring(raw)
+    if fld in SCREENER_IDS:
+        (value,) = set(root.xpath(f"//@data-{SCREENER_IDS[fld]}-id"))
+        return str(value)
+    spans = " ".join(span.text_content() for span in root.xpath("//*[@id='top']//span"))
+    exchange = "NSE" if fld == "screener_nse" else "BSE"
+    (code,) = {v for ex, v in re.findall(r"\b(BSE|NSE):\s*(\S+)", spans) if ex == exchange}
+    return str(code)
 
 
 def check_unit(name: str, unit: dict[str, Any], excluded: list[str]) -> None:
@@ -372,57 +470,99 @@ def check_unit(name: str, unit: dict[str, Any], excluded: list[str]) -> None:
         )
 
 
+class Retained:
+    """The manifest's retained sources, its discovery entries and its two filings' periods."""
+
+    def __init__(self, repo: Path, manifest: dict[str, Any]) -> None:
+        sources = manifest["header"]["sources"]
+        self.paths = {s["label"]: repo / s["path"] for s in sources}
+        found = [s["label"] for s in sources if s["kind"] == DISCOVERY]
+        need(len(found) == 1, "discovery source")
+        self.discovery = found[0]
+        self.entries = json.loads(self.paths[self.discovery].read_bytes())["entries"]
+        listed = {
+            row["xbrl"]: period_end(row)
+            for s in sources
+            if s["kind"] == LISTING
+            for row in listing_items(json.loads(self.paths[s["label"]].read_bytes()))[0]
+            if row.get("xbrl")
+        }
+        instances = {e["sha256"]: e["url"] for e in self.ok(XBRL_SURFACE)}
+        filings = {s["label"]: self.sha(s["label"]) for s in sources if s["kind"] == XBRL}
+        need(len(instances) == len(filings) == FILINGS, "filings")
+        need(sorted(filings.values()) == sorted(instances), "filings")
+        need(set(instances.values()) <= listed.keys(), "filings")
+        self.periods = {label: listed[instances[sha]] for label, sha in filings.items()}
+
+    def ok(self, surface: str) -> list[dict[str, Any]]:
+        """The generation's successful entries of one surface."""
+        return [e for e in self.entries if e["surface"] == surface and e["outcome"] == "OK"]
+
+    def sha(self, label: str) -> str:
+        """Hex SHA-256 of one source's bytes."""
+        return hashlib.sha256(self.paths[label].read_bytes()).hexdigest()
+
+
 def check_value(
-    repo: Path, manifest: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any]
+    repo: Path,
+    manifest: dict[str, Any],
+    node: dict[str, Any],
+    retained: Retained,
+    verified: set[str],
+    values: dict[str, Any],
 ) -> None:
-    """One onboarding value: its name's transform, every locator at its name's field, the
-    filing values covering every retained filing, the symbol the current attempt's."""
+    """One onboarding value: its name's transform; its filing locators at its name's field,
+    covering every filing (a setting: its own filings, valid from the earliest); a binding
+    locator for each identity field of every verified unit, on a successful discovery capture
+    and keyed by this issuer's identity."""
     name, locators = node["name"], node["at"]
     transform, field = VALUE_RULES[name]
     need(node["transform"] == transform, f"{name} transform")
     got = TRANSFORMS[transform](locators)
-    need(got is not None and str(got) == str(node["v"]), f"value {name}")
+    want = normalise_name(str(node["v"])) if transform == "normalised_name" else str(node["v"])
+    need(got is not None and str(got) == want, f"value {name}")
     if transform == "basis_of_inventory":
         located = {(loc["src"], loc["path"]) for loc in locators}
         as_of = date.fromisoformat(node["as_of"]["lex"])
         need(located == basis_rows(repo, manifest, as_of), "basis inventory")
         return
     if name.startswith("DOCUMENT_"):
-        check_document(repo, manifest, field, locators)
+        check_document(retained, field, locators)
         return
-    filings = {s["label"] for s in manifest["header"]["sources"] if s["kind"] == XBRL}
+    bound = [loc for loc in locators if "fld" in loc]
+    wanted = [f for f, (s, _, n) in BINDINGS.items() if n == name and SURFACE_UNITS[s] in verified]
+    need(sorted(loc["fld"] for loc in bound) == sorted(wanted), f"{name} bindings")
+    for loc in bound:
+        surface, key, _ = BINDINGS[loc["fld"]]
+        captured = {e["sha256"] for e in retained.ok(surface)}
+        need(retained.sha(loc["src"]) in captured, f"{name} capture")
+        need(loc.get("key") == (key and str(values[key])), f"{name} key")
+    filed = [loc for loc in locators if "fld" not in loc]
+    srcs = {loc["src"] for loc in filed}
     key = "ref" if transform == "framework_of_entry_point" else "c"
-    at_field = all(loc.get(key) in field.split() for loc in locators)
-    need(at_field and {loc["src"] for loc in locators} == filings != set(), f"{name} locators")
-    need(name != "SYMBOL" or node["v"] == attempt["identifier"], "identifier")
+    at_field = all(loc.get(key) in field.split() for loc in filed)
+    need(at_field and srcs <= retained.periods.keys() and bool(srcs) == bool(field), f"{name} at")
+    if name in SETTINGS:
+        start = min(retained.periods[src] for src in srcs)
+        need(str(node.get("valid_from")) == start.isoformat(), f"{name} valid_from")
+    elif field:
+        need(srcs == retained.periods.keys(), f"{name} locators")
+    need(name != "SYMBOL" or node["v"] == values["SYMBOL"], "identifier")
 
 
-def check_document(repo: Path, manifest: dict[str, Any], field: str, locators: Locators) -> None:
-    """D5 DOCUMENT_LOCATION: the field of the discovery-manifest entry of the ingested instance
-    (the OK NSE XBRL instance of the latest listed period), whose SHA-256 is a retained
-    filing's bytes."""
-    sources = manifest["header"]["sources"]
-    found = {s["label"]: s["path"] for s in sources if s["kind"] == DISCOVERY}
-    need(len(locators) == len(found) == 1, "document locator")
-    (loc,), ((label, path),) = locators, found.items()
-    entries = json.loads((repo / path).read_bytes())["entries"]
-    listed = {
-        row["xbrl"]: period_end(row)
-        for s in sources
-        if s["kind"] == LISTING
-        for row in listing_items(json.loads((repo / s["path"]).read_bytes()))[0]
-        if row.get("xbrl")
-    }
-    instances = [e for e in entries if e["surface"] == XBRL_SURFACE and e["outcome"] == "OK"]
-    latest = max(instances, key=lambda entry: listed[entry["url"]])
-    at = f"entries[{entries.index(latest)}].{field}"
-    need(loc["src"] == label and loc["path"] == at, "document locator")
-    retained = {
-        hashlib.sha256((repo / s["path"]).read_bytes()).hexdigest()
-        for s in sources
-        if s["kind"] == XBRL
-    }
-    need(latest["sha256"] in retained, "document bytes")
+def check_document(retained: Retained, field: str, locators: Locators) -> None:
+    """D5 DOCUMENT_LOCATION: the field of the discovery-manifest entry of the ingested instance,
+    the filing of the latest listed period."""
+    latest = retained.sha(max(retained.periods, key=retained.periods.__getitem__))
+    instances = retained.ok(XBRL_SURFACE)
+    (index,) = [
+        i for i, e in enumerate(retained.entries) if e in instances and e["sha256"] == latest
+    ]
+    at = f"entries[{index}].{field}"
+    need(
+        [(loc["src"], loc["path"]) for loc in locators] == [(retained.discovery, at)],
+        "document locator",
+    )
 
 
 def listing_items(doc: Any) -> tuple[list[dict[str, Any]], str]:
@@ -452,8 +592,9 @@ def check_stage4(
 ) -> None:
     """The Stage 4 manifest against the current attempt's prediction, its freeze entry and
     ``ONBOARDING_VERSIONS``; each unit's exact verdict; operational failures projected to the
-    non-diagnostic excluded units' surfaces; the complete value inventory, each value equal to
-    its located lexemes after its name's transform. Lexemes at their locators are
+    non-diagnostic excluded units' surfaces; the complete value inventory over both filings and
+    every verified unit's identity bindings, each value equal to its located lexemes after its
+    name's transform. Lexemes at their locators are
     ``check_locator``'s; failures name the step only (D1.7)."""
     onboarding, prediction, (run,) = manifest["onboarding"], attempt["prediction"], manifest["runs"]
     versions = ONBOARDING_VERSIONS.model_dump(exclude_defaults=True)
@@ -472,304 +613,28 @@ def check_stage4(
     surfaces = {UNIT_SURFACES[VerificationUnit(u)] for u in excluded if u != UPSTOX}
     failed = {failure_surface(f) for f in run.get("operational_failures", [])}
     need(failed == surfaces, "operational failures")
-    names = sorted(node["name"] for node in onboarding["values"])
-    need(names == sorted(VALUE_RULES), "value inventory")
-    for node in onboarding["values"]:
-        check_value(repo, manifest, node, attempt)
+    verified = {u for u, unit in units.items() if unit["state"] == VerificationState.VERIFIED}
+    check_values(repo, manifest, attempt, verified)
 
 
-# Synthetic Stage 4 cases over a development company (Apar), files under ``tmp_path``.
-DEV_SYMBOL, DEV_ISIN = "APARINDS", "INE372A01015"  # config/identity/aparinds.yaml
-ENTRY = "http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/in-capmkt-ent"
-HREF = "in-capmkt-ent-2026-01-31.xsd"
-INSTANCE = f"""<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
- xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink"
- xmlns:in-capmkt="http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt" xmlns:in-capmkt-ent="{ENTRY}">
-<link:schemaRef xlink:type="simple" xlink:href="{HREF}"/>
-<xbrli:context id="c1"><xbrli:period><xbrli:instant>2026-06-30</xbrli:instant></xbrli:period>
-</xbrli:context>
-<in-capmkt:DateOfEndOfFinancialYear contextRef="c1">2027-03-31</in-capmkt:DateOfEndOfFinancialYear>
-<in-capmkt:Symbol contextRef="c1">APARINDS</in-capmkt:Symbol>
-<in-capmkt:ISIN contextRef="c1">INE372A01015</in-capmkt:ISIN>
-<in-capmkt:ScripCode contextRef="c1">532259</in-capmkt:ScripCode>
-<in-capmkt:NameOfTheCompany contextRef="c1">APAR INDUSTRIES LIMITED</in-capmkt:NameOfTheCompany>
-<in-capmkt:DescriptionOfPresentationCurrency contextRef="c1">INR\
-</in-capmkt:DescriptionOfPresentationCurrency>
-<in-capmkt:LevelOfRounding contextRef="c1">Crores</in-capmkt:LevelOfRounding>
-</xbrli:xbrl>"""
-LISTED = {"symbol": DEV_SYMBOL, "type": FINANCIALS, "broadcast_Date": "24-Jul-2026 18:34:26"}
-XBRL_URL = "https://nsearchives.nseindia.com/corporate/xbrl/APAR_JUN.xml"
-OLD_URL = "https://nsearchives.nseindia.com/corporate/xbrl/APAR_OLD.xml"
-INTEGRATED = {
-    "data": [
-        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": CONSOLIDATED, "xbrl": XBRL_URL},
-        LISTED | {"qe_Date": "30-Jun-2026", "consolidated": "Non-Consolidated"},
-        LISTED | {"qe_Date": "30-Jun-2026", "type": "Integrated Filing- Governance"},
-        LISTED | {"qe_Date": "31-Mar-2023", "consolidated": CONSOLIDATED, "xbrl": OLD_URL},
-    ]
-}
-LEGACY = [{"symbol": DEV_SYMBOL, "toDate": "31-Mar-2026", "consolidated": "Non-Consolidated"}]
-EXCLUSIONS = {  # R-PDF always excludes RESULTS_PDF
-    "pdf-only": ["RESULTS_PDF"],
-    "upstox-diagnostic": ["RESULTS_PDF", "UPSTOX"],
-    "mixed": ["RESULTS_PDF", "TIJORI", "UPSTOX"],
-}
-VERDICTS = {  # an excluded unit's (state, reason)
-    "RESULTS_PDF": ("UNAVAILABLE", "EXCLUDED_BY_RULE"),
-    "TIJORI": ("UNAVAILABLE", "ACCESS_FAILED"),
-    "UPSTOX": ("UNVERIFIED", "BASIS_UNVERIFIED"),
-}
-FAILURES = {
-    "RESULTS_PDF": "PDF\tEXCLUDED_BY_RULE\tattempt=7",
-    "TIJORI": "tijori/financials\t-\tattempt=-",
-}
-VERSIONS = {"dictionary": "v2", "mapping_set": "v5"}
-ROWS = [{"isin": DEV_ISIN, "trading_symbol": DEV_SYMBOL}]  # Upstox instruments (gzip)
-INSTRUMENT_ISIN = {"src": "INSTRUMENTS", "path": "[0].isin", "lex": DEV_ISIN, "gz": True}
-FACT = "{src: INSTANCE, c: %s, ctx: c1, u: null, d: null, per: '2026-06-30', lex: '%s'}"
-VALUES = (
-    f"""
-- {{name: SYMBOL, transform: identity, v: APARINDS, at: [{FACT % ("Symbol", "APARINDS")}]}}
-- {{name: ISIN, transform: identity, v: INE372A01015, at: [{FACT % ("ISIN", "INE372A01015")}]}}
-- {{name: BSE_SCRIP, transform: identity, v: '532259', at: [{FACT % ("ScripCode", "532259")}]}}
-- {{name: NAME, transform: identity, v: APAR INDUSTRIES LIMITED,
-   at: [{FACT % ("NameOfTheCompany", "APAR INDUSTRIES LIMITED")}]}}
-- {{name: PRESENTATION_CURRENCY, transform: identity, v: INR,
-   at: [{FACT % ("DescriptionOfPresentationCurrency", "INR")}]}}
-- {{name: ROUNDING_LEVEL, transform: identity, v: Crores,
-   at: [{FACT % ("LevelOfRounding", "Crores")}]}}
-- {{name: FISCAL_YEAR_END, transform: month_of_date, v: 3,
-   at: [{FACT % ("DateOfEndOfFinancialYear", "2027-03-31")}]}}
-"""
-    + """
-- {name: REPORTING_FRAMEWORK, transform: framework_of_entry_point, v: IND_AS, at: [
-   {src: INSTANCE, ref: schemaRef, lex: in-capmkt-ent-2026-01-31.xsd},
-   {src: INSTANCE, ref: namespace, lex: '%(entry)s'}]}
-- {name: DOCUMENT_URL, transform: identity, v: '%(url)s',
-   at: [{src: DISCOVERY, path: 'entries[0].url', lex: '%(url)s'}]}
-- {name: DOCUMENT_SHA256, transform: identity, v: '%(sha)s',
-   at: [{src: DISCOVERY, path: 'entries[0].sha256', lex: '%(sha)s'}]}
-- {name: BASIS_STATUS, transform: basis_of_inventory, v: CONSOLIDATED_AND_STANDALONE,
-   as_of: {src: DISCOVERY, path: as_of, lex: '2026-08-01'}, at: [
-   {src: INTEGRATED, path: 'data[0].consolidated', lex: Consolidated},
-   {src: INTEGRATED, path: 'data[1].consolidated', lex: Non-Consolidated},
-   {src: LEGACY, path: '[0].consolidated', lex: Non-Consolidated}]}
-"""
-)
-
-
-def stage4_case(name: str, root: Path, run: dict[str, Any]) -> dict[str, Any]:
-    """A synthetic Stage 4 manifest, attempt and freeze entry, consistent for the case's
-    exclusion set and then mutated; its Stage 1-schema run a copy of a development run carrying
-    the excluded failures; ``check`` runs ``check_stage4`` on it, ``fails`` names the checks that
-    must refuse (``run`` = ``check_run``)."""
-    base, mutate, fails = STAGE4_CASES[name]
-    files = {
-        "INSTANCE": ("instance.xml", "xbrl", INSTANCE.encode()),
-        "INTEGRATED": ("integrated.json", LISTING, json.dumps(INTEGRATED).encode()),
-        "LEGACY": ("legacy.json", LISTING, json.dumps(LEGACY).encode()),
-        "DISCOVERY": ("discovery.json", DISCOVERY, json.dumps(discovery_doc()).encode()),
-        "INSTRUMENTS": ("instruments.json.gz", "json", gzip.compress(json.dumps(ROWS).encode())),
+def check_values(
+    repo: Path, manifest: dict[str, Any], attempt: dict[str, Any], verified: set[str]
+) -> None:
+    """The complete value inventory (each verified unit's identity ids too), one node per name
+    but one per setting value; each setting's nodes partition the two filings; every node
+    equal to its located lexemes after its name's transform."""
+    retained, nodes = Retained(repo, manifest), manifest["onboarding"]["values"]
+    names = [node["name"] for node in nodes]
+    required = {n for n, (_, field) in VALUE_RULES.items() if field} | {
+        n for s, _, n in BINDINGS.values() if SURFACE_UNITS[s] in verified
     }
-    for file, _, data in files.values():
-        (root / file).write_bytes(data)
-    excluded = EXCLUSIONS[base]
-    failures = [FAILURES[u] for u in excluded if u in FAILURES]
-    sha = hashlib.sha256(INSTANCE.encode()).hexdigest()
-    values = yaml.safe_load(VALUES % {"entry": ENTRY, "url": XBRL_URL, "sha": sha})
-    sources = [
-        {"label": label, "path": str(root / file), "kind": kind}
-        for label, (file, kind, _) in files.items()
-    ]
-    manifest = {
-        "header": {"manifest": "stage4", "onboarding_versions": dict(VERSIONS), "sources": sources},
-        "onboarding": {
-            "outcome": "PARTIAL",
-            "excluded_units": list(excluded),
-            "units": {
-                u: dict(zip(("state", "reason"), VERDICTS[u], strict=True))
-                if u in excluded
-                else {"state": "VERIFIED"}
-                for u in VerificationUnit
-            },
-            "values": values,
-        },
-        "runs": [
-            copy.deepcopy(run)
-            | {"operational_failures": failures, "status": "INCOMPLETE", "exit": 4}
-        ],
-    }
-    prediction = {
-        "outcome": "PARTIAL",
-        "excluded_units": list(excluded),
-        "diagnostic_excluded": [u for u in excluded if u == UPSTOX],
-        "run_status": "INCOMPLETE" if set(excluded) - {UPSTOX} else "COMPLETE",
-    }
-    attempt = {"n": 1, "identifier": DEV_SYMBOL, "prediction": prediction}
-    freeze = {"attempt": 1, "onboarding_versions": dict(VERSIONS)}
-    case = {"root": root, "manifest": manifest, "attempt": attempt, "freeze": freeze}
-    unit_of(case, UPSTOX)["at"] = [dict(INSTRUMENT_ISIN)]  # a compressed ``field`` locator (T5a)
-    mutate(case)
-    return case | {"fails": fails, "check": lambda: check_stage4(root, manifest, attempt, freeze)}
-
-
-def discovery_doc(sha: str | None = None) -> dict[str, Any]:
-    """The synthetic discovery manifest: the ingested Jun instance, then an older one."""
-    entry = {"surface": XBRL_SURFACE, "outcome": "OK"}
-    jun = sha or hashlib.sha256(INSTANCE.encode()).hexdigest()
-    return {
-        "as_of": "2026-08-01",
-        "entries": [
-            entry | {"url": XBRL_URL, "sha256": jun},
-            entry | {"url": OLD_URL, "sha256": "0" * 64},
-        ],
-    }
-
-
-def document_sha_wrong(case: dict[str, Any]) -> None:
-    """The entry, value and lexeme agree on a hash that is no retained filing's bytes."""
-    (case["root"] / "discovery.json").write_text(json.dumps(discovery_doc("f" * 64)))
-    node = value_node(case, "DOCUMENT_SHA256")
-    node["v"] = node["at"][0]["lex"] = "f" * 64
-
-
-def value_node(case: dict[str, Any], name: str) -> dict[str, Any]:
-    """One onboarding value of a case."""
-    (node,) = [n for n in values_of(case) if n["name"] == name]
-    return node
-
-
-def banking(case: dict[str, Any]) -> None:
-    """The filing re-declared under IntegratedFinance_Banking: same xsd file name (Task 0b §2)."""
-    instance = case["root"] / "instance.xml"
-    instance.write_text(instance.read_text().replace("_IndAS/", "_Banking/"))
-    for loc in value_node(case, "REPORTING_FRAMEWORK")["at"]:
-        loc["lex"] = loc["lex"].replace("_IndAS/", "_Banking/")
-
-
-def values_of(case: dict[str, Any]) -> list[dict[str, Any]]:
-    """The case's onboarding values."""
-    return cast(list[dict[str, Any]], case["manifest"]["onboarding"]["values"])
-
-
-def unit_of(case: dict[str, Any], unit: str) -> dict[str, Any]:
-    """One unit's verdict of a case."""
-    return cast(dict[str, Any], case["manifest"]["onboarding"]["units"][unit])
-
-
-def run_of_case(case: dict[str, Any]) -> dict[str, Any]:
-    """The case's one run."""
-    return cast(dict[str, Any], case["manifest"]["runs"][0])
-
-
-UPSTOX_FAILURE = "upstox/income-statement:upstox-income-statement-summary-v2\t-\tattempt=-"
-STAGE4_CASES: dict[str, tuple[str, Callable[[dict[str, Any]], Any], set[str]]] = {
-    # name: (exclusion set, mutation, the checks that must refuse)
-    **{base: (base, lambda case: None, set()) for base in EXCLUSIONS},
-    "incomplete-to-complete": (
-        "pdf-only",
-        lambda case: run_of_case(case).update(status="COMPLETE", exit=3),
-        {"run", "stage4"},
-    ),
-    "upstox-failure-projected": (
-        "upstox-diagnostic",
-        lambda case: run_of_case(case)["operational_failures"].append(UPSTOX_FAILURE),
-        {"stage4"},
-    ),
-    "mixed-failure-dropped": (
-        "mixed",
-        lambda case: run_of_case(case)["operational_failures"].pop(),
-        {"stage4"},
-    ),
-    "unit-state-wrong": (
-        "pdf-only",
-        lambda case: case["manifest"]["onboarding"]["units"]["TIJORI"].update(state="UNVERIFIED"),
-        {"stage4"},
-    ),
-    "basis-wrong": (
-        "pdf-only",
-        lambda case: value_node(case, "BASIS_STATUS").update(v="STANDALONE_ONLY"),
-        {"stage4"},
-    ),
-    "basis-row-unlocated": (
-        "pdf-only",
-        lambda case: value_node(case, "BASIS_STATUS")["at"].pop(),
-        {"stage4"},
-    ),
-    "framework-banking-namespace": ("pdf-only", banking, {"stage4"}),
-    "onboarding-versions-wrong": (
-        "pdf-only",
-        lambda case: case["manifest"]["header"]["onboarding_versions"].update(mapping_set="v4"),
-        {"stage4"},
-    ),
-    "values-deleted": ("pdf-only", lambda case: values_of(case).clear(), {"stage4"}),
-    "value-duplicated": (
-        "pdf-only",
-        lambda case: values_of(case).append(copy.deepcopy(value_node(case, "ISIN"))),
-        {"stage4"},
-    ),
-    "framework-as-identity-of-isin": (
-        "pdf-only",
-        lambda case: value_node(case, "REPORTING_FRAMEWORK").update(
-            transform="identity", v=DEV_ISIN, at=copy.deepcopy(value_node(case, "ISIN")["at"])
-        ),
-        {"stage4"},
-    ),
-    "currency-at-rounding-field": (
-        "pdf-only",
-        lambda case: value_node(case, "PRESENTATION_CURRENCY").update(
-            v="Crores", at=copy.deepcopy(value_node(case, "ROUNDING_LEVEL")["at"])
-        ),
-        {"stage4"},
-    ),
-    "filing-unlocated": (
-        "pdf-only",
-        lambda case: case["manifest"]["header"]["sources"].append(
-            {"label": "OLDER", "path": str(case["root"] / "instance.xml"), "kind": XBRL}
-        ),
-        {"stage4"},
-    ),
-    "symbol-not-the-attempts": (
-        "pdf-only",
-        lambda case: case["attempt"].update(identifier="ZZOTHER"),
-        {"stage4"},
-    ),
-    "pdf-state-conflict": (
-        "pdf-only",
-        lambda case: unit_of(case, "RESULTS_PDF").update(state="CONFLICT"),
-        {"stage4"},
-    ),
-    "pdf-reason-changed": (
-        "pdf-only",
-        lambda case: unit_of(case, "RESULTS_PDF").update(reason="ACCESS_FAILED"),
-        {"stage4"},
-    ),
-    "vendor-reason-missing": (
-        "mixed",
-        lambda case: unit_of(case, "TIJORI").pop("reason"),
-        {"stage4"},
-    ),
-    "document-location-omitted": (
-        "pdf-only",
-        lambda case: values_of(case).remove(value_node(case, "DOCUMENT_SHA256")),
-        {"stage4"},
-    ),
-    "document-url-of-an-older-instance": (
-        "pdf-only",
-        lambda case: value_node(case, "DOCUMENT_URL").update(
-            v=OLD_URL, at=[{"src": "DISCOVERY", "path": "entries[1].url", "lex": OLD_URL}]
-        ),
-        {"stage4"},
-    ),
-    "document-url-wrong": (
-        "pdf-only",
-        lambda case: value_node(case, "DOCUMENT_URL").update(v=OLD_URL),
-        {"stage4"},
-    ),
-    "document-sha-not-the-retained-bytes": ("pdf-only", document_sha_wrong, {"stage4"}),
-    "vendor-state-conflict": (
-        "mixed",
-        lambda case: unit_of(case, "TIJORI").update(state="CONFLICT"),
-        {"stage4"},
-    ),
-}
+    single = all(names.count(n) == 1 for n in names if n not in SETTINGS)
+    need(set(names) == required and single, "value inventory")
+    values = {node["name"]: node["v"] for node in nodes} | {"SYMBOL": attempt["identifier"]}
+    for node in nodes:
+        check_value(repo, manifest, node, retained, verified, values)
+    for name in SETTINGS:
+        group = [node for node in nodes if node["name"] == name]
+        filed = [{loc["src"] for loc in node["at"]} for node in group]
+        covered = sum(map(len, filed)) == len(retained.periods) == len(set().union(*filed))
+        need(covered and len({str(node["v"]) for node in group}) == len(group), f"{name} periods")

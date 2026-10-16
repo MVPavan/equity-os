@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, LiteralString, NoReturn
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 import psycopg
@@ -135,7 +135,7 @@ ORIGINS = {
     UPSTOX_STATEMENT: "api.upstox.com",
 }
 _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text={isin}"
-_SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?q={symbol}&v=3&fts=1"
+_SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?{query}"
 _SCREENER_PAGE_URL = "https://www.screener.in/company/{symbol}/consolidated/"
 _TIJORI_SEARCH_URL = "https://www.tijorifinance.com/api/v1/ind/company_search/?q={isin}"
 _TIJORI_PAGE_URL = "https://www.tijorifinance.com/company/{slug}/financials/"
@@ -154,6 +154,12 @@ _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
 _ABORT_AUTH = "{surface} is not authorised"
 _BAD_REPLAY = "replay generation {folder}: {why}"
+
+
+def screener_search_url(symbol: str) -> str:
+    """The Screener search request for ``symbol``, its query URL-encoded (``M&M`` stays one
+    value)."""
+    return _SCREENER_SEARCH_URL.format(query=urlencode({"q": symbol, "v": 3, "fts": 1}))
 
 
 class Recorded(BaseModel):
@@ -541,7 +547,7 @@ def _vendors(run: _Run) -> None:
     )
 
     def screener_check() -> Verdict:
-        search = run.get(screener, SCREENER_SEARCH, _SCREENER_SEARCH_URL.format(symbol=symbol))
+        search = run.get(screener, SCREENER_SEARCH, screener_search_url(symbol))
         found = screener_candidate(search, symbol)
         if not isinstance(found, int):
             return found
@@ -555,7 +561,7 @@ def _vendors(run: _Run) -> None:
         if not isinstance(found, str):
             return found
         page = run.get(tijori, TIJORI_PAGE, _TIJORI_PAGE_URL.format(slug=found))
-        return tijori_page_state(page, symbol)
+        return tijori_page_state(page, found, symbol)
 
     def upstox_check() -> Verdict:
         rows = run.get(upstox, UPSTOX_INSTRUMENTS, _INSTRUMENTS_URL)

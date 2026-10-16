@@ -8,8 +8,9 @@ complete one: its manifest present, valid and naming it) and never opens a socke
 ``--acquire`` writes the next generation through the live transport, and only on a checkout
 that satisfies the freeze protocol (C5): the descriptor's current entry complete, approved,
 bound to the current held-out attempt and committed at ``HEAD``, its implementation commit an
-ancestor of the first commit holding the entry, and no implementation path changed since or
-uncommitted. The live transport keeps the real HTTP status, follows no redirect and bounds
+ancestor of the first commit holding the entry, no commit since touching an implementation path
+and none uncommitted, the descriptor in the running checkout and ``--config-root`` its
+``config``. The live transport keeps the real HTTP status, follows no redirect and bounds
 every body. An admitted issuer
 (``ONBOARDED``/``PARTIAL``) then gets its derived settings, the latest verified filing as an
 XBRL-only package, each verified vendor capture, the R-PDF exclusion attempt (D5) and the
@@ -25,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -123,6 +125,7 @@ from fundamentals.store.snapshot_store import MAX_BODY_BYTES, SnapshotStore
 
 ONBOARD_COMMAND = "onboard"
 DEFAULT_CONFIG_ROOT = "config"
+SOURCE_CHECKOUT = Path(__file__).resolve().parents[3]  # the checkout this code runs from
 ACQUISITION_NAME = "acquisition.json"
 GENERATION_PREFIX = "gen-"
 IMPLEMENTATION_PATHS = ("src", "config", "migrations", "scripts", "pyproject.toml", "uv.lock")
@@ -141,10 +144,6 @@ SCREENER_SECTIONS = (
 NSE_RESULTS_PDF_SOURCE = "nse-results-pdf"
 RULING_PDF = "R-PDF"
 COMPARE_PREFIX = "compare: "
-COMPARE_COMMAND = (
-    "fundamentals compare run --entity {entity} --period-end {period_end} --basis consolidated "
-    "--mode as_known --dictionary {dictionary} --mapping-set {mapping_set}{vendors}"
-)
 _ADMITTED = (OnboardingOutcome.ONBOARDED, OnboardingOutcome.PARTIAL)
 _TIJORI_COMPANY_ID = "company_id"
 _EVIDENCE_REF = "evidence_input:{id}"
@@ -302,7 +301,7 @@ def _onboard(args: argparse.Namespace) -> int:
     ``compare run`` command follow (D5)."""
     if args.acquire and args.generation is not None:
         raise ValueError(_ACQUIRE_GENERATION)
-    acquisition = _frozen(args.freeze_descriptor) if args.acquire else None
+    acquisition = _frozen(args.freeze_descriptor, args.config_root) if args.acquire else None
     config = load_run_config(args.config_root, ONBOARDING_VERSIONS)
     root: Path = args.raw_root
     taken = sorted(
@@ -500,17 +499,26 @@ def _ingest(
                 _INGEST_FAILED.format(what="/".join(pair), outcome=vendor.attempt.outcome)
             )
     exclude_pdf(repository, entity_id, period, _sha256((folder / MANIFEST_NAME).read_bytes()))
-    vendors = "".join(
-        f" --vendor {surface}"
+    return compare_command(key, period, args.config_root)
+
+
+def compare_command(entity: str, period_end: date, config_root: Path) -> str:
+    """The ``compare run`` command under ``ONBOARDING_VERSIONS`` and onboarding's config root,
+    shell-quoted (an entity key such as ``M&M`` stays one argument)."""
+    vendors = [
+        arg
         for unit, surface in UNIT_SURFACES.items()
         if unit is not VerificationUnit.RESULTS_PDF
-    )
-    return COMPARE_COMMAND.format(
-        entity=key,
-        period_end=period.isoformat(),
-        dictionary=ONBOARDING_VERSIONS.dictionary,
-        mapping_set=ONBOARDING_VERSIONS.mapping_set,
-        vendors=vendors,
+        for arg in ("--vendor", surface)
+    ]
+    return shlex.join(
+        [
+            *("fundamentals", "compare", "run", "--entity", entity),
+            *("--period-end", period_end.isoformat(), "--basis", "consolidated"),
+            *("--mode", "as_known", "--config-root", str(config_root)),
+            *("--dictionary", ONBOARDING_VERSIONS.dictionary),
+            *("--mapping-set", ONBOARDING_VERSIONS.mapping_set, *vendors),
+        ]
     )
 
 
@@ -633,14 +641,19 @@ def _sha256(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def _frozen(descriptor: Path | None) -> dict[str, Any]:
-    """C5: the freeze protocol's checks over ``HEAD``'s committed descriptor entry, and what the
-    acquisition records of them (``freeze_descriptor_sha256`` hashes the entry as
-    ``yaml.safe_dump(sort_keys=True)``, the D1.1 payload rule)."""
+def _frozen(descriptor: Path | None, config_root: Path) -> dict[str, Any]:
+    """C5: the freeze protocol's checks over ``HEAD``'s committed descriptor entry, in the
+    running checkout with its own ``config``, and what the acquisition records of them
+    (``freeze_descriptor_sha256`` hashes the entry as ``yaml.safe_dump(sort_keys=True)``, the
+    D1.1 payload rule)."""
     if descriptor is None:
         raise ValueError(_NEEDS_DESCRIPTOR)
-    repo = Path(_git(descriptor.resolve().parent, "rev-parse", "--show-toplevel"))
-    path = str(descriptor.resolve().relative_to(repo.resolve()))
+    repo = Path(_git(descriptor.resolve().parent, "rev-parse", "--show-toplevel")).resolve()
+    if repo != SOURCE_CHECKOUT.resolve():
+        raise ValueError(_UNFROZEN.format(why="the descriptor is not in the running checkout"))
+    if config_root.resolve() != (repo / DEFAULT_CONFIG_ROOT).resolve():
+        raise ValueError(_UNFROZEN.format(why="--config-root is not the checkout's config"))
+    path = str(descriptor.resolve().relative_to(repo))
     if _git(repo, "status", "--porcelain", "--", *IMPLEMENTATION_PATHS, path, HOLDOUT_RECORD):
         raise ValueError(_UNFROZEN.format(why="uncommitted changes"))
     head = _git(repo, "rev-parse", "HEAD")
@@ -650,7 +663,8 @@ def _frozen(descriptor: Path | None) -> dict[str, Any]:
     holding = [commit for commit in commits if entry in _freezes(repo, commit, path)]
     implementation = str(entry[_IMPLEMENTATION])
     _git(repo, "merge-base", "--is-ancestor", implementation, holding[0])
-    _git(repo, "diff", "--quiet", implementation, head, "--", *IMPLEMENTATION_PATHS)
+    if _git(repo, "rev-list", f"{implementation}..{head}", "--", *IMPLEMENTATION_PATHS):
+        raise ValueError(_UNFROZEN.format(why="an implementation commit since the freeze"))
     return {
         "attempt": entry["attempt"],
         "freeze_descriptor_sha256": _sha256(yaml.safe_dump(entry, sort_keys=True).encode()),

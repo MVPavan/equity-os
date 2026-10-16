@@ -123,8 +123,9 @@ def test_apar_on_a_seeded_database_resolves_to_its_d1a_ids(
     assert record[4] == entity_id and table_counts(pg_db) == before
 
 
-NEW_SYMBOL, CHANGED_ON = (
+NEW_SYMBOL, NEW_SCRIP, CHANGED_ON = (
     "ZZAPAR",
+    "999001",  # SYNTHETIC scrip
     date(2026, 6, 1),
 )  # between the Mar (28-May) and Jun (24-Jul) filings
 
@@ -134,9 +135,10 @@ NEW_SYMBOL, CHANGED_ON = (
 def test_reonboarding_after_isin_and_symbol_change_keeps_ids(
     cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path
 ) -> None:
-    """C6-C8: after an ISIN_CHANGE and a SYMBOL_CHANGE between the two filings, fixtures
-    carrying the new values (the older filing still the old ones) re-onboard to the same
-    entity, security and listing ids; Upstox verifies against the new ISIN's rows."""
+    """C6-C8: after an ISIN_CHANGE and NSE and BSE SYMBOL_CHANGEs between the two filings,
+    fixtures carrying the new values (the older filing still the old ones, its ScripCode the
+    old scrip) re-onboard to the same entity, security and listing ids; Upstox verifies against
+    the new ISIN's rows."""
     assert cli(APAR, write_root(tmp_path / "raw1", world(APAR), APAR)) == INCOMPLETE
     first, states = recorded(pg_db)
     assert {u for u, (s, _) in states.items() if s == S.VERIFIED} == VERIFIED_FIVE
@@ -156,9 +158,17 @@ def test_reonboarding_after_isin_and_symbol_change_keeps_ids(
         (IdentifierNamespace.NSE_SYMBOL, APAR),
         NEW_SYMBOL,
     )
+    db_event(
+        pg_db,
+        IdentityEventKind.SYMBOL_CHANGE,
+        CHANGED_ON,
+        (IdentifierNamespace.BSE_SCRIP, APAR_SCRIP),
+        NEW_SCRIP,
+    )
     served = world(APAR)
     rename(served, APAR_ISIN, new_isin, keep=(MAR,))
     rename(served, APAR, NEW_SYMBOL, keep=(MAR,))
+    rename(served, APAR_SCRIP, NEW_SCRIP, keep=(MAR,))
     assert cli(NEW_SYMBOL, write_root(tmp_path / "raw2", served, NEW_SYMBOL)) == INCOMPLETE
     records = rows(pg_db, "SELECT outcome, entity_id FROM eqos.onboarding_records ORDER BY id")
     assert records[-1] == (OC.PARTIAL.value, first[4])
@@ -174,7 +184,8 @@ def test_reonboarding_after_isin_and_symbol_change_keeps_ids(
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         old = {v.value for v in latest_slice(conn, CHANGED_ON - timedelta(days=1))}
         new = {v.value for v in latest_slice(conn)}
-    assert {APAR_ISIN, APAR} <= old and {new_isin, NEW_SYMBOL} <= new and APAR not in new
+    assert {APAR_ISIN, APAR, APAR_SCRIP} <= old and {new_isin, NEW_SYMBOL, NEW_SCRIP} <= new
+    assert APAR not in new and APAR_SCRIP not in new
 
 
 @pytest.mark.pg

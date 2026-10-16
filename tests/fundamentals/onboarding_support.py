@@ -317,15 +317,20 @@ def yaml_sha(mapping: dict[str, Any]) -> str:
     return hashlib.sha256(yaml.safe_dump(mapping, sort_keys=True).encode()).hexdigest()
 
 
-def freeze_repo(tmp_path: Path, burned: bool = False) -> tuple[Path, str, dict[str, Any]]:
-    """A git repo whose implementation commit holds ``src/`` and a synthetic held-out record
-    (one attempt, burned or current); returns the complete descriptor entry for it."""
+def freeze_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, burned: bool = False
+) -> tuple[Path, str, dict[str, Any]]:
+    """A git repo, made the running checkout, whose implementation commit holds ``src/``, a
+    ``config`` link to the repository's own and a synthetic held-out record (one attempt,
+    burned or current); returns the complete descriptor entry for it."""
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     git(repo, "init", "-q")
     git(repo, "config", "user.email", "t@example.invalid")
     git(repo, "config", "user.name", "t")
     (repo / "src" / "impl.py").write_text("x = 1\n")
+    (repo / "config").symlink_to(REPO_ROOT / "config")
+    monkeypatch.setattr(onboard_cli, "SOURCE_CHECKOUT", repo)
     attempt: dict[str, Any] = {
         "n": 1,
         "identifier": "ZZSYNTH",
@@ -337,14 +342,16 @@ def freeze_repo(tmp_path: Path, burned: bool = False) -> tuple[Path, str, dict[s
     record = repo / HOLDOUT_RECORD
     record.parent.mkdir(parents=True)
     record.write_text(yaml.safe_dump({"attempts": [attempt], "burns": burns if burned else []}))
-    git(repo, "add", "src/impl.py", HOLDOUT_RECORD)
+    git(repo, "add", "src/impl.py", "config", HOLDOUT_RECORD)
     git(repo, "commit", "-qm", "impl")
     implementation = git(repo, "rev-parse", "HEAD")
     entry = {
         "attempt": 1,
         "implementation_commit": implementation,
         "inputs": list(IMPLEMENTATION_PATHS),
-        "tree": {"src": git(repo, "rev-parse", f"{implementation}:src")},
+        "tree": {
+            path: git(repo, "rev-parse", f"{implementation}:{path}") for path in ("config", "src")
+        },
         "holdout_payload_sha256": payload,
         "onboarding_versions": {"dictionary": "v2", "mapping_set": "v5"},
         "review": dict(REVIEW),

@@ -12,14 +12,16 @@ import email.message
 import hashlib
 import io
 import json
+import shlex
 import shutil
 import urllib.request
 import urllib.response
 from collections.abc import Callable
 from contextlib import nullcontext
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import requests
@@ -49,6 +51,7 @@ from onboarding_support import (
     yaml_sha,
 )
 from pg_support import PgTestDatabase
+from retained_support import REPO_ROOT
 
 from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
@@ -60,6 +63,7 @@ from fundamentals.entity.discovery import (
     Request,
     acquiring_fetch,
     authorised,
+    screener_search_url,
 )
 from fundamentals.ingest.http_session import ResponseTooLargeError
 from fundamentals.ingest.nse_filings import NSE_API, listing_url
@@ -95,7 +99,7 @@ def test_acquire_then_replay_is_identical_and_leaks_nothing(
     outcome and window; altered retained entries refuse; a second acquisition writes gen-2 and
     leaves gen-1 byte-identical, and an echoed credential lands nowhere. ``acquisition.json``
     carries every D2 field, bound to the committed descriptor entry."""
-    repo, implementation, entry = freeze_repo(tmp_path)
+    repo, implementation, entry = freeze_repo(tmp_path, monkeypatch)
     descriptor = freeze(repo, entry)
     raw = tmp_path / "raw"
     clock = datetime(2026, 10, 16, 2, 20, 24, tzinfo=UTC)
@@ -192,6 +196,7 @@ ENTRY_BREACHES: dict[str, Callable[[dict[str, Any]], object]] = {
 }
 BREACHES = [
     *("dirty_impl", "entry_uncommitted", "impl_after_freeze", "head_at_implementation"),
+    *("impl_changed_then_reverted", "other_checkout", "other_config_root"),
     *("attempt_burned", *ENTRY_BREACHES),
 ]
 
@@ -203,8 +208,11 @@ def test_acquire_refuses_outside_the_freeze_protocol(
     """C5 and D6 step 2: acquisition only on the descriptor commit or a descendant with no IMPL
     change, the entry committed, complete, APPROVEd, pinning the implementation's inputs, tree
     and configuration, and bound to the current unburned attempt and its payload hash; each
-    breach refuses (exit 5) before any request."""
-    repo, implementation, entry = freeze_repo(tmp_path, burned=breach == "attempt_burned")
+    breach refuses (exit 5) before any request, as does an implementation commit since the
+    freeze even if reverted, a descriptor outside the running checkout and another config root."""
+    repo, implementation, entry = freeze_repo(
+        tmp_path, monkeypatch, burned=breach == "attempt_burned"
+    )
     if breach in ENTRY_BREACHES:
         ENTRY_BREACHES[breach](entry)
     descriptor = freeze(repo, entry)
@@ -215,8 +223,16 @@ def test_acquire_refuses_outside_the_freeze_protocol(
     elif breach == "impl_after_freeze":
         (repo / "src" / "impl.py").write_text("x = 3\n")
         git(repo, "commit", "-qam", "late")
+    elif breach == "impl_changed_then_reverted":
+        (repo / "src" / "impl.py").write_text("x = 3\n")
+        git(repo, "commit", "-qam", "late")
+        git(repo, "revert", "--no-edit", "HEAD")
     elif breach == "head_at_implementation":
         git(repo, "checkout", "-q", implementation)
+    elif breach == "other_checkout":
+        monkeypatch.setattr(onboard_cli, "SOURCE_CHECKOUT", REPO_ROOT)
+    elif breach == "other_config_root":
+        shutil.copytree(REPO_ROOT / "config", tmp_path / "config")
     monkeypatch.setattr(onboard_cli, "live_transport", lambda: _raising)
     args = [
         "onboard",
@@ -228,6 +244,7 @@ def test_acquire_refuses_outside_the_freeze_protocol(
         "--acquire",
         "--freeze-descriptor",
         str(descriptor),
+        *(("--config-root", str(tmp_path / "config")) if breach == "other_config_root" else ()),
     ]
     assert main(args) == FAILURE
     assert not (tmp_path / "raw").exists()
@@ -249,7 +266,7 @@ def test_a_denied_request_is_recorded_and_replayed_from_the_record(
     """D4.4: an unregistered vendor surface is a capture-less NOT_AUTHORISED manifest entry with
     no transport call (PARTIAL); replay after the table gains it still serves the recorded
     denial. An unregistered anchor surface aborts the same way: entry kept, no record."""
-    repo, _, entry = freeze_repo(tmp_path)
+    repo, _, entry = freeze_repo(tmp_path, monkeypatch)
     acquire = ("--acquire", "--freeze-descriptor", str(freeze(repo, entry)))
     raw, sent = tmp_path / "raw", []
     monkeypatch.setattr(
@@ -297,7 +314,7 @@ def test_an_off_origin_xbrl_link_is_never_requested(
 ) -> None:
     """A substituted listing pointing the latest instance at an internal http host: the request
     is refused before the transport (NOT_AUTHORISED entry), the anchor aborts, no record."""
-    repo, _, entry = freeze_repo(tmp_path)
+    repo, _, entry = freeze_repo(tmp_path, monkeypatch)
     served, sent = world(APAR), []
     old = b"https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_" + JUN.encode()
     edit(served, "integrated-filing", old, b"http://127.0.0.1/synthetic/" + JUN.encode())
@@ -334,6 +351,18 @@ def test_authority_binds_each_surface_to_its_https_origin(
     port or userinfo."""
     request = Request(unit=U.XBRL_ENTITY, source_id=pair[0], surface=pair[1], url=url)
     assert authorised(request, VENDOR_SURFACES) is allowed
+
+
+def test_a_reserved_character_symbol_stays_one_value_in_request_and_printed_command() -> None:
+    """SYNTHETIC ``ZZ&A`` (NSE symbols may carry ``&``, e.g. ``M&M``): Screener's search query
+    carries it as one ``q`` value, and the printed ``compare run`` command, split as a shell
+    does, keeps the entity and an alternate config root as single arguments."""
+    query = parse_qs(urlsplit(screener_search_url("ZZ&A")).query)
+    assert query == {"q": ["ZZ&A"], "v": ["3"], "fts": ["1"]}
+    command = onboard_cli.compare_command("ZZ&A", date(2026, 6, 30), Path("/zz alt/config"))
+    argv = list(shlex.shlex(command, posix=True, punctuation_chars=True))  # ``&`` is a token
+    assert argv[argv.index("--entity") + 1] == "ZZ&A"
+    assert argv[argv.index("--config-root") + 1] == "/zz alt/config"
 
 
 @pytest.mark.pg
@@ -444,7 +473,7 @@ def test_a_listing_body_timing_out_is_retained_and_exits_cleanly(
 ) -> None:
     """The NSE listing answers 200 and its streamed body read times out: the acquisition keeps
     the request as a TIMEOUT entry and the command fails with exit 5, no record."""
-    repo, _, entry = freeze_repo(tmp_path)
+    repo, _, entry = freeze_repo(tmp_path, monkeypatch)
     monkeypatch.setattr(onboard_cli, "nse_session", lambda: nullcontext(_NseSession(_STALLED)))
     _no_credentials(monkeypatch)
     nse, served = onboard_cli.live_transport(), serving_transport(world(APAR))

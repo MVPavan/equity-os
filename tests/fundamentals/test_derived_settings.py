@@ -29,6 +29,7 @@ from onboarding_support import (
     freeze,
     freeze_repo,
     fresh_db,
+    recorded,
     rows,
     serving_transport,
     world,
@@ -69,6 +70,7 @@ SEED_COMMIT = "82a84db"  # the plan commit: every extractor-pinned source as of 
 MAR_END, JUN_END = date(2026, 3, 31), date(2026, 6, 30)
 FAILURE = 5
 PIN_FLAGS = ("--dictionary", "v2", "--mapping-set", "v5")
+_FIN_TABLES = b'<script id="fin_tables_data" type="application/json">'
 
 
 def _discovery(served: list[dict[str, Any]]) -> Discovery:
@@ -215,8 +217,10 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
     executed verbatim, is INCOMPLETE with failures projecting exactly to PDF
     (EXCLUDED_BY_RULE) and no Screener schedule side. Controls: without the exclusion attempt
     PDF is NO_VALUE and the run COMPLETE; Tijori also excluded adds exactly tijori/financials;
-    only Upstox excluded leaves exactly PDF; the CLI's v1 defaults fail or diverge."""
-    repo, _, entry = freeze_repo(tmp_path)
+    only Upstox excluded leaves exactly PDF; a standalone-only Tijori page records TIJORI
+    UNVERIFIED (PARTIAL) and adds exactly tijori/financials; the CLI's v1 defaults fail or
+    diverge."""
+    repo, _, entry = freeze_repo(tmp_path, monkeypatch)
     descriptor = freeze(repo, entry)
     raw = tmp_path / "raw"
     monkeypatch.setattr(onboard_cli, "live_transport", lambda: serving_transport(world(APAR)))
@@ -294,10 +298,20 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
             ("INCOMPLETE", {"PDF", "tijori/financials"}),
         ),
         ("no-upstox", _denied(tmp_path, UPSTOX_INSTRUMENTS), {}, ("INCOMPLETE", {"PDF"})),
+        (
+            "tijori-standalone",
+            _standalone_tijori(tmp_path),
+            {},
+            ("INCOMPLETE", {"PDF", "tijori/financials"}),
+        ),
     ]
     for tag, root, patches, expected in controls:
         db, command, context = replayed(tag, root, **patches)
         try:
+            if tag == "tijori-standalone":
+                (_, outcome, *_), states = recorded(db)
+                assert outcome == "PARTIAL"
+                assert states["TIJORI"] == ("UNVERIFIED", "BASIS_UNVERIFIED")
             _, run_id = _compare(command, capsys)
             assert run_id is not None
             assert _failures(db, run_id) == expected, tag
@@ -315,6 +329,19 @@ def _denied(tmp_path: Path, pair: tuple[str, str]) -> Path:
         if (item["source_id"], item["surface"]) == pair:
             item["outcome"] = "NOT_AUTHORISED"
     return write_root(tmp_path / f"raw-{pair[1]}", served, APAR)
+
+
+def _standalone_tijori(tmp_path: Path) -> Path:
+    """SYNTHETIC: a replay root whose authenticated, correct-company Tijori page carries only
+    standalone tables (every consolidated table null), so verification refuses its basis."""
+    served = world(APAR)
+    (page,) = [item for item in served if item["surface"] == "financials"]
+    head, rest = page["body"].split(_FIN_TABLES, 1)
+    island, tail = rest.split(b"</script>", 1)
+    tables = json.loads(island)
+    tables.update({key: None for key in tables if key.split("_")[1:2] == ["c"]})
+    page["body"] = head + _FIN_TABLES + json.dumps(tables).encode() + b"</script>" + tail
+    return write_root(tmp_path / "raw-tijori-standalone", served, APAR)
 
 
 def _comparable(db: PgTestDatabase, run_id: int) -> list[tuple[Any, ...]]:

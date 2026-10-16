@@ -15,7 +15,6 @@ import re
 import subprocess
 from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import date
 from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from functools import cache
@@ -29,16 +28,17 @@ from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
 from manifest_support import (
     LEDGER3_MUTATIONS,
-    STAGE4_CASES,
     Mutation,
+    approved,
     check_ledger,
     check_ledger_stage3,
     check_stage4,
     expected_status,
     payload_sha256,
-    stage4_case,
+    read_binding,
     xml_refs,
 )
+from stage4_cases import STAGE4_CASES, stage4_case
 from stage4_support import CHECKS as HOLDOUT_CHECKS
 from stage4_support import current, refused
 
@@ -77,6 +77,7 @@ SHAPES = {  # locator shape -> (required, optional) fields besides VALUE_FIELDS 
     "text": ({"src", "line", "lex"}, set()),  # lexeme verbatim on that 1-based line
     "field": ({"src", "path", "lex"}, {"gz"}),  # JSON/YAML value at the path, as text
     "xml_ref": ({"src", "ref", "lex"}, set()),  # an instance's schemaRef href or namespace
+    "binding": ({"src", "fld", "lex"}, {"key"}),  # a Stage 4 identity field (read_binding)
 }
 GROUP_FIELDS = {
     "screener_html": ("sec", "row"),
@@ -317,6 +318,8 @@ def check_locator(manifest: dict[str, Any], loc: dict[str, Any]) -> None:
         assert str(field_at(path, loc["path"], loc.get("gz", False))) == loc["lex"], loc
     elif shape == "xml_ref":
         assert loc["lex"] in xml_refs(path.read_bytes())[loc["ref"]], loc
+    elif shape == "binding":
+        assert read_binding(path, loc["fld"], loc.get("key")) == loc["lex"], loc
 
 
 @cache
@@ -749,7 +752,8 @@ def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
 
 @per_manifest
 def test_approved_payload_preceded_its_e2e(path: Path) -> None:
-    """The e2e's first commit is a child of a commit whose manifest payload is the approved one."""
+    """The e2e's first commit is a child of a commit whose manifest carries its own APPROVE
+    over the current payload (``approved``)."""
     e2e = E2E[path.name.removesuffix("_manifest.yaml")]
     if not (REPO / e2e).exists():
         return
@@ -759,17 +763,13 @@ def test_approved_payload_preceded_its_e2e(path: Path) -> None:
 
     added = git("log", "--diff-filter=A", "--format=%H", "--", e2e).split()
     assert added, f"{e2e} is not committed"
-    before = git("show", f"{added[-1].decode()}^:{path.relative_to(REPO)}")
-    assert payload_sha256(before) == load(path)["header"]["approval"]["payload_sha256"]
+    approved(git("show", f"{added[-1].decode()}^:{path.relative_to(REPO)}"), path.read_bytes())
 
 
 @per_manifest
 def test_manifest_is_approved(path: Path) -> None:
-    approval, payload = load(path)["header"]["approval"], payload_sha256(path.read_bytes())
-    print(f"{path.name} payload_sha256: {payload}")
-    assert approval["verdict"] == "APPROVE"
-    assert isinstance(approval["date"], date), "an approval records its date (YYYY-MM-DD)"
-    assert approval["payload_sha256"] == payload, "the approval covers another payload"
+    print(f"{path.name} payload_sha256: {payload_sha256(path.read_bytes())}")
+    approved(path.read_bytes(), path.read_bytes())
 
 
 @pytest.mark.parametrize("name", LEDGER3_MUTATIONS)

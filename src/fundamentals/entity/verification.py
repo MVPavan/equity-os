@@ -44,6 +44,8 @@ from fundamentals.ingest.screener_session_page import (
     read_page_evidence,
 )
 from fundamentals.ingest.tijori_capture import classify_financials_body
+from fundamentals.ingest.tijori_source import TijoriSource
+from fundamentals.ingest.tijori_tables import TijoriError, TijoriTableScope
 from fundamentals.ingest.upstox_source import (
     AcquisitionOutcome,
     UpstoxCapture,
@@ -229,11 +231,12 @@ def exchange_state(
 
 
 def filing_codes(filing: FilingIdentity, expected: Expected, scrip: str) -> Verdict:
-    """The filing's ``ScripCode`` the verified ``scrip`` (and the one expected at its date) and
-    its ``Symbol`` the expected symbol."""
+    """The filing's ``ScripCode`` the one expected at its date (an unresolved issuer: the
+    verified current ``scrip``; the resolver checks that against current ownership) and its
+    ``Symbol`` the expected symbol."""
     want = expected.scrip or scrip
-    if filing.scrip != {scrip} or want != scrip:
-        return differs("scrip", sorted(filing.scrip | {scrip}), want)
+    if filing.scrip != {want}:
+        return differs("scrip", sorted(filing.scrip), want)
     if filing.symbol != {expected.symbol}:
         return differs("filing symbol", sorted(filing.symbol), expected.symbol)
     return VERIFIED
@@ -290,8 +293,9 @@ def tijori_candidate(search: bytes) -> Verdict | str:
     return str(slugs[0])
 
 
-def tijori_page_state(page: bytes, symbol: str) -> Verdict:
-    """The page's ``company_details.symbol`` equals the NSE symbol (its own gate classifies)."""
+def tijori_page_state(page: bytes, slug: str, symbol: str) -> Verdict:
+    """The page's ``company_details.symbol`` equals the NSE symbol (its own gate classifies)
+    and it carries a consolidated table, the evidence ingest requires (D4.3)."""
     record = classify_financials_body(page, expected_symbol=symbol, expected_company_id=None)
     if record.code is OutcomeCode.IDENTITY_MISMATCH:
         return conflict(f"Tijori page symbol is not {symbol}")
@@ -299,6 +303,12 @@ def tijori_page_state(page: bytes, symbol: str) -> Verdict:
         return VerificationState.UNAVAILABLE, OnboardingReason.ACCESS_FAILED.value
     if record.code is not OutcomeCode.OK:
         return VerificationState.UNVERIFIED, record.native_value
+    try:
+        tables = TijoriSource.parse_all_tables_bytes(page, slug=slug, expected_symbol=symbol)
+    except TijoriError:
+        tables = ()
+    if not any(table.scope is TijoriTableScope.CONSOLIDATED for table in tables):
+        return VerificationState.UNVERIFIED, OnboardingReason.BASIS_UNVERIFIED.value
     return VERIFIED
 
 
