@@ -1,7 +1,8 @@
 # Extractor v2 (structural Ind AS signal) Implementation Plan
 
 Status: approved — Sol plan review r1 REJECT (6) → r2 REJECT (2) → r3 APPROVE 2026-10-17.
-Implemented 2026-10-17 (Tasks 1–2; Task 3 records); phase-end Sol review and the live smoke pending.
+Implemented 2026-10-17 (`6aca86f`); live smoke executed at `6aca86f` (observed table in Task 3); acceptance
+pending the rule-6 amendment below and the phase-end Sol review.
 
 **Origin:** bead `eqos-71x`; D6 [Amendment 2026-10-16 (attempt 2 burn)](D6.md#amendment-2026-10-16-attempt-2-burn-eqos-h410)
 option A ("a new bead, its own version advance"), the owner's B-now-A-later choice; D6 Freeze step 6
@@ -247,12 +248,20 @@ Verification: smoke output saved under `scratchpad/execution/x71/` (not committe
 
 All 8 first-party XBRL extraction attempts are `COMPLETE` under `xbrl-occurrences/2`; zero
 `NO_FRAMEWORK_DECLARATION` outcomes and zero "declares no accounting framework" rejections; 8
-companies admitted, 6 of them formerly phrase-free. Pass rule 1–6 met.
+companies admitted, 6 of them formerly phrase-free. Rules 1–5 met; rule 6 is met only under amendment A1 below.
 Diagnosis (rule 6): the NSE equity master lists HFCL and MTARTECH in series `BE`, not `EQ`, in this
 capture and in the Task 0b master (`data/raw/onboarding-dev/master/EQUITY_L.csv`). D6's
 `master_rows` (`entity/verification.py:132–140`) accepts `EQ` rows only, so the exchange unit refuses
 before the framework gate. A pre-existing D6 scope rule, unrelated to v2 and not a live-data change;
 the plan's provisional prediction missed the series. Follow-up `eqos-z48` (scope and reason code).
+
+**Amendment A1 to rule 6 (2026-10-17, for Sol review).** Besides a diagnosed live-data change, an
+unexpected *provisional* outcome may be recorded as unrelated when it is a demonstrated prediction
+error: the refusal comes from a pre-existing rule unchanged by this phase, is shown on the retained
+inputs to fire identically under v1, and stops before the framework gate. It must be recorded with
+its evidence and a bead, and does not count toward rules 2–3. Enforced rows get no such relief.
+HFCL and MTARTECH qualify: `master_rows` is unchanged by `6aca86f`, both are `BE` in the Task 0b
+master, and the exchange unit refuses before the XBRL unit; follow-up `eqos-z48`.
 Dependencies: Tasks 1–2, phase-end Sol review. Implementer: Sonnet (doc edits).
 
 ## Verification (phase gate)
