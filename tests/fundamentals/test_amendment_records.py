@@ -40,7 +40,36 @@ RECORDS = {
         "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
         {"initiation-clarified"},
     ),
+    "ledger_stage5": (
+        AMENDMENTS / "2026-10-12-retention-replay.md",
+        "retention-replay",
+        "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
+        {
+            "c16-qualified",
+            "c02-qualified",
+            "data-spec-us12",
+            "data-spec-4-capture-store",
+            "data-spec-5-replay",
+            "data-spec-6-integrity",
+            "data-spec-6-backup",
+            "data-spec-6-restore-test",
+            "data-spec-7-shareholding",
+            "data-spec-8-discovery",
+            "data-spec-stage2-restore",
+            "data-spec-0-cross-spec",
+            "data-spec-5-queue-panel",
+            "data-spec-2-qualification",
+            "ledger-5-high-incident",
+        },
+    ),
+    "a05": (
+        AMENDMENTS / "2026-10-12-a05-derived-amounts.md",
+        "a05-derived-amounts",
+        "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
+        {"derived-amounts-kept", "redaction-inventory"},
+    ),
 }
+VENDOR_TERMS = "docs/research/vendor-terms-screener-tijori-2026-10.md"
 MODEL_NAME = re.compile(r"gpt|claude|opus|sonnet|fable|astra|\bsol\b|gemini|llama", re.IGNORECASE)
 
 
@@ -83,6 +112,14 @@ def test_amendment_records(record: Path, scope: str, spec: str, ids: set[str]) -
         assert item["id"] in text
 
 
+def test_a05_record_cites_vendor_terms() -> None:
+    """The derived-amounts decision rests on the vendor-terms research it links."""
+    record = RECORDS["a05"][0]
+    links = re.findall(r"\]\(([^)#]+)", record.read_text(encoding="utf-8"))
+    cited = {(record.parent / link).resolve().relative_to(ROOT).as_posix() for link in links}
+    assert VENDOR_TERMS in cited
+
+
 def _first_commit(path: Path) -> str:
     """Return the commit that first added ``path``."""
     log = subprocess.run(
@@ -116,6 +153,7 @@ def test_context_glossary() -> None:
     promotion = _entry(context, "Memory promotion")
     roles = _entry(context, "Approval panel / owner role / runtime role")
     truth = _entry(context, "Source-of-truth hierarchy")
+    package = _entry(context, "Evidence package")
     invariant = _entry(
         (ROOT / ".claude/project/invariants.md").read_text(encoding="utf-8"),
         "Memory promotion is a separate, approved action",
@@ -125,6 +163,7 @@ def test_context_glossary() -> None:
     )
     assert all(role in roles.lower() for role in ("approval panel", "owner role", "runtime role"))
     assert "PostgreSQL rows for the approved narrative" in truth
+    assert "tombstones and comparison outcomes (retention-replay record)" in package
     assert "approval panel or the owner role" in " ".join(invariant.split())
-    for entry in (promotion, roles, truth, invariant):
+    for entry in (promotion, roles, truth, package, invariant):
         assert not MODEL_NAME.search(entry), entry
