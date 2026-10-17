@@ -201,6 +201,8 @@ _SUBSCRIBER_RIGHTS = "docs/evidence/phase-0a/a-05-rights-decision-005-subscriber
 _UPSTOX_RIGHTS = "docs/research/upstox-rights-record.md"
 # Owner decision 2026-09-03 (data spec §3): Upstox statements are a diagnostic parse-check only.
 _UPSTOX_DIAGNOSTIC = "docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md"
+# No rights record covers SEBI; the D8 plan (Task 2b) records this bounded reference capture.
+_REGULATOR_REFERENCE = "docs/workstreams/data-foundation/plans/D8.md"
 
 
 def _surface(
@@ -234,6 +236,10 @@ SHP_XBRL = ("nse-shareholding-xbrl", "NSE_SHP_XBRL")
 SCREENER_SHAREHOLDING = ("screener-subscriber", "SCREENER_SHAREHOLDING")
 TIJORI_SHAREHOLDING = ("tijori", "shareholding")
 UPSTOX_SHAREHOLDING = ("upstox", "share-holdings")
+# Definitional references for the SHP probe (plan D8 Task 2b): never interpreted.
+SHP_TAXONOMY = ("nse", "SHP_TAXONOMY")
+SEBI_REGULATION = ("sebi", "REGULATION_TEXT")
+SCREENER_DOCS = ("screener", "SCREENER_DOCS")
 # The Upstox surfaces that go to the API origin with the bearer token.
 UPSTOX_ROUTED = (UPSTOX_STATEMENT, UPSTOX_SHAREHOLDING)
 # An owner-exported Screener screen (plan D7 R5): the only input of a screen run, never fetched.
@@ -248,6 +254,9 @@ _IDENTITY_SURFACES = (
     (UPSTOX_INSTRUMENTS, Representation.JSON, _UPSTOX_RIGHTS),
     (SCREEN_EXPORT, Representation.CSV, _SUBSCRIBER_RIGHTS),
     (SHP_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
+    (SHP_TAXONOMY, Representation.XBRL, _EXCHANGE_RIGHTS),
+    (SEBI_REGULATION, Representation.PDF, _REGULATOR_REFERENCE),
+    (SCREENER_DOCS, Representation.HTML, _SUBSCRIBER_RIGHTS),
 )
 
 VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (

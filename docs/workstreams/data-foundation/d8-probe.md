@@ -1,6 +1,8 @@
 # D8 Task 2 — Probe under registered authority
 
-Status: complete, **escalations open** (§9; Sol rules before Task 3). Plan: [`plans/D8.md`](plans/D8.md)
+Status: complete. Sol ruled on §9 (REQUEST_CHANGES; dispositions in [`plans/D8.md`](plans/D8.md) "Probe
+ruling dispositions"). §11 adds the Task 2b definitional evidence and supersedes §4's hierarchy
+basis, §5's thresholds and §9's surface table where they differ. Plan: [`plans/D8.md`](plans/D8.md)
 Task 2, R2–R5, R8, Q1. Live requests 2026-10-17 09:58:06–09:58:58 UTC: one sequential pass, 3 s
 spacing, 18 requests, 18 × HTTP 200 (`OK`), no failed request, so no `gen-2`. Credentials came only
 from `source scripts/credentials.sh` (no refresh was needed and none was printed). Every Screener page
@@ -137,9 +139,9 @@ names are:
 | C2 | `EmployeeBenefitsTrustsMember` | not filed | filed | filed | holder `Foodie Bay Employees Esop Trust` (ETERNAL, context `D_EmployeeBenefitsTrusts_Context15`) |
 
 A subcategory used only in the checks is `SovereignWealthFundsDomesticMember` (under B1; ETERNAL
-and TITAN). The hierarchy (which member is a parent of which) rests on the member names plus the
-share-count identities. The taxonomy's presentation linkbase is not retained, because fetching it
-would be an unregistered surface.
+and TITAN). The hierarchy now rests on SEBI's retained format (§11.2), not on member names or
+share-count identities, which are consistency checks only. The taxonomy the instances reference is
+not retrievable (§11.1).
 
 ## 5. First-party denominators and holder thresholds
 
@@ -167,8 +169,10 @@ no entry. Each locator is element × context per §4.
   (TITAN: 207 foreign promoter-group entities), and the filing states no threshold.
   **Not stated** (§9 E7).
 - **ETERNAL persons acting in concert for public**
-  (`DetailsOfTheShareholdersActingAsPersonsInConcertForPublicAxis`, 29 names) has no percentage
-  fact and no stated threshold. **Not stated** (§9 E7).
+  (`DetailsOfTheShareholdersActingAsPersonsInConcertForPublicAxis`, 29 names). **Correction (Sol
+  ruling issue 5):** an earlier version said this list has no percentage fact. That was wrong.
+  ETERNAL has 29 `PercentageOfShareholdingByPAC` facts (e.g. context `PAC_Public15` = `0.0174`);
+  APARINDS and TITAN have none. No threshold is stated (§11.3).
 
 ## 6. Vendor labels: locators and structure
 
@@ -253,6 +257,13 @@ under R5.
 
 The table is aid tables 1–6 (§10), reproduced verbatim from the hashed output. The ruling-bearing
 rows are table 4's. No ruling above rests on a match alone.
+
+**Absent-as-zero arithmetic is consistency-only (Sol ruling issue 8).** Aid table 2 ("absent
+member = not filed, counted 0"), aid table 3 ("not filed; 0 taken") and every aid table 4 row with
+a `Not filed` member count an unfiled member as 0. Those rows are consistency checks only and are
+never production evidence. In production a missing operand is `OPERAND_MISSING`: Apar has no C2,
+and ETERNAL and TITAN file no C `ShareholdingAsAPercentageOfTotalNumberOfShares` fact, so no C
+percentage is manufactured for them.
 
 ## 9. Escalations for review
 
@@ -547,3 +558,155 @@ Inline vendor examples withheld elsewhere in this probe (inline-1 to inline-4) a
 | TITAN | DetailsOfSharesHeldByOthersIndianShareholdersAxis | 176 | 0 |
 | TITAN | DetailsOfSharesHeldByProvidentFundsOrPensionFundsAxis | 1 | 1.7300 |
 | TITAN | DetailsOfSharesHeldByResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakhAxis | 2 | 1.0700 |
+
+## 11. Supplemental definitional evidence (plan Task 2b; Sol ruling issue 4)
+
+### 11.1 Capture
+
+One sequential pass on 2026-10-17, 10:25:05–10:25:19 UTC, 3 s spacing. The driver is
+`scratchpad/execution/d8/probe/drive_reference.py`
+(`f686b536466769d7705308bf57781f15ea5592e85b470645b3dd7a13a2543466`). It sends only through
+`acquiring_fetch(live_transport(), …)`, takes `allowed` from `ingest/shareholding_filing.authorised`
+against `VENDOR_SURFACES` (the master uses D6's `discovery.authorised`), and writes through
+`write_generation`. Credentials came only from `source scripts/credentials.sh`. The new surfaces are
+role `IDENTITY` (never interpreted, never corroborating). No existing role is a definitional
+reference; `IDENTITY` is the nearest by behaviour, not by name. No rights record covers SEBI, so
+`("sebi","REGULATION_TEXT")` cites plan D8 Task 2b as its authority. `replay_fetch` loads the
+generation, and the `as_of` check passes.
+
+Root `R/reference/gen-1/`: issuer `reference`, `as_of` 2026-10-17, authorisation
+`plan D8 Task 2b reference capture (Sol probe ruling issue 4)`.
+
+| File | Surface (`source`, `surface`) | URL | Outcome | Bytes | SHA-256 |
+|---|---|---|---|---|---|
+| `00.bin` | `nse`, `EQUITY_L` | `https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv` (fixes `as_of` only) | `OK` | 183984 | `474ad748f65c9ffa4cf9aa2e483117dfd0f68ccafd6c4c8a0cca02583556f765` |
+| — | `nse`, `SHP_TAXONOMY` | `https://nsearchives.nseindia.com/corporate/xbrl/in-bse-shp-2025-10-31.xsd` (the instances' relative `schemaRef` resolved against their URL) | **`HTTP_404`** (kept, no body) | — | — |
+| `02.bin` | `sebi`, `REGULATION_TEXT` | `https://www.sebi.gov.in/sebi_data/attachdocs/mar-2025/1742546419358.pdf` | `OK` | 467105 | `f069059d34b3b96c8bab1ee25ded9276d1bb307a7bd7235d9faa694bda15adaf` |
+| `03.bin` | `sebi`, `REGULATION_TEXT` | `https://www.sebi.gov.in/sebi_data/attachdocs/nov-2018/1542886228040.pdf` | `OK` | 448983 | `03006d19bf4f914a07d39dc4acb5d613bde79f18d066402a097c0f1027816d1a` |
+| `04.bin` | `screener`, `SCREENER_DOCS` | `https://www.screener.in/docs/changelog/shareholding-patterns/` | `OK` | 13132 | `bb1b39bd0eb334f9b6777745173b9b222cf17cb3fff06f28f7d203b4f7755a46` |
+| `discovery-manifest.json` | — | — | — | — | `9b6a3554a045e953fc033690bda92607333152725725ca2fcbf81cb7d3c2eb49` |
+
+- `02.bin` is SEBI circular SEBI/HO/CFD/CFD-PoD-2/P/CIR/2025/35 (20 March 2025). It revises Tables
+  I–IV of the Regulation 31 format (Annexure A, pp. 3–13) and is "in force with effect from the
+  quarter ending June 30, 2025" (p. 2, para 7). The probed instant is 2026-06-30. The instances use
+  taxonomy 2025-10-31 and utility `SHP V1.1 (01-12-2025)`.
+- `03.bin` is the SEBI LODR (Sixth Amendment) Regulations, 2018 (Gazette, 16 November 2018), which
+  inserts Regulation 31(4).
+- **The taxonomy is not retained.** The only location the instances name returns 404. No
+  presentation or definition linkbase is available. BSE's namespace-shaped path
+  (`www.bseindia.com/xbrl/shp/2025-10-31/…`) served a generic HTML page in a pre-capture check, so
+  it was not captured.
+
+Locators below are `R/reference/gen-1/<file>` with a PDF page (pypdf 1-based index, which equals the
+printed "Page N of 15/10") and a quoted phrase.
+
+**Applicability caveat.** The format is applicable by its effective date. No later amendment was
+retained. A search result mentioned a SEBI master circular dated 30 April 2026 (a third-party
+mirror only), which was neither verified nor captured. If it re-prescribes Tables I–IV, 02.bin's
+applicability needs re-checking.
+
+### 11.2 Hierarchy (format relationships)
+
+The parent–child relationships come from the format. The binding of each `in-bse-shp` member to a
+format row is by **label correspondence**. This is an inference, because the taxonomy that would
+bind them is not retrievable (§11.1). The share-count identities (aid table 2) are consistency
+checks only.
+
+| Relationship | Format locator (`02.bin`) | XBRL member(s) (label correspondence) |
+|---|---|---|
+| Total over A, B, C | p. 3, Table I rows "(A) Promoter & Promoter Group", "(B) Public", "(C) Non Promoter- Non Public", "Total"; voting-rights column "Total as a % of (A+B +C)" | `ShareholdingPatternMember` over A, B, C |
+| A = A(1) + A(2) | p. 5, "(A)= (A)(1)+(A)(2)" | `ShareholdingOfPromoterAndPromoterGroupMember` (children Indian/Foreign are subcategories, out of scope) |
+| B = B(1) + B(2) + B(3) + B(4) | p. 11, "Total Public Shareholding (B) = (B)(1) + (B)(2) + (B)(3) + B(4)" | `PublicShareholdingMember` |
+| B1 under B | p. 7, "(1) Institutions (Domestic)" … p. 8 "Sub-Total B(1)" | `InstitutionsDomesticMember` |
+| B2 under B | p. 8, "(2) Institutions (Foreign)" … "Sub-Total B(2)" | `InstitutionsForeignMember` |
+| B3 under B | p. 9, "(3) Central Government / State Government(s)" … "Sub-Total B(3)" | `GovernmentsMember` |
+| B4 under B | p. 9, "(4) Non- institutions" … p. 11 "Sub-Total (B)(4)" | `NonInstitutionsMember` |
+| C = C1 + C2 | p. 13, "Total Non Promoter - Non Public Shareholding (C) = (C1) + (C2)"; p. 3, Table I rows "(C1) Shares underlying DRs", "(C2) Shares held by Employee Trusts" | `SharesHeldByNonPromoterNonPublicShareholdersMember` |
+| C1 under C | p. 12, "(1) Custodian/DR Holder … Sub-Total (C1)" | **no member in any instance** (reserved declaration only, E8) |
+| C2 under C | p. 12, "(2) Employee Benefit Trust / Employee Welfare Trust … Sub-Total (C2)" | `EmployeeBenefitsTrustsMember` |
+| Categories in B are disjoint | p. 11, note (4): "Shareholding under any of the categories shall be unique and will not be duplicated under multiple categories" | — |
+
+Two further facts. Each is definitional or filed, and neither is a mapping:
+- **Domestic sovereign wealth funds are in B1.** See p. 8, "(h) Sovereign Wealth Funds" before
+  "Sub-Total B(1)"; foreign SWFs are B2 (c). This structurally confirms that a B1 − SWF basket
+  (Screener `DIIs`, §7) is not B1.
+- **C1 is empty by filed declaration.** All three instances file
+  `WhetherTheListedEntityHasAnySharesAgainstWhichDepositoryReceiptsAreIssued` = `false` (context
+  `MainI`). C1 ("Shares underlying DRs") therefore has no holdings in these submissions. This is a
+  filed fact, not a zero fill. It does not decide which basket a vendor label means, so the E2
+  refusals stand (R5 Unresolved members). B3 stays unplaced: ETERNAL files 199505 shares and TITAN
+  23624.
+
+**First-party denominators (refines §4).** The format defines the
+`ShareholdingAsAPercentageOfTotalNumberOfShares` column as "Shareholding as a % of total no. of
+shares (calculated as per SCRR, 1957) As a % of (A+B+C2)" (p. 3, column VIII). It defines the
+voting-rights column as "Total as a % of (A+B+C)" in Table I (p. 3), and as "Total as a % of Total
+Voting rights" in Tables II–IV. So `TOTAL_SHARES` for a first-party percentage means the SCRR base
+A+B+C2, which equals all shares only when C1 is empty. That holds for all three submissions
+(declaration above). Task 3 must state this in the `TOTAL_SHARES` evidence for first-party entries.
+`VOTING_RIGHTS` is evidenced by the format.
+
+### 11.3 Holder lists: completeness, threshold and denominator
+
+| List (XBRL axis) | Format locator | Completeness | `threshold_pct` | `threshold_denominator` |
+|---|---|---|---|---|
+| Public-category name lists (Table III): `DetailsOfSharesHeldBy{MutualFundsOrUTI, InsuranceCompanies, ProvidentFundsOrPensionFunds, InstitutionsForeignPortfolioInvestorOne, ForeignDirectInvestment, BodiesCorporate, DirectorsAndDirectorsRelatives, ResidentIndividual…InExcessOfRsTwoLakh}Axis` | `02.bin` p. 11, Table III note (2): "The above format needs to be disclosed along with the names of the shareholders holding 1% or more than 1% of shares of the listed entity" | `THRESHOLDED` | `1` (inclusive: "1% or more") | `TOTAL_SHARES` ("shares of the listed entity"; the only share-count member on the axis) |
+| C2 trust list (Table IV): `DetailsOfSharesHeldByEmployeeBenefitsTrustsAxis` (ETERNAL) | `02.bin` p. 13, Table IV note (2), same words | `THRESHOLDED` | `1` (inclusive) | `TOTAL_SHARES` |
+| Promoter-group lists (Table II): `DetailsSharesHeldByIndividualsOrHUFAxis`, `DetailsOfSharesHeldBy{OthersIndianShareholders, OtherForeignShareholders, CentralGovernmentOrStateGovernments}Axis` | `03.bin` p. 2, Reg. 31(4): "All entities falling under promoter and promoter group shall be disclosed separately in the shareholding pattern … in accordance with the formats specified by the Board"; `02.bin` p. 6, Table II note 3: "Details of promoter and promoter group with shareholding "NIL" can be accessed from here." | **Proposed `COMPLETE`, for Sol to rule.** Two caveats: (i) 03.bin is the 2018 amending notification, and the current consolidated LODR text is not retained; (ii) note 3 routes NIL-holding entities to a separate link, so the retained XBRL is not shown to carry them. A strict reading gives `UNKNOWN` | null | null |
+| PAC list: `DetailsOfTheShareholdersActingAsPersonsInConcertForPublicAxis` (ETERNAL: 29 names, 29 `PercentageOfShareholdingByPAC` facts) | `02.bin` p. 11: "Details of the shareholders acting as persons in Concert including their Shareholding (No. and %)", with no threshold or completeness statement | `UNKNOWN` (reason: the format prescribes the list but states neither a threshold nor that it is complete) | null | null |
+| "Other" lists: `DetailsOfSharesHeldByOtherNonInstitutionsAxis`, `…OtherInstitutionsForeignAxis` | — | not holder lists: every row's `WhetherACategoryOrMoreThan1PercentageOfShareholding` is `Category` (§5) | — | — |
+
+This supersedes §5's public-list citation (the ETERNAL issuer remark, `recordId` 213995, "more
+than 1%"), which was issuer text on another submission. The format threshold is inclusive.
+Observed minima (aid table 6) remain consistency-only. The axis-to-table correspondence is by label
+(§11.2). TITAN's `…CentralGovernmentOrStateGovernmentsAxis` is read as Table II A(1)(b)
+("Central Government/ State Government(s)", p. 4), because Table III B(3) uses different
+sub-rows (p. 9).
+
+### 11.4 Vendor denominators
+
+- **Screener: searched, and not established.** The only Screener definition page found is
+  `04.bin`. It says "The shareholding patterns are based on company filings. It discloses names of
+  investors who hold over 1% shares in the company." (line 349, `<article>`). It states no
+  denominator for the category percentages, so every Screener percentage label stays `UNMAPPED`
+  (R4 Denominator — clarification).
+- **Tijori: searched, and not found.** Web searches on 2026-10-17 (an unrestricted query, and one
+  restricted to `tijorifinance.com`) found no Tijori methodology or definition page for its
+  shareholding table. Nothing was captured, and nothing is inferred. Every Tijori percentage label
+  stays `UNMAPPED`.
+- **Upstox: unchanged.** `docs/research/upstox-api-schemas/fundamentals.md:163` ("Percentage of
+  total shares") gives `TOTAL_SHARES` (ruling issue 2).
+
+### 11.5 Acceptance surfaces after the ruling and §11
+
+First-party sides exist where filed (§4): Apar A, B, B1, B2 and B4, each under `TOTAL_SHARES` and
+`VOTING_RIGHTS`, with no B3, C or C2. First-party percentages are `PRECISION_UNSUPPORTED` (ruling
+issue 6). An **evidenced comparison** is a vendor label mapped to a first-party aggregate under an
+evidenced denominator.
+
+**Apar (APARINDS), per vendor:**
+
+| Vendor | Promoter | Public | Institution |
+|---|---|---|---|
+| Screener | **Refusal**: `Promoters` `UNMAPPED`, denominator not evidenced (§11.4) | **Refusal**: `Public` `UNMAPPED` (denominator; and E2 {B4, B4+B3}) | **Refusal**: `FIIs` `UNMAPPED` (denominator; E2 {B2, B2+B3, B2+C1}); `DIIs` `UNMAPPED` (denominator; B1 refuted on ETERNAL and TITAN, and B1 contains domestic SWF per §11.2) |
+| Tijori | **Refusal**: `Promoter` `UNMAPPED` (denominator) | **Refusal**: `Public Shareholding` `UNMAPPED` (denominator; its structural basket B + C2, §7, is moot until a denominator exists) | **Refusal**: `Institutions` `UNMAPPED` (denominator; E2 {B1+B2, B1+B2+B3}) |
+| Upstox (diagnostic) | **Evidenced**: `promoters` → A, `TOTAL_SHARES` (documented). Table I and note 4 place B3 in B and C1 in C, so neither is in A. The pair is diagnostic and `PRECISION_UNSUPPORTED` | **Refusal**: `retail_and_other` `UNMAPPED` (E2 {B4+C2, B4+C, B3+B4+C}) | **Refusal**: `fii` `UNMAPPED` (E2; B3 unplaced, though C1 is empty by declaration); DII: no mapping or construction (ruling issue 7); `mutual_funds`, `other_dii` `UNMAPPED` (subcategories) |
+
+**ETERNAL and TITAN** follow the same rules. Every Screener and Tijori label is `UNMAPPED`. Upstox
+`promoters` → A is evidenced for TITAN. For ETERNAL there is no first-party A, so Upstox's value
+(private, `R/d8-doc-private/d8-doc-inline.md` inline-4) never pairs. Every other Upstox label is refused.
+
+**Net:** the only evidenced vendor comparisons in D8 are Upstox `promoters` ↔ A for Apar and TITAN,
+which are diagnostic and `PRECISION_UNSUPPORTED`. No non-diagnostic vendor comparison exists. No
+public or institution comparison exists for any vendor.
+
+### 11.6 Gaps closed and still open
+
+- **Hierarchy: evidenced** by the format (§11.2), with one residual inference: the member-to-row
+  binding is by label, because the taxonomy is a 404.
+- **Thresholds: evidenced** for the public and C2 lists (1 %, inclusive, `TOTAL_SHARES`). The
+  promoter lists are proposed `COMPLETE` and await Sol's ruling on the caveats. The PAC list is
+  `UNKNOWN`.
+- **Vendor denominators: still open** for Screener and Tijori, because no published definition
+  exists. These need the spec Stage 3 exception: no Screener or Tijori aggregate comparison is
+  possible, and Tijori is a required real source.

@@ -5,8 +5,11 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 from fundamentals.contracts.source_catalog import (
+    SCREENER_DOCS,
     SCREENER_SHAREHOLDING,
+    SEBI_REGULATION,
     SHP_LISTING,
+    SHP_TAXONOMY,
     SHP_XBRL,
     TIJORI_SHAREHOLDING,
     UPSTOX_SHAREHOLDING,
@@ -24,6 +27,9 @@ SHP_ORIGINS = {
     SCREENER_SHAREHOLDING: "www.screener.in",
     TIJORI_SHAREHOLDING: "www.tijorifinance.com",
     UPSTOX_SHAREHOLDING: "api.upstox.com",
+    SHP_TAXONOMY: "nsearchives.nseindia.com",
+    SEBI_REGULATION: "www.sebi.gov.in",
+    SCREENER_DOCS: "www.screener.in",
 }
 
 
