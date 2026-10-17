@@ -299,3 +299,12 @@ Format per entry:
   open attempt that would force a burn.
 - Apply: never search `tests/` or `data/` recursively while opaque artifacts exist; search an
   explicit list of permitted files, or load inputs in Python. Put this line in every brief.
+
+## WSL wall clock steps backwards; clock-ordering checks flake  (2026-10-17)
+
+- Observed: `time.time()` on this WSL host stepped back 0.81s and 1.11s within a 20s probe.
+  `source_admission`'s "derivation clock moved backwards" then fails whichever pipeline test
+  straddles a step (a different test each full run, sometimes in an isolated module run).
+- Why it matters: a red full suite here is often environmental, not the change under test.
+- Apply: on that error, rerun the test and note it on eqos-0bp; do not chase it in feature
+  code. Durable fix is host time sync or a monotonic test clock (eqos-0bp).
