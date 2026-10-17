@@ -29,6 +29,7 @@ from pg_support import PgTestDatabase
 from stage1_e2e_support import actual, manifest_lines
 from stage1_provenance import provenance
 from stage4_support import (
+    CLOSURE,
     DISCOVERY,
     FREEZE,
     IMPL,
@@ -57,7 +58,7 @@ from fundamentals.compare.run_models import (
 )
 from fundamentals.compare.run_store import RunStore
 from fundamentals.contracts.canonical import Basis
-from fundamentals.contracts.comparison import SourceRole
+from fundamentals.contracts.comparison import CalculationState, SourceRole
 from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.evidence_tier import EvidenceTier
@@ -66,9 +67,6 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.pg.identity_seed import SettingKey
 
 MANIFEST = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
-CLOSURE = (
-    "8e720897ecd6f2c60e13f7b2f3bddc0797b4178b"  # last D6 change; IMPL unchanged since the freeze
-)
 ACQUISITION = "acquisition"  # header source kind of the generation's acquisition.json
 SETTING_KEYS = dict(
     zip(
@@ -229,7 +227,8 @@ def deleted(rows: tuple[ResultRow, ...], target: int) -> tuple[ResultRow, ...]:
 def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[..., Any]) -> None:
     """Each mutation that leaves every number unchanged is caught: a relabelled selection or
     rule, each selection's id or direct occurrence deleted, a moved locator, a promoted tier, a
-    broken construction operand, a vendor trace operand replaced by another of its operands
+    broken construction operand, a vendor trace operand replaced by another of its operands, a
+    first-party computed side's trace id deleted or unknown, or its trace operand broken
     (provenance), a wrong recorded mode or pin (``check``, the run-identity check)."""
     repository, rows, record = outcome.stage.repository, outcome.rows, outcome.record
     read, cells = repository.get_interpretations, repository.get_occurrences
@@ -246,6 +245,18 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
     need(
         any(len({o.interpretation_id for o in t.trace.operands}) > 1 for t in traces(vendor)),
         "vendor trace targets",
+    )
+    computed = [
+        v.calculation_trace_id
+        for row in rows
+        for v in row.source_values
+        if v.source_role is SourceRole.FIRST_PARTY
+        and v.calculation_trace_id
+        and v.calculation_state is CalculationState.COMPUTED
+    ]
+    need(
+        any(o.interpretation_id for t in traces(computed) for o in t.trace.operands),
+        "computed trace targets",
     )
 
     def moved(ids: list[int]) -> tuple[Any, ...]:
@@ -272,6 +283,19 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
             else i
             for i in found
         )
+
+    def unresolved(ids: list[int]) -> tuple[Any, ...]:
+        mutated = []
+        for stored in traces(ids):
+            operands = [
+                o.model_copy(update={"interpretation_id": 10**9})
+                if o.interpretation_id and stored.trace_id in computed
+                else o
+                for o in stored.trace.operands
+            ]
+            trace = stored.trace.model_copy(update={"operands": tuple(operands)})
+            mutated.append(stored.model_copy(update={"trace": trace}))
+        return tuple(mutated)
 
     def duplicated(ids: list[int]) -> tuple[Any, ...]:
         mutated = []
@@ -315,11 +339,30 @@ def mutations_caught(outcome: Any, manifest: dict[str, Any], check: Callable[...
         ("promoted tier", "get_interpretations", promoted),
         ("broken operand", "get_interpretations", broken),
         ("duplicated vendor operand", "get_calculation_traces", duplicated),
+        ("unresolved computed operand", "get_calculation_traces", unresolved),
     ):
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(repository, method, seam)
             if not provenance(outcome, None, manifest):
                 missed.append(name)
+    for n, target in enumerate(sorted(set(computed))):
+        for name, trace_id in (("deleted", None), ("unknown", 10**9)):
+            retraced = tuple(
+                row.model_copy(
+                    update={
+                        "source_values": tuple(
+                            v.model_copy(update={"calculation_trace_id": trace_id})
+                            if v.source_role is SourceRole.FIRST_PARTY
+                            and v.calculation_trace_id == target
+                            else v
+                            for v in row.source_values
+                        )
+                    }
+                )
+                for row in rows
+            )
+            if not provenance(outcome, retraced, manifest):
+                missed.append(f"{name} computed trace {n}")
     wrong_pin = record.pinned.model_copy(update={"mapping_set": record.pinned.dictionary})
     wrong: dict[str, dict[str, Any]] = {
         "wrong mode": {"mode": RunMode.RETROSPECTIVE},

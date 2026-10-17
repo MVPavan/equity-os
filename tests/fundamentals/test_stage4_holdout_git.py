@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import stage4_support
 import yaml
 from stage4_filings import qualifying_periods
 from stage4_support import (
@@ -133,8 +134,9 @@ def churn(repo: Path, violation: str, kind: str, path: str, *versions: str) -> N
             commit(repo, {path: versions[0]})
 
 
-def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
-    """Attempt 1 drawn, implemented and frozen; then burned, fixed, redrawn and refrozen."""
+def history(repo: Path, violation: str = "", redraw: bool = True) -> str:
+    """Attempt 1 drawn, implemented and frozen; then burned, fixed, redrawn and refrozen; then
+    closed (D6 step 6). Returns the closure commit."""
     seed = git(repo, "rev-parse", "HEAD")
     if violation == "impl-before-record":
         commit(repo, {"src/app.py": "x = 2\n"})
@@ -179,16 +181,27 @@ def history(repo: Path, violation: str = "", redraw: bool = True) -> None:
         commit(repo, {FREEZE: frozen((impl, one), (fix, two))})
     if violation == "impl-after-freeze":
         commit(repo, {"src/app.py": "x = 4\n"})
+    closure = commit(repo, {"docs/closure.md": "closed\n"})
+    if violation == "impl-after-closure":
+        commit(repo, {"src/app.py": "x = 5\n"})
     if violation in REMOVALS:
         commit(repo, {FREEZE: REMOVALS[violation]})
+    return closure
 
 
 REMOVALS = {"freeze-list-emptied": "freezes: []\n", "freeze-file-deleted": None}
 
 
-@pytest.mark.parametrize("redraw", [False, True], ids=["initial", "burn-refreeze-redraw"])
-def test_ordering_accepts_the_d15_sequence(repo: Path, redraw: bool) -> None:
-    history(repo, redraw=redraw)
+@pytest.mark.parametrize(
+    ("redraw", "violation"),
+    [(False, ""), (True, ""), (True, "impl-after-closure")],
+    ids=["initial", "burn-refreeze-redraw", "impl-after-closure"],
+)
+def test_ordering_accepts_the_d15_sequence(
+    repo: Path, redraw: bool, violation: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The D1.5 sequence passes, including an IMPL change after the closure commit."""
+    monkeypatch.setattr(stage4_support, "CLOSURE", history(repo, violation, redraw))
     CHECKS["ordering"](repo)
 
 
@@ -209,9 +222,12 @@ def test_ordering_accepts_the_d15_sequence(repo: Path, redraw: bool) -> None:
         *((removal, "entry changed after its commit") for removal in REMOVALS),
     ],
 )
-def test_ordering_refuses_violations(repo: Path, violation: str, step: str) -> None:
-    """Each D1.5 violation fails the ordering check, which names only its step."""
-    history(repo, violation)
+def test_ordering_refuses_violations(
+    repo: Path, violation: str, step: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each D1.5 violation fails the ordering check, which names only its step; an IMPL change
+    between the freeze and the closure commit is refused."""
+    monkeypatch.setattr(stage4_support, "CLOSURE", history(repo, violation))
     with pytest.raises(FAILED) as failed:
         CHECKS["ordering"](repo)
     assert str(failed.value) == f"stage4_holdout ordering: {step}"

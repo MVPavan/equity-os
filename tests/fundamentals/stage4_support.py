@@ -36,6 +36,8 @@ CAPABILITY = "docs/workstreams/data-foundation/d6-capability.md"
 DISCOVERY = "src/fundamentals/entity/discovery.py"
 HOLDOUT = "data/holdout"
 IMPL = ("src", "config", "migrations", "scripts", "pyproject.toml", "uv.lock")
+# D6 Freeze step 6: the phase's closure commit; IMPL may change only after it
+CLOSURE = "8e720897ecd6f2c60e13f7b2f3bddc0797b4178b"
 LEAK_ROOTS = ("src", "config", "tests")
 SELECTION_ROOTS = ("src", "config", "tests", "migrations", "scripts", "docs", "scratchpad")
 CATALOGUE = {  # D1.2 amendment: exempt only while the bytes match the pin
@@ -516,6 +518,14 @@ class Selection:
         need(rule == skip["reason"], "skip reason")
 
 
+def calendar_date(value: Any) -> bool:
+    """Whether ``value`` is an ISO ``YYYY-MM-DD`` calendar date (a date or its text)."""
+    try:
+        return date.fromisoformat(str(value)).isoformat() == str(value)
+    except ValueError:
+        return False
+
+
 def keyed(node: Any, kind: str) -> dict[str, Any]:
     """The node, refused unless it is a mapping with exactly the D1.1 keys of its kind."""
     need(isinstance(node, dict) and node.keys() == KEYS[kind], f"{kind} keys")
@@ -533,7 +543,7 @@ def check_schema(repo: Path) -> None:
             isinstance(burn["attempt"], int)
             and all(isinstance(t, str) and t for t in texts)
             and bool(SHA256.fullmatch(burn["freeze_descriptor_sha256"]))
-            and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(burn["date"]))),
+            and calendar_date(burn["date"]),
             "burn fields",
         )
     for attempt in doc["attempts"]:
@@ -652,7 +662,8 @@ def introductions(
 def check_ordering(repo: Path) -> None:
     """D1.5: append-only entries, ``record_k^ == selection_commit``, seeds, each burn's descriptor
     hash that of its attempt's freeze entry at the burn commit, IMPL ordering around ``record_1``,
-    freeze descriptors after their record and no IMPL change after the current freeze."""
+    freeze descriptors after their record and no IMPL change from the current freeze to
+    ``CLOSURE`` (D6 step 6), which HEAD descends from."""
     doc, frozen_entries = record(repo), freezes(repo)
     attempts, burns = doc["attempts"], doc["burns"] or []
     need([a["n"] for a in attempts] == list(range(1, len(attempts) + 1)), "attempt numbering")
@@ -691,7 +702,10 @@ def check_ordering(repo: Path) -> None:
         need(entry["holdout_payload_sha256"] == payload, "freeze payload")
     current = [f for f in frozen_entries if f["attempt"] == len(attempts) > len(burns)]
     for entry in current:
-        change = commits(repo, f"{entry['implementation_commit']}..HEAD", "--", *IMPL)
+        frozen_at = entry["implementation_commit"]
+        closed = is_ancestor(repo, frozen_at, CLOSURE) and is_ancestor(repo, CLOSURE, "HEAD")
+        need(closed, "closure ancestry")
+        change = commits(repo, f"{frozen_at}..{CLOSURE}", "--", *IMPL)
         need(not change, "IMPL change after freeze")
 
 

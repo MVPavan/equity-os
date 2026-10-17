@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -64,6 +65,22 @@ def provenance(
         and side.get("calc") != "COMPUTED"
         and (key, name) not in chosen
     ]
+    # every manifest COMPUTED first-party VALUE side is read from its calculation trace
+    held = {
+        (row_key(run, row), _name(value)): value
+        for row in rows or outcome.rows
+        for value in row.source_values
+        if value.source_role is SourceRole.FIRST_PARTY
+    }
+    for key, row in sorted(want.items()):
+        for name in ("xbrl", "pdf"):
+            side = row.get(name)
+            if side and side["s"] == "VALUE" and side.get("calc") == "COMPUTED":
+                refs = re.findall(r"\{([^}]*)\}", side.get("form", ""))
+                operands = [held.get((ref, name)) for ref in refs]
+                lines += _computed(
+                    repository, f"{key} {name}", side, held.get((key, name)), operands
+                )
     read = repository.get_interpretations
     found = {item.interpretation_id: item for item in read(sorted(set(chosen.values())))}
     cells = {
@@ -91,11 +108,7 @@ def provenance(
         if all("at" in op for op in side.get("operands", [{}])):  # an XBRL construction
             lines += _operands(repository, sources, f"{key} {name}", side, item)
         if item.occurrence_id is None:
-            ids = set(item.operand_interpretation_ids)
-            ops = {o.interpretation_id: o.occurrence_id for o in read(sorted(ids))}
-            cited = sorted({o for o in ops.values() if o is not None})
-            held = {c.occurrence_id for c in repository.get_occurrences(cited)}
-            if not ids or ops.keys() != ids or not held >= set(ops.values()):
+            if not _resolved(repository, set(item.operand_interpretation_ids)):
                 lines.append(f"{key} {name} interpretation {interpretation_id} is unresolved")
             continue
         cell = cells.get(item.occurrence_id)
@@ -148,6 +161,66 @@ def provenance(
 def labels(manifest: dict[str, Any]) -> dict[str, str]:
     """A manifest's source labels by SHA-256."""
     return {entry["sha256"]: entry["label"] for entry in manifest["header"]["sources"]}
+
+
+def _resolved(repository: Any, ids: set[int]) -> bool:
+    """Whether ``ids`` is non-empty and each names a stored interpretation whose occurrence is
+    stored, or whose construction operands resolve so."""
+    found = repository.get_interpretations(sorted(ids))
+    cited = {i.occurrence_id for i in found if i.occurrence_id is not None}
+    held = {c.occurrence_id for c in repository.get_occurrences(sorted(cited))}
+    return (
+        bool(ids)
+        and {i.interpretation_id for i in found} == ids
+        and held == cited
+        and all(
+            _resolved(repository, set(i.operand_interpretation_ids))
+            for i in found
+            if i.occurrence_id is None
+        )
+    )
+
+
+def _trace(repository: Any, where: str, trace_id: int) -> tuple[list[str], Any]:
+    """The stored trace by id, or a difference naming it unknown."""
+    traces = repository.get_calculation_traces([trace_id])
+    return ([], traces[0]) if traces else ([f"{where} trace {trace_id} is unknown"], None)
+
+
+def _computed(
+    repository: Any, where: str, side: dict[str, Any], value: Any, refs: list[Any]
+) -> list[str]:
+    """A COMPUTED first-party side: a stored trace, of the manifest's rule where it names one,
+    whose operands (through child traces other than an operand row's own) are resolved
+    interpretations and, where the side has a ``form``, exactly its operand rows' selections."""
+    if value is None or value.calculation_trace_id is None:
+        return [f"{where} has no calculation trace"]
+    lines, stored = _trace(repository, where, value.calculation_trace_id)
+    if stored is None:
+        return lines
+    if "construction" in side and stored.trace.formula_id != side["construction"]:
+        lines.append(f"{where} construction: want {side['construction']}")
+    rows = {(v.interpretation_id, v.calculation_trace_id) if v else None for v in refs}
+    got = _leaves(stored, rows)
+    if not got or not all(
+        _resolved(repository, {i}) if i is not None else (i, t) in rows for i, t in got
+    ):
+        lines.append(f"{where} trace operands are unresolved")
+    if refs and got != rows:
+        lines.append(f"{where} trace operands are not the form's rows")
+    return lines
+
+
+def _leaves(stored: Any, rows: set[Any]) -> set[tuple[int | None, int | None]]:
+    """A trace's operands as (interpretation, trace) ids, each child trace not in ``rows``
+    replaced by its own; a missing child stays as itself."""
+    children = {child.trace_id: child for child in stored.children}
+    got: set[tuple[int | None, int | None]] = set()
+    for operand in stored.trace.operands:
+        pair = (operand.interpretation_id, operand.operand_trace_id)
+        child = children.get(operand.operand_trace_id)
+        got |= _leaves(child, rows) if child is not None and pair not in rows else {pair}
+    return got
 
 
 def _operands(
@@ -210,11 +283,10 @@ def _vendor_provenance(
                 continue
             ids = [value.interpretation_id] if value.interpretation_id is not None else []
             if value.calculation_trace_id is not None:
-                traces = repository.get_calculation_traces([value.calculation_trace_id])
-                if not traces:
-                    lines.append(f"{key} {name} trace {value.calculation_trace_id} is unknown")
+                missing, trace = _trace(repository, f"{key} {name}", value.calculation_trace_id)
+                if trace is None:
+                    lines += missing
                     continue
-                (trace,) = traces
                 if trace.trace.formula_id != side.get("construction"):
                     lines.append(
                         f"{key} {name} construction: want {side.get('construction')}"
