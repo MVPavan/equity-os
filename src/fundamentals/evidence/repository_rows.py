@@ -47,6 +47,7 @@ from fundamentals.contracts.interval import Interval
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.qualification import ProvenCondition
+from fundamentals.contracts.retention import OriginalExpiredError
 
 Row = Mapping[str, Any]
 
@@ -208,23 +209,31 @@ INSERT_OCCURRENCE: LiteralString = (
     "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
     "ON CONFLICT DO NOTHING"
 )
-OCCURRENCE_COLUMNS: LiteralString = (
+# R13: a vendor row whose capture is not retained is withheld: list reads skip it (the join
+# condition), by-id reads decode it to OriginalExpiredError. Exchange rows read unchanged.
+_VISIBLE: LiteralString = (
+    "(NOT eqos.is_vendor_source(c.source_id) "
+    "OR eqos.capture_state(c.id) IN ('RETAINED', 'RESTORED')) "
+)
+_OCCURRENCE_ROWS: LiteralString = (
     "SELECT o.id AS occurrence_id, o.representation, o.extractor_version, o.native_field, "
     "o.raw_value_text, o.raw_unit, o.raw_scale, o.raw_sign, o.precision_kind, "
     "o.declared_precision, o.native_context, o.period_start, o.period_end, o.period_instant, "
     "o.missing_state, o.disclosure, o.anchor, o.anchor_key, o.knowledge_time, "
     "o.knowledge_time_status, o.first_seen_at, o.revision_cause, "
     "c.id, c.source_id, c.surface, c.request_key, c.capture_id, c.blob_sha256, "
-    "c.record_sha256, c.registered_at, c.first_seen_at AS capture_first_seen_at "
+    "c.record_sha256, c.registered_at, c.first_seen_at AS capture_first_seen_at, "
+    "NOT " + _VISIBLE + "AS withheld "
     "FROM eqos.occurrences o JOIN eqos.capture_refs c ON c.id = o.capture_ref_id "
 )
+OCCURRENCE_COLUMNS: LiteralString = _OCCURRENCE_ROWS + "AND " + _VISIBLE
 OCCURRENCES_OF_GENERATION: LiteralString = (
     OCCURRENCE_COLUMNS + "WHERE o.capture_ref_id = %s AND o.extractor_version = %s ORDER BY o.id"
 )
 OCCURRENCES_OF_CAPTURE: LiteralString = (
     OCCURRENCE_COLUMNS + "WHERE o.capture_ref_id = %s ORDER BY o.id"
 )
-OCCURRENCES_BY_ID: LiteralString = OCCURRENCE_COLUMNS + "WHERE o.id = ANY(%s) ORDER BY o.id"
+OCCURRENCES_BY_ID: LiteralString = _OCCURRENCE_ROWS + "WHERE o.id = ANY(%s) ORDER BY o.id"
 
 # --- attempts -------------------------------------------------------------------------
 
@@ -289,17 +298,18 @@ INSERT_CONDITION_EVIDENCE: LiteralString = (
     "INSERT INTO eqos.interpretation_condition_evidence (interpretation_id, condition_id, "
     "holds, evidence_interpretation_id) VALUES (%s, %s, %s, %s)"
 )
-INTERPRETATION_COLUMNS: LiteralString = (
-    "SELECT i.*, "
+_INTERPRETATION_ROWS: LiteralString = (
+    "SELECT i.*, NOT " + _VISIBLE + "AS withheld, "
     "COALESCE((SELECT array_agg(o.operand_interpretation_id ORDER BY o.ordinal) "
     " FROM eqos.interpretation_operands o WHERE o.interpretation_id = i.id), '{}') AS operands, "
     "COALESCE((SELECT jsonb_agg(jsonb_build_array(e.condition_id, e.holds, "
     " e.evidence_interpretation_id) ORDER BY e.condition_id, e.evidence_interpretation_id) "
     " FROM eqos.interpretation_condition_evidence e WHERE e.interpretation_id = i.id), "
     " '[]'::jsonb) AS conditions "
-    "FROM eqos.interpretations i "
+    "FROM eqos.interpretations i JOIN eqos.capture_refs c ON c.id = i.capture_ref_id "
 )
-INTERPRETATIONS_BY_ID: LiteralString = INTERPRETATION_COLUMNS + "WHERE i.id = ANY(%s) ORDER BY i.id"
+INTERPRETATION_COLUMNS: LiteralString = _INTERPRETATION_ROWS + "AND " + _VISIBLE
+INTERPRETATIONS_BY_ID: LiteralString = _INTERPRETATION_ROWS + "WHERE i.id = ANY(%s) ORDER BY i.id"
 INTERPRETATIONS_OF_OCCURRENCES: LiteralString = (
     INTERPRETATION_COLUMNS + "WHERE i.occurrence_id = ANY(%s) ORDER BY i.id"
 )
@@ -422,7 +432,8 @@ def occurrence_params(occurrence: Occurrence) -> tuple[object, ...]:
 
 
 def occurrence_of(row: Row) -> Occurrence:
-    """An occurrence from a joined occurrence/capture row."""
+    """An occurrence from a joined occurrence/capture row; a withheld one raises (R13)."""
+    _refuse_withheld(row, row["id"])
     return Occurrence(
         occurrence_id=row["occurrence_id"],
         capture=capture_of(row, first_seen_column="capture_first_seen_at"),
@@ -538,7 +549,8 @@ def interpretation_params(item: Interpretation) -> tuple[object, ...]:
 
 
 def interpretation_of(row: Row) -> Interpretation:
-    """An interpretation with its operands and condition evidence."""
+    """An interpretation with its operands and condition evidence; a withheld one raises."""
+    _refuse_withheld(row, row["capture_ref_id"])
     period = period_of(row)
     stored = row["dimension_set"]
     dimensions = (
@@ -595,6 +607,12 @@ def interpretation_of(row: Row) -> Interpretation:
         supersedes_interpretation_id=row["supersedes_interpretation_id"],
         recorded_at=row["recorded_at"],
     )
+
+
+def _refuse_withheld(row: Row, capture_ref_id: int) -> None:
+    """Raise for a vendor row whose capture is expired or being purged (R13)."""
+    if row.get("withheld"):
+        raise OriginalExpiredError(f"capture {capture_ref_id} is expired; its payload is withheld")
 
 
 def _conditions(rows: Sequence[Sequence[Any]]) -> tuple[ProvenCondition, ...]:

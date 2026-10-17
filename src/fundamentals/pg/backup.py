@@ -78,7 +78,8 @@ _UNRESOLVED = (
 )
 _SCHEMA_PRESENT = "SELECT to_regnamespace('eqos') IS NOT NULL"
 _STATES = (
-    "SELECT r.id, eqos.capture_state(r.id), a.url FROM eqos.capture_refs r "
+    "SELECT r.id, eqos.capture_state(r.id), a.url, (SELECT max(p.id) FROM eqos.purge_records p "
+    "WHERE p.capture_ref_id = r.id) FROM eqos.capture_refs r "
     "LEFT JOIN eqos.capture_addresses a ON a.capture_ref_id = r.id"
 )
 _PENDING = "SELECT kind, id FROM eqos.retention_pending ORDER BY kind, id"
@@ -111,6 +112,7 @@ class ExpiredCapture(BaseModel):
 
     capture: Capture
     url: str | None
+    purge_record_id: int | None = None
 
 
 class BackupManifest(BaseModel):
@@ -202,7 +204,7 @@ def write_backup(
                     )  # fmt: skip
             captures = tuple(c for c in everything if states[c[0]][0] in _RETAINED)
             expired = tuple(
-                ExpiredCapture(capture=c, url=states[c[0]][1])
+                ExpiredCapture(capture=c, url=states[c[0]][1], purge_record_id=states[c[0]][2])
                 for c in everything
                 if c not in captures
             )

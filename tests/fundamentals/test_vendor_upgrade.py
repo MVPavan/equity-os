@@ -141,6 +141,11 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
             "eqos.capture_state(id) IN ('RETAINED', 'RESTORED')", "true"
         ),
     )
+    # Every row is visible before 0029's state-aware readers (R13).
+    for module in (rows_sql, run_store):
+        for name, fragment in vars(module).items():
+            if isinstance(fragment, str) and rows_sql._VISIBLE in fragment and name != "_VISIBLE":
+                monkeypatch.setattr(module, name, fragment.replace(rows_sql._VISIBLE, "true "))
     upgrade_migrations = tmp_path / "through-0006-migrations"
     upgrade_migrations.mkdir()
     for source in sorted(MIGRATIONS_DIR.glob("000[1-6]_*.sql")):

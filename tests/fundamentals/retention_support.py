@@ -38,6 +38,7 @@ from fundamentals.retention.holds import capture_facts
 RETENTION_TABLES = frozenset(
     {"retention_classes", "capture_addresses", "licence_ends"}
     | {"capture_states", "purge_runs", "purge_run_closures"}
+    | {"purge_records", "retention_probes"}
 )
 FIRST_RETENTION_MIGRATION = "0027_retention_classes.sql"
 CLASS_OF = (
@@ -69,11 +70,6 @@ VALUES (%s, %s, 'UNMAPPED', %s, 'HIGH', false, 'MAPPING_DEFINITION_OR_SOURCE_ERR
 RETURNING id"""
 _DISPOSE = """INSERT INTO eqos.queue_dispositions (item_id, kind, reason, decider, evidence_ref)
 VALUES (%s, 'DISMISSED', 'fixture', 'fixture-owner', 'fixture')"""
-# STAND-IN until the purge role's grants land (plan D9 File map, 0029): the dry-run's reads.
-_PURGE_READS = (
-    "GRANT SELECT ON ALL TABLES IN SCHEMA eqos TO eqos_purge",
-    "GRANT EXECUTE ON FUNCTION eqos.store_now() TO eqos_purge",
-)
 _SET_CLOCK = "SELECT setval('eqos.store_clock_us', %s, true)"
 
 
@@ -203,12 +199,6 @@ def verdict(
 ) -> Eligibility:
     """One capture's eligibility at :func:`later`."""
     return eligibility(facts_of(conn, capture_ref_id, pinned), later())
-
-
-def grant_purge_reads(migrator: psycopg.Connection) -> None:
-    """STAND-IN: let the purge role read what the dry-run reads (see ``_PURGE_READS``)."""
-    for statement in _PURGE_READS:
-        migrator.execute(statement)
 
 
 def set_store_clock(migrator: psycopg.Connection, at: datetime) -> None:

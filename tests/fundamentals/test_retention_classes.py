@@ -327,9 +327,11 @@ INSERTERS = {
     "retention_classes": set(),
     "capture_addresses": {"eqos_runtime", "eqos_owner"},
     "licence_ends": {"eqos_owner", "eqos_purge"},
-    "capture_states": set(),
-    "purge_runs": set(),
-    "purge_run_closures": set(),
+    "capture_states": {"eqos_purge"},  # the purge grants arrive with 0029
+    "purge_runs": {"eqos_purge"},
+    "purge_run_closures": {"eqos_purge"},
+    "purge_records": {"eqos_purge"},
+    "retention_probes": {"eqos_purge"},
 }
 
 

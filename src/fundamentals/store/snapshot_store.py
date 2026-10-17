@@ -39,7 +39,7 @@ import os
 import re
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import structlog
@@ -125,6 +125,7 @@ class SnapshotStore:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._anchor: DirectoryAnchor | None = None
+        self._held = False
 
     @contextmanager
     def prepare_ordinary_output(self) -> Iterator[None]:
@@ -254,6 +255,23 @@ class SnapshotStore:
                 byte_count=0 if record.body is None else record.body.byte_count,
             )
             return published
+
+    @contextmanager
+    def writer_held(self) -> Iterator[None]:
+        """Hold the writer lock across this instance's ``delete_blob`` and ``blob_inventory``
+        calls, which then do not take it again (RP4b; a flock is per open file description)."""
+        with self._tree() as tree, tree.writer_lock():
+            self._held = True
+            try:
+                yield
+            finally:
+                self._held = False
+
+    @contextmanager
+    def _writer(self) -> Iterator[DescriptorTree]:
+        """A tree under the writer lock: the one this instance holds, or taken for the call."""
+        with self._tree() as tree, nullcontext() if self._held else tree.writer_lock():
+            yield tree
 
     @contextmanager
     def _tree(self, *, create: bool = False) -> Iterator[DescriptorTree]:
@@ -460,7 +478,7 @@ class SnapshotStore:
         """Unlink each registered body link ``(surface, request_key, capture_id)``, then the
         blob, fsyncing parents and calling ``checkpoint`` after each unlink. A blob with a link
         not named here keeps every byte (``UNKNOWN_LINK``); missing files count as deleted."""
-        with self._tree() as tree, tree.writer_lock():
+        with self._writer() as tree:
             blob_dir = _find_dir(tree, (BLOBS_DIRNAME, source_id, blob_sha256[:BLOB_PREFIX_LENGTH]))
             blob = None
             if blob_dir is not None and tree.exists(blob_dir, blob_sha256):
@@ -491,7 +509,7 @@ class SnapshotStore:
 
     def blob_inventory(self) -> tuple[BlobEntry, ...]:
         """Every stored blob and its link count, listed under the writer lock (RP5)."""
-        with self._tree() as tree, tree.writer_lock():
+        with self._writer():
             blobs = self._root / BLOBS_DIRNAME
             return tuple(
                 BlobEntry(source_id=source.name, blob_sha256=path.name, links=info.st_nlink)

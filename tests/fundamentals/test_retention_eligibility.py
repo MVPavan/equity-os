@@ -21,7 +21,6 @@ from retention_support import (
     dispose,
     facts_of,
     finish_migrations,
-    grant_purge_reads,
     later,
     open_item,
     pre_retention_db,
@@ -204,7 +203,6 @@ def test_a_pre_existing_capture_is_kept_until_classified(
     database, migrator = pre_retention_db
     capture = register(migrator, "nse", "EQUITY_L")
     finish_migrations(migrator)
-    grant_purge_reads(migrator)
     assert verdict(migrator, capture) == KEEP
     refused = retention_cli(monkeypatch, database, "purge", "--dry-run")
     assert refused == (2, "unclassified\tnse\tEQUITY_L\n")

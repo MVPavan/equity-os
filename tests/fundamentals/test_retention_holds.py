@@ -30,7 +30,6 @@ from retention_support import (
     CONFIG,
     dispose,
     facts_of,
-    grant_purge_reads,
     later,
     open_item,
     package,
@@ -458,7 +457,6 @@ def test_the_dry_run_lists_exactly_the_eligible_blobs(
     world.identity_event(held)
     now = later()
     with pg_db.migrator_connection() as migrator:
-        grant_purge_reads(migrator)
         set_store_clock(migrator, now)
     expected = eligible_blobs(capture_facts(world.rt, pinned_roots(CONFIG)), now)
     listed = {b.capture_ref_ids for b in expected}
