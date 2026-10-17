@@ -1,6 +1,6 @@
 # Extractor v2 (structural Ind AS signal) Implementation Plan
 
-Status: draft — pending Sol review r3 (r2 REJECT: R4, R7 addressed below)
+Status: approved — Sol plan review r1 REJECT (6) → r2 REJECT (2) → r3 APPROVE 2026-10-17.
 
 **Origin:** bead `eqos-71x`; D6 [Amendment 2026-10-16 (attempt 2 burn)](D6.md#amendment-2026-10-16-attempt-2-burn-eqos-h410)
 option A ("a new bead, its own version advance"), the owner's B-now-A-later choice; D6 Freeze step 6
@@ -165,7 +165,8 @@ upgrade proof guards it. Implementer: Opus.
 
 ### Task 2: Discovery parity and the frozen historical rule
 
-Goal: discovery admits exactly what v2 ingest accepts; the D6 draw checker evaluates the historical
+Goal: discovery's framework verdict equals v2 ingest's, and discovery admits exactly the
+sector-eligible inputs v2 ingest accepts; the D6 draw checker evaluates the historical
 v1 rule independently of production.
 Approach:
 - **Historical rule (R2)** in `stage4_filings.py`, one small helper, docstring "frozen D6 attempt-3
