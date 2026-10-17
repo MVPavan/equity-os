@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D9 Retention and replay: Task 8 manifest",
-    "detail": "Tasks 1-7 done: classes, holds, retention protocol, crash-safe purge with tombstones, re-fetch with hash check, licence ends and restore that purges first. Task 8 in progress: an independently authored frozen Stage 5 manifest (expectations decided by hand from fixtures and the spec), then Sol approval before the Stage 5 end-to-end (Task 9).",
+    "title": "D9 Retention and replay: Task 9 end-to-end",
+    "detail": "Tasks 1-8 done. The frozen Stage 5 manifest was independently authored and approved by Sol after three review rounds (unattainable fixture expectations, invalid replay seeds and checker gaps fixed). Task 9 in progress: the Stage 5 end-to-end through the CLI (classify, backup, dry-run, purge crashed and rerun, re-fetch three ways, licence end, restores with replay) checked against the manifest.",
     "stage": "D9"
   },
   "next": [
@@ -11,6 +11,10 @@
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D9 Task 8 committed: frozen ledger Stage 5 manifest, independently authored, approved by Sol in round 3 (payload e094ce26). Rounds 1-2 fixed unattainable expectations, non-replayable seed runs, the Task 9 order, probe and purge-reason expectations, preservation digests, a deterministic screen-export fixture and a fundamentals-free structural checker."
+    },
     {
       "date": "2026-10-17",
       "text": "D9 Task 7 committed: 'retention licence-end' (marker, authority file, row, purge) and two-phase restore that purges first before access; backups reconcile licence ends. Full suite 4018 passed, two WSL clock backsteps passed on rerun."
