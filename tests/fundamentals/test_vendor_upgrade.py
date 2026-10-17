@@ -21,7 +21,7 @@ from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.compare import run, run_config, run_store
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.entity import identity_layers
-from fundamentals.evidence import discovery_gate
+from fundamentals.evidence import capture_retention, discovery_gate
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -131,6 +131,8 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pre_0022_reads(monkeypatch)
+    # No capture_addresses before 0027: intake records no address.
+    monkeypatch.setattr(capture_retention, "_INSERT_ADDRESS", "SELECT %s, %s")
     upgrade_migrations = tmp_path / "through-0006-migrations"
     upgrade_migrations.mkdir()
     for source in sorted(MIGRATIONS_DIR.glob("000[1-6]_*.sql")):

@@ -23,6 +23,7 @@ from pg_support import PgTestDatabase
 from psycopg import errors, sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from retention_support import RETENTION_TABLES
 
 from fundamentals.api.cli import main
 from fundamentals.contracts.evidence import RunMode
@@ -543,6 +544,7 @@ def test_privileges_match_the_d2_matrix(ledger: Ledger) -> None:
         tables = [
             row[0]
             for row in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'eqos'")
+            if row[0] not in RETENTION_TABLES  # test_retention_classes.py
         ]
         for role, inserts in INSERTERS.items():
             for table in tables:

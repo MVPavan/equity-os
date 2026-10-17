@@ -39,14 +39,16 @@ class PgRole(StrEnum):
     PANEL = "PANEL"
     OWNER = "OWNER"
     READER = "READER"
+    PURGE = "PURGE"
 
 
 # NOLOGIN group roles; a member login connects with ``role=<group>``, so ``current_user`` is the
-# group inside the session (plan D3, D2; the reader: plan D5, D2).
+# group inside the session (plan D3, D2; the reader: plan D5, D2; purge: plan D9 R6).
 GROUP_ROLES: dict[PgRole, str] = {
     PgRole.PANEL: "eqos_panel",
     PgRole.OWNER: "eqos_owner",
     PgRole.READER: "eqos_reader",
+    PgRole.PURGE: "eqos_purge",
 }
 
 

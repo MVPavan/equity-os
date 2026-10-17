@@ -91,6 +91,7 @@ from fundamentals.entity.verification import (
     upstox_statement_state,
     xbrl_entity_state,
 )
+from fundamentals.evidence.capture_retention import capture_registration
 from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.xbrl_adapter import parse_instance
@@ -642,52 +643,51 @@ def _expected(
 def store_captures(
     store: SnapshotStore, repository: EvidenceRepository, captures: Sequence[Capture]
 ) -> list[tuple[VerificationUnit, CaptureReference]]:
-    """Publish each body to the snapshot store and register it, in order: ``(unit, ref)``.
-
-    Upstox requests keep their route and query parameters; others are keyed by their key digest."""
+    """Publish and register each body in one registration (with its URL), in order: ``(unit,
+    ref)``. Upstox requests keep their route and query; others are keyed by their key digest."""
     registered = []
     for item in captures:
         body = item.response.body or b""
         request, sha = item.request, hashlib.sha256(body).hexdigest()
-        authority = surface_authority(request.source_id, request.surface)
-        identity = RequestIdentity(
-            source_id=request.source_id,
-            surface=request.surface,
-            request_key=hashlib.sha256(request.key.encode()).hexdigest(),
-        )
-        if (request.source_id, request.surface) in UPSTOX_ROUTED:
-            identity = upstox_request_identity(request.surface, UPSTOX_ROUTE, request.url)
-        record = store.put_capture(
-            CaptureRecord.make(
-                request=identity,
-                retrieved_at=item.response.retrieved_at,
-                http_status=200,
-                media_type=_MEDIA_TYPE,
-                content_encoding=None,
-                body=BlobRef(source_id=request.source_id, content_sha256=sha, byte_count=len(body)),
-                outcome=OutcomeRecord(
-                    code=OutcomeCode.OK, native_kind=_NATIVE_KIND, native_value=OK
+        source, surface = request.source_id, request.surface
+        authority = surface_authority(source, surface)
+        key = hashlib.sha256(request.key.encode()).hexdigest()
+        identity = RequestIdentity(source_id=source, surface=surface, request_key=key)
+        if (source, surface) in UPSTOX_ROUTED:
+            identity = upstox_request_identity(surface, UPSTOX_ROUTE, request.url)
+        blob = BlobRef(source_id=source, content_sha256=sha, byte_count=len(body))
+        ok = OutcomeRecord(code=OutcomeCode.OK, native_kind=_NATIVE_KIND, native_value=OK)
+        with capture_registration(repository._pool) as registration:
+            record = store.put_capture(
+                CaptureRecord.make(
+                    request=identity,
+                    retrieved_at=item.response.retrieved_at,
+                    http_status=200,
+                    media_type=_MEDIA_TYPE,
+                    content_encoding=None,
+                    body=blob,
+                    outcome=ok,
+                    rights=SnapshotRights(authority_refs=(authority.retention_authority,)),
+                    schema_version=CAPTURE_SCHEMA_VERSION,
+                    body_completeness=BodyCompleteness.COMPLETE,
                 ),
-                rights=SnapshotRights(authority_refs=(authority.retention_authority,)),
-                schema_version=CAPTURE_SCHEMA_VERSION,
-                body_completeness=BodyCompleteness.COMPLETE,
-            ),
-            body,
-        )
-        now = repository.store_clock()
-        ref = repository.put_capture_ref(
-            CaptureReference(
-                capture_ref_id=None,
-                source_id=request.source_id,
-                surface=request.surface,
-                request_key=record.request.request_key,
-                capture_id=record.capture_id,
-                blob_sha256=sha,
-                record_sha256=record.record_sha256,
-                registered_at=now,
-                first_seen_at=now,
+                body,
             )
-        )
+            now = repository.store_clock()
+            ref = registration.insert(
+                CaptureReference(
+                    capture_ref_id=None,
+                    source_id=source,
+                    surface=surface,
+                    request_key=record.request.request_key,
+                    capture_id=record.capture_id,
+                    blob_sha256=sha,
+                    record_sha256=record.record_sha256,
+                    registered_at=now,
+                    first_seen_at=now,
+                ),
+                url=request.url,
+            )
         registered.append((request.unit, ref))
     return registered
 

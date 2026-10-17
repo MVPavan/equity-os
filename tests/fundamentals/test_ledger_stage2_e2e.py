@@ -26,6 +26,7 @@ from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES
 from pg_support import PgTestDatabase
 from psycopg import errors
 from retained_support import apar_store
+from retention_support import RETENTION_TABLES
 from stage1_e2e_support import RUNS, Stage
 from test_frozen_manifests import LEDGER, LEDGER2, REPO, load
 from test_ledger_import import CONFIG as IMPORT_CONFIG
@@ -480,5 +481,5 @@ def test_ledger_stage2_end_to_end(
     )
     tables = [*STAGE2["backup"]["tables"]]
     tables += [t["table"] for m in (load(LEDGER), MANIFEST) for t in m["backup_tables"]]
-    tables += IDENTITY_TABLES | COVERAGE_TABLES
+    tables += IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES
     assert sorted(verify_set(sets).table_counts) == sorted(tables)

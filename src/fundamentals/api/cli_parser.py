@@ -16,6 +16,7 @@ from fundamentals.api.ledger_cli import add_ledger_parser
 from fundamentals.api.legacy_cli import add_legacy_parser
 from fundamentals.api.news_cli import add_news_parser
 from fundamentals.api.onboard_cli import add_onboard_parser
+from fundamentals.api.retention_cli import add_retention_parser
 from fundamentals.api.review_cli import add_review_parser
 from fundamentals.api.screener_company_cli import add_screener_company_parser
 from fundamentals.api.screener_financials_cli import add_screener_financials_parser
@@ -191,6 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_compare_parser(subparsers)
     add_onboard_parser(subparsers)
     add_coverage_parser(subparsers)
+    add_retention_parser(subparsers)
     add_ledger_parser(subparsers)
     add_upstox_parser(subparsers)
     add_upstox_crosscheck_parser(subparsers)

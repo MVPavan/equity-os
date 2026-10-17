@@ -44,6 +44,7 @@ from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.onboard_cli import dispatch_onboard_command
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_cli import dispatch_report_command
+from fundamentals.api.retention_cli import dispatch_retention_command
 from fundamentals.api.review_cli import dispatch_review_command
 from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.screener_watchlist_corroborate_cli import (
@@ -333,6 +334,9 @@ def main(
     coverage_exit_code = dispatch_coverage_command(args)
     if coverage_exit_code is not None:
         return coverage_exit_code
+
+    if (retention_exit_code := dispatch_retention_command(args)) is not None:
+        return retention_exit_code
 
     ledger_exit_code = dispatch_ledger_command(args)
     if ledger_exit_code is not None:

@@ -85,6 +85,7 @@ class RetainedCaptureBinding(BaseModel):
     relative_path: Path
     expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     filed_at_raw: str
+    url: str | None = None
 
 
 class RetainedIntake(BaseModel):
@@ -172,6 +173,7 @@ def retained_intake_from_manifest(
                 relative_path=Path(folder) / entry["filename"],
                 expected_sha256=entry["sha256"],
                 filed_at_raw=entry["filed_at_nse"],
+                url=entry.get("url"),
             )
         )
     return RetainedIntake(

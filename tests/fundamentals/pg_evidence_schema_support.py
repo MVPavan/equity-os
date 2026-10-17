@@ -20,6 +20,7 @@ from pg_support import REPO_ROOT, PgTestDatabase
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from retention_support import RETENTION_TABLES
 
 from fundamentals.pg.settings import SCHEMA_NAME, PgRole
 
@@ -629,12 +630,13 @@ def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
 
 def _tables(conn: psycopg.Connection) -> list[str]:
     """The evidence tables: the ledger's, memory's and coverage's have their own matrix in
-    test_ledger_integrity, the identity tables in test_identity_layers."""
+    test_ledger_integrity, the identity tables in test_identity_layers, the retention tables in
+    test_retention_classes."""
     rows = conn.execute(
         "SELECT tablename FROM pg_tables WHERE schemaname = %s ORDER BY tablename",
         (SCHEMA_NAME,),
     ).fetchall()
-    excluded = LEDGER_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES
+    excluded = LEDGER_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES
     return [row[0] for row in rows if row[0] not in excluded]
 
 

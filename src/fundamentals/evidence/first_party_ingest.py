@@ -56,6 +56,7 @@ from fundamentals.evidence.capture_intake import (
     stage_retained_member,
 )
 from fundamentals.evidence.capture_interpretation import CaptureScope, interpret_generation
+from fundamentals.evidence.capture_retention import capture_registration
 from fundamentals.evidence.first_party_extract import (
     IngestError,
     IngestRequest,
@@ -372,13 +373,16 @@ def _registered(
     surface: str,
 ) -> CaptureReference:
     """The stored registration of these bytes, staging them only when none exists (level 1)."""
-    existing = repository.find_capture_ref(binding.source_id, surface, binding.expected_sha256)
-    if existing is not None:
-        return existing
-    staged = stage_retained_member(
-        store, intake, binding.representation, surface=surface, clock=repository.store_clock
-    )
-    return repository.put_capture_ref(staged)
+    with capture_registration(repository._pool) as registration:
+        existing = registration.find(
+            binding.source_id, surface, blob_sha256=binding.expected_sha256
+        )
+        if existing is not None:
+            return existing
+        staged = stage_retained_member(
+            store, intake, binding.representation, surface=surface, clock=repository.store_clock
+        )
+        return registration.insert(staged, url=binding.url)
 
 
 def admit_transcript(
