@@ -47,7 +47,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 CHECKER_VERSION = "ledger-claim-check-v1"
 V, P = SubjectKind.REPORT_VERSION, SubjectKind.DISPOSITION_PROPOSAL
-M = SubjectKind.MEMORY_ITEM
+M, W = SubjectKind.MEMORY_ITEM, SubjectKind.WATCHLIST
 DECISION_REF = "decision:{decision_id}"
 _DECIDERS = frozenset({DeciderRole.PANEL, DeciderRole.OWNER})
 _ANY_HEAD = frozenset({None, *DecisionKind})
@@ -85,6 +85,9 @@ TRANSITIONS: dict[
         for kind in (DecisionKind.PROMOTE, DecisionKind.REJECT_CANDIDATE)
     },
     (M, DecisionKind.RETIRE): (frozenset({DeciderRole.OWNER}), frozenset({DecisionKind.PROMOTE})),
+    # 0026 (plan D7, O10): the owner adds a stock, removes it, and may add it again.
+    (W, DecisionKind.ADD): (frozenset({DeciderRole.OWNER}), frozenset({None, DecisionKind.REMOVE})),
+    (W, DecisionKind.REMOVE): (frozenset({DeciderRole.OWNER}), frozenset({DecisionKind.ADD})),
 }
 _HEAD_STATUS = {
     None: VersionStatus.DRAFT,

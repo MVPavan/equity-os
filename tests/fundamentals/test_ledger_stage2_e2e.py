@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import pytest
+from coverage_support import watchlist
 from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES
 from pg_support import PgTestDatabase
 from psycopg import errors
@@ -65,6 +66,7 @@ from fundamentals.ledger.import_mapping import UPDATE_FILES
 from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.memory.store import MemoryStore
 from fundamentals.pg.backup import verify_set, write_backup
+from fundamentals.pg.settings import PgRole
 from fundamentals.store.snapshot_store import SnapshotStore
 
 MANIFEST = load(LEDGER2)
@@ -170,6 +172,8 @@ def stage2_state(
             "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s", item_spec["stock"]
         )
         stocks = {item_spec["stock"]: entity_id}
+        with pg_db.owner_pool() as owner:
+            watchlist({PgRole.RUNTIME: runtime, PgRole.OWNER: owner}, entity_id, paths["snapshots"])
         memory: MemoryStore = PgMemoryStore(runtime)
 
         def draft(supports: tuple[int, ...]) -> MemoryItemDraft:

@@ -18,6 +18,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from coverage_support import watchlist
 from pg_evidence_schema_support import (
     NOW,
     PERIOD_END,
@@ -136,6 +137,9 @@ class Cited:
         self.cell_key = key("profit_before_tax", PeriodInterval.duration(PERIOD_START, PERIOD_END))
         self.cell_key = self.cell_key.model_copy(update={"entity_id": self.entity_id})
         self.cell_value, self.fixture_first_seen = Decimal(100), NOW
+        watchlist(
+            self.pools, self.entity_id, self.snapshots
+        )  # SEED: runtime drafts pass the gate (plan D7 R6)
         with self.pools[PgRole.RUNTIME].connection() as conn, conn.transaction():
             self.ids = _seed_cells(conn, self.entity_id, self.cell_key.digest())
         pdf_sources = self.query(

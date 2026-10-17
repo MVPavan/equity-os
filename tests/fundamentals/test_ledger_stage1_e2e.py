@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from coverage_support import watchlist
 from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
 from pg_support import PgTestDatabase, drop_database, mint_name
 from stage1_e2e_support import CONFIG, RUNS, Stage
@@ -51,6 +52,7 @@ from fundamentals.ledger.display import (
 )
 from fundamentals.ledger.importer import load_import_config
 from fundamentals.pg.backup import restore_backup, verify_set, write_backup
+from fundamentals.pg.settings import PgRole
 from fundamentals.store.snapshot_store import SnapshotStore
 
 MANIFEST = load(LEDGER)
@@ -360,6 +362,8 @@ def test_ledger_stage1_end_to_end(
         claims=(revenue,),
     )
     with pg_db.runtime_pool() as pool:
+        with pg_db.owner_pool() as owner:
+            watchlist({PgRole.RUNTIME: pool, PgRole.OWNER: owner}, entity_id, paths["snapshots"])
         with pool.connection() as conn, conn.transaction():
             successor = store.create_version(conn.cursor(), draft)
         lifecycle.submit(pool, successor, **paths)

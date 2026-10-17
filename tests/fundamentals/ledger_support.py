@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from coverage_support import watchlist
 from pg_support import PgTestDatabase
 from psycopg import Cursor
 from psycopg_pool import ConnectionPool
@@ -39,6 +40,7 @@ from fundamentals.contracts.ledger import (
 )
 from fundamentals.ledger import store
 from fundamentals.pg.settings import PgRole
+from fundamentals.store.snapshot_store import SnapshotStore
 
 # The tables 0012 and 0013 create.
 LEDGER_TABLES = frozenset(
@@ -116,11 +118,32 @@ SELF_CITED = NumericClaim(
 class Ledger:
     """One seeded test database's ledger, driven through the three role pools."""
 
-    def __init__(self, pools: dict[PgRole, ConnectionPool], seeded: dict[str, int]) -> None:
+    def __init__(
+        self,
+        pools: dict[PgRole, ConnectionPool],
+        seeded: dict[str, int],
+        snapshots: SnapshotStore,
+    ) -> None:
         self.pools = pools
+        self.snapshots = snapshots
         self.entity_id = seeded["_entity"]
         self.trace_id = seeded["calculation_traces"]
         self._periods = 0
+        self._covered: set[int] = set()
+        self.cover(self.entity_id)
+
+    def cover(self, entity_id: int) -> None:
+        """SEED (plan D7 R6), once per stock: on the watchlist with a runtime bootstrap draft,
+        so runtime drafts of its earnings updates pass the drafting gate."""
+        if entity_id in self._covered:
+            return
+        self._covered.add(entity_id)
+        watchlist(self.pools, entity_id, self.snapshots)
+        with self._cursor(PgRole.RUNTIME) as cursor:
+            report = store.create_report(
+                cursor, entity_id=entity_id, period="FY27_Q0", kind=ReportKind.BOOTSTRAP_THESIS
+            )
+        self.draft(report)
 
     def report(self) -> int:
         """A new report (runtime) for a fresh period."""
@@ -285,11 +308,14 @@ def validation(
 
 
 @pytest.fixture
-def ledger(pg_db: PgTestDatabase, seeded: dict[str, int]) -> Iterator[Ledger]:
-    """The ledger of a seeded test database with its runtime, panel and owner pools open."""
+def ledger(
+    pg_db: PgTestDatabase, seeded: dict[str, int], tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Ledger]:
+    """The ledger of a seeded test database with its runtime, panel and owner pools open and a
+    snapshot store for the watchlist seed's capture."""
     with ExitStack() as stack:
         pools = {
             role: stack.enter_context(pg_db.role_pool(role))
             for role in (PgRole.RUNTIME, PgRole.PANEL, PgRole.OWNER)
         }
-        yield Ledger(pools, seeded)
+        yield Ledger(pools, seeded, SnapshotStore(tmp_path_factory.mktemp("snapshots")))

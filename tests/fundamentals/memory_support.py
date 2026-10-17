@@ -72,10 +72,11 @@ class Memory:
     def approved(
         self, report_id: int | None = None, predecessor_id: int | None = None, **update: Any
     ) -> int:
-        """A runtime draft (on a new report, unless a successor) submitted and approved by the
-        owner binding its own all-``MATCH`` check."""
+        """A runtime draft (on a new report, unless a successor; its stock covered first)
+        submitted and approved by the owner binding its own all-``MATCH`` check."""
         if report_id is None:
             report_id = self.ledger.report()
+        self.ledger.cover(self.one("SELECT entity_id FROM eqos.reports WHERE id = %s", report_id))
         version_id = self.ledger.draft(report_id, predecessor_id, **update)
         self.ledger.submit(version_id)
         self.ledger.approve(version_id)
