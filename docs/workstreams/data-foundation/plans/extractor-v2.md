@@ -1,10 +1,11 @@
 # Extractor v2 (structural Ind AS signal) Implementation Plan
 
 Status: approved — Sol plan review r1 REJECT (6) → r2 REJECT (2) → r3 APPROVE 2026-10-17.
-Implemented 2026-10-17 (`6aca86f`); live smoke executed at `6aca86f` (observed table in Task 3); acceptance
-pending the rule-6 amendment below and the phase-end Sol review.
+Implemented 2026-10-17 (`6aca86f`); live smoke executed at `6aca86f` (observed table in Task 3); accepted
+2026-10-17: phase-end code review r1 REJECT (2, records) → r2 APPROVE (incl. amendment A1).
 Fix round 2026-10-17 (fresh critical review REJECT, 3 findings): competing-form veto at ingest, seed-run
-selection proof in the upgrade test, corpus test re-described as characterization; versions stay `/2`, `/3`.
+selection proof in the upgrade test, corpus test re-described as characterization; versions stay `/2`, `/3` (`ad29c3e`); critical re-review
+APPROVE 2026-10-17. Phase complete.
 
 **Origin:** bead `eqos-71x`; D6 [Amendment 2026-10-16 (attempt 2 burn)](D6.md#amendment-2026-10-16-attempt-2-burn-eqos-h410)
 option A ("a new bead, its own version advance"), the owner's B-now-A-later choice; D6 Freeze step 6

@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "Extractor v2 (eqos-71x): plan",
-    "detail": "Identifier-only onboarding supports only 2 of 11 development companies because the pinned framework check needs an Ind AS phrase most integrated filings lack. Extractor v2 accepts the structural Ind AS signal through one predicate shared by discovery and ingest, with versioned extractors. It comes before D7, whose three-member batch needs more than two onboardable companies.",
-    "stage": "eqos-71x"
+    "title": "D7 Coverage model: plan",
+    "detail": "Extractor v2 is complete: identifier-only onboarding now admits 8 of 11 development companies (was 2). Next, the D7 plan: universe registry, screens and capture batches that onboard through D6, owner-only watchlist decisions gating report drafting.",
+    "stage": "eqos-3oq"
   },
   "next": [
-    "D7 Coverage model (plan; migration path 0024, batch members via D6)",
-    "Follow-ups: NSE priming timeout (eqos-h4h.8), pagination (eqos-h4h.9), envelope validation (eqos-h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "D7 Coverage model (plan; migration 0024)",
+    "Follow-ups: BE-series scope (eqos-z48), flaky tests under load (eqos-0bp), NSE priming timeout (eqos-h4h.8), pagination (eqos-h4h.9), envelope validation (eqos-h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "Extractor v2 (eqos-71x) complete: an uncontested IntegratedFinance_IndAS form declaration is Ind AS evidence through one predicate shared by discovery and ingest; a competing form vetoes every branch; versions xbrl-occurrences/2, pdf-occurrences/3. Live smoke: 8 of 11 dev companies PARTIAL (NETWEB standalone; HFCL, MTARTECH NSE BE series, eqos-z48). Plan r3, code r2 and critical re-review APPROVE. Full suite 3951 passed, 8 skipped."
+    },
     {
       "date": "2026-10-17",
       "text": "eqos-t3l closed: cached XBRL reuse rechecked against filing-date identity and eligibility, replay bound to recorded request metadata, settings read from registered non-empty facts, onboarding refusals exit 5 (ab43c23, aa30892; Sol r1 REJECT (1) -> r2 APPROVE). Full suite 3938 passed, 8 skipped."
