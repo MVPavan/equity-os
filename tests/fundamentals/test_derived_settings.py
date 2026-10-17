@@ -58,7 +58,7 @@ from fundamentals.contracts.source_catalog import (
     TIJORI_SEARCH,
     UPSTOX_INSTRUMENTS,
 )
-from fundamentals.entity.derived_settings import derive
+from fundamentals.entity.derived_settings import DerivedSettingsError, derive
 from fundamentals.entity.discovery import Capture, Discovery, Request, Response
 from fundamentals.evidence.repository import EvidenceRepository, VersionPin
 from fundamentals.pg.identity_seed import SettingKey, load_issuer_identity
@@ -115,6 +115,40 @@ def test_apar_derives_the_identity_files_settings_from_its_filings() -> None:
         (SettingKey.REPORTING_FRAMEWORK, "IND_AS", MAR_END),
         (SettingKey.DOCUMENT_LOCATION, json.dumps(location, sort_keys=True), JUN_END),
     }
+
+
+_CURRENCY = b'<in-capmkt:DescriptionOfPresentationCurrency contextRef="OneD">INR'
+_CURRENCY_END = b"</in-capmkt:DescriptionOfPresentationCurrency>"
+_ROUNDING = b'<in-capmkt:LevelOfRounding contextRef="OneD">Crores</in-capmkt:LevelOfRounding>'
+_XSI = b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+SETTING_DEFECTS = {
+    # SYNTHETIC edits of the Jun instance: (old, new)
+    "missing": (_CURRENCY + _CURRENCY_END, b""),
+    "blank": (_CURRENCY, _CURRENCY.removesuffix(b"INR")),
+    "nil": (
+        _ROUNDING,
+        b'<in-capmkt:LevelOfRounding contextRef="OneD" xsi:nil="true" ' + _XSI + b"/>",
+    ),
+    "namespace_lookalike": (
+        _CURRENCY + _CURRENCY_END,
+        b'<zz:DescriptionOfPresentationCurrency xmlns:zz="http://example.invalid/zz" '
+        b'contextRef="OneD">INR</zz:DescriptionOfPresentationCurrency>',
+    ),
+    "outside_the_declaration_context": (_CURRENCY, _CURRENCY.replace(b"OneD", b"OneI")),
+}
+
+
+@pytest.mark.parametrize("case", SETTING_DEFECTS)
+def test_a_setting_needs_one_non_empty_registered_fact_in_the_declaration_context(
+    case: str,
+) -> None:
+    """A presentation-currency or rounding declaration that is missing, blank, nil, only an
+    extension-namespace lookalike, or outside the context declaring the reporting period proves
+    no setting: nothing is derived."""
+    served = world(APAR)
+    edit(served, JUN, *SETTING_DEFECTS[case])
+    with pytest.raises(DerivedSettingsError):
+        derive(_discovery(served))
 
 
 @pytest.mark.pg

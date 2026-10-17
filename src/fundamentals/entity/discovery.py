@@ -287,19 +287,20 @@ def authorised(request: Request, table: tuple[SurfaceAuthority, ...]) -> bool:
 
 
 def replay_fetch(folder: Path) -> Fetch:
-    """Serve a generation's responses by request key, a recorded denial included (today's
-    authority table is not consulted); every body is checked before any use."""
+    """Serve each recorded response only to its exact request (key, unit, source, surface, URL),
+    a recorded denial included (today's authority table is not consulted); bodies are checked."""
     manifest = DiscoveryManifest.model_validate_json((folder / MANIFEST_NAME).read_bytes())
-    served: dict[str, Response] = {}
+    served: dict[tuple[str, Request], Response] = {}
     for entry in manifest.entries:
         body = None
         if entry.filename is not None:
             body = (folder / entry.filename).read_bytes()
             if hashlib.sha256(body).hexdigest() != entry.sha256 or len(body) != entry.bytes:
                 raise ValueError(_BAD_REPLAY.format(folder=folder, why=f"{entry.filename} altered"))
-        if entry.request_key in served or (entry.outcome == OK) != (body is not None):
+        recorded = entry.request_key, Request.model_validate(entry, from_attributes=True)
+        if recorded in served or (entry.outcome == OK) != (body is not None):
             raise ValueError(_BAD_REPLAY.format(folder=folder, why=entry.request_key))
-        served[entry.request_key] = Response(
+        served[recorded] = Response(
             outcome=entry.outcome, body=body, retrieved_at=entry.retrieved_at
         )
     master = [e for e in manifest.entries if (e.source_id, e.surface) == NSE_MASTER]
@@ -308,7 +309,7 @@ def replay_fetch(folder: Path) -> Fetch:
 
     def fetch(request: Request, allowed: bool) -> Response:
         del allowed
-        return served[request.key]
+        return served[request.key, request]
 
     return fetch
 

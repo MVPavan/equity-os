@@ -63,6 +63,7 @@ from fundamentals.entity.discovery import (
     Request,
     acquiring_fetch,
     authorised,
+    replay_fetch,
     screener_search_url,
 )
 from fundamentals.ingest.http_session import ResponseTooLargeError
@@ -382,6 +383,35 @@ def test_replay_selects_a_generation_or_the_highest_complete_one(
     assert cli(APAR, root, "--generation", "2") == FAILURE
     assert cli(APAR, root, "--generation", "3") == FAILURE
     assert count(pg_db, "onboarding_records") == 2
+
+
+RELABELS: dict[str, Callable[[dict[str, Any]], object]] = {
+    "other_source": lambda entry: entry.update(source_id="tijori"),
+    "other_unit": lambda entry: entry.update(unit="EXCHANGE"),
+    "unapproved_url": lambda entry: entry.update(  # same path and query, so the same key
+        url=entry["url"].replace("https://www.screener.in", "https://zz.invalid")
+    ),
+    "underived_key": lambda entry: entry.update(request_key=entry["request_key"] + "&zz=1"),
+}
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("relabel", [None, *RELABELS])
+def test_replay_serves_an_entry_only_to_the_request_it_records(
+    relabel: str | None, tmp_path: Path
+) -> None:
+    """SYNTHETIC: the Screener page's body and hash intact, but its entry relabelled as another
+    source or unit, recorded from an unapproved URL or under a key its URL does not derive: replay
+    refuses the approved request instead of publishing the body as its evidence."""
+    folder = write_root(tmp_path / "raw", world(APAR), APAR) / "gen-1"
+    manifest = json.loads((folder / MANIFEST_NAME).read_text())
+    (entry,) = [e for e in manifest["entries"] if e["surface"] == "SCREENER_FINANCIALS"]
+    request = Request.model_validate(entry)
+    if relabel is not None:
+        RELABELS[relabel](entry)
+    (folder / MANIFEST_NAME).write_text(json.dumps(manifest))
+    with pytest.raises(KeyError) if relabel else nullcontext():
+        assert replay_fetch(folder)(request, True).outcome == "OK"
 
 
 # --- the live transport's boundaries (fakes only) ---------------------------------------------

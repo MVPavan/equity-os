@@ -60,6 +60,7 @@ from fundamentals.evidence.first_party_extract import (
     IngestError,
     IngestRequest,
     MemberGeneration,
+    _read_xbrl,
     extract_member,
     stored_capture,
 )
@@ -109,6 +110,7 @@ _NOT_AUTHORISED = "source {source_id!r} is not an authorised first-party {repres
 _NOT_TRANSCRIPT = "source {source_id!r} is not a declared diagnostic-only first-party source"
 _NO_FISCAL_YEAR_END = "entity {entity_id} has no evidenced fiscal-year-end month"
 _STAGING_FAILED = "members failed to stage: {members}"
+_REUSE_REJECTED = "reused XBRL generation no longer passes its pinned checks: {outcome}"
 _RETRIES_EXHAUSTED = "interpretations of capture {capture} conflicted {count} times"
 _SCOPE_CONFLICT = (
     "capture {capture} has interpretations under this triple for another entity, basis or "
@@ -233,19 +235,28 @@ def ingest_first_party(
             knowledge_time_status=KnowledgeTimeStatus.KNOWN,
         )
         filed_on = member.knowledge_time.astimezone(NSE_WALL_ZONE).date()
-        pending.append(
-            extract_member(
-                binding,
-                member,
-                intake=intake,
-                repository=repository,
-                request=request,
-                identifiers=repository.issuer_identifiers(entity_id, as_of=filed_on),
-                mapping_set=mapping_set,
-                pdf_specs=pdf_specs,
-                extractor_version=versions[binding.representation],
-            )
+        identifiers = repository.issuer_identifiers(entity_id, as_of=filed_on)
+        generation = extract_member(
+            binding,
+            member,
+            intake=intake,
+            repository=repository,
+            request=request,
+            identifiers=identifiers,
+            mapping_set=mapping_set,
+            pdf_specs=pdf_specs,
+            extractor_version=versions[binding.representation],
         )
+        # A reused XBRL generation answers to the identity governing its filing date today.
+        reused = generation.stored and generation.outcome is ExtractionOutcome.COMPLETE
+        if reused and binding.representation is Representation.XBRL:
+            path = intake.input_anchor.path / binding.relative_path
+            read = _read_xbrl(path, binding, member, identifiers, request, mapping_set)
+            if read.outcome is not ExtractionOutcome.COMPLETE:
+                raise IngestError(_REUSE_REJECTED.format(outcome=read.outcome.value))
+        pending.append(generation)
+    # Every member's capture, a reused generation's included, passes the D4.5 gate first.
+    repository.refuse_ineligible([item.member.capture.capture_ref_id for item in pending])
     # Presence first, so a present family's unlocated PDF block fails inside its generation.
     present = _present(pending, mapping_set, reporting_period_end)
     extracted = [item.written(repository) for item in pending]

@@ -356,6 +356,11 @@ class EvidenceRepository:
             stored_attempts = tuple(_insert_attempt(conn, attempt) for attempt in attempts)
         return stored_occurrences, stored_attempts
 
+    def refuse_ineligible(self, capture_ids: Sequence[int | None]) -> None:
+        """The D6 D4.5 gate alone, for captures a reused generation cites (writes nothing)."""
+        with self._pool.connection() as conn:
+            refuse_ineligible(conn, capture_ids)
+
     def reserve_interpretation_ids(self, count: int) -> tuple[int, ...]:
         """Reserve ``count`` interpretation ids from the identity sequence."""
         if count == 0:

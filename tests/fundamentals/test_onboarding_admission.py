@@ -72,6 +72,7 @@ from fundamentals.entity.identity_layers import IdentityEventKind, latest_slice
 from fundamentals.evidence import vendor_screener
 from fundamentals.evidence.capture_intake import RetainedCaptureBinding, RetainedIntake
 from fundamentals.evidence.discovery_gate import IneligibleCaptureError
+from fundamentals.evidence.first_party_extract import IngestError
 from fundamentals.evidence.first_party_ingest import ingest_first_party
 from fundamentals.evidence.mapping import load_mapping_set, load_normalisation_policy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -551,3 +552,58 @@ def test_gate_refuses_conflicted_and_identity_captures_and_admits_partial_ones(
         with pytest.raises((IneligibleCaptureError, KeyError)):
             writers["equity_l"]()
         assert evidence_counts(db) == before
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_corrected_second_attempt_over_refused_bytes_fails_cleanly(
+    cli: Callable[..., int],
+    pg_db: PgTestDatabase,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """D4.5 at the command boundary: attempt 1 verifies the XBRL instances, then Tijori
+    conflicts; attempt 2 corrects Tijori over the same XBRL bytes and is admitted (PARTIAL), but
+    those bytes stay ineligible, so its ingest is refused: exit 5, nothing stored, and the
+    refusal's identifying message is not echoed."""
+    seed_apar(pg_db)
+    served = world(APAR)
+    edit(served, "financials/", b'"symbol": "APARINDS"', b'"symbol": "ZZAPAR"')
+    assert cli(APAR, write_root(tmp_path / "raw1", served, APAR)) == FAILURE
+    capsys.readouterr()
+    assert cli(APAR, write_root(tmp_path / "raw2", world(APAR), APAR)) == FAILURE
+    records = rows(pg_db, "SELECT outcome FROM eqos.onboarding_records ORDER BY id")
+    assert records == [(OC.IDENTITY_CONFLICT.value,), (OC.PARTIAL.value,)]
+    assert evidence_counts(pg_db) == (0, 0)
+    logs = capsys.readouterr()
+    assert "IneligibleCaptureError" in logs.out + logs.err
+    assert "not eligible" not in logs.out + logs.err
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize("later", ["refused_record", "symbol_event_before_publication"])
+def test_a_previously_extracted_filing_is_rechecked_before_reuse(
+    later: str, cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """D4.5/C8 on reuse: the Jun instance is ingested (COMPLETE) before anything links its
+    bytes. Later an onboarding conflict links the same bytes to a refused record, or a symbol
+    change is recorded effective before the filing's publication; re-ingesting the capture is
+    then refused before its cached generation is reused, and nothing stored changes."""
+    seed_apar(pg_db)
+    xbrl = _writers(pg_db, tmp_path / "a", tmp_path / "snapshots")["xbrl"]
+    assert xbrl().package_id is not None
+    before = evidence_counts(pg_db), count(pg_db, "acquisition_attempts")
+    assert before[0][0] > 0
+    if later == "refused_record":
+        served = world(APAR)
+        edit(served, "financials/", b'"symbol": "APARINDS"', b'"symbol": "ZZAPAR"')
+        assert cli(APAR, write_root(tmp_path / "raw", served, APAR)) == FAILURE
+        refusal: type[Exception] = IneligibleCaptureError
+    else:
+        nse = (IdentifierNamespace.NSE_SYMBOL, APAR)
+        db_event(pg_db, IdentityEventKind.SYMBOL_CHANGE, CHANGED_ON, nse, NEW_SYMBOL)
+        refusal = IngestError
+    with pytest.raises(refusal):
+        xbrl()
+    assert (evidence_counts(pg_db), count(pg_db, "acquisition_attempts")) == before

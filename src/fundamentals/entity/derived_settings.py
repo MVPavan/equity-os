@@ -16,7 +16,6 @@ from datetime import date, datetime
 from typing import Any, LiteralString
 
 import psycopg
-from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.basis_status import BasisStatus
@@ -31,6 +30,8 @@ from fundamentals.contracts.source_catalog import (
 from fundamentals.entity.discovery import FILINGS_CHECKED, Discovery, as_of_for
 from fundamentals.entity.verification import financial_rule
 from fundamentals.evidence import repository_rows as rows_sql
+from fundamentals.extract.xbrl_parser import iter_raw_facts
+from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.nse_filings import filing_window, listing_rows
 from fundamentals.pg.identity_seed import SettingKey
 
@@ -38,7 +39,7 @@ FISCAL_YEAR_END = "DateOfEndOfFinancialYear"
 ROUNDING_LEVEL = "LevelOfRounding"
 PRESENTATION_CURRENCY = "DescriptionOfPresentationCurrency"
 _NOT_VERIFIED = "settings derive only from verified anchors; {unit} is {state}"
-_NOT_ONE = "{name}: {count} distinct values in {url}"
+_NOT_ONE = "{name}: {count} distinct values (none may be empty) in the declaration context of {url}"
 _NOT_IND_AS = "{url} is not an Ind AS in-capmkt filing"
 
 
@@ -158,18 +159,26 @@ def write(
 
 
 def _declared(filing: Filing) -> dict[SettingKey, str]:
-    """The values one instance declares; a missing or ambiguous fact fails closed."""
+    """The values one instance declares under its registered taxonomy, in the context declaring
+    its reporting period; a missing, empty, nil or ambiguous fact fails closed."""
     if not financial_rule(filing.body):
         raise DerivedSettingsError(_NOT_IND_AS.format(url=filing.url))
-    root = etree.fromstring(filing.body)
+    instance = iter_raw_facts(filing.body, taxonomies=_ALL_TAXONOMIES)
+    spec = instance.taxonomy
+    registered = [
+        (fact.concept_qname.rsplit(":", 1)[-1], fact)
+        for fact in instance.facts
+        if fact.namespace_uri == spec.namespace
+    ]
+    declaring = {f.context_ref for n, f in registered if n == spec.reporting_period_end_concept}
 
     def fact(name: str) -> str:
         values = {
-            (element.text or "").strip()
-            for element in root.iter()
-            if isinstance(element.tag, str) and etree.QName(element).localname == name
+            (f.raw_text or "").strip()
+            for n, f in registered
+            if n == name and f.context_ref in declaring
         }
-        if len(values) != 1:
+        if len(values) != 1 or "" in values:
             raise DerivedSettingsError(
                 _NOT_ONE.format(name=name, count=len(values), url=filing.url)
             )
