@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "D9 Retention and replay: plan",
-    "detail": "D8 is parked by owner ruling: Screener and Tijori publish no shareholding denominator, so only a diagnostic Upstox promoter comparison is evidenced. Registration, live probe and definitional evidence are kept. The D9 plan is being drafted: retention classes, holds, a retention lock, crash-safe purge, re-fetch with hash check, restore that purges first.",
+    "title": "D9 Retention and replay: Task 2",
+    "detail": "Plan Sol-approved (r4). Task 1 done: retention-replay and A-05 amendment records approved by Sol; derived amounts are kept as private outcomes while vendor captures and payload are purged at licence end. Task 2 in progress: retention classes, catalog authority and capture registration (migration 0027).",
     "stage": "D9"
   },
   "next": [
-    "D9 plan review (Sol), then D9 Tasks",
+    "D9 Tasks 3-9: holds, retention lock and backup, purge, re-fetch, restore, Stage 5 manifest and end-to-end; then D9 phase-end review",
     "D7 Tasks 5-6 once the owner's real Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
     "D8 resumes only if vendor definitions appear or the owner picks a Stage 3 exception",
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D9 plan approved by Sol (r4). Task 1 committed: 15 retention-replay amendments and the A-05 decision (keep derived amounts as private outcomes; Medium-High Screener and High Tijori risk accepted) with the vendor redaction inventory, approved by Sol; amendment-record tests 8 passed."
+    },
     {
       "date": "2026-10-17",
       "text": "D8 parked (owner ruling). Plan Sol-approved r4; D8.1 source registration committed; live probe of Apar, ETERNAL, TITAN shareholding (NSE filing, Screener, Tijori, Upstox) and SEBI 2025/35 format evidence retained. Sol ruled vendor denominators cannot be inferred by arithmetic; Screener and Tijori publish none, so the D8 exit is not passable without a spec exception."
