@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "D8 Shareholding filing source: plan",
-    "detail": "D7 Tasks 1-4 are done (registry, screens and batches, watchlist and drafting gate, amendment 1 approved). D7 Tasks 5-6 wait on the owner's real Screener CSV export. Meanwhile the D8 plan is being drafted: the exchange shareholding filing as a first-party source, compared with Screener and Tijori.",
-    "stage": "eqos-17r"
+    "title": "D9 Retention and replay: plan",
+    "detail": "D8 is parked by owner ruling: Screener and Tijori publish no shareholding denominator, so only a diagnostic Upstox promoter comparison is evidenced. Registration, live probe and definitional evidence are kept. The D9 plan is being drafted: retention classes, holds, a retention lock, crash-safe purge, re-fetch with hash check, restore that purges first.",
+    "stage": "D9"
   },
   "next": [
-    "D8 plan review (Sol), then D8 Tasks 1-5",
-    "D7 Tasks 5-6 once the Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
-    "D9 Retention and replay (needs D7.3, done)",
+    "D9 plan review (Sol), then D9 Tasks",
+    "D7 Tasks 5-6 once the owner's real Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
+    "D8 resumes only if vendor definitions appear or the owner picks a Stage 3 exception",
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D8 parked (owner ruling). Plan Sol-approved r4; D8.1 source registration committed; live probe of Apar, ETERNAL, TITAN shareholding (NSE filing, Screener, Tijori, Upstox) and SEBI 2025/35 format evidence retained. Sol ruled vendor denominators cannot be inferred by arithmetic; Screener and Tijori publish none, so the D8 exit is not passable without a spec exception."
+    },
     {
       "date": "2026-10-17",
       "text": "D7 Tasks 3-4 committed: owner-only watchlist ADD/REMOVE sealed to a completed capture batch; runtime report drafting refused off the watchlist, first version must be a bootstrap thesis (0026). Amendment 1 (coverage initiation clarified, not lifted) approved by Sol. Watchlist, ledger, memory, views tests 475 passed; full suite 3975 passed with one load flake (eqos-0bp)."
