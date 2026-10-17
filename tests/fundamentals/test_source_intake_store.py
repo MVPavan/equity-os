@@ -659,11 +659,9 @@ def test_aba_read_keeps_original_pinned_bytes_or_refuses(
 def test_deadline_expiry_refuses_bounded_local_read(
     setup: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import fundamentals.store.snapshot_store as disk
-
     store, ctx = setup
     ticks = iter((0.0, 6.0))
-    monkeypatch.setattr(disk.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr("time.monotonic", lambda: next(ticks))
     with pytest.raises(SourceRegistrationError, match="budget"):
         stage_local_source(
             store, approved_intake=ctx, role=SourceRole.XBRL, path=Path("source.xml")
