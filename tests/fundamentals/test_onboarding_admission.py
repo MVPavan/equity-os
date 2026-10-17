@@ -11,6 +11,7 @@ import threading
 from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import psycopg
@@ -50,6 +51,7 @@ from pg_support import PgTestDatabase
 from retained_support import apar_catalog, seed_apar
 from test_evidence_vendor_screener import binding as screener_binding
 
+from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.canon.interval import load_rounding_policy
@@ -607,3 +609,26 @@ def test_a_previously_extracted_filing_is_rechecked_before_reuse(
     with pytest.raises(refusal):
         xbrl()
     assert (evidence_counts(pg_db), count(pg_db, "acquisition_attempts")) == before
+
+
+@pytest.mark.parametrize("error", [IneligibleCaptureError, IngestError])
+def test_an_ingest_refusal_exits_five_naming_only_its_type(
+    error: type[Exception],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A refusal raised during ingest (an ineligible capture, or a cached generation failing its
+    filing-date recheck after a concurrent identity event) is a clean FAILURE, not a crash, and
+    its identifying message is not echoed."""
+
+    def refuse(_: object) -> int:
+        raise error("ISSUER-SPECIFIC DETAIL")
+
+    monkeypatch.setattr(onboard_cli, "_onboard", refuse)
+    code = onboard_cli.dispatch_onboard_command(
+        SimpleNamespace(command=onboard_cli.ONBOARD_COMMAND)
+    )
+    logs = capsys.readouterr()
+    assert code == FAILURE
+    assert error.__name__ in logs.out + logs.err
+    assert "ISSUER-SPECIFIC DETAIL" not in logs.out + logs.err

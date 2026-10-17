@@ -104,6 +104,7 @@ from fundamentals.evidence.capture_intake import (
     retained_intake_from_manifest,
 )
 from fundamentals.evidence.discovery_gate import IneligibleCaptureError
+from fundamentals.evidence.first_party_extract import IngestError
 from fundamentals.evidence.first_party_ingest import ingest_first_party
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.vendor_ingest import (
@@ -189,6 +190,7 @@ _FAILURES = (
     OnboardingAbortError,
     OnboardingIngestError,
     IneligibleCaptureError,
+    IngestError,
     OSError,
     LookupError,
     ValueError,
