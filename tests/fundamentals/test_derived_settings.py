@@ -12,6 +12,7 @@ import shlex
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +76,9 @@ CURRENT_VERSIONS = {
     Representation.XBRL: XBRL_EXTRACTOR_VERSION,
     Representation.PDF: PDF_EXTRACTOR_VERSION,
 }
+# Apar FY26 Q2 consolidated quarter revenue, printed identically by its XBRL and results PDF.
+QUARTER_REVENUE = "revenue_from_operations|2025-07-01..2025-09-30|CONSOLIDATED|-|REPORTED"
+QUARTER_REVENUE_INR = Decimal("57154200000")
 SEED_PINS = [  # (version, sha256) of the first-party pins over SEED_COMMIT's bytes
     ("xbrl-occurrences/1", "82dd91864ae8c159c69928ff628b0d6ee8946e1c6c733e67e448ef721d3fd267"),
     ("pdf-occurrences/2", "96a3c2f255b579cf42e90618313a92e913b75edb6bbd746b48b9c1fa8d45723c"),
@@ -493,7 +497,9 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
     and one stored run, all under the seed versions and pins computed from the seed commit's
     source bytes. Re-ingesting the same captures under the current versions, then onboarding,
     raises no VersionContentDriftError, keeps every pre-existing row and the run's pins, replays
-    the run unchanged, and adds the new generations beside the old ones. The seed rows come
+    the run unchanged, and adds the new generations beside the old ones. The seed run selects
+    seed-version XBRL and PDF interpretations, among them the known quarter revenue, and the
+    replay keeps every selection and value. The seed rows come
     from current code under historical pins (a compatibility fixture, not historical
     execution); Apar's notes carry the Ind AS phrase, so v1 and v2 extract it identically."""
     current_root = run_config._SOURCE_ROOT
@@ -529,6 +535,20 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
             return pinned.extractor_xbrl, pinned.extractor_pdf, load_results(run_id, pool=pool)
 
     before, run_before = snapshot(), stored_run()
+    chosen = _selected(run_before[2])
+    versions = dict(
+        rows(
+            pg_db,
+            "SELECT i.id, o.extractor_version FROM eqos.interpretations i "
+            "JOIN eqos.occurrences o ON o.id = i.occurrence_id",
+        )
+    )
+    for representation, version in SEED_VERSIONS.items():
+        direct = versions.keys() & {
+            selected for (_, side), (selected, _) in chosen.items() if side is representation
+        }  # constructed interpretations carry no occurrence of their own
+        assert direct and {versions[selected] for selected in direct} == {version}, representation
+        assert chosen[(QUARTER_REVENUE, representation)][1] == QUARTER_REVENUE_INR
     upgraded = ingest.run(ingest.intake())
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
@@ -545,13 +565,25 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
     assert [(pin.version, pin.content_sha256) for pin in (xbrl_pin, pdf_pin)] == SEED_PINS
     assert (xbrl_pin, pdf_pin, results) == run_before
     with pg_db.runtime_pool() as pool:
-        assert replay_run(run_id, pool=pool, config_root=REPO_ROOT / "config") == results
+        replayed = replay_run(run_id, pool=pool, config_root=REPO_ROOT / "config")
+    assert replayed == results
+    assert _selected(replayed) == chosen
     for representation in (Representation.XBRL, Representation.PDF):
         assert _overall(upgraded, representation) is ExtractionOutcome.COMPLETE
         capture = ingest.capture_id(upgraded, representation)
         assert capture == ingest.capture_id(seeded, representation)
         for version in (SEED_VERSIONS[representation], CURRENT_VERSIONS[representation]):
             assert ingest.repository.list_capture_occurrences(capture, version), version
+
+
+def _selected(results: Any) -> dict[tuple[str, Representation], tuple[int, Decimal | None]]:
+    """Each first-party side's selected interpretation and value, by row and representation."""
+    return {
+        (row.row_id, side.representation): (side.interpretation_id, side.value)
+        for row in results
+        for side in row.source_values
+        if side.representation in SEED_VERSIONS and side.interpretation_id is not None
+    }
 
 
 def _overall(report: Any, representation: Representation) -> ExtractionOutcome:

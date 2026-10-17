@@ -3,6 +3,8 @@
 Status: approved — Sol plan review r1 REJECT (6) → r2 REJECT (2) → r3 APPROVE 2026-10-17.
 Implemented 2026-10-17 (`6aca86f`); live smoke executed at `6aca86f` (observed table in Task 3); acceptance
 pending the rule-6 amendment below and the phase-end Sol review.
+Fix round 2026-10-17 (fresh critical review REJECT, 3 findings): competing-form veto at ingest, seed-run
+selection proof in the upgrade test, corpus test re-described as characterization; versions stay `/2`, `/3`.
 
 **Origin:** bead `eqos-71x`; D6 [Amendment 2026-10-16 (attempt 2 burn)](D6.md#amendment-2026-10-16-attempt-2-burn-eqos-h410)
 option A ("a new bead, its own version advance"), the owner's B-now-A-later choice; D6 Freeze step 6
@@ -88,8 +90,10 @@ True iff all hold (unparseable bytes → false):
 Uses:
 - ingest: `verify_xbrl_framework(instance, framework, *, body: bytes)` adds Ind AS evidence
   "IntegratedFinance_IndAS form declaration" when `integrated_ind_as(body)`. The v1 schemaRef and
-  text-block branches are unchanged, so v2 = v1 ∪ structural: it rejects nothing v1 accepted. (A
-  conflicted filing with a notes phrase is still accepted by the phrase, as in v1.) `_read_xbrl`
+  text-block branches are otherwise unchanged, so v2 = v1 ∪ structural minus one veto: any
+  competing form declared anywhere (clause 3's scan finding a form other than IndAS) rejects
+  before every branch, phrase and schemaRef included (critical review 2026-10-17; no retained
+  verdict changes — Apar's legacy `Ind-AS_entry_point` filings declare no form). `_read_xbrl`
   passes the `body` it holds (`first_party_extract.py:393,402`).
 - discovery: `financial_rule(body)` returns `integrated_ind_as(body)`; `framework_state(instance,
   body)` calls `verify_xbrl_framework` as ingest does; `discovery.py:538` passes `zip(instances,
@@ -130,8 +134,8 @@ Approach (test-first; record the red run):
   names the form declaration (today `IDENTITY_REJECTED`); the no-declaration case also rewrites
   `IntegratedFinance_IndAS` → `IntegratedFinance_ZZ` and stays rejected.
 - `test_identity_namespace.py`: parametrise one retained instance per form with its own bytes
-  (phrase-free dev IndAS accepted; HDFCBANK, BAJFINANCE, HDFCLIFE rejected "declares no accounting
-  framework"). **R1 marked negative:** an in-memory copy of a retained HDFCBANK filing with the
+  (phrase-free dev IndAS accepted; HDFCBANK, BAJFINANCE, HDFCLIFE rejected — since the 2026-10-17
+  veto, naming their competing form). **R1 marked negative:** an in-memory copy of a retained HDFCBANK filing with the
   root namespace `http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/in-capmkt-ent`
   added (Banking namespaces and content kept) → `integrated_ind_as` false and
   `verify_xbrl_framework(..., body=marked)` rejected. Foreign-text test passes its own bytes.

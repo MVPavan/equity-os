@@ -154,19 +154,28 @@ def _marked_bank() -> bytes:
 
 
 @pytest.mark.retained
-def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> None:
-    """eqos-h4h.10: attempt 2 was burned because discovery admitted an Ind AS filing whose XBRL
-    ingest then rejected for declaring no framework. Over every distinct retained instance,
-    discovery's framework verdict is ingest's own (``first_party_extract._read_xbrl``), and its
-    sector and framework gates admit an instance iff the financial rule holds and ingest
-    accepts the framework: under extractor v2, the 16 IndAS-form instances of all 11 symbols.
-    A bank filing carrying a competing IndAS namespace is refused by both."""
+def test_framework_and_admission_characterization_over_the_retained_corpus() -> None:
+    """Helper/corpus characterization (eqos-h4h.10 context: attempt 2 was burned when discovery
+    admitted a filing ingest refused). Over every distinct retained instance the shared
+    framework helper behind ``framework_state`` and ``_read_xbrl`` verifies 18: the 16
+    IndAS-form instances of all 11 symbols plus Apar's two legacy ``Ind-AS_entry_point``
+    filings, which declare no IntegratedFinance form. The other 7 each declare a competing
+    form. The competing-form veto (critical review 2026-10-17) only ever rejects, and 18
+    verified before it, so it changes no retained verdict. Sector and framework gates admit
+    the 16. Consumer wiring is covered by the integration cases and the ingest refusal in
+    ``test_identity_namespace``. A bank filing carrying a competing IndAS namespace is refused."""
     admitted: list[str] = []
+    legacy: list[str] = []
     for label, body, instance, _ in _retained():
-        ingest = verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=body).verified
-        assert (framework_state(instance, body) == VERIFIED) is ingest, label
-        if financial_rule(body) and framework_state(instance, body) == VERIFIED:
+        verdict = verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=body)
+        assert (framework_state(instance, body) == VERIFIED) is verdict.verified, label
+        if not verdict.verified:
+            assert "IntegratedFinance form(s)" in (verdict.reason or ""), label
+        elif financial_rule(body):
             admitted.append(label)
+        else:
+            legacy.append(label)
+    assert legacy == [APAR, APAR]
     assert len(admitted) == 16
     assert set(admitted) == {symbol for symbol, _ in _dev_filings()}
     marked = _marked_bank()

@@ -307,7 +307,8 @@ def test_parser_failure_is_one_parse_failed_attempt(
 def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
     """The requested framework is verified against the capture's own declaration: where it
     is found is recorded. Without its notes phrase the XBRL still declares Ind AS by its
-    IntegratedFinance_IndAS form namespace; a capture declaring neither is IDENTITY_REJECTED.
+    IntegratedFinance_IndAS form namespace; a capture declaring neither (its form renamed to an
+    unknown one, which also vetoes) is IDENTITY_REJECTED.
     """
     report = ingest.run(ingest.intake())
     xbrl = _overall(report.attempts, Representation.XBRL)
@@ -348,8 +349,11 @@ def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
             marked={Representation.XBRL: undeclared_xbrl, Representation.PDF: undeclared_pdf}
         )
     )
-    for representation in (Representation.XBRL, Representation.PDF):
+    for representation, reason in (
+        (Representation.XBRL, "IntegratedFinance form(s) ['ZZ']"),  # an unknown form vetoes
+        (Representation.PDF, "declares no accounting framework"),
+    ):
         attempt = _overall(marked.attempts, representation)
         assert attempt.outcome is ExtractionOutcome.IDENTITY_REJECTED
-        assert "declares no accounting framework" in (attempt.reason or "")
+        assert reason in (attempt.reason or "")
     assert marked.package_id is None

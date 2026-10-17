@@ -68,6 +68,7 @@ _SCHEMA_REF = "{http://www.xbrl.org/2003/linkbase}schemaRef"
 _HREF = "{http://www.w3.org/1999/xlink}href"
 _NO_FRAMEWORK = "the capture declares no accounting framework"
 _FRAMEWORKS_DISAGREE = "the capture declares several accounting frameworks {found}"
+_COMPETING_FORMS = "the capture declares the IntegratedFinance form(s) {found}, not Ind AS"
 _FRAMEWORK_CONFLICT = "the capture declares {found} at {where}, not the requested {requested}"
 _NO_PERIOD_DECLARATION = "the capture declares no reporting period end ({concept})"
 _PERIOD_CONFLICT = (
@@ -196,22 +197,15 @@ def integrated_ind_as(body: bytes) -> bool:
     """Whether the instance is an uncontested IntegratedFinance_IndAS form: every schemaRef an
     ``in-capmkt-ent-`` entry point, the root declaring the IndAS entry-point namespace, and no
     namespace anywhere naming another IntegratedFinance form (unparseable bytes: false)."""
-    try:
-        root = etree.fromstring(body)
-    except etree.XMLSyntaxError:
+    root = _root(body)
+    if root is None:
         return False
     refs = [ref.get(_HREF) or "" for ref in root.iter(_SCHEMA_REF)]
-    forms = {
-        found.group(1)
-        for element in root.iter(etree.Element)
-        for uri in element.nsmap.values()
-        if uri and (found := INTEGRATED_FORM.match(uri))
-    }
     return (
         bool(refs)
         and all(ref.rsplit("/", 1)[-1].startswith(ENTRY_POINT_PREFIX) for ref in refs)
         and any(IND_AS_ENTRY_POINT.match(uri) for uri in root.nsmap.values() if uri)
-        and forms == {IND_AS_FORM}
+        and _integrated_forms(root) == {IND_AS_FORM}
     )
 
 
@@ -220,6 +214,9 @@ def verify_xbrl_framework(
 ) -> IdentityVerdict:
     """The entry point, IntegratedFinance form and own text blocks must declare exactly the
     requested framework (``body``: the bytes ``instance`` was parsed from)."""
+    root = _root(body)  # a competing form vetoes every declaration below
+    if root is not None and (competing := sorted(_integrated_forms(root) - {IND_AS_FORM})):
+        return _rejected(_COMPETING_FORMS.format(found=competing), [])
     found: dict[AccountingFramework, list[str]] = {}
     for href in instance.schema_refs:
         if href.rsplit("/", 1)[-1].startswith(IND_AS_ENTRY_POINT_PREFIX):
@@ -320,6 +317,24 @@ def _contains(haystack: Sequence[str], needle: Sequence[str]) -> bool:
     return width > 0 and any(
         list(haystack[i : i + width]) == list(needle) for i in range(len(haystack) - width + 1)
     )
+
+
+def _root(body: bytes) -> etree._Element | None:
+    """The parsed instance root (unparseable bytes: none)."""
+    try:
+        return etree.fromstring(body)
+    except etree.XMLSyntaxError:
+        return None
+
+
+def _integrated_forms(root: etree._Element) -> set[str]:
+    """Every IntegratedFinance form a namespace anywhere in the instance names."""
+    return {
+        found.group(1)
+        for element in root.iter(etree.Element)
+        for uri in element.nsmap.values()
+        if uri and (found := INTEGRATED_FORM.match(uri))
+    }
 
 
 def _rejected(reason: str, evidence: list[str]) -> IdentityVerdict:

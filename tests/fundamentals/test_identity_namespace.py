@@ -1,6 +1,8 @@
 """Only the registered taxonomy can supply the filing's identity declarations."""
 
-from datetime import date
+import hashlib
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 from evidence_support import dictionary, mapping_set
@@ -8,8 +10,12 @@ from retained_support import REPO_ROOT, apar_original
 from stage4_filings import onboarding_mapping_set
 from vendor_retained_support import RAW_ROOT
 
-from fundamentals.contracts.canonical import Basis
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
+from fundamentals.contracts.canonical import Basis, Representation
+from fundamentals.contracts.evidence import CaptureReference, KnowledgeTimeStatus, PackageMember
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.evidence.capture_intake import RetainedCaptureBinding
+from fundamentals.evidence.first_party_extract import IngestRequest, _read_xbrl
 from fundamentals.evidence.mapping import MappingSet
 from fundamentals.evidence.member_identity import (
     IssuerIdentifiers,
@@ -38,7 +44,13 @@ IND_AS_ROOT_NAMESPACE = (
     b'xmlns:zz="http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/'
     b'in-capmkt-ent" '
 )
-NO_FRAMEWORK = "the capture declares no accounting framework"
+BANKING_ROOT_NAMESPACE = (
+    b'xmlns:zb="http://www.sebi.gov.in/xbrl/IntegratedFinance_Banking/2025-01-31/in-capmkt/'
+    b'in-capmkt-ent" '
+)
+UNKNOWN_CHILD_NAMESPACE = (
+    b'xmlns:zz="http://www.sebi.gov.in/xbrl/IntegratedFinance_ZZ/2025-01-31/x" '
+)
 
 
 def test_foreign_report_nature_cannot_replace_genuine_context_evidence(
@@ -133,7 +145,7 @@ def test_only_the_ind_as_form_declares_the_framework(form: str) -> None:
     if verdict.verified:
         assert verdict.evidence == ("IND_AS declared at IntegratedFinance_IndAS form declaration",)
     else:
-        assert verdict.reason == NO_FRAMEWORK
+        assert verdict.reason == _competing(form)
 
 
 def test_a_competing_form_contests_an_ind_as_namespace() -> None:
@@ -145,8 +157,76 @@ def test_a_competing_form_contests_an_ind_as_namespace() -> None:
     instance = parse_instance(marked, mapping_set=onboarding_mapping_set())
     assert not integrated_ind_as(marked)
     verdict = verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=marked)
-    assert verdict.reason == NO_FRAMEWORK
+    assert verdict.reason == _competing("Banking")
     assert not integrated_ind_as(b"<not xml")
+
+
+@pytest.mark.parametrize(
+    ("form", "edit"),
+    [
+        ("Banking", (b"<xbrli:xbrl ", b"<xbrli:xbrl " + BANKING_ROOT_NAMESPACE)),
+        ("ZZ", (b"<xbrli:context ", b"<xbrli:context " + UNKNOWN_CHILD_NAMESPACE)),
+        (None, (b"", b"")),
+    ],
+)
+def test_a_competing_form_vetoes_a_phrase_bearing_ind_as_filing_at_ingest(
+    mapping_set: MappingSet, tmp_path: Path, form: str | None, edit: tuple[bytes, bytes]
+) -> None:
+    """Critical review 2026-10-17 (P1): an unused Banking (root) or unknown (child-local)
+    IntegratedFinance form added to Apar's IndAS filing, its IndAS namespace and Ind AS notes
+    phrase kept, is refused by actual ingest (``_read_xbrl``) before the phrase can verify it;
+    the unmutated filing extracts."""
+    body = apar_original("FY26_Q2", "xbrl-consolidated").read_bytes()
+    mutated = body.replace(*edit, 1) if form else body
+    assert (mutated != body) is (form is not None)
+    path = tmp_path / "instance.xml"
+    path.write_bytes(mutated)
+    sha = hashlib.sha256(mutated).hexdigest()
+    at = datetime(2025, 11, 1, tzinfo=UTC)
+    binding = RetainedCaptureBinding(
+        representation=Representation.XBRL,
+        source_id="apar",
+        relative_path=Path("instance.xml"),
+        expected_sha256=sha,
+        filed_at_raw="",
+    )
+    capture = CaptureReference(
+        capture_ref_id=1,
+        source_id="apar",
+        surface="nse",
+        request_key="apar",
+        capture_id="apar",
+        blob_sha256=sha,
+        record_sha256=sha,
+        registered_at=at,
+        first_seen_at=at,
+    )
+    member = PackageMember(
+        representation=Representation.XBRL,
+        capture=capture,
+        knowledge_time=at,
+        knowledge_time_raw="",
+        knowledge_time_status=KnowledgeTimeStatus.KNOWN,
+    )
+    request = IngestRequest(
+        entity_id=1,
+        period_end=date(2025, 9, 30),
+        basis=Basis.CONSOLIDATED,
+        framework=AccountingFramework.IND_AS,
+    )
+    read = _read_xbrl(path, binding, member, IDENTIFIERS, request, mapping_set)
+    if form is None:
+        assert read.outcome is ExtractionOutcome.COMPLETE
+        assert read.occurrences
+    else:
+        assert read.outcome is ExtractionOutcome.IDENTITY_REJECTED
+        assert read.reason == _competing(form)
+        assert not read.occurrences
+
+
+def _competing(form: str) -> str:
+    """The rejection naming one competing IntegratedFinance form."""
+    return f"the capture declares the IntegratedFinance form(s) {[form]}, not Ind AS"
 
 
 def test_foreign_period_end_cannot_replace_genuine_declaration(mapping_set: MappingSet) -> None:
