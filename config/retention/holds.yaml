@@ -1,0 +1,10 @@
+# Frozen acceptance manifests whose inputs hold their captures (plan D9 R4): the public
+# `tests/fundamentals/fixtures/data_foundation/*_manifest.yaml` set. stage4_manifest.yaml is
+# excluded by name and never read; ledger_stage4 and ledger_stage5 are appended by the commits
+# creating them.
+manifests:
+  - tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml

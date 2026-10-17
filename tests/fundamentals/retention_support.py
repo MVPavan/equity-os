@@ -6,6 +6,8 @@ publishes real bytes through an intake path.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import uuid
 from collections.abc import Iterator
@@ -13,11 +15,24 @@ from datetime import UTC, datetime
 
 import psycopg
 import pytest
-from pg_support import MIGRATIONS_DIR, PgTestDatabase, create_database, drop_database, mint_name
+from pg_support import (
+    MIGRATIONS_DIR,
+    REPO_ROOT,
+    PgTestDatabase,
+    create_database,
+    drop_database,
+    mint_name,
+)
+from psycopg import sql
 
+from fundamentals.api.cli import main
 from fundamentals.contracts.evidence import CaptureReference
+from fundamentals.contracts.retention import CaptureFacts, Eligibility, HoldRoot
+from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.pg.migrations import apply_migrations
 from fundamentals.pg.settings import PgRole
+from fundamentals.retention.eligibility import add_months, eligibility
+from fundamentals.retention.holds import capture_facts
 
 # The tables the retention migrations add; each D9 migration extends this in its own change.
 RETENTION_TABLES = frozenset({"retention_classes", "capture_addresses", "licence_ends"})
@@ -27,6 +42,36 @@ CLASS_OF = (
     "LEFT JOIN eqos.retention_classes c ON c.capture_ref_id = r.id WHERE r.id = %s"
 )
 ADDRESS_OF = "SELECT url FROM eqos.capture_addresses WHERE capture_ref_id = %s"
+CONFIG = REPO_ROOT / "config"
+LATER_MONTHS = 13  # the cases' clock: past every class window
+NO_PINS: dict[HoldRoot, frozenset[str]] = {}
+_ADDRESS = "INSERT INTO eqos.capture_addresses (capture_ref_id, url) VALUES (%s, %s)"
+_PACKAGE = """WITH p AS (
+    INSERT INTO eqos.filing_packages (entity_id, family, reporting_period_end, basis, framework,
+        reporting_kind, knowledge_time, evidence_sha256)
+    VALUES (%(entity)s, 'FINANCIAL_RESULTS', '2025-09-30', 'CONSOLIDATED', 'IND_AS', 'QUARTER',
+        now(), %(nonce)s) RETURNING id)
+INSERT INTO eqos.package_members (package_id, capture_ref_id, representation, knowledge_time,
+    knowledge_time_raw, knowledge_time_status)
+SELECT id, %(capture)s, 'XBRL', now(), 'fixture', 'KNOWN' FROM p RETURNING package_id"""
+_VERIFY = """WITH r AS (
+    INSERT INTO eqos.runs (identity_hash, cutoff, mode, status, code_version, manifest,
+        manifest_sha256)
+    VALUES (%(nonce)s, now(), 'AS_KNOWN', 'COMPLETE', 'fixture', '{}', %(nonce)s) RETURNING id)
+INSERT INTO eqos.run_inputs (run_id, input_kind, disposition, package_id)
+SELECT id, 'PACKAGE', 'SELECTED', %(package)s FROM r"""
+_ITEM = """INSERT INTO eqos.queue_items (run_id, pair_identity, outcome, input_sha256, severity,
+    diagnostic, routing_reason, source_refs)
+VALUES (%s, %s, 'UNMAPPED', %s, 'HIGH', false, 'MAPPING_DEFINITION_OR_SOURCE_ERROR', '[]')
+RETURNING id"""
+_DISPOSE = """INSERT INTO eqos.queue_dispositions (item_id, kind, reason, decider, evidence_ref)
+VALUES (%s, 'DISMISSED', 'fixture', 'fixture-owner', 'fixture')"""
+# STAND-IN until the purge role's grants land (plan D9 File map, 0029): the dry-run's reads.
+_PURGE_READS = (
+    "GRANT SELECT ON ALL TABLES IN SCHEMA eqos TO eqos_purge",
+    "GRANT EXECUTE ON FUNCTION eqos.store_now() TO eqos_purge",
+)
+_SET_CLOCK = "SELECT setval('eqos.store_clock_us', %s, true)"
 
 
 def synthetic(source_id: str, surface: str) -> CaptureReference:
@@ -85,3 +130,96 @@ def pre_retention_db(
 def finish_migrations(migrator: psycopg.Connection) -> None:
     """Apply every remaining migration, 0027 included."""
     apply_migrations(migrator, MIGRATIONS_DIR)
+
+
+def register(
+    conn: psycopg.Connection,
+    source_id: str,
+    surface: str,
+    *,
+    blob: str | None = None,
+    url: str | None = None,
+) -> int:
+    """SYNTHETIC: register a capture now (``blob`` if given), with an address if ``url``."""
+    ref = synthetic(source_id, surface)
+    ref = ref if blob is None else ref.model_copy(update={"blob_sha256": blob})
+    row = conn.execute(rows_sql.INSERT_CAPTURE_REF + " RETURNING id", rows_sql.capture_params(ref))
+    ((capture_ref_id,),) = row.fetchall()
+    if url is not None:
+        conn.execute(_ADDRESS, (capture_ref_id, url))
+    return int(capture_ref_id)
+
+
+def package(conn: psycopg.Connection, entity_id: int, capture_ref_id: int) -> int:
+    """SEED: a filing package of ``entity_id`` whose XBRL member is the capture."""
+    nonce = uuid.uuid4().hex * 2
+    params = {"entity": entity_id, "capture": capture_ref_id, "nonce": nonce}
+    ((package_id,),) = conn.execute(_PACKAGE, params).fetchall()
+    return int(package_id)
+
+
+def verify(conn: psycopg.Connection, package_id: int) -> None:
+    """SEED: a ``COMPLETE`` run selecting the package, which verifies its members now (R5)."""
+    conn.execute(_VERIFY, {"nonce": uuid.uuid4().hex * 2, "package": package_id})
+
+
+def open_item(conn: psycopg.Connection, run_id: int, **evidence: int) -> int:
+    """SEED: an undisposed queue item of ``run_id`` sealed in its transaction with one evidence
+    row: an ``occurrence_id``/``interpretation_id``/``attempt_id`` input or a trace."""
+    table = "queue_item_traces" if "calculation_trace_id" in evidence else "queue_item_inputs"
+    columns = sql.SQL(", ").join(map(sql.Identifier, ["item_id", *evidence]))
+    insert = sql.SQL("INSERT INTO eqos.{} ({}) VALUES (%s, %s)").format(
+        sql.Identifier(table), columns
+    )
+    with conn.transaction():
+        row = conn.execute(_ITEM, (run_id, uuid.uuid4().hex, uuid.uuid4().hex)).fetchone()
+        assert row is not None
+        conn.execute(insert, (row[0], *evidence.values()))
+    return int(row[0])
+
+
+def dispose(owner: psycopg.Connection, item_id: int) -> None:
+    """The owner's disposition of a queue item."""
+    owner.execute(_DISPOSE, (item_id,))
+
+
+def facts_of(
+    conn: psycopg.Connection, capture_ref_id: int, pinned: dict[HoldRoot, frozenset[str]] = NO_PINS
+) -> CaptureFacts:
+    """One capture's retention facts."""
+    return next(f for f in capture_facts(conn, pinned) if f.capture_ref_id == capture_ref_id)
+
+
+def later() -> datetime:
+    """The cases' evaluation time: :data:`LATER_MONTHS` from now."""
+    return add_months(datetime.now(UTC), LATER_MONTHS)
+
+
+def verdict(
+    conn: psycopg.Connection, capture_ref_id: int, pinned: dict[HoldRoot, frozenset[str]] = NO_PINS
+) -> Eligibility:
+    """One capture's eligibility at :func:`later`."""
+    return eligibility(facts_of(conn, capture_ref_id, pinned), later())
+
+
+def grant_purge_reads(migrator: psycopg.Connection) -> None:
+    """STAND-IN: let the purge role read what the dry-run reads (see ``_PURGE_READS``)."""
+    for statement in _PURGE_READS:
+        migrator.execute(statement)
+
+
+def set_store_clock(migrator: psycopg.Connection, at: datetime) -> None:
+    """Advance the store clock to ``at`` (R5: tests move ``eqos.store_clock_us``)."""
+    migrator.execute(_SET_CLOCK, (int(at.timestamp() * 1_000_000),))
+
+
+def retention_cli(
+    monkeypatch: pytest.MonkeyPatch, database: PgTestDatabase, *argv: str
+) -> tuple[int, str]:
+    """``fundamentals retention <argv>`` against ``database``: exit code and stdout."""
+    for name, value in database.cli_env().items():
+        monkeypatch.setenv(name, value)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = main(["retention", *argv])
+    return code, out.getvalue()
