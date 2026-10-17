@@ -1,6 +1,6 @@
 # Extractor v2 (structural Ind AS signal) Implementation Plan
 
-Status: draft — pending Sol review r2 (r1 REJECT: R1–R6 addressed below)
+Status: draft — pending Sol review r3 (r2 REJECT: R4, R7 addressed below)
 
 **Origin:** bead `eqos-71x`; D6 [Amendment 2026-10-16 (attempt 2 burn)](D6.md#amendment-2026-10-16-attempt-2-burn-eqos-h410)
 option A ("a new bead, its own version advance"), the owner's B-now-A-later choice; D6 Freeze step 6
@@ -146,12 +146,18 @@ Approach (test-first; record the red run):
      `extractor_versions=SEED_VERSIONS` (old-version generations), and store one comparison run.
      (The rows come from current code; for Apar, whose notes carry the phrase, v1 and v2 extract
      identically — stated in the test docstring.)
-  3. Snapshot tables, run results and the stored run's pins; leave the patches; onboard Apar under
-     the new defaults.
+  3. Snapshot tables, run results and the stored run's pins; leave the seed patches, explicitly
+     restoring the current source root and default-version map; re-ingest the same retained
+     two-member Apar intake (XBRL + PDF) under current defaults via the existing `Ingest.run`
+     helper (`tests/fundamentals/evidence_support.py`); then also onboard Apar. Onboarding alone is
+     insufficient: it builds an XBRL-only intake and records a capture-less PDF `EXCLUDED_BY_RULE`
+     attempt (`onboard_cli.py` ~:425–466), so it cannot exercise PDF re-extraction.
   4. Assert: exit as today; every pre-existing row unchanged; the stored run's manifest pins still
-     name the seed versions/hashes; `replay_run` of it uses those pins and returns identical
-     `load_results`; new occurrences/attempts exist under `xbrl-occurrences/2` and
-     `pdf-occurrences/3` alongside the v1/v2-PDF generations; no `VersionContentDriftError`.
+     name the seed versions/hashes; `replay_run` uses them and returns identical `load_results`;
+     the same XBRL and PDF captures carry both old (`xbrl-occurrences/1`, `pdf-occurrences/2`) and
+     new (`xbrl-occurrences/2`, `pdf-occurrences/3`) generations, new attempts `COMPLETE`; no
+     `VersionContentDriftError`. Limitation: seed rows come from current code under historical
+     pins — a compatibility fixture, not historical execution. No production API, migration or bulk tool.
 Verification: `uv run pytest tests/fundamentals/test_identity_namespace.py tests/fundamentals/test_evidence_refusals.py tests/fundamentals/test_xbrl_dimension_identity.py tests/fundamentals/test_derived_settings.py tests/fundamentals/test_compare_config_pins.py tests/fundamentals/test_evidence_reprocessing.py`
 green; `wc -l src/fundamentals/entity/discovery.py` ≤ 800; mypy, ruff.
 Dependencies: none. Risk: a missed PDF bump passes in fresh DBs but drifts on real ones — the
@@ -173,16 +179,20 @@ Approach:
   sector rule (today's `financial_rule` body: in-capmkt-ent schemaRefs + IndAS namespace, no
   conflict clause) is restated alongside. `xbrl_admitted` uses both instead of production
   `financial_rule`/`framework_state`; parser and `instance_state` stay production (unchanged here).
-- Historical-rule tests (`test_onboarding_verification.py`): schemaRef-only → admitted; phrase-only →
-  admitted; structural-only (IndAS form, no phrase) → **not** admitted; absent → not; phrase only in
+- Historical-rule tests (`test_onboarding_verification.py`): schemaRef-only → the historical
+  framework helper accepts (full `xbrl_admitted` still applies the historical sector rule); phrase-only →
+  accepted; structural-only (IndAS form, no phrase) → **not** accepted; absent → not; phrase only in
   a foreign-namespace text block → not. Independence: monkeypatch
   `member_identity.verify_xbrl_framework`/`verification.framework_state`/`financial_rule` to
-  always-accept and assert `xbrl_admitted` results are unchanged over the 25 retained instances
-  (7 admitted framework-wise, `{APARINDS, LAURUSLABS}`).
-- Parity: `test_discovery_admits_exactly_the_instances_first_party_ingest_accepts` (`:104–131`)
-  asserts v2 ingest verdict == discovery `financial_rule` + `framework_state` over all 25,
-  admitted == 16, symbols = the 11; the R1 marked HDFCBANK copy is refused by discovery's
-  `financial_rule` and by `framework_state`.
+  always-accept and assert `xbrl_admitted` results are unchanged over the 25 retained instances.
+  Historical combined admission = 7 (`{APARINDS, LAURUSLABS}`); the historical framework helper
+  alone accepts 9 — those 7 plus the two legacy Apar `Ind-AS_entry_point` schemaRef instances,
+  which discovery's sector rule rejects.
+- Parity (`test_discovery_admits_exactly_the_instances_first_party_ingest_accepts`, `:104–131`),
+  over all 25 inputs: (a) `framework_state(instance, body)` equals the ingest framework verdict;
+  (b) discovery admission equals `financial_rule(body) AND ingest_framework_verified` (plus the
+  unchanged instance gates where applicable). Admitted == 16 integrated positives, symbols = the
+  11; the R1 marked HDFCBANK copy is refused by `financial_rule` and by `framework_state`.
 - REFUSALS `no_framework_declaration` (`:380–389`) becomes a success case: exit `INCOMPLETE`
   (`PARTIAL`), XBRL attempt `COMPLETE`, occurrences under `XBRL_EXTRACTOR_VERSION`. Combined-defect
   cases using `_NO_PHRASE` (`:530,564–574`) drop it; delete a resulting duplicate.
