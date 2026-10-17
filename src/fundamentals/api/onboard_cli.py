@@ -107,15 +107,12 @@ from fundamentals.evidence.capture_intake import (
     FirstPartySurface,
     retained_intake_from_manifest,
 )
+from fundamentals.evidence.capture_retention import ingest_vendor_retained
 from fundamentals.evidence.discovery_gate import IneligibleCaptureError
 from fundamentals.evidence.first_party_extract import IngestError
 from fundamentals.evidence.first_party_ingest import ingest_first_party
 from fundamentals.evidence.repository import EvidenceRepository
-from fundamentals.evidence.vendor_ingest import (
-    VendorExtraction,
-    VendorIngestRequest,
-    ingest_vendor,
-)
+from fundamentals.evidence.vendor_ingest import VendorExtraction, VendorIngestRequest
 from fundamentals.evidence.vendor_screener import ScreenerIssuerBinding
 from fundamentals.ingest.http_session import NoRedirectHandler, read_bounded
 from fundamentals.ingest.nse_filings import NSE_API
@@ -515,7 +512,7 @@ def _ingest(
         args.config_root, found, stored, verified, month, recorded.inputs
     ):
         ref = stored[pair][1]
-        vendor = ingest_vendor(
+        vendor = ingest_vendor_retained(
             VendorIngestRequest(
                 source_id=pair[0],
                 surface=pair[1],

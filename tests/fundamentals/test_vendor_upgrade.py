@@ -102,6 +102,8 @@ def legacy_publication(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     # The queue tables arrive in 0006; the old producer routed nothing.
     monkeypatch.setattr(run, "route_run", lambda *_: ())
+    # No capture expires before 0030 (R13).
+    monkeypatch.setattr(run, "_expired", lambda *_: set())
     # D1a recorded no comparison-semantics pin (D1b review C2).
     monkeypatch.setattr(run_config, "COMPARISON_SEMANTICS", None)
 

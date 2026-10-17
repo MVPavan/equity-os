@@ -10,6 +10,10 @@ retention purge --snapshot-root PATH --backup-dir PATH [--config-root PATH]
     (recover any unfinished run, then delete every eligible blob; exit 0, ``EXIT_REFUSED``
     when a precondition fails, ``EXIT_HIGH`` when a probe halted a source or a blob must be
     registered or removed)
+retention refetch --capture ID --snapshot-root PATH
+    (as the runtime role: fetch an expired exchange capture from its address; exit 0 when
+    restored, ``EXIT_HIGH`` on a mismatch, ``EXIT_REFUSED`` when the fetch failed or the
+    capture is not refetchable)
 """
 
 from __future__ import annotations
@@ -24,7 +28,8 @@ import psycopg
 import structlog
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
-from fundamentals.contracts.retention_purge import PurgeRefusedError, PurgeStep
+from fundamentals.contracts.retention_purge import PurgeRefusedError, PurgeStep, RefetchOutcome
+from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.backup import BackupError, write_backup
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.retention_io import AuthorityError
@@ -32,18 +37,22 @@ from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_di
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.retention.holds import pinned_roots
 from fundamentals.retention.purge import INCIDENTS, UNCLASSIFIED, dry_run, purge
-from fundamentals.retention.refetch import live_fetch
+from fundamentals.retention.refetch import live_fetch, refetch
+from fundamentals.store.snapshot_store import SnapshotStore
 
 RETENTION_COMMAND = "retention"
 CLASSIFY_ACTION = "classify"
 PURGE_ACTION = "purge"
+REFETCH_ACTION = "refetch"
 CONFIG_ROOT = Path("config")
 EXIT_HIGH = 3  # SUCCESS_WITH_OPEN_HIGH (compare/run_models.py)
 _ACTION_DEST = "retention_action"
-_HELP = "capture retention: classes and purge"
+_HELP = "capture retention: classes, purge and re-fetch"
 _CLASSIFY_HELP = "classify the captures registered before retention classes existed"
 _PURGE_HELP = "delete the blobs eligible for purge, or list them (--dry-run)"
 _DRY_RUN_HELP = "only list the eligible blobs and open incidents"
+_REFETCH_HELP = "fetch an expired exchange capture back from its address"
+_REFETCH_EXIT = {RefetchOutcome.RESTORED: EXIT_OK, RefetchOutcome.REFETCH_MISMATCH: EXIT_HIGH}
 _PURGE_NEEDS = "retention purge: --snapshot-root and --backup-dir are required\n"
 _CLASSIFY = "SELECT eqos.classify_existing()"
 _FAILED_EVENT = "retention_command_failed"
@@ -59,6 +68,9 @@ def add_retention_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
     purge_parser.add_argument("--snapshot-root", type=Path)
     purge_parser.add_argument("--backup-dir", type=Path)
     purge_parser.add_argument("--config-root", type=Path, default=CONFIG_ROOT)
+    refetch_parser = actions.add_parser(REFETCH_ACTION, help=_REFETCH_HELP)
+    refetch_parser.add_argument("--capture", type=int, required=True)
+    refetch_parser.add_argument("--snapshot-root", type=Path, required=True)
 
 
 def dispatch_retention_command(args: argparse.Namespace) -> int | None:
@@ -68,6 +80,8 @@ def dispatch_retention_command(args: argparse.Namespace) -> int | None:
     try:
         if args.retention_action == CLASSIFY_ACTION:
             return _classify()
+        if args.retention_action == REFETCH_ACTION:
+            return _refetch(args.capture, args.snapshot_root)
         if args.dry_run:
             return _dry_run(args.config_root)
         if args.snapshot_root is None or args.backup_dir is None:
@@ -82,6 +96,7 @@ def dispatch_retention_command(args: argparse.Namespace) -> int | None:
         PurgeRefusedError,
         AuthorityError,
         BackupError,
+        SnapshotError,
     ) as failure:
         structlog.get_logger("fundamentals.retention").error(
             _FAILED_EVENT, failure=type(failure).__name__, detail=str(failure)
@@ -158,6 +173,14 @@ def _purge(config_root: Path, snapshot_root: Path, backup_dir: Path) -> int:
     ]
     sys.stdout.write("".join(f"{line}\n" for line in lines))
     return EXIT_HIGH if report.high else EXIT_OK
+
+
+def _refetch(capture_ref_id: int, snapshot_root: Path) -> int:
+    """Re-fetch one capture with the live fetcher; print and exit by its outcome (R10)."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        outcome = refetch(pool, SnapshotStore(snapshot_root), capture_ref_id, live_fetch)
+    sys.stdout.write(f"{outcome}\t{capture_ref_id}\n")
+    return _REFETCH_EXIT.get(outcome, EXIT_REFUSED)
 
 
 def _no_checkpoint(step: PurgeStep) -> None:

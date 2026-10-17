@@ -3,29 +3,45 @@
 :func:`live_fetch` is the one network path: no redirects, a timeout, and a body that counts
 only when read to EOF at the length the server announced. :func:`probe` hash-checks a sample
 of a source's eligible captures before any of that source's exchange originals are deleted.
+:func:`refetch` records an attempt first, then restores equal bytes as the same capture or
+publishes different bytes as a new capture naming the attempt.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.client
 import urllib.error
 import urllib.request
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import UTC
 from typing import Any, LiteralString
 
 import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
+from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureFacts
 from fundamentals.contracts.retention_purge import (
     FetchFailure,
     FetchFailureCategory,
     ProbeOutcome,
+    RefetchOutcome,
 )
-from fundamentals.contracts.snapshot import BodyCompleteness
+from fundamentals.contracts.snapshot import (
+    BlobRef,
+    BodyCompleteness,
+    CaptureRecord,
+    MissingSnapshotError,
+    RequestParameter,
+    derive_capture_id,
+)
+from fundamentals.evidence.capture_retention import capture_registration
 from fundamentals.ingest.http_session import NoRedirectHandler, read_bounded_capture
-from fundamentals.store.snapshot_store import MAX_BODY_BYTES
+from fundamentals.store.snapshot_store import MAX_BODY_BYTES, SnapshotStore
 
 Fetch = Callable[[str], bytes]
 REFETCH_TIMEOUT_SECONDS = 60.0
@@ -34,6 +50,27 @@ _INSERT_PROBE: LiteralString = (
     "INSERT INTO eqos.retention_probes (source_id, capture_ref_id, url, outcome, category, "
     "http_status, fetched_sha256, severity) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
 )
+ATTEMPT_PARAMETER = "refetch_attempt"
+# A capture with its address and latest attempt; ``finished`` when that attempt's new
+# capture (route key suffixed with the attempt, see ``_register``) is registered.
+_CAPTURE: LiteralString = (
+    "SELECT r.source_id, r.surface, r.request_key, r.capture_id, r.blob_sha256, "
+    "r.record_sha256, d.url, l.id, l.outcome, l.fetched_sha256, l.recorded_at, "
+    "eqos.capture_state(r.id) = 'EXPIRED' AND NOT eqos.is_vendor_source(r.source_id) "
+    "AND d.url IS NOT NULL AS refetchable, EXISTS (SELECT 1 FROM eqos.capture_refs n "
+    "WHERE (n.source_id, n.surface) = (r.source_id, r.surface) "
+    "AND n.request_key = r.request_key || '.refetch_attempt-' || l.id) AS finished "
+    "FROM eqos.capture_refs r LEFT JOIN eqos.capture_addresses d ON d.capture_ref_id = r.id "
+    "LEFT JOIN LATERAL (SELECT * FROM eqos.refetch_attempts WHERE capture_ref_id = r.id "
+    "ORDER BY id DESC LIMIT 1) l ON true WHERE r.id = %s"
+)
+_INSERT_ATTEMPT: LiteralString = (
+    "INSERT INTO eqos.refetch_attempts (capture_ref_id, url, outcome, category, http_status, "
+    "fetched_sha256, severity) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+    "RETURNING id, url, outcome, fetched_sha256, recorded_at"
+)
+_RETENTION_SHARED: LiteralString = "SELECT eqos.retention_shared()"
+_RESTORE: LiteralString = "SELECT eqos.restore_capture(%s)"
 
 
 def live_fetch(url: str) -> bytes:
@@ -92,3 +129,82 @@ def probe(
             if not matched:
                 break
     return outcomes
+
+
+def refetch(
+    pool: ConnectionPool, store: SnapshotStore, capture_ref_id: int, fetch: Fetch
+) -> RefetchOutcome:
+    """Fetch an expired exchange capture from its address: equal bytes restore it (same id and
+    times), different bytes become a new capture under a HIGH ``MISMATCH`` attempt (R10). A
+    rerun finishes the latest attempt before fetching again."""
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        row = cursor.execute(_CAPTURE, (capture_ref_id,)).fetchone()
+    if row is None or not row["refetchable"]:
+        return RefetchOutcome.NOT_REFETCHABLE
+    ids = (row["source_id"], row["surface"], row["request_key"], row["capture_id"])
+    record = CaptureRecord.model_validate_json(store.read_record(*ids, row["record_sha256"]))
+    if row["outcome"] == "MISMATCH" and row["finished"]:
+        return RefetchOutcome.REFETCH_MISMATCH
+
+    def attempt(outcome: str, fetched: str | None, failed: tuple[Any, ...] = (None, None)) -> Any:
+        """Transaction A: one committed attempt row, before any store write."""
+        severity = "HIGH" if outcome == "MISMATCH" else None
+        params = (capture_ref_id, row["url"], outcome, *failed, fetched, severity)
+        with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            return cursor.execute(_INSERT_ATTEMPT, params).fetchone()
+
+    body = None
+    if row["outcome"] == "MATCH":
+        with contextlib.suppress(MissingSnapshotError):  # a relink before a crash survives
+            body = store.read_body(record)
+    if body is None:
+        try:
+            body = fetch(row["url"])
+        except FetchFailure as failure:
+            attempt("FAILED", None, (failure.category, failure.http_status))
+            return RefetchOutcome.FAILED
+        sha256 = hashlib.sha256(body).hexdigest()
+        if sha256 != row["blob_sha256"]:
+            reused = row["outcome"] == "MISMATCH" and row["fetched_sha256"] == sha256
+            _register(pool, store, record, row if reused else attempt("MISMATCH", sha256), body)
+            return RefetchOutcome.REFETCH_MISMATCH
+        attempt("MATCH", sha256)
+    with pool.connection() as conn, conn.transaction():  # transaction B
+        conn.execute(_RETENTION_SHARED)
+        store.relink(record, body)
+        conn.execute(_RESTORE, (capture_ref_id,))  # admitted only after a matching attempt
+    return RefetchOutcome.RESTORED
+
+
+def _register(
+    pool: ConnectionPool,
+    store: SnapshotStore,
+    original: CaptureRecord,
+    attempt: dict[str, Any],
+    body: bytes,
+) -> None:
+    """Publish and register mismatching bytes as the attempt's new capture at its address:
+    the original route with the attempt as a request parameter (invariant 13), retrieved at
+    the attempt's time so a rerun (reusing an unfinished attempt) republishes the same record."""
+    request, attempt_id = original.request, attempt["id"]
+    key = f"{request.request_key}.{ATTEMPT_PARAMETER}-{attempt_id}"
+    params = (*request.parameters, RequestParameter(name=ATTEMPT_PARAMETER, value=str(attempt_id)))
+    named = request.model_copy(update={"request_key": key, "parameters": params})
+    sha256, at = hashlib.sha256(body).hexdigest(), attempt["recorded_at"].astimezone(UTC)
+    blob = BlobRef(source_id=request.source_id, content_sha256=sha256, byte_count=len(body))
+    update = {"request": named, "retrieved_at": at, "http_status": 200, "body": blob}
+    fresh = original.model_copy(update=update | {"capture_id": derive_capture_id(at, blob)})
+    record = store.put_capture(CaptureRecord.model_validate(fresh.model_dump()), body)
+    ref = CaptureReference(
+        capture_ref_id=None,
+        source_id=named.source_id,
+        surface=named.surface,
+        request_key=named.request_key,
+        capture_id=record.capture_id,
+        blob_sha256=sha256,
+        record_sha256=record.record_sha256,
+        registered_at=at,
+        first_seen_at=at,
+    )
+    with capture_registration(pool) as registration:
+        registration.insert(ref, url=attempt["url"])

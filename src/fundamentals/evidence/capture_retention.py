@@ -4,7 +4,8 @@ RP1, RP6, RP7).
 Every non-vendor intake registers through :func:`capture_registration`: one READ COMMITTED
 transaction that takes the retention lock shared first, in which the ``capture_refs`` trigger
 writes the class row and the intake's address is recorded once, with the capture's first
-registration. Byte readers go through :func:`read_retained`.
+registration. Byte readers go through :func:`read_retained`; vendor intake goes through
+:func:`ingest_vendor_retained`, which leaves the pinned ``ingest_vendor`` source unchanged (R13).
 """
 
 from __future__ import annotations
@@ -21,6 +22,12 @@ from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureState, OriginalExpiredError
 from fundamentals.contracts.snapshot import CaptureRecord, IntegrityError, MissingSnapshotError
 from fundamentals.evidence import repository_rows as rows_sql
+from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.evidence.vendor_ingest import (
+    VendorIngestReport,
+    VendorIngestRequest,
+    ingest_vendor,
+)
 from fundamentals.store.snapshot_store import SnapshotStore
 
 _INSERT_ADDRESS: LiteralString = (
@@ -33,6 +40,10 @@ _FIND_RETAINED: LiteralString = (
     "SELECT " + rows_sql.CAPTURE_COLUMNS + " FROM eqos.capture_refs "
     "WHERE source_id = %s AND surface = %s AND blob_sha256 = %s "
     "AND eqos.capture_state(id) IN ('RETAINED', 'RESTORED') ORDER BY id LIMIT 1"
+)
+_STATE_OF: LiteralString = (
+    "SELECT id, eqos.capture_state(id) FROM eqos.capture_refs "
+    "WHERE source_id = %s AND surface = %s AND request_key = %s AND capture_id = %s"
 )
 _GONE = frozenset({CaptureState.EXPIRED, CaptureState.PURGE_PENDING})
 
@@ -89,3 +100,16 @@ def read_retained(
         )
     except MissingSnapshotError as error:
         raise IntegrityError(f"retained capture {ref.capture_ref_id} lost its body") from error
+
+
+def ingest_vendor_retained(
+    request: VendorIngestRequest, *, repository: EvidenceRepository, **options: Any
+) -> VendorIngestReport:
+    """``ingest_vendor``, refused before it writes anything (no attempt) when the capture is
+    registered and expired or being purged (R13)."""
+    identity = (request.source_id, request.surface, request.request_key, request.capture_id)
+    with repository._pool.connection() as conn:
+        row = conn.execute(_STATE_OF, identity).fetchone()
+    if row is not None and CaptureState(row[1]) in _GONE:
+        raise OriginalExpiredError(f"ORIGINAL_EXPIRED: capture {row[0]} is {row[1]}")
+    return ingest_vendor(request, repository=repository, **options)

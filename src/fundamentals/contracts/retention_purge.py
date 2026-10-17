@@ -1,4 +1,4 @@
-"""Purge and probe vocabulary (plan D9 R8-R10); beside ``retention.py``, which is at its cap."""
+"""Purge, probe and re-fetch vocabulary (plan D9 R8-R10); beside the capped ``retention.py``."""
 
 from __future__ import annotations
 
@@ -36,6 +36,15 @@ class FetchFailure(Exception):  # noqa: N818 - the name plan D9 R10 fixes
         super().__init__(f"fetch failed: {category}" + (f" {http_status}" if http_status else ""))
         self.category = category
         self.http_status = http_status
+
+
+class RefetchOutcome(StrEnum):
+    """What one ``retention refetch`` did (R10)."""
+
+    RESTORED = "RESTORED"
+    REFETCH_MISMATCH = "REFETCH_MISMATCH"
+    FAILED = "FAILED"
+    NOT_REFETCHABLE = "NOT_REFETCHABLE"
 
 
 class ProbeOutcome(BaseModel):

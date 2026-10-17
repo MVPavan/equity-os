@@ -17,7 +17,7 @@ from pathlib import Path
 from psycopg_pool import ConnectionPool
 
 from fundamentals.compare.resolve import load_inputs, recompute, resolve
-from fundamentals.compare.resolve_models import ReplayReader
+from fundamentals.compare.resolve_models import ReplayReader, ResolvedInputs
 from fundamentals.compare.routing import route_run
 from fundamentals.compare.run_config import (
     ConfigVersions,
@@ -46,6 +46,7 @@ from fundamentals.compare.run_store import PublishHook, RunStore
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import RunMode, VendorExtractorPin, VersionPin
+from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.review_queue import QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.repository import EvidenceRepository
@@ -76,6 +77,7 @@ DEFINITION_SET_ARTIFACT = "definition_set"
 NO_ATTEMPT = "-"
 _FAILURE = "{representation}\t{reason}\tattempt={attempt}"
 _NON_DIAGNOSTIC = (SourceRole.FIRST_PARTY, SourceRole.INDEPENDENT_VENDOR)
+_EXPIRED = "ORIGINAL_EXPIRED: {what} reads expired vendor captures {captures}"
 
 
 def request_for(
@@ -135,6 +137,7 @@ def execute_run(
         config=config,
         definition_set_id=definition_set_id,
     )
+    inputs = _retained(inputs, request.cutoff, pool)
     manifest = RunManifest(
         scope=request.scope,
         cutoff=request.cutoff,
@@ -184,6 +187,8 @@ def replay_run(
         database_identity=manifest.database_identity,
     )
     config = _config(config_root, request, extractors, vendor_pins=pinned.vendor_extractors)
+    if expired := sorted(_expired(pool, manifest.inputs)):
+        raise OriginalExpiredError(_EXPIRED.format(what=f"run {run_id}", captures=expired))
     by_id = reader if reader is not None else EvidenceRepository(pool)
     inputs = load_inputs(by_id, manifest.inputs)
     stored_set = by_id.get_definition_set(inputs.definition_set_id)
@@ -241,6 +246,34 @@ def exit_status(record: RunRecord, overlay: QueueOverlay) -> RunExitStatus:
     if any(item.severity is QueueSeverity.HIGH for item in overlay.open_items):
         return RunExitStatus.SUCCESS_WITH_OPEN_HIGH
     return RunExitStatus.SUCCESS
+
+
+def _expired(pool: ConnectionPool, inputs: tuple[RunInput, ...]) -> set[int]:
+    """The input vendor captures that are not retained (R13)."""
+    captures = [item.ref_id for item in inputs if item.kind is RunInputKind.CAPTURE_REF]
+    with pool.connection() as conn:
+        found = conn.execute("SELECT eqos.expired_vendor_captures(%s)", (captures,)).fetchone()
+    return set(found[0] if found else ())
+
+
+def _retained(inputs: ResolvedInputs, cutoff: datetime, pool: ConnectionPool) -> ResolvedInputs:
+    """Inputs without the vendor attempts and captures whose originals expired, refused when
+    the latest applicable attempt of a key (as ``vendor_sides`` picks it) reads one (R13)."""
+    if not (expired := _expired(pool, inputs.inputs)):
+        return inputs
+    latest = {}
+    drop: set[tuple[RunInputKind, int | None]] = {(RunInputKind.CAPTURE_REF, c) for c in expired}
+    for attempt in sorted(inputs.attempts, key=lambda item: (item.attempted_at, item.attempt_id)):
+        capture = attempt.capture and attempt.capture.capture_ref_id
+        if capture in expired:
+            drop.add((RunInputKind.ATTEMPT, attempt.attempt_id))
+        if attempt.capture is None or attempt.capture.registered_at <= cutoff:
+            key = (attempt.source_id, attempt.surface, attempt.entity_id, attempt.period_end)
+            latest[(*key, attempt.basis)] = capture
+    if read := sorted(expired.intersection(latest.values())):
+        raise OriginalExpiredError(_EXPIRED.format(what="the latest attempt", captures=read))
+    kept = tuple(item for item in inputs.inputs if (item.kind, item.ref_id) not in drop)
+    return inputs.model_copy(update={"inputs": kept})
 
 
 def _config(

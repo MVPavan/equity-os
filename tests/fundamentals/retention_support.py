@@ -39,6 +39,7 @@ RETENTION_TABLES = frozenset(
     {"retention_classes", "capture_addresses", "licence_ends"}
     | {"capture_states", "purge_runs", "purge_run_closures"}
     | {"purge_records", "retention_probes"}
+    | {"refetch_attempts"}
 )
 FIRST_RETENTION_MIGRATION = "0027_retention_classes.sql"
 CLASS_OF = (
