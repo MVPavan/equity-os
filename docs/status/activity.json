@@ -1,16 +1,18 @@
 {
   "now": {
-    "title": "D6 closed; next: eqos-t3l production fixes",
-    "detail": "D6 identifier-only onboarding is complete on test databases: held-out attempt 3 reproduced its independent manifest under the freeze. Four production defects found by the fresh critical review (cached XBRL reuse bypassing identity/eligibility checks, replay metadata, derived-settings declarations, CLI eligibility exit) are fixed next under eqos-t3l with Sol review, before broad onboarding.",
-    "stage": "eqos-t3l"
+    "title": "Extractor v2 (eqos-71x): plan",
+    "detail": "Identifier-only onboarding supports only 2 of 11 development companies because the pinned framework check needs an Ind AS phrase most integrated filings lack. Extractor v2 accepts the structural Ind AS signal through one predicate shared by discovery and ingest, with versioned extractors. It comes before D7, whose three-member batch needs more than two onboardable companies.",
+    "stage": "eqos-71x"
   },
   "next": [
-    "eqos-t3l: D6 post-closure production fixes (P1, blocks extractor v2)",
-    "D7 Coverage model",
-    "Extractor v2 (eqos-71x): structural Ind AS signal; only 2 of 11 dev companies onboard until then",
-    "Follow-ups: NSE priming timeout (h4h.8), pagination (h4h.9), envelope validation (h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "D7 Coverage model (plan; migration path 0024, batch members via D6)",
+    "Follow-ups: NSE priming timeout (eqos-h4h.8), pagination (eqos-h4h.9), envelope validation (eqos-h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "eqos-t3l closed: cached XBRL reuse rechecked against filing-date identity and eligibility, replay bound to recorded request metadata, settings read from registered non-empty facts, onboarding refusals exit 5 (ab43c23, aa30892; Sol r1 REJECT (1) -> r2 APPROVE). Full suite 3938 passed, 8 skipped."
+    },
     {
       "date": "2026-10-17",
       "text": "D6 complete. Phase-end Sol review r1 REJECT (7) → r2 REJECT (1) → r3 APPROVE; fresh critical review REJECT (8): four acceptance-test gaps fixed (8e72089, 616e070), re-review APPROVE; four production defects deferred to eqos-t3l by owner ruling, freeze check pinned at closure (D6.md Freeze step 6). Epic eqos-h4h closed."
