@@ -24,19 +24,27 @@ Layout under the root::
     <root>/<source_id>/<surface>/<request_key>/<capture_id>/body<ext>
     <root>/blobs/<source_id>/<sha256[:2]>/<sha256>
     <root>/.staging/...
+    <root>/.retention/licence-ended/<source_id>
+
+Retention (plan D9 RP4, RP5) adds the only operations that remove or restore bytes: a blob and
+its registered body links are deleted, or a verified body is linked back, under the writer lock
+and never touching ``record.json``. A licence-ended marker closes a source to every reader and
+writer except :meth:`SnapshotStore.read_record`, which checks the registered record digest.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 import structlog
 
+from fundamentals.contracts.retention import BlobDeletion, BlobEntry, LicenceEndedError
 from fundamentals.contracts.snapshot import (
     BlobRef,
     BodyCompleteness,
@@ -77,6 +85,9 @@ _LOGGER = structlog.get_logger(__name__)
 
 BLOBS_DIRNAME = "blobs"
 STAGING_DIRNAME = ".staging"
+RETENTION_DIRNAME = ".retention"
+LICENCE_ENDED_DIRNAME = "licence-ended"
+LICENCE_MARKER = b"licence ended\n"
 RECORD_FILENAME = "record.json"
 BODY_STEM = "body"
 BLOB_PREFIX_LENGTH = 2
@@ -103,6 +114,9 @@ NO_RETAINED_BODY = "capture {capture_id} retained no body"
 NO_SUCH_CAPTURE = "no capture at {path}"
 UNREADABLE = "cannot read {path}"
 UNSAFE_SYMLINK = "refusing to follow a symlinked path component: {path}"
+LICENCE_ENDED = "the {source_id} licence has ended; its captures are closed"
+RECORD_DIGEST_MISMATCH = "record of capture {capture_id} does not match its registered digest"
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class SnapshotStore:
@@ -151,6 +165,7 @@ class SnapshotStore:
         """
         payload = self._verified_payload(record, body)
         with self._tree(create=True) as tree, tree.writer_lock():
+            self._refuse_ended(record.request.source_id)
             route = tree.descend(
                 (record.request.source_id, record.request.surface, record.request.request_key),
                 create=True,
@@ -261,6 +276,7 @@ class SnapshotStore:
         """Pin, bound and verify the exact record, body and content-addressed blob."""
         if not 0 < max_bytes <= MAX_BODY_BYTES:
             raise IntegrityError("body read limit exceeds producer bound")
+        self._refuse_ended(source_id)
         with self._tree() as tree:
             result = self._read_from_tree(
                 tree, source_id, surface, request_key, capture_id, max_bytes
@@ -324,6 +340,7 @@ class SnapshotStore:
         self, source_id: str, surface: str, request_key: str, capture_id: str
     ) -> CaptureRecord:
         """The published record of one capture."""
+        self._refuse_ended(source_id)
         capture_dir = self._child(self._route(source_id, surface, request_key), capture_id)
         record_path = self._child(capture_dir, RECORD_FILENAME)
         if not record_path.is_file():
@@ -368,6 +385,128 @@ class SnapshotStore:
         if not body_path.is_file():
             raise MissingSnapshotError(NO_SUCH_CAPTURE.format(path=body_path))
         return self._read_verified(body_path, record.body)
+
+    def mark_licence_ended(self, source_id: str) -> None:
+        """Close ``source_id`` to the store's readers and writers (RP4a); idempotent."""
+        with self._tree(create=True) as tree, tree.writer_lock():
+            markers = tree.descend((RETENTION_DIRNAME, LICENCE_ENDED_DIRNAME), create=True)
+            tree.publish_file(markers, source_id, LICENCE_MARKER)
+            tree.flush()
+
+    def read_record(
+        self, source_id: str, surface: str, request_key: str, capture_id: str, expected_sha256: str
+    ) -> bytes:
+        """The ``record.json`` bytes of one capture, refused unless they hash to its registered
+        digest; open after a licence end (RP4a)."""
+        with self._tree() as tree:
+            directory = tree.descend((source_id, surface, request_key, capture_id))
+            data = tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
+            tree.verify()
+        if _record_sha256(data) != expected_sha256:
+            raise IntegrityError(RECORD_DIGEST_MISMATCH.format(capture_id=capture_id))
+        return data
+
+    def put_record(self, record_bytes: bytes, expected_sha256: str) -> None:
+        """Publish one capture's ``record.json`` alone (an expired capture keeps no body)."""
+        record = CaptureRecord.model_validate_json(record_bytes)
+        if _record_sha256(record_bytes) != expected_sha256:
+            raise IntegrityError(RECORD_DIGEST_MISMATCH.format(capture_id=record.capture_id))
+        request = record.request
+        with self._tree(create=True) as tree, tree.writer_lock():
+            directory = tree.descend(
+                (request.source_id, request.surface, request.request_key, record.capture_id),
+                create=True,
+            )
+            tree.publish_file(directory, RECORD_FILENAME, record_bytes)
+            tree.flush()
+
+    def relink(self, record: CaptureRecord, body: bytes) -> CaptureRecord:
+        """Link verified bytes back as a published capture's body; ``record.json`` must already
+        be the registered one and is never written (R10)."""
+        payload = self._verified_payload(record, body)
+        if payload is None:
+            raise IntegrityError(NO_RETAINED_BODY.format(capture_id=record.capture_id))
+        reference, data = payload
+        request = record.request
+        identity = (request.source_id, request.surface, request.request_key, record.capture_id)
+        with self._tree() as tree, tree.writer_lock():
+            self._refuse_ended(request.source_id)
+            directory = tree.descend(identity)
+            published = tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
+            if _record_sha256(published) != record.record_sha256:
+                raise CaptureConflictError(
+                    CAPTURE_ALREADY_PUBLISHED.format(capture_id=record.capture_id)
+                )
+            sha = reference.content_sha256
+            blob_dir = tree.descend(
+                (BLOBS_DIRNAME, request.source_id, sha[:BLOB_PREFIX_LENGTH]), create=True
+            )
+            tree.publish_file(blob_dir, sha, data)
+            name = body_filename(record)
+            if not tree.exists(directory, name):
+                os.link(sha, name, src_dir_fd=blob_dir, dst_dir_fd=directory, follow_symlinks=False)
+                os.fsync(directory)
+            restored, _ = self._read_from_tree(tree, *identity, MAX_BODY_BYTES)
+            tree.flush()
+            return restored
+
+    def delete_blob(
+        self,
+        source_id: str,
+        blob_sha256: str,
+        links: tuple[tuple[str, str, str], ...],
+        checkpoint: Callable[[], None],
+    ) -> BlobDeletion:
+        """Unlink each registered body link ``(surface, request_key, capture_id)``, then the
+        blob, fsyncing parents and calling ``checkpoint`` after each unlink. A blob with a link
+        not named here keeps every byte (``UNKNOWN_LINK``); missing files count as deleted."""
+        with self._tree() as tree, tree.writer_lock():
+            blob_dir = _find_dir(tree, (BLOBS_DIRNAME, source_id, blob_sha256[:BLOB_PREFIX_LENGTH]))
+            blob = None
+            if blob_dir is not None and tree.exists(blob_dir, blob_sha256):
+                blob = os.stat(blob_sha256, dir_fd=blob_dir, follow_symlinks=False)
+            bodies, linked = [], 0
+            for surface, request_key, capture_id in links:
+                directory = tree.descend((source_id, surface, request_key, capture_id))
+                record = CaptureRecord.model_validate_json(
+                    tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
+                )
+                name = body_filename(record)
+                if record.body is None or not tree.exists(directory, name):
+                    continue
+                bodies.append((directory, name))
+                found = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                linked += blob is not None and _identity(found) == _identity(blob)
+            if blob is not None and blob.st_nlink > 1 + linked:
+                return BlobDeletion.UNKNOWN_LINK
+            for directory, name in bodies:
+                os.unlink(name, dir_fd=directory)
+                os.fsync(directory)
+                checkpoint()
+            if blob is not None and blob_dir is not None:
+                os.unlink(blob_sha256, dir_fd=blob_dir)
+                os.fsync(blob_dir)
+                checkpoint()
+            return BlobDeletion.DELETED
+
+    def blob_inventory(self) -> tuple[BlobEntry, ...]:
+        """Every stored blob and its link count, listed under the writer lock (RP5)."""
+        with self._tree() as tree, tree.writer_lock():
+            blobs = self._root / BLOBS_DIRNAME
+            return tuple(
+                BlobEntry(source_id=source.name, blob_sha256=path.name, links=info.st_nlink)
+                for source in _plain_dirs(blobs)
+                for prefix in _plain_dirs(source)
+                for path in sorted(prefix.iterdir())
+                if _SHA256.fullmatch(path.name) and not path.is_symlink()
+                for info in (path.lstat(),)
+            )
+
+    def _refuse_ended(self, source_id: str) -> None:
+        """Raise when ``source_id`` carries a licence-ended marker."""
+        _check_component(source_id)
+        if (self._root / RETENTION_DIRNAME / LICENCE_ENDED_DIRNAME / source_id).exists():
+            raise LicenceEndedError(LICENCE_ENDED.format(source_id=source_id))
 
     def _verified_payload(
         self, record: CaptureRecord, body: bytes | None
@@ -442,6 +581,28 @@ def body_filename(record: CaptureRecord) -> str:
         return f"{BODY_STEM}{GZIP_EXTENSION}"
     extension = MEDIA_TYPE_EXTENSIONS.get(record.media_type or "", DEFAULT_EXTENSION)
     return f"{BODY_STEM}{extension}"
+
+
+def _record_sha256(record_bytes: bytes) -> str:
+    """The registered digest of a ``record.json`` file: its canonical JSON, newline dropped."""
+    return hashlib.sha256(record_bytes.removesuffix(b"\n")).hexdigest()
+
+
+def _find_dir(tree: DescriptorTree, names: tuple[str, ...]) -> int | None:
+    """The descriptor of an existing directory path under the root, ``None`` if absent."""
+    fd = tree.root
+    for name in names:
+        if not tree.exists(fd, name):
+            return None
+        fd = tree.child(fd, name)
+    return fd
+
+
+def _plain_dirs(path: Path) -> list[Path]:
+    """The non-symlink subdirectories of ``path``, sorted; none if it is absent."""
+    if not path.is_dir() or path.is_symlink():
+        return []
+    return sorted(c for c in path.iterdir() if c.is_dir() and not c.is_symlink())
 
 
 def ensure_root(path: Path) -> None:

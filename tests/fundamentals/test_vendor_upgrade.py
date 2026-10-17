@@ -131,8 +131,16 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pre_0022_reads(monkeypatch)
-    # No capture_addresses before 0027: intake records no address.
+    # No capture_addresses before 0027 and no retention lock or states before 0028.
     monkeypatch.setattr(capture_retention, "_INSERT_ADDRESS", "SELECT %s, %s")
+    monkeypatch.setattr(capture_retention, "_RETENTION_SHARED", "SELECT 1")
+    monkeypatch.setattr(
+        capture_retention,
+        "_FIND_RETAINED",
+        capture_retention._FIND_RETAINED.replace(
+            "eqos.capture_state(id) IN ('RETAINED', 'RESTORED')", "true"
+        ),
+    )
     upgrade_migrations = tmp_path / "through-0006-migrations"
     upgrade_migrations.mkdir()
     for source in sorted(MIGRATIONS_DIR.glob("000[1-6]_*.sql")):

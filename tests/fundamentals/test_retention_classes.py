@@ -221,7 +221,7 @@ def test_a_second_class_row_is_refused(pg_db: PgTestDatabase, seeded: dict[str, 
             migrator.execute(insert, row)
         for table in RETENTION_TABLES:
             with pytest.raises(errors.RaiseException, match="immutable"):
-                migrator.execute(sql.SQL("TRUNCATE eqos.{}").format(sql.Identifier(table)))
+                migrator.execute(sql.SQL("TRUNCATE eqos.{} CASCADE").format(sql.Identifier(table)))
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         with pytest.raises(errors.InsufficientPrivilege):
             conn.execute(insert, row)
@@ -327,6 +327,9 @@ INSERTERS = {
     "retention_classes": set(),
     "capture_addresses": {"eqos_runtime", "eqos_owner"},
     "licence_ends": {"eqos_owner", "eqos_purge"},
+    "capture_states": set(),
+    "purge_runs": set(),
+    "purge_run_closures": set(),
 }
 
 

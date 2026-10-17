@@ -35,7 +35,10 @@ from fundamentals.retention.eligibility import add_months, eligibility
 from fundamentals.retention.holds import capture_facts
 
 # The tables the retention migrations add; each D9 migration extends this in its own change.
-RETENTION_TABLES = frozenset({"retention_classes", "capture_addresses", "licence_ends"})
+RETENTION_TABLES = frozenset(
+    {"retention_classes", "capture_addresses", "licence_ends"}
+    | {"capture_states", "purge_runs", "purge_run_closures"}
+)
 FIRST_RETENTION_MIGRATION = "0027_retention_classes.sql"
 CLASS_OF = (
     "SELECT r.source_id, r.surface, c.retention_class, c.cause FROM eqos.capture_refs r "

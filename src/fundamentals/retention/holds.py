@@ -17,7 +17,7 @@ import psycopg
 import yaml
 from psycopg.rows import dict_row
 
-from fundamentals.contracts.retention import CaptureFacts, CaptureState, HoldRoot
+from fundamentals.contracts.retention import CaptureFacts, HoldRoot
 from fundamentals.ledger.numeral_scan import LOCATION_MARKER
 
 HOLDS_FILE = Path("retention") / "holds.yaml"
@@ -117,13 +117,14 @@ SELECT r.id AS capture_ref_id, r.source_id, r.surface, r.blob_sha256,
     coalesce(k.retention_class, 'UNCLASSIFIED') AS base_class,
     eqos.capture_covered(r.id) AS covered, eqos.is_vendor_source(r.source_id) AS vendor_bounded,
     r.registered_at, v.verified_at, coalesce(h.holds, '{}') AS holds,
-    l.ended_at AS licence_ended_at, %(state)s::text AS state, a.url
+    l.ended_at AS licence_ended_at, eqos.capture_state(r.id) AS state, a.url
 FROM eqos.capture_refs r
 LEFT JOIN eqos.retention_classes k ON k.capture_ref_id = r.id
 LEFT JOIN held h ON h.id = r.id
 LEFT JOIN verified v ON v.capture_ref_id = r.id
 LEFT JOIN eqos.licence_ends l ON l.source_id = r.source_id
 LEFT JOIN eqos.capture_addresses a ON a.capture_ref_id = r.id
+WHERE eqos.capture_state(r.id) <> 'EXPIRED'
 ORDER BY r.id
 """
 
@@ -168,8 +169,6 @@ def capture_facts(
         "marker": LOCATION_MARKER.pattern,
         "fixtures": sorted(pinned.get(HoldRoot.QUALIFICATION_FIXTURE, ())),
         "manifests": sorted(pinned.get(HoldRoot.MANIFEST_INPUT, ())),
-        # Stand-in until capture states arrive (0028): no capture has expired yet.
-        "state": CaptureState.RETAINED.value,
     }
     with conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(_FACTS, params).fetchall()

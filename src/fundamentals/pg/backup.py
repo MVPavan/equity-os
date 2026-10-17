@@ -5,6 +5,11 @@ the referenced captures are all read from it, so the manifest and the dump canno
 set is staged under ``.<id>.partial`` and renamed into place only once it verifies. Restore
 verifies the set first and only ever targets a fresh ``eqos_test_*`` database (design decision
 6); a production restore is the owner's runbook, not code. Every client or SQL failure is fatal.
+
+Retention (plan D9 R12): a backup holds the retention lock shared from before its export until
+the set is published, refuses an unfinished purge and missing authority files, archives the
+body of every retained capture and only the ``record.json`` of every other one, lists those in
+``expired`` and records the expiry journal's last event id as its watermark.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import os
 import subprocess
 import uuid
 from collections.abc import Sequence
+from contextlib import ExitStack
 from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any, cast
@@ -21,14 +27,23 @@ from typing import IO, Any, cast
 import psycopg
 import structlog
 import yaml
-from psycopg import IsolationLevel, sql
+from psycopg import sql
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.compare.run import load_results, replay_run
 from fundamentals.compare.run_models import DatabaseIdentity
+from fundamentals.contracts.retention import CaptureState, JournalEventKind
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.approvals import current_database, is_test_database
 from fundamentals.pg.pool import open_pool
+from fundamentals.pg.retention_io import (
+    AuthorityError,
+    authority_absent,
+    holds_exclusive,
+    init_authority,
+    read_authority,
+    session_shared,
+)
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.pg.test_databases import check_test_db_name, create_test_database
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -62,6 +77,16 @@ _UNRESOLVED = (
     "AND c.id <> ALL(%(bad)s)) ORDER BY 1, 2"
 )
 _SCHEMA_PRESENT = "SELECT to_regnamespace('eqos') IS NOT NULL"
+_STATES = (
+    "SELECT r.id, eqos.capture_state(r.id), a.url FROM eqos.capture_refs r "
+    "LEFT JOIN eqos.capture_addresses a ON a.capture_ref_id = r.id"
+)
+_PENDING = "SELECT kind, id FROM eqos.retention_pending ORDER BY kind, id"
+_UNTOUCHED = (
+    "SELECT NOT EXISTS (SELECT 1 FROM eqos.licence_ends) AND NOT EXISTS "
+    "(SELECT 1 FROM eqos.capture_states WHERE state = 'EXPIRED')"
+)
+_RETAINED = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 _RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
 _PUBLISHED = "backup_published"
 
@@ -79,6 +104,15 @@ class BackupError(Exception):
     """A backup or restore step failed; nothing is published or reported as restored."""
 
 
+class ExpiredCapture(BaseModel):
+    """A capture whose body the set does not hold, only its registered ``record.json``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    capture: Capture
+    url: str | None
+
+
 class BackupManifest(BaseModel):
     """What one set holds, all read from the dump's own exported snapshot."""
 
@@ -92,6 +126,8 @@ class BackupManifest(BaseModel):
     run_ids: tuple[int, ...]
     captures: tuple[Capture, ...]
     files: tuple[tuple[str, str], ...]
+    expired: tuple[ExpiredCapture, ...] = ()
+    journal_watermark: int = 0
 
 
 class RestoreCheck(BaseModel):
@@ -132,21 +168,31 @@ def write_backup(
     snapshot_root: Path,
     out_dir: Path,
     client_prefix: Sequence[str] = DEFAULT_CLIENT_PREFIX,
+    held: psycopg.Connection[Any] | None = None,
 ) -> Path:
-    """Write, verify and publish one matched set of ``database``; return its directory."""
+    """Write, verify and publish one matched set of ``database``; return its directory.
+
+    ``held`` is a purge's own autocommit connection holding the retention lock exclusive: its
+    finished run (one with a ``COMPLETE`` event) does not count as pending recovery.
+    """
     backup_id = uuid.uuid4().hex
     staging = out_dir / f".{backup_id}{PARTIAL_SUFFIX}"
-    staging.mkdir(mode=0o700, parents=True)
     source, archive = SnapshotStore(snapshot_root), SnapshotStore(staging / CAPTURES_DIR)
     try:
-        with psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname=database)) as conn:
-            conn.isolation_level, conn.read_only = IsolationLevel.REPEATABLE_READ, True
+        with ExitStack() as stack:
+            conn = held or stack.enter_context(
+                psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname=database), autocommit=True)
+            )
+            present = bool(_scalar(conn, _SCHEMA_PRESENT))
+            watermark, fresh = _retention_preflight(conn, out_dir, held) if present else (0, False)
+            staging.mkdir(mode=0o700, parents=True)
             with conn.transaction():
+                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 snapshot = _scalar(conn, "SELECT pg_export_snapshot()")
-                present = _scalar(conn, _SCHEMA_PRESENT)
                 counts = _counts(conn) if present else {}
                 run_ids = _column(conn, _RUN_IDS) if present else ()
-                captures = _captures(conn) if present else ()
+                everything = _captures(conn) if present else ()
+                states = {row[0]: row[1:] for row in conn.execute(_STATES)} if present else {}
                 if present and conn.execute(_UNRESOLVED, {"bad": []}).fetchone() is not None:
                     raise BackupError(f"{database} has a fact whose original is not registered")
                 with (staging / DUMP_FILE).open("wb") as dump:
@@ -154,29 +200,66 @@ def write_backup(
                         client_prefix, settings, database,
                         ("pg_dump", "-Fc", f"--snapshot={snapshot}"), stdout=dump,
                     )  # fmt: skip
-        for capture in captures:
-            record, body = source.read_capture_verified(*capture[1:5])
-            if not _matches(record.record_sha256, body, capture):
-                raise BackupError(f"capture {capture[0]} differs from its registration")
-            archive.put_capture(record, body)
-    except (psycopg.Error, SnapshotError, OSError) as error:
+            captures = tuple(c for c in everything if states[c[0]][0] in _RETAINED)
+            expired = tuple(
+                ExpiredCapture(capture=c, url=states[c[0]][1])
+                for c in everything
+                if c not in captures
+            )
+            for capture in captures:
+                record, body = source.read_capture_verified(*capture[1:5])
+                if not _matches(record.record_sha256, body, capture):
+                    raise BackupError(f"capture {capture[0]} differs from its registration")
+                archive.put_capture(record, body)
+            for item in expired:
+                kept = source.read_record(*item.capture[1:5], item.capture[6])
+                archive.put_record(kept, item.capture[6])
+            files = _hash_files(staging)
+            manifest = BackupManifest(
+                backup_id=backup_id,
+                database=DatabaseIdentity(host=settings.host, port=settings.port, name=database),
+                schema_state=SchemaState.PRESENT if present else SchemaState.ABSENT,
+                dump_sha256=dict(files)[DUMP_FILE],
+                table_counts=counts,
+                run_ids=run_ids,
+                captures=captures,
+                files=files,
+                expired=expired,
+                journal_watermark=watermark,
+            )
+            (staging / MANIFEST_FILE).write_text(yaml.safe_dump(manifest.model_dump(mode="json")))
+            _verify(staging)
+            published = staging.rename(out_dir / backup_id)
+            if fresh:
+                init_authority(out_dir)
+    except (psycopg.Error, SnapshotError, OSError, AuthorityError) as error:
         raise BackupError(f"backup of {database} failed: {type(error).__name__}") from error
-    files = _hash_files(staging)
-    manifest = BackupManifest(
-        backup_id=backup_id,
-        database=DatabaseIdentity(host=settings.host, port=settings.port, name=database),
-        schema_state=SchemaState.PRESENT if present else SchemaState.ABSENT,
-        dump_sha256=dict(files)[DUMP_FILE],
-        table_counts=counts,
-        run_ids=run_ids,
-        captures=captures,
-        files=files,
-    )
-    (staging / MANIFEST_FILE).write_text(yaml.safe_dump(manifest.model_dump(mode="json")))
-    _verify(staging)
-    published = staging.rename(out_dir / backup_id)
     structlog.get_logger(__name__).info(_PUBLISHED, backup_id=backup_id, captures=len(captures))
     return published
+
+
+def _retention_preflight(
+    conn: psycopg.Connection[Any], out_dir: Path, held: psycopg.Connection[Any] | None
+) -> tuple[int, bool]:
+    """Take the shared lock (unless ``held``), refuse an unfinished purge or missing authority;
+    return the journal watermark and whether this backup initialises the authority files."""
+    if held is None:
+        session_shared(conn)
+    elif not holds_exclusive(held):
+        raise BackupError("held= needs the connection holding the retention lock exclusive")
+    pending = conn.execute(_PENDING).fetchall()
+    fresh = authority_absent(out_dir)
+    if fresh and ((out_dir.exists() and any(out_dir.iterdir())) or not _scalar(conn, _UNTOUCHED)):
+        raise BackupError(f"{out_dir} has no retention authority files and is not new")
+    try:
+        journal = () if fresh else read_authority(out_dir).journal
+    except AuthorityError as error:
+        raise BackupError(f"retention authority refused: {error}") from error
+    completed = {e.run_id for e in journal if e.kind is JournalEventKind.COMPLETE}
+    unfinished = [p for p in pending if not (held and p[0] == "RUN" and p[1] in completed)]
+    if unfinished:
+        raise BackupError(f"a purge is unfinished {unfinished}; run fundamentals retention purge")
+    return (journal[-1].id if journal else 0), fresh
 
 
 def verify_set(set_dir: Path) -> BackupManifest:
@@ -295,6 +378,11 @@ def _verify(set_dir: Path) -> BackupManifest:
     archive = SnapshotStore(set_dir / CAPTURES_DIR)
     if not all(_restored(archive, capture) for capture in manifest.captures):
         raise BackupError(f"{set_dir.name} captures differ from its manifest")
+    try:
+        for item in manifest.expired:
+            archive.read_record(*item.capture[1:5], item.capture[6])
+    except SnapshotError as error:
+        raise BackupError(f"{set_dir.name} expired records differ from its manifest") from error
     return manifest
 
 
@@ -303,9 +391,8 @@ def _inventories_consistent(manifest: BackupManifest) -> bool:
     if manifest.schema_state is SchemaState.ABSENT:
         return not (manifest.table_counts or manifest.run_ids or manifest.captures)
     counts = manifest.table_counts
-    return counts.get("runs") == len(manifest.run_ids) and counts.get("capture_refs") == len(
-        manifest.captures
-    )
+    registered = len(manifest.captures) + len(manifest.expired)
+    return counts.get("runs") == len(manifest.run_ids) and counts.get("capture_refs") == registered
 
 
 def _client(
