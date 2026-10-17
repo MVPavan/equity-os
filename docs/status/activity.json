@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D9 Retention and replay: Task 2",
-    "detail": "Plan Sol-approved (r4). Task 1 done: retention-replay and A-05 amendment records approved by Sol; derived amounts are kept as private outcomes while vendor captures and payload are purged at licence end. Task 2 in progress: retention classes, catalog authority and capture registration (migration 0027).",
+    "title": "D9 Retention and replay: Task 3",
+    "detail": "Tasks 1-2 done: amendments approved; every capture now carries a retention class (vendor, identity, exchange-refetchable, covered) and the database refuses writes beyond a source's authority (0027). Task 3 in progress: holds over the citation graph and eligibility, with a read-only purge dry-run.",
     "stage": "D9"
   },
   "next": [
@@ -11,6 +11,10 @@
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D9 Task 2 committed: retention classes at intake plus one-off classify, watchlist-derived coverage, retention_limited view, guard refusing licence-ended sources and vendor SOURCE_QUOTE claims (0027). Full suite 3920 passed, one known clock flake passed on rerun."
+    },
     {
       "date": "2026-10-17",
       "text": "D9 plan approved by Sol (r4). Task 1 committed: 15 retention-replay amendments and the A-05 decision (keep derived amounts as private outcomes; Medium-High Screener and High Tijori risk accepted) with the vendor redaction inventory, approved by Sol; amendment-record tests 8 passed."
