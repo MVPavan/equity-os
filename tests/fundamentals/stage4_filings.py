@@ -3,6 +3,7 @@ draw checks and the Stage 4 manifest oracle) and the XBRL prefilter."""
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime
@@ -10,20 +11,34 @@ from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
+from lxml import etree  # type: ignore[import-untyped]
+
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
-from fundamentals.entity.verification import (
-    VERIFIED,
-    financial_rule,
-    framework_state,
-    instance_state,
-)
+from fundamentals.entity.verification import VERIFIED, instance_state
 from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError, load_mapping_set
 from fundamentals.evidence.xbrl_adapter import parse_instance
+from fundamentals.extract.xbrl_parser import RawXbrlInstance
 
 CONFIG = Path(__file__).resolve().parents[2] / "config"
 FINANCIALS, CONSOLIDATED = "Integrated Filing- Financials", "Consolidated"
 DAY, MOMENT, WINDOW = "%d-%b-%Y", "%d-%b-%Y %H:%M:%S", 6
+# Frozen D6 attempt-3 admission rule, restated from 4351e2c
+# (src/fundamentals/evidence/member_identity.py:35-52,179-196,245-281,
+# entity/verification.py:74-81,153-166, extract/pdf_header_text.py:55-57); never the production
+# rule, which later extractor versions may change.
+HISTORICAL_PHRASES = (
+    "prepared in accordance with Indian Accounting Standard",
+    "prepared in accordance with the Indian Accounting Standards",
+)
+HISTORICAL_SCHEMA_PREFIX, HISTORICAL_TEXT_BLOCK = "Ind-AS_entry_point", "TextBlock"
+HISTORICAL_SECTOR_PREFIX = "in-capmkt-ent-"
+HISTORICAL_SECTOR_NAMESPACE = re.compile(
+    rb"^http://www\.sebi\.gov\.in/xbrl/IntegratedFinance_IndAS/\d{4}-\d{2}-\d{2}"
+    rb"/in-capmkt/in-capmkt-ent$"
+)
+_SCHEMA_REF = "{http://www.xbrl.org/2003/linkbase}schemaRef"
+_HREF = "{http://www.w3.org/1999/xlink}href"
 
 
 def period_end(row: dict[str, Any]) -> date:
@@ -95,14 +110,61 @@ def onboarding_mapping_set() -> MappingSet:
     )
 
 
+def _tokens(text: str) -> list[str]:
+    """The historical tokenisation: lowercase alphanumeric runs."""
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).split()
+
+
+def _has_run(haystack: list[str], needle: list[str]) -> bool:
+    """Whether ``needle`` occurs as a contiguous token run in ``haystack``."""
+    width = len(needle)
+    return any(haystack[i : i + width] == needle for i in range(len(haystack) - width + 1))
+
+
+def historical_sector_rule(body: bytes) -> bool:
+    """Frozen attempt-3 sector rule: in-capmkt-ent schemaRefs only and the root declaring the
+    IntegratedFinance_IndAS entry-point namespace (no competing-form clause)."""
+    try:
+        root = etree.fromstring(body)
+    except etree.XMLSyntaxError:
+        return False
+    refs = [ref.get(_HREF) or "" for ref in root.iter(_SCHEMA_REF)]
+    return (
+        bool(refs)
+        and all(ref.rsplit("/", 1)[-1].startswith(HISTORICAL_SECTOR_PREFIX) for ref in refs)
+        and any(
+            HISTORICAL_SECTOR_NAMESPACE.match(uri.encode()) for uri in root.nsmap.values() if uri
+        )
+    )
+
+
+def historical_framework(instance: RawXbrlInstance) -> bool:
+    """Frozen attempt-3 framework rule: Ind AS iff an ``Ind-AS_entry_point`` schemaRef or an
+    own-taxonomy non-numeric text-block fact carrying a declaration phrase declares it."""
+    if any(
+        href.rsplit("/", 1)[-1].startswith(HISTORICAL_SCHEMA_PREFIX)
+        for href in instance.schema_refs
+    ):
+        return True
+    phrases = [_tokens(phrase) for phrase in HISTORICAL_PHRASES]
+    return any(
+        _has_run(_tokens(fact.raw_text or ""), phrase)
+        for fact in instance.facts
+        if fact.namespace_uri == instance.taxonomy.namespace
+        and not fact.is_numeric
+        and fact.concept_qname.endswith(HISTORICAL_TEXT_BLOCK)
+        for phrase in phrases
+    )
+
+
 def xbrl_admitted(instances: Iterable[tuple[bytes, date]]) -> bool:
     """The D1.3 XBRL prefilter over a candidate's ``(instance, period end)`` pairs, discovery's
-    issuer-independent XBRL gates in its order (D4.2 steps 3-4): every financial rule before any
-    instance is parsed, the onboarding mapping set's schema, then each instance's scope and
-    period (``instance_state``) and ingest's framework predicate (``framework_state``). Issuer
-    identity, name and report-nature declarations are left to discovery."""
+    issuer-independent XBRL gates as of attempt 3, in its order (D4.2 steps 3-4): every
+    historical sector rule before any instance is parsed, the onboarding mapping set's schema,
+    then each instance's scope and period (``instance_state``) and the historical framework
+    rule. Issuer identity, name and report-nature declarations are left to discovery."""
     pairs = list(instances)
-    if not all(financial_rule(body) for body, _ in pairs):
+    if not all(historical_sector_rule(body) for body, _ in pairs):
         return False
     try:
         parsed = [
@@ -111,6 +173,6 @@ def xbrl_admitted(instances: Iterable[tuple[bytes, date]]) -> bool:
     except UnsupportedSchemaError:
         return False
     return all(
-        instance_state(instance, end) == VERIFIED == framework_state(instance)
+        instance_state(instance, end) == VERIFIED and historical_framework(instance)
         for instance, end in parsed
     )

@@ -28,6 +28,7 @@ from retained_support import (
     MarkedEdit,
     PdfRedaction,
     apar_original,
+    marked_copy,
     marked_pdf,
 )
 
@@ -305,7 +306,8 @@ def test_parser_failure_is_one_parse_failed_attempt(
 
 def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
     """The requested framework is verified against the capture's own declaration: where it
-    is found is recorded; a capture declaring none is IDENTITY_REJECTED.
+    is found is recorded. Without its notes phrase the XBRL still declares Ind AS by its
+    IntegratedFinance_IndAS form namespace; a capture declaring neither is IDENTITY_REJECTED.
     """
     report = ingest.run(ingest.intake())
     xbrl = _overall(report.attempts, Representation.XBRL)
@@ -313,13 +315,28 @@ def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
     assert xbrl.outcome is pdf.outcome is ExtractionOutcome.COMPLETE
     assert "DisclosureOfNotesOnFinancialResultsExplanatoryTextBlock" in (xbrl.reason or "")
     assert "page 5" in (pdf.reason or "")
-    undeclared_xbrl = marked_xbrl(
+    phrase_free = marked_xbrl(
         ingest.tmp_path,
         MarkedEdit(
-            label="no-framework-declaration",
+            label="no-framework-phrase",
             find=XBRL_DECLARATION,
             replace=b"prepared under the standards notified",
         ),
+    )
+    structural = ingest.run(ingest.intake(XBRL_ONLY, marked={Representation.XBRL: phrase_free}))
+    (attempt,) = structural.attempts
+    assert attempt.outcome is ExtractionOutcome.COMPLETE
+    assert "IntegratedFinance_IndAS form declaration" in (attempt.reason or "")
+    assert "TextBlock" not in (attempt.reason or "")
+    undeclared_xbrl = marked_copy(
+        phrase_free,
+        edit=MarkedEdit(
+            label="no-framework-declaration",
+            find=b"IntegratedFinance_IndAS",
+            replace=b"IntegratedFinance_ZZ",
+            count=2,
+        ),
+        tmp_path=ingest.tmp_path,
     )
     undeclared_pdf = marked_pdf(
         ingest.tmp_path,
@@ -334,4 +351,5 @@ def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
     for representation in (Representation.XBRL, Representation.PDF):
         attempt = _overall(marked.attempts, representation)
         assert attempt.outcome is ExtractionOutcome.IDENTITY_REJECTED
+        assert "declares no accounting framework" in (attempt.reason or "")
     assert marked.package_id is None

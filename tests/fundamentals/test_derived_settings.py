@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from evidence_support import XBRL_ONLY, Ingest, dictionary, ingest, mapping_set, policy
+from evidence_support import Ingest, dictionary, ingest, mapping_set, policy
 from onboarding_support import (
     APAR,
     APAR_ISIN,
@@ -38,6 +38,7 @@ from onboarding_support import (
 from pg_support import PgTestDatabase
 from pydantic import ValidationError
 from retained_support import APAR_IDENTITY, REPO_ROOT
+from run_support import Runner
 
 from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
@@ -45,12 +46,12 @@ from fundamentals.compare import run_config
 from fundamentals.compare.run import load_results, replay_run
 from fundamentals.compare.run_config import (
     EXTRACTOR_SOURCES,
-    EXTRACTOR_VERSIONS,
     VENDOR_EXTRACTORS,
     vendor_version_pin,
 )
 from fundamentals.compare.run_models import FIRST_PARTY_SOURCES, RunScope
 from fundamentals.compare.run_store import RunStore
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.onboarding import VerificationState, VerificationUnit
@@ -60,13 +61,24 @@ from fundamentals.contracts.source_catalog import (
 )
 from fundamentals.entity.derived_settings import DerivedSettingsError, derive
 from fundamentals.entity.discovery import Capture, Discovery, Request, Response
+from fundamentals.evidence.pdf_adapter import PDF_EXTRACTOR_VERSION
 from fundamentals.evidence.repository import EvidenceRepository, VersionPin
+from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 from fundamentals.pg.identity_seed import SettingKey, load_issuer_identity
 
 __all__ = ["cli", "dictionary", "ingest", "mapping_set", "policy"]
 pytestmark = pytest.mark.retained
 
 SEED_COMMIT = "82a84db"  # the plan commit: every extractor-pinned source as of the freeze plan
+SEED_VERSIONS = {Representation.XBRL: "xbrl-occurrences/1", Representation.PDF: "pdf-occurrences/2"}
+CURRENT_VERSIONS = {
+    Representation.XBRL: XBRL_EXTRACTOR_VERSION,
+    Representation.PDF: PDF_EXTRACTOR_VERSION,
+}
+SEED_PINS = [  # (version, sha256) of the first-party pins over SEED_COMMIT's bytes
+    ("xbrl-occurrences/1", "82dd91864ae8c159c69928ff628b0d6ee8946e1c6c733e67e448ef721d3fd267"),
+    ("pdf-occurrences/2", "96a3c2f255b579cf42e90618313a92e913b75edb6bbd746b48b9c1fa8d45723c"),
+]
 MAR_END, JUN_END = date(2026, 3, 31), date(2026, 6, 30)
 FAILURE = 5
 PIN_FLAGS = ("--dictionary", "v2", "--mapping-set", "v5")
@@ -446,28 +458,27 @@ def _seed_bytes(relative: str) -> bytes:
     ).stdout
 
 
-def _seed_pins(monkeypatch: pytest.MonkeyPatch, root: Path) -> list[VersionPin]:
-    """Every extractor pin computed from the seed commit's bytes of its sources."""
+def _seed_pins(root: Path) -> list[VersionPin]:
+    """Every extractor pin computed from the seed commit's bytes of its sources, the first-party
+    ones at the seed versions (call with ``run_config._SOURCE_ROOT`` patched to ``root``)."""
     for relative in {
         *(path for paths in EXTRACTOR_SOURCES.values() for path in paths),
         *(path for _, paths in VENDOR_EXTRACTORS.values() for path in paths),
     }:
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_bytes(_seed_bytes(relative))
-    with monkeypatch.context() as patch:
-        patch.setattr(run_config, "_SOURCE_ROOT", root)
-        first_party = [
-            VersionPin(
-                artifact=f"extractor_{representation.value.lower()}",
-                version=version,
-                content_sha256=run_config.extractor_pin(representation).content_sha256,
-            )
-            for representation, version in EXTRACTOR_VERSIONS.items()
-        ]
-        vendors = [
-            vendor_version_pin(run_config.vendor_extractor_pin(source_id, "-"))
-            for source_id in VENDOR_EXTRACTORS
-        ]
+    first_party = [
+        VersionPin(
+            artifact=f"extractor_{representation.value.lower()}",
+            version=version,
+            content_sha256=run_config.extractor_pin(representation, version=version).content_sha256,
+        )
+        for representation, version in SEED_VERSIONS.items()
+    ]
+    vendors = [
+        vendor_version_pin(run_config.vendor_extractor_pin(source_id, "-"))
+        for source_id in VENDOR_EXTRACTORS
+    ]
     return first_party + vendors
 
 
@@ -478,11 +489,25 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C3 upgrade: a database with Stage-1-style Apar evidence and every extractor pin computed
-    from the seed commit's source bytes; onboarding Apar then succeeds (no
-    VersionContentDriftError: no pinned source changed) and every pre-existing row stays."""
-    ingest.run(ingest.intake(XBRL_ONLY))
-    ingest.repository.pin_versions(_seed_pins(monkeypatch, tmp_path / "seed-src"))
+    """C3 and the extractor v2 upgrade (R4): a database holding Apar XBRL and PDF generations
+    and one stored run, all under the seed versions and pins computed from the seed commit's
+    source bytes. Re-ingesting the same captures under the current versions, then onboarding,
+    raises no VersionContentDriftError, keeps every pre-existing row and the run's pins, replays
+    the run unchanged, and adds the new generations beside the old ones. The seed rows come
+    from current code under historical pins (a compatibility fixture, not historical
+    execution); Apar's notes carry the Ind AS phrase, so v1 and v2 extract it identically."""
+    current_root = run_config._SOURCE_ROOT
+    with monkeypatch.context() as patch:
+        patch.setattr(run_config, "_SOURCE_ROOT", tmp_path / "seed-src")
+        patch.setattr(run_config, "EXTRACTOR_VERSIONS", SEED_VERSIONS)
+        pins = _seed_pins(tmp_path / "seed-src")
+        assert [(pin.version, pin.content_sha256) for pin in pins[:2]] == SEED_PINS
+        ingest.repository.pin_versions(pins)
+        seeded = ingest.run(ingest.intake(), extractor_versions=SEED_VERSIONS)
+        with pg_db.runtime_pool() as pool:
+            run_id = Runner(ingest, pool).run().run_id
+    assert run_config._SOURCE_ROOT == current_root
+    assert run_config.EXTRACTOR_VERSIONS == CURRENT_VERSIONS
     tables = [
         name
         for (name,) in rows(
@@ -498,7 +523,13 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
             for name in tables
         }
 
-    before = snapshot()
+    def stored_run() -> tuple[Any, ...]:
+        with pg_db.runtime_pool() as pool:
+            pinned = RunStore(pool).read_manifest(run_id).pinned
+            return pinned.extractor_xbrl, pinned.extractor_pdf, load_results(run_id, pool=pool)
+
+    before, run_before = snapshot(), stored_run()
+    upgraded = ingest.run(ingest.intake())
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
     root = write_root(tmp_path / "raw", world(APAR), APAR)
@@ -510,6 +541,27 @@ def test_onboarding_on_a_seed_commit_database_drifts_no_pin_and_changes_no_row(
     after = snapshot()
     assert all(before[name] <= after[name] for name in tables)
     assert rows(pg_db, "SELECT count(*) FROM eqos.occurrences")[0][0] > len(before["occurrences"])
+    xbrl_pin, pdf_pin, results = stored_run()
+    assert [(pin.version, pin.content_sha256) for pin in (xbrl_pin, pdf_pin)] == SEED_PINS
+    assert (xbrl_pin, pdf_pin, results) == run_before
+    with pg_db.runtime_pool() as pool:
+        assert replay_run(run_id, pool=pool, config_root=REPO_ROOT / "config") == results
+    for representation in (Representation.XBRL, Representation.PDF):
+        assert _overall(upgraded, representation) is ExtractionOutcome.COMPLETE
+        capture = ingest.capture_id(upgraded, representation)
+        assert capture == ingest.capture_id(seeded, representation)
+        for version in (SEED_VERSIONS[representation], CURRENT_VERSIONS[representation]):
+            assert ingest.repository.list_capture_occurrences(capture, version), version
+
+
+def _overall(report: Any, representation: Representation) -> ExtractionOutcome:
+    """The outcome of a member's one overall attempt."""
+    (attempt,) = [
+        a
+        for a in report.attempts
+        if a.representation is representation and a.statement_family is None
+    ]
+    return attempt.outcome
 
 
 def test_comparison_vendors_refuse_identity_and_first_party_surfaces() -> None:

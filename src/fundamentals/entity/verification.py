@@ -15,7 +15,6 @@ import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 
-from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.acquisition_outcome import OutcomeCode
@@ -33,6 +32,7 @@ from fundamentals.entity.entity_map import isin_check_digit
 from fundamentals.evidence.member_identity import (
     _NO_BASIS_DECLARATION,
     IssuerIdentifiers,
+    integrated_ind_as,
     verify_xbrl_framework,
     verify_xbrl_identity,
     verify_xbrl_period,
@@ -71,16 +71,6 @@ from fundamentals.ingest.xbrl_identity import (
 )
 
 VERIFIED: Verdict = (VerificationState.VERIFIED, None)
-# Task 0b pin (docs/workstreams/data-foundation/d6-capability.md §2, §3): the in-capmkt-ent
-# entry point under IntegratedFinance_IndAS. Bank, NBFC and insurer filings use the same xsd
-# file name under IntegratedFinance_Banking/_NBFC/_LI, so the namespace is what separates them.
-IND_AS_ENTRY_POINT = re.compile(
-    rb"^http://www\.sebi\.gov\.in/xbrl/IntegratedFinance_IndAS/\d{4}-\d{2}-\d{2}"
-    rb"/in-capmkt/in-capmkt-ent$"
-)
-ENTRY_POINT_PREFIX = "in-capmkt-ent-"
-_SCHEMA_REF = "{http://www.xbrl.org/2003/linkbase}schemaRef"
-_HREF = "{http://www.w3.org/1999/xlink}href"
 _MASTER_SYMBOL, _MASTER_SERIES, _MASTER_NAME, _MASTER_ISIN = (
     "SYMBOL",
     "SERIES",
@@ -151,19 +141,9 @@ def master_rows(master: bytes, symbol: str) -> list[tuple[str, str]]:
 
 
 def financial_rule(instance: bytes) -> bool:
-    """Supported only on the positive non-financial signal: the ``in-capmkt-ent-`` schemaRef
-    and the ``IntegratedFinance_IndAS`` entry-point namespace; anything else fails closed."""
-    try:
-        root = etree.fromstring(instance)
-    except etree.XMLSyntaxError:
-        return False
-    refs = [ref.get(_HREF) or "" for ref in root.iter(_SCHEMA_REF)]
-    namespaces = {uri.encode() for uri in root.nsmap.values() if uri}
-    return (
-        bool(refs)
-        and all(ref.rsplit("/", 1)[-1].startswith(ENTRY_POINT_PREFIX) for ref in refs)
-        and any(IND_AS_ENTRY_POINT.match(uri) for uri in namespaces)
-    )
+    """Supported only on the positive non-financial signal, an uncontested
+    ``IntegratedFinance_IndAS`` form (``integrated_ind_as``); anything else fails closed."""
+    return integrated_ind_as(instance)
 
 
 def filing_identity(instance: RawXbrlInstance) -> FilingIdentity:
@@ -219,10 +199,10 @@ def ingest_identity_state(
     return conflict(verdict.reason or "")
 
 
-def framework_state(instance: RawXbrlInstance) -> Verdict:
-    """First-party ingest's own Ind AS framework predicate; rejected → UNVERIFIED
-    (``NO_FRAMEWORK_DECLARATION``)."""
-    if verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified:
+def framework_state(instance: RawXbrlInstance, body: bytes) -> Verdict:
+    """First-party ingest's own Ind AS framework predicate over the instance and the bytes it
+    was parsed from; rejected → UNVERIFIED (``NO_FRAMEWORK_DECLARATION``)."""
+    if verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=body).verified:
         return VERIFIED
     return VerificationState.UNVERIFIED, OnboardingReason.NO_FRAMEWORK_DECLARATION.value
 

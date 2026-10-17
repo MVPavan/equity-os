@@ -535,7 +535,7 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
             xbrl_entity_state(filing, run.name, expected),
             ingest_identity_state(instance, filing, expected),
         )
-    ] + [framework_state(instance) for instance in instances]
+    ] + [framework_state(instance, body) for instance, body in zip(instances, bodies, strict=True)]
     run.set(xbrl, deciding(verdicts))
     peer = run.anchor(exchange, BSE_PEER_SEARCH, _BSE_URL.format(isin=run.isin))
     verdict, run.scrip = exchange_state(peer, run.isin, checked)

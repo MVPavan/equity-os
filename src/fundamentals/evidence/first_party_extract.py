@@ -399,7 +399,7 @@ def _read_xbrl(
         return _Read(outcome=ExtractionOutcome.UNSUPPORTED_SCHEMA, reason=str(error))
     except XbrlParseError as error:
         return _Read(outcome=ExtractionOutcome.PARSE_FAILED, reason=str(error))
-    framework = verify_xbrl_framework(instance, request.framework)
+    framework = verify_xbrl_framework(instance, request.framework, body=body)
     rejected = _first_rejection(
         verify_xbrl_identity(instance, identifiers, basis=request.basis),
         verify_xbrl_period(instance, request.period_end),

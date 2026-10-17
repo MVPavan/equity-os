@@ -9,9 +9,11 @@ period end: each is read from the capture's own declaration and must equal the r
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from datetime import date
 
+from lxml import etree  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.canonical import Basis
@@ -47,9 +49,23 @@ FRAMEWORK_DECLARATIONS: Mapping[AccountingFramework, tuple[str, ...]] = {
 }
 # The exchange's Ind AS taxonomy entry point, a structural framework declaration: every retained
 # NSE INDAS_*.xml (POLYCAB, HFCL, CGPOWER, MTARTECH, LAURUSLABS, ...) carries
-# <link:schemaRef xlink:href="Ind-AS_entry_point_2020-03-31.xsd"/>. Apar's integrated filings
-# reference in-capmkt-ent-*.xsd, which names no framework, so they rely on the text blocks.
+# <link:schemaRef xlink:href="Ind-AS_entry_point_2020-03-31.xsd"/>. Integrated filings
+# reference in-capmkt-ent-*.xsd, which names no framework; their IntegratedFinance form
+# namespace declares it (``integrated_ind_as``).
 IND_AS_ENTRY_POINT_PREFIX = "Ind-AS_entry_point"
+# Task 0b pin (docs/workstreams/data-foundation/d6-capability.md §2, §3): the in-capmkt-ent
+# entry point under IntegratedFinance_IndAS. Bank, NBFC and insurer filings use the same xsd
+# file name under IntegratedFinance_Banking/_NBFC/_LI, so the namespace is what separates them.
+IND_AS_ENTRY_POINT = re.compile(
+    r"^http://www\.sebi\.gov\.in/xbrl/IntegratedFinance_IndAS/\d{4}-\d{2}-\d{2}"
+    r"/in-capmkt/in-capmkt-ent$"
+)
+ENTRY_POINT_PREFIX = "in-capmkt-ent-"
+INTEGRATED_FORM = re.compile(r"^http://www\.sebi\.gov\.in/xbrl/IntegratedFinance_([^/]+)/")
+IND_AS_FORM = "IndAS"
+IND_AS_FORM_DECLARATION = "IntegratedFinance_IndAS form declaration"
+_SCHEMA_REF = "{http://www.xbrl.org/2003/linkbase}schemaRef"
+_HREF = "{http://www.w3.org/1999/xlink}href"
 _NO_FRAMEWORK = "the capture declares no accounting framework"
 _FRAMEWORKS_DISAGREE = "the capture declares several accounting frameworks {found}"
 _FRAMEWORK_CONFLICT = "the capture declares {found} at {where}, not the requested {requested}"
@@ -176,14 +192,40 @@ def verify_pdf_identity(pdf: LoadedPdf, identifiers: IssuerIdentifiers) -> Ident
     return _rejected(_NO_MARKER.format(marker=PDF_SYMBOL_MARKER), [])
 
 
+def integrated_ind_as(body: bytes) -> bool:
+    """Whether the instance is an uncontested IntegratedFinance_IndAS form: every schemaRef an
+    ``in-capmkt-ent-`` entry point, the root declaring the IndAS entry-point namespace, and no
+    namespace anywhere naming another IntegratedFinance form (unparseable bytes: false)."""
+    try:
+        root = etree.fromstring(body)
+    except etree.XMLSyntaxError:
+        return False
+    refs = [ref.get(_HREF) or "" for ref in root.iter(_SCHEMA_REF)]
+    forms = {
+        found.group(1)
+        for element in root.iter(etree.Element)
+        for uri in element.nsmap.values()
+        if uri and (found := INTEGRATED_FORM.match(uri))
+    }
+    return (
+        bool(refs)
+        and all(ref.rsplit("/", 1)[-1].startswith(ENTRY_POINT_PREFIX) for ref in refs)
+        and any(IND_AS_ENTRY_POINT.match(uri) for uri in root.nsmap.values() if uri)
+        and forms == {IND_AS_FORM}
+    )
+
+
 def verify_xbrl_framework(
-    instance: RawXbrlInstance, framework: AccountingFramework
+    instance: RawXbrlInstance, framework: AccountingFramework, *, body: bytes
 ) -> IdentityVerdict:
-    """The entry point and own text blocks must declare exactly the requested framework."""
+    """The entry point, IntegratedFinance form and own text blocks must declare exactly the
+    requested framework (``body``: the bytes ``instance`` was parsed from)."""
     found: dict[AccountingFramework, list[str]] = {}
     for href in instance.schema_refs:
         if href.rsplit("/", 1)[-1].startswith(IND_AS_ENTRY_POINT_PREFIX):
             found.setdefault(AccountingFramework.IND_AS, []).append(f"schemaRef {href}")
+    if integrated_ind_as(body):
+        found.setdefault(AccountingFramework.IND_AS, []).append(IND_AS_FORM_DECLARATION)
     for fact in instance.facts:
         if (
             fact.namespace_uri != instance.taxonomy.namespace

@@ -57,7 +57,8 @@ def test_dimension_namespace_controls_canonical_mapping(
         else:
             changed.set("dimension", "alias:ReportableSegmentsAxis")
         node.getparent().replace(node, changed)
-    instance = parse_instance(etree.tostring(root), mapping_set=mapping_set)
+    body = etree.tostring(root)
+    instance = parse_instance(body, mapping_set=mapping_set)
     identifiers = IssuerIdentifiers(
         entity_id=1,
         isin="INE372A01015",
@@ -66,7 +67,7 @@ def test_dimension_namespace_controls_canonical_mapping(
         evidence_input_id=1,
     )
     assert verify_xbrl_identity(instance, identifiers, basis=Basis.CONSOLIDATED).verified
-    assert verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified
+    assert verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=body).verified
     owner = member(Representation.XBRL, 1, at(29), at(30))
     read = occurrences_from_instance(
         instance, capture=owner.capture, member=owner, mapping_set=mapping_set

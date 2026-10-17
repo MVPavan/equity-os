@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import stage4_filings
 from onboarding_support import (
     APAR,
     APAR_ISIN,
@@ -42,19 +43,39 @@ from onboarding_support import (
     write_root,
 )
 from pg_support import PgTestDatabase
-from stage4_filings import onboarding_mapping_set, xbrl_admitted
+from stage4_filings import (
+    historical_framework,
+    historical_sector_rule,
+    onboarding_mapping_set,
+    xbrl_admitted,
+)
 
 from fundamentals.contracts.entity_identity import IdentifierNamespace
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.onboarding import OnboardingOutcome, VerificationState, VerificationUnit
+from fundamentals.entity import verification
 from fundamentals.entity.identity_layers import latest_slice
-from fundamentals.entity.verification import financial_rule, normalise_name, outcome
-from fundamentals.evidence.member_identity import verify_xbrl_framework
-from fundamentals.evidence.xbrl_adapter import parse_instance
+from fundamentals.entity.verification import (
+    VERIFIED,
+    financial_rule,
+    framework_state,
+    normalise_name,
+    outcome,
+)
+from fundamentals.evidence import member_identity
+from fundamentals.evidence.member_identity import IdentityVerdict, verify_xbrl_framework
+from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION, parse_instance
+from fundamentals.extract.xbrl_parser import RawXbrlInstance
 from fundamentals.ingest.nse_filings import filing_window, listing_rows
 from fundamentals.pg.identity_seed import EvidenceInputKind
 
 __all__ = ["cli", "requested"]
+HDFCBANK_JUN = DEV / "bank-HDFCBANK/nse/INTEGRATED_FILING_BANKING_1696123_18072026040126_WEB.xml"
+IND_AS_ROOT_NAMESPACE = (
+    b'xmlns:zz="http://www.sebi.gov.in/xbrl/IntegratedFinance_IndAS/2026-01-31/in-capmkt/'
+    b'in-capmkt-ent" '
+)
+FOREIGN = "https://example.invalid/foreign"
 
 
 def _dev_filings() -> list[tuple[str, Path]]:
@@ -100,20 +121,14 @@ def test_financial_rule_admits_every_development_filing() -> None:
     assert not financial_rule(unknown)  # unknown entry point fails closed
 
 
-@pytest.mark.retained
-def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> None:
-    """eqos-h4h.10: attempt 2 was burned because discovery admitted an Ind AS filing (Task 0b
-    entry-point signal) whose XBRL ingest then rejected for declaring no framework. Over every
-    distinct retained integrated instance, discovery's XBRL step admits an instance iff the
-    financial rule holds and ingest's own framework check (``first_party_extract._read_xbrl``)
-    accepts it. Most development filings carry no notes phrase, so only Apar (six instances) and
-    LAURUSLABS are supported."""
-    paths = sorted(DEV.rglob("nse/INTEGRATED_FILING*.xml"))
-    paths += sorted((DEV.parent / "watchlist/aparinds/nse").glob("INTEGRATED_FILING*.xml"))
-    bodies = {hashlib.sha256(path.read_bytes()).hexdigest(): path for path in reversed(paths)}
-    admitted: list[str] = []
-    non_financial = 0
-    for path in bodies.values():
+def _retained() -> list[tuple[str, bytes, RawXbrlInstance, date]]:
+    """Every distinct (by sha256 of bytes) retained NSE instance: symbol or folder, bytes, the
+    instance under the onboarding mapping set, and its declared reporting-period end."""
+    paths = sorted(DEV.glob("**/nse/*.xml"))
+    paths += sorted((DEV.parent / "watchlist/aparinds/nse").glob("*.xml"))
+    distinct = {hashlib.sha256(path.read_bytes()).hexdigest(): path for path in reversed(paths)}
+    found = []
+    for path in distinct.values():
         body = path.read_bytes()
         instance = parse_instance(body, mapping_set=onboarding_mapping_set())
         spec = instance.taxonomy
@@ -123,13 +138,113 @@ def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> 
             if fact.namespace_uri == spec.namespace
             and fact.concept_qname.endswith(f":{spec.reporting_period_end_concept}")
         }
-        ingest = verify_xbrl_framework(instance, AccountingFramework.IND_AS).verified
-        non_financial += financial_rule(body)
-        assert xbrl_admitted([(body, end)]) == (financial_rule(body) and ingest), path
-        if xbrl_admitted([(body, end)]):
-            admitted.append(path.parts[-3] if "dev-entry-points" in path.parts else APAR)
-    assert non_financial == 16 and len(admitted) == 7
-    assert set(admitted) == {APAR, "LAURUSLABS"}
+        label = path.parts[-3] if "onboarding-dev" in path.parts else APAR
+        found.append((label, body, instance, end))
+    assert len(found) == 25
+    return found
+
+
+def _marked_bank() -> bytes:
+    """R1 (MARKED): a bank filing with an unused IndAS root namespace added, its Banking
+    namespaces and content kept."""
+    body = HDFCBANK_JUN.read_bytes()
+    marked = body.replace(b"<xbrli:xbrl ", b"<xbrli:xbrl " + IND_AS_ROOT_NAMESPACE, 1)
+    assert marked != body
+    return marked
+
+
+@pytest.mark.retained
+def test_discovery_admits_exactly_the_instances_first_party_ingest_accepts() -> None:
+    """eqos-h4h.10: attempt 2 was burned because discovery admitted an Ind AS filing whose XBRL
+    ingest then rejected for declaring no framework. Over every distinct retained instance,
+    discovery's framework verdict is ingest's own (``first_party_extract._read_xbrl``), and its
+    sector and framework gates admit an instance iff the financial rule holds and ingest
+    accepts the framework: under extractor v2, the 16 IndAS-form instances of all 11 symbols.
+    A bank filing carrying a competing IndAS namespace is refused by both."""
+    admitted: list[str] = []
+    for label, body, instance, _ in _retained():
+        ingest = verify_xbrl_framework(instance, AccountingFramework.IND_AS, body=body).verified
+        assert (framework_state(instance, body) == VERIFIED) is ingest, label
+        if financial_rule(body) and framework_state(instance, body) == VERIFIED:
+            admitted.append(label)
+    assert len(admitted) == 16
+    assert set(admitted) == {symbol for symbol, _ in _dev_filings()}
+    marked = _marked_bank()
+    instance = parse_instance(marked, mapping_set=onboarding_mapping_set())
+    assert historical_sector_rule(marked)  # the counterexample the conflict clause closes
+    assert not financial_rule(marked)
+    assert framework_state(instance, marked) != VERIFIED
+
+
+def _dev_instance(symbol: str, body_edit: tuple[bytes, bytes] = (b"", b"")) -> RawXbrlInstance:
+    """A development filing's instance (``body_edit``: SYNTHETIC bytes replaced first)."""
+    (path,) = [path for name, path in _dev_filings() if name == symbol]
+    body = path.read_bytes().replace(*body_edit) if body_edit[0] else path.read_bytes()
+    return parse_instance(body, mapping_set=onboarding_mapping_set())
+
+
+def _phrase_in_foreign_block() -> RawXbrlInstance:
+    """SYNTHETIC: Apar's phrase-bearing facts moved to a foreign-namespace text block."""
+    instance = _dev_instance(APAR)
+    moved = tuple(
+        fact.model_copy(update={"namespace_uri": FOREIGN, "concept_qname": "zz:NotesTextBlock"})
+        if "Indian Accounting Standard" in (fact.raw_text or "")
+        else fact
+        for fact in instance.facts
+    )
+    return instance.model_copy(update={"facts": moved})
+
+
+HISTORICAL_FRAMEWORK_CASES: dict[str, tuple[Callable[[], RawXbrlInstance], bool]] = {
+    "schema_ref_only": (  # SYNTHETIC: THERMAX (no phrase) under the Ind AS entry point
+        lambda: _dev_instance("THERMAX").model_copy(
+            update={"schema_refs": ("Ind-AS_entry_point_2020-03-31.xsd",)}
+        ),
+        True,
+    ),
+    "phrase_only": (lambda: _dev_instance(APAR), True),
+    "structural_only": (lambda: _dev_instance("THERMAX"), False),
+    "absent": (
+        lambda: _dev_instance("THERMAX", (b"IntegratedFinance_IndAS", b"IntegratedFinance_ZZ")),
+        False,
+    ),
+    "phrase_in_foreign_block": (_phrase_in_foreign_block, False),
+}
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("case", HISTORICAL_FRAMEWORK_CASES)
+def test_historical_framework_rule_is_the_attempt_3_rule(case: str) -> None:
+    """The frozen D6 attempt-3 framework rule accepts a schemaRef or an own text-block phrase,
+    never the IndAS form namespace extractor v2 added."""
+    build, accepted = HISTORICAL_FRAMEWORK_CASES[case]
+    assert historical_framework(build()) is accepted
+
+
+@pytest.mark.retained
+def test_the_draw_checker_is_independent_of_the_production_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D6's recorded attempt-3 draw stays reproducible: the historical prefilter admits the 7
+    Apar and LAURUSLABS instances (its framework rule alone 9, adding the two legacy Apar
+    ``Ind-AS_entry_point`` instances the sector rule refuses), and production predicates made
+    to accept everything change none of its results."""
+    retained = _retained()
+
+    def results() -> list[bool]:
+        return [xbrl_admitted([(body, end)]) for _, body, _, end in retained]
+
+    before = results()
+    admitted = [label for (label, *_), held in zip(retained, before, strict=True) if held]
+    framework = [label for label, _, instance, _ in retained if historical_framework(instance)]
+    assert len(admitted) == 7 and set(admitted) == {APAR, "LAURUSLABS"}
+    assert len(framework) == 9 and set(framework) == {APAR, "LAURUSLABS"}
+    accept = IdentityVerdict(verified=True, reason=None, evidence=())
+    monkeypatch.setattr(member_identity, "verify_xbrl_framework", lambda *_, **__: accept)
+    for module in (verification, stage4_filings):  # also any rebinding inside the checker
+        monkeypatch.setattr(module, "financial_rule", lambda _: True, raising=False)
+        monkeypatch.setattr(module, "framework_state", lambda *_: VERIFIED, raising=False)
+    assert results() == before
 
 
 def _row(
@@ -377,16 +492,6 @@ REFUSALS = {
         R.FOREIGN_ISIN,
     ),
     "two_revisions_one_period": (APAR, _two_revisions, R.INSUFFICIENT_FILINGS),
-    "no_framework_declaration": (  # SYNTHETIC: the latest instance's notes phrase removed
-        APAR,
-        partial(
-            edit,
-            url_part="INTEGRATED_FILING_INDAS_1701114",
-            old=b"Indian Accounting Standard",
-            new=b"Zz Accounting Standard",
-        ),
-        R.NO_FRAMEWORK_DECLARATION,
-    ),
 }
 
 
@@ -408,6 +513,30 @@ def test_unsupported_issuers_get_a_reason_and_no_entity(
     assert record[1:5] == (OC.UNSUPPORTED.value, None, reason.value, None)
     assert S.CONFLICT.value not in {state for state, _ in states.values()}
     _nothing_admitted(pg_db)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_apar_without_its_notes_phrase_onboards_on_its_form_declaration(
+    cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """Extractor v2: with the latest instance's notes phrase removed (SYNTHETIC), its
+    IntegratedFinance_IndAS form still declares Ind AS, so Apar onboards PARTIAL (exit 4) and
+    the XBRL is ingested COMPLETE under the current extractor version."""
+    served = world(APAR)
+    edit(served, JUN, b"Indian Accounting Standard", b"Zz Accounting Standard")
+    assert cli(APAR, write_root(tmp_path / "raw", served, APAR)) == INCOMPLETE
+    record, _ = recorded(pg_db)
+    assert record[1:4] == (OC.PARTIAL.value, None, None)
+    assert rows(
+        pg_db,
+        "SELECT outcome, extractor_version FROM eqos.acquisition_attempts "
+        "WHERE representation = 'XBRL' AND statement_family IS NULL",
+    ) == [("COMPLETE", XBRL_EXTRACTOR_VERSION)]
+    versions = {
+        v for (v,) in rows(pg_db, "SELECT DISTINCT extractor_version FROM eqos.occurrences")
+    }
+    assert {v for v in versions if v.startswith("xbrl-")} == {XBRL_EXTRACTOR_VERSION}
 
 
 def _nothing_admitted(db: PgTestDatabase) -> None:
@@ -527,11 +656,6 @@ def _both(*changes: Change) -> Change:
     return change
 
 
-_NO_PHRASE = partial(
-    edit, url_part=JUN, old=b"Indian Accounting Standard", new=b"Zz Accounting Standard"
-)
-
-
 def _unbound_nature(url_part: str, *contexts: str) -> Change:
     """SYNTHETIC: the report-nature declarations lose their ``contextRef``: the file scope still
     reads, but no context-bound fact declares the nature."""
@@ -559,19 +683,10 @@ DECLARATION_DEFECTS = {  # name: (synthetic change, XBRL_ENTITY state, refusal r
     "nature_blank": (_append(JUN, NATURE, "Consolidated", " "), S.CONFLICT, None),
     "nature_nil": (_append(JUN, NATURE, "Consolidated", NIL), S.CONFLICT, None),
     "nature_unbound": (_unbound_nature(JUN, "OneD"), S.UNVERIFIED, R.BASIS_UNVERIFIED),
-    # precedence: identity verdicts of both instances before the framework refusal
-    "framework_and_isin_one_instance": (
-        _both(_NO_PHRASE, partial(edit, url_part=JUN, old=b">INE372A01015<", new=b">ZZ<")),
-        S.CONFLICT,
-        None,
-    ),
-    "framework_latest_symbol_older": (
-        _both(_NO_PHRASE, _append(MAR, "Symbol", APAR, " ")),
-        S.CONFLICT,
-        None,
-    ),
-    "framework_latest_nature_older": (
-        _both(_NO_PHRASE, _unbound_nature(MAR, "OneD", "FourD")),
+    # the older instance is judged as the latest is
+    "older_symbol_blank": (_append(MAR, "Symbol", APAR, " "), S.CONFLICT, None),
+    "older_nature_unbound": (
+        _unbound_nature(MAR, "OneD", "FourD"),
         S.UNVERIFIED,
         R.BASIS_UNVERIFIED,
     ),
@@ -588,8 +703,7 @@ def test_discovery_applies_ingest_identity_check_to_both_instances(
     A blank or nil ISIN/Symbol/ScripCode beside the true one, or a contradicting, blank or nil
     context-bound report nature, contradicts the issuer (IDENTITY_CONFLICT, HIGH); no
     context-bound report nature leaves the basis unproven (UNSUPPORTED BASIS_UNVERIFIED). Both
-    instances are judged before a missing framework declaration decides: a conflict anywhere
-    wins, then ingest's order (identity before framework)."""
+    instances are judged."""
     change, state, reason = DECLARATION_DEFECTS[case]
     served = world(APAR)
     change(served)
