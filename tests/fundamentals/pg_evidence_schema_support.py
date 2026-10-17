@@ -15,7 +15,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_support import IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
+from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
 from pg_support import REPO_ROOT, PgTestDatabase
 from psycopg import sql
 from psycopg.rows import dict_row
@@ -628,13 +628,14 @@ def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
 
 
 def _tables(conn: psycopg.Connection) -> list[str]:
-    """The evidence tables: the ledger's and memory's have their own matrix in
+    """The evidence tables: the ledger's, memory's and coverage's have their own matrix in
     test_ledger_integrity, the identity tables in test_identity_layers."""
     rows = conn.execute(
         "SELECT tablename FROM pg_tables WHERE schemaname = %s ORDER BY tablename",
         (SCHEMA_NAME,),
     ).fetchall()
-    return [row[0] for row in rows if row[0] not in LEDGER_TABLES | MEMORY_TABLES | IDENTITY_TABLES]
+    excluded = LEDGER_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES
+    return [row[0] for row in rows if row[0] not in excluded]
 
 
 def _update_column(conn: psycopg.Connection, table: str) -> str:

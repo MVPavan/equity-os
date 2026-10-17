@@ -8,6 +8,7 @@ from pathlib import Path
 from fundamentals.api.adjudication_cli import add_adjudication_parser
 from fundamentals.api.compare_cli import add_compare_parser
 from fundamentals.api.config import XbrlMode
+from fundamentals.api.coverage_cli import add_coverage_parser
 from fundamentals.api.db_cli import add_db_parser
 from fundamentals.api.entity_map_cli import add_entity_map_parser
 from fundamentals.api.evidence_cli import add_evidence_parser
@@ -189,6 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_legacy_parser(subparsers)
     add_compare_parser(subparsers)
     add_onboard_parser(subparsers)
+    add_coverage_parser(subparsers)
     add_ledger_parser(subparsers)
     add_upstox_parser(subparsers)
     add_upstox_crosscheck_parser(subparsers)

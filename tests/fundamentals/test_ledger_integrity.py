@@ -17,7 +17,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_support import LEDGER_TABLES, RULING, Ledger, ledger, validation
+from ledger_support import COVERAGE_TABLES, LEDGER_TABLES, RULING, Ledger, ledger, validation
 from pg_evidence_schema_support import _insert, _update_column, runtime, seeded
 from pg_support import PgTestDatabase
 from psycopg import errors, sql
@@ -524,12 +524,14 @@ def test_the_runtime_role_may_submit_only(ledger: Ledger, seeded: dict[str, int]
                     conn.execute(sql.SQL(statement).format(sql.Identifier("eqos", table), column))
 
 
-GATED = LEDGER_TABLES | {"queue_dispositions"}
+GATED = LEDGER_TABLES | COVERAGE_TABLES | {"queue_dispositions", "capture_refs"}
 INSERTERS = {
     RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions", "panel_reviews"})
-    | {"queue_dispositions"},
+    | {"queue_dispositions", "capture_refs"},
     PANEL_ROLE: (LEDGER_TABLES - {"disposition_proposals"}) | {"queue_dispositions"},
-    OWNER_ROLE: {"decisions", "queue_dispositions", "validations", "validation_claim_states"},
+    OWNER_ROLE: {"decisions", "queue_dispositions", "validations", "validation_claim_states"}
+    | COVERAGE_TABLES
+    | {"capture_refs"},
 }
 
 

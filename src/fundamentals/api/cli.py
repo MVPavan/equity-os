@@ -26,6 +26,7 @@ from fundamentals.api.cli_parser import REGISTER_SOURCES_COMMAND
 from fundamentals.api.cli_parser import build_parser as _build_parser
 from fundamentals.api.compare_cli import dispatch_compare_command
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
+from fundamentals.api.coverage_cli import dispatch_coverage_command
 from fundamentals.api.db_cli import dispatch_db_command
 from fundamentals.api.entity_map_cli import (
     ENTITY_MAP_COMMAND,
@@ -328,6 +329,10 @@ def main(
     onboard_exit_code = dispatch_onboard_command(args)
     if onboard_exit_code is not None:
         return onboard_exit_code
+
+    coverage_exit_code = dispatch_coverage_command(args)
+    if coverage_exit_code is not None:
+        return coverage_exit_code
 
     ledger_exit_code = dispatch_ledger_command(args)
     if ledger_exit_code is not None:
