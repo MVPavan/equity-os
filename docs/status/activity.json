@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "D7 Coverage model: Task 3 (watchlist and drafting gate)",
-    "detail": "Plan approved (Sol r2). Task 1 (universe registry, migration 0024) and Task 2 (screens, screen runs, capture batches, migration 0025) are committed; the full suite passes. Task 3 is with the implementer: owner-only ADD/REMOVE watchlist decisions, and a gate refusing report drafting for stocks off the watchlist (migration 0026). Task 5 (frozen manifest) waits on the owner's real Screener CSV export.",
-    "stage": "eqos-3oq.3"
+    "title": "D8 Shareholding filing source: plan",
+    "detail": "D7 Tasks 1-4 are done (registry, screens and batches, watchlist and drafting gate, amendment 1 approved). D7 Tasks 5-6 wait on the owner's real Screener CSV export. Meanwhile the D8 plan is being drafted: the exchange shareholding filing as a first-party source, compared with Screener and Tijori.",
+    "stage": "eqos-17r"
   },
   "next": [
-    "D7 Task 4: amendment 1 record",
-    "D7 Task 5/6: frozen manifest and e2e (need owner's Screener CSV in data/raw/screener-exports/)",
-    "D7 phase-end review",
-    "Follow-ups: eqos-8hp (delete legacy screener-screen), eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "D8 plan review (Sol), then D8 Tasks 1-5",
+    "D7 Tasks 5-6 once the Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
+    "D9 Retention and replay (needs D7.3, done)",
+    "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D7 Tasks 3-4 committed: owner-only watchlist ADD/REMOVE sealed to a completed capture batch; runtime report drafting refused off the watchlist, first version must be a bootstrap thesis (0026). Amendment 1 (coverage initiation clarified, not lifted) approved by Sol. Watchlist, ledger, memory, views tests 475 passed; full suite 3975 passed with one load flake (eqos-0bp)."
+    },
     {
       "date": "2026-10-17",
       "text": "D7 Tasks 1-2 committed: universe registry with idempotent refresh (0024); screens, screen runs and capture batches that onboard and compare members through D6 (0025). Legacy screener-screen now refuses (CSV-only rule); deletion tracked as eqos-8hp. Full suite 3968 passed, 8 skipped."
