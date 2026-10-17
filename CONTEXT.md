@@ -69,6 +69,10 @@ _Avoid_: backfill (capture prevents future loss; it does not recreate the past)
 The authority table proposed by the blueprint: immutable object store for originals, SQL for facts/claims/events/approvals, registered calculation store for traces, PostgreSQL rows for the approved narrative (Markdown is a generated view; versioned files stay the record until the Stage 1 cutover is approved), rebuildable indices for retrieval. Formal acceptance is register item B-03 (open); its narrative row is amended by the report-ledger record.
 _Avoid_: single source of truth (there are several, by role)
 
+**Watchlist (covered)**:
+The stocks the owner has chosen to cover with reports: an owner-only `ADD`/`REMOVE` decision with verbatim reason, sealed on a verified identity and a completed capture batch. Only watchlisted stocks get drafted reports; a new member's first report is a `BOOTSTRAP_THESIS` (amendment 1).
+_Avoid_: the universe registry (every listed stock, no coverage implied), captured stocks (data captured by a batch, not covered), `config/watchlist.yaml` (the data spec's comparison set)
+
 **Onboarding outcome**:
 The result of onboarding a company from its identifier alone: `ONBOARDED` (run `COMPLETE`), `PARTIAL` (run `INCOMPLETE`, listing exactly the excluded verification units), `IDENTITY_CONFLICT` or `UNSUPPORTED`. `NOT_AUTHORISED` is a per-unit state, not an outcome. Defined in the D6 plan.
 _Avoid_: onboarding status (ambiguous with run status)

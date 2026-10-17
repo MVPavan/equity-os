@@ -34,6 +34,12 @@ RECORDS = {
             "promotion-approval-roles",
         },
     ),
+    "ledger_stage4": (
+        AMENDMENTS / "2026-10-17-coverage-initiation.md",
+        "coverage-initiation",
+        "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
+        {"initiation-clarified"},
+    ),
 }
 MODEL_NAME = re.compile(r"gpt|claude|opus|sonnet|fable|astra|\bsol\b|gemini|llama", re.IGNORECASE)
 
