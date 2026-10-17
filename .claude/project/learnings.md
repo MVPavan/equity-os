@@ -290,3 +290,12 @@ Format per entry:
   admission, ingest, printed compare) over several dev companies, and test that every admission
   predicate agrees with the ingest predicate it precedes
   (`scratchpad/execution/d6/live_onboard_smoke.py`).
+
+## Recursive searches leak opaque paths  (2026-10-17)
+- Observed: during the extractor-v2 plan, an author's `grep -l` over `tests/` listed the held-out
+  manifest's filename, and a reviewer's `grep` printed one header line from it: the exclusion
+  globs did not match the full searched paths. No identifier was exposed.
+- Why it matters: the opaque contract is breached by a search, not just by opening a file; on an
+  open attempt that would force a burn.
+- Apply: never search `tests/` or `data/` recursively while opaque artifacts exist; search an
+  explicit list of permitted files, or load inputs in Python. Put this line in every brief.
