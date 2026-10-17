@@ -1,15 +1,20 @@
 {
   "now": {
-    "title": "D6 Task 5d: Stage 4 manifest for the held-out company",
-    "detail": "Attempt 3 live acquisition met its pre-registered prediction (PARTIAL, PDF excluded by rule, compare run INCOMPLETE). An Opus author is writing the independent Stage 4 manifest; Sol approves it before the end-to-end test.",
-    "stage": "eqos-h4h.5"
+    "title": "D6 closed; next: eqos-t3l production fixes",
+    "detail": "D6 identifier-only onboarding is complete on test databases: held-out attempt 3 reproduced its independent manifest under the freeze. Four production defects found by the fresh critical review (cached XBRL reuse bypassing identity/eligibility checks, replay metadata, derived-settings declarations, CLI eligibility exit) are fixed next under eqos-t3l with Sol review, before broad onboarding.",
+    "stage": "eqos-t3l"
   },
   "next": [
-    "D6 Task 6: end-to-end test and phase-end Sol review",
-    "Extractor v2: structural Ind AS signal (identifier-only onboarding supports few issuers until then)",
-    "Follow-ups: NSE pagination, NSE priming timeout, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "eqos-t3l: D6 post-closure production fixes (P1, blocks extractor v2)",
+    "D7 Coverage model",
+    "Extractor v2 (eqos-71x): structural Ind AS signal; only 2 of 11 dev companies onboard until then",
+    "Follow-ups: NSE priming timeout (h4h.8), pagination (h4h.9), envelope validation (h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D6 complete. Phase-end Sol review r1 REJECT (7) → r2 REJECT (1) → r3 APPROVE; fresh critical review REJECT (8): four acceptance-test gaps fixed (8e72089, 616e070), re-review APPROVE; four production defects deferred to eqos-t3l by owner ruling, freeze check pinned at closure (D6.md Freeze step 6). Epic eqos-h4h closed."
+    },
     {
       "date": "2026-10-16",
       "text": "D6 held-out attempts: attempt 1 burned (BSE refused the custom User-Agent; fixed adf6e78), attempt 2 burned (ingest rejected Ind AS filings discovery admitted; owner chose clean refusal now, extractor v2 later; fixed ba0f47e, 97ce112 after Sol r1 REJECT/r2 APPROVE). Attempt 3 drawn, frozen (62698aa) and acquired live: PARTIAL / [RESULTS_PDF] / INCOMPLETE as predicted. Full suite 3816 passed, 8 skipped."
