@@ -22,7 +22,6 @@ import pytest
 import screener_screen_support as support
 from pydantic import ValidationError
 
-from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
 from fundamentals.ingest.screener_session_models import (
     SOURCE_ID,
@@ -461,14 +460,14 @@ def test_the_private_query_never_reaches_a_transport_log_line_or_an_error_messag
         support.serve_transport_failure(
             patcher, urllib.error.HTTPError(url, 429, "Too Many Requests", None, None)
         )
-        assert main(arguments) == EXIT_REFUSED
+        assert support.legacy_main(arguments) == EXIT_REFUSED
         logged = capsys.readouterr().err
         assert "screener_session_rate_limited" in logged
         assert support.SELECTOR_QUERY not in logged
 
     with monkeypatch.context() as patcher:
         support.serve_transport_failure(patcher, urllib.error.URLError("connection reset"))
-        assert main(arguments) == EXIT_REFUSED
+        assert support.legacy_main(arguments) == EXIT_REFUSED
         logged = capsys.readouterr().err
         assert "ScreenerSessionFetchError" in logged
         assert support.SELECTOR_QUERY not in logged

@@ -49,14 +49,7 @@ from fundamentals.api.screener_page_cli import (
     render_screener_page_summary,
     run_screener_page_command,
 )
-from fundamentals.api.screener_screen_cli import (
-    SCREENER_SCREEN_COMMAND,
-    render_screener_screen_summary,
-    run_screener_screen_command,
-)
-from fundamentals.api.screener_screen_cli import (
-    is_incomplete as screen_is_incomplete,
-)
+from fundamentals.api.screener_screen_cli import SCREENER_SCREEN_COMMAND
 from fundamentals.api.screener_watchlist_cli import (
     SCREENER_WATCHLIST_COMMAND,
     other_watchlists,
@@ -89,6 +82,10 @@ EXIT_BASIS_UNAVAILABLE = 3
 
 _CLI_LOGGER_NAME = "fundamentals.cli"
 _SESSION_REQUIRED = "SCREENER_SESSION_COOKIE is required for {command}"
+_SCREEN_RETIRED = (
+    "{command} refused: the system never requests a Screener screen; export it to CSV and run "
+    "`fundamentals coverage screen-run`"
+)
 _REFUSAL_LINE = "{command} refused ({refusal}): {detail}"
 _INCOMPLETE_LINE = "{command} did not finish: {reason}"
 _UNCHECKED_LINE = "{command}: schedules the reconciliation gate did not clear: {families}"
@@ -120,6 +117,9 @@ def dispatch_screener_command(
     """
     if args.command not in SCREENER_COMMANDS:
         return None
+    if args.command == SCREENER_SCREEN_COMMAND:  # plan D7 R5: before credentials or network
+        sys.stderr.write(_SCREEN_RETIRED.format(command=args.command) + "\n")
+        return EXIT_REFUSED
     credentials = credentials_factory()
     if credentials is None:
         raise SystemExit(_SESSION_REQUIRED.format(command=args.command))
@@ -134,10 +134,6 @@ def dispatch_screener_command(
             return _run_company(args, credentials=credentials)
         if args.command == SCREENER_WATCHLIST_COMMAND:
             return _run_watchlist(args, credentials=credentials)
-        if args.command == SCREENER_SCREEN_COMMAND:
-            screen = run_screener_screen_command(args, credentials=credentials)
-            sys.stdout.write(render_screener_screen_summary(screen) + "\n")
-            return EXIT_REFUSED if screen_is_incomplete(screen) else EXIT_OK
         run = run_screener_page_command(args, credentials=credentials)
     except ScreenerSessionError as error:
         sys.stderr.write(

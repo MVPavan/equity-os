@@ -69,10 +69,14 @@ IDENTITY_TABLES = frozenset(
         "namespace_verifications",
     }
 )
-# 0024's universe registry: owner INSERT only (plan D7 R2).
-COVERAGE_TABLES = frozenset(
+# 0024's universe registry and 0025's screens and batches: owner INSERT only (plan D7 R2).
+REGISTRY_TABLES = frozenset(
     {"registry_loads", "registry_listings", "registry_sightings", "registry_candidate_events"}
 )
+COVERAGE_TABLES = REGISTRY_TABLES | {
+    *("screens", "screen_runs", "screen_members"),
+    *("capture_batches", "batch_member_results", "batch_completions"),
+}
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64
 PINNED_INPUTS = "1" * 64

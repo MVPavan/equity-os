@@ -96,6 +96,7 @@ class Representation(StrEnum):
     PDF = "PDF"
     HTML = "HTML"
     JSON = "JSON"
+    CSV = "CSV"
 
 
 FIRST_PARTY_REPRESENTATIONS = (Representation.XBRL, Representation.PDF)

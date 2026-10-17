@@ -227,6 +227,8 @@ TIJORI_SEARCH = ("tijori", "company_search")
 TIJORI_PAGE = ("tijori", "financials")
 UPSTOX_INSTRUMENTS = ("upstox", "instruments")
 UPSTOX_STATEMENT = ("upstox", "income-statement")
+# An owner-exported Screener screen (plan D7 R5): the only input of a screen run, never fetched.
+SCREEN_EXPORT = ("screener-subscriber", "SCREEN_EXPORT")
 _IDENTITY_SURFACES = (
     (NSE_MASTER, Representation.HTML, _EXCHANGE_RIGHTS),
     (NSE_RESULTS_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
@@ -235,6 +237,7 @@ _IDENTITY_SURFACES = (
     (SCREENER_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
     (TIJORI_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
     (UPSTOX_INSTRUMENTS, Representation.JSON, _UPSTOX_RIGHTS),
+    (SCREEN_EXPORT, Representation.CSV, _SUBSCRIBER_RIGHTS),
 )
 
 VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (

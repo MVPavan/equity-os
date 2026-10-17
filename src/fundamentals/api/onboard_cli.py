@@ -44,6 +44,7 @@ import psycopg
 import structlog
 import yaml
 from psycopg_pool import ConnectionPool
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.api.env_credentials import (
     _screener_credentials_from_env,
@@ -66,6 +67,7 @@ from fundamentals.contracts.onboarding import (
     ONBOARDING_VERSIONS,
     UNIT_SURFACES,
     OnboardingOutcome,
+    Verdict,
     VerificationState,
     VerificationUnit,
 )
@@ -150,6 +152,9 @@ _ADMITTED = (OnboardingOutcome.ONBOARDED, OnboardingOutcome.PARTIAL)
 _TIJORI_COMPANY_ID = "company_id"
 _EVIDENCE_REF = "evidence_input:{id}"
 _ENTITY_KEY_SQL: LiteralString = "SELECT entity_key FROM eqos.reporting_entities WHERE id = %s"
+# ``record`` returns no id; this single-writer CLI's record is the symbol's latest (discovery.py
+# is at its line cap).
+_RECORD_ID_SQL: LiteralString = "SELECT max(id) FROM eqos.onboarding_records WHERE identifier = %s"
 _FREEZES = "freezes"
 _IMPLEMENTATION = "implementation_commit"
 _ENTRY_KEYS = frozenset(
@@ -300,9 +305,37 @@ def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
         return RunExitStatus.FAILURE
 
 
+class Onboarded(BaseModel):
+    """What one onboarding recorded, the printed ``compare run`` command and its exit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    outcome: OnboardingOutcome
+    reason: str | None
+    states: dict[VerificationUnit, Verdict]
+    entity_id: int | None
+    onboarding_record_id: int
+    compare: str | None
+    exit: int
+
+
 def _onboard(args: argparse.Namespace) -> int:
+    """Onboard and print the outcome, each unit's state and any ``compare run`` command."""
+    done = onboard(args)
+    sys.stdout.write(f"onboard {args.symbol}: {done.outcome.value}")
+    if done.outcome is OnboardingOutcome.IDENTITY_CONFLICT:
+        sys.stdout.write(f" severity {_SEVERITY_HIGH}")
+    sys.stdout.write(f" {done.reason or ''}\n")
+    for unit, (state, why) in done.states.items():
+        sys.stdout.write(f"  {unit.value}: {state.value} {why or ''}\n")
+    if done.compare is not None:
+        sys.stdout.write(f"{COMPARE_PREFIX}{done.compare}\n")
+    return done.exit
+
+
+def onboard(args: argparse.Namespace) -> Onboarded:
     """Acquire or replay, discover, record; an admitted issuer's settings, ingest and the
-    ``compare run`` command follow (D5)."""
+    ``compare run`` command follow (D5). ``args`` is a parsed ``onboard`` command line."""
     if args.acquire and args.generation is not None:
         raise ValueError(_ACQUIRE_GENERATION)
     acquisition = _frozen(args.freeze_descriptor, args.config_root) if args.acquire else None
@@ -350,19 +383,19 @@ def _onboard(args: argparse.Namespace) -> int:
             refs = store_captures(store, EvidenceRepository(pool), found.captures)
         with pool.connection() as conn:
             recorded = record(conn, found, refs)
+            (record_id,) = conn.execute(_RECORD_ID_SQL, (args.symbol,)).fetchone() or (0,)
         command = None
         if derived is not None and package is not None and recorded.entity_id is not None:
             command = _ingest(pool, args, config, found, refs, derived, package, recorded, folder)
-    result = recorded.outcome
-    sys.stdout.write(f"onboard {args.symbol}: {result.value}")
-    if result is OnboardingOutcome.IDENTITY_CONFLICT:
-        sys.stdout.write(f" severity {_SEVERITY_HIGH}")
-    sys.stdout.write(f" {recorded.reason or ''}\n")
-    for unit, (state, why) in found.states.items():
-        sys.stdout.write(f"  {unit.value}: {state.value} {why or ''}\n")
-    if command is not None:
-        sys.stdout.write(f"{COMPARE_PREFIX}{command}\n")
-    return _EXIT.get(result, RunExitStatus.FAILURE)
+    return Onboarded(
+        outcome=recorded.outcome,
+        reason=recorded.reason,
+        states=found.states,
+        entity_id=recorded.entity_id,
+        onboarding_record_id=record_id,
+        compare=command,
+        exit=_EXIT.get(recorded.outcome, RunExitStatus.FAILURE),
+    )
 
 
 def _manifest(root: Path, generation: int) -> DiscoveryManifest:

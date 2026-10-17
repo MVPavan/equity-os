@@ -25,6 +25,7 @@ import hashlib
 import importlib
 import json
 import os
+import sys
 import time
 import urllib.request
 from datetime import UTC, datetime
@@ -86,7 +87,14 @@ from screener_screen_fixtures import (  # noqa: F401
     zero_result_page,
 )
 
-from fundamentals.api.cli import main
+from fundamentals.api import cli
+from fundamentals.api.env_credentials import _screener_credentials_from_env
+from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.api.screener_screen_cli import (
+    is_incomplete,
+    render_screener_screen_summary,
+    run_screener_screen_command,
+)
 from fundamentals.ingest.screener_session import ScreenerSessionSource
 from fundamentals.ingest.screener_session_models import (
     ScreenerCredentials,
@@ -295,8 +303,24 @@ def run_cli(
     """Run ``fundamentals screener-screen`` end to end against the pinned seam."""
     recorder = serve(monkeypatch, bodies, refusals=refusals)
     target = out_dir if out_dir is not None else tmp_path / "out"
-    exit_code = main([COMMAND, "--query", query, "--out", str(target), *extra])
+    exit_code = legacy_main([COMMAND, "--query", query, "--out", str(target), *extra])
     return exit_code, target, recorder
+
+
+def legacy_main(argv: list[str]) -> int:
+    """The retired ``screener-screen`` command's acquisition path, below its dispatch (plan D7
+    R5: the public command refuses; the subsystem stays tested until its deletion bead)."""
+    cli._configure_logging()
+    args = cli._build_parser().parse_args(argv)
+    credentials = _screener_credentials_from_env()
+    assert credentials is not None
+    try:
+        screen = run_screener_screen_command(args, credentials=credentials)
+    except ScreenerSessionError as error:
+        sys.stderr.write(f"{COMMAND} refused ({type(error).__name__}): {error}\n")
+        return EXIT_REFUSED
+    sys.stdout.write(render_screener_screen_summary(screen) + "\n")
+    return EXIT_REFUSED if is_incomplete(screen) else EXIT_OK
 
 
 def artifact_of(out_dir: Path) -> Path:

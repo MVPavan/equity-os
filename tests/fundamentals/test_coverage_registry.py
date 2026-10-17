@@ -15,7 +15,7 @@ from typing import Any
 import psycopg
 import pytest
 from coverage_support import INSTRUMENTS, capture, coverage, remark
-from ledger_support import COVERAGE_TABLES
+from ledger_support import REGISTRY_TABLES
 from onboarding_support import fresh_db, rows, seed
 from pg_support import PgTestDatabase
 
@@ -24,7 +24,7 @@ from fundamentals.entity.identity_layers import latest_slice
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 ETERNAL_ISIN = "INE758T01015"
-REGISTRY = tuple(sorted(COVERAGE_TABLES))
+REGISTRY = tuple(sorted(REGISTRY_TABLES))
 IDENTITY = (
     "reporting_entities",
     "securities",

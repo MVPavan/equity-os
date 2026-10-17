@@ -221,6 +221,22 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
 
 def _run(args: argparse.Namespace) -> int:
     """Execute one run and print its id and status."""
+    record = run_compare(args)
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        overlay = read_overlay(pool, run_id=record.run_id, as_of=overlay_boundary(pool))
+    sys.stdout.write(
+        _SUMMARY.format(
+            run_id=record.run_id,
+            status=record.manifest.status.value,
+            created=str(record.created).lower(),
+        )
+        + "\n"
+    )
+    return int(exit_status(record, overlay))
+
+
+def run_compare(args: argparse.Namespace) -> RunRecord:
+    """Execute (or find) the run a parsed ``compare run`` command line names."""
     settings = PgSettings()
     with open_pool(settings, PgRole.RUNTIME) as pool:
         repository = EvidenceRepository(pool)
@@ -239,17 +255,7 @@ def _run(args: argparse.Namespace) -> int:
             vendors=tuple(args.vendor),
             versions=ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
         )
-        record = execute_run(request, pool=pool, config_root=args.config_root)
-        overlay = read_overlay(pool, run_id=record.run_id, as_of=overlay_boundary(pool))
-    sys.stdout.write(
-        _SUMMARY.format(
-            run_id=record.run_id,
-            status=record.manifest.status.value,
-            created=str(record.created).lower(),
-        )
-        + "\n"
-    )
-    return int(exit_status(record, overlay))
+        return execute_run(request, pool=pool, config_root=args.config_root)
 
 
 def _report(args: argparse.Namespace) -> int:

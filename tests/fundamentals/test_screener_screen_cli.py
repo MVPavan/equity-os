@@ -1,5 +1,8 @@
 """The ``screener-screen`` publication contract and its refusals.
 
+The public command now refuses at dispatch (plan D7 R5, ``test_coverage_batch.py``); these
+tests drive its acquisition path below the dispatch until the subsystem is deleted.
+
 Everything here is about what reaches disk, what reaches stdout, and what exit
 code the caller sees. The transport seam and the synthetic bodies live in
 :mod:`screener_screen_support`; nothing in this file opens a socket or reads a
@@ -15,7 +18,6 @@ from pathlib import Path
 import pytest
 import screener_screen_support as support
 
-from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import (
     EXIT_BASIS_UNAVAILABLE,
     EXIT_OK,
@@ -55,7 +57,7 @@ def _created_directory(monkeypatch: pytest.MonkeyPatch, query: str) -> tuple[Pat
         requested = support.serve(patcher, support.walk(2))
         support.intercept_first_creation(patcher)
         with pytest.raises(support.FirstCreationError) as excinfo:
-            main([support.COMMAND, "--query", query])
+            support.legacy_main([support.COMMAND, "--query", query])
     created = excinfo.value.path
     directory = created.parent if created.name == support.PAGES_DIRNAME else created
     return directory, requested.urls
@@ -85,7 +87,7 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
         with monkeypatch.context() as patcher:
             requested = support.serve(patcher, support.walk(2))
             with pytest.raises(SystemExit) as excinfo:
-                main([support.COMMAND, "--query", support.QUERY, "--max-pages", bad])
+                support.legacy_main([support.COMMAND, "--query", support.QUERY, "--max-pages", bad])
             assert excinfo.value.code == EXIT_REFUSED
             assert requested.urls == []
 
@@ -93,7 +95,7 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
         with monkeypatch.context() as patcher:
             requested = support.serve(patcher, support.walk(2))
             with pytest.raises(SystemExit) as excinfo:
-                main([support.COMMAND, "--query", support.QUERY, flag, "anything"])
+                support.legacy_main([support.COMMAND, "--query", support.QUERY, flag, "anything"])
             assert excinfo.value.code == EXIT_REFUSED
             assert requested.urls == []
 
@@ -107,12 +109,7 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
             support.TSV_HEADER,
             f"results\t2\t16\t6\t{support.artifact_of(out_dir).resolve()}",
         ]
-        logged = captured.err
-        assert "screener_command_invoked" in logged
-        assert f"command={support.COMMAND}" in logged
-        assert "stock=" not in logged
-        assert "basis=" not in logged
-        assert support.QUERY not in logged
+        assert support.QUERY not in captured.err
 
     # No --max-pages at all, against a query offering one more page than the
     # bound: the walk must stop at 25 of its own accord.
@@ -160,7 +157,7 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
 
     with monkeypatch.context() as patcher:
         requested = support.serve(patcher, support.walk(2))
-        refused = main(
+        refused = support.legacy_main(
             [
                 support.COMMAND,
                 "--query",
@@ -172,18 +169,6 @@ def test_the_command_bounds_its_flags_prints_two_tsv_lines_and_exits_by_outcome(
         assert refused == EXIT_REFUSED
         assert requested.urls == []
         assert "ScreenQueryError" in capsys.readouterr().err
-
-    # No cookie is a local configuration fault, not an answer from the host: it
-    # names the variable and exits 1 (a string ``SystemExit`` is exit 1), which
-    # is the code a caller must not confuse with a refusal.
-    with monkeypatch.context() as patcher:
-        requested = support.serve(patcher, support.walk(2))
-        patcher.delenv(support.SESSION_ENV, raising=False)
-        with pytest.raises(SystemExit) as excinfo:
-            main([support.COMMAND, "--query", support.QUERY, "--out", str(tmp_path / "nocookie")])
-        assert excinfo.value.code not in (EXIT_OK, EXIT_REFUSED, EXIT_BASIS_UNAVAILABLE)
-        assert support.SESSION_ENV in str(excinfo.value.code)
-        assert requested.urls == []
 
     # Nothing this command can produce is a basis question, so exit 3 is
     # unreachable and must never be borrowed for another meaning.
@@ -217,7 +202,7 @@ def test_pages_are_written_into_a_safe_directory_and_verified_before_the_artifac
     with monkeypatch.context() as patcher:
         requested = support.serve(patcher, support.walk(2))
         with pytest.raises(SystemExit):
-            main([support.COMMAND, "--query", support.QUERY, "--out", str(unsafe)])
+            support.legacy_main([support.COMMAND, "--query", support.QUERY, "--out", str(unsafe)])
         assert requested.urls == []
 
     occupied = tmp_path / "occupied"
@@ -226,7 +211,7 @@ def test_pages_are_written_into_a_safe_directory_and_verified_before_the_artifac
     with monkeypatch.context() as patcher:
         requested = support.serve(patcher, support.walk(2))
         with pytest.raises(SystemExit) as excinfo:
-            main([support.COMMAND, "--query", support.QUERY, "--out", str(occupied)])
+            support.legacy_main([support.COMMAND, "--query", support.QUERY, "--out", str(occupied)])
         assert "refusing to overwrite" in str(excinfo.value)
         assert requested.urls == []
 
@@ -259,7 +244,9 @@ def test_pages_are_written_into_a_safe_directory_and_verified_before_the_artifac
         created = support.record_publications(patcher)
         support.serve(patcher, support.walk(2))
         with pytest.raises(SystemExit):
-            main([support.COMMAND, "--query", support.QUERY, "--out", str(contested)])
+            support.legacy_main(
+                [support.COMMAND, "--query", support.QUERY, "--out", str(contested)]
+            )
     assert created == [support.page_file(contested, 1), foreign]
     assert support.artifact_of(contested) not in created
     assert not support.artifact_of(contested).exists()

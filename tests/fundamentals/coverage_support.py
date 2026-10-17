@@ -1,6 +1,9 @@
-"""Shared fixtures of the D7 coverage tests: retained instrument captures and owner CLI runs.
+"""Shared fixtures of the D7 coverage tests: retained instrument captures, the screen export,
+pinned onboarding generations and owner CLI runs.
 
-Re-marked snapshots are SYNTHETIC: written only under ``tmp_path``, never committed.
+Re-marked snapshots are SYNTHETIC: written only under ``tmp_path``, never committed. The screen
+export is ``SYNTHETIC-FORMAT`` until the owner supplies a real one (plan D7 Q1): a hand-written
+``Name,BSE Code,NSE Code`` file for Task 2 development only, never a manifest source.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ import gzip
 import hashlib
 import io
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +27,20 @@ INSTRUMENTS = (
     / "upstox_instruments.raw.json.gz"
 )
 _META = "upstox_instruments_meta.json"
+SCREEN_CSV = Path(__file__).parent / "fixtures" / "coverage" / "screen_export.csv"
+SCREEN_CSV_PROVENANCE = "SYNTHETIC-FORMAT"
+SCREEN_HEADER = "Name,BSE Code,NSE Code"
+# Development companies and their v2-smoke generations (plan D7 R8), all PARTIAL at preflight.
+LIVE_SMOKE = REPO_ROOT / "data/raw/onboarding-dev/live-smoke"
+GENERATIONS = {"ETERNAL": 1, "POLYCAB": 1, "TITAN": 1, "THERMAX": 3, "CGPOWER": 1}
+
+
+def pinned_copies(root: Path, symbols: tuple[str, ...]) -> Path:
+    """``root/<SYMBOL>/gen-<n>``: copies of each symbol's pinned generation only."""
+    for symbol in symbols:
+        generation = f"gen-{GENERATIONS[symbol]}"
+        shutil.copytree(LIVE_SMOKE / symbol / generation, root / symbol / generation)
+    return root
 
 
 def remark(body: bytes, segment: str, old: str, new: str) -> bytes:
