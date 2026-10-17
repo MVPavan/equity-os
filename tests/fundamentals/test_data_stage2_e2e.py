@@ -19,7 +19,7 @@ from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMO
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
 from retained_support import APAR_ISSUER_CONFIG
-from retention_support import RETENTION_TABLES
+from retention_support import RETENTION_TABLES, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage, row_key
 from temporal_fixture_support import install_trusted_fixture_cli
 from test_cutover_rollback import Window
@@ -273,6 +273,7 @@ def test_stage2_end_to_end(
             snapshot_root=tmp_path / "restored",
             replay_runs=True,
             config_root=CONFIG,
+            **restore_args(pg_db, sets, tmp_path / "restored"),
         )
         assert check.ok, check
     finally:

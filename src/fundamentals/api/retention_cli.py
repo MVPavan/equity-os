@@ -10,6 +10,10 @@ retention purge --snapshot-root PATH --backup-dir PATH [--config-root PATH]
     (recover any unfinished run, then delete every eligible blob; exit 0, ``EXIT_REFUSED``
     when a precondition fails, ``EXIT_HIGH`` when a probe halted a source or a blob must be
     registered or removed)
+retention licence-end --source ID --ended-on DATE --reason TEXT --snapshot-root PATH
+        --backup-dir PATH [--config-root PATH]
+    (record a vendor licence end: store marker, licence-ends.json entry, database row, then a
+    purge of all that source's material, holds notwithstanding; exit codes as purge)
 retention refetch --capture ID --snapshot-root PATH
     (as the runtime role: fetch an expired exchange capture from its address; exit 0 when
     restored, ``EXIT_HIGH`` on a mismatch, ``EXIT_REFUSED`` when the fetch failed or the
@@ -21,6 +25,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Callable
+from datetime import date
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +35,12 @@ import psycopg
 import structlog
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
-from fundamentals.contracts.retention_purge import PurgeRefusedError, PurgeStep, RefetchOutcome
+from fundamentals.contracts.retention_purge import (
+    PurgeRefusedError,
+    PurgeReport,
+    PurgeStep,
+    RefetchOutcome,
+)
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.backup import BackupError, write_backup
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
@@ -36,7 +48,13 @@ from fundamentals.pg.retention_io import AuthorityError
 from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.retention.holds import pinned_roots
-from fundamentals.retention.purge import INCIDENTS, UNCLASSIFIED, dry_run, purge
+from fundamentals.retention.purge import (
+    INCIDENTS,
+    UNCLASSIFIED,
+    dry_run,
+    purge,
+    record_licence_end,
+)
 from fundamentals.retention.refetch import live_fetch, refetch
 from fundamentals.store.snapshot_store import SnapshotStore
 
@@ -44,6 +62,7 @@ RETENTION_COMMAND = "retention"
 CLASSIFY_ACTION = "classify"
 PURGE_ACTION = "purge"
 REFETCH_ACTION = "refetch"
+LICENCE_END_ACTION = "licence-end"
 CONFIG_ROOT = Path("config")
 EXIT_HIGH = 3  # SUCCESS_WITH_OPEN_HIGH (compare/run_models.py)
 _ACTION_DEST = "retention_action"
@@ -52,6 +71,7 @@ _CLASSIFY_HELP = "classify the captures registered before retention classes exis
 _PURGE_HELP = "delete the blobs eligible for purge, or list them (--dry-run)"
 _DRY_RUN_HELP = "only list the eligible blobs and open incidents"
 _REFETCH_HELP = "fetch an expired exchange capture back from its address"
+_LICENCE_END_HELP = "record a vendor licence end and purge all that source's material"
 _REFETCH_EXIT = {RefetchOutcome.RESTORED: EXIT_OK, RefetchOutcome.REFETCH_MISMATCH: EXIT_HIGH}
 _PURGE_NEEDS = "retention purge: --snapshot-root and --backup-dir are required\n"
 _CLASSIFY = "SELECT eqos.classify_existing()"
@@ -71,6 +91,13 @@ def add_retention_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
     refetch_parser = actions.add_parser(REFETCH_ACTION, help=_REFETCH_HELP)
     refetch_parser.add_argument("--capture", type=int, required=True)
     refetch_parser.add_argument("--snapshot-root", type=Path, required=True)
+    ended = actions.add_parser(LICENCE_END_ACTION, help=_LICENCE_END_HELP)
+    ended.add_argument("--source", required=True)
+    ended.add_argument("--ended-on", required=True, type=date.fromisoformat)
+    ended.add_argument("--reason", required=True)
+    ended.add_argument("--snapshot-root", type=Path, required=True)
+    ended.add_argument("--backup-dir", type=Path, required=True)
+    ended.add_argument("--config-root", type=Path, default=CONFIG_ROOT)
 
 
 def dispatch_retention_command(args: argparse.Namespace) -> int | None:
@@ -82,6 +109,14 @@ def dispatch_retention_command(args: argparse.Namespace) -> int | None:
             return _classify()
         if args.retention_action == REFETCH_ACTION:
             return _refetch(args.capture, args.snapshot_root)
+        if args.retention_action == LICENCE_END_ACTION:
+            ended = partial(
+                record_licence_end,
+                source_id=args.source,
+                ended_on=args.ended_on,
+                reason=args.reason,
+            )
+            return _purge(args.config_root, args.snapshot_root, args.backup_dir, ended)
         if args.dry_run:
             return _dry_run(args.config_root)
         if args.snapshot_root is None or args.backup_dir is None:
@@ -138,8 +173,14 @@ def _dry_run(config_root: Path) -> int:
     return EXIT_OK
 
 
-def _purge(config_root: Path, snapshot_root: Path, backup_dir: Path) -> int:
-    """Run one purge with the live fetcher and a held final backup; print what it did."""
+def _purge(
+    config_root: Path,
+    snapshot_root: Path,
+    backup_dir: Path,
+    run: Callable[..., PurgeReport] = purge,
+) -> int:
+    """Run one purge (or ``run``, a licence end) with the live fetcher and a held final backup;
+    print what it did."""
     settings = PgSettings()
     login = load_login(PgRole.PURGE, secrets_dir(os.environ))
 
@@ -152,7 +193,7 @@ def _purge(config_root: Path, snapshot_root: Path, backup_dir: Path) -> int:
             held=conn,
         )
 
-    report = purge(
+    report = run(
         settings,
         login,
         database=settings.db,

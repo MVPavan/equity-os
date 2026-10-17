@@ -17,6 +17,7 @@ import psycopg
 import pytest
 import yaml
 from pg_support import PgTestDatabase, create_database, drop_database, mint_name
+from retention_support import restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage
 from test_legacy_import import Rig
 from test_store import _fact
@@ -66,9 +67,9 @@ def late_registration(settings: PgSettings, dbname: str) -> tuple[str, ...]:
     return ("sh", "-c", f'{shlex.join(psql)} >/dev/null && exec "$@"', "sh", *DEFAULT_CLIENT_PREFIX)
 
 
-def use_env(monkeypatch: pytest.MonkeyPatch, settings: PgSettings, dbname: str) -> None:
-    """Point the CLI's ``EQOS_PG_*`` settings at ``dbname``."""
-    for name, value in PgTestDatabase(dbname=dbname, settings=settings).cli_env().items():
+def use_env(monkeypatch: pytest.MonkeyPatch, pg_db: PgTestDatabase, dbname: str) -> None:
+    """Point the CLI's ``EQOS_PG_*`` settings at ``dbname``, with the session logins."""
+    for name, value in pg_db.model_copy(update={"dbname": dbname}).cli_env().items():
         monkeypatch.setenv(name, value)
 
 
@@ -116,6 +117,7 @@ def test_round_trip_snapshot_and_tamper(
         snapshot_root=tmp_path / "restored-store",
         replay_runs=True,
         config_root=CONFIG,
+        **restore_args(pg_db, set_dir, tmp_path / "restored-store"),
     )
     assert check.ok, check
     assert "late" not in query(settings, restored, "SELECT source_id FROM eqos.capture_refs")
@@ -135,6 +137,7 @@ def test_round_trip_snapshot_and_tamper(
                 snapshot_root=tmp_path / f"empty-{name}",
                 replay_runs=False,
                 config_root=CONFIG,
+                **restore_args(pg_db, copy, tmp_path / f"empty-{name}", set_dir.parent),
             )
         assert fresh not in databases(settings)
     with pytest.raises(BackupError, match="unpublished"):
@@ -175,6 +178,7 @@ def test_round_trip_snapshot_and_tamper(
                 snapshot_root=tmp_path / f"meta-store-{name}",
                 replay_runs=True,
                 config_root=CONFIG,
+                **restore_args(pg_db, copy, tmp_path / f"meta-store-{name}", set_dir.parent),
             )
         finally:
             drop_database(settings, fresh)
@@ -199,10 +203,10 @@ def test_absent_schema_restores_through_the_cli(
     settings, empty = pg_db.settings, mint_name(pg_db.settings)
     create_database(settings, empty)
     try:
-        use_env(monkeypatch, settings, empty)
+        use_env(monkeypatch, pg_db, empty)
         assert main(["db", "backup", "--out", str(tmp_path), "--snapshot-root", "unused"]) == 0
         (set_dir,) = tmp_path.iterdir()
-        use_env(monkeypatch, settings, settings.db)
+        use_env(monkeypatch, pg_db, settings.db)
         args = ["db", "restore", "--set", str(set_dir), "--database", restored]
         assert main([*args, "--snapshot-root", str(tmp_path / "store")]) == EXIT_OK
     finally:
@@ -222,7 +226,7 @@ def test_restore_refuses_non_test_targets(
     settings = pg_db.settings
     before = databases(settings)
     if entrypoint == "cli":
-        use_env(monkeypatch, settings, settings.db)
+        use_env(monkeypatch, pg_db, settings.db)
         args = ["db", "restore", "--set", str(tmp_path), "--database", name]
         assert main([*args, "--snapshot-root", str(tmp_path / "s")]) == EXIT_REFUSED
     else:
@@ -235,5 +239,6 @@ def test_restore_refuses_non_test_targets(
                 snapshot_root=tmp_path / "s",
                 replay_runs=False,
                 config_root=CONFIG,
+                **restore_args(pg_db, tmp_path, tmp_path / "s"),
             )
     assert databases(settings) == before

@@ -93,3 +93,13 @@ class PurgeReport(BaseModel):
 
 class PurgeRefusedError(Exception):
     """A purge precondition failed before any deletion; nothing was removed."""
+
+
+class RestoreDelta(BaseModel):
+    """What a restore's purge-first added: the captures it expired and the rows per table, so
+    restore can check the database changed by exactly that (R12)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    expired: tuple[int, ...]
+    rows: dict[str, int]

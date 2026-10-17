@@ -12,6 +12,8 @@ import shutil
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -26,6 +28,7 @@ from pg_support import (
 from psycopg import sql
 
 from fundamentals.api.cli import main
+from fundamentals.api.db_cli import restore_purge_first
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureFacts, Eligibility, HoldRoot
 from fundamentals.evidence import repository_rows as rows_sql
@@ -217,3 +220,16 @@ def retention_cli(
     with contextlib.redirect_stdout(out):
         code = main(["retention", *argv])
     return code, out.getvalue()
+
+
+def restore_args(
+    database: PgTestDatabase, set_dir: Path, snapshot_root: Path, backup_dir: Path | None = None
+) -> dict[str, Any]:
+    """Restore's retention arguments (plan D9 R12): the authority directory (default the set's
+    parent), the session purge login and the composed purge-first."""
+    backup_dir = backup_dir or set_dir.parent
+    return {
+        "backup_dir": backup_dir,
+        "purge_login": database.logins[PgRole.PURGE],
+        "purge_first": restore_purge_first(set_dir, backup_dir, snapshot_root),
+    }

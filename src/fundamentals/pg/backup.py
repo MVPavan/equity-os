@@ -18,7 +18,7 @@ import hashlib
 import os
 import subprocess
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from enum import StrEnum
 from pathlib import Path
@@ -28,24 +28,33 @@ import psycopg
 import structlog
 import yaml
 from psycopg import sql
+from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.compare.run import load_results, replay_run
 from fundamentals.compare.run_models import DatabaseIdentity
-from fundamentals.contracts.retention import CaptureState, JournalEventKind
+from fundamentals.contracts.retention import CaptureState, JournalEventKind, OriginalExpiredError
+from fundamentals.contracts.retention_purge import RestoreDelta
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.approvals import current_database, is_test_database
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.retention_io import (
+    Authority,
     AuthorityError,
     authority_absent,
     holds_exclusive,
     init_authority,
     read_authority,
+    reconcile_licence_ends,
     session_shared,
 )
+from fundamentals.pg.role_secrets import RoleLogin
 from fundamentals.pg.settings import PgRole, PgSettings
-from fundamentals.pg.test_databases import check_test_db_name, create_test_database
+from fundamentals.pg.test_databases import (
+    check_test_db_name,
+    create_test_database,
+    open_test_database,
+)
 from fundamentals.store.snapshot_store import SnapshotStore
 
 DEFAULT_CLIENT_PREFIX = (
@@ -90,8 +99,12 @@ _UNTOUCHED = (
 _RETAINED = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 _RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
 _PUBLISHED = "backup_published"
+_LICENCE_ENDS = "SELECT source_id FROM eqos.licence_ends"
+_LAST_MIGRATION_TABLE = "refetch_attempts"  # 0030: older sets are refused
+_NO_AUTHORITY = Authority(licence_ends=(), journal=())
 
 Capture = tuple[int, str, str, str, str, str, str]
+PurgeFirst = Callable[[psycopg.Connection[Any]], RestoreDelta]
 
 
 class SchemaState(StrEnum):
@@ -146,12 +159,19 @@ class RestoreCheck(BaseModel):
     hash_mismatches: tuple[int, ...]
     unresolved_bindings: tuple[tuple[str, int], ...]
     replay_mismatches: tuple[int, ...]
+    faithful: bool
+    delta_ok: bool
+    expired_without_record: tuple[int, ...]
+    replay_expired: tuple[int, ...]
 
     @property
     def ok(self) -> bool:
-        """Whether every check passed."""
+        """Whether every check passed; a run needing an expired original is reported apart."""
         return (
-            self.schema_equal
+            self.faithful
+            and self.delta_ok
+            and not self.expired_without_record
+            and self.schema_equal
             and self.run_ids_equal
             and self.counts_equal
             and self.fk_valid
@@ -254,9 +274,11 @@ def _retention_preflight(
     if fresh and ((out_dir.exists() and any(out_dir.iterdir())) or not _scalar(conn, _UNTOUCHED)):
         raise BackupError(f"{out_dir} has no retention authority files and is not new")
     try:
-        journal = () if fresh else read_authority(out_dir).journal
+        authority = _NO_AUTHORITY if fresh else read_authority(out_dir)
+        reconcile_licence_ends(conn, authority)
     except AuthorityError as error:
         raise BackupError(f"retention authority refused: {error}") from error
+    journal = authority.journal
     completed = {e.run_id for e in journal if e.kind is JournalEventKind.COMPLETE}
     unfinished = [p for p in pending if not (held and p[0] == "RUN" and p[1] in completed)]
     if unfinished:
@@ -280,15 +302,28 @@ def restore_backup(
     client_prefix: Sequence[str] = DEFAULT_CLIENT_PREFIX,
     replay_runs: bool,
     config_root: Path,
+    backup_dir: Path | None = None,
+    purge_login: RoleLogin,
+    purge_first: PurgeFirst,
 ) -> RestoreCheck:
-    """Restore a verified set into a new test database and an empty snapshot root, then check."""
+    """Restore a verified set into a new test database, closed from creation, and an empty
+    snapshot root (R12): check it is faithful, mark licence ends, run the injected purge-first
+    as the purge login, check the delta and replay, then grant access. A failure leaves the
+    database closed; ``backup_dir`` (default the set's parent) holds the authority files."""
     if not is_test_database(database):
         raise BackupError(f"restore refuses {database!r}: not an eqos_test_ database")
     check_test_db_name(database, settings)
     manifest = verify_set(set_dir)
+    present = manifest.schema_state is SchemaState.PRESENT
+    if present and _LAST_MIGRATION_TABLE not in manifest.table_counts:
+        raise BackupError(f"{set_dir.name} predates migration 0030; restore refused")
+    try:
+        authority = read_authority(backup_dir or set_dir.parent) if present else _NO_AUTHORITY
+    except AuthorityError as error:
+        raise BackupError(f"retention authority refused: {error}") from error
     if snapshot_root.exists() and any(snapshot_root.iterdir()):
         raise BackupError(f"snapshot root {snapshot_root} is not empty")
-    create_test_database(settings, database)
+    create_test_database(settings, database, closed=True)
     with psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname=database)) as conn:
         if current_database(conn) != database:
             raise BackupError(f"connected to {current_database(conn)!r}, not {database!r}")
@@ -297,12 +332,15 @@ def restore_backup(
     archive, target = SnapshotStore(set_dir / CAPTURES_DIR), SnapshotStore(snapshot_root)
     for capture in manifest.captures:
         target.put_capture(*archive.read_capture_verified(*capture[1:5]))
+    for item in manifest.expired:
+        target.put_record(archive.read_record(*item.capture[1:5], item.capture[6]), item.capture[6])
     bad = tuple(capture[0] for capture in manifest.captures if not _restored(target, capture))
     counts: dict[str, int] = {}
     captures: tuple[Capture, ...] = ()
     unresolved: tuple[tuple[str, int], ...] = ()
     run_ids: tuple[int, ...] = ()
-    replayed: tuple[int, ...] = ()
+    retired: set[int] = set()
+    ends: set[str] = set()
     fk_valid = True
     conninfo = settings.conninfo(PgRole.ADMIN, dbname=database)
     with psycopg.connect(conninfo, autocommit=True) as conn:
@@ -313,26 +351,66 @@ def restore_backup(
             run_ids = _column(conn, _RUN_IDS)
             rows = conn.execute(_UNRESOLVED, {"bad": list(bad)}).fetchall()
             unresolved = tuple((str(row[0]), int(row[1])) for row in rows)
-    if present and replay_runs:
-        with open_pool(settings, PgRole.RUNTIME, dbname=database) as pool:
-            replayed = tuple(
-                run_id
-                for run_id in run_ids
-                if replay_run(run_id, pool=pool, config_root=config_root)
-                != load_results(run_id, pool=pool)
-            )
-    expected, restored = set(manifest.captures), set(captures)
-    return RestoreCheck(
+            retired = {row[0] for row in conn.execute(_STATES) if row[1] not in _RETAINED}
+            ends = set(_column(conn, _LICENCE_ENDS))
+    expected = set(manifest.captures) | {item.capture for item in manifest.expired}
+    check = RestoreCheck(
         schema_equal=(manifest.schema_state is SchemaState.PRESENT) == present,
         run_ids_equal=run_ids == manifest.run_ids,
         counts_equal=counts == manifest.table_counts,
         fk_valid=fk_valid,
-        missing_captures=tuple(sorted(item[0] for item in expected - restored)),
-        extra_captures=tuple(sorted(item[0] for item in restored - expected)),
+        missing_captures=tuple(sorted(item[0] for item in expected - set(captures))),
+        extra_captures=tuple(sorted(item[0] for item in set(captures) - expected)),
         hash_mismatches=bad,
         unresolved_bindings=unresolved,
-        replay_mismatches=replayed,
+        replay_mismatches=(),
+        faithful=retired == {item.capture[0] for item in manifest.expired},
+        delta_ok=True,
+        expired_without_record=(),
+        replay_expired=(),
     )
+    if present and check.ok:
+        for source in ends | {end.source_id for end in authority.licence_ends}:
+            target.mark_licence_ended(source)
+        login = settings.conninfo(PgRole.PURGE, dbname=database, login=purge_login)
+        with psycopg.connect(login, autocommit=True) as conn:
+            delta = purge_first(conn)
+            after, states = _counts(conn), conn.execute(_STATES).fetchall()
+        by_id = {capture[0]: capture for capture in captures}
+        gone = [(capture, record) for capture, state, _, record in states if state not in _RETAINED]
+        unrecorded = tuple(sorted(c for c, r in gone if r is None or _restored(target, by_id[c])))
+        changed = {table: after[table] - counts.get(table, 0) for table in after}
+        replayed: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
+        if replay_runs:
+            with open_pool(settings, PgRole.PURGE, dbname=database, login=purge_login) as pool:
+                replayed = _replay(run_ids, pool, config_root)
+        check = check.model_copy(
+            update={
+                "delta_ok": changed == {t: delta.rows.get(t, 0) for t in counts},
+                "expired_without_record": unrecorded,
+                "replay_mismatches": replayed[0],
+                "replay_expired": replayed[1],
+            }
+        )
+    if check.ok:
+        open_test_database(settings, database)
+    return check
+
+
+def _replay(
+    run_ids: tuple[int, ...], pool: ConnectionPool, config_root: Path
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """The runs whose replay differs from their stored results, and those whose replay needs
+    an expired vendor original (``replay_expired``, reported apart)."""
+    mismatched, expired = [], []
+    for run_id in run_ids:
+        try:
+            replayed = replay_run(run_id, pool=pool, config_root=config_root)
+            if replayed != load_results(run_id, pool=pool):
+                mismatched.append(run_id)
+        except OriginalExpiredError:
+            expired.append(run_id)
+    return tuple(mismatched), tuple(expired)
 
 
 def _restored(target: SnapshotStore, capture: Capture) -> bool:

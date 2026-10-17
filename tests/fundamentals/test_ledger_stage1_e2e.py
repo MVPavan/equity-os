@@ -21,7 +21,7 @@ import pytest
 from coverage_support import watchlist
 from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
 from pg_support import PgTestDatabase, drop_database, mint_name
-from retention_support import RETENTION_TABLES
+from retention_support import RETENTION_TABLES, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage
 from test_frozen_manifests import LEDGER, REPO, load
 from test_ledger_import import CONFIG as IMPORT_CONFIG
@@ -417,6 +417,7 @@ def test_ledger_stage1_end_to_end(
             snapshot_root=tmp_path / "restored",
             replay_runs=False,
             config_root=CONFIG,
+            **restore_args(pg_db, sets, tmp_path / "restored"),
         )
         assert check.ok, check
     finally:

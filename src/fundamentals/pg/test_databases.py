@@ -16,7 +16,7 @@ from psycopg import sql
 
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.migrations import bootstrap_roles
-from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.pg.settings import GROUP_ROLES, MIGRATOR_ROLE_NAME, PgRole, PgSettings
 
 MAINTENANCE_DB = "postgres"
 SAFE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
@@ -64,22 +64,37 @@ def create_test_database(
     name: str,
     *,
     template: str | None = None,
+    closed: bool = False,
     connect: AdminConnector = _default_connector,
 ) -> None:
-    """Create a guarded test database (optionally from a guarded template) and grant it."""
+    """Create a guarded test database (optionally from a guarded template) and grant it; a
+    ``closed`` one admits only the migrator and the purge group until :func:`open_test_database`
+    (restore, plan D9 R12)."""
     check_test_db_name(name, settings)
     if template is not None:
         check_test_db_name(template, settings)
     with connect(settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)) as admin:
         check_test_db_name(name, settings)
+        database = sql.Identifier(name)
         if template is None:
-            admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+            closing = sql.SQL(" ALLOW_CONNECTIONS false" if closed else "")
+            admin.execute(sql.SQL("CREATE DATABASE {}{}").format(database, closing))
         else:
-            admin.execute(
-                sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
-                    sql.Identifier(name), sql.Identifier(template)
-                )
-            )
+            copy = sql.SQL("CREATE DATABASE {} TEMPLATE {}")
+            admin.execute(copy.format(database, sql.Identifier(template)))
+        if not closed:
+            bootstrap_roles(admin, settings, name)
+            return
+        roles = sql.Identifier(MIGRATOR_ROLE_NAME), sql.Identifier(GROUP_ROLES[PgRole.PURGE])
+        admin.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(database))
+        admin.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}, {}").format(database, *roles))
+        admin.execute(sql.SQL("ALTER DATABASE {} ALLOW_CONNECTIONS true").format(database))
+
+
+def open_test_database(settings: PgSettings, name: str) -> None:
+    """Grant a closed test database to every role (restore's last step)."""
+    check_test_db_name(name, settings)
+    with _default_connector(settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)) as admin:
         bootstrap_roles(admin, settings, name)
 
 

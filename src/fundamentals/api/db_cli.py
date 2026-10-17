@@ -3,14 +3,17 @@
     db bootstrap
     db migrate [--migrations-dir migrations]
     db backup --out DIR --snapshot-root R
-    db restore --set DIR --database D --snapshot-root R [--replay-runs] [--config-root config]
+    db restore --set DIR --database D --snapshot-root R [--backup-dir DIR] [--replay-runs]
+        [--config-root config]
     db create-test --suffix S
 
 All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as
 the admin role over the ``postgres`` maintenance database; ``migrate`` runs as
 the migrator role, which owns every object it creates. ``backup`` writes a
 matched set of ``EQOS_PG_DB``; ``restore --database`` only names the new
-``eqos_test_*`` database to create, and exits nonzero unless every check passes.
+``eqos_test_*`` database to create, and exits nonzero unless every check passes; it runs as
+the purge login and purges first what the authority files in ``--backup-dir`` (default the
+set's parent) expired after the set (plan D9 R12).
 ``create-test`` creates a guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
 """
 
@@ -20,14 +23,17 @@ import argparse
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import structlog
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.contracts.retention_purge import PurgeRefusedError, RestoreDelta
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
-from fundamentals.pg.backup import BackupError, restore_backup, write_backup
+from fundamentals.pg.backup import BackupError, restore_backup, verify_set, write_backup
 from fundamentals.pg.migrations import (
     LoginRoleError,
     MigrationChecksumError,
@@ -36,6 +42,7 @@ from fundamentals.pg.migrations import (
     bootstrap_roles,
     create_login,
 )
+from fundamentals.pg.retention_io import AuthorityError, read_authority
 from fundamentals.pg.role_secrets import (
     MissingRoleSecretError,
     RoleSecretError,
@@ -44,6 +51,7 @@ from fundamentals.pg.role_secrets import (
 )
 from fundamentals.pg.settings import GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import HarnessGuardError, create_test_database
+from fundamentals.retention.purge import restore_purge
 
 DB_COMMAND = "db"
 BOOTSTRAP_ACTION = "bootstrap"
@@ -89,6 +97,7 @@ def add_db_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser
     restore.add_argument("--set", required=True, type=Path)
     restore.add_argument("--database", required=True)
     restore.add_argument("--snapshot-root", required=True, type=Path)
+    restore.add_argument("--backup-dir", type=Path)
     restore.add_argument("--replay-runs", action="store_true")
     restore.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     create_test = actions.add_parser(CREATE_TEST_ACTION, help=_CREATE_TEST_HELP)
@@ -114,6 +123,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
             sys.stdout.write(_PUBLISHED.format(path=published) + "\n")
             return EXIT_OK
         if action == RESTORE_ACTION:
+            backup_dir = args.backup_dir or args.set.parent
             check = restore_backup(
                 args.set,
                 settings,
@@ -121,6 +131,9 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
                 snapshot_root=args.snapshot_root,
                 replay_runs=args.replay_runs,
                 config_root=args.config_root,
+                backup_dir=backup_dir,
+                purge_login=load_login(PgRole.PURGE, secrets_dir(os.environ)),
+                purge_first=restore_purge_first(args.set, backup_dir, args.snapshot_root),
             )
             sys.stdout.write(check.model_dump_json() + "\n")
             return EXIT_OK if check.ok else EXIT_REFUSED
@@ -142,6 +155,8 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
         HarnessGuardError,
         RoleSecretError,
         LoginRoleError,
+        AuthorityError,
+        PurgeRefusedError,
     ) as refusal:
         structlog.get_logger("fundamentals.db").warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=str(refusal)
@@ -150,6 +165,19 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
     lines = [_APPLIED_HEADER.format(count=len(applied)), *(item.filename for item in applied)]
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
+
+
+def restore_purge_first(
+    set_dir: Path, backup_dir: Path, snapshot_root: Path
+) -> Callable[[psycopg.Connection[Any]], RestoreDelta]:
+    """Restore's injected purge-first (pg never imports retention): the authority files and
+    the set's journal watermark, read when the restored database is ready."""
+
+    def purge_first(conn: psycopg.Connection[Any]) -> RestoreDelta:
+        watermark = verify_set(set_dir).journal_watermark
+        return restore_purge(conn, read_authority(backup_dir), watermark, snapshot_root, backup_dir)
+
+    return purge_first
 
 
 def _create_logins(admin: psycopg.Connection) -> None:

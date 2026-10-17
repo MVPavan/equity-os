@@ -32,6 +32,10 @@ _HOLDS_EXCLUSIVE: LiteralString = (
     "AND pid = pg_backend_pid() AND mode = 'ExclusiveLock' AND objsubid = 1 "
     "AND (classid::bigint << 32 | objid::bigint) = eqos.retention_lock_key())"
 )
+_LICENCE_ENDS: LiteralString = "SELECT source_id FROM eqos.licence_ends"
+_INSERT_LICENCE_END: LiteralString = (
+    "INSERT INTO eqos.licence_ends (source_id, ended_at) VALUES (%s, %s) ON CONFLICT DO NOTHING"
+)
 _FILES: dict[type[BaseModel], str] = {
     LicenceEnd: LICENCE_ENDS_FILE,
     JournalEvent: EXPIRY_JOURNAL_FILE,
@@ -97,6 +101,20 @@ def append_authority[M: (JournalEvent, LicenceEnd)](backup_dir: Path, entry: M) 
         dumped = [e.model_dump(mode="json") for e in entries] + [stored.model_dump(mode="json")]
         _write(backup_dir, _FILES[type(entry)], dumped)
     return stored
+
+
+def reconcile_licence_ends(conn: psycopg.Connection[Any], authority: Authority) -> tuple[str, ...]:
+    """Insert the filed licence ends the database lacks, returning them; refuse a database
+    licence end the file lacks (R11)."""
+    stored = {source for (source,) in conn.execute(_LICENCE_ENDS).fetchall()}
+    filed = {end.source_id: end for end in authority.licence_ends}
+    if stored - filed.keys():
+        unfiled = sorted(stored - filed.keys())
+        raise AuthorityError(f"licence ends {unfiled} are not filed; rerun retention licence-end")
+    missing = tuple(source for source in filed if source not in stored)
+    for source in missing:
+        conn.execute(_INSERT_LICENCE_END, (source, filed[source].recorded_at))
+    return missing
 
 
 def expiries_after(journal: tuple[JournalEvent, ...], watermark: int) -> frozenset[int]:
