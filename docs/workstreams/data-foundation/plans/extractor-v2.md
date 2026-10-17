@@ -233,7 +233,26 @@ Pass rule (all required):
    the v1 baseline before disposition; only a diagnosed live-data change (e.g. a new filing) may be
    recorded as unrelated, explicitly, with a bead — never waived automatically. A failed request is
    re-run (R-ACQ).
-Verification: smoke output saved under `scratchpad/execution/extractor-v2/`; table filled here.
+Verification: smoke output saved under `scratchpad/execution/x71/` (not committed); table filled here.
+
+**Observed 2026-10-17** (commit `6aca86f`, scratch DB `eqos_test_x71_smoke`, fresh generations):
+
+| Symbol | Outcome | Framework gate | Disposition |
+|---|---|---|---|
+| APARINDS, LAURUSLABS | `PARTIAL` (exit 4) | reached, passed | enforced row holds |
+| NETWEB | `UNSUPPORTED STANDALONE_BASIS` (exit 5) | not reached | enforced row holds |
+| THERMAX, SONACOMS | `PARTIAL` (exit 4) | reached, passed (form declaration) | enforced row holds |
+| CGPOWER, ETERNAL, POLYCAB, TITAN | `PARTIAL` (exit 4) | reached, passed (form declaration) | provisional prediction holds |
+| HFCL, MTARTECH | `UNSUPPORTED NOT_LISTED` (exit 5) | not reached | unexpected; diagnosed below |
+
+All 8 first-party XBRL extraction attempts are `COMPLETE` under `xbrl-occurrences/2`; zero
+`NO_FRAMEWORK_DECLARATION` outcomes and zero "declares no accounting framework" rejections; 8
+companies admitted, 6 of them formerly phrase-free. Pass rule 1–6 met.
+Diagnosis (rule 6): the NSE equity master lists HFCL and MTARTECH in series `BE`, not `EQ`, in this
+capture and in the Task 0b master (`data/raw/onboarding-dev/master/EQUITY_L.csv`). D6's
+`master_rows` (`entity/verification.py:132–140`) accepts `EQ` rows only, so the exchange unit refuses
+before the framework gate. A pre-existing D6 scope rule, unrelated to v2 and not a live-data change;
+the plan's provisional prediction missed the series. Follow-up `eqos-z48` (scope and reason code).
 Dependencies: Tasks 1–2, phase-end Sol review. Implementer: Sonnet (doc edits).
 
 ## Verification (phase gate)
