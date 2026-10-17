@@ -1,14 +1,20 @@
 {
   "now": {
-    "title": "D7 Coverage model: plan",
-    "detail": "Extractor v2 is complete: identifier-only onboarding now admits 8 of 11 development companies (was 2). Next, the D7 plan: universe registry, screens and capture batches that onboard through D6, owner-only watchlist decisions gating report drafting.",
-    "stage": "eqos-3oq"
+    "title": "D7 Coverage model: Task 3 (watchlist and drafting gate)",
+    "detail": "Plan approved (Sol r2). Task 1 (universe registry, migration 0024) and Task 2 (screens, screen runs, capture batches, migration 0025) are committed; the full suite passes. Task 3 is with the implementer: owner-only ADD/REMOVE watchlist decisions, and a gate refusing report drafting for stocks off the watchlist (migration 0026). Task 5 (frozen manifest) waits on the owner's real Screener CSV export.",
+    "stage": "eqos-3oq.3"
   },
   "next": [
-    "D7 Coverage model (plan; migration 0024)",
-    "Follow-ups: BE-series scope (eqos-z48), flaky tests under load (eqos-0bp), NSE priming timeout (eqos-h4h.8), pagination (eqos-h4h.9), envelope validation (eqos-h4h.11), eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "D7 Task 4: amendment 1 record",
+    "D7 Task 5/6: frozen manifest and e2e (need owner's Screener CSV in data/raw/screener-exports/)",
+    "D7 phase-end review",
+    "Follow-ups: eqos-8hp (delete legacy screener-screen), eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D7 Tasks 1-2 committed: universe registry with idempotent refresh (0024); screens, screen runs and capture batches that onboard and compare members through D6 (0025). Legacy screener-screen now refuses (CSV-only rule); deletion tracked as eqos-8hp. Full suite 3968 passed, 8 skipped."
+    },
     {
       "date": "2026-10-17",
       "text": "Extractor v2 (eqos-71x) complete: an uncontested IntegratedFinance_IndAS form declaration is Ind AS evidence through one predicate shared by discovery and ingest; a competing form vetoes every branch; versions xbrl-occurrences/2, pdf-occurrences/3. Live smoke: 8 of 11 dev companies PARTIAL (NETWEB standalone; HFCL, MTARTECH NSE BE series, eqos-z48). Plan r3, code r2 and critical re-review APPROVE. Full suite 3951 passed, 8 skipped."
