@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D9 Retention and replay: Task 5",
-    "detail": "Tasks 1-4 done: amendments, retention classes (0027), holds and eligibility with a purge dry-run, and the retention protocol (0028: shared/exclusive lock with purge epoch, capture states, guard over every payload and edge table, store deletion operations, backup that refuses an open purge). Task 5 in progress: crash-safe purge with vendor tombstones (0029).",
+    "title": "D9 Retention and replay: Task 6",
+    "detail": "Tasks 1-5 done. Purge is crash-safe (0029): exchange originals expire only after a matching re-fetch probe, mismatches open HIGH incidents, vendor payload is tombstoned per the A-05 inventory. Task 6 in progress: re-fetch an expired original with hash check (RESTORED or REFETCH_MISMATCH) and ORIGINAL_EXPIRED on replay (0030).",
     "stage": "D9"
   },
   "next": [
@@ -11,6 +11,10 @@
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D9 Task 5 committed: crash-safe purge with recovery, expiry journal fence, vendor tombstones per A-05, re-fetch probes with HIGH incidents, 'retention purge' exit 0/2/3 (0029). 28 purge tests; full suite 3989 passed, two WSL clock backsteps passed on rerun."
+    },
     {
       "date": "2026-10-17",
       "text": "D9 Tasks 3-4 committed: hold query over the citation graph and eligibility with 'retention purge --dry-run'; retention lock, purge epoch, capture states, guard v2 and store delete/inventory/record operations, backup under the shared lock (0028). Full suites 3943 and 3962 passed; failures were a WSL wall-clock backstep (root cause of eqos-0bp, recorded in learnings) and one pre-0028 upgrade test, fixed."
