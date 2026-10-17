@@ -24,6 +24,7 @@ from typing import Any, cast
 import pymupdf
 import pytest
 import yaml
+from ledger_stage5_check import STAGE5_MUTATIONS, check_ledger_stage5
 from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
 from manifest_support import (
@@ -46,6 +47,7 @@ STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yam
 LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
 LEDGER2 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml"
 LEDGER3 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml"
+LEDGER5 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml"
 STAGE4 = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
 # Stage 4 runs behind an opaque boundary (test_stage4_manifest), never loaded at collection.
 PUBLIC = [path for path in MANIFESTS if path != STAGE4]
@@ -55,6 +57,7 @@ E2E = {
     "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
     "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
     "ledger_stage3": "tests/fundamentals/test_ledger_stage3_e2e.py",
+    "ledger_stage5": "tests/fundamentals/test_ledger_stage5_e2e.py",
     "stage4": "tests/fundamentals/test_data_stage4_e2e.py",
 }
 XI = "{http://www.xbrl.org/2003/instance}"
@@ -679,6 +682,8 @@ def test_values_follow_from_their_lexemes(path: Path) -> None:
     manifest = load(path)
     if path == LEDGER3:
         check_stage3(manifest)
+    elif path == LEDGER5:
+        check_ledger_stage5(manifest)
     else:
         (check_ledger if "versions" in manifest else check_values)(manifest)
     if path == STAGE4:
@@ -781,3 +786,13 @@ def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
     LEDGER3_MUTATIONS[name](manifest)
     with pytest.raises(AssertionError):
         check_stage3(manifest)
+
+
+@pytest.mark.parametrize("name", STAGE5_MUTATIONS)
+def test_ledger_stage5_check_rejects_mutations(name: str) -> None:
+    """The Stage 5 check passes on the frozen manifest and fails once a field or label drifts."""
+    manifest = copy.deepcopy(load(LEDGER5))
+    check_ledger_stage5(manifest)
+    STAGE5_MUTATIONS[name](manifest)
+    with pytest.raises((AssertionError, KeyError)):
+        check_ledger_stage5(manifest)

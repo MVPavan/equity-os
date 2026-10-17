@@ -1,0 +1,519 @@
+# Ledger Stage 5 frozen manifest (D9 Task 8): retention and replay. Hand-decided under ruling R15; see header.
+header:
+  manifest: ledger_stage5
+  spec: docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md (§5 Retention, §6 Replay after deletion, Success Criteria Stage 5); plan docs/workstreams/data-foundation/plans/D9.md (rulings R2-R15, Task 8 inventory, Task 9 flow); amendment docs/blueprint/amendments/2026-10-12-a05-derived-amounts.md (redaction inventory)
+  hand_verification: {verifier: 'D9.8 independent manifest authors: r1, r2 and r3 (all claude-opus-5-5)', date: '2026-10-17', method: 'Decided by hand from the R15 inputs: retained fixture bytes (hashed by scratchpad/execution/d9/manifest/hash_sources.py, plain hashlib/json, never importing fundamentals), the frozen Stage 1/2 manifests, ledger spec §5/§6, plan D9 rulings R2-R14 and the Task 9 flow, the approved A-05 record, and, as explicit reviewer clarification, the statements of system behaviour in the r1 review (gpt-6.1-sol, 2026-10-17, REQUEST_CHANGES): probes before recovery over non-EXPIRED facts incl. PURGE_PENDING, purge records cite the latest successful probe of their source, the licence-end command runs the ordinary purge, eligibility reasons WINDOW/CATALOG_CEILING/LICENCE_END, restore replays every stored run, N-TIJ and N-UPC yield no occurrence. Pre-D9 code and fixtures were read to learn what intake, runs and seeds produce: vendor adapters (vendor_tijori, vendor_upstox), evidence/admission.py, compare/routing.py, and, at the D9 plan commit b873865, compare/run.py, compare/run_store.py, compare/queue.py, evidence/vendor_ingest.py, pg/backup.py, entity/discovery.py, coverage/registry.py, coverage/screens.py, tests coverage_support.py and stage1_e2e_support.py, plus parts of migrations 0001, 0006, 0008, 0010, 0011, 0025 and 0026. r1 author: saw two SQL lines of src/fundamentals/retention/holds.py in a grep result and, after writing, ran one test_retention_holds case; no value was taken from either. r2 author: revised every section; did not read, import or run D9 code or D9 tests, and opened none of the review''s D9 file:line references; incidental exposure (r2): the git diff hunk of tests/fundamentals/retention_support.py shown three context lines (a queue-disposition seed INSERT and the store-clock setval), and file-name-only listings (D9 commit file lists; a grep naming retention/holds.py). r3 author: acted on the r2 review (gpt-6.1-sol, 2026-10-17, REQUEST_CHANGES), taking as clarification only its stated behaviour (RUN-L0 fails with no evidenced reporting currency; an ADD without REMOVE covers L-X, existing captures included, Q3 ruling); removed RUN-L0, made RUN-L the watchlist batch''s run after intake and before the ADD (L-X stays COVERED, so no eligibility, dry-run, purge, backup, replay or restore expectation changed), declared header.script.purge_runs, and extended the checker; read pre-D9 tests/fundamentals/coverage_support.py and the D9 plan''s R2, R5, RP3 and verification case C3; did not read, import or run D9 code or D9 tests, and opened none of the review''s D9 file:line references. Classes follow R2, eligibility R5 with the R3 ceiling, purge and recovery R8, journal and sanitize R11, backup and restore R12, re-fetch R10, replay R13. Every blob hash is a bound file''s SHA-256 (M-Q4: header.derived_blobs); record hashes are literal where the record.json is copied verbatim, else RUNTIME_BINDING (header.notation.record_sha256). Instants and windows are rules over the store clock (header.clock), never wall-clock literals.'}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-17, payload_sha256: e094ce2628c15f7de46e0b40ea519185e12c4be28da05a1fca0cbb5152ccb328}
+  notation:
+    labels: 'fixture labels are capture labels (fixtures); stored comparison runs RUN-* (header.script.runs); purge runs P1, P2, P3 (header.script.purge_runs); probe invocations P1, rerun, P3 (probe.invocations); backup sets S0 (instant A), S1a/S1b (final backups of P1/P2), S2 (before licence end), S3 (final backup of P3); a primed name (S0'', S2'') is a copy taken outside the backup directory'
+    record_sha256: 'a 64-hex value is the SHA-256 of the retained record.json copied verbatim into the store (header.sources <label>-REC); RUNTIME_BINDING marks a record minted at intake under the store clock: the e2e hashes the record.json written at registration, asserts it equals capture_refs.record_sha256, and asserts that value at every later read, in every backup set and after every restore (an invariant binding, not a literal)'
+    blob_sha256: every blob is the SHA-256 of the file bound under the same label in header.sources, except M-Q4 (header.derived_blobs)
+    since: '{anchor, months}: add_months(anchor, months) (header.rules); anchor verified_at is the label''s verification run''s created_at (no dispositions exist on those runs), registered_at the capture_refs.registered_at; LICENCE_END is the licence end''s ended_on (header.script)'
+    holds: 'holds: [..] is the exact root set; holds_include / holds_exclude bound it where closed queue roots of RUN-L may also reach the capture (their HoldRoot member is not named here; R5 makes them irrelevant: L-X is COVERED, L-TIJ is vendor-bounded so R3 sets them aside). Names: OPEN_QUEUE_ITEM (an undisposed queue item reaches the capture), QUALIFICATION_FIXTURE (a config/mappings fixture capture_sha256 equals the blob; holds_at locates it)'
+    reasons: 'ELIGIBLE and purge-record reasons: WINDOW (class window passed, no hold set aside), CATALOG_CEILING (R3 set a hold aside), LICENCE_END'
+    outcomes: 'attempt outcomes are rows of retention_probes / refetch_attempts: MATCH, MISMATCH, FAILED (with category); command outcomes are capture states and exit codes: a MATCH re-fetch gives RESTORED and exit 0, MISMATCH keeps EXPIRED, publishes a new capture and exits 3, FAILED keeps EXPIRED, publishes nothing and exits 2'
+    probe_ref: '{latest_match: <source>} = the greatest-id MATCH retention_probes row of that source existing when the purge record commits (header.rules.probe_record); NOT_REQUIRED for non-exchange classes'
+    incident: 'true = a HIGH row that eqos.retention_incidents shows open (R9); a probe incident closes on a later MATCH probe of its source, a mismatch incident when its capture is RESTORED'
+    digest: 'per preservation set: sha256 over the UTF-8 bytes of the selected rows'' `to_jsonb(t)::text` (PostgreSQL jsonb text, every column), rows in the stated order, joined by one LF; computed at each checkpoint; equal = identical hex at every checkpoint'
+    checkpoints: 'D0 after the dry-run (before the first purge); D1 after the purge rerun; D2 after the three re-fetches and the X-Q2P re-extraction; D3 after licence-end'
+    approval: as stage1 header.notation.approval
+  arithmetic: none
+  rules:
+    p4_exchange: EXCHANGE_REFETCHABLE since = add_months(verified_at, 3) (ledger §5 P4); no verification time, or no address, is KEEP (R5, R14)
+    four_quarters: VENDOR and IDENTITY since = add_months(registered_at, 12) (ledger §5 four quarters)
+    month_end: add_months clamps the day to the target month's last day (R5)
+    order: licence end reached -> ELIGIBLE(since=LICENCE_END, reason LICENCE_END), holds notwithstanding; effective COVERED -> KEEP; relevant holds -> HELD(roots); then the anchor rule, reason WINDOW, or CATALOG_CEILING when R3 set a hold aside (R5)
+    r3_ceiling: vendor-bounded sources (screener, screener-subscriber, tijori, upstox) are held only by OPEN_QUEUE_ITEM; any other root is set aside; non-vendor sources are held by any root, closed queue items and dispositions included (R4)
+    covered: 'an EXCHANGE_REFETCHABLE capture is effectively COVERED when a linked entity has an ADD not followed by a REMOVE (R2); per the r2 review''s Q3 ruling (and plan D9 case C3, COVERED after ADD; REMOVE leaves the earlier capture COVERED) the ADD covers captures registered before it too. The script registers L-X (step 2), runs RUN-L (step 4), then ADDs LAURUSLABS (step 5) and never removes it, so L-X is COVERED from step 5 on, at every checkpoint. L-TIJ and W-CSV, registered before the ADD, stay VENDOR (ledger §5: watchlist add upgrades only non-vendor originals, recording RETENTION_LIMITED for the rest)'
+    restored: RESTORED is evaluated like RETAINED; a re-fetch keeps the capture's verification anchor (R5, R10)
+    verified: the earliest COMPLETE run with a SELECTED PACKAGE input for the capture's package and no undisposed queue item on that package; time = the later of its created_at and the last disposition (R5)
+    probe: up to 3 eligible EXCHANGE_REFETCHABLE captures per source, lowest ids, before recovery, over non-EXPIRED facts (PURGE_PENDING included); a failure is a HIGH row and halts that source's exchange deletions for the invocation (R8, R9, review finding 5)
+    probe_record: an EXCHANGE_REFETCHABLE purge record cites the latest successful probe of its source (review finding 5), so P1's records cite the rerun's probes, not the crashed invocation's
+    blob: a blob is eligible only when every non-EXPIRED capture using it is; no two captures share a blob, so eligible blobs = eligible captures
+  clock:
+    A: 'wall time (store clock not set): every instant-A write (header.script steps 1-8); t_A = eqos.store_now() read right after S0 is published'
+    B: add_months(t_A, 13), set as migrator through eqos.store_clock_us before the dry-run; every later command reads a store clock >= B (store_now is monotonic)
+    windows_passed_at_B: '13 > 12 > 3: every VENDOR/IDENTITY registration and every verified EXCHANGE_REFETCHABLE anchor (all <= t_A) is past its window at B'
+  script:
+    config_root: 'a tmp copy of config/ whose retention/holds.yaml is `manifests: []`, passed as --config-root to the dry-run, both purges and licence-end; config/mappings is kept, so qualification pins stay roots. Why: with the committed list, the stage1 manifest and this manifest pin every fixture blob as a frozen-manifest root; that would HOLD every non-vendor fixture (any root holds them) and would add CATALOG_CEILING to every vendor-bounded one (R3 sets the root aside; they stay ELIGIBLE). Excluded roots: stage1, stage2, ledger_stage1, ledger_stage2, ledger_stage3 and ledger_stage5 manifest inputs. Task 9 does not test production manifest-root integration (Task 3 H1 does). Runs pin the repo config/ unchanged'
+    store: one tmp snapshot root; L-TIJ, N-TIJ, N-UPC and U-APQ are copied verbatim from data/raw/snapshots/v1 (record.json and body, blob relinked) before vendor ingest; nothing under data/ is written
+    steps:
+    - '1 seeds: APARINDS (seed_apar), LAURUSLABS (test_watchlist_xbrl_ingest._seed), NETWEB (seed_netweb)'
+    - '2 first-party intake (each binding''s URL = the retrieval-manifest url): L-X (L-MAN FY25_Q3 xbrl-consolidated), X-Q1 (A-MAN FY26_Q1 xbrl-consolidated-comparator), X-Q2P (A-MAN FY25_Q2 xbrl-consolidated-comparator), package FY26_Q4 = X-Q4 + P-Q4 (A-MAN xbrl-consolidated + results, issuer config ISSUER-Q4), X-Q5 (A-MAN FY27_Q1 xbrl-consolidated)'
+    - '3 vendor intake: L-TIJ (LAURUSLABS, 2024-12-31, consolidated), A-SCR (Screener page staged, four sections, APARINDS FY26_Q2 as Stage 1), U-APQ (APARINDS upstox income-statement quarterly consolidated, as Stage 1 A-UPQ), N-TIJ and N-UPC (Stage 1 NETWEB flow); identity: U-INS through `coverage registry --instruments`'
+    - '4 runs RUN-L, RUN-N, RUN-Q2, RUN-Q4, RUN-Q5 (header.script.runs)'
+    - '5 watchlist, deterministic (no random tag): W-CSV is registered through entity.discovery.store_captures with Request(unit SCREENER, source/surface SCREEN_EXPORT, url ''ledger-stage5-synthetic'') and body = the W-CSV file bytes; then coverage_support.batched''s runtime and owner rows with tag ''ledger-stage5-synthetic'' and the batch result''s run_id = RUN-L (no skeletal run is inserted); the batch completes; then lifecycle.decide ADD on LAURUSLABS, after L-X and L-TIJ are registered (header.rules.covered)'
+    - '6 queue: every queue item of RUN-L is disposed through compare.queue.record_disposition (kind DISMISSED, reason ''ledger Stage 5 e2e'', decider owner, evidence_ref ''ledger-stage5''); then one SEED undisposed queue item of RUN-N whose single queue_item_inputs row has attempt_id = N-TIJ''s EXTRACTION attempt (an R4 edge, no occurrence or interpretation), never disposed'
+    - '7 facts: a NATIVE fact store ''ledger-stage5''; evidence.admission.admit_run(RUN-Q5, store_id ''ledger-stage5''), created >= 1'
+    - '8 `retention classify`; `db backup` S0, copied aside as S0''; read t_A'
+    - '9 set the store clock to B; `retention purge --dry-run`; checkpoint D0'
+    - '10 `retention purge` crashed at FILES_DELETED (recovery.crash); `retention purge` rerun; checkpoint D1; direct replay of every run'
+    - '11 `retention refetch` X-Q2P, then X-Q4, then X-Q5; X-Q2P''s restored body is re-extracted in process by the XBRL extractor (no ingest, no write) and its anchor keys compared with the stored occurrences; checkpoint D2'
+    - '12 `db restore --replay-runs` of S0'' (--backup-dir the backup directory)'
+    - '13 `db backup` S2, copied aside as S2'''
+    - '14 `retention licence-end --source tijori --ended-on <UTC date of B> --reason "ledger Stage 5 e2e"`; checkpoint D3; direct replay of every run'
+    - '15 `db restore --replay-runs` of S2'' (--backup-dir the backup directory)'
+    runs:
+      RUN-L: {entity: LAURUSLABS, period_end: '2024-12-31', vendors: [tijori/financials], publish: execute_run (routing on), inputs: [L-X, L-TIJ], why: 'the watchlist batch''s same-entity run (header.script.steps 5); vendor-derived result_source_values, queue items and dispositions; Stage 1 LAURUSLABS-Q3FY25 without Screener'}
+      RUN-N: {entity: NETWEB, period_end: '2024-12-31', vendors: [tijori/financials, upstox/income-statement], publish: execute_run (routing on), inputs: [N-TIJ, N-UPC], stage1_at: {src: STAGE1, path: 'runs[9].run', lex: NETWEB-Q3FY25}, queue_at: {src: STAGE1, path: 'runs[9].counts.queue', lex: '{}'}}
+      RUN-Q2: {entity: APARINDS, period_end: '2024-09-30', package: FY25_Q2, vendors: [], publish: verification}
+      RUN-Q4: {entity: APARINDS, period_end: '2026-03-31', package: FY26_Q4, vendors: [], publish: verification}
+      RUN-Q5: {entity: APARINDS, period_end: '2026-06-30', package: FY27_Q1, vendors: [], publish: verification}
+    purge_runs:
+      P1: {records_by: rerun, why: 'crashed at FILES_DELETED before writing records (recovery.after_crash.purge_records); the rerun''s recovery completes its intents and writes their records'}
+      P2: {records_by: rerun, why: the rerun's own run; it expires nothing}
+      P3: {records_by: P3, why: the tijori licence-end purge}
+    verification_publish: 'a replayable run record without queue items: compare.resolve.resolve over the request, then RunStore.publish(manifest, rows, definition_set_id=..., queue_drafts=()) with the manifest execute_run would build (full document, pins, inputs, run_status(rows)); asserted status COMPLETE. Why: R4 makes every queue item and disposition a root and any root holds non-vendor material; routed items name the package''s occurrences and interpretations, so a routed run would HOLD the very captures it verifies (header.rules.verified, r3_ceiling)'
+    fetch_purge: every purge invocation (P1 crashed, the rerun, P3) fetches the retained bytes of the URL's fixture, except P-Q4's URL, which raises FetchFailure(TIMEOUT)
+    fetch_refetch: X-Q2P's URL returns its retained bytes; X-Q4's returns its retained bytes followed by one LF (0x0a); X-Q5's raises FetchFailure(HTTP_STATUS, 404)
+  derived_blobs:
+    M-Q4: {from: X-Q4, bytes: X-Q4's bytes followed by one LF (X-Q4 does not end with LF), sha256: a988e8b0229bc092efd59d1510d7cca66cae06b8fb9024d3075281952caada26}
+  upstox_redaction: 'U-APQ is the nonempty retained Upstox fixture (Stage 1 A-UPQ, pre-D9): its occurrences carry numeric lexemes and disclosure.anomalies, so it proves Upstox payload redaction; N-UPC is the empty response and yields no occurrence'
+  sources:
+  - {label: STAGE1, kind: manifest, path: tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml, sha256: 3d68b689bea95d8a9eb46555e555ca156c6012b54e04d3376b6754549fcb52d4}
+  - {label: STAGE2, kind: manifest, path: tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml, sha256: 04c3a0f5ac41162860173c951cab74a1522aab5b0f1730ab327e19fd8c800dcd}
+  - {label: A05, kind: amendment, path: docs/blueprint/amendments/2026-10-12-a05-derived-amounts.md, sha256: 8c52f4ba40be288ba328c251d45b41463e3c72340433551d16cd07338a243c42}
+  - {label: A-MAN, kind: retrieval_manifest, path: data/raw/watchlist/aparinds/retrieval-manifest-v2.json, sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+  - {label: L-MAN, kind: retrieval_manifest, path: data/raw/watchlist/lauruslabs/retrieval-manifest.json, sha256: 4ea1f4293744605b96128d511b2a2746e6d0f8a22e205dd921c4c59c1816509c}
+  - {label: ISSUER-Q4, kind: issuer_config, path: config/aparinds-fy26-q4.yaml, sha256: 9f6c51da44544336b4902f1f490a68d35cc25983065f12c82b75db24fe16cd06}
+  - {label: QUAL-XBRL, kind: mapping, path: config/mappings/xbrl/v3/in_bse_fin.yaml, sha256: 2ca8cad089a48ae342e9a8b6f57d2d99edb1200fc56fa7d700e1d5c684a0990e}
+  - {label: QUAL-TIJ, kind: mapping, path: config/mappings/tijori/v3/financials.yaml, sha256: 6e8db6631a9da6e76a5938ddf57fdd13e6a627f0c4939204aeebc1db2ff5f307}
+  - {label: L-X, kind: xbrl, path: data/raw/watchlist/lauruslabs/nse/INDAS_117690_1360957_24012025084417.xml, sha256: 2d50d29a467b9035f8124f7a9576346b7d36888e9895befc3363e3c5d227cfa6}
+  - {label: X-Q1, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml, sha256: a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1}
+  - {label: X-Q2P, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INDAS_113920_1293440_30102024104705.xml, sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60}
+  - {label: X-Q4, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml, sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01}
+  - {label: P-Q4, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-results.pdf, sha256: 17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377}
+  - {label: X-Q5, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml, sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85}
+  - {label: A-SCR, kind: screener_html, path: data/raw/watchlist/screener-financials/APARINDS/consolidated/screener_financials_page.raw.html, sha256: 34f46c0ea9e37d58a5c23c5fd4fd6f2d3bee93cd37a819e79a41d14b2a4768bc}
+  - {label: U-APQ, kind: upstox_json, path: data/raw/snapshots/v1/upstox/income-statement/default-3acbf55d982a3ba6440218b0/20261014T092123.626790Z-c83a9f0b1b07/body.json, sha256: c83a9f0b1b072f6168e40a53555e8759e683585136763365432bf50a29c21e62}
+  - {label: U-APQ-REC, kind: capture_record, path: data/raw/snapshots/v1/upstox/income-statement/default-3acbf55d982a3ba6440218b0/20261014T092123.626790Z-c83a9f0b1b07/record.json, sha256: 85977dffbfc6c15a8b622fa1011d13cba64ece39ca4458da6542962284e5d477}
+  - {label: L-TIJ, kind: tijori_island, path: data/raw/snapshots/v1/tijori/financials/laurus-labs/20260905T113024.330612Z-a99ac5398de1/body.bin, sha256: a99ac5398de199cd98f8af8ea2ba2c03704bfc9d3167ea5045ed06b1cdcf26e6}
+  - {label: L-TIJ-REC, kind: capture_record, path: data/raw/snapshots/v1/tijori/financials/laurus-labs/20260905T113024.330612Z-a99ac5398de1/record.json, sha256: cabc622a1ba83b2b5a1c948234001614476023b74beaea64bd8f10d07ba35e96}
+  - {label: N-TIJ, kind: tijori_island, path: data/raw/snapshots/v1/tijori/financials/netweb-technologies-india-ltd/20260905T113205.130775Z-ddeedacd1778/body.bin, sha256: ddeedacd17785c23f9bc0b18d0797fdf8b1617dfbd8b93e86e480f087003441d}
+  - {label: N-TIJ-REC, kind: capture_record, path: data/raw/snapshots/v1/tijori/financials/netweb-technologies-india-ltd/20260905T113205.130775Z-ddeedacd1778/record.json, sha256: d3c21871bc22725fa0620107eefbebdb5a22a4eb586db85d0fd49be2ca57ff76}
+  - {label: N-UPC, kind: upstox_json, path: data/raw/snapshots/v1/upstox/income-statement/default-4f732806df2fa93560222cb5/20261014T071519.894428Z-a5ae6a0cc42c/body.json, sha256: a5ae6a0cc42c95aa63473fd6542d794efec984142f0dbd2d40052b90a0b9c8f6}
+  - {label: N-UPC-REC, kind: capture_record, path: data/raw/snapshots/v1/upstox/income-statement/default-4f732806df2fa93560222cb5/20261014T071519.894428Z-a5ae6a0cc42c/record.json, sha256: 98c5c7b2036e887e10a92f24c092dff69e5f0ceab0039e3a21597308700b8222}
+  - {label: U-INS, kind: upstox_instruments, path: data/raw/upstox/instruments/complete/20260904T082313Z-459ec0544e40/upstox_instruments.raw.json.gz, sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd}
+  - {label: U-INS-META, kind: upstox_meta, path: data/raw/upstox/instruments/complete/20260904T082313Z-459ec0544e40/upstox_instruments_meta.json, sha256: b1d082752fb651e44f219efc1116a151454ec827eea5489a6b41a1128a06f2f9}
+  - {label: W-CSV, kind: screen_export, path: tests/fundamentals/fixtures/data_foundation/ledger_stage5_screen_export.csv, sha256: 4f05be90ebbab3b98eba2fb024df9a47621a916427f6c744b59664de5bd2060c}
+fixtures:
+  L-X:
+    entity: LAURUSLABS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: COVERED
+    url: https://nsearchives.nseindia.com/corporate/xbrl/INDAS_117690_1360957_24012025084417.xml
+    url_at: {src: L-MAN, path: 'entries[0].url', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/INDAS_117690_1360957_24012025084417.xml'}
+    blob_sha256: 2d50d29a467b9035f8124f7a9576346b7d36888e9895befc3363e3c5d227cfa6
+    holds_include: [QUALIFICATION_FIXTURE]
+    holds_exclude: [OPEN_QUEUE_ITEM]
+    holds_at: [{src: QUAL-XBRL, line: 93, lex: 2d50d29a467b9035f8124f7a9576346b7d36888e9895befc3363e3c5d227cfa6}]
+    verified: RUN-L (irrelevant, COVERED precedes the anchor)
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  X-Q1:
+    entity: APARINDS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml
+    url_at: {src: A-MAN, path: 'entries[22].url', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml'}
+    blob_sha256: a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  X-Q2P:
+    entity: APARINDS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: https://nsearchives.nseindia.com/corporate/xbrl/INDAS_113920_1293440_30102024104705.xml
+    url_at: {src: A-MAN, path: 'entries[19].url', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/INDAS_113920_1293440_30102024104705.xml'}
+    blob_sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60
+    holds: []
+    verified: RUN-Q2
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  X-Q4:
+    entity: APARINDS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml
+    url_at: {src: A-MAN, path: 'entries[2].url', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml'}
+    blob_sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01
+    holds: []
+    verified: RUN-Q4
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  P-Q4:
+    entity: APARINDS
+    source: aparinds-fy26-q4-results-pdf
+    source_at: {src: ISSUER-Q4, path: 'results_pdf.source_id', lex: aparinds-fy26-q4-results-pdf}
+    surface: NSE_RESULTS_PDF
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: https://nsearchives.nseindia.com/corporate/APARINDS_28052026142649_OutcomeofBoardMeeting.pdf
+    url_at: {src: A-MAN, path: 'entries[9].url', lex: 'https://nsearchives.nseindia.com/corporate/APARINDS_28052026142649_OutcomeofBoardMeeting.pdf'}
+    blob_sha256: 17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377
+    holds: []
+    verified: RUN-Q4
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  X-Q5:
+    entity: APARINDS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml
+    url_at: {src: A-MAN, path: 'entries[3].url', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml'}
+    blob_sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85
+    holds: []
+    verified: RUN-Q5
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  A-SCR:
+    entity: APARINDS
+    source: screener-subscriber
+    surface: SCREENER_FINANCIALS
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: null
+    blob_sha256: 34f46c0ea9e37d58a5c23c5fd4fd6f2d3bee93cd37a819e79a41d14b2a4768bc
+    payload_at: {src: A-SCR, sec: balance-sheet, row: Borrowings, col: Mar 2025, lex: '585'}
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  U-APQ:
+    entity: APARINDS
+    source: upstox
+    surface: income-statement
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: null
+    blob_sha256: c83a9f0b1b072f6168e40a53555e8759e683585136763365432bf50a29c21e62
+    payload_at: {src: U-APQ, block: income_statement, item: revenue, col: Sep 2025, lex: '5738.67'}
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: 85977dffbfc6c15a8b622fa1011d13cba64ece39ca4458da6542962284e5d477
+  L-TIJ:
+    entity: LAURUSLABS
+    source: tijori
+    surface: financials
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: null
+    blob_sha256: a99ac5398de199cd98f8af8ea2ba2c03704bfc9d3167ea5045ed06b1cdcf26e6
+    payload_at: {src: L-TIJ, tbl: qt_c, row: Net Profit, col: Dec 2024, island: '90.61', shown: '90.61'}
+    holds_include: [QUALIFICATION_FIXTURE]
+    holds_exclude: [OPEN_QUEUE_ITEM]
+    holds_at: [{src: QUAL-TIJ, line: 41, lex: a99ac5398de199cd98f8af8ea2ba2c03704bfc9d3167ea5045ed06b1cdcf26e6}]
+    verified: none
+    licence: tijori
+    record_sha256: cabc622a1ba83b2b5a1c948234001614476023b74beaea64bd8f10d07ba35e96
+  N-TIJ:
+    entity: NETWEB
+    source: tijori
+    surface: financials
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: null
+    blob_sha256: ddeedacd17785c23f9bc0b18d0797fdf8b1617dfbd8b93e86e480f087003441d
+    run_input_at: {src: STAGE1, path: 'header.sources[12].path', lex: data/raw/snapshots/v1/tijori/financials/netweb-technologies-india-ltd/20260905T113205.130775Z-ddeedacd1778/body.bin}
+    holds: [OPEN_QUEUE_ITEM]
+    hold_edge: the SEED queue item's queue_item_inputs.attempt_id = N-TIJ's EXTRACTION attempt (header.script.steps 6)
+    verified: none
+    licence: tijori
+    record_sha256: d3c21871bc22725fa0620107eefbebdb5a22a4eb586db85d0fd49be2ca57ff76
+  N-UPC:
+    entity: NETWEB
+    source: upstox
+    surface: income-statement
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: null
+    blob_sha256: a5ae6a0cc42c95aa63473fd6542d794efec984142f0dbd2d40052b90a0b9c8f6
+    run_input_at: {src: STAGE1, path: 'header.sources[13].path', lex: data/raw/snapshots/v1/upstox/income-statement/default-4f732806df2fa93560222cb5/20261014T071519.894428Z-a5ae6a0cc42c/body.json}
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: 98c5c7b2036e887e10a92f24c092dff69e5f0ceab0039e3a21597308700b8222
+  U-INS:
+    entity: none
+    source: upstox
+    surface: instruments
+    base_class: IDENTITY
+    effective_class: IDENTITY
+    url: https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz
+    url_at: {src: U-INS-META, path: request_url, lex: 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz'}
+    blob_sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  W-CSV:
+    entity: LAURUSLABS
+    source: screener-subscriber
+    surface: SCREEN_EXPORT
+    base_class: VENDOR
+    effective_class: VENDOR
+    url: ledger-stage5-synthetic
+    synthetic: explicitly synthetic screen export (header row and one tag row, coverage_support's SYNTHETIC-FORMAT); bytes fixed by the bound file
+    blob_sha256: 4f05be90ebbab3b98eba2fb024df9a47621a916427f6c744b59664de5bd2060c
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: RUNTIME_BINDING
+  M-Q4:
+    arises: refetch.X-Q4 (the MISMATCH bytes become a new capture through capture_registration, request parameters naming the attempt id)
+    entity: APARINDS
+    source: nse-indas-xbrl-consolidated
+    surface: NSE_XBRL_INSTANCE
+    base_class: EXCHANGE_REFETCHABLE
+    effective_class: EXCHANGE_REFETCHABLE
+    url: not asserted (never purged, so no purge record, fence or expired-list entry carries it)
+    blob_sha256: a988e8b0229bc092efd59d1510d7cca66cae06b8fb9024d3075281952caada26
+    holds: []
+    verified: none
+    licence: none
+    record_sha256: RUNTIME_BINDING
+eligibility:
+  at_B:
+    L-X: {kind: KEEP, basis: COVERED}
+    X-Q1: {kind: KEEP, basis: no verification time}
+    X-Q2P: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW}
+    X-Q4: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW}
+    P-Q4: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW}
+    X-Q5: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW}
+    A-SCR: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: WINDOW}
+    U-APQ: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: WINDOW}
+    L-TIJ: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: CATALOG_CEILING}
+    N-TIJ: {kind: HELD, roots: [OPEN_QUEUE_ITEM]}
+    N-UPC: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: WINDOW}
+    U-INS: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: WINDOW}
+    W-CSV: {kind: ELIGIBLE, since: {anchor: registered_at, months: 12}, reason: WINDOW}
+  before_licence_end:
+    at: D2 (non-EXPIRED captures)
+    L-X: {kind: KEEP, basis: COVERED}
+    X-Q1: {kind: KEEP, basis: no verification time}
+    X-Q2P: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW, basis: RESTORED evaluated like RETAINED; anchor kept}
+    P-Q4: {kind: ELIGIBLE, since: {anchor: verified_at, months: 3}, reason: WINDOW}
+    N-TIJ: {kind: HELD, roots: [OPEN_QUEUE_ITEM]}
+    M-Q4: {kind: KEEP, basis: no verification time}
+  after_licence_end:
+    N-TIJ: {kind: ELIGIBLE, since: LICENCE_END, reason: LICENCE_END, basis: holds notwithstanding (the open item stays open)}
+dry_run:
+  at: B
+  exit: 0
+  blobs:
+  - {label: X-Q2P, source: nse-indas-xbrl-consolidated, sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60}
+  - {label: X-Q4, source: nse-indas-xbrl-consolidated, sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01}
+  - {label: X-Q5, source: nse-indas-xbrl-consolidated, sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85}
+  - {label: P-Q4, source: aparinds-fy26-q4-results-pdf, sha256: 17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377}
+  - {label: A-SCR, source: screener-subscriber, sha256: 34f46c0ea9e37d58a5c23c5fd4fd6f2d3bee93cd37a819e79a41d14b2a4768bc}
+  - {label: W-CSV, source: screener-subscriber, sha256: 4f05be90ebbab3b98eba2fb024df9a47621a916427f6c744b59664de5bd2060c}
+  - {label: L-TIJ, source: tijori, sha256: a99ac5398de199cd98f8af8ea2ba2c03704bfc9d3167ea5045ed06b1cdcf26e6}
+  - {label: U-APQ, source: upstox, sha256: c83a9f0b1b072f6168e40a53555e8759e683585136763365432bf50a29c21e62}
+  - {label: N-UPC, source: upstox, sha256: a5ae6a0cc42c95aa63473fd6542d794efec984142f0dbd2d40052b90a0b9c8f6}
+  - {label: U-INS, source: upstox, sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd}
+  open_incidents: []
+probe:
+  sample_size: 3
+  invocations:
+    P1:
+      rows:
+      - {label: X-Q2P, outcome: MATCH, category: null, incident: false}
+      - {label: X-Q4, outcome: MATCH, category: null, incident: false}
+      - {label: X-Q5, outcome: MATCH, category: null, incident: false}
+      - {label: P-Q4, outcome: FAILED, category: TIMEOUT, severity: HIGH, incident: true}
+      halted: [aparinds-fy26-q4-results-pdf]
+      exit: none (the crash seam raises)
+    rerun:
+      rows:
+      - {label: X-Q2P, outcome: MATCH, category: null, incident: false}
+      - {label: X-Q4, outcome: MATCH, category: null, incident: false}
+      - {label: X-Q5, outcome: MATCH, category: null, incident: false}
+      - {label: P-Q4, outcome: FAILED, category: TIMEOUT, severity: HIGH, incident: true}
+      halted: [aparinds-fy26-q4-results-pdf]
+      exit: 3
+      note: probes run before recovery; X-Q2P, X-Q4 and X-Q5 are PURGE_PENDING then, still non-EXPIRED facts, and the fetch is from their addresses
+    P3:
+      rows:
+      - {label: X-Q2P, outcome: MATCH, category: null, incident: false}
+      - {label: P-Q4, outcome: FAILED, category: TIMEOUT, severity: HIGH, incident: true}
+      halted: [aparinds-fy26-q4-results-pdf]
+      exit: 3
+      note: X-Q2P is RESTORED and eligible again; M-Q4 is KEEP, so not a candidate
+  row_count: {P1: 4, rerun: 4, P3: 2}
+purge:
+  exit: 3
+  states:
+    L-X: RETAINED
+    X-Q1: RETAINED
+    X-Q2P: EXPIRED
+    X-Q4: EXPIRED
+    P-Q4: RETAINED
+    X-Q5: EXPIRED
+    A-SCR: EXPIRED
+    U-APQ: EXPIRED
+    L-TIJ: EXPIRED
+    N-TIJ: RETAINED
+    N-UPC: EXPIRED
+    U-INS: EXPIRED
+    W-CSV: EXPIRED
+  records:
+    X-Q2P: {run: P1, class: EXCHANGE_REFETCHABLE, reason: WINDOW, url: 'https://nsearchives.nseindia.com/corporate/xbrl/INDAS_113920_1293440_30102024104705.xml', probe: {latest_match: nse-indas-xbrl-consolidated, invocation: rerun}}
+    X-Q4: {run: P1, class: EXCHANGE_REFETCHABLE, reason: WINDOW, url: 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml', probe: {latest_match: nse-indas-xbrl-consolidated, invocation: rerun}}
+    X-Q5: {run: P1, class: EXCHANGE_REFETCHABLE, reason: WINDOW, url: 'https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml', probe: {latest_match: nse-indas-xbrl-consolidated, invocation: rerun}}
+    A-SCR: {run: P1, class: VENDOR, reason: WINDOW, url: null, probe: NOT_REQUIRED}
+    U-APQ: {run: P1, class: VENDOR, reason: WINDOW, url: null, probe: NOT_REQUIRED}
+    L-TIJ: {run: P1, class: VENDOR, reason: CATALOG_CEILING, url: null, probe: NOT_REQUIRED}
+    N-UPC: {run: P1, class: VENDOR, reason: WINDOW, url: null, probe: NOT_REQUIRED}
+    U-INS: {run: P1, class: IDENTITY, reason: WINDOW, url: 'https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz', probe: NOT_REQUIRED}
+    W-CSV: {run: P1, class: VENDOR, reason: WINDOW, url: ledger-stage5-synthetic, probe: NOT_REQUIRED}
+  record_fields: 'every record carries the label''s blob_sha256 and a purged_at from the store clock (>= B); the {latest_match} probe row is one of the invocation''s rows for that source (id greater than every P1 probe row); each expired label''s capture_refs.record_sha256 equals fixtures[label].record_sha256 and its record.json stays in the store byte-identical'
+  blobs:
+    present: [L-X, X-Q1, P-Q4, N-TIJ]
+    absent: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]
+  tombstones:
+    inventory: 'A05 redaction-inventory (header tombstone): for each tombstoned label, every row its rows rule selects; clear columns NULL, reset columns to the value, json_keep columns reduced to their keys, keep columns equal to the D0 read row by row (by id); no row deleted (row counts equal D0)'
+    labels:
+      A-SCR: {occurrences: nonempty, interpretations: nonempty, result_source_values: 0, extraction_attempts: 1, cleared_before: [occurrences.raw_value_text, interpretations.value], json_dropped: []}
+      U-APQ: {occurrences: nonempty, interpretations: nonempty, result_source_values: 0, extraction_attempts: 1, cleared_before: [occurrences.raw_value_text, interpretations.value], json_dropped: [disclosure.anomalies]}
+      L-TIJ: {occurrences: nonempty, interpretations: nonempty, result_source_values: nonempty, extraction_attempts: 1, cleared_before: [occurrences.raw_value_text, interpretations.value, result_source_values.value], json_dropped: [native_context.island_value]}
+      N-UPC: {occurrences: 0, interpretations: 0, result_source_values: 0, extraction_attempts: 1, cleared_before: [acquisition_attempts.reason], json_dropped: []}
+    meaning: 'nonempty = at least one selected row at D0; N = exactly N rows at D0 and after; cleared_before = columns non-NULL in at least one selected row at D0 (so the redaction is observed, not vacuous); json_dropped = path present in every selected occurrence at D0 and in none after; attempts: acquisition_attempts stage EXTRACTION of the capture, reason NULL after'
+    traces: calculation_traces and calculation_trace_operands are cleared wherever the inventory selects rows; their population is not claimed (no expectation depends on a vendor-derived trace existing)
+    not_tombstoned: 'U-INS (IDENTITY) and W-CSV (no payload rows: occurrences 0, attempts 0); the non-vendor labels'
+preservation:
+  checkpoints: [D0, D1, D2, D3]
+  sets:
+    non_vendor_occurrences: {table: occurrences, capture_of: [L-X, X-Q1, X-Q2P, X-Q4, P-Q4, X-Q5], order: id, nonempty_for: [L-X, X-Q1, X-Q2P, X-Q4, P-Q4, X-Q5]}
+    non_vendor_interpretations: {table: interpretations, capture_of: [L-X, X-Q1, X-Q2P, X-Q4, P-Q4, X-Q5], order: id, nonempty_for: [L-X, X-Q2P, X-Q4, X-Q5]}
+    fact_rows: {table: fact_rows, rows: target_store 'ledger-stage5', order: handle, nonempty: true}
+    fact_admissions: {table: fact_admissions, rows: store_id 'ledger-stage5', order: id, nonempty: true}
+    results: {table: results, rows: all, order: id, nonempty_for_runs: [RUN-L, RUN-Q2, RUN-Q4, RUN-Q5]}
+    pair_outcomes: {table: pair_outcomes, rows: all, order: id, nonempty: true}
+    queue_items: {table: queue_items, rows: all, order: id, nonempty_for_runs: [RUN-L, RUN-N]}
+    queue_item_inputs: {table: queue_item_inputs, rows: all, order: id, nonempty: true}
+    queue_dispositions: {table: queue_dispositions, rows: all, order: id, nonempty_for_runs: [RUN-L]}
+  rule: every set's digest is equal at D0, D1, D2 and D3; nonempty bounds are checked at D0; the A-05 kept outcomes (results, pair_outcomes, queue items, dispositions) and the non-vendor payload therefore survive both purges, the re-fetches and the licence end
+  m_q4: M-Q4 has 0 occurrences and 0 interpretations (no automatic re-ingest after a mismatch)
+backup:
+  S0: {at: A, journal_watermark: 0, initialises: [licence-ends.json, expiry-journal.json], retained: [L-X, X-Q1, X-Q2P, X-Q4, P-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-TIJ, N-UPC, U-INS, W-CSV], expired: [], copied_as: "S0'"}
+  after_rerun:
+    sets_deleted: [S0]
+    sets_present: [S1a, S1b]
+    remnants: none
+    S1a: {run: P1, journal_watermark: 2, retained: [L-X, X-Q1, P-Q4, N-TIJ], expired: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]}
+    S1b: {run: P2, journal_watermark: 4, retained: [L-X, X-Q1, P-Q4, N-TIJ], expired: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]}
+  S2: {at: step 13, journal_watermark: 4, retained: [L-X, X-Q1, X-Q2P, P-Q4, N-TIJ, M-Q4], expired: [X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV], copied_as: "S2'"}
+  set_contents: 'every listed label''s archived record.json hashes to fixtures[label].record_sha256; each retained label''s body hashes to its blob_sha256; each expired label is listed with its url (fixtures, null where null) and its latest purge record and has no body'
+  journal:
+  - {id: 1, kind: FENCE, run: P1, captures: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]}
+  - {id: 2, kind: COMPLETE, run: P1, expired: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV], cancelled: []}
+  - {id: 3, kind: FENCE, run: P2, captures: []}
+  - {id: 4, kind: COMPLETE, run: P2, expired: [], cancelled: []}
+refetch:
+  at: after the purge rerun, before licence end (Task 9 order)
+  X-Q2P:
+    fetch: retained bytes
+    attempt: {outcome: MATCH, category: null, http_status: null, fetched_sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60}
+    command: {state: RESTORED, exit: 0}
+    unchanged: [capture_ref_id, registered_at, first_seen_at, record_sha256, blob_sha256, verification anchor]
+    body: present and read verified
+    reextract: anchor keys equal the stored occurrences' anchor keys; nothing written
+  X-Q4:
+    fetch: retained bytes + LF
+    attempt: {outcome: MISMATCH, category: null, http_status: null, fetched_sha256: a988e8b0229bc092efd59d1510d7cca66cae06b8fb9024d3075281952caada26, severity: HIGH, incident: true, code: REFETCH_MISMATCH}
+    command: {state: EXPIRED, exit: 3, new_capture: M-Q4}
+    body: absent
+  X-Q5:
+    fetch: FetchFailure(HTTP_STATUS, 404)
+    attempt: {outcome: FAILED, category: HTTP_STATUS, http_status: 404, fetched_sha256: null}
+    command: {state: EXPIRED, exit: 2, published: nothing}
+  open_incidents: [P1 and rerun probe rows of aparinds-fy26-q4-results-pdf (TIMEOUT), the X-Q4 MISMATCH attempt]
+licence_end:
+  command: {steps: [marker, licence-ends.json entry, licence_ends row, purge], exit: 3, run: P3}
+  probe: probe.invocations.P3
+  intents: [X-Q2P, N-TIJ]
+  states: {L-X: RETAINED, X-Q1: RETAINED, X-Q2P: EXPIRED, X-Q4: EXPIRED, P-Q4: RETAINED, X-Q5: EXPIRED, A-SCR: EXPIRED, U-APQ: EXPIRED, L-TIJ: EXPIRED, N-TIJ: EXPIRED, N-UPC: EXPIRED, U-INS: EXPIRED, W-CSV: EXPIRED, M-Q4: RETAINED}
+  records:
+    X-Q2P: {run: P3, class: EXCHANGE_REFETCHABLE, reason: WINDOW, url: 'https://nsearchives.nseindia.com/corporate/xbrl/INDAS_113920_1293440_30102024104705.xml', probe: {latest_match: nse-indas-xbrl-consolidated, invocation: P3}}
+    N-TIJ: {run: P3, class: VENDOR, reason: LICENCE_END, url: null, probe: NOT_REQUIRED}
+  record_counts: {X-Q2P: 2, N-TIJ: 1}
+  blobs:
+    present: [L-X, X-Q1, P-Q4, M-Q4]
+    absent: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-TIJ, N-UPC, U-INS, W-CSV]
+  tombstones:
+    labels:
+      N-TIJ: {occurrences: 0, interpretations: 0, result_source_values: 0, extraction_attempts: 1, cleared_before: [acquisition_attempts.reason], json_dropped: []}
+  journal:
+  - {id: 5, kind: FENCE, run: P3, captures: [X-Q2P, N-TIJ]}
+  - {id: 6, kind: COMPLETE, run: P3, expired: [X-Q2P, N-TIJ], cancelled: []}
+  sets: {sets_deleted: [S1a, S1b, S2], sets_present: [S3], remnants: none}
+  S3: {run: P3, journal_watermark: 6, retained: [L-X, X-Q1, P-Q4, M-Q4], expired: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-TIJ, N-UPC, U-INS, W-CSV]}
+  why_deleted: 'S1a and S1b archive N-TIJ''s body (licence-ended source); S2 archives X-Q2P''s and N-TIJ''s bodies, both in the expiries after its watermark 4 (event 6)'
+  open_incidents: [P1, rerun and P3 probe rows of aparinds-fy26-q4-results-pdf (TIMEOUT), the X-Q4 MISMATCH attempt]
+recovery:
+  crash: FILES_DELETED
+  after_crash:
+    states: {X-Q2P: PURGE_PENDING, X-Q4: PURGE_PENDING, X-Q5: PURGE_PENDING, A-SCR: PURGE_PENDING, U-APQ: PURGE_PENDING, L-TIJ: PURGE_PENDING, N-UPC: PURGE_PENDING, U-INS: PURGE_PENDING, W-CSV: PURGE_PENDING, P-Q4: RETAINED, N-TIJ: RETAINED, L-X: RETAINED, X-Q1: RETAINED}
+    blobs_absent: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]
+    journal: [1]
+    purge_records: []
+    open_runs: [P1]
+    sets_present: [S0]
+    refused: {claim insert: names fundamentals retention purge, db backup: names fundamentals retention purge}
+  after_rerun:
+    states: as purge.states
+    journal: [1, 2, 3, 4]
+    open_runs: []
+    max_open_runs: 1
+    sets: as backup.after_rerun
+    bodies: no non-EXPIRED capture lacks its body; no EXPIRED capture has a body link
+replay:
+  meaning: 'identical = replay_run(run) equals load_results(run); {ORIGINAL_EXPIRED: [..]} = replay_run raises OriginalExpiredError naming exactly those captures; in a restore, identical = in neither replay_mismatches nor replay_expired, replay_expired = listed in replay_expired; replay_mismatches is empty in both restores'
+  runs:
+    RUN-L: {at_A: identical, D1: {ORIGINAL_EXPIRED: [L-TIJ]}, D3: {ORIGINAL_EXPIRED: [L-TIJ]}, restore_pre_purge: replay_expired, restore_licence_end: replay_expired}
+    RUN-N: {at_A: identical, stage1_at: {src: STAGE1, path: 'runs[9].replay', lex: equal}, D1: {ORIGINAL_EXPIRED: [N-UPC]}, D3: {ORIGINAL_EXPIRED: [N-TIJ, N-UPC]}, restore_pre_purge: replay_expired, restore_licence_end: replay_expired}
+    RUN-Q2: {at_A: identical, D1: identical, D3: identical, restore_pre_purge: identical, restore_licence_end: identical}
+    RUN-Q4: {at_A: identical, D1: identical, D3: identical, restore_pre_purge: identical, restore_licence_end: identical}
+    RUN-Q5: {at_A: identical, D1: identical, D3: identical, restore_pre_purge: identical, restore_licence_end: identical}
+  first_party: RUN-Q2, RUN-Q4 and RUN-Q5 stay identical after their exchange bytes expire (ledger §6 table, row 1)
+restore:
+  pre_purge:
+    set: "S0'"
+    phase1: ok
+    phase1_hash_match: [L-X, X-Q1, X-Q2P, X-Q4, P-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-TIJ, N-UPC, U-INS, W-CSV]
+    licence_ends: []
+    markers: []
+    expired_after_purge_first: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-UPC, U-INS, W-CSV]
+    note: X-Q2P is RESTORED in the primary yet expires here (restoration is not journaled; R11)
+    retained_hash_match: [L-X, X-Q1, P-Q4, N-TIJ]
+    purge_records: every expired label has one; their fields restate no eligibility (R12), so only their existence is frozen
+    record_sha256: every label the set archives has its restored record.json hash to fixtures[label].record_sha256
+    replay_expired: [RUN-L, RUN-N]
+    ok: true
+  licence_end:
+    set: "S2'"
+    phase1: ok
+    phase1_hash_match: [L-X, X-Q1, X-Q2P, P-Q4, N-TIJ, M-Q4]
+    licence_ends: [tijori]
+    markers: [tijori]
+    marker_before_purge_first: true
+    expired_after_purge_first: [X-Q2P, X-Q4, X-Q5, A-SCR, U-APQ, L-TIJ, N-TIJ, N-UPC, U-INS, W-CSV]
+    tijori: {N-TIJ: {state: EXPIRED, record_sha256: d3c21871bc22725fa0620107eefbebdb5a22a4eb586db85d0fd49be2ca57ff76}, L-TIJ: {state: EXPIRED, record_sha256: cabc622a1ba83b2b5a1c948234001614476023b74beaea64bd8f10d07ba35e96}}
+    retained_hash_match: [L-X, X-Q1, P-Q4, M-Q4]
+    purge_records: every expired label has one; existence only, as pre_purge
+    record_sha256: every label the set archives has its restored record.json hash to fixtures[label].record_sha256
+    replay_expired: [RUN-L, RUN-N]
+    ok: true
