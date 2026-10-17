@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D9 Retention and replay: Task 7",
-    "detail": "Tasks 1-6 done: classes, holds, retention protocol, crash-safe purge with tombstones, and re-fetch with hash check (RESTORED or HIGH REFETCH_MISMATCH; replay over expired vendor captures refuses ORIGINAL_EXPIRED, 0030). Task 7 in progress: licence ends and restore that purges first (closed DB, faithful check, delta check, then access).",
+    "title": "D9 Retention and replay: Task 8 manifest",
+    "detail": "Tasks 1-7 done: classes, holds, retention protocol, crash-safe purge with tombstones, re-fetch with hash check, licence ends and restore that purges first. Task 8 in progress: an independently authored frozen Stage 5 manifest (expectations decided by hand from fixtures and the spec), then Sol approval before the Stage 5 end-to-end (Task 9).",
     "stage": "D9"
   },
   "next": [
@@ -11,6 +11,10 @@
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-17",
+      "text": "D9 Task 7 committed: 'retention licence-end' (marker, authority file, row, purge) and two-phase restore that purges first before access; backups reconcile licence ends. Full suite 4018 passed, two WSL clock backsteps passed on rerun."
+    },
     {
       "date": "2026-10-17",
       "text": "D9 Task 6 committed: 'retention refetch' restores identical bytes or records a HIGH mismatch; ingest and comparison replay refuse expired vendor captures (0030). Full suite 4004 passed, two WSL clock backsteps passed on rerun."
