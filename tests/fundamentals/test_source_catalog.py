@@ -12,11 +12,16 @@ undeclared source is refused rather than promoted.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from fundamentals.contracts.comparison import SourceRole
+from fundamentals.contracts.onboarding import VerificationUnit
 from fundamentals.contracts.source_catalog import (
     BUILTIN_SOURCES,
+    SHP_XBRL,
+    VENDOR_SURFACES,
     EvidenceRole,
     SourceCatalog,
     SourceClass,
@@ -25,6 +30,8 @@ from fundamentals.contracts.source_catalog import (
     UnknownSourceError,
     surface_authority,
 )
+from fundamentals.entity.discovery import NOT_AUTHORISED, OK, Capture, Request, acquiring_fetch
+from fundamentals.ingest.shareholding_filing import authorised
 
 # The source proven non-independent of Screener (see eqos-0j6). It matches no
 # builtin marker, which is precisely why the old substring rule promoted it.
@@ -107,3 +114,28 @@ def test_vendor_surfaces_are_registered_with_a_role_and_unknown_ones_are_refused
     assert screener.role is SourceRole.INDEPENDENT_VENDOR
     with pytest.raises(SurfaceNotAuthorisedError):
         surface_authority("screener-subscriber", "UNREGISTERED")
+
+
+def test_unregistered_shareholding_surface_is_logged_not_authorised_and_never_sent() -> None:
+    """Authority is checked before capture: a surface absent from the table is not sent."""
+    request = Request(
+        unit=VerificationUnit.EXCHANGE,
+        source_id=SHP_XBRL[0],
+        surface=SHP_XBRL[1],
+        url="https://nsearchives.nseindia.com/shp/x.xml",
+    )
+    sent: list[Request] = []
+
+    def send(item: Request) -> tuple[int, bytes]:
+        sent.append(item)
+        return 200, b"<xbrl/>"
+
+    for table, outcome in (
+        (tuple(a for a in VENDOR_SURFACES if (a.source_id, a.surface) != SHP_XBRL), NOT_AUTHORISED),
+        (VENDOR_SURFACES, OK),
+    ):
+        log: list[Capture] = []
+        fetch = acquiring_fetch(send, lambda: datetime(2026, 10, 17, tzinfo=UTC), log)
+        fetch(request, authorised(request, table))
+        assert log[0].response.outcome == outcome
+    assert sent == [request]

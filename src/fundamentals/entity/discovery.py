@@ -56,6 +56,7 @@ from fundamentals.contracts.source_catalog import (
     TIJORI_PAGE,
     TIJORI_SEARCH,
     UPSTOX_INSTRUMENTS,
+    UPSTOX_ROUTED,
     UPSTOX_STATEMENT,
     SurfaceAuthority,
     SurfaceNotAuthorisedError,
@@ -643,8 +644,7 @@ def store_captures(
 ) -> list[tuple[VerificationUnit, CaptureReference]]:
     """Publish each body to the snapshot store and register it, in order: ``(unit, ref)``.
 
-    The Upstox statement keeps its route and query parameters, which ``vendor_upstox`` reads
-    at ingest; every other request is keyed by the digest of its manifest key."""
+    Upstox requests keep their route and query parameters; others are keyed by their key digest."""
     registered = []
     for item in captures:
         body = item.response.body or b""
@@ -655,7 +655,7 @@ def store_captures(
             surface=request.surface,
             request_key=hashlib.sha256(request.key.encode()).hexdigest(),
         )
-        if (request.source_id, request.surface) == UPSTOX_STATEMENT:
+        if (request.source_id, request.surface) in UPSTOX_ROUTED:
             identity = upstox_request_identity(request.surface, UPSTOX_ROUTE, request.url)
         record = store.put_capture(
             CaptureRecord.make(

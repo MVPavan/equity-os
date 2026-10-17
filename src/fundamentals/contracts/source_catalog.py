@@ -182,6 +182,7 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     _first_party("bse-summary"),
     _first_party("bse-results-pdf"),
     _first_party("nse-indas-xbrl-consolidated"),
+    _first_party("nse-shareholding-xbrl"),
     _first_party("bse-announcements", is_namespace=True),
     _first_party("nse-announcements", is_namespace=True),
     _first_party("sec-edgar-", is_namespace=True),
@@ -227,6 +228,14 @@ TIJORI_SEARCH = ("tijori", "company_search")
 TIJORI_PAGE = ("tijori", "financials")
 UPSTOX_INSTRUMENTS = ("upstox", "instruments")
 UPSTOX_STATEMENT = ("upstox", "income-statement")
+# Shareholding-pattern surfaces (plan D8 R2, R8).
+SHP_LISTING = ("nse", "SHAREHOLDING_LISTING")
+SHP_XBRL = ("nse-shareholding-xbrl", "NSE_SHP_XBRL")
+SCREENER_SHAREHOLDING = ("screener-subscriber", "SCREENER_SHAREHOLDING")
+TIJORI_SHAREHOLDING = ("tijori", "shareholding")
+UPSTOX_SHAREHOLDING = ("upstox", "share-holdings")
+# The Upstox surfaces that go to the API origin with the bearer token.
+UPSTOX_ROUTED = (UPSTOX_STATEMENT, UPSTOX_SHAREHOLDING)
 # An owner-exported Screener screen (plan D7 R5): the only input of a screen run, never fetched.
 SCREEN_EXPORT = ("screener-subscriber", "SCREEN_EXPORT")
 _IDENTITY_SURFACES = (
@@ -238,6 +247,7 @@ _IDENTITY_SURFACES = (
     (TIJORI_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
     (UPSTOX_INSTRUMENTS, Representation.JSON, _UPSTOX_RIGHTS),
     (SCREEN_EXPORT, Representation.CSV, _SUBSCRIBER_RIGHTS),
+    (SHP_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
 )
 
 VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
@@ -271,4 +281,10 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
         for pair, representation, authority in _IDENTITY_SURFACES
     ),
     _surface(*NSE_XBRL_INSTANCE, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS),
+    _surface(*SHP_XBRL, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS),
+    *(
+        _surface(*pair, Representation.HTML, SourceRole.INDEPENDENT_VENDOR, _SUBSCRIBER_RIGHTS)
+        for pair in (SCREENER_SHAREHOLDING, TIJORI_SHAREHOLDING)
+    ),
+    _surface(*UPSTOX_SHAREHOLDING, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC),
 )

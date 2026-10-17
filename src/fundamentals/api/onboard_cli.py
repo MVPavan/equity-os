@@ -39,6 +39,7 @@ from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, LiteralString
+from urllib.parse import urlsplit
 
 import psycopg
 import structlog
@@ -78,6 +79,7 @@ from fundamentals.contracts.source_catalog import (
     SCREENER_PAGE,
     TIJORI_PAGE,
     TIJORI_SEARCH,
+    UPSTOX_ROUTED,
     UPSTOX_STATEMENT,
     VENDOR_SURFACES,
 )
@@ -269,7 +271,11 @@ def live_transport() -> Send:
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
-        if (request.source_id, request.surface) == UPSTOX_STATEMENT and upstox:
+        if (
+            upstox
+            and (request.source_id, request.surface) in UPSTOX_ROUTED
+            and urlsplit(request.url)[:2] == ("https", discovery.ORIGINS[UPSTOX_STATEMENT])
+        ):
             headers["Authorization"] = f"Bearer {upstox.access_token.get_secret_value()}"
         try:
             with opener.open(
