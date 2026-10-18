@@ -32,20 +32,27 @@ from test_retention_restore import licence_end, mint
 
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import HoldRoot, JournalEventKind
-from fundamentals.contracts.retention_purge import IncompleteKind, PurgeStep
+from fundamentals.contracts.retention_purge import IncompleteKind, PurgeRefusedError, PurgeStep
 from fundamentals.pg.backup import BackupError
 from fundamentals.pg.retention_io import (
     EXPIRY_JOURNAL_FILE,
+    JOURNAL_HEAD_FILE,
     LICENCE_ENDS_FILE,
     AuthorityError,
     read_authority,
 )
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention.purge import NO_LONGER_ELIGIBLE, purge
+from fundamentals.store.snapshot_store import RETENTION_DIRNAME
 
 pytestmark = pytest.mark.pg
 
 __all__ = ["env", "mint"]
+
+REVOKE_RUN_IDS = (  # undo 0032: the grants of a set migrated through 0031
+    "DO $$ BEGIN EXECUTE format('REVOKE UPDATE ON SEQUENCE %s FROM eqos_purge', "
+    "pg_get_serial_sequence('eqos.purge_runs', 'id')); END $$"
+)
 
 
 @pytest.mark.parametrize("pinned", [False, True])
@@ -68,9 +75,13 @@ def test_a_body_unlinked_before_a_crash_expires_beside_a_new_link(env: Env, pinn
 def test_runs_after_a_restore_journal_past_the_primary(
     env: Env, mint: Callable[[], str], tmp_path: Path
 ) -> None:
-    """K2 (R8, R11): after the primary journals runs 1-2, a restored target's purge-first and
-    its next purge take ids 3 and 4, so that purge journals its own fence and completion and a
-    later restore of the same set expires what it purged; else it reuses run 2's events."""
+    """K2, L2 (R8, R11, R12): after the primary journals runs 1-2, a restored target's
+    purge-first and its next purge take ids 3 and 4, so that purge journals its own fence and
+    completion and a later restore of the same set expires what it purged; else it reuses run
+    2's events. The set has 0031's grants (no purge-role privilege on the run id sequence),
+    which a restore accepts, so run ids must not need one."""
+    with env.db.migrator_connection() as conn:
+        conn.execute(REVOKE_RUN_IDS)
     gone, kept = env.capture(b"k2-gone"), exchange(env, b"k2-kept")[0]
     env.age()
     old = aside(env.backup(), tmp_path)
@@ -107,10 +118,11 @@ def test_runs_after_a_restore_journal_past_the_primary(
 def test_an_edited_completion_is_refused_or_read_as_its_fence(
     env: Env, mint: Callable[[], str], tmp_path: Path, edit: str, step: PurgeStep
 ) -> None:
-    """K3 (R11, R12): with a crash before the final backup, a ``COMPLETE`` edited to expire
-    nothing is refused when it no longer partitions its fence, or once the live head witnesses
-    it; written but unwitnessed, it is read as its fence and the pre-purge set restores the
-    capture EXPIRED. Else the purged bytes come back RETAINED."""
+    """K3, L1 (R8, R11, R12): with a crash before the final backup, a ``COMPLETE`` edited to
+    expire nothing is refused when it no longer partitions its fence, or once the live head
+    witnesses it; written but unwitnessed, a rerun purge refuses to witness it against the
+    database's EXPIRED, and it is read as its fence: the pre-purge set restores the capture
+    EXPIRED. Else the purged bytes come back RETAINED."""
     ref = env.capture(b"k3")
     old = aside(env.backup(), tmp_path)
     env.age()
@@ -122,6 +134,10 @@ def test_an_edited_completion_is_refused_or_read_as_its_fence(
     journal.write_text(json.dumps([fence, complete | {"expired": [], "cancelled": cancelled}]))
     target = mint()
     if (edit, step) == ("repartitioned", PurgeStep.COMPLETION_WRITTEN):
+        head = (env.root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE).read_bytes()
+        with pytest.raises(PurgeRefusedError, match="disagrees with its committed states"):
+            env.purge(final=False)
+        assert (env.root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE).read_bytes() == head
         check, _ = restore(env, old, target)
         assert check.ok and on(env, target, STATE, ref.capture_ref_id) == [("EXPIRED",)], check
         return

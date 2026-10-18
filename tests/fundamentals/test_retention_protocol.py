@@ -86,7 +86,10 @@ pytestmark = pytest.mark.pg
 __all__ = ["ledger", "runtime", "seeded"]
 
 URL = "https://nsearchives.nseindia.com/corporate/xbrl/p-case.xml"
-PURGE_RUN = "INSERT INTO eqos.purge_runs DEFAULT VALUES RETURNING id"
+PURGE_RUN = (
+    "INSERT INTO eqos.purge_runs (id) OVERRIDING SYSTEM VALUE "
+    "SELECT coalesce(max(id), 0) + 1 FROM eqos.purge_runs RETURNING id"
+)
 CLOSE_RUN = "INSERT INTO eqos.purge_run_closures (run_id) VALUES (%s)"
 EXPIRE = "INSERT INTO eqos.capture_states (capture_ref_id, state) VALUES (%s, 'EXPIRED')"
 APPENDER = (

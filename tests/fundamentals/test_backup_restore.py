@@ -199,8 +199,13 @@ def test_backup_refuses_a_native_fact_whose_original_was_never_registered(
     assert [path.name for path in out.iterdir() if not path.name.startswith(".")] == []
 
 
+@pytest.mark.parametrize("witnessed", [False, True])
 def test_absent_schema_restores_through_the_cli(
-    pg_db: PgTestDatabase, tmp_path: Path, restored: str, monkeypatch: pytest.MonkeyPatch
+    pg_db: PgTestDatabase,
+    tmp_path: Path,
+    restored: str,
+    monkeypatch: pytest.MonkeyPatch,
+    witnessed: bool,
 ) -> None:
     settings, empty = pg_db.settings, mint_name(pg_db.settings)
     create_database(settings, empty)
@@ -213,7 +218,8 @@ def test_absent_schema_restores_through_the_cli(
         args += ["--snapshot-root", str(tmp_path / "store")]
         with pytest.raises(SystemExit):  # the witness choice is required (R11)
             main(args)
-        assert main([*args, "--unwitnessed"]) == EXIT_OK
+        live = ["--live-snapshot-root", str(tmp_path / "live")] if witnessed else ["--unwitnessed"]
+        assert main([*args, *live]) == EXIT_OK  # L3: no live marker, no authority file read
     finally:
         drop_database(settings, empty)
     assert query(settings, restored, "SELECT to_regnamespace('eqos')") == [None]

@@ -58,8 +58,8 @@ def restore_purge_first(
     """Restore's injected purge-first (pg never imports retention): one authority snapshot read
     against the head in ``live`` when the target is ready, marks its licence ends and is purged.
     Refuses now when a live licence-ended marker's source is not filed."""
-    if live is not None:
-        marked = {p.name for p in (live / RETENTION_DIRNAME / LICENCE_ENDED_DIRNAME).glob("*")}
+    ended = (live / RETENTION_DIRNAME / LICENCE_ENDED_DIRNAME).glob("*") if live else ()
+    if marked := {p.name for p in ended}:  # no marker: nothing to reconcile, no authority read
         try:
             filed = {end.source_id for end in read_authority(backup_dir).licence_ends}
             if unfiled := sorted(marked - filed):

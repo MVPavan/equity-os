@@ -80,11 +80,10 @@ _OPEN_RUNS: LiteralString = (
     "SELECT id FROM eqos.purge_runs r WHERE NOT EXISTS "
     "(SELECT 1 FROM eqos.purge_run_closures c WHERE c.run_id = r.id) ORDER BY id"
 )
-_RUN_IDS_PAST: LiteralString = (
-    "SELECT setval(pg_get_serial_sequence('eqos.purge_runs', 'id'), "
-    "greatest((SELECT max(id) FROM eqos.purge_runs), %s, 0) + 1, false)"
+_NEW_RUN: LiteralString = (  # an explicit id needs only INSERT, which every 0029+ set grants
+    "INSERT INTO eqos.purge_runs (id) OVERRIDING SYSTEM VALUE "
+    "SELECT greatest(max(id), %s, 0) + 1 FROM eqos.purge_runs RETURNING id"
 )
-_NEW_RUN: LiteralString = "INSERT INTO eqos.purge_runs DEFAULT VALUES RETURNING id"
 _CLOSE_RUN: LiteralString = "INSERT INTO eqos.purge_run_closures (run_id) VALUES (%s)"
 _STATE: LiteralString = (
     "INSERT INTO eqos.capture_states (capture_ref_id, state, purge_run_id) VALUES (%s, %s, %s)"
@@ -184,8 +183,7 @@ _EXCHANGE = RetentionClass.EXCHANGE_REFETCHABLE
 def new_run(conn: psycopg.Connection[Any], authority: Authority) -> int:
     """Commit a run row whose id is past every run of the database and of the journal."""
     last = max((event.run_id for event in authority.journal), default=0)
-    conn.execute(_RUN_IDS_PAST, (last,))
-    return int(conn.execute(_NEW_RUN).fetchall()[0][0])
+    return int(conn.execute(_NEW_RUN, (last,)).fetchall()[0][0])
 
 
 def _facts(conn: psycopg.Connection[Any], pinned: Pinned) -> tuple[tuple[CaptureFacts, ...], Any]:
@@ -228,11 +226,14 @@ class _Run:
         with self.conn.cursor(row_factory=dict_row) as cursor:
             users = cursor.execute(_USERS).fetchall()
         pending = [u for u in users if u["state"] == CaptureState.PURGE_PENDING]
-        if not self._journaled(run_id, JournalEventKind.FENCE):
+        if self._event(run_id, JournalEventKind.FENCE) is None:
             fence = tuple(FencedCapture.model_validate(_fenced(u)) for u in pending)
             event = JournalEvent(kind=JournalEventKind.FENCE, run_id=run_id, captures=fence)
             append_authority(self.backup_dir, event)
             self.checkpoint(PurgeStep.FENCE_WRITTEN)
+        done = self._event(run_id, JournalEventKind.COMPLETE)
+        if done is not None and (done.expired, done.cancelled) != self._outcomes(run_id):
+            raise PurgeRefusedError(f"run {run_id}'s COMPLETE disagrees with its committed states")
         advance_head(self.backup_dir, self.root)
         with self.conn.transaction():
             facts, now = _facts(self.conn, self.pinned)
@@ -253,12 +254,10 @@ class _Run:
                     if user["id"] not in cancel:
                         self._expire(run_id, user, verdicts.get(user["id"]))
         self.checkpoint(PurgeStep.EXPIRED_COMMITTED)
-        states = self.conn.execute(_RUN_STATES, (run_id,)).fetchall()
-        expired = tuple(c for c, state in states if state == CaptureState.EXPIRED)
-        cancelled = tuple(c for c, state in states if state in _KEPT)
+        expired, cancelled = self._outcomes(run_id)
         self.expired += [c for c in expired if c not in self.expired]
         self.cancelled += [(c, r) for c, r in cancel.items()]
-        if not self._journaled(run_id, JournalEventKind.COMPLETE):
+        if done is None:
             event = JournalEvent(
                 kind=JournalEventKind.COMPLETE,
                 run_id=run_id,
@@ -275,10 +274,16 @@ class _Run:
         sanitize(self.conn, self.backup_dir, self.checkpoint)
         self.conn.execute(_CLOSE_RUN, (run_id,))
 
-    def _journaled(self, run_id: int, kind: JournalEventKind) -> bool:
-        """Whether the expiry journal has a ``kind`` event for the run."""
+    def _event(self, run_id: int, kind: JournalEventKind) -> JournalEvent | None:
+        """The expiry journal's ``kind`` event for the run, if any."""
         journal = read_authority(self.backup_dir).journal
-        return any(e.run_id == run_id and e.kind is kind for e in journal)
+        return next((e for e in journal if e.run_id == run_id and e.kind is kind), None)
+
+    def _outcomes(self, run_id: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """The run's committed outcomes: the captures it expired and those it cancelled."""
+        states = self.conn.execute(_RUN_STATES, (run_id,)).fetchall()
+        expired = tuple(c for c, state in states if state == CaptureState.EXPIRED)
+        return expired, tuple(c for c, state in states if state in _KEPT)
 
     def _delete(
         self, users: list[dict[str, Any]], eligible: set[tuple[str, str]]
