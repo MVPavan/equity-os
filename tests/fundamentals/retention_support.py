@@ -32,7 +32,6 @@ from pg_support import (
 from psycopg import sql
 
 from fundamentals.api.cli import main
-from fundamentals.api.db_cli import restore_purge_first
 from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureFacts, Eligibility, HoldRoot
@@ -50,6 +49,7 @@ from fundamentals.pg.restore_check import Rows
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention.eligibility import add_months, eligibility
 from fundamentals.retention.holds import capture_facts
+from fundamentals.retention.purge_first import restore_purge_first
 from fundamentals.store.snapshot_store import BLOBS_DIRNAME
 
 # The tables the retention migrations add; each D9 migration extends this in its own change.

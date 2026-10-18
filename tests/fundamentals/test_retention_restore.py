@@ -87,6 +87,7 @@ from fundamentals.pg.retention_io import (
 )
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention import purge as purge_module
+from fundamentals.retention import purge_first
 from fundamentals.retention.purge import record_licence_end
 from fundamentals.retention.refetch import refetch
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -363,7 +364,7 @@ def test_restore_removes_sets_with_expired_bytes_or_stays_closed(
     with pytest.raises(CrashError):
         env.purge(checkpoint=crash_at(PurgeStep.COMPLETION_WRITTEN, []))
     with monkeypatch.context() as patch:
-        patch.setattr(purge_module, "sanitize", boom)
+        patch.setattr(purge_first, "sanitize", boom)
         with pytest.raises(CrashError):
             restore(env, old, (target := mint()))
     assert old.exists() and on(env, target, OPEN_RUNS) == [(1,)] and runtime_refused(env, target)

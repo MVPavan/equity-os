@@ -73,6 +73,7 @@ from fundamentals.compare.run_config import DEFAULT_VERSION, DICTIONARY_DIR, Con
 from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunReadError, RunStore
 from fundamentals.contracts.canonical import Basis
 from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.review_queue import DispositionKind, QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence.alignment import AlignmentLoadError
@@ -192,6 +193,9 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
             }
             return queue_actions[args.queue_action](args)
         return _report(args)
+    except OriginalExpiredError as error:  # R13: names the expired capture
+        sys.stderr.write(f"compare refused: {error}\n")
+        return int(RunExitStatus.FAILURE)
     except (
         CompareCommandError,
         DatabaseUnavailableError,

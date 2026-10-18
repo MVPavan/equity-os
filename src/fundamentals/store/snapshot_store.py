@@ -99,6 +99,7 @@ UNREADABLE = "cannot read {path}"
 UNSAFE_SYMLINK = "refusing to follow a symlinked path component: {path}"
 LICENCE_ENDED = "the {source_id} licence has ended; its captures are closed"
 RECORD_DIGEST_MISMATCH = "record of capture {capture_id} does not match its registered digest"
+BodyLink = tuple[tuple[str, ...], tuple[int, int]] | None  # names and file identity
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -451,19 +452,9 @@ class SnapshotStore:
         this blob, then the blob unless ``keep_blob``, with ``checkpoint`` after each unlink;
         missing files count as deleted. A blob linked elsewhere is ``UNKNOWN_LINK`` unless kept."""
         blob_names = (BLOBS_DIRNAME, source_id, blob_sha256[:BLOB_PREFIX_LENGTH], blob_sha256)
-        bodies: list[tuple[tuple[str, ...], tuple[int, int]]] = []
         with self._writer():
             blob = self._stat(blob_names)
-            for link in links:
-                with self._tree() as tree:
-                    directory = tree.descend((source_id, *link))
-                    record = CaptureRecord.model_validate_json(
-                        tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
-                    )
-                body = (source_id, *link, body_filename(record))
-                if record.body is not None and record.body.content_sha256 == blob_sha256:
-                    if (found := self._stat(body)) is not None:
-                        bodies.append((body, _identity(found)))
+            bodies = [b for link in links if (b := self.body_link(source_id, blob_sha256, link))]
             if blob is not None and not keep_blob:
                 if blob.st_nlink > 1 + sum(i == _identity(blob) for _, i in bodies):
                     return BlobDeletion.UNKNOWN_LINK
@@ -471,6 +462,16 @@ class SnapshotStore:
             for names, _ in bodies:
                 self._unlink(names, checkpoint)
             return BlobDeletion.DELETED
+
+    def body_link(self, source_id: str, blob_sha256: str, link: tuple[str, str, str]) -> BodyLink:
+        """A capture's present body ``link`` to this blob, as its names and file identity."""
+        with self._tree() as tree:
+            raw = tree.read(tree.descend((source_id, *link)), RECORD_FILENAME, MAX_METADATA_BYTES)
+        record = CaptureRecord.model_validate_json(raw)
+        if record.body is None or record.body.content_sha256 != blob_sha256:
+            return None
+        body = (source_id, *link, body_filename(record))
+        return None if (found := self._stat(body)) is None else (body, _identity(found))
 
     def delete_sources(self, sources: frozenset[str], checkpoint: Callable[[], None]) -> str | None:
         """RP5 licence end: unlink every body under each source's capture tree, registered or

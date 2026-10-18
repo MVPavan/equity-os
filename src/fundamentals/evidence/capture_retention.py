@@ -21,7 +21,12 @@ from psycopg_pool import ConnectionPool
 
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureState, OriginalExpiredError
-from fundamentals.contracts.snapshot import CaptureRecord, IntegrityError, MissingSnapshotError
+from fundamentals.contracts.snapshot import (
+    CaptureRecord,
+    IntegrityError,
+    MissingSnapshotError,
+    UnsafePathError,
+)
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.vendor_ingest import (
@@ -46,6 +51,8 @@ _STATE_OF: LiteralString = (
     "SELECT id, eqos.capture_state(id) FROM eqos.capture_refs "
     "WHERE source_id = %s AND surface = %s AND request_key = %s AND capture_id = %s"
 )
+# Message of the UnsafePathError a purge unlinking a body mid-read raises (descriptor_tree.verify).
+DETACHED_FILE = "detached file"
 _GONE = frozenset({CaptureState.EXPIRED, CaptureState.PURGE_PENDING})
 
 
@@ -104,7 +111,7 @@ def retained_capture(
     """A capture's verified record and bytes: an expired or purging capture raises
     :class:`OriginalExpiredError`; a retained one missing its body is corruption (RP7). Purge
     commits ``PURGE_PENDING`` before it unlinks, so a READ COMMITTED recheck after a missing
-    body tells a concurrent purge from corruption."""
+    body (or a file detached mid-read) tells a concurrent purge from corruption."""
 
     def refuse_gone() -> None:
         with conn.cursor(row_factory=tuple_row) as cursor:
@@ -123,6 +130,11 @@ def retained_capture(
     except MissingSnapshotError as error:
         refuse_gone()
         raise IntegrityError(f"retained capture {ref.capture_ref_id} lost its body") from error
+    except UnsafePathError as error:
+        if DETACHED_FILE not in str(error):
+            raise
+        refuse_gone()
+        raise
 
 
 def ingest_vendor_retained(

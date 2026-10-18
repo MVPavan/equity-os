@@ -23,17 +23,15 @@ import argparse
 import os
 import sys
 import uuid
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import psycopg
 import structlog
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
-from fundamentals.contracts.retention_purge import PurgeRefusedError, RestoreDelta
+from fundamentals.contracts.retention_purge import PurgeRefusedError
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
-from fundamentals.pg.backup import BackupError, restore_backup, verify_set, write_backup
+from fundamentals.pg.backup import BackupError, restore_backup, write_backup
 from fundamentals.pg.migrations import (
     LoginRoleError,
     MigrationChecksumError,
@@ -42,7 +40,7 @@ from fundamentals.pg.migrations import (
     bootstrap_roles,
     create_login,
 )
-from fundamentals.pg.retention_io import AuthorityError, mark_licence_ends, read_authority
+from fundamentals.pg.retention_io import AuthorityError
 from fundamentals.pg.role_secrets import (
     MissingRoleSecretError,
     RoleSecretError,
@@ -51,7 +49,7 @@ from fundamentals.pg.role_secrets import (
 )
 from fundamentals.pg.settings import GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import HarnessGuardError, create_test_database
-from fundamentals.retention.purge import restore_purge
+from fundamentals.retention.purge_first import restore_purge_first
 
 DB_COMMAND = "db"
 BOOTSTRAP_ACTION = "bootstrap"
@@ -169,20 +167,6 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
     lines = [_APPLIED_HEADER.format(count=len(applied)), *(item.filename for item in applied)]
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
-
-
-def restore_purge_first(
-    set_dir: Path, backup_dir: Path, snapshot_root: Path, live: Path | None
-) -> Callable[[psycopg.Connection[Any]], RestoreDelta]:
-    """Restore's injected purge-first (pg never imports retention): one authority snapshot read
-    against the head in ``live`` when the target is ready, marks its licence ends and is purged."""
-
-    def purge_first(conn: psycopg.Connection[Any]) -> RestoreDelta:
-        watermark = verify_set(set_dir).journal_watermark
-        mark_licence_ends(snapshot_root, authority := read_authority(backup_dir, live))
-        return restore_purge(conn, authority, watermark, snapshot_root, backup_dir)
-
-    return purge_first
 
 
 def _create_logins(admin: psycopg.Connection) -> None:

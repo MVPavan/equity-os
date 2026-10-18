@@ -7,7 +7,8 @@ under the store's writer lock, commits purge records, ``EXPIRED`` and vendor tom
 one transaction, journals ``COMPLETE``, takes the injected final backup on its own
 connection, sanitizes older sets and closes the run. A crash leaves the run open, which
 refuses writers and backups until a rerun converges it through the same routine. A licence
-end (R11) and a restore's purge-first (R12) reuse the deletion and sanitize routines.
+end (R11) and a restore's purge-first (R12, ``purge_first``) reuse the deletion and sanitize
+routines. Run ids continue past every run the journal names, which a restored target's ids lag.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from fundamentals.contracts.retention import (
     Eligibility,
     EligibilityKind,
     EligibleBlob,
-    EligibleReason,
     FencedCapture,
     HoldRoot,
     JournalEvent,
@@ -45,7 +45,6 @@ from fundamentals.contracts.retention_purge import (
     PurgeRefusedError,
     PurgeReport,
     PurgeStep,
-    RestoreDelta,
 )
 from fundamentals.pg.backup import MANIFEST_FILE, PARTIAL_SUFFIX, BackupManifest
 from fundamentals.pg.retention_io import (
@@ -81,6 +80,10 @@ _OPEN_RUNS: LiteralString = (
     "SELECT id FROM eqos.purge_runs r WHERE NOT EXISTS "
     "(SELECT 1 FROM eqos.purge_run_closures c WHERE c.run_id = r.id) ORDER BY id"
 )
+_RUN_IDS_PAST: LiteralString = (
+    "SELECT setval(pg_get_serial_sequence('eqos.purge_runs', 'id'), "
+    "greatest((SELECT max(id) FROM eqos.purge_runs), %s, 0) + 1, false)"
+)
 _NEW_RUN: LiteralString = "INSERT INTO eqos.purge_runs DEFAULT VALUES RETURNING id"
 _CLOSE_RUN: LiteralString = "INSERT INTO eqos.purge_run_closures (run_id) VALUES (%s)"
 _STATE: LiteralString = (
@@ -110,7 +113,6 @@ _PURGE_RECORD: LiteralString = (
 _TOMBSTONE: LiteralString = "SELECT eqos.tombstone_vendor_capture(%s)"
 _LICENCE_ENDS: LiteralString = "SELECT source_id FROM eqos.licence_ends"
 _VENDOR_NOW: LiteralString = "SELECT eqos.is_vendor_source(%s), eqos.store_now()"
-JOURNAL_EXPIRY = "EXPIRY_JOURNAL"
 _GONE = frozenset({CaptureState.EXPIRED, CaptureState.PURGE_PENDING})
 _KEPT = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 
@@ -146,20 +148,21 @@ def purge(
     """Recover any open run, then purge every eligible blob in a new run (R8)."""
     conninfo = settings.conninfo(PgRole.PURGE, dbname=database, login=login)
     with psycopg.connect(conninfo, autocommit=True) as conn:
-        reconcile_licence_ends(conn, read_authority(backup_dir))
+        reconcile_licence_ends(conn, authority := read_authority(backup_dir))
         refuse_unclassified(conn)
         with conn.transaction():
             facts, now = _facts(conn, pinned)
         exchange = _eligible_facts(facts, now, RetentionClass.EXCHANGE_REFETCHABLE)
         probes = probe(conn, exchange, fetch)
         session_exclusive(conn)
+        matched = {source for source, outcome in probes.items() if outcome.matched}
         run = _Run(conn, snapshot_root, backup_dir, pinned, final_backup, checkpoint)
+        run.halted = frozenset(probes.keys() - matched)
         for (open_run,) in conn.execute(_OPEN_RUNS).fetchall():
             run.converge(open_run)
-        ((run_id,),) = conn.execute(_NEW_RUN).fetchall()
+        run_id = new_run(conn, authority)
         with conn.transaction():
             facts, now = _facts(conn, pinned)
-            matched = {source for source, outcome in probes.items() if outcome.matched}
             for fact in _eligible_facts(facts, now):
                 if fact.base_class is not _EXCHANGE or fact.source_id in matched:
                     conn.execute(_STATE, (fact.capture_ref_id, CaptureState.PURGE_PENDING, run_id))
@@ -170,12 +173,19 @@ def purge(
         expired=tuple(run.expired),
         cancelled=tuple(run.cancelled),
         incomplete=tuple(run.incomplete),
-        halted_sources=tuple(sorted(probes.keys() - matched)),
+        halted_sources=tuple(sorted(run.halted)),
         backup_id=run.backup_id,
     )
 
 
 _EXCHANGE = RetentionClass.EXCHANGE_REFETCHABLE
+
+
+def new_run(conn: psycopg.Connection[Any], authority: Authority) -> int:
+    """Commit a run row whose id is past every run of the database and of the journal."""
+    last = max((event.run_id for event in authority.journal), default=0)
+    conn.execute(_RUN_IDS_PAST, (last,))
+    return int(conn.execute(_NEW_RUN).fetchall()[0][0])
 
 
 def _facts(conn: psycopg.Connection[Any], pinned: Pinned) -> tuple[tuple[CaptureFacts, ...], Any]:
@@ -211,6 +221,7 @@ class _Run:
         self.cancelled: list[tuple[int, str]] = []
         self.incomplete: list[IncompleteBlob] = []
         self.backup_id: str | None = None
+        self.halted: frozenset[str] = frozenset()  # probe-halted sources keep intact intents
 
     def converge(self, run_id: int) -> None:
         """Fence, delete, expire, complete, back up, sanitize and close one run."""
@@ -227,6 +238,11 @@ class _Run:
             facts, now = _facts(self.conn, self.pinned)
         verdicts = {f.capture_ref_id: (f, _decision(f, now)) for f in facts}
         eligible = {(b.source_id, b.blob_sha256) for b in eligible_blobs(facts, now)}
+        eligible -= {
+            (u["source_id"], u["blob_sha256"])
+            for u in pending
+            if u["source_id"] in self.halted and u["retention_class"] == _EXCHANGE
+        }
         with self.store.writer_held():
             cancel = self._delete(users, eligible)
             self.checkpoint(PurgeStep.FILES_DELETED)
@@ -252,6 +268,7 @@ class _Run:
             )
             append_authority(self.backup_dir, event)
             self.checkpoint(PurgeStep.COMPLETION_WRITTEN)
+        advance_head(self.backup_dir, self.root)
         if self.final_backup is not None:
             self.backup_id = self.final_backup(self.conn).name
             self.checkpoint(PurgeStep.BACKUP_WRITTEN)
@@ -269,7 +286,8 @@ class _Run:
         """Step 3 under the held writer lock (RP5): every licence-ended source's bodies and blobs,
         all checked before any unlink; then per inventoried blob, the body links of its expired
         and purging users (residue included) and the blob unless a retained user keeps it.
-        Return the intents to cancel: an unknown link, or intact bytes no longer eligible."""
+        Return the intents to cancel: those with an intact body whose blob is no longer
+        eligible or keeps an unknown link; an intent whose body is gone is finished."""
         ended = frozenset(source for (source,) in self.conn.execute(_LICENCE_ENDS).fetchall())
         if (outside := self.store.delete_sources(ended, self._link_deleted)) is not None:
             raise PurgeRefusedError(f"licence-ended blob {outside} is linked outside its trees")
@@ -280,20 +298,20 @@ class _Run:
         for entry in self.store.blob_inventory():
             key = (entry.source_id, entry.blob_sha256)
             group = by_blob.get(key, [])
-            mine = [u["id"] for u in group if u["state"] == CaptureState.PURGE_PENDING]
             if not group:
                 self.incomplete.append(_incomplete(entry, IncompleteKind.UNREGISTERED))
                 continue
-            if mine and key not in eligible and entry.links >= 1 + len(mine):
-                cancel.update(dict.fromkeys(mine, NO_LONGER_ELIGIBLE))
-                continue
-            gone = [u for u in group if CaptureState(u["state"]) in _GONE]
-            links = tuple((u["surface"], u["request_key"], u["capture_id"]) for u in gone)
+            mine = [u for u in group if u["state"] == CaptureState.PURGE_PENDING]
+            intact = [u["id"] for u in mine if self.store.body_link(*key, _link(u))]
+            if key not in eligible:
+                cancel.update(dict.fromkeys(intact, NO_LONGER_ELIGIBLE))
+            gone = [u for u in group if CaptureState(u["state"]) in _GONE and u["id"] not in cancel]
+            links = tuple(_link(u) for u in gone)
             kept = len(gone) < len(group)
             deleted = self.store.delete_blob(*key, links, self._link_deleted, keep_blob=kept)
             if deleted is BlobDeletion.UNKNOWN_LINK:
                 self.incomplete.append(_incomplete(entry, IncompleteKind.UNKNOWN_LINK))
-                cancel.update(dict.fromkeys(mine, IncompleteKind.UNKNOWN_LINK.value))
+                cancel.update(dict.fromkeys(intact, IncompleteKind.UNKNOWN_LINK.value))
         return cancel
 
     def _link_deleted(self) -> None:
@@ -360,6 +378,11 @@ def _fenced(user: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _link(user: dict[str, Any]) -> tuple[str, str, str]:
+    """A capture's body link under its source: surface, request key and capture id."""
+    return user["surface"], user["request_key"], user["capture_id"]
+
+
 def _incomplete(entry: Any, kind: IncompleteKind) -> IncompleteBlob:
     """An inventory entry the operator must resolve."""
     return IncompleteBlob(source_id=entry.source_id, blob_sha256=entry.blob_sha256, kind=kind)
@@ -405,56 +428,3 @@ def record_licence_end(
         final_backup=final_backup,
         checkpoint=checkpoint,
     )
-
-
-def restore_purge(
-    conn: psycopg.Connection[Any],
-    authority: Authority,
-    watermark: int,
-    snapshot_root: Path,
-    backup_dir: Path,
-) -> RestoreDelta:
-    """Purge-first of a restored set (R12): insert the filed licence ends, expire the set's
-    expiries after ``watermark`` and every licence-ended capture with purge records, holds
-    notwithstanding and without an eligibility recompute; delete their bytes, sanitize the
-    backup directory and close the run. No journal append, no final backup."""
-    inserted = reconcile_licence_ends(conn, authority)
-    session_exclusive(conn)
-    ((run_id,),) = conn.execute(_NEW_RUN).fetchall()
-    ended = {source for (source,) in conn.execute(_LICENCE_ENDS).fetchall()}
-    expiries = expiries_after(authority.journal, watermark)
-    with conn.cursor(row_factory=dict_row) as cursor:
-        users = cursor.execute(_USERS).fetchall()
-    targets = [
-        u
-        for u in users
-        if u["state"] not in _GONE and (u["id"] in expiries or u["source_id"] in ended)
-    ]
-    with conn.transaction():
-        for user in targets:
-            capture, gone = user["id"], user["source_id"] in ended
-            conn.execute(_STATE, (capture, CaptureState.PURGE_PENDING, run_id))
-            if user["retention_class"] == RetentionClass.VENDOR:
-                conn.execute(_TOMBSTONE, (capture,))
-            reason = EligibleReason.LICENCE_END if gone else JOURNAL_EXPIRY
-            record = (run_id, capture, user["retention_class"], reason, user["url"])
-            conn.execute(_PURGE_RECORD, (*record, user["blob_sha256"], user["source_id"], False))
-            conn.execute(_STATE, (capture, CaptureState.EXPIRED, run_id))
-    run = _Run(conn, snapshot_root, backup_dir, {}, None, _no_step)
-    with conn.cursor(row_factory=dict_row) as cursor:
-        users = cursor.execute(_USERS).fetchall()
-    with run.store.writer_held():
-        run._delete(users, set())
-    if run.incomplete:
-        raise PurgeRefusedError(f"restored store has blobs to register or remove: {run.incomplete}")
-    sanitize(conn, backup_dir, _no_step)
-    conn.execute(_CLOSE_RUN, (run_id,))
-    count = len(targets)
-    rows = {"purge_runs": 1, "purge_run_closures": 1, "licence_ends": len(inserted)}
-    rows |= {"capture_states": 2 * count, "purge_records": count}
-    return RestoreDelta(expired=tuple(u["id"] for u in targets), rows=rows)
-
-
-def _no_step(step: PurgeStep) -> None:
-    """Restore's purge-first has no crash seam: a failure leaves the target closed."""
-    del step

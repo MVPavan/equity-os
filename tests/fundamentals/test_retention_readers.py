@@ -21,11 +21,11 @@ from purge_support import PDF, XBRL, Env, env
 from retention_support import dispose
 from stage1_e2e_support import RUNS, SCREENER, Stage
 
-from fundamentals.api import onboard_cli
+from fundamentals.api import compare_cli, onboard_cli
 from fundamentals.contracts.onboarding import VerificationUnit
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.retention_purge import FetchFailure, FetchFailureCategory
-from fundamentals.contracts.snapshot import MissingSnapshotError
+from fundamentals.contracts.snapshot import MissingSnapshotError, UnsafePathError
 from fundamentals.contracts.source_catalog import BUILTIN_SOURCES, NSE_MASTER
 from fundamentals.entity.discovery import Capture, Request, Response, store_captures
 from fundamentals.evidence import repository as repository_module
@@ -94,6 +94,28 @@ def test_a_purge_racing_a_retained_read_is_expiry_not_corruption(
 
     monkeypatch.setattr(SnapshotStore, "read_capture_verified", purged_meanwhile)
     with pytest.raises(OriginalExpiredError, match="ORIGINAL_EXPIRED"):
+        read_retained(env.pool, env.store, ref)
+
+
+@pytest.mark.parametrize("expired", [True, False])
+def test_a_body_detached_mid_read_is_expiry_only_when_confirmed(
+    env: Env, monkeypatch: pytest.MonkeyPatch, expired: bool
+) -> None:
+    """K7 (RP7): a body unlinked after its descriptor was read raises the store's detached-file
+    error; confirmed expiry is ``OriginalExpiredError``, a retained capture keeps the original."""
+    ref = env.capture(b"k7-detached", XBRL)
+
+    def detached(store: SnapshotStore, *identity: str) -> Any:
+        if expired:
+            with env.db.migrator_connection() as conn:
+                conn.execute(SEED_STATE, (ref.capture_ref_id, "EXPIRED"))
+        raise UnsafePathError("detached file: body.json")
+
+    monkeypatch.setattr(SnapshotStore, "read_capture_verified", detached)
+    raises = (
+        (OriginalExpiredError, "ORIGINAL_EXPIRED") if expired else (UnsafePathError, "detached")
+    )
+    with pytest.raises(raises[0], match=raises[1]):
         read_retained(env.pool, env.store, ref)
 
 
@@ -210,3 +232,20 @@ def test_onboarding_refuses_an_expired_capture_cleanly(
     args = argparse.Namespace(command=onboard_cli.ONBOARD_COMMAND, symbol="SYN")
     assert onboard_cli.dispatch_onboard_command(args) == onboard_cli.RunExitStatus.FAILURE
     assert "onboard SYN refused: ORIGINAL_EXPIRED: capture 7 is EXPIRED" in capsys.readouterr().err
+
+
+def test_compare_refuses_an_expired_capture_cleanly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """K8: an ``OriginalExpiredError`` from a compare run ends the command with the failure
+    exit and a message naming the capture, not a traceback."""
+
+    def expired(args: argparse.Namespace) -> Any:
+        raise OriginalExpiredError("ORIGINAL_EXPIRED: capture 7 is EXPIRED")
+
+    monkeypatch.setattr(compare_cli, "run_compare", expired)
+    args = argparse.Namespace(
+        command=compare_cli.COMPARE_COMMAND, compare_action=compare_cli.RUN_ACTION
+    )
+    assert compare_cli.dispatch_compare_command(args) == int(compare_cli.RunExitStatus.FAILURE)
+    assert "compare refused: ORIGINAL_EXPIRED: capture 7 is EXPIRED" in capsys.readouterr().err

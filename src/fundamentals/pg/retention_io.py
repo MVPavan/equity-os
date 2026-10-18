@@ -6,8 +6,8 @@ each on its own connection. The authority files ``licence-ends.json`` and
 in order, appended by one locked helper; dropped or renumbered ids are refused, never repaired.
 The journal's head is witnessed by each set (watermark and digest of the journal up to it) and,
 outside the backup directory's rollback domain, by a head file in the live snapshot store that a
-purge advances before deleting; a journal shorter than or unlike a witness is refused, as is a
-non-empty one where the live store has no head.
+purge advances before deleting and after completing; a journal shorter than or unlike a witness
+is refused, as is a non-empty one where the live store has no head.
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ _INSERT_LICENCE_END: LiteralString = (
     "INSERT INTO eqos.licence_ends (source_id, ended_at) VALUES (%s, %s) ON CONFLICT DO NOTHING"
 )
 _HEAD = TypeAdapter(tuple[int, Annotated[str, StringConstraints(pattern="^[0-9a-f]{64}$")]])
+_COMPLETE = JournalEventKind.COMPLETE
+Journal = tuple[JournalEvent, ...]
 _FILES: dict[type[BaseModel], str] = {
     LicenceEnd: LICENCE_ENDS_FILE,
     JournalEvent: EXPIRY_JOURNAL_FILE,
@@ -56,12 +58,13 @@ class AuthorityError(Exception):
 
 
 class Authority(BaseModel):
-    """Both authority files as read."""
+    """Both authority files as read, and the live head's watermark when one was checked."""
 
     model_config = ConfigDict(frozen=True)
 
     licence_ends: tuple[LicenceEnd, ...]
     journal: tuple[JournalEvent, ...]
+    head: int | None = None
 
 
 def session_shared(conn: psycopg.Connection[Any]) -> None:
@@ -81,28 +84,28 @@ def holds_exclusive(conn: psycopg.Connection[Any]) -> bool:
 
 
 def read_authority(backup_dir: Path, snapshot_root: Path | None = None) -> Authority:
-    """Both authority files, refusing a missing or malformed one or a journal that a set in
-    ``backup_dir`` or the head in ``snapshot_root`` shows truncated, rolled back or rewritten."""
-    authority = Authority(
-        licence_ends=tuple(_entries(backup_dir, LicenceEnd)),
-        journal=tuple(_entries(backup_dir, JournalEvent)),
-    )
+    """Both authority files, refusing a missing or malformed one, a ``COMPLETE`` unlike its fence
+    or a journal that a set or the head in ``snapshot_root`` shows truncated or rewritten."""
+    ends = tuple(_entries(backup_dir, LicenceEnd))
+    journal = tuple(_entries(backup_dir, JournalEvent))
     for manifest in sorted(backup_dir.glob(f"[!.]*/{MANIFEST_FILE}")):
         try:
             witness = yaml.safe_load(manifest.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError) as error:
             raise AuthorityError(f"{manifest.parent.name} has no readable manifest") from error
-        check_head(
-            authority.journal, witness.get("journal_watermark", 0), witness.get("journal_sha256")
-        )
-    head = snapshot_root and snapshot_root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE
-    if head and (authority.journal or head.exists()):
+        check_head(journal, witness.get("journal_watermark", 0), witness.get("journal_sha256"))
+    head, path = None, snapshot_root and snapshot_root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE
+    if path and (journal or path.exists()):
         try:
-            witnessed = _HEAD.validate_json(head.read_bytes(), strict=True)
+            head, digest = _HEAD.validate_json(path.read_bytes(), strict=True)
         except (OSError, ValidationError) as error:
-            raise AuthorityError(f"{head} is missing or unreadable") from error
-        check_head(authority.journal, *witnessed)
-    return authority
+            raise AuthorityError(f"{path} is missing or unreadable") from error
+        check_head(journal, head, digest)
+    for run in {e.run_id for e in journal if e.kind is _COMPLETE}:
+        fenced = sorted(c.capture_ref_id for e in journal if e.run_id == run for c in e.captures)
+        if fenced != sorted(i for e in journal if e.run_id == run for i in e.expired + e.cancelled):
+            raise AuthorityError(f"run {run} completes other captures than it fenced")
+    return Authority(licence_ends=ends, journal=journal, head=head)
 
 
 def journal_digest(journal: tuple[JournalEvent, ...]) -> str:
@@ -175,13 +178,13 @@ def reconcile_licence_ends(conn: psycopg.Connection[Any], authority: Authority) 
     return missing
 
 
-def expiries_after(journal: tuple[JournalEvent, ...], watermark: int) -> frozenset[int]:
+def expiries_after(journal: Journal, watermark: int, head: int | None = None) -> frozenset[int]:
     """Captures expired by runs with an event above ``watermark``: a completed run's expired
-    ids, an unresolved run's every fenced capture (R11, conservatively)."""
-    expired: set[int] = set()
+    ids, an unresolved run's (or one completed past a live ``head``) every fenced capture."""
+    expired, last = set[int](), len(journal) if head is None else head
     for run in {event.run_id for event in journal if event.id > watermark}:
         events = [event for event in journal if event.run_id == run]
-        completes = [e.expired for e in events if e.kind is JournalEventKind.COMPLETE]
+        completes = [e.expired for e in events if e.kind is _COMPLETE and e.id <= last]
         fenced = (c.capture_ref_id for e in events for c in e.captures)
         expired.update(completes[-1] if completes else fenced)
     return frozenset(expired)
