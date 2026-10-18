@@ -8,7 +8,8 @@ and selection's store-clock recording times bound it however early the writer da
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -27,6 +28,11 @@ __all__ = ["cited"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 _FACT_JSON = "SELECT fact_json FROM eqos.fact_rows WHERE origin = %s AND origin_id = %s"
+_ROW = "SELECT handle, content_identity FROM eqos.fact_rows WHERE origin = %s AND origin_id = %s"
+_CANDIDATE = """SELECT handle, origin_id FROM eqos.fact_rows
+WHERE target_store = %s AND content_identity = %s AND handle <> %s"""
+_OPEN_EVENT = """INSERT INTO eqos.fact_store_events (store_id, operation_id, state, recorded_at)
+VALUES (%s, %s, 'OPEN', eqos.store_now())"""
 # Sol r2's bypass: a copy of a native row and a selection of it, inserted with Sept 9 times.
 _FORGED_ROW = """INSERT INTO eqos.fact_rows SELECT target_store, handle + 1, origin,
     nextval('eqos.fact_native_id'), content_identity, 'forged', revision_family,
@@ -138,3 +144,49 @@ def test_a_fact_with_no_first_party_capture_is_unresolved(cited: Cited) -> None:
     provenance = Fact.model_validate_json(fact_json).observation.provenance
     claim = _native(cited, provenance=provenance.model_copy(update={"file_sha256": "0" * 64}))
     assert _state(cited, claim) is ClaimState.UNRESOLVED
+
+
+def _legacy(cited: Cited, origin_id: int) -> NumericClaim:
+    """An unkeyed ``FIGURE`` on an imported fact of the legacy store, at its resolved value."""
+    claim = _figure(None, fact_origin=cited.revenue_origin, fact_origin_id=origin_id)
+    resolved = cited.resolve(claim)
+    assert resolved is not None
+    return claim.model_copy(update={"value": resolved.value})
+
+
+def test_a_native_selection_of_an_imported_fact_is_held_to_its_recording_time(
+    cited: Cited,
+) -> None:
+    """Closing r1 #1: the imported FY27_Q1 revenue candidate selected natively now, dated an
+    hour after the import's selection, is past a 2026-09-08 cutoff — where ``get_canonical``
+    still answers the imported canonical row, whose imported selection keeps its legacy time."""
+    store_id, cutoff = cited.revenue_origin, datetime(2026, 9, 8, tzinfo=UTC)
+    ((handle, identity),) = cited.query(_ROW, store_id, cited.revenue_origin_id)
+    ((candidate, candidate_id),) = cited.query(_CANDIDATE, store_id, identity, handle)
+    with cited.runtime() as cursor:
+        cursor.execute(_OPEN_EVENT, (store_id, uuid.uuid4()))
+    store = PgFactStore(cited.pools[PgRole.RUNTIME], store_id)
+    imported = store.get_selection_history(identity)[-1].selected_at
+    store.select_canonical(candidate, "test: native reselection", imported + timedelta(hours=1))
+    canonical = store.get_canonical(identity, cutoff=cutoff)
+    assert canonical is not None and canonical.row_id == handle
+    reselected = _legacy(cited, candidate_id)
+    resolved = cited.resolve(reselected)
+    assert resolved is not None
+    assert all(
+        at is not None and at <= cutoff
+        for name, at in resolved.times
+        if name is not InputTime.SELECTED
+    )
+    assert _state(cited, reselected, cutoff) is ClaimState.POST_CUTOFF
+    assert _state(cited, reselected) is ClaimState.MATCH
+    assert _state(cited, _legacy(cited, cited.revenue_origin_id), cutoff) is ClaimState.MATCH
+
+
+@pytest.mark.parametrize("case", ["legacy_revenue", "interpretation_figure", "comparison"])
+def test_a_keyed_citation_resolves_only_for_its_issuer(cited: Cited, case: str) -> None:
+    """Closing r1 #2: the issuer's legacy translation, run-bound figure or run comparison cited
+    in another stock's report is ``UNRESOLVED`` — never a (trusted or untrusted) match."""
+    claim = getattr(cited, case)()
+    assert cited.resolve(claim) is not None
+    assert cited.resolve(claim, cited.entity_id + 1) is None

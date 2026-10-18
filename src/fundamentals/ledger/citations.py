@@ -68,10 +68,14 @@ _FIRST_SEEN: LiteralString = """least(c.first_seen_at, (SELECT min(a.retrieved_a
 _CAPTURE: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
 )
+# A fact's first selection time: a legacy-imported selection's own time, any other selection's
+# no earlier than its store-clock recording (0037), whatever the cited fact's origin.
 _FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, f.file_sha256 AS fact_file,
-    f.created_at, t.*, b.capture_ref_id, s.selected_at, s.recorded_at AS selection_recorded_at
+    f.created_at, t.*, b.capture_ref_id, s.selected_at
 FROM eqos.fact_rows f
-LEFT JOIN LATERAL (SELECT min(selected_at) AS selected_at, min(recorded_at) AS recorded_at
+LEFT JOIN LATERAL (SELECT min(CASE WHEN eqos.legacy_time_exempt(target_store, origin)
+        THEN selected_at::timestamptz ELSE greatest(selected_at::timestamptz, recorded_at) END)
+        AS selected_at
     FROM eqos.fact_selections WHERE target_store = f.target_store AND row_handle = f.handle) s
     ON true
 LEFT JOIN eqos.legacy_fact_translations t
@@ -188,7 +192,8 @@ def resolve_citation(
 ) -> ResolvedCitation | None:
     """What the claim's citation resolves to at ``overlay_position``, or ``None``.
 
-    ``entity_id`` is the stock of the claim's report, which a ``POLICY`` decision must share.
+    ``entity_id`` is the stock of the claim's report, which every keyed record and a ``POLICY``
+    decision must share.
     """
     citation = claim.citation
     with cursor.connection.cursor(row_factory=dict_row) as own:
@@ -202,7 +207,9 @@ def resolve_citation(
                 return None
             if citation.run_id is None:
                 return _interpretation(own, citation.interpretation_id, claim, entity_id, times)
-            return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
+            return _run_cell(
+                own, _CELL, citation.interpretation_id, claim, entity_id, overlay_position, times
+            )
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
             return _trace(own, citation.calculation_trace_id, claim, entity_id, catalog)
         if citation.kind is CitationKind.SOURCE_QUOTE and citation.capture_ref_id is not None:
@@ -214,7 +221,9 @@ def resolve_citation(
                 quote_text=_span(own, capture, citation.anchor or "", snapshots),
             )
         if citation.kind is CitationKind.COMPARISON:
-            return _run_cell(own, _COMPARISON, citation.pair_outcome_id, claim, overlay_position)
+            return _run_cell(
+                own, _COMPARISON, citation.pair_outcome_id, claim, entity_id, overlay_position
+            )
         if citation.kind is CitationKind.POLICY:
             return _policy(own, claim, entity_id)
     return None
@@ -301,22 +310,19 @@ def _source(own: Cursor[Any], citation: Citation) -> str | None:
 def _fact(
     own: Cursor[Any], origin: str | None, origin_id: int, entity_id: int, catalog: SourceCatalog
 ) -> ResolvedCitation | None:
-    """A legacy fact, through its translation and its bound capture; or a native (run-written)
-    fact of the report's issuer, through ``translate`` and its file's first-party capture, also
-    held to its row's and first selection's store-clock recording times."""
+    """A legacy fact of the report's issuer, through its translation and its bound capture; or a
+    native (run-written) fact of that issuer, through ``translate`` and its file's first-party
+    capture, also held to its row's store-clock recording time."""
     row = own.execute(_FACT, (origin, origin_id)).fetchone()
     if row is None:
         return None
     recorded: _Times = ()
     if origin == NATIVE_ORIGIN:
         key, capture = _native_key(own, row, entity_id), _file_capture(own, row, catalog)
-        recorded = (
-            (InputTime.RECORDED, _instant(row["created_at"])),
-            (InputTime.RECORDED, row["selection_recorded_at"]),
-        )
+        recorded = ((InputTime.RECORDED, _instant(row["created_at"])),)
     else:
         key, capture = _legacy_key(row), _first_party_capture(own, row["capture_ref_id"], catalog)
-    if capture is None or key is None:
+    if capture is None or key is None or key.entity_id != entity_id:
         return None
     observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
     return ResolvedCitation(
@@ -329,7 +335,7 @@ def _fact(
         times=(
             (InputTime.KNOWLEDGE, _instant(row["knowledge_time"])),
             (InputTime.FIRST_SEEN, capture["first_seen"]),
-            (InputTime.SELECTED, _instant(row["selected_at"])),
+            (InputTime.SELECTED, row["selected_at"]),
             *recorded,
         ),
     )
@@ -374,8 +380,7 @@ def _interpretation(
     """A mapped first-party interpretation of the report's issuer, under a claim key of that
     issuer: its own value and key, with no run (a comparator figure or a filed operand of a
     run's computed value)."""
-    key = claim.measurement_key
-    if key is None or key.entity_id != entity_id:
+    if _issuer_key(claim, entity_id) is None:
         return None
     row = own.execute(_INTERPRETATION, (interpretation_id, entity_id)).fetchone()
     if row is None or row["value"] is None:
@@ -394,8 +399,7 @@ def _trace(
 ) -> ResolvedCitation | None:
     """A computed trace whose every operand is first-party, under a claim key of the report's
     issuer (the caller matches the trace's key digest to the claim's)."""
-    key = claim.measurement_key
-    if key is None or key.entity_id != entity_id:
+    if _issuer_key(claim, entity_id) is None:
         return None
     row = own.execute(_TRACE, (trace_id,)).fetchone()
     times = _input_times(own, (trace_id,), (), catalog)
@@ -406,17 +410,25 @@ def _trace(
     )
 
 
+def _issuer_key(claim: NumericClaim, entity_id: int) -> MeasurementKey | None:
+    """The claim's key, only when it is a key of the report's issuer."""
+    key = claim.measurement_key
+    return key if key is not None and key.entity_id == entity_id else None
+
+
 def _run_cell(
     own: Cursor[Any],
     query: LiteralString,
     record_id: int | None,
     claim: NumericClaim,
+    entity_id: int,
     overlay_position: datetime,
     times: _Times | None = None,
 ) -> ResolvedCitation | None:
-    """A value of a result of the named run under the claim's key: an interpretation's
-    ``VALUE`` source value (D9), or a pair difference whose input time is the run's."""
-    run_id, key = claim.citation.run_id, claim.measurement_key
+    """A value of a result of the named run under the claim's key of the report's issuer: an
+    interpretation's ``VALUE`` source value (D9), or a pair difference whose input time is the
+    run's."""
+    run_id, key = claim.citation.run_id, _issuer_key(claim, entity_id)
     if record_id is None or run_id is None or key is None:
         return None
     row = own.execute(query, (record_id, run_id, key.digest())).fetchone()

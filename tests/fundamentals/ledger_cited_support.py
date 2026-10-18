@@ -173,13 +173,14 @@ class Cited:
         with self.pools[PgRole.PANEL].connection() as conn, conn.transaction():
             yield conn.cursor()
 
-    def resolve(self, cited: NumericClaim) -> ResolvedCitation | None:
-        """The real resolver on this database, at the current overlay position."""
+    def resolve(self, cited: NumericClaim, entity_id: int | None = None) -> ResolvedCitation | None:
+        """The real resolver on this database, at the current overlay position, for a report of
+        ``entity_id`` (default: the seeded issuer)."""
         with self.runtime() as cursor:
             return resolve_citation(
                 cursor,
                 cited,
-                entity_id=self.entity_id,
+                entity_id=self.entity_id if entity_id is None else entity_id,
                 overlay_position=datetime.now(UTC),
                 catalog=self.catalog,
                 snapshots=self.snapshots,

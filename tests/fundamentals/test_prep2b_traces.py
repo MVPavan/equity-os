@@ -58,6 +58,10 @@ QUARTERS = {
 # the run once printed them truncated (19, 33).
 GAPS = {"fy26-q4-pg": "19.72", "fy27-q1": "33.65"}
 TRACES = "SELECT count(*) FROM eqos.calculation_traces"
+MAPPED_VERSIONS = (
+    "SELECT DISTINCT mapping_set_version FROM eqos.interpretations WHERE status = 'MAPPED' "
+    "ORDER BY 1"
+)
 
 
 @pytest.fixture(scope="module")
@@ -191,3 +195,20 @@ def test_an_interpretation_figure_resolves_only_for_its_issuer(
     )
     for claim, report in ((figure, other), (foreign, ingest.entity_id), (foreign, other)):
         assert _state(ingest, claim, report) is ClaimState.UNRESOLVED
+
+
+def test_an_older_mapping_versions_interpretations_do_not_block_the_run(
+    ingest: Ingest, mapping_set: MappingSet, tmp_path: Path
+) -> None:
+    """The run XBRL also interpreted under mapping v4 beside v5 (append-only, same capture and
+    keys): the run binds within its own pinned context, so every value still matches."""
+    result = _run("fy27-q1", tmp_path)
+    filed, kind, period_end = QUARTERS["fy27-q1"][0]
+    older = mapping_set.model_copy(update={"version": "v4"})
+    ingest.run(ingest.intake({Representation.XBRL: kind}, filed), period_end, mapping_set=older)
+    _ingest(ingest, "fy27-q1")
+    with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        versions = conn.execute(MAPPED_VERSIONS).fetchall()
+    assert versions == [("v4",), ("v5",)]
+    claims = _claims(bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id))
+    assert {_state(ingest, claim) for claim in claims.values()} == {ClaimState.MATCH}

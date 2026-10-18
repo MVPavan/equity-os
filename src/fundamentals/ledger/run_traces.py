@@ -1,14 +1,15 @@
 """A run's retained computed values as stored, interpretation-backed traces (PREP-2b Task 4).
 
 Every operand is the one ``MAPPED`` interpretation of its key on the run's own (or the
-comparator's) XBRL capture, and must equal the run's value. Each result is computed exactly
-from those operands and packaged by ``conclude``; it must equal the run's value at the trace's
-stored scale. Nothing is stored unless every value holds. Formulas (version ``1``, operands
-``DURATION`` under their own keys): ``run.difference`` a − b, ``run.sum`` a + b,
-``run.change_pct`` (a − b) / b × 100 and the registered ``effective_tax_rate_pct``
-tax / PBT × 100. Keys follow the import's (``measurement_key``, ``change_key``); claim keys
-are the import's claim keys. The bound claims come back as the draft's changes and
-calculations lines.
+comparator's) XBRL capture under ``RUN_CONTEXT`` (the onboarding pins and the XBRL extractor;
+other versions' interpretations may sit beside it), and must equal the run's value. Each result
+is computed exactly from those operands and packaged by ``conclude``; it must equal the run's
+value at the trace's stored scale. Nothing is stored unless every value holds. Formulas
+(version ``1``, operands ``DURATION`` under their own keys): ``run.difference`` a − b,
+``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100 and the registered
+``effective_tax_rate_pct`` tax / PBT × 100. Keys follow the import's (``measurement_key``,
+``change_key``); claim keys are the import's claim keys. The bound claims come back as the
+draft's changes and calculations lines.
 """
 
 from __future__ import annotations
@@ -37,11 +38,13 @@ from fundamentals.contracts.evidence import CaptureReference, Interpretation, In
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.ledger import NumericClaim, Rounding
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.contracts.qualification import ScopedTier
 from fundamentals.contracts.role import FactRole
 from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS
 from fundamentals.ledger.import_mapping import ABS, PCT, _valued, change_key, measurement_key
 from fundamentals.output.earnings_update import _ROLE_LABELS, EarningsUpdate
@@ -66,6 +69,13 @@ _UNPROVEN = ScopedTier(
     tier=EvidenceTier.EQUIVALENCE_UNPROVEN, qualification_ref=None, condition_evidence=()
 )
 _Operand = tuple[str, OperandValue]
+# Dictionary, mapping-set, normalisation-policy and extractor versions a run's operands carry.
+RUN_CONTEXT = (
+    ONBOARDING_VERSIONS.dictionary,
+    ONBOARDING_VERSIONS.mapping_set,
+    ONBOARDING_VERSIONS.normalisation_policy,
+    XBRL_EXTRACTOR_VERSION,
+)
 
 
 class RunDraftError(RuntimeError):
@@ -104,8 +114,8 @@ class _Binder:
         run_value: Decimal,
         selection: SelectionSource = SelectionSource.PACKAGE_AS_REPORTED,
     ) -> _Operand:
-        """The single mapped interpretation of ``key`` in ``source``'s capture, equal to the
-        run's value."""
+        """The single mapped interpretation of ``key`` in ``source``'s capture under
+        ``RUN_CONTEXT``, equal to the run's value."""
         capture = self.repo.find_capture_ref(
             source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
         )
@@ -113,6 +123,7 @@ class _Binder:
             item
             for item in self._interpretations(capture)
             if item.status is InterpretationStatus.MAPPED
+            and _context(item) == RUN_CONTEXT
             and item.key is not None
             and item.key.digest() == key.digest()
         ]
@@ -324,6 +335,16 @@ def cite(claim: NumericClaim, **record: object) -> NumericClaim:
     """``claim`` cited to its stored record."""
     citation = claim.citation.model_copy(update=record)
     return claim.model_copy(update={"citation": citation, "unresolved": False})
+
+
+def _context(item: Interpretation) -> tuple[str, str, str, str]:
+    """The versions an interpretation was made under, in ``RUN_CONTEXT`` order."""
+    return (
+        item.dictionary_version,
+        item.mapping_set_version,
+        item.normalisation_policy_version,
+        item.extractor_version,
+    )
 
 
 def _scale(key: MeasurementKey) -> int:
