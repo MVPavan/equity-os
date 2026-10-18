@@ -27,6 +27,18 @@ __all__ = ["cited"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 _FACT_JSON = "SELECT fact_json FROM eqos.fact_rows WHERE origin = %s AND origin_id = %s"
+# Sol r2's bypass: a copy of a native row and a selection of it, inserted with Sept 9 times.
+_FORGED_ROW = """INSERT INTO eqos.fact_rows SELECT target_store, handle + 1, origin,
+    nextval('eqos.fact_native_id'), content_identity, 'forged', revision_family,
+    revision_ordinal + 1, canonical_status, canonical_selected_at, canonical_reason, source_id,
+    file_sha256, anchor, valid_time_start, valid_time_end, knowledge_time, first_seen_time,
+    fact_json, %(at)s FROM eqos.fact_rows WHERE origin = %(origin)s AND origin_id = %(id)s
+RETURNING target_store, handle, origin_id, content_identity"""
+_FORGED_SELECTION = """INSERT INTO eqos.fact_selections (target_store, handle, origin, origin_id,
+    content_identity, row_handle, sequence, predecessor_handle, selected_at, reason,
+    legacy_baseline, synthesized, selection_sha256, recorded_at)
+VALUES (%s, 1, 'pg-native', nextval('eqos.fact_native_id'), %s, %s, 1, NULL, %s, 'forged',
+    false, false, 'forged', %s)"""
 
 
 def _native(
@@ -87,6 +99,28 @@ def test_a_backdated_native_fact_is_post_cutoff(cited: Cited) -> None:
     held to its store-clock insertion and selection-recording times: past a 2026-09-10 cutoff
     (its capture was first seen 2026-09-06/07), known now."""
     claim = _native(cited, claimed=datetime(2026, 9, 9, tzinfo=UTC))
+    assert _state(cited, claim, datetime(2026, 9, 10, tzinfo=UTC)) is ClaimState.POST_CUTOFF
+    assert _state(cited, claim) is ClaimState.MATCH
+
+
+def test_a_native_row_and_selection_inserted_with_backdated_times_are_post_cutoff(
+    cited: Cited,
+) -> None:
+    """Runtime SQL that supplies Sept 9 ``created_at`` and ``recorded_at`` gets the store clock
+    instead (migration 0037): the forged row is past a 2026-09-10 cutoff, known now."""
+    claimed = datetime(2026, 9, 9, tzinfo=UTC)
+    claim = _native(cited, selected=False, claimed=claimed)
+    origin, origin_id = claim.citation.fact_origin, claim.citation.fact_origin_id
+    with cited.runtime() as cursor:
+        params = {"at": claimed.isoformat(), "origin": origin, "id": origin_id}
+        row = cursor.execute(_FORGED_ROW, params).fetchone()
+        assert row is not None
+        store, handle, forged, identity = row
+        at = claimed.isoformat()
+        cursor.execute(_FORGED_SELECTION, (store, identity, handle, at, claimed))
+    claim = claim.model_copy(
+        update={"citation": claim.citation.model_copy(update={"fact_origin_id": forged})}
+    )
     assert _state(cited, claim, datetime(2026, 9, 10, tzinfo=UTC)) is ClaimState.POST_CUTOFF
     assert _state(cited, claim) is ClaimState.MATCH
 

@@ -14,8 +14,12 @@ from test_store import _fact, _observation
 from fundamentals.store.fact_store import CanonicalSelectionError, FactStore, FactStoreLike
 
 
+@pytest.mark.parametrize("open_store", ["sqlite"], indirect=True)
 def test_later_selection_preserves_earlier_cutoff_after_reopen(open_store: StoreOpener) -> None:
-    """A restatement changes current results without changing the July result."""
+    """A restatement changes current results without changing the July result.
+
+    SQLite only: PostgreSQL holds a native selection to its store-clock recording time, so a
+    2024-dated selection made now is not effective at 2024 cutoffs (``test_pg_fact_store``)."""
     store = open_store()
     original = store.put(_fact())
     store.select_canonical(original.row_id, "original", datetime(2024, 7, 19, tzinfo=UTC))
@@ -47,11 +51,13 @@ def test_later_selection_preserves_earlier_cutoff_after_reopen(open_store: Store
         reopened.close()
 
 
+@pytest.mark.parametrize("open_store", ["sqlite"], indirect=True)
 @pytest.mark.parametrize("field", ["knowledge_time", "first_seen_time"])
 def test_unselected_and_future_known_facts_are_not_historical_evidence(
     store: FactStoreLike, field: str
 ) -> None:
-    """A value alone is not a decision, and first-seen bounds cannot be bypassed."""
+    """A value alone is not a decision, and first-seen bounds cannot be bypassed (SQLite only,
+    as above)."""
     candidate = store.put(_fact())
     assert store.get_canonical(candidate.content_identity) is None
     future = store.put(

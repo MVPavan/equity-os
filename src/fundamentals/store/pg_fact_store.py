@@ -72,7 +72,7 @@ _NOW: LiteralString = "SELECT eqos.store_now()"
 _INSERT_ROW: LiteralString = """
 INSERT INTO eqos.fact_rows (target_store, handle, origin, origin_id, content_identity, value_hash,
     revision_family, revision_ordinal, canonical_status, source_id, file_sha256, anchor,
-    valid_time_start, valid_time_end, knowledge_time, first_seen_time, fact_json, created_at)
+    valid_time_start, valid_time_end, knowledge_time, first_seen_time, fact_json)
 VALUES (%(store)s,
     (SELECT coalesce(max(handle), 0) + 1 FROM eqos.fact_rows WHERE target_store = %(store)s),
     %(origin)s, nextval('eqos.fact_native_id'), %(content_identity)s, %(value_hash)s,
@@ -82,8 +82,17 @@ VALUES (%(store)s,
     (SELECT coalesce(max(revision_ordinal), 0) + 1 FROM eqos.fact_rows
         WHERE target_store = %(store)s AND content_identity = %(content_identity)s),
     %(canonical_status)s, %(source_id)s, %(file_sha256)s, %(anchor)s, %(valid_time_start)s,
-    %(valid_time_end)s, %(knowledge_time)s, %(first_seen_time)s, %(fact_json)s, %(created_at)s)
+    %(valid_time_end)s, %(knowledge_time)s, %(first_seen_time)s, %(fact_json)s)
 RETURNING handle
+"""
+# Native selections recorded, or targeting rows created, after a cutoff (0037: store clock).
+_LATE: LiteralString = """
+SELECT s.handle FROM eqos.fact_selections s
+JOIN eqos.fact_rows r ON r.target_store = s.target_store AND r.handle = s.row_handle
+WHERE s.target_store = %(store)s AND s.content_identity = %(identity)s
+    AND ((s.recorded_at > %(cutoff)s AND NOT eqos.legacy_time_exempt(s.target_store, s.origin))
+    OR (r.created_at::timestamptz > %(cutoff)s
+        AND NOT eqos.legacy_time_exempt(r.target_store, r.origin)))
 """
 _INSERT_SELECTION: LiteralString = """
 INSERT INTO eqos.fact_selections (target_store, handle, origin, origin_id, content_identity,
@@ -133,7 +142,7 @@ def insert_revision(cursor: Cursor[Any], store_id: str, fact: Fact) -> int:
         existing = own.execute(_EXISTING, params).fetchone()
         if existing is not None:
             return int(existing[0])
-        params |= {"revision_family": fact.revision_family, "created_at": _store_now(own)}
+        params |= {"revision_family": fact.revision_family}
         inserted = own.execute(_INSERT_ROW, params).fetchone()
     assert inserted is not None
     return int(inserted[0])
@@ -337,9 +346,12 @@ class PgFactStore:
     def _canonical(
         self, cursor: _DictCursor, content_identity: str, cutoff: datetime
     ) -> StoredRevision | None:
-        """The revision selected at ``cutoff``, if its fact was known by then."""
+        """The revision selected at ``cutoff``, if its fact was known, and (native) its row and
+        selection recorded, by then."""
+        params = {"store": self._store_id, "identity": content_identity, "cutoff": cutoff}
+        late = {row["handle"] for row in cursor.execute(_LATE, params).fetchall()}
         decision = effective_revision(
-            self._history(cursor, content_identity),
+            [d for d in self._history(cursor, content_identity) if d.selection_id not in late],
             cutoff,
             lambda row_id: Fact.model_validate_json(self._row(cursor, row_id)["fact_json"]),
         )

@@ -204,7 +204,7 @@ def resolve_citation(
                 return _interpretation(own, citation.interpretation_id, claim, entity_id, times)
             return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
-            return _trace(own, citation.calculation_trace_id, claim, catalog)
+            return _trace(own, citation.calculation_trace_id, claim, entity_id, catalog)
         if citation.kind is CitationKind.SOURCE_QUOTE and citation.capture_ref_id is not None:
             capture = _first_party_capture(own, citation.capture_ref_id, catalog)
             if capture is None:
@@ -390,9 +390,13 @@ def _interpretation(
 
 
 def _trace(
-    own: Cursor[Any], trace_id: int, claim: NumericClaim, catalog: SourceCatalog
+    own: Cursor[Any], trace_id: int, claim: NumericClaim, entity_id: int, catalog: SourceCatalog
 ) -> ResolvedCitation | None:
-    """A computed trace whose every operand is first-party."""
+    """A computed trace whose every operand is first-party, under a claim key of the report's
+    issuer (the caller matches the trace's key digest to the claim's)."""
+    key = claim.measurement_key
+    if key is None or key.entity_id != entity_id:
+        return None
     row = own.execute(_TRACE, (trace_id,)).fetchone()
     times = _input_times(own, (trace_id,), (), catalog)
     if row is None or row["value"] is None or times is None:

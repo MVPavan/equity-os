@@ -9,6 +9,7 @@ non-forking constraint.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -18,8 +19,9 @@ import pytest
 from legacy_support import LEGACY_SHA256
 from pg_support import PgTestDatabase
 from test_legacy_import import Rig
-from test_store import _fact
+from test_store import _fact, _observation
 
+from fundamentals.compare.queue import overlay_boundary
 from fundamentals.contracts.fact import CanonicalStatus
 from fundamentals.pg.legacy_import import origin_id_for
 from fundamentals.pg.settings import PgRole
@@ -149,3 +151,24 @@ def test_a_forking_selection_violates_the_store_constraint(pg_db: PgTestDatabase
         store.select_canonical(row_id, "second")
     with pytest.raises(psycopg.errors.UniqueViolation, match="predecessor_handle"):
         _sql(pg_db, PgRole.MIGRATOR, FORK, store_id)
+
+
+def test_historical_reads_hold_native_selections_to_their_recording_times(
+    pg_db: PgTestDatabase,
+) -> None:
+    """A native selection dated before a cutoff but recorded after it is not effective there
+    (PREP-2/2b r2 #2): the cutoff falls back to the last selection recorded by then."""
+    early, late = datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 2, tzinfo=UTC)
+    with pg_db.runtime_pool() as pool:
+        store = PgFactStore(pool, create_native_store(pool, "recorded"))
+        original = store.put(_fact())
+        store.select_canonical(original.row_id, "original", early)
+        between = overlay_boundary(pool)
+        restated = store.put(_fact(_observation(normalized_value="6400", raw_value="64000000000")))
+        store.select_canonical(restated.row_id, "backdated restatement", late)
+        identity = original.content_identity
+        assert store.get_canonical(identity, cutoff=datetime(2026, 9, 10, tzinfo=UTC)) is None
+        at_between = store.get_canonical(identity, cutoff=between)
+        assert at_between is not None and at_between.row_id == original.row_id
+        current = store.get_canonical(identity)
+        assert current is not None and current.row_id == restated.row_id

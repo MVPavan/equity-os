@@ -41,7 +41,7 @@ from fundamentals.contracts.ledger import (
 )
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.ledger import store
-from fundamentals.ledger.citations import bound_contract, resolve_location
+from fundamentals.ledger.citations import bound_contract, resolve_citation, resolve_location
 from fundamentals.ledger.claim_check import check_claim, cutoff_instant, quote_qualifiers
 from fundamentals.ledger.import_mapping import ledger_contracts
 from fundamentals.ledger.numeral_scan import scan_section
@@ -433,6 +433,27 @@ def test_first_party_trace_and_comparison_resolve(
     assert resolved is not None
     assert resolved.value == value
     assert time in {name for name, _ in resolved.times}
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_trace_does_not_resolve_on_another_issuers_report(cited: Cited) -> None:
+    """An Apar trace under an Apar claim key, both digests matching, is not evidence for a
+    report on another stock: the claim key must name the report's issuer."""
+    claim = cited.first_party_trace()
+    with cited.runtime() as cursor:
+        resolved = resolve_citation(
+            cursor,
+            claim,
+            entity_id=cited.entity_id + 1,
+            overlay_position=datetime.now(UTC),
+            catalog=cited.catalog,
+            snapshots=cited.snapshots,
+        )
+    assert resolved is None
+    now = datetime.now(UTC)
+    state = check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=now, imported=False)
+    assert state is ClaimState.UNRESOLVED
 
 
 @pytest.mark.pg
