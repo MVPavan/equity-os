@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "D9 Retention and replay: phase-end review",
-    "detail": "All nine D9 tasks done. The Stage 5 end-to-end passes through the CLI against the frozen manifest (re-approved after the e2e found three manifest errors: record digest convention, Screener attempt count, Upstox null interpretation values). Sol is reviewing the whole phase.",
+    "title": "D9 Retention and replay: final critical review",
+    "detail": "Phase-end review loop closed after three rounds (18 + 5 + 2 findings fixed; the last two ruled by the orchestrator: every restore names its journal witness or declares --unwitnessed). A fresh Sol session is doing the closing critical review of the whole phase.",
     "stage": "D9"
   },
   "next": [
-    "D9 phase-end review (Sol), fix rounds, then a fresh critical review",
+    "D9 final critical review (Sol), fix round if needed, then close epic eqos-4fc",
     "D7 Tasks 5-6 once the owner's real Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
     "D8 resumes only if vendor definitions appear or the owner picks a Stage 3 exception",
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "D9 phase-end review: round 1 (F1-F18) fixed in 081b501, round 2 (G1-G5: journal witness, exact tombstone closure, exact numerics, locked trace reads, retry history) in 45e5e95, round 3 (H1-H2: required witness choice, purge-first checked) in 72a9434 under orchestrator rulings. Full suite 4089 passed, one WSL clock flake."
+    },
     {
       "date": "2026-10-18",
       "text": "D9 Task 9 committed: Stage 5 end-to-end (classify, backup, dry-run, purge crashed and rerun, re-fetch three ways, Tijori licence end, two restores with replay) matches the frozen manifest; four must-fail mutations. Manifest amended r4 and re-approved by Sol. Full suite 4036 passed, one WSL clock flake."
