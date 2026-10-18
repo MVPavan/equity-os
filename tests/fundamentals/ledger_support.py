@@ -78,6 +78,7 @@ REGISTRY_TABLES = frozenset(
 COVERAGE_TABLES = REGISTRY_TABLES | {
     *("screens", "screen_runs", "screen_members", "screen_run_pairs"),
     *("capture_batches", "batch_member_results", "batch_completions"),
+    *("screen_member_dispositions", "screen_other_vendor_reads"),
 }
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64

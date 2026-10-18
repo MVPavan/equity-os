@@ -19,8 +19,8 @@ from fundamentals.contracts.retention import (
 EXCHANGE_WINDOW_MONTHS = 3  # P4: three calendar months after verification
 VENDOR_WINDOW_MONTHS = 12  # four quarters from registration (vendor and identity)
 _KEEP = Eligibility(kind=EligibilityKind.KEEP)
-# R3: for a vendor-bounded source only an open queue item extends the window.
-_VENDOR_HOLDS = frozenset({HoldRoot.OPEN_QUEUE_ITEM})
+# R3: for a vendor-bounded source only an open queue item or screen review extends the window.
+_VENDOR_HOLDS = frozenset({HoldRoot.OPEN_QUEUE_ITEM, HoldRoot.OPEN_SCREEN_REVIEW})
 
 
 def add_months(at: datetime, months: int) -> datetime:

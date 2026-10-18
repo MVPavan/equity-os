@@ -73,6 +73,12 @@ WITH RECURSIVE edges(from_kind, from_id, to_kind, to_id) AS MATERIALIZED (
                                        WHERE d.item_id = q.id)
                      THEN 'QUEUE_ITEM' ELSE 'OPEN_QUEUE_ITEM' END, 'Q', q.id
         FROM eqos.queue_items q
+    UNION ALL SELECT 'OPEN_SCREEN_REVIEW', 'C', c.id FROM eqos.screen_run_pairs p
+        JOIN eqos.screen_runs r ON r.id IN (p.screener_run_id, p.tijori_run_id)
+        CROSS JOIN LATERAL (SELECT r.definition_capture_ref_id UNION SELECT r.capture_ref_id
+            UNION SELECT capture_ref_id FROM eqos.screen_other_vendor_reads o
+            WHERE o.pair_id = p.id) c(id)
+        WHERE p.id IN (SELECT pair_id FROM eqos.screen_review_pending)
     UNION ALL SELECT 'LEGACY_BINDING', 'C', capture_ref_id FROM eqos.legacy_evidence_bindings
     UNION ALL SELECT 'IDENTITY_EVENT', 'C', c.capture_ref_id FROM eqos.identity_events e
         JOIN eqos.evidence_input_captures c ON c.evidence_input_id = e.evidence_input_id

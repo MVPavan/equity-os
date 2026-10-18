@@ -317,13 +317,8 @@ class TijoriSource:
         section: TijoriOverviewSection | None = None,
     ) -> tuple[TijoriOverviewSectionBase, ...]:
         """Fetch the overview sections, binding the response to the caller's identity."""
-        credentials = self._config.credentials
-        if credentials is None:
-            raise TijoriCredentialsError(
-                "tijori credentials not provided; skipping Tijori overview acquisition"
-            )
         return self.parse_overview_bytes(
-            self._fetch_overview_bytes(slug, credentials),
+            self.fetch_overview_bytes(slug),
             slug=slug,
             expected_symbol=expected_symbol,
             expected_company_id=expected_company_id,
@@ -538,6 +533,16 @@ class TijoriSource:
         return self._fetch_page_bytes(
             url, slug=slug, credentials=credentials, fetch_event=_SHAREHOLDING_FETCH_FAILED_EVENT
         )
+
+    def fetch_overview_bytes(self, slug: str) -> bytes:
+        """The overview page's bytes, unparsed, so a caller can retain exactly what it then
+        parses with :meth:`parse_overview_bytes`."""
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori overview acquisition"
+            )
+        return self._fetch_overview_bytes(slug, credentials)
 
     def _fetch_overview_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
         """Fetch one complete authenticated overview page without redirects."""

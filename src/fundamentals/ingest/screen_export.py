@@ -8,6 +8,8 @@ so a caller never holds a partial export. Values stay vendor text; nothing here 
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from collections import Counter
@@ -31,7 +33,7 @@ from fundamentals.ingest.screener_session_models import (
 )
 from fundamentals.ingest.screener_session_page import assert_logged_in, parse_document
 from fundamentals.ingest.screener_watchlist import cookie_state, export_form, read_watchlist_export
-from fundamentals.ingest.screener_watchlist_models import CSRF_FORM_FIELD
+from fundamentals.ingest.screener_watchlist_models import CSRF_FORM_FIELD, EXPORT_ENCODING
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource, TijoriSourceConfig
 
 SPACING_SECONDS = 2.0
@@ -201,7 +203,16 @@ def export_tijori(
         screen_text=f"tijori:{text}",
         definition=listing,
         results=results,
-        rows=tuple({key: _cell(value) for key, value in row.items()} for row in data),
+        rows=result_rows(ScreenVendor.TIJORI, results.body),
+    )
+
+
+def result_rows(vendor: ScreenVendor, body: bytes) -> tuple[dict[str, str], ...]:
+    """A retained results capture's rows as text, in export order (a member's row number)."""
+    if vendor is ScreenVendor.SCREENER:
+        return tuple(csv.DictReader(io.StringIO(body.decode(EXPORT_ENCODING))))
+    return tuple(
+        {key: _cell(value) for key, value in row.items()} for row in json.loads(body)["data"]
     )
 
 
