@@ -143,6 +143,7 @@ _BAD_EXPORT_MEDIA_TYPE = "watchlist export media type is {media_type!r}, not {ex
 _NO_EXPORT_FILENAME = "watchlist export carries no Content-Disposition filename"
 _EMPTY_EXPORT = "watchlist export carries no header record"
 _RAGGED_EXPORT = "watchlist export record {position} has {width} fields, not {expected}"
+_MALFORMED_EXPORT = "watchlist export is not well-formed CSV: {error}"
 
 
 def read_watchlist_table(root: Any) -> WatchlistTable:
@@ -247,7 +248,16 @@ def read_watchlist_export(
         )
     if not _export_filename(content_disposition):
         raise WatchlistExportError(_NO_EXPORT_FILENAME)
-    parsed = list(csv.reader(io.StringIO(raw.decode(EXPORT_ENCODING))))
+    return read_export_csv(raw)
+
+
+def read_export_csv(raw: bytes) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    """An export body's header and records, strictly: malformed quoting or a ragged record
+    refuses rather than shifting a field under the wrong label."""
+    try:
+        parsed = list(csv.reader(io.StringIO(raw.decode(EXPORT_ENCODING)), strict=True))
+    except csv.Error as error:
+        raise WatchlistExportError(_MALFORMED_EXPORT.format(error=error)) from error
     if not parsed:
         raise WatchlistExportError(_EMPTY_EXPORT)
     header = tuple(parsed[0])

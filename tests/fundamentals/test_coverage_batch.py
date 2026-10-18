@@ -39,10 +39,13 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.contracts.onboarding import OnboardingOutcome
 from fundamentals.coverage import screens
+from fundamentals.coverage.registry import REGISTRY_LOCK
 from fundamentals.ingest import screen_export
 from fundamentals.ingest.screen_export import ScreenVendor, VendorExport
 from fundamentals.ingest.screener_session_models import ScreenerCredentials
 from fundamentals.ingest.tijori_source import TijoriCredentials
+from fundamentals.pg.pool import open_pool
+from fundamentals.pg.settings import PgRole
 from fundamentals.store.snapshot_store import SnapshotStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
@@ -369,6 +372,23 @@ def test_a_failed_pair_insert_leaves_no_capture_or_screen_row(world: Any) -> Non
         patch.setattr(screens, "_INSERT_PAIR", "SELECT %s / (%s * 0)")
         with pytest.raises(psycopg.errors.DivisionByZero):
             _record(world, tijori=(_tijori_row("Novel", "THERMAX", slug="novel-results"),))
+    assert [count(db, table) for table in RUN_TABLES] == before
+
+
+def test_an_export_binds_against_one_registry_state(world: Any) -> None:
+    """Recording an export takes the registry load lock, so no load commits between its rows'
+    bindings: while a load holds it, the export waits (here: until its statement timeout) and
+    writes nothing."""
+    db = world["db"]
+    before = [count(db, table) for table in RUN_TABLES]
+    quick = db.settings.model_copy(update={"statement_timeout_ms": 500})
+    with (
+        db.owner_pool() as holder, holder.connection() as conn, conn.transaction(),
+        open_pool(quick, PgRole.OWNER, dbname=db.dbname, login=db.logins[PgRole.OWNER]) as pool,
+    ):  # fmt: skip
+        conn.execute(REGISTRY_LOCK)
+        with pytest.raises(psycopg.errors.QueryCanceled):
+            screens.record_screen_run(pool, *_recorded(), SnapshotStore(Path(world["snaps"])))
     assert [count(db, table) for table in RUN_TABLES] == before
 
 

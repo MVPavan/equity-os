@@ -36,7 +36,7 @@ LOADED_EVENT = "coverage.registry_loaded"
 _UNREADABLE = "instrument capture {path} read as {outcome}"
 _MISMATCH = "instrument capture {path} does not hash to its record's content_sha256"
 # Arbitrary fixed key: loads serialise so "the preceding load" is the committed latest.
-_LOCK: LiteralString = "SELECT pg_advisory_xact_lock(4215031024)"
+REGISTRY_LOCK: LiteralString = "SELECT pg_advisory_xact_lock(4215031024)"
 _INSERT_LOAD: LiteralString = (
     "INSERT INTO eqos.registry_loads (capture_ref_id, content_sha256) VALUES (%s, %s) "
     "ON CONFLICT (capture_ref_id) DO NOTHING RETURNING id"
@@ -103,7 +103,7 @@ def load_registry(
         )
     rows = catalog.instruments
     with pool.connection() as conn, conn.transaction():
-        conn.execute(_LOCK)
+        conn.execute(REGISTRY_LOCK)
         inserted = conn.execute(
             _INSERT_LOAD, (ref.capture_ref_id, catalog.content_sha256)
         ).fetchone()

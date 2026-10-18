@@ -37,8 +37,8 @@ from fundamentals.api.env_credentials import (
     _tijori_credentials_from_env,
 )
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
-from fundamentals.api.watchlist_config import load_watchlist_config
-from fundamentals.coverage.screen_review import ItemStatus, ReviewItem, read_other_vendor
+from fundamentals.api.watchlist_config import StockConfig, load_watchlist_config
+from fundamentals.coverage.screen_review import ItemStatus, ReadGap, ReviewItem, read_other_vendor
 from fundamentals.ingest.http_session import RequestPacer
 from fundamentals.ingest.screen_export import (
     SPACING_SECONDS,
@@ -53,6 +53,7 @@ from fundamentals.ingest.screen_export import (
 )
 from fundamentals.ingest.screener_session import ScreenerSessionSource
 from fundamentals.ingest.screener_session_models import ScreenerCredentials, ScreenerSessionError
+from fundamentals.ingest.screener_watchlist_models import WatchlistExportError
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriFetchError, TijoriSource
 
 CONFIG = Path(__file__).parents[2] / "config" / "screens.yaml"
@@ -60,6 +61,7 @@ WATCHLIST = Path(__file__).parents[2] / "config" / "watchlist.yaml"
 OVERVIEW_PATH = "/company/titan-company-limited/"  # TITAN's verified Tijori slug
 OVERVIEW = (Path(__file__).parent / "fixtures" / "synthetic_tijori_overview.html").read_bytes()
 FORMULA = "Market Capitalization > 20000"
+TITAN_ISIN = "INE280A01028"  # TITAN's ISIN in the SYNTHETIC CSV
 SYMBOLS = ["ETERNAL", "POLYCAB", "TITAN", "THERMAX", "CGPOWER"]
 ACTION = "/api/export/screen/?query=Market+Capitalization+%3E+20000&amp;url_name=raw_query"
 ECHO = "Market Capitalization &gt; 20000</textarea>"
@@ -194,6 +196,10 @@ SCREENER_REFUSALS: dict[str, Callable[[], Replies]] = {
     "no ISIN column": lambda: _csv("ISIN Code", "ISIN"),
     "repeated column": lambda: _csv("BSE Code", "Name"),
     "ragged csv": lambda: _csv(",ETERNAL,", ",ETERNAL,,"),
+    "csv shorter than declared": lambda: _with(
+        ("POST", EXPORT_PATH),
+        (200, fixture("screener.csv"), CSV_TYPE | {"Content-Length": "999999"}),
+    ),
     "csv not 200": lambda: _with(("POST", EXPORT_PATH), (203, fixture("screener.csv"), CSV_TYPE)),
     "csv as html": lambda: _with(("POST", EXPORT_PATH), (200, fixture("screener.csv"), HTML_TYPE)),
 }
@@ -291,7 +297,7 @@ def test_tijori_export_and_its_diagnostic_reads_share_one_pacer(
     item = ReviewItem(
         pair_id=1, member_id=1, vendor=ScreenVendor.SCREENER, status=ItemStatus.ABSENT,
         reason=None, nse_code="TITAN", candidate_member_ids=(), row_number=1, results_ref=1,
-        read=None,
+        read=None, isin=TITAN_ISIN, bse_codes=("500114",),
     )  # fmt: skip
     for _ in range(2):
         assert not isinstance(read_other_vendor(item, titan, tijori, pacer, screener), str)
@@ -302,6 +308,81 @@ def test_tijori_export_and_its_diagnostic_reads_share_one_pacer(
     assert [urlsplit(url).path for _, url, _ in web.requests][-3:] == [
         RESULTS_PATH, OVERVIEW_PATH, OVERVIEW_PATH
     ]  # fmt: skip
+
+
+def _titan_item(vendor: ScreenVendor, **changes: object) -> tuple[ReviewItem, StockConfig]:
+    """A bound TITAN item of ``vendor`` and TITAN's watchlist stock, its identifiers changed."""
+    (titan,) = [s for s in load_watchlist_config(WATCHLIST).stocks if s.symbol == "TITAN"]
+    ids = titan.identifiers.model_copy(update=changes)
+    item = ReviewItem(
+        pair_id=1, member_id=1, vendor=vendor, status=ItemStatus.ABSENT, reason=None,
+        nse_code="TITAN", candidate_member_ids=(), row_number=1, results_ref=1, read=None,
+        isin=TITAN_ISIN, bse_codes=("500114",),
+    )  # fmt: skip
+    return item, titan.model_copy(update={"identifiers": ids})
+
+
+@pytest.mark.parametrize(
+    ("vendor", "changes", "gap"),
+    [
+        *[(v, {"isin": "INE000A01010"}, ReadGap.NOT_VERIFIED) for v in ScreenVendor],
+        *[(v, {"bse_scrip": "999999"}, ReadGap.NOT_VERIFIED) for v in ScreenVendor],
+        (ScreenVendor.TIJORI, {"screener_slug": "TITAN/?q=x"}, ReadGap.READ_REFUSED),
+        (ScreenVendor.TIJORI, {"screener_slug": ".."}, ReadGap.READ_REFUSED),
+    ],
+)
+def test_a_diagnostic_read_of_another_issuer_or_url_requests_nothing(
+    vendor: ScreenVendor,
+    changes: dict[str, str],
+    gap: ReadGap,
+    monkeypatch: pytest.MonkeyPatch,
+    clock: FakeClock,
+) -> None:
+    """A watchlist stock that is not the member's bound issuer (another ISIN, or a BSE scrip not
+    the bound ISIN's: its NSE symbol reused), or a Screener slug that is not one plain path
+    segment (a prohibited query, a traversal), refuses before any request."""
+    web = serve(monkeypatch, {})
+    item, stock = _titan_item(vendor, **changes)
+    screener, tijori = _sources()
+    assert read_other_vendor(item, stock, tijori, RequestPacer(0.0), screener) == gap
+    assert web.requests == []
+
+
+def test_malformed_csv_quoting_refuses_at_export_and_hydration(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """An unterminated quoted final cell keeps every record's width, so only strict parsing in the
+    one shared reader catches it, at export and on re-reading the retained capture."""
+    body = fixture("screener.csv")
+    assert body.endswith(b",5.00\n")
+    broken = body[:-5] + b'"5.00\n'
+    with pytest.raises(WatchlistExportError, match="well-formed"):
+        _screener(monkeypatch, _with(("POST", EXPORT_PATH), (200, broken, CSV_TYPE)))
+    with pytest.raises(WatchlistExportError, match="well-formed"):
+        result_rows(ScreenVendor.SCREENER, broken)
+
+
+def test_tijori_hydration_keeps_number_lexemes() -> None:
+    """A Tijori value is the vendor's text: a JSON number is never rounded through a float."""
+    body = b'{"data": [{"a": 1.2300, "b": 9007199254740993.125, "c": 7, "d": null}]}'
+    assert result_rows(ScreenVendor.TIJORI, body) == (
+        {"a": "1.2300", "b": "9007199254740993.125", "c": "7", "d": ""},
+    )
+
+
+@pytest.mark.parametrize("text", ["", "- {name: a, screener: [x\n"])
+def test_an_empty_or_unparsable_screen_config_refuses(
+    text: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An empty screens file, or one that is not YAML, refuses through the CLI's handler before
+    any request."""
+    connects: list[object] = []
+    monkeypatch.setattr(socket.socket, "connect", lambda *args: connects.append(args))
+    screens = tmp_path / "screens.yaml"
+    screens.write_text(text)
+    code = main(["coverage", "export", "--screen", "a", "--screens", str(screens),
+                 "--snapshot-root", str(tmp_path)])  # fmt: skip
+    assert code == EXIT_REFUSED and connects == []
 
 
 def test_screen_config_loads_and_refuses_a_repeated_name_or_blank_field(tmp_path: Path) -> None:

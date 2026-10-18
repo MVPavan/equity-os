@@ -18,6 +18,7 @@ terminal — this adapter never works around one.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import assert_never
@@ -39,6 +40,7 @@ SCREENER_HOST = "www.screener.in"
 SCREENER_ORIGIN = f"{SCREENER_SCHEME}://{SCREENER_HOST}"
 CONSOLIDATED_PATH_TEMPLATE = "/company/{slug}/consolidated/"
 STANDALONE_PATH_TEMPLATE = "/company/{slug}/"
+_SLUG = re.compile(r"[A-Za-z0-9][A-Za-z0-9&_-]*")
 DEFAULT_USER_AGENT = "EquityOS Research"
 DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
@@ -247,7 +249,10 @@ class BasisTopology(BaseModel):
 
 
 def company_page_url(slug: str, basis: Basis) -> str:
-    """Build one company-page URL on the pinned Screener origin."""
+    """Build one company-page URL on the pinned Screener origin; a slug that is not one plain
+    path segment (a query, fragment, separator or traversal) refuses before any request."""
+    if not _SLUG.fullmatch(slug):
+        raise ScreenerOriginError(f"refusing company slug {slug!r}: not one plain path segment")
     template = (
         CONSOLIDATED_PATH_TEMPLATE if basis is Basis.CONSOLIDATED else STANDALONE_PATH_TEMPLATE
     )

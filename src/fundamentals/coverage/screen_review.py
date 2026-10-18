@@ -72,11 +72,14 @@ CORRESPONDENCES = {
     },
     ScreenVendor.TIJORI: {"<span>latest</span>Mcap<span>Cr</span>": "Market Cap"},
 }
-# Each pending item, its member's row locator and its read (both null while none is recorded).
+# Each pending item, its member's row locator, its read (both null while none is recorded) and
+# its bound ISIN with that ISIN's current BSE codes.
 _PENDING: LiteralString = (
     "SELECT p.member_id, p.vendor, p.status, p.reason, p.nse_code, p.candidate_member_ids, "
     "m.row_number, r.capture_ref_id AS results_ref, o.capture_ref_id AS read_ref, o.gap, "
-    "o.tijori_slug, o.tijori_company_id "
+    "o.tijori_slug, o.tijori_company_id, m.isin, ARRAY(SELECT v.exchange_token "
+    "FROM eqos.registry_view v WHERE v.status = 'LISTED' AND v.segment = 'BSE_EQ' "
+    "AND v.isin = m.isin) AS bse_codes "
     "FROM eqos.screen_review_pending p JOIN eqos.screen_members m ON m.id = p.member_id "
     "JOIN eqos.screen_runs r ON r.id = m.screen_run_id "
     "LEFT JOIN eqos.screen_other_vendor_reads o "
@@ -115,7 +118,8 @@ class ReadGap(StrEnum):
 
 class ReviewItem(BaseModel):
     """One pending item of a pair, its member's row locator and its read (a capture ref id, a
-    gap, or ``None`` while none is recorded) with a Tijori read's gate identifiers."""
+    gap, or ``None`` while none is recorded) with a Tijori read's gate identifiers, and the
+    member's bound ISIN with its current BSE codes."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -131,6 +135,8 @@ class ReviewItem(BaseModel):
     read: int | ReadGap | None
     tijori_slug: str | None = None
     tijori_company_id: int | None = None
+    isin: str | None = None
+    bse_codes: tuple[str, ...] = ()
 
 
 def pending_items(pool: ConnectionPool, pair_id: int) -> tuple[ReviewItem, ...]:
@@ -169,12 +175,16 @@ def read_other_vendor(
     tijori_pacer: RequestPacer,
     screener: ScreenerSessionSource,
 ) -> Capture | ReadGap:
-    """One identity-gated page of the other vendor for a bound item, or why there is none."""
+    """One identity-gated page of the other vendor for a bound item, or why there is none. The
+    watchlist stock must be the member's issuer: its BSE scrip one of the bound ISIN's listings
+    and its ISIN, if configured, that ISIN (an NSE symbol can be reused)."""
     if item.status is ItemStatus.UNRESOLVED:
         return ReadGap.MEMBER_UNRESOLVED
     ids = None if stock is None else stock.identifiers
+    if ids is None or ids.isin not in (None, item.isin) or ids.bse_scrip not in item.bse_codes:
+        return ReadGap.NOT_VERIFIED
     if item.vendor is ScreenVendor.SCREENER:
-        if ids is None or ids.unverified_tijori_fields():
+        if ids.unverified_tijori_fields():
             return ReadGap.NOT_VERIFIED
         tijori_pacer.wait_for_slot()
         try:
@@ -186,7 +196,7 @@ def read_other_vendor(
             base=tijori.config.base_url, slug=ids.tijori_slug
         )
         return _capture(VerificationUnit.TIJORI, TIJORI_OVERVIEW, url, body, datetime.now(UTC))
-    if ids is None or ids.unverified_screener_fields():
+    if ids.unverified_screener_fields():
         return ReadGap.NOT_VERIFIED
     consolidated = ids.screener_warehouse_id_consolidated is not None
     try:

@@ -21,6 +21,7 @@ Operating rules, all of them fail-closed:
 from __future__ import annotations
 
 import hashlib
+import http.client
 import time
 import urllib.error
 import urllib.request
@@ -74,6 +75,7 @@ _GET_METHOD = "GET"
 _POST_METHOD = "POST"
 SET_COOKIE_HEADER = "Set-Cookie"
 CONTENT_TYPE_HEADER = "Content-Type"
+CONTENT_LENGTH_HEADER = "Content-Length"
 CONTENT_DISPOSITION_HEADER = "Content-Disposition"
 REFERER_HEADER = "Referer"
 ORIGIN_HEADER = "Origin"
@@ -394,6 +396,11 @@ class ScreenerSessionSource:
                         )
                     payload = read_bounded(response, self._config.max_response_bytes)
                     response_headers = response.headers
+                    declared = response_headers.get(CONTENT_LENGTH_HEADER)
+                    if declared is not None and declared.strip() != str(len(payload)):
+                        raise ScreenerSessionFetchError(
+                            f"screener sent {len(payload)} of {declared} bytes for {log_url}"
+                        )
             except urllib.error.HTTPError as error:
                 self._refuse_terminal_status(error, log_url=log_url)
                 rate_limit = error
@@ -411,7 +418,7 @@ class ScreenerSessionSource:
                 raise ScreenerSessionFetchError(
                     f"screener response exceeded maximum {self._config.max_response_bytes} bytes"
                 ) from error
-            except (urllib.error.URLError, TimeoutError, OSError) as error:
+            except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
                 raise ScreenerSessionFetchError(
                     f"screener fetch failed for {log_url}: {type(error).__name__}"
                 ) from error

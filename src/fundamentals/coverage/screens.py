@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.onboarding import OnboardingOutcome, VerificationUnit
 from fundamentals.contracts.source_catalog import SCREEN_EXPORT, SCREENER_SCREEN_PAGE, TIJORI_SCREEN
+from fundamentals.coverage.registry import REGISTRY_LOCK
 from fundamentals.entity.discovery import OK, Capture, Request, Response, register_capture
 from fundamentals.evidence.capture_retention import Registration
 from fundamentals.ingest.screen_export import ScreenVendor, VendorExport, result_rows
@@ -156,8 +157,11 @@ def record_screen_run(
     pool: ConnectionPool, screener: VendorExport, tijori: VendorExport, snapshots: SnapshotStore
 ) -> ExportResult:
     """Register each export's responses as captures and write both runs, their members and the
-    pair, all in one transaction under the shared retention lock: a refusal leaves nothing."""
+    pair, all in one transaction under the shared retention lock: a refusal leaves nothing. The
+    registry load lock, taken first as a load takes it, binds every row against one registry
+    state."""
     with snapshots.prepare_ordinary_output(), pool.connection() as conn, conn.transaction():
+        conn.execute(REGISTRY_LOCK)
         conn.execute(_RETENTION_SHARED)
         registration = Registration(conn)
         runs = [

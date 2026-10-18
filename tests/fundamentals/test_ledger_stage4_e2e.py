@@ -84,10 +84,10 @@ _PACKAGE = (
     "JOIN eqos.package_statements s ON s.package_id = p.id AND s.role = 'PRESENT' "
     "WHERE i.run_id = %s AND i.input_kind = 'PACKAGE' GROUP BY 1"
 )
-# The captures a run's persisted inputs bind: directly, as an input package's members, or as an
-# input evidence record's captures.
+# The captures a run's persisted inputs bind (each capture once, however reached): directly, as
+# an input package's members, or as an input evidence record's captures.
 _INPUTS = (
-    "SELECT DISTINCT c.source_id, c.surface, c.blob_sha256 FROM eqos.run_inputs i "
+    "SELECT DISTINCT c.source_id, c.surface, c.blob_sha256, c.id FROM eqos.run_inputs i "
     "LEFT JOIN eqos.package_members m ON m.package_id = i.package_id "
     "LEFT JOIN eqos.evidence_input_captures x ON x.evidence_input_id = i.evidence_input_id "
     "JOIN eqos.capture_refs c ON c.id IN (i.capture_ref_id, m.capture_ref_id, x.capture_ref_id) "
@@ -251,7 +251,9 @@ def inventory(found: list[tuple[Any, ...]], keys: dict[str, str]) -> dict[str, A
     }
 
 
+EXCHANGES = ("nse", "bse")
 Keep = Callable[[tuple[Any, ...]], bool]
+Edit = Callable[[list[tuple[Any, ...]]], list[tuple[Any, ...]]]
 
 
 def everything(row: tuple[Any, ...]) -> bool:
@@ -266,20 +268,24 @@ def observed_run(
     keep: Keep = everything,
     *,
     inputs_of: int | None = None,
-    keep_input: Keep = everything,
+    edit_inputs: Edit = list,
 ) -> dict[str, Any]:
     """A member run as stored, in ``batch.members[].run``'s shape (comparison counts aside);
-    its retained inputs are the captures its own persisted inputs bind (``inputs_of`` another
-    run's instead); ``keep`` and ``keep_input`` filter its comparison and input rows."""
+    its retained inputs are every capture its own persisted inputs bind (``inputs_of`` another
+    run's instead), by source surface, a surface bound more than once listing each, except an
+    exchange's single identity capture (onboarding's, which the manifest does not pin); ``keep``
+    filters its comparison rows and ``edit_inputs`` edits its input rows."""
     ((entity, status, manifest, exit_code),) = rows(db, _RUN, run_id)
     scope, pinned = manifest["scope"], manifest["pinned"]
-    inputs: dict[str, Any] = {XBRL: []}
-    bound = rows(db, _INPUTS, run_id if inputs_of is None else inputs_of)
-    for source, surface, blob in filter(keep_input, bound):
-        if surface == XBRL_SURFACE:
-            inputs[XBRL] = sorted([*inputs[XBRL], blob])
-        elif [source, surface] in scope["vendors"]:
-            inputs[f"{source}/{surface}"] = blob
+    found = edit_inputs(rows(db, _INPUTS, run_id if inputs_of is None else inputs_of))
+    bound: dict[str, list[str]] = {XBRL: []}
+    for source, surface, blob, _ in found:
+        name = XBRL if surface == XBRL_SURFACE else f"{source}/{surface}"
+        bound.setdefault(name, []).append(blob)
+    inputs = {name: blobs[0] if len(blobs) == 1 and name != XBRL else sorted(blobs)
+              for name, blobs in bound.items()}  # fmt: skip
+    inputs = {name: blob for name, blob in inputs.items()
+              if not (isinstance(blob, str) and name.split("/")[0] in EXCHANGES)}  # fmt: skip
     ((package_kind, statements),) = rows(db, _PACKAGE, run_id) or [(None, [])]
     found = [row for row in rows(db, _VALUES, run_id) if keep(row)]
     failures = sorted({failure_surface(f) for f in manifest["operational_failures"]})
@@ -319,8 +325,9 @@ def test_each_batch_member_is_admitted_with_its_own_comparison(world: Any, symbo
     ((outcome, isin, record),) = rows(db, _RESULT, symbol)
     units = {u: {"state": s} | ({"reason": r} if r else {}) for u, s, r in rows(db, _UNITS, record)}
     assert (outcome, isin, units) == (member["outcome"], member["isin"], member["units"])
-    keys = member["run"]["comparison"]["keys"]
-    assert observed_run(db, world["runs"][symbol], keys) == expected_run(member)
+    keys, expected = member["run"]["comparison"]["keys"], expected_run(member)
+    assert all(isinstance(blob, str) for name, blob in expected["inputs"].items() if name != XBRL)
+    assert observed_run(db, world["runs"][symbol], keys) == expected
 
 
 MUTATIONS: dict[str, dict[str, Any]] = {
@@ -330,15 +337,19 @@ MUTATIONS: dict[str, dict[str, Any]] = {
     "comparison-rows-removed": {"keep": lambda row: False},
     "one-vendor-rows-removed": {"keep": lambda row: row[4] != "tijori"},
     "inputs-of-another-run": {"inputs_of": "TITAN"},
-    "one-input-missing": {"keep_input": lambda row: row[0] != "tijori"},
+    "one-input-missing": {"edit_inputs": lambda found: [r for r in found if r[0] != "tijori"]},
+    "duplicate-input": {
+        "edit_inputs": lambda found: found + [next(r[:3] + (0,) for r in found if r[0] == "tijori")]
+    },
+    "unexpected-source": {"edit_inputs": lambda found: found + [("tijori", "overview", "0", 0)]},
 }
 
 
 @pytest.mark.parametrize("mutation", MUTATIONS)
 def test_a_mutated_observation_fails_the_member_assertion(world: Any, mutation: str) -> None:
     """ETERNAL's unmutated observation matches its manifest run; swapped for TITAN's, with its
-    comparison rows (all, or one vendor's) removed, with TITAN's inputs or one input missing,
-    it no longer does."""
+    comparison rows (all, or one vendor's) removed, with TITAN's inputs, one input missing, one
+    bound twice or one from an unexpected source, it no longer does."""
     change, runs = MUTATIONS[mutation], world["runs"]
     member = MEMBERS["ETERNAL"]
     keys = member["run"]["comparison"]["keys"]
@@ -350,7 +361,7 @@ def test_a_mutated_observation_fails_the_member_assertion(world: Any, mutation: 
         keys,
         change.get("keep", everything),
         inputs_of=runs[change["inputs_of"]] if "inputs_of" in change else None,
-        keep_input=change.get("keep_input", everything),
+        edit_inputs=change.get("edit_inputs", list),
     )
     assert mutated != expected
 

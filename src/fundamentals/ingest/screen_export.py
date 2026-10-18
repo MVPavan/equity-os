@@ -8,8 +8,6 @@ anything is returned, so a caller never holds a partial export. Values stay vend
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import re
 from collections import Counter
@@ -21,7 +19,7 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from fundamentals.ingest.http_session import RequestPacer
 from fundamentals.ingest.screener_session import ScreenerSessionSource
@@ -32,10 +30,14 @@ from fundamentals.ingest.screener_session_models import (
     ScreenerSessionConfig,
 )
 from fundamentals.ingest.screener_session_page import assert_logged_in, parse_document
-from fundamentals.ingest.screener_watchlist import cookie_state, export_form, read_watchlist_export
+from fundamentals.ingest.screener_watchlist import (
+    cookie_state,
+    export_form,
+    read_export_csv,
+    read_watchlist_export,
+)
 from fundamentals.ingest.screener_watchlist_models import (
     CSRF_FORM_FIELD,
-    EXPORT_ENCODING,
     EXPORT_PATH,
 )
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource, TijoriSourceConfig
@@ -112,7 +114,11 @@ class VendorExport(BaseModel):
 
 def load_screen_config(path: Path) -> dict[str, ScreenConfig]:
     """The configured screens by name; a blank field or a repeated name refuses."""
-    screens = [ScreenConfig.model_validate(entry) for entry in yaml.safe_load(path.read_text())]
+    try:
+        loaded = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as error:
+        raise ScreenExportError(f"{path} is not valid YAML") from error
+    screens = TypeAdapter(list[ScreenConfig]).validate_python(loaded)
     if not all(_normal(s.name) and _normal(s.screener) and _normal(s.tijori) for s in screens):
         raise ScreenExportError(_BLANK.format(path=path))
     repeated = [name for name, n in Counter(s.name for s in screens).items() if n > 1]
@@ -209,9 +215,9 @@ def export_tijori(
 def result_rows(vendor: ScreenVendor, body: bytes) -> tuple[dict[str, str], ...]:
     """A results capture's rows as text, in export order (a member's row number)."""
     if vendor is ScreenVendor.TIJORI:
-        data = json.loads(body)["data"]
+        data = json.loads(body, parse_float=str)["data"]
         return tuple({key: _cell(value) for key, value in row.items()} for row in data)
-    header, *records = csv.reader(io.StringIO(body.decode(EXPORT_ENCODING)))
+    header, records = read_export_csv(body)
     _columns(header)
     return tuple(dict(zip(header, record, strict=True)) for record in records)
 
