@@ -12,6 +12,7 @@ from decimal import Decimal
 from fundamentals.output.earnings_update import RenderedCalculation
 
 OPERAND_MISSING = "OPERAND_MISSING"
+GAP_LABEL = "Non-operating / other income gap (₹ crore)"
 TAX_LABEL = "Tax expense (filed, ₹ crore)"
 ETR_LABEL = "Effective tax rate (%)"
 HEADLINE_LABEL = "Headline PBT incl. associates (₹ crore)"

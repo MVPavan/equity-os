@@ -85,6 +85,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--source-admission-store", default=None, help="protected native retained source root"
     )
+    run.add_argument(
+        "--retrospective",
+        metavar="RETRIEVAL_MANIFEST",
+        type=Path,
+        default=None,
+        help="admit registered originals this manifest shows published by the cutoff",
+    )
     run.add_argument("--out", default=None, help="write the markdown to a file instead of stdout")
     run.add_argument("--out-json", default=None, help="write the rendered update JSON to a file")
 

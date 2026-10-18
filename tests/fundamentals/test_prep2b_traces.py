@@ -1,0 +1,244 @@
+"""PREP-2b Task 4: a run's comparator figures and computed values bind to stored traces.
+
+Each quarter's run (trusted fixture clocks: report behaviour only) is bound against the
+evidence ingest of its own XBRL and its two comparators. Every retained computed value is a
+stored trace over mapped interpretations and checks ``MATCH`` at the value the run emitted;
+every comparator figure and the filed tax cite their interpretation. A value the run did not
+derive from those interpretations refuses before anything is stored.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+from evidence_support import CONFIG, XBRL_KIND, Ingest, ingest, policy
+from retained_support import REPO_ROOT, apar_catalog, apar_store
+from temporal_fixture_support import FIXTURE_ACQUIRED_AT, run_trusted_fixture_pipeline
+
+from fundamentals.api.config import load_config
+from fundamentals.api.pipeline import PipelineResult, XbrlInput
+from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
+from fundamentals.canon.role_translation import LEGACY_CONCEPTS
+from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.guidance_claim import EpistemicClass
+from fundamentals.contracts.ledger import (
+    Citation,
+    CitationKind,
+    ClaimState,
+    NumericClaim,
+    Rounding,
+)
+from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
+from fundamentals.evidence.mapping import MappingSet, load_mapping_set
+from fundamentals.ledger.citations import resolve_citation
+from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS, check_claim
+from fundamentals.ledger.import_mapping import change_key, measurement_key
+from fundamentals.ledger.run_traces import TAX, Computed, RunDraftError, bind_computed
+from fundamentals.output.pnl_lines import GAP_LABEL, TAX_LABEL, format_crore
+from fundamentals.store.fact_store import FactStore
+
+__all__ = ["ingest", "policy"]
+
+pytestmark = [pytest.mark.pg, pytest.mark.retained]
+
+COMPARATOR_KIND = "xbrl-consolidated-comparator"
+# Each run quarter's XBRL, then its QoQ and YoY comparators: manifest quarter, kind, period end.
+QUARTERS = {
+    "fy26-q4-pg": (
+        ("FY26_Q4", XBRL_KIND, date(2026, 3, 31)),
+        ("FY26_Q3", XBRL_KIND, date(2025, 12, 31)),
+        ("FY25_Q4", COMPARATOR_KIND, date(2025, 3, 31)),
+    ),
+    "fy27-q1": (
+        ("FY27_Q1", XBRL_KIND, date(2026, 6, 30)),
+        ("FY26_Q4", XBRL_KIND, date(2026, 3, 31)),
+        ("FY26_Q1", COMPARATOR_KIND, date(2025, 6, 30)),
+    ),
+}
+# The other-income gap the retained FY26_Q4 and FY27_Q1 updates state (total income − revenue);
+# the run once printed them truncated (19, 33).
+GAPS = {"fy26-q4-pg": "19.72", "fy27-q1": "33.65"}
+TRACES = "SELECT count(*) FROM eqos.calculation_traces"
+# A percent change is stated at its trace's stored scale (rounding policy v1, 2 places): at
+# the run's display 0.1 it would round twice (stored, then shown) and can miss the run's.
+PERCENT_PLACES = 2
+
+
+@pytest.fixture(scope="module")
+def dictionary() -> CanonicalDictionary:
+    """Canonical dictionary v2."""
+    return load_dictionary(CONFIG / "dictionary", "v2")
+
+
+@pytest.fixture(scope="module")
+def mapping_set(dictionary: CanonicalDictionary) -> MappingSet:
+    """Mapping set v5: the 2026 in-capmkt taxonomy of FY26_Q4 and FY27_Q1 (PREP-1)."""
+    return load_mapping_set(CONFIG / "mappings", "v5", dictionary=dictionary)
+
+
+def _run(quarter: str, tmp_path: Path) -> PipelineResult:
+    """The quarter's pipeline run on a scratch SQLite store, ledger off ``data/``."""
+    path = REPO_ROOT / "config" / f"aparinds-{quarter}.yaml"
+    config = load_config(path).model_copy(update={"ledger_path": str(tmp_path / "ledger.json")})
+    xml = config.xbrl_local_path(path).read_bytes()
+    return run_trusted_fixture_pipeline(
+        config=config,
+        config_path=path,
+        xbrl_input=XbrlInput(
+            xml_bytes=xml,
+            file_sha256=hashlib.sha256(xml).hexdigest(),
+            source_id=config.xbrl.source_id,
+            retrieved_at=FIXTURE_ACQUIRED_AT,
+        ),
+        results_pdf_path=str(config.results_pdf_path(path)),
+        results_pdf_sha256=config.results_pdf.sha256,
+        transcript_pdf_path=str(config.transcript_pdf_path(path)),
+        transcript_pdf_sha256=config.transcript_pdf.sha256,
+        store=FactStore(tmp_path / f"{quarter}.sqlite"),
+    )
+
+
+def _ingest(ingest: Ingest, quarter: str, members: tuple[int, ...] = (0, 1, 2)) -> None:
+    """Evidence-ingest the run quarter's XBRL and its comparators (the listed ones)."""
+    for index in members:
+        filed, kind, period_end = QUARTERS[quarter][index]
+        ingest.run(ingest.intake({Representation.XBRL: kind}, filed), period_end)
+
+
+def _traces(ingest: Ingest) -> int:
+    """How many calculation traces are stored."""
+    with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        row = conn.execute(TRACES).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+def _claims(result: PipelineResult, computed: Computed, entity_id: int) -> list[NumericClaim]:
+    """Every bound value as the claim a draft would state, at the run's value and key."""
+    update = result.update
+    start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
+    by_concept = {fact.concept_qname: fact for fact in update.facts}
+    found: dict[str, tuple[MeasurementKey, str, Decimal]] = {}
+    for comparative in update.comparatives:
+        fact = by_concept[comparative.concept_qname]
+        key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
+        for change in (comparative.qoq, comparative.yoy):
+            base = f"cmp.{fact.role.value}.{change.kind.value.lower()}"
+            period = PeriodInterval.duration(change.period_start, change.period_end)
+            assert change.prior_value is not None and change.absolute_change is not None
+            found[f"{base}.prior"] = (
+                key.model_copy(update={"period": period}),
+                fact.unit,
+                change.prior_value,
+            )
+            found[f"{base}.abs"] = (
+                change_key(key, change.kind, "abs"),
+                fact.unit,
+                change.absolute_change,
+            )
+            if change.percent_change is not None:
+                found[f"{base}.pct"] = (
+                    change_key(key, change.kind, "pct"),
+                    PERCENT,
+                    change.percent_change,
+                )
+    for number, calculation in enumerate(update.calculations, start=1):
+        unit = PERCENT if calculation.label.endswith("(%)") else CRORE
+        canonical_id = TAX if calculation.label == TAX_LABEL else calculation.label
+        value = Decimal(calculation.result.replace(",", ""))
+        found[f"calc.{number}"] = (
+            measurement_key(canonical_id, unit, entity_id, start, end),
+            unit,
+            value,
+        )
+    assert found.keys() == computed.figures.keys() | computed.traces.keys()
+    claims = []
+    for name, (key, unit, value) in found.items():
+        traced = name in computed.traces
+        citation = (
+            Citation(kind=CitationKind.CALCULATION, calculation_trace_id=computed.traces[name])
+            if traced
+            else Citation(kind=CitationKind.FIGURE, interpretation_id=computed.figures[name])
+        )
+        value_kind, currency, scale = UNITS[unit]
+        percent = name.endswith(".pct")
+        claims.append(
+            NumericClaim(
+                claim_key=name,
+                section_key="changes",
+                citation=citation,
+                measurement_key=key,
+                value_kind=value_kind,
+                unit=unit,
+                currency=currency,
+                scale=scale,
+                value=value,
+                precision=PERCENT_PLACES if percent else max(0, -int(value.as_tuple().exponent)),
+                rounding=Rounding.ROUND_HALF_EVEN if percent else Rounding.ROUND_HALF_UP,
+                epistemic_class=EpistemicClass.COMPUTED if traced else EpistemicClass.OBSERVED,
+            )
+        )
+    return claims
+
+
+def _state(ingest: Ingest, claim: NumericClaim) -> ClaimState:
+    """The AS_KNOWN check of ``claim`` now, on the real resolver."""
+    with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        resolved = resolve_citation(
+            conn.cursor(),
+            claim,
+            entity_id=ingest.entity_id,
+            overlay_position=datetime.now(UTC),
+            catalog=apar_catalog(),
+            snapshots=apar_store(ingest.tmp_path),
+        )
+    now = datetime.now(UTC)
+    return check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=now, imported=False)
+
+
+@pytest.mark.parametrize("quarter", sorted(QUARTERS))
+def test_every_computed_value_binds_and_matches(
+    ingest: Ingest, tmp_path: Path, quarter: str
+) -> None:
+    """Every comparator figure, change, gap, tax, ETR and headline PBT checks ``MATCH``; the
+    gap is emitted exactly, from its exact operands."""
+    result = _run(quarter, tmp_path)
+    _ingest(ingest, quarter)
+    computed = bind_computed(ingest.repository, result, entity_id=ingest.entity_id)
+    claims = _claims(result, computed, ingest.entity_id)
+    assert {claim.claim_key: _state(ingest, claim) for claim in claims} == {
+        claim.claim_key: ClaimState.MATCH for claim in claims
+    }
+    facts = {fact.role.value: fact.value for fact in result.update.facts}
+    gap = result.update.calculations[0]
+    income, revenue = facts["total_income"], facts["revenue"]
+    assert (gap.label, gap.result) == (GAP_LABEL, GAPS[quarter])
+    assert gap.trace == f"Total income {format_crore(income)} − Revenue {format_crore(revenue)}"
+    assert income - revenue == Decimal(GAPS[quarter])
+    assert {"calc.1", "calc.3", "calc.4"} <= computed.traces.keys()
+    assert "calc.2" in computed.figures
+
+
+def test_a_missing_comparator_or_a_changed_value_refuses_before_any_write(
+    ingest: Ingest, tmp_path: Path
+) -> None:
+    """No YoY comparator ingested, or a gap the interpretations do not give: nothing stored."""
+    result = _run("fy27-q1", tmp_path)
+    _ingest(ingest, "fy27-q1", (0, 1))
+    count = _traces(ingest)
+    with pytest.raises(RunDraftError, match="no single mapped interpretation"):
+        bind_computed(ingest.repository, result, entity_id=ingest.entity_id)
+    _ingest(ingest, "fy27-q1", (2,))
+    gap = result.update.calculations[0].model_copy(update={"result": "33.66"})
+    calculations = (gap, *result.update.calculations[1:])
+    changed = result.model_copy(
+        update={"update": result.update.model_copy(update={"calculations": calculations})}
+    )
+    with pytest.raises(RunDraftError, match="calc.1"):
+        bind_computed(ingest.repository, changed, entity_id=ingest.entity_id)
+    assert _traces(ingest) == count

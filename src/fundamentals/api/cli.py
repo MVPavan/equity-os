@@ -55,6 +55,7 @@ from fundamentals.api.source_admission import (
     SourceAdmissionError,
     load_source_manifest,
     prepare_pipeline_sources,
+    published_package,
 )
 from fundamentals.api.source_intake import (
     ApprovedIntakeContext,
@@ -221,6 +222,7 @@ def run_command(
         run_started_at=run_started_at,
         source_refs=refs,
         evidence_resolver=resolver,
+        package=_package(args, config),
     ) as prepared:
         if xbrl_input is None:
             xbrl_input = XbrlInput(
@@ -250,6 +252,18 @@ def run_command(
                 store=store,
                 admitted_inputs=prepared,
             )
+
+
+def _package(args: argparse.Namespace, config: FundamentalsConfig) -> dict[str, datetime] | None:
+    """The quarter's published originals from ``--retrospective``'s manifest, if given."""
+    manifest: Path | None = getattr(args, "retrospective", None)
+    if manifest is None:
+        return None
+    return published_package(
+        manifest.read_bytes(),
+        issuer=config.issuer.nse_symbol,
+        quarter=config.quarter.issuer_quarter,
+    )
 
 
 def main(

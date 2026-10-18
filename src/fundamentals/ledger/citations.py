@@ -2,7 +2,8 @@
 
 ``resolve_citation`` returns ``None`` (row 1, ``UNRESOLVED``) unless the cited record exists
 and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
-behind them), a quote only a non-vendor capture, a ``COMPARISON`` its own run and key, a
+behind them; an interpretation ``FIGURE`` with no run its own mapped value), a quote only a
+non-vendor capture, a ``COMPARISON`` its own run and key, a
 ``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
@@ -105,6 +106,8 @@ _SOURCE: LiteralString = """SELECT coalesce(
     (SELECT c.blob_sha256 FROM eqos.interpretations i
      JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
     (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
+_INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
+FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED'"""
 _TRACE: LiteralString = (
     "SELECT value, key_digest FROM eqos.calculation_traces WHERE id = %s AND state = 'COMPUTED'"
 )
@@ -196,6 +199,8 @@ def resolve_citation(
             times = _input_times(own, (), (citation.interpretation_id,), catalog)
             if times is None:
                 return None
+            if citation.run_id is None:
+                return _interpretation(own, citation.interpretation_id, claim, times)
             return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
             return _trace(own, citation.calculation_trace_id, claim, catalog)
@@ -353,6 +358,23 @@ def _file_capture(own: Cursor[Any], row: _Row, catalog: SourceCatalog) -> _Row |
     """The earliest-seen first-party capture of a native fact's file, if any."""
     captures = own.execute(_FILE_CAPTURES, (row["fact_file"],)).fetchall()
     return next((c for c in captures if _first_party(c["source_id"], catalog)), None)
+
+
+def _interpretation(
+    own: Cursor[Any], interpretation_id: int, claim: NumericClaim, times: _Times
+) -> ResolvedCitation | None:
+    """A mapped first-party interpretation's own value and key, with no run (a comparator
+    figure or a filed operand of a run's computed value)."""
+    row = own.execute(_INTERPRETATION, (interpretation_id,)).fetchone()
+    if row is None or row["value"] is None:
+        return None
+    return ResolvedCitation(
+        value=_claim_scaled(row["value"], claim),
+        key_digest=row["key_digest"],
+        value_kind=ValueKind(row["value_kind"]),
+        currency=row["currency"],
+        times=times,
+    )
 
 
 def _trace(

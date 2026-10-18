@@ -29,7 +29,11 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import Basis, ValueKind
-from fundamentals.contracts.comparative import TAXONOMY_DRIFT_PREFIX, ComparativeChange
+from fundamentals.contracts.comparative import (
+    TAXONOMY_DRIFT_PREFIX,
+    ComparativeChange,
+    ComparatorKind,
+)
 from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
     Citation,
@@ -81,6 +85,7 @@ FALSIFIERS = "falsifiers"
 FALSIFIER_FIELDS = frozenset({"falsifier_id", "statement", "predicate"})
 PREDICATE_FIELDS = frozenset({"metric_id", "op", "threshold"})
 PERCENT_METRIC = "_pct"
+ABS, PCT = "abs", "pct"
 Q0 = "Q0"
 # The generator's facts label (now, then) when the retained updates were rendered.
 LABEL_THEN = (_ROLE_LABELS[FactRole.PROFIT_BEFORE_TAX], "Profit before tax")
@@ -147,7 +152,7 @@ def map_earnings_update(
         fact = facts[role]
         name = f"fact.{role.value}"
         _require(fact.unit in TABLE_STYLE, period, f"{name} unit")
-        key = _key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
+        key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
         claims[name] = _valued(name, "facts", fact.value, fact.unit, key, fact.sources[0])
         lines.append(
             f"| {labels[role]} | {_slot(name, TABLE_STYLE[fact.unit])} | `{fact.concept_qname}` "
@@ -205,7 +210,7 @@ def map_earnings_update(
         unit = next((u for s, u in CALC_UNITS.items() if calculation.label.endswith(s)), None)
         _require(unit is not None, period, f"{name} unit")
         assert unit is not None
-        key = _key(calculation.label, unit, entity_id, start, end)
+        key = measurement_key(calculation.label, unit, entity_id, start, end)
         claims[name] = _valued(name, "calculations", result, unit, key)
         lines.append(
             f"- **{calculation.label}** = {_slot(name, '')}. "
@@ -343,7 +348,9 @@ def _places(value: Decimal) -> int:
     return max(0, -exponent) if isinstance(exponent, int) else 0
 
 
-def _key(canonical_id: str, unit: str, entity_id: int, start: date, end: date) -> MeasurementKey:
+def measurement_key(
+    canonical_id: str, unit: str, entity_id: int, start: date, end: date
+) -> MeasurementKey:
     """A consolidated Ind AS key, as the legacy translation builds a reported value's; a
     computed value's ``canonical_id`` names what it computes."""
     value_kind, currency, _ = UNITS[unit]
@@ -357,6 +364,14 @@ def _key(canonical_id: str, unit: str, entity_id: int, start: date, end: date) -
         value_kind=value_kind,
         dimensions=DimensionSet(),
     )
+
+
+def change_key(key: MeasurementKey, kind: ComparatorKind, name: str) -> MeasurementKey:
+    """A comparator change's computed key: the current key, ``<canonical_id>.<kind>.<name>``;
+    the percent change is a dimensionless percentage."""
+    percent = {"value_kind": ValueKind.PERCENTAGE, "currency": None} if name == PCT else {}
+    canonical_id = f"{key.canonical_id}.{kind.value.lower()}.{name}"
+    return key.model_copy(update={"canonical_id": canonical_id, **percent})
 
 
 def _valued(
@@ -402,15 +417,8 @@ def _change_claims(
     _require(None not in (prior, delta, percent, change.prior_source), version, f"{base} prior")
     assert prior is not None and delta is not None and percent is not None
     assert current.measurement_key is not None and current.unit is not None
-    key, unit, kind = current.measurement_key, current.unit, change.kind.value.lower()
+    key, unit, kind = current.measurement_key, current.unit, change.kind
     period = PeriodInterval.duration(change.period_start, change.period_end)
-
-    def computed(name: str, **update: Any) -> MeasurementKey:
-        return key.model_copy(
-            update={"canonical_id": f"{key.canonical_id}.{kind}.{name}", **update}
-        )
-
-    percent_key = computed("pct", value_kind=ValueKind.PERCENTAGE, currency=None)
     return {
         f"{base}.prior": _valued(
             f"{base}.prior",
@@ -420,13 +428,13 @@ def _change_claims(
             key.model_copy(update={"period": period}),
             change.prior_source,
         ),
-        f"{base}.abs": _valued(f"{base}.abs", "changes", delta, unit, computed("abs")),
+        f"{base}.abs": _valued(f"{base}.abs", "changes", delta, unit, change_key(key, kind, ABS)),
         f"{base}.pct": _valued(
             f"{base}.pct",
             "changes",
             percent,
             PERCENT,
-            percent_key,
+            change_key(key, kind, PCT),
             precision=1,
             rounding=Rounding.ROUND_HALF_EVEN,
         ),

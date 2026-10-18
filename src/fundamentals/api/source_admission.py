@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -34,6 +35,7 @@ from fundamentals.contracts.source_registration import (
     SourceRegistrationError,
     SourceRole,
 )
+from fundamentals.evidence.capture_intake import parse_filed_at
 from fundamentals.store.snapshot_store import (
     MAX_METADATA_BYTES,
     DescriptorTree,
@@ -41,6 +43,11 @@ from fundamentals.store.snapshot_store import (
     SnapshotStore,
 )
 from fundamentals.store.source_intake_store import SourceIntakeStore
+
+AdmissionMode = Literal[
+    "trusted_direct", "new_local_capture", "retained_registered", "retrospective_registered"
+]
+RETROSPECTIVE: Final = "retrospective_registered"
 
 
 class SourceAdmissionError(ValueError):
@@ -177,7 +184,7 @@ class AdmittedSource(BaseModel):
     source_sha256: str
     acquired_at: datetime
     first_seen_at: datetime
-    mode: Literal["trusted_direct", "new_local_capture", "retained_registered"]
+    mode: AdmissionMode
     reference: RetainedSourceRef | None = None
     registration: SourceRegistration | None = None
     claimed_retrieved_at: datetime | None = None
@@ -248,7 +255,11 @@ def prepare_pipeline_sources(
     source_refs: PipelineSourceRefs | None = None,
     evidence_resolver: SourceEvidenceResolver | None = None,
     clock: Callable[[], datetime] | None = None,
+    package: Mapping[str, datetime] | None = None,
 ) -> Iterator[AdmittedPipelineInputs]:
+    """Admit the three run sources; with ``package`` (each pinned original's publication time,
+    PREP-2b contract a-b) a registered original published by ``cutoff`` is admitted
+    retrospectively, its real later registration kept."""
     tick = clock or actual_clock
     utc_time(cutoff)
     last = utc_time(run_started_at)
@@ -279,7 +290,7 @@ def prepare_pipeline_sources(
         last = completed
         registration = None
         claimed_retrieved_at = None
-        mode: Literal["trusted_direct", "new_local_capture", "retained_registered"]
+        mode: AdmissionMode
         if ref is not None and evidence is not None:
             if (
                 ref.source_id != source_id
@@ -311,6 +322,13 @@ def prepare_pipeline_sources(
                 if cutoff > min(run_started_at, completed):
                     raise SourceAdmissionError("retained registered cutoff is in the future")
                 mode = "retained_registered"
+                if package is not None:
+                    published = package.get(expected)
+                    if published is None or published > cutoff:
+                        raise SourceAdmissionError(
+                            f"{purpose}: not a package original published by the cutoff"
+                        )
+                    mode = RETROSPECTIVE
             bound = max(
                 acquired, first_seen, registration.registered_at if registration else first_seen
             )
@@ -320,7 +338,7 @@ def prepare_pipeline_sources(
             acquired = first_seen = completed
             bound = completed
             mode = "new_local_capture"
-        if bound > cutoff:
+        if bound > cutoff and mode != RETROSPECTIVE:
             raise SourceAdmissionError(
                 f"{purpose}: source acquisition/first-seen/registration exceeds cutoff"
             )
@@ -365,6 +383,22 @@ def prepare_pipeline_sources(
             yield prepared
         finally:
             _ACTIVE.pop(id(prepared), None)
+
+
+def published_package(manifest: bytes, *, issuer: str, quarter: str) -> dict[str, datetime]:
+    """The quarter's retrieval-manifest originals: each SHA-256's earliest NSE publication."""
+    try:
+        payload = json.loads(manifest)
+        if payload["issuer"] != issuer:
+            raise SourceAdmissionError(f"retrieval manifest is not {issuer}'s")
+        package: dict[str, datetime] = {}
+        for entry in payload["entries"]:
+            if entry["quarter"] == quarter:
+                filed = parse_filed_at(entry["filed_at_nse"])
+                package[entry["sha256"]] = min(filed, package.get(entry["sha256"], filed))
+    except (KeyError, TypeError, ValueError) as error:
+        raise SourceAdmissionError(f"retrieval manifest refused: {error}") from error
+    return package
 
 
 def admitted_provenance(provenance: Provenance, source: AdmittedSource) -> Provenance:

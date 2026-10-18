@@ -22,7 +22,7 @@ from fundamentals.extract.xbrl_parser import FactSelectionError, select_observat
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
 from fundamentals.output.earnings_update import FactRole, RenderedCalculation, anchor_label
 from fundamentals.output.management_ledger import ManagementLedger, reconcile_ledger
-from fundamentals.output.pnl_lines import headline_line, tax_lines
+from fundamentals.output.pnl_lines import GAP_LABEL, format_crore, headline_line, tax_lines
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
 
@@ -238,9 +238,9 @@ def build_calculations(
     other_income = total_income - revenue
     return (
         RenderedCalculation(
-            label="Non-operating / other income gap (₹ crore)",
-            result=f"{int(other_income):,}",
-            trace=f"Total income {int(total_income):,} − Revenue {int(revenue):,}",
+            label=GAP_LABEL,
+            result=format_crore(other_income),
+            trace=f"Total income {format_crore(total_income)} − Revenue {format_crore(revenue)}",
         ),
         *tax_lines(pbt=pbt, tax=_operand(tax), sources=_operand_source(tax)),
         headline_line(pbt=pbt, share_of_associates=_operand(share), sources=_operand_source(share)),
