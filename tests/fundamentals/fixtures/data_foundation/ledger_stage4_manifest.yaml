@@ -15,7 +15,7 @@ header:
       trading_symbol and BSE_EQ exchange_token for the ISIN. Batch unit states restate D6 D4.3 identity reads over each pinned generation (all agree) and the Screener and Tijori page gates (entity/verification.py
       screener_page_state, tijori_page_state) with comparison_inventory.py, each read at a locator in batch.members[].gates. Per-source comparison inventories restate the run''s keys, applicability and
       side selection over dictionary v2 and mapping set v5 from the pinned bytes (comparison_inventory.py, uv run --no-sync python -I: stdlib, PyYAML, lxml).'
-  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-18, payload_sha256: 3a79c3a73855149e4781c7e2f0007a0dfb4761348e7c1481efff5fcc9f1aa340}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-18, payload_sha256: 10edc1ecf80619288e47c65ef9a3dd6f706fc2fb42f4f8b1ec5c7360665d0e8b}
   export_provenance: AUTOMATED_EXPORT
   derived_fixture:
     rule: remove every data row whose ISIN (Screener) / NSE symbol (Tijori) is not one of the five; nothing else changes; the Screener page is reduced to its textarea and page info
@@ -839,6 +839,7 @@ batch:
               - other_income
               - profit_before_exceptional_items_and_tax
               - profit_before_tax
+              - profit_before_tax_incl_associates
               - profit_continuing_after_tax
               - profit_discontinued_after_tax
               - profit_discontinued_before_tax
@@ -859,7 +860,7 @@ batch:
               - total_expenses
               - total_income
             counts:
-              value: 47
+              value: 48
           screener-subscriber/SCREENER_FINANCIALS:
             sides:
               Q:
@@ -903,13 +904,10 @@ batch:
               Q:
               - profit_before_tax_incl_associates
               - total_income
-            value:
-              Q:
-              - profit_before_tax_incl_associates
-              - total_income
+            value: {}
             counts:
               sides: 2
-              value: 2
+              value: 0
     gates:
       SCREENER:
         authenticated:
@@ -1132,6 +1130,7 @@ batch:
               - other_income
               - profit_before_exceptional_items_and_tax
               - profit_before_tax
+              - profit_before_tax_incl_associates
               - profit_continuing_after_tax
               - profit_discontinued_after_tax
               - profit_discontinued_before_tax
@@ -1200,6 +1199,7 @@ batch:
               - other_income
               - profit_before_exceptional_items_and_tax
               - profit_before_tax
+              - profit_before_tax_incl_associates
               - profit_continuing_after_tax
               - profit_discontinued_after_tax
               - profit_discontinued_before_tax
@@ -1220,7 +1220,7 @@ batch:
               - total_expenses
               - total_income
             counts:
-              value: 162
+              value: 164
           screener-subscriber/SCREENER_FINANCIALS:
             sides:
               I:
@@ -1447,6 +1447,7 @@ batch:
               - other_income
               - profit_before_exceptional_items_and_tax
               - profit_before_tax
+              - profit_before_tax_incl_associates
               - profit_continuing_after_tax
               - profit_discontinued_after_tax
               - profit_discontinued_before_tax
@@ -1466,7 +1467,7 @@ batch:
               - total_expenses
               - total_income
             counts:
-              value: 46
+              value: 47
           screener-subscriber/SCREENER_FINANCIALS:
             sides:
               Q:
@@ -1510,13 +1511,10 @@ batch:
               Q:
               - profit_before_tax_incl_associates
               - total_income
-            value:
-              Q:
-              - profit_before_tax_incl_associates
-              - total_income
+            value: {}
             counts:
               sides: 2
-              value: 2
+              value: 0
     gates:
       SCREENER:
         authenticated:
