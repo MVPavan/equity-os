@@ -190,6 +190,7 @@ def insert_decision(
     decided_on: date | None = None,
     policy: PolicyValue | None = None,
     panel_review_id: int | None = None,
+    rejected_claims: tuple[str, ...] = (),
 ) -> DecisionRecord:
     """Append one decision naming the head it follows; the trigger checks and completes it."""
     decision_id = _insert(
@@ -209,6 +210,7 @@ def insert_decision(
             "policy_key": None if policy is None else policy.key,
             "policy_value": None if policy is None else policy.value,
             "policy_unit": None if policy is None else policy.unit,
+            "rejected_claims": list(rejected_claims) or None,
         },
     )
     with cursor.connection.cursor(row_factory=dict_row) as own:

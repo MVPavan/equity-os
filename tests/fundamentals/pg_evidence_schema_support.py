@@ -225,6 +225,8 @@ def _trace(content_sha256: str = "c" * 64) -> dict[str, Any]:
         "exact_lower": "1233/100",
         "exact_upper": "247/20",
         "effective_tier": "EQUIVALENCE_UNPROVEN",
+        # Operand slots (0039) for every ordinal a schema test inserts directly.
+        "operand_count": 10,
     }
 
 

@@ -699,7 +699,8 @@ def _rows(
 
 def _insert_trace(conn: psycopg.Connection[Any], trace: CalculationTrace) -> int:
     """Insert one trace and its operand rows, or find it by content hash; its id."""
-    inserted = _rows(conn, calc_sql.INSERT_TRACE, calc_sql.trace_params(trace))
+    params = (*calc_sql.trace_params(trace), len(trace.operands))
+    inserted = _rows(conn, calc_sql.INSERT_TRACE, params)
     if not inserted:
         return _one_id(conn, calc_sql.SELECT_TRACE_ID, (trace.content_sha256(),))
     trace_id = int(inserted[0]["id"])

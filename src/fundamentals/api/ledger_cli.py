@@ -107,6 +107,7 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     decision.add_argument("--key")
     decision.add_argument("--value", type=Decimal)
     decision.add_argument("--unit")
+    decision.add_argument("--claim", action="append", default=[])
     decision.add_argument("--stock")
     decision.add_argument("--snapshot-root", type=Path)
     decision.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
@@ -175,6 +176,7 @@ def _decide(args: argparse.Namespace) -> int:
             kind=args.kind,
             ruling=ruling,
             policy=policy,
+            claims=tuple(args.claim),
             **sources,
         )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")

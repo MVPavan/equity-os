@@ -262,6 +262,7 @@ class DecisionRecord(BaseModel):
     decider: DeciderRole
     recorded_at: datetime
     decision_sha256: str
+    rejected_claims: tuple[str, ...] | None = None
 
 
 class DisplayStyle(BaseModel):

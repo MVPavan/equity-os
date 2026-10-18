@@ -69,6 +69,7 @@ def _trace(conn: psycopg.Connection, content_sha256: str) -> int:
             "exact_lower": "3/1",
             "exact_upper": "3/1",
             "effective_tier": "EQUIVALENCE_UNPROVEN",
+            "operand_count": 3,
         },
     )
 

@@ -290,13 +290,14 @@ def test_vendor_capture_trace_selection_roundtrips_and_requires_value_provenance
         parent = trace.model_copy(update={"operands": (parent_operand,)})
         trace_id = repository.put_calculation_trace(parent)
         with pg_db.migrator_connection() as conn:
-            with pytest.raises(errors.CheckViolation):
+            spare = _insert(conn, "calculation_traces", _trace("f" * 64))
+            with pytest.raises(errors.CheckViolation, match="calculation_trace_operands_check"):
                 _insert(
                     conn,
                     "calculation_trace_operands",
                     {
-                        "calculation_trace_id": trace_id,
-                        "ordinal": 1,
+                        "calculation_trace_id": spare,
+                        "ordinal": 0,
                         "operand_name": "missing-source",
                         "key_digest": "constructed-key",
                         "temporal_role": "DURATION",

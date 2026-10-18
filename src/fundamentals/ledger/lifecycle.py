@@ -330,10 +330,11 @@ def decide(
     policy: PolicyValue | None = None,
     catalog: SourceCatalog | None = None,
     snapshots: SnapshotStore | None = None,
+    claims: tuple[str, ...] = (),
 ) -> DecisionRecord:
     """Record one decision with its verbatim ruling as the pool's role; an ``APPROVE`` of a
     version binds the check this transaction makes with ``catalog`` and ``snapshots``, which
-    must pass (D4)."""
+    must pass (D4); ``claims`` are the keys a ``REQUEST_CHANGES`` rejects (PREP-5)."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         approving = subject_kind is V and kind is DecisionKind.APPROVE
         validation = (
@@ -349,6 +350,7 @@ def decide(
             validation=validation,
             ruling=ruling,
             policy=policy,
+            rejected_claims=claims,
         )
 
 

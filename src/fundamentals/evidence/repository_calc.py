@@ -29,8 +29,8 @@ _TRACE_COLUMNS: LiteralString = (
     "lower, upper, exact_value, exact_lower, exact_upper, effective_tier"
 )
 INSERT_TRACE: LiteralString = (
-    "INSERT INTO eqos.calculation_traces (" + _TRACE_COLUMNS + ") VALUES "
-    "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+    "INSERT INTO eqos.calculation_traces (" + _TRACE_COLUMNS + ", operand_count) VALUES "
+    "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
     "ON CONFLICT DO NOTHING RETURNING id"
 )
 SELECT_TRACE_ID: LiteralString = "SELECT id FROM eqos.calculation_traces WHERE content_sha256 = %s"
