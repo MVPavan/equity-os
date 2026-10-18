@@ -2,6 +2,7 @@
 
 Task 1: a ``REQUEST_CHANGES`` records the claims it rejects, each a distinct claim key of the
 version under review, in an immutable column; a stored trace's operand set cannot grow.
+Task 2: a rejected version's package inputs and rerun set are derived from its verified rows.
 """
 
 from __future__ import annotations
@@ -13,19 +14,24 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_support import RULING, Ledger, claim, ledger
+from evidence_support import ingest, policy
+from ledger_support import RULING, SELF_CITED, Ledger, claim, ledger
 from pg_evidence_schema_support import _insert, _trace, runtime, seeded
 from pg_support import PgTestDatabase
+from prep2b_support import Pilot
 from psycopg import errors
+from test_prep2b_run_draft import dictionary, mapping_set
 
 from fundamentals.api.cli import main
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
-from fundamentals.contracts.ledger import DecisionKind, SubjectKind
+from fundamentals.contracts.ledger import Citation, CitationKind, DecisionKind, SubjectKind
 from fundamentals.evidence.repository import EvidenceRepository
-from fundamentals.ledger import lifecycle
+from fundamentals.evidence.repository_calc import StoredTrace
+from fundamentals.ledger import lifecycle, rework
+from fundamentals.ledger.run_traces import RunDraftError
 from fundamentals.pg.settings import PgRole
 
-__all__ = ["ledger", "runtime", "seeded"]
+__all__ = ["dictionary", "ingest", "ledger", "mapping_set", "policy", "runtime", "seeded"]
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -131,6 +137,18 @@ def _operand(interpretation_id: int, ordinal: int) -> TraceOperand:
     )
 
 
+def _two_operand_trace(first: int, second: int) -> CalculationTrace:
+    """A computed trace over two leaf operands, of interpretations ``first`` and ``second``."""
+    return CalculationTrace.model_validate(
+        {
+            **_trace(),
+            "operands": (_operand(first, 0), _operand(second, 1)),
+            "exact_value": Fraction(617, 50),
+            "exact_interval": {"lower": Fraction(1233, 100), "upper": Fraction(247, 20)},
+        }
+    )
+
+
 @pytest.mark.parametrize(
     ("ordinal", "closed", "sqlstate"),
     [(2, False, "23514"), (0, False, "23505"), (0, True, "23514")],
@@ -147,15 +165,7 @@ def test_a_stored_trace_takes_no_further_operand(
     """A cited trace must not gain an operand, now or after a restore: the writer records the
     count it stores, every slot below it is taken, and a row without a count (pre-0039) admits
     none. The refusal reaches the trace writer's own role."""
-    interpretation = seeded["interpretations"]
-    trace = CalculationTrace.model_validate(
-        {
-            **_trace(),
-            "operands": (_operand(interpretation, 0), _operand(interpretation, 1)),
-            "exact_value": Fraction(617, 50),
-            "exact_interval": {"lower": Fraction(1233, 100), "upper": Fraction(247, 20)},
-        }
-    )
+    trace = _two_operand_trace(seeded["interpretations"], seeded["interpretations"])
     with pg_db.runtime_pool() as pool:
         trace_id = EvidenceRepository(pool).put_calculation_trace(trace)
     count = runtime.execute(
@@ -196,3 +206,124 @@ def test_tombstoning_cannot_change_an_operand_count(
         with pytest.raises(psycopg.Error, match="immutable"), migrator.transaction():
             migrator.execute(tombstone)
             migrator.execute(clear.format(extra=", operand_count = 11"), trace_id)
+
+
+_NESTED = {"interpretation_id": None, "operand_trace_id": 9}
+_NEITHER = {"interpretation_id": None}
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["nested", "neither", "comparison", "policy", "unresolved"],
+)
+def test_inputs_refuse_a_claim_whose_inputs_cannot_all_be_named(shape: str) -> None:
+    """A dropped operand or record would shrink the rerun set and carry a stale claim, so any
+    shape a run draft does not emit refuses before grouping."""
+    trace = _two_operand_trace(1, 2)
+    calculation = claim(7)
+    if shape in ("nested", "neither"):
+        second = trace.operands[1].model_copy(update=_NESTED if shape == "nested" else _NEITHER)
+        trace = trace.model_copy(update={"operands": (trace.operands[0], second)})
+    claims = {
+        "nested": calculation,
+        "neither": calculation,
+        "comparison": calculation.model_copy(
+            update={"citation": Citation(kind=CitationKind.COMPARISON, pair_outcome_id=3)}
+        ),
+        "policy": SELF_CITED,
+        "unresolved": calculation.model_copy(update={"unresolved": True}),
+    }
+    stored = {7: StoredTrace(trace_id=7, trace=trace, children=())}
+    with pytest.raises(RunDraftError, match="no reworkable inputs"):
+        rework.inputs({"c": claims[shape]}, stored, {1: "a", 2: "b"}, {})
+
+
+def test_a_calculation_rests_on_every_operand() -> None:
+    """Each operand is an input: its interpretation's capture blob under its own key."""
+    stored = {7: StoredTrace(trace_id=7, trace=_two_operand_trace(1, 2), children=())}
+    atoms = rework.inputs({"c": claim(7)}, stored, {1: "a", 2: "b"}, {})
+    assert atoms == {"c": frozenset({("a", "key-0"), ("b", "key-1")})}
+
+
+@pytest.fixture
+def submitted_q2(
+    pg_db: PgTestDatabase, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, ingest: Any
+) -> tuple[Pilot, int]:
+    """The pilot with FY26_Q2's run draft submitted (``IN_REVIEW``)."""
+    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest)
+    version = pilot.run("FY26_Q2").draft_version_id
+    assert version is not None
+    with pg_db.runtime_pool() as runtime:
+        lifecycle.submit(runtime, version, **pilot.sources())
+    return pilot, version
+
+
+def _request_changes(pilot: Pilot, version: int, *keys: str) -> None:
+    """The owner requests changes to ``version``, rejecting ``keys``."""
+    with pilot.pg_db.owner_pool() as owner:
+        record = lifecycle.decide(
+            owner, subject_kind=V, subject_id=version, kind=REQUEST, ruling=RULING, claims=keys
+        )
+    assert record.rejected_claims == keys
+
+
+def _plan(pilot: Pilot, version: int) -> rework.Rework | None:
+    """The version's rework, read as the runtime role."""
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        return rework.plan(conn.cursor(), EvidenceRepository(pool), version)
+
+
+REQUEST = DecisionKind.REQUEST_CHANGES
+QOQ = tuple(f"cmp.revenue.qoq.{part}" for part in ("prior", "abs", "pct"))
+YOY = tuple(f"cmp.revenue.yoy.{part}" for part in ("prior", "abs", "pct"))
+GAP = "calc.1"  # the income − revenue gap
+CABLES = "ledger.cables_revenue_growth.annual.consolidated"
+
+
+@pytest.mark.parametrize(
+    ("rejected", "rerun"),
+    [
+        ("cmp.revenue.qoq.prior", set(QOQ)),
+        ("fact.revenue", {"fact.revenue", *QOQ, *YOY, GAP}),
+        (CABLES, {CABLES}),
+    ],
+    ids=["comparator-prior", "current-fact", "guidance"],
+)
+def test_a_rejection_reruns_the_lines_sharing_its_inputs(
+    submitted_q2: tuple[Pilot, int], rejected: str, rerun: set[str]
+) -> None:
+    """Affected = the rejected claim and every claim sharing one of its inputs (one hop), closed
+    over the lines they sit on: a comparator prior reruns its own changes line, the current
+    revenue fact every revenue change and the income gap (with the line-mate priors), a
+    guidance quote only itself. Everything else is carried untouched."""
+    pilot, version = submitted_q2
+    assert _plan(pilot, version) is None
+    _request_changes(pilot, version, rejected)
+    found = _plan(pilot, version)
+    assert found is not None
+    assert found.rerun == rerun
+    assert found.carried == {c.claim_key for c in pilot.version(version).claims} - rerun
+    for section in pilot.version(version).sections[1:]:
+        body, lines = section.body.splitlines(), found.lines[section.section_key]
+        assert len(found.scaffolds[section.section_key].splitlines()) + len(lines) == len(body)
+
+
+def test_a_rejected_package_cannot_expand(
+    submitted_q2: tuple[Pilot, int], runtime: psycopg.Connection
+) -> None:
+    """N's package must not expand under an unchanged seal: an operand added to one of its
+    cited traces is refused, and its inputs and rerun set read back unchanged."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, "fact.revenue")
+    before = _plan(pilot, version)
+    assert before is not None
+    trace_id = before.claims[GAP].citation.calculation_trace_id
+    assert trace_id is not None
+    with pilot.pg_db.runtime_pool() as pool:
+        traces = EvidenceRepository(pool).get_calculation_traces([trace_id])
+    row: dict[str, Any] = {"calculation_trace_id": trace_id, "ordinal": 2} | _LATE_OPERAND
+    with pytest.raises(errors.CheckViolation):
+        _insert(runtime, "calculation_trace_operands", row)
+    assert _plan(pilot, version) == before
+    with pilot.pg_db.runtime_pool() as pool:
+        assert EvidenceRepository(pool).get_calculation_traces([trace_id]) == traces
