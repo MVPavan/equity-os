@@ -93,7 +93,9 @@ _REVIEW_HELP = "print a screen pair's pending review items beside the other vend
 _DISPOSE_HELP = "dispose one review item of a screen pair"
 _ITEM = "item\t{member}\t{vendor}\t{status}\t{reason}\t{candidates}"
 _VALUE = "value\t{member}\t{column}\t{own}\t{other}"
-_MEMBER = "{vendor}:{name}\t{resolution}"
+_MEMBER = "{vendor}:{name}\t{resolution}{qualifier}"
+_QUALIFIER = f" {screen_review.SLUG_NOT_VERIFIED}"
+_UNVERIFIED = "slug_not_verified\t{member}"
 _RESULT = "{symbol}\t{outcome} run {run}"
 _LOADED = "load\t{load_id}\ncreated\t{created}\nnew_listings\t{new}\ncandidate_events\t{events}"
 _FAILED_EVENT = "coverage_command_failed"
@@ -218,25 +220,26 @@ def _export(args: argparse.Namespace) -> int:
                     vendor=run.vendor.value,
                     name=member.name,
                     resolution=member.listing_id or member.reason,
+                    qualifier=_QUALIFIER if member.slug_verified is False else "",
                 )  # fmt: skip
                 for member in run.members
             ]
         _print(lines)
         _read_missing(pool, snapshots, done.pair_id, stocks, sources, pacer)
-        _print(_review_lines(pool, snapshots, done.pair_id, stocks))
+        _print(_review_lines(pool, snapshots, done.pair_id))
     return EXIT_OK
 
 
 def _review(args: argparse.Namespace) -> int:
     """Print the pair's pending review items as the owner, first reading the other vendor for
     any item without a recorded read when ``--read``."""
-    stocks = _stocks(args.watchlist)
     snapshots = SnapshotStore(args.snapshot_root)
     with _owner_pool() as pool:
         if args.read:
             pacer = RequestPacer(screen_export.SPACING_SECONDS)
+            stocks = _stocks(args.watchlist)
             _read_missing(pool, snapshots, args.pair, stocks, _sources(), pacer)
-        _print(_review_lines(pool, snapshots, args.pair, stocks))
+        _print(_review_lines(pool, snapshots, args.pair))
     return EXIT_OK
 
 
@@ -260,7 +263,7 @@ def _read_missing(
         if item.read is None:
             stock = stocks.get(item.nse_code or "")
             read = screen_review.read_other_vendor(item, stock, tijori, pacer, screener)
-            screen_review.record_read(pool, snapshots, item, read)
+            screen_review.record_read(pool, snapshots, item, read, stock)
 
 
 def _print(lines: list[str]) -> None:
@@ -274,14 +277,16 @@ def _stocks(watchlist: Path) -> dict[str, StockConfig]:
     return {stock.symbol: stock for stock in load_watchlist_config(watchlist).stocks}
 
 
-def _review_lines(
-    pool: ConnectionPool, snapshots: SnapshotStore, pair_id: int, stocks: dict[str, StockConfig]
-) -> list[str]:
-    """Each pending item, then each column of its member's row beside the other vendor's
-    corresponding field, ``FIELD_NOT_EXPOSED``, the item's read gap or ``READ_NOT_RECORDED``."""
-    lines = []
+def _review_lines(pool: ConnectionPool, snapshots: SnapshotStore, pair_id: int) -> list[str]:
+    """Each bound Tijori member without a verified slug; each pending item, then each column of
+    its member's row beside the other vendor's corresponding field, ``FIELD_NOT_EXPOSED``, the
+    item's read gap or ``READ_NOT_RECORDED``."""
+    lines = [
+        _UNVERIFIED.format(member=member)
+        for member in screen_review.slug_not_verified(pool, pair_id)
+    ]
     items = screen_review.pending_items(pool, pair_id)
-    for item, values in screen_review.side_by_side(pool, snapshots, items, stocks):
+    for item, values in screen_review.side_by_side(pool, snapshots, items):
         lines.append(
             _ITEM.format(
                 member=item.member_id,

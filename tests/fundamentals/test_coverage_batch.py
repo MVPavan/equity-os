@@ -36,6 +36,7 @@ from screen_export_support import (
 )
 
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.contracts.onboarding import OnboardingOutcome
 from fundamentals.coverage import screens
 from fundamentals.ingest import screen_export
@@ -70,6 +71,7 @@ _RESULTS = (
 
 
 CONFIG = Path(__file__).parents[2] / "config" / "screens.yaml"
+WATCHLIST = CONFIG.with_name("watchlist.yaml")
 COOKIES = {"SCREENER_SESSION_COOKIE": "screener-cookie", "TIJORI_SESSION_COOKIE": "tijori-cookie"}
 RUN_TABLES = ("screens", "screen_runs", "screen_members", "screen_run_pairs", "capture_refs")
 RUN_TABLES += ("capture_addresses",)
@@ -289,27 +291,31 @@ def test_tijori_rows_bind_by_unique_current_nse_symbol(world: Any) -> None:
 
 def test_a_verified_tijori_slug_vetoes_a_different_one(world: Any) -> None:
     """Where an onboarded entity's Tijori unit is VERIFIED, a row naming another slug does not
-    bind; its verified slug does. Without one, the slug is unverified and binding passes."""
+    bind; its verified slug (the watchlist's, known independently of the binding query) binds as
+    verified. THERMAX was never onboarded: even its true slug binds only as registry membership,
+    recorded as not verified (ruling (d))."""
     db = world["db"]
-    verified = {
-        symbol: [slug for (slug,) in rows(db, screens._VERIFIED_SLUGS, ISINS[symbol])]
-        for symbol in (*CHOSEN, *OTHERS)
+    slugs = {
+        stock.symbol: stock.identifiers.tijori_slug
+        for stock in load_watchlist_config(WATCHLIST).stocks
     }
-    symbol = next(symbol for symbol in CHOSEN if verified[symbol])
-    assert not verified["THERMAX"]
     done = _record(
         world,
         tijori=(
-            _tijori_row("Verified", symbol, slug=verified[symbol][0]),
-            _tijori_row("Other slug", symbol, slug="another-company"),
-            _tijori_row("Unverified", "THERMAX", slug="another-company"),
+            *(_tijori_row(symbol, symbol, slug=slugs[symbol]) for symbol in CHOSEN),
+            _tijori_row("Other slug", "TITAN", slug="another-company"),
+            _tijori_row("Unverified", "THERMAX", slug=slugs["THERMAX"]),
         ),
     )
     assert _bound(done.tijori) == [
-        _listing(db, "NSE_EQ", ISINS[symbol]),
+        *(_listing(db, "NSE_EQ", ISINS[symbol]) for symbol in CHOSEN),
         "CONFLICTING_CODES",
         _listing(db, "NSE_EQ", ISINS["THERMAX"]),
     ]
+    flags = [True, True, True, None, False]
+    assert [member.slug_verified for member in done.tijori.members] == flags
+    stored = "SELECT slug_verified FROM eqos.screen_members WHERE screen_run_id = %s ORDER BY id"
+    assert [flag for (flag,) in rows(db, stored, done.tijori.run_id)] == flags
 
 
 def test_an_edited_formula_is_a_second_screen(world: Any, tmp_path: Path) -> None:

@@ -54,7 +54,8 @@ _INSERT_RUN: LiteralString = (
 )
 _INSERT_MEMBER: LiteralString = (
     "INSERT INTO eqos.screen_members (screen_run_id, row_number, name, nse_code, bse_code, "
-    "listing_id, reason, isin, slug) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+    "listing_id, reason, isin, slug, slug_verified) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
 )
 _INSERT_PAIR: LiteralString = (
     "INSERT INTO eqos.screen_run_pairs (screener_run_id, tijori_run_id) VALUES (%s, %s) "
@@ -119,6 +120,7 @@ class ScreenMember(BaseModel):
     slug: str | None
     listing_id: int | None
     reason: UnresolvedReason | None
+    slug_verified: bool | None = None
 
 
 class ScreenRun(BaseModel):
@@ -205,7 +207,7 @@ def _record(
         member = bind(conn, {key: value.strip() for key, value in row.items()})
         values = (
             run_id, number, member.name, member.nse_code, member.bse_code, member.listing_id,
-            member.reason, member.isin, member.slug,
+            member.reason, member.isin, member.slug, member.slug_verified,
         )  # fmt: skip
         (member_id,) = conn.execute(_INSERT_MEMBER, values).fetchone() or (0,)
         members.append(member.model_copy(update={"member_id": member_id}))
@@ -238,12 +240,13 @@ def _bind_screener(conn: psycopg.Connection[Any], row: dict[str, str]) -> Screen
 
 def _bind_tijori(conn: psycopg.Connection[Any], row: dict[str, str]) -> ScreenMember:
     """By the unique current NSE symbol; a supplied scripcode must name the same listing and a
-    verified Tijori slug of the ISIN's entity vetoes a different one."""
+    verified Tijori slug of the ISIN's entity vetoes a different one. A bound member records
+    whether its slug is verified."""
     nse, slug = row.get(TIJORI_NSE) or None, row.get(TIJORI_SLUG) or None
     scrip = None if row.get(TIJORI_BSE, "") in _NO_SCRIPCODE else row[TIJORI_BSE]
     hits = conn.execute(_MATCH, (NSE_SEGMENT, nse)).fetchall() if nse else []
     isin = str(hits[0][1]) if len(hits) == 1 else None
-    reason = None
+    reason, verified = None, set[str]()
     if not nse:
         reason = UnresolvedReason.NO_CODE
     elif not hits:
@@ -257,7 +260,8 @@ def _bind_tijori(conn: psycopg.Connection[Any], row: dict[str, str]) -> ScreenMe
     ):
         reason = UnresolvedReason.CONFLICTING_CODES
     listing = None if reason else int(hits[0][0])
-    return _member(row.get(TIJORI_NAME, ""), nse, scrip, isin, slug, listing, reason)
+    member = _member(row.get(TIJORI_NAME, ""), nse, scrip, isin, slug, listing, reason)
+    return member if reason else member.model_copy(update={"slug_verified": bool(verified)})
 
 
 def _member(

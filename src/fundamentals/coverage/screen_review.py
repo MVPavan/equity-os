@@ -5,7 +5,10 @@ The items are ``eqos.screen_review_items``; an item is pending until its one dis
 member's values are its row of the run's results capture, never a copy. After an export commits,
 each pending bound item whose NSE symbol names a watchlist stock with verified other-vendor ids
 gets one identity-gated page of the other vendor, retained as a capture; every other pending item
-records why it has none. Values print as vendor text side by side, never compared or stored.
+records why it has none. A Tijori read keeps the identifiers it was gated on and replays against
+them, never today's watchlist. Values print as vendor text side by side, never compared or stored.
+Bound Tijori members without a verified slug are listed: their binding is registry membership,
+not vendor identity verification.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.api.watchlist_config import SourceIdentifiers, StockConfig
+from fundamentals.api.watchlist_config import StockConfig
 from fundamentals.contracts.onboarding import VerificationUnit
 from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.contracts.snapshot import CaptureRecord
@@ -53,6 +56,8 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 FIELD_NOT_EXPOSED = "FIELD_NOT_EXPOSED"
 READ_NOT_RECORDED = "READ_NOT_RECORDED"
+GATE_NOT_RECORDED = "GATE_NOT_RECORDED"
+SLUG_NOT_VERIFIED = "SLUG_NOT_VERIFIED"
 DISPOSITION_KINDS = (
     DispositionKind.ACCEPTED_AS_DEFINITION,
     DispositionKind.MAPPING_FIX,
@@ -70,7 +75,8 @@ CORRESPONDENCES = {
 # Each pending item, its member's row locator and its read (both null while none is recorded).
 _PENDING: LiteralString = (
     "SELECT p.member_id, p.vendor, p.status, p.reason, p.nse_code, p.candidate_member_ids, "
-    "m.row_number, r.capture_ref_id AS results_ref, o.capture_ref_id AS read_ref, o.gap "
+    "m.row_number, r.capture_ref_id AS results_ref, o.capture_ref_id AS read_ref, o.gap, "
+    "o.tijori_slug, o.tijori_company_id "
     "FROM eqos.screen_review_pending p JOIN eqos.screen_members m ON m.id = p.member_id "
     "JOIN eqos.screen_runs r ON r.id = m.screen_run_id "
     "LEFT JOIN eqos.screen_other_vendor_reads o "
@@ -82,10 +88,13 @@ _INSERT_DISPOSITION: LiteralString = (
     "evidence_ref) VALUES (%s, %s, %s, %s, %s)"
 )
 _INSERT_READ: LiteralString = (
-    "INSERT INTO eqos.screen_other_vendor_reads (pair_id, member_id, capture_ref_id, gap) "
-    "VALUES (%s, %s, %s, %s)"
+    "INSERT INTO eqos.screen_other_vendor_reads (pair_id, member_id, capture_ref_id, gap, "
+    "tijori_slug, tijori_company_id) VALUES (%s, %s, %s, %s, %s, %s)"
 )
-_NO_STOCK = "{symbol} has a retained Tijori read but is no longer a watchlist stock"
+_UNVERIFIED: LiteralString = (
+    "SELECT m.id FROM eqos.screen_run_pairs p JOIN eqos.screen_members m "
+    "ON m.screen_run_id = p.tijori_run_id WHERE p.id = %s AND NOT m.slug_verified ORDER BY m.id"
+)
 
 
 class ItemStatus(StrEnum):
@@ -106,7 +115,7 @@ class ReadGap(StrEnum):
 
 class ReviewItem(BaseModel):
     """One pending item of a pair, its member's row locator and its read (a capture ref id, a
-    gap, or ``None`` while none is recorded)."""
+    gap, or ``None`` while none is recorded) with a Tijori read's gate identifiers."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -120,6 +129,8 @@ class ReviewItem(BaseModel):
     row_number: int
     results_ref: int
     read: int | ReadGap | None
+    tijori_slug: str | None = None
+    tijori_company_id: int | None = None
 
 
 def pending_items(pool: ConnectionPool, pair_id: int) -> tuple[ReviewItem, ...]:
@@ -130,6 +141,12 @@ def pending_items(pool: ConnectionPool, pair_id: int) -> tuple[ReviewItem, ...]:
         ReviewItem.model_validate(row | {"pair_id": pair_id, "read": row["gap"] or row["read_ref"]})
         for row in found
     )
+
+
+def slug_not_verified(pool: ConnectionPool, pair_id: int) -> tuple[int, ...]:
+    """The pair's bound Tijori members whose slug is not a verified one."""
+    with pool.connection() as conn:
+        return tuple(member for (member,) in conn.execute(_UNVERIFIED, (pair_id,)))
 
 
 def dispose(
@@ -162,7 +179,7 @@ def read_other_vendor(
         tijori_pacer.wait_for_slot()
         try:
             body = tijori.fetch_overview_bytes(ids.tijori_slug)
-            _company_details(body, ids)
+            _company_details(body, ids.tijori_slug, ids.nse_symbol, ids.tijori_company_id)
         except TijoriError:
             return ReadGap.READ_REFUSED
         url = tijori.config.overview_url_template.format(
@@ -194,23 +211,30 @@ def read_other_vendor(
 
 
 def record_read(
-    pool: ConnectionPool, snapshots: SnapshotStore, item: ReviewItem, read: Capture | ReadGap
+    pool: ConnectionPool,
+    snapshots: SnapshotStore,
+    item: ReviewItem,
+    read: Capture | ReadGap,
+    stock: StockConfig | None,
 ) -> None:
-    """Retain a read's bytes and record it against the item, or record the item's gap."""
+    """Retain a read's bytes and record it against the item with the Tijori identifiers it was
+    gated on (``stock``'s), or record the item's gap."""
     ref, gap = None, read if isinstance(read, ReadGap) else None
+    gate: tuple[str | None, int | None] = (None, None)
     if isinstance(read, Capture):
         with snapshots.prepare_ordinary_output():
             ((_, stored),) = store_captures(snapshots, EvidenceRepository(pool), [read])
         ref = stored.capture_ref_id
+        if item.vendor is ScreenVendor.SCREENER and stock is not None:
+            gate = (stock.identifiers.tijori_slug, stock.identifiers.tijori_company_id)
     with pool.connection() as conn:
-        conn.execute(_INSERT_READ, (item.pair_id, item.member_id, ref, gap))
+        conn.execute(_INSERT_READ, (item.pair_id, item.member_id, ref, gap, *gate))
 
 
 def side_by_side(
     pool: ConnectionPool,
     snapshots: SnapshotStore,
     items: tuple[ReviewItem, ...],
-    stocks: dict[str, StockConfig],
 ) -> Iterator[tuple[ReviewItem, list[tuple[str, str, str]]]]:
     """Each item with every column of its member's row (hydrated verbatim from its run's
     results capture, each capture read once) beside the other vendor's corresponding field,
@@ -220,7 +244,7 @@ def side_by_side(
         if item.results_ref not in results:
             body = _retained(pool, snapshots, item.results_ref)[1]
             results[item.results_ref] = result_rows(item.vendor, body)
-        other = _other_values(pool, snapshots, item, stocks.get(item.nse_code or ""))
+        other = _other_values(pool, snapshots, item)
         row = results[item.results_ref][item.row_number - 1]
         shown = dict.fromkeys(row, other) if isinstance(other, str) else other
         yield (
@@ -230,10 +254,10 @@ def side_by_side(
 
 
 def _other_values(
-    pool: ConnectionPool, snapshots: SnapshotStore, item: ReviewItem, stock: StockConfig | None
+    pool: ConnectionPool, snapshots: SnapshotStore, item: ReviewItem
 ) -> dict[str, str] | str:
     """The other vendor's field text per corresponding member column, re-read from the retained
-    page with the reader that gated it, or why there is none."""
+    page with the reader and identifiers that gated it, or why there is none."""
     if item.read is None:
         return READ_NOT_RECORDED
     if isinstance(item.read, ReadGap):
@@ -241,9 +265,9 @@ def _other_values(
     record, body = _retained(pool, snapshots, item.read)
     fields = CORRESPONDENCES[item.vendor]
     if item.vendor is ScreenVendor.SCREENER:
-        if stock is None:
-            raise ValueError(_NO_STOCK.format(symbol=item.nse_code))
-        details = _company_details(body, stock.identifiers)
+        if item.tijori_slug is None or item.tijori_company_id is None or item.nse_code is None:
+            return GATE_NOT_RECORDED
+        details = _company_details(body, item.tijori_slug, item.nse_code, item.tijori_company_id)
         return {column: getattr(details, field).raw_text for column, field in fields.items()}
     block = top_ratios_list(parse_document(body.decode("utf-8", errors="replace")))
     ratios = (
@@ -267,14 +291,16 @@ def _other_values(
     return {column: texts.get(field, FIELD_NOT_EXPOSED) for column, field in fields.items()}
 
 
-def _company_details(body: bytes, ids: SourceIdentifiers) -> TijoriCompanyDetailsSection:
+def _company_details(
+    body: bytes, slug: str, symbol: str, company_id: int
+) -> TijoriCompanyDetailsSection:
     """The overview's company details section alone, after its identity gate against the
-    watchlist ids."""
+    given Tijori identifiers."""
     sections = TijoriSource.parse_overview_bytes(
         body,
-        slug=ids.tijori_slug,
-        expected_symbol=ids.nse_symbol,
-        expected_company_id=ids.tijori_company_id,
+        slug=slug,
+        expected_symbol=symbol,
+        expected_company_id=company_id,
         section=TijoriOverviewSection.COMPANY_DETAILS,
     )
     (details,) = [s for s in sections if isinstance(s, TijoriCompanyDetailsSection)]

@@ -13,6 +13,7 @@ import contextlib
 import csv
 import io
 import json
+import re
 import socket
 from collections.abc import Iterator
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any
 
 import psycopg
 import pytest
+import yaml
 from coverage_support import INSTRUMENTS, coverage
 from onboarding_support import fresh_db, rows
 from retention_support import later
@@ -29,10 +31,18 @@ from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.retention import EligibilityKind, EligibleReason, HoldRoot
 from fundamentals.coverage import screen_review
-from fundamentals.coverage.screen_review import FIELD_NOT_EXPOSED, READ_NOT_RECORDED
+from fundamentals.coverage.screen_review import (
+    FIELD_NOT_EXPOSED,
+    READ_NOT_RECORDED,
+    SLUG_NOT_VERIFIED,
+)
 from fundamentals.ingest import screen_export
-from fundamentals.ingest.tijori_overview_models import TijoriCompanyDetailsSection
+from fundamentals.ingest.tijori_overview_models import (
+    TijoriCompanyDetailsSection,
+    TijoriOverviewSection,
+)
 from fundamentals.ingest.tijori_source import TijoriSource
+from fundamentals.ingest.tijori_tables import TijoriError
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention.eligibility import eligibility
 from fundamentals.retention.holds import capture_facts
@@ -41,6 +51,8 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONFIG = Path(__file__).parents[2] / "config" / "screens.yaml"
+WATCHLIST = CONFIG.with_name("watchlist.yaml")
+REVIEW_LINES = ("slug_not_verified", "item", "value")
 COOKIES = {"SCREENER_SESSION_COOKIE": "screener-cookie", "TIJORI_SESSION_COOKIE": "tijori-cookie"}
 OVERVIEW_PATH = "/company/titan-company-limited/"  # TITAN's verified Tijori slug
 HFCL_PAGE_PATH = "/company/HFCL/consolidated/"
@@ -53,6 +65,10 @@ _TIJORI_ROWS = [
     {"name": "Titan Unlisted", "slug": "", "scripcode": 500114, "nse symbol": ""},
 ]
 _ITEMS = "SELECT member_id, status FROM eqos.screen_review_items WHERE pair_id = %s"
+_BOUND_TIJORI = (
+    "SELECT m.id FROM eqos.screen_run_pairs p JOIN eqos.screen_members m "
+    "ON m.screen_run_id = p.tijori_run_id WHERE p.id = %s AND m.listing_id IS NOT NULL"
+)
 _READS = (
     "SELECT m.nse_code, c.source_id, c.surface, o.gap FROM eqos.screen_other_vendor_reads o "
     "JOIN eqos.screen_members m ON m.id = o.member_id "
@@ -67,15 +83,16 @@ _PAIR_CAPTURES = (
 )
 
 
-def _replies() -> Any:
-    """One export where TITAN is Screener-only and Tijori adds three rows of its own."""
+def _replies(overview: bytes = OVERVIEW) -> Any:
+    """One export where TITAN is Screener-only and Tijori adds three rows of its own; TITAN's
+    Tijori overview is ``overview``."""
     results = json.loads(fixture("tijori-results.json"))
     results["data"] = [r for r in results["data"] if r["nse symbol"] != "TITAN"] + _TIJORI_ROWS
     results["total_results"] = len(results["data"])
     json_type = {"Content-Type": "application/json"}
     return default_replies() | {
         ("GET", RESULTS_PATH): [(200, json.dumps(results).encode(), json_type)],
-        ("GET", OVERVIEW_PATH): [(200, OVERVIEW, HTML_TYPE)],
+        ("GET", OVERVIEW_PATH): [(200, overview, HTML_TYPE)],
         ("GET", HFCL_PAGE_PATH): [(200, WRONG_PAGE, HTML_TYPE)],
     }
 
@@ -88,19 +105,19 @@ def _cli(*args: str) -> tuple[int, list[list[str]]]:
     return code, [line.split("\t") for line in out.getvalue().splitlines()]
 
 
-def _served(*args: str) -> tuple[int, list[list[str]], list[str]]:
+def _served(*args: str, overview: bytes = OVERVIEW) -> tuple[int, list[list[str]], list[str]]:
     """``_cli(*args)`` over :func:`_replies`, unpaced; its exit, output and the paths requested."""
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(screen_export, "SPACING_SECONDS", 0.0)
-        web = serve(patch, _replies())
+        web = serve(patch, _replies(overview))
         code, lines = _cli(*args)
     return code, lines, [url.split("/", 3)[3] for _, url, _ in web.requests]
 
 
-def _export(snaps: str) -> tuple[list[list[str]], list[str]]:
+def _export(snaps: str, overview: bytes = OVERVIEW) -> tuple[list[list[str]], list[str]]:
     """One ``coverage export`` over :func:`_replies`; its output and the paths requested."""
     args = ("export", "--screen", "d7-stage4", "--screens", str(CONFIG), "--snapshot-root", snaps)
-    code, lines, requested = _served(*args)
+    code, lines, requested = _served(*args, overview=overview)
     assert code == EXIT_OK, lines
     return lines, requested
 
@@ -193,7 +210,67 @@ def test_items_reads_and_values_side_by_side(world: Any) -> None:
     assert values[unlisted, "scripcode"] == ("500114", "MEMBER_UNRESOLVED")
     code, reviewed = _cli("review", "--pair", str(pair), "--snapshot-root", world["snaps"])
     assert code == EXIT_OK
-    assert reviewed == [line for line in lines if line[0] in ("item", "value")]
+    assert reviewed == [line for line in lines if line[0] in REVIEW_LINES]
+
+
+def test_bound_tijori_members_without_a_verified_slug_are_reported(world: Any) -> None:
+    """Nothing here was onboarded, so no Tijori slug is verified: every bound Tijori member,
+    shared ones included (no review item), is reported at export and in every review, since its
+    binding is registry membership, not vendor identity verification (ruling (d))."""
+    db, lines = world["db"], world["first"][0]
+    pair = _pair(lines)
+    bound = sorted(member for (member,) in rows(db, _BOUND_TIJORI, pair))
+    assert len(bound) == 6  # HFCL, RELIANCE and four of the five shared companies
+    reported = [int(line[1]) for line in lines if line[0] == "slug_not_verified"]
+    assert reported == bound
+    hfcl = next(line for line in lines if line[0] == "TIJORI:Hfcl")
+    assert hfcl[1].endswith(" " + SLUG_NOT_VERIFIED)
+    screener = [line[1] for line in lines if line[0].startswith("SCREENER:")]
+    assert screener and not any(shown.endswith(SLUG_NOT_VERIFIED) for shown in screener)
+    review = _cli("review", "--pair", str(pair), "--snapshot-root", world["snaps"])[1]
+    assert [int(line[1]) for line in review if line[0] == "slug_not_verified"] == bound
+
+
+def test_a_review_replays_the_identifiers_its_read_was_gated_on(world: Any, tmp_path: Path) -> None:
+    """The overview read keeps TITAN's Tijori slug and id; with TITAN gone from the watchlist,
+    or the watchlist gone, the review replays the retained read against them unchanged."""
+    db, lines = world["db"], world["second"][0]
+    pair = _pair(lines)
+    query = (
+        "SELECT tijori_slug, tijori_company_id FROM eqos.screen_other_vendor_reads "
+        "WHERE pair_id = %s AND capture_ref_id IS NOT NULL"
+    )
+    assert rows(db, query, pair) == [("titan-company-limited", 81)]
+    watchlist = yaml.safe_load(WATCHLIST.read_text())
+    watchlist["stocks"] = [
+        stock for stock in watchlist["stocks"] if stock["identifiers"]["nse_symbol"] != "TITAN"
+    ]
+    without_titan = tmp_path / "watchlist.yaml"
+    without_titan.write_text(yaml.safe_dump(watchlist))
+    review = ("review", "--pair", str(pair), "--snapshot-root", world["snaps"])
+    expected = [line for line in lines if line[0] in REVIEW_LINES]
+    assert _served(*review, "--watchlist", str(without_titan), "--read") == (EXIT_OK, expected, [])
+    assert _cli(*review, "--watchlist", str(tmp_path / "gone.yaml")) == (EXIT_OK, expected)
+
+
+def test_the_review_reads_only_the_overviews_company_details(world: Any) -> None:
+    """S5 needs only Tijori's company details: an overview whose ratios island is malformed
+    (the whole page does not parse) is still read, and its replayed values are that section's."""
+    broken = re.sub(
+        rb'(id="ratios_table"[^>]*>).*?(</script>)', rb'\1"broken"\2', OVERVIEW, count=1, flags=re.S
+    )
+    gate = {"slug": "titan-company-limited", "expected_symbol": "TITAN", "expected_company_id": 81}
+    with pytest.raises(TijoriError):
+        TijoriSource.parse_overview_bytes(broken, **gate)
+    lines, _ = _export(world["snaps"], overview=broken)
+    titan = _member(world["db"], _pair(lines), "SCREENER", "TITAN")
+    (details,) = TijoriSource.parse_overview_bytes(
+        OVERVIEW, section=TijoriOverviewSection.COMPANY_DETAILS, **gate
+    )
+    assert isinstance(details, TijoriCompanyDetailsSection)
+    other = {line[2]: line[4] for line in lines if line[0] == "value" and line[1] == str(titan)}
+    assert other["Market Capitalization"] == details.market_cap.raw_text != ""
+    assert other["Price to Earning"] == details.price_earnings.raw_text != ""
 
 
 def test_dispositions_clear_items_and_release_their_holds(world: Any) -> None:
@@ -223,7 +300,8 @@ def test_dispositions_clear_items_and_release_their_holds(world: Any) -> None:
     for member in items:
         assert _cli(*dispose, "--member", str(member), "--reason", "boundary")[0] == EXIT_OK
     assert _cli(*dispose, "--member", str(items[0]), "--reason", "again")[0] == EXIT_REFUSED
-    assert _cli("review", "--pair", str(pair), "--snapshot-root", world["snaps"]) == (EXIT_OK, [])
+    code, reviewed = _cli("review", "--pair", str(pair), "--snapshot-root", world["snaps"])
+    assert code == EXIT_OK and {line[0] for line in reviewed} == {"slug_not_verified"}
     assert {(v.kind, v.reason) for v in _verdicts(db, pair)} == {
         (EligibilityKind.ELIGIBLE, EligibleReason.WINDOW)
     }
