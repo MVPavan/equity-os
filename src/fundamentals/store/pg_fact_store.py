@@ -109,6 +109,9 @@ _OPEN_EVENT: LiteralString = (
     "VALUES (%s, %s, 'OPEN', eqos.store_now())"
 )
 
+# One snapshot for a cutoff read: the late-selection set and the history must agree.
+_SNAPSHOT: LiteralString = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+
 _T = TypeVar("_T")
 _DictCursor = Cursor[dict[str, Any]]
 
@@ -296,13 +299,13 @@ class PgFactStore:
     ) -> StoredRevision | None:
         """The decision effective at ``cutoff`` (default: the overlay boundary)."""
         stamp = require_utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
-        with self._read() as cursor:
+        with self._read(_SNAPSHOT) as cursor:
             return self._canonical(cursor, content_identity, stamp)
 
     def query_canonical(self, *, cutoff: datetime | None = None) -> tuple[StoredRevision, ...]:
         """One effective selection per identity, read from one snapshot."""
         stamp = require_utc(cutoff) if cutoff is not None else overlay_boundary(self._pool)
-        with self._read("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY") as cursor:
+        with self._read(_SNAPSHOT) as cursor:
             identities = cursor.execute(_IDENTITIES, (self._store_id,)).fetchall()
             found = [self._canonical(cursor, row["content_identity"], stamp) for row in identities]
         return tuple(sorted((row for row in found if row is not None), key=lambda row: row.row_id))

@@ -172,3 +172,28 @@ def test_historical_reads_hold_native_selections_to_their_recording_times(
         assert at_between is not None and at_between.row_id == original.row_id
         current = store.get_canonical(identity)
         assert current is not None and current.row_id == restated.row_id
+
+
+def test_a_selection_committed_mid_read_stays_out_of_the_cutoff_answer(
+    pg_db: PgTestDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A backdated selection committed by another connection between the late-selection and
+    history reads must not leak in: both read one snapshot (PREP-2/2b r3)."""
+    with pg_db.runtime_pool() as pool, pg_db.runtime_pool() as writer_pool:
+        store_id = create_native_store(pool, "snapshot")
+        store, writer = PgFactStore(pool, store_id), PgFactStore(writer_pool, store_id)
+        original = store.put(_fact())
+        store.select_canonical(original.row_id, "original", datetime(2026, 9, 1, tzinfo=UTC))
+        restated = store.put(_fact(_observation(normalized_value="6400", raw_value="64000000000")))
+        cutoff = overlay_boundary(pool)
+        history = PgFactStore._history
+        pending = [lambda: writer.select_canonical(restated.row_id, "backdated", cutoff)]
+
+        def interleaved(self: PgFactStore, cursor: Any, identity: str) -> Any:
+            if self is store and pending:
+                pending.pop()()
+            return history(self, cursor, identity)
+
+        monkeypatch.setattr(PgFactStore, "_history", interleaved)
+        found = store.get_canonical(original.content_identity, cutoff=cutoff)
+        assert not pending and found is not None and found.row_id == original.row_id
