@@ -15,7 +15,7 @@ RUNTIME_BINDING = "RUNTIME_BINDING"  # header.notation.record_sha256
 SECTIONS = {"header", "fixtures", "eligibility", "dry_run", "probe", "purge", "preservation"}
 SECTIONS |= {"backup", "refetch", "licence_end", "recovery", "replay", "restore"}
 HEADER = {"manifest", "spec", "hand_verification", "approval", "notation", "arithmetic", "rules"}
-HEADER |= {"clock", "script", "derived_blobs", "sources"}
+HEADER |= {"clock", "script", "derived_blobs", "record_digests", "sources"}
 FIELDS = {"entity", "source", "surface", "base_class", "effective_class", "url", "blob_sha256"}
 FIELDS |= {"verified", "licence", "record_sha256"}
 RECORD = {"run", "class", "reason", "url", "probe"}
@@ -104,6 +104,7 @@ def check_fixtures(manifest: dict[str, Any]) -> None:
     assert len(hashes) == len(header["sources"])
     assert all(HEX.fullmatch(str(digest)) for digest in hashes.values())
     derived, runs = header["derived_blobs"], {"none", *header["script"]["runs"]}
+    digests = header["record_digests"]
     for label, fixture in manifest["fixtures"].items():
         assert FIELDS <= fixture.keys(), (label, FIELDS - fixture.keys())
         assert {fixture["base_class"], fixture["effective_class"]} <= CLASSES, label
@@ -111,7 +112,9 @@ def check_fixtures(manifest: dict[str, Any]) -> None:
         assert HEX.fullmatch(str(bound)) and fixture["blob_sha256"] == bound, label
         assert fixture["verified"].split()[0] in runs, label
         record = fixture["record_sha256"]
-        assert record == RUNTIME_BINDING or record == hashes[f"{label}-REC"], label
+        if record != RUNTIME_BINDING:
+            assert digests[label]["from"] == f"{label}-REC" in hashes, label
+            assert HEX.fullmatch(str(record)) and record == digests[label]["sha256"], label
         if "holds" in fixture:
             assert set(fixture["holds"]) <= ROOTS and "holds_include" not in fixture, label
         else:
