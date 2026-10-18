@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "D9 Retention and replay: Task 9 end-to-end",
-    "detail": "Tasks 1-8 done. The frozen Stage 5 manifest was independently authored and approved by Sol after three review rounds (unattainable fixture expectations, invalid replay seeds and checker gaps fixed). Task 9 in progress: the Stage 5 end-to-end through the CLI (classify, backup, dry-run, purge crashed and rerun, re-fetch three ways, licence end, restores with replay) checked against the manifest.",
+    "title": "D9 Retention and replay: phase-end review",
+    "detail": "All nine D9 tasks done. The Stage 5 end-to-end passes through the CLI against the frozen manifest (re-approved after the e2e found three manifest errors: record digest convention, Screener attempt count, Upstox null interpretation values). Sol is reviewing the whole phase.",
     "stage": "D9"
   },
   "next": [
-    "D9 Tasks 3-9: holds, retention lock and backup, purge, re-fetch, restore, Stage 5 manifest and end-to-end; then D9 phase-end review",
+    "D9 phase-end review (Sol), fix rounds, then a fresh critical review",
     "D7 Tasks 5-6 once the owner's real Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
     "D8 resumes only if vendor definitions appear or the owner picks a Stage 3 exception",
     "Follow-ups: eqos-8hp, eqos-z48, eqos-0bp, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "D9 Task 9 committed: Stage 5 end-to-end (classify, backup, dry-run, purge crashed and rerun, re-fetch three ways, Tijori licence end, two restores with replay) matches the frozen manifest; four must-fail mutations. Manifest amended r4 and re-approved by Sol. Full suite 4036 passed, one WSL clock flake."
+    },
     {
       "date": "2026-10-17",
       "text": "D9 Task 8 committed: frozen ledger Stage 5 manifest, independently authored, approved by Sol in round 3 (payload e094ce26). Rounds 1-2 fixed unattainable expectations, non-replayable seed runs, the Task 9 order, probe and purge-reason expectations, preservation digests, a deterministic screen-export fixture and a fundamentals-free structural checker."
