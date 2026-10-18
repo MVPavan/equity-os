@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "Screen export (eqos-351): exporter, binding, review queue",
-    "detail": "PREP-2 and PREP-2b done. Screen-export Task 2 done (c56ec39: legacy query-URL screen subsystem deleted, about -4,160 lines). Tasks 3-5 (export transport, retention and binding, cross-check queue and D9 holds) running.",
-    "stage": "D7"
+    "title": "Screen export built; waiting on owner screens. PREP-2/2b review, PREP-3 plan",
+    "detail": "Screen export Tasks 3-5 done (a8a1d24, 116e3f2): Screener and Tijori saved-screen export, paired runs with company matching (migration 0034), cross-check review queue with other-vendor reads and the OPEN_SCREEN_REVIEW retention hold (migration 0035). Tasks 6-7 need the owner's saved screens. Sol is reviewing PREP-2/2b; Opus is drafting the PREP-3 plan.",
+    "stage": "PREP"
   },
   "next": [
-    "Screen export Tasks 6-7 (Stage 4 manifest and e2e), then D7 phase-end review; live runs need the owner's saved Screener screen and Tijori query d7-stage4",
-    "PREP-3..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
-    "Phase-end Sol review of PREP-2/2b (incl. ledger/run_draft.py size, 519 lines)",
+    "Owner: save the five-company Screener screen (ETERNAL, POLYCAB, TITAN, THERMAX, CGPOWER) and Tijori query d7-stage4; then screen-export Tasks 6-7 and the D7 phase-end review (Task 5 code is about 4x its size estimate, to be cut in review)",
+    "PREP-2/2b phase-end fixes from Sol's review (incl. ledger/run_draft.py size)",
+    "PREP-3 plan review, then PREP-3..8 and the Apar pilot (cutover eqos-3zl owner-approved)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)",
     "Follow-ups: eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "Screen export Tasks 3-5 done (a8a1d24, 116e3f2): vendor export transport for both vendors, paired runs and binding (0034), review queue, other-vendor reads and OPEN_SCREEN_REVIEW hold (0035). Catalog gained screen_results, SCREEN_DEFINITION and Tijori overview surfaces (orchestrator ruling). 310 related tests pass."
+    },
     {
       "date": "2026-10-18",
       "text": "Screen-export Task 2 done (c56ec39, eqos-8hp): legacy Screener ?q= screen subsystem deleted (about -4,160 lines); 631 related tests pass. Tasks 3-5 dispatched."
