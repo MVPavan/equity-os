@@ -1,9 +1,9 @@
-"""Export one owner-saved screen from Screener (CSV) and Tijori (JSON) (amendment 2026-10-18).
+"""Run one owner-authored screen formula at Screener (CSV) and Tijori (JSON) (amendment 2026-10-18).
 
-Requests only the amendment's endpoints: Screener ``/explore/``, the saved screen page and that
-page's one export form; Tijori's owner saved-query listing and ``advanced_search`` with the
-stored query. Every check refuses with :class:`ScreenExportError` before anything is returned,
-so a caller never holds a partial export. Values stay vendor text; nothing here interprets them.
+Requests only the amendment's endpoints: Screener's raw-query page for the formula and that page's
+one export form; Tijori's ``advanced_search`` for the formula. Each vendor's echo of the formula
+must equal the configured one, and every check refuses with :class:`ScreenExportError` before
+anything is returned, so a caller never holds a partial export. Values stay vendor text.
 """
 
 from __future__ import annotations
@@ -13,12 +13,11 @@ import io
 import json
 import re
 from collections import Counter
-from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urljoin
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict
@@ -33,38 +32,39 @@ from fundamentals.ingest.screener_session_models import (
 )
 from fundamentals.ingest.screener_session_page import assert_logged_in, parse_document
 from fundamentals.ingest.screener_watchlist import cookie_state, export_form, read_watchlist_export
-from fundamentals.ingest.screener_watchlist_models import CSRF_FORM_FIELD, EXPORT_ENCODING
+from fundamentals.ingest.screener_watchlist_models import (
+    CSRF_FORM_FIELD,
+    EXPORT_ENCODING,
+    EXPORT_PATH,
+)
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource, TijoriSourceConfig
 
 SPACING_SECONDS = 2.0
 ISIN_COLUMN = "ISIN Code"
-EXPLORE_URL = f"{SCREENER_ORIGIN}/explore/"
-TIJORI_LISTING_PATH = "/api/filter_queries/search/?owner=true&limit=100&offset=0"
+SCREENER_RAW_PATH = "/screen/raw/"
+QUERY_KEY, URL_NAME_KEY, RAW_QUERY_URL_NAME = "query", "url_name", "raw_query"
+_ACTION_KEYS = (QUERY_KEY, URL_NAME_KEY)
 TIJORI_RESULTS_PATH = "/api/filter_queries/advanced_search/"
-# The flags the probe's saved-query run sent (filters.js defaults, checkboxes off).
+TIJORI_FORMULA_KEY = "financial"
+# The flags the probe's run sent (filters.js defaults, checkboxes off).
 TIJORI_FLAGS = {"is_checked": "False", "whales": "False", "is_sme": "False"}
-TIJORI_SOURCE_NAME = "Advanced"
-_YOUR_SCREENS = (
-    ".//*[h2[normalize-space()='Your screens']]"
-    "//a[contains(concat(' ', normalize-space(@class), ' '), ' screen-item ')]"
-)
-_SCREEN_LINK = re.compile(r"^/screens/[1-9][0-9]*/([^/]+)/$")
-_DEFINITION = ".//textarea[@name='query']"
+_ECHO = ".//textarea[@name='query']"
 _PAGE_INFO = ".//*[@data-page-info]"
 _RESULT_COUNT = re.compile(r"^([0-9]+) results? found")
 
-_MATCHES = "{vendor} lists {count} saved screens named {name!r}, not exactly one"
+_EMPTY = "screen formula is empty"
 _STATUS = "screener page returned HTTP {status}, not 200"
-_ONE_DEFINITION = "screener screen page renders {count} query definitions, not exactly one"
-_NO_COUNT = "screener screen page states no result count"
+_ECHO_DIFFERS = "screener page echoes {count} query definitions, not exactly the formula"
+_NO_COUNT = "screener page states no single result count"
+_ACTION_DIFFERS = "screener export action is not exactly the formula's raw-query export"
 _COUNT_DIFFERS = "{vendor} states {stated} results but returned {rows} rows"
 _NO_ISIN = "screener export has no ISIN Code column"
-_TRUNCATED = "tijori saved-query listing is truncated (count {count}, {rows} returned, next {next})"
 _NOT_ROWS = "tijori results carry no list of row objects"
+_TIJORI_ECHO_DIFFERS = "tijori results do not echo exactly the formula"
 
 
 class ScreenExportError(ValueError):
-    """A vendor response is not the complete export of exactly one saved screen."""
+    """A vendor response is not the complete export of exactly the configured formula."""
 
 
 class ScreenVendor(StrEnum):
@@ -75,7 +75,7 @@ class ScreenVendor(StrEnum):
 
 
 class ScreenConfig(BaseModel):
-    """One configured screen: its Screener saved-screen slug and Tijori saved-query name."""
+    """One configured screen: its owner-authored Screener and Tijori formulas."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -95,7 +95,7 @@ class ScreenFetch(BaseModel):
 
 
 class VendorExport(BaseModel):
-    """One vendor's export: the definition as fetched, both responses and the rows as text."""
+    """One vendor's export: the formula, the definition and results responses, rows as text."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -127,24 +127,32 @@ def screen_sources(
     )
 
 
-def export_screener(source: ScreenerSessionSource, slug: str) -> VendorExport:
-    """Find ``slug`` among the owner's screens, read its definition and count, POST its export."""
-    explore = _logged_in_page(source, EXPLORE_URL)[1]
-    hrefs = [link.get("href") or "" for link in explore.xpath(_YOUR_SCREENS)]
-    paths = [href for href in hrefs if (m := _SCREEN_LINK.match(href)) and m.group(1) == slug]
-    _one(paths, ScreenVendor.SCREENER, slug)
-    page_url = SCREENER_ORIGIN + paths[0]
+def export_screener(source: ScreenerSessionSource, formula: str) -> VendorExport:
+    """Run ``formula`` on Screener's raw-query page, check its echo and count, POST its export."""
+    wanted = _formula(formula)
+    page_url = f"{SCREENER_ORIGIN}{SCREENER_RAW_PATH}?{urlencode({QUERY_KEY: formula})}"
     page, root, set_cookies = _logged_in_page(source, page_url)
-    definitions = root.xpath(_DEFINITION)
-    if len(definitions) != 1:
-        raise ScreenExportError(_ONE_DEFINITION.format(count=len(definitions)))
-    stated = [m for e in root.xpath(_PAGE_INFO) if (m := _RESULT_COUNT.match(_text(e)))]
+    echoes = root.xpath(_ECHO)
+    if len(echoes) != 1 or _normal(echoes[0].text_content()) != wanted:
+        raise ScreenExportError(_ECHO_DIFFERS.format(count=len(echoes)))
+    stated = [
+        m for e in root.xpath(_PAGE_INFO) if (m := _RESULT_COUNT.match(_normal(e.text_content())))
+    ]
     if len(stated) != 1:
         raise ScreenExportError(_NO_COUNT)
     action, token = export_form(root)
-    url = urljoin(page_url, action)
+    parts = urlsplit(action)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    values = dict(query)
+    if (
+        (parts.scheme, parts.netloc, parts.path, parts.fragment) != ("", "", EXPORT_PATH, "")
+        or sorted(key for key, _ in query) != sorted(_ACTION_KEYS)
+        or _normal(values[QUERY_KEY]) != wanted
+        or values[URL_NAME_KEY] != RAW_QUERY_URL_NAME
+    ):
+        raise ScreenExportError(_ACTION_DIFFERS)
     export, content_type, disposition = source.post_form(
-        url=url,
+        url=urljoin(page_url, action),
         fields={CSRF_FORM_FIELD: token},
         referer=page_url,
         cookies=cookie_state(set_cookies),
@@ -160,7 +168,7 @@ def export_screener(source: ScreenerSessionSource, slug: str) -> VendorExport:
     _same_count(ScreenVendor.SCREENER, int(stated[0].group(1)), len(records))
     return VendorExport(
         vendor=ScreenVendor.SCREENER,
-        screen_text=f"screener:{definitions[0].text_content()}",
+        screen_text=f"screener:{formula}",
         definition=_screen_fetch(page),
         results=_screen_fetch(export),
         rows=tuple(dict(zip(header, record, strict=True)) for record in records),
@@ -168,40 +176,26 @@ def export_screener(source: ScreenerSessionSource, slug: str) -> VendorExport:
 
 
 def export_tijori(
-    source: TijoriSource, name: str, *, pacer: RequestPacer | None = None
+    source: TijoriSource, formula: str, *, pacer: RequestPacer | None = None
 ) -> VendorExport:
-    """Find saved query ``name`` in the owner's listing and fetch its results, one attempt each."""
-    wait = (pacer or RequestPacer(SPACING_SECONDS)).wait_for_slot
-    base = source.config.base_url
-    listing = _json_fetch(source, base + TIJORI_LISTING_PATH, wait)
-    listed = json.loads(listing.body)
-    entries = listed["results"]
-    if listed["next"] is not None or listed["count"] != len(entries):
-        raise ScreenExportError(
-            _TRUNCATED.format(count=listed["count"], rows=len(entries), next=listed["next"])
-        )
-    matched = [entry for entry in entries if entry["name"] == name]
-    _one(matched, ScreenVendor.TIJORI, name)
-    query = {key: matched[0][key] for key in ("financial_query", "alt_query", "extra_cols")}
-    columns = query["extra_cols"]
-    params = {"financial": query["financial_query"], **TIJORI_FLAGS}
-    if columns:
-        params["columns"] = columns if isinstance(columns, str) else ",".join(columns)
-    if query["alt_query"]:
-        params["alternate"] = query["alt_query"]
-    params |= {"source": TIJORI_SOURCE_NAME, "query_id": str(matched[0]["id"])}
-    url = f"{base}{TIJORI_RESULTS_PATH}?{urlencode(params, quote_via=quote)}"
-    results = _json_fetch(source, url, wait)
+    """Run ``formula`` in Tijori's advanced search, one attempt; the response echoes it."""
+    wanted = _formula(formula)
+    params = urlencode({TIJORI_FORMULA_KEY: formula, **TIJORI_FLAGS}, quote_via=quote)
+    url = f"{source.config.base_url}{TIJORI_RESULTS_PATH}?{params}"
+    (pacer or RequestPacer(SPACING_SECONDS)).wait_for_slot()
+    results = ScreenFetch(url=url, body=source.fetch_json(url), retrieved_at=datetime.now(UTC))
     payload = json.loads(results.body)
     data = payload.get("data")
     if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
         raise ScreenExportError(_NOT_ROWS)
     _same_count(ScreenVendor.TIJORI, payload.get("total_results"), len(data))
-    text = json.dumps(query, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    echo, alternate = payload.get("financial_q"), payload.get("alternate_q")
+    if not isinstance(echo, str) or _normal(echo) != wanted or alternate not in (None, ""):
+        raise ScreenExportError(_TIJORI_ECHO_DIFFERS)
     return VendorExport(
         vendor=ScreenVendor.TIJORI,
-        screen_text=f"tijori:{text}",
-        definition=listing,
+        screen_text=f"tijori:{formula}",
+        definition=results,
         results=results,
         rows=result_rows(ScreenVendor.TIJORI, results.body),
     )
@@ -228,19 +222,6 @@ def _logged_in_page(
     return fetch, root, set_cookies
 
 
-def _json_fetch(source: TijoriSource, url: str, wait: Callable[[], None]) -> ScreenFetch:
-    """One paced Tijori JSON request."""
-    wait()
-    body = source.fetch_json(url)
-    return ScreenFetch(url=url, body=body, retrieved_at=datetime.now(UTC))
-
-
-def _one(matches: list[Any], vendor: ScreenVendor, name: str) -> None:
-    """Refuse unless exactly one saved screen carries ``name``."""
-    if len(matches) != 1:
-        raise ScreenExportError(_MATCHES.format(vendor=vendor, count=len(matches), name=name))
-
-
 def _same_count(vendor: ScreenVendor, stated: object, rows: int) -> None:
     """Refuse an export whose rows differ from the vendor's own result count."""
     if stated != rows:
@@ -252,9 +233,16 @@ def _screen_fetch(fetch: ScreenerDocumentFetch) -> ScreenFetch:
     return ScreenFetch(url=fetch.source_url, body=fetch.raw_body, retrieved_at=fetch.fetched_at)
 
 
-def _text(element: Any) -> str:
-    """An element's text with whitespace collapsed."""
-    return " ".join(element.text_content().split())
+def _normal(text: str) -> str:
+    """Text with whitespace runs collapsed to one space and the ends stripped."""
+    return " ".join(text.split())
+
+
+def _formula(formula: str) -> str:
+    """The normalised formula; an empty one refuses before any request."""
+    if not (wanted := _normal(formula)):
+        raise ScreenExportError(_EMPTY)
+    return wanted
 
 
 def _cell(value: object) -> str:

@@ -17,9 +17,8 @@ import pytest
 from fundamentals.ingest.tijori_source import DEFAULT_BASE_URL
 
 FIXTURES = Path(__file__).parent / "fixtures" / "screen_export"
-SCREEN_PATH = "/screens/1000001/d7-stage4/"
+SCREEN_PATH = "/screen/raw/"
 EXPORT_PATH = "/api/export/screen/"
-LISTING_PATH = "/api/filter_queries/search/"
 RESULTS_PATH = "/api/filter_queries/advanced_search/"
 CSV_TYPE = {"Content-Type": "text/csv", "Content-Disposition": "attachment; filename=d7.csv"}
 JSON_TYPE = {"Content-Type": "application/json"}
@@ -38,10 +37,8 @@ def fixture(name: str) -> bytes:
 def default_replies() -> dict[tuple[str, str], list[Reply]]:
     """Every request of one happy export, keyed by (method, path)."""
     return {
-        ("GET", "/explore/"): [(200, fixture("explore.html"), HTML_TYPE)],
         ("GET", SCREEN_PATH): [(200, fixture("screen.html"), PAGE_COOKIE)],
         ("POST", EXPORT_PATH): [(200, fixture("screener.csv"), CSV_TYPE)],
-        ("GET", LISTING_PATH): [(200, fixture("tijori-listing.json"), JSON_TYPE)],
         ("GET", RESULTS_PATH): [(200, fixture("tijori-results.json"), JSON_TYPE)],
     }
 

@@ -23,9 +23,16 @@ import pytest
 from coverage_support import INSTRUMENTS, capture, coverage, pinned_copies, remark
 from onboarding_support import count, fresh_db, rows
 from pydantic import SecretStr
-from screen_export_support import RESULTS_PATH, default_replies, serve
+from screen_export_support import (
+    PAGE_COOKIE,
+    RESULTS_PATH,
+    SCREEN_PATH,
+    default_replies,
+    fixture,
+    serve,
+)
 
-from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
+from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.onboarding import OnboardingOutcome
 from fundamentals.coverage import screens
 from fundamentals.ingest import screen_export
@@ -75,13 +82,13 @@ _BSE_ONLY = (
 )
 
 
-def _export(snaps: str, replies: Any = None) -> tuple[int, dict[str, str]]:
+def _export(snaps: str, replies: Any = None, config: Path = CONFIG) -> tuple[int, dict[str, str]]:
     """``coverage export`` of the configured screen over recorded responses."""
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(screen_export, "SPACING_SECONDS", 0.0)
         serve(patch, replies)
         return coverage(
-            "export", "--screen", "d7-stage4", "--screens", str(CONFIG), "--snapshot-root", snaps
+            "export", "--screen", "d7-stage4", "--screens", str(config), "--snapshot-root", snaps
         )
 
 
@@ -95,9 +102,10 @@ def _recorded() -> tuple[VendorExport, VendorExport]:
             ScreenerCredentials(session_cookie=SecretStr("c")),
             TijoriCredentials(session_cookie=SecretStr("c")),
         )
+        screen = screen_export.load_screen_config(CONFIG)["d7-stage4"]
         return (
-            screen_export.export_screener(screener, "d7-stage4"),
-            screen_export.export_tijori(tijori, "d7-stage4"),
+            screen_export.export_screener(screener, screen.screener),
+            screen_export.export_tijori(tijori, screen.tijori),
         )
 
 
@@ -175,7 +183,8 @@ def _listing(db: Any, segment: str, isin: str) -> int:
 
 def test_both_runs_bind_the_five_and_keep_every_response(world: Any) -> None:
     """Each vendor's five rows bind to their companies' NSE listings; each run's definition and
-    results captures resolve to the recorded bytes; the pair links the two runs."""
+    results captures resolve to the recorded bytes (Tijori's results are its definition, stored
+    once); the pair links the two runs."""
     db, screened = world["db"], world["screened"]
     runs = (int(screened["screener_run"]), int(screened["tijori_run"]))
     expected = sorted((sym, "NSE_EQ", isin, None) for sym, isin in ISINS.items())
@@ -204,9 +213,8 @@ def test_both_runs_bind_the_five_and_keep_every_response(world: Any) -> None:
         list(runs),
     )
     bodies = [store.read_capture_verified(*ref)[1] for ref in refs]
-    assert bodies == [
-        fetch.body for export in _recorded() for fetch in (export.definition, export.results)
-    ]
+    screener, tijori = _recorded()
+    assert bodies == [screener.definition.body, screener.results.body, tijori.results.body]
 
 
 def test_screener_rows_bind_by_isin_and_unresolved_rows_never_batch(world: Any) -> None:
@@ -286,17 +294,32 @@ def test_a_verified_tijori_slug_vetoes_a_different_one(world: Any) -> None:
     ]
 
 
-def test_an_edited_definition_is_a_second_screen(world: Any) -> None:
-    """The same definition text reuses its screen row; an edit under the same slug is a new one."""
+def test_an_edited_formula_is_a_second_screen(world: Any, tmp_path: Path) -> None:
+    """Re-running the configured formula reuses its screen row; editing the formula in the
+    config (the vendor echoing the edit) makes a new one, keyed by the new text's hash."""
     db = world["db"]
     before = count(db, "screens")
     _record(world)
     assert count(db, "screens") == before
-    screener, tijori = _recorded()
-    edited = screener.model_copy(update={"screen_text": screener.screen_text + " AND OPM > 10"})
-    with db.owner_pool() as pool:
-        screens.record_screen_run(pool, edited, tijori, SnapshotStore(Path(world["snaps"])))
+    config = tmp_path / "screens.yaml"
+    edit = "screener: Market Capitalization > 20000"
+    config.write_text(CONFIG.read_text().replace(edit, edit + " AND OPM > 10"))
+    page = fixture("screen.html")
+    for old, new in (
+        (b"20000</", b"20000 AND OPM &gt; 10</"),
+        (b"20000&amp;", b"20000+AND+OPM+%3E+10&amp;"),
+    ):
+        assert old in page
+        page = page.replace(old, new)
+    replies = default_replies() | {("GET", SCREEN_PATH): [(200, page, PAGE_COOKIE)]}
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in (db.cli_env() | COOKIES).items():
+            patch.setenv(name, value)
+        code, _ = _export(world["snaps"], replies, config)
+    assert code == EXIT_OK
     assert count(db, "screens") == before + 1
+    texts = {text for (text,) in rows(db, "SELECT screen_text FROM eqos.screens")}
+    assert "screener:Market Capitalization > 20000 AND OPM > 10" in texts
 
 
 def test_a_tijori_failure_writes_nothing(world: Any) -> None:

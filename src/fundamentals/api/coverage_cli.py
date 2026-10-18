@@ -4,7 +4,7 @@
         (load one retained instrument capture into the universe registry; a replay is a no-op)
     coverage export --screen <name> --snapshot-root <dir> [--screens config/screens.yaml]
         [--watchlist config/watchlist.yaml]
-        (fetch the configured saved screen from Screener and Tijori, then record both runs,
+        (run the configured formulas at Screener and Tijori, then record both runs,
         every response as a capture and each row bound against the registry, and their pair;
         after that commits, one other-vendor read per pending review item, then the review)
     coverage review --pair <id> --snapshot-root <dir> [--watchlist config/watchlist.yaml]
@@ -81,7 +81,7 @@ DEFAULT_WATCHLIST = Path("config/watchlist.yaml")
 _ACTION_DEST = "coverage_action"
 _HELP = "owner-chosen coverage: the universe registry, screen runs and capture batches"
 _REGISTRY_HELP = "load one retained Upstox instrument capture into the universe registry"
-_EXPORT_HELP = "export a configured saved screen from Screener and Tijori and record both runs"
+_EXPORT_HELP = "run a configured screen at Screener and Tijori and record both runs"
 _BATCH_HELP = "onboard and compare exactly the chosen members of a screen run"
 _REVIEW_HELP = "print a screen pair's pending review items beside the other vendor's values"
 _DISPOSE_HELP = "dispose one review item of a screen pair"

@@ -1,12 +1,13 @@
 """Screens, screen runs and capture batches (plan D7 Task 2; D7-screen-export S3, S4).
 
-A screen run is one vendor's automated export of a saved screen (``ingest.screen_export``): the
-definition and results responses are captures, the definition as fetched is the screen text, and
-each row binds to a registry listing or is ``UNRESOLVED`` with a reason. Binding is registry
-membership only, never a vendor identity verification: Screener rows bind by ISIN, Tijori rows by
-their current NSE symbol. One export's two runs are written with their pair in one transaction. A
-batch declares the chosen members once; each member's terminal result and the completion are
-recorded here, while the orchestration over onboarding and comparison lives in the CLI.
+A screen run is one vendor's automated export of a configured formula (``ingest.screen_export``):
+the definition and results responses are captures (one capture for Tijori, whose results echo the
+formula), the formula is the screen text, and each row binds to a registry listing or is
+``UNRESOLVED`` with a reason. Binding is registry membership only, never a vendor identity
+verification: Screener rows bind by ISIN, Tijori rows by their current NSE symbol. One export's
+two runs are written with their pair in one transaction. A batch declares the chosen members
+once; each member's terminal result and the completion are recorded here, while the orchestration
+over onboarding and comparison lives in the CLI.
 """
 
 from __future__ import annotations
@@ -164,8 +165,11 @@ def record_screen_run(
 
 
 def _store(pool: ConnectionPool, export: VendorExport, snapshots: SnapshotStore) -> list[int]:
-    """Register the definition and results responses; their capture ref ids."""
-    surfaces = _SURFACES[export.vendor]
+    """Register the definition and results responses (once if they are one); their capture ref
+    ids, definition first."""
+    pairs = list(zip(_SURFACES[export.vendor], (export.definition, export.results), strict=True))
+    if export.definition == export.results:
+        pairs = pairs[1:]
     captures = [
         Capture(
             request=Request(
@@ -173,13 +177,12 @@ def _store(pool: ConnectionPool, export: VendorExport, snapshots: SnapshotStore)
             ),
             response=Response(outcome=OK, body=fetch.body, retrieved_at=fetch.retrieved_at),
         )
-        for (source, surface), fetch in zip(
-            surfaces, (export.definition, export.results), strict=True
-        )
+        for (source, surface), fetch in pairs
     ]
     with snapshots.prepare_ordinary_output():
         stored = store_captures(snapshots, EvidenceRepository(pool), captures)
-    return [int(ref.capture_ref_id or 0) for _, ref in stored]
+    refs = [int(ref.capture_ref_id or 0) for _, ref in stored]
+    return [refs[0], refs[-1]]
 
 
 def _record(

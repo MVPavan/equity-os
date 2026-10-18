@@ -138,7 +138,7 @@ def _verdicts(db: Any, pair: int) -> list[Any]:
     with db.role_pool(PgRole.PURGE) as pool, pool.connection() as conn:
         held = {c for (c,) in conn.execute(_PAIR_CAPTURES, (pair, pair))}
         facts = [f for f in capture_facts(conn, {}) if f.capture_ref_id in held]
-    assert len(facts) == len(held) == 5  # two runs' definition and results, one overview read
+    assert len(facts) == len(held) == 4  # Screener page and CSV, Tijori results, one overview read
     return [eligibility(fact, later()) for fact in facts]
 
 
@@ -164,8 +164,8 @@ def test_items_reads_and_values_side_by_side(world: Any) -> None:
         ],
         key=str,
     )
-    # One overview and one company page after the five export requests; none for RELIANCE.
-    assert requested[5:] == [OVERVIEW_PATH.lstrip("/"), HFCL_PAGE_PATH.lstrip("/")]
+    # One overview and one company page after the three export requests; none for RELIANCE.
+    assert requested[3:] == [OVERVIEW_PATH.lstrip("/"), HFCL_PAGE_PATH.lstrip("/")]
     shown = [line[1:] for line in lines if line[0] == "value"]
     values = {(int(m), column): (own, other) for m, column, own, other in shown}
     (titan_row,) = [

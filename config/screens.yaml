@@ -1,8 +1,6 @@
-# Saved vendor screens `fundamentals coverage export --screen <name>` fetches (amendment
-# 2026-10-18-screen-export). Each names the owner's Screener saved-screen slug (as listed under
-# "Your screens" on /explore/) and Tijori saved-query name; both are required. Owner actions
-# A1/A2 of plan D7-screen-export save `d7-stage4` at both vendors; the Screener slug is the one
-# the owner gives. Never commit a person-named screen.
+# Screens `fundamentals coverage export --screen <name>` runs (amendment 2026-10-18-screen-export):
+# each names an owner-authored formula per vendor, run directly at that vendor (nothing is saved
+# there); editing a formula makes a new screen definition. Never commit a person-named screen.
 - name: d7-stage4
-  screener: d7-stage4
-  tijori: d7-stage4
+  screener: Market Capitalization > 20000
+  tijori: Market Capitalization > 20000
