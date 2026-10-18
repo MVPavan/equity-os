@@ -1,9 +1,8 @@
-"""Shared fixtures of the D7 coverage tests: retained instrument captures, the screen export,
-pinned onboarding generations, owner CLI runs and the watchlist seed.
+"""Shared fixtures of the D7 coverage tests: retained instrument captures, pinned onboarding
+generations, owner CLI runs and the watchlist seed.
 
-Re-marked snapshots are SYNTHETIC: written only under ``tmp_path``, never committed. The screen
-export is ``SYNTHETIC-FORMAT`` until the owner supplies a real one (plan D7 Q1): a hand-written
-``Name,BSE Code,NSE Code`` file for Task 2 development only, never a manifest source.
+Re-marked snapshots are SYNTHETIC: written only under ``tmp_path``, never committed. The seed's
+owner-export screen run is SYNTHETIC too.
 """
 
 from __future__ import annotations
@@ -39,8 +38,6 @@ INSTRUMENTS = (
     / "upstox_instruments.raw.json.gz"
 )
 _META = "upstox_instruments_meta.json"
-SCREEN_CSV = Path(__file__).parent / "fixtures" / "coverage" / "screen_export.csv"
-SCREEN_CSV_PROVENANCE = "SYNTHETIC-FORMAT"
 SCREEN_HEADER = "Name,BSE Code,NSE Code"
 # Development companies and their v2-smoke generations (plan D7 R8), all PARTIAL at preflight.
 LIVE_SMOKE = REPO_ROOT / "data/raw/onboarding-dev/live-smoke"
@@ -102,8 +99,8 @@ _RUN = (
 _OWNER_ROWS = (
     "INSERT INTO eqos.screens (text_sha256, screen_text) "
     "VALUES (encode(sha256(convert_to(%(tag)s, 'UTF8')), 'hex'), %(tag)s) RETURNING id",
-    "INSERT INTO eqos.screen_runs (screen_id, capture_ref_id) VALUES (%(screen)s, %(capture)s) "
-    "RETURNING id",
+    "INSERT INTO eqos.screen_runs (screen_id, capture_ref_id, vendor, provenance) "
+    "VALUES (%(screen)s, %(capture)s, 'SCREENER', 'OWNER_EXPORT') RETURNING id",
     "INSERT INTO eqos.registry_listings (segment, isin) VALUES ('NSE_EQ', %(isin)s) "
     "ON CONFLICT DO NOTHING RETURNING id",
     "INSERT INTO eqos.screen_members (screen_run_id, row_number, name, listing_id) "

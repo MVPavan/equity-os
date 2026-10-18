@@ -1,0 +1,56 @@
+{
+ "alternate_q": null,
+ "columns": [
+  "name",
+  "scripcode",
+  "nse symbol",
+  "segment",
+  "<span>latest</span>Mcap<span>Cr</span>"
+ ],
+ "data": [
+  {
+   "name": "Eternal",
+   "slug": "zomato-ltd",
+   "scripcode": 543320,
+   "nse symbol": "ETERNAL",
+   "segment": "SYNTHETIC",
+   "<span>latest</span>Mcap<span>Cr</span>": 20001.0
+  },
+  {
+   "name": "Polycab India",
+   "slug": "polycab-india-ltd",
+   "scripcode": 542652,
+   "nse symbol": "POLYCAB",
+   "segment": "SYNTHETIC",
+   "<span>latest</span>Mcap<span>Cr</span>": 20002.0
+  },
+  {
+   "name": "Titan Company",
+   "slug": "titan-company-limited",
+   "scripcode": 500114,
+   "nse symbol": "TITAN",
+   "segment": "SYNTHETIC",
+   "<span>latest</span>Mcap<span>Cr</span>": 20003.0
+  },
+  {
+   "name": "Thermax",
+   "slug": "thermax-limited",
+   "scripcode": 500411,
+   "nse symbol": "THERMAX",
+   "segment": "SYNTHETIC",
+   "<span>latest</span>Mcap<span>Cr</span>": 20004.0
+  },
+  {
+   "name": "CG Power & Industrial Solutions",
+   "slug": "crompton-greaves-limited",
+   "scripcode": 500093,
+   "nse symbol": "CGPOWER",
+   "segment": "SYNTHETIC",
+   "<span>latest</span>Mcap<span>Cr</span>": 20005.0
+  }
+ ],
+ "extra_columns": [],
+ "financial_q": "Market Capitalization > 20000",
+ "footer_calc": {},
+ "total_results": 5
+}

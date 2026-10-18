@@ -212,7 +212,7 @@ def read_watchlist_page(root: Any) -> WatchlistPageEvidence:
     """
     if root.xpath(_PAGINATION) or root.xpath(_PAGE_INFO):
         raise WatchlistPageError(_PAGINATED)
-    action, token = _export_form(root)
+    action, token = export_form(root)
     selected, others = _dropdown(root)
     return WatchlistPageEvidence(
         export_action=action,
@@ -299,7 +299,7 @@ def acquire_watchlist(
                 _ID_NOT_CONFIRMED.format(seen=evidence.watchlist_id, requested=watchlist_id)
             )
         table = read_watchlist_table(root)
-        cookies = _cookie_state(set_cookies)
+        cookies = cookie_state(set_cookies)
         secrets.append(cookies[CSRF_COOKIE_NAME])
         attempted = urljoin(page_url, evidence.export_action)
         try:
@@ -480,7 +480,7 @@ def _company_link(href: str | None, *, row_id: int) -> tuple[str | None, bool]:
     raise WatchlistStructureError(_UNSUPPORTED_LINK)
 
 
-def _export_form(root: Any) -> tuple[str, str]:
+def export_form(root: Any) -> tuple[str, str]:
     """Return the one export form's verbatim action and its CSRF form token."""
     forms = [
         form
@@ -545,7 +545,7 @@ def _dropdown(root: Any) -> tuple[str | None, tuple[str, ...]]:
     return selected, tuple(others)
 
 
-def _cookie_state(set_cookies: tuple[str, ...]) -> dict[str, str]:
+def cookie_state(set_cookies: tuple[str, ...]) -> dict[str, str]:
     """Fold the GET's ``Set-Cookie`` headers into the state the export POST must carry.
 
     Held locally and serialised by hand rather than by a cookie jar: CPython's jar

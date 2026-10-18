@@ -1,0 +1,25 @@
+{
+ "count": 2,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "id": 901,
+   "name": "d7-stage4",
+   "description": "SYNTHETIC",
+   "financial_query": "Market Capitalization > 20000",
+   "alt_query": "",
+   "extra_cols": "",
+   "created_by": "SYNTHETIC"
+  },
+  {
+   "id": 902,
+   "name": "other-query",
+   "description": "SYNTHETIC",
+   "financial_query": "Market Capitalization > 1",
+   "alt_query": "",
+   "extra_cols": "",
+   "created_by": "SYNTHETIC"
+  }
+ ]
+}

@@ -291,7 +291,7 @@ def test_a_page_supplied_session_cookie_can_never_displace_the_injected_one(
 ) -> None:
     """A44 / SL4-11: the override is made impossible rather than merely unreached.
 
-    ``_cookie_state`` refuses a re-issued session cookie before the POST, so
+    ``cookie_state`` refuses a re-issued session cookie before the POST, so
     nothing in this seam reaches the transport with one today. That is one
     refusal away from a page-supplied ``sessionid`` being serialised into the
     outbound header in place of the one this process was configured with, so the

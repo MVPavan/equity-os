@@ -76,7 +76,7 @@ REGISTRY_TABLES = frozenset(
     {"registry_loads", "registry_listings", "registry_sightings", "registry_candidate_events"}
 )
 COVERAGE_TABLES = REGISTRY_TABLES | {
-    *("screens", "screen_runs", "screen_members"),
+    *("screens", "screen_runs", "screen_members", "screen_run_pairs"),
     *("capture_batches", "batch_member_results", "batch_completions"),
 }
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)

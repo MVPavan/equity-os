@@ -242,8 +242,11 @@ SEBI_REGULATION = ("sebi", "REGULATION_TEXT")
 SCREENER_DOCS = ("screener", "SCREENER_DOCS")
 # The Upstox surfaces that go to the API origin with the bearer token.
 UPSTOX_ROUTED = (UPSTOX_STATEMENT, UPSTOX_SHAREHOLDING)
-# An owner-exported Screener screen (plan D7 R5): the only input of a screen run, never fetched.
+# A saved vendor screen fetched on an owner command (amendment 2026-10-18-screen-export): the
+# Screener CSV export, the Screener screen page holding its definition, Tijori listing and results.
 SCREEN_EXPORT = ("screener-subscriber", "SCREEN_EXPORT")
+SCREENER_SCREEN_PAGE = ("screener-subscriber", "SCREEN_DEFINITION")
+TIJORI_SCREEN = ("tijori", "screen_results")
 _IDENTITY_SURFACES = (
     (NSE_MASTER, Representation.HTML, _EXCHANGE_RIGHTS),
     (NSE_RESULTS_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
@@ -253,6 +256,8 @@ _IDENTITY_SURFACES = (
     (TIJORI_SEARCH, Representation.JSON, _SUBSCRIBER_RIGHTS),
     (UPSTOX_INSTRUMENTS, Representation.JSON, _UPSTOX_RIGHTS),
     (SCREEN_EXPORT, Representation.CSV, _SUBSCRIBER_RIGHTS),
+    (SCREENER_SCREEN_PAGE, Representation.HTML, _SUBSCRIBER_RIGHTS),
+    (TIJORI_SCREEN, Representation.JSON, _SUBSCRIBER_RIGHTS),
     (SHP_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
     (SHP_TAXONOMY, Representation.XBRL, _EXCHANGE_RIGHTS),
     (SEBI_REGULATION, Representation.PDF, _REGULATOR_REFERENCE),
