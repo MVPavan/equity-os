@@ -14,7 +14,7 @@ import json
 import re
 import subprocess
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from functools import cache
@@ -24,6 +24,7 @@ from typing import Any, cast
 import pymupdf
 import pytest
 import yaml
+from ledger_stage4_check import LEDGER4_MUTATIONS, check_ledger_stage4
 from ledger_stage5_check import STAGE5_MUTATIONS, check_ledger_stage5
 from lxml import etree  # type: ignore[import-untyped]
 from manifest_locators import screener_table, tijori_cell, upstox_cell, vendor_rows
@@ -47,6 +48,7 @@ STAGE1 = REPO / "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yam
 LEDGER = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml"
 LEDGER2 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml"
 LEDGER3 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml"
+LEDGER4 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage4_manifest.yaml"
 LEDGER5 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml"
 STAGE4 = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
 # Stage 4 runs behind an opaque boundary (test_stage4_manifest), never loaded at collection.
@@ -57,6 +59,7 @@ E2E = {
     "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
     "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
     "ledger_stage3": "tests/fundamentals/test_ledger_stage3_e2e.py",
+    "ledger_stage4": "tests/fundamentals/test_ledger_stage4_e2e.py",
     "ledger_stage5": "tests/fundamentals/test_ledger_stage5_e2e.py",
     "stage4": "tests/fundamentals/test_data_stage4_e2e.py",
 }
@@ -680,12 +683,8 @@ def test_recorded_arithmetic_is_exact(path: Path) -> None:
 @per_manifest
 def test_values_follow_from_their_lexemes(path: Path) -> None:
     manifest = load(path)
-    if path == LEDGER3:
-        check_stage3(manifest)
-    elif path == LEDGER5:
-        check_ledger_stage5(manifest)
-    else:
-        (check_ledger if "versions" in manifest else check_values)(manifest)
+    stage = STAGE_CHECKS.get(path, (check_ledger if "versions" in manifest else check_values,))
+    stage[0](manifest)
     if path == STAGE4:
         check_stage4(REPO, manifest, *current(REPO))
 
@@ -778,21 +777,24 @@ def test_manifest_is_approved(path: Path) -> None:
     approved(path.read_bytes(), path.read_bytes())
 
 
-@pytest.mark.parametrize("name", LEDGER3_MUTATIONS)
-def test_ledger_stage3_check_rejects_mutations(name: str) -> None:
-    """The Stage 3 check passes on the frozen manifest and fails once an expectation drifts."""
-    manifest = copy.deepcopy(load(LEDGER3))
-    check_stage3(manifest)
-    LEDGER3_MUTATIONS[name](manifest)
-    with pytest.raises(AssertionError):
-        check_stage3(manifest)
+STAGE_CHECKS: dict[Path, tuple[Callable[..., None], Mapping[str, Callable[..., object]]]] = {
+    LEDGER3: (check_stage3, LEDGER3_MUTATIONS),
+    LEDGER4: (check_ledger_stage4, LEDGER4_MUTATIONS),
+    LEDGER5: (check_ledger_stage5, STAGE5_MUTATIONS),
+}
+STAGE_CASES = [(p, n) for p, (_, muts) in STAGE_CHECKS.items() if p.exists() for n in muts]
 
 
-@pytest.mark.parametrize("name", STAGE5_MUTATIONS)
-def test_ledger_stage5_check_rejects_mutations(name: str) -> None:
-    """The Stage 5 check passes on the frozen manifest and fails once a field or label drifts."""
-    manifest = copy.deepcopy(load(LEDGER5))
-    check_ledger_stage5(manifest)
-    STAGE5_MUTATIONS[name](manifest)
+@pytest.mark.parametrize(
+    ("path", "name"),
+    STAGE_CASES,
+    ids=[f"{p.stem.removesuffix('_manifest')}-{n}" for p, n in STAGE_CASES],
+)
+def test_stage_check_rejects_mutations(path: Path, name: str) -> None:
+    """A stage check passes on its frozen manifest and fails once a field or expectation drifts."""
+    check, mutations = STAGE_CHECKS[path]
+    manifest = copy.deepcopy(load(path))
+    check(manifest)
+    mutations[name](manifest)
     with pytest.raises((AssertionError, KeyError)):
-        check_ledger_stage5(manifest)
+        check(manifest)

@@ -1,0 +1,1621 @@
+# Ledger Stage 4 frozen manifest (D7 Task 5 as amended by D7-screen-export Task 6). PENDING -- not approved; do not move under tests/ until Sol APPROVE.
+header:
+  manifest: ledger_stage4
+  status: pending
+  spec: docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md (Stage 4, §4 Screens as amended by docs/blueprint/amendments/2026-10-18-screen-export.md); plans docs/workstreams/data-foundation/plans/D7.md
+    (Task 5, R3, R8), D7-screen-export.md (S4, S5, S6, Task 6, Revision 2026-10-18, Review r1 responses)
+  hand_verification:
+    verifier: D7-screen-export Task 6 manifest author (claude-opus-5-5, fresh)
+    date: '2026-10-18'
+    method: 'Derived from source bytes with scratchpad/screen-export-live/manifest-aid/{derive_check,registry_check,generation_check,comparison_inventory,write_manifest}.py (python3 -I, json/csv/gzip/re/hashlib/yaml,
+      lxml for comparison_inventory; never imports fundamentals or a repo test module); derivation per value in scratchpad/screen-export-live/manifest-derivation.md. The author did not run D7 code, did
+      not read its output (run reports, logs, export.out, report.json, the database) and took no value from the prior partial draft; every draft value was re-derived and the draft''s locator shapes replaced
+      (its row/col/path locators match no SHAPES entry). The derived fixture was rebuilt from the three full live responses (hashed only, plus the reads S6 needs) and compared byte for byte. The five rows
+      (ISIN, NSE, BSE) were checked against the full 380-row CSV, the full 376-row Tijori data and the 2026-09-04 registry list: each member exactly once per side, codes equal to the registry''s NSE_EQ
+      trading_symbol and BSE_EQ exchange_token for the ISIN. Batch unit states restate D6 D4.3 identity reads over each pinned generation (all agree) and the Screener and Tijori page gates (entity/verification.py
+      screener_page_state, tijori_page_state) with comparison_inventory.py, each read at a locator in batch.members[].gates. Per-source comparison inventories restate the run''s keys, applicability and
+      side selection over dictionary v2 and mapping set v5 from the pinned bytes (comparison_inventory.py, uv run --no-sync python -I: stdlib, PyYAML, lxml).'
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-18, payload_sha256: 3a79c3a73855149e4781c7e2f0007a0dfb4761348e7c1481efff5fcc9f1aa340}
+  export_provenance: AUTOMATED_EXPORT
+  derived_fixture:
+    rule: remove every data row whose ISIN (Screener) / NSE symbol (Tijori) is not one of the five; nothing else changes; the Screener page is reduced to its textarea and page info
+    source_captures:
+    - vendor: SCREENER
+      role: definition
+      sha256: fe39ff4f079415bb3db9a89b09d26b105328e9933cefb21cbfb215d816043968
+    - vendor: SCREENER
+      role: results
+      sha256: 2c5d68d75cec6c7b48d035c3d4e93c35efe1c6591cc1c55cf183c88a14b83963
+    - vendor: TIJORI
+      role: results
+      sha256: 6d16c65abfc8ca3f0488c18ec9b60a1ea1e646ac0f098cfd8f2c1c7bec78f5eb
+      note: also the Tijori run's definition capture (Revision S3)
+    rows_kept:
+      SCREENER:
+        of: 380
+        kept: 5
+      TIJORI:
+        of: 376
+        kept: 5
+    fixture_sha256:
+      screener-page.html: 19f6d806e5c3adc3a9c3c9f188dbc48a9b9dc313a04318ab46d2995eff757688
+      screener.csv: 8d6f30f81b1f93f24e191f12efd39c385fabcd1fbe7ea5b13802222e23ff88b9
+      tijori-results.json: 42567c5f92365f0fb5029abd996287de50e2a105b6d2daf403df191b85e562e1
+    counts_stated:
+      screener_page_info: '380 results found: Showing page 1 of 8'
+      tijori_total_results: 376
+  arithmetic: none
+  e2e: tests/fundamentals/test_ledger_stage4_e2e.py
+  notation:
+    locators: 'text: lexeme verbatim on that 1-based line; field: JSON value at the path (gz: gzip-decoded); binding: the D4.3 identity read (manifest_support.read_binding) for fld and key'
+    row: screen.screener[].row = 1-based CSV data row (header excluded) of the fixture; screen.tijori[].data_index = 0-based index into the fixture's data array; the e2e maps screen_members.row_number onto
+      these by the S5 locator convention
+    listing: '{segment, isin}: the registry listing (stable key SEGMENT|ISIN) a member binds to; reason null = bound'
+    data_index: Task 7 asserts screen_members.row_number == data_index + 1 for the Tijori run (committed code stores 1-based row numbers for both vendors) and == row for the Screener run
+    comparison: 'batch.members[].run.comparison: keys = the run''s undimensioned period keys (Q fiscal quarter ending at period_end, Y year-to-date when longer, I the period_end instant); sources[<s>] for
+      s = xbrl (result_source_values representation XBRL, value_identity REPORTED only) or a vendor <source_id>/<surface> (vendor surface label as stored); sides = canonical ids by key alias with a stored
+      side of that source, value = those whose side is VALUE; counts = their sizes. Task 7 compares each member run''s stored set exactly, over results with an empty dimension set'
+    gates: 'batch.members[].gates: the D4.3 Screener page gate (authenticated: Account link and logout form; identity: search id = page company id, a warehouse id; basis_marker: the declaring marker Consolidated
+      Figures, wrapped over two lines) and Tijori page gate (is_auth true; company_details symbol and company id; one companies search slug; a consolidated table) as located lexemes'
+    approval: header.approval.payload_sha256 = sha256 of this file's bytes with the one line starting '  approval:' (and its newline) removed; the approval verdict is valid only for that payload
+  checks:
+    provenance: export_provenance == AUTOMATED_EXPORT and derived_fixture present with rule, source_captures, rows_kept, fixture_sha256; fixture_sha256 equals header.sources hashes of the three fixture
+      files
+    batch_subset: batch.declared ⊂ symbols bound on the Screener side with an NSE_EQ listing; batch.others = the five minus batch.declared
+    partial: outcome PARTIAL iff EXCHANGE and XBRL_ENTITY VERIFIED and excluded_units non-empty
+    run_status: run status INCOMPLETE iff an excluded unit is non-diagnostic (RESULTS_PDF is; UPSTOX would not be)
+    review_items: screen.review_items == [] iff every member is bound on both sides to the same ISIN and no member is unresolved (S5)
+    comparison: 'per member run: every run input source has a non-empty sides inventory (xbrl a non-empty value inventory); value within sides; counts equal the inventories; aliases are the declared keys'
+    gates: SCREENER and TIJORI VERIFIED iff their gate locators are complete (each located by test_every_lexeme_is_at_its_locator)
+  sources:
+  - label: SCREENER-PAGE
+    kind: html
+    path: tests/fundamentals/fixtures/screen_export/stage4/screener-page.html
+    sha256: 19f6d806e5c3adc3a9c3c9f188dbc48a9b9dc313a04318ab46d2995eff757688
+  - label: SCREENER-CSV
+    kind: csv
+    path: tests/fundamentals/fixtures/screen_export/stage4/screener.csv
+    sha256: 8d6f30f81b1f93f24e191f12efd39c385fabcd1fbe7ea5b13802222e23ff88b9
+  - label: TIJORI-JSON
+    kind: json
+    path: tests/fundamentals/fixtures/screen_export/stage4/tijori-results.json
+    sha256: 42567c5f92365f0fb5029abd996287de50e2a105b6d2daf403df191b85e562e1
+  - label: REGISTRY
+    kind: gz
+    path: data/raw/upstox/instruments/complete/20260904T082313Z-459ec0544e40/upstox_instruments.raw.json.gz
+    sha256: 459ec0544e40c4289fd1fdb007612f4db59f46604504988569a48a262ea087dd
+  - label: ETERNAL-DISC
+    kind: discovery_manifest
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/discovery-manifest.json
+    sha256: d97b058c9c6f224b2c73ce1505e82fd236d221d4ec1ba5774868526366e339df
+  - label: ETERNAL-MASTER
+    kind: csv
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/00.bin
+    sha256: 474ad748f65c9ffa4cf9aa2e483117dfd0f68ccafd6c4c8a0cca02583556f765
+  - label: ETERNAL-X1
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/03.bin
+    sha256: 6d66975e1a64fec63e05437b73205e5bf9c80127ef010d9625a118a583b880c0
+  - label: ETERNAL-X2
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/04.bin
+    sha256: dcad4aee5189866b0835428eacc170a0582f131401bf2f54de4b4c815926250a
+  - label: ETERNAL-PEER
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/05.bin
+    sha256: e10e91f9bf5856e9e7825d268c0d0256dbbfe5d4452ad33ff135bdb100c9bd6e
+  - label: ETERNAL-SSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/06.bin
+    sha256: 5674d74a10dc334394a1a177ad38523d20de4166a558d14c25ba885cf96cb818
+  - label: ETERNAL-SCR
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/07.bin
+    sha256: 6a232c795ca3643a9f6c8975c72a2d16d462f2d178ca43a5b1bec329a38840f1
+  - label: ETERNAL-TSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/08.bin
+    sha256: e544c92d1a45bd7e518bdb9cc8ebd60067caffd1ea6c9bffd7ce5028cc11659d
+  - label: ETERNAL-TIJ
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/09.bin
+    sha256: eff74b7fd2b6157594499c1df140d39d51dd029834edd2720b121bd09624b5c7
+  - label: ETERNAL-UPL
+    kind: gz
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/10.bin
+    sha256: c540413928220682bf14f0552caccc1c16980c1f3c378c396a2985505777586c
+  - label: ETERNAL-UPS
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/ETERNAL/gen-1/11.bin
+    sha256: ab2f8ec7754b7c4ec4a9ff0daa7c540a780ac637cf9cae70b1e34b126e601d2e
+  - label: POLYCAB-DISC
+    kind: discovery_manifest
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/discovery-manifest.json
+    sha256: 2c196d999f9be4a76a061e23d5a555a20cf2c59a91346eb4cf787b3f7eb04637
+  - label: POLYCAB-MASTER
+    kind: csv
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/00.bin
+    sha256: 474ad748f65c9ffa4cf9aa2e483117dfd0f68ccafd6c4c8a0cca02583556f765
+  - label: POLYCAB-X1
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/03.bin
+    sha256: 6476acf173e1896cf17159a578999aa455a3f25b9d22de9ba502097c8f3df47e
+  - label: POLYCAB-X2
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/04.bin
+    sha256: 32dd9af89104cc954d65d4195c4452a87b043eff465bf73ffcd3a15671c94030
+  - label: POLYCAB-PEER
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/05.bin
+    sha256: 32c3b3e08ce78ef71193d128b7d3e46904082ab87ef385e37b2c81a9ddb1a049
+  - label: POLYCAB-SSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/06.bin
+    sha256: e721f211272a74c251f47fee0587166872180e5893a5890fd0d5d4de78e76a30
+  - label: POLYCAB-SCR
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/07.bin
+    sha256: 0f6c3cf31875d4ce3934b45264b9c3c7c7a231123a7a4f3c073ac51d1b4457f1
+  - label: POLYCAB-TSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/08.bin
+    sha256: 2ed0d9f5f460bae7f461fb33082e8f82f0f8b50e6e63ea711fd3e2716c25b686
+  - label: POLYCAB-TIJ
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/09.bin
+    sha256: 37320b99a51fe325b39d410cb562af4a20fe4685dc9485b732d62aa084c270d9
+  - label: POLYCAB-UPL
+    kind: gz
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/10.bin
+    sha256: c540413928220682bf14f0552caccc1c16980c1f3c378c396a2985505777586c
+  - label: POLYCAB-UPS
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/POLYCAB/gen-1/11.bin
+    sha256: 94ef7209267223c338c6c3a9aa18c4753f27394ee2463cf1de9b27cb3673b830
+  - label: TITAN-DISC
+    kind: discovery_manifest
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/discovery-manifest.json
+    sha256: 97bd2e78a60042612c32cf966b6af492d9c227c1ac075e321c859a4e4ed46a0b
+  - label: TITAN-MASTER
+    kind: csv
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/00.bin
+    sha256: 474ad748f65c9ffa4cf9aa2e483117dfd0f68ccafd6c4c8a0cca02583556f765
+  - label: TITAN-X1
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/03.bin
+    sha256: a1d9eb5bdded074ba0c780fc92b58a3661ba7e3410b758588a5f4bb677801a85
+  - label: TITAN-X2
+    kind: xbrl
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/04.bin
+    sha256: d8e7cb35d8f6e96fc2eed5a4eba0be4d5dd3d76e2c4f77d7c6a39e326e018c2e
+  - label: TITAN-PEER
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/05.bin
+    sha256: 0bdc607938b983dc288b4778e9d15fffe57b7fb6fd9cc0b6ff9ed4f537a65655
+  - label: TITAN-SSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/06.bin
+    sha256: d3ee5265eeb9e55969bb2f2f7c2bc572176b807877b7b02056cb053dc597f1c3
+  - label: TITAN-SCR
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/07.bin
+    sha256: ae06b0f8bccb8859eea68038e8103a41fed8ed693b2a5bd6e4417c3b197c14f3
+  - label: TITAN-TSEARCH
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/08.bin
+    sha256: dcb694e9a8b83e8f5b76a74f0c1763a9778c46933a0365797c9232d29b12eeec
+  - label: TITAN-TIJ
+    kind: html
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/09.bin
+    sha256: 2a8622b4cd9149c18dbab5c6f64edcca749b861c2f611e55f1ba9307f2c9942b
+  - label: TITAN-UPL
+    kind: gz
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/10.bin
+    sha256: c540413928220682bf14f0552caccc1c16980c1f3c378c396a2985505777586c
+  - label: TITAN-UPS
+    kind: json
+    path: data/raw/onboarding-dev/live-smoke/TITAN/gen-1/11.bin
+    sha256: f75e031017c137269db9a693cecc175f4a33cbb1f56b2a27048bdbb28c3b004b
+registry:
+  snapshot:
+    label: REGISTRY
+    captured: '2026-09-04T08:23:13Z'
+  derived: listing keys = distinct (segment, isin) over rows with segment in {NSE_EQ, BSE_EQ}, isin a string of length >= 12 starting INE with characters 8-9 (0-based slice 7:9) = 01 (ingest/upstox_instruments.py
+    _is_retained_equity); instrument_type not used
+  counts:
+    rows: 118334
+    cash_segment_rows: 22458
+    listings: 7845
+    NSE_EQ: 3132
+    BSE_EQ: 4713
+    isins: 5409
+  spot_rows:
+  - symbol: CGPOWER
+    isin: INE067A01029
+    status: LISTED
+    listings:
+    - key: NSE_EQ|INE067A01029
+      symbol: CGPOWER
+      token: '760'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[105569].instrument_key'
+          lex: NSE_EQ|INE067A01029
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[105569].trading_symbol'
+          lex: CGPOWER
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[105569].exchange_token'
+          lex: '760'
+    - key: BSE_EQ|INE067A01029
+      symbol: CGPOWER
+      token: '500093'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[75757].instrument_key'
+          lex: BSE_EQ|INE067A01029
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[75757].trading_symbol'
+          lex: CGPOWER
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[75757].exchange_token'
+          lex: '500093'
+  - symbol: ETERNAL
+    isin: INE758T01015
+    status: LISTED
+    listings:
+    - key: NSE_EQ|INE758T01015
+      symbol: ETERNAL
+      token: '5097'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[101934].instrument_key'
+          lex: NSE_EQ|INE758T01015
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[101934].trading_symbol'
+          lex: ETERNAL
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[101934].exchange_token'
+          lex: '5097'
+    - key: BSE_EQ|INE758T01015
+      symbol: ETERNAL
+      token: '543320'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[76641].instrument_key'
+          lex: BSE_EQ|INE758T01015
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[76641].trading_symbol'
+          lex: ETERNAL
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[76641].exchange_token'
+          lex: '543320'
+  - symbol: POLYCAB
+    isin: INE455K01017
+    status: LISTED
+    listings:
+    - key: NSE_EQ|INE455K01017
+      symbol: POLYCAB
+      token: '9590'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[102063].instrument_key'
+          lex: NSE_EQ|INE455K01017
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[102063].trading_symbol'
+          lex: POLYCAB
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[102063].exchange_token'
+          lex: '9590'
+    - key: BSE_EQ|INE455K01017
+      symbol: POLYCAB
+      token: '542652'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[109685].instrument_key'
+          lex: BSE_EQ|INE455K01017
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[109685].trading_symbol'
+          lex: POLYCAB
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[109685].exchange_token'
+          lex: '542652'
+  - symbol: THERMAX
+    isin: INE152A01029
+    status: LISTED
+    listings:
+    - key: NSE_EQ|INE152A01029
+      symbol: THERMAX
+      token: '3475'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[99741].instrument_key'
+          lex: NSE_EQ|INE152A01029
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[99741].trading_symbol'
+          lex: THERMAX
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[99741].exchange_token'
+          lex: '3475'
+    - key: BSE_EQ|INE152A01029
+      symbol: THERMAX
+      token: '500411'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[75992].instrument_key'
+          lex: BSE_EQ|INE152A01029
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[75992].trading_symbol'
+          lex: THERMAX
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[75992].exchange_token'
+          lex: '500411'
+  - symbol: TITAN
+    isin: INE280A01028
+    status: LISTED
+    listings:
+    - key: NSE_EQ|INE280A01028
+      symbol: TITAN
+      token: '3506'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[72625].instrument_key'
+          lex: NSE_EQ|INE280A01028
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[72625].trading_symbol'
+          lex: TITAN
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[72625].exchange_token'
+          lex: '3506'
+    - key: BSE_EQ|INE280A01028
+      symbol: TITAN
+      token: '500114'
+      at:
+        key:
+          src: REGISTRY
+          gz: true
+          path: '[78908].instrument_key'
+          lex: BSE_EQ|INE280A01028
+        symbol:
+          src: REGISTRY
+          gz: true
+          path: '[78908].trading_symbol'
+          lex: TITAN
+        token:
+          src: REGISTRY
+          gz: true
+          path: '[78908].exchange_token'
+          lex: '500114'
+  loads:
+  - step: first coverage registry load
+    created: true
+    new_listings: 7845
+    candidate_events: 0
+  - step: replay of the same capture
+    created: false
+    new_listings: 0
+    candidate_events: 0
+    counts_unchanged: true
+  - step: 'later SYNTHETIC capture (tmp_path): the registry bytes with only the NSE_EQ row of INE758T01015 re-marked trading_symbol ETERNAL -> ZOMATO'
+    created: true
+    new_listings: 0
+    candidate_events:
+    - listing: NSE_EQ|INE758T01015
+      from: ETERNAL
+      to: ZOMATO
+    current:
+      NSE_EQ|INE758T01015: ZOMATO
+      BSE_EQ|INE758T01015: ETERNAL
+    identity_layers: unchanged (ETERNAL's verified identity, events, relationships, base rows, latest_slice)
+    precondition: no NSE_EQ or BSE_EQ equity row in REGISTRY has trading_symbol ZOMATO
+screen:
+  name: d7-stage4
+  formula:
+    screener: Market Capitalization > 20000
+    tijori: Market Capitalization > 20000
+    at:
+      screener:
+        src: SCREENER-PAGE
+        line: 4
+        lex: '>Market Capitalization &gt; 20000</textarea>'
+      tijori:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"financial_q":"Market Capitalization > 20000","alternate_q":null'
+  screen_text:
+    screener: screener:Market Capitalization > 20000
+    tijori: tijori:Market Capitalization > 20000
+  screener:
+  - row: 1
+    symbol: CGPOWER
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE067A01029
+      reason: null
+    at:
+      codes:
+        src: SCREENER-CSV
+        line: 2
+        lex: 500093,CGPOWER,INE067A01029
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE067A01029
+        lex: CGPOWER
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE067A01029
+        lex: '500093'
+  - row: 2
+    symbol: ETERNAL
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE758T01015
+      reason: null
+    at:
+      codes:
+        src: SCREENER-CSV
+        line: 3
+        lex: 543320,ETERNAL,INE758T01015
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE758T01015
+        lex: ETERNAL
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE758T01015
+        lex: '543320'
+  - row: 3
+    symbol: POLYCAB
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE455K01017
+      reason: null
+    at:
+      codes:
+        src: SCREENER-CSV
+        line: 4
+        lex: 542652,POLYCAB,INE455K01017
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE455K01017
+        lex: POLYCAB
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE455K01017
+        lex: '542652'
+  - row: 4
+    symbol: THERMAX
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE152A01029
+      reason: null
+    at:
+      codes:
+        src: SCREENER-CSV
+        line: 5
+        lex: 500411,THERMAX,INE152A01029
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE152A01029
+        lex: THERMAX
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE152A01029
+        lex: '500411'
+  - row: 5
+    symbol: TITAN
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE280A01028
+      reason: null
+    at:
+      codes:
+        src: SCREENER-CSV
+        line: 6
+        lex: 500114,TITAN,INE280A01028
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE280A01028
+        lex: TITAN
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE280A01028
+        lex: '500114'
+  tijori:
+  - data_index: 0
+    symbol: ETERNAL
+    slug: zomato-ltd
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE758T01015
+      reason: null
+      slug_check: NOT_VERIFIED at screen time (no verified entity yet); the batch-verified TIJORI_SLUG equals it for ETERNAL, POLYCAB, TITAN (batch.members[].bindings.tijori_slug)
+    at:
+      codes:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"slug":"zomato-ltd","scripcode":543320,"nse symbol":"ETERNAL"'
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE758T01015
+        lex: ETERNAL
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE758T01015
+        lex: '543320'
+  - data_index: 1
+    symbol: CGPOWER
+    slug: crompton-greaves-limited
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE067A01029
+      reason: null
+      slug_check: NOT_VERIFIED at screen time (no verified entity yet); the batch-verified TIJORI_SLUG equals it for ETERNAL, POLYCAB, TITAN (batch.members[].bindings.tijori_slug)
+    at:
+      codes:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"slug":"crompton-greaves-limited","scripcode":500093,"nse symbol":"CGPOWER"'
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE067A01029
+        lex: CGPOWER
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE067A01029
+        lex: '500093'
+  - data_index: 2
+    symbol: POLYCAB
+    slug: polycab-india-ltd
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE455K01017
+      reason: null
+      slug_check: NOT_VERIFIED at screen time (no verified entity yet); the batch-verified TIJORI_SLUG equals it for ETERNAL, POLYCAB, TITAN (batch.members[].bindings.tijori_slug)
+    at:
+      codes:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"slug":"polycab-india-ltd","scripcode":542652,"nse symbol":"POLYCAB"'
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE455K01017
+        lex: POLYCAB
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE455K01017
+        lex: '542652'
+  - data_index: 3
+    symbol: TITAN
+    slug: titan-company-limited
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE280A01028
+      reason: null
+      slug_check: NOT_VERIFIED at screen time (no verified entity yet); the batch-verified TIJORI_SLUG equals it for ETERNAL, POLYCAB, TITAN (batch.members[].bindings.tijori_slug)
+    at:
+      codes:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"slug":"titan-company-limited","scripcode":500114,"nse symbol":"TITAN"'
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE280A01028
+        lex: TITAN
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE280A01028
+        lex: '500114'
+  - data_index: 4
+    symbol: THERMAX
+    slug: thermax-limited
+    expect:
+      listing:
+        segment: NSE_EQ
+        isin: INE152A01029
+      reason: null
+      slug_check: NOT_VERIFIED at screen time (no verified entity yet); the batch-verified TIJORI_SLUG equals it for ETERNAL, POLYCAB, TITAN (batch.members[].bindings.tijori_slug)
+    at:
+      codes:
+        src: TIJORI-JSON
+        line: 1
+        lex: '"slug":"thermax-limited","scripcode":500411,"nse symbol":"THERMAX"'
+      registry_nse:
+        src: REGISTRY
+        fld: upstox_nse_symbol
+        key: INE152A01029
+        lex: THERMAX
+      registry_bse:
+        src: REGISTRY
+        fld: upstox_bse_token
+        key: INE152A01029
+        lex: '500411'
+  review_items: []
+  review_pending: []
+batch:
+  declared:
+  - ETERNAL
+  - POLYCAB
+  - TITAN
+  others:
+  - THERMAX
+  - CGPOWER
+  completed: true
+  members:
+  - symbol: ETERNAL
+    generation: gen-1
+    isin: INE758T01015
+    outcome: PARTIAL
+    units:
+      EXCHANGE:
+        state: VERIFIED
+      XBRL_ENTITY:
+        state: VERIFIED
+      SCREENER:
+        state: VERIFIED
+      TIJORI:
+        state: VERIFIED
+      UPSTOX:
+        state: VERIFIED
+      RESULTS_PDF:
+        state: UNAVAILABLE
+        reason: EXCLUDED_BY_RULE
+    excluded_units:
+    - RESULTS_PDF
+    bindings:
+      isin:
+        src: ETERNAL-MASTER
+        fld: master_isin
+        key: ETERNAL
+        lex: INE758T01015
+      bse_scrip:
+        src: ETERNAL-PEER
+        fld: peer_scrip
+        key: INE758T01015
+        lex: '543320'
+      screener_nse:
+        src: ETERNAL-SCR
+        fld: screener_nse
+        lex: ETERNAL
+      screener_bse:
+        src: ETERNAL-SCR
+        fld: screener_bse
+        lex: '543320'
+      tijori_symbol:
+        src: ETERNAL-TIJ
+        fld: tijori_symbol
+        lex: ETERNAL
+      tijori_slug:
+        src: ETERNAL-TIJ
+        fld: tijori_page_slug
+        lex: zomato-ltd
+      upstox_nse_symbol:
+        src: ETERNAL-UPL
+        fld: upstox_nse_symbol
+        key: INE758T01015
+        lex: ETERNAL
+      upstox_bse_token:
+        src: ETERNAL-UPL
+        fld: upstox_bse_token
+        key: INE758T01015
+        lex: '543320'
+    run:
+      entity: ETERNAL
+      period_end: '2026-06-30'
+      basis: CONSOLIDATED
+      config:
+        dictionary: v2
+        mapping_set: v5
+      status: INCOMPLETE
+      exit: 4
+      operational_failures:
+      - PDF
+      inputs:
+        xbrl:
+        - 6d66975e1a64fec63e05437b73205e5bf9c80127ef010d9625a118a583b880c0
+        - dcad4aee5189866b0835428eacc170a0582f131401bf2f54de4b4c815926250a
+        screener-subscriber/SCREENER_FINANCIALS: 6a232c795ca3643a9f6c8975c72a2d16d462f2d178ca43a5b1bec329a38840f1
+        tijori/financials: eff74b7fd2b6157594499c1df140d39d51dd029834edd2720b121bd09624b5c7
+        upstox/income-statement: ab2f8ec7754b7c4ec4a9ff0daa7c540a780ac637cf9cae70b1e34b126e601d2e
+      comparison:
+        package_kind: QUARTER
+        statements_present:
+        - PL
+        - SEGMENT
+        keys:
+          Q: 2026-04-01..2026-06-30
+          I: '2026-06-30'
+        sources:
+          xbrl:
+            value:
+              I:
+              - segment_assets_net
+              - segment_assets_total
+              - segment_liabilities_net
+              - segment_liabilities_total
+              - segment_unallocable_assets
+              - segment_unallocable_liabilities
+              Q:
+              - changes_in_inventories
+              - cost_of_materials_consumed
+              - current_tax
+              - deferred_tax
+              - depreciation_amortisation
+              - employee_benefits_expense
+              - eps_basic
+              - eps_basic_continuing
+              - eps_basic_discontinued
+              - eps_diluted
+              - eps_diluted_continuing
+              - eps_diluted_discontinued
+              - exceptional_items_before_tax
+              - finance_costs
+              - inter_segment_revenue
+              - oci_net
+              - oci_not_reclassified_items
+              - oci_reclassified_items
+              - other_expenses
+              - other_income
+              - profit_before_exceptional_items_and_tax
+              - profit_before_tax
+              - profit_continuing_after_tax
+              - profit_discontinued_after_tax
+              - profit_discontinued_before_tax
+              - profit_for_period
+              - purchases_of_stock_in_trade
+              - regulatory_deferral_net_movement
+              - revenue_from_operations
+              - segment_finance_costs
+              - segment_profit_before_tax
+              - segment_result_total
+              - segment_revenue_from_operations
+              - segment_revenue_total
+              - segment_unallocable_net
+              - share_of_profit_associates_jv
+              - tax_discontinued
+              - tax_expense
+              - total_comprehensive_income
+              - total_expenses
+              - total_income
+            counts:
+              value: 47
+          screener-subscriber/SCREENER_FINANCIALS:
+            sides:
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            value:
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            counts:
+              sides: 9
+              value: 9
+          tijori/financials:
+            sides:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            value:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            counts:
+              sides: 2
+              value: 2
+          upstox/income-statement:upstox-income-statement-summary-v2:
+            sides:
+              Q:
+              - profit_before_tax_incl_associates
+              - total_income
+            value:
+              Q:
+              - profit_before_tax_incl_associates
+              - total_income
+            counts:
+              sides: 2
+              value: 2
+    gates:
+      SCREENER:
+        authenticated:
+        - src: ETERNAL-SCR
+          line: 329
+          lex: href="/user/account/"
+        - src: ETERNAL-SCR
+          line: 357
+          lex: action="/logout/"
+        identity:
+        - src: ETERNAL-SSEARCH
+          fld: screener_search_id
+          key: ETERNAL
+          lex: '1274894'
+        - src: ETERNAL-SCR
+          fld: screener_page_id
+          lex: '1274894'
+        - src: ETERNAL-SCR
+          fld: screener_warehouse_id
+          lex: '68088707'
+        basis_marker:
+        - src: ETERNAL-SCR
+          line: 1373
+          lex: Consolidated
+        - src: ETERNAL-SCR
+          line: 1374
+          lex: Figures
+        declares: CONSOLIDATED
+      TIJORI:
+        authenticated:
+        - src: ETERNAL-TIJ
+          line: 9100
+          lex: <script id="is_auth" type="application/json">true</script>
+        identity:
+        - src: ETERNAL-TIJ
+          fld: tijori_symbol
+          lex: ETERNAL
+        - src: ETERNAL-TIJ
+          fld: tijori_company_id
+          lex: '43813'
+        - src: ETERNAL-TSEARCH
+          fld: tijori_search_slug
+          lex: zomato-ltd
+        consolidated_table:
+        - src: ETERNAL-TIJ
+          line: 4997
+          lex: '"qt_c": {"report_dates": ['
+        parsed_tables:
+        - bs_c_d
+        - bs_c_s
+        - cf_c
+        - fr_c
+        - pl_c_d
+        - pl_c_s
+        - qt_c
+  - symbol: POLYCAB
+    generation: gen-1
+    isin: INE455K01017
+    outcome: PARTIAL
+    units:
+      EXCHANGE:
+        state: VERIFIED
+      XBRL_ENTITY:
+        state: VERIFIED
+      SCREENER:
+        state: VERIFIED
+      TIJORI:
+        state: VERIFIED
+      UPSTOX:
+        state: VERIFIED
+      RESULTS_PDF:
+        state: UNAVAILABLE
+        reason: EXCLUDED_BY_RULE
+    excluded_units:
+    - RESULTS_PDF
+    bindings:
+      isin:
+        src: POLYCAB-MASTER
+        fld: master_isin
+        key: POLYCAB
+        lex: INE455K01017
+      bse_scrip:
+        src: POLYCAB-PEER
+        fld: peer_scrip
+        key: INE455K01017
+        lex: '542652'
+      screener_nse:
+        src: POLYCAB-SCR
+        fld: screener_nse
+        lex: POLYCAB
+      screener_bse:
+        src: POLYCAB-SCR
+        fld: screener_bse
+        lex: '542652'
+      tijori_symbol:
+        src: POLYCAB-TIJ
+        fld: tijori_symbol
+        lex: POLYCAB
+      tijori_slug:
+        src: POLYCAB-TIJ
+        fld: tijori_page_slug
+        lex: polycab-india-ltd
+      upstox_nse_symbol:
+        src: POLYCAB-UPL
+        fld: upstox_nse_symbol
+        key: INE455K01017
+        lex: POLYCAB
+      upstox_bse_token:
+        src: POLYCAB-UPL
+        fld: upstox_bse_token
+        key: INE455K01017
+        lex: '542652'
+    run:
+      entity: POLYCAB
+      period_end: '2026-09-30'
+      basis: CONSOLIDATED
+      config:
+        dictionary: v2
+        mapping_set: v5
+      status: INCOMPLETE
+      exit: 4
+      operational_failures:
+      - PDF
+      inputs:
+        xbrl:
+        - 6476acf173e1896cf17159a578999aa455a3f25b9d22de9ba502097c8f3df47e
+        - 32dd9af89104cc954d65d4195c4452a87b043eff465bf73ffcd3a15671c94030
+        screener-subscriber/SCREENER_FINANCIALS: 0f6c3cf31875d4ce3934b45264b9c3c7c7a231123a7a4f3c073ac51d1b4457f1
+        tijori/financials: 37320b99a51fe325b39d410cb562af4a20fe4685dc9485b732d62aa084c270d9
+        upstox/income-statement: 94ef7209267223c338c6c3a9aa18c4753f27394ee2463cf1de9b27cb3673b830
+      comparison:
+        package_kind: HALF_YEAR
+        statements_present:
+        - BALANCE_SHEET
+        - CASH_FLOW
+        - PL
+        - SEGMENT
+        keys:
+          Q: 2026-07-01..2026-09-30
+          Y: 2026-04-01..2026-09-30
+          I: '2026-09-30'
+        sources:
+          xbrl:
+            value:
+              I:
+              - borrowings_current
+              - borrowings_noncurrent
+              - cash_and_cash_equivalents
+              - cf_cash_closing
+              - current_assets_total
+              - current_financial_assets
+              - current_financial_liabilities
+              - current_investments
+              - current_liabilities_total
+              - current_tax_liabilities
+              - cwip
+              - deferred_tax_liabilities_net
+              - equity_attributable_owners
+              - equity_share_capital
+              - goodwill
+              - intangibles_under_development
+              - inventories
+              - investment_property
+              - investments_equity_method
+              - loans_current
+              - loans_noncurrent
+              - noncurrent_assets_total
+              - noncurrent_financial_assets
+              - noncurrent_financial_liabilities
+              - noncurrent_investments
+              - noncurrent_liabilities_total
+              - other_bank_balances
+              - other_current_assets
+              - other_current_financial_assets
+              - other_current_financial_liabilities
+              - other_current_liabilities
+              - other_equity
+              - other_intangible_assets
+              - other_noncurrent_assets
+              - other_noncurrent_financial_assets
+              - other_noncurrent_financial_liabilities
+              - ppe
+              - provisions_current
+              - provisions_noncurrent
+              - segment_assets_net
+              - segment_assets_total
+              - segment_liabilities_net
+              - segment_liabilities_total
+              - segment_unallocable_assets
+              - segment_unallocable_liabilities
+              - total_assets
+              - total_equity
+              - total_equity_and_liabilities
+              - total_liabilities
+              - trade_payables_current
+              - trade_payables_msme
+              - trade_payables_others
+              - trade_receivables_current
+              - trade_receivables_noncurrent
+              Q:
+              - changes_in_inventories
+              - cost_of_materials_consumed
+              - current_tax
+              - deferred_tax
+              - depreciation_amortisation
+              - employee_benefits_expense
+              - eps_basic
+              - eps_basic_continuing
+              - eps_basic_discontinued
+              - eps_diluted
+              - eps_diluted_continuing
+              - eps_diluted_discontinued
+              - exceptional_items_before_tax
+              - finance_costs
+              - inter_segment_revenue
+              - oci_net
+              - oci_not_reclassified_items
+              - oci_reclassified_items
+              - other_expenses
+              - other_income
+              - profit_before_exceptional_items_and_tax
+              - profit_before_tax
+              - profit_continuing_after_tax
+              - profit_discontinued_after_tax
+              - profit_discontinued_before_tax
+              - profit_for_period
+              - purchases_of_stock_in_trade
+              - regulatory_deferral_net_movement
+              - revenue_from_operations
+              - segment_finance_costs
+              - segment_profit_before_tax
+              - segment_result_total
+              - segment_revenue_from_operations
+              - segment_revenue_total
+              - segment_unallocable_net
+              - share_of_profit_associates_jv
+              - tax_discontinued
+              - tax_expense
+              - total_comprehensive_income
+              - total_expenses
+              - total_income
+              Y:
+              - cf_adj_depreciation
+              - cf_adj_finance_costs
+              - cf_adj_interest_income
+              - cf_adj_provisions_current
+              - cf_adj_share_based_payments
+              - cf_adj_unrealised_fx
+              - cf_adjustments_total
+              - cf_capex_ppe
+              - cf_cash_generated_from_operations
+              - cf_dividends_paid
+              - cf_fx_effect
+              - cf_income_taxes_paid
+              - cf_interest_paid_financing
+              - cf_interest_received_investing
+              - cf_lease_payments
+              - cf_net_change
+              - cf_net_change_before_fx
+              - cf_proceeds_borrowings
+              - cf_repayment_borrowings
+              - cf_sale_ppe
+              - cf_wc_inventories
+              - cf_wc_trade_payables_current
+              - cf_wc_trade_receivables_current
+              - cff
+              - cfi
+              - cfo
+              - changes_in_inventories
+              - cost_of_materials_consumed
+              - current_tax
+              - deferred_tax
+              - depreciation_amortisation
+              - employee_benefits_expense
+              - eps_basic
+              - eps_basic_continuing
+              - eps_basic_discontinued
+              - eps_diluted
+              - eps_diluted_continuing
+              - eps_diluted_discontinued
+              - exceptional_items_before_tax
+              - finance_costs
+              - inter_segment_revenue
+              - oci_net
+              - oci_not_reclassified_items
+              - oci_reclassified_items
+              - other_expenses
+              - other_income
+              - profit_before_exceptional_items_and_tax
+              - profit_before_tax
+              - profit_continuing_after_tax
+              - profit_discontinued_after_tax
+              - profit_discontinued_before_tax
+              - profit_for_period
+              - purchases_of_stock_in_trade
+              - regulatory_deferral_net_movement
+              - revenue_from_operations
+              - segment_finance_costs
+              - segment_profit_before_tax
+              - segment_result_total
+              - segment_revenue_from_operations
+              - segment_revenue_total
+              - segment_unallocable_net
+              - share_of_profit_associates_jv
+              - tax_discontinued
+              - tax_expense
+              - total_comprehensive_income
+              - total_expenses
+              - total_income
+            counts:
+              value: 162
+          screener-subscriber/SCREENER_FINANCIALS:
+            sides:
+              I:
+              - equity_share_capital
+              - liabilities_incl_nci
+              - total_assets
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            value:
+              I:
+              - equity_share_capital
+              - liabilities_incl_nci
+              - total_assets
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            counts:
+              sides: 12
+              value: 12
+          tijori/financials:
+            sides:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            value:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            counts:
+              sides: 2
+              value: 2
+          upstox/income-statement:upstox-income-statement-summary-v2:
+            sides:
+              Q:
+              - profit_before_tax_incl_associates
+              - total_income
+            value: {}
+            counts:
+              sides: 2
+              value: 0
+    gates:
+      SCREENER:
+        authenticated:
+        - src: POLYCAB-SCR
+          line: 329
+          lex: href="/user/account/"
+        - src: POLYCAB-SCR
+          line: 357
+          lex: action="/logout/"
+        identity:
+        - src: POLYCAB-SSEARCH
+          fld: screener_search_id
+          key: POLYCAB
+          lex: '1274653'
+        - src: POLYCAB-SCR
+          fld: screener_page_id
+          lex: '1274653'
+        - src: POLYCAB-SCR
+          fld: screener_warehouse_id
+          lex: '30744264'
+        basis_marker:
+        - src: POLYCAB-SCR
+          line: 1341
+          lex: Consolidated
+        - src: POLYCAB-SCR
+          line: 1342
+          lex: Figures
+        declares: CONSOLIDATED
+      TIJORI:
+        authenticated:
+        - src: POLYCAB-TIJ
+          line: 9162
+          lex: <script id="is_auth" type="application/json">true</script>
+        identity:
+        - src: POLYCAB-TIJ
+          fld: tijori_symbol
+          lex: POLYCAB
+        - src: POLYCAB-TIJ
+          fld: tijori_company_id
+          lex: '5794'
+        - src: POLYCAB-TSEARCH
+          fld: tijori_search_slug
+          lex: polycab-india-ltd
+        consolidated_table:
+        - src: POLYCAB-TIJ
+          line: 5059
+          lex: '"qt_c": {"report_dates": ['
+        parsed_tables:
+        - bs_c_d
+        - bs_c_s
+        - cf_c
+        - fr_c
+        - pl_c_d
+        - pl_c_s
+        - qt_c
+  - symbol: TITAN
+    generation: gen-1
+    isin: INE280A01028
+    outcome: PARTIAL
+    units:
+      EXCHANGE:
+        state: VERIFIED
+      XBRL_ENTITY:
+        state: VERIFIED
+      SCREENER:
+        state: VERIFIED
+      TIJORI:
+        state: VERIFIED
+      UPSTOX:
+        state: VERIFIED
+      RESULTS_PDF:
+        state: UNAVAILABLE
+        reason: EXCLUDED_BY_RULE
+    excluded_units:
+    - RESULTS_PDF
+    bindings:
+      isin:
+        src: TITAN-MASTER
+        fld: master_isin
+        key: TITAN
+        lex: INE280A01028
+      bse_scrip:
+        src: TITAN-PEER
+        fld: peer_scrip
+        key: INE280A01028
+        lex: '500114'
+      screener_nse:
+        src: TITAN-SCR
+        fld: screener_nse
+        lex: TITAN
+      screener_bse:
+        src: TITAN-SCR
+        fld: screener_bse
+        lex: '500114'
+      tijori_symbol:
+        src: TITAN-TIJ
+        fld: tijori_symbol
+        lex: TITAN
+      tijori_slug:
+        src: TITAN-TIJ
+        fld: tijori_page_slug
+        lex: titan-company-limited
+      upstox_nse_symbol:
+        src: TITAN-UPL
+        fld: upstox_nse_symbol
+        key: INE280A01028
+        lex: TITAN
+      upstox_bse_token:
+        src: TITAN-UPL
+        fld: upstox_bse_token
+        key: INE280A01028
+        lex: '500114'
+    run:
+      entity: TITAN
+      period_end: '2026-06-30'
+      basis: CONSOLIDATED
+      config:
+        dictionary: v2
+        mapping_set: v5
+      status: INCOMPLETE
+      exit: 4
+      operational_failures:
+      - PDF
+      inputs:
+        xbrl:
+        - a1d9eb5bdded074ba0c780fc92b58a3661ba7e3410b758588a5f4bb677801a85
+        - d8e7cb35d8f6e96fc2eed5a4eba0be4d5dd3d76e2c4f77d7c6a39e326e018c2e
+        screener-subscriber/SCREENER_FINANCIALS: ae06b0f8bccb8859eea68038e8103a41fed8ed693b2a5bd6e4417c3b197c14f3
+        tijori/financials: 2a8622b4cd9149c18dbab5c6f64edcca749b861c2f611e55f1ba9307f2c9942b
+        upstox/income-statement: f75e031017c137269db9a693cecc175f4a33cbb1f56b2a27048bdbb28c3b004b
+      comparison:
+        package_kind: QUARTER
+        statements_present:
+        - PL
+        - SEGMENT
+        keys:
+          Q: 2026-04-01..2026-06-30
+          I: '2026-06-30'
+        sources:
+          xbrl:
+            value:
+              I:
+              - segment_assets_net
+              - segment_assets_total
+              - segment_liabilities_net
+              - segment_liabilities_total
+              - segment_unallocable_assets
+              - segment_unallocable_liabilities
+              Q:
+              - changes_in_inventories
+              - cost_of_materials_consumed
+              - current_tax
+              - deferred_tax
+              - depreciation_amortisation
+              - employee_benefits_expense
+              - eps_basic
+              - eps_basic_continuing
+              - eps_basic_discontinued
+              - eps_diluted
+              - eps_diluted_continuing
+              - eps_diluted_discontinued
+              - exceptional_items_before_tax
+              - finance_costs
+              - inter_segment_revenue
+              - oci_net
+              - oci_not_reclassified_items
+              - oci_reclassified_items
+              - other_expenses
+              - other_income
+              - profit_before_exceptional_items_and_tax
+              - profit_before_tax
+              - profit_continuing_after_tax
+              - profit_discontinued_after_tax
+              - profit_discontinued_before_tax
+              - profit_for_period
+              - purchases_of_stock_in_trade
+              - regulatory_deferral_net_movement
+              - revenue_from_operations
+              - segment_finance_costs
+              - segment_profit_before_tax
+              - segment_result_total
+              - segment_revenue_from_operations
+              - segment_revenue_total
+              - share_of_profit_associates_jv
+              - tax_discontinued
+              - tax_expense
+              - total_comprehensive_income
+              - total_expenses
+              - total_income
+            counts:
+              value: 46
+          screener-subscriber/SCREENER_FINANCIALS:
+            sides:
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            value:
+              Q:
+              - depreciation_amortisation
+              - ebitda_excl_other_income
+              - eps_basic
+              - finance_costs
+              - opex_excl_finance_and_da
+              - other_income_incl_exceptional
+              - profit_before_tax
+              - profit_for_period
+              - revenue_from_operations
+            counts:
+              sides: 9
+              value: 9
+          tijori/financials:
+            sides:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            value:
+              Q:
+              - profit_continuing_after_tax
+              - revenue_from_operations
+            counts:
+              sides: 2
+              value: 2
+          upstox/income-statement:upstox-income-statement-summary-v2:
+            sides:
+              Q:
+              - profit_before_tax_incl_associates
+              - total_income
+            value:
+              Q:
+              - profit_before_tax_incl_associates
+              - total_income
+            counts:
+              sides: 2
+              value: 2
+    gates:
+      SCREENER:
+        authenticated:
+        - src: TITAN-SCR
+          line: 329
+          lex: href="/user/account/"
+        - src: TITAN-SCR
+          line: 357
+          lex: action="/logout/"
+        identity:
+        - src: TITAN-SSEARCH
+          fld: screener_search_id
+          key: TITAN
+          lex: '3437'
+        - src: TITAN-SCR
+          fld: screener_page_id
+          lex: '3437'
+        - src: TITAN-SCR
+          fld: screener_warehouse_id
+          lex: '6599273'
+        basis_marker:
+        - src: TITAN-SCR
+          line: 1392
+          lex: Consolidated
+        - src: TITAN-SCR
+          line: 1393
+          lex: Figures
+        declares: CONSOLIDATED
+      TIJORI:
+        authenticated:
+        - src: TITAN-TIJ
+          line: 9162
+          lex: <script id="is_auth" type="application/json">true</script>
+        identity:
+        - src: TITAN-TIJ
+          fld: tijori_symbol
+          lex: TITAN
+        - src: TITAN-TIJ
+          fld: tijori_company_id
+          lex: '81'
+        - src: TITAN-TSEARCH
+          fld: tijori_search_slug
+          lex: titan-company-limited
+        consolidated_table:
+        - src: TITAN-TIJ
+          line: 5059
+          lex: '"qt_c": {"report_dates": ['
+        parsed_tables:
+        - bs_c_d
+        - bs_c_s
+        - cf_c
+        - fr_c
+        - pl_c_d
+        - pl_c_s
+        - qt_c
+  others_expect:
+    THERMAX:
+      onboarding_record: null
+      capture: null
+      entity: null
+      run: null
+      batch_result: null
+    CGPOWER:
+      onboarding_record: null
+      capture: null
+      entity: null
+      run: null
+      batch_result: null
+  others_checkpoint: at batch completion, before the e2e's out-of-batch `fundamentals onboard CGPOWER`
+watchlist:
+- step: 1
+  action: fundamentals onboard CGPOWER outside a batch, then owner ADD CGPOWER with a ruling
+  expect: REFUSED
+  why: 'uncaptured: no admitted result in a completed batch (watchlist_digest NULL; R3)'
+- step: 2
+  action: owner ADD ETERNAL with a verbatim ruling
+  expect: ACCEPTED
+  why: ETERNAL has a PARTIAL (admitted) result in the completed batch
+- step: 3
+  action: runtime draft (report version) for TITAN
+  expect: REFUSED
+  why: TITAN is batched but not on the watchlist (R6)
+- step: 4
+  action: runtime ETERNAL EARNINGS_UPDATE version
+  expect: REFUSED
+  why: a new member's first version must be BOOTSTRAP_THESIS (R6)
+- step: 5
+  action: runtime ETERNAL BOOTSTRAP_THESIS version
+  expect: ACCEPTED
+  why: watchlisted, bootstrap first (R6)
+- step: 6
+  action: owner REMOVE ETERNAL with a ruling
+  expect: ACCEPTED
+  why: head is ADD
+- step: 7
+  action: runtime new ETERNAL version
+  expect: REFUSED
+  why: off the watchlist after REMOVE (R6)
+- step: 8
+  action: runtime section into the step-5 ETERNAL version
+  expect: REFUSED
+  why: content insert for an off-watchlist stock (R6)
