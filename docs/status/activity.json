@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "Screen export built; waiting on owner screens. PREP-2/2b review, PREP-3 plan",
-    "detail": "Screen export Tasks 3-5 done (a8a1d24, 116e3f2): Screener and Tijori saved-screen export, paired runs with company matching (migration 0034), cross-check review queue with other-vendor reads and the OPEN_SCREEN_REVIEW retention hold (migration 0035). Tasks 6-7 need the owner's saved screens. Sol is reviewing PREP-2/2b; Opus is drafting the PREP-3 plan.",
+    "title": "PREP-2/2b review r2, PREP-3 plan r2, D7 Stage 4 manifest",
+    "detail": "Screen export now runs owner-authored formulas directly at both vendors (amendment re-approved 0b3ae46; code 962be61); live run of Market Capitalization > 20000: Screener 380, Tijori 376, 368 matched on both, 20 unmatched (mostly REITs/InvITs absent from the registry). PREP-2/2b review fixes committed (73dad2b, migration 0036); Sol re-reviewing. PREP-3 plan in its second fix round. Fresh Opus author drafting the Stage 4 manifest by hand from source bytes.",
     "stage": "PREP"
   },
   "next": [
-    "Owner: save the five-company Screener screen (ETERNAL, POLYCAB, TITAN, THERMAX, CGPOWER) and Tijori query d7-stage4; then screen-export Tasks 6-7 and the D7 phase-end review (Task 5 code is about 4x its size estimate, to be cut in review)",
-    "PREP-2/2b phase-end fixes from Sol's review (incl. ledger/run_draft.py size)",
-    "PREP-3 plan review, then PREP-3..8 and the Apar pilot (cutover eqos-3zl owner-approved)",
-    "Owner: disable systemd-timesyncd in WSL (clock backsteps)",
-    "Follow-ups: eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "Sol approval of the Stage 4 manifest, commit it, then the Task 7 e2e and D7 phase-end review (Task 5 size to be cut)",
+    "PREP-2/2b: close the review loop, then a fresh critical review",
+    "PREP-3 plan approval, then implementation (tests only predicted)",
+    "PREP-4..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "Owner direction: run screen formulas directly, save nothing at the vendors. Probed live (Screener raw-query page has its own export form, full CSV; Tijori advanced search returns all rows). Amendment and plan revised, Sol r1 REVISE (4), r2 APPROVE (0b3ae46); exporter adapted (962be61); one live run recorded. PREP-2/2b phase review r1 REVISE (8, 3 P1 reproduced), fixes 73dad2b incl. migration 0036. PREP-3 plan r1 REVISE (11), r2 REVISE (2)."
+    },
     {
       "date": "2026-10-18",
       "text": "Screen export Tasks 3-5 done (a8a1d24, 116e3f2): vendor export transport for both vendors, paired runs and binding (0034), review queue, other-vendor reads and OPEN_SCREEN_REVIEW hold (0035). Catalog gained screen_results, SCREEN_DEFINITION and Tijori overview surfaces (orchestrator ruling). 310 related tests pass."
