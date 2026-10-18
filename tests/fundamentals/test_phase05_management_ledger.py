@@ -1,37 +1,22 @@
-"""Slice phase05-sC — the management ledger carried across quarters (+ addendum A2).
+"""Slice phase05-sC — the §5 management-ledger renderer and the addendum-A2 guidance rules
+(a per-rule ``unit`` and one- or two-group patterns). PREP-2b Task 7 removed the JSON ledger's
+persistence; cross-quarter guidance status is the run draft's (``test_prep2b_run_draft``).
 
-Acceptance tests for ``fundamentals.output.management_ledger`` (which does not exist
-yet), its wiring into ``FundamentalsConfig``/``run_pipeline``/``EarningsUpdate``, the §5
-renderer, and the addendum-A2 guidance rules (a per-rule ``unit`` and one- or two-group
-patterns). Every reference to a not-yet-existing name happens *inside* a test or a helper
-a test calls, so each node id fails on its own error instead of one module-level import
-collapsing the file into a collection error.
-
-All ledger data is synthetic: symbol ``SYNTH``, quarters ``FY27_Q1``/``FY27_Q2``/
-``FY27_Q3``, invented metrics and quotes, 2027 dates. The one pipeline test reuses the
-committed deterministic end-to-end path (see ``tests/fundamentals/test_pipeline_e2e.py``)
-because the ledger write is a property of that pipeline, not of a hand-built fixture.
+All ledger data is synthetic: symbol ``SYNTH``, quarters ``FY27_Q1``/``FY27_Q3``, invented
+metrics and quotes, 2027 dates.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
-import pytest
-import yaml
-from temporal_fixture_support import FIXTURE_ACQUIRED_AT, run_trusted_fixture_pipeline
-
-from fundamentals.api.config import FundamentalsConfig, GuidanceRuleConfig, load_config
-from fundamentals.api.pipeline import XbrlInput
-from fundamentals.api.source_admission import SourceAdmissionError
+from fundamentals.api.config import GuidanceRuleConfig
 from fundamentals.contracts.fact import ReconciliationStatus
-from fundamentals.contracts.guidance_claim import EpistemicClass, GuidanceClaim
+from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import Scope
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.role import FactRole
@@ -42,33 +27,16 @@ from fundamentals.output.earnings_update import (
     VerificationOutcome,
     render_earnings_update,
 )
-from fundamentals.store.fact_store import FactStore
-
-
-def _find_repo_root() -> Path:
-    """Walk up from this file to the directory holding ``config/fundamentals.yaml``."""
-    for candidate in Path(__file__).resolve().parents:
-        if (candidate / "config" / "fundamentals.yaml").is_file():
-            return candidate
-    raise RuntimeError("repository root (config/fundamentals.yaml) not found above this test")
-
-
-_REPO_ROOT = _find_repo_root()
-_CONFIG_PATH = _REPO_ROOT / "config" / "fundamentals.yaml"
-_FIXTURES = _REPO_ROOT / "tests" / "fundamentals" / "fixtures"
-_SYNTHETIC_XBRL = _FIXTURES / "synthetic_q1_fy25_consolidated.xml"
 
 _SYMBOL = "SYNTH"
 _ISSUER_NAME = "Synthetic Test Corp"
 _Q1 = "FY27_Q1"
-_Q2 = "FY27_Q2"
 _Q3 = "FY27_Q3"
 _HORIZON = "FY27"
 _MARGIN = "synth_margin"
 _GROWTH = "synth_growth"
 _PERCENT = "%"
 _RETRIEVED_AT = datetime(2027, 7, 25, tzinfo=UTC)
-_LEDGER_RELATIVE = "data/ledger/synth-management-ledger.json"
 
 _CRORE = "INR crore"
 _PER_SHARE = "INR per share"
@@ -90,7 +58,6 @@ _FACT_VALUES: dict[FactRole, Decimal] = {
 }
 
 _Q1_MARGIN_QUOTE = "we expect a synthetic margin of 10% to 12% for FY27"
-_Q2_MARGIN_QUOTE = "we reiterate a synthetic margin of 10% to 12% for FY27"
 _Q1_GROWTH_QUOTE = "synthetic growth guidance of 5% to 7% for FY27"
 
 
@@ -108,35 +75,6 @@ def _provenance(quarter: str, *, page: int = 4, block: int = 2) -> Provenance:
         span="0:48",
         retrieved_at=_RETRIEVED_AT,
     )
-
-
-def _claim(
-    metric: str,
-    lower: str,
-    upper: str,
-    quarter: str,
-    *,
-    quote: str,
-    unit: str = _PERCENT,
-) -> GuidanceClaim:
-    """One synthetic quote-anchored guidance claim for ``quarter``."""
-    return GuidanceClaim(
-        metric=metric,
-        lower_bound=Decimal(lower),
-        upper_bound=Decimal(upper),
-        unit=unit,
-        constant_currency=False,
-        horizon=_HORIZON,
-        scope=Scope.CONSOLIDATED,
-        epistemic_class=EpistemicClass.FORECAST,
-        source_quote=quote,
-        provenance=_provenance(quarter),
-    )
-
-
-def _margin_claim(lower: str, upper: str, quarter: str, quote: str) -> GuidanceClaim:
-    """The tracked margin commitment as restated in ``quarter``."""
-    return _claim(_MARGIN, lower, upper, quarter, quote=quote)
 
 
 def _fact(role: FactRole) -> RenderedFact:
@@ -183,20 +121,6 @@ def _line_with(lines: list[str], token: str) -> str:
 
 
 # --- helpers touching names that do not exist yet (never imported at module scope) ---
-
-
-def _reconcile(prior: Any, quarter: str, claims: list[GuidanceClaim]) -> Any:
-    """Reconcile ``claims`` for ``quarter`` against ``prior`` via the new module."""
-    from fundamentals.output.management_ledger import reconcile_ledger
-
-    return reconcile_ledger(prior, symbol=_SYMBOL, issuer_quarter=quarter, claims=claims)
-
-
-def _entry_by_metric(ledger: Any, metric: str) -> Any:
-    """The single ledger entry tracking ``metric``."""
-    matches = [entry for entry in ledger.entries if entry.metric == metric]
-    assert len(matches) == 1, f"expected one entry for {metric!r}, got {len(matches)}"
-    return matches[0]
 
 
 def _rule_from_config(rule_config: GuidanceRuleConfig) -> Any:
@@ -314,179 +238,6 @@ def _update_with_ledger(ledger: Any) -> EarningsUpdate:
     )
 
 
-def _deterministic_xbrl_input(config: FundamentalsConfig) -> XbrlInput:
-    """The committed synthetic XBRL instance, as the end-to-end fixture uses it."""
-    xml_bytes = _SYNTHETIC_XBRL.read_bytes()
-    return XbrlInput(
-        xml_bytes=xml_bytes,
-        file_sha256=hashlib.sha256(xml_bytes).hexdigest(),
-        source_id=config.xbrl.source_id,
-        retrieved_at=FIXTURE_ACQUIRED_AT,
-    )
-
-
-def _run(config: FundamentalsConfig) -> None:
-    """Run the deterministic pipeline once against an in-memory store."""
-    store = FactStore(":memory:")
-    try:
-        run_trusted_fixture_pipeline(
-            config=config,
-            xbrl_input=_deterministic_xbrl_input(config),
-            results_pdf_path=str(config.results_pdf_path(_CONFIG_PATH)),
-            results_pdf_sha256=config.results_pdf.sha256,
-            transcript_pdf_path=str(config.transcript_pdf_path(_CONFIG_PATH)),
-            transcript_pdf_sha256=config.transcript_pdf.sha256,
-            store=store,
-        )
-    finally:
-        store.close()
-
-
-def _config_with_ledger(ledger_path: Path) -> FundamentalsConfig:
-    """The committed deterministic config, pointed at ``ledger_path``."""
-    return load_config(_CONFIG_PATH).model_copy(update={"ledger_path": str(ledger_path)})
-
-
-# --- tests ---
-
-
-def test_first_quarter_entries_are_new() -> None:
-    # A commitment nobody has tracked before must enter the ledger as NEW with this
-    # quarter's transcript anchor on both ends — that anchor is what sD later judges.
-    ledger = _reconcile(None, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-
-    from fundamentals.output.management_ledger import LedgerStatus
-
-    assert ledger.symbol == _SYMBOL
-    assert ledger.version == 1
-    assert ledger.updated_quarter == _Q1
-    entry = _entry_by_metric(ledger, _MARGIN)
-    assert entry.status is LedgerStatus.NEW
-    assert entry.claim_key == f"{_MARGIN}|{_HORIZON}|{Scope.CONSOLIDATED}"
-    assert (entry.lower_bound, entry.upper_bound) == (Decimal("10"), Decimal("12"))
-    assert entry.first.issuer_quarter == _Q1
-    assert entry.latest.issuer_quarter == _Q1
-    assert entry.first.quote == _Q1_MARGIN_QUOTE
-    assert entry.first.source == _provenance(_Q1)
-
-
-def test_identical_restatement_is_reaffirmed_with_latest_anchor() -> None:
-    # Re-stating the same range must keep the ORIGINAL quarter's anchor as ``first``
-    # (that is when the commitment was made) while recording the fresh restatement.
-    prior = _reconcile(None, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-    ledger = _reconcile(prior, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)])
-
-    from fundamentals.output.management_ledger import LedgerStatus
-
-    assert ledger.version == 2
-    assert ledger.updated_quarter == _Q2
-    assert len(ledger.entries) == 1
-    entry = _entry_by_metric(ledger, _MARGIN)
-    assert entry.status is LedgerStatus.REAFFIRMED
-    assert (entry.lower_bound, entry.upper_bound) == (Decimal("10"), Decimal("12"))
-    assert entry.first.issuer_quarter == _Q1
-    assert entry.first.quote == _Q1_MARGIN_QUOTE
-    assert entry.latest.issuer_quarter == _Q2
-    assert entry.latest.quote == _Q2_MARGIN_QUOTE
-    assert entry.latest.source == _provenance(_Q2)
-
-
-def test_changed_bounds_are_modified_with_history() -> None:
-    # A moved goalpost must not silently replace the old one: the superseded bounds
-    # stay in history, so a later reader can see the commitment was changed.
-    prior = _reconcile(None, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-    new_quote = "we now see a synthetic margin of 13% to 15% for FY27"
-    ledger = _reconcile(prior, _Q2, [_margin_claim("13", "15", _Q2, new_quote)])
-
-    from fundamentals.output.management_ledger import LedgerStatus
-
-    entry = _entry_by_metric(ledger, _MARGIN)
-    assert entry.status is LedgerStatus.MODIFIED
-    assert (entry.lower_bound, entry.upper_bound) == (Decimal("13"), Decimal("15"))
-    assert entry.first.issuer_quarter == _Q1
-    assert entry.latest.issuer_quarter == _Q2
-    assert entry.latest.quote == new_quote
-    superseded = [
-        revision
-        for revision in entry.history
-        if (revision.lower_bound, revision.upper_bound) == (Decimal("10"), Decimal("12"))
-    ]
-    assert len(superseded) == 1, f"old bounds must survive in history: {entry.history}"
-    assert superseded[0].issuer_quarter == _Q1
-
-
-def test_unrestated_entry_is_carried_and_never_deleted() -> None:
-    # Silence is evidence too: a commitment management stopped repeating must stay in
-    # the ledger, marked CARRIED, with the quarter it was not restated in recorded.
-    prior = _reconcile(
-        None,
-        _Q1,
-        [
-            _margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE),
-            _claim(_GROWTH, "5", "7", _Q1, quote=_Q1_GROWTH_QUOTE),
-        ],
-    )
-    ledger = _reconcile(prior, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)])
-
-    from fundamentals.output.management_ledger import LedgerStatus
-
-    assert len(ledger.entries) == 2, "nothing is ever deleted from the ledger"
-    carried = _entry_by_metric(ledger, _GROWTH)
-    assert carried.status is LedgerStatus.CARRIED
-    assert (carried.lower_bound, carried.upper_bound) == (Decimal("5"), Decimal("7"))
-    assert carried.first.issuer_quarter == _Q1
-    assert carried.latest.issuer_quarter == _Q1, "an unrestated claim gains no new anchor"
-    assert carried.latest.quote == _Q1_GROWTH_QUOTE
-    assert any(
-        revision.issuer_quarter == _Q2 and revision.status is LedgerStatus.CARRIED
-        for revision in carried.history
-    ), f"history must note the quarter it was not restated in: {carried.history}"
-
-
-def test_duplicate_claim_keys_rejected() -> None:
-    # Two ranges for the same metric/horizon/scope make "was it met?" unanswerable, so
-    # reconciliation fails closed instead of picking one silently.
-    with pytest.raises(ValueError):
-        _reconcile(
-            None,
-            _Q1,
-            [
-                _margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE),
-                _margin_claim("13", "15", _Q1, "a second synthetic margin sentence"),
-            ],
-        )
-
-
-def test_earlier_quarter_cannot_overwrite_later_ledger() -> None:
-    # Re-running an old quarter must never rewind the ledger to a stale state.
-    prior = _reconcile(None, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)])
-
-    with pytest.raises(ValueError):
-        _reconcile(prior, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-    assert _reconcile(prior, _Q2, [_margin_claim("10", "12", _Q2, _Q2_MARGIN_QUOTE)]) == prior
-
-
-def test_ledger_round_trips_through_json(tmp_path: Path) -> None:
-    # The ledger is the only carrier of cross-quarter memory: it must survive the disk
-    # round trip exactly, and a failed write must never leave a truncated ledger.
-    from fundamentals.output.management_ledger import load_ledger, save_ledger
-
-    ledger = _reconcile(None, _Q1, [_margin_claim("10", "12", _Q1, _Q1_MARGIN_QUOTE)])
-    path = tmp_path / "synth-ledger.json"
-
-    assert load_ledger(path) is None, "an absent ledger is a first quarter, not an error"
-    save_ledger(ledger, path)
-    assert load_ledger(path) == ledger
-
-    blocker = tmp_path / "blocker.json"
-    blocker.write_text("not a directory", encoding="utf-8")
-    unwritable = blocker / "synth-ledger.json"
-    with pytest.raises(OSError):
-        save_ledger(ledger, unwritable)
-    assert not unwritable.exists(), "a failed write must leave no partial ledger"
-    assert blocker.read_text(encoding="utf-8") == "not a directory"
-
-
 def test_renderer_section_five_shows_status_and_both_anchors() -> None:
     # §5 is the reader-facing contract: every carried commitment shows its status and
     # both ends of its evidence, so no status claim is made without an anchor.
@@ -510,47 +261,6 @@ def test_renderer_section_five_shows_status_and_both_anchors() -> None:
 
     carried = _line_with(section, "CARRIED")
     assert f"not restated in {_Q3}" in carried
-
-
-def test_pipeline_writes_ledger_only_after_gates_pass(tmp_path: Path) -> None:
-    # The ledger is committed state: a run that fails an integrity gate must not leave
-    # a ledger claiming the quarter was processed.
-    passed_path = tmp_path / "passed-ledger.json"
-    _run(_config_with_ledger(passed_path))
-    assert passed_path.is_file(), "a fully-gated run commits the ledger"
-    payload = json.loads(passed_path.read_text(encoding="utf-8"))
-    assert payload["version"] == 1
-    assert payload["entries"], "a run with anchored guidance records at least one entry"
-
-    failed_path = tmp_path / "failed-ledger.json"
-    config = _config_with_ledger(failed_path)
-    corrupted = config.model_copy(
-        update={"transcript_pdf": config.transcript_pdf.model_copy(update={"sha256": "00" * 32})}
-    )
-    with pytest.raises(SourceAdmissionError, match=r"^transcript_pdf: source digest mismatch$"):
-        _run(corrupted)
-    assert not failed_path.exists(), "a failed gate must leave no ledger on disk"
-
-
-def test_config_ledger_path_optional(tmp_path: Path) -> None:
-    # Issuers without a tracked ledger must keep working unchanged; those with one get a
-    # repo-relative path resolved the same way every other held path is.
-    raw: dict[str, Any] = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8"))
-    raw.pop("ledger_path", None)
-    without = tmp_path / "without-ledger.yaml"
-    without.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    config_without = load_config(without)
-    assert config_without.ledger_path is None
-    assert config_without.ledger_path_resolved(without) is None
-
-    raw["ledger_path"] = _LEDGER_RELATIVE
-    with_ledger = tmp_path / "with-ledger.yaml"
-    with_ledger.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    config_with = load_config(with_ledger)
-    assert config_with.ledger_path == _LEDGER_RELATIVE
-    assert config_with.ledger_path_resolved(with_ledger) == (
-        config_with.repo_root(with_ledger) / _LEDGER_RELATIVE
-    )
 
 
 def test_point_guidance_rule_yields_equal_bounds_with_unit() -> None:

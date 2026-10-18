@@ -331,6 +331,7 @@ def _collect(config_path: Path) -> Any:
         config_path=config_path,
         current=current,
         current_sources={qname: (obs.provenance,) for qname, obs in current.items()},
+        acquired_at={},
     )
 
 
@@ -526,7 +527,7 @@ def test_taxonomy_drift_accepted_records_note(tmp_path: Path) -> None:
     assert change.taxonomy_drift is not None
     assert FIN_PREFIX in change.taxonomy_drift or FIN_NAMESPACE in change.taxonomy_drift
 
-    _, trace = _render_change(revenue, change, _Footnotes())
+    _, trace = _render_change(revenue, change, _Footnotes(), 1)
     assert trace is not None
     assert _RENDERED_DRIFT_MARKER in trace
 

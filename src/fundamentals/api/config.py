@@ -537,7 +537,6 @@ class FundamentalsConfig(BaseModel):
     store_db: str | None = None
     # The PostgreSQL fact store this issuer routes to once reopened (plan D2, Task 6).
     fact_store_id: str | None = None
-    ledger_path: str | None = None
     results_pdf: SourceFileConfig
     transcript_pdf: SourceFileConfig
     xbrl: XbrlConfig
@@ -609,12 +608,6 @@ class FundamentalsConfig(BaseModel):
         if self.store_db is None or self.store_db == ":memory:":
             return self.store_db
         return str(self.repo_root(config_path) / self.store_db)
-
-    def ledger_path_resolved(self, config_path: Path) -> Path | None:
-        """Resolve the optional management-ledger path against the repository root."""
-        if self.ledger_path is None:
-            return None
-        return self.repo_root(config_path) / self.ledger_path
 
 
 def load_config(config_path: Path) -> FundamentalsConfig:

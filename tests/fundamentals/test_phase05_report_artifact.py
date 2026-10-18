@@ -173,7 +173,11 @@ def test_run_writes_json_artifact_that_round_trips(tmp_path: Path) -> None:
 
     result = run_command(build_parser().parse_args(_run_argv(out_json=tmp_path / "unused.json")))
     loaded = EarningsUpdate.model_validate_json(out_json.read_text(encoding="utf-8"))
-    assert loaded == result.update
+    # Each run states its own completion instant as its derivation cutoff (PREP-2b).
+    assert loaded.derivation_cutoff is not None
+    assert loaded == result.update.model_copy(
+        update={"derivation_cutoff": loaded.derivation_cutoff}
+    )
 
 
 def test_run_json_artifact_refuses_to_clobber(tmp_path: Path) -> None:

@@ -16,7 +16,7 @@ claims stay out of scope rather than being fabricated here.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from decimal import Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 from typing import Final, assert_never
@@ -38,7 +38,11 @@ _CRORE_UNIT = "INR crore"
 _PER_SHARE_UNIT = "INR per share"
 _PERCENT_UNIT: Final = "percent"
 _SHA_PREFIX_LEN = 12
-_PERCENT_QUANTUM = Decimal("0.1")
+RETROSPECTIVE_LABEL: Final = (
+    "Retrospective workflow demonstration: originals registered after the source cutoff were "
+    "admitted as published by it; this cannot prove historical possession or absence of "
+    "hindsight."
+)
 
 
 class RenderError(RuntimeError):
@@ -186,6 +190,12 @@ class EarningsUpdate(BaseModel):
     cross_foot: VerificationOutcome
     sec_cross_check_note: str
     ledger: ManagementLedger | None = None
+    # A run's contract (c) label and cutoffs; a retained generator twin has none and states
+    # percent changes at 0.1.
+    retrospective: bool | None = None
+    source_cutoff: datetime | None = None
+    derivation_cutoff: datetime | None = None
+    percent_places: int = 1
 
 
 def _format_bounds(lower: Decimal, upper: Decimal) -> str:
@@ -254,6 +264,7 @@ def _render_change(
     comparative: ConceptComparative,
     change: ComparativeChange,
     notes: _Footnotes,
+    places: int,
 ) -> tuple[str, str | None]:
     """Render one prior value and its traced changes, or its explicit failure reason."""
     period = _comparator_period_label(change.period_start, change.period_end)
@@ -276,7 +287,7 @@ def _render_change(
     else:
         try:
             with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
-                rounded_percent = change.percent_change.quantize(_PERCENT_QUANTUM)
+                rounded_percent = change.percent_change.quantize(Decimal(1).scaleb(-places))
                 formatted_percent = _format_signed(rounded_percent, _PERCENT_UNIT)
         except DecimalException:
             percent = "n/a (percent cannot be represented safely)"
@@ -308,6 +319,7 @@ def _render_comparatives(
     notes: _Footnotes,
     *,
     attempted: bool,
+    places: int,
 ) -> list[str]:
     """Render the section-3 table over every configured material concept."""
     if not comparatives:
@@ -333,8 +345,8 @@ def _render_comparatives(
                 f"{_format_value(comparative.current_value, comparative.unit)}"
                 f"{notes.markers(comparative.current_sources)}"
             )
-        qoq_cell, qoq_trace = _render_change(comparative, comparative.qoq, notes)
-        yoy_cell, yoy_trace = _render_change(comparative, comparative.yoy, notes)
+        qoq_cell, qoq_trace = _render_change(comparative, comparative.qoq, notes, places)
+        yoy_cell, yoy_trace = _render_change(comparative, comparative.yoy, notes, places)
         lines.append(
             f"| {label} | {_escape_markdown_cell(current)} | "
             f"{_escape_markdown_cell(qoq_cell)} | {_escape_markdown_cell(yoy_cell)} |"
@@ -390,6 +402,15 @@ def render_earnings_update(update: EarningsUpdate) -> str:
         f"**{update.knowledge_cutoff}**; anything later is out of scope."
     )
     lines.append("")
+    if update.source_cutoff is not None and update.derivation_cutoff is not None:
+        lines.append(
+            f"Source cutoff: **{update.source_cutoff.isoformat()}**; derivation cutoff (run "
+            f"completion): **{update.derivation_cutoff.isoformat()}**."
+        )
+        lines.append("")
+    if update.retrospective:
+        lines.append(RETROSPECTIVE_LABEL)
+        lines.append("")
 
     lines.append("## 2. facts")
     lines.append("")
@@ -413,6 +434,7 @@ def render_earnings_update(update: EarningsUpdate) -> str:
             update.facts,
             notes,
             attempted=update.comparatives_attempted,
+            places=update.percent_places,
         )
     )
     lines.append("")

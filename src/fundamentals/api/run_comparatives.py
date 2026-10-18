@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from decimal import DecimalException
+from datetime import datetime
+from decimal import ROUND_HALF_EVEN, Decimal, DecimalException
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ from fundamentals.api.comparatives import (
 from fundamentals.api.config import ComparatorInstanceConfig, FundamentalsConfig
 from fundamentals.api.pipeline_steps import normalize_entity
 from fundamentals.contracts.comparative import (
+    RUN_PERCENT_PLACES,
     TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,
     ComparatorKind,
@@ -51,8 +53,10 @@ def _load_instance(
     config_path: Path,
     kind: ComparatorKind,
     instance: ComparatorInstanceConfig,
+    acquired_at: Mapping[str, datetime],
 ) -> tuple[Observation, ...]:
-    """Hash-verify, parse, and entity-normalise one declared prior instance."""
+    """Hash-verify, parse, and entity-normalise one declared prior instance, stamped with its
+    registered capture's acquisition time when it has one (else the quarter's cutoff)."""
     path = config.comparator_path(config_path, kind)
     if path is None:
         raise RunComparativesError(f"no {kind.value} comparator path declared")
@@ -73,7 +77,7 @@ def _load_instance(
             xml_bytes,
             source_id=config.xbrl.source_id,
             file_sha256=actual_sha256,
-            retrieved_at=config.quarter.knowledge_cutoff,
+            retrieved_at=acquired_at.get(actual_sha256, config.quarter.knowledge_cutoff),
             taxonomies=_ALL_TAXONOMIES,
         )
     except (DecimalException, ValidationError, ValueError, XbrlParseError) as error:
@@ -183,13 +187,17 @@ def _change(
             instance.period_end,
             REASON_INCOMPATIBLE.format(reasons="; ".join(compatibility.reasons)),
         )
-    return _calculate(
+    change = _calculate(
         kind=kind,
         period_start=instance.period_start,
         period_end=instance.period_end,
         current_value=current.normalized_value,
         prior=prior,
-    ).model_copy(update={"taxonomy_drift": drift})
+    )
+    percent = change.percent_change
+    if percent is not None:
+        percent = percent.quantize(Decimal(1).scaleb(-RUN_PERCENT_PLACES), ROUND_HALF_EVEN)
+    return change.model_copy(update={"taxonomy_drift": drift, "percent_change": percent})
 
 
 def collect_run_comparatives(
@@ -198,13 +206,16 @@ def collect_run_comparatives(
     config_path: Path,
     current: Mapping[str, Observation],
     current_sources: Mapping[str, tuple[Provenance, ...]],
+    acquired_at: Mapping[str, datetime],
 ) -> tuple[ConceptComparative, ...]:
     """Build QoQ and YoY changes for configured role concepts in their declared order."""
     observations: dict[ComparatorKind, tuple[Observation, ...] | None] = {}
     instances = {kind: _instance(config, kind) for kind in ComparatorKind}
     for kind, instance in instances.items():
         observations[kind] = (
-            _load_instance(config, config_path, kind, instance) if instance is not None else None
+            _load_instance(config, config_path, kind, instance, acquired_at)
+            if instance is not None
+            else None
         )
 
     comparatives: list[ConceptComparative] = []

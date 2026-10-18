@@ -12,7 +12,11 @@ from fundamentals.api.coverage_cli import add_coverage_parser
 from fundamentals.api.db_cli import add_db_parser
 from fundamentals.api.entity_map_cli import add_entity_map_parser
 from fundamentals.api.evidence_cli import add_evidence_parser
-from fundamentals.api.ledger_cli import add_ledger_parser
+from fundamentals.api.ledger_cli import (
+    DEFAULT_WATCHLIST,
+    ISSUER_CONFIG_FLAG,
+    add_ledger_parser,
+)
 from fundamentals.api.legacy_cli import add_legacy_parser
 from fundamentals.api.news_cli import add_news_parser
 from fundamentals.api.onboard_cli import add_onboard_parser
@@ -91,6 +95,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="admit registered originals this manifest shows published by the cutoff",
+    )
+    run.add_argument(
+        "--snapshot-root",
+        type=Path,
+        default=None,
+        help="the snapshot store a PostgreSQL run's draft is checked against",
+    )
+    run.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    run.add_argument(
+        ISSUER_CONFIG_FLAG,
+        type=Path,
+        action="append",
+        default=[],
+        help="an earlier quarter's config whose transcript a carried guidance claim cites",
     )
     run.add_argument("--out", default=None, help="write the markdown to a file instead of stdout")
     run.add_argument("--out-json", default=None, help="write the rendered update JSON to a file")

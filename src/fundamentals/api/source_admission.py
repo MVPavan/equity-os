@@ -202,6 +202,7 @@ class AdmittedPipelineInputs:
     _results_path: Path
     _transcript_path: Path
     _clock: Callable[[], datetime]
+    retrospective: bool = False
 
 
 _ACTIVE: dict[int, AdmittedPipelineInputs] = {}
@@ -377,6 +378,7 @@ def prepare_pipeline_sources(
             _results_path=paths[0],
             _transcript_path=paths[1],
             _clock=tick,
+            retrospective=package is not None,
         )
         _ACTIVE[id(prepared)] = prepared
         try:
@@ -385,15 +387,16 @@ def prepare_pipeline_sources(
             _ACTIVE.pop(id(prepared), None)
 
 
-def published_package(manifest: bytes, *, issuer: str, quarter: str) -> dict[str, datetime]:
-    """The quarter's retrieval-manifest originals: each SHA-256's earliest NSE publication."""
+def published_package(manifest: bytes, *, issuer: str, quarter: str | None) -> dict[str, datetime]:
+    """The quarter's (``None``: every quarter's) retrieval-manifest originals: each SHA-256's
+    earliest NSE publication."""
     try:
         payload = json.loads(manifest)
         if payload["issuer"] != issuer:
             raise SourceAdmissionError(f"retrieval manifest is not {issuer}'s")
         package: dict[str, datetime] = {}
         for entry in payload["entries"]:
-            if entry["quarter"] == quarter:
+            if quarter in (None, entry["quarter"]):
                 filed = parse_filed_at(entry["filed_at_nse"])
                 package[entry["sha256"]] = min(filed, package.get(entry["sha256"], filed))
     except (KeyError, TypeError, ValueError) as error:

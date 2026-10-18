@@ -13,6 +13,8 @@ from fundamentals.contracts.provenance import Provenance
 # IEEE 754 decimal128 precision bounds comparator arithmetic and presentation
 # without depending on the process-global Decimal context.
 PERCENT_CONTEXT_PRECISION = 34
+# A run states a percent change at its stored trace's scale (rounding policy v1, half-even).
+RUN_PERCENT_PLACES = 2
 
 
 class ComparatorKind(StrEnum):

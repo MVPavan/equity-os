@@ -64,8 +64,8 @@ QUARTERS = {
 # the run once printed them truncated (19, 33).
 GAPS = {"fy26-q4-pg": "19.72", "fy27-q1": "33.65"}
 TRACES = "SELECT count(*) FROM eqos.calculation_traces"
-# A percent change is stated at its trace's stored scale (rounding policy v1, 2 places): at
-# the run's display 0.1 it would round twice (stored, then shown) and can miss the run's.
+# A percent change is stated at its trace's stored scale (rounding policy v1, 2 places), as
+# the run emits it.
 PERCENT_PLACES = 2
 
 
@@ -82,9 +82,9 @@ def mapping_set(dictionary: CanonicalDictionary) -> MappingSet:
 
 
 def _run(quarter: str, tmp_path: Path) -> PipelineResult:
-    """The quarter's pipeline run on a scratch SQLite store, ledger off ``data/``."""
+    """The quarter's pipeline run on a scratch SQLite store."""
     path = REPO_ROOT / "config" / f"aparinds-{quarter}.yaml"
-    config = load_config(path).model_copy(update={"ledger_path": str(tmp_path / "ledger.json")})
+    config = load_config(path)
     xml = config.xbrl_local_path(path).read_bytes()
     return run_trusted_fixture_pipeline(
         config=config,
@@ -209,7 +209,7 @@ def test_every_computed_value_binds_and_matches(
     gap is emitted exactly, from its exact operands."""
     result = _run(quarter, tmp_path)
     _ingest(ingest, quarter)
-    computed = bind_computed(ingest.repository, result, entity_id=ingest.entity_id)
+    computed = bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id)
     claims = _claims(result, computed, ingest.entity_id)
     assert {claim.claim_key: _state(ingest, claim) for claim in claims} == {
         claim.claim_key: ClaimState.MATCH for claim in claims
@@ -232,7 +232,7 @@ def test_a_missing_comparator_or_a_changed_value_refuses_before_any_write(
     _ingest(ingest, "fy27-q1", (0, 1))
     count = _traces(ingest)
     with pytest.raises(RunDraftError, match="no single mapped interpretation"):
-        bind_computed(ingest.repository, result, entity_id=ingest.entity_id)
+        bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id)
     _ingest(ingest, "fy27-q1", (2,))
     gap = result.update.calculations[0].model_copy(update={"result": "33.66"})
     calculations = (gap, *result.update.calculations[1:])
@@ -240,5 +240,5 @@ def test_a_missing_comparator_or_a_changed_value_refuses_before_any_write(
         update={"update": result.update.model_copy(update={"calculations": calculations})}
     )
     with pytest.raises(RunDraftError, match="calc.1"):
-        bind_computed(ingest.repository, changed, entity_id=ingest.entity_id)
+        bind_computed(ingest.repository, changed.update, entity_id=ingest.entity_id)
     assert _traces(ingest) == count

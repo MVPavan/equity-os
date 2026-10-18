@@ -238,15 +238,11 @@ def test_each_bad_source_refuses_before_any_parser_or_write(
 
     monkeypatch.setattr(pipeline, "load_pdf", never_parse)
     monkeypatch.setattr(pipeline, "parse_observations", never_parse)
-    ledger = tmp_path / "ledger.json"
-    ledger.write_bytes(b"preserve-ledger")
-    args["config"] = args["config"].model_copy(update={"ledger_path": str(ledger)})
     store = FactStore(":memory:")
     try:
         with pytest.raises(SourceAdmissionError):
             run_pipeline(**args, **proof, store=store, clock=Tick())
         assert store.query_canonical() == ()
-        assert ledger.read_bytes() == b"preserve-ledger"
     finally:
         store.close()
 
@@ -509,8 +505,8 @@ def test_clock_reversal_after_admission_refuses_without_fact_writes(tmp_path: Pa
         store.close()
 
 
-def test_repeated_local_guidance_keeps_ledger_and_advances_acquisition(tmp_path: Path) -> None:
-    """A fresh admission of identical bytes must not rewrite retained guidance."""
+def test_repeated_local_guidance_advances_acquisition(tmp_path: Path) -> None:
+    """A fresh admission of identical bytes stamps the guidance with its own acquisition."""
     from datetime import timedelta
 
     import pymupdf
@@ -525,13 +521,11 @@ def test_repeated_local_guidance_keeps_ledger_and_advances_acquisition(tmp_path:
     document.save(transcript)
     document.close()
     digest = hashlib.sha256(transcript.read_bytes()).hexdigest()
-    ledger_path = tmp_path / "ledger.json"
     args["transcript_pdf_sha256"] = digest
     config = args["config"]
     args["config"] = config.model_copy(
         update={
             "transcript_pdf": config.transcript_pdf.model_copy(update={"sha256": digest}),
-            "ledger_path": str(ledger_path),
             "guidance": GuidanceConfig(
                 rules=(
                     GuidanceRuleConfig(
@@ -550,13 +544,10 @@ def test_repeated_local_guidance_keeps_ledger_and_advances_acquisition(tmp_path:
         first = run_pipeline(**args, store=store, clock=Tick())
     finally:
         store.close()
-    before = {p: p.read_bytes() for p in [ledger_path, *tmp_path.glob("ledger.quarters/*.json")]}
     store = FactStore(str(db))
     try:
         second = run_pipeline(**args, store=store, clock=Tick(RUN_TIME + timedelta(minutes=1)))
         assert first.update.guidance and second.update.guidance
-        assert second.update.ledger == first.update.ledger
-        assert all(p.read_bytes() == body for p, body in before.items())
         assert all(s.mode == "new_local_capture" for s in second.temporal_evidence.sources)
         assert (
             second.temporal_evidence.sources[2].acquired_at
@@ -565,12 +556,6 @@ def test_repeated_local_guidance_keeps_ledger_and_advances_acquisition(tmp_path:
         assert (
             second.update.guidance[0].source.retrieved_at
             == second.temporal_evidence.sources[2].acquired_at
-        )
-        assert second.update.ledger is not None
-        assert second.update.ledger.quarter_claims is not None
-        assert (
-            second.update.ledger.quarter_claims[0].provenance.retrieved_at
-            == first.temporal_evidence.sources[2].acquired_at
         )
     finally:
         store.close()
@@ -685,253 +670,6 @@ def test_trusted_caller_fixture_composes_generated_documents_without_config_chan
         assert prepared.transcript_pdf.acquired_at == FIXTURE_ACQUIRED_AT
         assert prepared.transcript_pdf.mode == "trusted_direct"
         assert prepared.xbrl_bytes == xbrl.xml_bytes
-
-
-def local_guidance_inputs(tmp_path: Path) -> dict[str, Any]:
-    import pymupdf
-
-    from fundamentals.api.config import GuidanceConfig, GuidanceRuleConfig
-
-    args = inputs(tmp_path, future=True)
-    transcript = Path(args["transcript_pdf_path"])
-    transcript.unlink()
-    document: Any = pymupdf.open()
-    document.new_page().insert_text((60, 90), "We expect margin guidance 10% to 12%.")
-    document.save(transcript)
-    document.close()
-    digest = hashlib.sha256(transcript.read_bytes()).hexdigest()
-    ledger_path = tmp_path / "ledger.json"
-    args["transcript_pdf_sha256"] = digest
-    config = args["config"]
-    args["config"] = config.model_copy(
-        update={
-            "transcript_pdf": config.transcript_pdf.model_copy(update={"sha256": digest}),
-            "ledger_path": str(ledger_path),
-            "guidance": GuidanceConfig(
-                rules=(
-                    GuidanceRuleConfig(
-                        metric="margin",
-                        label="Margin",
-                        pattern=r"margin guidance (\d+)% to (\d+)%",
-                        horizon="FY25",
-                    ),
-                )
-            ),
-        }
-    )
-    return args
-
-
-@pytest.mark.parametrize("equivalent_pattern", [False, True])
-def test_local_guidance_replay_retains_exact_artifact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, equivalent_pattern: bool
-) -> None:
-    from datetime import timedelta
-
-    import fundamentals.api.pipeline as pipeline
-
-    args = local_guidance_inputs(tmp_path)
-    store = FactStore(":memory:")
-    try:
-        first = run_pipeline(**args, store=store, clock=Tick())
-        assert first.update.ledger is not None
-        prior = first.update.ledger
-        before = Path(args["config"].ledger_path).read_bytes()
-        if equivalent_pattern:
-            config = args["config"]
-            rule = config.guidance.rules[0].model_copy(
-                update={"pattern": r"margin guidance ([0-9]+)% to ([0-9]+)%"}
-            )
-            args["config"] = config.model_copy(
-                update={"guidance": config.guidance.model_copy(update={"rules": (rule,)})}
-            )
-        loaded = []
-        original_load = pipeline.load_ledger
-
-        def observe_loaded(*a: Any, **kw: Any) -> Any:
-            ledger = original_load(*a, **kw)
-            loaded.append(ledger)
-            return ledger
-
-        monkeypatch.setattr(pipeline, "load_ledger", observe_loaded)
-        second = run_pipeline(**args, store=store, clock=Tick(RUN_TIME + timedelta(minutes=1)))
-        assert second.update.ledger is loaded[0]
-        assert second.update.ledger == prior
-        assert Path(args["config"].ledger_path).read_bytes() == before
-        assert (
-            second.update.guidance[0].source.retrieved_at
-            > first.update.guidance[0].source.retrieved_at
-        )
-        assert second.temporal_evidence.facts[0].historical_certification is False
-    finally:
-        store.close()
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("metric", "changed"),
-        ("lower_bound", "11"),
-        ("upper_bound", "13"),
-        ("unit", "INR"),
-        ("constant_currency", True),
-        ("horizon", "FY26"),
-        ("scope", "standalone"),
-        ("qualifiers", ["changed"]),
-        ("epistemic_class", "opinion"),
-        ("source_quote", "different quote"),
-        ("provenance.source_id", "changed"),
-        ("provenance.file_sha256", "ab" * 32),
-        ("provenance.page", 2),
-        ("provenance.block", 2),
-        ("provenance.span", "changed-span"),
-        ("provenance.filed_at", "2024-07-17T00:00:00Z"),
-        ("provenance.published_at", "2024-07-17T00:00:00Z"),
-        ("provenance.context_ref", "changed"),
-    ],
-)
-def test_local_guidance_changed_nonclock_field_conflicts(
-    tmp_path: Path, field: str, value: Any
-) -> None:
-    import json
-    from datetime import timedelta
-
-    args = local_guidance_inputs(tmp_path)
-    store = FactStore(":memory:")
-    try:
-        run_pipeline(**args, store=store, clock=Tick())
-        path = Path(args["config"].ledger_path)
-        payload = json.loads(path.read_bytes())
-        target = payload["quarter_claims"][0]
-        if field.startswith("provenance."):
-            target = target["provenance"]
-        target[field.split(".")[-1]] = value
-        retained = [path, *tmp_path.glob("ledger.quarters/*.json")]
-        for artifact in retained:
-            artifact.write_text(json.dumps(payload))
-        before = {artifact: artifact.read_bytes() for artifact in retained}
-        with pytest.raises(ValueError, match="conflicting same-quarter guidance"):
-            run_pipeline(**args, store=store, clock=Tick(RUN_TIME + timedelta(minutes=1)))
-        assert all(artifact.read_bytes() == body for artifact, body in before.items())
-    finally:
-        store.close()
-
-
-@pytest.mark.parametrize(
-    "oldclock", ["missing", "naive", "nonutc", "after_derivation", "after_cutoff"]
-)
-@pytest.mark.parametrize("field", ["retrieved_at", "first_seen_at"])
-def test_local_guidance_invalid_retained_clock_refuses(
-    tmp_path: Path, oldclock: str, field: str
-) -> None:
-    import json
-    from datetime import timedelta
-
-    args = local_guidance_inputs(tmp_path)
-    store = FactStore(":memory:")
-    try:
-        run_pipeline(**args, store=store, clock=Tick())
-        path = Path(args["config"].ledger_path)
-        payload = json.loads(path.read_bytes())
-        provenance = payload["quarter_claims"][0]["provenance"]
-        values = {
-            "missing": None,
-            "naive": "2026-10-02T00:00:00",
-            "nonutc": "2026-10-02T01:00:00+01:00",
-            "after_derivation": "2026-10-02T00:02:00Z",
-            "after_cutoff": "2100-01-01T00:00:00Z",
-        }
-        provenance[field] = values[oldclock]
-        retained = [path, *tmp_path.glob("ledger.quarters/*.json")]
-        for artifact in retained:
-            artifact.write_text(json.dumps(payload))
-        before = {artifact: artifact.read_bytes() for artifact in retained}
-        from pydantic import ValidationError
-
-        from fundamentals.api.source_admission import SourceAdmissionError
-
-        if oldclock == "missing" and field == "retrieved_at":
-            refusal = ValidationError
-            message = "Input should be a valid datetime"
-        else:
-            refusal = SourceAdmissionError
-            message = {
-                "missing": "retained guidance clocks require present UTC time",
-                "naive": "temporal evidence requires aware UTC time",
-                "nonutc": "temporal evidence requires aware UTC time",
-                "after_derivation": (
-                    "retained guidance clocks exceed cutoff or current derivation completion"
-                ),
-                "after_cutoff": (
-                    "retained guidance clocks exceed cutoff or current derivation completion"
-                ),
-            }[oldclock]
-        with pytest.raises(refusal, match=message):
-            run_pipeline(**args, store=store, clock=Tick(RUN_TIME + timedelta(minutes=1)))
-        assert all(artifact.read_bytes() == body for artifact, body in before.items())
-    finally:
-        store.close()
-
-
-def test_local_guidance_legacy_incomplete_claims_receive_no_relaxed_replay(tmp_path: Path) -> None:
-    import json
-    from datetime import timedelta
-
-    args = local_guidance_inputs(tmp_path)
-    store = FactStore(":memory:")
-    try:
-        run_pipeline(**args, store=store, clock=Tick())
-        path = Path(args["config"].ledger_path)
-        payload = json.loads(path.read_bytes())
-        payload.pop("quarter_claims")
-        retained = [path, *tmp_path.glob("ledger.quarters/*.json")]
-        for artifact in retained:
-            artifact.write_text(json.dumps(payload))
-        before = {artifact: artifact.read_bytes() for artifact in retained}
-        with pytest.raises(ValueError, match="conflicting same-quarter guidance"):
-            run_pipeline(**args, store=store, clock=Tick(RUN_TIME + timedelta(minutes=1)))
-        assert all(artifact.read_bytes() == body for artifact, body in before.items())
-    finally:
-        store.close()
-
-
-@pytest.mark.parametrize("field", ["retrieved_at", "first_seen_at"])
-def test_retained_guidance_clock_after_cutoff_before_derivation_refuses(
-    tmp_path: Path, field: str
-) -> None:
-    import json
-    from datetime import timedelta
-
-    from fundamentals.api.source_admission import SourceAdmissionError
-
-    args = local_guidance_inputs(tmp_path)
-    config = args["config"]
-    args["config"] = config.model_copy(
-        update={"quarter": config.quarter.model_copy(update={"knowledge_cutoff": CUTOFF})}
-    )
-    store = FactStore(":memory:")
-    try:
-        run_pipeline(**args, **synthetic_evidence(args), store=store, clock=Tick())
-        path = Path(args["config"].ledger_path)
-        payload = json.loads(path.read_bytes())
-        payload["quarter_claims"][0]["provenance"][field] = "2025-01-01T00:00:00Z"
-        retained = [path, *tmp_path.glob("ledger.quarters/*.json")]
-        for artifact in retained:
-            artifact.write_text(json.dumps(payload))
-        before = {artifact: artifact.read_bytes() for artifact in retained}
-        with pytest.raises(
-            SourceAdmissionError,
-            match="^retained guidance clocks exceed cutoff or current derivation completion$",
-        ):
-            run_pipeline(
-                **args,
-                **synthetic_evidence(args),
-                store=store,
-                clock=Tick(RUN_TIME + timedelta(minutes=1)),
-            )
-        assert all(artifact.read_bytes() == body for artifact, body in before.items())
-    finally:
-        store.close()
 
 
 def test_native_receipt_role_refuses_even_when_source_and_content_pins_coincide(

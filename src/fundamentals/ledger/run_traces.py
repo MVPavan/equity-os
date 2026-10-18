@@ -20,7 +20,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.api.pipeline import PipelineResult
 from fundamentals.canon.formula import CalculationTrace, OperandValue, TraceKind, conclude
 from fundamentals.canon.interval import (
     Interval,
@@ -42,6 +41,7 @@ from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS
 from fundamentals.ledger.import_mapping import ABS, PCT, change_key, measurement_key
+from fundamentals.output.earnings_update import EarningsUpdate
 from fundamentals.output.pnl_lines import (
     ETR_LABEL,
     GAP_LABEL,
@@ -191,10 +191,10 @@ class _Binder:
         self.pending[claim_key] = result.trace
 
 
-def bind_computed(repo: EvidenceRepository, result: PipelineResult, *, entity_id: int) -> Computed:
-    """Store a trace per retained computed value and find the interpretation of each comparator
-    figure and the filed tax expense; any missing interpretation or mismatch raises."""
-    update = result.update
+def bind_computed(repo: EvidenceRepository, update: EarningsUpdate, *, entity_id: int) -> Computed:
+    """Store a trace per retained computed value of the run's ``update`` and find the
+    interpretation of each comparator figure and the filed tax expense; any missing
+    interpretation or mismatch raises."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end)
     facts = {fact.role: fact for fact in update.facts}

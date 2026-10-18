@@ -1,28 +1,32 @@
 """PREP-2b Task 5: ``run --retrospective`` admits registered originals published by the cutoff.
 
 The originals are registered (really) after the source cutoff. Without the flag that refuses as
-before. With it, each registered original must be one of the quarter's retrieval-manifest
-originals published by the cutoff; its real acquisition and registration times are kept. A
-local source is never retrospective.
+before. With it, the manifest must be the one ``config/ledger_import.yaml`` pins and each
+registered original one of the quarter's manifest originals published by the cutoff; its real
+acquisition and registration times are kept. A local source is never retrospective.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+from retained_support import REPO_ROOT
 from tests.fundamentals.test_cli_temporal_admission import cli_fixture
 from tests.fundamentals.test_source_intake_cli import INTAKE_TIME, intake_fixture
 
 from fundamentals.api.cli import _build_parser, main, run_command
 from fundamentals.api.config import load_config
+from fundamentals.api.ledger_cli import DEFAULT_IMPORT_CONFIG
 from fundamentals.api.pipeline import PipelineResult
 from fundamentals.api.source_admission import RETROSPECTIVE, SourceAdmissionError
 
 CUTOFF = INTAKE_TIME - timedelta(days=1)
+PINNED = "c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b"
 NSE_WALL = "%d-%b-%Y %H:%M:%S"
 IST = timedelta(hours=5, minutes=30)
 
@@ -44,7 +48,15 @@ def _manifest(
     ]
     path = tmp_path / "retrieval-manifest.json"
     path.write_text(json.dumps({"issuer": config.issuer.nse_symbol, "entries": entries}))
+    _pin(config.repo_root(fixture["config"]), path)
     return path
+
+
+def _pin(root: Path, manifest: Path) -> None:
+    """Pin ``manifest`` in ``root``'s ledger import config, as the committed one pins its own."""
+    body = (REPO_ROOT / DEFAULT_IMPORT_CONFIG).read_text()
+    pinned = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    (root / DEFAULT_IMPORT_CONFIG).write_text(body.replace(PINNED, pinned))
 
 
 def _run(fixture: dict[str, Any], *extra: str) -> PipelineResult:
@@ -104,6 +116,17 @@ def test_a_local_source_is_never_retrospective(registered: dict[str, Any], tmp_p
     """With no registered references the sources are new local captures: past the cutoff."""
     manifest = _manifest(registered, tmp_path, CUTOFF - timedelta(hours=1))
     (tmp_path / "local").mkdir()
-    _, _, argv = cli_fixture(tmp_path / "local")
+    config, _, argv = cli_fixture(tmp_path / "local")
+    _pin(load_config(config).repo_root(config), manifest)
     with pytest.raises(SourceAdmissionError, match="exceeds cutoff"):
         main([*argv, "--retrospective", str(manifest)])
+
+
+def test_retrospective_refuses_an_unpinned_manifest(
+    registered: dict[str, Any], tmp_path: Path
+) -> None:
+    """A manifest other than the pinned one cannot select the historical package."""
+    manifest = _manifest(registered, tmp_path, CUTOFF - timedelta(hours=1))
+    manifest.write_text(manifest.read_text() + "\n")
+    with pytest.raises(SourceAdmissionError, match="is not the pinned"):
+        _run(registered, "--retrospective", str(manifest))

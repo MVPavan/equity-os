@@ -49,7 +49,7 @@ def _pilot_copy(tmp_path: Path, **override: object) -> Path:
     body["xbrl"]["local_path"] = str(REPO_ROOT / body["xbrl"]["local_path"])
     for comparator in body["comparators"].values():
         comparator["local_path"] = str(REPO_ROOT / comparator["local_path"])
-    body |= {"ledger_path": str(tmp_path / "ledger.json"), **override}
+    body |= override
     path = tmp_path / "config" / source.name
     path.parent.mkdir(exist_ok=True)
     path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import datetime
 from decimal import Decimal
 
 import structlog
@@ -13,7 +11,6 @@ from fundamentals.api.config import (
     TAX_EXPENSE_CONCEPT,
     FundamentalsConfig,
 )
-from fundamentals.api.source_admission import SourceAdmissionError, utc_time
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import AccountingFramework, Observation, PeriodType, Scope
 from fundamentals.extract.guidance_extractor import PERCENT_UNIT
@@ -21,7 +18,6 @@ from fundamentals.extract.pdf_number_parser import PdfParseSpec
 from fundamentals.extract.xbrl_parser import FactSelectionError, select_observation
 from fundamentals.ingest.sec_source import SecAnnualSource, SecFetchError, SecSourceConfig
 from fundamentals.output.earnings_update import FactRole, RenderedCalculation, anchor_label
-from fundamentals.output.management_ledger import ManagementLedger, reconcile_ledger
 from fundamentals.output.pnl_lines import GAP_LABEL, format_crore, headline_line, tax_lines
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
@@ -164,51 +160,6 @@ def run_sec_cross_check(config: FundamentalsConfig) -> str:
         f"{len(result.observations)} FY25 annual IFRS/USD facts loaded and correctly "
         "EXCLUDED from the Q1 evidence package (knowledge_time > cutoff); not cross-footed"
     )
-
-
-def reconcile_current_guidance(
-    prior: ManagementLedger | None,
-    *,
-    symbol: str,
-    issuer_quarter: str,
-    claims: Sequence[GuidanceClaim],
-    cutoff: datetime,
-    derivation_completed_at: datetime,
-) -> ManagementLedger:
-    """Reuse complete identical anchored output, retaining the original artifact."""
-    if (
-        prior is not None
-        and prior.updated_quarter == issuer_quarter
-        and prior.quarter_claims is not None
-    ):
-        excluded = {"provenance": {"retrieved_at", "first_seen_at"}}
-        old = {
-            (claim.metric, claim.horizon, claim.scope): claim.model_dump(exclude=excluded)
-            for claim in prior.quarter_claims
-        }
-        current = {
-            (claim.metric, claim.horizon, claim.scope): claim.model_dump(exclude=excluded)
-            for claim in claims
-        }
-        if len(old) == len(prior.quarter_claims) and len(current) == len(claims) and old == current:
-            for claim in prior.quarter_claims:
-                for clock in (claim.provenance.retrieved_at, claim.provenance.first_seen_at):
-                    if clock is None:
-                        raise SourceAdmissionError(
-                            "retained guidance clocks require present UTC time"
-                        )
-                    retained_at = utc_time(clock)
-                    if retained_at > cutoff or retained_at > derivation_completed_at:
-                        raise SourceAdmissionError(
-                            "retained guidance clocks exceed cutoff or "
-                            "current derivation completion"
-                        )
-            # Strict ledger reconciliation checks the retained artifact itself;
-            # fresh report claims above keep their actual acquisition clocks.
-            return reconcile_ledger(
-                prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=prior.quarter_claims
-            )
-    return reconcile_ledger(prior, symbol=symbol, issuer_quarter=issuer_quarter, claims=claims)
 
 
 # Render roles whose sourced value the calculations section derives from.

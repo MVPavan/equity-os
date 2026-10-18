@@ -17,9 +17,11 @@ import hashlib
 import sys
 from contextlib import ExitStack
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import structlog
+from psycopg_pool import ConnectionPool
 
 from fundamentals.api.artifact_writer import write_bytes_no_clobber
 from fundamentals.api.cli_parser import REGISTER_SOURCES_COMMAND
@@ -38,7 +40,11 @@ from fundamentals.api.env_credentials import (
     _upstox_credentials_from_env,
 )
 from fundamentals.api.evidence_cli import dispatch_evidence_command
-from fundamentals.api.ledger_cli import dispatch_ledger_command
+from fundamentals.api.ledger_cli import (
+    DEFAULT_IMPORT_CONFIG,
+    dispatch_ledger_command,
+    ledger_catalog,
+)
 from fundamentals.api.legacy_cli import dispatch_legacy_command
 from fundamentals.api.news_cli import dispatch_news_command
 from fundamentals.api.onboard_cli import dispatch_onboard_command
@@ -73,11 +79,23 @@ from fundamentals.api.upstox_cli import dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
 from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
 from fundamentals.api.validate_cli import dispatch_validate_command
+from fundamentals.contracts.fact import CanonicalStatus
 from fundamentals.contracts.source_registration import SourceRegistrationError, SourceRole
+from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.xbrl_source import NseXbrlSource
+from fundamentals.ledger.importer import load_import_config
+from fundamentals.ledger.run_draft import (
+    Retrospective,
+    RunDraft,
+    preflight,
+    write_run_draft,
+)
+from fundamentals.ledger.run_traces import RunDraftError
 from fundamentals.pg.cutover import open_fact_store
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.store.pg_fact_store import PgFactStore
+from fundamentals.store.snapshot_store import SnapshotStore
 
 
 class _LazyStderrLoggerFactory:
@@ -208,6 +226,7 @@ def run_command(
     transcript_pdf_path = config.transcript_pdf_path(config_path)
     if xbrl_source_id != config.xbrl.source_id:
         raise SourceAdmissionError("XBRL source identity mismatch")
+    package, retrospective = _retrospective(args, config, config_path)
     with prepare_pipeline_sources(
         xbrl_bytes=xbrl_bytes,
         xbrl_source_id=xbrl_source_id,
@@ -222,7 +241,7 @@ def run_command(
         run_started_at=run_started_at,
         source_refs=refs,
         evidence_resolver=resolver,
-        package=_package(args, config),
+        package=package,
     ) as prepared:
         if xbrl_input is None:
             xbrl_input = XbrlInput(
@@ -235,13 +254,16 @@ def run_command(
         if store_db_path not in (None, ":memory:"):
             Path(store_db_path).parent.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
-            store = open_fact_store(
-                config.fact_store_id,
-                store_db_path,
-                pool_factory=lambda: stack.enter_context(open_pool(PgSettings(), PgRole.RUNTIME)),
-            )
+            pools: list[ConnectionPool] = []
+
+            def runtime_pool() -> ConnectionPool:
+                pools.append(stack.enter_context(open_pool(PgSettings(), PgRole.RUNTIME)))
+                return pools[-1]
+
+            store = open_fact_store(config.fact_store_id, store_db_path, pool_factory=runtime_pool)
             stack.callback(store.close)
-            return run_pipeline(
+            run = partial(
+                run_pipeline,
                 config=config,
                 config_path=config_path,
                 xbrl_input=xbrl_input,
@@ -252,18 +274,71 @@ def run_command(
                 store=store,
                 admitted_inputs=prepared,
             )
+            if not isinstance(store, PgFactStore):
+                return run()
+            # A PostgreSQL run reads its prior and writes its earnings update as a DRAFT.
+            if args.snapshot_root is None:
+                raise RunDraftError("a PostgreSQL run needs --snapshot-root for its draft")
+            symbol, period = config.issuer.nse_symbol, config.quarter.issuer_quarter
+            catalog = ledger_catalog(args.watchlist, symbol, [config_path, *args.issuer_config])
+            snapshots = SnapshotStore(args.snapshot_root.resolve())
+            comparators = config.comparators
+            declared = () if comparators is None else (comparators.qoq, comparators.yoy)
+            xbrl = (prepared.xbrl.source_sha256,) + tuple(
+                instance.sha256 for instance in declared if instance is not None
+            )
+            pdfs = (prepared.results_pdf.source_sha256, prepared.transcript_pdf.source_sha256)
+            (pool,) = pools
+            prior = preflight(
+                pool,
+                stock=symbol,
+                period=period,
+                xbrl=xbrl,
+                pdfs=pdfs,
+                catalog=catalog,
+                snapshots=snapshots,
+            )
+            result = run(comparators_acquired_at=prior.first_seen)
+            draft = RunDraft(
+                period=period,
+                update=result.update,
+                guidance=result.guidance_claims,
+                facts={
+                    revision.revision_family.split(":")[1]: store.fact_ref(revision.row_id)
+                    for revision in result.stored_revisions
+                    if revision.canonical_status is CanonicalStatus.CANONICAL
+                },
+                xbrl=xbrl,
+                pdfs=pdfs,
+                retrospective=retrospective,
+            )
+            repository = EvidenceRepository(pool)
+            version_id = write_run_draft(
+                pool, repository, prior, draft, catalog=catalog, snapshots=snapshots
+            )
+            structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
+            return result.model_copy(update={"draft_version_id": version_id})
 
 
-def _package(args: argparse.Namespace, config: FundamentalsConfig) -> dict[str, datetime] | None:
-    """The quarter's published originals from ``--retrospective``'s manifest, if given."""
+def _retrospective(
+    args: argparse.Namespace, config: FundamentalsConfig, config_path: Path
+) -> tuple[dict[str, datetime] | None, Retrospective | None]:
+    """The quarter's package from ``--retrospective``'s manifest, which must be the one
+    ``config/ledger_import.yaml`` pins, and the designation the draft records."""
     manifest: Path | None = getattr(args, "retrospective", None)
     if manifest is None:
-        return None
-    return published_package(
-        manifest.read_bytes(),
-        issuer=config.issuer.nse_symbol,
-        quarter=config.quarter.issuer_quarter,
-    )
+        return None, None
+    body = manifest.read_bytes()
+    digest = hashlib.sha256(body).hexdigest()
+    pin = load_import_config(config.repo_root(config_path) / DEFAULT_IMPORT_CONFIG)
+    if digest != pin.retrieval_manifest_sha256:
+        raise SourceAdmissionError(
+            f"retrieval manifest {digest} is not the pinned {pin.retrieval_manifest_sha256}"
+        )
+    issuer = config.issuer.nse_symbol
+    published = published_package(body, issuer=issuer, quarter=None)
+    package = published_package(body, issuer=issuer, quarter=config.quarter.issuer_quarter)
+    return package, Retrospective(manifest_sha256=digest, published=published)
 
 
 def main(

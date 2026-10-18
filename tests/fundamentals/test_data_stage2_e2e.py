@@ -15,10 +15,13 @@ from typing import Any
 
 import pytest
 import yaml
+from evidence_support import CONFIG as EVIDENCE_CONFIG
+from evidence_support import Ingest, policy
 from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
-from retained_support import APAR_ISSUER_CONFIG
+from prep2b_support import XBRLS, Pilot
+from retained_support import APAR_ISSUER_CONFIG, APAR_MANIFEST
 from retention_support import RETENTION_TABLES, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage, row_key
 from temporal_fixture_support import install_trusted_fixture_cli
@@ -29,9 +32,13 @@ from test_store import _fact
 
 import fundamentals.pg.cutover as cutover
 from fundamentals.api.cli import main
+from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
 from fundamentals.compare.run import load_results
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.evidence.admission import admit_run, key_identity, read_selected, select_admitted
+from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy, load_mapping_set
+from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.ledger.run_draft import RUN_AUTHOR
 from fundamentals.pg.approvals import GatedOperation
 from fundamentals.pg.backup import restore_backup, verify_set, write_backup
 from fundamentals.pg.cutover import FactStoreState, store_status
@@ -39,6 +46,7 @@ from fundamentals.store.fact_store import FactStore
 from fundamentals.store.pg_fact_store import FactStoreFrozenError, PgFactStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
+__all__ = ["policy"]
 
 MANIFEST = load(REPO / "tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml")
 (STORE,) = MANIFEST["import"]["stores"]
@@ -60,10 +68,24 @@ SELECTIONS = (
     "legacy_baseline, synthesized, reason FROM eqos.fact_selections WHERE target_store = %s"
 )
 BINDINGS = "SELECT DISTINCT file_sha256 FROM eqos.legacy_evidence_bindings WHERE target_store = %s"
+# The Q2 FY26 run's comparator XBRLs (YoY, QoQ), evidence-ingested for its draft.
+COMPARATORS = tuple(row for row in XBRLS if row[0] in ("FY25_Q2", "FY26_Q1"))
 EVENTS = (
     "SELECT state, last_row_handle, last_selection_handle FROM eqos.fact_store_events "
     "WHERE store_id = %s ORDER BY id"
 )
+
+
+@pytest.fixture(scope="module")
+def dictionary() -> CanonicalDictionary:
+    """Canonical dictionary v2."""
+    return load_dictionary(EVIDENCE_CONFIG / "dictionary", "v2")
+
+
+@pytest.fixture(scope="module")
+def mapping_set(dictionary: CanonicalDictionary) -> MappingSet:
+    """Mapping set v5: maps the run's comparator XBRLs (PREP-1)."""
+    return load_mapping_set(EVIDENCE_CONFIG / "mappings", "v5", dictionary=dictionary)
 
 
 def imported(rig: Rig, store: str) -> tuple[list[Any], list[Any], set[Any], set[str]]:
@@ -83,16 +105,13 @@ def imported(rig: Rig, store: str) -> tuple[list[Any], list[Any], set[Any], set[
 
 
 def pipeline_config(tmp_path: Path, rig: Rig, store: str) -> Path:
-    """The Apar Q2 FY26 config routed to ``store``, with repo-absolute paths and a fresh ledger
-    under ``tmp_path`` (the production ledger is past Q2 FY26, so a replay refuses a copy of it).
-    """
+    """The Apar Q2 FY26 config routed to ``store``, with repo-absolute paths."""
     body = yaml.safe_load(APAR_ISSUER_CONFIG.read_text(encoding="utf-8"))
     body["raw_dir"] = str(REPO / body["raw_dir"])
     body["xbrl"]["local_path"] = str(REPO / body["xbrl"]["local_path"])
     for comparator in body["comparators"].values():
         comparator["local_path"] = str(REPO / comparator["local_path"])
-    ledger = tmp_path / "ledger.json"
-    body |= {"store_db": str(rig.legacy), "ledger_path": str(ledger), "fact_store_id": store}
+    body |= {"store_db": str(rig.legacy), "fact_store_id": store}
     path = tmp_path / "config" / APAR_ISSUER_CONFIG.name
     path.parent.mkdir()
     path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
@@ -103,6 +122,9 @@ def test_stage2_end_to_end(
     pg_db: PgTestDatabase,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    dictionary: CanonicalDictionary,
+    mapping_set: MappingSet,
+    policy: NormalisationPolicy,
 ) -> None:
     rig = Rig(pg_db, tmp_path)
     constants = STORE["selection_constants"]
@@ -234,30 +256,7 @@ def test_stage2_end_to_end(
             for item in admission["admitted"]
         }
 
-    # 8. The pipeline routes through open_fact_store to the OPEN store; no FactStore is built.
-    for name, value in pg_db.cli_env().items():
-        monkeypatch.setenv(name, value)
-    install_trusted_fixture_cli(monkeypatch)
-
-    def no_sqlite(*_: object) -> FactStore:
-        raise AssertionError("an OPEN store must not construct a SQLite FactStore")
-
-    monkeypatch.setattr(cutover, "FactStore", no_sqlite)
-    config, out = pipeline_config(tmp_path, rig, legacy), tmp_path / "run.json"
-    args = ["--config", str(config), "--out-json", str(out), "--out", str(tmp_path / "run.md")]
-    assert main(["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", *args]) == 0
-    calculations = {
-        calc["label"]: calc["result"]
-        for calc in json.loads(out.read_text(encoding="utf-8"))["calculations"]
-    }
-    markdown = (tmp_path / "run.md").read_text(encoding="utf-8")
-    for line in MANIFEST["consumer_report"]:
-        if line["line"] in calculations:
-            assert calculations[line["line"]] == line.get("rendered", line.get("v"))
-        else:
-            assert f"| {line['line']} | {line['v']} |" in markdown
-
-    # 9. Matched backup, then restore with replay into a fresh test database.
+    # 8. Matched backup, then restore with replay into a fresh test database.
     sets = write_backup(
         rig.settings, database=pg_db.dbname, snapshot_root=rig.snapshots, out_dir=tmp_path / "sets"
     )
@@ -278,6 +277,38 @@ def test_stage2_end_to_end(
         assert check.ok, check
     finally:
         drop_database(rig.settings, fresh)
+    # 9. The pipeline routes through open_fact_store to the OPEN store; no FactStore is built.
+    # It writes its earnings update as a DRAFT (PREP-2b Task 6), which needs the sealed imports,
+    # the watchlist, the transcript and the comparator XBRLs; set up after the backup, whose
+    # frozen counts cover the D2 operations only.
+    for name, value in pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+    install_trusted_fixture_cli(monkeypatch)
+
+    def no_sqlite(*_: object) -> FactStore:
+        raise AssertionError("an OPEN store must not construct a SQLite FactStore")
+
+    monkeypatch.setattr(cutover, "FactStore", no_sqlite)
+    config, out = pipeline_config(tmp_path, rig, legacy), tmp_path / "run.json"
+    with pg_db.runtime_pool() as pool:
+        ingest = Ingest(pg_db, EvidenceRepository(pool), tmp_path, dictionary, mapping_set, policy)
+        Pilot(pg_db, tmp_path, monkeypatch, ingest, COMPARATORS, rig=rig, transcripts=("FY26_Q2",))
+    args = ["--config", str(config), "--out-json", str(out), "--out", str(tmp_path / "run.md")]
+    args += ["--retrospective", str(APAR_MANIFEST), "--snapshot-root", str(rig.snapshots)]
+    assert main(["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", *args]) == 0
+    (version,) = rig.query("SELECT id FROM eqos.report_versions WHERE author = %s", RUN_AUTHOR)
+    assert version
+    calculations = {
+        calc["label"]: calc["result"]
+        for calc in json.loads(out.read_text(encoding="utf-8"))["calculations"]
+    }
+    markdown = (tmp_path / "run.md").read_text(encoding="utf-8")
+    for line in MANIFEST["consumer_report"]:
+        if line["line"] in calculations:
+            assert calculations[line["line"]] == line.get("rendered", line.get("v"))
+        else:
+            assert f"| {line['line']} | {line['v']} |" in markdown
+
     assert file_sha256(LEGACY_PATH) == LEGACY_SHA256
 
 

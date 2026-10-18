@@ -283,9 +283,8 @@ def test_missing_report_operands_render_operand_missing(store: FactStoreLike) ->
 @pytest.mark.retained
 def test_apar_q2_fy26_filed_tax_etr_and_headline(store: FactStoreLike, tmp_path: Path) -> None:
     """Design decision 8 through the real issuer config: filed tax, ETR and headline PBT
-    come from the pipeline's own XBRL parse; only the ledger is redirected off ``data/``."""
-    loaded = load_config(_APAR_CONFIG)
-    config = loaded.model_copy(update={"ledger_path": str(tmp_path / "ledger.json")})
+    come from the pipeline's own XBRL parse."""
+    config = load_config(_APAR_CONFIG)
     xml = config.xbrl_local_path(_APAR_CONFIG).read_bytes()
     digest = hashlib.sha256(xml).hexdigest()
     result = run_trusted_fixture_pipeline(

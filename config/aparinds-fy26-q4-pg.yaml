@@ -24,7 +24,6 @@ quarter:
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"
 fact_store_id: "sqlite-cb02b0f12a1708d0"
-ledger_path: "data/ledger/aparinds-management-ledger.json"
 
 results_pdf:
   source_id: "aparinds-fy26-q4-results-pdf"

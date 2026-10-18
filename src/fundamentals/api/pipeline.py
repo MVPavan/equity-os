@@ -24,7 +24,7 @@ Q1 fact aborts the render — no un-sourced number is ever emitted.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -40,7 +40,6 @@ from fundamentals.api.pipeline_steps import (
     claim_range_quote,
     normalize_entity,
     pdf_parse_spec,
-    reconcile_current_guidance,
     required_concepts,
     run_sec_cross_check,
     select_optional,
@@ -60,8 +59,9 @@ from fundamentals.api.source_admission import (
     utc_time,
     validate_prepared,
 )
-from fundamentals.contracts.comparative import ConceptComparative
+from fundamentals.contracts.comparative import RUN_PERCENT_PLACES, ConceptComparative
 from fundamentals.contracts.fact import Fact, ReconciliationStatus
+from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.observation import (
     Observation,
 )
@@ -85,10 +85,6 @@ from fundamentals.output.earnings_update import (
     RenderedGuidance,
     VerificationOutcome,
     render_earnings_update,
-)
-from fundamentals.output.management_ledger import (
-    load_ledger,
-    save_ledger,
 )
 from fundamentals.store.fact_store import CanonicalSelectionError, FactStoreLike, StoredRevision
 from fundamentals.verify.cross_check import CrossCheckResult, cross_check
@@ -164,6 +160,8 @@ class PipelineResult(BaseModel):
     cross_check_results: tuple[CrossCheckResult, ...]
     sec_cross_check_note: str
     temporal_evidence: PipelineTemporalEvidence
+    guidance_claims: tuple[GuidanceClaim, ...] = ()
+    draft_version_id: int | None = None
 
 
 def run_pipeline(
@@ -180,8 +178,10 @@ def run_pipeline(
     evidence_resolver: SourceEvidenceResolver | None = None,
     clock: Callable[[], datetime] | None = None,
     admitted_inputs: AdmittedPipelineInputs | None = None,
+    comparators_acquired_at: Mapping[str, datetime] | None = None,
 ) -> PipelineResult:
-    """Run the full Q1 FY25 increment end to end, failing closed on any gap."""
+    """Run the full Q1 FY25 increment end to end, failing closed on any gap;
+    ``comparators_acquired_at`` is each registered comparator XBRL's acquisition time."""
     if (
         xbrl_input.source_id != config.xbrl.source_id
         or results_pdf_sha256 != config.results_pdf.sha256
@@ -203,7 +203,11 @@ def run_pipeline(
             xbrl_bytes=xbrl_input.xml_bytes,
         )
         return _run_admitted(
-            config=config, config_path=config_path, store=store, prepared=admitted_inputs
+            config=config,
+            config_path=config_path,
+            store=store,
+            prepared=admitted_inputs,
+            comparators_acquired_at=comparators_acquired_at,
         )
     tick = clock or actual_clock
     with prepare_pipeline_sources(
@@ -222,7 +226,13 @@ def run_pipeline(
         evidence_resolver=evidence_resolver,
         clock=tick,
     ) as prepared:
-        return _run_admitted(config=config, config_path=config_path, store=store, prepared=prepared)
+        return _run_admitted(
+            config=config,
+            config_path=config_path,
+            store=store,
+            prepared=prepared,
+            comparators_acquired_at=comparators_acquired_at,
+        )
 
 
 def _run_admitted(
@@ -231,6 +241,7 @@ def _run_admitted(
     config_path: Path | None,
     store: FactStoreLike,
     prepared: AdmittedPipelineInputs,
+    comparators_acquired_at: Mapping[str, datetime] | None,
 ) -> PipelineResult:
     completed = monotonic_clock(prepared)
 
@@ -403,30 +414,6 @@ def _run_admitted(
         )
     log.info("guidance_anchored", claims=len(rendered_guidance))
 
-    ledger_path = (
-        config.ledger_path_resolved(config_path)
-        if config_path is not None
-        else Path(config.ledger_path)
-        if config.ledger_path is not None
-        else None
-    )
-    ledger = (
-        reconcile_current_guidance(
-            load_ledger(
-                ledger_path,
-                issuer_quarter=config.quarter.issuer_quarter,
-                symbol=config.issuer.nse_symbol,
-            ),
-            symbol=config.issuer.nse_symbol,
-            issuer_quarter=config.quarter.issuer_quarter,
-            claims=guidance_claims,
-            cutoff=prepared.cutoff,
-            derivation_completed_at=transcript_extracted_at,
-        )
-        if ledger_path is not None
-        else None
-    )
-
     # 7. Assemble the render inputs and the planned store writes WITHOUT touching
     #    the store yet: canonical promotion happens only after every gate AND the
     #    render succeed, so a later failure never leaves partial canonical facts.
@@ -502,6 +489,7 @@ def _run_admitted(
             config_path=config_path,
             current={fact.concept_qname: role_obs[fact.role] for fact in rendered_facts},
             current_sources={fact.concept_qname: fact.sources for fact in rendered_facts},
+            acquired_at=comparators_acquired_at or {},
         )
 
     # 9. Build the derived calculations and render the sourced 11-section update.
@@ -528,7 +516,9 @@ def _run_admitted(
             total_count=len(cross_foot_results),
         ),
         sec_cross_check_note=sec_note,
-        ledger=ledger,
+        retrospective=prepared.retrospective,
+        source_cutoff=prepared.cutoff,
+        percent_places=RUN_PERCENT_PLACES,
     )
     markdown = render_earnings_update(update)
 
@@ -567,8 +557,8 @@ def _run_admitted(
             )
         )
         stored_revisions.append(revision)
-    if ledger_path is not None and ledger is not None:
-        save_ledger(ledger, ledger_path)
+    update = update.model_copy(update={"derivation_cutoff": completed()})
+    markdown = render_earnings_update(update)
     log.info("facts_stored", revisions=len(stored_revisions))
     log.info("pipeline_complete", markdown_bytes=len(markdown))
 
@@ -589,4 +579,5 @@ def _run_admitted(
             reconciled_at=reconciled_at,
             facts=tuple(audits),
         ),
+        guidance_claims=tuple(guidance_claims),
     )
