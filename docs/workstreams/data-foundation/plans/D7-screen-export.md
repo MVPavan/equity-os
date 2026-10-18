@@ -1,6 +1,7 @@
 # D7 Screen Export Implementation Plan
 
 Status: approved r3 — Sol r1, r2 REVISE; r3 **APPROVE** (GPT-6.1 Sol, 2026-10-18). Dispositions at the end.
+**Revised 2026-10-18 (direct formula queries, end of file): approved by Sol (direct-query r2 APPROVE, 2026-10-18); the revision overrides the sections it names.**
 **Origin:** bead `eqos-351`; owner decisions 2026-10-18 (automated export of both vendors' saved
 screens, no HTML results extraction, cross-check as diagnostics, legacy deleted); evidence
 [`screen-export-probe.md`](../../../research/screen-export-probe.md); amends [D7](D7.md); absorbs
@@ -273,3 +274,94 @@ attempt (covers 429 retries), Tijori retries disabled; fake-clock test with a re
 S5's Tijori read needs a small byte-retention seam: `fetch_overview()` returns parsed sections
 only. Expose the same fetched bytes for `store_captures` and replay through
 `parse_overview_bytes`; no second request, never serialise parsed sections as the capture.
+
+## Revision 2026-10-18: direct formula queries
+
+Owner direction 2026-10-18: no screens are saved at Screener or Tijori; the system runs
+owner-authored formulas directly at each vendor, exports and keeps the files. Evidence: the
+orchestrator's live probe of 2026-10-18 (raw responses in `scratchpad/raw-probe/`, not committed).
+Unchanged: pairing both vendors, captures and row locators, S4 binding, S5 review items, other-vendor
+reads and `OPEN_SCREEN_REVIEW`, ≥ 2 s pacing, no-retry Tijori, fail-closed refusals, S6 derived
+fixture rule, Tasks 5 and 7. Everything below overrides the named text above.
+
+- **Task 2** (done, `c56ec39`) stays: the legacy `screener-screen` subsystem is gone. Its goal line
+  "nothing can request `/screen/raw/?query=`" no longer holds; only `coverage export` requests it,
+  through `ScreenerSessionSource.fetch_navigation` (which already redacts `query` in logged URLs).
+
+- **S1.** The amendment's After paragraph is the revised record's
+  ([2026-10-18-screen-export](../../../blueprint/amendments/2026-10-18-screen-export.md), digest
+  `a5155fbe…42be`), approved by Sol r2 on 2026-10-18 ([review](../reviews/D7-amendment-3-review.md));
+  the r3 approval of the old digest does not carry over. Task 1 is redone: new Sol report, approvals block restored.
+- **Constraints, requests.** *Screen-query requests* (only these carry a formula): Screener `GET
+  /screen/raw/?query=<formula>` (`query` the only parameter; never `sort`, `order`, `page`, `limit`,
+  `source_id`) and `POST` to its one export form action (validated exactly, see S3); Tijori `GET
+  /api/filter_queries/advanced_search/?financial=<formula>&is_checked=False&whales=False&is_sme=False`.
+  *Approved diagnostic reads* (S5, unchanged, after the export commits, one page per pending
+  `ABSENT`/`NOT_PROVEN` item, existing readers): the Screener company page (`SCREENER_FINANCIALS`
+  reader, as `screener_company_cli.py:150`) and the Tijori overview page (`fetch_overview`); neither
+  carries a formula. No other request is made. `/explore/`, `/screens/<id>/<slug>/` and the Tijori
+  saved-query listing are no longer requested.
+  The `?q=`, `?page=`, `?sort=`, `?limit=` ban stands (robots.txt, 2026-10-18; `?query=` matches
+  none of its rules).
+- **S2 Config.** `config/screens.yaml`: a list of `{name, screener: <Screener formula>, tijori:
+  <Tijori formula>}`, all non-empty, names unique. The formulas are owner-authored text in the repo;
+  nothing is matched against a vendor listing, so "absent or appearing twice in the owner's
+  listing" is dropped.
+- **S3 Definition versioning.** The definition is the configured formula: `screen_text` is
+  `screener:<formula>` / `tijori:<formula>` from config, hashed as before (a formula edit makes a
+  new `eqos.screens` row). Screener: the raw page is still retained as the definition capture
+  (`SCREENER_SCREEN_PAGE`), the vendor's echo — its single `textarea[name=query]` must equal the
+  configured formula, else refuse — and its "N results found" must equal the CSV row count.
+  *Formula equality everywhere*: collapse runs of whitespace to one space and strip the ends on both
+  sides, then compare exactly. *Export action* (r1-2): parse the form action (HTML-unescaped); path
+  exactly `/api/export/screen/`, query keys exactly `{query, url_name}`, each once, `query` equal to
+  the configured formula, `url_name` equal to the literal `raw_query`, no fragment; else
+  refuse. Tijori: one request; `total_results` must equal `len(data)`; the response's `financial_q`
+  must be present and equal the configured formula and `alternate_q` null or empty (r1-1), else
+  refuse; the run's `definition_capture_ref_id` is its results capture (validated as above; the
+  request URL carries the formula). Verified from the retained probe: `financial_q ==
+  'Market Capitalization > 20000'`, `alternate_q` null, Screener textarea (unescaped) identical.
+  Dropped: the Tijori listing refusal (`next`/`count`), saved-query parameters (`alt_query`,
+  `extra_cols`, `columns`, `alternate`, `source`, `query_id`).
+- **Task 3.** `export_screener(source, formula)`, `export_tijori(source, formula)`. Refusals: empty
+  formula; non-200 or wrong media type (both); not logged in; textarea absent, duplicated or not
+  equal to the formula; no or two result counts; export action failing the S3 check (wrong path,
+  extra or missing query key, repeated key, `query` ≠ formula, `url_name` ≠ `raw_query`, fragment —
+  each fixture keeps the row count equal so only the action check can refuse it); ragged CSV; no
+  `ISIN Code`; page count ≠ CSV rows; `total_results` ≠ `len(data)`; Tijori `financial_q` missing or
+  ≠ formula, `alternate_q` non-empty (each with `total_results == len(data)`). Fixtures:
+  delete `explore.html`, `tijori-listing.json`; `screen.html` becomes the reduced raw-query page.
+  Requests: exactly 2 Screener, 1 Tijori; fake-clock pacing test unchanged.
+- **Task 4.** No new migration. Every `0034_screen_export.sql` column keeps a meaning: `definition_capture_ref_id`
+  (Screener raw page; Tijori = results capture, satisfying the `AUTOMATED_EXPORT` check),
+  `screen_members.isin`, `.slug` (Tijori row `slug`, still S4's veto). `record_screen_run` stores one
+  Tijori capture, not two.
+- **S6 / Task 6.** The source captures come from one `coverage export --screen d7-stage4` run on an
+  owner command, `d7-stage4` configured as `Market Capitalization > 20000` at both vendors (probe:
+  Screener 380 rows, Tijori 376, all five members in both). Derived rule unchanged; the Screener page
+  is reduced to the textarea and page info. Task 3's textarea element is already pinned by the probe.
+- **Status of Tasks 3–5 and stale text (r1-4).** Tasks 3–5 are committed (`a8a1d24`: 3–4;
+  `116e3f2`: 5) against the saved-screen design and need the direct-query adaptation above in a
+  follow-up change, with no new SQL: the committed migrations are `0034_screen_export.sql` (Task 4)
+  and `0035_screen_review.sql` (Task 5), immutable. Overrides: the constraints' "`0033`, `0034`" mean
+  `0034`/`0035` as committed; Task 5's `0034` (views, dispositions, reads, holds arm) means
+  `0035_screen_review.sql`; Task 4's "edited same-slug definition makes a second screen row" test
+  becomes "editing the configured formula in config yields a new `eqos.screens` row (new definition
+  hash)"; Task 6 depends on Task 5 only (A1–A2 removed).
+- **Owner actions.** A1/A2 are dropped (nothing to save). A3 becomes: further `config/screens.yaml`
+  formulas; a person-named screen is never committed.
+- **Estimate.** Net deletion: ~−40 src (`screen_export.py` loses explore matching, listing and
+  saved-query parameters, gains the echo and action checks), ~−30 test, −2 fixtures, no SQL.
+
+### Review r1 responses (Sol r1 on digest `66e770b7…f815`, REVISE)
+
+1. P1 Tijori binding → S3, Task 3: `financial_q` must equal the configured formula
+   (whitespace-normalised), `alternate_q` null or empty; refusal cases added; the results capture
+   stays the definition capture.
+2. P2 export action → S3 exact parse (path, keys `{query, url_name}` once each, `query` = formula,
+   `url_name` = `raw_query`, no fragment); equal-row-count refusal fixtures in Task 3; amendment
+   Permitted endpoints and `change` text updated.
+3. P3 allowlist → constraints split into screen-query requests and the restored S5 diagnostic reads
+   (Screener company page, Tijori overview); amendment mirrors it.
+4. P3 stale text → explicit overrides: migrations `0034`/`0035` as committed, formula-edit test
+   replaces the same-slug test, Task 6 drops A1–A2, Tasks 3–5 marked committed.
