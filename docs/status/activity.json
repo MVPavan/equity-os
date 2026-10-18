@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "PREP-2: make the pilot PostgreSQL-only",
-    "detail": "Audit found the pilot run still falls back to the SQLite store (no fact_store_id in the Apar configs) and writes the management ledger to JSON. Opus is drafting docs/plans/PREP-2.md; Sol reviews the plan next.",
-    "stage": "PREP-2"
+    "title": "PREP-2b: the run writes its earnings update as a PostgreSQL ledger draft",
+    "detail": "PREP-2 done (dceb5a7): pilot configs route to the PostgreSQL store and refuse without it. The run-to-ledger-draft writer was split out as PREP-2b; its plan is being drafted.",
+    "stage": "PREP-2b"
   },
   "next": [
-    "PREP-2 plan review (Sol), then implementation",
-    "PREP-3..8, then the Apar pilot on PostgreSQL (cutover eqos-3zl needs the owner's go-ahead first)",
-    "D7 Tasks 5-6 once the owner's Screener CSV is in data/raw/screener-exports/",
-    "Owner: host clock fix for the WSL backsteps (eqos-0bp / eqos-bhy: w32tm /resync; else disable systemd-timesyncd)",
+    "PREP-2b plan (Sol review), then implementation",
+    "PREP-3..8, then the Apar pilot on PostgreSQL (cutover eqos-3zl approved by the owner 2026-10-18)",
+    "Automated Screener/Tijori screen CSV export: proposal sent to the owner, awaiting choice",
+    "Owner: host clock fix for the WSL backsteps (w32tm /resync)",
     "Follow-ups: eqos-8hp, eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "PREP-2 committed (dceb5a7): plan Sol r1 REVISE (12) -> split run-to-ledger-draft to PREP-2b -> r2 APPROVE. Pilot configs name store sqlite-cb02b0f12a1708d0; a run without an OPEN PG store refuses and never opens SQLite. Q4 uses aparinds-fy26-q4-pg.yaml because the Stage 5 manifest pins the original's bytes. Full suite 4104 passed, 2 failed (that pin, fixed; one clock flake)."
+    },
     {
       "date": "2026-10-18",
       "text": "PREP-2 audit: does not hold. fundamentals run opens SQLite when fact_store_id is unset (all four Apar configs) and saves the management ledger as JSON. Bead eqos-4j2.16; plan in progress. Backend roadmap §3 states refreshed (were dated 2026-10-13)."
