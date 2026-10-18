@@ -218,10 +218,6 @@ class ScreenerSessionSource:
         """
         return self._document_fetch(url, xhr=True)
 
-    def fetch_screen_page(self, *, url: str) -> ScreenerDocumentFetch:
-        """Fetch a raw-screen navigation through the shared subscriber transport."""
-        return self._document_fetch(url, xhr=False)
-
     def fetch_navigation(self, *, url: str) -> tuple[ScreenerDocumentFetch, tuple[str, ...]]:
         """Fetch one navigation page and return its bytes beside the cookies it set.
 

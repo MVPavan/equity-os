@@ -27,7 +27,6 @@ from test_upstox_scope_guards import (
 )
 
 from fundamentals.ingest.screener_financials_models import SectionOutcome
-from fundamentals.ingest.screener_screen_models import ScreenOutcome
 from fundamentals.ingest.screener_session_models import PageOutcome
 from fundamentals.ingest.screener_watchlist_models import WatchlistOutcome
 from fundamentals.ingest.tijori_common import TijoriIslandStatus
@@ -52,7 +51,6 @@ EXPECTED_WIRE_VALUES = {
 
 PARSE_LEVEL_ENUMS = (
     SectionOutcome,
-    ScreenOutcome,
     WatchlistOutcome,
     TijoriIslandStatus,
     TijoriEventsOutcome,

@@ -28,7 +28,6 @@ from coverage_support import (
 )
 from onboarding_support import count, fresh_db, rows
 
-from fundamentals.api import cli
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
 from fundamentals.contracts.onboarding import OnboardingOutcome
 from fundamentals.coverage import screens
@@ -49,7 +48,6 @@ FORBIDDEN_IMPORTS = {
     "threading",
     "asyncio",
     "subprocess",
-    "fundamentals.ingest.screener_screen",
 }
 BATCH_TABLES = ("capture_batches", "batch_member_results", "batch_completions")
 _RESULTS = (
@@ -263,22 +261,9 @@ def test_a_stopped_batch_has_no_completion(world: Any) -> None:
     assert rows(db, "SELECT id FROM eqos.batch_completions WHERE batch_id = %s", batch) == []
 
 
-def test_legacy_screener_screen_refuses_before_credentials(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """``fundamentals screener-screen`` refuses at dispatch: no credential read, no request."""
-
-    def credentials() -> None:
-        raise AssertionError("credentials were read")
-
-    monkeypatch.setattr(cli, "_screener_credentials_from_env", credentials)
-    assert cli.main(["screener-screen", "--query", "Market Capitalization > 1"]) == EXIT_REFUSED
-    assert "coverage screen-run" in capsys.readouterr().err
-
-
 def test_no_socket_opens_and_nothing_is_scheduled(world: Any) -> None:
     """The guard saw no connection; the coverage package imports no scheduler, thread, event
-    loop, subprocess or the legacy screen acquisition."""
+    loop, subprocess."""
     assert world["connects"] == []
     package = Path(screens.__file__).parent
     for module in package.glob("*.py"):

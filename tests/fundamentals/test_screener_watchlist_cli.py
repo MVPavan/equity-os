@@ -11,11 +11,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
-import screener_screen_support as screen_support
 import screener_watchlist_fixtures as fx
 from pydantic import SecretStr
 
@@ -58,7 +58,46 @@ def _run_cli(
 def _payload(out_dir: Path) -> dict[str, Any]:
     """The published artifact record of one output directory, parsed."""
     loaded: dict[str, Any] = json.loads((out_dir / ARTIFACT_FILENAME).read_text(encoding="utf-8"))
-    return screen_support.artifact_body(loaded)
+    nested: dict[str, Any] = loaded if "outcome" in loaded else loaded["artifact"]
+    return nested
+
+
+class FirstCreationError(Exception):
+    """Raised in place of the first directory an invocation tries to create."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(str(path))
+        self.path = path
+
+
+def intercept_first_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop an invocation at the first directory it creates, naming that path.
+
+    The default output root is derived from the repository, not the working
+    directory, so the first creation attempt is the resolved destination and no
+    byte reaches the disk.
+    """
+
+    def refuse(
+        self: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None:
+        del mode, parents, exist_ok
+        raise FirstCreationError(self)
+
+    monkeypatch.setattr(Path, "mkdir", refuse)
+
+
+def record_publications(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Every destination the no-clobber writer links into place, in creation order."""
+    destinations: list[Path] = []
+    linked = os.link
+
+    def record(source_path: Any, target: Any, *, follow_symlinks: bool = True) -> None:
+        destinations.append(Path(target))
+        linked(source_path, target, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(os, "link", record)
+    return destinations
 
 
 def test_the_command_bounds_its_flags_and_refuses_before_the_first_request(
@@ -137,7 +176,7 @@ def test_both_bodies_are_retained_verified_and_written_before_the_artifact(
     """
     out_dir = tmp_path / "out"
     with monkeypatch.context() as patcher:
-        created = screen_support.record_publications(patcher)
+        created = record_publications(patcher)
         exit_code, _ = _run_cli(patcher, out_dir)
 
     assert exit_code == EXIT_OK
@@ -336,8 +375,8 @@ def test_the_default_output_directory_is_under_the_raw_data_root_and_costs_no_re
     """
     with monkeypatch.context() as patcher:
         transport = fx.serve(patcher, page=fx.watchlist_page(_ROSTER), export=None)
-        screen_support.intercept_first_creation(patcher)
-        with pytest.raises(screen_support.FirstCreationError) as excinfo:
+        intercept_first_creation(patcher)
+        with pytest.raises(FirstCreationError) as excinfo:
             main([fx.COMMAND])
 
     created = excinfo.value.path

@@ -25,7 +25,6 @@ from fundamentals.api.review_cli import add_review_parser
 from fundamentals.api.screener_company_cli import add_screener_company_parser
 from fundamentals.api.screener_financials_cli import add_screener_financials_parser
 from fundamentals.api.screener_page_cli import add_screener_page_parser
-from fundamentals.api.screener_screen_cli import add_screener_screen_parser
 from fundamentals.api.screener_watchlist_cli import add_screener_watchlist_parser
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     add_screener_watchlist_corroborate_parser,
@@ -205,7 +204,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_tijori_analysis_parser(subparsers)
     add_tijori_events_parser(subparsers)
     add_screener_page_parser(subparsers)
-    add_screener_screen_parser(subparsers)
     add_screener_financials_parser(subparsers)
     add_screener_company_parser(subparsers)
     add_screener_watchlist_parser(subparsers)

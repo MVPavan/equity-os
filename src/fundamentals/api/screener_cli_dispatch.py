@@ -49,7 +49,6 @@ from fundamentals.api.screener_page_cli import (
     render_screener_page_summary,
     run_screener_page_command,
 )
-from fundamentals.api.screener_screen_cli import SCREENER_SCREEN_COMMAND
 from fundamentals.api.screener_watchlist_cli import (
     SCREENER_WATCHLIST_COMMAND,
     other_watchlists,
@@ -65,13 +64,12 @@ SCREENER_COMMANDS = (
     SCREENER_PAGE_COMMAND,
     SCREENER_FINANCIALS_COMMAND,
     SCREENER_COMPANY_COMMAND,
-    SCREENER_SCREEN_COMMAND,
     SCREENER_WATCHLIST_COMMAND,
 )
 
-# The two list-scoped commands address a query or a watchlist, never one stock
-# on one basis, so the invocation log must not dereference those fields for them.
-_STOCK_SCOPED_LOG_EXCLUSIONS = (SCREENER_SCREEN_COMMAND, SCREENER_WATCHLIST_COMMAND)
+# The watchlist command addresses a list, never one stock on one basis, so the
+# invocation log must not dereference those fields for it.
+_STOCK_SCOPED_LOG_EXCLUSIONS = (SCREENER_WATCHLIST_COMMAND,)
 
 # Distinct, documented exit codes: a caller (or a shell loop over the watchlist)
 # can tell "this company has no such basis" from "the fetch was refused" without
@@ -82,10 +80,6 @@ EXIT_BASIS_UNAVAILABLE = 3
 
 _CLI_LOGGER_NAME = "fundamentals.cli"
 _SESSION_REQUIRED = "SCREENER_SESSION_COOKIE is required for {command}"
-_SCREEN_RETIRED = (
-    "{command} refused: the system never requests a Screener screen; export it to CSV and run "
-    "`fundamentals coverage screen-run`"
-)
 _REFUSAL_LINE = "{command} refused ({refusal}): {detail}"
 _INCOMPLETE_LINE = "{command} did not finish: {reason}"
 _UNCHECKED_LINE = "{command}: schedules the reconciliation gate did not clear: {families}"
@@ -117,9 +111,6 @@ def dispatch_screener_command(
     """
     if args.command not in SCREENER_COMMANDS:
         return None
-    if args.command == SCREENER_SCREEN_COMMAND:  # plan D7 R5: before credentials or network
-        sys.stderr.write(_SCREEN_RETIRED.format(command=args.command) + "\n")
-        return EXIT_REFUSED
     credentials = credentials_factory()
     if credentials is None:
         raise SystemExit(_SESSION_REQUIRED.format(command=args.command))
