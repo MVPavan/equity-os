@@ -1,17 +1,20 @@
 {
   "now": {
-    "title": "PREP-2/2b review r2, PREP-3 plan r2, D7 Stage 4 manifest",
-    "detail": "Screen export now runs owner-authored formulas directly at both vendors (amendment re-approved 0b3ae46; code 962be61); live run of Market Capitalization > 20000: Screener 380, Tijori 376, 368 matched on both, 20 unmatched (mostly REITs/InvITs absent from the registry). PREP-2/2b review fixes committed (73dad2b, migration 0036); Sol re-reviewing. PREP-3 plan in its second fix round. Fresh Opus author drafting the Stage 4 manifest by hand from source bytes.",
-    "stage": "PREP"
+    "title": "D7 screen-export phase re-review r2",
+    "detail": "PREP-2, PREP-2b and PREP-3 are done: closing critical review REVISE (3, all reproduced), fixes f8bcc8b, Sol re-review APPROVE; PREP-3 bead closed. Screen-export phase review r1 fixes committed (1880497 for 15 findings; c450ce5 for 5/8/9 with migration 0038); Sol re-reviewing.",
+    "stage": "D7"
   },
   "next": [
-    "Sol approval of the Stage 4 manifest, commit it, then the Task 7 e2e and D7 phase-end review (Task 5 size to be cut)",
-    "PREP-2/2b: close the review loop, then a fresh critical review",
-    "PREP-3 plan approval, then implementation (tests only predicted)",
+    "Screen-export: close the review loop, fresh closing review, then close eqos-351, D7 (eqos-3oq) and D9 (eqos-4fc)",
     "PREP-4..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "eqos-4j2.23: take the derivation cutoff from the store clock",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "PREP-2/2b/3 closed: fresh closing review found 3 (native selection of imported fact passed historical checks; legacy/run-bound citations lacked issuer checks; coexisting mapping versions blocked runs); fixed f8bcc8b; Sol APPROVE. Screen-export phase r1 fixes 1880497 + c450ce5 (migration 0038); holds list gains the Stage 4 manifest. Filed eqos-4j2.23 (process-clock cutoff vs store clock)."
+    },
     {
       "date": "2026-10-18",
       "text": "Owner direction: run screen formulas directly, save nothing at the vendors. Probed live (Screener raw-query page has its own export form, full CSV; Tijori advanced search returns all rows). Amendment and plan revised, Sol r1 REVISE (4), r2 APPROVE (0b3ae46); exporter adapted (962be61); one live run recorded. PREP-2/2b phase review r1 REVISE (8, 3 P1 reproduced), fixes 73dad2b incl. migration 0036. PREP-3 plan r1 REVISE (11), r2 REVISE (2)."
