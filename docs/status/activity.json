@@ -1,16 +1,21 @@
 {
   "now": {
-    "title": "D9 complete; next: D7 waits on the owner's Screener CSV, then PREP",
-    "detail": "D9 Retention and replay closed after the phase review and the fresh critical review (Sol APPROVE 2026-10-18). Ledger Stage 5 e2e green; migrations 0027-0032.",
-    "stage": "D9"
+    "title": "PREP-2: make the pilot PostgreSQL-only",
+    "detail": "Audit found the pilot run still falls back to the SQLite store (no fact_store_id in the Apar configs) and writes the management ledger to JSON. Opus is drafting docs/plans/PREP-2.md; Sol reviews the plan next.",
+    "stage": "PREP-2"
   },
   "next": [
-    "D7 Tasks 5-6 once the owner's real Screener CSV is in data/raw/screener-exports/; D7 phase-end review",
-    "PREP-2..8, then the Apar pilot on PostgreSQL",
-    "D8 resumes only if vendor definitions appear or the owner picks a Stage 3 exception",
-    "Follow-ups: eqos-0bp (clock flake, now ~2/5 in isolation), eqos-8hp, eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
+    "PREP-2 plan review (Sol), then implementation",
+    "PREP-3..8, then the Apar pilot on PostgreSQL (cutover eqos-3zl needs the owner's go-ahead first)",
+    "D7 Tasks 5-6 once the owner's Screener CSV is in data/raw/screener-exports/",
+    "Owner: host clock fix for the WSL backsteps (eqos-0bp / eqos-bhy: w32tm /resync; else disable systemd-timesyncd)",
+    "Follow-ups: eqos-8hp, eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "PREP-2 audit: does not hold. fundamentals run opens SQLite when fact_store_id is unset (all four Apar configs) and saves the management ledger as JSON. Bead eqos-4j2.16; plan in progress. Backend roadmap §3 states refreshed (were dated 2026-10-13)."
+    },
     {
       "date": "2026-10-18",
       "text": "D9 closed: fresh critical review found 8 recovery/restore gaps (K1-K8, fixed 9e979e7), re-review found K3 partial and two regressions (L1-L3, fixed 1f54c2d), re-review 2 APPROVE. Record: reviews/D9-phase-review.md. Full suite 4102 passed, 2 WSL clock flakes."

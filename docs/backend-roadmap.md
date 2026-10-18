@@ -52,20 +52,20 @@ time.
 
 ## 3. All remaining backend work
 
-| # | Work | Done when | State (2026-10-13) |
+| # | Work | Done when | State (2026-10-18) |
 |---|---|---|---|
 | D1a | Canonical comparison tracer: schema, dictionary, formula engine, evidence model, first-party tables, runs, report | `test_compare_tracer.py` green; phase review approved | Complete; fixes `22a3c78`, independent phase/critical re-reviews approved; full suite and quality checks green |
-| D1b | Vendors (Screener, Tijori), corroboration, review queue, frozen Stage 1 manifest | `test_data_stage1_e2e.py` matches the manifest (Apar + ten companies) | In execution; approved plan `f82634d`, independent work parallelized; full acceptance pending retained vendor evidence |
-| D2 | Migrate the legacy SQLite fact store; move consumers to PostgreSQL; cutover | Stage 2 e2e green; cutover recorded | Not started |
-| D3 | Report ledger: versions, numeric claims citing facts or traces, claim check, approvals, export | Ledger Stage 1 e2e and `test_ledger_export.py` green | Not started |
-| D4 | Long-term memory with separate promotion | Ledger Stage 2 e2e green | Not started |
-| D5 | Generated read-only views | Ledger Stage 3 e2e green | Not started |
-| D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Not started |
-| D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Not started |
-| D8 | Shareholding filing source | Stage 3 e2e green | Not started |
-| D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Not started |
-| PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Open bead (found in D1a) |
-| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Covered by D2 consumer port; confirm before the pilot |
+| D1b | Vendors (Screener, Tijori), corroboration, review queue, frozen Stage 1 manifest | `test_data_stage1_e2e.py` matches the manifest (Apar + ten companies) | Complete (Sol APPROVE 2026-10-14) |
+| D2 | Migrate the legacy SQLite fact store; move consumers to PostgreSQL; cutover | Stage 2 e2e green; cutover recorded | Complete on test databases (Sol APPROVE 2026-10-15); production cutover is owner-gated `eqos-3zl` |
+| D3 | Report ledger: versions, numeric claims citing facts or traces, claim check, approvals, export | Ledger Stage 1 e2e and `test_ledger_export.py` green | Complete (Sol APPROVE 2026-10-15) |
+| D4 | Long-term memory with separate promotion | Ledger Stage 2 e2e green | Complete (Sol APPROVE 2026-10-15) |
+| D5 | Generated read-only views | Ledger Stage 3 e2e green | Complete (Sol APPROVE 2026-10-15) |
+| D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Complete (Sol APPROVE 2026-10-17); D6b extractor v2 complete |
+| D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Tasks 1–4 done; Tasks 5–6 wait on the owner's Screener CSV export |
+| D8 | Shareholding filing source | Stage 3 e2e green | Parked (owner ruling 2026-10-17) |
+| D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
+| PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
+| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Audit 2026-10-18: does not hold. `fundamentals run` falls back to SQLite when `fact_store_id` is unset (all four Apar configs), and the run writes the management ledger to JSON, not the D3 ledger |
 | PREP-3 | Resumable workflow with defined states, retries and failure states (register B-01) | Interrupt-and-resume test per step | Open |
 | PREP-4 | Source-of-truth matrix (B-03) | Matrix approved by the reviewer | Open |
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Open |
