@@ -4,7 +4,7 @@
     db migrate [--migrations-dir migrations]
     db backup --out DIR --snapshot-root R
     db restore --set DIR --database D --snapshot-root R [--backup-dir DIR] [--replay-runs]
-        [--config-root config]
+        [--live-snapshot-root L] [--config-root config]
     db create-test --suffix S
 
 All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as the admin role over
@@ -12,7 +12,8 @@ the ``postgres`` maintenance database; ``migrate`` runs as the migrator role, wh
 object it creates. ``backup`` writes a matched set of ``EQOS_PG_DB``; ``restore --database``
 only names the new ``eqos_test_*`` database to create, and exits nonzero unless every check
 passes; it runs as the purge login and purges first what the authority files in ``--backup-dir``
-(default the set's parent) expired after the set (plan D9 R12). ``create-test`` creates a
+(default the set's parent) expired after the set, refusing a journal that does not extend the
+head a purge witnessed in ``--live-snapshot-root`` (plan D9 R11, R12). ``create-test`` creates a
 guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
 """
 
@@ -97,6 +98,7 @@ def add_db_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser
     restore.add_argument("--database", required=True)
     restore.add_argument("--snapshot-root", required=True, type=Path)
     restore.add_argument("--backup-dir", type=Path)
+    restore.add_argument("--live-snapshot-root", type=Path)
     restore.add_argument("--replay-runs", action="store_true")
     restore.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     create_test = actions.add_parser(CREATE_TEST_ACTION, help=_CREATE_TEST_HELP)
@@ -131,6 +133,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
                 replay_runs=args.replay_runs,
                 config_root=args.config_root,
                 backup_dir=backup_dir,
+                live_snapshot_root=args.live_snapshot_root,
                 purge_login=load_login(PgRole.PURGE, secrets_dir(os.environ)),
                 purge_first=restore_purge_first(args.set, backup_dir, args.snapshot_root),
             )

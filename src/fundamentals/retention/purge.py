@@ -50,6 +50,7 @@ from fundamentals.contracts.retention_purge import (
 from fundamentals.pg.backup import MANIFEST_FILE, PARTIAL_SUFFIX, BackupManifest
 from fundamentals.pg.retention_io import (
     Authority,
+    advance_head,
     append_authority,
     expiries_after,
     read_authority,
@@ -203,7 +204,7 @@ class _Run:
         final_backup: FinalBackup | None,
         checkpoint: Checkpoint,
     ) -> None:
-        self.conn, self.backup_dir = conn, backup_dir
+        self.conn, self.backup_dir, self.root = conn, backup_dir, snapshot_root
         self.store = SnapshotStore(snapshot_root)
         self.pinned, self.final_backup, self.checkpoint = pinned, final_backup, checkpoint
         self.expired: list[int] = []
@@ -221,6 +222,7 @@ class _Run:
             event = JournalEvent(kind=JournalEventKind.FENCE, run_id=run_id, captures=fence)
             append_authority(self.backup_dir, event)
             self.checkpoint(PurgeStep.FENCE_WRITTEN)
+        advance_head(self.backup_dir, self.root)
         with self.conn.transaction():
             facts, now = _facts(self.conn, self.pinned)
         verdicts = {f.capture_ref_id: (f, _decision(f, now)) for f in facts}

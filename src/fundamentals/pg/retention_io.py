@@ -1,15 +1,12 @@
 """Retention locks and authority files (plan D9 RP1, R11).
 
 The session locks wrap ``eqos.retention_lock_key()``: purge holds it exclusive, backup shared,
-each on its own connection for as long as the session needs it. The two authority files sit in
-the backup directory beside the sets: ``licence-ends.json`` and ``expiry-journal.json``, each a
-JSON array whose entries carry ids 1, 2, ... in order. One locked helper appends to either; a
-file whose ids were dropped or renumbered is refused, never repaired.
-
-The journal's expected head is witnessed by the published sets beside it: each manifest records
-its watermark and the digest of the journal up to it, so a journal shorter than a set's
-watermark (truncated, rolled back) or differing from the history a set recorded is refused.
-Every purge publishes a final backup after ``COMPLETE``, so the newest set witnesses the head.
+each on its own connection. The authority files ``licence-ends.json`` and
+``expiry-journal.json`` sit in the backup directory beside the sets, JSON arrays with ids 1..n
+in order, appended by one locked helper; dropped or renumbered ids are refused, never repaired.
+The journal's head is witnessed by each set (watermark and digest of the journal up to it) and,
+outside the backup directory's rollback domain, by a head file in the live snapshot store that a
+purge advances before deleting: a journal shorter than a witness or differing from it is refused.
 """
 
 from __future__ import annotations
@@ -28,11 +25,12 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from fundamentals.contracts.retention import JournalEvent, JournalEventKind, LicenceEnd
-from fundamentals.store.snapshot_store import SnapshotStore
+from fundamentals.store.snapshot_store import RETENTION_DIRNAME, SnapshotStore
 
 LICENCE_ENDS_FILE = "licence-ends.json"
 EXPIRY_JOURNAL_FILE = "expiry-journal.json"
 AUTHORITY_LOCK_FILE = ".retention-authority.lock"
+JOURNAL_HEAD_FILE = "expiry-journal-head.json"
 MANIFEST_FILE = "manifest.yaml"
 _SESSION_SHARED: LiteralString = "SELECT pg_advisory_lock_shared(eqos.retention_lock_key())"
 _SESSION_EXCLUSIVE: LiteralString = "SELECT pg_advisory_lock(eqos.retention_lock_key())"
@@ -80,9 +78,9 @@ def holds_exclusive(conn: psycopg.Connection[Any]) -> bool:
     return bool(row and row[0])
 
 
-def read_authority(backup_dir: Path) -> Authority:
-    """Both authority files, refusing a missing or malformed one or a journal that a published
-    set in ``backup_dir`` shows truncated, rolled back or rewritten."""
+def read_authority(backup_dir: Path, snapshot_root: Path | None = None) -> Authority:
+    """Both authority files, refusing a missing or malformed one or a journal that a set in
+    ``backup_dir`` or the head in ``snapshot_root`` shows truncated, rolled back or rewritten."""
     authority = Authority(
         licence_ends=tuple(_entries(backup_dir, LicenceEnd)),
         journal=tuple(_entries(backup_dir, JournalEvent)),
@@ -95,6 +93,9 @@ def read_authority(backup_dir: Path) -> Authority:
         check_head(
             authority.journal, witness.get("journal_watermark", 0), witness.get("journal_sha256")
         )
+    head = snapshot_root and snapshot_root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE
+    if head and head.exists():
+        check_head(authority.journal, *json.loads(head.read_text(encoding="utf-8")))
     return authority
 
 
@@ -105,15 +106,22 @@ def journal_digest(journal: tuple[JournalEvent, ...]) -> str:
 
 
 def check_head(journal: tuple[JournalEvent, ...], watermark: int, digest: str | None) -> None:
-    """Refuse a journal that ends before a set's ``watermark`` or whose first ``watermark``
-    events differ from the ``digest`` the set recorded (None: a set from before digests)."""
+    """Refuse a journal ending before a witnessed ``watermark`` or unlike its ``digest``."""
     if watermark > len(journal):
         raise AuthorityError(
-            f"{EXPIRY_JOURNAL_FILE} ends at event {len(journal)} but a set was taken at event "
+            f"{EXPIRY_JOURNAL_FILE} ends at event {len(journal)} but was witnessed at event "
             f"{watermark}: truncated or rolled back"
         )
     if digest is not None and journal_digest(journal[:watermark]) != digest:
         raise AuthorityError(f"{EXPIRY_JOURNAL_FILE} differs from the history a set recorded")
+
+
+def advance_head(backup_dir: Path, snapshot_root: Path) -> None:
+    """Witness the journal's head in the live store, refusing one not extending the last head."""
+    with _locked(backup_dir):
+        journal = read_authority(backup_dir, snapshot_root).journal
+        (directory := snapshot_root / RETENTION_DIRNAME).mkdir(mode=0o700, exist_ok=True)
+        _write(directory, JOURNAL_HEAD_FILE, [len(journal), journal_digest(journal)])
 
 
 def authority_absent(backup_dir: Path) -> bool:
@@ -152,8 +160,7 @@ def reconcile_licence_ends(conn: psycopg.Connection[Any], authority: Authority) 
     licence end the file lacks (R11)."""
     stored = {source for (source,) in conn.execute(_LICENCE_ENDS).fetchall()}
     filed = {end.source_id: end for end in authority.licence_ends}
-    if stored - filed.keys():
-        unfiled = sorted(stored - filed.keys())
+    if unfiled := sorted(stored - filed.keys()):
         raise AuthorityError(f"licence ends {unfiled} are not filed; rerun retention licence-end")
     missing = tuple(source for source in filed if source not in stored)
     for source in missing:
@@ -164,15 +171,12 @@ def reconcile_licence_ends(conn: psycopg.Connection[Any], authority: Authority) 
 def expiries_after(journal: tuple[JournalEvent, ...], watermark: int) -> frozenset[int]:
     """Captures expired by runs with an event above ``watermark``: a completed run's expired
     ids, an unresolved run's every fenced capture (R11, conservatively)."""
-    runs = {event.run_id for event in journal if event.id > watermark}
     expired: set[int] = set()
-    for run in runs:
+    for run in {event.run_id for event in journal if event.id > watermark}:
         events = [event for event in journal if event.run_id == run]
-        completes = [e for e in events if e.kind is JournalEventKind.COMPLETE]
-        if completes:
-            expired.update(completes[-1].expired)
-        else:
-            expired.update(c.capture_ref_id for e in events for c in e.captures)
+        completes = [e.expired for e in events if e.kind is JournalEventKind.COMPLETE]
+        fenced = (c.capture_ref_id for e in events for c in e.captures)
+        expired.update(completes[-1] if completes else fenced)
     return frozenset(expired)
 
 
@@ -189,7 +193,7 @@ def _entries[M: (JournalEvent, LicenceEnd)](backup_dir: Path, model: type[M]) ->
     return entries
 
 
-def _write(backup_dir: Path, name: str, entries: list[Any]) -> None:
+def _write(backup_dir: Path, name: str, entries: Any) -> None:
     """Replace one file atomically: temp, fsync, rename, fsync the directory."""
     temporary = backup_dir / f".{name}.tmp"
     with temporary.open("w", encoding="utf-8") as handle:

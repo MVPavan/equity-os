@@ -153,6 +153,7 @@ _SEGMENTS_AS_OF: LiteralString = (
 _SEGMENTS_BY_ID: LiteralString = (
     _SEGMENT_COLUMNS + "WHERE m.id = ANY(%s) GROUP BY m.id ORDER BY m.id"
 )
+_RETENTION_SHARED: LiteralString = "SELECT eqos.retention_shared()"
 # R13: the non-retained vendor captures the traces rest on, children included.
 _TRACES_EXPIRED: LiteralString = (
     "SELECT eqos.expired_vendor_captures(coalesce(array_agg(c), '{}')) AS expired "
@@ -647,42 +648,18 @@ class EvidenceRepository:
 
     def get_calculation_traces(self, ids: Sequence[int]) -> tuple[StoredTrace, ...]:
         """Stored traces by id, with operand rows and child traces; each hash re-checked. A
-        trace resting on a non-retained vendor capture raises before any decode (R13)."""
+        trace resting on a non-retained vendor capture raises before any decode (R13); the
+        check and the whole read share one transaction under the retention shared lock."""
         if not ids:
             return ()
-        expired = self._fetch(_TRACES_EXPIRED, (list(ids),))[0]["expired"]
-        if expired:
-            raise OriginalExpiredError(f"ORIGINAL_EXPIRED: traces {list(ids)} rest on {expired}")
-        traces = self._fetch(calc_sql.TRACES_BY_ID, (list(ids),))
-        operands: dict[int, list[TraceOperand]] = {}
-        for row in self._fetch(calc_sql.OPERANDS_OF_TRACES, (list(ids),)):
-            operands.setdefault(row["calculation_trace_id"], []).append(calc_sql.operand_of(row))
-        child_ids = sorted(
-            {
-                operand.operand_trace_id
-                for items in operands.values()
-                for operand in items
-                if operand.operand_trace_id is not None
-            }
-        )
-        children = {child.trace_id: child for child in self.get_calculation_traces(child_ids)}
-        stored: list[StoredTrace] = []
-        for row in traces:
-            own = operands.get(row["id"], [])
-            trace = calc_sql.trace_of(row, own)
-            calc_sql.check_trace_digest(trace, row["content_sha256"])
-            stored.append(
-                StoredTrace(
-                    trace_id=row["id"],
-                    trace=trace,
-                    children=tuple(
-                        children[operand.operand_trace_id]
-                        for operand in own
-                        if operand.operand_trace_id is not None
-                    ),
+        with self._transaction() as conn:
+            conn.execute(_RETENTION_SHARED)
+            expired = _rows(conn, _TRACES_EXPIRED, (list(ids),))[0]["expired"]
+            if expired:
+                raise OriginalExpiredError(
+                    f"ORIGINAL_EXPIRED: traces {list(ids)} rest on {expired}"
                 )
-            )
-        return tuple(stored)
+            return _read_traces(conn, ids)
 
     def _proofs(self, found: Sequence[Mapping[str, Any]]) -> tuple[AlignmentProof, ...]:
         """Proof rows keyed by their XBRL target interpretation's measurement key."""
@@ -735,6 +712,28 @@ def _insert_trace(conn: psycopg.Connection[Any], trace: CalculationTrace) -> int
             ],
         )
     return trace_id
+
+
+def _read_traces(conn: psycopg.Connection[Any], ids: Sequence[int]) -> tuple[StoredTrace, ...]:
+    """Traces by id on one connection, children recursively; each content hash re-checked."""
+    if not ids:
+        return ()
+    traces = _rows(conn, calc_sql.TRACES_BY_ID, (list(ids),))
+    operands: dict[int, list[TraceOperand]] = {}
+    for row in _rows(conn, calc_sql.OPERANDS_OF_TRACES, (list(ids),)):
+        operands.setdefault(row["calculation_trace_id"], []).append(calc_sql.operand_of(row))
+    nested = sorted(
+        {o.operand_trace_id for own in operands.values() for o in own if o.operand_trace_id}
+    )
+    children = {child.trace_id: child for child in _read_traces(conn, nested)}
+    stored: list[StoredTrace] = []
+    for row in traces:
+        own = operands.get(row["id"], [])
+        trace = calc_sql.trace_of(row, own)
+        calc_sql.check_trace_digest(trace, row["content_sha256"])
+        nest = tuple(children[o.operand_trace_id] for o in own if o.operand_trace_id)
+        stored.append(StoredTrace(trace_id=row["id"], trace=trace, children=nest))
+    return tuple(stored)
 
 
 def _one_id(conn: psycopg.Connection[Any], query: LiteralString, params: tuple[object, ...]) -> int:

@@ -15,13 +15,14 @@ import shutil
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
 import yaml
-from pg_evidence_schema_support import _insert, _occurrence
+from pg_evidence_schema_support import _insert, _interpretation, _occurrence
 from pg_support import PgTestDatabase, drop_database, mint_name
 from purge_support import (
     OPEN_RUNS,
@@ -51,6 +52,8 @@ from restore_support import (
 )
 from retention_support import (
     CONFIG,
+    DELTA_DAMAGE,
+    delta_world,
     dispose,
     open_item,
     package,
@@ -73,6 +76,7 @@ from fundamentals.contracts.retention import (
 )
 from fundamentals.contracts.retention_purge import PurgeReport, PurgeStep, RestoreDelta
 from fundamentals.pg.backup import MANIFEST_FILE, BackupError
+from fundamentals.pg.restore_check import delta_problems
 from fundamentals.pg.retention_io import (
     EXPIRY_JOURNAL_FILE,
     LICENCE_ENDS_FILE,
@@ -495,6 +499,34 @@ def test_a_truncated_or_rewritten_journal_is_refused(
             env.backup()
 
 
+def test_a_journal_rolled_back_before_the_final_backup_is_refused(
+    env: Env, mint: Callable[[], str]
+) -> None:
+    """G1 (R11, R12): a purge witnesses the journal's head in the live store before it deletes.
+    After a crash past the deletion and before the final backup, an emptied journal (what a
+    rollback of the whole backup directory leaves) agrees with every set, so only that witness
+    refuses restore of the pre-purge set, which would bring the deleted vendor bytes back."""
+    env.capture(b"g1")
+    old = env.backup()
+    env.age()
+    with pytest.raises(CrashError):
+        env.purge(checkpoint=crash_at(PurgeStep.FILES_DELETED, []))
+    (env.sets / EXPIRY_JOURNAL_FILE).write_text("[]")
+    with pytest.raises(BackupError, match="truncated or rolled back"):
+        restore(env, old, (target := mint()))
+    assert target not in databases(env.db.settings)
+
+
+@pytest.mark.parametrize("damage", ["none", *DELTA_DAMAGE])
+def test_the_delta_is_exactly_the_expired_vendor_tombstone_closure(damage: str) -> None:
+    """G2 (R12, A-05): the rows purge-first may change are derived from the pre-purge rows as
+    ``tombstone_vendor_capture`` selects them, so a tombstone of an unrelated trace, operand or
+    result value, an omitted closure trace and a non-vendor capture's tombstone each fail."""
+    before, after = delta_world(damage)
+    problems = delta_problems(before, after, RestoreDelta(expired=(1,), rows={}))
+    assert bool(problems) is (damage != "none"), problems
+
+
 def test_a_licence_end_filed_during_restore_is_marked_and_purged(
     env: Env, mint: Callable[[], str]
 ) -> None:
@@ -525,17 +557,22 @@ def test_a_licence_end_filed_during_restore_is_marked_and_purged(
 def test_the_restore_delta_allows_only_tombstones_of_expired_captures(
     env: Env, mint: Callable[[], str], tmp_path: Path, tamper: str
 ) -> None:
-    """F9 (R12 phase 2, A-05 redaction inventory): purge-first may change a preserved row only
-    into its tombstone image and only for a capture it expired. One more change that leaves
-    every row count equal - a kept column of the tombstoned occurrence, or the inventory
-    columns of a retained capture's occurrence - fails the delta and keeps the target closed."""
+    """F9, G2, G3 (R12 phase 2, A-05 redaction inventory): purge-first may change a preserved
+    row only into its tombstone image and only for a capture it expired. One more change that
+    leaves every row count equal - a kept column of the tombstoned occurrence, the inventory
+    columns of a retained capture's occurrence, an expired occurrence left with its payload or
+    a retained interpretation's numeric moved at its 18th decimal - fails the delta and keeps
+    the target closed."""
     gone = env.capture(b"f9-gone")
     kept = env.capture(b"f9-kept: an address-less exchange capture", XBRL)
     with env.db.migrator_connection() as conn:
         for ref in (gone, kept):
-            _insert(
-                conn, "occurrences", _occurrence(int(ref.capture_ref_id or 0), uuid.uuid4().hex)
-            )
+            row = _occurrence(capture := int(ref.capture_ref_id or 0), uuid.uuid4().hex)
+            occurrence = _insert(conn, "occurrences", row)
+        exact = {"upper": Decimal("3405600000.000000000000000001")}
+        _insert(
+            conn, "interpretations", _interpretation(entity(conn), capture, occurrence, **exact)
+        )
     old = aside(env.backup(), tmp_path)
     env.age()
     assert env.purge().expired == (gone.capture_ref_id,)
@@ -547,7 +584,7 @@ def test_the_restore_delta_allows_only_tombstones_of_expired_captures(
                 admin = env.db.settings.conninfo(PgRole.ADMIN, dbname=conn.info.dbname)
                 with psycopg.connect(admin, autocommit=True) as other:
                     other.execute(REPLICA)
-                    ref = gone if tamper == "kept column" else kept
+                    ref = gone if tamper in ("kept column", "untouched payload") else kept
                     other.execute(TAMPER[tamper], (ref.capture_ref_id,))
             return delta
 

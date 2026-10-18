@@ -47,14 +47,19 @@ TAMPER = {
     "WHERE capture_ref_id = %s",
     "retained capture": "UPDATE eqos.occurrences SET raw_value_text = NULL, raw_sign = NULL "
     "WHERE capture_ref_id = %s",
+    "untouched payload": "UPDATE eqos.occurrences SET raw_value_text = '3405600000', raw_sign = 1, "
+    """native_context = '{"context_ref": "OneD"}' WHERE capture_ref_id = %s""",
+    "exact numeric": "UPDATE eqos.interpretations SET upper = 3405600000.000000000000000002 "
+    "WHERE capture_ref_id = %s",
 }
 
 
 def restore(
     env: Env, set_dir: Path, database: str, *, first: Any = None, replay: bool = False
 ) -> tuple[RestoreCheck, Path]:
-    """Restore ``set_dir`` with the authority files of ``env.sets``; ``first`` wraps the
-    composed purge-first. Returns the check and the restored snapshot root."""
+    """Restore ``set_dir`` with the authority files of ``env.sets`` and the journal head of
+    ``env.root``; ``first`` wraps the composed purge-first. Returns the check and the restored
+    snapshot root."""
     root = env.root.parent / f"restored-{database}"
     args = restore_args(env.db, set_dir, root, env.sets)
     if first is not None:
@@ -66,6 +71,7 @@ def restore(
         snapshot_root=root,
         replay_runs=replay,
         config_root=CONFIG,
+        live_snapshot_root=env.root,
         **args,
     )
     return check, root

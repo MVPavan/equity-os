@@ -187,7 +187,8 @@ def refetch(
             return RefetchOutcome.FAILED
         sha256 = hashlib.sha256(body).hexdigest()
         if sha256 != row["blob_sha256"]:
-            reused = row["outcome"] == "MISMATCH" and row["fetched_sha256"] == sha256
+            unfinished = row["outcome"] == "MISMATCH" and not row["finished"]
+            reused = unfinished and row["fetched_sha256"] == sha256
             _register(pool, store, record, row if reused else attempt("MISMATCH", sha256), body)
             return RefetchOutcome.REFETCH_MISMATCH
         attempt("MATCH", sha256)

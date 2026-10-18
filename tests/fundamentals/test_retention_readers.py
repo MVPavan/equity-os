@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import pytest
 from pg_support import PgTestDatabase
 from psycopg_pool import ConnectionPool
@@ -27,6 +28,7 @@ from fundamentals.contracts.retention_purge import FetchFailure, FetchFailureCat
 from fundamentals.contracts.snapshot import MissingSnapshotError
 from fundamentals.contracts.source_catalog import BUILTIN_SOURCES, NSE_MASTER
 from fundamentals.entity.discovery import Capture, Request, Response, store_captures
+from fundamentals.evidence import repository as repository_module
 from fundamentals.evidence.capture_retention import read_retained
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger.citations import resolve_location
@@ -47,6 +49,8 @@ VENDOR_INTERPRETATIONS = (
     "SELECT id FROM eqos.interpretations WHERE eqos.is_vendor_source("
     "(SELECT source_id FROM eqos.capture_refs WHERE id = capture_ref_id))"
 )
+# The purge's exclusive retention lock, tried without waiting (xact: released at commit).
+TRY_EXCLUSIVE = "SELECT pg_try_advisory_xact_lock(eqos.retention_lock_key())"
 # Traces with a vendor interpretation operand; a trace without one nesting a child trace.
 DIRECT = (
     "SELECT DISTINCT calculation_trace_id FROM eqos.calculation_trace_operands "
@@ -135,6 +139,25 @@ def test_a_tombstoned_trace_is_expired_not_a_provenance_mismatch(
         for trace in (direct, transitive):
             with pytest.raises(OriginalExpiredError, match="ORIGINAL_EXPIRED"):
                 stage.repository.get_calculation_traces([trace])
+
+
+def test_a_purge_cannot_slip_between_the_trace_expiry_check_and_the_read(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G4 (R13): once the expiry check has run, the purge's exclusive retention lock is
+    unavailable until the trace read ends, so no purge can tombstone a trace between them."""
+    execute, slipped = psycopg.Cursor.execute, []
+
+    def purge_attempt(cursor: psycopg.Cursor[Any], query: Any, *args: Any, **kw: Any) -> Any:
+        result = execute(cursor, query, *args, **kw)
+        if query == repository_module._TRACES_EXPIRED:
+            with env.db.migrator_connection() as conn:
+                slipped.append(conn.execute(TRY_EXCLUSIVE).fetchone())
+        return result
+
+    monkeypatch.setattr(psycopg.Cursor, "execute", purge_attempt)
+    assert EvidenceRepository(env.pool).get_calculation_traces([0]) == ()
+    assert slipped == [(False,)]
 
 
 def one_connection_pool(pg_db: PgTestDatabase) -> ConnectionPool:

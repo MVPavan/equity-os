@@ -145,6 +145,7 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
     )
     # No capture expires before 0028, so no trace rests on one (R13).
     monkeypatch.setattr(repository, "_TRACES_EXPIRED", "SELECT '{}'::bigint[] AS expired, %s")
+    monkeypatch.setattr(repository, "_RETENTION_SHARED", "SELECT 1")
     # Every row is visible before 0029's state-aware readers (R13).
     for module in (rows_sql, run_store):
         for name, fragment in vars(module).items():

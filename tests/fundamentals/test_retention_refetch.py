@@ -194,6 +194,19 @@ def test_a_crash_before_registration_reruns_under_the_same_attempt(
     assert len(env.sql(ATTEMPTS, capture)) == 1 and len(env.sql(NEW_CAPTURES, ref.request_key)) == 1
 
 
+def test_a_retry_after_a_completed_mismatch_records_its_fetch(env: Env) -> None:
+    """G5 (R10): ``retry`` after a completed mismatch fetching the same changed bytes records a
+    new ``MISMATCH`` attempt and its own capture, so the history keeps every fetch."""
+    (ref,) = expire(env, (b"g5-original", XBRL))
+    capture = int(ref.capture_ref_id or 0)
+    for _ in range(2):
+        assert refetch(env.pool, env.store, capture, serve(b"g5-changed"), retry=True) is (
+            RefetchOutcome.REFETCH_MISMATCH
+        )
+    assert [a[0] for a in env.sql(ATTEMPTS, capture)] == ["MISMATCH", "MISMATCH"]
+    assert len(env.sql(NEW_CAPTURES, ref.request_key)) == 2
+
+
 @pytest.mark.parametrize("purged", [False, True], ids=["rerun", "purged"])
 def test_a_crash_after_relink_commits_on_rerun_or_is_purged(
     env: Env, monkeypatch: pytest.MonkeyPatch, purged: bool

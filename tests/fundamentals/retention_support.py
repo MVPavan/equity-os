@@ -46,6 +46,7 @@ from fundamentals.contracts.snapshot import (
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.ledger import store as ledger_store
 from fundamentals.pg.migrations import apply_migrations
+from fundamentals.pg.restore_check import Rows
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention.eligibility import add_months, eligibility
 from fundamentals.retention.holds import capture_facts
@@ -332,3 +333,60 @@ def draft_claim(ledger: Ledger, conn: psycopg.Connection) -> int:
     draft = ledger.version_draft(ledger.report())
     with conn.cursor() as cursor:
         return ledger_store.create_version(cursor, draft)
+
+
+DELTA_DAMAGE = {
+    "unrelated trace": ("calculation_traces", 2),
+    "unrelated operand": ("calculation_trace_operands", 2),
+    "unrelated result value": ("result_source_values", 2),
+    "omitted closure trace": ("calculation_traces", 11),
+    "not vendor": ("retention_classes", 1),
+}
+
+
+def delta_world(damage: str) -> tuple[Rows, Rows]:
+    """SYNTHETIC: VENDOR captures 1 (expired) and 2 (kept), each with an interpretation, its
+    construction trace, trace 10 + c fed from it through an operand and a vendor result value.
+    Returns the pre-purge rows and the rows with exactly capture 1's tombstones (0029), then
+    ``damage`` applied."""
+    pay, both = {"value": 1, "lower": 0, "upper": 2}, (1, 2)
+    exact = pay | {"exact_value": 1, "exact_lower": 0, "exact_upper": 2}
+    operand = {"interpretation_id": None}
+    vendor = {"source_role": "INDEPENDENT_VENDOR", "calculation_trace_id": None}
+    before: Rows = {
+        "occurrences": {},
+        "acquisition_attempts": {},
+        "retention_classes": {c: {"capture_ref_id": c, "retention_class": "VENDOR"} for c in both},
+        "interpretations": {
+            c: pay | {"capture_ref_id": c, "transform_trace": {"k": c}} for c in both
+        },
+        "construction_traces": {
+            c: {"interpretation_id": c, "calculation_trace_id": c} for c in both
+        },
+        "calculation_traces": {t: exact for t in (1, 2, 11, 12)},
+        "calculation_trace_operands": {
+            c: exact | operand | {"calculation_trace_id": 10 + c, "operand_trace_id": c}
+            for c in both
+        },
+        "result_source_values": {c: pay | vendor | {"interpretation_id": c} for c in both},
+    }
+    after = {table: dict(rows) for table, rows in before.items()}
+    blank = {"interpretations": dict.fromkeys(pay) | {"transform_trace": {}}}
+    blank["result_source_values"] = dict.fromkeys(pay)
+    for table in ("interpretations", "calculation_traces", "calculation_trace_operands"):
+        after[table][1] = before[table][1] | blank.get(table, dict.fromkeys(exact))
+    after["calculation_traces"][11] = exact | dict.fromkeys(exact)
+    after["result_source_values"][1] = (
+        before["result_source_values"][1] | blank["result_source_values"]
+    )
+    table, key = DELTA_DAMAGE.get(damage, ("", 0))
+    if damage.startswith("unrelated"):
+        after[table][key] = before[table][key] | blank.get(table, dict.fromkeys(exact))
+    elif damage == "omitted closure trace":
+        after[table][key] = before[table][key]
+    elif damage == "not vendor":
+        before[table][key] = after[table][key] = {
+            "capture_ref_id": 1,
+            "retention_class": "EXCHANGE",
+        }
+    return before, after

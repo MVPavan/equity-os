@@ -313,13 +313,15 @@ def restore_backup(
     replay_runs: bool,
     config_root: Path,
     backup_dir: Path | None = None,
+    live_snapshot_root: Path | None = None,
     purge_login: RoleLogin,
     purge_first: PurgeFirst,
 ) -> RestoreCheck:
     """Restore a verified set into a new test database, closed from creation, and an empty
     snapshot root (R12): check it is faithful, mark licence ends, run the injected purge-first
     as the purge login, check the delta and replay, then grant access. A failure leaves the
-    database closed; ``backup_dir`` (default the set's parent) holds the authority files."""
+    database closed; ``backup_dir`` (default the set's parent) holds the authority files and
+    ``live_snapshot_root`` the journal head a purge witnessed before deleting."""
     if not is_test_database(database):
         raise BackupError(f"restore refuses {database!r}: not an eqos_test_ database")
     check_test_db_name(database, settings)
@@ -327,7 +329,9 @@ def restore_backup(
     present = manifest.schema_state is SchemaState.PRESENT
     if present and _LAST_MIGRATION_TABLE not in manifest.table_counts:
         raise BackupError(f"{set_dir.name} predates migration 0030; restore refused")
-    authority = _authority(backup_dir or set_dir.parent, manifest) if present else _NO_AUTHORITY
+    authority = _NO_AUTHORITY
+    if present:
+        authority = _authority(backup_dir or set_dir.parent, manifest, live_snapshot_root)
     if snapshot_root.exists() and any(snapshot_root.iterdir()):
         raise BackupError(f"snapshot root {snapshot_root} is not empty")
     create_test_database(settings, database, closed=True)
@@ -407,10 +411,10 @@ def restore_backup(
     return check
 
 
-def _authority(backup_dir: Path, manifest: BackupManifest) -> Authority:
-    """The authority files, refused unless the set's own witness agrees with the journal."""
+def _authority(backup_dir: Path, manifest: BackupManifest, live: Path | None) -> Authority:
+    """The authority files, refused unless the set's own witness and the live head agree."""
     try:
-        authority = read_authority(backup_dir)
+        authority = read_authority(backup_dir, live)
         check_head(authority.journal, manifest.journal_watermark, manifest.journal_sha256)
     except AuthorityError as error:
         raise BackupError(f"retention authority refused: {error}") from error
