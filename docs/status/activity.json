@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "PREP-2b implementation (Tasks 1-3), screen-export plan in review",
-    "detail": "PREP-2b plan approved by Sol r3 (c10f968): the run writes its earnings update as a PostgreSQL ledger draft; the pilot becomes a labelled retrospective workflow demonstration; IST cutoff fix folded in. Screen-export plan (eqos-351) in its r2 fix round.",
-    "stage": "PREP-2b"
+    "title": "Screen export (eqos-351): legacy deletion, then exporter",
+    "detail": "PREP-2 and PREP-2b done: the pilot run is PostgreSQL-only and writes a validated, labelled-retrospective ledger draft per quarter. Screen-export plan and spec amendment approved; Task 2 (delete legacy screener-screen) running.",
+    "stage": "D7"
   },
   "next": [
-    "PREP-2b Tasks 4-7, then full suite and commit",
-    "Screen-export plan re-review (Sol), then build (needs owner's saved Screener screen and Tijori query d7-stage4)",
+    "Screen export Tasks 3-7 (exporter, binding, review queue + D9 holds, Stage 4 manifest and e2e) — live runs need the owner's saved Screener screen and Tijori query d7-stage4",
     "PREP-3..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Phase-end Sol review of PREP-2/2b (incl. ledger/run_draft.py size, 519 lines)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)",
     "Follow-ups: eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "PREP-2b done (246187c, 83643a8, dbcb68e): IST cutoffs fixed; computed claims trace-backed; retrospective admission pinned to the retrieval manifest; each run writes a validated DRAFT (FY26_Q2 to FY27_Q1 sequence approved in test); JSON management ledger deleted (about -1,500 lines); migration 0033. Full suite 4077 passed, 8 skipped, 0 failed. Screen-export amendment approved (caeeb12)."
+    },
     {
       "date": "2026-10-18",
       "text": "PREP-2b plan: Sol r1 REVISE (12), r2 REVISE (retrospective contract, other-income truncation 19.72/33.65, IST cutoffs), r3 APPROVE. Found: no proof any Apar original was held before its cutoff (all retrieved 2026-09-06/07), so the pilot is a labelled retrospective workflow demonstration; all Apar cutoffs were 5h30 late (IST read as UTC, eqos-4j2.18). Screen-export live probe committed (b148489); plan r1, r2 REVISE."
