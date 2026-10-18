@@ -51,10 +51,22 @@ from purge_support import (
     ref_of,
     vendor_copy,
 )
-from retention_support import dispose, later, package, retention_cli, set_store_clock, verify
+from retention_support import (
+    PAUSE,
+    dispose,
+    draft_claim,
+    in_thread,
+    later,
+    locks,
+    package,
+    record_of,
+    retention_cli,
+    set_store_clock,
+    verify,
+    wait_for,
+)
 from stage1_e2e_support import RUNS, Stage
 from test_retention_holds import World, _figure, _quote, world
-from test_retention_protocol import PAUSE, draft_claim, in_thread, locks, record_of, wait_for
 
 from fundamentals.compare.run import load_results
 from fundamentals.compare.run_store import RunStore
@@ -578,9 +590,10 @@ def test_live_fetch_counts_only_a_complete_body(
         return answer
 
     monkeypatch.setattr(urllib.request.OpenerDirector, "open", fake_open)
+    monkeypatch.setattr("socket.getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("8.8.8.8", 443))])
     if isinstance(expected, bytes):
-        assert refetch.live_fetch("https://example.invalid/x") == expected
+        assert refetch.live_fetch("https://nsearchives.nseindia.com/x") == expected
         return
     with pytest.raises(FetchFailure) as failure:
-        refetch.live_fetch("https://example.invalid/x")
+        refetch.live_fetch("https://nsearchives.nseindia.com/x")
     assert (failure.value.category, failure.value.http_status) == expected

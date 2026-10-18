@@ -1,18 +1,15 @@
-"""Fetching an expired exchange original back from its address (plan D9 R8 step 1, R10).
-
-:func:`live_fetch` is the one network path: no redirects, a timeout, and a body that counts
-only when read to EOF at the length the server announced. :func:`probe` hash-checks a sample
-of a source's eligible captures before any of that source's exchange originals are deleted.
-:func:`refetch` records an attempt first, then restores equal bytes as the same capture or
-publishes different bytes as a new capture naming the attempt.
-"""
+"""Fetching an expired exchange original back from its address (plan D9 R8 step 1, R10):
+:func:`live_fetch` (the one network path), :func:`probe` before deletion, :func:`refetch`."""
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
 import http.client
+import ipaddress
+import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import defaultdict
 from collections.abc import Callable
@@ -44,6 +41,10 @@ from fundamentals.ingest.http_session import NoRedirectHandler, read_bounded_cap
 from fundamentals.store.snapshot_store import MAX_BODY_BYTES, SnapshotStore
 
 Fetch = Callable[[str], bytes]
+# The exchange hosts first-party captures are fetched from; any other address is refused.
+APPROVED_HOSTS = frozenset(
+    {"www.nseindia.com", "nsearchives.nseindia.com", "www.bseindia.com", "api.bseindia.com"}
+)
 REFETCH_TIMEOUT_SECONDS = 60.0
 PROBE_SAMPLE = 3
 _INSERT_PROBE: LiteralString = (
@@ -74,11 +75,16 @@ _RESTORE: LiteralString = "SELECT eqos.restore_capture(%s)"
 
 
 def live_fetch(url: str) -> bytes:
-    """The complete body at ``url``, or :class:`FetchFailure` naming why not."""
+    """The complete HTTP 200 body at an approved ``url``, else :class:`FetchFailure`."""
+    _approve(url)
     opener = urllib.request.build_opener(NoRedirectHandler)
     try:
         with opener.open(url, timeout=REFETCH_TIMEOUT_SECONDS) as response:
+            if response.status != http.client.OK:
+                raise FetchFailure(FetchFailureCategory.HTTP_STATUS, response.status)
             length = response.headers.get("Content-Length")
+            if length is not None and not length.isdecimal():
+                raise FetchFailure(FetchFailureCategory.INCOMPLETE)
             read = read_bounded_capture(
                 response,
                 MAX_BODY_BYTES,
@@ -89,17 +95,27 @@ def live_fetch(url: str) -> bytes:
         raise FetchFailure(FetchFailureCategory.HTTP_STATUS, error.code) from error
     except http.client.IncompleteRead as error:
         raise FetchFailure(FetchFailureCategory.INCOMPLETE) from error
-    except TimeoutError as error:
-        raise FetchFailure(FetchFailureCategory.TIMEOUT) from error
-    except urllib.error.URLError as error:
-        timed_out = isinstance(error.reason, TimeoutError)
+    except OSError as error:  # a URLError carries its cause as ``reason``
+        timed_out = isinstance(getattr(error, "reason", error), TimeoutError)
         category = FetchFailureCategory.TIMEOUT if timed_out else FetchFailureCategory.CONNECTION
         raise FetchFailure(category) from error
-    except OSError as error:
-        raise FetchFailure(FetchFailureCategory.CONNECTION) from error
     if read.completeness is not BodyCompleteness.COMPLETE or read.raw_body is None:
         raise FetchFailure(FetchFailureCategory.INCOMPLETE)
     return read.raw_body
+
+
+def _approve(url: str) -> None:
+    """Refuse, before opening it, an address other than HTTPS to an approved host (no port or
+    user) that resolves to public addresses only."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.netloc not in APPROVED_HOSTS:
+        raise FetchFailure(FetchFailureCategory.REFUSED_ADDRESS)
+    try:
+        addresses = socket.getaddrinfo(parts.netloc, 443, proto=socket.IPPROTO_TCP)
+    except OSError as error:
+        raise FetchFailure(FetchFailureCategory.CONNECTION) from error
+    if not all(ipaddress.ip_address(address[4][0]).is_global for address in addresses):
+        raise FetchFailure(FetchFailureCategory.REFUSED_ADDRESS)
 
 
 def probe(
@@ -132,18 +148,24 @@ def probe(
 
 
 def refetch(
-    pool: ConnectionPool, store: SnapshotStore, capture_ref_id: int, fetch: Fetch
+    pool: ConnectionPool,
+    store: SnapshotStore,
+    capture_ref_id: int,
+    fetch: Fetch,
+    *,
+    retry: bool = False,
 ) -> RefetchOutcome:
     """Fetch an expired exchange capture from its address: equal bytes restore it (same id and
     times), different bytes become a new capture under a HIGH ``MISMATCH`` attempt (R10). A
-    rerun finishes the latest attempt before fetching again."""
+    rerun finishes the latest attempt before fetching again; after a completed mismatch only
+    ``retry`` fetches again."""
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         row = cursor.execute(_CAPTURE, (capture_ref_id,)).fetchone()
     if row is None or not row["refetchable"]:
         return RefetchOutcome.NOT_REFETCHABLE
     ids = (row["source_id"], row["surface"], row["request_key"], row["capture_id"])
     record = CaptureRecord.model_validate_json(store.read_record(*ids, row["record_sha256"]))
-    if row["outcome"] == "MISMATCH" and row["finished"]:
+    if row["outcome"] == "MISMATCH" and row["finished"] and not retry:
         return RefetchOutcome.REFETCH_MISMATCH
 
     def attempt(outcome: str, fetched: str | None, failed: tuple[Any, ...] = (None, None)) -> Any:
@@ -183,9 +205,9 @@ def _register(
     attempt: dict[str, Any],
     body: bytes,
 ) -> None:
-    """Publish and register mismatching bytes as the attempt's new capture at its address:
-    the original route with the attempt as a request parameter (invariant 13), retrieved at
-    the attempt's time so a rerun (reusing an unfinished attempt) republishes the same record."""
+    """Publish and register mismatching bytes as the attempt's new capture at its address: the
+    original route naming the attempt (invariant 13), retrieved at the attempt's time so a rerun
+    republishes the same record."""
     request, attempt_id = original.request, attempt["id"]
     key = f"{request.request_key}.{ATTEMPT_PARAMETER}-{attempt_id}"
     params = (*request.parameters, RequestParameter(name=ATTEMPT_PARAMETER, value=str(attempt_id)))

@@ -16,13 +16,12 @@ import psycopg
 import pytest
 from pg_evidence_schema_support import _insert
 from pg_support import REPO_ROOT, PgTestDatabase
-from retention_support import set_store_clock
+from retention_support import record_of, set_store_clock
 from stage1_e2e_support import MANIFEST, SNAPSHOTS, Stage
 from test_frozen_manifests import source
-from test_retention_protocol import record_of
 
 from fundamentals.contracts.evidence import CaptureReference
-from fundamentals.contracts.retention import JournalEventKind
+from fundamentals.contracts.retention import HoldRoot, JournalEventKind
 from fundamentals.contracts.retention_purge import PurgeReport, PurgeStep
 from fundamentals.contracts.snapshot import CaptureRecord, MissingSnapshotError
 from fundamentals.evidence.capture_retention import capture_registration
@@ -107,6 +106,7 @@ class Env:
         checkpoint: Callable[[PurgeStep], None] = lambda step: None,
         *,
         final: bool = True,
+        pinned: dict[HoldRoot, frozenset[str]] | None = None,
     ) -> PurgeReport:
         """One purge as the purge login, with a held final backup unless ``final`` is false."""
         return purge(
@@ -115,7 +115,7 @@ class Env:
             database=self.db.dbname,
             snapshot_root=self.root,
             backup_dir=self.sets,
-            pinned={},
+            pinned=pinned or {},
             fetch=fetch or no_fetch,
             final_backup=self.backup if final else None,
             checkpoint=checkpoint,
@@ -233,7 +233,7 @@ class FakeResponse:
         self.headers = Message()
         if length is not None:
             self.headers["Content-Length"] = str(length)
-        self.chunks = chunks
+        self.chunks, self.status = chunks, 200
 
     def __enter__(self) -> FakeResponse:
         return self

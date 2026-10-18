@@ -61,7 +61,7 @@ from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.retention.eligibility import eligibility, eligible_blobs
 from fundamentals.retention.holds import capture_facts
 from fundamentals.retention.refetch import Fetch, probe
-from fundamentals.store.snapshot_store import RECORD_FILENAME, SnapshotStore
+from fundamentals.store.snapshot_store import SnapshotStore
 
 Checkpoint = Callable[[PurgeStep], None]
 FinalBackup = Callable[[psycopg.Connection[Any]], Path]
@@ -85,6 +85,11 @@ _CLOSE_RUN: LiteralString = "INSERT INTO eqos.purge_run_closures (run_id) VALUES
 _STATE: LiteralString = (
     "INSERT INTO eqos.capture_states (capture_ref_id, state, purge_run_id) VALUES (%s, %s, %s)"
 )
+_CANCEL: LiteralString = (  # back to the state before the intent: RETAINED or RESTORED
+    "INSERT INTO eqos.capture_states (capture_ref_id, state, purge_run_id) SELECT %(c)s, "
+    "coalesce((SELECT state FROM eqos.capture_states WHERE capture_ref_id = %(c)s AND state "
+    "<> 'PURGE_PENDING' ORDER BY id DESC LIMIT 1), 'RETAINED'), %(run)s"
+)
 _RUN_STATES: LiteralString = (
     "SELECT capture_ref_id, eqos.capture_state(capture_ref_id) FROM eqos.capture_states "
     "WHERE purge_run_id = %s GROUP BY capture_ref_id ORDER BY capture_ref_id"
@@ -106,6 +111,7 @@ _LICENCE_ENDS: LiteralString = "SELECT source_id FROM eqos.licence_ends"
 _VENDOR_NOW: LiteralString = "SELECT eqos.is_vendor_source(%s), eqos.store_now()"
 JOURNAL_EXPIRY = "EXPIRY_JOURNAL"
 _GONE = frozenset({CaptureState.EXPIRED, CaptureState.PURGE_PENDING})
+_KEPT = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 
 
 def dry_run(conn: psycopg.Connection[Any], pinned: Pinned) -> tuple[EligibleBlob, ...]:
@@ -198,7 +204,7 @@ class _Run:
         checkpoint: Checkpoint,
     ) -> None:
         self.conn, self.backup_dir = conn, backup_dir
-        self.root, self.store = snapshot_root, SnapshotStore(snapshot_root)
+        self.store = SnapshotStore(snapshot_root)
         self.pinned, self.final_backup, self.checkpoint = pinned, final_backup, checkpoint
         self.expired: list[int] = []
         self.cancelled: list[tuple[int, str]] = []
@@ -217,21 +223,21 @@ class _Run:
             self.checkpoint(PurgeStep.FENCE_WRITTEN)
         with self.conn.transaction():
             facts, now = _facts(self.conn, self.pinned)
-        verdicts = {f.capture_ref_id: (f, eligibility(f, now)) for f in facts}
+        verdicts = {f.capture_ref_id: (f, _decision(f, now)) for f in facts}
         eligible = {(b.source_id, b.blob_sha256) for b in eligible_blobs(facts, now)}
         with self.store.writer_held():
             cancel = self._delete(users, eligible)
             self.checkpoint(PurgeStep.FILES_DELETED)
             with self.conn.transaction():
                 for capture in cancel:
-                    self.conn.execute(_STATE, (capture, CaptureState.RETAINED, run_id))
+                    self.conn.execute(_CANCEL, {"c": capture, "run": run_id})
                 for user in pending:
                     if user["id"] not in cancel:
                         self._expire(run_id, user, verdicts.get(user["id"]))
         self.checkpoint(PurgeStep.EXPIRED_COMMITTED)
         states = self.conn.execute(_RUN_STATES, (run_id,)).fetchall()
         expired = tuple(c for c, state in states if state == CaptureState.EXPIRED)
-        cancelled = tuple(c for c, state in states if state == CaptureState.RETAINED)
+        cancelled = tuple(c for c, state in states if state in _KEPT)
         self.expired += [c for c in expired if c not in self.expired]
         self.cancelled += [(c, r) for c, r in cancel.items()]
         if not self._journaled(run_id, JournalEventKind.COMPLETE):
@@ -258,46 +264,35 @@ class _Run:
     def _delete(
         self, users: list[dict[str, Any]], eligible: set[tuple[str, str]]
     ) -> dict[int, str]:
-        """Step 3 under the held writer lock (RP5): inventory every blob; delete those whose
-        registered users are all purging or expired (residue included), and every blob of a
-        licence-ended source; return the intents to cancel: an unknown link, or intact bytes no
-        longer eligible."""
-        ended = {source for (source,) in self.conn.execute(_LICENCE_ENDS).fetchall()}
+        """Step 3 under the held writer lock (RP5): every licence-ended source's bodies and blobs,
+        all checked before any unlink; then per inventoried blob, the body links of its expired
+        and purging users (residue included) and the blob unless a retained user keeps it.
+        Return the intents to cancel: an unknown link, or intact bytes no longer eligible."""
+        ended = frozenset(source for (source,) in self.conn.execute(_LICENCE_ENDS).fetchall())
+        if (outside := self.store.delete_sources(ended, self._link_deleted)) is not None:
+            raise PurgeRefusedError(f"licence-ended blob {outside} is linked outside its trees")
         by_blob: defaultdict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for user in users:
             by_blob[user["source_id"], user["blob_sha256"]].append(user)
         cancel: dict[int, str] = {}
         for entry in self.store.blob_inventory():
             key = (entry.source_id, entry.blob_sha256)
-            if entry.source_id in ended:
-                self._delete_ended(*key)
-                continue
             group = by_blob.get(key, [])
             mine = [u["id"] for u in group if u["state"] == CaptureState.PURGE_PENDING]
             if not group:
                 self.incomplete.append(_incomplete(entry, IncompleteKind.UNREGISTERED))
                 continue
-            if any(CaptureState(u["state"]) not in _GONE for u in group):
-                continue
             if mine and key not in eligible and entry.links >= 1 + len(mine):
                 cancel.update(dict.fromkeys(mine, NO_LONGER_ELIGIBLE))
                 continue
-            links = tuple((u["surface"], u["request_key"], u["capture_id"]) for u in group)
-            deleted = self.store.delete_blob(*key, links, self._link_deleted)
+            gone = [u for u in group if CaptureState(u["state"]) in _GONE]
+            links = tuple((u["surface"], u["request_key"], u["capture_id"]) for u in gone)
+            kept = len(gone) < len(group)
+            deleted = self.store.delete_blob(*key, links, self._link_deleted, keep_blob=kept)
             if deleted is BlobDeletion.UNKNOWN_LINK:
                 self.incomplete.append(_incomplete(entry, IncompleteKind.UNKNOWN_LINK))
                 cancel.update(dict.fromkeys(mine, IncompleteKind.UNKNOWN_LINK.value))
         return cancel
-
-    def _delete_ended(self, source_id: str, blob_sha256: str) -> None:
-        """RP5 licence-end variant: unlink every body under the source's capture tree, registered
-        or not, then the blob; a link from outside that tree refuses."""
-        records = (self.root / source_id).glob(f"*/*/*/{RECORD_FILENAME}")
-        links = tuple((p.parts[-4], p.parts[-3], p.parts[-2]) for p in records)
-        if self.store.delete_blob(source_id, blob_sha256, links, self._link_deleted) is (
-            BlobDeletion.UNKNOWN_LINK
-        ):
-            raise PurgeRefusedError(f"{source_id} blob {blob_sha256} is linked outside its tree")
 
     def _link_deleted(self) -> None:
         """The per-unlink crash seam."""
@@ -340,6 +335,15 @@ def sanitize(conn: psycopg.Connection[Any], backup_dir: Path, checkpoint: Checkp
         if path.is_dir() and path.name.startswith("."):
             if path.name.endswith((DELETING_SUFFIX, PARTIAL_SUFFIX)):
                 shutil.rmtree(path)
+
+
+def _decision(fact: CaptureFacts, now: datetime) -> Eligibility:
+    """An intent's verdict once its bytes are gone (R8): a hold that appeared since (only a
+    pinned file root can, writers being refused) does not undo the deletion."""
+    verdict = eligibility(fact, now)
+    if verdict.kind is EligibilityKind.HELD:
+        return eligibility(fact.model_copy(update={"holds": frozenset()}), now)
+    return verdict
 
 
 def _fenced(user: dict[str, Any]) -> dict[str, Any]:

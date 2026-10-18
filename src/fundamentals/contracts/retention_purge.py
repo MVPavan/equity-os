@@ -27,6 +27,7 @@ class FetchFailureCategory(StrEnum):
     HTTP_STATUS = "HTTP_STATUS"
     TIMEOUT = "TIMEOUT"
     CONNECTION = "CONNECTION"
+    REFUSED_ADDRESS = "REFUSED_ADDRESS"
 
 
 class FetchFailure(Exception):  # noqa: N818 - the name plan D9 R10 fixes

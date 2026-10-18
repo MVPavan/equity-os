@@ -38,8 +38,9 @@ import hashlib
 import os
 import re
 import uuid
+from collections import Counter
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 import structlog
@@ -58,28 +59,10 @@ from fundamentals.contracts.snapshot import (
     UnsafePathError,
     canonical_json,
 )
-from fundamentals.store.descriptor_tree import (
-    LOCK_FILENAME as LOCK_FILENAME,
-)
-from fundamentals.store.descriptor_tree import (
-    MAX_METADATA_BYTES as MAX_METADATA_BYTES,
-)
-from fundamentals.store.descriptor_tree import (
-    READ_BUDGET_SECONDS as READ_BUDGET_SECONDS,
-)
-from fundamentals.store.descriptor_tree import (
-    UNSAFE_COMPONENT as UNSAFE_COMPONENT,
-)
-from fundamentals.store.descriptor_tree import (
-    DescriptorTree as DescriptorTree,
-)
-from fundamentals.store.descriptor_tree import (
-    DirectoryAnchor as DirectoryAnchor,
-)
-from fundamentals.store.descriptor_tree import (
-    _check_component,
-    _identity,
-)
+from fundamentals.store.descriptor_tree import MAX_METADATA_BYTES as MAX_METADATA_BYTES
+from fundamentals.store.descriptor_tree import DescriptorTree as DescriptorTree
+from fundamentals.store.descriptor_tree import DirectoryAnchor as DirectoryAnchor
+from fundamentals.store.descriptor_tree import _check_component, _identity
 
 _LOGGER = structlog.get_logger(__name__)
 
@@ -165,21 +148,14 @@ class SnapshotStore:
         carrying a different record is a conflict and nothing is touched.
         """
         payload = self._verified_payload(record, body)
+        request = record.request
+        identity = (request.source_id, request.surface, request.request_key, record.capture_id)
         with self._tree(create=True) as tree, tree.writer_lock():
-            self._refuse_ended(record.request.source_id)
-            route = tree.descend(
-                (record.request.source_id, record.request.surface, record.request.request_key),
-                create=True,
-            )
+            self._refuse_ended(request.source_id)
+            route = tree.descend(identity[:3], create=True)
             if tree.exists(route, record.capture_id):
                 published, retained = self._read_from_tree(
-                    tree,
-                    record.request.source_id,
-                    record.request.surface,
-                    record.request.request_key,
-                    record.capture_id,
-                    MAX_BODY_BYTES,
-                    evidence=True,
+                    tree, *identity, MAX_BODY_BYTES, evidence=True
                 )
                 if published.record_sha256 != record.record_sha256:
                     raise CaptureConflictError(
@@ -235,13 +211,7 @@ class SnapshotStore:
             os.fsync(route)
             os.fsync(staging_root)
             published, retained = self._read_from_tree(
-                tree,
-                record.request.source_id,
-                record.request.surface,
-                record.request.request_key,
-                record.capture_id,
-                MAX_BODY_BYTES,
-                evidence=True,
+                tree, *identity, MAX_BODY_BYTES, evidence=True
             )
             if published.record_sha256 != record.record_sha256 or retained != (body or b""):
                 raise IntegrityError("capture publication changed")
@@ -267,11 +237,9 @@ class SnapshotStore:
             finally:
                 self._held = False
 
-    @contextmanager
-    def _writer(self) -> Iterator[DescriptorTree]:
-        """A tree under the writer lock: the one this instance holds, or taken for the call."""
-        with self._tree() as tree, nullcontext() if self._held else tree.writer_lock():
-            yield tree
+    def _writer(self) -> AbstractContextManager[None]:
+        """The writer lock: the one this instance holds, or taken for the call."""
+        return nullcontext() if self._held else self.writer_held()
 
     @contextmanager
     def _tree(self, *, create: bool = False) -> Iterator[DescriptorTree]:
@@ -373,6 +341,7 @@ class SnapshotStore:
         A directory with no ``record.json`` is a crash remnant and ``.staging``
         is work in progress; neither is a capture a reader may see.
         """
+        self._refuse_ended(source_id)
         route = self._route(source_id, surface, request_key)
         if not route.is_dir():
             return ()
@@ -396,6 +365,7 @@ class SnapshotStore:
 
     def read_evidence_body(self, record: CaptureRecord) -> bytes:
         """Verify retained bytes for inspection, without granting replay eligibility."""
+        self._refuse_ended(record.request.source_id)
         if record.body is None:
             raise MissingSnapshotError(NO_RETAINED_BODY.format(capture_id=record.capture_id))
         capture_dir = self._child(self._route_of(record.request), record.capture_id)
@@ -474,38 +444,72 @@ class SnapshotStore:
         blob_sha256: str,
         links: tuple[tuple[str, str, str], ...],
         checkpoint: Callable[[], None],
+        *,
+        keep_blob: bool = False,
     ) -> BlobDeletion:
-        """Unlink each registered body link ``(surface, request_key, capture_id)``, then the
-        blob, fsyncing parents and calling ``checkpoint`` after each unlink. A blob with a link
-        not named here keeps every byte (``UNKNOWN_LINK``); missing files count as deleted."""
-        with self._writer() as tree:
-            blob_dir = _find_dir(tree, (BLOBS_DIRNAME, source_id, blob_sha256[:BLOB_PREFIX_LENGTH]))
-            blob = None
-            if blob_dir is not None and tree.exists(blob_dir, blob_sha256):
-                blob = os.stat(blob_sha256, dir_fd=blob_dir, follow_symlinks=False)
-            bodies, linked = [], 0
-            for surface, request_key, capture_id in links:
-                directory = tree.descend((source_id, surface, request_key, capture_id))
-                record = CaptureRecord.model_validate_json(
-                    tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
-                )
-                name = body_filename(record)
-                if record.body is None or not tree.exists(directory, name):
-                    continue
-                bodies.append((directory, name))
-                found = os.stat(name, dir_fd=directory, follow_symlinks=False)
-                linked += blob is not None and _identity(found) == _identity(blob)
-            if blob is not None and blob.st_nlink > 1 + linked:
-                return BlobDeletion.UNKNOWN_LINK
-            for directory, name in bodies:
-                os.unlink(name, dir_fd=directory)
-                os.fsync(directory)
-                checkpoint()
-            if blob is not None and blob_dir is not None:
-                os.unlink(blob_sha256, dir_fd=blob_dir)
-                os.fsync(blob_dir)
-                checkpoint()
+        """Unlink each named body link ``(surface, request_key, capture_id)`` whose record names
+        this blob, then the blob unless ``keep_blob``, with ``checkpoint`` after each unlink;
+        missing files count as deleted. A blob linked elsewhere is ``UNKNOWN_LINK`` unless kept."""
+        blob_names = (BLOBS_DIRNAME, source_id, blob_sha256[:BLOB_PREFIX_LENGTH], blob_sha256)
+        bodies: list[tuple[tuple[str, ...], tuple[int, int]]] = []
+        with self._writer():
+            blob = self._stat(blob_names)
+            for link in links:
+                with self._tree() as tree:
+                    directory = tree.descend((source_id, *link))
+                    record = CaptureRecord.model_validate_json(
+                        tree.read(directory, RECORD_FILENAME, MAX_METADATA_BYTES)
+                    )
+                body = (source_id, *link, body_filename(record))
+                if record.body is not None and record.body.content_sha256 == blob_sha256:
+                    if (found := self._stat(body)) is not None:
+                        bodies.append((body, _identity(found)))
+            if blob is not None and not keep_blob:
+                if blob.st_nlink > 1 + sum(i == _identity(blob) for _, i in bodies):
+                    return BlobDeletion.UNKNOWN_LINK
+                bodies.append((blob_names, _identity(blob)))
+            for names, _ in bodies:
+                self._unlink(names, checkpoint)
             return BlobDeletion.DELETED
+
+    def delete_sources(self, sources: frozenset[str], checkpoint: Callable[[], None]) -> str | None:
+        """RP5 licence end: unlink every body under each source's capture tree, registered or
+        not, then its whole blob tree, keeping every ``record.json``. Every blob is checked
+        first; one linked from outside those trees deletes nothing and is returned."""
+        with self._writer():
+            trees = [(self._root / source).glob("*/*/*/body*") for source in sorted(sources)]
+            bodies = sorted(path.relative_to(self._root).parts for tree in trees for path in tree)
+            inside = Counter(_identity(info) for names in bodies if (info := self._stat(names)))
+            blobs: list[tuple[str, ...]] = [
+                (BLOBS_DIRNAME, e.source_id, e.blob_sha256[:BLOB_PREFIX_LENGTH], e.blob_sha256)
+                for e in self.blob_inventory()
+                if e.source_id in sources
+            ]
+            for names in blobs:
+                info = self._stat(names)
+                if info is not None and info.st_nlink > 1 + inside[_identity(info)]:
+                    return names[-1]
+            for names in (*bodies, *blobs):
+                self._unlink(names, checkpoint)
+            return None
+
+    def _stat(self, names: tuple[str, ...]) -> os.stat_result | None:
+        """The status of one file under the root, ``None`` when it or a parent is absent."""
+        with self._tree() as tree:
+            directory = _find_dir(tree, names[:-1])
+            if directory is None or not tree.exists(directory, names[-1]):
+                return None
+            return os.stat(names[-1], dir_fd=directory, follow_symlinks=False)
+
+    def _unlink(self, names: tuple[str, ...], checkpoint: Callable[[], None]) -> None:
+        """Unlink one file under the root, if present, on short-lived descriptors; checkpoint."""
+        with self._tree() as tree:
+            directory = _find_dir(tree, names[:-1])
+            if directory is None or not tree.exists(directory, names[-1]):
+                return
+            os.unlink(names[-1], dir_fd=directory)
+            os.fsync(directory)
+        checkpoint()
 
     def blob_inventory(self) -> tuple[BlobEntry, ...]:
         """Every stored blob and its link count, listed under the writer lock (RP5)."""

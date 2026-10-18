@@ -380,7 +380,7 @@ def _registered(
         if existing is not None:
             return existing
         staged = stage_retained_member(
-            store, intake, binding.representation, surface=surface, clock=repository.store_clock
+            store, intake, binding.representation, surface=surface, clock=registration.store_clock
         )
         return registration.insert(staged, url=binding.url)
 

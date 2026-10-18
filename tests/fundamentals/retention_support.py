@@ -7,16 +7,20 @@ publishes real bytes through an intake path.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import shutil
+import threading
+import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+from ledger_support import Ledger
 from pg_support import (
     MIGRATIONS_DIR,
     REPO_ROOT,
@@ -29,13 +33,23 @@ from psycopg import sql
 
 from fundamentals.api.cli import main
 from fundamentals.api.db_cli import restore_purge_first
+from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureFacts, Eligibility, HoldRoot
+from fundamentals.contracts.snapshot import (
+    A05_DECISION_005,
+    BlobRef,
+    CaptureRecord,
+    RequestIdentity,
+    SnapshotRights,
+)
 from fundamentals.evidence import repository_rows as rows_sql
+from fundamentals.ledger import store as ledger_store
 from fundamentals.pg.migrations import apply_migrations
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention.eligibility import add_months, eligibility
 from fundamentals.retention.holds import capture_facts
+from fundamentals.store.snapshot_store import BLOBS_DIRNAME
 
 # The tables the retention migrations add; each D9 migration extends this in its own change.
 RETENTION_TABLES = frozenset(
@@ -75,6 +89,14 @@ RETURNING id"""
 _DISPOSE = """INSERT INTO eqos.queue_dispositions (item_id, kind, reason, decider, evidence_ref)
 VALUES (%s, 'DISMISSED', 'fixture', 'fixture-owner', 'fixture')"""
 _SET_CLOCK = "SELECT setval('eqos.store_clock_us', %s, true)"
+OUTCOME = OutcomeRecord(code=OutcomeCode.OK, native_kind="synthetic.Kind", native_value="OK")
+RETRIEVED = datetime(2026, 10, 1, tzinfo=UTC)
+LOCKS = (
+    "SELECT mode, granted FROM pg_locks WHERE locktype = 'advisory' AND objsubid = 1 "
+    "AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) "
+    "AND (classid::bigint << 32 | objid::bigint) = eqos.retention_lock_key() ORDER BY mode"
+)
+PAUSE = 'touch "$0.paused"; while [ ! -e "$0.go" ]; do sleep 0.05; done; exec "$@"'
 
 
 def synthetic(source_id: str, surface: str) -> CaptureReference:
@@ -233,3 +255,80 @@ def restore_args(
         "purge_login": database.logins[PgRole.PURGE],
         "purge_first": restore_purge_first(set_dir, backup_dir, snapshot_root),
     }
+
+
+def record_of(body: bytes, source_id: str = "nse", surface: str = "NSE_XBRL_INSTANCE") -> Any:
+    """SYNTHETIC: a capture record of ``body`` on a fresh route."""
+    request = RequestIdentity(
+        source_id=source_id, surface=surface, request_key=uuid.uuid4().hex, parameters=()
+    )
+    blob = BlobRef(
+        source_id=source_id, content_sha256=hashlib.sha256(body).hexdigest(), byte_count=len(body)
+    )
+    return CaptureRecord.make(
+        request=request,
+        retrieved_at=RETRIEVED,
+        http_status=200,
+        media_type="application/json",
+        content_encoding=None,
+        body=blob,
+        outcome=OUTCOME,
+        rights=SnapshotRights(authority_refs=(A05_DECISION_005,)),
+    )
+
+
+def link_of(record: CaptureRecord) -> tuple[str, str, str]:
+    """A capture's ``(surface, request_key, capture_id)`` body-link key."""
+    return record.request.surface, record.request.request_key, record.capture_id
+
+
+def ids_of(record: CaptureRecord) -> tuple[str, str, str, str]:
+    """A capture's store identity."""
+    return (record.request.source_id, *link_of(record))
+
+
+def capture_dir(root: Path, record: CaptureRecord) -> Path:
+    """A capture's directory under ``root``."""
+    return root.joinpath(*ids_of(record))
+
+
+def blob_path(root: Path, record: CaptureRecord) -> Path:
+    """A capture's content-addressed blob under ``root``."""
+    assert record.body is not None
+    sha = record.body.content_sha256
+    return root / BLOBS_DIRNAME / record.request.source_id / sha[:2] / sha
+
+
+def locks(conn: psycopg.Connection) -> list[tuple[str, bool]]:
+    """The retention lock's holders and waiters in this database."""
+    return [(str(mode), bool(granted)) for mode, granted in conn.execute(LOCKS).fetchall()]
+
+
+def wait_for(check: Callable[[], bool], seconds: float = 20.0) -> None:
+    """Poll ``check`` until it holds, failing after ``seconds``."""
+    deadline = time.monotonic() + seconds
+    while not check():
+        assert time.monotonic() < deadline, "condition never held"
+        time.sleep(0.05)
+
+
+def in_thread(target: Callable[[], Any]) -> tuple[threading.Thread, list[Any]]:
+    """Start ``target`` in a thread; the list receives its result or exception."""
+    outcome: list[Any] = []
+
+    def run() -> None:
+        try:
+            outcome.append(target())
+        except Exception as error:  # noqa: BLE001 - handed to the asserting thread
+            outcome.append(error)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    return thread, outcome
+
+
+def draft_claim(ledger: Ledger, conn: psycopg.Connection) -> int:
+    """A draft version with one claim, inserted on ``conn`` in its open transaction."""
+    draft = ledger.version_draft(ledger.report())
+    with conn.cursor() as cursor:
+        return ledger_store.create_version(cursor, draft)

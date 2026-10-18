@@ -7,14 +7,13 @@
         [--config-root config]
     db create-test --suffix S
 
-All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as
-the admin role over the ``postgres`` maintenance database; ``migrate`` runs as
-the migrator role, which owns every object it creates. ``backup`` writes a
-matched set of ``EQOS_PG_DB``; ``restore --database`` only names the new
-``eqos_test_*`` database to create, and exits nonzero unless every check passes; it runs as
-the purge login and purges first what the authority files in ``--backup-dir`` (default the
-set's parent) expired after the set (plan D9 R12).
-``create-test`` creates a guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
+All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as the admin role over
+the ``postgres`` maintenance database; ``migrate`` runs as the migrator role, which owns every
+object it creates. ``backup`` writes a matched set of ``EQOS_PG_DB``; ``restore --database``
+only names the new ``eqos_test_*`` database to create, and exits nonzero unless every check
+passes; it runs as the purge login and purges first what the authority files in ``--backup-dir``
+(default the set's parent) expired after the set (plan D9 R12). ``create-test`` creates a
+guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ from fundamentals.pg.migrations import (
     bootstrap_roles,
     create_login,
 )
-from fundamentals.pg.retention_io import AuthorityError, read_authority
+from fundamentals.pg.retention_io import AuthorityError, mark_licence_ends, read_authority
 from fundamentals.pg.role_secrets import (
     MissingRoleSecretError,
     RoleSecretError,
@@ -170,12 +169,13 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
 def restore_purge_first(
     set_dir: Path, backup_dir: Path, snapshot_root: Path
 ) -> Callable[[psycopg.Connection[Any]], RestoreDelta]:
-    """Restore's injected purge-first (pg never imports retention): the authority files and
-    the set's journal watermark, read when the restored database is ready."""
+    """Restore's injected purge-first (pg never imports retention): one authority snapshot,
+    read when the restored database is ready, marks its licence ends and is purged."""
 
     def purge_first(conn: psycopg.Connection[Any]) -> RestoreDelta:
-        watermark = verify_set(set_dir).journal_watermark
-        return restore_purge(conn, read_authority(backup_dir), watermark, snapshot_root, backup_dir)
+        watermark, authority = verify_set(set_dir).journal_watermark, read_authority(backup_dir)
+        mark_licence_ends(snapshot_root, authority)
+        return restore_purge(conn, authority, watermark, snapshot_root, backup_dir)
 
     return purge_first
 

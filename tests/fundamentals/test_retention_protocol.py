@@ -13,10 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
-import threading
-import time
-import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,10 +25,22 @@ from pg_evidence_schema_support import _insert, _occurrence, runtime, seeded
 from pg_support import PgTestDatabase
 from psycopg import IsolationLevel, errors
 from psycopg_pool import ConnectionPool
-from retention_support import register, synthetic
+from retention_support import (
+    PAUSE,
+    blob_path,
+    capture_dir,
+    draft_claim,
+    ids_of,
+    in_thread,
+    link_of,
+    locks,
+    record_of,
+    register,
+    synthetic,
+    wait_for,
+)
 from test_retention_classes import _queue_item
 
-from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
 from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import (
     BlobDeletion,
@@ -45,16 +54,10 @@ from fundamentals.contracts.retention import (
     RefusalCode,
 )
 from fundamentals.contracts.snapshot import (
-    A05_DECISION_005,
-    BlobRef,
-    CaptureRecord,
     IntegrityError,
-    RequestIdentity,
-    SnapshotRights,
 )
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.capture_retention import capture_registration, read_retained
-from fundamentals.ledger import store as ledger_store
 from fundamentals.pg.backup import (
     CAPTURES_DIR,
     DEFAULT_CLIENT_PREFIX,
@@ -75,20 +78,13 @@ from fundamentals.pg.retention_io import (
 )
 from fundamentals.pg.settings import PgRole
 from fundamentals.store.pg_fact_store import create_native_store, run_serializable
-from fundamentals.store.snapshot_store import BLOBS_DIRNAME, RECORD_FILENAME, SnapshotStore
+from fundamentals.store.snapshot_store import RECORD_FILENAME, SnapshotStore
 
 pytestmark = pytest.mark.pg
 
 __all__ = ["ledger", "runtime", "seeded"]
 
 URL = "https://nsearchives.nseindia.com/corporate/xbrl/p-case.xml"
-OUTCOME = OutcomeRecord(code=OutcomeCode.OK, native_kind="synthetic.Kind", native_value="OK")
-RETRIEVED = datetime(2026, 10, 1, tzinfo=UTC)
-LOCKS = (
-    "SELECT mode, granted FROM pg_locks WHERE locktype = 'advisory' AND objsubid = 1 "
-    "AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) "
-    "AND (classid::bigint << 32 | objid::bigint) = eqos.retention_lock_key() ORDER BY mode"
-)
 PURGE_RUN = "INSERT INTO eqos.purge_runs DEFAULT VALUES RETURNING id"
 CLOSE_RUN = "INSERT INTO eqos.purge_run_closures (run_id) VALUES (%s)"
 EXPIRE = "INSERT INTO eqos.capture_states (capture_ref_id, state) VALUES (%s, 'EXPIRED')"
@@ -113,49 +109,6 @@ GUARD_TABLES = (
     "SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
     "WHERE t.tgname = 'a0_retention_guard'"
 )
-PAUSE = 'touch "$0.paused"; while [ ! -e "$0.go" ]; do sleep 0.05; done; exec "$@"'
-
-
-def record_of(body: bytes, source_id: str = "nse", surface: str = "NSE_XBRL_INSTANCE") -> Any:
-    """SYNTHETIC: a capture record of ``body`` on a fresh route."""
-    request = RequestIdentity(
-        source_id=source_id, surface=surface, request_key=uuid.uuid4().hex, parameters=()
-    )
-    blob = BlobRef(
-        source_id=source_id, content_sha256=hashlib.sha256(body).hexdigest(), byte_count=len(body)
-    )
-    return CaptureRecord.make(
-        request=request,
-        retrieved_at=RETRIEVED,
-        http_status=200,
-        media_type="application/json",
-        content_encoding=None,
-        body=blob,
-        outcome=OUTCOME,
-        rights=SnapshotRights(authority_refs=(A05_DECISION_005,)),
-    )
-
-
-def link_of(record: CaptureRecord) -> tuple[str, str, str]:
-    """A capture's ``(surface, request_key, capture_id)`` body-link key."""
-    return record.request.surface, record.request.request_key, record.capture_id
-
-
-def ids_of(record: CaptureRecord) -> tuple[str, str, str, str]:
-    """A capture's store identity."""
-    return (record.request.source_id, *link_of(record))
-
-
-def capture_dir(root: Path, record: CaptureRecord) -> Path:
-    """A capture's directory under ``root``."""
-    return root.joinpath(*ids_of(record))
-
-
-def blob_path(root: Path, record: CaptureRecord) -> Path:
-    """A capture's content-addressed blob under ``root``."""
-    assert record.body is not None
-    sha = record.body.content_sha256
-    return root / BLOBS_DIRNAME / record.request.source_id / sha[:2] / sha
 
 
 def publish(pool: ConnectionPool, store: SnapshotStore, body: bytes) -> CaptureReference:
@@ -185,41 +138,6 @@ def purge_run(migrator: psycopg.Connection, *, close: bool = True) -> int:
     if close:
         migrator.execute(CLOSE_RUN, (row[0],))
     return int(row[0])
-
-
-def locks(conn: psycopg.Connection) -> list[tuple[str, bool]]:
-    """The retention lock's holders and waiters in this database."""
-    return [(str(mode), bool(granted)) for mode, granted in conn.execute(LOCKS).fetchall()]
-
-
-def wait_for(check: Callable[[], bool], seconds: float = 20.0) -> None:
-    """Poll ``check`` until it holds, failing after ``seconds``."""
-    deadline = time.monotonic() + seconds
-    while not check():
-        assert time.monotonic() < deadline, "condition never held"
-        time.sleep(0.05)
-
-
-def in_thread(target: Callable[[], Any]) -> tuple[threading.Thread, list[Any]]:
-    """Start ``target`` in a thread; the list receives its result or exception."""
-    outcome: list[Any] = []
-
-    def run() -> None:
-        try:
-            outcome.append(target())
-        except Exception as error:  # noqa: BLE001 - handed to the asserting thread
-            outcome.append(error)
-
-    thread = threading.Thread(target=run)
-    thread.start()
-    return thread, outcome
-
-
-def draft_claim(ledger: Ledger, conn: psycopg.Connection) -> int:
-    """A draft version with one claim, inserted on ``conn`` in its open transaction."""
-    draft = ledger.version_draft(ledger.report())
-    with conn.cursor() as cursor:
-        return ledger_store.create_version(cursor, draft)
 
 
 @pytest.fixture
@@ -520,7 +438,7 @@ def test_relink_restores_the_body_and_never_rewrites_the_record(tmp_path: Path) 
 
 
 def test_a_licence_marker_closes_the_source_except_hash_checked_records(tmp_path: Path) -> None:
-    """P11: with a ``tijori`` marker, its publish, record and verified reads refuse;
+    """P11: with a ``tijori`` marker, its publish, record, listing and byte reads refuse;
     ``read_record`` returns the record on a hash match only; other sources are unaffected."""
     root = tmp_path / "store"
     store = SnapshotStore(root)
@@ -534,6 +452,11 @@ def test_a_licence_marker_closes_the_source_except_hash_checked_records(tmp_path
         store.get_capture(*ids_of(tijori))
     with pytest.raises(LicenceEndedError):
         store.read_capture_verified(*ids_of(tijori))
+    for read in (store.read_body, store.read_evidence_body):  # F5: every byte reader
+        with pytest.raises(LicenceEndedError):
+            read(tijori)
+    with pytest.raises(LicenceEndedError):
+        store.list_captures(*ids_of(tijori)[:3])
     kept = store.read_record(*ids_of(tijori), tijori.record_sha256)
     assert kept == (capture_dir(root, tijori) / RECORD_FILENAME).read_bytes()
     with pytest.raises(IntegrityError):

@@ -21,7 +21,7 @@ from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.compare import run, run_config, run_store
 from fundamentals.contracts.evidence import PinnedVersions
 from fundamentals.entity import identity_layers
-from fundamentals.evidence import capture_retention, discovery_gate
+from fundamentals.evidence import capture_retention, discovery_gate, repository
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.evidence.mapping import MappingSet, NormalisationPolicy
 from fundamentals.evidence.repository import EvidenceRepository
@@ -143,6 +143,8 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
             "eqos.capture_state(id) IN ('RETAINED', 'RESTORED')", "true"
         ),
     )
+    # No capture expires before 0028, so no trace rests on one (R13).
+    monkeypatch.setattr(repository, "_TRACES_EXPIRED", "SELECT '{}'::bigint[] AS expired, %s")
     # Every row is visible before 0029's state-aware readers (R13).
     for module in (rows_sql, run_store):
         for name, fragment in vars(module).items():

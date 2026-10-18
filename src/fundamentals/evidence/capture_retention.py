@@ -4,7 +4,7 @@ RP1, RP6, RP7).
 Every non-vendor intake registers through :func:`capture_registration`: one READ COMMITTED
 transaction that takes the retention lock shared first, in which the ``capture_refs`` trigger
 writes the class row and the intake's address is recorded once, with the capture's first
-registration. Byte readers go through :func:`read_retained`; vendor intake goes through
+registration. Byte readers go through :func:`retained_capture`; vendor intake goes through
 :func:`ingest_vendor_retained`, which leaves the pinned ``ingest_vendor`` source unchanged (R13).
 """
 
@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any, LiteralString
 
 import psycopg
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, tuple_row
 from psycopg_pool import ConnectionPool
 
 from fundamentals.contracts.evidence import CaptureReference
@@ -59,6 +60,11 @@ class Registration:
         found = self._rows(_FIND_RETAINED, (source_id, surface, blob_sha256))
         return rows_sql.capture_of(found[0]) if found else None
 
+    def store_clock(self) -> datetime:
+        """The store clock in UTC, read on this registration's connection (no second checkout)."""
+        clock: datetime = self._rows(rows_sql.STORE_CLOCK, ())[0]["now"]
+        return clock.astimezone(UTC)
+
     def insert(self, ref: CaptureReference, *, url: str | None) -> CaptureReference:
         """Register a capture (an existing registration wins), recording ``url`` with a new one."""
         inserted = self._rows(
@@ -87,18 +93,35 @@ def capture_registration(pool: ConnectionPool) -> Iterator[Registration]:
 def read_retained(
     pool: ConnectionPool, store: SnapshotStore, ref: CaptureReference
 ) -> tuple[CaptureRecord, bytes]:
-    """A capture's verified record and bytes: an expired or purging capture raises
-    :class:`OriginalExpiredError`; a retained one missing its body is corruption (RP7)."""
+    """:func:`retained_capture` on a pooled connection."""
     with pool.connection() as conn:
-        row = conn.execute(_STATE, (ref.capture_ref_id,)).fetchone()
-    assert row is not None
-    if CaptureState(row[0]) in _GONE:
-        raise OriginalExpiredError(f"capture {ref.capture_ref_id} is {row[0]}")
+        return retained_capture(conn, store, ref)
+
+
+def retained_capture(
+    conn: psycopg.Connection[Any], store: SnapshotStore, ref: CaptureReference
+) -> tuple[CaptureRecord, bytes]:
+    """A capture's verified record and bytes: an expired or purging capture raises
+    :class:`OriginalExpiredError`; a retained one missing its body is corruption (RP7). Purge
+    commits ``PURGE_PENDING`` before it unlinks, so a READ COMMITTED recheck after a missing
+    body tells a concurrent purge from corruption."""
+
+    def refuse_gone() -> None:
+        with conn.cursor(row_factory=tuple_row) as cursor:
+            row = cursor.execute(_STATE, (ref.capture_ref_id,)).fetchone()
+        assert row is not None
+        if CaptureState(row[0]) in _GONE:
+            raise OriginalExpiredError(
+                f"ORIGINAL_EXPIRED: capture {ref.capture_ref_id} is {row[0]}"
+            )
+
+    refuse_gone()
     try:
         return store.read_capture_verified(
             ref.source_id, ref.surface, ref.request_key, ref.capture_id
         )
     except MissingSnapshotError as error:
+        refuse_gone()
         raise IntegrityError(f"retained capture {ref.capture_ref_id} lost its body") from error
 
 

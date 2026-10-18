@@ -673,7 +673,7 @@ def store_captures(
                 ),
                 body,
             )
-            now = repository.store_clock()
+            now = registration.store_clock()
             ref = registration.insert(
                 CaptureReference(
                     capture_ref_id=None,

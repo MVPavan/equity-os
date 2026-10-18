@@ -9,7 +9,8 @@ verifies the set first and only ever targets a fresh ``eqos_test_*`` database (d
 Retention (plan D9 R12): a backup holds the retention lock shared from before its export until
 the set is published, refuses an unfinished purge and missing authority files, archives the
 body of every retained capture and only the ``record.json`` of every other one, lists those in
-``expired`` and records the expiry journal's last event id as its watermark.
+``expired`` and records the expiry journal's last event id as its watermark, with the digest of
+the journal up to it: the witness that refuses a later truncated or rolled-back journal.
 """
 
 from __future__ import annotations
@@ -28,22 +29,31 @@ import psycopg
 import structlog
 import yaml
 from psycopg import sql
-from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.compare.run import load_results, replay_run
 from fundamentals.compare.run_models import DatabaseIdentity
-from fundamentals.contracts.retention import CaptureState, JournalEventKind, OriginalExpiredError
+from fundamentals.contracts.retention import CaptureState, JournalEventKind
 from fundamentals.contracts.retention_purge import RestoreDelta
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.approvals import current_database, is_test_database
 from fundamentals.pg.pool import open_pool
+from fundamentals.pg.restore_check import (
+    Rows,
+    delta_problems,
+    replay,
+    table_rows,
+    validate_foreign_keys,
+)
+from fundamentals.pg.retention_io import MANIFEST_FILE as MANIFEST_FILE
 from fundamentals.pg.retention_io import (
     Authority,
     AuthorityError,
     authority_absent,
+    check_head,
     holds_exclusive,
     init_authority,
+    journal_digest,
+    mark_licence_ends,
     read_authority,
     reconcile_licence_ends,
     session_shared,
@@ -61,7 +71,6 @@ DEFAULT_CLIENT_PREFIX = (
     "docker", "run", "--rm", "-i", "--network", "host", "-e", "PGPASSWORD", "postgres:18.6",
 )  # fmt: skip
 CLIENT_TIMEOUT_S = 900
-MANIFEST_FILE = "manifest.yaml"
 DUMP_FILE = "database.dump"
 CAPTURES_DIR = "captures"
 PARTIAL_SUFFIX = ".partial"
@@ -73,10 +82,6 @@ _TABLES = (
 _CAPTURES = (
     "SELECT id, source_id, surface, request_key, capture_id, blob_sha256, record_sha256 "
     "FROM eqos.capture_refs ORDER BY id"
-)
-_FOREIGN_KEYS = (
-    "SELECT conrelid::regclass::text, conname FROM pg_constraint "
-    "WHERE contype = 'f' AND connamespace = 'eqos'::regnamespace ORDER BY 1, 2"
 )
 _UNRESOLVED = (
     "SELECT b.target_store, b.row_handle FROM eqos.legacy_evidence_bindings b "
@@ -99,6 +104,7 @@ _UNTOUCHED = (
 _RETAINED = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 _RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
 _PUBLISHED = "backup_published"
+_DELTA = "restore_delta_refused"
 _LICENCE_ENDS = "SELECT source_id FROM eqos.licence_ends"
 _LAST_MIGRATION_TABLE = "refetch_attempts"  # 0030: older sets are refused
 _NO_AUTHORITY = Authority(licence_ends=(), journal=())
@@ -143,6 +149,7 @@ class BackupManifest(BaseModel):
     files: tuple[tuple[str, str], ...]
     expired: tuple[ExpiredCapture, ...] = ()
     journal_watermark: int = 0
+    journal_sha256: str | None = None
 
 
 class RestoreCheck(BaseModel):
@@ -206,7 +213,9 @@ def write_backup(
                 psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname=database), autocommit=True)
             )
             present = bool(_scalar(conn, _SCHEMA_PRESENT))
-            watermark, fresh = _retention_preflight(conn, out_dir, held) if present else (0, False)
+            watermark, digest, fresh = (
+                _retention_preflight(conn, out_dir, held) if present else (0, None, False)
+            )
             staging.mkdir(mode=0o700, parents=True)
             with conn.transaction():
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -248,6 +257,7 @@ def write_backup(
                 files=files,
                 expired=expired,
                 journal_watermark=watermark,
+                journal_sha256=digest,
             )
             (staging / MANIFEST_FILE).write_text(yaml.safe_dump(manifest.model_dump(mode="json")))
             _verify(staging)
@@ -262,9 +272,9 @@ def write_backup(
 
 def _retention_preflight(
     conn: psycopg.Connection[Any], out_dir: Path, held: psycopg.Connection[Any] | None
-) -> tuple[int, bool]:
+) -> tuple[int, str, bool]:
     """Take the shared lock (unless ``held``), refuse an unfinished purge or missing authority;
-    return the journal watermark and whether this backup initialises the authority files."""
+    return the journal watermark, its digest and whether this backup initialises authority."""
     if held is None:
         session_shared(conn)
     elif not holds_exclusive(held):
@@ -283,7 +293,7 @@ def _retention_preflight(
     unfinished = [p for p in pending if not (held and p[0] == "RUN" and p[1] in completed)]
     if unfinished:
         raise BackupError(f"a purge is unfinished {unfinished}; run fundamentals retention purge")
-    return (journal[-1].id if journal else 0), fresh
+    return (journal[-1].id if journal else 0), journal_digest(journal), fresh
 
 
 def verify_set(set_dir: Path) -> BackupManifest:
@@ -317,10 +327,7 @@ def restore_backup(
     present = manifest.schema_state is SchemaState.PRESENT
     if present and _LAST_MIGRATION_TABLE not in manifest.table_counts:
         raise BackupError(f"{set_dir.name} predates migration 0030; restore refused")
-    try:
-        authority = read_authority(backup_dir or set_dir.parent) if present else _NO_AUTHORITY
-    except AuthorityError as error:
-        raise BackupError(f"retention authority refused: {error}") from error
+    authority = _authority(backup_dir or set_dir.parent, manifest) if present else _NO_AUTHORITY
     if snapshot_root.exists() and any(snapshot_root.iterdir()):
         raise BackupError(f"snapshot root {snapshot_root} is not empty")
     create_test_database(settings, database, closed=True)
@@ -341,18 +348,20 @@ def restore_backup(
     run_ids: tuple[int, ...] = ()
     retired: set[int] = set()
     ends: set[str] = set()
+    before: Rows = {}
     fk_valid = True
     conninfo = settings.conninfo(PgRole.ADMIN, dbname=database)
     with psycopg.connect(conninfo, autocommit=True) as conn:
         present = bool(_scalar(conn, _SCHEMA_PRESENT))
         if present:
-            fk_valid = _validate_foreign_keys(conn)
+            fk_valid = validate_foreign_keys(conn)
             counts, captures = _counts(conn), _captures(conn)
             run_ids = _column(conn, _RUN_IDS)
             rows = conn.execute(_UNRESOLVED, {"bad": list(bad)}).fetchall()
             unresolved = tuple((str(row[0]), int(row[1])) for row in rows)
             retired = {row[0] for row in conn.execute(_STATES) if row[1] not in _RETAINED}
             ends = set(_column(conn, _LICENCE_ENDS))
+            before = table_rows(conn, list(counts))
     expected = set(manifest.captures) | {item.capture for item in manifest.expired}
     check = RestoreCheck(
         schema_equal=(manifest.schema_state is SchemaState.PRESENT) == present,
@@ -370,23 +379,24 @@ def restore_backup(
         replay_expired=(),
     )
     if present and check.ok:
-        for source in ends | {end.source_id for end in authority.licence_ends}:
-            target.mark_licence_ended(source)
+        mark_licence_ends(snapshot_root, authority, *ends)
         login = settings.conninfo(PgRole.PURGE, dbname=database, login=purge_login)
         with psycopg.connect(login, autocommit=True) as conn:
             delta = purge_first(conn)
-            after, states = _counts(conn), conn.execute(_STATES).fetchall()
+            after, states = table_rows(conn, list(counts)), conn.execute(_STATES).fetchall()
         by_id = {capture[0]: capture for capture in captures}
         gone = [(capture, record) for capture, state, _, record in states if state not in _RETAINED]
         unrecorded = tuple(sorted(c for c, r in gone if r is None or _restored(target, by_id[c])))
-        changed = {table: after[table] - counts.get(table, 0) for table in after}
+        problems = delta_problems(before, after, delta)
+        if problems:
+            structlog.get_logger(__name__).warning(_DELTA, problems=problems)
         replayed: tuple[tuple[int, ...], tuple[int, ...]] = ((), ())
         if replay_runs:
             with open_pool(settings, PgRole.PURGE, dbname=database, login=purge_login) as pool:
-                replayed = _replay(run_ids, pool, config_root)
+                replayed = replay(run_ids, pool, config_root)
         check = check.model_copy(
             update={
-                "delta_ok": changed == {t: delta.rows.get(t, 0) for t in counts},
+                "delta_ok": not problems,
                 "expired_without_record": unrecorded,
                 "replay_mismatches": replayed[0],
                 "replay_expired": replayed[1],
@@ -397,20 +407,14 @@ def restore_backup(
     return check
 
 
-def _replay(
-    run_ids: tuple[int, ...], pool: ConnectionPool, config_root: Path
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """The runs whose replay differs from their stored results, and those whose replay needs
-    an expired vendor original (``replay_expired``, reported apart)."""
-    mismatched, expired = [], []
-    for run_id in run_ids:
-        try:
-            replayed = replay_run(run_id, pool=pool, config_root=config_root)
-            if replayed != load_results(run_id, pool=pool):
-                mismatched.append(run_id)
-        except OriginalExpiredError:
-            expired.append(run_id)
-    return tuple(mismatched), tuple(expired)
+def _authority(backup_dir: Path, manifest: BackupManifest) -> Authority:
+    """The authority files, refused unless the set's own witness agrees with the journal."""
+    try:
+        authority = read_authority(backup_dir)
+        check_head(authority.journal, manifest.journal_watermark, manifest.journal_sha256)
+    except AuthorityError as error:
+        raise BackupError(f"retention authority refused: {error}") from error
+    return authority
 
 
 def _restored(target: SnapshotStore, capture: Capture) -> bool:
@@ -425,20 +429,6 @@ def _restored(target: SnapshotStore, capture: Capture) -> bool:
 def _matches(record_sha256: str, body: bytes, capture: Capture) -> bool:
     """Whether a record hash and body equal the registered ``record_sha256`` and ``blob_sha256``."""
     return record_sha256 == capture[6] and _sha256(body) == capture[5]
-
-
-def _validate_foreign_keys(conn: psycopg.Connection[Any]) -> bool:
-    """``VALIDATE CONSTRAINT`` every ``eqos`` foreign key; False on the first violation."""
-    try:
-        for table, constraint in conn.execute(_FOREIGN_KEYS).fetchall():
-            conn.execute(
-                sql.SQL("ALTER TABLE {} VALIDATE CONSTRAINT {}").format(
-                    sql.SQL(table), sql.Identifier(constraint)
-                )
-            )
-    except psycopg.errors.ForeignKeyViolation:
-        return False
-    return True
 
 
 def _verify(set_dir: Path) -> BackupManifest:

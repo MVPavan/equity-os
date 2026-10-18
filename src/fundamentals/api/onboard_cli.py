@@ -72,6 +72,7 @@ from fundamentals.contracts.onboarding import (
     VerificationState,
     VerificationUnit,
 )
+from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import (
     BSE_PEER_SEARCH,
@@ -303,6 +304,9 @@ def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
         return None
     try:
         return _onboard(args)
+    except OriginalExpiredError as error:  # R13: names the expired capture
+        sys.stderr.write(f"onboard {args.symbol} refused: {error}\n")
+        return RunExitStatus.FAILURE
     except _FAILURES as error:
         structlog.get_logger().error("onboard_failed", error=type(error).__name__)
         return RunExitStatus.FAILURE

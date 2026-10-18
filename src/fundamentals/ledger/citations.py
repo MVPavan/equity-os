@@ -43,9 +43,9 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
-from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
-from fundamentals.evidence.repository_rows import period_of
+from fundamentals.evidence.capture_retention import retained_capture
+from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
 from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -194,7 +194,7 @@ def resolve_citation(
                 return None
             return ResolvedCitation(
                 times=((InputTime.FIRST_SEEN, capture["first_seen"]),),
-                quote_text=_span(capture, citation.anchor or "", snapshots),
+                quote_text=_span(own, capture, citation.anchor or "", snapshots),
             )
         if citation.kind is CitationKind.COMPARISON:
             return _run_cell(own, _COMPARISON, citation.pair_outcome_id, claim, overlay_position)
@@ -252,9 +252,7 @@ def resolve_location(
         return False
     with cursor.connection.cursor(row_factory=dict_row) as own:
         capture = _first_party_capture(own, int(capture_id), catalog)
-    if capture is None:
-        return False
-    span = _span(capture, anchor, snapshots)
+        span = None if capture is None else _span(own, capture, anchor, snapshots)
     return span is not None and span.strip() != ""
 
 
@@ -413,10 +411,10 @@ def _input_times(
     return tuple(times)
 
 
-def _span(capture: _Row, anchor: str, snapshots: SnapshotStore) -> str | None:
+def _span(own: Cursor[Any], capture: _Row, anchor: str, snapshots: SnapshotStore) -> str | None:
     """The text at a ``p<page>.b<block>.<start>:<end>`` anchor of a PDF capture, or ``None``."""
     parsed = ANCHOR.fullmatch(anchor)
-    document = _document(capture, snapshots)
+    document = _document(own, capture, snapshots)
     if parsed is None or document is None:
         return None
     provenance = Provenance(
@@ -432,20 +430,20 @@ def _span(capture: _Row, anchor: str, snapshots: SnapshotStore) -> str | None:
     return result.resolved_text if result.anchored else None
 
 
-def _document(capture: _Row, snapshots: SnapshotStore) -> SourceDocument | None:
-    """The capture's retained PDF as addressable blocks, or ``None`` if it has none."""
-    identity = (capture[name] for name in ("source_id", "surface", "request_key", "capture_id"))
+def _document(own: Cursor[Any], capture: _Row, snapshots: SnapshotStore) -> SourceDocument | None:
+    """The capture's retained PDF as addressable blocks, or ``None`` if it is not a PDF. An
+    expired original raises ``OriginalExpiredError``, a lost one ``IntegrityError`` (RP7)."""
+    _, body = retained_capture(own.connection, snapshots, capture_of(capture))
+    if not body.startswith(PDF_MAGIC):
+        return None
     try:
-        _, body = snapshots.read_capture_verified(*identity)
-        if not body.startswith(PDF_MAGIC):
-            return None
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / "capture.pdf"
             path.write_bytes(body)
             pdf = load_pdf(
                 source_id=capture["source_id"], path=path, expected_sha256=capture["blob_sha256"]
             )
-    except (SnapshotError, PdfIntegrityError, pymupdf.FileDataError):
+    except (PdfIntegrityError, pymupdf.FileDataError):
         return None
     return source_document(pdf)
 

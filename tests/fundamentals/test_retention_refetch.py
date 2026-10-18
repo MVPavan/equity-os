@@ -9,19 +9,23 @@ for both or neither.
 
 from __future__ import annotations
 
+import socket
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Callable, Iterator
+from email.message import Message
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
 from pg_support import PgTestDatabase
-from purge_support import XBRL, CrashError, Env, entity, env, ids, no_fetch
+from purge_support import XBRL, CrashError, Env, FakeResponse, entity, env, ids, no_fetch
 from retention_support import package, retention_cli, verify
 from stage1_e2e_support import RUNS, SCREENER, Stage
-from test_retention_protocol import in_thread, locks
+from test_retention_protocol import CLOSE_RUN, in_thread, locks, purge_run
 
 from fundamentals.compare import run as compare_run
 from fundamentals.compare.run import RunInputKind, RunRecord, load_results, replay_run
@@ -37,6 +41,7 @@ from fundamentals.contracts.retention_purge import (
 from fundamentals.evidence.capture_retention import ingest_vendor_retained, read_retained
 from fundamentals.evidence.vendor_ingest import VendorIngestRequest
 from fundamentals.pg.retention_io import init_authority
+from fundamentals.pg.settings import PgRole
 from fundamentals.retention import refetch as refetch_module
 from fundamentals.retention.purge import INCIDENTS
 from fundamentals.retention.refetch import ATTEMPT_PARAMETER, refetch
@@ -69,6 +74,7 @@ SEED_MATCH = (
     "SELECT r.id, 'seed', 'MATCH', r.blob_sha256 FROM eqos.capture_refs r WHERE r.id = %s"
 )
 LICENCE_END = "INSERT INTO eqos.licence_ends (source_id) VALUES (%s)"
+RESTORE = "SELECT eqos.restore_capture(%s)"
 Apar = tuple[Stage, Env, CaptureReference, RunRecord, dict[str, bytes]]
 
 
@@ -96,10 +102,12 @@ def serve(body: bytes) -> Callable[[str], bytes]:
     return lambda url: body
 
 
-def refetch_cli(monkeypatch: pytest.MonkeyPatch, env: Env, capture: int, fetch: Any) -> int:
+def refetch_cli(
+    monkeypatch: pytest.MonkeyPatch, env: Env, capture: int, fetch: Any, *extra: str
+) -> int:
     """``retention refetch`` of one capture with ``fetch`` as the live fetcher."""
     monkeypatch.setattr("fundamentals.api.retention_cli.live_fetch", fetch)
-    args = ("refetch", "--capture", str(capture), "--snapshot-root", str(env.root))
+    args = ("refetch", "--capture", str(capture), "--snapshot-root", str(env.root), *extra)
     return retention_cli(monkeypatch, env.db, *args)[0]
 
 
@@ -135,7 +143,7 @@ def test_different_bytes_are_a_high_mismatch_and_a_new_capture(
     """F3, F4 (rerun), F13: different bytes leave the capture EXPIRED, record a HIGH
     ``MISMATCH`` and publish them as a new capture whose request names the attempt; the dry run
     lists the open incident and the command exits 3. A rerun fetches nothing and adds nothing.
-    The incident stays open until the capture is RESTORED (SEED: a matching attempt)."""
+    The incident stays open until ``--retry`` fetches the original bytes and RESTORES it."""
     (ref,) = expire(env, (b"f3-original", XBRL))
     capture = int(ref.capture_ref_id or 0)
     assert refetch_cli(monkeypatch, env, capture, serve(b"f3-changed")) == 3
@@ -159,10 +167,9 @@ def test_different_bytes_are_a_high_mismatch_and_a_new_capture(
     assert refetch(env.pool, env.store, capture, no_fetch) is RefetchOutcome.REFETCH_MISMATCH
     assert env.sql(CAPTURES) == before and len(env.sql(ATTEMPTS, capture)) == 1
     assert env.sql(INCIDENTS) == [incident]
-    with env.db.migrator_connection() as conn:
-        conn.execute(SEED_MATCH, (capture,))
-        conn.execute(SEED_STATE, (capture, "RESTORED"))
-    assert env.sql(INCIDENTS) == []
+    assert refetch_cli(monkeypatch, env, capture, serve(b"f3-original"), "--retry") == 0
+    assert env.state(ref) == "RESTORED" and env.has_body(ref) and env.sql(INCIDENTS) == []
+    assert [a[0] for a in env.sql(ATTEMPTS, capture)] == ["MISMATCH", "MATCH"]
 
 
 def test_a_crash_before_registration_reruns_under_the_same_attempt(
@@ -245,6 +252,126 @@ def test_a_failed_fetch_records_an_attempt_and_publishes_nothing(
     ]
     assert env.state(ref) == "EXPIRED" and not env.has_body(ref)
     assert env.sql(CAPTURES) == before and env.sql(INCIDENTS) == []
+
+
+class Response(FakeResponse):
+    """A response stand-in with an HTTP status and a raw Content-Length header."""
+
+    def __init__(self, status: int, length: str | None, chunks: list[bytes | Exception]) -> None:
+        super().__init__(None, chunks)
+        self.status = status
+        if length is not None:
+            self.headers["Content-Length"] = length
+
+
+def resolving(monkeypatch: pytest.MonkeyPatch, address: str = "1.1.1.1") -> None:
+    """Every host resolves to ``address`` (no DNS in tests)."""
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    answer = [(family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, 443))]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: answer)
+
+
+def answering(monkeypatch: pytest.MonkeyPatch, answer: Any) -> list[str]:
+    """Every request is answered with ``answer`` (raised if an exception); the opened URLs."""
+    opened: list[str] = []
+
+    def fake_open(self: Any, url: str, timeout: float) -> Any:
+        opened.append(url)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", fake_open)
+    return opened
+
+
+@pytest.mark.parametrize(
+    ("url", "address"),
+    [
+        ("file:///etc/hostname", "1.1.1.1"),
+        ("ftp://nsearchives.nseindia.com/x", "1.1.1.1"),
+        ("http://nsearchives.nseindia.com/x", "1.1.1.1"),
+        ("https://example.com/x", "1.1.1.1"),
+        ("https://nsearchives.nseindia.com:8443/x", "1.1.1.1"),
+        ("https://user@nsearchives.nseindia.com/x", "1.1.1.1"),
+        ("https://nsearchives.nseindia.com/x", "127.0.0.1"),
+        ("https://nsearchives.nseindia.com/x", "10.1.2.3"),
+        ("https://nsearchives.nseindia.com/x", "169.254.169.254"),
+        ("https://nsearchives.nseindia.com/x", "::1"),
+    ],
+)
+def test_live_fetch_refuses_an_unapproved_address_before_opening_it(
+    monkeypatch: pytest.MonkeyPatch, url: str, address: str
+) -> None:
+    """F4 (R10): only HTTPS to an approved exchange host, resolving to public addresses only,
+    is opened; anything else (local files, other schemes, hosts, ports, private, loopback or
+    link-local destinations) is ``REFUSED_ADDRESS`` with no request made."""
+    resolving(monkeypatch, address)
+    opened = answering(monkeypatch, Response(200, "1", [b"x"]))
+    with pytest.raises(FetchFailure) as failure:
+        refetch_module.live_fetch(url)
+    assert failure.value.category is FetchFailureCategory.REFUSED_ADDRESS and opened == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (Response(206, "5", [b"whole"]), (FetchFailureCategory.HTTP_STATUS, 206)),
+        (Response(200, "five", [b"whole"]), (FetchFailureCategory.INCOMPLETE, None)),
+        (Response(200, "-5", [b"whole"]), (FetchFailureCategory.INCOMPLETE, None)),
+        (
+            urllib.error.HTTPError("u", 302, "Found", Message(), None),
+            (FetchFailureCategory.HTTP_STATUS, 302),
+        ),
+    ],
+    ids=["partial-content", "malformed-length", "negative-length", "redirect"],
+)
+def test_a_non_200_or_malformed_answer_is_a_failed_attempt(
+    env: Env, monkeypatch: pytest.MonkeyPatch, answer: Any, expected: Any
+) -> None:
+    """F15 (R10): through the live fetcher, a non-200 status (206, a refused redirect) or an
+    invalid Content-Length is a categorised ``FAILED`` attempt that publishes nothing; a
+    complete 200 body restores."""
+    (ref,) = expire(env, (b"whole", XBRL))
+    capture = int(ref.capture_ref_id or 0)
+    resolving(monkeypatch)
+    answering(monkeypatch, answer)
+    assert refetch_cli(monkeypatch, env, capture, refetch_module.live_fetch) == 2
+    assert env.sql(ATTEMPTS, capture) == [("FAILED", expected[0].value, expected[1], None, None)]
+    assert env.state(ref) == "EXPIRED" and not env.has_body(ref)
+    answering(monkeypatch, Response(200, "5", [b"whole"]))
+    assert refetch_cli(monkeypatch, env, capture, refetch_module.live_fetch) == 0
+    assert env.state(ref) == "RESTORED"
+
+
+@pytest.mark.parametrize("stale", [False, True], ids=["pending-run", "stale-snapshot"])
+def test_restore_capture_takes_the_retention_protocol(env: Env, stale: bool) -> None:
+    """F3 (RP1, RP2): runtime SQL restoring an expired capture with a matching attempt is
+    refused while a purge run is open, and when its snapshot predates a committed purge; once
+    neither holds, the same call restores."""
+    (ref,) = expire(env, (b"f3-sql", XBRL))
+    capture = int(ref.capture_ref_id or 0)
+    refused = (
+        pytest.raises(psycopg.errors.SerializationFailure, match="STALE_SNAPSHOT")
+        if stale
+        else pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState, match="PURGE_PENDING")
+    )
+    with env.db.migrator_connection() as migrator:
+        migrator.execute(SEED_MATCH, (capture,))
+        run = None if stale else purge_run(migrator, close=False)
+        with psycopg.connect(env.db.conninfo(PgRole.RUNTIME)) as conn:
+            conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+            with refused, conn.transaction():
+                conn.execute("SELECT 1")  # takes the transaction snapshot
+                if stale:
+                    purge_run(migrator)
+                conn.execute(RESTORE, (capture,))
+        if run is not None:
+            migrator.execute(CLOSE_RUN, (run,))
+    assert env.state(ref) == "EXPIRED"
+    with env.pool.connection() as conn:
+        conn.execute(RESTORE, (capture,))
+    assert env.state(ref) == "RESTORED"
 
 
 def test_vendor_identity_and_licence_ended_captures_are_not_refetchable(env: Env) -> None:

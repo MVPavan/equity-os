@@ -10,10 +10,11 @@ fetches are fakes. A set "aside" is a copy taken before a purge, since sanitize 
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,12 +38,22 @@ from purge_support import (
     no_fetch,
     vendor_copy,
 )
+from restore_support import (
+    QUOTED,
+    REPLICA,
+    TAMPER,
+    PurgeFirst,
+    aside,
+    on,
+    quote,
+    restore,
+    runtime_refused,
+)
 from retention_support import (
     CONFIG,
     dispose,
     open_item,
     package,
-    restore_args,
     retention_cli,
     verdict,
     verify,
@@ -54,10 +65,21 @@ from test_retention_purge import offline
 from test_retention_refetch import ARCHIVE, serve
 
 from fundamentals.api.cli import main
-from fundamentals.contracts.retention import EligibilityKind, JournalEventKind, LicenceEndedError
+from fundamentals.contracts.retention import (
+    EligibilityKind,
+    JournalEventKind,
+    LicenceEnd,
+    LicenceEndedError,
+)
 from fundamentals.contracts.retention_purge import PurgeReport, PurgeStep, RestoreDelta
-from fundamentals.pg.backup import MANIFEST_FILE, BackupError, RestoreCheck, restore_backup
-from fundamentals.pg.retention_io import LICENCE_ENDS_FILE, init_authority, read_authority
+from fundamentals.pg.backup import MANIFEST_FILE, BackupError
+from fundamentals.pg.retention_io import (
+    EXPIRY_JOURNAL_FILE,
+    LICENCE_ENDS_FILE,
+    append_authority,
+    init_authority,
+    read_authority,
+)
 from fundamentals.pg.settings import PgRole
 from fundamentals.retention import purge as purge_module
 from fundamentals.retention.purge import record_licence_end
@@ -68,7 +90,6 @@ pytestmark = pytest.mark.pg
 
 __all__ = ["env"]
 
-PurgeFirst = Callable[[psycopg.Connection], RestoreDelta]
 TIJORI = VENDOR[0]
 TIJORI_FLAG = "/".join(VENDOR)
 RUN = (
@@ -97,47 +118,6 @@ def mint(pg_db: PgTestDatabase) -> Iterator[Callable[[], str]]:
     yield new
     for name in names:
         drop_database(pg_db.settings, name)
-
-
-def restore(
-    env: Env, set_dir: Path, database: str, *, first: Any = None, replay: bool = False
-) -> tuple[RestoreCheck, Path]:
-    """Restore ``set_dir`` with the authority files of ``env.sets``; ``first`` wraps the
-    composed purge-first. Returns the check and the restored snapshot root."""
-    root = env.root.parent / f"restored-{database}"
-    args = restore_args(env.db, set_dir, root, env.sets)
-    if first is not None:
-        args["purge_first"] = first(args["purge_first"])
-    check = restore_backup(
-        set_dir,
-        env.db.settings,
-        database=database,
-        snapshot_root=root,
-        replay_runs=replay,
-        config_root=CONFIG,
-        **args,
-    )
-    return check, root
-
-
-def on(env: Env, database: str, query: str, *params: object) -> list[tuple[Any, ...]]:
-    """Rows of one statement on a restored database, as the admin role."""
-    with psycopg.connect(env.db.settings.conninfo(PgRole.ADMIN, dbname=database)) as conn:
-        return conn.execute(query, params).fetchall()
-
-
-def runtime_refused(env: Env, database: str) -> bool:
-    """Whether the runtime role is refused a connection to ``database``."""
-    try:
-        psycopg.connect(env.db.settings.conninfo(PgRole.RUNTIME, dbname=database)).close()
-    except psycopg.OperationalError:
-        return True
-    return False
-
-
-def aside(set_dir: Path, tmp_path: Path) -> Path:
-    """A copy of a set outside the backup directory, taken before a purge removes it."""
-    return Path(shutil.copytree(set_dir, tmp_path / "aside" / set_dir.name))
 
 
 def hold(env: Env, capture: int) -> int:
@@ -453,3 +433,126 @@ def test_a_set_older_than_0030_is_refused(
     with pytest.raises(BackupError, match="predates migration 0030"):
         restore(env, old, target)
     assert target not in databases(env.db.settings)
+
+
+def test_a_quoted_restored_capture_restores_with_its_claim(
+    env: Env, mint: Callable[[], str], tmp_path: Path
+) -> None:
+    """R7, quote-bearing: expire, RESTORED by a matching re-fetch, then a SOURCE_QUOTE claim and
+    a backup: that set restores the capture RESTORED with its body and the claim, and the claim
+    holds it through a later purge. A set from before the first expiry restores it EXPIRED
+    with no body: restore expires the bytes the claim's later set keeps."""
+    body, url = b"r7-quote: revenue 7 crore", f"{ARCHIVE}{uuid.uuid4().hex}"
+    ref = env.capture(body, XBRL, url=url)
+    capture = int(ref.capture_ref_id or 0)
+    with env.db.migrator_connection() as conn:
+        verify(conn, package(conn, owner := entity(conn), capture))
+    first = aside(env.backup(), tmp_path)
+    env.age()
+    env.purge(serve(body))
+    assert refetch(env.pool, env.store, capture, serve(body)) == "RESTORED"
+    claim = quote(env, owner, capture, "revenue 7 crore")
+    later = env.backup()
+    env.purge(serve(body))
+    assert env.state(ref) == "RESTORED"
+    check, root = restore(env, later, (target := mint()))
+    assert check.ok, check
+    assert on(env, target, STATE, capture) == [("RESTORED",)]
+    assert on(env, target, QUOTED, claim) == [(capture, "revenue 7 crore")]
+    assert b"revenue 7 crore" in SnapshotStore(root).read_capture_verified(*ids(ref))[1]
+    check, root = restore(env, first, (target := mint()))
+    assert check.ok and on(env, target, STATE, capture) == [("EXPIRED",)], check
+    assert on(env, target, RECORDED, capture) == [(1,)] and bodies(root, XBRL[0]) == []
+
+
+@pytest.mark.parametrize("damage", ["emptied", "truncated", "rewritten", "beyond its end"])
+def test_a_truncated_or_rewritten_journal_is_refused(
+    env: Env, mint: Callable[[], str], tmp_path: Path, damage: str
+) -> None:
+    """F1 (R11, R12): the published sets witness the journal's head, so after a purge an
+    emptied, truncated or rewritten journal (one dropping the expiry) refuses restore of a
+    pre-purge set before any database exists, and backup too; with no set left beside it, the
+    restored set's own watermark past the journal's end refuses. Otherwise the old set would
+    restore the expired bytes RETAINED."""
+    env.capture(b"f1")
+    old = aside(env.backup(), tmp_path)
+    env.age()
+    final = env.sets / str(env.purge().backup_id)
+    journal = env.sets / EXPIRY_JOURNAL_FILE
+    events = json.loads(journal.read_text())
+    assert [e["kind"] for e in events] == ["FENCE", "COMPLETE"]
+    if damage == "beyond its end":
+        old = aside(final, tmp_path)
+        shutil.rmtree(final)
+    kept = {"truncated": events[:1], "rewritten": [events[0], events[1] | {"expired": []}]}
+    journal.write_text(json.dumps(kept.get(damage, [])))
+    target = mint()
+    with pytest.raises(BackupError, match="retention authority refused"):
+        restore(env, old, target)
+    assert target not in databases(env.db.settings)
+    if damage != "beyond its end":
+        with pytest.raises(BackupError, match="truncated or rolled back|differs from the history"):
+            env.backup()
+
+
+def test_a_licence_end_filed_during_restore_is_marked_and_purged(
+    env: Env, mint: Callable[[], str]
+) -> None:
+    """F6 (R12, RP4a): a licence end filed after restore first read the authority files is
+    marked and purged from the one authority snapshot purge-first consumes, so the restored
+    store refuses later Tijori publication instead of accepting it."""
+    ref = env.capture(b"f6")
+    set_dir = env.backup()
+    end = LicenceEnd(
+        source_id=TIJORI, ended_on=date(2026, 10, 1), reason="f6", recorded_at=datetime.now(UTC)
+    )
+
+    def late(inner: PurgeFirst) -> PurgeFirst:
+        def first(conn: psycopg.Connection) -> RestoreDelta:
+            append_authority(env.sets, end)
+            return inner(conn)
+
+        return first
+
+    check, root = restore(env, set_dir, (target := mint()), first=late)
+    assert check.ok, check
+    assert on(env, target, STATE, ref.capture_ref_id) == [("EXPIRED",)]
+    with pytest.raises(LicenceEndedError):
+        SnapshotStore(root).put_capture(record_of(b"f6-later", *VENDOR), b"f6-later")
+
+
+@pytest.mark.parametrize("tamper", ["none", *TAMPER])
+def test_the_restore_delta_allows_only_tombstones_of_expired_captures(
+    env: Env, mint: Callable[[], str], tmp_path: Path, tamper: str
+) -> None:
+    """F9 (R12 phase 2, A-05 redaction inventory): purge-first may change a preserved row only
+    into its tombstone image and only for a capture it expired. One more change that leaves
+    every row count equal - a kept column of the tombstoned occurrence, or the inventory
+    columns of a retained capture's occurrence - fails the delta and keeps the target closed."""
+    gone = env.capture(b"f9-gone")
+    kept = env.capture(b"f9-kept: an address-less exchange capture", XBRL)
+    with env.db.migrator_connection() as conn:
+        for ref in (gone, kept):
+            _insert(
+                conn, "occurrences", _occurrence(int(ref.capture_ref_id or 0), uuid.uuid4().hex)
+            )
+    old = aside(env.backup(), tmp_path)
+    env.age()
+    assert env.purge().expired == (gone.capture_ref_id,)
+
+    def tampered(inner: PurgeFirst) -> PurgeFirst:
+        def first(conn: psycopg.Connection) -> RestoreDelta:
+            delta = inner(conn)
+            if tamper in TAMPER:
+                admin = env.db.settings.conninfo(PgRole.ADMIN, dbname=conn.info.dbname)
+                with psycopg.connect(admin, autocommit=True) as other:
+                    other.execute(REPLICA)
+                    ref = gone if tamper == "kept column" else kept
+                    other.execute(TAMPER[tamper], (ref.capture_ref_id,))
+            return delta
+
+        return first
+
+    check, _ = restore(env, old, (target := mint()), first=tampered)
+    assert check.delta_ok is check.ok is (tamper == "none"), check
+    assert runtime_refused(env, target) is (tamper != "none")

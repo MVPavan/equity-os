@@ -5,11 +5,17 @@ each on its own connection for as long as the session needs it. The two authorit
 the backup directory beside the sets: ``licence-ends.json`` and ``expiry-journal.json``, each a
 JSON array whose entries carry ids 1, 2, ... in order. One locked helper appends to either; a
 file whose ids were dropped or renumbered is refused, never repaired.
+
+The journal's expected head is witnessed by the published sets beside it: each manifest records
+its watermark and the digest of the journal up to it, so a journal shorter than a set's
+watermark (truncated, rolled back) or differing from the history a set recorded is refused.
+Every purge publishes a final backup after ``COMPLETE``, so the newest set witnesses the head.
 """
 
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from collections.abc import Iterator
@@ -18,13 +24,16 @@ from pathlib import Path
 from typing import Any, LiteralString
 
 import psycopg
+import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from fundamentals.contracts.retention import JournalEvent, JournalEventKind, LicenceEnd
+from fundamentals.store.snapshot_store import SnapshotStore
 
 LICENCE_ENDS_FILE = "licence-ends.json"
 EXPIRY_JOURNAL_FILE = "expiry-journal.json"
 AUTHORITY_LOCK_FILE = ".retention-authority.lock"
+MANIFEST_FILE = "manifest.yaml"
 _SESSION_SHARED: LiteralString = "SELECT pg_advisory_lock_shared(eqos.retention_lock_key())"
 _SESSION_EXCLUSIVE: LiteralString = "SELECT pg_advisory_lock(eqos.retention_lock_key())"
 _HOLDS_EXCLUSIVE: LiteralString = (
@@ -72,11 +81,39 @@ def holds_exclusive(conn: psycopg.Connection[Any]) -> bool:
 
 
 def read_authority(backup_dir: Path) -> Authority:
-    """Both authority files, refusing a missing or malformed one."""
-    return Authority(
+    """Both authority files, refusing a missing or malformed one or a journal that a published
+    set in ``backup_dir`` shows truncated, rolled back or rewritten."""
+    authority = Authority(
         licence_ends=tuple(_entries(backup_dir, LicenceEnd)),
         journal=tuple(_entries(backup_dir, JournalEvent)),
     )
+    for manifest in sorted(backup_dir.glob(f"[!.]*/{MANIFEST_FILE}")):
+        try:
+            witness = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as error:
+            raise AuthorityError(f"{manifest.parent.name} has no readable manifest") from error
+        check_head(
+            authority.journal, witness.get("journal_watermark", 0), witness.get("journal_sha256")
+        )
+    return authority
+
+
+def journal_digest(journal: tuple[JournalEvent, ...]) -> str:
+    """SHA-256 of the journal's events in canonical JSON: what a set records of its history."""
+    dumped = json.dumps([event.model_dump(mode="json") for event in journal], sort_keys=True)
+    return hashlib.sha256(dumped.encode()).hexdigest()
+
+
+def check_head(journal: tuple[JournalEvent, ...], watermark: int, digest: str | None) -> None:
+    """Refuse a journal that ends before a set's ``watermark`` or whose first ``watermark``
+    events differ from the ``digest`` the set recorded (None: a set from before digests)."""
+    if watermark > len(journal):
+        raise AuthorityError(
+            f"{EXPIRY_JOURNAL_FILE} ends at event {len(journal)} but a set was taken at event "
+            f"{watermark}: truncated or rolled back"
+        )
+    if digest is not None and journal_digest(journal[:watermark]) != digest:
+        raise AuthorityError(f"{EXPIRY_JOURNAL_FILE} differs from the history a set recorded")
 
 
 def authority_absent(backup_dir: Path) -> bool:
@@ -101,6 +138,13 @@ def append_authority[M: (JournalEvent, LicenceEnd)](backup_dir: Path, entry: M) 
         dumped = [e.model_dump(mode="json") for e in entries] + [stored.model_dump(mode="json")]
         _write(backup_dir, _FILES[type(entry)], dumped)
     return stored
+
+
+def mark_licence_ends(snapshot_root: Path, authority: Authority, *also: str) -> None:
+    """Write the RP4a marker of every licence end in ``authority`` (and ``also``)."""
+    store = SnapshotStore(snapshot_root)
+    for source in {end.source_id for end in authority.licence_ends} | set(also):
+        store.mark_licence_ended(source)
 
 
 def reconcile_licence_ends(conn: psycopg.Connection[Any], authority: Authority) -> tuple[str, ...]:

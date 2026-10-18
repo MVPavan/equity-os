@@ -14,10 +14,10 @@ retention licence-end --source ID --ended-on DATE --reason TEXT --snapshot-root 
         --backup-dir PATH [--config-root PATH]
     (record a vendor licence end: store marker, licence-ends.json entry, database row, then a
     purge of all that source's material, holds notwithstanding; exit codes as purge)
-retention refetch --capture ID --snapshot-root PATH
+retention refetch --capture ID --snapshot-root PATH [--retry]
     (as the runtime role: fetch an expired exchange capture from its address; exit 0 when
     restored, ``EXIT_HIGH`` on a mismatch, ``EXIT_REFUSED`` when the fetch failed or the
-    capture is not refetchable)
+    capture is not refetchable; after a completed mismatch only ``--retry`` fetches again)
 """
 
 from __future__ import annotations
@@ -91,6 +91,7 @@ def add_retention_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
     refetch_parser = actions.add_parser(REFETCH_ACTION, help=_REFETCH_HELP)
     refetch_parser.add_argument("--capture", type=int, required=True)
     refetch_parser.add_argument("--snapshot-root", type=Path, required=True)
+    refetch_parser.add_argument("--retry", action="store_true")
     ended = actions.add_parser(LICENCE_END_ACTION, help=_LICENCE_END_HELP)
     ended.add_argument("--source", required=True)
     ended.add_argument("--ended-on", required=True, type=date.fromisoformat)
@@ -108,7 +109,7 @@ def dispatch_retention_command(args: argparse.Namespace) -> int | None:
         if args.retention_action == CLASSIFY_ACTION:
             return _classify()
         if args.retention_action == REFETCH_ACTION:
-            return _refetch(args.capture, args.snapshot_root)
+            return _refetch(args.capture, args.snapshot_root, retry=args.retry)
         if args.retention_action == LICENCE_END_ACTION:
             ended = partial(
                 record_licence_end,
@@ -216,10 +217,11 @@ def _purge(
     return EXIT_HIGH if report.high else EXIT_OK
 
 
-def _refetch(capture_ref_id: int, snapshot_root: Path) -> int:
+def _refetch(capture_ref_id: int, snapshot_root: Path, *, retry: bool) -> int:
     """Re-fetch one capture with the live fetcher; print and exit by its outcome (R10)."""
+    store = SnapshotStore(snapshot_root)
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
-        outcome = refetch(pool, SnapshotStore(snapshot_root), capture_ref_id, live_fetch)
+        outcome = refetch(pool, store, capture_ref_id, live_fetch, retry=retry)
     sys.stdout.write(f"{outcome}\t{capture_ref_id}\n")
     return _REFETCH_EXIT.get(outcome, EXIT_REFUSED)
 

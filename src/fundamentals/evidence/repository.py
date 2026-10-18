@@ -34,6 +34,7 @@ from fundamentals.contracts.evidence import (
     StatementRole,
 )
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.entity.identity_layers import issuer_values
 from fundamentals.evidence import repository_calc as calc_sql
@@ -151,6 +152,12 @@ _SEGMENTS_AS_OF: LiteralString = (
 )
 _SEGMENTS_BY_ID: LiteralString = (
     _SEGMENT_COLUMNS + "WHERE m.id = ANY(%s) GROUP BY m.id ORDER BY m.id"
+)
+# R13: the non-retained vendor captures the traces rest on, children included.
+_TRACES_EXPIRED: LiteralString = (
+    "SELECT eqos.expired_vendor_captures(coalesce(array_agg(c), '{}')) AS expired "
+    "FROM unnest(%s::bigint[]) t(id), unnest(eqos.row_captures('calculation_traces', "
+    "jsonb_build_object('calculation_trace_id', t.id))) c"
 )
 
 
@@ -639,9 +646,13 @@ class EvidenceRepository:
         return trace_id
 
     def get_calculation_traces(self, ids: Sequence[int]) -> tuple[StoredTrace, ...]:
-        """Stored traces by id, with operand rows and child traces; each hash re-checked."""
+        """Stored traces by id, with operand rows and child traces; each hash re-checked. A
+        trace resting on a non-retained vendor capture raises before any decode (R13)."""
         if not ids:
             return ()
+        expired = self._fetch(_TRACES_EXPIRED, (list(ids),))[0]["expired"]
+        if expired:
+            raise OriginalExpiredError(f"ORIGINAL_EXPIRED: traces {list(ids)} rest on {expired}")
         traces = self._fetch(calc_sql.TRACES_BY_ID, (list(ids),))
         operands: dict[int, list[TraceOperand]] = {}
         for row in self._fetch(calc_sql.OPERANDS_OF_TRACES, (list(ids),)):
