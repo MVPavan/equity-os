@@ -1,16 +1,19 @@
 {
   "now": {
-    "title": "D7 screen-export phase re-review r2",
-    "detail": "PREP-2, PREP-2b and PREP-3 are done: closing critical review REVISE (3, all reproduced), fixes f8bcc8b, Sol re-review APPROVE; PREP-3 bead closed. Screen-export phase review r1 fixes committed (1880497 for 15 findings; c450ce5 for 5/8/9 with migration 0038); Sol re-reviewing.",
-    "stage": "D7"
+    "title": "PREP-4 next",
+    "detail": "D7 (coverage model and screen export) and D9 (retention) are complete: screen-export phase re-review APPROVE, fresh closing review REVISE (11: prohibited-URL slug, symbol-reuse issuer binding, registry generations, short responses, strict CSV, number lexemes, observer inventory, config refusal; 3 parked) fixed 95e96bd, re-review APPROVE. PREP-2/2b/3 complete.",
+    "stage": "PREP"
   },
   "next": [
-    "Screen-export: close the review loop, fresh closing review, then close eqos-351, D7 (eqos-3oq) and D9 (eqos-4fc)",
     "PREP-4..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
     "eqos-4j2.23: take the derivation cutoff from the store clock",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "D7 and D9 closed. Screen-export phase r2 APPROVE; fresh closing review REVISE (11), fixes 95e96bd (8), 3 parked as beads (publish-before-register residue, owner-SQL member sealing, concurrent diagnostic GET); re-review APPROVE. Beads eqos-351, eqos-3oq, eqos-4fc closed."
+    },
     {
       "date": "2026-10-18",
       "text": "PREP-2/2b/3 closed: fresh closing review found 3 (native selection of imported fact passed historical checks; legacy/run-bound citations lacked issuer checks; coexisting mapping versions blocked runs); fixed f8bcc8b; Sol APPROVE. Screen-export phase r1 fixes 1880497 + c450ce5 (migration 0038); holds list gains the Stage 4 manifest. Filed eqos-4j2.23 (process-clock cutoff vs store clock)."
