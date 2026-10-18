@@ -65,8 +65,8 @@ time.
 | D8 | Shareholding filing source | Stage 3 e2e green | Parked (owner ruling 2026-10-17) |
 | D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
 | PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
-| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Audit 2026-10-18: does not hold. `fundamentals run` falls back to SQLite when `fact_store_id` is unset (all four Apar configs), and the run writes the management ledger to JSON, not the D3 ledger |
-| PREP-3 | Resumable workflow with defined states, retries and failure states (register B-01) | Interrupt-and-resume test per step | Done: `tests/fundamentals/test_prep3_resume.py`; states and failure states in `docs/plans/PREP-3.md` (phase review pending) |
+| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Done: PREP-2/2b (`docs/plans/PREP-2b.md`); pilot configs name only the PostgreSQL store and the run writes the D3 ledger; closing review Sol APPROVE 2026-10-18 (`f8bcc8b`); legacy impersonation parked `eqos-4j2.22` |
+| PREP-3 | Resumable workflow with defined states, retries and failure states (register B-01) | Interrupt-and-resume test per step | Done: `tests/fundamentals/test_prep3_resume.py`; states and failure states in `docs/plans/PREP-3.md`; closing review Sol APPROVE 2026-10-18 |
 | PREP-4 | Source-of-truth matrix (B-03) | Matrix approved by the reviewer | Open |
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Open |
 | PREP-6 | Review telemetry wired to ledger claims (B-04, B-13); seeded-error drill | Per-claim disposition and time recorded; drill errors caught | Instrument exists (`fundamentals review`); not yet on the ledger |
