@@ -1,15 +1,20 @@
 {
   "now": {
-    "title": "PREP-4 next",
-    "detail": "D7 (coverage model and screen export) and D9 (retention) are complete: screen-export phase re-review APPROVE, fresh closing review REVISE (11: prohibited-URL slug, symbol-reuse issuer binding, registry generations, short responses, strict CSV, number lexemes, observer inventory, config refusal; 3 parked) fixed 95e96bd, re-review APPROVE. PREP-2/2b/3 complete.",
+    "title": "PREP-5 next",
+    "detail": "PREP-4 done: source-of-truth matrix (docs/blueprint/source-of-truth-matrix.md) Sol APPROVE after one fix round. It records pilot gaps now tracked as beads: fact admission not on the run path (eqos-4j2.24, P1), no workflow memory writes (eqos-4j2.25, P1), thesis-impact reads a YAML file (eqos-4j2.26), PILOT-4 citation contract (eqos-4j2.27).",
     "stage": "PREP"
   },
   "next": [
-    "PREP-4..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
-    "eqos-4j2.23: take the derivation cutoff from the store clock",
+    "PREP-5: rejected-claim rework path and evidence-package versioning (B-14)",
+    "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
+    "PREP-6..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "PREP-4 source-of-truth matrix: Sol r1 REVISE (11: retention authority files, five citation kinds, source-intake receipts, diagnostic vs ledger exports, memory permissions, pin scope, trace validation, evidence packages, exceptions, dashboard, deferred scope), r2 APPROVE. Filed eqos-4j2.24..27 for the pilot gaps it records."
+    },
     {
       "date": "2026-10-18",
       "text": "D7 and D9 closed. Screen-export phase r2 APPROVE; fresh closing review REVISE (11), fixes 95e96bd (8), 3 parked as beads (publish-before-register residue, owner-SQL member sealing, concurrent diagnostic GET); re-review APPROVE. Beads eqos-351, eqos-3oq, eqos-4fc closed."

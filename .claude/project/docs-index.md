@@ -5,6 +5,7 @@ Authoritative docs and when to read them.
 | Doc | Read when |
 |---|---|
 | `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md` | **Canonical for all implementation gates** — "single operational source of truth" for decisions (IDs A-01…E-10), acceptance evidence, dependencies, status, phase-gate scorecards (§F), and SQLite/state-table scale-up triggers (§H) |
+| `docs/blueprint/source-of-truth-matrix.md` | **Which store wins** for captures, evidence, facts, comparisons, traces, ledger, memory, views, coverage and config — register B-03 / PREP-4 authority table grounded in the code at HEAD, with its Gaps list |
 | `docs/blueprint/funda-blueprint-final-consolidated-review.md` | Product/architecture rationale — approved direction, doctrine, first-release contract (§7); narrative only, does **not** override the v2 register |
 | `docs/blueprint/funda-third-order-review-disposition-report.md` | Why v2 says what it says — disposition of the third-order audit (accepted/modified/rejected findings, document strategy) |
 | `docs/blueprint/funda-blueprint-implementation-decision-register.md` | Superseded v1 register — historical reference only; use v2 |
