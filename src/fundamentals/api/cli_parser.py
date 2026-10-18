@@ -96,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="admit registered originals this manifest shows published by the cutoff",
     )
     run.add_argument(
+        "--full-successor",
+        action="store_true",
+        help="rerun a head with claim rejections in full instead of only its rejected lines",
+    )
+    run.add_argument(
         "--snapshot-root",
         type=Path,
         default=None,

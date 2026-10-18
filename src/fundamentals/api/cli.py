@@ -80,6 +80,8 @@ from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_co
 from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
 from fundamentals.api.validate_cli import dispatch_validate_command
 from fundamentals.contracts.fact import CanonicalStatus
+from fundamentals.contracts.guidance_claim import GuidanceClaim
+from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.source_registration import SourceRegistrationError, SourceRole
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.xbrl_source import NseXbrlSource
@@ -87,10 +89,16 @@ from fundamentals.ledger.importer import load_import_config
 from fundamentals.ledger.run_draft import (
     Retrospective,
     RunDraft,
+    allowed_captures,
+    check_blobs,
+    check_head,
+    gate_lines,
     preflight,
+    section_body,
     write_run_draft,
 )
 from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
+from fundamentals.output.earnings_update import EarningsUpdate
 from fundamentals.pg.cutover import open_fact_store
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -275,6 +283,8 @@ def run_command(
                 admitted_inputs=prepared,
             )
             if not isinstance(store, PgFactStore):
+                if args.full_successor:
+                    raise RunDraftError("--full-successor needs a PostgreSQL store")
                 return run()
             # A PostgreSQL run reads its prior and writes its earnings update as a DRAFT.
             if args.snapshot_root is None:
@@ -297,14 +307,39 @@ def run_command(
                 pdfs=pdfs,
                 catalog=catalog,
                 snapshots=snapshots,
+                full_successor=args.full_successor,
             )
             repository = EvidenceRepository(pool)
             bound: list[tuple[Line, ...]] = []
+
+            def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
+                assert update.source_cutoff is not None
+                with pool.connection() as conn, conn.cursor() as cursor:
+                    check_blobs(
+                        cursor,
+                        blobs,
+                        allowed=allowed_captures(prior, xbrl, pdfs),
+                        cutoff=update.source_cutoff,
+                        retrospective=retrospective,
+                        catalog=catalog,
+                    )
+
+            def before_commit(update: EarningsUpdate, guidance: tuple[GuidanceClaim, ...]) -> None:
+                gate = None
+                if prior.rework is not None or prior.full_successor is not None:
+                    with pool.connection() as conn, conn.cursor() as cursor:
+                        check_head(cursor, prior, period)  # before the run's first write
+                        if prior.rework is not None:
+                            gate = prior.rework.gate(section_body, partial(admit, update))
+                            gate_lines(cursor, gate, update, guidance, prior, catalog)
+                lines = bind_computed(repository, update, entity_id=prior.entity_id, carry=gate)
+                bound.append(lines)
+
+            carried = prior.rework.carried if prior.rework is not None else frozenset()
             result = run(
                 comparators_acquired_at=prior.first_seen,
-                before_commit=lambda update: bound.append(
-                    bind_computed(repository, update, entity_id=prior.entity_id)
-                ),
+                before_commit=before_commit,
+                skip_roles=frozenset(role for role in FactRole if f"fact.{role.value}" in carried),
             )
             draft = RunDraft(
                 period=period,

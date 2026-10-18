@@ -6,11 +6,16 @@ operand interpretation's capture blob), ``(blob, anchor)`` for a ``SOURCE_QUOTE`
 claims are the rejected ones and every claim sharing an atom with them (one hop); the rerun set
 is every claim on a line holding an affected claim, since a line is re-rendered whole. Anything
 else is carried. Traces are read through the repository, so each hash is re-checked.
+
+A rework run passes every line it would write through a ``Gate`` before its first write: a
+line of carried keys must equal the version's and takes its claims; a line of rerun keys only
+is rerun; any other refuses, as does a missing carried line or a changed section scaffold.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections import defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, LiteralString
 
 from psycopg import Cursor
@@ -25,6 +30,8 @@ from fundamentals.ledger.run_traces import RunDraftError
 
 Atom = tuple[str, str]
 FactOrigin = tuple[str, int]
+# A run binds these, so a carried claim takes the version's (a quote's text and anchor included).
+_BINDING = {"citation", "unresolved"}
 _FACT_FILES: LiteralString = """SELECT origin, origin_id, file_sha256 FROM eqos.fact_rows
 WHERE (origin, origin_id) IN (SELECT * FROM unnest(%s::text[], %s::bigint[]))"""
 
@@ -42,6 +49,68 @@ class Rework(BaseModel):
     carried: frozenset[str]
     blobs: frozenset[str]
     scaffolds: Mapping[str, str]
+
+    def gate(
+        self, body: Callable[[str, Sequence[str]], str], admit: Callable[[frozenset[str]], None]
+    ) -> Gate:
+        """A gate over a rework run's lines; ``body`` renders a section from its lines and
+        ``admit`` checks the run's sources."""
+        return Gate(self, body, admit)
+
+
+class Gate:
+    """A rework run's lines, recorded in order and held to the reworked version's."""
+
+    def __init__(
+        self,
+        rework: Rework,
+        body: Callable[[str, Sequence[str]], str],
+        admit: Callable[[frozenset[str]], None],
+    ) -> None:
+        self.rework, self.body, self.admit = rework, body, admit
+        self.recorded: dict[str, list[str]] = defaultdict(list)
+        self.carried: set[tuple[str, frozenset[str]]] = set()
+        self.sources: set[str] = set()
+
+    def line(
+        self, section: str, text: str, claims: tuple[NumericClaim, ...]
+    ) -> tuple[NumericClaim, ...] | None:
+        """The version's claims for a carried line, ``None`` for a rerun line, ``()`` for a
+        line without claims; refuses any other."""
+        self.recorded[section].append(text)
+        keys = frozenset(claim.claim_key for claim in claims)
+        rework = self.rework
+        if not keys:
+            return ()
+        if not keys & rework.carried and keys & rework.rerun:
+            self.sources |= {c.citation.source_sha256 for c in claims if c.citation.source_sha256}
+            return None
+        if keys <= rework.carried and (text, keys) in rework.lines[section]:
+            held = tuple(rework.claims[claim.claim_key] for claim in claims)
+            if all(_same(claim, own) for claim, own in zip(claims, held, strict=True)):
+                self.carried.add((section, keys))
+                return held
+        raise RunDraftError(f"rework of version {rework.head}: {section} line {sorted(keys)} moved")
+
+    def close(self, blobs: frozenset[str]) -> None:
+        """Refuse unless every carried line came back and every section's scaffold is the
+        version's, then admit the run's sources and the carried claims' inputs."""
+        rework = self.rework
+        for section, held in rework.lines.items():
+            for _, keys in held:
+                if keys <= rework.carried and (section, keys) not in self.carried:
+                    raise RunDraftError(f"rework drops {section} line {sorted(keys)}")
+        for section, expected in rework.scaffolds.items():
+            if scaffold(self.body(section, self.recorded[section])) != expected:
+                raise RunDraftError(f"rework changes the {section} section outside its claims")
+        self.admit(blobs | self.sources | rework.blobs)
+
+
+def _same(claim: NumericClaim, own: NumericClaim) -> bool:
+    """Whether a run's unbound claim states what the version's resolved claim does."""
+    return not own.unresolved and claim.model_dump(exclude=_BINDING) == own.model_dump(
+        exclude=_BINDING
+    )
 
 
 def rejected(cursor: Cursor[Any], head: int) -> tuple[str, ...]:

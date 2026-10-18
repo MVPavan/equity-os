@@ -101,6 +101,7 @@ from fundamentals.verify.quote_anchor import (
 )
 
 _LOGGER = structlog.get_logger("fundamentals.pipeline")
+BeforeCommit = Callable[[EarningsUpdate, tuple[GuidanceClaim, ...]], object]
 
 
 class _PlannedWrite(BaseModel):
@@ -179,11 +180,13 @@ def run_pipeline(
     clock: Callable[[], datetime] | None = None,
     admitted_inputs: AdmittedPipelineInputs | None = None,
     comparators_acquired_at: Mapping[str, datetime] | None = None,
-    before_commit: Callable[[EarningsUpdate], object] | None = None,
+    before_commit: BeforeCommit | None = None,
+    skip_roles: frozenset[FactRole] = frozenset(),
 ) -> PipelineResult:
     """Run the full Q1 FY25 increment end to end, failing closed on any gap;
     ``comparators_acquired_at`` is each registered comparator XBRL's acquisition time;
-    ``before_commit`` sees the rendered update before any fact is stored and may refuse."""
+    ``before_commit`` sees the rendered update and guidance claims before any fact is stored
+    and may refuse; ``skip_roles`` are rendered but not stored or selected."""
     if (
         xbrl_input.source_id != config.xbrl.source_id
         or results_pdf_sha256 != config.results_pdf.sha256
@@ -211,6 +214,7 @@ def run_pipeline(
             prepared=admitted_inputs,
             comparators_acquired_at=comparators_acquired_at,
             before_commit=before_commit,
+            skip_roles=skip_roles,
         )
     tick = clock or actual_clock
     with prepare_pipeline_sources(
@@ -236,6 +240,7 @@ def run_pipeline(
             prepared=prepared,
             comparators_acquired_at=comparators_acquired_at,
             before_commit=before_commit,
+            skip_roles=skip_roles,
         )
 
 
@@ -246,7 +251,8 @@ def _run_admitted(
     store: FactStoreLike,
     prepared: AdmittedPipelineInputs,
     comparators_acquired_at: Mapping[str, datetime] | None,
-    before_commit: Callable[[EarningsUpdate], object] | None,
+    before_commit: BeforeCommit | None,
+    skip_roles: frozenset[FactRole],
 ) -> PipelineResult:
     completed = monotonic_clock(prepared)
 
@@ -437,7 +443,9 @@ def _run_admitted(
             if concept in confirmed_concepts
             else ReconciliationStatus.CROSS_FOOT_PASS
         )
-        planned_writes.append(
+        # A skipped role (carried by a rework) is rendered, never stored.
+        writes = planned_writes if role not in skip_roles else []
+        writes.append(
             _PlannedWrite(
                 fact=build_derived_fact(
                     xbrl_fact_obs,
@@ -454,7 +462,7 @@ def _run_admitted(
         sources: list[Provenance] = [xbrl_fact_obs.provenance]
         pdf_confirm = pdf_by_concept.get(concept)
         if concept in config.concepts.cross_check and pdf_confirm is not None:
-            planned_writes.append(
+            writes.append(
                 _PlannedWrite(
                     fact=build_derived_fact(
                         pdf_confirm,
@@ -527,7 +535,7 @@ def _run_admitted(
     )
     markdown = render_earnings_update(update)
     if before_commit is not None:
-        before_commit(update)
+        before_commit(update, tuple(guidance_claims))
 
     # 10. All gates and the render passed — now commit. Canonical promotion is a
     #     separate auditable step; nothing was persisted on a failed run.

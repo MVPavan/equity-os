@@ -6,12 +6,15 @@ anything; the pipeline binds the computed values (:mod:`run_traces`) before it s
 ``write_run_draft`` then, in one READ COMMITTED transaction, locks WATCHLIST then the prior,
 re-reads both heads (or the bootstrap period), checks every capture behind every claim against
 the source cutoff, writes the version and checks it ``AS_KNOWN`` in place; anything not passing
-rolls it all back.
+rolls it all back. A rework of a version with claim rejections (``Prior.rework``, PREP-5)
+carries that version's claims on every line it does not rerun; ``--full-successor``
+(``Prior.full_successor``) reruns it whole. Either way the period's head must still be the
+reworked version, before the run's first write and again under the lock.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping, Sequence, Set
 from datetime import date, datetime
 from typing import Any, LiteralString
 
@@ -39,10 +42,11 @@ from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.evidence.capture_retention import retained_capture
+from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ledger import store
 from fundamentals.ledger.citations import _FILE_CAPTURES, _first_party
-from fundamentals.ledger.claim_check import CRORE, UNITS, quote_qualifiers
+from fundamentals.ledger.claim_check import UNITS, quote_qualifiers
 from fundamentals.ledger.display import content_hash
 from fundamentals.ledger.import_mapping import (
     BOUNDS_STYLE,
@@ -62,10 +66,19 @@ from fundamentals.ledger.lifecycle import (
     check_version,
     version_status,
 )
-from fundamentals.ledger.run_traces import CALCS, CHANGES, Line, RunDraftError, cite
+from fundamentals.ledger.rework import Rework, plan, rejected
+from fundamentals.ledger.run_traces import (
+    CALCS,
+    CHANGES,
+    CRORE_UNIT,
+    Carry,
+    Line,
+    RunDraftError,
+    _shown,
+    cite,
+)
 from fundamentals.output.earnings_update import _ROLE_LABELS, REQUIRED_ROLES, EarningsUpdate
 from fundamentals.output.management_ledger import LedgerStatus
-from fundamentals.output.pnl_lines import OPERAND_MISSING
 from fundamentals.store.fact_store import FactRef
 from fundamentals.store.snapshot_store import SnapshotStore
 
@@ -73,8 +86,6 @@ RUN_AUTHOR = "fundamentals-run"
 GUIDANCE_KEY = "ledger.{metric}.{horizon}.{scope}"  # as import_mapping keys a ledger entry
 HEADING, RESULTS = "heading", "results"
 GUIDANCE = "management_ledger"
-CRORE_STYLE = "group-intl,trim"
-CRORE_UNIT = f"{CRORE_STYLE},unit"
 CARRIED = LedgerStatus.CARRIED
 NONE = "- none"
 INTROS = {
@@ -101,9 +112,19 @@ WHERE o.calculation_trace_id = ANY(%s)"""
 _READ_COMMITTED: LiteralString = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
 
 
+class Successor(BaseModel):
+    """A ``--full-successor`` run: the version it reruns whole and the claims rejected there."""
+
+    model_config = ConfigDict(frozen=True)
+
+    head: int
+    rejected: tuple[str, ...]
+
+
 class Prior(BaseModel):
     """The run's entity, the pinned predecessor head (``None`` for the bootstrap period) with
-    its guidance claims, and the first-seen time of each required original."""
+    its guidance claims, the first-seen time of each required original, and the period's head
+    this run reworks, selectively or whole."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -112,6 +133,8 @@ class Prior(BaseModel):
     version_id: int | None = None
     sealed_digest: str | None = None
     entries: tuple[NumericClaim, ...] = ()
+    rework: Rework | None = None
+    full_successor: Successor | None = None
 
 
 class Retrospective(BaseModel):
@@ -150,20 +173,33 @@ def preflight(
     pdfs: tuple[str, ...],
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
+    full_successor: bool = False,
 ) -> Prior:
     """The pinned prior; refuses when the period's head is open, the prior is not ``APPROVED``
     or a required original, or a capture a prior guidance claim cites, is not a retained
-    first-party capture."""
+    first-party capture. A head with claim rejections is reworked; ``full_successor`` reruns it
+    whole and needs one."""
     with pool.connection() as conn, conn.cursor() as cursor:
         row = cursor.execute(_ENTITY, (stock,)).fetchone()
         if row is None:
             raise RunDraftError(f"no reporting entity {stock}")
         entity_id = int(row[0])
-        _require_closed(cursor, entity_id, period)
+        current = _require_closed(cursor, entity_id, period)
         first_seen = {
             sha256: _original(cursor, sha256, catalog, snapshots) for sha256 in (*xbrl, *pdfs)
         }
         prior = Prior(entity_id=entity_id, first_seen=first_seen)
+        if full_successor:
+            keys = () if current is None else rejected(cursor, current)
+            if current is None or not keys:
+                raise RunDraftError(f"--full-successor: {period}'s head has no claim rejections")
+            prior = prior.model_copy(
+                update={"full_successor": Successor(head=current, rejected=keys)}
+            )
+        elif current is not None:
+            prior = prior.model_copy(
+                update={"rework": plan(cursor, EvidenceRepository(pool), current)}
+            )
         if _bootstrap(cursor, entity_id, period):
             return prior
         previous = _predecessor(period)
@@ -208,18 +244,16 @@ def write_run_draft(
             ):
                 raise RunDraftError(f"the pinned prior version {prior.version_id} changed")
         current = _require_closed(cursor, entity_id, run.period)
+        check_head(cursor, prior, run.period)
+        reworked = prior.rework
+        carried = {} if reworked is None else {k: reworked.claims[k] for k in reworked.carried}
         body = _Body()
-        _results(body, update, run.facts, entity_id)
+        for text, claim in _results(update, run.facts, entity_id):
+            body.add(RESULTS, text, carried.get(claim.claim_key, claim))
         for line in run.lines:
             body.add(line.section, _shown(line), *line.claims)
-        entries = {entry.claim_key: entry for entry in prior.entries}
-        for guidance, rendered in zip(run.guidance, update.guidance, strict=True):
-            claim = _quote(cursor, guidance, rendered.metric_label, rendered.quote, catalog)
-            body.add(GUIDANCE, _guided(claim, _status(claim, entries.get(claim.claim_key))), claim)
-        for key, entry in entries.items():
-            if key not in body.claims:
-                carried = entry.model_copy(update={"section_key": GUIDANCE})
-                body.add(GUIDANCE, _guided(carried, CARRIED), carried)
+        for text, claim in _guidance(cursor, run.guidance, update, prior, catalog):
+            body.add(GUIDANCE, text, carried.get(claim.claim_key, claim))
         claims = tuple(body.claims.values())
         _check_sources(cursor, claims, run, prior, catalog)
         sections = _sections(run, prior, body.lines)
@@ -260,6 +294,29 @@ def write_run_draft(
             found += validation.version_states
             raise RunDraftError(f"the draft does not validate AS_KNOWN: {', '.join(found)}")
     return version_id
+
+
+def gate_lines(
+    cursor: Cursor[Any],
+    gate: Carry,
+    update: EarningsUpdate,
+    guidance: tuple[GuidanceClaim, ...],
+    prior: Prior,
+    catalog: SourceCatalog,
+) -> None:
+    """The run's results and guidance lines through a rework's gate, before any fact is
+    stored."""
+    for text, claim in _results(update, {}, prior.entity_id):
+        gate.line(RESULTS, text, (claim,))
+    for text, claim in _guidance(cursor, guidance, update, prior, catalog):
+        gate.line(GUIDANCE, text, (claim,))
+
+
+def check_head(cursor: Cursor[Any], prior: Prior, period: str) -> None:
+    """Refuse unless the period's head is still the version this run reworks, if any."""
+    reworked = prior.rework or prior.full_successor
+    if reworked is not None and (head := _head(cursor, prior.entity_id, period)) != reworked.head:
+        raise RunDraftError(f"{period}'s head is version {head}, not the reworked {reworked.head}")
 
 
 def _head(cursor: Cursor[Any], entity_id: int, period: str) -> int | None:
@@ -333,34 +390,41 @@ class _Body:
 
 
 def _results(
-    body: _Body, update: EarningsUpdate, facts: Mapping[str, FactRef], entity_id: int
-) -> None:
-    """Each required role's reported value, cited to the run's selected fact."""
+    update: EarningsUpdate, facts: Mapping[str, FactRef], entity_id: int
+) -> Iterator[tuple[str, NumericClaim]]:
+    """Each required role's line and reported value, cited to the run's selected fact (uncited
+    for a role with none)."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     by_role = {fact.role: fact for fact in update.facts}
     for role in REQUIRED_ROLES:
-        fact, ref = by_role[role], facts[role.value]
+        fact, ref = by_role[role], facts.get(role.value)
         key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
         name = f"fact.{role.value}"
         claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
-        cited = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
-        body.add(RESULTS, f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}", cited)
+        if ref is not None:
+            claim = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
+        yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}", claim
 
 
-def _shown(line: Line) -> str:
-    """A changes or calculations line with its claims' placeholders."""
-    keys = [claim.claim_key for claim in line.claims]
-    if line.section == CALCS:
-        style = CRORE_STYLE if keys and line.claims[0].unit == CRORE else ""
-        return f"- {line.label} = {_slot(keys[0], style) if keys else OPERAND_MISSING}"
-    if not keys:
-        return f"- {line.label}: not available ({line.unavailable})"
-    prior, change, *percent = keys
-    shown = f"- {line.label}: prior {_slot(prior, CRORE_UNIT)}"
-    shown += f"; change {_slot(change, f'plus,{CRORE_UNIT}')}"
-    if percent:
-        return f"{shown}, {_slot(percent[0], 'plus,unit')}"
-    return f"{shown}; percent change not available ({line.unavailable})"
+def _guidance(
+    cursor: Cursor[Any],
+    guidance: tuple[GuidanceClaim, ...],
+    update: EarningsUpdate,
+    prior: Prior,
+    catalog: SourceCatalog,
+) -> list[tuple[str, NumericClaim]]:
+    """Each guidance line and claim, then the prior's entries the run did not restate."""
+    entries = {entry.claim_key: entry for entry in prior.entries}
+    found = []
+    for claim_source, rendered in zip(guidance, update.guidance, strict=True):
+        claim = _quote(cursor, claim_source, rendered.metric_label, rendered.quote, catalog)
+        found.append((_guided(claim, _status(claim, entries.get(claim.claim_key))), claim))
+    stated = {claim.claim_key for _, claim in found}
+    for key, entry in entries.items():
+        if key not in stated:
+            carried = entry.model_copy(update={"section_key": GUIDANCE})
+            found.append((_guided(carried, CARRIED), carried))
+    return found
 
 
 def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
@@ -422,20 +486,47 @@ def _check_sources(
     prior: Prior,
     catalog: SourceCatalog,
 ) -> None:
-    """Every capture behind every claim is one of the run's originals or one the prior cites,
-    first seen (retrospective: published, contract a) by the source cutoff."""
+    """Every capture behind every claim passes ``check_blobs``."""
     cutoff = run.update.source_cutoff
     assert cutoff is not None
     traces = [c.citation.calculation_trace_id for c in claims if c.citation.calculation_trace_id]
     blobs = {c.citation.source_sha256 for c in claims if c.citation.source_sha256 is not None}
     blobs |= {row[0] for row in cursor.execute(_OPERAND_BLOBS, (traces,)).fetchall()}
-    allowed = {*run.xbrl, *run.pdfs, *(entry.citation.source_sha256 for entry in prior.entries)}
+    check_blobs(
+        cursor,
+        blobs,
+        allowed=allowed_captures(prior, run.xbrl, run.pdfs),
+        cutoff=cutoff,
+        retrospective=run.retrospective,
+        catalog=catalog,
+    )
+
+
+def allowed_captures(prior: Prior, xbrl: tuple[str, ...], pdfs: tuple[str, ...]) -> set[str]:
+    """The captures a run may cite: its originals, the prior's and, in a rework, those the
+    carried claims rest on (admitted for the reworked version)."""
+    cited = {entry.citation.source_sha256 for entry in prior.entries}
+    carried = prior.rework.blobs if prior.rework is not None else frozenset()
+    return {*xbrl, *pdfs, *(blob for blob in cited if blob is not None), *carried}
+
+
+def check_blobs(
+    cursor: Cursor[Any],
+    blobs: Set[str],
+    *,
+    allowed: Set[str],
+    cutoff: datetime,
+    retrospective: Retrospective | None,
+    catalog: SourceCatalog,
+) -> None:
+    """Every blob is an allowed capture, first seen (retrospective: published, contract a)
+    by the source cutoff."""
     if outside := sorted(blob[:12] for blob in blobs - allowed):
         raise RunDraftError(f"captures not in the run's package: {', '.join(outside)}")
     late = []
     for blob in sorted(blobs):
-        if run.retrospective is not None:
-            at = run.retrospective.published.get(blob)
+        if retrospective is not None:
+            at = retrospective.published.get(blob)
         else:
             captures = _captures(cursor, blob, catalog)
             at = captures[0]["first_seen"] if captures else None
@@ -461,6 +552,13 @@ def _sections(
         "hindsight."
     )
     pinned = f"version:{prior.version_id} digest {prior.sealed_digest}"
+    successor = prior.full_successor
+    full = (
+        ""
+        if successor is None
+        else f"Full successor of version:{successor.head} (full rework requested; rejected "
+        f"{', '.join(successor.rejected)})\n"
+    )
     seen = "; ".join(f"sha256 {sha} at {at.isoformat()}" for sha, at in prior.first_seen.items())
     heading = (
         f"# {update.issuer_name} ({update.nse_symbol}) — {update.issuer_quarter_label}\n\n"
@@ -468,16 +566,15 @@ def _sections(
         f"{update.source_cutoff.isoformat()}; derivation cutoff "
         f"{update.derivation_cutoff.isoformat()}.\n{designation}\n"
         f"Prior: {'none (bootstrap period)' if prior.version_id is None else pinned}.\n"
-        f"Originals first seen: {seen}.\n\n"
+        f"{full}Originals first seen: {seen}.\n\n"
     )
-    bodies = [(HEADING, heading)] + [
-        (
-            key,
-            f"## {key}\n\n{intro}\n" + "".join(f"{line}\n" for line in lines[key] or [NONE]) + "\n",
-        )
-        for key, intro in INTROS.items()
-    ]
+    bodies = [(HEADING, heading)] + [(key, section_body(key, lines[key])) for key in INTROS]
     return tuple(
         ReportSection(ordinal=ordinal, section_key=key, body=body)
         for ordinal, (key, body) in enumerate(bodies)
     )
+
+
+def section_body(key: str, lines: Sequence[str]) -> str:
+    """A non-heading section: its key, intro and lines (``- none`` when empty)."""
+    return f"## {key}\n\n{INTROS[key]}\n" + "".join(f"{line}\n" for line in lines or [NONE]) + "\n"

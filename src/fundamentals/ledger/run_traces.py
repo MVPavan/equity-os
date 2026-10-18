@@ -9,16 +9,20 @@ value at the trace's stored scale. Nothing is stored unless every value holds. F
 ``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100 and the registered
 ``effective_tax_rate_pct`` tax / PBT × 100. Keys follow the import's (``measurement_key``,
 ``change_key``); claim keys are the import's claim keys. The bound claims come back as the
-draft's changes and calculations lines.
+draft's changes and calculations lines. With a ``Carry`` (a rework, PREP-5) each line is first
+built unbound and only the lines it does not carry are bound; it is closed before any trace is
+stored.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from fractions import Fraction
+from functools import cache, partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -46,7 +50,14 @@ from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS
-from fundamentals.ledger.import_mapping import ABS, PCT, _valued, change_key, measurement_key
+from fundamentals.ledger.import_mapping import (
+    ABS,
+    PCT,
+    _slot,
+    _valued,
+    change_key,
+    measurement_key,
+)
 from fundamentals.output.earnings_update import _ROLE_LABELS, EarningsUpdate
 from fundamentals.output.pnl_lines import (
     ETR_LABEL,
@@ -69,6 +80,9 @@ _UNPROVEN = ScopedTier(
     tier=EvidenceTier.EQUIVALENCE_UNPROVEN, qualification_ref=None, condition_evidence=()
 )
 _Operand = tuple[str, OperandValue]
+_Lookup = Callable[[], _Operand]
+CRORE_STYLE = "group-intl,trim"
+CRORE_UNIT = f"{CRORE_STYLE},unit"
 # Dictionary, mapping-set, normalisation-policy and extractor versions a run's operands carry.
 RUN_CONTEXT = (
     ONBOARDING_VERSIONS.dictionary,
@@ -94,6 +108,18 @@ class Line(BaseModel):
     unavailable: str | None = None
 
 
+class Carry(Protocol):
+    """What a rework carries from its predecessor (``rework.Gate``)."""
+
+    def line(
+        self, section: str, text: str, claims: tuple[NumericClaim, ...]
+    ) -> tuple[NumericClaim, ...] | None:
+        """The predecessor's claims for a carried line, ``None`` for a line to rerun."""
+
+    def close(self, blobs: frozenset[str]) -> None:
+        """Refuse unless every line held; ``blobs`` are the rerun operands' sources."""
+
+
 class _Binder:
     """One run's operand lookups and trace writes."""
 
@@ -101,6 +127,8 @@ class _Binder:
         self.repo, self.entity_id, self.start, self.end = repo, entity_id, start, end
         self.policy: RoundingPolicy = load_rounding_policy(ROUNDING_POLICY)
         self.pending: dict[str, CalculationTrace] = {}
+        self.binds: dict[str, Callable[[], NumericClaim]] = {}
+        self.blobs: set[str] = set()
 
     def key(self, canonical_id: str, unit: str) -> MeasurementKey:
         """A key of this run's quarter."""
@@ -116,6 +144,7 @@ class _Binder:
     ) -> _Operand:
         """The single mapped interpretation of ``key`` in ``source``'s capture under
         ``RUN_CONTEXT``, equal to the run's value."""
+        self.blobs.add(source.file_sha256)
         capture = self.repo.find_capture_ref(
             source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
         )
@@ -154,6 +183,17 @@ class _Binder:
             reasons=(),
         )
 
+    def lazy(
+        self,
+        name: str,
+        source: Provenance,
+        key: MeasurementKey,
+        run_value: Decimal,
+        selection: SelectionSource = SelectionSource.PACKAGE_AS_REPORTED,
+    ) -> _Lookup:
+        """``operand``, looked up once and only when a bound line needs it."""
+        return cache(partial(self.operand, name, source, key, run_value, selection))
+
     def _interpretations(self, capture: CaptureReference | None) -> tuple[Interpretation, ...]:
         """Every interpretation of a registered capture; none of an unregistered one."""
         if capture is None or capture.capture_ref_id is None:
@@ -164,16 +204,22 @@ class _Binder:
         self,
         name: str,
         section: str,
-        operand: _Operand,
+        operand: _Lookup,
+        key: MeasurementKey,
         source: Provenance,
         run_value: Decimal,
         unit: str,
     ) -> NumericClaim:
-        """A retained figure's claim at the run's value, cited to its interpretation."""
-        held = operand[1]
-        assert held.interpretation_id is not None
-        claim = _valued(name, section, run_value, unit, held.key, source)
-        return cite(claim, interpretation_id=held.interpretation_id)
+        """A retained figure's claim at the run's value; bound, it cites its interpretation."""
+        claim = _valued(name, section, run_value, unit, key, source)
+
+        def bind() -> NumericClaim:
+            held = operand()[1]
+            assert held.interpretation_id is not None
+            return cite(claim, interpretation_id=held.interpretation_id)
+
+        self.binds[name] = bind
+        return claim
 
     def trace(
         self,
@@ -181,13 +227,31 @@ class _Binder:
         section: str,
         formula: str,
         output: MeasurementKey,
-        operands: tuple[_Operand, _Operand],
+        operands: tuple[_Lookup, _Lookup],
         run_value: Decimal,
         unit: str,
         **options: Any,
     ) -> NumericClaim:
-        """Compute one trace and check it against the run's value; its claim is cited once
-        every trace holds and is stored."""
+        """A computed value's claim; bound, its trace is computed and checked against the run's
+        value, and the claim is cited once every trace holds and is stored."""
+        claim = _valued(name, section, run_value, unit, output, **options)
+
+        def bind() -> NumericClaim:
+            self._compute(name, formula, output, (operands[0](), operands[1]()), run_value)
+            return claim
+
+        self.binds[name] = bind
+        return claim
+
+    def _compute(
+        self,
+        name: str,
+        formula: str,
+        output: MeasurementKey,
+        operands: tuple[_Operand, _Operand],
+        run_value: Decimal,
+    ) -> None:
+        """Compute one trace, check it against the run's value and hold it for storing."""
         (_, a), (_, b) = operands
         assert a.exact is not None and a.interval is not None
         assert b.exact is not None and b.interval is not None
@@ -219,15 +283,19 @@ class _Binder:
         if result.value != store_value(expected, output.value_kind, self.policy):
             raise RunDraftError(f"{name}: computed {result.value}, the run's {run_value}")
         self.pending[name] = result.trace
-        return _valued(name, section, run_value, unit, output, **options)
 
 
 def bind_computed(
-    repo: EvidenceRepository, update: EarningsUpdate, *, entity_id: int
+    repo: EvidenceRepository,
+    update: EarningsUpdate,
+    *,
+    entity_id: int,
+    carry: Carry | None = None,
 ) -> tuple[Line, ...]:
     """The run's changes and calculations lines: a stored trace per retained computed value and
     the interpretation of each comparator figure and the filed tax expense, all bound before
-    any trace is stored; any missing interpretation or mismatch raises."""
+    any trace is stored; any missing interpretation or mismatch raises. ``carry`` keeps the
+    lines it carries unbound and is closed before any trace is stored."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end)
     facts = {fact.role: fact for fact in update.facts}
@@ -236,7 +304,7 @@ def bind_computed(
     for comparative in update.comparatives:
         fact = by_concept[comparative.concept_qname]
         key, unit = binder.key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit), fact.unit
-        current = binder.operand("current", fact.sources[0], key, fact.value)
+        current = binder.lazy("current", fact.sources[0], key, fact.value)
         for change in (comparative.qoq, comparative.yoy):
             label = f"{_ROLE_LABELS[fact.role]} {change.kind.value} vs "
             label += f"{change.period_start}..{change.period_end}"
@@ -248,19 +316,14 @@ def bind_computed(
             assert change.prior_source is not None
             base = f"cmp.{fact.role.value}.{change.kind.value.lower()}"
             period = PeriodInterval.duration(change.period_start, change.period_end)
-            prior = binder.operand(
-                "prior",
-                change.prior_source,
-                key.model_copy(update={"period": period}),
-                change.prior_value,
-                SelectionSource.HISTORICAL_PACKAGE,
-            )
+            prior_key = key.model_copy(update={"period": period})
+            source, value = change.prior_source, change.prior_value
+            historical = SelectionSource.HISTORICAL_PACKAGE
+            prior = binder.lazy("prior", source, prior_key, value, historical)
             pair = (current, prior)
             abs_key = change_key(key, change.kind, ABS)
             claims = [
-                binder.figure(
-                    f"{base}.prior", CHANGES, prior, change.prior_source, change.prior_value, unit
-                ),
+                binder.figure(f"{base}.prior", CHANGES, prior, prior_key, source, value, unit),
                 binder.trace(
                     f"{base}.abs", CHANGES, DIFFERENCE, abs_key, pair, change.absolute_change, unit
                 ),
@@ -285,13 +348,13 @@ def bind_computed(
             )
     xbrl = facts[FactRole.PROFIT_BEFORE_TAX].sources[0]
 
-    def reported(name: str, role: FactRole) -> _Operand:
+    def reported(name: str, role: FactRole) -> _Lookup:
         fact = facts[role]
         canonical_id = LEGACY_CONCEPTS[fact.concept_qname]
-        return binder.operand(name, fact.sources[0], binder.key(canonical_id, CRORE), fact.value)
+        return binder.lazy(name, fact.sources[0], binder.key(canonical_id, CRORE), fact.value)
 
     pbt = facts[FactRole.PROFIT_BEFORE_TAX].value
-    tax: _Operand | None = None
+    tax: _Lookup | None = None
     for number, calculation in enumerate(update.calculations, start=1):
         name, label = f"calc.{number}", calculation.label
         if calculation.result == OPERAND_MISSING:
@@ -305,8 +368,9 @@ def bind_computed(
                 name, CALCS, DIFFERENCE, binder.key(label, CRORE), operands, value, CRORE
             )
         elif label == TAX_LABEL:
-            tax = binder.operand("tax", xbrl, binder.key(TAX, CRORE), value)
-            claim = binder.figure(name, CALCS, tax, xbrl, value, CRORE)
+            tax_key = binder.key(TAX, CRORE)
+            tax = binder.lazy("tax", xbrl, tax_key, value)
+            claim = binder.figure(name, CALCS, tax, tax_key, xbrl, value, CRORE)
         elif label == ETR_LABEL and tax is not None:
             operands = (tax, reported("pbt", FactRole.PROFIT_BEFORE_TAX))
             claim = binder.trace(
@@ -314,12 +378,20 @@ def bind_computed(
             )
         elif label == HEADLINE_LABEL:
             share_key = binder.key(SHARE, CRORE)
-            share = binder.operand("share_of_associates", xbrl, share_key, value - pbt)
+            share = binder.lazy("share_of_associates", xbrl, share_key, value - pbt)
             operands = (reported("pbt", FactRole.PROFIT_BEFORE_TAX), share)
             claim = binder.trace(name, CALCS, SUM, binder.key(label, CRORE), operands, value, CRORE)
         else:
             raise RunDraftError(f"{name}: no formula for {label!r}")
         lines.append(Line(section=CALCS, label=label, claims=(claim,)))
+    bound = []
+    for line in lines:
+        held = None if carry is None else carry.line(line.section, _shown(line), line.claims)
+        if held is None:
+            held = tuple(binder.binds[claim.claim_key]() for claim in line.claims)
+        bound.append(line.model_copy(update={"claims": held}))
+    if carry is not None:
+        carry.close(frozenset(binder.blobs))
     traces = {name: repo.put_calculation_trace(trace) for name, trace in binder.pending.items()}
 
     def stored(claim: NumericClaim) -> NumericClaim:
@@ -327,8 +399,24 @@ def bind_computed(
         return claim if trace_id is None else cite(claim, calculation_trace_id=trace_id)
 
     return tuple(
-        line.model_copy(update={"claims": tuple(map(stored, line.claims))}) for line in lines
+        line.model_copy(update={"claims": tuple(map(stored, line.claims))}) for line in bound
     )
+
+
+def _shown(line: Line) -> str:
+    """A changes or calculations line with its claims' placeholders."""
+    keys = [claim.claim_key for claim in line.claims]
+    if line.section == CALCS:
+        style = CRORE_STYLE if keys and line.claims[0].unit == CRORE else ""
+        return f"- {line.label} = {_slot(keys[0], style) if keys else OPERAND_MISSING}"
+    if not keys:
+        return f"- {line.label}: not available ({line.unavailable})"
+    prior, change, *percent = keys
+    shown = f"- {line.label}: prior {_slot(prior, CRORE_UNIT)}"
+    shown += f"; change {_slot(change, f'plus,{CRORE_UNIT}')}"
+    if percent:
+        return f"{shown}, {_slot(percent[0], 'plus,unit')}"
+    return f"{shown}; percent change not available ({line.unavailable})"
 
 
 def cite(claim: NumericClaim, **record: object) -> NumericClaim:

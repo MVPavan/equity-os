@@ -3,33 +3,52 @@
 Task 1: a ``REQUEST_CHANGES`` records the claims it rejects, each a distinct claim key of the
 version under review, in an immutable column; a stored trace's operand set cannot grow.
 Task 2: a rejected version's package inputs and rerun set are derived from its verified rows.
+Task 3: a rework run derives only the rerun lines and refuses any other movement before writing;
+``--full-successor`` reruns the version whole; the head is re-checked before and at the write.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import io
+import sqlite3
+from collections import defaultdict
+from collections.abc import Callable
 from decimal import Decimal
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+import yaml
 from evidence_support import ingest, policy
 from ledger_support import RULING, SELF_CITED, Ledger, claim, ledger
 from pg_evidence_schema_support import _insert, _trace, runtime, seeded
 from pg_support import PgTestDatabase
 from prep2b_support import Pilot
 from psycopg import errors
+from retained_support import APAR_MANIFEST
 from test_prep2b_run_draft import dictionary, mapping_set
 
-from fundamentals.api.cli import main
+from fundamentals.api import cli
+from fundamentals.api.cli import _build_parser, main, run_command
+from fundamentals.api.pipeline import PipelineResult
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
-from fundamentals.contracts.ledger import Citation, CitationKind, DecisionKind, SubjectKind
+from fundamentals.contracts.ledger import (
+    Citation,
+    CitationKind,
+    DecisionKind,
+    SubjectKind,
+    VersionStatus,
+)
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
-from fundamentals.ledger import lifecycle, rework
-from fundamentals.ledger.run_traces import RunDraftError
+from fundamentals.ledger import lifecycle, rework, run_draft, run_traces, store
+from fundamentals.ledger.run_traces import CHANGES, RunDraftError, _Binder
 from fundamentals.pg.settings import PgRole
+from fundamentals.store.pg_fact_store import PgFactStore
 
 __all__ = ["dictionary", "ingest", "ledger", "mapping_set", "policy", "runtime", "seeded"]
 
@@ -264,7 +283,7 @@ def _request_changes(pilot: Pilot, version: int, *keys: str) -> None:
         record = lifecycle.decide(
             owner, subject_kind=V, subject_id=version, kind=REQUEST, ruling=RULING, claims=keys
         )
-    assert record.rejected_claims == keys
+    assert (record.rejected_claims or ()) == keys
 
 
 def _plan(pilot: Pilot, version: int) -> rework.Rework | None:
@@ -327,3 +346,313 @@ def test_a_rejected_package_cannot_expand(
     assert _plan(pilot, version) == before
     with pilot.pg_db.runtime_pool() as pool:
         assert EvidenceRepository(pool).get_calculation_traces([trace_id]) == traces
+
+
+GAP_INPUTS = ("fact.revenue", "cmp.revenue.qoq.prior", "cmp.revenue.yoy.prior", "fact.total_income")
+WRITES = ("put_calculation_trace", "put", "select_canonical")
+TABLES = (
+    "fact_rows",
+    "fact_selections",
+    "calculation_traces",
+    "calculation_trace_operands",
+    "report_versions",
+    "numeric_claims",
+)
+CONDUCTOR = "ledger.conductor_ebitda_per_mt.medium_term.consolidated"
+PBT = "fact.profit_before_tax"
+Calls = dict[str, list[Any]]
+
+
+@pytest.fixture
+def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
+    """Every operand lookup (its key), trace computation (its output key), trace store, fact
+    store and canonical selection (each fact's role family) the run makes."""
+    found: Calls = defaultdict(list)
+
+    def spy(owner: Any, name: str, record: Callable[..., Any]) -> None:
+        real = getattr(owner, name)
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = real(*args, **kwargs)
+            found[name].append(record(result, *args))
+            return result
+
+        monkeypatch.setattr(owner, name, wrapper)
+
+    spy(_Binder, "operand", lambda _, _self, _name, _source, key, *__: key.digest())
+    spy(run_traces, "conclude", lambda _, _kind, output, *__: output.digest())
+    spy(EvidenceRepository, "put_calculation_trace", lambda trace_id, *_: trace_id)
+    spy(PgFactStore, "put", lambda revision, *_: revision.fact.revision_family)
+    spy(PgFactStore, "select_canonical", lambda revision, *_: revision.fact.revision_family)
+    return found
+
+
+def _rerun(
+    pilot: Pilot, *flags: str, edit: Callable[[dict[str, Any]], None] | None = None
+) -> PipelineResult:
+    """FY26_Q2 run again; ``edit`` corrects its config first (a new approved config, A3)."""
+    context, argv = pilot.registered("FY26_Q2")
+    if edit is not None:
+        path = Path(argv[argv.index("--config") + 1])
+        body = yaml.safe_load(path.read_text(encoding="utf-8"))
+        edit(body)
+        path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        context = dataclasses.replace(context, approved_config_sha256=digest)
+    args = _build_parser().parse_args([*argv, "--retrospective", str(APAR_MANIFEST), *flags])
+    return run_command(args, intake_context=context)
+
+
+def _rules(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """The config's guidance rules."""
+    rules: list[dict[str, Any]] = body["guidance"]["rules"]
+    return rules
+
+
+def _relabel(body: dict[str, Any]) -> None:
+    """The cables guidance shown under a corrected label."""
+    for rule in _rules(body):
+        if rule["metric"] == "cables_revenue_growth":
+            rule["label"] = "Cables revenue growth guidance (corrected)"
+
+
+def _add_metric(body: dict[str, Any]) -> None:
+    """A copy of the cables rule under a new metric."""
+    cables = next(r for r in _rules(body) if r["metric"] == "cables_revenue_growth")
+    _rules(body).append(cables | {"metric": "cables_growth_copy"})
+
+
+def _counts(pilot: Pilot) -> tuple[int, ...]:
+    """Rows of every table a run writes."""
+    found = pilot.query(f"SELECT {', '.join(f'(SELECT count(*) FROM eqos.{t})' for t in TABLES)}")
+    return tuple(found[0])
+
+
+def _successor(pilot: Pilot, version: int) -> int:
+    """The draft written on ``version``."""
+    rows = pilot.query("SELECT id FROM eqos.report_versions WHERE predecessor_id = %s", version)
+    ((found,),) = rows
+    return int(found)
+
+
+def _lines(pilot: Pilot, version: int) -> set[str]:
+    """Every line of the version's sections after the heading."""
+    return {line for s in pilot.version(version).sections[1:] for line in s.body.splitlines()}
+
+
+def test_a_rework_reruns_only_the_rejected_lines(
+    submitted_q2: tuple[Pilot, int], calls: Calls
+) -> None:
+    """Rejecting the revenue fact with no correction looks up, computes and stores exactly the
+    revenue lines' inputs and traces and writes only the revenue fact (the unaffected
+    calculations never execute, not merely deduplicate); every carried claim is N's row, cited
+    and resolved, on N's line, although the run built it unbound (Sol r2 1)."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, "fact.revenue")
+    found = _plan(pilot, version)
+    assert found is not None
+    new = _rerun(pilot).draft_version_id
+    assert new is not None and _successor(pilot, version) == new
+    before = {c.claim_key: c for c in pilot.version(version).claims}
+    digest = {
+        key: claim.measurement_key.digest()
+        for key, claim in before.items()
+        if claim.measurement_key
+    }
+    traced = (*QOQ[1:], *YOY[1:], GAP)
+    assert sorted(calls["conclude"]) == sorted(digest[key] for key in traced)
+    assert len(calls["put_calculation_trace"]) == len(traced)
+    assert set(calls["operand"]) == {digest[key] for key in GAP_INPUTS}
+    assert set(calls["put"]) == {"FY26_Q2:revenue"}
+    assert set(calls["select_canonical"]) <= {"FY26_Q2:revenue"}
+    after = {c.claim_key: c for c in pilot.version(new).claims}
+    assert set(after) == set(before)
+    for key in found.carried:
+        assert after[key] == before[key] and not after[key].unresolved
+    carried = {
+        text for held in found.lines.values() for text, keys in held if keys <= found.carried
+    }
+    assert carried <= _lines(pilot, new)
+
+
+def test_a_guidance_rework_binds_and_writes_nothing(
+    submitted_q2: tuple[Pilot, int], calls: Calls
+) -> None:
+    """No rerun line of a guidance rejection holds a computed or fact claim, so nothing may be
+    looked up, computed or stored."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, CABLES)
+    assert _rerun(pilot).draft_version_id is not None
+    for name in ("operand", "conclude", *WRITES):
+        assert calls[name] == [], name
+
+
+@pytest.mark.parametrize(
+    ("rejected", "edit", "intro", "named"),
+    [
+        (PBT, _relabel, None, CABLES),
+        (CONDUCTOR, _add_metric, None, "ledger.cables_growth_copy"),
+        (CONDUCTOR, None, "(prior − current)", "changes section"),
+    ],
+    ids=["carried-label", "unexplained-addition", "changes-intro"],
+)
+def test_a_rework_refuses_movement_outside_its_rerun_lines_before_writing(
+    submitted_q2: tuple[Pilot, int],
+    calls: Calls,
+    monkeypatch: pytest.MonkeyPatch,
+    rejected: str,
+    edit: Callable[[dict[str, Any]], None] | None,
+    intro: str | None,
+    named: str,
+) -> None:
+    """Presentation drift on a carried line (with a fact role rerun, so a write would follow),
+    an unexplained new claim, and a changed intro (it defines every carried change's sign; Sol
+    r2 4) each refuse inside the hook: a refusal after writes would leave a canonical selection
+    and traces no version cites."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, rejected)
+    if intro is not None:
+        monkeypatch.setitem(run_draft.INTROS, CHANGES, f"Prior figures and changes {intro}:")
+    before = _counts(pilot)
+    with pytest.raises(RunDraftError, match=named):
+        _rerun(pilot, edit=edit)
+    for name in WRITES:
+        assert calls[name] == [], name
+    assert _counts(pilot) == before
+
+
+def test_a_relabelled_guidance_rework_changes_only_its_claim(
+    submitted_q2: tuple[Pilot, int],
+) -> None:
+    """The rejected guidance claim takes its corrected label; nothing else moves."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, CABLES)
+    new = _rerun(pilot, edit=_relabel).draft_version_id
+    assert new is not None
+    before = {c.claim_key: c for c in pilot.version(version).claims}
+    after = {c.claim_key: c for c in pilot.version(new).claims}
+    assert after[CABLES].metric_label == "Cables revenue growth guidance (corrected)"
+    assert (
+        after[CABLES].model_copy(update={"metric_label": before[CABLES].metric_label})
+        == before[CABLES]
+    )
+    assert {key: c for key, c in after.items() if key != CABLES} == {
+        key: c for key, c in before.items() if key != CABLES
+    }
+    moved = _lines(pilot, new) ^ _lines(pilot, version)
+    assert len(moved) == 2 and all(CABLES in line for line in moved)
+
+
+def test_a_refused_rework_recovers_as_a_full_successor(
+    submitted_q2: tuple[Pilot, int], calls: Calls
+) -> None:
+    """A correction moving a carried line refuses selectively; ``--full-successor`` reruns
+    the version whole under a heading naming it and its rejections, validates, submits and is
+    approved, while N stays as it was."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, PBT)
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        digest = store.sealed_digest(conn.cursor(), version)
+    with pytest.raises(RunDraftError, match=CABLES):
+        _rerun(pilot, edit=_relabel)
+    new = _rerun(pilot, "--full-successor", edit=_relabel).draft_version_id
+    assert new is not None and _successor(pilot, version) == new
+    heading = pilot.version(new).sections[0].body
+    assert f"Full successor of version:{version} (full rework requested; rejected {PBT})" in heading
+    claims = {c.claim_key: c for c in pilot.version(new).claims}
+    assert claims[CABLES].metric_label == "Cables revenue growth guidance (corrected)"
+    computed = [c for c in claims.values() if c.citation.kind is CitationKind.CALCULATION]
+    assert len(calls["conclude"]) == len(computed)
+    pilot.approve(new)
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        cursor = conn.cursor()
+        assert lifecycle.version_status(cursor, new) is VersionStatus.APPROVED
+        assert lifecycle.version_status(cursor, version) is VersionStatus.CHANGES_REQUESTED
+        assert store.sealed_digest(cursor, version) == digest
+
+
+@pytest.mark.parametrize("sqlite", [False, True], ids=["no-rejections", "sqlite"])
+def test_a_full_successor_needs_claim_rejections_and_postgres(
+    submitted_q2: tuple[Pilot, int], monkeypatch: pytest.MonkeyPatch, sqlite: bool
+) -> None:
+    """``--full-successor`` reruns only a head with claim rejections; on a SQLite store, which
+    has no ledger to check, it refuses before the pipeline runs."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version)
+    ran: list[object] = []
+    monkeypatch.setattr(cli, "run_pipeline", lambda **_: ran.append(_))
+    database = pilot.tmp_path / "facts.db"
+
+    def to_sqlite(body: dict[str, Any]) -> None:
+        del body["fact_store_id"]
+        body["store_db"] = str(database)
+
+    before = _counts(pilot)
+    with pytest.raises(RunDraftError, match="PostgreSQL" if sqlite else "no claim rejections"):
+        _rerun(pilot, "--full-successor", edit=to_sqlite if sqlite else None)
+    assert ran == [] and _counts(pilot) == before
+    if sqlite:
+        with sqlite3.connect(database) as facts:
+            assert facts.execute("SELECT count(*) FROM facts").fetchone() == (0,)
+
+
+def _compete(pilot: Pilot, version: int) -> None:
+    """A successor of ``version``, closed (submitted, changes requested), as another writer's."""
+    draft = pilot.version(version).model_copy(update={"predecessor_id": version})
+    with pilot.pg_db.runtime_pool() as pool:
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            competitor = store.create_version(cursor, draft)
+        lifecycle.submit(pool, competitor, **pilot.sources())
+    _request_changes(pilot, competitor)
+
+
+@pytest.mark.parametrize("full", [False, True], ids=["rework", "full-successor"])
+@pytest.mark.parametrize("late", [False, True], ids=["before-hook", "after-check"])
+def test_a_rework_refuses_a_head_that_moved(
+    submitted_q2: tuple[Pilot, int],
+    calls: Calls,
+    monkeypatch: pytest.MonkeyPatch,
+    full: bool,
+    late: bool,
+) -> None:
+    """A successor closed after preflight would otherwise become the predecessor, under a
+    heading naming N (Sol r3). Committed before the hook, the pre-write check refuses with
+    nothing written; committed after it, the draft write refuses with no version or claim
+    written (closing r2 ruling A: only the rerun's writes remain)."""
+    pilot, version = submitted_q2
+    _request_changes(pilot, version, "fact.revenue")
+    counts: list[tuple[int, ...]] = []
+
+    def compete() -> None:
+        _compete(pilot, version)
+        counts.append(_counts(pilot))
+
+    if late:
+        put = EvidenceRepository.put_calculation_trace
+
+        def racing(self: EvidenceRepository, trace: CalculationTrace) -> int:
+            if not counts:
+                compete()
+            return put(self, trace)
+
+        monkeypatch.setattr(EvidenceRepository, "put_calculation_trace", racing)
+    else:
+        real = cli.preflight
+
+        def stale(*args: Any, **kwargs: Any) -> run_draft.Prior:
+            prior = real(*args, **kwargs)
+            compete()
+            return prior
+
+        monkeypatch.setattr(cli, "preflight", stale)
+    with pytest.raises(RunDraftError, match=f"not the reworked {version}"):
+        _rerun(pilot, *(["--full-successor"] if full else []))
+    (before,) = counts
+    after = _counts(pilot)
+    if late:
+        assert calls["put_calculation_trace"]
+        assert after[-2:] == before[-2:]  # report_versions, numeric_claims
+    else:
+        for name in WRITES:
+            assert calls[name] == [], name
+        assert after == before
