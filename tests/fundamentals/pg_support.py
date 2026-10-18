@@ -169,13 +169,20 @@ def pg_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgTestData
         drop_database(settings, name)
 
 
+@contextmanager
+def cloned_database(template: PgTestDatabase) -> Iterator[PgTestDatabase]:
+    """A fresh database cloned from ``template``, dropped on exit."""
+    settings = template.settings
+    name = mint_name(settings)
+    create_database(settings, name, template=template.dbname)
+    try:
+        yield template.model_copy(update={"dbname": name})
+    finally:
+        drop_database(settings, name)
+
+
 @pytest.fixture
 def pg_db(pg_template: PgTestDatabase) -> Iterator[PgTestDatabase]:
     """A fresh database cloned from the session template, dropped after the test."""
-    settings = pg_template.settings
-    name = mint_name(settings)
-    create_database(settings, name, template=pg_template.dbname)
-    try:
-        yield pg_template.model_copy(update={"dbname": name})
-    finally:
-        drop_database(settings, name)
+    with cloned_database(pg_template) as database:
+        yield database

@@ -2,6 +2,8 @@
 
 **Status: DRAFT — AWAITING FRESH SOL XHIGH REVIEW**
 
+**Phase 0.5 realisation of B-01 is `docs/plans/PREP-3.md`; S14's run record, transition chain and attempt records are deferred until a §8 trigger fires.**
+
 This document is an implementation contract, not evidence of delegated approval. It does not grant analyst, product, production, or other human authority.
 
 ## 1. Authority and ownership

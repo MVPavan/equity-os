@@ -149,8 +149,15 @@ class Pilot:
 
     def registered(self, quarter: str) -> tuple[ApprovedIntakeContext, list[str]]:
         """The quarter's originals registered now through the intake, and its run argv."""
-        if quarter in self._registered:
-            return self._registered[quarter]
+        if quarter not in self._registered:
+            context, register, argv = self.prepared(quarter)
+            assert main(register, intake_context=context) == 0
+            self._registered[quarter] = (context, argv)
+        return self._registered[quarter]
+
+    def prepared(self, quarter: str) -> tuple[ApprovedIntakeContext, list[str], list[str]]:
+        """The quarter's originals captured now (not registered), its approved intake context,
+        and its ``register-sources`` and run argv."""
         path = self.config(quarter)
         config = load_config(path)
         refs, bindings = {}, []
@@ -201,15 +208,13 @@ class Pilot:
         retained = ["--source-admission-store", str(self.retained)]
         register = ["register-sources", "--config", str(path), *retained]
         register += ["--source-admission-manifest", str(manifest), "--out-manifest", str(locator)]
-        assert main(register, intake_context=context) == 0
         fiscal, number = quarter.split("_")
         argv = ["run", "--issuer", STOCK, "--quarter", f"{number}-{fiscal}", "--config", str(path)]
         argv += ["--source-admission-manifest", str(locator), *retained]
         argv += ["--snapshot-root", str(self.rig.snapshots)]
         argv += ["--watchlist", str(REPO_ROOT / DEFAULT_WATCHLIST)]
         argv += [flag for q in QUARTERS for flag in ("--issuer-config", str(issuer_config(q)))]
-        self._registered[quarter] = (context, argv)
-        return self._registered[quarter]
+        return context, register, argv
 
     def run(self, quarter: str, *, retrospective: bool = True) -> PipelineResult:
         """The quarter's ``run`` (``--retrospective`` on the pinned manifest by default)."""

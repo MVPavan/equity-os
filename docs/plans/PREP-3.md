@@ -175,7 +175,8 @@ exception column says otherwise.
 | S2 | `refuse_ineligible` refusal; `IngestError` (reuse rejected, retries exhausted, no fiscal-year end) | earlier members' capture rows and generations, interpretations of members already processed | fix the cause, retry; reuse levels 1–3 |
 | S2 | interruption between capture publication and its row | an orphan capture directory (decision 6) | retry; orphan per decision 6 |
 | S3a/b | `RunDraftError` (preflight), `SourceAdmissionError`, `PipelineError` (cross-foot, cross-check, guidance anchor) | nothing | deterministic: fix the input, retry |
-| S3c | `RunDraftError` in `bind_computed` (no formula), interruption after trace k | traces 1..k only; no fact, selection or version | retry reuses those traces and adds the rest |
+| S3c | `RunDraftError` in `bind_computed` (no formula; raised before any trace insert) | nothing | deterministic: fix the input, retry |
+| S3c | interruption after trace k | traces 1..k only; no fact, selection or version | retry reuses those traces and adds the rest |
 | S3d | `FactStoreFrozenError`, `FactStoreRetryError`, `CanonicalSelectionError`, interruption | the complete trace sequence, plus the facts and selections committed before it | retry reuses them (`FactStoreFrozenError`: reopen the store or route to another, which then gets new rows) |
 | S3e | `RunDraftError` at write (prior changed, does not validate), interruption | S3c traces, S3d facts and selections; no version | retry reuses them; a validation failure repeats until the input is fixed (PREP-5) |
 | S3f | interruption, `FileExistsError` on `--out-json` | the `DRAFT` version, maybe the JSON | **exception:** retry refuses (open head); recover per decision 2 |
@@ -335,7 +336,7 @@ Dependencies: 3. Risks: low.
 | 3 | Task 1 seams wrong | Task 1 S2 parametrized over the real boundaries: capture row, generation, interpretations, package, segment members, package-owned attempts where reachable; "fired" assertion |
 | 4 | Register-sources resume uncovered | S1 table row and failure rows; Task 1 S1 cases between originals, before locator publication, after publication; completion check without overwrite |
 | 5 | Duplicate-key assertions vacuous | "Tests" section: reuse of snapshotted ids, equivalence to an uninterrupted baseline, exactly-the-remainder, fired, stable; uniqueness supplementary |
-| 6 | Partial trace sequence not interrupted | Task 2 (c): `put_calculation_trace` after call 1 |
+| 6 | Partial trace sequence not interrupted | Task 2 (a): `put_calculation_trace` after call 1 |
 | 7 | Post-draft recovery unproved | Decision 2 lists recoverable vs abandoned artifacts; Task 2 (e) covers before-JSON and between-files and runs submit, approve and a hash-checked export |
 | 8 | Derived states overlap | State = head status or `NONE` (mutually exclusive) plus a separate `runnable` read; retry-versus-successor and imported-head bootstrap paragraphs; consequence 1 narrowed; PREP-2b successor behaviour kept |
 | 9 | Failure table wrong | Failure table rebuilt per execution boundary including ingest, with durable attempts and the state-dependent exceptions (S1 locator, S3f, S4/S5 after commit, S6) |
