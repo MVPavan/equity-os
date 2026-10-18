@@ -7,16 +7,17 @@ stored scale. Nothing is stored unless every value holds. Formulas (version ``1`
 ``DURATION`` under their own keys): ``run.difference`` a − b, ``run.sum`` a + b,
 ``run.change_pct`` (a − b) / b × 100 and the registered ``effective_tax_rate_pct``
 tax / PBT × 100. Keys follow the import's (``measurement_key``, ``change_key``); claim keys
-are the import's claim keys.
+are the import's claim keys. The bound claims come back as the draft's changes and
+calculations lines.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,9 +31,11 @@ from fundamentals.canon.interval import (
 )
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import Representation, TemporalRole, ValueKind
+from fundamentals.contracts.comparative import RUN_PERCENT_PLACES
 from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
 from fundamentals.contracts.evidence import CaptureReference, Interpretation, InterpretationStatus
 from fundamentals.contracts.evidence_tier import EvidenceTier
+from fundamentals.contracts.ledger import NumericClaim, Rounding
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.contracts.qualification import ScopedTier
@@ -40,8 +43,8 @@ from fundamentals.contracts.role import FactRole
 from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS
-from fundamentals.ledger.import_mapping import ABS, PCT, change_key, measurement_key
-from fundamentals.output.earnings_update import EarningsUpdate
+from fundamentals.ledger.import_mapping import ABS, PCT, _valued, change_key, measurement_key
+from fundamentals.output.earnings_update import _ROLE_LABELS, EarningsUpdate
 from fundamentals.output.pnl_lines import (
     ETR_LABEL,
     GAP_LABEL,
@@ -55,6 +58,7 @@ DIFFERENCE, SUM, CHANGE_PCT = "run.difference", "run.sum", "run.change_pct"
 ETR = "effective_tax_rate_pct"
 FORMULA_VERSION = "1"
 TAX, SHARE = "tax_expense", "share_of_profit_associates_jv"
+CHANGES, CALCS = "changes", "calculations"
 _HUNDRED = Interval.exact(Fraction(100))
 _CRORE_SCALE = UNITS[CRORE][2] or 1
 # The code-side formulas carry no equivalence proof.
@@ -68,13 +72,16 @@ class RunDraftError(RuntimeError):
     """The run's draft cannot be written; nothing of it is."""
 
 
-class Computed(BaseModel):
-    """Each retained figure's interpretation id and computed value's trace id, by claim key."""
+class Line(BaseModel):
+    """One changes or calculations line: its label, its bound claims in display order, each
+    cited to its stored trace or interpretation, and why a value is not available."""
 
     model_config = ConfigDict(frozen=True)
 
-    figures: Mapping[str, int]
-    traces: Mapping[str, int]
+    section: str
+    label: str
+    claims: tuple[NumericClaim, ...] = ()
+    unavailable: str | None = None
 
 
 class _Binder:
@@ -83,7 +90,6 @@ class _Binder:
     def __init__(self, repo: EvidenceRepository, entity_id: int, start: date, end: date) -> None:
         self.repo, self.entity_id, self.start, self.end = repo, entity_id, start, end
         self.policy: RoundingPolicy = load_rounding_policy(ROUNDING_POLICY)
-        self.figures: dict[str, int] = {}
         self.pending: dict[str, CalculationTrace] = {}
 
     def key(self, canonical_id: str, unit: str) -> MeasurementKey:
@@ -143,21 +149,34 @@ class _Binder:
             return ()
         return self.repo.list_capture_interpretations(capture.capture_ref_id)
 
-    def figure(self, claim_key: str, operand: _Operand) -> None:
-        """Record a retained figure's interpretation."""
-        interpretation_id = operand[1].interpretation_id
-        assert interpretation_id is not None
-        self.figures[claim_key] = interpretation_id
+    def figure(
+        self,
+        name: str,
+        section: str,
+        operand: _Operand,
+        source: Provenance,
+        run_value: Decimal,
+        unit: str,
+    ) -> NumericClaim:
+        """A retained figure's claim at the run's value, cited to its interpretation."""
+        held = operand[1]
+        assert held.interpretation_id is not None
+        claim = _valued(name, section, run_value, unit, held.key, source)
+        return cite(claim, interpretation_id=held.interpretation_id)
 
     def trace(
         self,
-        claim_key: str,
+        name: str,
+        section: str,
         formula: str,
         output: MeasurementKey,
         operands: tuple[_Operand, _Operand],
         run_value: Decimal,
-    ) -> None:
-        """Compute one trace and check it against the run's value; stored only once all hold."""
+        unit: str,
+        **options: Any,
+    ) -> NumericClaim:
+        """Compute one trace and check it against the run's value; its claim is cited once
+        every trace holds and is stored."""
         (_, a), (_, b) = operands
         assert a.exact is not None and a.interval is not None
         assert b.exact is not None and b.interval is not None
@@ -172,8 +191,8 @@ class _Binder:
             else:
                 point = (a.exact / b.exact * 100, a.interval.div(b.interval).mul(_HUNDRED))
         except (UndefinedDivisionError, ZeroDivisionError) as error:
-            raise RunDraftError(f"{claim_key}: {formula} is undefined: {error}") from error
-        entries = [(name, TemporalRole.DURATION, value) for name, value in operands]
+            raise RunDraftError(f"{name}: {formula} is undefined: {error}") from error
+        entries = [(operand, TemporalRole.DURATION, value) for operand, value in operands]
         result = conclude(
             TraceKind.FORMULA,
             output,
@@ -187,26 +206,33 @@ class _Binder:
         )
         expected = Fraction(run_value) * _scale(output)
         if result.value != store_value(expected, output.value_kind, self.policy):
-            raise RunDraftError(f"{claim_key}: computed {result.value}, the run's {run_value}")
-        self.pending[claim_key] = result.trace
+            raise RunDraftError(f"{name}: computed {result.value}, the run's {run_value}")
+        self.pending[name] = result.trace
+        return _valued(name, section, run_value, unit, output, **options)
 
 
-def bind_computed(repo: EvidenceRepository, update: EarningsUpdate, *, entity_id: int) -> Computed:
-    """Store a trace per retained computed value of the run's ``update`` and find the
-    interpretation of each comparator figure and the filed tax expense; any missing
-    interpretation or mismatch raises."""
+def bind_computed(
+    repo: EvidenceRepository, update: EarningsUpdate, *, entity_id: int
+) -> tuple[Line, ...]:
+    """The run's changes and calculations lines: a stored trace per retained computed value and
+    the interpretation of each comparator figure and the filed tax expense, all bound before
+    any trace is stored; any missing interpretation or mismatch raises."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end)
     facts = {fact.role: fact for fact in update.facts}
     by_concept = {fact.concept_qname: fact for fact in update.facts}
+    lines: list[Line] = []
     for comparative in update.comparatives:
-        fact = by_concept.get(comparative.concept_qname)
-        if fact is None:
-            continue
-        key = binder.key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit)
+        fact = by_concept[comparative.concept_qname]
+        key, unit = binder.key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit), fact.unit
         current = binder.operand("current", fact.sources[0], key, fact.value)
         for change in (comparative.qoq, comparative.yoy):
+            label = f"{_ROLE_LABELS[fact.role]} {change.kind.value} vs "
+            label += f"{change.period_start}..{change.period_end}"
             if change.prior_value is None or change.absolute_change is None:
+                lines.append(
+                    Line(section=CHANGES, label=label, unavailable=change.unavailable_reason)
+                )
                 continue
             assert change.prior_source is not None
             base = f"cmp.{fact.role.value}.{change.kind.value.lower()}"
@@ -218,13 +244,34 @@ def bind_computed(repo: EvidenceRepository, update: EarningsUpdate, *, entity_id
                 change.prior_value,
                 SelectionSource.HISTORICAL_PACKAGE,
             )
-            binder.figure(f"{base}.prior", prior)
             pair = (current, prior)
             abs_key = change_key(key, change.kind, ABS)
-            binder.trace(f"{base}.abs", DIFFERENCE, abs_key, pair, change.absolute_change)
+            claims = [
+                binder.figure(
+                    f"{base}.prior", CHANGES, prior, change.prior_source, change.prior_value, unit
+                ),
+                binder.trace(
+                    f"{base}.abs", CHANGES, DIFFERENCE, abs_key, pair, change.absolute_change, unit
+                ),
+            ]
             if change.percent_change is not None:
-                pct_key = change_key(key, change.kind, PCT)
-                binder.trace(f"{base}.pct", CHANGE_PCT, pct_key, pair, change.percent_change)
+                claims.append(
+                    binder.trace(
+                        f"{base}.pct",
+                        CHANGES,
+                        CHANGE_PCT,
+                        change_key(key, change.kind, PCT),
+                        pair,
+                        change.percent_change,
+                        PERCENT,
+                        precision=RUN_PERCENT_PLACES,
+                        rounding=Rounding.ROUND_HALF_EVEN,
+                    )
+                )
+            reason = change.percent_unavailable_reason
+            lines.append(
+                Line(section=CHANGES, label=label, claims=tuple(claims), unavailable=reason)
+            )
     xbrl = facts[FactRole.PROFIT_BEFORE_TAX].sources[0]
 
     def reported(name: str, role: FactRole) -> _Operand:
@@ -235,29 +282,48 @@ def bind_computed(repo: EvidenceRepository, update: EarningsUpdate, *, entity_id
     pbt = facts[FactRole.PROFIT_BEFORE_TAX].value
     tax: _Operand | None = None
     for number, calculation in enumerate(update.calculations, start=1):
-        if calculation.result == OPERAND_MISSING:
-            continue
         name, label = f"calc.{number}", calculation.label
+        if calculation.result == OPERAND_MISSING:
+            lines.append(Line(section=CALCS, label=label))
+            continue
         value = Decimal(calculation.result.replace(",", ""))
         if label == GAP_LABEL:
             income = reported("total_income", FactRole.TOTAL_INCOME)
             operands = (income, reported("revenue", FactRole.REVENUE))
-            binder.trace(name, DIFFERENCE, binder.key(label, CRORE), operands, value)
+            claim = binder.trace(
+                name, CALCS, DIFFERENCE, binder.key(label, CRORE), operands, value, CRORE
+            )
         elif label == TAX_LABEL:
             tax = binder.operand("tax", xbrl, binder.key(TAX, CRORE), value)
-            binder.figure(name, tax)
+            claim = binder.figure(name, CALCS, tax, xbrl, value, CRORE)
         elif label == ETR_LABEL and tax is not None:
             operands = (tax, reported("pbt", FactRole.PROFIT_BEFORE_TAX))
-            binder.trace(name, ETR, binder.key(label, PERCENT), operands, value)
+            claim = binder.trace(
+                name, CALCS, ETR, binder.key(label, PERCENT), operands, value, PERCENT
+            )
         elif label == HEADLINE_LABEL:
             share_key = binder.key(SHARE, CRORE)
             share = binder.operand("share_of_associates", xbrl, share_key, value - pbt)
             operands = (reported("pbt", FactRole.PROFIT_BEFORE_TAX), share)
-            binder.trace(name, SUM, binder.key(label, CRORE), operands, value)
+            claim = binder.trace(name, CALCS, SUM, binder.key(label, CRORE), operands, value, CRORE)
         else:
             raise RunDraftError(f"{name}: no formula for {label!r}")
+        lines.append(Line(section=CALCS, label=label, claims=(claim,)))
     traces = {name: repo.put_calculation_trace(trace) for name, trace in binder.pending.items()}
-    return Computed(figures=binder.figures, traces=traces)
+
+    def stored(claim: NumericClaim) -> NumericClaim:
+        trace_id = traces.get(claim.claim_key)
+        return claim if trace_id is None else cite(claim, calculation_trace_id=trace_id)
+
+    return tuple(
+        line.model_copy(update={"claims": tuple(map(stored, line.claims))}) for line in lines
+    )
+
+
+def cite(claim: NumericClaim, **record: object) -> NumericClaim:
+    """``claim`` cited to its stored record."""
+    citation = claim.citation.model_copy(update=record)
+    return claim.model_copy(update={"citation": citation, "unresolved": False})
 
 
 def _scale(key: MeasurementKey) -> int:

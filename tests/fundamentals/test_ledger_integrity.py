@@ -228,16 +228,53 @@ def test_the_seal_refuses_content_and_a_wrong_digest(ledger: Ledger, path: str) 
         assert store.sealed_digest(cursor, version) == seal.sealed_digest
 
 
-def _add_claim(conn: psycopg.Connection, version: int) -> None:
-    """Insert, by direct SQL, a copy of the version's first claim under a new key."""
+def _add_claim(
+    conn: psycopg.Connection, version: int, key: str = "calc.late", **columns: Any
+) -> None:
+    """Insert, by direct SQL, a copy of the version's first claim under a new key, with any
+    column replaced."""
     with conn.cursor(row_factory=dict_row) as cursor:
         row = cursor.execute(
             "SELECT * FROM eqos.numeric_claims WHERE version_id = %s LIMIT 1", (version,)
         ).fetchone()
     assert row is not None
     del row["id"]
-    late = {"claim_key": "calc.late", "measurement_key": Jsonb(row["measurement_key"])}
-    _insert(conn, "numeric_claims", row | late)
+    late = {"claim_key": key, "measurement_key": Jsonb(row["measurement_key"])}
+    _insert(conn, "numeric_claims", row | late | columns)
+
+
+# A FIGURE's citation columns (0033, PREP-2b ruling 2), each case breaking one clause.
+_FIGURE_REFUSED = (
+    {"run_id": "runs", "fact_origin": "x", "fact_origin_id": 1},  # a run with no interpretation
+    {"interpretation_id": "interpretations", "fact_origin": "x", "fact_origin_id": 1},
+    {"interpretation_id": "interpretations", "calculation_trace_id": "calculation_traces"},
+    {"interpretation_id": "interpretations", "quote": "q"},
+    {"interpretation_id": "interpretations", "fact_origin": "x"},  # an origin with no id
+    {"interpretation_id": "interpretations", "unresolved": True},
+    {},  # resolved, citing nothing
+)
+
+
+def test_a_figure_cites_one_fact_or_interpretation(ledger: Ledger, seeded: dict[str, int]) -> None:
+    """An interpretation ``FIGURE``, with or without a run, is accepted; a run without an
+    interpretation, a fact and an interpretation together, another kind's citation column, half
+    a fact reference and an ``unresolved`` flag that disagrees with the record are refused."""
+    version = ledger.draft(ledger.report())
+    accepted = (
+        {"interpretation_id": "interpretations"},
+        {"interpretation_id": "interpretations", "run_id": "runs"},
+    )
+    with ledger.pools[PgRole.RUNTIME].connection() as conn:
+        for number, columns in enumerate((*accepted, *_FIGURE_REFUSED)):
+            row = {"citation_kind": "FIGURE", "calculation_trace_id": None, "unresolved": False}
+            row |= {name: seeded.get(value, value) for name, value in columns.items()}
+            if number < len(accepted):
+                with conn.transaction():
+                    _add_claim(conn, version, f"figure.{number}", **row)
+                continue
+            with pytest.raises(errors.CheckViolation, match="numeric_claims_check6"):
+                with conn.transaction():
+                    _add_claim(conn, version, f"figure.{number}", **row)
 
 
 # --- Chain: stale head, trigger-set fields

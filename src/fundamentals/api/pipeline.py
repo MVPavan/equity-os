@@ -179,9 +179,11 @@ def run_pipeline(
     clock: Callable[[], datetime] | None = None,
     admitted_inputs: AdmittedPipelineInputs | None = None,
     comparators_acquired_at: Mapping[str, datetime] | None = None,
+    before_commit: Callable[[EarningsUpdate], object] | None = None,
 ) -> PipelineResult:
     """Run the full Q1 FY25 increment end to end, failing closed on any gap;
-    ``comparators_acquired_at`` is each registered comparator XBRL's acquisition time."""
+    ``comparators_acquired_at`` is each registered comparator XBRL's acquisition time;
+    ``before_commit`` sees the rendered update before any fact is stored and may refuse."""
     if (
         xbrl_input.source_id != config.xbrl.source_id
         or results_pdf_sha256 != config.results_pdf.sha256
@@ -208,6 +210,7 @@ def run_pipeline(
             store=store,
             prepared=admitted_inputs,
             comparators_acquired_at=comparators_acquired_at,
+            before_commit=before_commit,
         )
     tick = clock or actual_clock
     with prepare_pipeline_sources(
@@ -232,6 +235,7 @@ def run_pipeline(
             store=store,
             prepared=prepared,
             comparators_acquired_at=comparators_acquired_at,
+            before_commit=before_commit,
         )
 
 
@@ -242,6 +246,7 @@ def _run_admitted(
     store: FactStoreLike,
     prepared: AdmittedPipelineInputs,
     comparators_acquired_at: Mapping[str, datetime] | None,
+    before_commit: Callable[[EarningsUpdate], object] | None,
 ) -> PipelineResult:
     completed = monotonic_clock(prepared)
 
@@ -521,6 +526,8 @@ def _run_admitted(
         percent_places=RUN_PERCENT_PLACES,
     )
     markdown = render_earnings_update(update)
+    if before_commit is not None:
+        before_commit(update)
 
     # 10. All gates and the render passed — now commit. Canonical promotion is a
     #     separate auditable step; nothing was persisted on a failed run.

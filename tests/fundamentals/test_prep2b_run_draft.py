@@ -8,17 +8,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 from evidence_support import CONFIG, ingest, policy
-from prep2b_support import COUNTS, Pilot
+from prep2b_support import COMPARATOR_KIND, COUNTS, RULING, XBRLS, Pilot
+from test_transcript_admission import issuer_config
 from tests.fundamentals.test_source_intake_cli import INTAKE_TIME, intake_fixture
 
 import fundamentals.api.cli as cli
@@ -26,22 +28,29 @@ from fundamentals.api.cli import _build_parser, main, run_command
 from fundamentals.api.config import load_config
 from fundamentals.api.source_admission import RETROSPECTIVE, SourceAdmissionError
 from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
+from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.fact import CanonicalStatus
+from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
     CitationKind,
     ClaimState,
     DecisionKind,
+    NumericClaim,
+    ReportKind,
     SubjectKind,
     VersionStatus,
 )
+from fundamentals.contracts.memory import MemoryItemDraft, MemoryKind, SupportDraft, SupportTarget
 from fundamentals.evidence.mapping import MappingSet, load_mapping_set
 from fundamentals.ledger import lifecycle, store
-from fundamentals.ledger.claim_check import cutoff_instant
+from fundamentals.ledger.citations import resolve_citation
+from fundamentals.ledger.claim_check import check_claim, cutoff_instant
 from fundamentals.ledger.export import export_version
 from fundamentals.ledger.lifecycle import DecisionRefusedError, version_status
 from fundamentals.ledger.run_draft import (
     _LOCK,
+    _READ_COMMITTED,
     GUIDANCE,
     GUIDANCE_KEY,
     RUN_AUTHOR,
@@ -51,6 +60,7 @@ from fundamentals.ledger.run_draft import (
     write_run_draft,
 )
 from fundamentals.ledger.run_traces import RunDraftError
+from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.output.earnings_update import RETROSPECTIVE_LABEL
 from fundamentals.output.management_ledger import LedgerStatus
 from fundamentals.store.pg_fact_store import PgFactStore
@@ -63,6 +73,9 @@ SEQUENCE = ("FY26_Q2", "FY26_Q3", "FY26_Q4", "FY27_Q1")
 Q2_TRANSCRIPT = "c9ed50d30185"  # the FY26_Q2 transcript every FY26_Q3 carried claim cites
 WAIT_SECONDS = 10
 IST = ZoneInfo("Asia/Kolkata")
+# A guidance line's claim key and status, as the version body stores it.
+GUIDED = re.compile(r"\{\{c:([^|}]+)\|[^}]*\}\} for [^\n]*? — ([A-Z]+): \"")
+STATUS_FIELDS = ("lower_bound", "upper_bound", "unit", "constant_currency", "qualifiers")
 
 
 @pytest.fixture(scope="module")
@@ -117,8 +130,8 @@ def _intercept(monkeypatch: pytest.MonkeyPatch, before: Callable[[Prior, RunDraf
     """Run ``before`` between the run's preflight and its draft write; a ``RunDraft`` it
     returns replaces the run's."""
 
-    def intercepted(pool: Any, repo: Any, prior: Prior, run: RunDraft, **kwargs: Any) -> int:
-        return write_run_draft(pool, repo, prior, before(prior, run) or run, **kwargs)
+    def intercepted(pool: Any, prior: Prior, run: RunDraft, **kwargs: Any) -> int:
+        return write_run_draft(pool, prior, before(prior, run) or run, **kwargs)
 
     monkeypatch.setattr(cli, "write_run_draft", intercepted)
 
@@ -155,29 +168,84 @@ def test_prior_refusals(request: pytest.FixtureRequest) -> None:
     _refuses(pilot, "FY26_Q3", r"FY26_Q2 has no APPROVED head \(head \d+: DRAFT")
 
 
+def test_bootstrap_period_and_carried_captures(
+    approved_q2: Pilot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preflight refuses before anything is written: a carried guidance capture the catalog
+    does not hold first-party (FY26_Q2's transcript config omitted), and — the FY26_Q2 prior
+    withdrawn — a FY26_Q3 bootstrap report with no version, which is no bootstrap period. A
+    second bootstrap version arriving after preflight makes the write refuse under the
+    WATCHLIST lock; then every run refuses the ambiguous bootstrap period."""
+    pilot = approved_q2
+    argv = pilot.registered("FY26_Q3")[1]
+    kept, at = list(argv), argv.index(str(issuer_config("FY26_Q2")))
+    del argv[at - 1 : at + 1]
+    _refuses(pilot, "FY26_Q3", f"original {Q2_TRANSCRIPT}.* has no first-party capture")
+    argv[:] = kept
+    q2 = _head(pilot, "FY26_Q2")
+    _withdraw(pilot, q2)
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.transaction():
+        bootstrap = store.create_report(
+            conn.cursor(),
+            entity_id=pilot.entity_id,
+            period="FY26_Q3",
+            kind=ReportKind.BOOTSTRAP_THESIS,
+        )
+    _refuses(pilot, "FY26_Q3", "FY26_Q2 has no APPROVED head")
+
+    def second(prior: Prior, _: RunDraft) -> None:
+        pinned = prior.model_copy(update={"version_id": q2})
+        with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.transaction():
+            _append(pilot, pinned, conn, bootstrap)
+
+    _intercept(monkeypatch, second)
+    with pytest.raises(RunDraftError, match="ambiguous bootstrap period: FY26_Q2, FY26_Q3"):
+        pilot.run("FY26_Q2")
+    monkeypatch.setattr(cli, "write_run_draft", write_run_draft)
+    _refuses(pilot, "FY26_Q3", "ambiguous bootstrap period")
+
+
+def test_an_unbindable_comparator_refuses_before_any_write(
+    request: pytest.FixtureRequest, mapping_set: MappingSet
+) -> None:
+    """FY26_Q2's YoY comparator ingested under a mapping without profit for the period: the
+    run refuses before it stores a fact or selection."""
+    pilot = _pilot(request, xbrls=tuple(xbrl for xbrl in XBRLS if xbrl[0] != "FY25_Q2"))
+    ingest = request.getfixturevalue("ingest")
+    entries = tuple(e for e in mapping_set.entries if e.canonical_id != "profit_for_period")
+    partial = mapping_set.model_copy(update={"entries": entries})
+    comparator = ingest.intake({Representation.XBRL: COMPARATOR_KIND}, "FY25_Q2")
+    ingest.run(comparator, date(2024, 9, 30), mapping_set=partial)
+    _refuses(pilot, "FY26_Q2", "no single mapped interpretation of profit_for_period")
+
+
 def _stored(result: Any) -> Any:
     """The run's stored canonical revisions."""
     return [r for r in result.stored_revisions if r.canonical_status is CanonicalStatus.CANONICAL]
 
 
-def _append(pilot: Pilot, prior: Prior, conn: Any) -> None:
-    """A runtime version appended to the prior's report, under the WATCHLIST lock."""
+def _append(pilot: Pilot, prior: Prior, conn: Any, report_id: int | None = None) -> None:
+    """A runtime copy of the prior version, appended to its report (or as the root of
+    ``report_id``), under the WATCHLIST lock."""
     assert prior.version_id is not None
     cursor = conn.cursor()
-    cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+    cursor.execute(_READ_COMMITTED)
     cursor.execute(_LOCK, (SubjectKind.WATCHLIST.value, prior.entity_id))
     draft = store.read_version(cursor, prior.version_id)
-    store.create_version(cursor, draft.model_copy(update={"predecessor_id": prior.version_id}))
+    placed: dict[str, int | None] = {"predecessor_id": prior.version_id}
+    if report_id is not None:
+        placed = {"report_id": report_id, "predecessor_id": None}
+    store.create_version(cursor, draft.model_copy(update=placed))
 
 
-def _withdraw(pilot: Pilot, prior: Prior) -> None:
-    """The owner withdraws the pinned prior."""
-    assert prior.version_id is not None
+def _withdraw(pilot: Pilot, version_id: int | None) -> None:
+    """The owner withdraws the version."""
+    assert version_id is not None
     with pilot.pg_db.owner_pool() as owner:
         lifecycle.decide(
             owner,
             subject_kind=SubjectKind.REPORT_VERSION,
-            subject_id=prior.version_id,
+            subject_id=version_id,
             kind=DecisionKind.WITHDRAW,
             ruling="TEST: withdraw the prior",
         )
@@ -196,7 +264,7 @@ def test_write_time_races(approved_q2: Pilot, monkeypatch: pytest.MonkeyPatch, r
             _append(pilot, prior, conn)
         versions.append(1)
 
-    actions = {"append": append, "withdraw": lambda prior, _: _withdraw(pilot, prior)}
+    actions = {"append": append, "withdraw": lambda prior, _: _withdraw(pilot, prior.version_id)}
     if race == "concurrent":
         _concurrent_write(pilot, monkeypatch, versions)
     else:
@@ -219,12 +287,12 @@ def _concurrent_write(pilot: Pilot, monkeypatch: pytest.MonkeyPatch, versions: l
     """Between preflight and the write: A takes WATCHLIST and appends; the write (B, its own
     thread) blocks on WATCHLIST until A commits."""
 
-    def intercepted(pool: Any, repo: Any, prior: Prior, run: RunDraft, **kwargs: Any) -> int:
+    def intercepted(pool: Any, prior: Prior, run: RunDraft, **kwargs: Any) -> int:
         outcome: dict[str, Any] = {}
 
         def b() -> None:
             try:
-                outcome["id"] = write_run_draft(pool, repo, prior, run, **kwargs)
+                outcome["id"] = write_run_draft(pool, prior, run, **kwargs)
             except RunDraftError as error:
                 outcome["error"] = error
 
@@ -372,6 +440,7 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
     supersede the import; a second run while a draft is open refuses before the pipeline."""
     previous: tuple[int, str] | None = None
     carried = 0
+    seen: set[str] = set()
     for quarter in SEQUENCE:
         result = pilot.run(quarter)
         version_id = result.draft_version_id
@@ -393,6 +462,22 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
         else:
             assert f"Prior: version:{previous[0]} digest {previous[1]}." in heading
         claims = {claim.claim_key: claim for claim in version.claims}
+        prior = {} if previous is None else _guidance_claims(pilot.version(previous[0]).claims)
+        (body,) = (s.body for s in version.sections if s.section_key == GUIDANCE)
+        statuses = dict(GUIDED.findall(body))
+        assert statuses.keys() == _guidance_claims(version.claims).keys()
+        for key, status in statuses.items():
+            entry, claim = prior.get(key), claims[key]
+            if entry is None:
+                expected = LedgerStatus.NEW
+            elif claim.citation == entry.citation:
+                expected = LedgerStatus.CARRIED
+            elif all(getattr(claim, f) == getattr(entry, f) for f in STATUS_FIELDS):
+                expected = LedgerStatus.REAFFIRMED
+            else:
+                expected = LedgerStatus.MODIFIED
+            assert status == expected.value, key
+        seen |= set(statuses.values())
         for key, claim in claims.items():
             if (
                 key.startswith("calc.")
@@ -427,13 +512,21 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
             assert version_status(cursor, version.predecessor_id) is VersionStatus.SUPERSEDED
             previous = (version_id, store.sealed_digest(cursor, version_id))
     assert carried > 0
+    assert {LedgerStatus.NEW, LedgerStatus.CARRIED} <= {LedgerStatus(s) for s in seen}
+    assert seen & {LedgerStatus.REAFFIRMED.value, LedgerStatus.MODIFIED.value}
+
+
+def _guidance_claims(claims: tuple[NumericClaim, ...]) -> dict[str, NumericClaim]:
+    """A version's guidance claims by key."""
+    return {claim.claim_key: claim for claim in claims if claim.section_key == GUIDANCE}
 
 
 def test_real_clock_retrospective(pilot: Pilot) -> None:
     """Real clocks, no trusted fixture: the run admits its registered originals
     ``retrospective_registered`` at real times; its draft passes ``AS_KNOWN`` at the derivation
     cutoff; a ``RETROSPECTIVE`` validation cannot bind approval; and nothing the run created —
-    fact rows, selections, versions — is visible at the historical source cutoff."""
+    fact rows, selections, versions, the draft's claims and a memory item promoted on them — is
+    visible at the historical source cutoffs."""
     started = datetime.now(UTC)
     result = pilot.run("FY26_Q2")
     version_id = result.draft_version_id
@@ -473,3 +566,39 @@ def test_real_clock_retrospective(pilot: Pilot) -> None:
         RUN_AUTHOR,
     )
     assert min(first_created, first_cutoff) > max(cutoffs)
+    claims = pilot.version(version_id).claims
+    with pilot.pg_db.runtime_pool() as runtime, runtime.connection() as conn:
+        for at in (cutoff, *cutoffs):
+            for claim in claims:
+                resolved = resolve_citation(
+                    conn.cursor(),
+                    claim,
+                    entity_id=pilot.entity_id,
+                    overlay_position=at,
+                    **pilot.sources(),
+                )
+                state = check_claim(
+                    claim, resolved, mode=RunMode.AS_KNOWN, cutoff=at, imported=False
+                )
+                assert state is ClaimState.POST_CUTOFF, claim.claim_key
+        (claim_id,) = conn.execute(
+            "SELECT min(id) FROM eqos.numeric_claims WHERE version_id = %s", (version_id,)
+        ).fetchone() or (None,)
+    supports = ((SupportTarget.VERSION, version_id), (SupportTarget.CLAIM, claim_id))
+    item = MemoryItemDraft(
+        entity_id=pilot.entity_id,
+        kind=MemoryKind.COMPANY_UNDERSTANDING,
+        statement="The run's FY26_Q2 update is approved",
+        epistemic_class=EpistemicClass.OBSERVED,
+        valid_from=date(2025, 9, 30),
+        valid_to=None,
+        supersedes_item_id=None,
+        supports=tuple(SupportDraft(target=target, target_id=id_) for target, id_ in supports),
+    )
+    with pilot.pg_db.runtime_pool() as runtime, pilot.pg_db.owner_pool() as owner:
+        item_id = PgMemoryStore(runtime).stage(item)
+        PgMemoryStore(owner).decide(item_id, DecisionKind.PROMOTE, ruling=RULING)
+        memory = PgMemoryStore(runtime)
+        assert [found.id for found in memory.retrieve("", stock=pilot.entity_id)] == [item_id]
+        for at in (cutoff, *cutoffs):
+            assert memory.retrieve("", stock=pilot.entity_id, cutoff=at) == ()

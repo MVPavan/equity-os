@@ -2,7 +2,8 @@
 
 A native row is the run's own fact: its key comes from ``translate``, its capture is the
 first-party capture of its file, and it resolves only when its observation names the report's
-issuer. Without a selection it has no ``SELECTED`` time and stays past every cutoff.
+issuer. Without a selection it has no ``SELECTED`` time and stays past every cutoff; its row's
+and selection's store-clock recording times bound it however early the writer dates it.
 """
 
 from __future__ import annotations
@@ -28,27 +29,36 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 _FACT_JSON = "SELECT fact_json FROM eqos.fact_rows WHERE origin = %s AND origin_id = %s"
 
 
-def _native(cited: Cited, *, selected: bool = True, **observation: Any) -> NumericClaim:
-    """A ``FIGURE`` on a native copy of the FY27_Q1 revenue fact, its observation updated."""
+def _native(
+    cited: Cited,
+    *,
+    selected: bool = True,
+    claimed: datetime | None = None,
+    **observation: Any,
+) -> NumericClaim:
+    """A ``FIGURE`` on a native copy of the FY27_Q1 revenue fact, its observation updated;
+    ``claimed``: the knowledge, first-seen and selection time the writer states."""
     ((fact_json,),) = cited.query(_FACT_JSON, cited.revenue_origin, cited.revenue_origin_id)
     fact = Fact.model_validate_json(fact_json)
     fact = fact.model_copy(update={"observation": fact.observation.model_copy(update=observation)})
+    if claimed is not None:
+        fact = fact.model_copy(update={"knowledge_time": claimed, "first_seen_time": claimed})
     pool = cited.pools[PgRole.RUNTIME]
     store = PgFactStore(pool, create_native_store(pool, "cited"))
     row_id = store.put(fact).row_id
     if selected:
-        store.select_canonical(row_id, "test: run selection")
+        store.select_canonical(row_id, "test: run selection", claimed)
     ref = store.fact_ref(row_id)
     assert ref.origin == NATIVE_ORIGIN
     key = translate(fact, entity_id=cited.entity_id)
     return _figure(key, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
 
 
-def _state(cited: Cited, claim: NumericClaim) -> ClaimState:
-    """The AS_KNOWN claim check of ``claim`` now."""
+def _state(cited: Cited, claim: NumericClaim, cutoff: datetime | None = None) -> ClaimState:
+    """The AS_KNOWN claim check of ``claim`` at ``cutoff`` (default: now)."""
     resolved = cited.resolve(claim)
-    now = datetime.now(UTC)
-    return check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=now, imported=False)
+    at = cutoff or datetime.now(UTC)
+    return check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=at, imported=False)
 
 
 def test_a_selected_native_fact_matches(cited: Cited) -> None:
@@ -62,7 +72,7 @@ def test_a_selected_native_fact_matches(cited: Cited) -> None:
         claim.scale,
         claim.measurement_key.digest(),
     )
-    times = {InputTime.KNOWLEDGE, InputTime.FIRST_SEEN, InputTime.SELECTED}
+    times = {InputTime.KNOWLEDGE, InputTime.FIRST_SEEN, InputTime.SELECTED, InputTime.RECORDED}
     assert {name for name, _ in resolved.times} == times
     assert _state(cited, claim) is ClaimState.MATCH
 
@@ -70,6 +80,15 @@ def test_a_selected_native_fact_matches(cited: Cited) -> None:
 def test_an_unselected_native_fact_is_post_cutoff(cited: Cited) -> None:
     """A row the run never selected has no selection time: it cannot be cited as known."""
     assert _state(cited, _native(cited, selected=False)) is ClaimState.POST_CUTOFF
+
+
+def test_a_backdated_native_fact_is_post_cutoff(cited: Cited) -> None:
+    """A row written now that states 2026-09-09 knowledge, first-seen and selection times is
+    held to its store-clock insertion and selection-recording times: past a 2026-09-10 cutoff
+    (its capture was first seen 2026-09-06/07), known now."""
+    claim = _native(cited, claimed=datetime(2026, 9, 9, tzinfo=UTC))
+    assert _state(cited, claim, datetime(2026, 9, 10, tzinfo=UTC)) is ClaimState.POST_CUTOFF
+    assert _state(cited, claim) is ClaimState.MATCH
 
 
 def test_another_issuers_fact_is_unresolved(cited: Cited) -> None:

@@ -1,17 +1,18 @@
 """A run's earnings update as a validated ``DRAFT`` version (PREP-2b Task 6).
 
-``preflight`` pins the predecessor quarter's ``APPROVED`` head (none for the bootstrap period)
-and refuses before the pipeline writes anything. ``write_run_draft`` binds the computed values
-(:mod:`run_traces`), then in one READ COMMITTED transaction locks WATCHLIST then the prior,
-re-reads both heads, checks every capture behind every claim against the source cutoff, writes
-the version and checks it ``AS_KNOWN`` in place; anything not passing rolls it all back.
+``preflight`` pins the predecessor quarter's ``APPROVED`` head (none for the bootstrap period:
+the one period with a bootstrap thesis version) and refuses before the pipeline writes
+anything; the pipeline binds the computed values (:mod:`run_traces`) before it stores a fact.
+``write_run_draft`` then, in one READ COMMITTED transaction, locks WATCHLIST then the prior,
+re-reads both heads (or the bootstrap period), checks every capture behind every claim against
+the source cutoff, writes the version and checks it ``AS_KNOWN`` in place; anything not passing
+rolls it all back.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any, LiteralString
 
 from psycopg import Cursor
@@ -21,7 +22,6 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import ValueKind
-from fundamentals.contracts.comparative import RUN_PERCENT_PLACES
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.guidance_claim import EpistemicClass, GuidanceClaim
 from fundamentals.contracts.ledger import (
@@ -35,28 +35,22 @@ from fundamentals.contracts.ledger import (
     VersionDraft,
     VersionStatus,
 )
-from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.retention import OriginalExpiredError
-from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.evidence.capture_retention import retained_capture
-from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ledger import store
 from fundamentals.ledger.citations import _FILE_CAPTURES, _first_party
-from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS, quote_qualifiers
+from fundamentals.ledger.claim_check import CRORE, UNITS, quote_qualifiers
 from fundamentals.ledger.display import content_hash
 from fundamentals.ledger.import_mapping import (
-    ABS,
     BOUNDS_STYLE,
     CONTRACT_FIELDS,
-    PCT,
     QUOTE_STYLE,
     _places,
     _slot,
     _valued,
-    change_key,
     measurement_key,
 )
 from fundamentals.ledger.importer import _ENTITY
@@ -68,7 +62,7 @@ from fundamentals.ledger.lifecycle import (
     check_version,
     version_status,
 )
-from fundamentals.ledger.run_traces import TAX, Computed, RunDraftError, bind_computed
+from fundamentals.ledger.run_traces import CALCS, CHANGES, Line, RunDraftError, cite
 from fundamentals.output.earnings_update import _ROLE_LABELS, REQUIRED_ROLES, EarningsUpdate
 from fundamentals.output.management_ledger import LedgerStatus
 from fundamentals.output.pnl_lines import OPERAND_MISSING
@@ -77,7 +71,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 RUN_AUTHOR = "fundamentals-run"
 GUIDANCE_KEY = "ledger.{metric}.{horizon}.{scope}"  # as import_mapping keys a ledger entry
-HEADING, RESULTS, CHANGES, CALCS = "heading", "results", "changes", "calculations"
+HEADING, RESULTS = "heading", "results"
 GUIDANCE = "management_ledger"
 CRORE_STYLE = "group-intl,trim"
 CRORE_UNIT = f"{CRORE_STYLE},unit"
@@ -96,9 +90,9 @@ _REPORT: LiteralString = (
 _HEAD: LiteralString = """SELECT max(v.id) FROM eqos.report_versions v
 JOIN eqos.reports r ON r.id = v.report_id
 WHERE r.entity_id = %s AND r.period = %s AND r.kind = 'EARNINGS_UPDATE'"""
-_MAPPED: LiteralString = (
-    "SELECT 1 FROM eqos.interpretations WHERE capture_ref_id = ANY(%s) AND status = 'MAPPED'"
-)
+_BOOTSTRAPS: LiteralString = """SELECT DISTINCT r.period FROM eqos.reports r
+JOIN eqos.report_versions v ON v.report_id = r.id
+WHERE r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'"""
 _OPERAND_BLOBS: LiteralString = """SELECT DISTINCT c.blob_sha256
 FROM eqos.calculation_trace_operands o
 JOIN eqos.interpretations i ON i.id = o.interpretation_id
@@ -132,7 +126,8 @@ class Retrospective(BaseModel):
 
 class RunDraft(BaseModel):
     """What the draft is written from: the emitted update, its guidance claims, each required
-    role's selected fact, the run's originals (XBRLs incl. comparators; PDFs) and designation."""
+    role's selected fact, its bound changes and calculations lines, the run's originals (XBRLs
+    incl. comparators; PDFs) and designation."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -140,6 +135,7 @@ class RunDraft(BaseModel):
     update: EarningsUpdate
     guidance: tuple[GuidanceClaim, ...]
     facts: Mapping[str, FactRef]
+    lines: tuple[Line, ...]
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
     retrospective: Retrospective | None = None
@@ -156,7 +152,8 @@ def preflight(
     snapshots: SnapshotStore,
 ) -> Prior:
     """The pinned prior; refuses when the period's head is open, the prior is not ``APPROVED``
-    or a required original is not a retained first-party capture (an XBRL also mapped)."""
+    or a required original, or a capture a prior guidance claim cites, is not a retained
+    first-party capture."""
     with pool.connection() as conn, conn.cursor() as cursor:
         row = cursor.execute(_ENTITY, (stock,)).fetchone()
         if row is None:
@@ -164,12 +161,10 @@ def preflight(
         entity_id = int(row[0])
         _require_closed(cursor, entity_id, period)
         first_seen = {
-            sha256: _original(cursor, sha256, sha256 in xbrl, catalog, snapshots)
-            for sha256 in (*xbrl, *pdfs)
+            sha256: _original(cursor, sha256, catalog, snapshots) for sha256 in (*xbrl, *pdfs)
         }
         prior = Prior(entity_id=entity_id, first_seen=first_seen)
-        bootstrap = (entity_id, period, ReportKind.BOOTSTRAP_THESIS.value)
-        if cursor.execute(_REPORT, bootstrap).fetchone() is not None:
+        if _bootstrap(cursor, entity_id, period):
             return prior
         previous = _predecessor(period)
         head = _head(cursor, entity_id, previous)
@@ -178,6 +173,9 @@ def preflight(
             raise RunDraftError(f"{previous} has no APPROVED head (head {head}: {status})")
         claims = store.read_version(cursor, head).claims
         quotes = tuple(c for c in claims if c.citation.kind is CitationKind.SOURCE_QUOTE)
+        for sha256 in {quote.citation.source_sha256 for quote in quotes}:
+            assert sha256 is not None
+            _original(cursor, sha256, catalog, snapshots)
         digest = store.sealed_digest(cursor, head)
         return prior.model_copy(
             update={"version_id": head, "sealed_digest": digest, "entries": quotes}
@@ -186,7 +184,6 @@ def preflight(
 
 def write_run_draft(
     pool: ConnectionPool,
-    repo: EvidenceRepository,
     prior: Prior,
     run: RunDraft,
     *,
@@ -195,11 +192,13 @@ def write_run_draft(
 ) -> int:
     """Write the run's ``DRAFT`` version on its quarter's report; returns its id."""
     update, entity_id = run.update, prior.entity_id
-    computed = bind_computed(repo, update, entity_id=entity_id)
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(_READ_COMMITTED)
         cursor.execute(_LOCK, (SubjectKind.WATCHLIST.value, entity_id))
-        if prior.version_id is not None:
+        if prior.version_id is None:
+            if not _bootstrap(cursor, entity_id, run.period):
+                raise RunDraftError(f"{run.period} is no longer the bootstrap period")
+        else:
             cursor.execute(_LOCK, (SubjectKind.REPORT_VERSION.value, prior.version_id))
             head = _head(cursor, entity_id, _predecessor(run.period))
             if (
@@ -209,15 +208,18 @@ def write_run_draft(
             ):
                 raise RunDraftError(f"the pinned prior version {prior.version_id} changed")
         current = _require_closed(cursor, entity_id, run.period)
-        body = _Body(computed, entity_id)
-        _figures(body, update, run.facts)
+        body = _Body()
+        _results(body, update, run.facts, entity_id)
+        for line in run.lines:
+            body.add(line.section, _shown(line), *line.claims)
         entries = {entry.claim_key: entry for entry in prior.entries}
         for guidance, rendered in zip(run.guidance, update.guidance, strict=True):
             claim = _quote(cursor, guidance, rendered.metric_label, rendered.quote, catalog)
-            body.guidance(claim, _status(claim, entries.get(claim.claim_key)))
+            body.add(GUIDANCE, _guided(claim, _status(claim, entries.get(claim.claim_key))), claim)
         for key, entry in entries.items():
             if key not in body.claims:
-                body.guidance(entry.model_copy(update={"section_key": GUIDANCE}), CARRIED)
+                carried = entry.model_copy(update={"section_key": GUIDANCE})
+                body.add(GUIDANCE, _guided(carried, CARRIED), carried)
         claims = tuple(body.claims.values())
         _check_sources(cursor, claims, run, prior, catalog)
         sections = _sections(run, prior, body.lines)
@@ -289,11 +291,20 @@ def _captures(cursor: Cursor[Any], sha256: str, catalog: SourceCatalog) -> list[
     return [row for row in rows if _first_party(row["source_id"], catalog)]
 
 
+def _bootstrap(cursor: Cursor[Any], entity_id: int, period: str) -> bool:
+    """Whether ``period`` is the stock's bootstrap period: the one period with a bootstrap
+    thesis version (several refuse)."""
+    periods = sorted(row[0] for row in cursor.execute(_BOOTSTRAPS, (entity_id,)).fetchall())
+    if len(periods) > 1:
+        raise RunDraftError(f"ambiguous bootstrap period: {', '.join(periods)}")
+    return periods == [period]
+
+
 def _original(
-    cursor: Cursor[Any], sha256: str, mapped: bool, catalog: SourceCatalog, snapshots: SnapshotStore
+    cursor: Cursor[Any], sha256: str, catalog: SourceCatalog, snapshots: SnapshotStore
 ) -> datetime:
     """The first-seen time of an original's earliest first-party capture, which must be
-    retained and, for an XBRL, carry a mapped interpretation."""
+    retained."""
     captures = _captures(cursor, sha256, catalog)
     if not captures:
         raise RunDraftError(f"original {sha256[:12]} has no first-party capture")
@@ -301,9 +312,6 @@ def _original(
         retained_capture(cursor.connection, snapshots, capture_of(captures[0]))
     except (SnapshotError, OriginalExpiredError) as error:
         raise RunDraftError(f"original {sha256[:12]} is not retained: {error}") from error
-    ids = [row["id"] for row in captures]
-    if mapped and cursor.execute(_MAPPED, (ids,)).fetchone() is None:
-        raise RunDraftError(f"original {sha256[:12]} has no mapped interpretation")
     first_seen: datetime = captures[0]["first_seen"]
     return first_seen
 
@@ -311,101 +319,57 @@ def _original(
 class _Body:
     """The draft's claims by key and each section's lines, built together."""
 
-    def __init__(self, computed: Computed, entity_id: int) -> None:
-        self.computed, self.entity_id = computed, entity_id
+    def __init__(self) -> None:
         self.claims: dict[str, NumericClaim] = {}
         self.lines: dict[str, list[str]] = {key: [] for key in INTROS}
 
-    def add(self, claim: NumericClaim, **citation: Any) -> str:
-        """Add ``claim``, a computed or comparator value cited to its bound record; returns its
-        key."""
-        name, figures = claim.claim_key, self.computed.figures
-        if name in self.claims:
-            raise RunDraftError(f"duplicate claim key {name}")
-        if claim.citation.kind is not CitationKind.SOURCE_QUOTE:
-            if not citation:
-                citation = (
-                    {"interpretation_id": figures[name]}
-                    if name in figures
-                    else {"calculation_trace_id": self.computed.traces[name]}
-                )
-            cited = claim.citation.model_copy(update=citation)
-            claim = claim.model_copy(update={"citation": cited, "unresolved": False})
-        self.claims[name] = claim
-        return name
-
-    def guidance(self, claim: NumericClaim, status: LedgerStatus) -> None:
-        """Add a guidance claim and its line."""
-        key = self.add(claim)
-        self.lines[GUIDANCE].append(
-            f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
-            f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}"'
-        )
+    def add(self, section: str, line: str, *claims: NumericClaim) -> None:
+        """Add a line of ``section`` and the claims it shows."""
+        for claim in claims:
+            if claim.claim_key in self.claims:
+                raise RunDraftError(f"duplicate claim key {claim.claim_key}")
+            self.claims[claim.claim_key] = claim
+        self.lines[section].append(line)
 
 
-def _figures(body: _Body, update: EarningsUpdate, facts: Mapping[str, FactRef]) -> None:
-    """The draft's reported, comparator and calculated values and their lines."""
-    entity_id = body.entity_id
+def _results(
+    body: _Body, update: EarningsUpdate, facts: Mapping[str, FactRef], entity_id: int
+) -> None:
+    """Each required role's reported value, cited to the run's selected fact."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     by_role = {fact.role: fact for fact in update.facts}
-    keys = {
-        fact.role: measurement_key(
-            LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end
-        )
-        for fact in update.facts
-    }
     for role in REQUIRED_ROLES:
         fact, ref = by_role[role], facts[role.value]
-        claim = _valued(
-            f"fact.{role.value}", RESULTS, fact.value, fact.unit, keys[role], fact.sources[0]
-        )
-        name = body.add(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
-        body.lines[RESULTS].append(f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}")
-    for comparative in update.comparatives:
-        fact = next(f for f in update.facts if f.concept_qname == comparative.concept_qname)
-        key, unit = keys[fact.role], fact.unit
-        for change in (comparative.qoq, comparative.yoy):
-            base = f"{fact.role.value}.{change.kind.value.lower()}"
-            line = f"- {_ROLE_LABELS[fact.role]} {change.kind.value} vs "
-            line += f"{change.period_start}..{change.period_end}"
-            if change.prior_value is None or change.absolute_change is None:
-                body.lines[CHANGES].append(f"{line}: not available ({change.unavailable_reason})")
-                continue
-            period = PeriodInterval.duration(change.period_start, change.period_end)
-            held = key.model_copy(update={"period": period})
-            prior = _valued(
-                f"cmp.{base}.prior", CHANGES, change.prior_value, unit, held, change.prior_source
-            )
-            delta = change_key(key, change.kind, ABS)
-            delta_claim = _valued(f"cmp.{base}.abs", CHANGES, change.absolute_change, unit, delta)
-            line += f": prior {_slot(body.add(prior), CRORE_UNIT)}"
-            line += f"; change {_slot(body.add(delta_claim), f'plus,{CRORE_UNIT}')}"
-            if change.percent_change is None:
-                line += f"; percent change not available ({change.percent_unavailable_reason})"
-            else:
-                percent = _valued(
-                    f"cmp.{base}.pct",
-                    CHANGES,
-                    change.percent_change,
-                    PERCENT,
-                    change_key(key, change.kind, PCT),
-                    precision=RUN_PERCENT_PLACES,
-                    rounding=Rounding.ROUND_HALF_EVEN,
-                )
-                line += f", {_slot(body.add(percent), 'plus,unit')}"
-            body.lines[CHANGES].append(line)
-    filed = by_role[FactRole.PROFIT_BEFORE_TAX].sources[0]
-    for number, calculation in enumerate(update.calculations, start=1):
-        name, shown = f"calc.{number}", OPERAND_MISSING
-        if calculation.result != OPERAND_MISSING:
-            unit = PERCENT if calculation.label.endswith("(%)") else CRORE
-            value = Decimal(calculation.result.replace(",", ""))
-            observed = name in body.computed.figures  # the filed tax expense
-            measured = TAX if observed else calculation.label
-            key = measurement_key(measured, unit, entity_id, start, end)
-            body.add(_valued(name, CALCS, value, unit, key, filed if observed else None))
-            shown = _slot(name, CRORE_STYLE if unit == CRORE else "")
-        body.lines[CALCS].append(f"- {calculation.label} = {shown}")
+        key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
+        name = f"fact.{role.value}"
+        claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
+        cited = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
+        body.add(RESULTS, f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}", cited)
+
+
+def _shown(line: Line) -> str:
+    """A changes or calculations line with its claims' placeholders."""
+    keys = [claim.claim_key for claim in line.claims]
+    if line.section == CALCS:
+        style = CRORE_STYLE if keys and line.claims[0].unit == CRORE else ""
+        return f"- {line.label} = {_slot(keys[0], style) if keys else OPERAND_MISSING}"
+    if not keys:
+        return f"- {line.label}: not available ({line.unavailable})"
+    prior, change, *percent = keys
+    shown = f"- {line.label}: prior {_slot(prior, CRORE_UNIT)}"
+    shown += f"; change {_slot(change, f'plus,{CRORE_UNIT}')}"
+    if percent:
+        return f"{shown}, {_slot(percent[0], 'plus,unit')}"
+    return f"{shown}; percent change not available ({line.unavailable})"
+
+
+def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
+    """A guidance line."""
+    key = claim.claim_key
+    return (
+        f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
+        f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}"'
+    )
 
 
 def _quote(

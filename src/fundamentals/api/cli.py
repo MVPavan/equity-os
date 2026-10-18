@@ -90,7 +90,7 @@ from fundamentals.ledger.run_draft import (
     preflight,
     write_run_draft,
 )
-from fundamentals.ledger.run_traces import RunDraftError
+from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
 from fundamentals.pg.cutover import open_fact_store
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -298,7 +298,14 @@ def run_command(
                 catalog=catalog,
                 snapshots=snapshots,
             )
-            result = run(comparators_acquired_at=prior.first_seen)
+            repository = EvidenceRepository(pool)
+            bound: list[tuple[Line, ...]] = []
+            result = run(
+                comparators_acquired_at=prior.first_seen,
+                before_commit=lambda update: bound.append(
+                    bind_computed(repository, update, entity_id=prior.entity_id)
+                ),
+            )
             draft = RunDraft(
                 period=period,
                 update=result.update,
@@ -308,14 +315,12 @@ def run_command(
                     for revision in result.stored_revisions
                     if revision.canonical_status is CanonicalStatus.CANONICAL
                 },
+                lines=bound[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
                 retrospective=retrospective,
             )
-            repository = EvidenceRepository(pool)
-            version_id = write_run_draft(
-                pool, repository, prior, draft, catalog=catalog, snapshots=snapshots
-            )
+            version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
             structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
             return result.model_copy(update={"draft_version_id": version_id})
 

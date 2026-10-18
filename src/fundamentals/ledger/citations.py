@@ -69,10 +69,11 @@ _CAPTURE: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
 )
 _FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, f.file_sha256 AS fact_file,
-    t.*, b.capture_ref_id,
-    (SELECT min(s.selected_at) FROM eqos.fact_selections s
-     WHERE s.target_store = f.target_store AND s.row_handle = f.handle) AS selected_at
+    f.created_at, t.*, b.capture_ref_id, s.selected_at, s.recorded_at AS selection_recorded_at
 FROM eqos.fact_rows f
+LEFT JOIN LATERAL (SELECT min(selected_at) AS selected_at, min(recorded_at) AS recorded_at
+    FROM eqos.fact_selections WHERE target_store = f.target_store AND row_handle = f.handle) s
+    ON true
 LEFT JOIN eqos.legacy_fact_translations t
     ON t.target_store = f.target_store AND t.row_handle = f.handle
 LEFT JOIN eqos.legacy_evidence_bindings b
@@ -107,7 +108,7 @@ _SOURCE: LiteralString = """SELECT coalesce(
      JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
     (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
 _INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
-FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED'"""
+FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED' AND entity_id = %s"""
 _TRACE: LiteralString = (
     "SELECT value, key_digest FROM eqos.calculation_traces WHERE id = %s AND state = 'COMPUTED'"
 )
@@ -200,7 +201,7 @@ def resolve_citation(
             if times is None:
                 return None
             if citation.run_id is None:
-                return _interpretation(own, citation.interpretation_id, claim, times)
+                return _interpretation(own, citation.interpretation_id, claim, entity_id, times)
             return _run_cell(own, _CELL, citation.interpretation_id, claim, overlay_position, times)
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
             return _trace(own, citation.calculation_trace_id, claim, catalog)
@@ -301,12 +302,18 @@ def _fact(
     own: Cursor[Any], origin: str | None, origin_id: int, entity_id: int, catalog: SourceCatalog
 ) -> ResolvedCitation | None:
     """A legacy fact, through its translation and its bound capture; or a native (run-written)
-    fact of the report's issuer, through ``translate`` and its file's first-party capture."""
+    fact of the report's issuer, through ``translate`` and its file's first-party capture, also
+    held to its row's and first selection's store-clock recording times."""
     row = own.execute(_FACT, (origin, origin_id)).fetchone()
     if row is None:
         return None
+    recorded: _Times = ()
     if origin == NATIVE_ORIGIN:
         key, capture = _native_key(own, row, entity_id), _file_capture(own, row, catalog)
+        recorded = (
+            (InputTime.RECORDED, _instant(row["created_at"])),
+            (InputTime.RECORDED, row["selection_recorded_at"]),
+        )
     else:
         key, capture = _legacy_key(row), _first_party_capture(own, row["capture_ref_id"], catalog)
     if capture is None or key is None:
@@ -323,6 +330,7 @@ def _fact(
             (InputTime.KNOWLEDGE, _instant(row["knowledge_time"])),
             (InputTime.FIRST_SEEN, capture["first_seen"]),
             (InputTime.SELECTED, _instant(row["selected_at"])),
+            *recorded,
         ),
     )
 
@@ -361,11 +369,15 @@ def _file_capture(own: Cursor[Any], row: _Row, catalog: SourceCatalog) -> _Row |
 
 
 def _interpretation(
-    own: Cursor[Any], interpretation_id: int, claim: NumericClaim, times: _Times
+    own: Cursor[Any], interpretation_id: int, claim: NumericClaim, entity_id: int, times: _Times
 ) -> ResolvedCitation | None:
-    """A mapped first-party interpretation's own value and key, with no run (a comparator
-    figure or a filed operand of a run's computed value)."""
-    row = own.execute(_INTERPRETATION, (interpretation_id,)).fetchone()
+    """A mapped first-party interpretation of the report's issuer, under a claim key of that
+    issuer: its own value and key, with no run (a comparator figure or a filed operand of a
+    run's computed value)."""
+    key = claim.measurement_key
+    if key is None or key.entity_id != entity_id:
+        return None
+    row = own.execute(_INTERPRETATION, (interpretation_id, entity_id)).fetchone()
     if row is None or row["value"] is None:
         return None
     return ResolvedCitation(
