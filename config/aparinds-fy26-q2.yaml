@@ -19,7 +19,7 @@ quarter:
   label: "Q2 FY26 (quarter ended 2025-09-30)"
   period_start: "2025-07-01"
   period_end: "2025-09-30"
-  knowledge_cutoff: "2025-11-06T12:05:34Z"
+  knowledge_cutoff: "2025-11-06T06:35:34Z"
 
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"

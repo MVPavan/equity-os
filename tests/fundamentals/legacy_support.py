@@ -23,9 +23,9 @@ LEGACY_NAME = "aparinds.sqlite"
 SECOND_DIR = "second"
 
 BASELINE_CUTOFFS: tuple[datetime, ...] = (
-    # Before the first knowledge time (2025-11-06T12:05:34Z).
+    # Before the store's first knowledge time (2025-11-06T12:05:34Z, the pre-IST-fix cutoff).
     datetime(2025, 11, 1, tzinfo=UTC),
-    # After the last knowledge time (2026-07-31T15:44:41Z), before the first selection.
+    # After the store's last knowledge time (2026-07-31T15:44:41Z), before the first selection.
     datetime(2026, 8, 15, tzinfo=UTC),
     # The 12th stored canonical_selected_at.
     datetime(2026, 9, 7, 4, 58, 28, 240083, tzinfo=UTC),

@@ -70,7 +70,7 @@ time.
 | PREP-4 | Source-of-truth matrix (B-03) | Matrix approved by the reviewer | Open |
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Open |
 | PREP-6 | Review telemetry wired to ledger claims (B-04, B-13); seeded-error drill | Per-claim disposition and time recorded; drill errors caught | Instrument exists (`fundamentals review`); not yet on the ledger |
-| PREP-7 | Frozen pilot manifest | Expected values hand-verified from the four quarters' filings, reviewer-approved, committed before the pilot test | Not started |
+| PREP-7 | Frozen pilot manifest | Expected values hand-verified from the four quarters' filings, reviewer-approved, committed before the pilot test; per quarter the IST-correct source cutoff, the reviewed package (ids + sha256) and the retrospective designation | Not started |
 | PREP-8 | `scripts/verify_project.sh` | Runs every D-phase exit plus the pilot test; PASS/FAIL per part | Verifier foundation built `9781763`; all exits registered, actual pilot target unresolved and NOT BUILT; full project gate pending |
 
 Estimate (inference from D1a only): D1a–D9 take 3–6 weeks of continuous running, and PREP work plus
@@ -79,7 +79,12 @@ the pilot take about 1–2 weeks more. The pilot also needs the owner's time (§
 ## 4. Pilot acceptance: how the pilot decides completion
 
 **Scope.** Apar Industries consolidated, four program quarters, every step on the PostgreSQL
-backend:
+backend. The pilot is a **retrospective workflow demonstration**: every original was acquired in
+2026-09, after the quarters it covers, so it cannot prove historical possession or the absence of
+hindsight. Each quarter has a source cutoff (its transcript's NSE filing instant, IST-parsed),
+which selects the historical package, and a derivation cutoff (the run's completion), which is
+the version's knowledge time; real acquisition, registration and approval times are kept
+(`docs/plans/PREP-2b.md`, "Retrospective contract").
 
 | Pilot quarter | Issuer quarter | Role |
 |---|---|---|
@@ -96,8 +101,8 @@ pilot manifest (PREP-7), never from code output.
 | PILOT-1 | Ingest and extraction check (D1a) | All four quarters' XBRL and PDF ingested. Every applicable row has a state, and none is filled with zero. PQ0 (Q2 FY26) matches the manifest: PBT 340.56 / 340.53 crore, OPM 8.06% |
 | PILOT-2 | Corroboration (D1b) | Screener and Tijori compared per quarter; the Apar opex gap against Screener equals its pre-registered outcome; every untrusted outcome has a queue item |
 | PILOT-3 | PostgreSQL only (D2) | Legacy Apar facts reconciled; the pilot opens no SQLite store |
-| PILOT-4 | Ledger (D3) | Each update is a ledger version. 100% of material numerical claims cite a fact id or calculation trace, and the claim check passes. Reviewer approval is recorded. Export reproduces each version's hash |
-| PILOT-5 | Memory (D4) | Items promoted after PQ1 (Q3 FY26) are retrieved in PQ2 and PQ3 with provenance. A contradicted item is surfaced. No retrieval returns anything after the quarter's cutoff |
+| PILOT-4 | Ledger (D3) | Each update is a ledger version. 100% of material numerical claims cite a fact id or calculation trace (guidance: its source quote), and the claim check passes. Each version carries the retrospective label and both cutoffs. Reviewer approval is recorded. Export reproduces each version's hash |
+| PILOT-5 | Memory (D4) | Items promoted after PQ1 (Q3 FY26) are retrieved in PQ2 and PQ3 with provenance, at the actual sequential evaluation boundaries (after the prior promotion, later events excluded). A contradicted item is surfaced. Separately, retrieval at a historical source cutoff returns nothing the pilot created |
 | PILOT-6 | Views (D5) | Each version and the promoted memory render read-only |
 | PILOT-7 | Onboarding (D6) | A held-out second company onboards by identifier alone and produces a comparison report |
 | PILOT-8 | Coverage (D7) | Apar is on the watchlist through the decision chain; drafting for a non-watchlisted stock is refused |

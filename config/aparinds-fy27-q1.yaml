@@ -19,7 +19,7 @@ quarter:
   label: "Q1 FY27 (quarter ended 2026-06-30)"
   period_start: "2026-04-01"
   period_end: "2026-06-30"
-  knowledge_cutoff: "2026-07-31T15:44:41Z"
+  knowledge_cutoff: "2026-07-31T10:14:41Z"
 
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"

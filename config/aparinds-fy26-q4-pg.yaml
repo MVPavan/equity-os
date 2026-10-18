@@ -19,7 +19,7 @@ quarter:
   label: "Q4 FY26 (quarter ended 2026-03-31)"
   period_start: "2026-01-01"
   period_end: "2026-03-31"
-  knowledge_cutoff: "2026-06-04T16:13:48Z"
+  knowledge_cutoff: "2026-06-04T10:43:48Z"
 
 taxonomy_prefix: "in-capmkt"
 raw_dir: "data/raw/watchlist/aparinds"

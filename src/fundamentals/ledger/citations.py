@@ -28,10 +28,12 @@ from psycopg import Cursor
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.canon.role_translation import translate
 from fundamentals.compare.queue import overlay_at
 from fundamentals.compare.trust import trusted
 from fundamentals.contracts.canonical import Basis, ValueKind
 from fundamentals.contracts.comparison import CorroborationStatus, ExtractionStatus, SourceState
+from fundamentals.contracts.fact import Fact
 from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
@@ -44,10 +46,13 @@ from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
+from fundamentals.entity.identity_layers import issuer_values
 from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
 from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
+from fundamentals.reconcile.fact_view import CANONICAL_ENTITY_SCHEME
+from fundamentals.store.pg_fact_store import NATIVE_ORIGIN
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.verify.quote_anchor import (
     SourceDocument,
@@ -62,15 +67,21 @@ _FIRST_SEEN: LiteralString = """least(c.first_seen_at, (SELECT min(a.retrieved_a
 _CAPTURE: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
 )
-_FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, t.*, b.capture_ref_id,
+_FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, f.file_sha256 AS fact_file,
+    t.*, b.capture_ref_id,
     (SELECT min(s.selected_at) FROM eqos.fact_selections s
      WHERE s.target_store = f.target_store AND s.row_handle = f.handle) AS selected_at
 FROM eqos.fact_rows f
-JOIN eqos.legacy_fact_translations t
+LEFT JOIN eqos.legacy_fact_translations t
     ON t.target_store = f.target_store AND t.row_handle = f.handle
-JOIN eqos.legacy_evidence_bindings b
+LEFT JOIN eqos.legacy_evidence_bindings b
     ON b.target_store = f.target_store AND b.row_handle = f.handle
 WHERE f.origin = %s AND f.origin_id = %s"""
+# A native fact's captures: every capture of its file, earliest first-seen first.
+_FILE_CAPTURES: LiteralString = (
+    "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c "
+    "WHERE c.blob_sha256 = %s ORDER BY first_seen, c.id"
+)
 _RUN_CELL: LiteralString = """SELECT r.key_digest, r.value_kind, r.currency, run.created_at,
     r.extraction_status, r.corroboration_status, EXISTS (SELECT 1 FROM eqos.result_source_values f
     WHERE f.result_id = r.id AND f.source_role = 'FIRST_PARTY' AND f.source_state = 'VALUE')
@@ -180,7 +191,7 @@ def resolve_citation(
         if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
             return None
         if citation.kind is CitationKind.FIGURE and citation.fact_origin_id is not None:
-            return _fact(own, citation.fact_origin, citation.fact_origin_id, catalog)
+            return _fact(own, citation.fact_origin, citation.fact_origin_id, entity_id, catalog)
         if citation.kind is CitationKind.FIGURE and citation.interpretation_id is not None:
             times = _input_times(own, (), (citation.interpretation_id,), catalog)
             if times is None:
@@ -282,27 +293,20 @@ def _source(own: Cursor[Any], citation: Citation) -> str | None:
 
 
 def _fact(
-    own: Cursor[Any], origin: str | None, origin_id: int, catalog: SourceCatalog
+    own: Cursor[Any], origin: str | None, origin_id: int, entity_id: int, catalog: SourceCatalog
 ) -> ResolvedCitation | None:
-    """A legacy fact, through its translation and its bound capture."""
+    """A legacy fact, through its translation and its bound capture; or a native (run-written)
+    fact of the report's issuer, through ``translate`` and its file's first-party capture."""
     row = own.execute(_FACT, (origin, origin_id)).fetchone()
     if row is None:
         return None
-    capture = _first_party_capture(own, row["capture_ref_id"], catalog)
-    period = period_of(row)
-    if capture is None or period is None:
+    if origin == NATIVE_ORIGIN:
+        key, capture = _native_key(own, row, entity_id), _file_capture(own, row, catalog)
+    else:
+        key, capture = _legacy_key(row), _first_party_capture(own, row["capture_ref_id"], catalog)
+    if capture is None or key is None:
         return None
     observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
-    key = MeasurementKey(
-        entity_id=row["entity_id"],
-        canonical_id=row["canonical_id"],
-        period=period,
-        basis=Basis(row["basis"]),
-        framework=AccountingFramework(row["framework"]),
-        currency=row["currency"],
-        value_kind=ValueKind(row["value_kind"]),
-        dimensions=DimensionSet(pairs=tuple(tuple(pair) for pair in row["dimension_set"])),
-    )
     return ResolvedCitation(
         value=Decimal(str(observation["normalized_value"])),
         key_digest=key.digest(),
@@ -316,6 +320,39 @@ def _fact(
             (InputTime.SELECTED, _instant(row["selected_at"])),
         ),
     )
+
+
+def _legacy_key(row: _Row) -> MeasurementKey | None:
+    """A legacy fact's stored translation, if it has one."""
+    period = None if row["canonical_id"] is None else period_of(row)
+    if period is None:
+        return None
+    return MeasurementKey(
+        entity_id=row["entity_id"],
+        canonical_id=row["canonical_id"],
+        period=period,
+        basis=Basis(row["basis"]),
+        framework=AccountingFramework(row["framework"]),
+        currency=row["currency"],
+        value_kind=ValueKind(row["value_kind"]),
+        dimensions=DimensionSet(pairs=tuple(tuple(pair) for pair in row["dimension_set"])),
+    )
+
+
+def _native_key(own: Cursor[Any], row: _Row, entity_id: int) -> MeasurementKey | None:
+    """A native fact's key, only when its observation names the entity's NSE symbol."""
+    fact = Fact.model_validate_json(row["fact_json"])
+    _, symbol, _ = issuer_values(own.connection, entity_id)
+    issuer = (fact.observation.entity_scheme, fact.observation.entity_id)
+    if issuer != (CANONICAL_ENTITY_SCHEME, symbol.value):
+        return None
+    return translate(fact, entity_id=entity_id)
+
+
+def _file_capture(own: Cursor[Any], row: _Row, catalog: SourceCatalog) -> _Row | None:
+    """The earliest-seen first-party capture of a native fact's file, if any."""
+    captures = own.execute(_FILE_CAPTURES, (row["fact_file"],)).fetchall()
+    return next((c for c in captures if _first_party(c["source_id"], catalog)), None)
 
 
 def _trace(
