@@ -246,15 +246,22 @@ def retention_cli(
 
 
 def restore_args(
-    database: PgTestDatabase, set_dir: Path, snapshot_root: Path, backup_dir: Path | None = None
+    database: PgTestDatabase,
+    set_dir: Path,
+    snapshot_root: Path,
+    backup_dir: Path | None = None,
+    *,
+    live: Path | None,
 ) -> dict[str, Any]:
     """Restore's retention arguments (plan D9 R12): the authority directory (default the set's
-    parent), the session purge login and the composed purge-first."""
+    parent), the live head witness (``None``: unwitnessed), the session purge login and the
+    composed purge-first."""
     backup_dir = backup_dir or set_dir.parent
     return {
         "backup_dir": backup_dir,
+        "live_snapshot_root": live,
         "purge_login": database.logins[PgRole.PURGE],
-        "purge_first": restore_purge_first(set_dir, backup_dir, snapshot_root),
+        "purge_first": restore_purge_first(set_dir, backup_dir, snapshot_root, live),
     }
 
 

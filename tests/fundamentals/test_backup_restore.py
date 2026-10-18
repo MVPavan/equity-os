@@ -117,7 +117,7 @@ def test_round_trip_snapshot_and_tamper(
         snapshot_root=tmp_path / "restored-store",
         replay_runs=True,
         config_root=CONFIG,
-        **restore_args(pg_db, set_dir, tmp_path / "restored-store"),
+        **restore_args(pg_db, set_dir, tmp_path / "restored-store", live=None),
     )
     assert check.ok, check
     assert "late" not in query(settings, restored, "SELECT source_id FROM eqos.capture_refs")
@@ -137,7 +137,7 @@ def test_round_trip_snapshot_and_tamper(
                 snapshot_root=tmp_path / f"empty-{name}",
                 replay_runs=False,
                 config_root=CONFIG,
-                **restore_args(pg_db, copy, tmp_path / f"empty-{name}", set_dir.parent),
+                **restore_args(pg_db, copy, tmp_path / f"empty-{name}", set_dir.parent, live=None),
             )
         assert fresh not in databases(settings)
     with pytest.raises(BackupError, match="unpublished"):
@@ -178,7 +178,9 @@ def test_round_trip_snapshot_and_tamper(
                 snapshot_root=tmp_path / f"meta-store-{name}",
                 replay_runs=True,
                 config_root=CONFIG,
-                **restore_args(pg_db, copy, tmp_path / f"meta-store-{name}", set_dir.parent),
+                **restore_args(
+                    pg_db, copy, tmp_path / f"meta-store-{name}", set_dir.parent, live=None
+                ),
             )
         finally:
             drop_database(settings, fresh)
@@ -208,7 +210,10 @@ def test_absent_schema_restores_through_the_cli(
         (set_dir,) = tmp_path.iterdir()
         use_env(monkeypatch, pg_db, settings.db)
         args = ["db", "restore", "--set", str(set_dir), "--database", restored]
-        assert main([*args, "--snapshot-root", str(tmp_path / "store")]) == EXIT_OK
+        args += ["--snapshot-root", str(tmp_path / "store")]
+        with pytest.raises(SystemExit):  # the witness choice is required (R11)
+            main(args)
+        assert main([*args, "--unwitnessed"]) == EXIT_OK
     finally:
         drop_database(settings, empty)
     assert query(settings, restored, "SELECT to_regnamespace('eqos')") == [None]
@@ -227,7 +232,7 @@ def test_restore_refuses_non_test_targets(
     before = databases(settings)
     if entrypoint == "cli":
         use_env(monkeypatch, pg_db, settings.db)
-        args = ["db", "restore", "--set", str(tmp_path), "--database", name]
+        args = ["db", "restore", "--set", str(tmp_path), "--database", name, "--unwitnessed"]
         assert main([*args, "--snapshot-root", str(tmp_path / "s")]) == EXIT_REFUSED
     else:
         unreachable = settings.model_copy(update={"port": 1})  # any connection attempt would fail
@@ -239,6 +244,6 @@ def test_restore_refuses_non_test_targets(
                 snapshot_root=tmp_path / "s",
                 replay_runs=False,
                 config_root=CONFIG,
-                **restore_args(pg_db, tmp_path, tmp_path / "s"),
+                **restore_args(pg_db, tmp_path, tmp_path / "s", live=None),
             )
     assert databases(settings) == before

@@ -6,7 +6,8 @@ each on its own connection. The authority files ``licence-ends.json`` and
 in order, appended by one locked helper; dropped or renumbered ids are refused, never repaired.
 The journal's head is witnessed by each set (watermark and digest of the journal up to it) and,
 outside the backup directory's rollback domain, by a head file in the live snapshot store that a
-purge advances before deleting: a journal shorter than a witness or differing from it is refused.
+purge advances before deleting; a journal shorter than or unlike a witness is refused, as is a
+non-empty one where the live store has no head.
 """
 
 from __future__ import annotations
@@ -18,11 +19,11 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, LiteralString
+from typing import Annotated, Any, LiteralString
 
 import psycopg
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, StringConstraints, TypeAdapter, ValidationError
 
 from fundamentals.contracts.retention import JournalEvent, JournalEventKind, LicenceEnd
 from fundamentals.store.snapshot_store import RETENTION_DIRNAME, SnapshotStore
@@ -43,6 +44,7 @@ _LICENCE_ENDS: LiteralString = "SELECT source_id FROM eqos.licence_ends"
 _INSERT_LICENCE_END: LiteralString = (
     "INSERT INTO eqos.licence_ends (source_id, ended_at) VALUES (%s, %s) ON CONFLICT DO NOTHING"
 )
+_HEAD = TypeAdapter(tuple[int, Annotated[str, StringConstraints(pattern="^[0-9a-f]{64}$")]])
 _FILES: dict[type[BaseModel], str] = {
     LicenceEnd: LICENCE_ENDS_FILE,
     JournalEvent: EXPIRY_JOURNAL_FILE,
@@ -94,8 +96,12 @@ def read_authority(backup_dir: Path, snapshot_root: Path | None = None) -> Autho
             authority.journal, witness.get("journal_watermark", 0), witness.get("journal_sha256")
         )
     head = snapshot_root and snapshot_root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE
-    if head and head.exists():
-        check_head(authority.journal, *json.loads(head.read_text(encoding="utf-8")))
+    if head and (authority.journal or head.exists()):
+        try:
+            witnessed = _HEAD.validate_json(head.read_bytes(), strict=True)
+        except (OSError, ValidationError) as error:
+            raise AuthorityError(f"{head} is missing or unreadable") from error
+        check_head(authority.journal, *witnessed)
     return authority
 
 
@@ -119,9 +125,10 @@ def check_head(journal: tuple[JournalEvent, ...], watermark: int, digest: str | 
 def advance_head(backup_dir: Path, snapshot_root: Path) -> None:
     """Witness the journal's head in the live store, refusing one not extending the last head."""
     with _locked(backup_dir):
-        journal = read_authority(backup_dir, snapshot_root).journal
-        (directory := snapshot_root / RETENTION_DIRNAME).mkdir(mode=0o700, exist_ok=True)
-        _write(directory, JOURNAL_HEAD_FILE, [len(journal), journal_digest(journal)])
+        head = snapshot_root / RETENTION_DIRNAME / JOURNAL_HEAD_FILE
+        journal = read_authority(backup_dir, snapshot_root if head.exists() else None).journal
+        head.parent.mkdir(mode=0o700, exist_ok=True)
+        _write(head.parent, JOURNAL_HEAD_FILE, [len(journal), journal_digest(journal)])
 
 
 def authority_absent(backup_dir: Path) -> bool:

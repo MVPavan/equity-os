@@ -417,7 +417,7 @@ def test_ledger_stage1_end_to_end(
             snapshot_root=tmp_path / "restored",
             replay_runs=False,
             config_root=CONFIG,
-            **restore_args(pg_db, sets, tmp_path / "restored"),
+            **restore_args(pg_db, sets, tmp_path / "restored", live=None),
         )
         assert check.ok, check
     finally:

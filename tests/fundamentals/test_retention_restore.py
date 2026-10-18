@@ -80,6 +80,7 @@ from fundamentals.pg.restore_check import delta_problems
 from fundamentals.pg.retention_io import (
     EXPIRY_JOURNAL_FILE,
     LICENCE_ENDS_FILE,
+    AuthorityError,
     append_authority,
     init_authority,
     read_authority,
@@ -412,7 +413,7 @@ def test_unreadable_authority_refuses_every_command(
     retention = ["--snapshot-root", root, "--backup-dir", sets, "--config-root", str(CONFIG)]
     commands = {
         "restore": ["db", "restore", "--set", str(set_dir), "--database", target]
-        + ["--snapshot-root", str(restored)],
+        + ["--snapshot-root", str(restored), "--live-snapshot-root", root],
         "backup": ["db", "backup", "--out", sets, "--snapshot-root", root],
         "purge": ["retention", "purge", *retention],
         "licence-end": ["retention", "licence-end", "--source", TIJORI]
@@ -499,22 +500,29 @@ def test_a_truncated_or_rewritten_journal_is_refused(
             env.backup()
 
 
+@pytest.mark.parametrize("late", [False, True])
 def test_a_journal_rolled_back_before_the_final_backup_is_refused(
-    env: Env, mint: Callable[[], str]
+    env: Env, mint: Callable[[], str], late: bool
 ) -> None:
-    """G1 (R11, R12): a purge witnesses the journal's head in the live store before it deletes.
-    After a crash past the deletion and before the final backup, an emptied journal (what a
-    rollback of the whole backup directory leaves) agrees with every set, so only that witness
-    refuses restore of the pre-purge set, which would bring the deleted vendor bytes back."""
+    """G1, H2 (R11, R12): a purge witnesses the journal's head in the live store before it deletes.
+    After a crash past the deletion and before the final backup, an emptied journal (a rolled-back
+    backup directory) agrees with every set, so only that witness refuses restore of the pre-purge
+    set, also in the snapshot purge-first reads later; else the deleted vendor bytes come back."""
     env.capture(b"g1")
     old = env.backup()
     env.age()
     with pytest.raises(CrashError):
         env.purge(checkpoint=crash_at(PurgeStep.FILES_DELETED, []))
-    (env.sets / EXPIRY_JOURNAL_FILE).write_text("[]")
-    with pytest.raises(BackupError, match="truncated or rolled back"):
-        restore(env, old, (target := mint()))
-    assert target not in databases(env.db.settings)
+    journal = env.sets / EXPIRY_JOURNAL_FILE
+
+    def rolled_back(inner: PurgeFirst) -> PurgeFirst:
+        return lambda conn: journal.write_text("[]") and inner(conn)  # after restore's check
+
+    if not late:
+        journal.write_text("[]")
+    with pytest.raises((BackupError, AuthorityError), match="truncated or rolled back"):
+        restore(env, old, (target := mint()), first=rolled_back if late else None)
+    assert (target in databases(env.db.settings)) is late and runtime_refused(env, target)
 
 
 @pytest.mark.parametrize("damage", ["none", *DELTA_DAMAGE])

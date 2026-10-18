@@ -105,6 +105,7 @@ _RETAINED = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 _RUN_IDS = "SELECT id FROM eqos.runs ORDER BY id"
 _PUBLISHED = "backup_published"
 _DELTA = "restore_delta_refused"
+_UNWITNESSED = "restore_unwitnessed"
 _LICENCE_ENDS = "SELECT source_id FROM eqos.licence_ends"
 _LAST_MIGRATION_TABLE = "refetch_attempts"  # 0030: older sets are refused
 _NO_AUTHORITY = Authority(licence_ends=(), journal=())
@@ -170,6 +171,7 @@ class RestoreCheck(BaseModel):
     delta_ok: bool
     expired_without_record: tuple[int, ...]
     replay_expired: tuple[int, ...]
+    witnessed: bool
 
     @property
     def ok(self) -> bool:
@@ -313,7 +315,7 @@ def restore_backup(
     replay_runs: bool,
     config_root: Path,
     backup_dir: Path | None = None,
-    live_snapshot_root: Path | None = None,
+    live_snapshot_root: Path | None,
     purge_login: RoleLogin,
     purge_first: PurgeFirst,
 ) -> RestoreCheck:
@@ -321,11 +323,14 @@ def restore_backup(
     snapshot root (R12): check it is faithful, mark licence ends, run the injected purge-first
     as the purge login, check the delta and replay, then grant access. A failure leaves the
     database closed; ``backup_dir`` (default the set's parent) holds the authority files and
-    ``live_snapshot_root`` the journal head a purge witnessed before deleting."""
+    ``live_snapshot_root`` the journal head a purge witnessed before deleting (``None``: an
+    explicit unwitnessed recovery of a lost live store, logged and reported)."""
     if not is_test_database(database):
         raise BackupError(f"restore refuses {database!r}: not an eqos_test_ database")
     check_test_db_name(database, settings)
     manifest = verify_set(set_dir)
+    if live_snapshot_root is None:
+        structlog.get_logger(__name__).warning(_UNWITNESSED, set=set_dir.name)
     present = manifest.schema_state is SchemaState.PRESENT
     if present and _LAST_MIGRATION_TABLE not in manifest.table_counts:
         raise BackupError(f"{set_dir.name} predates migration 0030; restore refused")
@@ -381,6 +386,7 @@ def restore_backup(
         delta_ok=True,
         expired_without_record=(),
         replay_expired=(),
+        witnessed=live_snapshot_root is not None,
     )
     if present and check.ok:
         mark_licence_ends(snapshot_root, authority, *ends)

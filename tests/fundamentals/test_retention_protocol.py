@@ -68,6 +68,7 @@ from fundamentals.pg.backup import (
 )
 from fundamentals.pg.retention_io import (
     EXPIRY_JOURNAL_FILE,
+    JOURNAL_HEAD_FILE,
     LICENCE_ENDS_FILE,
     AuthorityError,
     append_authority,
@@ -78,7 +79,7 @@ from fundamentals.pg.retention_io import (
 )
 from fundamentals.pg.settings import PgRole
 from fundamentals.store.pg_fact_store import create_native_store, run_serializable
-from fundamentals.store.snapshot_store import RECORD_FILENAME, SnapshotStore
+from fundamentals.store.snapshot_store import RECORD_FILENAME, RETENTION_DIRNAME, SnapshotStore
 
 pytestmark = pytest.mark.pg
 
@@ -371,6 +372,21 @@ def test_authority_appends_are_serialised_and_append_only(tmp_path: Path) -> Non
         with pytest.raises(AuthorityError, match="dropped or renumbered"):
             append_authority(tmp_path, event)
         assert path.read_text() == tampered
+
+
+@pytest.mark.parametrize("head", [None, "[1, 2]", "{"])
+def test_a_missing_or_malformed_head_refuses_a_journal(tmp_path: Path, head: str | None) -> None:
+    """H1 (R11): beside a live store a missing head passes only an empty journal, so a lost
+    witness never passes silently, and a malformed head refuses rather than crashing."""
+    init_authority(tmp_path)
+    live = tmp_path / "live" / RETENTION_DIRNAME
+    assert read_authority(tmp_path, live.parent).journal == ()
+    append_authority(tmp_path, JournalEvent(kind=JournalEventKind.COMPLETE, run_id=1))
+    if head is not None:
+        live.mkdir(parents=True)
+        (live / JOURNAL_HEAD_FILE).write_text(head)
+    with pytest.raises(AuthorityError, match="missing or unreadable"):
+        read_authority(tmp_path, live.parent)
 
 
 def dropped(journal_text: str) -> str:

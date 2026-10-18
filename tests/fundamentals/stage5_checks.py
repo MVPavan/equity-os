@@ -230,8 +230,8 @@ def restore(
     root = world.tmp / f"restored-{target}"
     seen: list[set[str]] = []
 
-    def observed(set_path: Path, backup_dir: Path, snapshot_root: Path) -> Any:
-        inner = restore_purge_first(set_path, backup_dir, snapshot_root)
+    def observed(set_path: Path, backup_dir: Path, snapshot_root: Path, live: Path) -> Any:
+        inner = restore_purge_first(set_path, backup_dir, snapshot_root, live)
 
         def first(conn: psycopg.Connection) -> Any:
             marked = snapshot_root / ".retention" / "licence-ended"
@@ -251,6 +251,8 @@ def restore(
         target,
         "--snapshot-root",
         str(root),
+        "--live-snapshot-root",
+        str(world.root),
         "--backup-dir",
         str(world.sets),
         "--replay-runs",

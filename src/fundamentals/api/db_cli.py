@@ -4,17 +4,17 @@
     db migrate [--migrations-dir migrations]
     db backup --out DIR --snapshot-root R
     db restore --set DIR --database D --snapshot-root R [--backup-dir DIR] [--replay-runs]
-        [--live-snapshot-root L] [--config-root config]
+        (--live-snapshot-root L | --unwitnessed) [--config-root config]
     db create-test --suffix S
 
 All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as the admin role over
 the ``postgres`` maintenance database; ``migrate`` runs as the migrator role, which owns every
-object it creates. ``backup`` writes a matched set of ``EQOS_PG_DB``; ``restore --database``
-only names the new ``eqos_test_*`` database to create, and exits nonzero unless every check
-passes; it runs as the purge login and purges first what the authority files in ``--backup-dir``
-(default the set's parent) expired after the set, refusing a journal that does not extend the
-head a purge witnessed in ``--live-snapshot-root`` (plan D9 R11, R12). ``create-test`` creates a
-guarded ``eqos_test_<suffix>_<hex>`` database and prints its name.
+object it creates. ``backup`` writes a matched set of ``EQOS_PG_DB``; ``restore`` names the new
+``eqos_test_*`` ``--database``, exits nonzero unless every check passes, and as the purge login
+purges first what the authority files in ``--backup-dir`` (default the set's parent) expired
+after the set, refusing a journal not extending the head witnessed in ``--live-snapshot-root``
+(``--unwitnessed``: live store lost; a journal rolled back with its witness is undetectable;
+plan D9 R11, R12). ``create-test`` prints a new guarded ``eqos_test_<suffix>_<hex>`` database.
 """
 
 from __future__ import annotations
@@ -98,7 +98,9 @@ def add_db_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser
     restore.add_argument("--database", required=True)
     restore.add_argument("--snapshot-root", required=True, type=Path)
     restore.add_argument("--backup-dir", type=Path)
-    restore.add_argument("--live-snapshot-root", type=Path)
+    witness = restore.add_mutually_exclusive_group(required=True)
+    witness.add_argument("--live-snapshot-root", type=Path)
+    witness.add_argument("--unwitnessed", action="store_true")
     restore.add_argument("--replay-runs", action="store_true")
     restore.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     create_test = actions.add_parser(CREATE_TEST_ACTION, help=_CREATE_TEST_HELP)
@@ -124,7 +126,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
             sys.stdout.write(_PUBLISHED.format(path=published) + "\n")
             return EXIT_OK
         if action == RESTORE_ACTION:
-            backup_dir = args.backup_dir or args.set.parent
+            backup_dir, live = args.backup_dir or args.set.parent, args.live_snapshot_root
             check = restore_backup(
                 args.set,
                 settings,
@@ -133,9 +135,9 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
                 replay_runs=args.replay_runs,
                 config_root=args.config_root,
                 backup_dir=backup_dir,
-                live_snapshot_root=args.live_snapshot_root,
+                live_snapshot_root=live,
                 purge_login=load_login(PgRole.PURGE, secrets_dir(os.environ)),
-                purge_first=restore_purge_first(args.set, backup_dir, args.snapshot_root),
+                purge_first=restore_purge_first(args.set, backup_dir, args.snapshot_root, live),
             )
             sys.stdout.write(check.model_dump_json() + "\n")
             return EXIT_OK if check.ok else EXIT_REFUSED
@@ -170,14 +172,14 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
 
 
 def restore_purge_first(
-    set_dir: Path, backup_dir: Path, snapshot_root: Path
+    set_dir: Path, backup_dir: Path, snapshot_root: Path, live: Path | None
 ) -> Callable[[psycopg.Connection[Any]], RestoreDelta]:
-    """Restore's injected purge-first (pg never imports retention): one authority snapshot,
-    read when the restored database is ready, marks its licence ends and is purged."""
+    """Restore's injected purge-first (pg never imports retention): one authority snapshot read
+    against the head in ``live`` when the target is ready, marks its licence ends and is purged."""
 
     def purge_first(conn: psycopg.Connection[Any]) -> RestoreDelta:
-        watermark, authority = verify_set(set_dir).journal_watermark, read_authority(backup_dir)
-        mark_licence_ends(snapshot_root, authority)
+        watermark = verify_set(set_dir).journal_watermark
+        mark_licence_ends(snapshot_root, authority := read_authority(backup_dir, live))
         return restore_purge(conn, authority, watermark, snapshot_root, backup_dir)
 
     return purge_first

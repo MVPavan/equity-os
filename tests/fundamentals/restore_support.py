@@ -61,7 +61,7 @@ def restore(
     ``env.root``; ``first`` wraps the composed purge-first. Returns the check and the restored
     snapshot root."""
     root = env.root.parent / f"restored-{database}"
-    args = restore_args(env.db, set_dir, root, env.sets)
+    args = restore_args(env.db, set_dir, root, env.sets, live=env.root)
     if first is not None:
         args["purge_first"] = first(args["purge_first"])
     check = restore_backup(
@@ -71,7 +71,6 @@ def restore(
         snapshot_root=root,
         replay_runs=replay,
         config_root=CONFIG,
-        live_snapshot_root=env.root,
         **args,
     )
     return check, root
