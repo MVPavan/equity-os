@@ -68,6 +68,12 @@ RECORDS = {
         "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
         {"derived-amounts-kept", "redaction-inventory"},
     ),
+    "screen_export": (
+        AMENDMENTS / "2026-10-18-screen-export.md",
+        "screen-export",
+        "docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md",
+        {"screens-vendor-export"},
+    ),
 }
 VENDOR_TERMS = "docs/research/vendor-terms-screener-tijori-2026-10.md"
 MODEL_NAME = re.compile(r"gpt|claude|opus|sonnet|fable|astra|\bsol\b|gemini|llama", re.IGNORECASE)
