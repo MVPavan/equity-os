@@ -288,7 +288,7 @@ def acquire_watchlist(
     # holds it and redacts it itself, without ever handing it out.
     secrets: list[str] = []
     try:
-        page_fetch, set_cookies = source.fetch_navigation(url=page_url)
+        page_fetch, set_cookies, _ = source.fetch_navigation(url=page_url)
         documents.append(page_fetch)
         root = parse_document(page_fetch.raw_body.decode("utf-8", errors="replace"))
         assert_logged_in(root)

@@ -6,9 +6,11 @@
         [--watchlist config/watchlist.yaml]
         (run the configured formulas at Screener and Tijori, then record both runs,
         every response as a capture and each row bound against the registry, and their pair;
-        after that commits, one other-vendor read per pending review item, then the review)
-    coverage review --pair <id> --snapshot-root <dir> [--watchlist config/watchlist.yaml]
-        (print the pair's pending review items, each member's values beside the other vendor's)
+        print them once that commits, then one other-vendor read per pending review item, then
+        the review)
+    coverage review --pair <id> --snapshot-root <dir> [--watchlist config/watchlist.yaml] [--read]
+        (print the pair's pending review items, each member's values beside the other vendor's;
+        ``--read`` first makes the read of each pending item that has none recorded)
     coverage dispose --pair <id> --member <id> --kind <kind> --reason <text> --evidence <ref>
         (append the owner's one disposition of a review item)
     coverage batch --screen-run <id> --members A,B,C --raw-root <dir> --snapshot-root <dir>
@@ -17,10 +19,11 @@
         ``onboard``, run its printed comparison when admitted, record each result, complete)
 
 The composition root: the owner login comes from its credential file; onboarding and comparison
-inside a batch keep their runtime pools. Only ``export`` requests network resources, the
-amendment's endpoints with the vendor session cookies from the environment; nothing schedules
-anything. Any refusal exits ``EXIT_REFUSED`` with a structlog error that names no credential; a
-batch interrupted that way stays incomplete.
+inside a batch keep their runtime pools. Only ``export`` and ``review --read`` request network
+resources, the amendment's endpoints with the vendor session cookies from the environment;
+nothing schedules anything. Any refusal exits ``EXIT_REFUSED`` with a structlog error carrying
+only text this codebase or the database wrote, never a library's (which can quote a request
+header); a batch interrupted that way stays incomplete.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import argparse
 import os
 import shlex
 import sys
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 
@@ -45,6 +49,7 @@ from fundamentals.api.env_credentials import (
 from fundamentals.api.onboard_cli import DEFAULT_CONFIG_ROOT, add_onboard_parser, onboard
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.api.watchlist_config import StockConfig, load_watchlist_config
+from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.coverage import screen_review
@@ -63,8 +68,9 @@ from fundamentals.ingest.screen_export import (
     load_screen_config,
     screen_sources,
 )
+from fundamentals.ingest.screener_session import ScreenerSessionSource
 from fundamentals.ingest.screener_session_models import ScreenerSessionError
-from fundamentals.ingest.tijori_source import TijoriError
+from fundamentals.ingest.tijori_source import TijoriError, TijoriSource
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -91,6 +97,7 @@ _MEMBER = "{vendor}:{name}\t{resolution}"
 _RESULT = "{symbol}\t{outcome} run {run}"
 _LOADED = "load\t{load_id}\ncreated\t{created}\nnew_listings\t{new}\ncandidate_events\t{events}"
 _FAILED_EVENT = "coverage_command_failed"
+_OWN_MODULES = "fundamentals."
 
 
 def add_coverage_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -109,6 +116,7 @@ def add_coverage_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     review.add_argument("--pair", type=int, required=True)
     review.add_argument("--snapshot-root", type=Path, required=True)
     review.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    review.add_argument("--read", action="store_true")
     dispose = actions.add_parser(DISPOSE_ACTION, help=_DISPOSE_HELP)
     dispose.add_argument("--pair", type=int, required=True)
     dispose.add_argument("--member", type=int, required=True)
@@ -150,11 +158,21 @@ def dispatch_coverage_command(args: argparse.Namespace) -> int | None:
         ValueError,
         ScreenerSessionError,
         TijoriError,
+        OriginalExpiredError,
     ) as failure:
         structlog.get_logger("fundamentals.coverage").error(
-            _FAILED_EVENT, failure=type(failure).__name__, detail=str(failure)
+            _FAILED_EVENT, failure=type(failure).__name__, detail=_own_text(failure)
         )
         return EXIT_REFUSED
+
+
+def _own_text(failure: Exception) -> str | None:
+    """The failure's text when this codebase or the database raised it, else nothing: a
+    library's message (``http.client`` quoting an invalid ``Cookie`` header) can carry a
+    credential."""
+    *_, (frame, _) = traceback.walk_tb(failure.__traceback__)
+    own = str(frame.f_globals.get("__name__", "")).startswith(_OWN_MODULES)
+    return str(failure) if own or isinstance(failure, psycopg.Error) else None
 
 
 def _owner_pool() -> ConnectionPool:
@@ -179,48 +197,76 @@ def _registry(args: argparse.Namespace) -> int:
 
 def _export(args: argparse.Namespace) -> int:
     """Fetch both vendors' exports first (a refusal on either writes nothing), then record them
-    as the owner and print the pair, both runs and each member's listing or reason; then read
-    the other vendor once per pending item and print the review."""
+    as the owner and print the pair, both runs and each member's listing or reason at once; then
+    read the other vendor once per pending item and print the review."""
     screen = load_screen_config(args.screens)[args.screen]
     stocks = _stocks(args.watchlist)
-    screener, tijori = screen_sources(
-        _screener_credentials_from_env(), _tijori_credentials_from_env()
-    )
+    sources = _sources()
     pacer = RequestPacer(screen_export.SPACING_SECONDS)
     exports = (
-        export_screener(screener, screen.screener),
-        export_tijori(tijori, screen.tijori, pacer=pacer),
+        export_screener(sources[0], screen.screener),
+        export_tijori(sources[1], screen.tijori, pacer=pacer),
     )
     snapshots = SnapshotStore(args.snapshot_root)
     with _owner_pool() as pool:
         done = record_screen_run(pool, *exports, snapshots)
-        for item in screen_review.pending_items(pool, done.pair_id):
-            stock = stocks.get(item.nse_code or "")
-            read = screen_review.read_other_vendor(item, stock, tijori, pacer, screener)
-            screen_review.record_read(pool, snapshots, item, read)
-        review = _review_lines(pool, snapshots, done.pair_id, stocks)
-    lines = [f"pair\t{done.pair_id}"]
-    for run in (done.screener, done.tijori):
-        lines.append(f"{run.vendor.value.lower()}_run\t{run.run_id}")
-        lines += [
-            _MEMBER.format(
-                vendor=run.vendor.value,
-                name=member.name,
-                resolution=member.listing_id or member.reason,
-            )  # fmt: skip
-            for member in run.members
-        ]
-    sys.stdout.write("\n".join(lines + review) + "\n")
+        lines = [f"pair\t{done.pair_id}"]
+        for run in (done.screener, done.tijori):
+            lines.append(f"{run.vendor.value.lower()}_run\t{run.run_id}")
+            lines += [
+                _MEMBER.format(
+                    vendor=run.vendor.value,
+                    name=member.name,
+                    resolution=member.listing_id or member.reason,
+                )  # fmt: skip
+                for member in run.members
+            ]
+        _print(lines)
+        _read_missing(pool, snapshots, done.pair_id, stocks, sources, pacer)
+        _print(_review_lines(pool, snapshots, done.pair_id, stocks))
     return EXIT_OK
 
 
 def _review(args: argparse.Namespace) -> int:
-    """Print the pair's pending review items as the owner."""
+    """Print the pair's pending review items as the owner, first reading the other vendor for
+    any item without a recorded read when ``--read``."""
+    stocks = _stocks(args.watchlist)
+    snapshots = SnapshotStore(args.snapshot_root)
     with _owner_pool() as pool:
-        snapshots = SnapshotStore(args.snapshot_root)
-        lines = _review_lines(pool, snapshots, args.pair, _stocks(args.watchlist))
-    sys.stdout.write("".join(line + "\n" for line in lines))
+        if args.read:
+            pacer = RequestPacer(screen_export.SPACING_SECONDS)
+            _read_missing(pool, snapshots, args.pair, stocks, _sources(), pacer)
+        _print(_review_lines(pool, snapshots, args.pair, stocks))
     return EXIT_OK
+
+
+def _sources() -> tuple[ScreenerSessionSource, TijoriSource]:
+    """Both vendors' transports with the session cookies from the environment."""
+    return screen_sources(_screener_credentials_from_env(), _tijori_credentials_from_env())
+
+
+def _read_missing(
+    pool: ConnectionPool,
+    snapshots: SnapshotStore,
+    pair_id: int,
+    stocks: dict[str, StockConfig],
+    sources: tuple[ScreenerSessionSource, TijoriSource],
+    pacer: RequestPacer,
+) -> None:
+    """One other-vendor read for each pending item that has none recorded; recorded reads are
+    skipped, so an interrupted run completes by running again."""
+    screener, tijori = sources
+    for item in screen_review.pending_items(pool, pair_id):
+        if item.read is None:
+            stock = stocks.get(item.nse_code or "")
+            read = screen_review.read_other_vendor(item, stock, tijori, pacer, screener)
+            screen_review.record_read(pool, snapshots, item, read)
+
+
+def _print(lines: list[str]) -> None:
+    """Write ``lines`` to stdout now, so what has committed shows even if a later step fails."""
+    sys.stdout.write("".join(line + "\n" for line in lines))
+    sys.stdout.flush()
 
 
 def _stocks(watchlist: Path) -> dict[str, StockConfig]:
@@ -232,9 +278,10 @@ def _review_lines(
     pool: ConnectionPool, snapshots: SnapshotStore, pair_id: int, stocks: dict[str, StockConfig]
 ) -> list[str]:
     """Each pending item, then each column of its member's row beside the other vendor's
-    corresponding field, ``FIELD_NOT_EXPOSED``, or the item's read gap."""
+    corresponding field, ``FIELD_NOT_EXPOSED``, the item's read gap or ``READ_NOT_RECORDED``."""
     lines = []
-    for item in screen_review.pending_items(pool, pair_id):
+    items = screen_review.pending_items(pool, pair_id)
+    for item, values in screen_review.side_by_side(pool, snapshots, items, stocks):
         lines.append(
             _ITEM.format(
                 member=item.member_id,
@@ -244,16 +291,10 @@ def _review_lines(
                 candidates=",".join(map(str, item.candidate_member_ids)),
             )
         )
-        other = screen_review.other_values(pool, snapshots, item, stocks.get(item.nse_code or ""))
-        fields = screen_review.CORRESPONDENCES[item.vendor]
-        for column, own in screen_review.member_row(pool, snapshots, item).items():
-            if isinstance(other, screen_review.ReadGap):
-                shown = other.value
-            elif column in fields:
-                shown = other[fields[column]]
-            else:
-                shown = screen_review.FIELD_NOT_EXPOSED
-            lines.append(_VALUE.format(member=item.member_id, column=column, own=own, other=shown))
+        lines += [
+            _VALUE.format(member=item.member_id, column=column, own=own, other=other)
+            for column, own, other in values
+        ]
     return lines
 
 

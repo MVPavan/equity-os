@@ -28,7 +28,8 @@ from screen_export_support import HTML_TYPE, RESULTS_PATH, default_replies, fixt
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.retention import EligibilityKind, EligibleReason, HoldRoot
-from fundamentals.coverage.screen_review import FIELD_NOT_EXPOSED
+from fundamentals.coverage import screen_review
+from fundamentals.coverage.screen_review import FIELD_NOT_EXPOSED, READ_NOT_RECORDED
 from fundamentals.ingest import screen_export
 from fundamentals.ingest.tijori_overview_models import TijoriCompanyDetailsSection
 from fundamentals.ingest.tijori_source import TijoriSource
@@ -87,15 +88,21 @@ def _cli(*args: str) -> tuple[int, list[list[str]]]:
     return code, [line.split("\t") for line in out.getvalue().splitlines()]
 
 
-def _export(snaps: str) -> tuple[list[list[str]], list[str]]:
-    """One ``coverage export`` over :func:`_replies`; its output and the paths requested."""
+def _served(*args: str) -> tuple[int, list[list[str]], list[str]]:
+    """``_cli(*args)`` over :func:`_replies`, unpaced; its exit, output and the paths requested."""
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(screen_export, "SPACING_SECONDS", 0.0)
         web = serve(patch, _replies())
-        args = ("export", "--screen", "d7-stage4", "--screens", str(CONFIG))
-        code, lines = _cli(*args, "--snapshot-root", snaps)
+        code, lines = _cli(*args)
+    return code, lines, [url.split("/", 3)[3] for _, url, _ in web.requests]
+
+
+def _export(snaps: str) -> tuple[list[list[str]], list[str]]:
+    """One ``coverage export`` over :func:`_replies`; its output and the paths requested."""
+    args = ("export", "--screen", "d7-stage4", "--screens", str(CONFIG), "--snapshot-root", snaps)
+    code, lines, requested = _served(*args)
     assert code == EXIT_OK, lines
-    return lines, [url.split("/", 3)[3] for _, url, _ in web.requests]
+    return lines, requested
 
 
 @pytest.fixture(scope="module")
@@ -222,6 +229,36 @@ def test_dispositions_clear_items_and_release_their_holds(world: Any) -> None:
     }
 
 
+def test_an_interrupted_read_step_shows_its_pair_and_completes(world: Any) -> None:
+    """Reads interrupted after the first: the committed pair was printed already; its review
+    shows every member, the unread ones ``READ_NOT_RECORDED``; ``review --read`` requests only
+    those, after which the review shows what an uninterrupted export does."""
+    snaps, real = world["snaps"], screen_review.record_read
+    recorded: list[object] = []
+
+    def interrupted(*args: Any) -> None:
+        if recorded:
+            raise RuntimeError("interrupted")
+        recorded.append(real(*args))
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(screen_review, "record_read", interrupted)
+        args = ("export", "--screen", "d7-stage4", "--screens", str(CONFIG))
+        code, lines, _ = _served(*args, "--snapshot-root", snaps)
+    assert code == EXIT_REFUSED
+    review = ("review", "--pair", str(_pair(lines)), "--snapshot-root", snaps)
+    code, partial = _cli(*review)
+    assert code == EXIT_OK
+    unread = {line[1] for line in partial if line[0] == "value" and line[4] == READ_NOT_RECORDED}
+    items = {line[1] for line in partial if line[0] == "item"}
+    assert len(items) == 4 and len(unread) == 3 and unread < items
+    code, completed, requested = _served(*review, "--read")
+    assert code == EXIT_OK and requested == [HFCL_PAGE_PATH.lstrip("/")]
+    shown = sorted(line[2:] for line in completed if line[0] == "value")
+    assert shown == sorted(line[2:] for line in world["first"][0] if line[0] == "value")
+    assert _served(*review, "--read")[2] == []
+
+
 def test_licence_end_wins_over_an_open_review(world: Any) -> None:
     """A vendor's licence end makes its captures eligible even while the review is open."""
     db = world["db"]
@@ -235,3 +272,21 @@ def test_licence_end_wins_over_an_open_review(world: Any) -> None:
     assert {v.held_by for v in verdicts if v.kind is EligibilityKind.HELD} == {
         frozenset({HoldRoot.OPEN_SCREEN_REVIEW})
     }
+
+
+def test_a_review_refuses_an_expired_read(world: Any) -> None:
+    """The review reads captures through the retention-aware reader: once the pair's overview
+    read is EXPIRED, printing its values refuses instead of reading purged bytes. Last: it
+    expires a capture the other tests count."""
+    db, pair = world["db"], _pair(world["second"][0])
+    query = (
+        "SELECT capture_ref_id FROM eqos.screen_other_vendor_reads "
+        "WHERE pair_id = %s AND capture_ref_id IS NOT NULL"
+    )
+    ((read,),) = rows(db, query, pair)
+    review = ("review", "--pair", str(pair), "--snapshot-root", world["snaps"])
+    assert _cli(*review)[0] == EXIT_OK
+    with db.migrator_connection() as conn:
+        conn.execute("INSERT INTO eqos.capture_states (capture_ref_id, state) VALUES (%s, %s)",
+                     (read, "EXPIRED"))  # fmt: skip
+    assert _cli(*review)[0] == EXIT_REFUSED

@@ -11,6 +11,9 @@ coverage package schedules nothing.
 from __future__ import annotations
 
 import ast
+import csv
+import io
+import json
 import socket
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -36,7 +39,7 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.onboarding import OnboardingOutcome
 from fundamentals.coverage import screens
 from fundamentals.ingest import screen_export
-from fundamentals.ingest.screen_export import VendorExport
+from fundamentals.ingest.screen_export import ScreenVendor, VendorExport
 from fundamentals.ingest.screener_session_models import ScreenerCredentials
 from fundamentals.ingest.tijori_source import TijoriCredentials
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -69,6 +72,7 @@ _RESULTS = (
 CONFIG = Path(__file__).parents[2] / "config" / "screens.yaml"
 COOKIES = {"SCREENER_SESSION_COOKIE": "screener-cookie", "TIJORI_SESSION_COOKIE": "tijori-cookie"}
 RUN_TABLES = ("screens", "screen_runs", "screen_members", "screen_run_pairs", "capture_refs")
+RUN_TABLES += ("capture_addresses",)
 _RUN_CAPTURES = (
     "SELECT d.source_id, d.surface, c.source_id, c.surface FROM eqos.screen_runs r "
     "JOIN eqos.capture_refs c ON c.id = r.capture_ref_id "
@@ -113,13 +117,27 @@ def _record(
     world: Any, screener: tuple[dict[str, str], ...] = (), tijori: tuple[dict[str, str], ...] = ()
 ) -> screens.ExportResult:
     """Record one export as the owner: the recorded responses, with ``screener`` / ``tijori``
-    rows instead of the fixture rows when given."""
+    rows written into the results bytes instead of the fixture rows when given."""
     exports = [
-        export.model_copy(update={"rows": replaced}) if replaced else export
+        export.model_copy(update={"results": export.results.model_copy(update={"body": _body(
+            export.vendor, export.results.body, replaced
+        )})}) if replaced else export
         for export, replaced in zip(_recorded(), (screener, tijori), strict=True)
-    ]
+    ]  # fmt: skip
     with world["db"].owner_pool() as pool:
         return screens.record_screen_run(pool, *exports, SnapshotStore(Path(world["snaps"])))
+
+
+def _body(vendor: ScreenVendor, body: bytes, replaced: tuple[dict[str, str], ...]) -> bytes:
+    """A results capture's bytes holding exactly ``replaced`` as its rows."""
+    if vendor is ScreenVendor.TIJORI:
+        payload = json.loads(body) | {"data": list(replaced), "total_results": len(replaced)}
+        return json.dumps(payload).encode()
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(replaced[0])
+    writer.writerows(row.values() for row in replaced)
+    return out.getvalue().encode()
 
 
 def _screener_row(name: str, isin: str, nse: str = "", bse: str = "") -> dict[str, str]:
@@ -333,6 +351,18 @@ def test_a_tijori_failure_writes_nothing(world: Any) -> None:
             patch.setenv(name, value)
         code, _ = _export(world["snaps"], replies)
     assert code == EXIT_REFUSED
+    assert [count(db, table) for table in RUN_TABLES] == before
+
+
+def test_a_failed_pair_insert_leaves_no_capture_or_screen_row(world: Any) -> None:
+    """Captures, runs, members and pair are one transaction: a failure at the pair insert, after
+    a new results capture registered, leaves no capture registration or screen row behind."""
+    db = world["db"]
+    before = [count(db, table) for table in RUN_TABLES]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(screens, "_INSERT_PAIR", "SELECT %s / (%s * 0)")
+        with pytest.raises(psycopg.errors.DivisionByZero):
+            _record(world, tijori=(_tijori_row("Novel", "THERMAX", slug="novel-results"),))
     assert [count(db, table) for table in RUN_TABLES] == before
 
 

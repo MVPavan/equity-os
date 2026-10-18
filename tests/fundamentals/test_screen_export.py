@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import time
 from collections.abc import Callable
 from itertools import pairwise
@@ -30,17 +31,24 @@ from screen_export_support import (
     serve,
 )
 
+from fundamentals.api.cli import main
 from fundamentals.api.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
 )
+from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
+from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.coverage.screen_review import ItemStatus, ReviewItem, read_other_vendor
+from fundamentals.ingest.http_session import RequestPacer
 from fundamentals.ingest.screen_export import (
+    SPACING_SECONDS,
     ScreenExportError,
     ScreenVendor,
     VendorExport,
     export_screener,
     export_tijori,
     load_screen_config,
+    result_rows,
     screen_sources,
 )
 from fundamentals.ingest.screener_session import ScreenerSessionSource
@@ -48,6 +56,9 @@ from fundamentals.ingest.screener_session_models import ScreenerCredentials, Scr
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriFetchError, TijoriSource
 
 CONFIG = Path(__file__).parents[2] / "config" / "screens.yaml"
+WATCHLIST = Path(__file__).parents[2] / "config" / "watchlist.yaml"
+OVERVIEW_PATH = "/company/titan-company-limited/"  # TITAN's verified Tijori slug
+OVERVIEW = (Path(__file__).parent / "fixtures" / "synthetic_tijori_overview.html").read_bytes()
 FORMULA = "Market Capitalization > 20000"
 SYMBOLS = ["ETERNAL", "POLYCAB", "TITAN", "THERMAX", "CGPOWER"]
 ACTION = "/api/export/screen/?query=Market+Capitalization+%3E+20000&amp;url_name=raw_query"
@@ -125,8 +136,9 @@ def test_screener_export_is_the_csv_of_the_formula(
     assert export.screen_text == f"screener:{FORMULA}"
     assert export.definition.body == fixture("screen.html")
     assert export.results.body == fixture("screener.csv")
-    assert [row["NSE Code"] for row in export.rows] == SYMBOLS
-    assert export.rows[0]["ISIN Code"] == "INE758T01015"
+    rows = result_rows(export.vendor, export.results.body)
+    assert [row["NSE Code"] for row in rows] == SYMBOLS
+    assert rows[0]["ISIN Code"] == "INE758T01015"
 
 
 def test_tijori_export_is_one_advanced_search_echoing_the_formula(
@@ -143,8 +155,9 @@ def test_tijori_export_is_one_advanced_search_echoing_the_formula(
     assert export.screen_text == f"tijori:{FORMULA}"
     assert export.definition == export.results
     assert export.results.body == fixture("tijori-results.json")
-    assert [row["nse symbol"] for row in export.rows] == SYMBOLS
-    assert (export.rows[0]["scripcode"], export.rows[0]["slug"]) == ("543320", "zomato-ltd")
+    rows = result_rows(export.vendor, export.results.body)
+    assert [row["nse symbol"] for row in rows] == SYMBOLS
+    assert (rows[0]["scripcode"], rows[0]["slug"]) == ("543320", "zomato-ltd")
 
 
 def test_echoes_compare_with_whitespace_collapsed(
@@ -152,13 +165,16 @@ def test_echoes_compare_with_whitespace_collapsed(
 ) -> None:
     """A vendor echo differing only in whitespace runs or at the ends is the same formula."""
     replies = _page(ECHO, "\n  Market   Capitalization\n&gt; 20000 </textarea>")
-    assert _screener(monkeypatch, replies, formula=f" {FORMULA}\n").rows
+    assert _screener(monkeypatch, replies, formula=f" {FORMULA}\n")
     spaced = _results(financial_q=" Market  Capitalization > 20000\n")
-    assert _tijori(monkeypatch, spaced, formula=FORMULA).rows
+    assert _tijori(monkeypatch, spaced, formula=FORMULA)
 
 
 SCREENER_REFUSALS: dict[str, Callable[[], Replies]] = {
     "page not 200": lambda: _with(("GET", SCREEN_PATH), (203, fixture("screen.html"), PAGE_COOKIE)),
+    "page as json": lambda: _with(
+        ("GET", SCREEN_PATH), (200, fixture("screen.html"), PAGE_COOKIE | JSON_TYPE)
+    ),
     "not logged in": lambda: _page('<a href="/user/account/">Account</a>', ""),
     "echo absent": lambda: _page('name="query"', 'name="q"'),
     "echo twice": lambda: _page(
@@ -176,6 +192,7 @@ SCREENER_REFUSALS: dict[str, Callable[[], Replies]] = {
     "action url_name differs": lambda: _page(ACTION, ACTION.replace("raw_query", "screen")),
     "action fragment": lambda: _page(ACTION, ACTION + "#results"),
     "no ISIN column": lambda: _csv("ISIN Code", "ISIN"),
+    "repeated column": lambda: _csv("BSE Code", "Name"),
     "ragged csv": lambda: _csv(",ETERNAL,", ",ETERNAL,,"),
     "csv not 200": lambda: _with(("POST", EXPORT_PATH), (203, fixture("screener.csv"), CSV_TYPE)),
     "csv as html": lambda: _with(("POST", EXPORT_PATH), (200, fixture("screener.csv"), HTML_TYPE)),
@@ -201,6 +218,7 @@ TIJORI_REFUSALS: dict[str, Callable[[], Replies]] = {
     "echo missing": lambda: _results(drop="financial_q"),
     "echo differs": lambda: _results(financial_q="Market Capitalization > 2000"),
     "alternate set": lambda: _results(alternate_q="Sales > 1"),
+    "not an object": lambda: _with(("GET", RESULTS_PATH), (200, b"[]", JSON_TYPE)),
 }
 
 
@@ -210,6 +228,15 @@ def test_tijori_refusals(case: str, monkeypatch: pytest.MonkeyPatch, clock: Fake
     ``total_results == len(data)``)."""
     with pytest.raises((ScreenExportError, TijoriFetchError)):
         _tijori(monkeypatch, TIJORI_REFUSALS[case]())
+
+
+def test_a_repeated_column_refuses_on_hydration() -> None:
+    """A retained results capture whose header repeats a column refuses rather than collapsing
+    two fields into one."""
+    body = fixture("screener.csv").decode()
+    assert "BSE Code" in body
+    with pytest.raises(ScreenExportError, match="repeats columns"):
+        result_rows(ScreenVendor.SCREENER, body.replace("BSE Code", "Name", 1).encode())
 
 
 @pytest.mark.parametrize("formula", ["", " \n "])
@@ -248,8 +275,38 @@ def test_every_attempt_is_two_seconds_apart_and_tijori_is_never_retried(
     assert all(later - earlier >= 2.0 for earlier, later in pairwise(times))
 
 
-def test_screen_config_loads_and_refuses_a_repeated_name(tmp_path: Path) -> None:
-    """The committed config gives both vendors' formulas per screen; a repeated name refuses."""
+def test_tijori_export_and_its_diagnostic_reads_share_one_pacer(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """An export, then two Tijori overview reads through the export's pacer: every Tijori
+    attempt is at least 2 s after the previous one, as is every Screener attempt."""
+    web = serve(
+        monkeypatch, default_replies() | {("GET", OVERVIEW_PATH): [(200, OVERVIEW, HTML_TYPE)]}
+    )
+    screener, tijori = _sources()
+    pacer = RequestPacer(SPACING_SECONDS)
+    export_screener(screener, FORMULA)
+    export_tijori(tijori, FORMULA, pacer=pacer)
+    (titan,) = [s for s in load_watchlist_config(WATCHLIST).stocks if s.symbol == "TITAN"]
+    item = ReviewItem(
+        pair_id=1, member_id=1, vendor=ScreenVendor.SCREENER, status=ItemStatus.ABSENT,
+        reason=None, nse_code="TITAN", candidate_member_ids=(), row_number=1, results_ref=1,
+        read=None,
+    )  # fmt: skip
+    for _ in range(2):
+        assert not isinstance(read_other_vendor(item, titan, tijori, pacer, screener), str)
+    hosts = {urlsplit(url).netloc for _, url, _ in web.requests}
+    for host in hosts:
+        times = [at for _, url, at in web.requests if urlsplit(url).netloc == host]
+        assert all(later - earlier >= 2.0 for earlier, later in pairwise(times)), host
+    assert [urlsplit(url).path for _, url, _ in web.requests][-3:] == [
+        RESULTS_PATH, OVERVIEW_PATH, OVERVIEW_PATH
+    ]  # fmt: skip
+
+
+def test_screen_config_loads_and_refuses_a_repeated_name_or_blank_field(tmp_path: Path) -> None:
+    """The committed config gives both vendors' formulas per screen; a repeated name, or a blank
+    name or formula (found before any request), refuses."""
     screens = load_screen_config(CONFIG)
     assert (screens["d7-stage4"].screener, screens["d7-stage4"].tijori) == (FORMULA, FORMULA)
     repeated = tmp_path / "screens.yaml"
@@ -258,6 +315,28 @@ def test_screen_config_loads_and_refuses_a_repeated_name(tmp_path: Path) -> None
     )
     with pytest.raises(ScreenExportError):
         load_screen_config(repeated)
+    for blank in ("{name: ' ', screener: x, tijori: y}", "{name: a, screener: x, tijori: '   '}"):
+        repeated.write_text(f"- {blank}\n")
+        with pytest.raises(ScreenExportError, match="blank"):
+            load_screen_config(repeated)
+
+
+def test_a_refused_cookie_never_reaches_the_log(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A session cookie ``http.client`` refuses as a header value (a newline) refuses the export
+    before any connection, and the failure log names its type without quoting the cookie."""
+    secret = "sentinel-cookie-7f3a"
+    monkeypatch.setenv("SCREENER_SESSION_COOKIE", f"{secret}\nx")
+    monkeypatch.setenv("TIJORI_SESSION_COOKIE", secret)
+    connects: list[object] = []
+    monkeypatch.setattr(socket.socket, "connect", lambda *args: connects.append(args))
+    code = main(["coverage", "export", "--screen", "d7-stage4", "--screens", str(CONFIG),
+                 "--snapshot-root", str(tmp_path)])  # fmt: skip
+    out, err = capfd.readouterr()
+    assert code == EXIT_REFUSED and connects == []
+    assert "coverage_command_failed" in err and "failure=ValueError" in err
+    assert secret not in out + err
 
 
 @pytest.mark.skipif(
@@ -275,4 +354,4 @@ def test_live_export_passes_every_check(tmp_path: Path) -> None:
         export_tijori(tijori, screen.tijori),
     ):
         (tmp_path / f"{export.vendor}.results").write_bytes(export.results.body)
-        assert export.rows
+        assert result_rows(export.vendor, export.results.body)

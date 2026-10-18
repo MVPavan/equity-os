@@ -3,6 +3,7 @@ Task 6). Reads the manifest alone; its lexemes are ``check_locator``'s."""
 
 from __future__ import annotations
 
+import re
 from typing import Any, cast
 
 from manifest_support import PDF_VERDICT, Mutation, failure_surface
@@ -21,6 +22,8 @@ AUTOMATED_EXPORT = "AUTOMATED_EXPORT"  # header.export_provenance (D7-screen-exp
 SCREENER_ID = "screener-subscriber/SCREENER_FINANCIALS"
 SCREEN_FIXTURES = ("screener-page.html", "screener.csv", "tijori-results.json")
 CAPTURES = [("SCREENER", "definition"), ("SCREENER", "results"), ("TIJORI", "results")]
+SHA256 = re.compile(r"[0-9a-f]{64}")
+PAGE_COUNT = re.compile(r"([0-9]+) results? found")
 WATCHLIST_EXPECT = ["REFUSED", "ACCEPTED", "REFUSED", "REFUSED", "ACCEPTED", "ACCEPTED"]
 WATCHLIST_EXPECT += ["REFUSED", "REFUSED"]  # D7 Task 6 steps 1-8 (R3, R6, R7)
 GATES = {  # unit -> (identity binding flds, authenticated lexemes, basis/table lexemes)
@@ -115,11 +118,17 @@ def check_ledger_stage4(manifest: dict[str, Any]) -> None:
     assert header["export_provenance"] == AUTOMATED_EXPORT and "csv_provenance" not in header
     derived = header["derived_fixture"]
     captures = [(c["vendor"], c["role"]) for c in derived["source_captures"]]
-    assert captures == CAPTURES and all(len(c["sha256"]) == 64 for c in derived["source_captures"])
+    digests = [c["sha256"] for c in derived["source_captures"]]
+    assert captures == CAPTURES and all(SHA256.fullmatch(d) for d in digests), "source_captures"
     assert derived["rule"], "derived_fixture.rule"
     paths = {s["path"].rsplit("/", 1)[-1]: s["sha256"] for s in header["sources"]}
     assert derived["fixture_sha256"] == {name: paths[name] for name in SCREEN_FIXTURES}
+    stated = derived["counts_stated"]
+    page = PAGE_COUNT.match(stated["screener_page_info"])
+    originals = {"SCREENER": page and int(page.group(1)), "TIJORI": stated["tijori_total_results"]}
+    assert derived["rows_kept"].keys() == originals.keys(), "rows_kept"
     for vendor, kept in derived["rows_kept"].items():
+        assert kept["of"] == originals[vendor], vendor
         assert kept["kept"] == len(manifest["screen"][vendor.lower()]) <= kept["of"], vendor
     bound = bound_members(manifest["screen"])
     declared, others = batch["declared"], batch["others"]
@@ -157,6 +166,13 @@ LEDGER4_MUTATIONS: dict[str, Mutation] = {
         {"screener.csv": "0" * 64}
     ),
     "rows-kept": lambda m: m["header"]["derived_fixture"]["rows_kept"]["TIJORI"].update(kept=4),
+    "rows-kept-emptied": lambda m: m["header"]["derived_fixture"].update(rows_kept={}),
+    "rows-kept-false-original": lambda m: m["header"]["derived_fixture"]["rows_kept"][
+        "TIJORI"
+    ].update(of=375),
+    "source-capture-not-hex": lambda m: m["header"]["derived_fixture"]["source_captures"][0].update(
+        sha256="z" * 64
+    ),
     "tijori-listing-isin": lambda m: m["screen"]["tijori"][0]["expect"]["listing"].update(
         isin="INE280A01028"
     ),

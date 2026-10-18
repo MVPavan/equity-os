@@ -13,6 +13,7 @@ import io
 import json
 import re
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -52,13 +53,17 @@ _ECHO = ".//textarea[@name='query']"
 _PAGE_INFO = ".//*[@data-page-info]"
 _RESULT_COUNT = re.compile(r"^([0-9]+) results? found")
 
+HTML_MEDIA_TYPE = "text/html"
+
 _EMPTY = "screen formula is empty"
-_STATUS = "screener page returned HTTP {status}, not 200"
+_BLANK = "{path} has a screen with a blank name or formula"
+_STATUS = "screener page returned HTTP {status} {media_type}, not a 200 text/html page"
 _ECHO_DIFFERS = "screener page echoes {count} query definitions, not exactly the formula"
 _NO_COUNT = "screener page states no single result count"
 _ACTION_DIFFERS = "screener export action is not exactly the formula's raw-query export"
 _COUNT_DIFFERS = "{vendor} states {stated} results but returned {rows} rows"
 _NO_ISIN = "screener export has no ISIN Code column"
+_REPEATED_COLUMNS = "screener export repeats columns {columns}"
 _NOT_ROWS = "tijori results carry no list of row objects"
 _TIJORI_ECHO_DIFFERS = "tijori results do not echo exactly the formula"
 
@@ -103,12 +108,13 @@ class VendorExport(BaseModel):
     screen_text: str
     definition: ScreenFetch
     results: ScreenFetch
-    rows: tuple[dict[str, str], ...]
 
 
 def load_screen_config(path: Path) -> dict[str, ScreenConfig]:
-    """The configured screens by name; a repeated name refuses."""
+    """The configured screens by name; a blank field or a repeated name refuses."""
     screens = [ScreenConfig.model_validate(entry) for entry in yaml.safe_load(path.read_text())]
+    if not all(_normal(s.name) and _normal(s.screener) and _normal(s.tijori) for s in screens):
+        raise ScreenExportError(_BLANK.format(path=path))
     repeated = [name for name, n in Counter(s.name for s in screens).items() if n > 1]
     if repeated:
         raise ScreenExportError(f"{path} repeats screen names {repeated}")
@@ -163,15 +169,13 @@ def export_screener(source: ScreenerSessionSource, formula: str) -> VendorExport
         content_type=content_type,
         content_disposition=disposition,
     )
-    if ISIN_COLUMN not in header:
-        raise ScreenExportError(_NO_ISIN)
+    _columns(header)
     _same_count(ScreenVendor.SCREENER, int(stated[0].group(1)), len(records))
     return VendorExport(
         vendor=ScreenVendor.SCREENER,
         screen_text=f"screener:{formula}",
         definition=_screen_fetch(page),
         results=_screen_fetch(export),
-        rows=tuple(dict(zip(header, record, strict=True)) for record in records),
     )
 
 
@@ -185,6 +189,8 @@ def export_tijori(
     (pacer or RequestPacer(SPACING_SECONDS)).wait_for_slot()
     results = ScreenFetch(url=url, body=source.fetch_json(url), retrieved_at=datetime.now(UTC))
     payload = json.loads(results.body)
+    if not isinstance(payload, dict):
+        raise ScreenExportError(_NOT_ROWS)
     data = payload.get("data")
     if not isinstance(data, list) or not all(isinstance(row, dict) for row in data):
         raise ScreenExportError(_NOT_ROWS)
@@ -197,29 +203,40 @@ def export_tijori(
         screen_text=f"tijori:{formula}",
         definition=results,
         results=results,
-        rows=result_rows(ScreenVendor.TIJORI, results.body),
     )
 
 
 def result_rows(vendor: ScreenVendor, body: bytes) -> tuple[dict[str, str], ...]:
-    """A retained results capture's rows as text, in export order (a member's row number)."""
-    if vendor is ScreenVendor.SCREENER:
-        return tuple(csv.DictReader(io.StringIO(body.decode(EXPORT_ENCODING))))
-    return tuple(
-        {key: _cell(value) for key, value in row.items()} for row in json.loads(body)["data"]
-    )
+    """A results capture's rows as text, in export order (a member's row number)."""
+    if vendor is ScreenVendor.TIJORI:
+        data = json.loads(body)["data"]
+        return tuple({key: _cell(value) for key, value in row.items()} for row in data)
+    header, *records = csv.reader(io.StringIO(body.decode(EXPORT_ENCODING)))
+    _columns(header)
+    return tuple(dict(zip(header, record, strict=True)) for record in records)
 
 
 def _logged_in_page(
     source: ScreenerSessionSource, url: str
 ) -> tuple[ScreenerDocumentFetch, Any, tuple[str, ...]]:
-    """GET one Screener page that must be a logged-in 200; its fetch, tree and cookies."""
-    fetch, set_cookies = source.fetch_navigation(url=url)
-    if fetch.http_status != 200:
-        raise ScreenExportError(_STATUS.format(status=fetch.http_status))
+    """GET one Screener page that must be a logged-in 200 HTML page; its fetch, tree and
+    cookies."""
+    fetch, set_cookies, content_type = source.fetch_navigation(url=url)
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if fetch.http_status != 200 or media_type != HTML_MEDIA_TYPE:
+        raise ScreenExportError(_STATUS.format(status=fetch.http_status, media_type=media_type))
     root = parse_document(fetch.raw_body.decode("utf-8", errors="replace"))
     assert_logged_in(root)
     return fetch, root, set_cookies
+
+
+def _columns(header: Sequence[str]) -> None:
+    """Refuse a Screener header without the ISIN column or repeating a column, whose fields
+    would otherwise collapse into one."""
+    if ISIN_COLUMN not in header:
+        raise ScreenExportError(_NO_ISIN)
+    if repeated := sorted(name for name, n in Counter(header).items() if n > 1):
+        raise ScreenExportError(_REPEATED_COLUMNS.format(columns=repeated))
 
 
 def _same_count(vendor: ScreenVendor, stated: object, rows: int) -> None:

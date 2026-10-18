@@ -35,7 +35,7 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.ledger import ReportKind, ReportSection, VersionDraft
 from fundamentals.coverage import screens
 from fundamentals.entity.identity_layers import latest_slice
-from fundamentals.ingest.screen_export import ScreenFetch, ScreenVendor, VendorExport, result_rows
+from fundamentals.ingest.screen_export import ScreenFetch, ScreenVendor, VendorExport
 from fundamentals.ledger import store
 from fundamentals.store.snapshot_store import SnapshotStore
 
@@ -84,10 +84,22 @@ _PACKAGE = (
     "JOIN eqos.package_statements s ON s.package_id = p.id AND s.role = 'PRESENT' "
     "WHERE i.run_id = %s AND i.input_kind = 'PACKAGE' GROUP BY 1"
 )
+# The captures a run's persisted inputs bind: directly, as an input package's members, or as an
+# input evidence record's captures.
 _INPUTS = (
-    "SELECT c.source_id, c.surface, c.blob_sha256 FROM eqos.capture_entities x "
-    f"JOIN eqos.capture_refs c ON c.id = x.capture_ref_id {_BY_ENTITY}x.entity_id "
-    "WHERE e.entity_key = %s"
+    "SELECT DISTINCT c.source_id, c.surface, c.blob_sha256 FROM eqos.run_inputs i "
+    "LEFT JOIN eqos.package_members m ON m.package_id = i.package_id "
+    "LEFT JOIN eqos.evidence_input_captures x ON x.evidence_input_id = i.evidence_input_id "
+    "JOIN eqos.capture_refs c ON c.id IN (i.capture_ref_id, m.capture_ref_id, x.capture_ref_id) "
+    "WHERE i.run_id = %s ORDER BY 1, 2, 3"
+)
+# Every run in the database and every result of the batch, at batch completion.
+_RUN_CENSUS = (
+    f"SELECT r.id, e.entity_key, r.manifest -> 'scope' FROM eqos.runs r {_SCOPED} ORDER BY r.id"
+)
+_RESULT_CENSUS = (
+    "SELECT m.nse_code, r.run_id FROM eqos.batch_member_results r "
+    "JOIN eqos.screen_members m ON m.id = r.member_id WHERE r.batch_id = %s ORDER BY 1"
 )
 _VALUES = (
     "SELECT r.canonical_id, r.period_start, r.period_end, r.period_instant, v.source_id, "
@@ -122,9 +134,8 @@ def exports() -> list[VendorExport]:
             for label in labels
         )
         text = SCREEN["screen_text"][vendor.lower()]
-        found = result_rows(vendor, results.body)
         built.append(VendorExport(vendor=vendor, screen_text=text, definition=definition,
-                                  results=results, rows=found))  # fmt: skip
+                                  results=results))  # fmt: skip
     return built
 
 
@@ -170,9 +181,10 @@ def world(pg_template: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterato
             for symbol in BATCH["others"]
         }
         runs = {symbol: int(batched[symbol].split()[-1]) for symbol in BATCH["declared"]}
+        census = (rows(db, _RUN_CENSUS), rows(db, _RESULT_CENSUS, int(batched["batch"])))
         yield {"db": db, "root": root, "raw": raw, "snaps": snaps, "loads": loads, "pair": pair,
                "batch": int(batched["batch"]), "runs": runs, "others": others,
-               "connects": connects}  # fmt: skip
+               "census": census, "connects": connects}  # fmt: skip
 
 
 def test_the_registry_loads_once_and_replays(world: Any) -> None:
@@ -239,15 +251,31 @@ def inventory(found: list[tuple[Any, ...]], keys: dict[str, str]) -> dict[str, A
     }
 
 
+Keep = Callable[[tuple[Any, ...]], bool]
+
+
+def everything(row: tuple[Any, ...]) -> bool:
+    """Keep every row."""
+    return True
+
+
 def observed_run(
-    db: Any, run_id: int, keys: dict[str, str], keep: Callable[[tuple[Any, ...]], bool]
+    db: Any,
+    run_id: int,
+    keys: dict[str, str],
+    keep: Keep = everything,
+    *,
+    inputs_of: int | None = None,
+    keep_input: Keep = everything,
 ) -> dict[str, Any]:
     """A member run as stored, in ``batch.members[].run``'s shape (comparison counts aside);
-    ``keep`` filters its comparison rows."""
+    its retained inputs are the captures its own persisted inputs bind (``inputs_of`` another
+    run's instead); ``keep`` and ``keep_input`` filter its comparison and input rows."""
     ((entity, status, manifest, exit_code),) = rows(db, _RUN, run_id)
     scope, pinned = manifest["scope"], manifest["pinned"]
     inputs: dict[str, Any] = {XBRL: []}
-    for source, surface, blob in rows(db, _INPUTS, entity):
+    bound = rows(db, _INPUTS, run_id if inputs_of is None else inputs_of)
+    for source, surface, blob in filter(keep_input, bound):
         if surface == XBRL_SURFACE:
             inputs[XBRL] = sorted([*inputs[XBRL], blob])
         elif [source, surface] in scope["vendors"]:
@@ -282,11 +310,6 @@ def expected_run(member: dict[str, Any]) -> dict[str, Any]:
     return run | {"period_end": str(run["period_end"]), "inputs": inputs, "comparison": comparison}
 
 
-def everything(row: tuple[Any, ...]) -> bool:
-    """Keep every comparison row."""
-    return True
-
-
 @pytest.mark.parametrize("symbol", BATCH["declared"])
 def test_each_batch_member_is_admitted_with_its_own_comparison(world: Any, symbol: str) -> None:
     """``batch.members[]``: outcome, verified ISIN, unit states and the member's own run: entity,
@@ -297,27 +320,72 @@ def test_each_batch_member_is_admitted_with_its_own_comparison(world: Any, symbo
     units = {u: {"state": s} | ({"reason": r} if r else {}) for u, s, r in rows(db, _UNITS, record)}
     assert (outcome, isin, units) == (member["outcome"], member["isin"], member["units"])
     keys = member["run"]["comparison"]["keys"]
-    assert observed_run(db, world["runs"][symbol], keys, everything) == expected_run(member)
+    assert observed_run(db, world["runs"][symbol], keys) == expected_run(member)
 
 
-MUTATIONS: dict[str, tuple[str, Callable[[tuple[Any, ...]], bool]]] = {
-    # the observed state, not the store: (whose run is read as ETERNAL's, which rows are kept)
-    "run-swapped-for-another-entity": ("TITAN", everything),
-    "comparison-rows-removed": ("ETERNAL", lambda row: False),
-    "one-vendor-rows-removed": ("ETERNAL", lambda row: row[4] != "tijori"),
+MUTATIONS: dict[str, dict[str, Any]] = {
+    # the observed state, not the store: whose run is read as ETERNAL's, whose persisted inputs
+    # are read as its inputs, which comparison and input rows are kept
+    "run-swapped-for-another-entity": {"whose": "TITAN"},
+    "comparison-rows-removed": {"keep": lambda row: False},
+    "one-vendor-rows-removed": {"keep": lambda row: row[4] != "tijori"},
+    "inputs-of-another-run": {"inputs_of": "TITAN"},
+    "one-input-missing": {"keep_input": lambda row: row[0] != "tijori"},
 }
 
 
 @pytest.mark.parametrize("mutation", MUTATIONS)
 def test_a_mutated_observation_fails_the_member_assertion(world: Any, mutation: str) -> None:
-    """ETERNAL's unmutated observation matches its manifest run; swapped for TITAN's, or with its
-    comparison rows (all, or one vendor's) removed, it no longer does."""
-    whose, keep = MUTATIONS[mutation]
+    """ETERNAL's unmutated observation matches its manifest run; swapped for TITAN's, with its
+    comparison rows (all, or one vendor's) removed, with TITAN's inputs or one input missing,
+    it no longer does."""
+    change, runs = MUTATIONS[mutation], world["runs"]
     member = MEMBERS["ETERNAL"]
     keys = member["run"]["comparison"]["keys"]
     expected = expected_run(member)
-    assert observed_run(world["db"], world["runs"]["ETERNAL"], keys, everything) == expected
-    assert observed_run(world["db"], world["runs"][whose], keys, keep) != expected
+    assert observed_run(world["db"], runs["ETERNAL"], keys) == expected
+    mutated = observed_run(
+        world["db"],
+        runs[change.get("whose", "ETERNAL")],
+        keys,
+        change.get("keep", everything),
+        inputs_of=runs[change["inputs_of"]] if "inputs_of" in change else None,
+        keep_input=change.get("keep_input", everything),
+    )
+    assert mutated != expected
+
+
+def expected_census(world: Any) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]]]:
+    """``batch.declared``'s runs exactly: one per member, its manifest entity, period end and
+    basis, and the batch result naming it."""
+    runs = sorted((world["runs"][symbol], symbol) for symbol in BATCH["declared"])
+    scoped = [(run, symbol, str(MEMBERS[symbol]["run"]["period_end"]),
+               MEMBERS[symbol]["run"]["basis"]) for run, symbol in runs]  # fmt: skip
+    return scoped, sorted((symbol, run) for run, symbol in runs)
+
+
+def observed_census(census: tuple[list[tuple[Any, ...]], list[tuple[Any, ...]]]) -> Any:
+    """The census rows in :func:`expected_census`'s shape."""
+    runs, results = census
+    scoped = [(run, entity, "|".join(scope["period_ends"]), "|".join(scope["bases"]))
+              for run, entity, scope in runs]  # fmt: skip
+    return scoped, list(results)
+
+
+CENSUS_MUTATIONS: dict[str, Callable[[Any], Any]] = {
+    "extra-run-for-a-declared-member": lambda c: (c[0] + [(99, "TITAN", c[0][0][2])], c[1]),
+    "result-names-another-run": lambda c: (c[0], [(c[1][0][0], 99), *c[1][1:]]),
+}
+
+
+def test_the_batch_ran_exactly_the_declared_scoped_runs(world: Any) -> None:
+    """D7 Task 6: at batch completion the database holds exactly three runs, one per declared
+    member with its manifest entity, period and basis, each named by that member's result; an
+    extra run or a result naming another run fails the comparison."""
+    expected = expected_census(world)
+    assert observed_census(world["census"]) == expected
+    for mutate in CENSUS_MUTATIONS.values():
+        assert observed_census(mutate(world["census"])) != expected
 
 
 def test_the_batch_is_complete_and_the_others_have_nothing(world: Any) -> None:

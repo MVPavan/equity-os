@@ -2,12 +2,12 @@
 
 A screen run is one vendor's automated export of a configured formula (``ingest.screen_export``):
 the definition and results responses are captures (one capture for Tijori, whose results echo the
-formula), the formula is the screen text, and each row binds to a registry listing or is
-``UNRESOLVED`` with a reason. Binding is registry membership only, never a vendor identity
-verification: Screener rows bind by ISIN, Tijori rows by their current NSE symbol. One export's
-two runs are written with their pair in one transaction. A batch declares the chosen members
-once; each member's terminal result and the completion are recorded here, while the orchestration
-over onboarding and comparison lives in the CLI.
+formula), the formula is the screen text, and each row of the results capture binds to a registry
+listing or is ``UNRESOLVED`` with a reason. Binding is registry membership only, never a vendor
+identity verification: Screener rows bind by ISIN, Tijori rows by their current NSE symbol. One
+export's captures, two runs and pair are written in one transaction. A batch declares the chosen
+members once; each member's terminal result and the completion are recorded here, while the
+orchestration over onboarding and comparison lives in the CLI.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.onboarding import OnboardingOutcome, VerificationUnit
 from fundamentals.contracts.source_catalog import SCREEN_EXPORT, SCREENER_SCREEN_PAGE, TIJORI_SCREEN
-from fundamentals.entity.discovery import OK, Capture, Request, Response, store_captures
-from fundamentals.evidence.repository import EvidenceRepository
-from fundamentals.ingest.screen_export import ScreenVendor, VendorExport
+from fundamentals.entity.discovery import OK, Capture, Request, Response, register_capture
+from fundamentals.evidence.capture_retention import Registration
+from fundamentals.ingest.screen_export import ScreenVendor, VendorExport, result_rows
 from fundamentals.store.snapshot_store import SnapshotStore
 
 NAME_COLUMN, BSE_COLUMN, NSE_COLUMN, ISIN_COLUMN = "Name", "BSE Code", "NSE Code", "ISIN Code"
@@ -41,6 +41,7 @@ _UNITS = {
     ScreenVendor.TIJORI: VerificationUnit.TIJORI,
 }
 _NOT_MEMBERS = "not resolved NSE members of screen run {run}: {symbols}"
+_RETENTION_SHARED: LiteralString = "SELECT eqos.retention_shared()"
 _INSERT_SCREEN: LiteralString = (
     "INSERT INTO eqos.screens (text_sha256, screen_text) "
     "VALUES (encode(sha256(convert_to(%(text)s, 'UTF8')), 'hex'), %(text)s) ON CONFLICT DO NOTHING"
@@ -152,37 +153,42 @@ class Batch(BaseModel):
 def record_screen_run(
     pool: ConnectionPool, screener: VendorExport, tijori: VendorExport, snapshots: SnapshotStore
 ) -> ExportResult:
-    """Store each export's two responses as captures, then write both runs, their members and
-    the pair in one transaction."""
-    refs = [_store(pool, export, snapshots) for export in (screener, tijori)]
-    with pool.connection() as conn, conn.transaction():
+    """Register each export's responses as captures and write both runs, their members and the
+    pair, all in one transaction under the shared retention lock: a refusal leaves nothing."""
+    with snapshots.prepare_ordinary_output(), pool.connection() as conn, conn.transaction():
+        conn.execute(_RETENTION_SHARED)
+        registration = Registration(conn)
         runs = [
-            _record(conn, export, *ref)
-            for export, ref in zip((screener, tijori), refs, strict=True)
+            _record(conn, export, *_store(registration, export, snapshots))
+            for export in (screener, tijori)
         ]
         (pair_id,) = conn.execute(_INSERT_PAIR, (runs[0].run_id, runs[1].run_id)).fetchone() or (0,)
     return ExportResult(screener=runs[0], tijori=runs[1], pair_id=pair_id)
 
 
-def _store(pool: ConnectionPool, export: VendorExport, snapshots: SnapshotStore) -> list[int]:
+def _store(
+    registration: Registration, export: VendorExport, snapshots: SnapshotStore
+) -> tuple[int, int]:
     """Register the definition and results responses (once if they are one); their capture ref
     ids, definition first."""
     pairs = list(zip(_SURFACES[export.vendor], (export.definition, export.results), strict=True))
     if export.definition == export.results:
         pairs = pairs[1:]
-    captures = [
-        Capture(
-            request=Request(
-                unit=_UNITS[export.vendor], source_id=source, surface=surface, url=fetch.url
+    refs = [
+        register_capture(
+            snapshots,
+            registration,
+            Capture(
+                request=Request(
+                    unit=_UNITS[export.vendor], source_id=source, surface=surface, url=fetch.url
+                ),
+                response=Response(outcome=OK, body=fetch.body, retrieved_at=fetch.retrieved_at),
             ),
-            response=Response(outcome=OK, body=fetch.body, retrieved_at=fetch.retrieved_at),
-        )
+        )[1].capture_ref_id
+        or 0
         for (source, surface), fetch in pairs
     ]
-    with snapshots.prepare_ordinary_output():
-        stored = store_captures(snapshots, EvidenceRepository(pool), captures)
-    refs = [int(ref.capture_ref_id or 0) for _, ref in stored]
-    return [refs[0], refs[-1]]
+    return refs[0], refs[-1]
 
 
 def _record(
@@ -195,7 +201,7 @@ def _record(
     (run_id,) = conn.execute(_INSERT_RUN, keys).fetchone() or (0,)
     bind = _bind_screener if export.vendor is ScreenVendor.SCREENER else _bind_tijori
     members = []
-    for number, row in enumerate(export.rows, start=1):
+    for number, row in enumerate(result_rows(export.vendor, export.results.body), start=1):
         member = bind(conn, {key: value.strip() for key, value in row.items()})
         values = (
             run_id, number, member.name, member.nse_code, member.bse_code, member.listing_id,

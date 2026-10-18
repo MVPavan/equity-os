@@ -218,8 +218,11 @@ class ScreenerSessionSource:
         """
         return self._document_fetch(url, xhr=True)
 
-    def fetch_navigation(self, *, url: str) -> tuple[ScreenerDocumentFetch, tuple[str, ...]]:
-        """Fetch one navigation page and return its bytes beside the cookies it set.
+    def fetch_navigation(
+        self, *, url: str
+    ) -> tuple[ScreenerDocumentFetch, tuple[str, ...], str | None]:
+        """Fetch one navigation page and return its bytes beside the cookies it set and its
+        ``Content-Type``.
 
         The ``Set-Cookie`` values are returned as separate strings, never
         collapsed into one, because a page that sets several cookies would
@@ -231,8 +234,10 @@ class ScreenerSessionSource:
         status, raw, headers = self._request_bytes(
             url, method=_GET_METHOD, headers=self._session_headers(credentials), data=None
         )
-        return self._retained(raw, url=url, status=status), tuple(
-            headers.get_all(SET_COOKIE_HEADER) or ()
+        return (
+            self._retained(raw, url=url, status=status),
+            tuple(headers.get_all(SET_COOKIE_HEADER) or ()),
+            headers.get(CONTENT_TYPE_HEADER),
         )
 
     def post_form(

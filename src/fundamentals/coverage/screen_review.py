@@ -11,10 +11,12 @@ records why it has none. Values print as vendor text side by side, never compare
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import LiteralString
 
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
@@ -24,6 +26,7 @@ from fundamentals.contracts.review_queue import DispositionKind
 from fundamentals.contracts.snapshot import CaptureRecord
 from fundamentals.contracts.source_catalog import SCREENER_PAGE, TIJORI_OVERVIEW
 from fundamentals.entity.discovery import OK, Capture, Request, Response, store_captures
+from fundamentals.evidence.capture_retention import read_retained
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.http_session import RequestPacer
 from fundamentals.ingest.screen_export import ScreenVendor, result_rows
@@ -40,12 +43,16 @@ from fundamentals.ingest.screener_session_models import (
     ScreenerSessionError,
 )
 from fundamentals.ingest.screener_session_page import parse_document
-from fundamentals.ingest.tijori_overview_models import TijoriCompanyDetailsSection
+from fundamentals.ingest.tijori_overview_models import (
+    TijoriCompanyDetailsSection,
+    TijoriOverviewSection,
+)
 from fundamentals.ingest.tijori_source import TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriError
 from fundamentals.store.snapshot_store import SnapshotStore
 
 FIELD_NOT_EXPOSED = "FIELD_NOT_EXPOSED"
+READ_NOT_RECORDED = "READ_NOT_RECORDED"
 DISPOSITION_KINDS = (
     DispositionKind.ACCEPTED_AS_DEFINITION,
     DispositionKind.MAPPING_FIX,
@@ -60,9 +67,15 @@ CORRESPONDENCES = {
     },
     ScreenVendor.TIJORI: {"<span>latest</span>Mcap<span>Cr</span>": "Market Cap"},
 }
+# Each pending item, its member's row locator and its read (both null while none is recorded).
 _PENDING: LiteralString = (
-    "SELECT member_id, vendor, status, reason, nse_code, candidate_member_ids "
-    "FROM eqos.screen_review_pending WHERE pair_id = %s ORDER BY member_id"
+    "SELECT p.member_id, p.vendor, p.status, p.reason, p.nse_code, p.candidate_member_ids, "
+    "m.row_number, r.capture_ref_id AS results_ref, o.capture_ref_id AS read_ref, o.gap "
+    "FROM eqos.screen_review_pending p JOIN eqos.screen_members m ON m.id = p.member_id "
+    "JOIN eqos.screen_runs r ON r.id = m.screen_run_id "
+    "LEFT JOIN eqos.screen_other_vendor_reads o "
+    "ON (o.pair_id, o.member_id) = (p.pair_id, p.member_id) "
+    "WHERE p.pair_id = %s ORDER BY p.member_id"
 )
 _INSERT_DISPOSITION: LiteralString = (
     "INSERT INTO eqos.screen_member_dispositions (pair_id, member_id, kind, reason, "
@@ -72,20 +85,7 @@ _INSERT_READ: LiteralString = (
     "INSERT INTO eqos.screen_other_vendor_reads (pair_id, member_id, capture_ref_id, gap) "
     "VALUES (%s, %s, %s, %s)"
 )
-_CAPTURE_OF: LiteralString = (
-    "SELECT c.source_id, c.surface, c.request_key, c.capture_id FROM eqos.capture_refs c "
-    "WHERE c.id = %s"
-)
-_ROW_OF: LiteralString = (
-    "SELECT m.row_number, r.capture_ref_id FROM eqos.screen_members m "
-    "JOIN eqos.screen_runs r ON r.id = m.screen_run_id WHERE m.id = %s"
-)
-_NO_READ = "pair {pair} member {member} has no other-vendor read recorded"
-_NO_STOCK = "{symbol} has a retained read but is no longer a watchlist stock"
-_READ_OF: LiteralString = (
-    "SELECT capture_ref_id, gap FROM eqos.screen_other_vendor_reads "
-    "WHERE pair_id = %s AND member_id = %s"
-)
+_NO_STOCK = "{symbol} has a retained Tijori read but is no longer a watchlist stock"
 
 
 class ItemStatus(StrEnum):
@@ -105,7 +105,8 @@ class ReadGap(StrEnum):
 
 
 class ReviewItem(BaseModel):
-    """One pending item of a pair."""
+    """One pending item of a pair, its member's row locator and its read (a capture ref id, a
+    gap, or ``None`` while none is recorded)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -116,23 +117,18 @@ class ReviewItem(BaseModel):
     reason: str | None
     nse_code: str | None
     candidate_member_ids: tuple[int, ...]
+    row_number: int
+    results_ref: int
+    read: int | ReadGap | None
 
 
 def pending_items(pool: ConnectionPool, pair_id: int) -> tuple[ReviewItem, ...]:
     """The pair's items without a disposition, by member."""
-    with pool.connection() as conn:
-        found = conn.execute(_PENDING, (pair_id,)).fetchall()
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        found = cursor.execute(_PENDING, (pair_id,)).fetchall()
     return tuple(
-        ReviewItem(
-            pair_id=pair_id,
-            member_id=member,
-            vendor=vendor,
-            status=status,
-            reason=reason,
-            nse_code=nse,
-            candidate_member_ids=tuple(candidates),
-        )
-        for member, vendor, status, reason, nse, candidates in found
+        ReviewItem.model_validate(row | {"pair_id": pair_id, "read": row["gap"] or row["read_ref"]})
+        for row in found
     )
 
 
@@ -166,7 +162,7 @@ def read_other_vendor(
         tijori_pacer.wait_for_slot()
         try:
             body = tijori.fetch_overview_bytes(ids.tijori_slug)
-            _overview(body, ids)
+            _company_details(body, ids)
         except TijoriError:
             return ReadGap.READ_REFUSED
         url = tijori.config.overview_url_template.format(
@@ -210,33 +206,45 @@ def record_read(
         conn.execute(_INSERT_READ, (item.pair_id, item.member_id, ref, gap))
 
 
-def member_row(pool: ConnectionPool, snapshots: SnapshotStore, item: ReviewItem) -> dict[str, str]:
-    """The member's row, hydrated verbatim from its run's results capture."""
-    with pool.connection() as conn:
-        ((number, capture_ref_id),) = conn.execute(_ROW_OF, (item.member_id,)).fetchall()
-    rows = result_rows(item.vendor, _capture_bytes(pool, snapshots, capture_ref_id)[1])
-    return rows[int(number) - 1]
+def side_by_side(
+    pool: ConnectionPool,
+    snapshots: SnapshotStore,
+    items: tuple[ReviewItem, ...],
+    stocks: dict[str, StockConfig],
+) -> Iterator[tuple[ReviewItem, list[tuple[str, str, str]]]]:
+    """Each item with every column of its member's row (hydrated verbatim from its run's
+    results capture, each capture read once) beside the other vendor's corresponding field,
+    ``FIELD_NOT_EXPOSED``, the item's gap, or ``READ_NOT_RECORDED``."""
+    results: dict[int, tuple[dict[str, str], ...]] = {}
+    for item in items:
+        if item.results_ref not in results:
+            body = _retained(pool, snapshots, item.results_ref)[1]
+            results[item.results_ref] = result_rows(item.vendor, body)
+        other = _other_values(pool, snapshots, item, stocks.get(item.nse_code or ""))
+        row = results[item.results_ref][item.row_number - 1]
+        shown = dict.fromkeys(row, other) if isinstance(other, str) else other
+        yield (
+            item,
+            [(column, own, shown.get(column, FIELD_NOT_EXPOSED)) for column, own in row.items()],
+        )
 
 
-def other_values(
+def _other_values(
     pool: ConnectionPool, snapshots: SnapshotStore, item: ReviewItem, stock: StockConfig | None
-) -> dict[str, str] | ReadGap:
-    """The other vendor's corresponding fields as text, re-read from the retained page with the
-    reader that gated it, or the item's gap."""
-    with pool.connection() as conn:
-        found = conn.execute(_READ_OF, (item.pair_id, item.member_id)).fetchone()
-    if found is None:
-        raise ValueError(_NO_READ.format(pair=item.pair_id, member=item.member_id))
-    capture_ref_id, gap = found
-    if gap is not None:
-        return ReadGap(gap)
-    if stock is None:
-        raise ValueError(_NO_STOCK.format(symbol=item.nse_code))
-    record, body = _capture_bytes(pool, snapshots, capture_ref_id)
-    fields = CORRESPONDENCES[item.vendor].values()
+) -> dict[str, str] | str:
+    """The other vendor's field text per corresponding member column, re-read from the retained
+    page with the reader that gated it, or why there is none."""
+    if item.read is None:
+        return READ_NOT_RECORDED
+    if isinstance(item.read, ReadGap):
+        return item.read.value
+    record, body = _retained(pool, snapshots, item.read)
+    fields = CORRESPONDENCES[item.vendor]
     if item.vendor is ScreenVendor.SCREENER:
-        details = _overview(body, stock.identifiers)
-        return {field: getattr(details, field).raw_text for field in fields}
+        if stock is None:
+            raise ValueError(_NO_STOCK.format(symbol=item.nse_code))
+        details = _company_details(body, stock.identifiers)
+        return {column: getattr(details, field).raw_text for column, field in fields.items()}
     block = top_ratios_list(parse_document(body.decode("utf-8", errors="replace")))
     ratios = (
         ()
@@ -256,16 +264,18 @@ def other_values(
         ).ratios
     )
     texts = {ratio.name: ratio.raw_text for ratio in ratios}
-    return {field: texts.get(field, FIELD_NOT_EXPOSED) for field in fields}
+    return {column: texts.get(field, FIELD_NOT_EXPOSED) for column, field in fields.items()}
 
 
-def _overview(body: bytes, ids: SourceIdentifiers) -> TijoriCompanyDetailsSection:
-    """The overview's company details, after its identity gate against the watchlist ids."""
+def _company_details(body: bytes, ids: SourceIdentifiers) -> TijoriCompanyDetailsSection:
+    """The overview's company details section alone, after its identity gate against the
+    watchlist ids."""
     sections = TijoriSource.parse_overview_bytes(
         body,
         slug=ids.tijori_slug,
         expected_symbol=ids.nse_symbol,
         expected_company_id=ids.tijori_company_id,
+        section=TijoriOverviewSection.COMPANY_DETAILS,
     )
     (details,) = [s for s in sections if isinstance(s, TijoriCompanyDetailsSection)]
     return details
@@ -282,10 +292,9 @@ def _capture(
     )
 
 
-def _capture_bytes(
+def _retained(
     pool: ConnectionPool, snapshots: SnapshotStore, capture_ref_id: int
 ) -> tuple[CaptureRecord, bytes]:
-    """A registered capture's record and verified bytes."""
-    with pool.connection() as conn:
-        (ref,) = conn.execute(_CAPTURE_OF, (capture_ref_id,)).fetchall()
-    return snapshots.read_capture_verified(*ref)
+    """A registered capture's record and verified bytes; an expired or purging one refuses."""
+    (ref,) = EvidenceRepository(pool).get_capture_refs([capture_ref_id])
+    return read_retained(pool, snapshots, ref)
