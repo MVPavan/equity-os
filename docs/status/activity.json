@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "Screen export (eqos-351): legacy deletion, then exporter",
-    "detail": "PREP-2 and PREP-2b done: the pilot run is PostgreSQL-only and writes a validated, labelled-retrospective ledger draft per quarter. Screen-export plan and spec amendment approved; Task 2 (delete legacy screener-screen) running.",
+    "title": "Screen export (eqos-351): exporter, binding, review queue",
+    "detail": "PREP-2 and PREP-2b done. Screen-export Task 2 done (c56ec39: legacy query-URL screen subsystem deleted, about -4,160 lines). Tasks 3-5 (export transport, retention and binding, cross-check queue and D9 holds) running.",
     "stage": "D7"
   },
   "next": [
-    "Screen export Tasks 3-7 (exporter, binding, review queue + D9 holds, Stage 4 manifest and e2e) — live runs need the owner's saved Screener screen and Tijori query d7-stage4",
+    "Screen export Tasks 6-7 (Stage 4 manifest and e2e), then D7 phase-end review; live runs need the owner's saved Screener screen and Tijori query d7-stage4",
     "PREP-3..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
     "Phase-end Sol review of PREP-2/2b (incl. ledger/run_draft.py size, 519 lines)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)",
     "Follow-ups: eqos-z48, eqos-h4h.8/.9/.11, eqos-yqi, eqos-9sn, eqos-g2q, eqos-d60"
   ],
   "log": [
+    {
+      "date": "2026-10-18",
+      "text": "Screen-export Task 2 done (c56ec39, eqos-8hp): legacy Screener ?q= screen subsystem deleted (about -4,160 lines); 631 related tests pass. Tasks 3-5 dispatched."
+    },
     {
       "date": "2026-10-18",
       "text": "PREP-2b done (246187c, 83643a8, dbcb68e): IST cutoffs fixed; computed claims trace-backed; retrospective admission pinned to the retrieval manifest; each run writes a validated DRAFT (FY26_Q2 to FY27_Q1 sequence approved in test); JSON management ledger deleted (about -1,500 lines); migration 0033. Full suite 4077 passed, 8 skipped, 0 failed. Screen-export amendment approved (caeeb12)."
