@@ -135,3 +135,11 @@ Carried requirements from Sol r1 (Sol's fix in each):
 12. → Constraints (green after every task) and Task 1 "Existing-test impact"; carried as F12.
 P3. → decisions 1 and 2 (settled rulings; cutover owner-approved 2026-10-18, separate step);
    old open decision 5 (DRAFT prior refusal) → PREP-2b F7.
+
+## Implementation ruling (orchestrator, 2026-10-18)
+
+The frozen ledger Stage 5 manifest pins `config/aparinds-fy26-q4.yaml` by SHA-256, and
+`test_approved_payload_preceded_its_e2e` forbids amending it after its e2e (`4f0d4ca`). So that
+file stays byte-identical as D9 evidence, and the pilot's Q4 run uses
+`config/aparinds-fy26-q4-pg.yaml` (the same config with `fact_store_id` in place of `store_db`).
+`test_prep2_pilot_pg.py` names the four pilot configs explicitly.

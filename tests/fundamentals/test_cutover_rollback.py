@@ -34,6 +34,7 @@ from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
 from fundamentals.pg.approvals import GatedOperation, GateRefusal, GateRefusedError, split_approval
 from fundamentals.pg.cutover import (
     LEGAL_COMMANDS,
+    FactStoreRequiredError,
     FactStoreState,
     TransitionRefusal,
     TransitionRefusedError,
@@ -162,7 +163,8 @@ def test_refused_transitions_switch_nothing(rig: Rig, name: str) -> None:
 
 def test_frozen_write_is_refused_then_rollback_restores_sqlite_authority(rig: Rig) -> None:
     """The marker records the approval and last handles; a frozen write persists nothing and
-    succeeds on the store routed after rollback; the SQLite write then blocks re-cutover."""
+    succeeds on the store routed after rollback (refused with no SQLite path); the SQLite write
+    then blocks re-cutover."""
     window = Window(rig)
     store = window.stores[0]
     # Before the first knowledge time, before the first selection, median, last selection.
@@ -183,6 +185,8 @@ def test_frozen_write_is_refused_then_rollback_restores_sqlite_authority(rig: Ri
 
         window.move(ROLLBACK)
         assert window.states() == {store: FactStoreState.ROLLED_BACK}
+        with pytest.raises(FactStoreRequiredError):
+            open_fact_store(store, None, pool_factory=lambda: pool)
         routed = open_fact_store(store, str(rig.legacy), pool_factory=lambda: pool)
         assert isinstance(routed, FactStore)
         expected = json.loads(FIXTURE.read_text(encoding="utf-8"))["cutoffs"]
@@ -304,6 +308,8 @@ def test_cli_reopen_closes_the_window_and_reconcile_ignores_native_writes(
     sqlite = open_fact_store(None, str(rig.tmp_path / "facts.db"), pool_factory=_never)
     assert isinstance(sqlite, FactStore)
     sqlite.close()
+    with pytest.raises(FactStoreRequiredError):
+        open_fact_store(None, None, pool_factory=_never)
     after = rig.tmp_path / "after.yaml"
     assert main(["legacy", "reconcile", *manifest, "--out", str(after)]) == 0
     assert after.read_bytes() == split_approval(window.report.read_bytes())[0]

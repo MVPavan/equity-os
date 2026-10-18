@@ -230,7 +230,7 @@ def run_command(
                 retrieved_at=prepared.xbrl.acquired_at,
             )
         store_db_path = config.store_db_path(config_path)
-        if store_db_path != ":memory:":
+        if store_db_path not in (None, ":memory:"):
             Path(store_db_path).parent.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
             store = open_fact_store(

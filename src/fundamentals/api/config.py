@@ -534,7 +534,7 @@ class FundamentalsConfig(BaseModel):
     issuer: IssuerConfig
     quarter: QuarterConfig
     raw_dir: str
-    store_db: str
+    store_db: str | None = None
     # The PostgreSQL fact store this issuer routes to once reopened (plan D2, Task 6).
     fact_store_id: str | None = None
     ledger_path: str | None = None
@@ -604,9 +604,9 @@ class FundamentalsConfig(BaseModel):
             return None
         return self.repo_root(config_path) / instance.local_path
 
-    def store_db_path(self, config_path: Path) -> str:
-        """Resolve the store DB path (``:memory:`` passes through)."""
-        if self.store_db == ":memory:":
+    def store_db_path(self, config_path: Path) -> str | None:
+        """Resolve the store DB path (``:memory:`` and an absent store pass through)."""
+        if self.store_db is None or self.store_db == ":memory:":
             return self.store_db
         return str(self.repo_root(config_path) / self.store_db)
 

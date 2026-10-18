@@ -152,6 +152,15 @@ class TransitionRefusedError(Exception):
         self.reason = reason
 
 
+class FactStoreRequiredError(Exception):
+    """No writable fact store: the config names no ``OPEN`` PostgreSQL store and no SQLite one."""
+
+    def __init__(self, store_id: str | None) -> None:
+        """Name the store that could not be routed."""
+        super().__init__(f"fact store {store_id} needs an OPEN PostgreSQL store or a store_db")
+        self.store_id = store_id
+
+
 class CutoffCheck(BaseModel):
     """SQLite and PostgreSQL canonical rows at one reconcile cutoff."""
 
@@ -275,20 +284,22 @@ def store_status(pool: ConnectionPool, store_ids: Sequence[str]) -> Mapping[str,
 
 
 def open_fact_store(
-    store_id: str | None, store_db_path: str, *, pool_factory: Callable[[], ConnectionPool]
+    store_id: str | None, store_db_path: str | None, *, pool_factory: Callable[[], ConnectionPool]
 ) -> FactStoreLike:
     """The authoritative store: SQLite without a store id or after rollback, PostgreSQL when
-    ``OPEN``; refused while frozen. The pool belongs to ``pool_factory``'s owner."""
-    if store_id is None:
-        return FactStore(store_db_path)
-    pool = pool_factory()
-    with pool.connection() as conn:
-        state = store_state(conn, store_id)
-    if state == FactStoreState.OPEN:
-        return PgFactStore(pool, store_id)
-    if state == FactStoreState.ROLLED_BACK:
-        return FactStore(store_db_path)
-    raise FactStoreFrozenError(state)
+    ``OPEN``; refused while frozen or when SQLite is needed but not configured. The pool belongs
+    to ``pool_factory``'s owner."""
+    if store_id is not None:
+        pool = pool_factory()
+        with pool.connection() as conn:
+            state = store_state(conn, store_id)
+        if state == FactStoreState.OPEN:
+            return PgFactStore(pool, store_id)
+        if state != FactStoreState.ROLLED_BACK:
+            raise FactStoreFrozenError(state)
+    if store_db_path is None:
+        raise FactStoreRequiredError(store_id)
+    return FactStore(store_db_path)
 
 
 def _reconcile(
