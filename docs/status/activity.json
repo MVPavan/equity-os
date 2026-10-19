@@ -1,12 +1,12 @@
 {
   "now": {
-    "title": "PREP-6 Task 1 in progress",
-    "detail": "PREP-6 plan (docs/plans/PREP-6.md) Sol APPROVE: fundamentals review moves onto ledger versions; owner decision and per-claim disposition/time written in one transaction (migration 0040); seeded-error drill as an instrumentation regression. Detection of review-only seeds is not demonstrated (eqos-4j2.30, owner blind run). Task 1 (migration 0040, ACL tests) with Opus.",
+    "title": "PREP-7 next",
+    "detail": "PREP-6 done: fundamentals review reviews a ledger version claim by claim; finish writes the owner decision, review session and per-claim disposition/time in one transaction (migration 0040); rejected/edited keys feed PREP-5 rework on REQUEST_CHANGES; seeded-error drill as an instrumentation regression. Full suite 4219 passed. Review-seed detection still needs an owner blind run (eqos-4j2.30).",
     "stage": "PREP"
   },
   "next": [
-    "PREP-6 Tasks 2-4, then phase review",
-    "PREP-7, PREP-8",
+    "PREP-7: frozen pilot manifest (hand-verified expected values, cutoffs, reviewed packages)",
+    "PREP-8: scripts/verify_project.sh",
     "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
     "Then the Apar pilot (cutover eqos-3zl owner-approved)",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
@@ -14,6 +14,10 @@
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-19",
+      "text": "PREP-6 review telemetry closed: Tasks 1-4 (542902f, 45700e6, 776bcba, fd03d08); Sol phase r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE (7fc0584); closing REVISE 3 → APPROVE (ae2da10). Post-review full suite found 8 table-enumeration/import test regressions, fixed 020521c; final full suite 4219 passed, 9 skipped."
+    },
     {
       "date": "2026-10-19",
       "text": "PREP-6 plan approved (f9c5b72): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) → r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) → APPROVE. Filed eqos-4j2.30."
