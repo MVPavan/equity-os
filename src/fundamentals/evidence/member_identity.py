@@ -41,10 +41,14 @@ TEXT_BLOCK_SUFFIX = "TextBlock"
 # "... financial statements have been prepared in accordance with Indian Accounting Standard
 # notified under Section 133 of the Companies Act, 2013". LAURUSLABS results PDF (sha256 2b79047e):
 # "... have been prepared in accordance with the Indian Accounting Standards ('IND AS')".
+# Apar Q1 FY27 results PDF (sha256 c0c2b2fa) page 7, the auditor's review report on the
+# standalone results: "... financial results prepared in accordance with applicable Indian
+# Accounting Standards prescribed under Section 133 of the Companies Act, 2013".
 FRAMEWORK_DECLARATIONS: Mapping[AccountingFramework, tuple[str, ...]] = {
     AccountingFramework.IND_AS: (
         "prepared in accordance with Indian Accounting Standard",
         "prepared in accordance with the Indian Accounting Standards",
+        "prepared in accordance with applicable Indian Accounting Standards",
     ),
 }
 # The exchange's Ind AS taxonomy entry point, a structural framework declaration: every retained

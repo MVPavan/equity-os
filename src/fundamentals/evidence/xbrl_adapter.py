@@ -39,7 +39,7 @@ from fundamentals.extract.xbrl_parser import (
 )
 from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 
-XBRL_EXTRACTOR_VERSION = "xbrl-occurrences/2"
+XBRL_EXTRACTOR_VERSION = "xbrl-occurrences/3"
 SEGMENT_DESCRIPTION_CONCEPT = "DescriptionOfReportableSegment"
 DECIMALS_INFINITE = "INF"
 CONTEXT_MEMBER_DESCRIPTIONS = "member_descriptions"

@@ -343,6 +343,7 @@ def test_framework_must_be_declared_by_the_capture(ingest: Ingest) -> None:
         ingest.tmp_path,
         "no-framework-declaration",
         PdfRedaction(page=5, row_of="Indian", words=("Indian",)),
+        PdfRedaction(page=9, row_of="applicable", words=("applicable",)),
     )
     marked = ingest.run(
         ingest.intake(

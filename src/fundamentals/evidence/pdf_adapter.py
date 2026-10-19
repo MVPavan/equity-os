@@ -49,7 +49,7 @@ from fundamentals.extract.pdf_statement_pages import (
 )
 from fundamentals.ingest.pdf_source import LoadedPdf
 
-PDF_EXTRACTOR_VERSION = "pdf-occurrences/3"
+PDF_EXTRACTOR_VERSION = "pdf-occurrences/4"
 PDF_SCHEMA_IDENTITY = "sebi-lodr-results-layout"
 CONTEXT_HEADER_MONTHS = "header_months"
 NO_NUMERIC_ROW = "no banded numeric row parses"

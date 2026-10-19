@@ -49,7 +49,7 @@ rules:
       - {op: OPERAND, operand: total_income}
       - {op: OPERAND, operand: total_expenses}
     - {op: OPERAND, operand: exceptional_items_before_tax}
-  evidence_ref: "Schedule III: profit before tax = total income - total expenses + exceptional items (plan D1a Task 7). Apar's results PDF prints no exceptional-items line, so this rule proves nothing for its PDF (fail closed)"
+  evidence_ref: "Schedule III: profit before tax = total income - total expenses + exceptional items (plan D1a Task 7). Apar's Q2 FY26 results PDF prints no exceptional-items line, so this rule proves nothing there (fail closed); Q3 FY26 and Q4 FY26 print a readable line, and Q1 FY27's cell is unreadable"
 - rule_id: profit_for_period.pbt_incl_associates_less_tax
   kind: SUBTOTAL_IDENTITY
   canonical_id: profit_for_period
