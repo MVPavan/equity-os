@@ -156,6 +156,8 @@ and DELETE, as data spec §6):
 
 `EARNINGS_UPDATE` section keys follow the existing artifact.
 
+A `REQUEST_CHANGES` decision on a report version may name rejected claims, which are reworked selectively into v(N+1) (amended 2026-10-18, PREP-5).
+
 **Rules** (enforced by trigger or the decision commands):
 
 - **Numeric coverage:** narrative numbers come only from claims. A numeral in section text

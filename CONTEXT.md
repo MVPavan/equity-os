@@ -54,7 +54,7 @@ The mandatory label on output: observed / computed / inferred / forecast / opini
 _Avoid_: confidence level (that is a separate field)
 
 **Evidence package**:
-The frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record).
+The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record).
 _Avoid_: context (unqualified)
 
 **Valid time / knowledge time**:
