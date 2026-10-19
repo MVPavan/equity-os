@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, LiteralString
 
 from psycopg import Cursor
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from fundamentals.contracts.ledger import DecisionKind, DecisionRecord, SubjectKind, VersionDraft
 from fundamentals.contracts.source_catalog import SourceCatalog
@@ -108,7 +109,7 @@ class ClaimEvent(BaseModel):
     locate_seconds: int = Field(ge=0)
     check_seconds: int = Field(ge=0)
     note: str | None = None
-    at: datetime
+    at: AwareDatetime
 
     @model_validator(mode="after")
     def _category_matches(self) -> ClaimEvent:
@@ -127,7 +128,7 @@ class Session(BaseModel):
 
     version_id: int
     instrument_version: str
-    started_at: datetime
+    started_at: AwareDatetime
     events: tuple[ClaimEvent, ...] = ()
     command_handling_seconds: float = 0.0
 
@@ -231,11 +232,13 @@ def finish(
     ruling: str,
     *,
     at: datetime,
+    handled: Callable[[Session], Session],
     catalog: SourceCatalog | None = None,
     snapshots: SnapshotStore | None = None,
 ) -> DecisionRecord:
     """Write the version's decision, the session and every event in the caller's transaction;
-    a ``REQUEST_CHANGES`` rejects the claims currently edited or rejected (decision 5)."""
+    a ``REQUEST_CHANGES`` rejects the claims currently edited or rejected (decision 5).
+    ``handled`` adds this command's handling time just before the decision's first insert."""
     check_instrument(session)
     if at < _last(session):
         raise ValueError(_BACKWARDS.format(at=at, last=_last(session)))
@@ -249,6 +252,11 @@ def finish(
         if refused:
             raise ValueError(_NOT_ACCEPTED.format(keys=refused))
     rejected = tuple(key for key in keys if now[key].disposition in _CORRECTIONS)
+
+    def handle() -> None:
+        nonlocal session
+        session = handled(session)
+
     decision = record_decision(
         cursor,
         subject_kind=SubjectKind.REPORT_VERSION,
@@ -258,6 +266,7 @@ def finish(
         catalog=catalog,
         snapshots=snapshots,
         claims=rejected if kind is DecisionKind.REQUEST_CHANGES else (),
+        before_insert=handle,
     )
     row = cursor.execute(
         _SESSION,

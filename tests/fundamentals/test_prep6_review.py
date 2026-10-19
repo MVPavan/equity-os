@@ -46,11 +46,13 @@ from fundamentals.contracts.ledger import (
     CitationKind,
     ClaimState,
     DecisionKind,
+    DecisionRecord,
     NumericClaim,
     PanelReview,
     ReportKind,
     ReportSection,
     SubjectKind,
+    Validation,
     Verdict,
     VersionDraft,
     VersionStatus,
@@ -324,10 +326,16 @@ def _with(key: str, **update: Any) -> tuple[NumericClaim, ...]:
     return tuple(c.model_copy(update=update) if c.claim_key == key else c for c in CLAIMS)
 
 
-def _event(key: str, disposition: Disposition, at: datetime = T0) -> ClaimEvent:
-    """A disposition with a category it takes and no self-reported time."""
-    corrected = disposition in (EDITED, REJECTED)
-    category = CorrectionCategory.WORDING if corrected else CorrectionCategory.NONE
+def _event(
+    key: str,
+    disposition: Disposition,
+    at: datetime = T0,
+    category: CorrectionCategory | None = None,
+) -> ClaimEvent:
+    """A disposition with ``category``, by default one it takes, and no self-reported time."""
+    if category is None:
+        corrected = disposition in (EDITED, REJECTED)
+        category = CorrectionCategory.WORDING if corrected else CorrectionCategory.NONE
     return ClaimEvent(
         claim_key=key,
         disposition=disposition,
@@ -446,10 +454,16 @@ def _start(version: int, session: Path) -> int:
 
 
 def _claim(
-    session: Path, key: str, disposition: Disposition, *, seconds: tuple[int, int] = (0, 0)
+    session: Path,
+    key: str,
+    disposition: Disposition,
+    category: CorrectionCategory | None = None,
+    *,
+    seconds: tuple[int, int] = (0, 0),
 ) -> int:
-    """``review claim`` with the category ``_event`` gives and ``seconds`` (locate, check)."""
-    event = _event(key, disposition)
+    """``review claim`` with ``category`` (by default ``_event``'s) and ``seconds`` (locate,
+    check)."""
+    event = _event(key, disposition, category=category)
     locate, check = seconds
     return _cli(
         "claim",
@@ -519,8 +533,10 @@ def test_review_cli_bounds_time_and_instrument_version(
 ) -> None:
     """Per-claim time is derived, so it must not run backwards, a self-reported locate and
     check time must fit inside it, and the finish must not precede the last event; a session
-    from another instrument version breaks B-13's one-instrument symmetry. Each refusal writes
-    nothing; the boundary values are accepted."""
+    from another instrument version breaks B-13's one-instrument symmetry. A clock stepping
+    back during a command, or a naive timestamp, is refused too. Each refusal writes nothing;
+    the boundary values are accepted. ``finish``'s handling time includes its review-set reads
+    and checks."""
     _env(pg_db, monkeypatch)
     version = ledger.draft(ledger.report())
     ledger.submit(version)
@@ -546,12 +562,44 @@ def test_review_cli_bounds_time_and_instrument_version(
     assert ledger.head(version).kind is DecisionKind.SUBMIT
     with ledger.pools[PgRole.RUNTIME].connection() as conn:
         assert conn.execute("SELECT count(*) FROM eqos.review_sessions").fetchone() == (0,)
+    for field in ("at", "started_at"):  # a naive event time, then a naive session start
+        path.write_text(re.sub(rf'("{field}": "[^"]*)Z"', r'\1"', good))
+        assert path.read_text() != good
+        assert _claim(at(20), "calc.1", ACCEPTED) == 2
+    path.write_text(good)
+    read_set = review.review_set
+
+    def stepping(step: timedelta) -> None:
+        """Move the clock by ``step`` whenever a command reads the review set."""
+
+        def read(cursor: psycopg.Cursor[Any], version_id: int) -> tuple[str, ...]:
+            moment[0] += step
+            return read_set(cursor, version_id)
+
+        monkeypatch.setattr(review, "review_set", read)
+
+    stepping(timedelta(seconds=-1))
+    assert _claim(at(20), "calc.1", ACCEPTED) == 2
+    assert _finish(monkeypatch, at(10), DecisionKind.REQUEST_CHANGES) == 2
+    assert path.read_text() == good
+    with ledger.pools[PgRole.RUNTIME].connection() as conn:
+        assert conn.execute("SELECT count(*) FROM eqos.review_sessions").fetchone() == (0,)
+    stepping(timedelta(seconds=4))
+    head = store.chain_head
+
+    def locked_read(*args: Any) -> DecisionRecord | None:
+        """The decision's chain-head read under the subject lock, taking 3 s."""
+        moment[0] += timedelta(seconds=3)
+        return head(*args)
+
+    monkeypatch.setattr(store, "chain_head", locked_read)
     assert _finish(monkeypatch, at(10), DecisionKind.REQUEST_CHANGES) == 0
     with ledger.pools[PgRole.RUNTIME].connection() as conn:
         found = conn.execute(_SESSION_ROW, (version,)).fetchall()
         events = conn.execute(_EVENT_ROWS, (version,)).fetchall()
+    # start and claim took no time; finish's 4 s review-set read and 3 s locked read count.
     assert found == [
-        (review.INSTRUMENT_VERSION, T0, T0 + timedelta(seconds=10), 0, "REQUEST_CHANGES", None)
+        (review.INSTRUMENT_VERSION, T0, T0 + timedelta(seconds=10), 7000, "REQUEST_CHANGES", None)
     ]
     assert events == [(0, "calc.1", "accepted", "none", 10_000, 5, 5)]
 
@@ -635,15 +683,20 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
     pilot, version = submitted
     keys = _review_set(pilot, version)
     assert {REVENUE, GUIDE, PBT} <= set(keys) and len(keys) < 60
-    special = {REVENUE: REJECTED, PBT: DEFERRED}
-    plan = [(key, special.get(key, ACCEPTED)) for key in keys] + [(GUIDE, EDITED)]
+    none, wrong_value, wording = (
+        CorrectionCategory.NONE,
+        CorrectionCategory.WRONG_VALUE,
+        CorrectionCategory.WORDING,
+    )
+    special = {REVENUE: (REJECTED, wrong_value), PBT: (DEFERRED, none)}
+    plan = [(key, *special.get(key, (ACCEPTED, none))) for key in keys] + [(GUIDE, EDITED, wording)]
     gaps = [timedelta(seconds=20 + i % 5) for i in range(len(plan))]
     finished = T0 + timedelta(minutes=30)
     reads = _scripted(monkeypatch, _times(T0, gaps, finished))
     session = tmp_path / "review-n"
     assert _start(version, session) == 0
-    for key, disposition in plan:
-        assert _claim(session, key, disposition, seconds=(3, 2)) == 0
+    for key, disposition, category in plan:
+        assert _claim(session, key, disposition, category, seconds=(3, 2)) == 0
     assert _finish(monkeypatch, session, DecisionKind.REQUEST_CHANGES) == 0
     assert next(reads, None) is None
     ((instrument, started, ended, handling_ms, kind, rejected),) = pilot.query(
@@ -657,11 +710,16 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
     )
     assert handling_ms == 250 * (len(plan) + 2)
     assert sorted(rejected) == sorted({REVENUE, GUIDE})
-    assert pilot.query(_EVENT_ROWS, version) == [
-        (i, key, d.value, _event(key, d).category.value, gap // timedelta(milliseconds=1), 3, 2)
-        for i, ((key, d), gap) in enumerate(zip(plan, gaps, strict=True))
+    events = pilot.query(_EVENT_ROWS, version)
+    assert events == [
+        (i, key, d.value, c.value, gap // timedelta(milliseconds=1), 3, 2)
+        for i, ((key, d, c), gap) in enumerate(zip(plan, gaps, strict=True))
     ]
-    last = {key: _event(key, d) for key, d in plan}
+    assert {row[1]: row[3] for row in events if row[2] in ("edited", "rejected")} == {
+        REVENUE: "wrong_value",
+        GUIDE: "wording",
+    }
+    last = {key: _event(key, d, category=c) for key, d, c in plan}
     summary = _summary(capsys, version)
     assert summary == {
         "version_id": version,
@@ -688,6 +746,11 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
         "rejected": 1,
         "deferred": 1,
     }
+    assert {c: n for c, n in summary["category_counts"].items() if n} == {
+        "none": len(keys) - 2,
+        "wrong_value": 1,
+        "wording": 1,
+    }
     # The rework run with no correction: section bodies and re-derived rows are N's.
     successor = pilot.run("FY26_Q2").draft_version_id
     assert successor is not None
@@ -698,6 +761,15 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
     restart = finished + timedelta(hours=1)
     gaps = [timedelta(seconds=60)] * len(rereview)
     _scripted(monkeypatch, _times(restart, gaps, restart + timedelta(minutes=5)))
+    scripted, check, lag = review_cli._now, lifecycle.approval_check, [timedelta()]
+
+    def checking(*args: Any, **kwargs: Any) -> Validation:
+        """The approval check inside ``record_decision``, taking 4 s."""
+        lag[0] += timedelta(seconds=4)
+        return check(*args, **kwargs)
+
+    monkeypatch.setattr(review_cli, "_now", lambda: scripted() + lag[0])
+    monkeypatch.setattr(lifecycle, "approval_check", checking)
     session = tmp_path / "review-n1"
     assert _start(successor, session) == 0
     for key in rereview:
@@ -709,6 +781,8 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
         5.0,
         35.0,
     )
+    # finish's 4 s approval check counts towards its handling time.
+    assert summary["command_handling_seconds"] == 0.25 * (len(rereview) + 2) + 4
     assert summary["claim_count"] == len(keys) and summary["review_set_count"] == 3
 
 
@@ -885,6 +959,31 @@ def _verdict(outcomes: Mapping[str, Outcome]) -> tuple[bool, list[str]]:
     return not failing, failing
 
 
+# (seeded, disposition, outcome): every scoring rule; only CAUGHT and CORRECT pass.
+SCORING = [
+    (True, EDITED, Outcome.CAUGHT),
+    (True, REJECTED, Outcome.CAUGHT),
+    (True, ACCEPTED, Outcome.MISSED),
+    (True, DEFERRED, Outcome.MISSED),
+    (False, EDITED, Outcome.FALSE_REJECT),
+    (False, REJECTED, Outcome.FALSE_REJECT),
+    (False, ACCEPTED, Outcome.CORRECT),
+    (False, DEFERRED, Outcome.FALSE_DEFER),
+]
+
+
+@pytest.mark.parametrize(("seeded", "disposition", "outcome"), SCORING)
+def test_drill_scores_every_disposition_of_a_seeded_and_a_clean_claim(
+    seeded: bool, disposition: Disposition, outcome: Outcome
+) -> None:
+    """The drill's verdict is only as good as its scoring: a seed must be corrected and a clean
+    claim accepted, and every other outcome fails the drill naming the claim."""
+    outcomes = _score({"k"} if seeded else set(), {"k": disposition})
+    assert outcomes == {"k": outcome}
+    passes = outcome in (Outcome.CAUGHT, Outcome.CORRECT)
+    assert _verdict(outcomes) == (passes, [] if passes else ["k"])
+
+
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_drill_gate_seeds_are_caught_review_seeds_scored_and_a_miss_fails(
     pg_db: PgTestDatabase,
@@ -942,6 +1041,8 @@ def test_drill_gate_seeds_are_caught_review_seeds_scored_and_a_miss_fails(
     assert (kind, sorted(rejected)) == ("REQUEST_CHANGES", sorted(set(ANSWER) - SCRIPTS[script]))
     outcomes = _score(ANSWER, {key: Disposition(d) for _, key, d, *_ in events})
     assert _verdict(outcomes) == (not SCRIPTS[script], sorted(SCRIPTS[script]))
+    expected = {k: Outcome.MISSED if k in SCRIPTS[script] else Outcome.CAUGHT for k in (PBT, PAT)}
+    assert {k: outcomes[k] for k in (PBT, PAT)} == expected
     by_class = Counter((clean[k].epistemic_class, o) for k, o in outcomes.items())
     if script == "perfect":
         assert {pair: n for pair, n in by_class.items() if pair[1] is not Outcome.CORRECT} == {

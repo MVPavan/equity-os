@@ -49,6 +49,7 @@ _PER_CLAIM_NOTE = (
     "# a claim's elapsed time runs from the previous recorded claim: record each as you finish it"
 )
 _DECISION = "decision\t{id}"
+_CLOCK_BACK = "the clock moved back {seconds}s during the command"
 _CLI_LOGGER = structlog.get_logger("fundamentals.review")
 
 
@@ -88,8 +89,11 @@ def add_review_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
 
 
 def _handled(session: review.Session, entry: datetime) -> review.Session:
-    """The session with this command's handling time added."""
-    seconds = session.command_handling_seconds + (_now() - entry).total_seconds()
+    """The session with this command's handling time added; a backward clock is refused."""
+    interval = (_now() - entry).total_seconds()
+    if interval < 0:
+        raise ValueError(_CLOCK_BACK.format(seconds=-interval))
+    seconds = session.command_handling_seconds + interval
     return session.model_copy(update={"command_handling_seconds": seconds})
 
 
@@ -114,8 +118,9 @@ def _start(args: argparse.Namespace, entry: datetime) -> int:
         instrument_version=review.INSTRUMENT_VERSION,
         started_at=entry,
     )
+    session = _handled(session, entry)
     args.session.mkdir(parents=True)
-    review.save(_handled(session, entry), args.session)
+    review.save(session, args.session)
     return EXIT_OK
 
 
@@ -159,7 +164,13 @@ def _finish(args: argparse.Namespace, entry: datetime) -> int:
     with open_pool(PgSettings(), PgRole.OWNER, login=login) as pool:
         with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             record = review.finish(
-                cursor, _handled(session, entry), args.decision, ruling, at=entry, **sources
+                cursor,
+                session,
+                args.decision,
+                ruling,
+                at=entry,
+                handled=lambda checked: _handled(checked, entry),
+                **sources,
             )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")
     return EXIT_OK

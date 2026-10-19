@@ -11,7 +11,7 @@ approval binds only the check its decider makes in the deciding transaction; a r
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import partial
 from typing import Any, LiteralString
@@ -360,8 +360,10 @@ def record_decision(
     catalog: SourceCatalog | None = None,
     snapshots: SnapshotStore | None = None,
     claims: tuple[str, ...] = (),
+    before_insert: Callable[[], None] = lambda: None,
 ) -> DecisionRecord:
-    """``decide`` in the caller's transaction, so later inserts share the decision's commit."""
+    """``decide`` in the caller's transaction, so later inserts share the decision's commit;
+    ``before_insert`` runs after every check, just before the first insert."""
     approving = subject_kind is V and kind is DecisionKind.APPROVE
     validation = (
         approval_check(cursor, subject_id, catalog=catalog, snapshots=snapshots)
@@ -377,6 +379,7 @@ def record_decision(
         ruling=ruling,
         policy=policy,
         rejected_claims=claims,
+        before_insert=before_insert,
     )
 
 
@@ -387,6 +390,7 @@ def append_decision(
     kind: DecisionKind,
     *,
     validation: Validation | None = None,
+    before_insert: Callable[[], None] = lambda: None,
     **fields: Any,
 ) -> DecisionRecord:
     """Pre-check D3 under the queue lock (proposals, memory items, withdrawals) and the subject
@@ -417,9 +421,11 @@ def append_decision(
         )
     if subject_kind is not SubjectKind.REPORT:
         fields["sealed_digest"] = store.subject_digest(cursor, subject_kind, subject_id)
-    if subject_kind is V and kind is DecisionKind.APPROVE:
-        if validation is None or not passes(validation, fields["sealed_digest"]):
-            raise DecisionRefusedError(_UNBOUND.format(version_id=subject_id))
+    approving = subject_kind is V and kind is DecisionKind.APPROVE
+    if approving and (validation is None or not passes(validation, fields["sealed_digest"])):
+        raise DecisionRefusedError(_UNBOUND.format(version_id=subject_id))
+    before_insert()
+    if approving and validation is not None:
         fields["validation_id"] = store.insert_validation(cursor, validation)
     decision = store.insert_decision(
         cursor,
