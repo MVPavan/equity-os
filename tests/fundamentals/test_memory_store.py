@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 from ledger_support import MEMORY_TABLES, RULING, ledger
 from memory_support import Memory, memory
 from pg_evidence_schema_support import _update_column, runtime, seeded
-from pg_support import REPO_ROOT, PgTestDatabase
+from pg_support import MIGRATIONS_DIR, REPO_ROOT, PgTestDatabase
 from psycopg import errors, sql
 
+from fundamentals.api.cli import main
+from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.ledger import DecisionKind, PanelReview, SubjectKind, Verdict
 from fundamentals.contracts.memory import MemoryKind, SupportDraft, SupportTarget
 from fundamentals.ledger import store
@@ -214,6 +218,52 @@ def test_a_retry_returns_the_staged_item_and_writes_nothing(memory: Memory, afte
     with pytest.raises(MemoryStageConflictError, match=f"memory item {item} "):
         memory.stage(supports=(claim,))
     assert (memory.status(item), memory.snapshot()) == (status, rows)
+
+
+@pg
+def test_ledger_stage_prints_one_id_per_item_and_refuses_a_conflict(
+    memory: Memory,
+    pg_db: PgTestDatabase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``ledger stage <item.yaml>`` stages as the runtime; a retry prints the same id; the same
+    columns with other supports exit refused and write nothing."""
+    for name, value in pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+    path = tmp_path / "item.yaml"
+
+    def stage(**update: Any) -> int:
+        path.write_text(yaml.safe_dump(memory.draft(**update).model_dump(mode="json")))
+        return main(["ledger", "stage", str(path)])
+
+    assert stage() == EXIT_OK
+    printed = capsys.readouterr().out
+    assert printed.startswith("memory item ")
+    assert stage() == EXIT_OK
+    assert capsys.readouterr().out == printed
+    rows = memory.snapshot()
+    claim = SupportDraft(target=SupportTarget.CLAIM, target_id=memory.claim_id)
+    assert stage(supports=(claim,)) == EXIT_REFUSED
+    assert memory.snapshot() == rows
+
+
+@pg
+def test_0041_refuses_existing_duplicates_with_their_ids(
+    memory: Memory, pg_db: PgTestDatabase
+) -> None:
+    """Migration 0041 lists each duplicate key group's ids and deletes nothing."""
+    with pg_db.migrator_connection() as conn:
+        conn.execute("DROP INDEX eqos.memory_items_natural_key")
+    first, second = memory.stage(), memory.stage()
+    assert first != second
+    rows = memory.snapshot()
+    migration = (MIGRATIONS_DIR / "0041_memory_natural_key.sql").read_text(encoding="utf-8")
+    with pg_db.migrator_connection() as conn, pytest.raises(errors.UniqueViolation) as refused:
+        conn.execute(migration.encode())
+    assert f"{first}, {second}" in str(refused.value)
+    assert memory.snapshot() == rows
 
 
 @pg

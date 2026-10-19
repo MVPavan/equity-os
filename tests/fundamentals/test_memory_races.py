@@ -22,7 +22,9 @@ from pg_evidence_schema_support import runtime, seeded
 from pg_support import PgTestDatabase
 from psycopg import errors
 
+from fundamentals.contracts.ledger import DecisionKind
 from fundamentals.contracts.memory import MemoryKind, MemoryStatus, SupportDraft, SupportTarget
+from fundamentals.ledger.run_draft import boundary, recall
 from fundamentals.memory.pg_store import MemoryStageConflictError, stage
 from fundamentals.pg.settings import PgRole
 
@@ -154,3 +156,25 @@ def test_concurrent_identical_stages_converge_on_one_item(
         "ORDER BY claim_id NULLS LAST",
         staged[0],
     ) == [(memory.claim_id, None), (None, memory.version_id)]
+
+
+def test_a_boundary_waiting_on_promote_retrieves_the_promoted_item(
+    memory: Memory, pg_db: PgTestDatabase
+) -> None:
+    """PILOT-GAP memory, finding 13: a run's boundary waits on an overlapping owner PROMOTE's
+    queue lock, so it lands after the promotion's stamp; the heading line built at it lists the
+    item, and a later replay at the same boundary gives the same line."""
+    item = memory.stage()
+    taken: list[datetime] = []
+    error, promoted_at = race(
+        pg_db, lambda cursor: promote(cursor, item), lambda cursor: taken.append(boundary(cursor))
+    )
+    assert error is None
+    assert taken[0] > promoted_at
+    runtime = memory.ledger.pools[PgRole.RUNTIME]
+    line = recall(runtime, memory.ledger.entity_id, at=taken[0])
+    assert f"memory:{item} (needs revalidation: no; supports version:{memory.version_id})" in line
+    later = memory.stage(statement="A later item, promoted after the boundary")
+    memory.decide(PgRole.OWNER, later, DecisionKind.PROMOTE)
+    assert f"memory:{later} " in recall(runtime, memory.ledger.entity_id)
+    assert recall(runtime, memory.ledger.entity_id, at=taken[0]) == line

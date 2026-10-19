@@ -9,7 +9,9 @@ the source cutoff, writes the version and checks it ``AS_KNOWN`` in place; anyth
 rolls it all back. A rework of a version with claim rejections (``Prior.rework``, PREP-5)
 carries that version's claims on every line it does not rerun; ``--full-successor``
 (``Prior.full_successor``) reruns it whole. Either way the period's head must still be the
-reworked version, before the run's first write and again under the lock.
+reworked version, before the run's first write and again under the lock. ``recall`` retrieves
+the stock's promoted memory at a store-clock boundary before the pipeline starts; its line is
+sealed in the heading and nothing else reads it (PILOT-GAP memory).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
+from fundamentals.compare.queue import lock_queue
 from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.guidance_claim import EpistemicClass, GuidanceClaim
@@ -77,6 +80,7 @@ from fundamentals.ledger.run_traces import (
     _shown,
     cite,
 )
+from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.output.earnings_update import _ROLE_LABELS, REQUIRED_ROLES, EarningsUpdate
 from fundamentals.output.management_ledger import LedgerStatus
 from fundamentals.store.fact_store import FactRef
@@ -110,6 +114,8 @@ JOIN eqos.interpretations i ON i.id = o.interpretation_id
 JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
 WHERE o.calculation_trace_id = ANY(%s)"""
 _READ_COMMITTED: LiteralString = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
+MEMORY_LINE = "Memory retrieved at store time {boundary}: {items}."
+_MEMORY_ITEM = "memory:{id} (needs revalidation: {flag}; supports {supports})"
 
 
 class Successor(BaseModel):
@@ -161,7 +167,38 @@ class RunDraft(BaseModel):
     lines: tuple[Line, ...]
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
+    memory: str
     retrospective: Retrospective | None = None
+
+
+def boundary(cursor: Cursor[Any]) -> datetime:
+    """The store time after every memory decision or support-falsifying write stamped before
+    it has committed: the queue lock, then the clock."""
+    lock_queue(cursor)
+    row = cursor.execute(_NOW).fetchone()
+    assert row is not None
+    at: datetime = row[0]
+    return at
+
+
+def recall(pool: ConnectionPool, entity_id: int, *, at: datetime | None = None) -> str:
+    """The heading line of the stock's promoted memory as known at a fresh boundary (or a
+    replay at ``at``): each item's id, revalidation flag and support ids."""
+    if at is None:
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            at = boundary(cursor)
+    found = PgMemoryStore(pool).retrieve("", stock=entity_id, cutoff=at)
+    items = "; ".join(
+        _MEMORY_ITEM.format(
+            id=item.id,
+            flag="yes" if item.needs_revalidation else "no",
+            supports=", ".join(
+                f"{ref.target.value.removesuffix('_id')}:{ref.target_id}" for ref in item.supports
+            ),
+        )
+        for item in found
+    )
+    return MEMORY_LINE.format(boundary=at.isoformat(), items=items or "none")
 
 
 def preflight(
@@ -566,7 +603,7 @@ def _sections(
         f"{update.source_cutoff.isoformat()}; derivation cutoff "
         f"{update.derivation_cutoff.isoformat()}.\n{designation}\n"
         f"Prior: {'none (bootstrap period)' if prior.version_id is None else pinned}.\n"
-        f"{full}Originals first seen: {seen}.\n\n"
+        f"{full}Originals first seen: {seen}.\n{run.memory}\n\n"
     )
     bodies = [(HEADING, heading)] + [(key, section_body(key, lines[key])) for key in INTROS]
     return tuple(

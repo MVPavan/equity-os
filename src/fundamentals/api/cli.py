@@ -94,6 +94,7 @@ from fundamentals.ledger.run_draft import (
     check_head,
     gate_lines,
     preflight,
+    recall,
     section_body,
     write_run_draft,
 )
@@ -309,6 +310,7 @@ def run_command(
                 snapshots=snapshots,
                 full_successor=args.full_successor,
             )
+            memory = recall(pool, prior.entity_id)
             repository = EvidenceRepository(pool)
             bound: list[tuple[Line, ...]] = []
 
@@ -353,6 +355,7 @@ def run_command(
                 lines=bound[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
+                memory=memory,
                 retrospective=retrospective,
             )
             version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
