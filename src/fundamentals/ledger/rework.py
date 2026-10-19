@@ -7,9 +7,11 @@ claims are the rejected ones and every claim sharing an atom with them (one hop)
 is every claim on a line holding an affected claim, since a line is re-rendered whole. Anything
 else is carried. Traces are read through the repository, so each hash is re-checked.
 
-A rework run passes every line it would write through a ``Gate`` before its first write: a
-line of carried keys must equal the version's and takes its claims; a line of rerun keys only
-is rerun; any other refuses, as does a missing carried line or a changed section scaffold.
+A rework run passes every line it would write through a ``Gate`` before its first write. A
+line's keys are its text's placeholders, which must be its claims' and new to the run: a line
+of carried keys must equal the version's and takes its claims; a line of rerun keys only is
+rerun; any other refuses, as does a carried line missing or out of the version's order, or a
+changed section scaffold.
 """
 
 from __future__ import annotations
@@ -71,37 +73,41 @@ class Gate:
     ) -> None:
         self.rework, self.body, self.admit = rework, body, admit
         self.recorded: dict[str, list[str]] = defaultdict(list)
-        self.carried: set[tuple[str, frozenset[str]]] = set()
+        self.carried: dict[str, list[tuple[str, frozenset[str]]]] = defaultdict(list)
+        self.seen: frozenset[str] = frozenset()
         self.sources: set[str] = set()
 
     def line(
         self, section: str, text: str, claims: tuple[NumericClaim, ...]
     ) -> tuple[NumericClaim, ...] | None:
         """The version's claims for a carried line, ``None`` for a rerun line, ``()`` for a
-        line without claims; refuses any other."""
+        line without claims; refuses any other, and a line whose placeholders are not exactly
+        its claims or repeat a key the run already showed."""
         self.recorded[section].append(text)
-        keys = frozenset(claim.claim_key for claim in claims)
-        rework = self.rework
-        if not keys:
-            return ()
-        if not keys & rework.carried and keys & rework.rerun:
-            self.sources |= {c.citation.source_sha256 for c in claims if c.citation.source_sha256}
-            return None
-        if keys <= rework.carried and (text, keys) in rework.lines[section]:
-            held = tuple(rework.claims[claim.claim_key] for claim in claims)
-            if all(_same(claim, own) for claim, own in zip(claims, held, strict=True)):
-                self.carried.add((section, keys))
-                return held
+        keys, seen, rework = _keys(text), self.seen, self.rework
+        self.seen = seen | keys
+        if sorted(claim.claim_key for claim in claims) == sorted(keys) and not keys & seen:
+            if not keys:
+                return ()
+            if not keys & rework.carried and keys & rework.rerun:
+                sources = (c.citation.source_sha256 for c in claims)
+                self.sources |= {sha256 for sha256 in sources if sha256}
+                return None
+            if keys <= rework.carried and (text, keys) in rework.lines[section]:
+                held = tuple(rework.claims[claim.claim_key] for claim in claims)
+                if all(_same(claim, own) for claim, own in zip(claims, held, strict=True)):
+                    self.carried[section].append((text, keys))
+                    return held
         raise RunDraftError(f"rework of version {rework.head}: {section} line {sorted(keys)} moved")
 
     def close(self, blobs: frozenset[str]) -> None:
-        """Refuse unless every carried line came back and every section's scaffold is the
-        version's, then admit the run's sources and the carried claims' inputs."""
+        """Refuse unless every carried line came back in the version's order and every
+        section's scaffold is the version's, then admit the run's sources and the carried
+        claims' inputs."""
         rework = self.rework
         for section, held in rework.lines.items():
-            for _, keys in held:
-                if keys <= rework.carried and (section, keys) not in self.carried:
-                    raise RunDraftError(f"rework drops {section} line {sorted(keys)}")
+            if [line for line in held if line[1] <= rework.carried] != self.carried[section]:
+                raise RunDraftError(f"rework drops or reorders carried {section} lines")
         for section, expected in rework.scaffolds.items():
             if scaffold(self.body(section, self.recorded[section])) != expected:
                 raise RunDraftError(f"rework changes the {section} section outside its claims")
@@ -180,6 +186,11 @@ def _blob(blobs: Mapping[int, str], interpretation_id: int | None) -> str | None
     return None if interpretation_id is None else blobs.get(interpretation_id)
 
 
+def _keys(line: str) -> frozenset[str]:
+    """The claim keys a line's placeholders show."""
+    return frozenset(match[0] for match in PLACEHOLDER.findall(line))
+
+
 def scaffold(body: str) -> str:
     """A section body without its claim lines."""
     return "".join(line for line in body.splitlines(True) if not PLACEHOLDER.search(line))
@@ -214,9 +225,7 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
     affected = {key for key, own in atoms.items() if key in keys or own & hit}
     lines = {
         section.section_key: tuple(
-            (line, frozenset(match[0] for match in PLACEHOLDER.findall(line)))
-            for line in section.body.splitlines()
-            if PLACEHOLDER.search(line)
+            (line, _keys(line)) for line in section.body.splitlines() if PLACEHOLDER.search(line)
         )
         for section in version.sections
         if section.ordinal  # the heading (ordinal 0) is run metadata

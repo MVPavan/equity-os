@@ -445,6 +445,23 @@ def _add_metric(body: dict[str, Any]) -> None:
     _rules(body).append(cables | {"metric": "cables_growth_copy"})
 
 
+def _repeat(metric: str, body: dict[str, Any]) -> None:
+    """The ``metric`` guidance rule configured twice."""
+    _rules(body).append(next(r for r in _rules(body) if r["metric"] == metric))
+
+
+def _cables_label(label: str, body: dict[str, Any]) -> None:
+    """The cables guidance shown under ``label``."""
+    for rule in _rules(body):
+        if rule["metric"] == "cables_revenue_growth":
+            rule["label"] = label
+
+
+def _reorder(body: dict[str, Any]) -> None:
+    """The guidance rules in reverse order."""
+    _rules(body).reverse()
+
+
 def _counts(pilot: Pilot) -> tuple[int, ...]:
     """Rows of every table a run writes."""
     found = pilot.query(f"SELECT {', '.join(f'(SELECT count(*) FROM eqos.{t})' for t in TABLES)}")
@@ -458,9 +475,9 @@ def _successor(pilot: Pilot, version: int) -> int:
     return int(found)
 
 
-def _lines(pilot: Pilot, version: int) -> set[str]:
-    """Every line of the version's sections after the heading."""
-    return {line for s in pilot.version(version).sections[1:] for line in s.body.splitlines()}
+def _lines(pilot: Pilot, version: int) -> list[str]:
+    """Every line of the version's sections after the heading, in order."""
+    return [line for s in pilot.version(version).sections[1:] for line in s.body.splitlines()]
 
 
 def test_a_rework_reruns_only_the_rejected_lines(
@@ -495,7 +512,10 @@ def test_a_rework_reruns_only_the_rejected_lines(
     carried = {
         text for held in found.lines.values() for text, keys in held if keys <= found.carried
     }
-    assert carried <= _lines(pilot, new)
+    assert [line for line in _lines(pilot, new) if line in carried] == [
+        line for line in _lines(pilot, version) if line in carried
+    ]
+    assert carried <= set(_lines(pilot, new))
 
 
 def test_a_guidance_rework_binds_and_writes_nothing(
@@ -513,27 +533,42 @@ def test_a_guidance_rework_binds_and_writes_nothing(
 @pytest.mark.parametrize(
     ("rejected", "edit", "intro", "named"),
     [
-        (PBT, _relabel, None, CABLES),
-        (CONDUCTOR, _add_metric, None, "ledger.cables_growth_copy"),
-        (CONDUCTOR, None, "(prior − current)", "changes section"),
+        ((PBT,), _relabel, None, CABLES),
+        ((CONDUCTOR,), _add_metric, None, "ledger.cables_growth_copy"),
+        ((CONDUCTOR,), None, "(prior − current)", "changes section"),
+        ((PBT,), partial(_repeat, "conductor_ebitda_per_mt"), None, CONDUCTOR),
+        ((PBT, CABLES), partial(_repeat, "cables_revenue_growth"), None, CABLES),
+        ((PBT, CABLES), partial(_cables_label, f"{{{{c:{CONDUCTOR}|}}}}"), None, CONDUCTOR),
+        ((PBT, CABLES), partial(_cables_label, "{{c:ledger.unknown|}}"), None, "ledger.unknown"),
+        ((PBT,), _reorder, None, "reorders carried"),
     ],
-    ids=["carried-label", "unexplained-addition", "changes-intro"],
+    ids=[
+        "carried-label",
+        "unexplained-addition",
+        "changes-intro",
+        "repeated-carried-rule",
+        "repeated-rerun-rule",
+        "carried-key-in-rerun-label",
+        "unknown-key-in-rerun-label",
+        "reordered-carried-rules",
+    ],
 )
 def test_a_rework_refuses_movement_outside_its_rerun_lines_before_writing(
     submitted_q2: tuple[Pilot, int],
     calls: Calls,
     monkeypatch: pytest.MonkeyPatch,
-    rejected: str,
+    rejected: tuple[str, ...],
     edit: Callable[[dict[str, Any]], None] | None,
     intro: str | None,
     named: str,
 ) -> None:
     """Presentation drift on a carried line (with a fact role rerun, so a write would follow),
-    an unexplained new claim, and a changed intro (it defines every carried change's sign; Sol
-    r2 4) each refuse inside the hook: a refusal after writes would leave a canonical selection
-    and traces no version cites."""
+    an unexplained new claim, a changed intro (it defines every carried change's sign; Sol
+    r2 4), a claim shown twice, a placeholder that is not its line's claim (a carried or unknown
+    key in a rerun label) and carried lines out of order each refuse inside the hook: a refusal
+    after writes would leave a canonical selection and traces no version cites."""
     pilot, version = submitted_q2
-    _request_changes(pilot, version, rejected)
+    _request_changes(pilot, version, *rejected)
     if intro is not None:
         monkeypatch.setitem(run_draft.INTROS, CHANGES, f"Prior figures and changes {intro}:")
     before = _counts(pilot)
@@ -562,8 +597,12 @@ def test_a_relabelled_guidance_rework_changes_only_its_claim(
     assert {key: c for key, c in after.items() if key != CABLES} == {
         key: c for key, c in before.items() if key != CABLES
     }
-    moved = _lines(pilot, new) ^ _lines(pilot, version)
-    assert len(moved) == 2 and all(CABLES in line for line in moved)
+    moved = [
+        pair
+        for pair in zip(_lines(pilot, new), _lines(pilot, version), strict=True)
+        if len(set(pair)) > 1
+    ]
+    assert len(moved) == 1 and all(CABLES in line for line in moved[0])
 
 
 def test_a_refused_rework_recovers_as_a_full_successor(
