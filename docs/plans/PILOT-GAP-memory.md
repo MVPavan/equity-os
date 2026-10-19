@@ -266,7 +266,7 @@ invalidation to commit.
 ## Interactions with open beads
 
 - **eqos-4j2.20** — closed by Task 1.
-- **eqos-4j2.24** (admission) — lands first; see the shared-files table.
+- **eqos-4j2.24** (admission) — lands after memory and adapts the shared call sites; see the shared-files table.
 - **eqos-4j2.27** — also edits `api/ledger_cli.py`; sequence, never parallel.
 - **eqos-4j2.8** (pilot run) — consumes `ledger stage`, `ledger decide … PROMOTE` and the heading
   line; designs the real contradiction scenario.

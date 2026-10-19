@@ -24,6 +24,7 @@ from psycopg import errors
 
 from fundamentals.contracts.ledger import DecisionKind
 from fundamentals.contracts.memory import MemoryKind, MemoryStatus, SupportDraft, SupportTarget
+from fundamentals.ledger import run_draft
 from fundamentals.ledger.run_draft import boundary, recall
 from fundamentals.memory.pg_store import MemoryStageConflictError, stage
 from fundamentals.pg.settings import PgRole
@@ -178,3 +179,21 @@ def test_a_boundary_waiting_on_promote_retrieves_the_promoted_item(
     memory.decide(PgRole.OWNER, later, DecisionKind.PROMOTE)
     assert f"memory:{later} " in recall(runtime, memory.ledger.entity_id)
     assert recall(runtime, memory.ledger.entity_id, at=taken[0]) == line
+
+
+def test_default_recall_takes_its_cutoff_from_boundary(
+    memory: Memory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ``at``, recall must go through ``boundary`` (queue lock, then clock); reading the
+    clock directly would pass the replay tests above yet miss in-flight decisions."""
+    taken: list[datetime] = []
+
+    def spy(cursor: psycopg.Cursor[Any]) -> datetime:
+        taken.append(boundary(cursor))
+        return taken[-1]
+
+    monkeypatch.setattr(run_draft, "boundary", spy)
+    runtime = memory.ledger.pools[PgRole.RUNTIME]
+    line = recall(runtime, memory.ledger.entity_id)
+    assert len(taken) == 1
+    assert taken[0].isoformat() in line
