@@ -1,16 +1,21 @@
 {
   "now": {
-    "title": "PREP-5 next",
-    "detail": "PREP-4 done: source-of-truth matrix (docs/blueprint/source-of-truth-matrix.md) Sol APPROVE after one fix round. It records pilot gaps now tracked as beads: fact admission not on the run path (eqos-4j2.24, P1), no workflow memory writes (eqos-4j2.25, P1), thesis-impact reads a YAML file (eqos-4j2.26), PILOT-4 citation contract (eqos-4j2.27).",
+    "title": "PREP-6 next",
+    "detail": "PREP-5 done: a rejected claim (ledger decide --claim) reworks only its rerun lines into v(N+1); carried claims reuse N's rows; any other movement, a moved head or an out-of-package source refuses before writing; --full-successor is the recovery path. Also fixed two failures at HEAD: pinned Tijori/Screener extractor sources restored to their seed bytes (96b8a5d), stage2 e2e fixture. Full suite 4166 passed.",
     "stage": "PREP"
   },
   "next": [
-    "PREP-5: rejected-claim rework path and evidence-package versioning (B-14)",
+    "PREP-6, 7, 8",
     "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
-    "PREP-6..8, then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Owner: check equity_os for tijori-v4/screener-v1 pins made Oct 17-19 (may drift after 96b8a5d)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-19",
+      "text": "PREP-5 rejected-claim rework closed: Tasks 1-5 (e304766, 96cedc5, 4f50b25, 768116f, ead2fa6); Sol phase r1 REVISE 3 (duplicate keys, placeholder/claim agreement, carried order) fixed 53bfb79, r2 APPROVE; closing review REVISE 2 (display style before writes, duplicate-claim test) fixed, APPROVE. HEAD failures root-caused: screen-export edits drifted pinned extractor sources (restored, 96b8a5d) and a stale stage2 e2e fixture."
+    },
     {
       "date": "2026-10-18",
       "text": "PREP-4 source-of-truth matrix: Sol r1 REVISE (11: retention authority files, five citation kinds, source-intake receipts, diagnostic vs ledger exports, memory permissions, pin scope, trace validation, evidence packages, exceptions, dashboard, deferred scope), r2 APPROVE. Filed eqos-4j2.24..27 for the pilot gaps it records."
