@@ -1,12 +1,12 @@
 {
   "now": {
-    "title": "Fact admission next (eqos-4j2.24)",
-    "detail": "Memory (eqos-4j2.25) and alignment proofs (eqos-4j2.33) done: six required roles AGREE and admitted in all four pilot quarters (24/24); extractor v3. Full suite 4265 passed (1 test fixed after). Next: fact-admission Tasks 1-3, then the pilot test eqos-4j2.8.",
+    "title": "Pilot exit test next (eqos-4j2.8)",
+    "detail": "All three pilot-blocking gaps done: memory (eqos-4j2.25), alignment 24/24 (eqos-4j2.33), fact admission (eqos-4j2.24). Full suite 4281 passed. Next: plan and build tests/fundamentals/test_pilot_e2e.py (PILOT-1..13 on test databases). The live pilot run still waits on the owner-gated equity_os cutover (eqos-3zl).",
     "stage": "PREP"
   },
   "next": [
-    "Fact admission eqos-4j2.24 Tasks 1-3 (plan Sol-approved)",
-    "Then the pilot test eqos-4j2.8 and the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Plan and build the pilot exit test tests/fundamentals/test_pilot_e2e.py (eqos-4j2.8)",
+    "Owner: GO-AHEAD for the equity_os cutover (eqos-3zl) before the live pilot",
     "PQ3 segment statement still not located (eqos-ghv) — pilot test decides if needed",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: check equity_os for tijori-v4/screener-v1 pins made Oct 17-19 (may drift after 96b8a5d)",
@@ -444,6 +444,10 @@
     {
       "date": "2026-10-19",
       "text": "Memory recall sealed in the version heading (eqos-4j2.25) and alignment proofs (eqos-4j2.33, extractor v3): six required roles admitted in PQ0-PQ3, 24/24. Both Sol-approved."
+    },
+    {
+      "date": "2026-10-19",
+      "text": "Fact admission (eqos-4j2.24): runs admit facts through a pinned comparison run; Sol-approved; full suite 4281 passed. All pilot-blocking gaps closed."
     }
   ]
 }
