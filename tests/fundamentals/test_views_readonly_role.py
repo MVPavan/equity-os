@@ -87,8 +87,14 @@ def _report_matrix(memory: Memory) -> dict[str, int]:
 def _memory_matrix(memory: Memory, withdrawn: int) -> dict[str, int]:
     """Items promoted, promoted-and-flagged, retired both ways, candidate and rejected."""
     owner = PgRole.OWNER
-    items = {name: memory.stage() for name in ("promoted", "retired", "superseded", "rejected")}
-    items["flagged"] = memory.stage(supports=cites((SupportTarget.VERSION, withdrawn)))
+    # Distinct statements: identical columns stage the same item (0041's natural key).
+    items = {
+        name: memory.stage(statement=name)
+        for name in ("promoted", "retired", "superseded", "rejected")
+    }
+    items["flagged"] = memory.stage(
+        statement="flagged", supports=cites((SupportTarget.VERSION, withdrawn))
+    )
     items["cross_stock"] = memory.stage(
         entity_id=None,
         kind=MemoryKind.SOURCE_QUIRK,
