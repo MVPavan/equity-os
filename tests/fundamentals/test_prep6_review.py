@@ -7,6 +7,7 @@ Task 2: ``fundamentals review`` reviews a submitted version claim by claim and f
 decision, writing the decision and every event in one owner transaction; a successor whose
 section bodies are its predecessor's is reviewed only where it changed or was not accepted.
 Times come from a scripted ``review_cli._now``, so every persisted duration is exact.
+Task 3: the seeded-error drill, an instrumentation regression on a shadow version.
 """
 
 from __future__ import annotations
@@ -14,9 +15,12 @@ from __future__ import annotations
 import io
 import itertools
 import json
-from collections.abc import Callable, Iterator
+import re
+from collections import Counter
+from collections.abc import Callable, Collection, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -26,11 +30,11 @@ from evidence_support import Ingest, ingest, policy
 from ledger_support import CONTENT_HASH, CUTOFF, SECTION, Ledger, claim, ledger
 from pg_evidence_schema_support import _insert, runtime, seeded
 from pg_support import PgTestDatabase
-from prep2b_support import QUARTERS, STOCK, Pilot
+from prep2b_support import QUARTERS, RULING, STOCK, Pilot
 from psycopg import errors
 from retained_support import REPO_ROOT
 from test_prep2b_run_draft import dictionary, mapping_set
-from test_prep5_rework import QOQ, _correct
+from test_prep5_rework import CONDUCTOR, QOQ, _correct
 from test_transcript_admission import issuer_config
 
 from fundamentals.api import review_cli
@@ -40,16 +44,18 @@ from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
+    ClaimState,
     DecisionKind,
     NumericClaim,
     PanelReview,
+    ReportKind,
     ReportSection,
     SubjectKind,
     Verdict,
     VersionDraft,
     VersionStatus,
 )
-from fundamentals.ledger import lifecycle, review, store
+from fundamentals.ledger import display, lifecycle, review, store
 from fundamentals.ledger.review import ClaimEvent, CorrectionCategory, Disposition
 from fundamentals.ledger.run_draft import HEADING
 from fundamentals.pg.pool import DatabaseUnavailableError
@@ -772,3 +778,174 @@ def test_review_correction_rereviews_exactly_the_changed_and_rejected_claims(
     successor = rerun().draft_version_id
     assert successor is not None
     assert set(_review_set(pilot, successor)) == set(QOQ)
+
+
+# Task 3 ---------------------------------------------------------------------------------------
+
+PAT, EXPENSES, GAP = "fact.profit_for_period", "fact.total_expenses", "calc.1"
+INCOME_QOQ, INCOME_YOY = "cmp.total_income.qoq.prior", "cmp.total_income.yoy.prior"
+YOY_PRIOR = "cmp.revenue.yoy.prior"
+# Every seeded claim key (decision 7) and the state the check must give it.
+ANSWER = {
+    EXPENSES: ClaimState.VALUE_MISMATCH,  # G1 value
+    INCOME_QOQ: ClaimState.KEY_MISMATCH,  # G2 period
+    GAP: ClaimState.VALUE_MISMATCH,  # G3 calculation
+    CONDUCTOR: ClaimState.QUOTE_MEANING_MISMATCH,  # G4 guidance bounds
+    PBT: ClaimState.MATCH,  # R1 swapped lines
+    PAT: ClaimState.MATCH,  # R1
+    QOQ[0]: ClaimState.MATCH,  # R2 wrong comparator
+    GUIDE: ClaimState.MATCH,  # R3 guidance labelled observed
+}
+R1 = {f"{{{{c:{PBT}|": f"{{{{c:{PAT}|", f"{{{{c:{PAT}|": f"{{{{c:{PBT}|"}
+G5 = {"Reported consolidated figures:": "Reported consolidated figures across 3 segments:"}
+# Script name: the seeded keys it accepts.
+SCRIPTS = {"perfect": frozenset[str](), "misses_r1": frozenset({PBT, PAT})}
+
+
+class Outcome(StrEnum):
+    """A drill claim's score against the answer key."""
+
+    CAUGHT = "CAUGHT"
+    MISSED = "MISSED"
+    FALSE_REJECT = "FALSE_REJECT"
+    CORRECT = "CORRECT"
+    FALSE_DEFER = "FALSE_DEFER"
+
+
+def _seeds(clean: Mapping[str, NumericClaim]) -> dict[str, dict[str, Any]]:
+    """Decision 7's claim mutations of the clean draft (R1 is a text seed)."""
+    yoy, income = clean[YOY_PRIOR], clean[INCOME_QOQ].measurement_key
+    assert income is not None and clean[INCOME_YOY].measurement_key is not None
+    return {
+        EXPENSES: {"value": (clean[EXPENSES].value or 0) + 1},
+        INCOME_QOQ: {
+            "measurement_key": income.model_copy(
+                update={"period": clean[INCOME_YOY].measurement_key.period}
+            )
+        },
+        GAP: {"value": (clean[GAP].value or 0) + Decimal("0.01")},
+        CONDUCTOR: {"upper_bound": (clean[CONDUCTOR].upper_bound or 0) + 1},
+        QOQ[0]: {
+            "value": yoy.value,
+            "measurement_key": yoy.measurement_key,
+            "citation": yoy.citation,
+        },
+        GUIDE: {"epistemic_class": EpistemicClass.OBSERVED},
+    }
+
+
+def _shadow(
+    cursor: psycopg.Cursor[Any],
+    draft: VersionDraft,
+    entity_id: int,
+    period: str,
+    claims: Mapping[str, Mapping[str, Any]],
+    text: Mapping[str, str],
+) -> int:
+    """A copy of ``draft`` with ``claims`` updated and ``text`` replaced in every section, as
+    the root of a new report of ``entity_id`` for ``period``, under a recomputed content hash."""
+    pattern = re.compile("|".join(map(re.escape, text)))
+    sections = tuple(
+        s.model_copy(update={"body": pattern.sub(lambda m: text[m[0]], s.body)})
+        for s in draft.sections
+    )
+    seeded = tuple(c.model_copy(update=claims.get(c.claim_key, {})) for c in draft.claims)
+    report = store.create_report(
+        cursor, entity_id=entity_id, period=period, kind=ReportKind.EARNINGS_UPDATE
+    )
+    shadow = draft.model_copy(
+        update={
+            "report_id": report,
+            "predecessor_id": None,
+            "sections": sections,
+            "claims": seeded,
+            "content_hash": display.content_hash(sections, seeded),
+        }
+    )
+    return store.create_version(cursor, shadow)
+
+
+def _score(answer: Collection[str], dispositions: Mapping[str, Disposition]) -> dict[str, Outcome]:
+    """Each claim's outcome: a seed must be edited or rejected, a clean claim accepted."""
+
+    def outcome(key: str, disposition: Disposition) -> Outcome:
+        corrected = disposition in (EDITED, REJECTED)
+        if key in answer:
+            return Outcome.CAUGHT if corrected else Outcome.MISSED
+        if corrected:
+            return Outcome.FALSE_REJECT
+        return Outcome.FALSE_DEFER if disposition is DEFERRED else Outcome.CORRECT
+
+    return {key: outcome(key, d) for key, d in dispositions.items()}
+
+
+def _verdict(outcomes: Mapping[str, Outcome]) -> tuple[bool, list[str]]:
+    """Whether the drill passes, and the keys failing it."""
+    failing = sorted(k for k, o in outcomes.items() if o not in (Outcome.CAUGHT, Outcome.CORRECT))
+    return not failing, failing
+
+
+@pytest.mark.parametrize("script", SCRIPTS)
+def test_drill_gate_seeds_are_caught_review_seeds_scored_and_a_miss_fails(
+    pg_db: PgTestDatabase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ingest: Ingest,
+    script: str,
+) -> None:
+    """Decision 7's seeded-error drill. This is an instrumentation regression, not a detection
+    test: the scripted reviewer holds the answer key, so it proves that gate seeds are caught
+    by the deterministic checks, that review seeds pass them (or the drill tests nothing the
+    checks don't), that the shadow cannot be approved, and that every disposition and time is
+    recorded and scored with REQUEST_CHANGES naming exactly the seeds. A script missing R1 must
+    score FAIL, or the drill cannot fail. Detection of review-only seeds is not demonstrated
+    (eqos-4j2.30). Everything is written to the disposable test database and ``tmp_path``."""
+    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest)
+    version = pilot.run("FY26_Q2").draft_version_id
+    assert version is not None
+    draft = pilot.version(version)
+    clean = {c.claim_key: c for c in draft.claims}
+    with pg_db.runtime_pool() as pool:
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            shadow = _shadow(cursor, draft, pilot.entity_id, "FY26_Q2_DRILL", _seeds(clean), R1)
+            bare = _shadow(cursor, draft, pilot.entity_id, "FY26_Q2_DRILL_G5", {}, G5)
+        lifecycle.submit(pool, shadow, **pilot.sources())
+        with pytest.raises(lifecycle.DecisionRefusedError, match="UNREGISTERED_NUMBER"):
+            lifecycle.submit(pool, bare, **pilot.sources())
+    # (a) the checks flag exactly the gate seeds.
+    assert any(state is not ClaimState.MATCH for state in ANSWER.values())
+    states = dict(pilot.validate(shadow).claim_states)
+    assert states == {key: ANSWER.get(key, ClaimState.MATCH) for key in clean}
+    # (b) the owner's approval is refused by the check.
+    with pg_db.owner_pool() as owner, pytest.raises(lifecycle.DecisionRefusedError):
+        lifecycle.decide(
+            owner,
+            subject_kind=V,
+            subject_id=shadow,
+            kind=DecisionKind.APPROVE,
+            ruling=RULING,
+            **pilot.sources(),
+        )
+    assert _status(pilot, shadow) is VersionStatus.IN_REVIEW
+    # (d)/(e) the scripted review through the CLI, scored from the stored rows.
+    _ticking(monkeypatch, T0)
+    session = tmp_path / "drill"
+    assert _start(shadow, session) == 0
+    for key in _review_set(pilot, shadow):
+        caught = key in ANSWER and key not in SCRIPTS[script]
+        assert _claim(session, key, REJECTED if caught else ACCEPTED) == 0
+    assert _finish(monkeypatch, session, DecisionKind.REQUEST_CHANGES) == 0
+    events = pilot.query(_EVENT_ROWS, shadow)
+    assert sorted(key for _, key, *_ in events) == sorted(clean)
+    assert all(elapsed > 0 for *_, elapsed, _, _ in events)
+    ((*_, kind, rejected),) = pilot.query(_SESSION_ROW, shadow)
+    assert (kind, sorted(rejected)) == ("REQUEST_CHANGES", sorted(set(ANSWER) - SCRIPTS[script]))
+    outcomes = _score(ANSWER, {key: Disposition(d) for _, key, d, *_ in events})
+    assert _verdict(outcomes) == (not SCRIPTS[script], sorted(SCRIPTS[script]))
+    by_class = Counter((clean[k].epistemic_class, o) for k, o in outcomes.items())
+    if script == "perfect":
+        assert {pair: n for pair, n in by_class.items() if pair[1] is not Outcome.CORRECT} == {
+            (EpistemicClass.OBSERVED, Outcome.CAUGHT): 5,
+            (EpistemicClass.COMPUTED, Outcome.CAUGHT): 1,
+            (EpistemicClass.FORECAST, Outcome.CAUGHT): 2,
+        }
