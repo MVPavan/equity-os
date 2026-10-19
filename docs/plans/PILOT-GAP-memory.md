@@ -144,7 +144,7 @@ stay memory-blind.
   quarter's preflight, which reads decisions (`run_draft.py:206–209`).
 - The pilot's real contradiction scenario is eqos-4j2.8's; the test uses this device.
 
-## Shared files with eqos-4j2.24 (`docs/plans/PILOT-GAP-admission.md`) — sequence admission first
+## Shared files with eqos-4j2.24 (`docs/plans/PILOT-GAP-admission.md`) — sequence memory first (orchestrator ruling 2026-10-19)
 
 | File / function | Admission | Memory |
 |---|---|---|
@@ -153,8 +153,8 @@ stay memory-blind.
 | `tests/fundamentals/test_prep2b_run_draft.py` | e2e host | not touched |
 
 No other shared file: admission does not touch `ledger/run_draft.py`, `memory/`, `ledger_cli.py`
-or migrations (it claims none; this plan takes 0041). Memory's pilot test runs on admission's
-`Pilot` (with `--compare-run`), so it lands after admission. eqos-4j2.27 also edits
+or migrations (it claims none; this plan takes 0041). Memory lands first and its pilot test runs on today's
+`Pilot`; admission later puts `--compare-run` in `Pilot`'s shared argv path, which memory's tests then inherit. eqos-4j2.27 also edits
 `api/ledger_cli.py` — sequence, never parallel.
 
 ## File map
