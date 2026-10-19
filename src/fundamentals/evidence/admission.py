@@ -62,10 +62,11 @@ FROM eqos.fact_rows WHERE target_store = %(store)s AND handle = %(handle)s
 ON CONFLICT (store_id, result_id, interpretation_id) DO NOTHING RETURNING id
 """
 _RECORD: LiteralString = """
-SELECT id AS admission_id, row_handle AS handle, store_id, fact_origin AS origin,
-    fact_origin_id AS origin_id, run_id, result_id, interpretation_id, occurrence_id,
-    overlay_position
-FROM eqos.fact_admissions WHERE store_id = %s AND result_id = %s AND interpretation_id = %s
+SELECT a.id AS admission_id, a.row_handle AS handle, a.store_id, a.fact_origin AS origin,
+    a.fact_origin_id AS origin_id, a.run_id, a.result_id, a.interpretation_id, a.occurrence_id,
+    a.overlay_position, r.key_digest
+FROM eqos.fact_admissions a JOIN eqos.results r ON r.id = a.result_id
+WHERE a.store_id = %s AND a.result_id = %s AND a.interpretation_id = %s
 """
 _HANDLE: LiteralString = (
     "SELECT row_handle FROM eqos.fact_admissions WHERE id = %s AND store_id = %s"
@@ -100,6 +101,7 @@ class AdmissionRecord(BaseModel):
     interpretation_id: int
     occurrence_id: int
     overlay_position: datetime
+    key_digest: str
 
 
 class AdmissionOutcome(BaseModel):

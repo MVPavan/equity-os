@@ -4,7 +4,8 @@
 and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
 behind them; an interpretation ``FIGURE`` with no run its own mapped value), a quote only a
 non-vendor capture, a ``COMPARISON`` its own run and key, a
-``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, and a declared
+``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, an admitted fact
+only its admissions under the citing version's pinned runs, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
 A drafted quote's guidance contract is the one a sealed import binds to the same quote
@@ -18,7 +19,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
@@ -48,6 +49,7 @@ from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.source_catalog import SourceCatalog, SourceClass, UnknownSourceError
 from fundamentals.entity.identity_layers import issuer_values
+from fundamentals.evidence.admission import ADMITTED_CONCEPT_PREFIX
 from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
@@ -88,6 +90,13 @@ _FILE_CAPTURES: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c "
     "WHERE c.blob_sha256 = %s ORDER BY first_seen, c.id"
 )
+# An admitted fact's admissions of the report's issuer under the pinned runs, with their keys.
+_ADMITTED: LiteralString = """SELECT r.key_digest, r.value_kind, r.currency, a.overlay_position,
+    o.capture_ref_id
+FROM eqos.fact_admissions a JOIN eqos.results r ON r.id = a.result_id
+JOIN eqos.occurrences o ON o.id = a.occurrence_id
+WHERE a.fact_origin = %s AND a.fact_origin_id = %s AND r.entity_id = %s
+    AND a.run_id = ANY(%s)"""
 _RUN_CELL: LiteralString = """SELECT r.key_digest, r.value_kind, r.currency, run.created_at,
     r.extraction_status, r.corroboration_status, EXISTS (SELECT 1 FROM eqos.result_source_values f
     WHERE f.result_id = r.id AND f.source_role = 'FIRST_PARTY' AND f.source_state = 'VALUE')
@@ -189,18 +198,28 @@ def resolve_citation(
     overlay_position: datetime,
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
+    run_ids: Sequence[int] = (),
 ) -> ResolvedCitation | None:
     """What the claim's citation resolves to at ``overlay_position``, or ``None``.
 
     ``entity_id`` is the stock of the claim's report, which every keyed record and a ``POLICY``
-    decision must share.
+    decision must share; ``run_ids`` are the citing version's pinned comparison runs, the only
+    runs whose admissions an admitted fact resolves through.
     """
     citation = claim.citation
     with cursor.connection.cursor(row_factory=dict_row) as own:
         if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
             return None
         if citation.kind is CitationKind.FIGURE and citation.fact_origin_id is not None:
-            return _fact(own, citation.fact_origin, citation.fact_origin_id, entity_id, catalog)
+            return _fact(
+                own,
+                citation.fact_origin,
+                citation.fact_origin_id,
+                entity_id,
+                catalog,
+                claim,
+                run_ids,
+            )
         if citation.kind is CitationKind.FIGURE and citation.interpretation_id is not None:
             times = _input_times(own, (), (citation.interpretation_id,), catalog)
             if times is None:
@@ -308,14 +327,24 @@ def _source(own: Cursor[Any], citation: Citation) -> str | None:
 
 
 def _fact(
-    own: Cursor[Any], origin: str | None, origin_id: int, entity_id: int, catalog: SourceCatalog
+    own: Cursor[Any],
+    origin: str | None,
+    origin_id: int,
+    entity_id: int,
+    catalog: SourceCatalog,
+    claim: NumericClaim,
+    run_ids: Sequence[int],
 ) -> ResolvedCitation | None:
-    """A legacy fact of the report's issuer, through its translation and its bound capture; or a
-    native (run-written) fact of that issuer, through ``translate`` and its file's first-party
+    """A legacy fact of the report's issuer, through its translation and its bound capture; a
+    native admitted fact, through its pinned admissions (``_admitted``); or a native
+    (run-written) fact of that issuer, through ``translate`` and its file's first-party
     capture, also held to its row's store-clock recording time."""
     row = own.execute(_FACT, (origin, origin_id)).fetchone()
     if row is None:
         return None
+    observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
+    if origin == NATIVE_ORIGIN and observation["concept_qname"].startswith(ADMITTED_CONCEPT_PREFIX):
+        return _admitted(own, row, origin_id, entity_id, catalog, claim, run_ids)
     recorded: _Times = ()
     if origin == NATIVE_ORIGIN:
         key, capture = _native_key(own, row, entity_id), _file_capture(own, row, catalog)
@@ -324,7 +353,6 @@ def _fact(
         key, capture = _legacy_key(row), _first_party_capture(own, row["capture_ref_id"], catalog)
     if capture is None or key is None or key.entity_id != entity_id:
         return None
-    observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
     return ResolvedCitation(
         value=Decimal(str(observation["normalized_value"])),
         key_digest=key.digest(),
@@ -337,6 +365,47 @@ def _fact(
             (InputTime.FIRST_SEEN, capture["first_seen"]),
             (InputTime.SELECTED, row["selected_at"]),
             *recorded,
+        ),
+    )
+
+
+def _admitted(
+    own: Cursor[Any],
+    row: _Row,
+    origin_id: int,
+    entity_id: int,
+    catalog: SourceCatalog,
+    claim: NumericClaim,
+    run_ids: Sequence[int],
+) -> ResolvedCitation | None:
+    """An admitted fact of the report's issuer, through its admissions under the pinned runs:
+    their one key, value kind and currency, its base-unit value in the claim's scale, and the
+    earliest pinned admission as its recording time; every admitted occurrence's capture must
+    be first-party."""
+    admissions = own.execute(
+        _ADMITTED, (NATIVE_ORIGIN, origin_id, entity_id, list(run_ids))
+    ).fetchall()
+    cells = {(a["key_digest"], a["value_kind"], a["currency"]) for a in admissions}
+    captures = [
+        _first_party_capture(own, capture, catalog)
+        for capture in {a["capture_ref_id"] for a in admissions}
+    ]
+    seen = [capture["first_seen"] for capture in captures if capture is not None]
+    if len(cells) != 1 or len(seen) != len(captures):
+        return None
+    ((digest, value_kind, currency),) = cells
+    observation = Fact.model_validate_json(row["fact_json"]).observation
+    return ResolvedCitation(
+        value=_claim_scaled(observation.normalized_value, claim),
+        key_digest=digest,
+        value_kind=ValueKind(value_kind),
+        currency=currency,
+        times=(
+            (InputTime.KNOWLEDGE, _instant(row["knowledge_time"])),
+            *((InputTime.FIRST_SEEN, at) for at in seen),
+            (InputTime.SELECTED, row["selected_at"]),
+            (InputTime.RECORDED, _instant(row["created_at"])),
+            (InputTime.RECORDED, min(a["overlay_position"] for a in admissions)),
         ),
     )
 
@@ -454,8 +523,9 @@ def _run_cell(
 
 
 def _claim_scaled(value: Decimal, claim: NumericClaim) -> Decimal:
-    """A run-store value, held in base units (INR, not crore), in the claim's scale, so row 5
-    compares it at the claim's display precision. Legacy facts carry their own scale."""
+    """A run-store or admitted-fact value, held in base units (INR, not crore), in the claim's
+    scale, so row 5 compares it at the claim's display precision. Legacy facts carry their own
+    scale."""
     return value / (claim.scale or 1)
 
 

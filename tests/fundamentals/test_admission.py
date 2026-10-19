@@ -1,17 +1,18 @@
 """D2.4 admission (plan D2 Task 4): the §4 policy over real Stage 1 runs, the admission record,
-idempotence and atomicity, the bridge, and the separate selection and read steps."""
+idempotence and atomicity, the bridge, and the separate selection and read steps; and
+admitted facts as ledger citations (PILOT-GAP-admission Task 1)."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
-from retained_support import APAR_ISSUER_CONFIG, apar_original
+from retained_support import APAR_ISSUER_CONFIG, apar_catalog, apar_original
 from stage1_e2e_support import RUNS, Stage, row_key
 
 from fundamentals.api.config import load_config
@@ -24,10 +25,18 @@ from fundamentals.compare.queue import (
 )
 from fundamentals.compare.run import load_results
 from fundamentals.compare.run_models import ResultRow
-from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
+from fundamentals.contracts.canonical import Basis, Representation, StatementFamily, ValueKind
 from fundamentals.contracts.comparison import ExtractionStatus, SourceRole
 from fundamentals.contracts.evidence import InterpretationOrigin, PrecisionKind, RunMode
 from fundamentals.contracts.fact import ReconciliationStatus
+from fundamentals.contracts.guidance_claim import EpistemicClass
+from fundamentals.contracts.ledger import (
+    Citation,
+    CitationKind,
+    ClaimState,
+    NumericClaim,
+    Rounding,
+)
 from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.review_queue import DispositionKind, QueueItemDraft, QueueSeverity
 from fundamentals.evidence.admission import (
@@ -46,12 +55,15 @@ from fundamentals.extract.pdf_statement_pages import (
     specs_from_config,
 )
 from fundamentals.ingest.pdf_source import load_pdf
+from fundamentals.ledger.citations import resolve_citation
+from fundamentals.ledger.claim_check import check_claim
 from fundamentals.store.fact_store import (
     BarredAnchorFactError,
     CanonicalSelectionError,
     FactRef,
 )
 from fundamentals.store.pg_fact_store import PgFactStore, create_native_store
+from fundamentals.store.snapshot_store import SnapshotStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -164,6 +176,7 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
     # Each record names exactly its source rows, at one overlay position.
     for key, record in ((PAT, pat), (EPS, eps)):
         row = rows[key]
+        assert record.key_digest == row.key.digest()
         with pool.connection() as conn:
             result = conn.execute(RESULT_ID, (run_id, row.key.digest(), row.value_identity.value))
             (result_id,) = result.fetchone() or ()
@@ -332,3 +345,117 @@ def test_single_representation_not_applicable_is_admitted(pg_db: Any, tmp_path: 
         assert revision.row_id == record.handle
         assert fact.reconciliation_status is ReconciliationStatus.UNRECONCILED
         assert fact.observation.normalized_value == Decimal(906_100_000)
+
+
+# The rendered claims: PAT in INR crore and EPS in INR per share, as a draft states them.
+CLAIMED = {
+    PAT: ("INR crore", 10_000_000, ValueKind.CURRENCY_AMOUNT, Decimal("251.70")),
+    EPS: ("INR per share", 1, ValueKind.PER_SHARE_AMOUNT, Decimal("62.66")),
+}
+
+
+def _claim(row: ResultRow, key: str, ref: FactRef, value: Decimal | None = None) -> NumericClaim:
+    """A ``FIGURE`` claim on the admitted fact ``ref`` under the row's key."""
+    unit, scale, kind, claimed = CLAIMED[key]
+    return NumericClaim(
+        claim_key=f"fact.{key}",
+        section_key="results",
+        citation=Citation(
+            kind=CitationKind.FIGURE, fact_origin=ref.origin, fact_origin_id=ref.origin_id
+        ),
+        measurement_key=row.key,
+        value_kind=kind,
+        unit=unit,
+        currency="INR",
+        scale=scale,
+        value=claimed if value is None else value,
+        precision=2,
+        rounding=Rounding.ROUND_HALF_UP,
+        epistemic_class=EpistemicClass.OBSERVED,
+    )
+
+
+def test_admitted_facts_resolve_through_pinned_admissions(apar: Ran, tmp_path: Path) -> None:
+    """An admitted fact is citable only for its issuer and through an admission of a pinned
+    run; the earliest such admission of the cited row bounds it as known."""
+    stage, run_id, rows = apar
+    pool, repository = stage.pool, stage.repository
+    catalog, snapshots = apar_catalog(), SnapshotStore(tmp_path / "snapshots")
+
+    def state(
+        claim: NumericClaim,
+        run_ids: tuple[int, ...],
+        cutoff: datetime | None = None,
+        entity_id: int | None = None,
+    ) -> ClaimState:
+        """The AS_KNOWN check of ``claim`` at ``cutoff`` (default: the store clock now)."""
+        at = cutoff or repository.store_clock()
+        with pool.connection() as conn, conn.cursor() as cursor:
+            resolved = resolve_citation(
+                cursor,
+                claim,
+                entity_id=stage.entity_id if entity_id is None else entity_id,
+                overlay_position=at,
+                catalog=catalog,
+                snapshots=snapshots,
+                run_ids=run_ids,
+            )
+        return check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=at, imported=False)
+
+    # Admitted and selected: the crore and per-share claims match; a wrong value or another
+    # report's issuer does not.
+    store_id = create_native_store(pool, "cite")
+    store = PgFactStore(pool, store_id)
+    records = admit_run(run_id, pool=pool, store_id=store_id).records
+    claims: dict[str, NumericClaim] = {}
+    for key in (PAT, EPS):
+        record = _record(records, rows[key])
+        select_admitted(
+            pool,
+            store_id=store_id,
+            admission_id=record.admission_id,
+            reason="test: cite",
+            expected_selection_id=0,
+        )
+        claims[key] = _claim(rows[key], key, record.ref)
+        assert state(claims[key], (run_id,)) is ClaimState.MATCH
+    wrong = _claim(rows[PAT], PAT, _record(records, rows[PAT]).ref, Decimal("251.80"))
+    assert state(wrong, (run_id,)) is ClaimState.VALUE_MISMATCH
+    assert state(claims[PAT], (run_id,), entity_id=stage.entity_id + 1) is ClaimState.UNRESOLVED
+
+    # The same admitted PAT row written and selected directly in another store at T1 is an
+    # ``eqos:`` fact with no admission: unresolved.
+    (revision,) = [
+        item
+        for item in store.get_revisions(key_identity(rows[PAT].key))
+        if item.row_id == _record(records, rows[PAT]).handle
+    ]
+    direct_id = create_native_store(pool, "direct")
+    direct = PgFactStore(pool, direct_id)
+    row_id = direct.put(revision.fact).row_id
+    direct.select_canonical(row_id, "test: selected before admission")
+    shared = _claim(rows[PAT], PAT, direct.fact_ref(row_id))
+    assert state(shared, (run_id,)) is ClaimState.UNRESOLVED
+
+    # Admitted at T2 (the row is reused): past a cutoff in (T1, T2), known after T2. The first
+    # store's earlier admission of the same run is another row and does not count.
+    between = repository.store_clock()
+    admitted = admit_run(run_id, pool=pool, store_id=direct_id).records
+    assert _record(admitted, rows[PAT]).handle == row_id
+    assert state(shared, (run_id,), between) is ClaimState.POST_CUTOFF
+    assert state(shared, (run_id,)) is ClaimState.MATCH
+
+    # A second comparison run (first-party only, so another identity) admits the same row at
+    # T3: each pinned run's own admission time, the earliest when both are pinned, nothing when
+    # neither is.
+    second = stage.execute(vendors=[]).run_id
+    assert second != run_id
+    later = repository.store_clock()
+    admitted = admit_run(second, pool=pool, store_id=direct_id).records
+    assert _record(admitted, rows[PAT]).handle == row_id
+    assert state(shared, (second,), later) is ClaimState.POST_CUTOFF
+    assert state(shared, (run_id,), later) is ClaimState.MATCH
+    assert state(shared, (run_id, second), later) is ClaimState.MATCH
+    assert state(shared, (run_id, second), between) is ClaimState.POST_CUTOFF
+    assert state(shared, (second,)) is ClaimState.MATCH
+    assert state(shared, (max(run_id, second) + 1,)) is ClaimState.UNRESOLVED

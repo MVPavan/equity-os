@@ -264,6 +264,7 @@ def check_version(
                 overlay_position=boundary,
                 catalog=catalog,
                 snapshots=snapshots,
+                run_ids=draft.pinned_run_ids,
             ),
             bound.get(claim.claim_key)
             if imported or claim.citation.kind is not CitationKind.SOURCE_QUOTE
