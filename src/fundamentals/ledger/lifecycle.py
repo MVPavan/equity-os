@@ -336,22 +336,48 @@ def decide(
     version binds the check this transaction makes with ``catalog`` and ``snapshots``, which
     must pass (D4); ``claims`` are the keys a ``REQUEST_CHANGES`` rejects (PREP-5)."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        approving = subject_kind is V and kind is DecisionKind.APPROVE
-        validation = (
-            approval_check(cursor, subject_id, catalog=catalog, snapshots=snapshots)
-            if approving and catalog is not None and snapshots is not None
-            else None
-        )
-        return append_decision(
+        return record_decision(
             cursor,
-            subject_kind,
-            subject_id,
-            kind,
-            validation=validation,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            kind=kind,
             ruling=ruling,
             policy=policy,
-            rejected_claims=claims,
+            catalog=catalog,
+            snapshots=snapshots,
+            claims=claims,
         )
+
+
+def record_decision(
+    cursor: Cursor[Any],
+    *,
+    subject_kind: SubjectKind,
+    subject_id: int,
+    kind: DecisionKind,
+    ruling: str,
+    policy: PolicyValue | None = None,
+    catalog: SourceCatalog | None = None,
+    snapshots: SnapshotStore | None = None,
+    claims: tuple[str, ...] = (),
+) -> DecisionRecord:
+    """``decide`` in the caller's transaction, so later inserts share the decision's commit."""
+    approving = subject_kind is V and kind is DecisionKind.APPROVE
+    validation = (
+        approval_check(cursor, subject_id, catalog=catalog, snapshots=snapshots)
+        if approving and catalog is not None and snapshots is not None
+        else None
+    )
+    return append_decision(
+        cursor,
+        subject_kind,
+        subject_id,
+        kind,
+        validation=validation,
+        ruling=ruling,
+        policy=policy,
+        rejected_claims=claims,
+    )
 
 
 def append_decision(

@@ -562,13 +562,15 @@ def test_the_runtime_role_may_submit_only(ledger: Ledger, seeded: dict[str, int]
                     conn.execute(sql.SQL(statement).format(sql.Identifier("eqos", table), column))
 
 
-GATED = LEDGER_TABLES | COVERAGE_TABLES | {"queue_dispositions", "capture_refs"}
+REVIEW_TABLES = {"review_sessions", "claim_reviews"}
+GATED = LEDGER_TABLES | COVERAGE_TABLES | REVIEW_TABLES | {"queue_dispositions", "capture_refs"}
 INSERTERS = {
     RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions", "panel_reviews"})
     | {"queue_dispositions", "capture_refs"},
     PANEL_ROLE: (LEDGER_TABLES - {"disposition_proposals"}) | {"queue_dispositions"},
     OWNER_ROLE: {"decisions", "queue_dispositions", "validations", "validation_claim_states"}
     | COVERAGE_TABLES
+    | REVIEW_TABLES
     | {"capture_refs"},
 }
 
