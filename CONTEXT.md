@@ -57,6 +57,10 @@ _Avoid_: confidence level (that is a separate field)
 The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record).
 _Avoid_: context (unqualified)
 
+**Pilot source package**:
+The five frozen input files of one pilot quarter (XBRL, results PDF, transcript PDF, QoQ and YoY comparator XBRLs), pinned by id and sha256 in the pilot manifest. The input a run must read, not the evidence package it produces.
+_Avoid_: evidence package (for the inputs)
+
 **Valid time / knowledge time**:
 The bitemporal pair: when a fact applies vs when the system could have known it. Every other timestamp must have a precise definition.
 _Avoid_: date (unqualified), as-of (ambiguous)
