@@ -26,18 +26,18 @@ PHASES = [  # (label, epic id, name)
     ("D5", "eqos-tfb", "Generated views"),
     ("D6", "eqos-h4h", "Identifier-only onboarding"),
     ("D7", "eqos-3oq", "Coverage model"),
-    ("D8", "eqos-17r", "Shareholding filing source"),
+    ("D8", "eqos-17r", "Shareholding filing source — parked (owner 2026-10-17)"),
     ("D9", "eqos-4fc", "Retention and replay"),
 ]
 # Pilot prerequisites are not all beads; their state is recorded here and updated by hand.
 PREP = [
     ("PREP-1", "SEBI 2026 taxonomy mappings", "done"),
-    ("PREP-2", "Workflow reads only PostgreSQL", "todo"),
-    ("PREP-3", "Resumable workflow states", "todo"),
-    ("PREP-4", "Source-of-truth matrix", "todo"),
-    ("PREP-5", "Rejected-claim rework path", "todo"),
-    ("PREP-6", "Review telemetry on ledger claims", "todo"),
-    ("PREP-7", "Frozen pilot manifest", "todo"),
+    ("PREP-2", "Workflow reads only PostgreSQL", "done"),
+    ("PREP-3", "Resumable workflow states", "done"),
+    ("PREP-4", "Source-of-truth matrix", "done"),
+    ("PREP-5", "Rejected-claim rework path", "done"),
+    ("PREP-6", "Review telemetry on ledger claims", "done"),
+    ("PREP-7", "Frozen pilot manifest", "done"),
     ("PREP-8", "verify_project.sh (foundation built)", "todo"),
 ]
 # Architecture: (id, column, row, label, sublabel, stage refs). A ref is a phase label ("D3"),
