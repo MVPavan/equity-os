@@ -37,13 +37,15 @@ WHERE (origin, origin_id) IN (SELECT * FROM unnest(%s::text[], %s::bigint[]))"""
 
 
 class Rework(BaseModel):
-    """Version ``head``'s claims by key, its claim lines per section (text and keys), the rerun
-    and carried keys, the blobs the carried claims rest on, and each section's scaffold."""
+    """Version ``head``'s claims by key with their input atoms, its claim lines per section (text
+    and keys), the rerun and carried keys, the blobs the carried claims rest on, and each
+    section's scaffold."""
 
     model_config = ConfigDict(frozen=True)
 
     head: int
     claims: Mapping[str, NumericClaim]
+    atoms: Mapping[str, frozenset[Atom]]
     lines: Mapping[str, tuple[tuple[str, frozenset[str]], ...]]
     rerun: frozenset[str]
     carried: frozenset[str]
@@ -226,6 +228,7 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
     return Rework(
         head=head,
         claims=claims,
+        atoms=atoms,
         lines=lines,
         rerun=rerun,
         carried=carried,
