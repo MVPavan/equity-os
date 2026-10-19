@@ -308,3 +308,15 @@ Format per entry:
 - Why it matters: a red full suite here is often environmental, not the change under test.
 - Apply: on that error, rerun the test and note it on eqos-0bp; do not chase it in feature
   code. Durable fix is host time sync or a monotonic test clock (eqos-0bp).
+
+## Pinned extractor sources are frozen bytes  (2026-10-19)
+
+- Observed: screen-export commits edited `ingest/tijori_source.py` and
+  `ingest/screener_session_models.py` without a version bump. Both files are hashed into the
+  vendor extractor pins (`compare/run_config.py` `VENDOR_EXTRACTORS`). Databases pinned
+  earlier raised `VersionContentDriftError`. Targeted suites passed; only the full suite
+  caught it (`test_derived_settings`).
+- Why it matters: a version bump is no cheap way out, because frozen manifests and fixtures
+  name the old versions.
+- Apply: before editing an ingest file, check whether it is listed in `VENDOR_EXTRACTORS`.
+  If it is, put new code in an unpinned module. Run the full suite once per phase.
