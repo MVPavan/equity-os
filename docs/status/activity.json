@@ -1,11 +1,10 @@
 {
   "now": {
-    "title": "PREP-7 next",
-    "detail": "PREP-6 done: fundamentals review reviews a ledger version claim by claim; finish writes the owner decision, review session and per-claim disposition/time in one transaction (migration 0040); rejected/edited keys feed PREP-5 rework on REQUEST_CHANGES; seeded-error drill as an instrumentation regression. Full suite 4219 passed. Review-seed detection still needs an owner blind run (eqos-4j2.30).",
+    "title": "PREP-8 next",
+    "detail": "PREP-7 done: frozen pilot manifest (four quarters PQ0-PQ3: IST cutoff, five-member input package with ids + sha256, retrospective designation, 46 claims each), transcribed from filing bytes by a reviewed aid and re-derived by Sol; no human read the filings. Full suite 4250 passed.",
     "stage": "PREP"
   },
   "next": [
-    "PREP-7: frozen pilot manifest (hand-verified expected values, cutoffs, reviewed packages)",
     "PREP-8: scripts/verify_project.sh",
     "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
     "Then the Apar pilot (cutover eqos-3zl owner-approved)",
@@ -14,6 +13,10 @@
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-19",
+      "text": "PREP-7 frozen pilot manifest closed: plan 792fee2 (Sol r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; closing REVISE 7 → REVISE 2 → APPROVE); manifest + check 1b74d77, payload ad188b0d… (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs ab83c9d. Full suite 4250 passed, 9 skipped."
+    },
     {
       "date": "2026-10-19",
       "text": "PREP-6 review telemetry closed: Tasks 1-4 (542902f, 45700e6, 776bcba, fd03d08); Sol phase r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE (7fc0584); closing REVISE 3 → APPROVE (ae2da10). Post-review full suite found 8 table-enumeration/import test regressions, fixed 020521c; final full suite 4219 passed, 9 skipped."
