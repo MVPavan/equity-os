@@ -1,0 +1,19 @@
+# Mapping set v6 (eqos-4j2.33): v5 with pdf/v2 in place of pdf/v1, for the Apar Q3 FY26-Q1 FY27 results layout.
+version: v6
+normalisation_policy_version: v1
+entry_files:
+- xbrl/v1/in_capmkt.yaml
+- xbrl/v5/in_capmkt.yaml
+- xbrl/v3/in_bse_fin.yaml
+- pdf/v2/results_layout.yaml
+- screener/v2/financials.yaml
+- tijori/v3/financials.yaml
+- upstox/v2/summary.yaml
+- upstox/v2/full_statement.yaml
+construction_files:
+- constructions/v1.yaml
+- constructions/v2.yaml
+- screener/v2/constructions.yaml
+statement_anchor_files:
+- statement_anchors/v1.yaml
+- statement_anchors/v2.yaml

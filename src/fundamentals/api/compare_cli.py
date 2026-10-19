@@ -3,6 +3,7 @@
     compare run --entity <entity_key> --period-end <YYYY-MM-DD> --basis consolidated
         [--cutoff <ISO-8601 with offset>] [--mode as_known|retrospective] [--config-root config]
         [--vendor <source>/<surface> ...] [--dictionary v1] [--mapping-set v1]
+        [--alignment-rules v1]
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
         [--as-of <ISO-8601 with offset>] [--config-root config]
     compare queue list --run <id> [--as-of <ISO-8601 with offset>]
@@ -143,6 +144,7 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     run.add_argument("--vendor", action="append", default=[], type=_vendor)
     run.add_argument("--dictionary", default=DEFAULT_VERSION)
     run.add_argument("--mapping-set", default=DEFAULT_VERSION)
+    run.add_argument("--alignment-rules", default=DEFAULT_VERSION)
     report = actions.add_parser(REPORT_ACTION, help=_REPORT_HELP)
     report.add_argument("--run", type=int)
     report.add_argument("--entity")
@@ -257,7 +259,11 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
             ),
             mode=_MODES[args.mode],
             vendors=tuple(args.vendor),
-            versions=ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
+            versions=ConfigVersions(
+                dictionary=args.dictionary,
+                mapping_set=args.mapping_set,
+                alignment_rules=args.alignment_rules,
+            ),
         )
         return execute_run(request, pool=pool, config_root=args.config_root)
 

@@ -1,0 +1,98 @@
+# Filing-specific alignment rules v2 (eqos-4j2.33): v1 without the nil-exceptional
+# total_expenses.total_income_less_profit_before_tax, plus three premise-free rules for the Apar
+# Q2 FY26-Q1 FY27 results layout. v1 header follows.
+# Filing-specific alignment rules v1 (D1a Task 7; data spec §2). A rule proves XBRL-PDF
+# alignment for one measurement key of one filing only: a SUBTOTAL_IDENTITY holds when the
+# identity holds within interval tolerance in BOTH representations from that key's own values
+# (same period and dimensions); a LAYOUT_POSITION holds when both anchors (mapping entry ids,
+# or an entry-id family prefix) supplied that key. Identities are declarative operator trees
+# over canonical ids, never parsed strings. A rule whose operand is absent in either
+# representation proves nothing for that filing (fail closed). v1 does not cover finance costs
+# or depreciation and amortisation.
+version: v2
+rules:
+- rule_id: total_income.revenue_plus_other_income
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: total_income
+  identity:
+    op: ADD
+    args:
+    - {op: OPERAND, operand: revenue_from_operations}
+    - {op: OPERAND, operand: other_income}
+  evidence_ref: "Apar Q2 FY26 results PDF (sha256 8be1b8de) p3 line '5 Total income (3+4)'; X-Q2 Income = RevenueFromOperations + OtherIncome"
+- rule_id: revenue_from_operations.total_income_less_other_income
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: revenue_from_operations
+  identity:
+    op: SUB
+    args:
+    - {op: OPERAND, operand: total_income}
+    - {op: OPERAND, operand: other_income}
+  evidence_ref: "Schedule III line 5 (3+4) rearranged: revenue from operations = total income - other income"
+- rule_id: other_income.total_income_less_revenue
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: other_income
+  identity:
+    op: SUB
+    args:
+    - {op: OPERAND, operand: total_income}
+    - {op: OPERAND, operand: revenue_from_operations}
+  evidence_ref: "Schedule III line 5 (3+4) rearranged: other income = total income - revenue from operations"
+- rule_id: profit_before_tax.income_less_expenses_plus_exceptional
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: profit_before_tax
+  identity:
+    op: ADD
+    args:
+    - op: SUB
+      args:
+      - {op: OPERAND, operand: total_income}
+      - {op: OPERAND, operand: total_expenses}
+    - {op: OPERAND, operand: exceptional_items_before_tax}
+  evidence_ref: "Schedule III: profit before tax = total income - total expenses + exceptional items (plan D1a Task 7). Apar's results PDF prints no exceptional-items line, so this rule proves nothing for its PDF (fail closed)"
+- rule_id: profit_for_period.pbt_incl_associates_less_tax
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: profit_for_period
+  identity:
+    op: SUB
+    args:
+    - {op: OPERAND, operand: profit_before_tax_incl_associates}
+    - {op: OPERAND, operand: tax_expense}
+  evidence_ref: "Apar Q2 FY26 results PDF p3 line 11, text layer '11 rroft after tax (9.10)' (9 profit before tax incl. associates, 10 tax); X-Q2 ProfitLossForPeriod 2,517,000,000 = 3,405,300,000 - 888,300,000"
+- rule_id: eps_basic.basic_line
+  kind: LAYOUT_POSITION
+  canonical_id: eps_basic
+  layout_anchor:
+    XBRL: capmkt.eps_basic
+    PDF: pdf.eps_basic
+  evidence_ref: "Basic EPS at the PDF EPS block's 'Basic' line (p3) and the eps_basic mapping's element BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations in the reporting context; the mapping entries name the elements"
+- rule_id: total_expenses.sum_of_expense_lines
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: total_expenses
+  identity:
+    op: ADD
+    args:
+    - {op: OPERAND, operand: cost_of_materials_consumed}
+    - {op: OPERAND, operand: purchases_of_stock_in_trade}
+    - {op: OPERAND, operand: changes_in_inventories}
+    - {op: OPERAND, operand: employee_benefits_expense}
+    - {op: OPERAND, operand: finance_costs}
+    - {op: OPERAND, operand: depreciation_amortisation}
+    - {op: OPERAND, operand: other_expenses}
+  evidence_ref: "Schedule III line 6: total expenses = 6(a)+(b)+(c)+(d)+(e)+(f)+(g), printed in section Expenses in Apar Q2 FY26 (sha256 8be1b8de), Q3 FY26 (2f9c6d5a), Q4 FY26 (17f5bc04) and Q1 FY27 (c0c2b2fa) p3; XBRL files each line. No term is assumed nil"
+- rule_id: profit_before_tax.before_associates_position
+  kind: LAYOUT_POSITION
+  canonical_id: profit_before_tax
+  layout_anchor:
+    XBRL: capmkt.profit_before_tax
+    PDF: pdf.profit_before_tax
+  evidence_ref: "XBRL ProfitBeforeTax is the DIRECT filed element (capmkt.profit_before_tax family), before ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod. The PDF prints PBT before associates, then associates, then the incl.-associates subtotal: Q2 FY26 (8be1b8de) p3 lines 27/28/29 '(5.6)'/'(7+8)', Q3 FY26 (2f9c6d5a) p3 lines 32/33/34 '(7'/'(9+10)', Q4 FY26 (17f5bc04) p3 lines 31/32/33 '(7.8)'/'(9+10)', Q1 FY27 (c0c2b2fa) p3 lines 31/32/33 '(7.8)'/'(9+10)'"
+- rule_id: profit_for_period.total_comprehensive_income_less_oci
+  kind: SUBTOTAL_IDENTITY
+  canonical_id: profit_for_period
+  identity:
+    op: SUB
+    args:
+    - {op: OPERAND, operand: total_comprehensive_income}
+    - {op: OPERAND, operand: oci_net}
+  evidence_ref: "Schedule III: total comprehensive income = profit for the period + OCI, rearranged; Apar Q2 FY26 (8be1b8de) p3 lines 34/42/43 '(11+12)', Q3 FY26 (2f9c6d5a) p3 lines 39/47/48, Q4 FY26 (17f5bc04) and Q1 FY27 (c0c2b2fa) p3 lines 38/46/47 '(13+14)'; XBRL files ProfitLossForPeriod, OtherComprehensiveIncomeNetOfTaxes and ComprehensiveIncomeForThePeriod"
