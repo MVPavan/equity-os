@@ -13,8 +13,8 @@ the version advance. Gates: `uv run pytest tests/fundamentals`,
 `uv run ruff format --check src tests/fundamentals`. Follow the owner's 2026-10-14 minimal-code rule.
 
 Status: **approved — gpt-6.1-sol APPROVE, 2026-10-19** (r1 and r2 REQUEST_CHANGES → r3 APPROVE; fresh closing
-review REQUEST_CHANGES 0/2/1 → closing re-review APPROVE). Amended 2026-10-19 (below); the amendment
-awaits its own Sol review.
+review REQUEST_CHANGES 0/2/1 → closing re-review APPROVE). Amended 2026-10-19 (below): gpt-6.1-sol
+r1 REQUEST_CHANGES 0/1/0 → r2 APPROVE; its fresh closing review is folded into the phase-end review.
 
 ## Amendment 2026-10-19 — PQ3 framework declaration (extractor v3)
 
