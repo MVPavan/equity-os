@@ -1,17 +1,23 @@
 {
   "now": {
-    "title": "PREP-6 next",
-    "detail": "PREP-5 done: a rejected claim (ledger decide --claim) reworks only its rerun lines into v(N+1); carried claims reuse N's rows; any other movement, a moved head or an out-of-package source refuses before writing; --full-successor is the recovery path. Also fixed two failures at HEAD: pinned Tijori/Screener extractor sources restored to their seed bytes (96b8a5d), stage2 e2e fixture. Full suite 4166 passed.",
+    "title": "PREP-6 Task 1 in progress",
+    "detail": "PREP-6 plan (docs/plans/PREP-6.md) Sol APPROVE: fundamentals review moves onto ledger versions; owner decision and per-claim disposition/time written in one transaction (migration 0040); seeded-error drill as an instrumentation regression. Detection of review-only seeds is not demonstrated (eqos-4j2.30, owner blind run). Task 1 (migration 0040, ACL tests) with Opus.",
     "stage": "PREP"
   },
   "next": [
-    "PREP-6, 7, 8",
+    "PREP-6 Tasks 2-4, then phase review",
+    "PREP-7, PREP-8",
     "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
     "Then the Apar pilot (cutover eqos-3zl owner-approved)",
+    "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: check equity_os for tijori-v4/screener-v1 pins made Oct 17-19 (may drift after 96b8a5d)",
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-19",
+      "text": "PREP-6 plan approved (f9c5b72): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) → r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) → APPROVE. Filed eqos-4j2.30."
+    },
     {
       "date": "2026-10-19",
       "text": "PREP-5 rejected-claim rework closed: Tasks 1-5 (e304766, 96cedc5, 4f50b25, 768116f, ead2fa6); Sol phase r1 REVISE 3 (duplicate keys, placeholder/claim agreement, carried order) fixed 53bfb79, r2 APPROVE; closing review REVISE 2 (display style before writes, duplicate-claim test) fixed, APPROVE. HEAD failures root-caused: screen-export edits drifted pinned extractor sources (restored, 96b8a5d) and a stale stage2 e2e fixture."
