@@ -68,8 +68,8 @@ SELECTIONS = (
     "legacy_baseline, synthesized, reason FROM eqos.fact_selections WHERE target_store = %s"
 )
 BINDINGS = "SELECT DISTINCT file_sha256 FROM eqos.legacy_evidence_bindings WHERE target_store = %s"
-# The Q2 FY26 run's comparator XBRLs (YoY, QoQ), evidence-ingested for its draft.
-COMPARATORS = tuple(row for row in XBRLS if row[0] in ("FY25_Q2", "FY26_Q1"))
+# The Q2 FY26 run's own XBRL and its comparators (YoY, QoQ), evidence-ingested for its draft.
+COMPARATORS = tuple(row for row in XBRLS if row[0] in ("FY26_Q2", "FY25_Q2", "FY26_Q1"))
 EVENTS = (
     "SELECT state, last_row_handle, last_selection_handle FROM eqos.fact_store_events "
     "WHERE store_id = %s ORDER BY id"

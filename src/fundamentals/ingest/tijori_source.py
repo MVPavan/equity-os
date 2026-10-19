@@ -136,8 +136,6 @@ _SHAREHOLDING_FETCH_FAILED_EVENT = "tijori_shareholding_fetch_failed"
 _OVERVIEW_FETCH_FAILED_EVENT = "tijori_overview_fetch_failed"
 _ANALYSIS_FETCH_FAILED_EVENT = "tijori_analysis_fetch_failed"
 _EVENTS_FETCH_FAILED_EVENT = "tijori_events_fetch_failed"
-_JSON_FETCH_FAILED_EVENT = "tijori_json_fetch_failed"
-_JSON_MEDIA_TYPE = "application/json"
 # A market-wide listing has no slug; the fetch log still needs a subject.
 _MARKET_WIDE_FETCH_SUBJECT = "market-wide"
 
@@ -317,8 +315,13 @@ class TijoriSource:
         section: TijoriOverviewSection | None = None,
     ) -> tuple[TijoriOverviewSectionBase, ...]:
         """Fetch the overview sections, binding the response to the caller's identity."""
+        credentials = self._config.credentials
+        if credentials is None:
+            raise TijoriCredentialsError(
+                "tijori credentials not provided; skipping Tijori overview acquisition"
+            )
         return self.parse_overview_bytes(
-            self.fetch_overview_bytes(slug),
+            self._fetch_overview_bytes(slug, credentials),
             slug=slug,
             expected_symbol=expected_symbol,
             expected_company_id=expected_company_id,
@@ -534,16 +537,6 @@ class TijoriSource:
             url, slug=slug, credentials=credentials, fetch_event=_SHAREHOLDING_FETCH_FAILED_EVENT
         )
 
-    def fetch_overview_bytes(self, slug: str) -> bytes:
-        """The overview page's bytes, unparsed, so a caller can retain exactly what it then
-        parses with :meth:`parse_overview_bytes`."""
-        credentials = self._config.credentials
-        if credentials is None:
-            raise TijoriCredentialsError(
-                "tijori credentials not provided; skipping Tijori overview acquisition"
-            )
-        return self._fetch_overview_bytes(slug, credentials)
-
     def _fetch_overview_bytes(self, slug: str, credentials: TijoriCredentials) -> bytes:
         """Fetch one complete authenticated overview page without redirects."""
         url = self._config.overview_url_template.format(base=self._config.base_url, slug=slug)
@@ -551,50 +544,15 @@ class TijoriSource:
             url, slug=slug, credentials=credentials, fetch_event=_OVERVIEW_FETCH_FAILED_EVENT
         )
 
-    def fetch_json(self, url: str) -> bytes:
-        """Fetch one authenticated JSON response; any status but 200 or media type but JSON
-        refuses."""
-        credentials = self._config.credentials
-        if credentials is None:
-            raise TijoriCredentialsError("tijori credentials not provided")
-        payload, status, media_type = self._fetch_response(
-            url,
-            slug=_MARKET_WIDE_FETCH_SUBJECT,
-            credentials=credentials,
-            fetch_event=_JSON_FETCH_FAILED_EVENT,
-            xhr=True,
-        )
-        if status != 200:
-            raise TijoriFetchError(f"tijori returned HTTP {status}, not 200")
-        if (media_type or "").split(";", 1)[0].strip().lower() != _JSON_MEDIA_TYPE:
-            raise TijoriFetchError(f"tijori media type is {media_type!r}, not {_JSON_MEDIA_TYPE}")
-        return payload
-
     def _fetch_page_bytes(
         self, url: str, *, slug: str, credentials: TijoriCredentials, fetch_event: str
     ) -> bytes:
         """Fetch one complete authenticated Tijori page without following redirects."""
-        return self._fetch_response(
-            url, slug=slug, credentials=credentials, fetch_event=fetch_event
-        )[0]
-
-    def _fetch_response(
-        self,
-        url: str,
-        *,
-        slug: str,
-        credentials: TijoriCredentials,
-        fetch_event: str,
-        xhr: bool = False,
-    ) -> tuple[bytes, int | None, str | None]:
-        """One complete authenticated response, its status and media type; no redirects."""
         request = build_page_request(
             url,
             session_cookie=credentials.session_cookie,
             user_agent=self._config.user_agent,
         )
-        if xhr:
-            request.add_header("X-Requested-With", "XMLHttpRequest")
         opener = urllib.request.build_opener(_NoRedirectHandler())
         last_error: Exception | None = None
         for attempt in range(1, self._config.max_retries + 1):
@@ -611,8 +569,7 @@ class TijoriSource:
                         f"tijori response exceeded maximum {self._config.max_response_bytes} bytes"
                     )
                 self._verify_complete_response(response, payload)
-                headers = getattr(response, "headers", None)
-                return payload, status, None if headers is None else headers.get("Content-Type")
+                return payload
             except TijoriFetchError:
                 raise
             except urllib.error.HTTPError as error:

@@ -40,6 +40,7 @@ from fundamentals.ingest.screener_watchlist_models import (
     CSRF_FORM_FIELD,
     EXPORT_PATH,
 )
+from fundamentals.ingest.tijori_screen_fetch import fetch_json
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource, TijoriSourceConfig
 
 SPACING_SECONDS = 2.0
@@ -193,7 +194,7 @@ def export_tijori(
     params = urlencode({TIJORI_FORMULA_KEY: formula, **TIJORI_FLAGS}, quote_via=quote)
     url = f"{source.config.base_url}{TIJORI_RESULTS_PATH}?{params}"
     (pacer or RequestPacer(SPACING_SECONDS)).wait_for_slot()
-    results = ScreenFetch(url=url, body=source.fetch_json(url), retrieved_at=datetime.now(UTC))
+    results = ScreenFetch(url=url, body=fetch_json(source, url), retrieved_at=datetime.now(UTC))
     payload = json.loads(results.body)
     if not isinstance(payload, dict):
         raise ScreenExportError(_NOT_ROWS)

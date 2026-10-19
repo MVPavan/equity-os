@@ -50,6 +50,7 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriCompanyDetailsSection,
     TijoriOverviewSection,
 )
+from fundamentals.ingest.tijori_screen_fetch import fetch_overview_bytes
 from fundamentals.ingest.tijori_source import TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriError
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -188,7 +189,7 @@ def read_other_vendor(
             return ReadGap.NOT_VERIFIED
         tijori_pacer.wait_for_slot()
         try:
-            body = tijori.fetch_overview_bytes(ids.tijori_slug)
+            body = fetch_overview_bytes(tijori, ids.tijori_slug)
             _company_details(body, ids.tijori_slug, ids.nse_symbol, ids.tijori_company_id)
         except TijoriError:
             return ReadGap.READ_REFUSED

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import re
 import time
 import urllib.error
 import urllib.request
@@ -56,6 +57,7 @@ from fundamentals.ingest.screener_session_models import (
     ScreenerCredentials,
     ScreenerCredentialsError,
     ScreenerDocumentFetch,
+    ScreenerOriginError,
     ScreenerPageFetch,
     ScreenerPageMetadata,
     ScreenerRateLimitedError,
@@ -70,6 +72,8 @@ from fundamentals.ingest.screener_session_page import read_page_evidence
 _LOGGER = structlog.get_logger(__name__)
 
 _FETCH_EVENT = "screener_session_page_fetched"
+# One plain path segment: no query, fragment, separator or traversal.
+_SLUG = re.compile(r"[A-Za-z0-9][A-Za-z0-9&_-]*")
 _RATE_LIMITED_EVENT = "screener_session_rate_limited"
 _GET_METHOD = "GET"
 _POST_METHOD = "POST"
@@ -129,6 +133,8 @@ class ScreenerSessionSource:
         credentials = self._config.credentials
         if credentials is None:
             raise ScreenerCredentialsError(_NO_CREDENTIALS)
+        if not _SLUG.fullmatch(slug):
+            raise ScreenerOriginError(f"refusing company slug {slug!r}: not one plain path segment")
         url = company_page_url(slug, basis)
         status, raw = self._fetch_bytes(url, credentials)
         fetched_at = datetime.now(tz=UTC)
