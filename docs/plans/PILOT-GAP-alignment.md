@@ -3,15 +3,58 @@
 **Bead:** `eqos-4j2.33` (blocks `eqos-4j2.24` Tasks 2–3). **Scope:** versioned PDF mapping, alignment
 rules, one issuer config and one `compare run` flag, so that revenue, total income, total expenses,
 PBT, PAT and basic EPS are `AGREE` and admitted in Q2 FY26, Q3 FY26, Q4 FY26 and Q1 FY27 (PQ0–PQ3).
-**Out of scope:** `_decide`, `_qualified`, global qualification, the extractor, normalisation policy,
+**Out of scope:** `_decide`, `_qualified`, global qualification, the extractor (except Task 1b's one
+framework phrase), normalisation policy,
 `evidence ingest` flags (owned by `eqos-4j2.24` Task 2), and fuzzy matching of any kind.
 **Constraints:** existing issuer configs, v1 configs, mapping sets v1–v5, migrations 0001–0041 and the
-frozen manifests (stage1, pilot) stay unchanged. Gates: `uv run pytest tests/fundamentals`,
+frozen manifests (stage1, pilot) stay unchanged; pinned extractor sources change only by Task 1b, with
+the version advance. Gates: `uv run pytest tests/fundamentals`,
 `uv run mypy --strict src`, `uv run ruff check src tests/fundamentals` and
 `uv run ruff format --check src tests/fundamentals`. Follow the owner's 2026-10-14 minimal-code rule.
 
 Status: **approved — gpt-6.1-sol APPROVE, 2026-10-19** (r1 and r2 REQUEST_CHANGES → r3 APPROVE; fresh closing
-review REQUEST_CHANGES 0/2/1 → closing re-review APPROVE).
+review REQUEST_CHANGES 0/2/1 → closing re-review APPROVE). Amended 2026-10-19 (below); the amendment
+awaits its own Sol review.
+
+## Amendment 2026-10-19 — PQ3 framework declaration (extractor v3)
+
+**Blocker.** Production ingest rejects PQ3's results PDF (c0c2b2fa) as `IDENTITY_REJECTED: the capture
+declares no accounting framework`, so only 18 of 24 cells can pass. `verify_pdf_framework` matches
+`FRAMEWORK_DECLARATIONS[IND_AS]` (`evidence/member_identity.py:44`) as token runs of
+`normalize_text_tokens`. PQ3 page 5's note reads `tndian accounting standard` (OCR) and is not
+fuzzy-matched. The probes were not run under ingest, so this was missed there.
+
+**Ruling.** Add one exact phrase: `"prepared in accordance with applicable Indian Accounting
+Standards"`. PQ3 page 7 prints it, in the auditor's review report on the standalone results:
+`… financial results prepared in accordance with applicable indian accounting standards prescribed
+under section 133 of the companies act 2013 …` (`probe9.out`). "Indian Accounting Standards" names
+only Ind AS. Indian GAAP review reports say "applicable accounting standards". The rejected
+candidate, `"recognition and measurement principles laid down in the Indian Accounting Standard 34"`
+(PQ3 pp. 6, 8), turns ETERNAL bac409da from rejected to verified. Any shorter phrase is broader.
+
+**Check** (`probe8_framework.py` → `probe8.out`: production `load_pdf` and `verify_pdf_framework`,
+before and after the addition). It covers all 25 retained `data/raw/watchlist/*/*_pdf/*.pdf`, a
+superset of the PDFs tests ingest:
+- Verdict changes only for PQ3 c0c2b2fa: rejected → `IND_AS` at page 7.
+- Evidence gains a page only for PQ0 8be1b8de (and its byte-identical press-release copy): page 5
+  → pages 5, 9. Page 9 is the same review-report sentence, and the verdict stays verified.
+- No other change. Aparinds Q3 2f9c6d5a and Q4 17f5bc04 stay verified. LAURUSLABS 2b79047e, MTARTECH
+  ed809917 and THERMAX 9554c06c stay verified with the same evidence. CGPOWER, ETERNAL, HFCL, NETWEB,
+  POLYCAB, SONACOMS, TITAN and the presentations and transcripts stay rejected.
+- Only one framework is mapped, so the change can add no competing or conflicting declaration.
+
+**Version advance** (precedent `docs/workstreams/data-foundation/plans/extractor-v2.md`, `6aca86f`).
+`member_identity.py` is hashed into both `EXTRACTOR_SOURCES` lists. `XBRL_EXTRACTOR_VERSION` therefore
+moves to `xbrl-occurrences/3` (`xbrl_adapter.py:42`) and `PDF_EXTRACTOR_VERSION` to
+`pdf-occurrences/4` (`pdf_adapter.py:52`). Keeping a version with new content is refused
+(`VersionContentDriftError`). Moving the phrases to an unpinned module is rejected: it would change
+extraction without a version (`learnings.md`, "Pinned extractor sources are frozen bytes").
+Consequences:
+- Stored `/2`, `/3` generations and pins stay. A database needs a fresh ingest of every quarter
+  before its runs see first-party values. This plan's and `eqos-4j2.24`'s tests ingest fresh.
+- Frozen manifests are not edited. stage1 names `xbrl-occurrences/1, pdf-occurrences/2`; v2 already
+  left that unedited. A fresh run is regression equivalence, not reproduction.
+- PQ0's PDF attempt reason now names pages 5 and 9 (`first_party_extract.py:418`).
 
 ## Origin
 
@@ -208,7 +251,7 @@ All four results-PDF pins match (`compute_file_sha256`): 8be1b8de (PQ0), 2f9c6d5
    target. v1's PBT
    (`…plus_exceptional`) and PAT (`…less_tax`) rules name the exceptional and tax operands, so they
    fail closed (no proof) where those operands are unreadable.
-5. **No production code change** apart from the CLI flag. The extractor route (`.` as a nil marker) is
+5. **No production code change** apart from the CLI flag and Task 1b's phrase and version advance. The extractor route (`.` as a nil marker) is
    rejected in Open question 1.
 6. **`compare run --alignment-rules`** (default `v1`) passes `ConfigVersions(alignment_rules=…)`.
 
@@ -242,7 +285,7 @@ Expected holding proofs of alignment v2 under v6 (`probe7.out`, production `_pro
    `AGREE` value for value.
 
    The rejected alternative for PQ3 is to read `.` as an evidenced nil. That needs `_missing_state`/`DASH_GLYPHS` edits
-   in two pinned files, so `pdf-occurrences/4` and a re-extraction of every pinned database. Even then
+   in two pinned files, so a further PDF version advance and a re-extraction of every pinned database. Even then
    a dash has no value in alignment (`_valued`, `alignment.py:236–252`; dash-as-zero exists only inside
    constructions, `interpret.py:489–505`), so it would also need an alignment-engine change. Rejected:
    it is not needed for 24/24.
@@ -258,6 +301,8 @@ Expected holding proofs of alignment v2 under v6 (`probe7.out`, production `_pro
 | `config/mappings/v6.yaml` | new: v5 with `pdf/v2/results_layout.yaml` | 1 |
 | `config/mappings/alignment/v2.yaml` | new: Decision 4 | 1 |
 | `src/fundamentals/api/compare_cli.py` | `--alignment-rules` (:145, :260, usage :5) | 1 |
+| `src/fundamentals/evidence/member_identity.py`, `xbrl_adapter.py`, `pdf_adapter.py` (pinned) | one phrase + comment; `xbrl-occurrences/3`, `pdf-occurrences/4` | 1b |
+| `tests/fundamentals/test_evidence_refusals.py` | no-framework negative also redacts PQ0 page 9 | 1b |
 | `tests/fundamentals/test_pilot_alignment.py` | new: four-quarter acceptance + negatives | 2 |
 
 `docs/plans/PILOT-GAP-admission.md` is not changed.
@@ -287,6 +332,40 @@ Expected holding proofs of alignment v2 under v6 (`probe7.out`, production `_pro
   - Re-running `probe7_prove.py` and `probe4_align.py` with their mapping root pointed at `config/mappings` reproduces the Decision table and Findings 9, 14 and 15.
   - `git diff --stat` shows no change to any existing file under `config/` or `migrations/`.
   - All four gates pass.
+
+### Task 1b — PQ3 framework phrase, extractor v3 (Opus; before Task 2)
+
+- **Files:** the two 1b rows of the file map, nothing else.
+  - `member_identity.py`: append the phrase to `FRAMEWORK_DECLARATIONS[IND_AS]`. Extend the comment
+    above it with sha256 c0c2b2fa, page 7, the auditor's review report.
+  - The two version constants.
+  - `test_evidence_refusals.py:342–346`: add `PdfRedaction(page=9, row_of="applicable",
+    words=("applicable",))`. `applicable` occurs once on PQ0 page 9 (`probe10.out`). Without it the
+    marked PQ0 PDF verifies through page 9, and the negative goes red.
+- **Interfaces:** produces `xbrl-occurrences/3` and `pdf-occurrences/4`. Nothing else changes.
+- **Unchanged, checked:**
+  - `test_derived_settings.py`: `SEED_VERSIONS`, `SEED_PINS` and `SEED_COMMIT` name the seed bytes
+    (`/1`, `/2`). `CURRENT_VERSIONS` reads the constants. Its upgrade proof covers seed → current.
+  - `test_compare_config_pins.py` reads `EXTRACTOR_VERSIONS`. `derived_support.py`,
+    `revision_support.py` and `test_onboarding_verification.py:544–548` use the constants.
+  - `test_identity_namespace.py` evidence asserts are XBRL only.
+  - No `tests/fundamentals/*.py` asserts `declared at page`.
+  - Stage 4 checks current pins (`test_data_stage4_e2e.py:175–176`, per the v2 plan). Its manifests
+    are not opened.
+- **Verification:**
+  - Keep `probe8.out` as the pre-edit baseline. After the edit, production `verify_pdf_framework` on
+    each of the 25 PDFs returns the verdict and full evidence tuple that `probe8.out` records for the
+    chosen candidate (PQ3 verified at page 7; PQ0 pages 5 and 9; every other PDF unchanged).
+  - Run `uv run pytest tests/fundamentals/test_evidence_refusals.py
+    tests/fundamentals/test_identity_namespace.py tests/fundamentals/test_derived_settings.py
+    tests/fundamentals/test_compare_config_pins.py tests/fundamentals/test_evidence_reprocessing.py
+    tests/fundamentals/test_onboarding_verification.py`. Record the red run of the refusal test
+    without the page-9 redaction.
+  - PQ3 ingests both members `COMPLETE` under `aparinds-fy27-q1-pg.yaml`.
+  - The full suite runs once (learnings: only the full suite caught pin drift).
+- **Risk:** a stage or replay test may compare a literal version or a PDF attempt reason that this
+  search missed. If so, report it and adjust only test-side expectations of *current* versions.
+  Never edit a frozen manifest, and never keep a version with new bytes.
 
 ### Task 2 — four-quarter acceptance and fail-closed negatives (Opus; after Task 1)
 
@@ -342,7 +421,9 @@ Expected holding proofs of alignment v2 under v6 (`probe7.out`, production `_pro
   - PQ0 PBT is refused without alignment v2.
   - The PBT layout rule fails on a wrong anchor or position.
   - The pdf/v2 tax and expense selectors are exact to their section.
-- `_decide`, `_qualified`, the extractor, existing configs, migrations and the stage1 and pilot
+- PQ3's results PDF verifies `IND_AS` at page 7 under `pdf-occurrences/4`. No other retained PDF's
+  verdict changes (`probe8.out`).
+- `_decide`, `_qualified`, the extractor apart from Task 1b, existing configs, migrations and the stage1 and pilot
   manifests are unchanged. The stage1 tests stay green.
 
 ## Interactions with `eqos-4j2.24`
