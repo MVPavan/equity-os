@@ -32,6 +32,7 @@ from pg_evidence_schema_support import _insert, runtime, seeded
 from pg_support import PgTestDatabase
 from prep2b_support import QUARTERS, RULING, STOCK, Pilot
 from psycopg import errors
+from pydantic import ValidationError
 from retained_support import REPO_ROOT
 from test_prep2b_run_draft import dictionary, mapping_set
 from test_prep5_rework import CONDUCTOR, QOQ, _correct
@@ -57,6 +58,8 @@ from fundamentals.contracts.ledger import (
     VersionDraft,
     VersionStatus,
 )
+from fundamentals.contracts.retention import OriginalExpiredError
+from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.ledger import display, lifecycle, review, store
 from fundamentals.ledger.review import ClaimEvent, CorrectionCategory, Disposition
 from fundamentals.ledger.run_draft import HEADING
@@ -64,8 +67,6 @@ from fundamentals.pg.pool import DatabaseUnavailableError
 from fundamentals.pg.settings import PgRole
 
 __all__ = ["dictionary", "ingest", "ledger", "mapping_set", "policy", "runtime", "seeded"]
-pytestmark = pytest.mark.pg
-
 V = SubjectKind.REPORT_VERSION
 STARTED = datetime(2026, 8, 1, 9, tzinfo=UTC)
 FINISHED = datetime(2026, 8, 1, 9, 30, tzinfo=UTC)
@@ -221,6 +222,7 @@ REFUSALS: dict[str, Case] = {
 }
 
 
+@pytest.mark.pg
 @pytest.mark.parametrize("case", REFUSALS)
 def test_telemetry_schema_refuses_all_but_the_owner_review_of_its_version(
     rig: Rig, pg_db: PgTestDatabase, case: str
@@ -257,6 +259,27 @@ CATEGORY_CASES = [
 ]
 
 
+@pytest.mark.parametrize(("disposition", "category", "refused_by"), CATEGORY_CASES)
+def test_claim_event_category_rule_matches_the_stored_one(
+    disposition: str, category: str, refused_by: str | None
+) -> None:
+    """``ClaimEvent`` accepts and refuses exactly the cases the stored rule does."""
+    build = {
+        "claim_key": "k",
+        "disposition": disposition,
+        "category": category,
+        "locate_seconds": 0,
+        "check_seconds": 0,
+        "at": T0,
+    }
+    if refused_by is None:
+        assert ClaimEvent.model_validate(build).category.value == category
+    else:
+        with pytest.raises(ValidationError):
+            ClaimEvent.model_validate(build)
+
+
+@pytest.mark.pg
 @pytest.mark.parametrize(("disposition", "category", "refused_by"), CATEGORY_CASES)
 def test_telemetry_schema_category_rule_matches_the_validator(
     rig: Rig, disposition: str, category: str, refused_by: str | None
@@ -528,6 +551,7 @@ _EVENT_ROWS = (
 )
 
 
+@pytest.mark.pg
 def test_review_cli_bounds_time_and_instrument_version(
     ledger: Ledger, pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -604,6 +628,7 @@ def test_review_cli_bounds_time_and_instrument_version(
     assert events == [(0, "calc.1", "accepted", "none", 10_000, 5, 5)]
 
 
+@pytest.mark.pg
 @pytest.mark.parametrize("failure", ["unknown_version", "database_unavailable"])
 def test_review_cli_refuses_without_a_traceback(
     pg_db: PgTestDatabase,
@@ -627,6 +652,44 @@ def test_review_cli_refuses_without_a_traceback(
     assert _start(2**40, session) == 2
     assert expected in capsys.readouterr().err
     assert not session.exists()
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize("failure", ["OriginalExpiredError", "SnapshotError", "ParserError"])
+def test_review_finish_refuses_citation_and_config_failures_without_a_traceback(
+    pg_db: PgTestDatabase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """A citation check that finds an expired original or a snapshot refusal, and a malformed
+    watchlist, exit 2 with a logged refusal rather than a traceback."""
+    _env(pg_db, monkeypatch)
+    session = tmp_path / "session"
+    session.mkdir()
+    review.save(
+        review.Session(version_id=1, instrument_version=review.INSTRUMENT_VERSION, started_at=T0),
+        session,
+    )
+    sources = ["--stock", STOCK, "--snapshot-root", str(tmp_path)]
+    if failure == "ParserError":  # a yaml.YAMLError
+        watchlist = tmp_path / "watchlist.yaml"
+        watchlist.write_text("stocks: [unclosed\n")
+        sources += ["--watchlist", str(watchlist)]
+    else:
+        raised = {"OriginalExpiredError": OriginalExpiredError, "SnapshotError": SnapshotError}
+
+        def refuse(*args: Any, **kwargs: Any) -> Any:
+            raise raised[failure]("refused")
+
+        monkeypatch.setattr(review, "finish", refuse)
+        sources += ["--watchlist", str(REPO_ROOT / DEFAULT_WATCHLIST)]
+    assert _finish(monkeypatch, session, DecisionKind.APPROVE, *sources) == 2
+    error = capsys.readouterr().err
+    assert failure in error
+    assert "review_refused" in error
+    assert "Traceback" not in error
 
 
 @pytest.fixture
@@ -669,6 +732,7 @@ def _times(start: datetime, gaps: list[timedelta], finished: datetime) -> list[d
     return [moment for entry in entries for moment in (entry, entry + HANDLE)]
 
 
+@pytest.mark.pg
 def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_not_accepted(
     submitted: tuple[Pilot, int],
     tmp_path: Path,
@@ -786,6 +850,7 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
     assert summary["claim_count"] == len(keys) and summary["review_set_count"] == 3
 
 
+@pytest.mark.pg
 def test_review_refusals_write_nothing_and_a_reject_keeps_its_review(
     submitted: tuple[Pilot, int],
     tmp_path: Path,
@@ -832,6 +897,7 @@ def test_review_refusals_write_nothing_and_a_reject_keeps_its_review(
     assert pilot.query(_TELEMETRY_COUNTS) == after
 
 
+@pytest.mark.pg
 def test_review_correction_rereviews_exactly_the_changed_and_rejected_claims(
     submitted: tuple[Pilot, int],
     ingest: Ingest,
@@ -984,6 +1050,7 @@ def test_drill_scores_every_disposition_of_a_seeded_and_a_clean_claim(
     assert _verdict(outcomes) == (passes, [] if passes else ["k"])
 
 
+@pytest.mark.pg
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_drill_gate_seeds_are_caught_review_seeds_scored_and_a_miss_fails(
     pg_db: PgTestDatabase,

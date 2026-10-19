@@ -37,6 +37,7 @@ from typing import Any
 
 import psycopg
 import structlog
+import yaml
 from pydantic import ValidationError
 
 from fundamentals.api.config import load_config
@@ -45,6 +46,8 @@ from fundamentals.api.watchlist_config import load_watchlist_config, stock_catal
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind
 from fundamentals.contracts.memory import MemoryStatus
+from fundamentals.contracts.retention import OriginalExpiredError
+from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger.export import export_version, status_note, stock_entity, stock_versions
 from fundamentals.ledger.importer import import_versions, load_import_config
@@ -103,6 +106,9 @@ LEDGER_FAILURES = (
     OSError,
     ValueError,
     LookupError,
+    OriginalExpiredError,
+    SnapshotError,
+    yaml.YAMLError,
 )
 
 
