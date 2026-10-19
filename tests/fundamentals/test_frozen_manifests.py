@@ -54,14 +54,8 @@ STAGE4 = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yam
 # Stage 4 runs behind an opaque boundary (test_stage4_manifest), never loaded at collection.
 PUBLIC = [path for path in MANIFESTS if path != STAGE4]
 E2E = {
-    "stage1": "tests/fundamentals/test_data_stage1_e2e.py",
-    "stage2": "tests/fundamentals/test_data_stage2_e2e.py",
-    "ledger_stage1": "tests/fundamentals/test_ledger_stage1_e2e.py",
-    "ledger_stage2": "tests/fundamentals/test_ledger_stage2_e2e.py",
-    "ledger_stage3": "tests/fundamentals/test_ledger_stage3_e2e.py",
-    "ledger_stage4": "tests/fundamentals/test_ledger_stage4_e2e.py",
-    "ledger_stage5": "tests/fundamentals/test_ledger_stage5_e2e.py",
-    "stage4": "tests/fundamentals/test_data_stage4_e2e.py",
+    name: f"tests/fundamentals/test_{'data_' * name.startswith('stage')}{name}_e2e.py"
+    for name in ["stage1", "stage2", "stage4", "pilot", *(f"ledger_stage{n}" for n in range(1, 6))]
 }
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"

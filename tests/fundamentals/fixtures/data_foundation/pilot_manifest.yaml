@@ -1,0 +1,748 @@
+header:
+  manifest: pilot
+  spec: docs/plans/PREP-7.md (docs/backend-roadmap.md PREP-7)
+  hand_verification: {verifier: claude-opus-5-5 (PREP-7 Task 1 authoring aid), date: '2026-10-19', method: 'Audited scripted verbatim transcription; no human read the filings. A reviewed authoring aid (scratchpad, never committed) read only its literal INPUTS: the retained XBRL instances (lxml), the results PDFs (pymupdf word boxes, each cell bound to its label row and header-verified column), the retrieval manifest (json), the pilot configs, ledger_import.yaml and stage1 (yaml). It imported no fundamentals or test code and read no code output. Figures are XBRL lexemes at complete locators bound to each claim key''s member, concept, period, dims and unit (PREP-7 Decision 3); current figures are cross-checked against the results PDF; derived values are exact Fractions over the bound operands. The suite re-checks all of it from the bytes; Sol approves the payload.'}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-19, payload_sha256: ad188b0dfa059fe6ab952d1cfaa7ebdf2d12cdbbc98d61ac1fa4cc378fd0dda3}
+  notation: {value: 'v exact decimal or p/q; iv [lo, hi]. A figure''s v is its XBRL lex / UNIT_SCALE[u] (INR 10^7 = crore, INRPerShare 1), iv half-width 10^-d / 2 in the same unit (INF: 0); no locator carries sign. A derived node is {expr, v}: expr over the bound operands'' v re-evaluates to v exactly; pct and calc.3 are emitted as v quantized to 0.01 ROUND_HALF_EVEN', xbrl_locator: 'src, c (concept local name), ctx (contextRef), u (unitRef), d (decimals), lex, per (effective period after the DateOfStart/End re-periodisation); no dims = an undimensioned context', pdf_locator: 'src, pg, label (as printed in the text layer), col (a column id of header.pdf_columns[src][pg]), lex. Binding as stage1 header.notation.pdf_locator: label instance = a word equal to its first token with every token among the words to its right within 7pt; the cell is the words within 5pt of that y inside the column''s x band and must equal [lex]; a band is bound to its header by the words inside it on header_y. Printed lexemes drop grouping commas, read (x) as negative; a lone ''-'' or ''.'' is a zero marker read as exact 0. The unit is crore', field_locator: 'src, path (dotted JSON/YAML path), lex (the value as text)', claims: 'quarters[Q].claims = the run''s 46 numerical claim keys (fact.<role>, cmp.<role>.<qoq|yoy>.<prior|abs|pct>, calc.1..calc.4); aux holds the share of associates operand. calc.2 pdf_parts are the tax component cells (current, deferred, earlier years) whose sum corroborates it', package: 'quarters[Q].package: the five input members {xbrl, results_pdf, transcript_pdf, qoq, yoy}: config source_id, retrieval-manifest entry (quarter, kind) and sha256', approval: 'header.approval.payload_sha256 = sha256 of this file''s bytes with the one line starting ''  approval:'' (and its newline) removed'}
+  pdf_columns:
+    R-FY26_Q2:
+      3:
+        note: consolidated P&L
+        header_y: [124, 131]
+        cols:
+          Q:
+            x: [86, 129]
+            header: Sep 30, 2025
+          Q-1:
+            x: [129, 172]
+            header: Jun 30, 2025
+    R-FY26_Q3:
+      3:
+        note: consolidated P&L
+        header_y: [127, 134]
+        cols:
+          Q:
+            x: [66, 112]
+            header: Dec 31, 2025
+          Q-1:
+            x: [112, 158]
+            header: Sep 30, 2025
+    R-FY26_Q4:
+      3:
+        note: consolidated P&L
+        header_y: [135, 141]
+        cols:
+          Q:
+            x: [121, 165]
+            header: Mar 31, 2026
+          Q-1:
+            x: [165, 209]
+            header: Dec 31, 2025
+    R-FY27_Q1:
+      3:
+        note: consolidated P&L
+        header_y: [127, 133]
+        cols:
+          Q:
+            x: [155, 201]
+            header: Jun 30, 2026
+          Q-1:
+            x: [201, 246]
+            header: Mar 31, 2026
+  sources:
+  - {label: A-MAN, kind: retrieval_manifest, path: data/raw/watchlist/aparinds/retrieval-manifest-v2.json, sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+  - {label: STAGE1, kind: manifest, path: tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml, sha256: 3d68b689bea95d8a9eb46555e555ca156c6012b54e04d3376b6754549fcb52d4}
+  - {label: X-FY25_Q2, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INDAS_113920_1293440_30102024104705.xml, sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60}
+  - {label: X-FY25_Q3, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INDAS_117941_1363971_29012025110018.xml, sha256: 3ba61227e3341d1540504070c663eafe754f8b38fe918345a288fc4417337e5f}
+  - {label: X-FY25_Q4, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1439170_14052025093124_WEB.xml, sha256: 943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2}
+  - {label: X-FY26_Q1, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml, sha256: a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1}
+  - {label: X-FY26_Q2, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml, sha256: 90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799}
+  - {label: X-FY26_Q3, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1613642_29012026072210_WEB.xml, sha256: 87a5dd9583b582132c7c42c9cb6edcbc799372e3772efab19a0ba440f4fcc548}
+  - {label: X-FY26_Q4, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1675395_28052026085114_WEB.xml, sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01}
+  - {label: X-FY27_Q1, kind: xbrl, path: data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml, sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85}
+  - {label: R-FY26_Q2, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-results.pdf, sha256: 8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5}
+  - {label: R-FY26_Q3, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-results.pdf, sha256: 2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699}
+  - {label: R-FY26_Q4, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-results.pdf, sha256: 17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377}
+  - {label: R-FY27_Q1, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-results.pdf, sha256: c0c2b2fa5510a776331c2092f03301c65dbea5a98ee42ecbc31f768513278612}
+  - {label: T-FY26_Q2, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q2-transcript.pdf, sha256: c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803}
+  - {label: T-FY26_Q3, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-transcript.pdf, sha256: 66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02}
+  - {label: T-FY26_Q4, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-transcript.pdf, sha256: 69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c}
+  - {label: T-FY27_Q1, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-transcript.pdf, sha256: 78a312c86f58ea515f3eea3763e02a1e977104f282256e774e428d2a898304e5}
+quarters:
+  FY26_Q2:
+    source_cutoff:
+      v: '2025-11-06T06:35:34Z'
+      at:
+      - {src: A-MAN, path: 'entries[6].filed_at_nse', lex: '06-Nov-2025 12:05:34'}
+    package:
+    - role: xbrl
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q2, kind: xbrl-consolidated}
+      sha256: 90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799
+    - role: results_pdf
+      source_id: aparinds-fy26-q2-results-pdf
+      entry: {quarter: FY26_Q2, kind: results}
+      sha256: 8be1b8de71997d30f2dccd78cfc42d87c5564e2ab16357ca611763c1f3784ae5
+    - role: transcript_pdf
+      source_id: aparinds-fy26-q2-management-transcript
+      entry: {quarter: FY26_Q2, kind: transcript}
+      sha256: c9ed50d301850aebd2b8d46cecb54bc5317757769c32c72a7ab0dc6c98b72803
+    - role: qoq
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q1, kind: xbrl-consolidated-comparator}
+      sha256: a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1
+    - role: yoy
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY25_Q2, kind: xbrl-consolidated-comparator}
+      sha256: c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60
+    retrospective: {designated: RETROSPECTIVE, retrieval_manifest_sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+    claims:
+      fact.revenue:
+        v: '5715.42'
+        iv: ['5715.415', '5715.425']
+        at:
+        - {src: X-FY26_Q2, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '57154200000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Revenue from operations (1+2), col: Q, lex: '5,715.42'}
+      fact.total_income:
+        v: '5742.85'
+        iv: ['5742.845', '5742.855']
+        at:
+        - {src: X-FY26_Q2, c: Income, ctx: OneD, u: INR, d: '-5', lex: '57428500000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Total income (3+4), col: Q, lex: '5,742.85'}
+      fact.total_expenses:
+        v: '5402.29'
+        iv: ['5402.285', '5402.295']
+        at:
+        - {src: X-FY26_Q2, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '54022900000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Total exp, col: Q, lex: '5,402.29'}
+      fact.profit_before_tax:
+        v: '340.56'
+        iv: ['340.555', '340.565']
+        at:
+        - {src: X-FY26_Q2, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '3405600000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Profit before tax & share in net profit / (loss) of associates (5.6), col: Q, lex: '340.56'}
+      fact.profit_for_period:
+        v: '251.7'
+        iv: ['251.65', '251.75']
+        at:
+        - {src: X-FY26_Q2, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-6', lex: '2517000000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: rroft after tax, col: Q, lex: '251.70'}
+      fact.basic_eps:
+        v: '62.66'
+        iv: ['62.66', '62.66']
+        at:
+        - {src: X-FY26_Q2, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '62.66', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Basic, col: Q, lex: '62.66'}
+      cmp.revenue.qoq.prior:
+        v: '5104.16'
+        iv: ['5104.155', '5104.165']
+        at:
+        - {src: X-FY26_Q1, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '51041600000', per: 2025-04-01..2025-06-30}
+      cmp.revenue.qoq.abs: {expr: 5715.42 - 5104.16, v: '611.26'}
+      cmp.revenue.qoq.pct: {expr: (5715.42 - 5104.16) / 5104.16 * 100, v: 764075/63802}
+      cmp.revenue.yoy.prior:
+        v: '4644.51'
+        iv: ['4644.01', '4645.01']
+        at:
+        - {src: X-FY25_Q2, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-7', lex: '46445100000.00', per: 2024-07-01..2024-09-30}
+      cmp.revenue.yoy.abs: {expr: 5715.42 - 4644.51, v: '1070.91'}
+      cmp.revenue.yoy.pct: {expr: (5715.42 - 4644.51) / 4644.51 * 100, v: 3569700/154817}
+      cmp.total_income.qoq.prior:
+        v: '5128.95'
+        iv: ['5128.945', '5128.955']
+        at:
+        - {src: X-FY26_Q1, c: Income, ctx: OneD, u: INR, d: '-5', lex: '51289500000', per: 2025-04-01..2025-06-30}
+      cmp.total_income.qoq.abs: {expr: 5742.85 - 5128.95, v: '613.9'}
+      cmp.total_income.qoq.pct: {expr: (5742.85 - 5128.95) / 5128.95 * 100, v: 1227800/102579}
+      cmp.total_income.yoy.prior:
+        v: '4677.29'
+        iv: ['4676.79', '4677.79']
+        at:
+        - {src: X-FY25_Q2, c: Income, ctx: OneD, u: INR, d: '-7', lex: '46772900000.00', per: 2024-07-01..2024-09-30}
+      cmp.total_income.yoy.abs: {expr: 5742.85 - 4677.29, v: '1065.56'}
+      cmp.total_income.yoy.pct: {expr: (5742.85 - 4677.29) / 4677.29 * 100, v: 10655600/467729}
+      cmp.total_expenses.qoq.prior:
+        v: '4776.44'
+        iv: ['4776.435', '4776.445']
+        at:
+        - {src: X-FY26_Q1, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '47764400000', per: 2025-04-01..2025-06-30}
+      cmp.total_expenses.qoq.abs: {expr: 5402.29 - 4776.44, v: '625.85'}
+      cmp.total_expenses.qoq.pct: {expr: (5402.29 - 4776.44) / 4776.44 * 100, v: 1564625/119411}
+      cmp.total_expenses.yoy.prior:
+        v: '4420.59'
+        iv: ['4420.09', '4421.09']
+        at:
+        - {src: X-FY25_Q2, c: Expenses, ctx: OneD, u: INR, d: '-7', lex: '44205900000.00', per: 2024-07-01..2024-09-30}
+      cmp.total_expenses.yoy.abs: {expr: 5402.29 - 4420.59, v: '981.7'}
+      cmp.total_expenses.yoy.pct: {expr: (5402.29 - 4420.59) / 4420.59 * 100, v: 9817000/442059}
+      cmp.profit_before_tax.qoq.prior:
+        v: '352.51'
+        iv: ['352.505', '352.515']
+        at:
+        - {src: X-FY26_Q1, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '3525100000', per: 2025-04-01..2025-06-30}
+      cmp.profit_before_tax.qoq.abs: {expr: 340.56 - 352.51, v: '-11.95'}
+      cmp.profit_before_tax.qoq.pct: {expr: (340.56 - 352.51) / 352.51 * 100, v: -119500/35251}
+      cmp.profit_before_tax.yoy.prior:
+        v: '256.7'
+        iv: ['256.2', '257.2']
+        at:
+        - {src: X-FY25_Q2, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-7', lex: '2567000000.00', per: 2024-07-01..2024-09-30}
+      cmp.profit_before_tax.yoy.abs: {expr: 340.56 - 256.7, v: '83.86'}
+      cmp.profit_before_tax.yoy.pct: {expr: (340.56 - 256.7) / 256.7 * 100, v: 83860/2567}
+      cmp.profit_for_period.qoq.prior:
+        v: '262.91'
+        iv: ['262.905', '262.915']
+        at:
+        - {src: X-FY26_Q1, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2629100000', per: 2025-04-01..2025-06-30}
+      cmp.profit_for_period.qoq.abs: {expr: 251.7 - 262.91, v: '-11.21'}
+      cmp.profit_for_period.qoq.pct: {expr: (251.7 - 262.91) / 262.91 * 100, v: -112100/26291}
+      cmp.profit_for_period.yoy.prior:
+        v: '193.88'
+        iv: ['193.38', '194.38']
+        at:
+        - {src: X-FY25_Q2, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-7', lex: '1938800000.00', per: 2024-07-01..2024-09-30}
+      cmp.profit_for_period.yoy.abs: {expr: 251.7 - 193.88, v: '57.82'}
+      cmp.profit_for_period.yoy.pct: {expr: (251.7 - 193.88) / 193.88 * 100, v: 144550/4847}
+      cmp.basic_eps.qoq.prior:
+        v: '65.45'
+        iv: ['65.45', '65.45']
+        at:
+        - {src: X-FY26_Q1, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '65.45', per: 2025-04-01..2025-06-30}
+      cmp.basic_eps.qoq.abs: {expr: 62.66 - 65.45, v: '-2.79'}
+      cmp.basic_eps.qoq.pct: {expr: (62.66 - 65.45) / 65.45 * 100, v: -5580/1309}
+      cmp.basic_eps.yoy.prior:
+        v: '48.27'
+        iv: ['48.27', '48.27']
+        at:
+        - {src: X-FY25_Q2, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '48.27', per: 2024-07-01..2024-09-30}
+      cmp.basic_eps.yoy.abs: {expr: 62.66 - 48.27, v: '14.39'}
+      cmp.basic_eps.yoy.pct: {expr: (62.66 - 48.27) / 48.27 * 100, v: 143900/4827}
+      calc.1: {expr: 5742.85 - 5715.42, v: '27.43'}
+      calc.2:
+        v: '88.83'
+        iv: ['88.825', '88.835']
+        at:
+        - {src: X-FY26_Q2, c: TaxExpense, ctx: OneD, u: INR, d: '-5', lex: '888300000', per: 2025-07-01..2025-09-30}
+        pdf_parts:
+        - {src: R-FY26_Q2, pg: 3, label: (a) Current tax, col: Q, lex: '89.13'}
+        - {src: R-FY26_Q2, pg: 3, label: (b( Deferred tax, col: Q, lex: (0.30)}
+        - {src: R-FY26_Q2, pg: 3, label: (c) Current tax in respect of earlier years, col: Q, lex: '-'}
+      calc.3: {expr: 88.83 / 340.56 * 100, v: 24675/946}
+      calc.4: {expr: 340.56 + (-0.03), v: '340.53'}
+    aux:
+      share_of_associates:
+        v: '-0.03'
+        iv: ['-0.035', '-0.025']
+        at:
+        - {src: X-FY26_Q2, c: ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod, ctx: OneD, u: INR, d: '-5', lex: '-300000', per: 2025-07-01..2025-09-30}
+        pdf: {src: R-FY26_Q2, pg: 3, label: Share in net profit / (loss) of associates, col: Q, lex: (0.03)}
+  FY26_Q3:
+    source_cutoff:
+      v: '2026-02-04T09:18:22Z'
+      at:
+      - {src: A-MAN, path: 'entries[4].filed_at_nse', lex: '04-Feb-2026 14:48:22'}
+    package:
+    - role: xbrl
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q3, kind: xbrl-consolidated}
+      sha256: 87a5dd9583b582132c7c42c9cb6edcbc799372e3772efab19a0ba440f4fcc548
+    - role: results_pdf
+      source_id: aparinds-fy26-q3-results-pdf
+      entry: {quarter: FY26_Q3, kind: results}
+      sha256: 2f9c6d5a0c1d6394276602c97a08bd1624ea5e61197a57a1d95d260db6383699
+    - role: transcript_pdf
+      source_id: aparinds-fy26-q3-management-transcript
+      entry: {quarter: FY26_Q3, kind: transcript}
+      sha256: 66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02
+    - role: qoq
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q2, kind: xbrl-consolidated}
+      sha256: 90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799
+    - role: yoy
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY25_Q3, kind: xbrl-consolidated-comparator}
+      sha256: 3ba61227e3341d1540504070c663eafe754f8b38fe918345a288fc4417337e5f
+    retrospective: {designated: RETROSPECTIVE, retrieval_manifest_sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+    claims:
+      fact.revenue:
+        v: '5479.73'
+        iv: ['5479.725', '5479.735']
+        at:
+        - {src: X-FY26_Q3, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '54797300000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Revenue from operations (1+2), col: Q, lex: '5,479.73'}
+      fact.total_income:
+        v: '5495.04'
+        iv: ['5495.035', '5495.045']
+        at:
+        - {src: X-FY26_Q3, c: Income, ctx: OneD, u: INR, d: '-5', lex: '54950400000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Total income (3+4), col: Q, lex: '5,495.04'}
+      fact.total_expenses:
+        v: '5181.96'
+        iv: ['5181.955', '5181.965']
+        at:
+        - {src: X-FY26_Q3, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '51819600000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Total expenses, col: Q, lex: '5,181.96'}
+      fact.profit_before_tax:
+        v: '288.09'
+        iv: ['288.085', '288.095']
+        at:
+        - {src: X-FY26_Q3, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '2880900000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Profit before tax & share in net profit / (loss) of associates (7, col: Q, lex: '288.09'}
+      fact.profit_for_period:
+        v: '208.93'
+        iv: ['208.925', '208.935']
+        at:
+        - {src: X-FY26_Q3, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2089300000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Profit after tax, col: Q, lex: '208.93'}
+      fact.basic_eps:
+        v: '52.01'
+        iv: ['52.01', '52.01']
+        at:
+        - {src: X-FY26_Q3, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '52.01', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Basic, col: Q, lex: '52.01'}
+      cmp.revenue.qoq.prior:
+        v: '5715.42'
+        iv: ['5715.415', '5715.425']
+        at:
+        - {src: X-FY26_Q2, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '57154200000', per: 2025-07-01..2025-09-30}
+      cmp.revenue.qoq.abs: {expr: 5479.73 - 5715.42, v: '-235.69'}
+      cmp.revenue.qoq.pct: {expr: (5479.73 - 5715.42) / 5715.42 * 100, v: -1178450/285771}
+      cmp.revenue.yoy.prior:
+        v: '4716.42'
+        iv: ['4715.92', '4716.92']
+        at:
+        - {src: X-FY25_Q3, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-7', lex: '47164200000.00', per: 2024-10-01..2024-12-31}
+      cmp.revenue.yoy.abs: {expr: 5479.73 - 4716.42, v: '763.31'}
+      cmp.revenue.yoy.pct: {expr: (5479.73 - 4716.42) / 4716.42 * 100, v: 3816550/235821}
+      cmp.total_income.qoq.prior:
+        v: '5742.85'
+        iv: ['5742.845', '5742.855']
+        at:
+        - {src: X-FY26_Q2, c: Income, ctx: OneD, u: INR, d: '-5', lex: '57428500000', per: 2025-07-01..2025-09-30}
+      cmp.total_income.qoq.abs: {expr: 5495.04 - 5742.85, v: '-247.81'}
+      cmp.total_income.qoq.pct: {expr: (5495.04 - 5742.85) / 5742.85 * 100, v: -495620/114857}
+      cmp.total_income.yoy.prior:
+        v: '4750.6'
+        iv: ['4750.1', '4751.1']
+        at:
+        - {src: X-FY25_Q3, c: Income, ctx: OneD, u: INR, d: '-7', lex: '47506000000.00', per: 2024-10-01..2024-12-31}
+      cmp.total_income.yoy.abs: {expr: 5495.04 - 4750.6, v: '744.44'}
+      cmp.total_income.yoy.pct: {expr: (5495.04 - 4750.6) / 4750.6 * 100, v: 372220/23753}
+      cmp.total_expenses.qoq.prior:
+        v: '5402.29'
+        iv: ['5402.285', '5402.295']
+        at:
+        - {src: X-FY26_Q2, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '54022900000', per: 2025-07-01..2025-09-30}
+      cmp.total_expenses.qoq.abs: {expr: 5181.96 - 5402.29, v: '-220.33'}
+      cmp.total_expenses.qoq.pct: {expr: (5181.96 - 5402.29) / 5402.29 * 100, v: -2203300/540229}
+      cmp.total_expenses.yoy.prior:
+        v: '4512.04'
+        iv: ['4511.54', '4512.54']
+        at:
+        - {src: X-FY25_Q3, c: Expenses, ctx: OneD, u: INR, d: '-7', lex: '45120400000.00', per: 2024-10-01..2024-12-31}
+      cmp.total_expenses.yoy.abs: {expr: 5181.96 - 4512.04, v: '669.92'}
+      cmp.total_expenses.yoy.pct: {expr: (5181.96 - 4512.04) / 4512.04 * 100, v: 1674800/112801}
+      cmp.profit_before_tax.qoq.prior:
+        v: '340.56'
+        iv: ['340.555', '340.565']
+        at:
+        - {src: X-FY26_Q2, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '3405600000', per: 2025-07-01..2025-09-30}
+      cmp.profit_before_tax.qoq.abs: {expr: 288.09 - 340.56, v: '-52.47'}
+      cmp.profit_before_tax.qoq.pct: {expr: (288.09 - 340.56) / 340.56 * 100, v: -1325/86}
+      cmp.profit_before_tax.yoy.prior:
+        v: '238.56'
+        iv: ['238.06', '239.06']
+        at:
+        - {src: X-FY25_Q3, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-7', lex: '2385600000.00', per: 2024-10-01..2024-12-31}
+      cmp.profit_before_tax.yoy.abs: {expr: 288.09 - 238.56, v: '49.53'}
+      cmp.profit_before_tax.yoy.pct: {expr: (288.09 - 238.56) / 238.56 * 100, v: 41275/1988}
+      cmp.profit_for_period.qoq.prior:
+        v: '251.7'
+        iv: ['251.65', '251.75']
+        at:
+        - {src: X-FY26_Q2, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-6', lex: '2517000000', per: 2025-07-01..2025-09-30}
+      cmp.profit_for_period.qoq.abs: {expr: 208.93 - 251.7, v: '-42.77'}
+      cmp.profit_for_period.qoq.pct: {expr: (208.93 - 251.7) / 251.7 * 100, v: -42770/2517}
+      cmp.profit_for_period.yoy.prior:
+        v: '174.91'
+        iv: ['174.41', '175.41']
+        at:
+        - {src: X-FY25_Q3, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-7', lex: '1749100000.00', per: 2024-10-01..2024-12-31}
+      cmp.profit_for_period.yoy.abs: {expr: 208.93 - 174.91, v: '34.02'}
+      cmp.profit_for_period.yoy.pct: {expr: (208.93 - 174.91) / 174.91 * 100, v: 340200/17491}
+      cmp.basic_eps.qoq.prior:
+        v: '62.66'
+        iv: ['62.66', '62.66']
+        at:
+        - {src: X-FY26_Q2, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '62.66', per: 2025-07-01..2025-09-30}
+      cmp.basic_eps.qoq.abs: {expr: 52.01 - 62.66, v: '-10.65'}
+      cmp.basic_eps.qoq.pct: {expr: (52.01 - 62.66) / 62.66 * 100, v: -53250/3133}
+      cmp.basic_eps.yoy.prior:
+        v: '43.55'
+        iv: ['43.55', '43.55']
+        at:
+        - {src: X-FY25_Q3, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '43.55', per: 2024-10-01..2024-12-31}
+      cmp.basic_eps.yoy.abs: {expr: 52.01 - 43.55, v: '8.46'}
+      cmp.basic_eps.yoy.pct: {expr: (52.01 - 43.55) / 43.55 * 100, v: 16920/871}
+      calc.1: {expr: 5495.04 - 5479.73, v: '15.31'}
+      calc.2:
+        v: '79.15'
+        iv: ['79.145', '79.155']
+        at:
+        - {src: X-FY26_Q3, c: TaxExpense, ctx: OneD, u: INR, d: '-5', lex: '791500000', per: 2025-10-01..2025-12-31}
+        pdf_parts:
+        - {src: R-FY26_Q3, pg: 3, label: (a) Current tax, col: Q, lex: '74.31'}
+        - {src: R-FY26_Q3, pg: 3, label: (b) Deferred tax, col: Q, lex: '3.15'}
+        - {src: R-FY26_Q3, pg: 3, label: (c) Current tax in respect of earlier years, col: Q, lex: '1.69'}
+      calc.3: {expr: 79.15 / 288.09 * 100, v: 791500/28809}
+      calc.4: {expr: 288.09 + (-0.01), v: '288.08'}
+    aux:
+      share_of_associates:
+        v: '-0.01'
+        iv: ['-0.015', '-0.005']
+        at:
+        - {src: X-FY26_Q3, c: ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod, ctx: OneD, u: INR, d: '-5', lex: '-100000', per: 2025-10-01..2025-12-31}
+        pdf: {src: R-FY26_Q3, pg: 3, label: Share in net profit / (loss) of associates, col: Q, lex: (0.01)}
+  FY26_Q4:
+    source_cutoff:
+      v: '2026-06-04T10:43:48Z'
+      at:
+      - {src: A-MAN, path: 'entries[5].filed_at_nse', lex: '04-Jun-2026 16:13:48'}
+    package:
+    - role: xbrl
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q4, kind: xbrl-consolidated}
+      sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01
+    - role: results_pdf
+      source_id: aparinds-fy26-q4-results-pdf
+      entry: {quarter: FY26_Q4, kind: results}
+      sha256: 17f5bc047416a795ecdf8c9be5c09ff1699d00cb2feed885bf2a2e43a2d4a377
+    - role: transcript_pdf
+      source_id: aparinds-fy26-q4-management-transcript
+      entry: {quarter: FY26_Q4, kind: transcript}
+      sha256: 69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c
+    - role: qoq
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q3, kind: xbrl-consolidated}
+      sha256: 87a5dd9583b582132c7c42c9cb6edcbc799372e3772efab19a0ba440f4fcc548
+    - role: yoy
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY25_Q4, kind: xbrl-consolidated-comparator}
+      sha256: 943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2
+    retrospective: {designated: RETROSPECTIVE, retrieval_manifest_sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+    claims:
+      fact.revenue:
+        v: '6602.81'
+        iv: ['6602.805', '6602.815']
+        at:
+        - {src: X-FY26_Q4, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '66028100000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Revenue from operations (1+2), col: Q, lex: '6,602.81'}
+      fact.total_income:
+        v: '6622.53'
+        iv: ['6622.525', '6622.535']
+        at:
+        - {src: X-FY26_Q4, c: Income, ctx: OneD, u: INR, d: '-5', lex: '66225300000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Total income (3+4), col: Q, lex: '6,622.53'}
+      fact.total_expenses:
+        v: '6286.19'
+        iv: ['6286.185', '6286.195']
+        at:
+        - {src: X-FY26_Q4, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '62861900000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Total expenses, col: Q, lex: '6,286.19'}
+      fact.profit_before_tax:
+        v: '328.8'
+        iv: ['328.75', '328.85']
+        at:
+        - {src: X-FY26_Q4, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-6', lex: '3288000000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Profit before tax & share in net profit / (loss) of associates (7.8), col: Q, lex: '328.80'}
+      fact.profit_for_period:
+        v: '253.44'
+        iv: ['253.435', '253.445']
+        at:
+        - {src: X-FY26_Q4, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2534400000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Profit after tax, col: Q, lex: '253.44'}
+      fact.basic_eps:
+        v: '63.09'
+        iv: ['63.09', '63.09']
+        at:
+        - {src: X-FY26_Q4, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '63.09', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: '''Basic', col: Q, lex: '63.09'}
+      cmp.revenue.qoq.prior:
+        v: '5479.73'
+        iv: ['5479.725', '5479.735']
+        at:
+        - {src: X-FY26_Q3, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '54797300000', per: 2025-10-01..2025-12-31}
+      cmp.revenue.qoq.abs: {expr: 6602.81 - 5479.73, v: '1123.08'}
+      cmp.revenue.qoq.pct: {expr: (6602.81 - 5479.73) / 5479.73 * 100, v: 11230800/547973}
+      cmp.revenue.yoy.prior:
+        v: '5209.76'
+        iv: ['5209.755', '5209.765']
+        at:
+        - {src: X-FY25_Q4, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '52097600000', per: 2025-01-01..2025-03-31}
+      cmp.revenue.yoy.abs: {expr: 6602.81 - 5209.76, v: '1393.05'}
+      cmp.revenue.yoy.pct: {expr: (6602.81 - 5209.76) / 5209.76 * 100, v: 3482625/130244}
+      cmp.total_income.qoq.prior:
+        v: '5495.04'
+        iv: ['5495.035', '5495.045']
+        at:
+        - {src: X-FY26_Q3, c: Income, ctx: OneD, u: INR, d: '-5', lex: '54950400000', per: 2025-10-01..2025-12-31}
+      cmp.total_income.qoq.abs: {expr: 6622.53 - 5495.04, v: '1127.49'}
+      cmp.total_income.qoq.pct: {expr: (6622.53 - 5495.04) / 5495.04 * 100, v: 939575/45792}
+      cmp.total_income.yoy.prior:
+        v: '5226.89'
+        iv: ['5226.885', '5226.895']
+        at:
+        - {src: X-FY25_Q4, c: Income, ctx: OneD, u: INR, d: '-5', lex: '52268900000', per: 2025-01-01..2025-03-31}
+      cmp.total_income.yoy.abs: {expr: 6622.53 - 5226.89, v: '1395.64'}
+      cmp.total_income.yoy.pct: {expr: (6622.53 - 5226.89) / 5226.89 * 100, v: 13956400/522689}
+      cmp.total_expenses.qoq.prior:
+        v: '5181.96'
+        iv: ['5181.955', '5181.965']
+        at:
+        - {src: X-FY26_Q3, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '51819600000', per: 2025-10-01..2025-12-31}
+      cmp.total_expenses.qoq.abs: {expr: 6286.19 - 5181.96, v: '1104.23'}
+      cmp.total_expenses.qoq.pct: {expr: (6286.19 - 5181.96) / 5181.96 * 100, v: 2760575/129549}
+      cmp.total_expenses.yoy.prior:
+        v: '4886.8'
+        iv: ['4886.75', '4886.85']
+        at:
+        - {src: X-FY25_Q4, c: Expenses, ctx: OneD, u: INR, d: '-6', lex: '48868000000', per: 2025-01-01..2025-03-31}
+      cmp.total_expenses.yoy.abs: {expr: 6286.19 - 4886.8, v: '1399.39'}
+      cmp.total_expenses.yoy.pct: {expr: (6286.19 - 4886.8) / 4886.8 * 100, v: 699695/24434}
+      cmp.profit_before_tax.qoq.prior:
+        v: '288.09'
+        iv: ['288.085', '288.095']
+        at:
+        - {src: X-FY26_Q3, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '2880900000', per: 2025-10-01..2025-12-31}
+      cmp.profit_before_tax.qoq.abs: {expr: 328.8 - 288.09, v: '40.71'}
+      cmp.profit_before_tax.qoq.pct: {expr: (328.8 - 288.09) / 288.09 * 100, v: 135700/9603}
+      cmp.profit_before_tax.yoy.prior:
+        v: '340.09'
+        iv: ['340.085', '340.095']
+        at:
+        - {src: X-FY25_Q4, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '3400900000', per: 2025-01-01..2025-03-31}
+      cmp.profit_before_tax.yoy.abs: {expr: 328.8 - 340.09, v: '-11.29'}
+      cmp.profit_before_tax.yoy.pct: {expr: (328.8 - 340.09) / 340.09 * 100, v: -112900/34009}
+      cmp.profit_for_period.qoq.prior:
+        v: '208.93'
+        iv: ['208.925', '208.935']
+        at:
+        - {src: X-FY26_Q3, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2089300000', per: 2025-10-01..2025-12-31}
+      cmp.profit_for_period.qoq.abs: {expr: 253.44 - 208.93, v: '44.51'}
+      cmp.profit_for_period.qoq.pct: {expr: (253.44 - 208.93) / 208.93 * 100, v: 445100/20893}
+      cmp.profit_for_period.yoy.prior:
+        v: '249.97'
+        iv: ['249.965', '249.975']
+        at:
+        - {src: X-FY25_Q4, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2499700000', per: 2025-01-01..2025-03-31}
+      cmp.profit_for_period.yoy.abs: {expr: 253.44 - 249.97, v: '3.47'}
+      cmp.profit_for_period.yoy.pct: {expr: (253.44 - 249.97) / 249.97 * 100, v: 34700/24997}
+      cmp.basic_eps.qoq.prior:
+        v: '52.01'
+        iv: ['52.01', '52.01']
+        at:
+        - {src: X-FY26_Q3, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '52.01', per: 2025-10-01..2025-12-31}
+      cmp.basic_eps.qoq.abs: {expr: 63.09 - 52.01, v: '11.08'}
+      cmp.basic_eps.qoq.pct: {expr: (63.09 - 52.01) / 52.01 * 100, v: 110800/5201}
+      cmp.basic_eps.yoy.prior:
+        v: '62.23'
+        iv: ['62.23', '62.23']
+        at:
+        - {src: X-FY25_Q4, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '62.23', per: 2025-01-01..2025-03-31}
+      cmp.basic_eps.yoy.abs: {expr: 63.09 - 62.23, v: '0.86'}
+      cmp.basic_eps.yoy.pct: {expr: (63.09 - 62.23) / 62.23 * 100, v: 8600/6223}
+      calc.1: {expr: 6622.53 - 6602.81, v: '19.72'}
+      calc.2:
+        v: '75.48'
+        iv: ['75.475', '75.485']
+        at:
+        - {src: X-FY26_Q4, c: TaxExpense, ctx: OneD, u: INR, d: '-5', lex: '754800000', per: 2026-01-01..2026-03-31}
+        pdf_parts:
+        - {src: R-FY26_Q4, pg: 3, label: (a) Current tax, col: Q, lex: '88.84'}
+        - {src: R-FY26_Q4, pg: 3, label: (b) Deferred tax, col: Q, lex: (4.78)}
+        - {src: R-FY26_Q4, pg: 3, label: (c) Current tax in respect of earlier years, col: Q, lex: (8.58)}
+      calc.3: {expr: 75.48 / 328.8 * 100, v: 3145/137}
+      calc.4: {expr: 328.8 + 0.12, v: '328.92'}
+    aux:
+      share_of_associates:
+        v: '0.12'
+        iv: ['0.115', '0.125']
+        at:
+        - {src: X-FY26_Q4, c: ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod, ctx: OneD, u: INR, d: '-5', lex: '1200000', per: 2026-01-01..2026-03-31}
+        pdf: {src: R-FY26_Q4, pg: 3, label: Share in net profit / (loss) of associates, col: Q, lex: '0.12'}
+  FY27_Q1:
+    source_cutoff:
+      v: '2026-07-31T10:14:41Z'
+      at:
+      - {src: A-MAN, path: 'entries[18].filed_at_nse', lex: '31-Jul-2026 15:44:41'}
+    package:
+    - role: xbrl
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY27_Q1, kind: xbrl-consolidated}
+      sha256: f76a131abb5fdb796a8e579848c6036f04181c38f88b05e3a5317f4820124a85
+    - role: results_pdf
+      source_id: aparinds-fy27-q1-results-pdf
+      entry: {quarter: FY27_Q1, kind: results}
+      sha256: c0c2b2fa5510a776331c2092f03301c65dbea5a98ee42ecbc31f768513278612
+    - role: transcript_pdf
+      source_id: aparinds-fy27-q1-management-transcript
+      entry: {quarter: FY27_Q1, kind: transcript}
+      sha256: 78a312c86f58ea515f3eea3763e02a1e977104f282256e774e428d2a898304e5
+    - role: qoq
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q4, kind: xbrl-consolidated}
+      sha256: be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01
+    - role: yoy
+      source_id: nse-indas-xbrl-consolidated
+      entry: {quarter: FY26_Q1, kind: xbrl-consolidated-comparator}
+      sha256: a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1
+    retrospective: {designated: RETROSPECTIVE, retrieval_manifest_sha256: c47866ce13f719521bbcc7826fc23590acc73f9904cfc1749a1ad911bb399a1b}
+    claims:
+      fact.revenue:
+        v: '6591.06'
+        iv: ['6591.055', '6591.065']
+        at:
+        - {src: X-FY27_Q1, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '65910600000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Revenue from operations (1+2), col: Q, lex: '6,591.06'}
+      fact.total_income:
+        v: '6624.71'
+        iv: ['6624.705', '6624.715']
+        at:
+        - {src: X-FY27_Q1, c: Income, ctx: OneD, u: INR, d: '-5', lex: '66247100000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Total income (3+4), col: Q, lex: '6,624.71'}
+      fact.total_expenses:
+        v: '6002.37'
+        iv: ['6002.365', '6002.375']
+        at:
+        - {src: X-FY27_Q1, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '60023700000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Total expenses, col: Q, lex: '6,002.37'}
+      fact.profit_before_tax:
+        v: '622.34'
+        iv: ['622.335', '622.345']
+        at:
+        - {src: X-FY27_Q1, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '6223400000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Profit before tax & share in net profit / (loss) of associates (7.8), col: Q, lex: '622.34'}
+      fact.profit_for_period:
+        v: '467.45'
+        iv: ['467.445', '467.455']
+        at:
+        - {src: X-FY27_Q1, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '4674500000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Profit after tax, col: Q, lex: '467.45'}
+      fact.basic_eps:
+        v: '116.37'
+        iv: ['116.37', '116.37']
+        at:
+        - {src: X-FY27_Q1, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '116.37', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: -Basic, col: Q, lex: '116.37'}
+      cmp.revenue.qoq.prior:
+        v: '6602.81'
+        iv: ['6602.805', '6602.815']
+        at:
+        - {src: X-FY26_Q4, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '66028100000', per: 2026-01-01..2026-03-31}
+      cmp.revenue.qoq.abs: {expr: 6591.06 - 6602.81, v: '-11.75'}
+      cmp.revenue.qoq.pct: {expr: (6591.06 - 6602.81) / 6602.81 * 100, v: -117500/660281}
+      cmp.revenue.yoy.prior:
+        v: '5104.16'
+        iv: ['5104.155', '5104.165']
+        at:
+        - {src: X-FY26_Q1, c: RevenueFromOperations, ctx: OneD, u: INR, d: '-5', lex: '51041600000', per: 2025-04-01..2025-06-30}
+      cmp.revenue.yoy.abs: {expr: 6591.06 - 5104.16, v: '1486.9'}
+      cmp.revenue.yoy.pct: {expr: (6591.06 - 5104.16) / 5104.16 * 100, v: 1858625/63802}
+      cmp.total_income.qoq.prior:
+        v: '6622.53'
+        iv: ['6622.525', '6622.535']
+        at:
+        - {src: X-FY26_Q4, c: Income, ctx: OneD, u: INR, d: '-5', lex: '66225300000', per: 2026-01-01..2026-03-31}
+      cmp.total_income.qoq.abs: {expr: 6624.71 - 6622.53, v: '2.18'}
+      cmp.total_income.qoq.pct: {expr: (6624.71 - 6622.53) / 6622.53 * 100, v: 21800/662253}
+      cmp.total_income.yoy.prior:
+        v: '5128.95'
+        iv: ['5128.945', '5128.955']
+        at:
+        - {src: X-FY26_Q1, c: Income, ctx: OneD, u: INR, d: '-5', lex: '51289500000', per: 2025-04-01..2025-06-30}
+      cmp.total_income.yoy.abs: {expr: 6624.71 - 5128.95, v: '1495.76'}
+      cmp.total_income.yoy.pct: {expr: (6624.71 - 5128.95) / 5128.95 * 100, v: 2991520/102579}
+      cmp.total_expenses.qoq.prior:
+        v: '6286.19'
+        iv: ['6286.185', '6286.195']
+        at:
+        - {src: X-FY26_Q4, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '62861900000', per: 2026-01-01..2026-03-31}
+      cmp.total_expenses.qoq.abs: {expr: 6002.37 - 6286.19, v: '-283.82'}
+      cmp.total_expenses.qoq.pct: {expr: (6002.37 - 6286.19) / 6286.19 * 100, v: -2838200/628619}
+      cmp.total_expenses.yoy.prior:
+        v: '4776.44'
+        iv: ['4776.435', '4776.445']
+        at:
+        - {src: X-FY26_Q1, c: Expenses, ctx: OneD, u: INR, d: '-5', lex: '47764400000', per: 2025-04-01..2025-06-30}
+      cmp.total_expenses.yoy.abs: {expr: 6002.37 - 4776.44, v: '1225.93'}
+      cmp.total_expenses.yoy.pct: {expr: (6002.37 - 4776.44) / 4776.44 * 100, v: 71275/2777}
+      cmp.profit_before_tax.qoq.prior:
+        v: '328.8'
+        iv: ['328.75', '328.85']
+        at:
+        - {src: X-FY26_Q4, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-6', lex: '3288000000', per: 2026-01-01..2026-03-31}
+      cmp.profit_before_tax.qoq.abs: {expr: 622.34 - 328.8, v: '293.54'}
+      cmp.profit_before_tax.qoq.pct: {expr: (622.34 - 328.8) / 328.8 * 100, v: 73385/822}
+      cmp.profit_before_tax.yoy.prior:
+        v: '352.51'
+        iv: ['352.505', '352.515']
+        at:
+        - {src: X-FY26_Q1, c: ProfitBeforeTax, ctx: OneD, u: INR, d: '-5', lex: '3525100000', per: 2025-04-01..2025-06-30}
+      cmp.profit_before_tax.yoy.abs: {expr: 622.34 - 352.51, v: '269.83'}
+      cmp.profit_before_tax.yoy.pct: {expr: (622.34 - 352.51) / 352.51 * 100, v: 2698300/35251}
+      cmp.profit_for_period.qoq.prior:
+        v: '253.44'
+        iv: ['253.435', '253.445']
+        at:
+        - {src: X-FY26_Q4, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2534400000', per: 2026-01-01..2026-03-31}
+      cmp.profit_for_period.qoq.abs: {expr: 467.45 - 253.44, v: '214.01'}
+      cmp.profit_for_period.qoq.pct: {expr: (467.45 - 253.44) / 253.44 * 100, v: 535025/6336}
+      cmp.profit_for_period.yoy.prior:
+        v: '262.91'
+        iv: ['262.905', '262.915']
+        at:
+        - {src: X-FY26_Q1, c: ProfitLossForPeriod, ctx: OneD, u: INR, d: '-5', lex: '2629100000', per: 2025-04-01..2025-06-30}
+      cmp.profit_for_period.yoy.abs: {expr: 467.45 - 262.91, v: '204.54'}
+      cmp.profit_for_period.yoy.pct: {expr: (467.45 - 262.91) / 262.91 * 100, v: 2045400/26291}
+      cmp.basic_eps.qoq.prior:
+        v: '63.09'
+        iv: ['63.09', '63.09']
+        at:
+        - {src: X-FY26_Q4, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '63.09', per: 2026-01-01..2026-03-31}
+      cmp.basic_eps.qoq.abs: {expr: 116.37 - 63.09, v: '53.28'}
+      cmp.basic_eps.qoq.pct: {expr: (116.37 - 63.09) / 63.09 * 100, v: 59200/701}
+      cmp.basic_eps.yoy.prior:
+        v: '65.45'
+        iv: ['65.45', '65.45']
+        at:
+        - {src: X-FY26_Q1, c: BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations, ctx: OneD, u: INRPerShare, d: INF, lex: '65.45', per: 2025-04-01..2025-06-30}
+      cmp.basic_eps.yoy.abs: {expr: 116.37 - 65.45, v: '50.92'}
+      cmp.basic_eps.yoy.pct: {expr: (116.37 - 65.45) / 65.45 * 100, v: 101840/1309}
+      calc.1: {expr: 6624.71 - 6591.06, v: '33.65'}
+      calc.2:
+        v: '155.15'
+        iv: ['155.145', '155.155']
+        at:
+        - {src: X-FY27_Q1, c: TaxExpense, ctx: OneD, u: INR, d: '-5', lex: '1551500000', per: 2026-04-01..2026-06-30}
+        pdf_parts:
+        - {src: R-FY27_Q1, pg: 3, label: (a) Current tax, col: Q, lex: '182.12'}
+        - {src: R-FY27_Q1, pg: 3, label: (b) Deferred tax, col: Q, lex: (26.97)}
+        - {src: R-FY27_Q1, pg: 3, label: (c) Current tax in respect of earlier years, col: Q, lex: .}
+      calc.3: {expr: 155.15 / 622.34 * 100, v: 26750/1073}
+      calc.4: {expr: 622.34 + 0.26, v: '622.6'}
+    aux:
+      share_of_associates:
+        v: '0.26'
+        iv: ['0.255', '0.265']
+        at:
+        - {src: X-FY27_Q1, c: ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod, ctx: OneD, u: INR, d: '-5', lex: '2600000', per: 2026-04-01..2026-06-30}
+        pdf: {src: R-FY27_Q1, pg: 3, label: Share in net profit / (loss) of associates, col: Q, lex: '0.26'}
+pilot_checks:
+  PILOT-1:
+    pbt: FY26_Q2 fact.profit_before_tax
+    pbt_after_associates: FY26_Q2 calc.4
+    opm: {src: STAGE1, path: pre_registered.C7_OPM.spec_literal_2dp, lex: '8.06'}
+  PILOT-2:
+    pair: {src: STAGE1, path: pre_registered.H3.outcome.pair, lex: ANOMALY}
+    triage: {src: STAGE1, path: pre_registered.H3.outcome.triage, lex: NOISE}
+    queue: {src: STAGE1, path: pre_registered.H3.outcome.queue, lex: none}

@@ -10,3 +10,4 @@ manifests:
   - tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage4_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/pilot_manifest.yaml
