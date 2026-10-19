@@ -38,7 +38,7 @@ PREP = [
     ("PREP-5", "Rejected-claim rework path", "done"),
     ("PREP-6", "Review telemetry on ledger claims", "done"),
     ("PREP-7", "Frozen pilot manifest", "done"),
-    ("PREP-8", "verify_project.sh (foundation built)", "todo"),
+    ("PREP-8", "verify_project.sh", "done"),
 ]
 # Architecture: (id, column, row, label, sublabel, stage refs). A ref is a phase label ("D3"),
 # a stage ("D2.4"), "PREP-n", "pilot", or "built" (pre-roadmap foundation, already working).

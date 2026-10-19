@@ -6,8 +6,8 @@
 set -uo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# PREP-8 must register the actual approved pilot exit here. No path is approved yet.
-readonly PILOT_TARGET=""
+# The pilot exit fixed by docs/plans/PREP-7.md (Decision 8); NOT BUILT until eqos-4j2.8 lands it.
+readonly PILOT_TARGET="tests/fundamentals/test_pilot_e2e.py"
 
 if [ "$#" -ne 0 ]; then
   printf 'usage: scripts/verify_project.sh\n' >&2

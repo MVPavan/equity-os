@@ -135,25 +135,17 @@ def test_dispatch_uses_authoritative_targets_without_pg_or_retained_exclusions(v
     assert _statuses(result)["Pilot"] == "NOT BUILT"
 
 
-def test_future_registered_pilot_all_passing_control_flow_returns_zero(verifier) -> None:
+def test_built_pilot_with_every_part_passing_returns_zero(verifier) -> None:
     script, _, _ = verifier
     _build_targets(script)
-    # Only this isolated copy registers a synthetic pilot for the future dispatch seam.
-    # The production registry remains unresolved until an approved pilot contract exists.
-    script.write_text(
-        script.read_text().replace(
-            'readonly PILOT_TARGET=""',
-            'readonly PILOT_TARGET="tests/fundamentals/test_future_pilot_control_flow.py"',
-        )
-    )
-    pilot = script.parent.parent / "tests/fundamentals/test_future_pilot_control_flow.py"
-    pilot.touch()
+    # The registered pilot exit (PREP-7 Decision 8) exists only in this isolated copy.
+    (script.parent.parent / "tests/fundamentals/test_pilot_e2e.py").touch()
 
     result, calls = _run(verifier)
 
     assert result.returncode == 0
     assert set(_statuses(result).values()) == {"PASS"}
-    assert ["run", "pytest", "tests/fundamentals/test_future_pilot_control_flow.py"] in calls
+    assert ["run", "pytest", "tests/fundamentals/test_pilot_e2e.py"] in calls
 
 
 def test_present_phase_does_not_make_required_missing_export_pass(verifier) -> None:

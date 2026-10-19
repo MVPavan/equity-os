@@ -1,11 +1,10 @@
 {
   "now": {
-    "title": "PREP-8 next",
-    "detail": "PREP-7 done: frozen pilot manifest (four quarters PQ0-PQ3: IST cutoff, five-member input package with ids + sha256, retrospective designation, 46 claims each), transcribed from filing bytes by a reviewed aid and re-derived by Sol; no human read the filings. Full suite 4250 passed.",
+    "title": "Pilot gaps next",
+    "detail": "PREP-1…PREP-8 done. scripts/verify_project.sh: every built exit PASS, full suite 4250 passed; NOT BUILT only D8 (parked) and the pilot test (eqos-4j2.8). Next: pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory), then the pilot test.",
     "stage": "PREP"
   },
   "next": [
-    "PREP-8: scripts/verify_project.sh",
     "Pilot-blocking gaps eqos-4j2.24 (fact admission) and eqos-4j2.25 (memory) before the pilot",
     "Then the Apar pilot (cutover eqos-3zl owner-approved)",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
@@ -13,6 +12,10 @@
     "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
   ],
   "log": [
+    {
+      "date": "2026-10-19",
+      "text": "PREP-8 closed: verify_project.sh registers the pilot exit tests/fundamentals/test_pilot_e2e.py; real run 0 failed, 2 not built (D8 parked, pilot). Dashboard PREP row and D8 parked label fixed (77c9980)."
+    },
     {
       "date": "2026-10-19",
       "text": "PREP-7 frozen pilot manifest closed: plan 792fee2 (Sol r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; closing REVISE 7 → REVISE 2 → APPROVE); manifest + check 1b74d77, payload ad188b0d… (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs ab83c9d. Full suite 4250 passed, 9 skipped."
