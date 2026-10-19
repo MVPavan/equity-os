@@ -37,6 +37,8 @@ pytestmark = pytest.mark.pg
 OWNER = PgRole.OWNER
 CLAIM, VERSION = SupportTarget.CLAIM, SupportTarget.VERSION
 MARGIN = "Management raised its annual cables EBITDA margin guidance"
+# A distinct item's statement: identical columns stage the same item (0041's natural key).
+CUT = "Management cut its annual cables EBITDA margin guidance"
 EVERY_STATUS = frozenset(MemoryStatus)
 # The latest store time of any write that can falsify a support.
 _LATEST: LiteralString = """SELECT max(recorded_at) - interval '1 microsecond' FROM (
@@ -90,7 +92,7 @@ def test_search_finds_the_item_and_the_filters_select(memory: Memory) -> None:
     margin = promoted(memory, statement=MARGIN)
     share = promoted(memory)
     thesis = promoted(memory, kind=MemoryKind.THESIS_AND_WARNING)
-    candidate = memory.stage(statement=MARGIN)
+    candidate = memory.stage(statement=CUT)
     other = other_stock(memory)
     (elsewhere,) = reader.retrieve("cables margin", stock=other)
     assert elsewhere.entity_id == other
@@ -176,11 +178,12 @@ def test_an_invalidating_event_flags_the_promoted_item_and_refuses_promotion(
     memory: Memory, event: str, target: SupportTarget
 ) -> None:
     """A promoted P and a candidate C share a support; after the event P is flagged
-    NEEDS_REVALIDATION, PROMOTE of C and staging on that support are refused; a cutoff before
-    the event shows P unflagged."""
+    NEEDS_REVALIDATION, PROMOTE of C and staging a new item on that support are refused while an
+    exact retry of P returns P with nothing written; a cutoff before the event shows P
+    unflagged."""
     fields = _support(memory, event, target)
     item = promoted(memory, **fields)
-    candidate = memory.stage(**fields)
+    candidate = memory.stage(**fields, statement=MARGIN)
     falsified = fields["supports"][0].target_id if event == "redispose" else memory.version_id
     write = memory.writer(event, falsified)
     with memory.ledger._cursor(OWNER) as cursor:
@@ -188,8 +191,11 @@ def test_an_invalidating_event_flags_the_promoted_item_and_refuses_promotion(
     assert found(memory)[item].needs_revalidation
     with pytest.raises(errors.CheckViolation, match=REFUSED), memory.ledger._cursor(OWNER) as cur:
         promote(cur, candidate)
+    unchanged = memory.snapshot()
+    assert memory.stage(**fields) == item
+    assert memory.snapshot() == unchanged
     with pytest.raises(errors.CheckViolation, match=REFUSED):
-        memory.stage(**fields)
+        memory.stage(**fields, statement=CUT)
     earlier = found(memory, cutoff=memory.one(_LATEST))[item]
     assert (earlier.status, earlier.needs_revalidation) == (MemoryStatus.PROMOTED, False)
 

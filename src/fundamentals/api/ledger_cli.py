@@ -9,13 +9,14 @@
         [--issuer-config <yaml>]...
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
         [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]...
+    ledger stage <item.yaml>   (a MemoryItemDraft; an exact retry prints the same id)
     ledger export <version id> [--out PATH]   (narrative bytes; stdout unless --out)
     ledger export --stock <symbol> --out <dir> [--status-notes] [--memory]
         (every version's narrative, and its status note, and the promoted memory, under
         <dir>/<symbol>/, which must be fresh or empty: nothing is overwritten)
 
-The composition root: ``decide`` runs as the owner login from its credential file; ``check``
-and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
+The composition root: ``decide`` runs as the owner login from its credential file; ``check``,
+``stage`` and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
 ``check``, ``import`` and an approving ``decide`` get the stock's source catalog and the
 snapshot store; each ``--issuer-config`` adds that config's PDF declarations to the catalog
 (plan D4, Task 3b). Any refusal, or a
@@ -45,7 +46,7 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog, with_issuer_pdfs
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind
-from fundamentals.contracts.memory import MemoryStatus
+from fundamentals.contracts.memory import MemoryItemDraft, MemoryStatus
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
@@ -54,6 +55,7 @@ from fundamentals.ledger.importer import import_versions, load_import_config
 from fundamentals.ledger.lifecycle import decide, validate
 from fundamentals.memory import retrieval
 from fundamentals.memory.export import format_memory
+from fundamentals.memory.pg_store import PgMemoryStore
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -64,6 +66,7 @@ DECIDE_ACTION = "decide"
 CHECK_ACTION = "check"
 IMPORT_ACTION = "import"
 EXPORT_ACTION = "export"
+STAGE_ACTION = "stage"
 DEFAULT_WATCHLIST = Path("config") / "watchlist.yaml"
 DEFAULT_IMPORT_CONFIG = Path("config") / "ledger_import.yaml"
 ISSUER_CONFIG_FLAG = "--issuer-config"
@@ -72,12 +75,14 @@ _HELP = "decide report-ledger subjects and check report versions"
 _DECIDE_HELP = "record an owner decision; the verbatim ruling is read from stdin"
 _CHECK_HELP = "check every claim of a version and append the validation"
 _IMPORT_HELP = "import the configured retained versions as the panel role"
+_STAGE_HELP = "stage a memory item from a YAML MemoryItemDraft as the runtime role"
 _EXPORT_HELP = (
     "write a version's narrative bytes, or a stock's narratives, notes and memory into a fresh "
     "or empty <out>/<stock>/ (never overwrites)"
 )
 _POLICY_FIELDS = ("key", "value", "unit")
 _DECISION = "decision\t{id}"
+_MEMORY_ITEM = "memory item {id}"
 _VALIDATION = "validation\t{id}\nmode\t{mode}"
 _STATE = "{key}\t{state}"
 _IMPORTED = "{period}\t{kind}\t{version_id}\t{outcome}"
@@ -113,7 +118,8 @@ LEDGER_FAILURES = (
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``ledger`` with its ``decide``, ``check``, ``import`` and ``export`` actions."""
+    """Register ``ledger`` with its ``decide``, ``check``, ``import``, ``stage`` and ``export``
+    actions."""
     parser = subparsers.add_parser(LEDGER_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     decision = actions.add_parser(DECIDE_ACTION, help=_DECIDE_HELP)
@@ -141,6 +147,8 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     imports.add_argument("--repo", type=Path, default=Path())
     imports.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
     imports.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    stage = actions.add_parser(STAGE_ACTION, help=_STAGE_HELP)
+    stage.add_argument("item", type=Path)
     export = actions.add_parser(EXPORT_ACTION, help=_EXPORT_HELP)
     target = export.add_mutually_exclusive_group(required=True)
     target.add_argument("version_id", type=int, nargs="?")
@@ -159,6 +167,7 @@ def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
             DECIDE_ACTION: _decide,
             CHECK_ACTION: _check,
             IMPORT_ACTION: _import,
+            STAGE_ACTION: _stage,
             EXPORT_ACTION: _export,
         }
         return actions[args.ledger_action](args)
@@ -188,6 +197,15 @@ def _decide(args: argparse.Namespace) -> int:
             **sources,
         )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")
+    return EXIT_OK
+
+
+def _stage(args: argparse.Namespace) -> int:
+    """Stage one memory item as the runtime role and print its id."""
+    draft = MemoryItemDraft.model_validate(yaml.safe_load(args.item.read_text(encoding="utf-8")))
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        item_id = PgMemoryStore(pool).stage(draft)
+    sys.stdout.write(_MEMORY_ITEM.format(id=item_id) + "\n")
     return EXIT_OK
 
 

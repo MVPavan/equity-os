@@ -22,6 +22,7 @@ from psycopg import errors, sql
 from fundamentals.contracts.ledger import DecisionKind, PanelReview, SubjectKind, Verdict
 from fundamentals.contracts.memory import MemoryKind, SupportDraft, SupportTarget
 from fundamentals.ledger import store
+from fundamentals.memory.pg_store import MemoryStageConflictError
 from fundamentals.pg.settings import PgRole
 
 __all__ = ["ledger", "memory", "runtime", "seeded"]
@@ -33,6 +34,8 @@ PROMOTE, REJECT, RETIRE = (
 )
 PANEL, OWNER, RUNTIME = PgRole.PANEL, PgRole.OWNER, PgRole.RUNTIME
 ILLEGAL = "illegal decision"
+# A second item's statement: identical columns stage the same item (0041's natural key).
+OTHER = "Railway wires grew their share of consolidated revenue"
 pg = pytest.mark.pg
 
 
@@ -192,6 +195,28 @@ def test_one_item_cites_a_target_once(memory: Memory) -> None:
 
 
 @pg
+@pytest.mark.parametrize("after", ["staged", "promoted", "rejected", "retired", "invalidated"])
+def test_a_retry_returns_the_staged_item_and_writes_nothing(memory: Memory, after: str) -> None:
+    """eqos-4j2.20: restaging an item's columns and supports returns its id whatever its
+    lifecycle, leaving every row and its status unchanged (a terminal item stays terminal); the
+    same columns with other supports are a conflict."""
+    item = memory.stage()
+    if after != "staged":
+        memory.decide(OWNER, item, REJECT if after == "rejected" else PROMOTE)
+    if after == "retired":
+        memory.decide(OWNER, item, RETIRE)
+    if after == "invalidated":
+        with memory.ledger._cursor(OWNER) as cursor:
+            memory.writer("withdraw", memory.version_id)(cursor)
+    status, rows = memory.status(item), memory.snapshot()
+    assert memory.stage() == item
+    claim = SupportDraft(target=SupportTarget.CLAIM, target_id=memory.claim_id)
+    with pytest.raises(MemoryStageConflictError, match=f"memory item {item} "):
+        memory.stage(supports=(claim,))
+    assert (memory.status(item), memory.snapshot()) == (status, rows)
+
+
+@pg
 @pytest.mark.parametrize("across", ["stock", "kind", None])
 def test_a_supersession_across_stock_or_kind_is_refused(memory: Memory, across: str | None) -> None:
     """A correction supersedes an item of the same stock and kind only."""
@@ -275,7 +300,7 @@ def _review(memory: Memory, item_id: int, verdict: Verdict, kind: DecisionKind) 
 def test_a_panel_decision_needs_its_own_review(memory: Memory) -> None:
     """Without a review the panel's decision is refused; a review binds only the decision its
     verdict maps to (APPROVE → PROMOTE, REJECT → REJECT_CANDIDATE)."""
-    item, other = memory.stage(), memory.stage()
+    item, other = memory.stage(), memory.stage(statement=OTHER)
     with pytest.raises(errors.CheckViolation, match="needs a panel review"):
         memory.decide(PANEL, item, PROMOTE)
     with pytest.raises(errors.CheckViolation, match="does not bind"):
@@ -319,7 +344,7 @@ def test_a_decision_on_a_missing_or_future_item_is_refused(
                 sealed_digest=supplied,
                 ruling=RULING,
             )
-    assert memory.stage() == future
+    assert memory.stage(statement=OTHER) == future
     assert memory.decide(OWNER, future, kind).subject_id == future
 
 
@@ -327,7 +352,7 @@ def test_a_decision_on_a_missing_or_future_item_is_refused(
 def test_memory_decisions_follow_their_chain(memory: Memory) -> None:
     """Owner PROMOTE needs a ruling, the current head and the item's own digest; nothing but an
     owner RETIRE follows it; nothing follows RETIRE or REJECT_CANDIDATE."""
-    item, rejected = memory.stage(), memory.stage()
+    item, rejected = memory.stage(), memory.stage(statement=OTHER)
     with pytest.raises(errors.CheckViolation, match="ruling"):
         memory.decide(OWNER, item, PROMOTE, ruling=None)
     with pytest.raises(errors.CheckViolation, match="digest"):
@@ -357,7 +382,7 @@ def test_a_successor_promotes_only_over_a_promoted_predecessor(memory: Memory) -
     earlier = memory.stage()
     first, second = (
         memory.stage(supersedes_item_id=earlier),
-        memory.stage(supersedes_item_id=earlier),
+        memory.stage(supersedes_item_id=earlier, statement=OTHER),
     )
     with pytest.raises(errors.CheckViolation, match=ILLEGAL):
         memory.decide(OWNER, first, PROMOTE)

@@ -52,6 +52,8 @@ OWNER, RUNTIME = PgRole.OWNER, PgRole.RUNTIME
 CLAIM, VERSION = SupportTarget.CLAIM, SupportTarget.VERSION
 REFUSED = "fails its support predicate"
 MTR = MemoryKind.MANAGEMENT_TRACK_RECORD
+# A second item's statement: identical columns stage the same item (0041's natural key).
+OTHER = "Railway wires grew their share of consolidated revenue"
 
 
 def cites(*targets: tuple[SupportTarget, int]) -> tuple[SupportDraft, ...]:
@@ -242,7 +244,7 @@ def test_every_validation_after_the_trusted_pass_must_pass(
     for result in later:
         memory.ledger.validate(memory.version_id, **result)
     with pytest.raises(errors.CheckViolation, match=REFUSED):
-        memory.stage(supports=cites((CLAIM, memory.claim_id)))
+        memory.stage(statement=OTHER, supports=cites((CLAIM, memory.claim_id)))
 
 
 def test_a_match_untrusted_claim_fails_p(memory: Memory) -> None:
@@ -341,7 +343,7 @@ def test_a_lesson_cites_a_rejected_version_but_never_its_claims(memory: Memory) 
     assert ref.version_status is VersionStatus.REJECTED
     for update in (
         {"supports": cites((VERSION, version))},
-        lesson | {"supports": cites((CLAIM, claim_id))},
+        lesson | {"statement": OTHER, "supports": cites((CLAIM, claim_id))},
     ):
         with pytest.raises(errors.CheckViolation, match=REFUSED):
             memory.stage(**update)
