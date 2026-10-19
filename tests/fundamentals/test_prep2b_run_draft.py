@@ -13,24 +13,30 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 from evidence_support import CONFIG, ingest, policy
-from prep2b_support import COMPARATOR_KIND, COUNTS, RULING, XBRLS, Pilot
+from prep2b_support import COMPARATOR_KIND, COUNTS, RULING, TABLES, XBRLS, Pilot
+from structlog.testing import capture_logs
 from test_transcript_admission import issuer_config
 from tests.fundamentals.test_source_intake_cli import INTAKE_TIME, intake_fixture
 
 import fundamentals.api.cli as cli
+from fundamentals.api import compare_cli
 from fundamentals.api.cli import _build_parser, main, run_command
 from fundamentals.api.config import load_config
 from fundamentals.api.source_admission import RETROSPECTIVE, SourceAdmissionError
 from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
-from fundamentals.contracts.canonical import Representation
+from fundamentals.compare.queue import lock_queue, publish_queue_drafts
+from fundamentals.compare.run import load_results
+from fundamentals.contracts.canonical import Representation, ValueIdentity
+from fundamentals.contracts.comparison import SourceRole
+from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import RunMode
-from fundamentals.contracts.fact import CanonicalStatus
 from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
     CitationKind,
@@ -41,8 +47,12 @@ from fundamentals.contracts.ledger import (
     SubjectKind,
     VersionStatus,
 )
+from fundamentals.contracts.measurement_key import PeriodInterval
 from fundamentals.contracts.memory import MemoryItemDraft, MemoryKind, SupportDraft, SupportTarget
+from fundamentals.contracts.review_queue import QueueItemDraft, QueueSeverity
+from fundamentals.evidence.admission import key_identity
 from fundamentals.evidence.mapping import MappingSet, load_mapping_set
+from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger import lifecycle, store
 from fundamentals.ledger.citations import resolve_citation
 from fundamentals.ledger.claim_check import check_claim, cutoff_instant
@@ -76,6 +86,13 @@ IST = ZoneInfo("Asia/Kolkata")
 # A guidance line's claim key and status, as the version body stores it.
 GUIDED = re.compile(r"\{\{c:([^|}]+)\|[^}]*\}\} for [^\n]*? — ([A-Z]+): \"")
 STATUS_FIELDS = ("lower_bound", "upper_bound", "unit", "constant_currency", "qualifiers")
+FAMILIES = "SELECT DISTINCT revision_family FROM eqos.fact_rows WHERE target_store = %s"
+ADMITTED_FAMILY = "admitted:"
+MAPPED_VERSIONS = (
+    "SELECT DISTINCT mapping_set_version FROM eqos.interpretations WHERE status = 'MAPPED'"
+)
+VERSIONS = TABLES.index("report_versions")  # its column in ``_counts``
+Q2_QUARTER = PeriodInterval.duration(date(2025, 7, 1), date(2025, 9, 30))
 
 
 @pytest.fixture(scope="module")
@@ -86,8 +103,8 @@ def dictionary() -> CanonicalDictionary:
 
 @pytest.fixture(scope="module")
 def mapping_set(dictionary: CanonicalDictionary) -> MappingSet:
-    """Mapping set v5: maps every pilot run and comparator XBRL (PREP-1)."""
-    return load_mapping_set(CONFIG / "mappings", "v5", dictionary=dictionary)
+    """Mapping set v6, the pilot comparison pin: maps every pilot run and comparator XBRL."""
+    return load_mapping_set(CONFIG / "mappings", "v6", dictionary=dictionary)
 
 
 def _pilot(request: pytest.FixtureRequest, **options: Any) -> Pilot:
@@ -112,14 +129,15 @@ def approved_q2(pilot: Pilot) -> Pilot:
 
 
 def _counts(pilot: Pilot) -> tuple[Any, ...]:
-    """Fact rows, fact selections and report versions."""
+    """Rows of every table a run writes (``TABLES``)."""
     return pilot.query(COUNTS)[0]
 
 
 def _refuses(pilot: Pilot, quarter: str, match: str, **options: Any) -> None:
-    """The quarter's run refuses (``RunDraftError`` unless ``error``) and adds no fact row,
-    selection or version."""
+    """The quarter's run, its originals and comparison run in place, refuses
+    (``RunDraftError`` unless ``error``) and writes no row to any table a run writes."""
     error = options.pop("error", RunDraftError)
+    pilot.registered(quarter)
     before = _counts(pilot)
     with pytest.raises(error, match=match):
         pilot.run(quarter, **options)
@@ -219,9 +237,116 @@ def test_an_unbindable_comparator_refuses_before_any_write(
     _refuses(pilot, "FY26_Q2", "no single mapped interpretation of profit_for_period")
 
 
-def _stored(result: Any) -> Any:
-    """The run's stored canonical revisions."""
-    return [r for r in result.stored_revisions if r.canonical_status is CanonicalStatus.CANONICAL]
+def _compare_run(pilot: Pilot, quarter: str) -> int:
+    """The comparison run the quarter's run argv names."""
+    argv = pilot.registered(quarter)[1]
+    return int(argv[argv.index("--compare-run") + 1])
+
+
+def _name(pilot: Pilot, quarter: str, run_id: int | None) -> None:
+    """The quarter's run argv names comparison run ``run_id`` (none when ``None``)."""
+    argv = pilot.registered(quarter)[1]
+    if "--compare-run" in argv:
+        at = argv.index("--compare-run")
+        del argv[at : at + 2]
+    if run_id is not None:
+        argv += ["--compare-run", str(run_id)]
+
+
+def test_a_run_needs_its_pinned_comparison_run(pilot: Pilot, tmp_path: Path) -> None:
+    """Without ``--compare-run``, naming a run that is not stored, or naming a comparison run
+    whose pins differ from the pilot's only in the rounding policy (a test-local v2 copy), the
+    run refuses before any write."""
+    _name(pilot, "FY26_Q2", None)
+    _refuses(pilot, "FY26_Q2", "needs --compare-run")
+    _name(pilot, "FY26_Q2", 0)
+    _refuses(pilot, "FY26_Q2", "comparison run 0: .*is not stored")
+    drift = tmp_path / "drift"
+    drift.mkdir()
+    for item in CONFIG.iterdir():
+        if item.name != "rounding_policy":
+            (drift / item.name).symlink_to(item)
+    (drift / "rounding_policy").mkdir()
+    policy = (CONFIG / "rounding_policy" / "v1.yaml").read_text(encoding="utf-8")
+    assert policy.count("policy_id: v1\n") == 1
+    (drift / "rounding_policy" / "v2.yaml").write_text(policy.replace("v1\n", "v2\n", 1))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(compare_cli, "ConfigVersions", partial(ConfigVersions, rounding_policy="v2"))
+        drifted = pilot.compare_run("FY26_Q2", drift)
+    _name(pilot, "FY26_Q2", drifted)
+    _refuses(pilot, "FY26_Q2", f"comparison run {drifted}: .*rounding_policy")
+
+
+def test_an_open_high_on_a_required_role_refuses_unselected(pilot: Pilot) -> None:
+    """An open non-diagnostic HIGH on the quarter's profit for the period: the run refuses
+    naming the role and its refusal; it selects nothing and writes no version."""
+    run_id = _compare_run(pilot, "FY26_Q2")
+    with pilot.pg_db.runtime_pool() as pool:
+        (row,) = [
+            r
+            for r in load_results(run_id, pool=pool)
+            if r.key.canonical_id == "profit_for_period"
+            and r.key.period == Q2_QUARTER
+            and not r.key.dimensions.pairs
+            and r.value_identity is ValueIdentity.REPORTED
+        ]
+        (xbrl,) = [
+            v.interpretation_id
+            for v in row.source_values
+            if v.source_role is SourceRole.FIRST_PARTY and v.representation is Representation.XBRL
+        ]
+        assert xbrl is not None
+        draft = QueueItemDraft(
+            key=row.key,
+            pair_identity="test-high",
+            outcome="MISMATCH",
+            severity=QueueSeverity.HIGH,
+            evidence_interpretation_ids=(xbrl,),
+        )
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            lock_queue(cursor)
+            publish_queue_drafts(cursor, run_id=run_id, drafts=[draft])
+    unselected = "SELECT (SELECT count(*) FROM eqos.fact_selections), "
+    unselected += "(SELECT count(*) FROM eqos.report_versions)"
+    before = pilot.query(unselected)
+    with (
+        capture_logs() as logs,
+        pytest.raises(RunDraftError, match="profit_for_period not admitted .*: OPEN_HIGH"),
+    ):
+        pilot.run("FY26_Q2")
+    assert pilot.query(unselected) == before
+    (summary,) = [log for log in logs if log["event"] == "admission_refusals"]
+    assert summary["run_id"] == run_id and summary["OPEN_HIGH"] >= 1
+
+
+@pytest.mark.parametrize(
+    ("representation", "late"),
+    [(Representation.PDF, False), (Representation.PDF, True), (Representation.XBRL, False)],
+    ids=["pdf-other-capture", "pdf-after-cutoff", "xbrl-other-capture"],
+)
+def test_a_package_not_the_runs_own_refuses_before_any_write(
+    pilot: Pilot, monkeypatch: pytest.MonkeyPatch, representation: Representation, late: bool
+) -> None:
+    """The comparison run's package keeps the run's other member but this one is another
+    capture, or was published after the source cutoff: the run refuses before it writes."""
+    cutoff = load_config(pilot.config("FY26_Q2")).quarter.knowledge_cutoff
+    real = EvidenceRepository.get_packages
+
+    def swapped(self: EvidenceRepository, ids: Any) -> Any:
+        found = []
+        for package in real(self, ids):
+            member = package.members[representation]
+            change: dict[str, Any] = {"knowledge_time": cutoff + timedelta(seconds=1)}
+            if not late:
+                capture = member.capture.model_copy(update={"blob_sha256": "0" * 64})
+                change = {"capture": capture}
+            members = package.members | {representation: member.model_copy(update=change)}
+            found.append(package.model_copy(update={"members": members}))
+        return found
+
+    pilot.registered("FY26_Q2")
+    monkeypatch.setattr(EvidenceRepository, "get_packages", swapped)
+    _refuses(pilot, "FY26_Q2", f"'s {representation.value} member is not the run's own")
 
 
 def _append(pilot: Pilot, prior: Prior, conn: Any, report_id: int | None = None) -> None:
@@ -269,10 +394,10 @@ def test_write_time_races(approved_q2: Pilot, monkeypatch: pytest.MonkeyPatch, r
         _concurrent_write(pilot, monkeypatch, versions)
     else:
         _intercept(monkeypatch, actions[race])
-    before = _counts(pilot)[2]
+    before = _counts(pilot)[VERSIONS]
     with pytest.raises(RunDraftError, match="the pinned prior version .* changed"):
         pilot.run("FY26_Q3")
-    assert _counts(pilot)[2] == before + len(versions)
+    assert _counts(pilot)[VERSIONS] == before + len(versions)
 
 
 def _watch_lock_wait(pilot: Pilot) -> None:
@@ -344,13 +469,13 @@ def test_source_cutoff_at_write(approved_q2: Pilot, monkeypatch: pytest.MonkeyPa
             return run.model_copy(update={"retrospective": designation})
 
         _intercept(monkeypatch, late)
-        before = _counts(approved_q2)[2]
+        before = _counts(approved_q2)[VERSIONS]
         with pytest.raises(RunDraftError, match="past the source cutoff") as refused:
             approved_q2.run("FY26_Q3")
         named = str(refused.value).split(": ", 1)[1].split(", ")
         assert Q2_TRANSCRIPT in str(refused.value)
         assert len(named) > 1 if published is None else len(named) == 1
-        assert _counts(approved_q2)[2] == before
+        assert _counts(approved_q2)[VERSIONS] == before
 
 
 def test_draft_negatives(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -382,10 +507,10 @@ def test_draft_negatives(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
         edits, ("duplicate claim key", "does not validate AS_KNOWN"), strict=True
     ):
         _intercept(monkeypatch, lambda _, run, edit=edit: edit(run))
-        before = _counts(pilot)[2]
+        before = _counts(pilot)[VERSIONS]
         with pytest.raises(RunDraftError, match=match):
             pilot.run("FY26_Q2")
-        assert _counts(pilot)[2] == before
+        assert _counts(pilot)[VERSIONS] == before
 
 
 def _guidance(**changes: Any) -> Any:
@@ -504,6 +629,7 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
             lifecycle.submit(runtime, version_id, **pilot.sources())
         states = dict(pilot.validate(version_id).claim_states)
         assert states and set(states.values()) == {ClaimState.MATCH}
+        pilot.admitted(version_id)
         pilot.approve(version_id, submit=False)
         with pilot.pg_db.runtime_pool() as runtime, runtime.connection() as conn:
             cursor = conn.cursor()
@@ -513,6 +639,10 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
             previous = (version_id, store.sealed_digest(cursor, version_id))
     assert carried > 0
     assert {LedgerStatus.NEW, LedgerStatus.CARRIED} <= {LedgerStatus(s) for s in seen}
+    # Every fact the runs wrote is admitted, from interpretations made only under v6.
+    families = pilot.query(FAMILIES, pilot.store_id)
+    assert families and all(family.startswith(ADMITTED_FAMILY) for (family,) in families)
+    assert pilot.query(MAPPED_VERSIONS) == [("v6",)]
     assert seen & {LedgerStatus.REAFFIRMED.value, LedgerStatus.MODIFIED.value}
 
 
@@ -554,8 +684,9 @@ def test_real_clock_retrospective(pilot: Pilot) -> None:
     pilot.approve(version_id, submit=False)
     cutoffs = [load_config(pilot.config(quarter)).quarter.knowledge_cutoff for quarter in SEQUENCE]
     assert max(cutoffs) < started
-    revisions = [revision.content_identity for revision in _stored(result)]
-    assert revisions
+    pilot.admitted(version_id)
+    claims = pilot.version(version_id).claims
+    revisions = [key_identity(c.measurement_key) for c in claims if c.claim_key.startswith("fact.")]
     with pilot.pg_db.runtime_pool() as runtime:
         facts = PgFactStore(runtime, pilot.store_id)
         for identity in revisions:
@@ -566,7 +697,6 @@ def test_real_clock_retrospective(pilot: Pilot) -> None:
         RUN_AUTHOR,
     )
     assert min(first_created, first_cutoff) > max(cutoffs)
-    claims = pilot.version(version_id).claims
     with pilot.pg_db.runtime_pool() as runtime, runtime.connection() as conn:
         for at in (cutoff, *cutoffs):
             for claim in claims:
@@ -575,6 +705,7 @@ def test_real_clock_retrospective(pilot: Pilot) -> None:
                     claim,
                     entity_id=pilot.entity_id,
                     overlay_position=at,
+                    run_ids=pilot.version(version_id).pinned_run_ids,
                     **pilot.sources(),
                 )
                 state = check_claim(

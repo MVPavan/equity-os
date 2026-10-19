@@ -81,6 +81,15 @@ COUNT_ROWS = "SELECT count(*) FROM eqos.fact_rows WHERE target_store = %s"
 RESULT_ID = (
     "SELECT id FROM eqos.results WHERE run_id = %s AND key_digest = %s AND value_identity = %s"
 )
+CAPTURE_OF = (
+    "SELECT o.capture_ref_id FROM eqos.fact_admissions a "
+    "JOIN eqos.occurrences o ON o.id = a.occurrence_id WHERE a.id = %s"
+)
+CAPTURE_STATE = "INSERT INTO eqos.capture_states (capture_ref_id, state) VALUES (%s, %s)"
+REFETCHED = (
+    "INSERT INTO eqos.refetch_attempts (capture_ref_id, url, outcome, fetched_sha256) "
+    "SELECT id, 'test:refetch', 'MATCH', blob_sha256 FROM eqos.capture_refs WHERE id = %s"
+)
 REFUSE_TRIGGER = (
     "CREATE FUNCTION eqos.test_refuse() RETURNS trigger LANGUAGE plpgsql AS "
     "$$BEGIN RAISE EXCEPTION 'test refusal'; END$$",
@@ -459,3 +468,25 @@ def test_admitted_facts_resolve_through_pinned_admissions(apar: Ran, tmp_path: P
     assert state(shared, (run_id, second), between) is ClaimState.POST_CUTOFF
     assert state(shared, (second,)) is ClaimState.MATCH
     assert state(shared, (max(run_id, second) + 1,)) is ClaimState.UNRESOLVED
+
+    # The same bytes registered again while the first capture is expired (RP6), then that one
+    # restored by a matching re-fetch, feed a third run that admits the same row from a capture
+    # first seen after ``latest``: the earlier pinned admission and its own capture still
+    # witness the fact; the later run alone does not.
+    latest = repository.store_clock()
+    with pool.connection() as conn:
+        (first,) = conn.execute(CAPTURE_OF, (_record(admitted, rows[PAT]).admission_id,)).fetchone()
+        (package,) = conn.execute("SELECT max(id) FROM eqos.filing_packages").fetchone()
+    with stage.pg_db.migrator_connection() as migrator:
+        migrator.execute(CAPTURE_STATE, (first, "EXPIRED"))
+        stage.first_party(supersedes=package)
+        migrator.execute(REFETCHED, (first,))
+        migrator.execute(CAPTURE_STATE, (first, "RESTORED"))
+    third = stage.execute().run_id
+    (pat,) = [row for row in load_results(third, pool=pool) if row_key(stage.run, row) == PAT]
+    readmitted = _record(admit_run(third, pool=pool, store_id=direct_id).records, pat)
+    assert readmitted.handle == row_id
+    with pool.connection() as conn:
+        assert conn.execute(CAPTURE_OF, (readmitted.admission_id,)).fetchone() != (first,)
+    assert state(shared, (run_id, second, third), latest) is ClaimState.MATCH
+    assert state(shared, (third,), latest) is ClaimState.POST_CUTOFF

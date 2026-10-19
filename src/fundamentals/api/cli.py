@@ -15,12 +15,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
+from collections import Counter
 from contextlib import ExitStack
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import partial
 from pathlib import Path
+from typing import Any, LiteralString
 
 import structlog
+from psycopg import Cursor
 from psycopg_pool import ConnectionPool
 
 from fundamentals.api.artifact_writer import write_bytes_no_clobber
@@ -79,13 +82,33 @@ from fundamentals.api.upstox_cli import dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
 from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
 from fundamentals.api.validate_cli import dispatch_validate_command
-from fundamentals.contracts.fact import CanonicalStatus
+from fundamentals.canon.role_translation import LEGACY_CONCEPTS
+from fundamentals.compare.run_config import (
+    ComparisonSemanticsError,
+    load_run_config,
+    require_pins,
+)
+from fundamentals.compare.run_models import (
+    RunInputDisposition,
+    RunInputKind,
+    RunStatus,
+    row_id,
+)
+from fundamentals.compare.run_store import RunReadError, RunStore
+from fundamentals.contracts.canonical import Basis, Representation, ValueIdentity
+from fundamentals.contracts.config_versions import ConfigVersions
+from fundamentals.contracts.evidence import KnowledgeTimeStatus, RunMode
 from fundamentals.contracts.guidance_claim import GuidanceClaim
 from fundamentals.contracts.role import FactRole
 from fundamentals.contracts.source_registration import SourceRegistrationError, SourceRole
+from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence.admission import admit_run, key_identity, select_admitted
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.xbrl_source import NseXbrlSource
+from fundamentals.ledger import store as ledger_store
+from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.importer import load_import_config
+from fundamentals.ledger.rework import Rework
 from fundamentals.ledger.run_draft import (
     Retrospective,
     RunDraft,
@@ -99,12 +122,21 @@ from fundamentals.ledger.run_draft import (
     write_run_draft,
 )
 from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
-from fundamentals.output.earnings_update import EarningsUpdate
+from fundamentals.output.earnings_update import REQUIRED_ROLES, EarningsUpdate
 from fundamentals.pg.cutover import open_fact_store
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.store.fact_store import FactRef
 from fundamentals.store.pg_fact_store import PgFactStore
 from fundamentals.store.snapshot_store import SnapshotStore
+
+# The pins a pilot run's comparison run must name, by content (PILOT-GAP admission Decision 8).
+PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v6", alignment_rules="v2")
+_CONFIG_DIR = "config"  # as ``compare run``'s default config root
+_ADMITTED_IN: LiteralString = (
+    "SELECT 1 FROM eqos.fact_admissions WHERE store_id = %s AND fact_origin = %s"
+    " AND fact_origin_id = %s AND run_id = ANY(%s)"
+)
 
 
 class _LazyStderrLoggerFactory:
@@ -290,6 +322,9 @@ def run_command(
             # A PostgreSQL run reads its prior and writes its earnings update as a DRAFT.
             if args.snapshot_root is None:
                 raise RunDraftError("a PostgreSQL run needs --snapshot-root for its draft")
+            store_id = config.fact_store_id
+            if args.compare_run is None or store_id is None:
+                raise RunDraftError("a PostgreSQL run needs --compare-run for its facts")
             symbol, period = config.issuer.nse_symbol, config.quarter.issuer_quarter
             catalog = ledger_catalog(args.watchlist, symbol, [config_path, *args.issuer_config])
             snapshots = SnapshotStore(args.snapshot_root.resolve())
@@ -312,7 +347,11 @@ def run_command(
             )
             memory = recall(pool, prior.entity_id)
             repository = EvidenceRepository(pool)
+            versions, members = _comparison(
+                pool, repository, args.compare_run, prior.entity_id, config, xbrl, pdfs
+            )
             bound: list[tuple[Line, ...]] = []
+            facts: dict[str, FactRef] = {}
 
             def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
                 assert update.source_cutoff is not None
@@ -334,33 +373,178 @@ def run_command(
                         if prior.rework is not None:
                             gate = prior.rework.gate(section_body, partial(admit, update))
                             gate_lines(cursor, gate, update, guidance, prior, catalog)
-                lines = bind_computed(repository, update, entity_id=prior.entity_id, carry=gate)
+                            _check_carried(cursor, prior.rework, store_id)
+                lines = bind_computed(
+                    repository, update, entity_id=prior.entity_id, versions=versions, carry=gate
+                )
                 bound.append(lines)
+                facts.update(
+                    _admit(
+                        pool,
+                        store_id,
+                        args.compare_run,
+                        update,
+                        prior.entity_id,
+                        members,
+                        carried,
+                    )
+                )
 
             carried = prior.rework.carried if prior.rework is not None else frozenset()
             result = run(
                 comparators_acquired_at=prior.first_seen,
                 before_commit=before_commit,
-                skip_roles=frozenset(role for role in FactRole if f"fact.{role.value}" in carried),
+                skip_roles=frozenset(FactRole),  # facts come only from admission
             )
             draft = RunDraft(
                 period=period,
                 update=result.update,
                 guidance=result.guidance_claims,
-                facts={
-                    revision.revision_family.split(":")[1]: store.fact_ref(revision.row_id)
-                    for revision in result.stored_revisions
-                    if revision.canonical_status is CanonicalStatus.CANONICAL
-                },
+                facts=facts,
                 lines=bound[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
                 memory=memory,
+                run_id=args.compare_run,
                 retrospective=retrospective,
             )
             version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
             structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
             return result.model_copy(update={"draft_version_id": version_id})
+
+
+def _comparison(
+    pool: ConnectionPool,
+    repository: EvidenceRepository,
+    run_id: int,
+    entity_id: int,
+    config: FundamentalsConfig,
+    xbrl: tuple[str, ...],
+    pdfs: tuple[str, ...],
+) -> tuple[ConfigVersions, frozenset[tuple[str, str]]]:
+    """Comparison run ``run_id``'s pins and its quarter package's member captures, once the run
+    is a complete ``AS_KNOWN`` run of this entity and quarter under ``PILOT_VERSIONS`` whose one
+    selected package holds the run's own XBRL and results PDF, published by the cutoff."""
+    try:
+        manifest = RunStore(pool).read_manifest(run_id)
+    except (LookupError, RunReadError) as error:
+        raise RunDraftError(f"comparison run {run_id}: {error}") from error
+    period_end, cutoff = config.quarter.period_end, config.quarter.knowledge_cutoff
+    if (
+        manifest.status is not RunStatus.COMPLETE
+        or manifest.mode is not RunMode.AS_KNOWN
+        or manifest.scope.entity_ids != (entity_id,)
+        or period_end not in manifest.scope.period_ends
+    ):
+        raise RunDraftError(
+            f"comparison run {run_id} is not a complete AS_KNOWN run of {period_end}"
+        )
+    try:
+        require_pins(load_run_config(Path(_CONFIG_DIR), PILOT_VERSIONS), manifest.pinned)
+    except (VersionContentDriftError, ComparisonSemanticsError) as error:
+        raise RunDraftError(f"comparison run {run_id}: {error}") from error
+    selected = [
+        item.ref_id
+        for item in manifest.inputs
+        if item.kind is RunInputKind.PACKAGE and item.disposition is RunInputDisposition.SELECTED
+    ]
+    packages = [
+        package
+        for package in repository.get_packages(selected)
+        if (package.entity_id, package.reporting_period_end, package.basis)
+        == (entity_id, period_end, Basis.CONSOLIDATED)
+    ]
+    if len(packages) != 1 or packages[0].knowledge_time > cutoff:
+        raise RunDraftError(f"comparison run {run_id} has no single package published by {cutoff}")
+    expected = {
+        Representation.XBRL: (config.xbrl.source_id, xbrl[0]),
+        Representation.PDF: (config.results_pdf.source_id, pdfs[0]),
+    }
+    for representation, capture in expected.items():
+        member = packages[0].members.get(representation)
+        if (
+            member is None
+            or (member.capture.source_id, member.capture.blob_sha256) != capture
+            or member.knowledge_time_status is not KnowledgeTimeStatus.KNOWN
+            or member.knowledge_time > cutoff
+        ):
+            raise RunDraftError(
+                f"comparison run {run_id}'s {representation.value} member is not the run's own "
+                f"{capture[1]} published by {cutoff}"
+            )
+    return ConfigVersions.of(manifest.pinned), frozenset(expected.values())
+
+
+def _check_carried(cursor: Cursor[Any], rework: Rework, store_id: str) -> None:
+    """Refuse a rework whose carried facts were not admitted by its head's comparison runs."""
+    runs = list(ledger_store.read_version(cursor, rework.head).pinned_run_ids)
+    for key in sorted(rework.carried):
+        citation = rework.claims[key].citation
+        if key.startswith("fact.") and (
+            cursor.execute(
+                _ADMITTED_IN, (store_id, citation.fact_origin, citation.fact_origin_id, runs)
+            ).fetchone()
+            is None
+        ):
+            raise RunDraftError(
+                f"version {rework.head} predates fact admission; rerun with --full-successor"
+            )
+
+
+def _admit(
+    pool: ConnectionPool,
+    store_id: str,
+    run_id: int,
+    update: EarningsUpdate,
+    entity_id: int,
+    members: frozenset[tuple[str, str]],
+    carried: frozenset[str],
+) -> dict[str, FactRef]:
+    """Admit comparison run ``run_id``, then select each non-carried required role's admitted
+    fact; a refused role or an admission outside the package refuses before any selection."""
+    outcome = admit_run(run_id, pool=pool, store_id=store_id)
+    others = Counter(refusal.value for _, refusal in outcome.refusals)
+    structlog.get_logger("fundamentals.cli").info("admission_refusals", run_id=run_id, **others)
+    refusals = dict(outcome.refusals)
+    start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
+    by_role = {fact.role: fact for fact in update.facts}
+    chosen = {}
+    for role in REQUIRED_ROLES:
+        if f"fact.{role.value}" in carried:
+            continue
+        fact = by_role[role]
+        key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
+        found = [record for record in outcome.records if record.key_digest == key.digest()]
+        if len(found) != 1:
+            refusal = refusals.get(row_id(key, ValueIdentity.REPORTED), "not in run")
+            raise RunDraftError(
+                f"{role.value} not admitted from comparison run {run_id}: {refusal}"
+            )
+        chosen[role.value] = (key, found[0])
+    occurrences = {
+        item.occurrence_id: item
+        for item in EvidenceRepository(pool).get_occurrences(
+            [record.occurrence_id for _, record in chosen.values()]
+        )
+    }
+    for name, (_, record) in chosen.items():
+        capture = occurrences[record.occurrence_id].capture
+        if (capture.source_id, capture.blob_sha256) not in members:
+            raise RunDraftError(f"{name} was admitted from {capture.blob_sha256}, not the package")
+    store = PgFactStore(pool, store_id)
+    reason = f"admitted from comparison run {run_id}"
+    for key, record in chosen.values():
+        history = store.get_selection_history(key_identity(key))
+        if not history or history[-1].row_id != record.handle:
+            head = history[-1].selection_id if history else 0
+            select_admitted(
+                pool,
+                store_id=store_id,
+                admission_id=record.admission_id,
+                reason=reason,
+                expected_selection_id=head,
+            )
+    return {name: record.ref for name, (_, record) in chosen.items()}
 
 
 def _retrospective(

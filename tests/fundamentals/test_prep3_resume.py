@@ -36,6 +36,7 @@ from fundamentals.api.source_admission import load_source_manifest
 from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.ledger import ClaimState, DecisionKind, VersionDraft, VersionStatus
 from fundamentals.contracts.source_registration import SourceRegistrationError, SourceRole
+from fundamentals.evidence import admission
 from fundamentals.evidence.capture_retention import Registration
 from fundamentals.evidence.first_party_ingest import IngestReport
 from fundamentals.evidence.repository import EvidenceRepository
@@ -43,7 +44,6 @@ from fundamentals.ledger import lifecycle, run_draft, store
 from fundamentals.ledger.export import stock_entity, stock_versions
 from fundamentals.ledger.lifecycle import DecisionRefusedError, version_status
 from fundamentals.ledger.run_traces import RunDraftError
-from fundamentals.store.pg_fact_store import PgFactStore
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.source_intake_store import SourceIntakeStore
 
@@ -53,7 +53,15 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 Q2 = "FY26_Q2"
 INGEST_TABLES = ("capture_refs", "occurrences", "interpretations", "filing_packages")
-RUN_TABLES = ("calculation_traces", "fact_rows", "fact_selections", "report_versions")
+RUN_TABLES = (
+    "calculation_traces",
+    "fact_rows",
+    "fact_admissions",
+    "fact_selections",
+    "report_versions",
+)
+FACT_TABLES = ("fact_rows", "fact_admissions", "fact_selections")
+ADMITTED_ROWS = "SELECT row_handle FROM eqos.fact_admissions WHERE run_id = %s"
 KEYS = {"fact_rows": "handle", "fact_selections": "handle"}  # one store: handle is the row id
 
 
@@ -288,25 +296,33 @@ def run_resumes(
     boundary: tuple[object, str, bool, int],
 ) -> None:
     """The FY26_Q2 run interrupted at ``boundary``, then retried: persistence runs traces →
-    facts and selections → draft, so the interruption leaves no version; the retry's draft
-    cites every committed trace and stores every committed fact row; the attempt plus retry
-    add exactly the baseline's rows (the retry only the remainder), the same claims, all MATCH,
-    and one DRAFT head, which makes a further run refuse."""
+    admission → selections → draft, so the interruption leaves no version; an interruption
+    inside ``admit_run``'s transaction commits no fact, admission or selection, one after it
+    only admitted candidates; the retry's draft cites every committed trace and its comparison
+    run admits every committed fact row; the attempt plus retry add exactly the baseline's rows
+    (the retry only the remainder), the same claims, all MATCH, six admitted and selected
+    facts, and one DRAFT head, which makes a further run refuse."""
     owner, name, after, nth = boundary
-    pilot.registered(Q2)
+    argv = pilot.registered(Q2)[1]
+    run_id = int(argv[argv.index("--compare-run") + 1])
     start, initial = ingest.table_counts(), ids(ingest, RUN_TABLES)
     interrupted(lambda: pilot.run(Q2), owner, name, after=after, nth=nth)
     committed = added(ingest, RUN_TABLES, initial)
     assert not committed["report_versions"]
     traces = len(committed["calculation_traces"])
     if name == "put_calculation_trace":
-        assert traces == 1 and not committed["fact_rows"] and not committed["fact_selections"]
+        assert traces == 1
     else:
         assert traces == baseline[0]["calculation_traces"]
+    if name in ("put_calculation_trace", "insert_revision"):
+        assert not any(committed[table] for table in FACT_TABLES)
+    if name == "admit_run":
+        assert committed["fact_admissions"] and not committed["fact_selections"]
     result = pilot.run(Q2)
     assert result.draft_version_id is not None
     version = pilot.version(result.draft_version_id)
-    assert committed["fact_rows"] <= {r.row_id for r in result.stored_revisions}
+    assert committed["fact_rows"] <= {row[0] for row in pilot.query(ADMITTED_ROWS, run_id)}
+    pilot.admitted(result.draft_version_id)
     cited = {c.citation.calculation_trace_id for c in version.claims}
     assert committed["calculation_traces"] <= cited
     assert (delta(start, ingest.table_counts()), claims(version)) == baseline
@@ -333,8 +349,9 @@ def head(pilot: Pilot) -> int:
 @pytest.mark.parametrize(
     "boundary",
     [
-        pytest.param((PgFactStore, "put", True, 2), id="fact-row"),
-        pytest.param((PgFactStore, "select_canonical", True, 1), id="selection"),
+        pytest.param((admission, "insert_revision", True, 1), id="inner-rollback"),
+        pytest.param((cli, "admit_run", True, 1), id="admission"),
+        pytest.param((cli, "select_admitted", True, 1), id="selection"),
     ],
 )
 def test_run_resumes_after_interrupted_fact_writes(
@@ -343,8 +360,8 @@ def test_run_resumes_after_interrupted_fact_writes(
     run_baseline: tuple[dict[str, int], list[tuple[Any, ...]]],
     boundary: tuple[object, str, bool, int],
 ) -> None:
-    """PILOT-11's first clause: a run interrupted during its fact writes (after all its traces)
-    resumes without duplication."""
+    """PILOT-11's first clause: a run interrupted during its fact admission or selection (after
+    all its traces) resumes without duplication."""
     run_resumes(pilot, ingest, run_baseline, boundary)
 
 

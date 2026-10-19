@@ -1,10 +1,11 @@
 """A run's retained computed values as stored, interpretation-backed traces (PREP-2b Task 4).
 
 Every operand is the one ``MAPPED`` interpretation of its key on the run's own (or the
-comparator's) XBRL capture under ``RUN_CONTEXT`` (the onboarding pins and the XBRL extractor;
-other versions' interpretations may sit beside it), and must equal the run's value. Each result
-is computed exactly from those operands and packaged by ``conclude``; it must equal the run's
-value at the trace's stored scale. Nothing is stored unless every value holds. Formulas
+comparator's) XBRL capture under the run's pins (its comparison run's dictionary, mapping set
+and normalisation policy, and the XBRL extractor; other versions' interpretations may sit beside
+it), and must equal the run's value. Each result is computed exactly from those operands and
+packaged by ``conclude``; it must equal the run's value at the trace's stored scale. Nothing is
+stored unless every value holds. Formulas
 (version ``1``, operands ``DURATION`` under their own keys): ``run.difference`` a − b,
 ``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100 and the registered
 ``effective_tax_rate_pct`` tax / PBT × 100. Keys follow the import's (``measurement_key``,
@@ -38,11 +39,11 @@ from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import Representation, TemporalRole, ValueKind
 from fundamentals.contracts.comparative import RUN_PERCENT_PLACES
 from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
+from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import CaptureReference, Interpretation, InterpretationStatus
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.ledger import NumericClaim, Rounding
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
-from fundamentals.contracts.onboarding import ONBOARDING_VERSIONS
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.contracts.qualification import ScopedTier
 from fundamentals.contracts.role import FactRole
@@ -83,13 +84,6 @@ _Operand = tuple[str, OperandValue]
 _Lookup = Callable[[], _Operand]
 CRORE_STYLE = "group-intl,trim"
 CRORE_UNIT = f"{CRORE_STYLE},unit"
-# Dictionary, mapping-set, normalisation-policy and extractor versions a run's operands carry.
-RUN_CONTEXT = (
-    ONBOARDING_VERSIONS.dictionary,
-    ONBOARDING_VERSIONS.mapping_set,
-    ONBOARDING_VERSIONS.normalisation_policy,
-    XBRL_EXTRACTOR_VERSION,
-)
 
 
 class RunDraftError(RuntimeError):
@@ -123,8 +117,21 @@ class Carry(Protocol):
 class _Binder:
     """One run's operand lookups and trace writes."""
 
-    def __init__(self, repo: EvidenceRepository, entity_id: int, start: date, end: date) -> None:
+    def __init__(
+        self,
+        repo: EvidenceRepository,
+        entity_id: int,
+        start: date,
+        end: date,
+        versions: ConfigVersions,
+    ) -> None:
         self.repo, self.entity_id, self.start, self.end = repo, entity_id, start, end
+        self.context = (
+            versions.dictionary,
+            versions.mapping_set,
+            versions.normalisation_policy,
+            XBRL_EXTRACTOR_VERSION,
+        )
         self.policy: RoundingPolicy = load_rounding_policy(ROUNDING_POLICY)
         self.pending: dict[str, CalculationTrace] = {}
         self.binds: dict[str, Callable[[], NumericClaim]] = {}
@@ -143,7 +150,7 @@ class _Binder:
         selection: SelectionSource = SelectionSource.PACKAGE_AS_REPORTED,
     ) -> _Operand:
         """The single mapped interpretation of ``key`` in ``source``'s capture under
-        ``RUN_CONTEXT``, equal to the run's value."""
+        the run's pins, equal to the run's value."""
         self.blobs.add(source.file_sha256)
         capture = self.repo.find_capture_ref(
             source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
@@ -152,7 +159,7 @@ class _Binder:
             item
             for item in self._interpretations(capture)
             if item.status is InterpretationStatus.MAPPED
-            and _context(item) == RUN_CONTEXT
+            and _context(item) == self.context
             and item.key is not None
             and item.key.digest() == key.digest()
         ]
@@ -290,14 +297,16 @@ def bind_computed(
     update: EarningsUpdate,
     *,
     entity_id: int,
+    versions: ConfigVersions,
     carry: Carry | None = None,
 ) -> tuple[Line, ...]:
     """The run's changes and calculations lines: a stored trace per retained computed value and
     the interpretation of each comparator figure and the filed tax expense, all bound before
-    any trace is stored; any missing interpretation or mismatch raises. ``carry`` keeps the
+    any trace is stored; any missing interpretation or mismatch raises. Operands are read under
+    ``versions`` (the comparison run's pins). ``carry`` keeps the
     lines it carries unbound and is closed before any trace is stored."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
-    binder = _Binder(repo, entity_id, start, end)
+    binder = _Binder(repo, entity_id, start, end, versions)
     facts = {fact.role: fact for fact in update.facts}
     by_concept = {fact.concept_qname: fact for fact in update.facts}
     lines: list[Line] = []
@@ -426,7 +435,7 @@ def cite(claim: NumericClaim, **record: object) -> NumericClaim:
 
 
 def _context(item: Interpretation) -> tuple[str, str, str, str]:
-    """The versions an interpretation was made under, in ``RUN_CONTEXT`` order."""
+    """The versions an interpretation was made under, in ``_Binder.context`` order."""
     return (
         item.dictionary_version,
         item.mapping_set_version,

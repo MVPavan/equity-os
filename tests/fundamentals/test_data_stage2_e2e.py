@@ -290,8 +290,9 @@ def test_stage2_end_to_end(
         drop_database(rig.settings, fresh)
     # 9. The pipeline routes through open_fact_store to the OPEN store; no FactStore is built.
     # It writes its earnings update as a DRAFT (PREP-2b Task 6), which needs the sealed imports,
-    # the watchlist, the transcript and the comparator XBRLs; set up after the backup, whose
-    # frozen counts cover the D2 operations only.
+    # the watchlist, the transcript, the comparator XBRLs and the quarter's comparison run (its
+    # facts are admitted from it); set up after the backup, whose frozen counts cover the D2
+    # operations only.
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
     install_trusted_fixture_cli(monkeypatch)
@@ -303,8 +304,11 @@ def test_stage2_end_to_end(
     config, out = pipeline_config(tmp_path, rig, legacy), tmp_path / "run.json"
     with pg_db.runtime_pool() as pool:
         ingest = Ingest(pg_db, EvidenceRepository(pool), tmp_path, dictionary, mapping_set, policy)
-        Pilot(pg_db, tmp_path, monkeypatch, ingest, COMPARATORS, rig=rig, transcripts=("FY26_Q2",))
+        pilot = Pilot(
+            pg_db, tmp_path, monkeypatch, ingest, COMPARATORS, rig=rig, transcripts=("FY26_Q2",)
+        )
     args = ["--config", str(config), "--out-json", str(out), "--out", str(tmp_path / "run.md")]
+    args += ["--compare-run", str(pilot.compare_run("FY26_Q2"))]
     args += ["--retrospective", str(APAR_MANIFEST), "--snapshot-root", str(rig.snapshots)]
     assert main(["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", *args]) == 0
     (version,) = rig.query("SELECT id FROM eqos.report_versions WHERE author = %s", RUN_AUTHOR)

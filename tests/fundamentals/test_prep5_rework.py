@@ -33,7 +33,7 @@ from evidence_support import Ingest, ingest, policy
 from ledger_support import RULING, SELF_CITED, Ledger, claim, ledger
 from pg_evidence_schema_support import _insert, _trace, runtime, seeded
 from pg_support import PgTestDatabase
-from prep2b_support import COMPARATOR_KIND, STOCK, Pilot
+from prep2b_support import COMPARATOR_KIND, COUNTS, STOCK, Pilot
 from psycopg import errors
 from retained_support import (
     APAR_MANIFEST,
@@ -51,9 +51,11 @@ from fundamentals.api.ledger_cli import DEFAULT_IMPORT_CONFIG
 from fundamentals.api.pipeline import PipelineResult
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
 from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.fact import CanonicalStatus
 from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
+    ClaimState,
     DecisionKind,
     NumericClaim,
     SubjectKind,
@@ -386,15 +388,8 @@ def test_a_rejected_package_cannot_expand(
 
 
 GAP_INPUTS = ("fact.revenue", "cmp.revenue.qoq.prior", "cmp.revenue.yoy.prior", "fact.total_income")
-WRITES = ("put_calculation_trace", "put", "select_canonical")
-TABLES = (
-    "fact_rows",
-    "fact_selections",
-    "calculation_traces",
-    "calculation_trace_operands",
-    "report_versions",
-    "numeric_claims",
-)
+WRITES = ("put_calculation_trace", "admit_run", "select_admitted")
+FACTS = 3  # the first three TABLES: fact rows, admissions and selections
 CONDUCTOR = "ledger.conductor_ebitda_per_mt.medium_term.consolidated"
 PBT = "fact.profit_before_tax"
 Calls = dict[str, list[Any]]
@@ -402,8 +397,8 @@ Calls = dict[str, list[Any]]
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
-    """Every operand lookup (its key), trace computation (its output key), trace store, fact
-    store and canonical selection (each fact's role family) the run makes."""
+    """Every operand lookup (its key), trace computation (its output key), trace store,
+    admission (the rows it created) and admitted selection (its fact's family) the run makes."""
     found: Calls = defaultdict(list)
 
     def spy(owner: Any, name: str, record: Callable[..., Any]) -> None:
@@ -419,8 +414,8 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     spy(_Binder, "operand", lambda _, _self, _name, _source, key, *__: key.digest())
     spy(run_traces, "conclude", lambda _, _kind, output, *__: output.digest())
     spy(EvidenceRepository, "put_calculation_trace", lambda trace_id, *_: trace_id)
-    spy(PgFactStore, "put", lambda revision, *_: revision.fact.revision_family)
-    spy(PgFactStore, "select_canonical", lambda revision, *_: revision.fact.revision_family)
+    spy(cli, "admit_run", lambda outcome, *_: outcome.created)
+    spy(cli, "select_admitted", lambda revision, *_: revision.fact.revision_family)
     return found
 
 
@@ -482,8 +477,7 @@ def _reorder(body: dict[str, Any]) -> None:
 
 def _counts(pilot: Pilot) -> tuple[int, ...]:
     """Rows of every table a run writes."""
-    found = pilot.query(f"SELECT {', '.join(f'(SELECT count(*) FROM eqos.{t})' for t in TABLES)}")
-    return tuple(found[0])
+    return tuple(pilot.query(COUNTS)[0])
 
 
 def _successor(pilot: Pilot, version: int) -> int:
@@ -502,13 +496,15 @@ def test_a_rework_reruns_only_the_rejected_lines(
     submitted_q2: tuple[Pilot, int], calls: Calls
 ) -> None:
     """Rejecting the revenue fact with no correction looks up, computes and stores exactly the
-    revenue lines' inputs and traces and writes only the revenue fact (the unaffected
-    calculations never execute, not merely deduplicate); every carried claim is N's row, cited
-    and resolved, on N's line, although the run built it unbound (Sol r2 1)."""
+    revenue lines' inputs and traces (the unaffected calculations never execute, not merely
+    deduplicate); the revenue fact is re-admitted from the same comparison run, so no fact row,
+    admission or selection is new; every carried claim is N's row, cited and resolved, on N's
+    line, although the run built it unbound (Sol r2 1)."""
     pilot, version = submitted_q2
     _request_changes(pilot, version, "fact.revenue")
     found = _plan(pilot, version)
     assert found is not None
+    facts = _counts(pilot)[:FACTS]
     new = _rerun(pilot).draft_version_id
     assert new is not None and _successor(pilot, version) == new
     before = {c.claim_key: c for c in pilot.version(version).claims}
@@ -521,8 +517,9 @@ def test_a_rework_reruns_only_the_rejected_lines(
     assert sorted(calls["conclude"]) == sorted(digest[key] for key in traced)
     assert len(calls["put_calculation_trace"]) == len(traced)
     assert set(calls["operand"]) == {digest[key] for key in GAP_INPUTS}
-    assert set(calls["put"]) == {"FY26_Q2:revenue"}
-    assert set(calls["select_canonical"]) <= {"FY26_Q2:revenue"}
+    assert calls["admit_run"] == [0] and calls["select_admitted"] == []
+    assert _counts(pilot)[:FACTS] == facts
+    pilot.admitted(new)
     after = {c.claim_key: c for c in pilot.version(new).claims}
     assert set(after) == set(before)
     for key in found.carried:
@@ -540,12 +537,14 @@ def test_a_guidance_rework_binds_and_writes_nothing(
     submitted_q2: tuple[Pilot, int], calls: Calls
 ) -> None:
     """No rerun line of a guidance rejection holds a computed or fact claim, so nothing may be
-    looked up, computed or stored."""
+    looked up, computed, stored or selected; the idempotent admission adds nothing."""
     pilot, version = submitted_q2
     _request_changes(pilot, version, CABLES)
+    facts = _counts(pilot)[:FACTS]
     assert _rerun(pilot).draft_version_id is not None
-    for name in ("operand", "conclude", *WRITES):
+    for name in ("operand", "conclude", "put_calculation_trace", "select_admitted"):
         assert calls[name] == [], name
+    assert calls["admit_run"] == [0] and _counts(pilot)[:FACTS] == facts
 
 
 @pytest.mark.parametrize(
@@ -833,7 +832,7 @@ def test_corrected_filing_reworks_only_dependent_claims(
     """PILOT-11: a restated QoQ comparator moves only the rejected prior's changes line. v(N+1)
     carries the values recomputed from the new filing; every other claim keeps N's citation,
     the other QoQ priors the old filing's (finding 4); only the two dependent calculations run,
-    nothing is written as a fact; v(N+1) is approved and N's package is as it was."""
+    no fact row, admission or selection is new; v(N+1) is approved and N's package is as it was."""
     pilot, version = submitted_q2
     monkeypatch.setattr("sys.stdin", io.StringIO(RULING))
     command = ["ledger", "decide", V.value, str(version), REQUEST.value, "--claim", QOQ[0]]
@@ -843,6 +842,7 @@ def test_corrected_filing_reworks_only_dependent_claims(
     baseline = _sealed(pilot, version)
     assert baseline[3] is not None and baseline[3].rerun == set(QOQ)
     sha, rerun = _correct(pilot, ingest)
+    facts = _counts(pilot)[:FACTS]
     new = rerun().draft_version_id
     assert new is not None and _successor(pilot, version) == new
     numbers = pilot.query("SELECT eqos.version_number(%s), eqos.version_number(%s)", version, new)
@@ -865,7 +865,8 @@ def test_corrected_filing_reworks_only_dependent_claims(
     assert sorted(calls["conclude"]) == sorted(digest[key] for key in QOQ[1:])
     assert len(calls["put_calculation_trace"]) == 2
     assert set(calls["operand"]) == {digest["fact.revenue"], digest[QOQ[0]]}
-    assert calls["put"] == calls["select_canonical"] == []
+    assert calls["admit_run"] == [0] and calls["select_admitted"] == []
+    assert _counts(pilot)[:FACTS] == facts
     unchanged = {key: c for key, c in claims.items() if key not in QOQ}
     assert unchanged == {key: c for key, c in old.items() if key not in QOQ}
     assert _lines(pilot, new) == _lines(pilot, version)
@@ -930,3 +931,56 @@ def test_a_rework_source_outside_its_package_refuses_before_writing(
     for name in WRITES:
         assert calls[name] == [], name
     assert _counts(pilot) == before
+
+
+def test_a_head_citing_run_written_facts_reworks_only_in_full(
+    pg_db: PgTestDatabase, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, ingest: Any
+) -> None:
+    """A head written before fact admission (its pipeline-written fact rows cited, no pinned
+    comparison run) cannot carry those facts: a selective rework refuses naming
+    ``--full-successor`` and writes nothing; the full successor cites six admitted facts and
+    the old head still validates."""
+    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest)
+    results: list[PipelineResult] = []
+    with pytest.MonkeyPatch.context() as patch:
+        real_pipeline, real_write = cli.run_pipeline, cli.write_run_draft
+        real_create = store.create_version
+
+        def pipeline(**kwargs: Any) -> PipelineResult:
+            """The pre-admission pipeline: it writes and selects every role's fact."""
+            results.append(real_pipeline(**kwargs | {"skip_roles": frozenset()}))
+            return results[-1]
+
+        def write(pool: Any, prior: run_draft.Prior, run: run_draft.RunDraft, **kw: Any) -> int:
+            """The draft citing the pipeline's canonical rows, as before admission."""
+            stored = PgFactStore(pool, pilot.store_id)
+            facts = {
+                revision.revision_family.split(":")[1]: stored.fact_ref(revision.row_id)
+                for revision in results[-1].stored_revisions
+                if revision.canonical_status is CanonicalStatus.CANONICAL
+            }
+            return real_write(pool, prior, run.model_copy(update={"facts": facts}), **kw)
+
+        patch.setattr(cli, "run_pipeline", pipeline)
+        patch.setattr(cli, "_admit", lambda *_: {})
+        patch.setattr(cli, "write_run_draft", write)
+        patch.setattr(
+            store,
+            "create_version",
+            lambda cursor, draft: real_create(
+                cursor, draft.model_copy(update={"pinned_run_ids": ()})
+            ),
+        )
+        old = pilot.run("FY26_Q2").draft_version_id
+    assert old is not None and pilot.version(old).pinned_run_ids == ()
+    with pg_db.runtime_pool() as runtime:
+        lifecycle.submit(runtime, old, **pilot.sources())
+    _request_changes(pilot, old, "fact.revenue")
+    before = _counts(pilot)
+    with pytest.raises(RunDraftError, match=f"version {old} predates fact admission"):
+        _rerun(pilot)
+    assert _counts(pilot) == before
+    new = _rerun(pilot, "--full-successor").draft_version_id
+    assert new is not None
+    pilot.admitted(new)
+    assert {state for _, state in pilot.validate(old).claim_states} == {ClaimState.MATCH}

@@ -2,8 +2,9 @@
 
 The originals are registered (the D2 rig), ``ledger import`` runs as the panel, the stock is
 watchlisted, every quarter's transcript is a first-party capture and every run and comparator
-XBRL is evidence-ingested; runs write to an ``OPEN`` native store. Each quarter's three
-originals are registered through the source intake at real times and run ``--retrospective``
+XBRL is ``evidence ingest``-ed under the pilot pins, each run quarter's beside its results PDF;
+runs write to an ``OPEN`` native store. Each quarter's three originals are registered through the
+source intake at real times, compared by ``compare run`` and run ``--retrospective --compare-run``
 against the pinned retrieval manifest (contract a-b): no clock is synthetic.
 """
 
@@ -18,14 +19,22 @@ from typing import Any
 import pytest
 import yaml
 from coverage_support import watchlist
-from evidence_support import XBRL_KIND, Ingest
+from evidence_support import CONFIG, PDF_KIND, XBRL_KIND, Ingest
 from pg_support import PgTestDatabase
 from psycopg_pool import ConnectionPool
-from retained_support import APAR_MANIFEST, REPO_ROOT, apar_store
+from retained_support import (
+    APAR_MANIFEST,
+    INPUTS_DIR,
+    REPO_ROOT,
+    STORE_DIR,
+    apar_intake,
+    apar_store,
+)
 from test_legacy_import import Rig
 from test_transcript_admission import issuer_config, transcript_intake
 
 from fundamentals.api.cli import _build_parser, main, run_command
+from fundamentals.api.compare_cli import run_compare
 from fundamentals.api.config import load_config
 from fundamentals.api.ledger_cli import DEFAULT_IMPORT_CONFIG, DEFAULT_WATCHLIST, ledger_catalog
 from fundamentals.api.pipeline import PipelineResult
@@ -43,11 +52,13 @@ from fundamentals.contracts.snapshot import (
     SnapshotRights,
 )
 from fundamentals.contracts.source_registration import SourceRole
+from fundamentals.evidence.admission import key_identity
 from fundamentals.evidence.first_party_ingest import admit_transcript
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger import lifecycle, store
+from fundamentals.output.earnings_update import REQUIRED_ROLES
 from fundamentals.pg.settings import PgRole
-from fundamentals.store.pg_fact_store import create_native_store
+from fundamentals.store.pg_fact_store import PgFactStore, create_native_store
 from fundamentals.store.snapshot_store import DirectoryAnchor, SnapshotStore
 
 STOCK = "APARINDS"
@@ -58,6 +69,10 @@ QUARTERS = {
     "FY26_Q4": "fy26-q4-pg",
     "FY27_Q1": "fy27-q1",
 }
+# Each run quarter's results-PDF parse config: PQ3 reads its -pg unit marker (eqos-4j2.33).
+PDF_CONFIGS = QUARTERS | {"FY27_Q1": "fy27-q1-pg"}
+# The pilot comparison pins (``cli.PILOT_VERSIONS``) every ingest and comparison names.
+PINS = ("--dictionary", "v2", "--mapping-set", "v6")
 COMPARATOR_KIND = "xbrl-consolidated-comparator"
 # Every XBRL a pilot run reads (run quarters and comparators): manifest quarter, kind, period end.
 XBRLS = (
@@ -71,11 +86,22 @@ XBRLS = (
     ("FY26_Q1", COMPARATOR_KIND, date(2025, 6, 30)),
 )
 RIGHTS = SnapshotRights(authority_refs=("prep2b-test-retained-originals",))
-COUNTS = (
-    "SELECT (SELECT count(*) FROM eqos.fact_rows), (SELECT count(*) FROM eqos.fact_selections), "
-    "(SELECT count(*) FROM eqos.report_versions)"
+# Every table a run writes; the first three are its facts: rows, admissions and selections.
+TABLES = (
+    "fact_rows",
+    "fact_admissions",
+    "fact_selections",
+    "calculation_traces",
+    "calculation_trace_operands",
+    "report_versions",
+    "numeric_claims",
 )
+COUNTS = f"SELECT {', '.join(f'(SELECT count(*) FROM eqos.{table})' for table in TABLES)}"
 RULING = "TEST: approve the pilot run's draft"
+ADMITTED = (
+    "SELECT row_handle FROM eqos.fact_admissions WHERE store_id = %s AND fact_origin = %s "
+    "AND fact_origin_id = %s AND run_id = ANY(%s)"
+)
 
 
 class Pilot:
@@ -114,8 +140,9 @@ class Pilot:
             for quarter in transcripts:
                 self.admit_transcript(quarter, runtime)
             self.store_id = create_native_store(runtime, "pilot")
+        self.period_ends = {quarter: end for quarter, kind, end in xbrls if kind == XBRL_KIND}
         for quarter, kind, period_end in xbrls:
-            ingest.run(ingest.intake({Representation.XBRL: kind}, quarter), period_end)
+            self.evidence_ingest(quarter, kind, period_end)
         (tmp_path / "config").mkdir(exist_ok=True)
         shutil.copyfile(REPO_ROOT / DEFAULT_IMPORT_CONFIG, tmp_path / DEFAULT_IMPORT_CONFIG)
         self.retained = tmp_path / "retained"
@@ -127,6 +154,32 @@ class Pilot:
         command = ["ledger", "import", "--config", str(REPO_ROOT / DEFAULT_IMPORT_CONFIG)]
         command += ["--repo", str(REPO_ROOT), "--snapshot-root", str(self.rig.snapshots)]
         assert main(command) == 0
+
+    def evidence_ingest(self, quarter: str, kind: str, period_end: date) -> None:
+        """``evidence ingest`` of one XBRL under the pilot pins, a run quarter's beside its
+        results PDF read with that quarter's specs."""
+        members = {Representation.XBRL: kind}
+        command = ["evidence", "ingest", "--retrieval-manifest", str(APAR_MANIFEST)]
+        command += ["--issuer", STOCK, "--quarter", quarter, "--period-end", str(period_end)]
+        command += ["--basis", "consolidated", "--member", f"xbrl={kind}", *PINS]
+        command += ["--raw-root", str(self.tmp_path / INPUTS_DIR), "--config-root", str(CONFIG)]
+        command += ["--snapshot-root", str(self.tmp_path / STORE_DIR)]
+        if kind == XBRL_KIND:
+            members[Representation.PDF] = PDF_KIND
+            config = CONFIG / f"aparinds-{PDF_CONFIGS[quarter]}.yaml"
+            command += ["--member", f"pdf={PDF_KIND}", "--issuer-config", str(config)]
+            apar_intake(self.tmp_path, quarter, members, issuer_config=config)  # stages originals
+        else:
+            apar_intake(self.tmp_path, quarter, members)
+        assert main(command) == 0
+
+    def compare_run(self, quarter: str, config_root: Path = CONFIG) -> int:
+        """``compare run`` of the quarter's package under the pilot pins (``AS_KNOWN`` at the
+        store clock): the run a ``fundamentals run`` admits its facts from."""
+        command = ["compare", "run", "--entity", STOCK, "--basis", "consolidated", *PINS]
+        command += ["--period-end", str(self.period_ends[quarter]), "--alignment-rules", "v2"]
+        command += ["--config-root", str(config_root)]
+        return run_compare(_build_parser().parse_args(command)).run_id
 
     def admit_transcript(self, quarter: str, runtime: ConnectionPool) -> None:
         """The quarter's transcript as a first-party capture."""
@@ -148,10 +201,12 @@ class Pilot:
         return path
 
     def registered(self, quarter: str) -> tuple[ApprovedIntakeContext, list[str]]:
-        """The quarter's originals registered now through the intake, and its run argv."""
+        """The quarter's originals registered now through the intake, and its run argv naming
+        the quarter's comparison run."""
         if quarter not in self._registered:
             context, register, argv = self.prepared(quarter)
             assert main(register, intake_context=context) == 0
+            argv += ["--compare-run", str(self.compare_run(quarter))]
             self._registered[quarter] = (context, argv)
         return self._registered[quarter]
 
@@ -230,6 +285,25 @@ class Pilot:
         """A stored version's content."""
         with self.pg_db.runtime_pool() as pool, pool.connection() as conn:
             return store.read_version(conn.cursor(), version_id)
+
+    def admitted(self, version_id: int) -> None:
+        """Each of the version's required fact claims cites a row one of its pinned comparison
+        runs admitted, and that row is its key's current selection."""
+        version = self.version(version_id)
+        facts = [c for c in version.claims if c.claim_key.startswith("fact.")]
+        assert len(facts) == len(REQUIRED_ROLES) and version.pinned_run_ids
+        runs = list(version.pinned_run_ids)
+        with self.pg_db.runtime_pool() as pool:
+            selected = PgFactStore(pool, self.store_id)
+            for claim in facts:
+                cited, key = claim.citation, claim.measurement_key
+                assert key is not None
+                found = self.query(
+                    ADMITTED, self.store_id, cited.fact_origin, cited.fact_origin_id, runs
+                )
+                current = selected.get_canonical(key_identity(key))
+                assert current is not None, claim.claim_key
+                assert {row[0] for row in found} == {current.row_id}, claim.claim_key
 
     def sources(self) -> dict[str, Any]:
         """The catalog and snapshot store a claim check reads."""

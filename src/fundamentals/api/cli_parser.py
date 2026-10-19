@@ -101,6 +101,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="rerun a head with claim rejections in full instead of only its rejected lines",
     )
     run.add_argument(
+        "--compare-run",
+        type=int,
+        default=None,
+        help="the comparison run a PostgreSQL run admits its facts from",
+    )
+    run.add_argument(
         "--snapshot-root",
         type=Path,
         default=None,

@@ -380,20 +380,21 @@ def _admitted(
 ) -> ResolvedCitation | None:
     """An admitted fact of the report's issuer, through its admissions under the pinned runs:
     their one key, value kind and currency, its base-unit value in the claim's scale, and the
-    earliest pinned admission as its recording time; every admitted occurrence's capture must
-    be first-party."""
+    earliest pinned admission with its own capture as the witness of when it was known; every
+    admitted occurrence's capture must be first-party."""
     admissions = own.execute(
         _ADMITTED, (NATIVE_ORIGIN, origin_id, entity_id, list(run_ids))
     ).fetchall()
     cells = {(a["key_digest"], a["value_kind"], a["currency"]) for a in admissions}
-    captures = [
-        _first_party_capture(own, capture, catalog)
+    captures = {
+        capture: _first_party_capture(own, capture, catalog)
         for capture in {a["capture_ref_id"] for a in admissions}
-    ]
-    seen = [capture["first_seen"] for capture in captures if capture is not None]
+    }
+    seen = {ref: capture["first_seen"] for ref, capture in captures.items() if capture is not None}
     if len(cells) != 1 or len(seen) != len(captures):
         return None
     ((digest, value_kind, currency),) = cells
+    witness = min(admissions, key=lambda admission: admission["overlay_position"])
     observation = Fact.model_validate_json(row["fact_json"]).observation
     return ResolvedCitation(
         value=_claim_scaled(observation.normalized_value, claim),
@@ -402,10 +403,10 @@ def _admitted(
         currency=currency,
         times=(
             (InputTime.KNOWLEDGE, _instant(row["knowledge_time"])),
-            *((InputTime.FIRST_SEEN, at) for at in seen),
+            (InputTime.FIRST_SEEN, seen[witness["capture_ref_id"]]),
             (InputTime.SELECTED, row["selected_at"]),
             (InputTime.RECORDED, _instant(row["created_at"])),
-            (InputTime.RECORDED, min(a["overlay_position"] for a in admissions)),
+            (InputTime.RECORDED, witness["overlay_position"]),
         ),
     )
 

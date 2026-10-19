@@ -156,7 +156,7 @@ class Retrospective(BaseModel):
 class RunDraft(BaseModel):
     """What the draft is written from: the emitted update, its guidance claims, each required
     role's selected fact, its bound changes and calculations lines, the run's originals (XBRLs
-    incl. comparators; PDFs) and designation."""
+    incl. comparators; PDFs), the comparison run its facts were admitted from and designation."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -168,6 +168,7 @@ class RunDraft(BaseModel):
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
     memory: str
+    run_id: int
     retrospective: Retrospective | None = None
 
 
@@ -284,6 +285,9 @@ def write_run_draft(
         check_head(cursor, prior, run.period)
         reworked = prior.rework
         carried = {} if reworked is None else {k: reworked.claims[k] for k in reworked.carried}
+        run_ids = {run.run_id}
+        if reworked is not None:  # carried citations keep their head's comparison runs
+            run_ids.update(store.read_version(cursor, reworked.head).pinned_run_ids)
         body = _Body()
         for text, claim in _results(update, run.facts, entity_id):
             body.add(RESULTS, text, carried.get(claim.claim_key, claim))
@@ -312,6 +316,7 @@ def write_run_draft(
                 content_hash=content_hash(sections, claims),
                 sections=sections,
                 claims=claims,
+                pinned_run_ids=tuple(sorted(run_ids)),
             ),
         )
         boundary = cursor.execute(_NOW).fetchone()

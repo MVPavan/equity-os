@@ -23,6 +23,7 @@ from fundamentals.api.config import load_config
 from fundamentals.api.pipeline import PipelineResult, XbrlInput
 from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
 from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     CitationKind,
@@ -58,6 +59,8 @@ QUARTERS = {
 # the run once printed them truncated (19, 33).
 GAPS = {"fy26-q4-pg": "19.72", "fy27-q1": "33.65"}
 TRACES = "SELECT count(*) FROM eqos.calculation_traces"
+# The fixture's pins: dictionary v2, mapping set v5.
+VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v5")
 MAPPED_VERSIONS = (
     "SELECT DISTINCT mapping_set_version FROM eqos.interpretations WHERE status = 'MAPPED' "
     "ORDER BY 1"
@@ -142,7 +145,11 @@ def test_every_computed_value_binds_and_matches(
     gap is emitted exactly, from its exact operands."""
     result = _run(quarter, tmp_path)
     _ingest(ingest, quarter)
-    claims = _claims(bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id))
+    claims = _claims(
+        bind_computed(
+            ingest.repository, result.update, entity_id=ingest.entity_id, versions=VERSIONS
+        )
+    )
     assert {key: _state(ingest, claim) for key, claim in claims.items()} == {
         key: ClaimState.MATCH for key in claims
     }
@@ -165,7 +172,9 @@ def test_a_missing_comparator_or_a_changed_value_refuses_before_any_write(
     _ingest(ingest, "fy27-q1", (0, 1))
     count = _traces(ingest)
     with pytest.raises(RunDraftError, match="no single mapped interpretation"):
-        bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id)
+        bind_computed(
+            ingest.repository, result.update, entity_id=ingest.entity_id, versions=VERSIONS
+        )
     _ingest(ingest, "fy27-q1", (2,))
     gap = result.update.calculations[0].model_copy(update={"result": "33.66"})
     calculations = (gap, *result.update.calculations[1:])
@@ -173,7 +182,9 @@ def test_a_missing_comparator_or_a_changed_value_refuses_before_any_write(
         update={"update": result.update.model_copy(update={"calculations": calculations})}
     )
     with pytest.raises(RunDraftError, match="calc.1"):
-        bind_computed(ingest.repository, changed.update, entity_id=ingest.entity_id)
+        bind_computed(
+            ingest.repository, changed.update, entity_id=ingest.entity_id, versions=VERSIONS
+        )
     assert _traces(ingest) == count
 
 
@@ -184,9 +195,11 @@ def test_an_interpretation_figure_resolves_only_for_its_issuer(
     another stock's key, or both, it is ``UNRESOLVED`` — never a match on a foreign record."""
     result = _run("fy27-q1", tmp_path)
     _ingest(ingest, "fy27-q1")
-    figure = _claims(bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id))[
-        "calc.2"
-    ]
+    figure = _claims(
+        bind_computed(
+            ingest.repository, result.update, entity_id=ingest.entity_id, versions=VERSIONS
+        )
+    )["calc.2"]
     assert _state(ingest, figure) is ClaimState.MATCH
     assert figure.measurement_key is not None
     other = ingest.entity_id + 1
@@ -210,5 +223,9 @@ def test_an_older_mapping_versions_interpretations_do_not_block_the_run(
     with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
         versions = conn.execute(MAPPED_VERSIONS).fetchall()
     assert versions == [("v4",), ("v5",)]
-    claims = _claims(bind_computed(ingest.repository, result.update, entity_id=ingest.entity_id))
+    claims = _claims(
+        bind_computed(
+            ingest.repository, result.update, entity_id=ingest.entity_id, versions=VERSIONS
+        )
+    )
     assert {_state(ingest, claim) for claim in claims.values()} == {ClaimState.MATCH}

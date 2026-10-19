@@ -50,7 +50,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 EVIDENCE_COMMAND = "evidence"
 INGEST_ACTION = "ingest"
 DEFAULT_CONFIG_ROOT = "config"
-# Pinned versions this command ingests under; a new version is a reviewed code change.
+# Default pins, as ``compare run``'s; a new normalisation version is a reviewed code change.
 DICTIONARY_VERSION = "v1"
 MAPPING_SET_VERSION = "v1"
 NORMALISATION_POLICY_VERSION = "v1"
@@ -98,6 +98,8 @@ def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     ingest.add_argument("--member", action="append", default=[], help=_MEMBER_HELP)
     ingest.add_argument("--issuer-config", type=Path)
     ingest.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    ingest.add_argument("--dictionary", default=DICTIONARY_VERSION)
+    ingest.add_argument("--mapping-set", default=MAPPING_SET_VERSION)
 
 
 def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
@@ -129,9 +131,9 @@ def _ingest(args: argparse.Namespace) -> int:
     if Representation.PDF in members and args.issuer_config is None:
         raise EvidenceCommandError(_PDF_NEEDS_CONFIG)
     config_root: Path = args.config_root
-    dictionary = load_dictionary(config_root / DICTIONARY_DIR, DICTIONARY_VERSION)
+    dictionary = load_dictionary(config_root / DICTIONARY_DIR, args.dictionary)
     mapping_set = load_mapping_set(
-        config_root / MAPPINGS_DIR, MAPPING_SET_VERSION, dictionary=dictionary
+        config_root / MAPPINGS_DIR, args.mapping_set, dictionary=dictionary
     )
     policy = load_normalisation_policy(
         config_root / NORMALISATION_POLICY_DIR / f"{NORMALISATION_POLICY_VERSION}.yaml"
