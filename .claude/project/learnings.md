@@ -320,3 +320,14 @@ Format per entry:
   name the old versions.
 - Apply: before editing an ingest file, check whether it is listed in `VENDOR_EXTRACTORS`.
   If it is, put new code in an unpinned module. Run the full suite once per phase.
+
+## A new table breaks every table-enumerating test  (2026-10-19)
+
+- Observed: migration 0040 added two tables. Eight tests outside the phase's own suites
+  failed: the evidence-schema count and grant checks, plus the backup table lists in the
+  ledger stage 1/2 and data stage 2 end-to-end tests. A worker had stated that no other test
+  lists tables, and the targeted suites were green.
+- Why it matters: the regressions surface only in the full suite, after the phase review.
+- Apply: a migration that adds a table also adds it to a family set in
+  `tests/fundamentals/ledger_support.py` (or its family's support module). Run the full suite
+  before the phase review, not after it.
