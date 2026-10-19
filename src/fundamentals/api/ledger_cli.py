@@ -94,6 +94,16 @@ _EXISTS = "{path} already exists"
 _MISMATCH = "version {version_id} narrative does not hash to its stored content hash"
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _FILE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+# The refusals a ledger-bound command reports as ``EXIT_REFUSED`` rather than a traceback.
+LEDGER_FAILURES = (
+    DatabaseUnavailableError,
+    psycopg.Error,
+    RoleSecretError,
+    ValidationError,
+    OSError,
+    ValueError,
+    LookupError,
+)
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -146,15 +156,7 @@ def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
             EXPORT_ACTION: _export,
         }
         return actions[args.ledger_action](args)
-    except (
-        DatabaseUnavailableError,
-        psycopg.Error,
-        RoleSecretError,
-        ValidationError,
-        OSError,
-        ValueError,
-        LookupError,
-    ) as failure:
+    except LEDGER_FAILURES as failure:
         structlog.get_logger("fundamentals.ledger").error(
             _FAILED_EVENT, failure=type(failure).__name__, detail=str(failure)
         )
@@ -166,7 +168,7 @@ def _decide(args: argparse.Namespace) -> int:
     fields = {name: getattr(args, name) for name in _POLICY_FIELDS}
     policy = None if fields["key"] is None else PolicyValue.model_validate(fields)
     ruling = sys.stdin.read()
-    sources = _sources(args) if args.stock and args.snapshot_root else {}
+    sources = decision_sources(args) if args.stock and args.snapshot_root else {}
     login = load_login(PgRole.OWNER, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.OWNER, login=login) as pool:
         record = decide(
@@ -186,7 +188,7 @@ def _decide(args: argparse.Namespace) -> int:
 def _check(args: argparse.Namespace) -> int:
     """Check one version as the runtime role and print each claim's state."""
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
-        validation = validate(pool, args.version, mode=_MODES[args.mode], **_sources(args))
+        validation = validate(pool, args.version, mode=_MODES[args.mode], **decision_sources(args))
     lines = [_VALIDATION.format(id=validation.id, mode=validation.mode)]
     lines += [_STATE.format(key=key, state=state) for key, state in validation.claim_states]
     lines += [str(state) for state in validation.version_states]
@@ -202,7 +204,7 @@ def ledger_catalog(watchlist: Path, stock: str, issuer_configs: Sequence[Path]) 
     return catalog
 
 
-def _sources(args: argparse.Namespace) -> dict[str, Any]:
+def decision_sources(args: argparse.Namespace) -> dict[str, Any]:
     """The ``--stock`` source catalog and the ``--snapshot-root`` store."""
     return {
         "catalog": ledger_catalog(args.watchlist, args.stock, args.issuer_config),

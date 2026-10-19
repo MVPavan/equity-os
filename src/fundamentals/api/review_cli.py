@@ -1,141 +1,187 @@
-"""CLI commands for recording a human review of an earnings-update artifact."""
+"""The ``review`` command: the owner reviews a submitted ledger version claim by claim (PREP-6).
+
+    review start --version <id> --session <new dir>
+    review claim --session <dir> --claim <key> --disposition D [--category C]
+        --locate-seconds N --check-seconds M [--note TEXT]
+    review list --session <dir>
+    review finish --session <dir> --decision APPROVE|REQUEST_CHANGES|REJECT
+        [--stock <symbol> --snapshot-root <dir> [--watchlist …] [--issuer-config <yaml>]...]
+        (the verbatim ruling is read from stdin, as in ``ledger decide``)
+    review summary --version <id>
+
+``finish`` writes the decision and the review in one owner transaction; the rest run as the
+runtime role. Time is read through :func:`_now` at command entry and just before the session
+file is saved (or, at ``finish``, before the first insert); their difference over successful
+commands is the command-handling time.
+"""
 
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 from datetime import UTC, datetime
-from hashlib import sha256
 from pathlib import Path
 
 import structlog
-from pydantic import ValidationError
 
-from fundamentals.api.artifact_writer import preflight_out_paths, write_bytes_no_clobber
-from fundamentals.output.earnings_update import EarningsUpdate
-from fundamentals.output.review_session import (
-    ApprovalDecision,
-    ApprovalState,
-    ClaimReview,
-    CorrectionCategory,
-    Disposition,
-    ReviewSession,
-    approval_record_markdown,
-    finish_session,
-    load_session,
-    record_review,
-    save_session,
-    start_session,
-    summarize_session,
+from fundamentals.api.ledger_cli import (
+    DEFAULT_WATCHLIST,
+    ISSUER_CONFIG_FLAG,
+    LEDGER_FAILURES,
+    decision_sources,
 )
+from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
+from fundamentals.contracts.ledger import DecisionKind, VersionStatus
+from fundamentals.ledger import review
+from fundamentals.ledger.lifecycle import version_status
+from fundamentals.pg.pool import open_pool
+from fundamentals.pg.role_secrets import load_login, secrets_dir
+from fundamentals.pg.settings import PgRole, PgSettings
 
 REVIEW_COMMAND = "review"
+_DECISIONS = (DecisionKind.APPROVE, DecisionKind.REQUEST_CHANGES, DecisionKind.REJECT)
+_NOT_IN_REVIEW = "version {version_id} is {status}, not IN_REVIEW"
+_EXISTS = "session directory already exists: {path}"
+_LISTED = "{key}\t{disposition}"
+_UNREVIEWED = "unreviewed"
+_PER_CLAIM_NOTE = (
+    "# a claim's elapsed time runs from the previous recorded claim: record each as you finish it"
+)
+_DECISION = "decision\t{id}"
 _CLI_LOGGER = structlog.get_logger("fundamentals.review")
+
+
+def _now() -> datetime:
+    """The review's one clock."""
+    return datetime.now(UTC)
 
 
 def add_review_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the review session commands."""
-    review = subparsers.add_parser(REVIEW_COMMAND, help="record an earnings-update review session")
-    actions = review.add_subparsers(dest="review_action", required=True)
-    start = actions.add_parser("start", help="start a review session for one JSON report")
-    start.add_argument("--report-json", required=True, help="EarningsUpdate JSON artifact")
-    start.add_argument("--session", required=True, help="new session directory")
+    parser = subparsers.add_parser(REVIEW_COMMAND, help="review a submitted ledger version")
+    actions = parser.add_subparsers(dest="review_action", required=True)
+    start = actions.add_parser("start", help="start reviewing an IN_REVIEW version")
+    start.add_argument("--version", type=int, required=True)
+    start.add_argument("--session", type=Path, required=True, help="new session directory")
     claim = actions.add_parser("claim", help="record one claim disposition")
-    claim.add_argument("--session", required=True, help="session directory")
-    claim.add_argument("--claim", required=True, help="stable claim identifier")
-    claim.add_argument("--disposition", required=True, choices=[item.value for item in Disposition])
+    claim.add_argument("--session", type=Path, required=True)
+    claim.add_argument("--claim", required=True, help="the claim key")
+    claim.add_argument("--disposition", required=True, type=review.Disposition)
     claim.add_argument(
-        "--category",
-        default=CorrectionCategory.NONE.value,
-        choices=[item.value for item in CorrectionCategory],
+        "--category", type=review.CorrectionCategory, default=review.CorrectionCategory.NONE
     )
-    claim.add_argument("--seconds", type=int, default=None)
-    claim.add_argument("--note", default=None)
-    listed = actions.add_parser("list", help="list claims and current dispositions")
-    listed.add_argument("--session", required=True, help="session directory")
-    finish = actions.add_parser("finish", help="finish and approve or reject a review session")
-    finish.add_argument("--session", required=True, help="session directory")
-    finish.add_argument("--decision", required=True, choices=["approved", "rejected"])
-    finish.add_argument("--decider", required=True)
-    finish.add_argument("--verbatim", required=True)
+    claim.add_argument("--locate-seconds", type=int, required=True, help="self-reported")
+    claim.add_argument("--check-seconds", type=int, required=True, help="self-reported")
+    claim.add_argument("--note")
+    listed = actions.add_parser("list", help="list the review set and current dispositions")
+    listed.add_argument("--session", type=Path, required=True)
+    finish = actions.add_parser("finish", help="decide the version; the ruling is read from stdin")
+    finish.add_argument("--session", type=Path, required=True)
+    finish.add_argument("--decision", type=DecisionKind, choices=_DECISIONS, required=True)
+    finish.add_argument("--stock")
+    finish.add_argument("--snapshot-root", type=Path)
+    finish.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    finish.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    summary = actions.add_parser("summary", help="print a reviewed version's totals as JSON")
+    summary.add_argument("--version", type=int, required=True)
 
 
-def _with_elapsed(session: ReviewSession, started_at: datetime) -> ReviewSession:
-    elapsed = (datetime.now(UTC) - started_at).total_seconds()
-    return session.model_copy(
-        update={"instrumentation_seconds": session.instrumentation_seconds + elapsed}
+def _handled(session: review.Session, entry: datetime) -> review.Session:
+    """The session with this command's handling time added."""
+    seconds = session.command_handling_seconds + (_now() - entry).total_seconds()
+    return session.model_copy(update={"command_handling_seconds": seconds})
+
+
+def _review_set(version_id: int) -> tuple[str, ...]:
+    """The version's review set, read as the runtime role."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
+        return review.review_set(conn.cursor(), version_id)
+
+
+def _start(args: argparse.Namespace, entry: datetime) -> int:
+    """Open a session on an ``IN_REVIEW`` version."""
+    if args.session.exists():
+        raise ValueError(_EXISTS.format(path=args.session))
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
+        cursor = conn.cursor()
+        review.review_set(cursor, args.version)
+        status = version_status(cursor, args.version)
+    if status is not VersionStatus.IN_REVIEW:
+        raise ValueError(_NOT_IN_REVIEW.format(version_id=args.version, status=status))
+    session = review.Session(
+        version_id=args.version,
+        instrument_version=review.INSTRUMENT_VERSION,
+        started_at=entry,
     )
+    args.session.mkdir(parents=True)
+    review.save(_handled(session, entry), args.session)
+    return EXIT_OK
 
 
-def _start(args: argparse.Namespace, command_started_at: datetime) -> int:
-    session_dir = Path(args.session)
-    if session_dir.exists():
-        raise ValueError(f"session directory already exists: {session_dir}")
-    report_bytes = Path(args.report_json).read_bytes()
-    update = EarningsUpdate.model_validate_json(report_bytes)
-    session = start_session(update, report_json_sha256=sha256(report_bytes).hexdigest())
-    session_dir.mkdir(parents=True)
-    save_session(_with_elapsed(session, command_started_at), session_dir)
-    return 0
-
-
-def _claim(args: argparse.Namespace, command_started_at: datetime) -> int:
-    session_dir = Path(args.session)
-    session = load_session(session_dir)
-    review = ClaimReview(
-        claim_id=args.claim,
-        disposition=Disposition(args.disposition),
-        category=CorrectionCategory(args.category),
-        seconds=args.seconds,
+def _claim(args: argparse.Namespace, entry: datetime) -> int:
+    """Record one disposition at the command's entry time."""
+    session = review.load(args.session)
+    event = review.ClaimEvent(
+        claim_key=args.claim,
+        disposition=args.disposition,
+        category=args.category,
+        locate_seconds=args.locate_seconds,
+        check_seconds=args.check_seconds,
         note=args.note,
-        recorded_at=datetime.now(UTC),
+        at=entry,
     )
-    save_session(_with_elapsed(record_review(session, review), command_started_at), session_dir)
-    return 0
+    session = review.record(session, event, _review_set(session.version_id))
+    review.save(_handled(session, entry), args.session)
+    return EXIT_OK
 
 
-def _list(args: argparse.Namespace, command_started_at: datetime) -> int:
-    session_dir = Path(args.session)
-    session = load_session(session_dir)
-    current = {review.claim_id: review.disposition.value for review in session.reviews}
-    for claim in session.claims:
-        print(f"{claim.claim_id}\t{current.get(claim.claim_id, 'unreviewed')}")
-    save_session(_with_elapsed(session, command_started_at), session_dir)
-    return 0
+def _list(args: argparse.Namespace, entry: datetime) -> int:
+    """Print each review-set key with its current disposition."""
+    session = review.load(args.session)
+    review.check_instrument(session)
+    now = review.current(session)
+    lines = [
+        _LISTED.format(key=key, disposition=now[key].disposition if key in now else _UNREVIEWED)
+        for key in _review_set(session.version_id)
+    ]
+    sys.stdout.write("\n".join([*lines, _PER_CLAIM_NOTE]) + "\n")
+    review.save(_handled(session, entry), args.session)
+    return EXIT_OK
 
 
-def _finish(args: argparse.Namespace, command_started_at: datetime) -> int:
-    session_dir = Path(args.session)
-    summary_path, record_path = session_dir / "summary.json", session_dir / "approval_record.md"
-    preflight_out_paths((summary_path, record_path))
-    session = load_session(session_dir)
-    state = ApprovalState.APPROVED if args.decision == "approved" else ApprovalState.REJECTED
-    decision = ApprovalDecision(
-        state=state,
-        decider=args.decider,
-        verbatim=args.verbatim,
-        decided_at=datetime.now(UTC),
-    )
-    finished = _with_elapsed(finish_session(session, decision), command_started_at)
-    summary = summarize_session(finished)
-    save_session(finished, session_dir)
-    write_bytes_no_clobber(summary_path, summary.model_dump_json(indent=2).encode("utf-8"))
-    write_bytes_no_clobber(record_path, approval_record_markdown(summary, decision).encode("utf-8"))
-    return 0
+def _finish(args: argparse.Namespace, entry: datetime) -> int:
+    """Decide the version and write the review with it, as the owner."""
+    session = review.load(args.session)
+    ruling = sys.stdin.read()
+    sources = decision_sources(args) if args.stock and args.snapshot_root else {}
+    login = load_login(PgRole.OWNER, secrets_dir(os.environ))
+    with open_pool(PgSettings(), PgRole.OWNER, login=login) as pool:
+        with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
+            record = review.finish(
+                cursor, _handled(session, entry), args.decision, ruling, at=entry, **sources
+            )
+    sys.stdout.write(_DECISION.format(id=record.id) + "\n")
+    return EXIT_OK
+
+
+def _summary(args: argparse.Namespace) -> int:
+    """Print the version's review totals as JSON."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
+        found = review.summary(conn.cursor(), args.version)
+    sys.stdout.write(found.model_dump_json(indent=2) + "\n")
+    return EXIT_OK
 
 
 def dispatch_review_command(args: argparse.Namespace) -> int | None:
     """Run a review command or return ``None`` when another command was selected."""
     if args.command != REVIEW_COMMAND:
         return None
-    command_started_at = datetime.now(UTC)
+    actions = {"start": _start, "claim": _claim, "list": _list, "finish": _finish}
     try:
-        if args.review_action == "start":
-            return _start(args, command_started_at)
-        if args.review_action == "claim":
-            return _claim(args, command_started_at)
-        if args.review_action == "list":
-            return _list(args, command_started_at)
-        return _finish(args, command_started_at)
-    except (OSError, ValidationError, ValueError, SystemExit) as error:
-        _CLI_LOGGER.warning("review_refused", error=str(error))
-        return 2
+        if args.review_action == "summary":
+            return _summary(args)
+        return actions[args.review_action](args, _now())
+    except (*LEDGER_FAILURES, SystemExit) as failure:
+        _CLI_LOGGER.warning("review_refused", failure=type(failure).__name__, detail=str(failure))
+        return EXIT_REFUSED

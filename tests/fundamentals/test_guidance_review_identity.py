@@ -1,21 +1,81 @@
 """Canonical guidance identity survives presentation and JSON changes."""
 
 import hashlib
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pymupdf
 import pytest
-from tests.fundamentals.test_phase05_review_session import _synthetic_update
 from tests.fundamentals.test_pipeline_temporal_admission import inputs, run_synthetic_pipeline
 
+from fundamentals.contracts.fact import ReconciliationStatus
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.role import FactRole
 from fundamentals.output.earnings_update import (
     EarningsUpdate,
+    RenderedFact,
     RenderedGuidance,
+    VerificationOutcome,
     render_earnings_update,
 )
-from fundamentals.output.review_session import ClaimKind, enumerate_claims
 from fundamentals.store.fact_store import FactStore
+
+SOURCE = Provenance(
+    source_id="synthetic-xbrl",
+    file_sha256="0" * 63 + "1",
+    anchor_type=SourceAnchorType.XBRL_CONTEXT,
+    context_ref="synthetic-current",
+    retrieved_at=datetime(2027, 10, 20, 6, tzinfo=UTC),
+)
+
+
+def _synthetic_update() -> EarningsUpdate:
+    """A renderable synthetic report with one operating-margin guidance range."""
+    facts = tuple(
+        RenderedFact(
+            role=role,
+            concept_qname=f"syn-fin:{role.value}",
+            value=Decimal("100"),
+            unit="INR crore",
+            reconciliation_status=ReconciliationStatus.CROSS_SOURCE_CONFIRMED,
+            sources=(SOURCE,),
+        )
+        for role in (
+            FactRole.REVENUE,
+            FactRole.TOTAL_INCOME,
+            FactRole.TOTAL_EXPENSES,
+            FactRole.PROFIT_BEFORE_TAX,
+            FactRole.PROFIT_FOR_PERIOD,
+            FactRole.BASIC_EPS,
+        )
+    )
+    guidance = RenderedGuidance(
+        metric="margin",
+        metric_label="Operating margin",
+        lower_bound=Decimal("18.0"),
+        upper_bound=Decimal("19.5"),
+        unit="percent",
+        constant_currency=False,
+        horizon="fy2028",
+        quote="We expect margin of 18 to 19.5 percent for fy2028.",
+        source=SOURCE,
+    )
+    outcome = VerificationOutcome(passed_count=1, total_count=1)
+    return EarningsUpdate(
+        issuer_name="Synthetic Industries Limited",
+        nse_symbol="SYNTH",
+        issuer_quarter_label="Q2FY28",
+        period_start="2027-07-01",
+        period_end="2027-09-30",
+        knowledge_cutoff="2027-10-20",
+        facts=facts,
+        guidance=(guidance,),
+        calculations=(),
+        cross_check=outcome,
+        cross_foot=outcome,
+        sec_cross_check_note="not applicable to this synthetic issuer",
+    )
 
 
 def test_canonical_guidance_identity_survives_label_rename_and_json() -> None:
@@ -25,16 +85,15 @@ def test_canonical_guidance_identity_survives_label_rename_and_json() -> None:
     guidance = RenderedGuidance.model_validate(payload)
     update = update.model_copy(update={"guidance": (guidance,)})
     restored = EarningsUpdate.model_validate_json(update.model_dump_json())
-    claim = next(c for c in enumerate_claims(restored) if c.kind is ClaimKind.GUIDANCE)
-    assert claim.claim_id == "guidance:operating_margin:fy2028"
-    assert "Operating margin outlook" in claim.text
-    assert restored.guidance[0].lower_bound == Decimal("18.0")
-    renamed = restored.model_copy(
-        update={"guidance": (guidance.model_copy(update={"metric_label": "Margin"}),)}
+    assert restored.guidance[0] == guidance
+    assert (restored.guidance[0].metric, restored.guidance[0].horizon) == (
+        "operating_margin",
+        "fy2028",
     )
-    renamed_claim = next(c for c in enumerate_claims(renamed) if c.kind is ClaimKind.GUIDANCE)
-    assert renamed_claim.claim_id == claim.claim_id
-    assert renamed_claim.text != claim.text
+    renamed = RenderedGuidance.model_validate_json(
+        guidance.model_copy(update={"metric_label": "Margin"}).model_dump_json()
+    )
+    assert renamed.metric == guidance.metric and renamed.metric_label != guidance.metric_label
 
 
 @pytest.mark.parametrize("metric", ["", " ", "\t\n"])
@@ -72,9 +131,8 @@ def test_generated_pipeline_guidance_keeps_metric_through_json_and_label_rename(
         assert update.guidance[0].metric == "revenue_growth"
         assert update.guidance[0].metric_label == label
         assert label in result.markdown
-        claim = next(c for c in enumerate_claims(update) if c.kind is ClaimKind.GUIDANCE)
-        ids.append(claim.claim_id)
-    assert ids == ["guidance:revenue_growth:FY25", "guidance:revenue_growth:FY25"]
+        ids.append((update.guidance[0].metric, update.guidance[0].horizon))
+    assert ids == [("revenue_growth", "FY25"), ("revenue_growth", "FY25")]
 
 
 @pytest.mark.parametrize("metric", [None, "operating_margin", " operating_margin "])
@@ -86,9 +144,6 @@ def test_metric_is_verbatim_and_does_not_change_rendered_content(metric: str | N
     changed = update.model_copy(update={"guidance": (guidance,)})
     assert render_earnings_update(changed) == render_earnings_update(update)
     assert changed.guidance[0].metric == metric
-    claim = next(c for c in enumerate_claims(changed) if c.kind is ClaimKind.GUIDANCE)
-    expected = "Operating margin" if metric is None else metric
-    assert claim.claim_id == f"guidance:{expected}:fy2028"
 
 
 def test_shared_label_distinguishes_metrics_and_horizons() -> None:
@@ -103,8 +158,9 @@ def test_shared_label_distinguishes_metrics_and_horizons() -> None:
         )
     )
     update = update.model_copy(update={"guidance": guidance})
-    assert [c.claim_id for c in enumerate_claims(update) if c.kind is ClaimKind.GUIDANCE] == [
-        "guidance:operating_margin:fy2028",
-        "guidance:revenue_growth:fy2028",
-        "guidance:operating_margin:fy2029",
+    restored = EarningsUpdate.model_validate_json(update.model_dump_json())
+    assert [(g.metric, g.horizon) for g in restored.guidance] == [
+        ("operating_margin", "fy2028"),
+        ("revenue_growth", "fy2028"),
+        ("operating_margin", "fy2029"),
     ]
