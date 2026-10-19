@@ -9,8 +9,9 @@ and each of PQ1–PQ3, with per-claim dispositions and correction categories"). 
 (:63). PREP-5 open question 3 (`docs/plans/PREP-5.md`): PREP-6 may read `decisions.rejected_claims`
 as its rejected disposition if its review set also covers additions, replacements and
 presentation changes.
-Status: **approved** — Sol (gpt-6.1-sol) APPROVE 2026-10-19: plan review r1 REVISE (13) → r2
-APPROVE; closing review r1 REVISE (1 P1, 4 P2) → r2 APPROVE.
+Status: **implemented** (commits `542902f`, `45700e6`, `776bcba`, `7fc0584`, `ae2da10`). Plan
+approved — Sol (gpt-6.1-sol) APPROVE 2026-10-19: plan review r1 REVISE (13) → r2 APPROVE;
+closing review r1 REVISE (1 P1, 4 P2) → r2 APPROVE. See Realisation.
 **Goal:** the owner reviews a submitted ledger version claim by claim with `fundamentals review`.
 Each disposition, its correction category and its time are recorded, and the session ends in the
 version's decision. Telemetry rows and the decision are written in one owner transaction. A
@@ -790,3 +791,15 @@ Risk: low.
 | 3 | Report time counts one version only (P2) | Decision 4 and 8: `session_wall_clock_minutes` per version, plus `report_wall_clock_minutes` summed over the sessions on the version chain. Re-review e2e asserts 30 + 5 = 35; limitation labels both wall-clock |
 | 4 | Overhead claim exceeds what is measured (P2) | Decision 4: the interval is dispatch entry to just before the save, over successful commands. Renamed `command_handling_ms`/`command_handling_seconds`; exclusions stated (finding 2, limitation); B-13 overhead row marked partial. No new write path |
 | 5 | DB assertion only `elapsed_ms ≥ 0` (P2) | Task 2 telemetry e2e on a monkeypatched `review_cli._now`: exact `elapsed_ms` (re-disposition included), session times, `command_handling_ms` and summary totals |
+
+## Realisation
+
+Sol phase review, 2026-10-19: r1 REVISE (5) → r2 REVISE (1) → r3 APPROVE; phase closing review
+REVISE (3) → APPROVE.
+
+- `lifecycle.record_decision` and `append_decision` take a `before_insert` hook, run after every
+  check and just before the first insert. `review.finish` uses it to stop `command_handling_ms`
+  at that point (`7fc0584`).
+- `LEDGER_FAILURES` in `api/ledger_cli.py` is widened so the ledger and review CLIs refuse
+  expired originals and snapshot and YAML errors with exit 2 (`ae2da10`).
+- `ledger/review.py` came out larger than estimated: 345 lines after the review fixes (336 at Task 2). Sol found no reduction.
