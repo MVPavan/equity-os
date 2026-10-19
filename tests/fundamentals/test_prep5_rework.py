@@ -283,6 +283,24 @@ def test_a_calculation_rests_on_every_operand() -> None:
     assert atoms == {"c": frozenset({("a", "key-0"), ("b", "key-1")})}
 
 
+def test_a_gate_refuses_a_claim_given_twice_for_one_placeholder() -> None:
+    """Two claims behind one placeholder would write a claim no text shows, so a line's claim
+    keys must equal its placeholders as a multiset, not as a set."""
+    held = rework.Rework(
+        head=1,
+        claims={},
+        atoms={},
+        lines={},
+        rerun=frozenset({CLAIM}),
+        carried=frozenset(),
+        blobs=frozenset(),
+        scaffolds={},
+    )
+    gate = held.gate(lambda _section, lines: "".join(lines), lambda _blobs: None)
+    with pytest.raises(RunDraftError, match="moved"):
+        gate.line("results", f"{{{{c:{CLAIM}|}}}}", (claim(7), claim(7)))
+
+
 @pytest.fixture
 def submitted_q2(
     pg_db: PgTestDatabase, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, ingest: Any
@@ -540,6 +558,7 @@ def test_a_guidance_rework_binds_and_writes_nothing(
         ((PBT, CABLES), partial(_repeat, "cables_revenue_growth"), None, CABLES),
         ((PBT, CABLES), partial(_cables_label, f"{{{{c:{CONDUCTOR}|}}}}"), None, CONDUCTOR),
         ((PBT, CABLES), partial(_cables_label, "{{c:ledger.unknown|}}"), None, "ledger.unknown"),
+        ((PBT, CABLES), partial(_cables_label, f"{{{{c:{CABLES}|bogus}}}}"), None, "bogus"),
         ((PBT,), _reorder, None, "reorders carried"),
     ],
     ids=[
@@ -550,6 +569,7 @@ def test_a_guidance_rework_binds_and_writes_nothing(
         "repeated-rerun-rule",
         "carried-key-in-rerun-label",
         "unknown-key-in-rerun-label",
+        "invalid-style-in-rerun-label",
         "reordered-carried-rules",
     ],
 )
@@ -565,8 +585,9 @@ def test_a_rework_refuses_movement_outside_its_rerun_lines_before_writing(
     """Presentation drift on a carried line (with a fact role rerun, so a write would follow),
     an unexplained new claim, a changed intro (it defines every carried change's sign; Sol
     r2 4), a claim shown twice, a placeholder that is not its line's claim (a carried or unknown
-    key in a rerun label) and carried lines out of order each refuse inside the hook: a refusal
-    after writes would leave a canonical selection and traces no version cites."""
+    key in a rerun label) or does not render (an invalid style) and carried lines out of order
+    each refuse inside the hook: a refusal after writes would leave a canonical selection and
+    traces no version cites."""
     pilot, version = submitted_q2
     _request_changes(pilot, version, *rejected)
     if intro is not None:

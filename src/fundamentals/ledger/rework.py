@@ -27,7 +27,7 @@ from fundamentals.contracts.ledger import CitationKind, DecisionKind, NumericCla
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
-from fundamentals.ledger.display import PLACEHOLDER
+from fundamentals.ledger.display import PLACEHOLDER, DisplayError, render_section
 from fundamentals.ledger.run_traces import RunDraftError
 
 Atom = tuple[str, str]
@@ -82,7 +82,7 @@ class Gate:
     ) -> tuple[NumericClaim, ...] | None:
         """The version's claims for a carried line, ``None`` for a rerun line, ``()`` for a
         line without claims; refuses any other, and a line whose placeholders are not exactly
-        its claims or repeat a key the run already showed."""
+        its claims, repeat a key the run already showed or do not render."""
         self.recorded[section].append(text)
         keys, seen, rework = _keys(text), self.seen, self.rework
         self.seen = seen | keys
@@ -90,6 +90,10 @@ class Gate:
             if not keys:
                 return ()
             if not keys & rework.carried and keys & rework.rerun:
+                try:
+                    render_section(text, claims)
+                except DisplayError as error:
+                    raise RunDraftError(f"rework of version {rework.head}: {error}") from error
                 sources = (c.citation.source_sha256 for c in claims)
                 self.sources |= {sha256 for sha256 in sources if sha256}
                 return None
