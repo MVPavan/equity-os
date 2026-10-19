@@ -219,6 +219,12 @@ REFUSALS: dict[str, Case] = {
         errors.RaiseException,
         "immutable",
     ),
+    "migrator_delete": (
+        None,
+        lambda c, r: c.execute("DELETE FROM eqos.claim_reviews"),
+        errors.RaiseException,
+        "immutable",
+    ),
 }
 
 
@@ -229,8 +235,8 @@ def test_telemetry_schema_refuses_all_but_the_owner_review_of_its_version(
 ) -> None:
     """Telemetry must describe the owner's review decision on the version it decided: a claim
     of another version, a decision on another version, a SUBMIT, a panel decision, a runtime or
-    panel insert and any update are refused with nothing written. The SQLSTATE is asserted so an
-    ACL error cannot pass for a missing trigger."""
+    panel insert and any update or delete are refused with nothing written. The SQLSTATE is
+    asserted so an ACL error cannot pass for a missing trigger."""
     role, write, error, fragment = REFUSALS[case]
     with rig.ledger.pools[PgRole.OWNER].connection() as owner:
         if role is None:  # an existing row to update

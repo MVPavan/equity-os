@@ -17,7 +17,15 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_support import COVERAGE_TABLES, LEDGER_TABLES, RULING, Ledger, ledger, validation
+from ledger_support import (
+    COVERAGE_TABLES,
+    LEDGER_TABLES,
+    REVIEW_TABLES,
+    RULING,
+    Ledger,
+    ledger,
+    validation,
+)
 from pg_evidence_schema_support import _insert, _update_column, runtime, seeded
 from pg_support import PgTestDatabase
 from psycopg import errors, sql
@@ -49,6 +57,7 @@ SEALED = "is sealed"
 ILLEGAL = "illegal decision"
 UNBOUND = "latest passing AS_KNOWN validation"
 RUNTIME_ROLE, PANEL_ROLE, OWNER_ROLE = "eqos_runtime", "eqos_panel", "eqos_owner"
+PURGE_ROLE = "eqos_purge"
 OWNER = PgRole.OWNER
 
 
@@ -555,14 +564,13 @@ def test_the_runtime_role_may_submit_only(ledger: Ledger, seeded: dict[str, int]
             conn.transaction(),
         ):
             _insert(conn, "queue_dispositions", disposition)
-        for table in sorted(LEDGER_TABLES):
+        for table in sorted(LEDGER_TABLES | REVIEW_TABLES):
             column = sql.Identifier(_update_column(conn, table))
             for statement in ("UPDATE {0} SET {1} = {1}", "DELETE FROM {0}"):
                 with pytest.raises(errors.InsufficientPrivilege), conn.transaction():
                     conn.execute(sql.SQL(statement).format(sql.Identifier("eqos", table), column))
 
 
-REVIEW_TABLES = {"review_sessions", "claim_reviews"}
 GATED = LEDGER_TABLES | COVERAGE_TABLES | REVIEW_TABLES | {"queue_dispositions", "capture_refs"}
 INSERTERS = {
     RUNTIME_ROLE: (LEDGER_TABLES - {"qa_records", "legacy_acquisitions", "panel_reviews"})
@@ -605,6 +613,12 @@ def test_privileges_match_the_d2_matrix(ledger: Ledger) -> None:
                 assert conn.execute(
                     "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, function)
                 ).fetchone() == (True,)
+        for table in sorted(REVIEW_TABLES):  # purge reads the review telemetry, writes nothing
+            assert conn.execute(
+                "SELECT has_table_privilege(%(r)s, %(t)s, 'SELECT'), "
+                "has_table_privilege(%(r)s, %(t)s, 'INSERT, UPDATE, DELETE, TRUNCATE')",
+                {"r": PURGE_ROLE, "t": f"eqos.{table}"},
+            ).fetchone() == (True, False), table
     for role, group in GROUP_ROLES.items():
         if role not in ledger.pools:
             continue  # the reader: test_views_readonly_role.py

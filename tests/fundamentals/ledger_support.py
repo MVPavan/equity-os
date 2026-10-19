@@ -59,6 +59,8 @@ LEDGER_TABLES = frozenset(
         "legacy_acquisitions",
     }
 )
+# 0040's review telemetry: owner INSERT only (PREP-6 Decision 3).
+REVIEW_TABLES = frozenset({"review_sessions", "claim_reviews"})
 # The tables 0016 creates (plan D4, M1).
 MEMORY_TABLES = frozenset({"memory_items", "memory_supports"})
 # 0022's identity and onboarding tables (plan D6 D3.1).

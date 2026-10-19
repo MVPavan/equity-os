@@ -17,7 +17,13 @@ import pytest
 import yaml
 from evidence_support import CONFIG as EVIDENCE_CONFIG
 from evidence_support import Ingest, policy
-from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
+from ledger_support import (
+    COVERAGE_TABLES,
+    IDENTITY_TABLES,
+    LEDGER_TABLES,
+    MEMORY_TABLES,
+    REVIEW_TABLES,
+)
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
 from prep2b_support import XBRLS, Pilot
@@ -55,7 +61,12 @@ RESULT_COUNT = 441
 # The frozen backup inventory is 0001-0011's; the tables later migrations add, by name (plan D3,
 # finding 14). Each migration adding a table extends this in the same reviewed change.
 POST_0011_TABLES = (
-    LEDGER_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES
+    LEDGER_TABLES
+    | MEMORY_TABLES
+    | IDENTITY_TABLES
+    | COVERAGE_TABLES
+    | RETENTION_TABLES
+    | REVIEW_TABLES
 )
 # The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
 EXCLUDED = {

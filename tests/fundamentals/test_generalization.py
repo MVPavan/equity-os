@@ -346,21 +346,23 @@ def _assert_current_figures(markdown: str) -> None:
 
 
 def _collision_update() -> EarningsUpdate:
-    from tests.fundamentals.test_phase05_review_session import _synthetic_update
+    from tests.fundamentals.test_guidance_review_identity import _synthetic_update
 
     update = _synthetic_update()
     values = ("1000", "1100", "800", "300", "220", "5.50")
+    units = ("INR crore",) * 5 + ("INR per share",)
     digest = "900950abcdef" + "0" * 52
     facts = tuple(
         fact.model_copy(
             update={
                 "value": Decimal(value),
+                "unit": unit,
                 "sources": tuple(
                     p.model_copy(update={"file_sha256": digest}) for p in fact.sources
                 ),
             }
         )
-        for fact, value in zip(update.facts, values, strict=True)
+        for fact, value, unit in zip(update.facts, values, units, strict=True)
     )
     return update.model_copy(update={"facts": facts, "comparatives": (), "guidance": ()})
 

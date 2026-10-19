@@ -19,7 +19,13 @@ from typing import Any
 
 import pytest
 from coverage_support import watchlist
-from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, LEDGER_TABLES, MEMORY_TABLES
+from ledger_support import (
+    COVERAGE_TABLES,
+    IDENTITY_TABLES,
+    LEDGER_TABLES,
+    MEMORY_TABLES,
+    REVIEW_TABLES,
+)
 from pg_support import PgTestDatabase, drop_database, mint_name
 from retention_support import RETENTION_TABLES, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage
@@ -406,7 +412,7 @@ def test_ledger_stage1_end_to_end(
         rig.settings, database=pg_db.dbname, snapshot_root=rig.snapshots, out_dir=tmp_path / "sets"
     )
     tables = [*STAGE2["backup"]["tables"], *(t["table"] for t in MANIFEST["backup_tables"])]
-    tables += MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES
+    tables += MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
     assert sorted(verify_set(sets).table_counts) == sorted(tables)
     fresh = mint_name(rig.settings)
     try:
