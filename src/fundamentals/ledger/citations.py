@@ -8,8 +8,9 @@ non-vendor capture, a ``COMPARISON`` its own run and key, a
 only its admissions under the citing version's pinned runs, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
-A drafted quote's guidance contract is the one a sealed import binds to the same quote
-(``bound_contract``, plan D4 M9).
+A claim is labelled ``FILED`` exactly when it is an interpretation ``FIGURE`` with no run
+(invariant 7). A drafted quote's guidance contract is the one a sealed import binds to the same
+quote (``bound_contract``, plan D4 M9).
 Run-store values (cells, pair differences, traces) are base units, stated in the claim's
 scale (``scale`` 10^7 for crore); display never rescales.
 """
@@ -53,6 +54,7 @@ from fundamentals.evidence.admission import ADMITTED_CONCEPT_PREFIX
 from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
+from fundamentals.ledger.display import FILED
 from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
 from fundamentals.reconcile.fact_view import CANONICAL_ENTITY_SCHEME
 from fundamentals.store.pg_fact_store import NATIVE_ORIGIN
@@ -207,6 +209,14 @@ def resolve_citation(
     runs whose admissions an admitted fact resolves through.
     """
     citation = claim.citation
+    filed = (
+        citation.kind is CitationKind.FIGURE
+        and citation.fact_origin_id is None
+        and citation.interpretation_id is not None
+        and citation.run_id is None
+    )
+    if (FILED in claim.qualifiers) != filed:
+        return None
     with cursor.connection.cursor(row_factory=dict_row) as own:
         if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
             return None

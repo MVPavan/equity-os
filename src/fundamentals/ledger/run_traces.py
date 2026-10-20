@@ -12,7 +12,8 @@ stored unless every value holds. Formulas
 ``change_key``); claim keys are the import's claim keys. The bound claims come back as the
 draft's changes and calculations lines. With a ``Carry`` (a rework, PREP-5) each line is first
 built unbound and only the lines it does not carry are bound; it is closed before any trace is
-stored.
+stored. Each interpretation figure is labelled ``FILED``; a ``check`` sees every line's claims
+before any is bound.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 from fundamentals.ledger.claim_check import CRORE, PERCENT, UNITS
+from fundamentals.ledger.display import FILED
 from fundamentals.ledger.import_mapping import (
     ABS,
     PCT,
@@ -217,8 +219,10 @@ class _Binder:
         run_value: Decimal,
         unit: str,
     ) -> NumericClaim:
-        """A retained figure's claim at the run's value; bound, it cites its interpretation."""
+        """A retained figure's claim at the run's value, labelled filed; bound, it cites its
+        interpretation."""
         claim = _valued(name, section, run_value, unit, key, source)
+        claim = claim.model_copy(update={"qualifiers": tuple(sorted({*claim.qualifiers, FILED}))})
 
         def bind() -> NumericClaim:
             held = operand()[1]
@@ -299,12 +303,14 @@ def bind_computed(
     entity_id: int,
     versions: ConfigVersions,
     carry: Carry | None = None,
+    check: Callable[[tuple[NumericClaim, ...]], object] | None = None,
 ) -> tuple[Line, ...]:
     """The run's changes and calculations lines: a stored trace per retained computed value and
     the interpretation of each comparator figure and the filed tax expense, all bound before
     any trace is stored; any missing interpretation or mismatch raises. Operands are read under
     ``versions`` (the comparison run's pins). ``carry`` keeps the
-    lines it carries unbound and is closed before any trace is stored."""
+    lines it carries unbound and is closed before any trace is stored; ``check`` refuses the
+    unbound claims before any lookup."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end, versions)
     facts = {fact.role: fact for fact in update.facts}
@@ -393,6 +399,8 @@ def bind_computed(
         else:
             raise RunDraftError(f"{name}: no formula for {label!r}")
         lines.append(Line(section=CALCS, label=label, claims=(claim,)))
+    if check is not None:
+        check(tuple(claim for line in lines for claim in line.claims))
     bound = []
     for line in lines:
         held = None if carry is None else carry.line(line.section, _shown(line), line.claims)

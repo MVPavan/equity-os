@@ -11,7 +11,10 @@ carries that version's claims on every line it does not rerun; ``--full-successo
 (``Prior.full_successor``) reruns it whole. Either way the period's head must still be the
 reworked version, before the run's first write and again under the lock. ``recall`` retrieves
 the stock's promoted memory at a store-clock boundary before the pipeline starts; its line is
-sealed in the heading and nothing else reads it (PILOT-GAP memory).
+sealed in the heading and nothing else reads it (PILOT-GAP memory). A QoQ prior cites the
+predecessor run version's admitted ``fact.<role>`` when its key, value and file are the fact's
+(``predecessor``, PILOT-4), checked before the run's first write and swapped in at the write;
+that version's comparison runs join the draft's pins.
 """
 
 from __future__ import annotations
@@ -50,7 +53,7 @@ from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ledger import store
 from fundamentals.ledger.citations import _FILE_CAPTURES, _first_party
 from fundamentals.ledger.claim_check import UNITS, quote_qualifiers
-from fundamentals.ledger.display import content_hash
+from fundamentals.ledger.display import FILED, content_hash
 from fundamentals.ledger.import_mapping import (
     BOUNDS_STYLE,
     CONTRACT_FIELDS,
@@ -89,6 +92,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 RUN_AUTHOR = "fundamentals-run"
 GUIDANCE_KEY = "ledger.{metric}.{horizon}.{scope}"  # as import_mapping keys a ledger entry
 HEADING, RESULTS = "heading", "results"
+FACT_PREFIX, QOQ_PRIOR = "fact.", ".qoq.prior"
 GUIDANCE = "management_ledger"
 CARRIED = LedgerStatus.CARRIED
 NONE = "- none"
@@ -129,8 +133,9 @@ class Successor(BaseModel):
 
 class Prior(BaseModel):
     """The run's entity, the pinned predecessor head (``None`` for the bootstrap period) with
-    its guidance claims, the first-seen time of each required original, and the period's head
-    this run reworks, selectively or whole."""
+    its guidance claims and, for a run-generated head, its ``fact.*`` claims and pinned runs,
+    the first-seen time of each required original, and the period's head this run reworks,
+    selectively or whole."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -139,6 +144,8 @@ class Prior(BaseModel):
     version_id: int | None = None
     sealed_digest: str | None = None
     entries: tuple[NumericClaim, ...] = ()
+    facts: tuple[NumericClaim, ...] = ()
+    pinned_run_ids: tuple[int, ...] = ()
     rework: Rework | None = None
     full_successor: Successor | None = None
 
@@ -245,14 +252,22 @@ def preflight(
         status = None if head is None else version_status(cursor, head)
         if head is None or status is not VersionStatus.APPROVED:
             raise RunDraftError(f"{previous} has no APPROVED head (head {head}: {status})")
-        claims = store.read_version(cursor, head).claims
+        version = store.read_version(cursor, head)
+        claims, pins = version.claims, version.pinned_run_ids
         quotes = tuple(c for c in claims if c.citation.kind is CitationKind.SOURCE_QUOTE)
+        facts = tuple(c for c in claims if pins and c.claim_key.startswith(FACT_PREFIX))
         for sha256 in {quote.citation.source_sha256 for quote in quotes}:
             assert sha256 is not None
             _original(cursor, sha256, catalog, snapshots)
         digest = store.sealed_digest(cursor, head)
         return prior.model_copy(
-            update={"version_id": head, "sealed_digest": digest, "entries": quotes}
+            update={
+                "version_id": head,
+                "sealed_digest": digest,
+                "entries": quotes,
+                "facts": facts,
+                "pinned_run_ids": pins,
+            }
         )
 
 
@@ -285,7 +300,7 @@ def write_run_draft(
         check_head(cursor, prior, run.period)
         reworked = prior.rework
         carried = {} if reworked is None else {k: reworked.claims[k] for k in reworked.carried}
-        run_ids = {run.run_id}
+        run_ids = {run.run_id, *prior.pinned_run_ids}
         if reworked is not None:  # carried citations keep their head's comparison runs
             run_ids.update(store.read_version(cursor, reworked.head).pinned_run_ids)
         body = _Body()
@@ -295,7 +310,7 @@ def write_run_draft(
             body.add(line.section, _shown(line), *line.claims)
         for text, claim in _guidance(cursor, run.guidance, update, prior, catalog):
             body.add(GUIDANCE, text, carried.get(claim.claim_key, claim))
-        claims = tuple(body.claims.values())
+        claims = predecessor(prior, tuple(body.claims.values()))
         _check_sources(cursor, claims, run, prior, catalog)
         sections = _sections(run, prior, body.lines)
         kind = ReportKind.EARNINGS_UPDATE
@@ -336,6 +351,34 @@ def write_run_draft(
             found += validation.version_states
             raise RunDraftError(f"the draft does not validate AS_KNOWN: {', '.join(found)}")
     return version_id
+
+
+def predecessor(prior: Prior, claims: tuple[NumericClaim, ...]) -> tuple[NumericClaim, ...]:
+    """``claims`` with each QoQ prior cited, unlabelled, to the prior head's admitted
+    ``fact.<role>``; refuses one whose key, value or file is not that fact's."""
+    facts = {c.claim_key: c for c in prior.facts if c.citation.fact_origin_id is not None}
+    found = []
+    for claim in claims:
+        role = claim.claim_key.removeprefix("cmp.").removesuffix(QOQ_PRIOR)
+        fact = facts.get(FACT_PREFIX + role) if claim.claim_key.endswith(QOQ_PRIOR) else None
+        if fact is not None:
+            assert claim.measurement_key is not None and fact.measurement_key is not None
+            if (
+                claim.measurement_key.digest() != fact.measurement_key.digest()
+                or claim.value != fact.value
+                or claim.citation.source_sha256 != fact.citation.source_sha256
+            ):
+                raise RunDraftError(f"{claim.claim_key} is not version {prior.version_id}'s fact")
+            cited = cite(
+                claim,
+                fact_origin=fact.citation.fact_origin,
+                fact_origin_id=fact.citation.fact_origin_id,
+                interpretation_id=None,
+            )
+            labels = tuple(q for q in claim.qualifiers if q != FILED)
+            claim = cited.model_copy(update={"qualifiers": labels})
+        found.append(claim)
+    return tuple(found)
 
 
 def gate_lines(

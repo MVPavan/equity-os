@@ -29,6 +29,10 @@ COMMA = ", "
 _FLAGS = {"plus": "plus", "unit": "unit", "qual": "qualifier", "trim": "trim", "quote": "quote"}
 _PREFIX_QUALIFIERS = {"about": "about "}
 _SUFFIX_QUALIFIERS = {"plus": "-plus"}
+# A comparator figure or filed tax cited to its filed interpretation, not an admitted fact
+# (invariant 7): always shown with its label, whatever the slot's style.
+FILED = "filed"
+FILED_SUFFIX = " (filed value, single source, not cross-checked)"
 _BAD_TOKEN = "style token {token!r} is unknown, repeated or conflicting in {style!r}"
 _NO_QUOTE = "claim {key!r} is not a SOURCE_QUOTE, so it has no quote to show"
 _NO_CLAIM = "placeholder names no claim of this version: {key!r}"
@@ -75,7 +79,7 @@ def render_claim(claim: NumericClaim, style: DisplayStyle) -> str:
                 _SUFFIX_QUALIFIERS.get(qualifier, ""),
             )
             text = f"{prefix}{text}{suffix}"
-    return text
+    return text + FILED_SUFFIX if FILED in claim.qualifiers else text
 
 
 def render_section(text: str, claims: Iterable[NumericClaim]) -> str:

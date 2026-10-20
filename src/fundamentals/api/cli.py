@@ -116,6 +116,7 @@ from fundamentals.ledger.run_draft import (
     check_blobs,
     check_head,
     gate_lines,
+    predecessor,
     preflight,
     recall,
     section_body,
@@ -379,7 +380,12 @@ def run_command(
                             gate_lines(cursor, gate, update, guidance, prior, catalog)
                             _check_carried(cursor, prior.rework, store_id)
                 lines = bind_computed(
-                    repository, update, entity_id=prior.entity_id, versions=versions, carry=gate
+                    repository,
+                    update,
+                    entity_id=prior.entity_id,
+                    versions=versions,
+                    carry=gate,
+                    check=partial(predecessor, prior),  # before any trace persists
                 )
                 bound.append(lines)
                 facts.update(
