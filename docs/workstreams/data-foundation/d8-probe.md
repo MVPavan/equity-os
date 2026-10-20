@@ -2,7 +2,8 @@
 
 Status: complete. Sol ruled on §9 (REQUEST_CHANGES; dispositions in [`plans/D8.md`](plans/D8.md) "Probe
 ruling dispositions"). §11 adds the Task 2b definitional evidence and supersedes §4's hierarchy
-basis, §5's thresholds and §9's surface table where they differ. Plan: [`plans/D8.md`](plans/D8.md)
+basis, §5's thresholds and §9's surface table where they differ. §12 (2026-10-20) records how each
+vendor nests its shareholding, for the owner exception; §12.6 records the owner's Q3 ruling. Plan: [`plans/D8.md`](plans/D8.md)
 Task 2, R2–R5, R8, Q1. Live requests 2026-10-17 09:58:06–09:58:58 UTC: one sequential pass, 3 s
 spacing, 18 requests, 18 × HTTP 200 (`OK`), no failed request, so no `gen-2`. Credentials came only
 from `source scripts/credentials.sh` (no refresh was needed and none was printed). Every Screener page
@@ -696,6 +697,8 @@ evidenced denominator.
 `promoters` → A is evidenced for TITAN. For ETERNAL there is no first-party A, so Upstox's value
 (private, `R/d8-doc-private/d8-doc-inline.md` inline-4) never pairs. Every other Upstox label is refused.
 
+*Superseded for pairing by the owner exception (§12, §12.6): see plan R10 and R12.*
+
 **Net:** the only evidenced vendor comparisons in D8 are Upstox `promoters` ↔ A for Apar and TITAN,
 which are diagnostic and `PRECISION_UNSUPPORTED`. No non-diagnostic vendor comparison exists. No
 public or institution comparison exists for any vendor.
@@ -710,3 +713,117 @@ public or institution comparison exists for any vendor.
 - **Vendor denominators: still open** for Screener and Tijori, because no published definition
   exists. These need the spec Stage 3 exception: no Screener or Tijori aggregate comparison is
   possible, and Tijori is a required real source.
+
+## 12. Vendor shareholding nesting (owner exception 2026-10-20; plan D8 "Owner amendment")
+
+Read on 2026-10-20 for the owner's decision 2 (capture the full nested vendor tree). Retained bytes
+were read with `scratchpad/d8-resume/tijori_tree.py`
+(`fe4716c97c4894b94f2c36ecfc33cf7a713b010336272746a669d26b8b34f35f`, standard library only), whose
+output `tijori_tree.out` is `7a7c38683e2e67ad4ba6cb991a5d9123a387a6d3766357edbcf38d9df734c4d8`.
+Counts below come from that output or from `grep -c` over the named file.
+
+### 12.1 Live reconnaissance (not evidence)
+
+Read-only, sequential, 3 s spacing, credentials only from `source scripts/credentials.sh` (none
+printed). These requests did **not** go through `acquiring_fetch` or the catalog, because no
+drill-down surface is registered (§12.4). Their bodies stay in `scratchpad/d8-resume/`, are never
+cited by config or the manifest, and are re-captured under authority in plan Task 2c.
+
+| UTC (2026-10-20) | Request | HTTP | Bytes | SHA-256 |
+|---|---|---|---|---|
+| 14:38:32 | `GET https://www.screener.in/api/3/211/investors/promoters/quarterly/` | 200 | 8039 | `7a11c9220783a26656d5fb69957742b00eda286399f2dfe8316a1a6db717cf9d` |
+| 14:38:35 | `GET …/api/3/211/investors/foreign_institutions/quarterly/` | 200 | 303 | `a3b9c314cbb5ea60f4e9eacce0a82d6f20637ce32e45e8bb09b5ac100e23b1f4` |
+| 14:38:38 | `GET …/api/3/211/investors/domestic_institutions/quarterly/` | 200 | 3588 | `706550ff872cb920e29fc3fda63c973d285b835a368ecf8c39f8429cd29e9cda` |
+| 14:38:41 | `GET …/api/3/211/investors/public/quarterly/` | 200 | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` |
+| 14:39:01 | `GET https://www.screener.in/company/APARINDS/consolidated/` | 200 | 311701 | `d6a6f50e76e36538305cb41039157f8322f30345f966609e6d6cc2f29546073f` |
+
+Drivers: `screener_investors.py`
+(`638ac7839cb567e01adcdc3754c721c2965d788c9ee7ce3dbe09e0ab00804915`) and `screener_page.py`
+(`100e94e05eae7865b029848fe98f10c5f19f43c92f67b789935388f960643dfc`). Logs:
+`screener_investors_log.json` (`38f8189874ec85b9e38f60289c74d52098bacae5d584e2ce56ceffcb081e096f`)
+and `screener_page_log.json` (`cbee0371b7e7c42def0ae6c9712ec770ce8bf991da85bd824d18b274017975b3`).
+`211` is Apar's `data-company-id` in the retained `APARINDS/gen-1/03.bin`. The live page carries a logout link, so the existing session is valid.
+
+### 12.2 How each vendor exposes nesting
+
+- **Tijori: inline tree, three levels, all in the retained bytes.** Table `id="company_detailed"`
+  holds every node as a `<tr>` with `class="rowN"` (N = level), `myid`, `parent` and `data-parent`
+  (the parent's `myid`; `1` at the root). Level 1: `Promoter`, `PublicShareholding`,
+  `SharesheldbyCustodians-DR`, `No.ofShareholders`. Level 2: `IndianPromoters`, `ForeignPromoters`
+  under `Promoter`; `Institutions`, `Non-Institutions` under `PublicShareholding`. Level 3: named
+  holders, plus category-like nodes under `Non-Institutions` (`Individual<2lac`,
+  `InvestorEducationandProtectionFund(IEPF)`, `LLP`), mixed with holders (ETERNAL's C2 trust,
+  §6). Row counts (row1/row2/row3): APARINDS 4/4/21, ETERNAL 4/4/13, TITAN 4/4/27. Rows marked
+  `should_hide="yes"` (APARINDS 4, ETERNAL 3, TITAN 6) are present in the bytes and only collapsed
+  by `tree-table.js`; the page's one `$.ajax` call posts the contact form, so **no request is made
+  on expand**. A level-3 node with no value in a column prints `—` (absent, never zero).
+  Column windows differ: ETERNAL's last column is `Sep'26` (APARINDS and TITAN end at `Jun'26`),
+  so the instant is read by header, never by position. The existing reader
+  (`ingest/tijori_shareholding.build_tijori_shareholding`) already returns every row with
+  `parent_labels`, `depth`, `source_node_id` and `source_parent_id`, up to
+  `MAX_SHAREHOLDING_DEPTH` = 8.
+- **Screener: two levels; level 2 is a separate JSON request per bucket.** Level 1 is the page's
+  `quarterly-shp` rows (§6). Each row's `Company.showShareholders('<bucket>', 'quarterly', this)`
+  loads `GET /api/3/<company_id>/investors/<bucket>/quarterly/` (the route is already in
+  `ingest/screener_company_models.INVESTORS_PATH_TEMPLATE`). The body is
+  `{holder: {"<Mon YYYY>": "<pct>", …, "setAttributes": {"data-person-url": …}}}`: holders only.
+  In the four Apar bodies no holder carries `isExpandable` or any other nested object, so **no
+  third level exists**; Apar's `public` body is `{}`. Some holders lack the `Jun 2026` key (absent,
+  never zero). The live page's shareholding section (12.1) offers the same nine
+  `showShareholders` hooks as the retained one, and no other expand control (its only other
+  controls are the quarterly/yearly tab and a trades modal). Earlier research
+  (`docs/research/screener/surface-map.md` §3a, §3c) found the same shape for TITAN, NETWEB,
+  ETERNAL and HFCL, with promoters fully listed and other buckets listing only holders ≥ 1 %.
+- **Upstox: flat.** Five categories, one level (§6). No nesting exists to capture.
+
+**Maximum depth observed:** Tijori 3, Screener 2, Upstox 1. The owner's description of Screener
+subsections that expand further is **not observed**: Screener's second level is holders only.
+
+### 12.3 What the retained bytes lack, and the requests that fill it
+
+- Tijori: nothing is missing; `gen-1/04.bin` holds the full tree for all three companies.
+- Upstox: nothing is missing.
+- Screener: every level-2 body is missing. No drill-down was retained for any company (the D8
+  generations hold only the page, and `data/raw/watchlist/screener-financials/` holds schedules,
+  not investors). The fill is one `GET https://www.screener.in/api/3/<company_id>/investors/<bucket>/quarterly/`
+  per hook the page offers (APARINDS 4, ETERNAL 5, TITAN 6 buckets, §6), with `company_id` read from
+  the page's `data-company-id`, plus the same request with `yearly` per hook in the page's
+  `yearly-shp` table (APARINDS 5, ETERNAL 5, TITAN 6 in gen-1, Sol r5). The yearly table spans
+  earlier periods (from Mar 2017 for APARINDS and TITAN, Mar 2022 for ETERNAL) and Apar's yearly
+  table has a Government row its quarterly table lacks, so it is not a duplicate. Task 2c
+  re-discovers both counts on gen-2. The existing Screener session retrieves them (12.1: HTTP 200, JSON).
+
+### 12.4 Authority gap
+
+`("screener-subscriber","SCREENER_SHAREHOLDING")` is registered for the page only (HTML). The
+drill-down is JSON on another path, so it needs its own surface and origin before capture (plan
+Task 1b). No other gap exists.
+
+### 12.5 Node-mapping candidates (inventory only; Task 2c rules)
+
+- Tijori `IndianPromoters` / `ForeignPromoters` sit where Table II puts A(1) "Indian" and A(2)
+  "Foreign" (§11.2, `02.bin` "(A)= (A)(1)+(A)(2)"). The instances file `IndianMember` (APARINDS,
+  TITAN) and `ForeignMember` (TITAN); ETERNAL files neither.
+- Tijori level-3 category-like nodes have label candidates among filed B4 sub-rows:
+  `ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember` (all three) and
+  `InvestorEducationAndProtectionFundMember` (APARINDS, TITAN). No filed member corresponds to
+  `LLP`.
+- Screener level 2 and Tijori holder rows are holders. D8 has no holder mapping, so they stay
+  `UNMAPPED` diagnostics.
+- **Apar consequence (fact, no ruling).** Tijori `Public Shareholding` is basket B + C2 (§7). Apar
+  files no C2 (§4), so under strict R5 its first-party side is `OPERAND_MISSING`. Superseded for
+  the pairing by the owner's Q3 ruling (§12.6).
+
+### 12.6 Owner ruling on Q3 (2026-10-20): boundaries and absent categories
+
+Verbatim in plan D8 § Owner amendment; plan rule R12. It extends the exception from the
+denominator to the basket: a first-party category the filing does not list is taken as zero for
+the pairing (labelled "absent category taken as zero"), and a vendor category with an unclear
+boundary maps to its closest first-party aggregate (labelled "boundary assumed"). This
+supersedes, for the pairing only, the E2 refusals in §7, §9 and §11.5 and the strict-R5 Apar
+consequence above. The evidence is unchanged: §7's refutations still decide which basket is
+closest, B3 and C1 stay unplaced by evidence, and §8's absent-as-zero arithmetic stays
+consistency-only as evidence. Because first-party percentages are `PRECISION_UNSUPPORTED`, the
+formal pairs stay refused; the pairing, absent-as-zero included, is the plan's labelled report-time
+point check (R12), never a stored zero. Apar candidates per vendor are plan R12's table; Task 2c rules
+them in §13. Nesting depth is unchanged (§12.2): Tijori 3, Screener 2, Upstox 1.

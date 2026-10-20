@@ -62,7 +62,7 @@ time.
 | D5 | Generated read-only views | Ledger Stage 3 e2e green | Complete (Sol APPROVE 2026-10-15) |
 | D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Complete (Sol APPROVE 2026-10-17); D6b extractor v2 complete |
 | D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Complete (Sol APPROVE 2026-10-18; direct-query screen export, no owner CSV needed) |
-| D8 | Shareholding filing source | Stage 3 e2e green | Parked (owner ruling 2026-10-17) |
+| D8 | Shareholding filing source | Stage 3 e2e green | Resumed 2026-10-20 (owner exception); plan amendment awaits Sol re-review |
 | D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
 | PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
 | PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Done: PREP-2/2b (`docs/plans/PREP-2b.md`); pilot configs name only the PostgreSQL store and the run writes the D3 ledger; closing review Sol APPROVE 2026-10-18 (`f8bcc8b`); legacy impersonation parked `eqos-4j2.22` |
@@ -106,7 +106,7 @@ pilot manifest (PREP-7), never from code output.
 | PILOT-6 | Views (D5) | Each version and the promoted memory render read-only |
 | PILOT-7 | Onboarding (D6) | A held-out second company onboards by identifier alone and produces a comparison report |
 | PILOT-8 | Coverage (D7) | Apar is on the watchlist through the decision chain; drafting for a non-watchlisted stock is refused |
-| PILOT-9 | Shareholding (D8) | Each quarter's promoter, public and institution aggregates are compared against vendors and cited where the update uses them |
+| PILOT-9 | Shareholding (D8) | Each quarter's promoter, public and institution aggregates are compared against vendors and cited where the update uses them; each comparison is cited with its assumption labels ("denominator assumed, not vendor-stated" for Screener, Tijori and Upstox; "boundary assumed", "absent category taken as zero" where applicable; owner exception and Q3 ruling, PavanMV 2026-10-20) |
 | PILOT-10 | Retention and replay (D9) | After the pilot, a purge dry-run lists only eligible blobs. Purge, restore and replay of the PQ0 run reproduce its results, and no held evidence is deleted |
 | PILOT-11 | Workflow integrity (PREP-3…PREP-6) | One step is interrupted and resumes without duplication. One claim is rejected → only affected claims rerun → package v(N+1). The seeded-error drill is caught |
 | PILOT-12 | Review measurement (register §F) | Owner review time recorded for PQ0 and each of PQ1–PQ3, with per-claim dispositions and correction categories |
