@@ -443,8 +443,9 @@ done_step 5
 ```
 
 - **Inputs, validated first** (any failure exits nonzero before output): the four `compare-$Q.out`
-  run ids, each run's `run_inputs` `PACKAGE` row resolving to that period end's APARINDS
-  consolidated package, whose XBRL and PDF captures are the `$SNAP`-verified registrations of that
+  run ids, each run's primary selected `run_inputs` `PACKAGE` row (the one at its requested period
+  end; supporting packages the resolver also selects, e.g. FY26_Q3's for FY26_Q4, are permitted)
+  resolving to that period end's APARINDS consolidated package, whose XBRL and PDF captures are the `$SNAP`-verified registrations of that
   quarter's originals; the pins (dictionary `v2`, mapping set `v6`, and the current
   `normalisation_policy_version` and per-representation `extractor_version`, as in 0.3); the
   baseline-id sections of `preflight-inventory.out`. An id in the baseline is reused evidence, any
