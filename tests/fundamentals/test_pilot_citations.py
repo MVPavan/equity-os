@@ -51,6 +51,10 @@ FROM eqos.fact_selections s JOIN eqos.fact_rows f
 WHERE f.origin = %s AND f.origin_id = %s"""
 _ADMITTED_AT = """SELECT min(overlay_position) FROM eqos.fact_admissions
 WHERE fact_origin = %s AND fact_origin_id = %s AND run_id = ANY(%s)"""
+_INTERPRETED = """SELECT i.id FROM eqos.interpretations i
+JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
+WHERE i.status = 'MAPPED' AND i.entity_id = %s AND i.key_digest = %s AND c.blob_sha256 = %s
+ORDER BY i.id LIMIT 1"""
 _CAPTURED = (
     "SELECT " + _FIRST_SEEN + " FROM eqos.interpretations i "
     "JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s"
@@ -231,6 +235,29 @@ def test_a_missing_or_false_filed_label_is_unresolved(approved_q2: Pilot) -> Non
         mislabelled = claim.model_copy(update={"qualifiers": tuple(sorted(labels))})
         assert _state(pilot, q3, claim) is ClaimState.MATCH, key
         assert _state(pilot, q3, mislabelled) is ClaimState.UNRESOLVED, key
+
+
+def test_a_current_period_fact_cannot_swap_its_admission_for_a_filed_value(
+    approved_q2: Pilot,
+) -> None:
+    """``FILED`` is only for comparator priors and the filed tax total: a current-period
+    ``fact.revenue`` citing its own mapped interpretation, labelled ``FILED``, is
+    ``UNRESOLVED`` (invariant 7) even though key, value and source agree."""
+    pilot = approved_q2
+    _, _, q3 = _q3(pilot)
+    fact = _claims(q3)["fact.revenue"]
+    assert fact.measurement_key is not None
+    ((interpretation_id,),) = pilot.query(
+        _INTERPRETED,
+        pilot.entity_id,
+        fact.measurement_key.digest(),
+        fact.citation.source_sha256,
+    )
+    citation = fact.citation.model_copy(
+        update={"fact_origin": None, "fact_origin_id": None, "interpretation_id": interpretation_id}
+    )
+    filed = fact.model_copy(update={"citation": citation, "qualifiers": (FILED,)})
+    assert _state(pilot, q3, filed) is ClaimState.UNRESOLVED
 
 
 def test_late_predecessor_inputs_and_filed_captures_are_post_cutoff(approved_q2: Pilot) -> None:

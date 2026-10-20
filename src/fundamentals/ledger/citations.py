@@ -8,7 +8,8 @@ non-vendor capture, a ``COMPARISON`` its own run and key, a
 only its admissions under the citing version's pinned runs, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
-A claim is labelled ``FILED`` exactly when it is an interpretation ``FIGURE`` with no run
+A claim is labelled ``FILED`` exactly when it is an interpretation ``FIGURE`` with no run, and
+only a comparator prior (``cmp.*.prior``) or the filed tax total (``calc.2``) may be one
 (invariant 7). A drafted quote's guidance contract is the one a sealed import binds to the same
 quote (``bound_contract``, plan D4 M9).
 Run-store values (cells, pair differences, traces) are base units, stated in the claim's
@@ -122,6 +123,7 @@ _SOURCE: LiteralString = """SELECT coalesce(
     (SELECT c.blob_sha256 FROM eqos.interpretations i
      JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
     (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
+_FILED_TAX = "calc.2"
 _INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
 FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED' AND entity_id = %s"""
 _TRACE: LiteralString = (
@@ -215,7 +217,7 @@ def resolve_citation(
         and citation.interpretation_id is not None
         and citation.run_id is None
     )
-    if (FILED in claim.qualifiers) != filed:
+    if (FILED in claim.qualifiers) != filed or (filed and not _filed_key(claim.claim_key)):
         return None
     with cursor.connection.cursor(row_factory=dict_row) as own:
         if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
@@ -309,6 +311,13 @@ def resolve_location(
         capture = _first_party_capture(own, int(capture_id), catalog)
         span = None if capture is None else _span(own, capture, anchor, snapshots)
     return span is not None and span.strip() != ""
+
+
+def _filed_key(claim_key: str) -> bool:
+    """Whether a claim key may cite a filed value: a comparator prior or the filed tax total."""
+    return claim_key == _FILED_TAX or (
+        claim_key.startswith("cmp.") and claim_key.endswith(".prior")
+    )
 
 
 def _first_party(source_id: str, catalog: SourceCatalog) -> bool:

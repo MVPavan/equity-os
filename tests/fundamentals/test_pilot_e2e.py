@@ -87,7 +87,7 @@ from fundamentals.contracts.ledger import (
     SubjectKind,
     VersionDraft,
 )
-from fundamentals.contracts.memory import MemoryStatus
+from fundamentals.contracts.memory import MemoryStatus, SupportTarget
 from fundamentals.ledger import lifecycle, review, store
 from fundamentals.ledger.display import FILED, FILED_SUFFIX
 from fundamentals.ledger.run_draft import GUIDANCE, recall
@@ -327,6 +327,11 @@ def _pilot5_promote(pilot: Pilot, quarter: str, version_id: int, memory: dict[st
         drafts["A"] = _item(pilot, _claim_id(pilot, version_id, "fact.revenue"), "PQ1 MATCH")
         drafts["G"] = _item(pilot, _claim_id(pilot, version_id, CABLES), "Cables guidance")
     elif quarter == Q2:
+        (section,) = (s for s in pilot.version(version_id).sections if s.section_key == GUIDANCE)
+        (cables,) = (line for line in section.body.splitlines() if f"{{{{c:{CABLES}|" in line)
+        assert " — MODIFIED: " in cables, (
+            f"PILOT-5: PQ2's cables guidance is not MODIFIED: {cables}"
+        )
         item = _item(pilot, _claim_id(pilot, version_id, CABLES), "Cables guidance, restated")
         drafts["G2"] = item.model_copy(update={"supersedes_item_id": memory["G"]})
     for name, draft in drafts.items():
@@ -336,7 +341,10 @@ def _pilot5_promote(pilot: Pilot, quarter: str, version_id: int, memory: dict[st
 
 
 def _pilot5(
-    pilot: Pilot, lines: list[tuple[PipelineResult, str, datetime]], memory: dict[str, int]
+    pilot: Pilot,
+    lines: list[tuple[PipelineResult, str, datetime]],
+    memory: dict[str, int],
+    final: dict[str, int],
 ) -> None:
     """PILOT-5: each line replays at its boundary, later events are excluded (B, promoted
     between PQ3's recall and its draft, is absent from PQ3's line and retrieved later), nothing
@@ -356,11 +364,12 @@ def _pilot5(
             assert found == (), f"PILOT-5: memory retrievable at the source cutoff {cutoff}"
         lineage = {item.id: item for item in PgMemoryStore(runtime).provenance(memory["G2"])}
     support = (
-        {ref.target_id for ref in lineage[memory["G"]].supports}
+        tuple((ref.target, ref.target_id) for ref in lineage[memory["G"]].supports)
         if memory["G"] in lineage
-        else set()
+        else ()
     )
-    assert support, "PILOT-5: G′'s provenance lacks G or its support"
+    staged = ((SupportTarget.CLAIM, _claim_id(pilot, final[Q1], CABLES)),)
+    assert support == staged, f"PILOT-5: G′'s provenance has G supported by {support} ≠ {staged}"
     assert lineage[memory["G2"]].status is MemoryStatus.PROMOTED, "PILOT-5: G′ is not promoted"
 
 
@@ -580,7 +589,7 @@ def test_pilot_end_to_end(
         final[quarter] = result.draft_version_id or 0
         reviewed.append(_review(pilot, monkeypatch, final[quarter]))
         _pilot5_promote(pilot, quarter, final[quarter], memory)
-    _pilot5(pilot, lines, memory)
+    _pilot5(pilot, lines, memory, final)
     _pilot12(pilot, reviewed, rejected)
     _pilot6(pilot, memory, reviewed)
     with pg_db.runtime_pool() as pool:
