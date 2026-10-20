@@ -47,10 +47,10 @@ from pilot_manifest_check import KEYS as CLAIM_KEYS
 from pilot_manifest_check import citations_allowed
 from prep2b_support import COUNTS, STOCK, Pilot
 from test_cutover_rollback import CUTOVER, Window
-from test_frozen_manifests import REPO
+from test_frozen_manifests import REPO, load
 from test_legacy_import import Rig
 from test_pilot_citations import _cites_predecessor
-from test_pilot_memory import _CREATED, _item, _line, _promote
+from test_pilot_memory import _CREATED, _PROMOTED, _item, _line, _promote
 from test_prep2b_run_draft import dictionary, mapping_set
 from test_prep3_resume import ADMITTED_ROWS, RUN_TABLES, added, ids, interrupted
 from test_prep5_rework import QOQ, Calls, _lines, _plan, calls
@@ -73,10 +73,11 @@ from test_prep6_review import (
 import fundamentals.api.cli as fundamentals_cli
 import fundamentals.pg.cutover as cutover
 from fundamentals.api.cli import main
-from fundamentals.api.ledger_cli import _MEMORY_FILE, _NARRATIVE, _STEM
+from fundamentals.api.ledger_cli import _MEMORY_FILE, _NARRATIVE, _STEM, DEFAULT_IMPORT_CONFIG
 from fundamentals.api.pipeline import PipelineResult
 from fundamentals.canon.dictionary import CanonicalDictionary
 from fundamentals.contracts.canonical import StatementFamily
+from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     CitationKind,
     ClaimState,
@@ -89,7 +90,6 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.memory import MemoryStatus
 from fundamentals.ledger import lifecycle, review, store
 from fundamentals.ledger.display import FILED, FILED_SUFFIX
-from fundamentals.ledger.export import stock_entity, stock_versions
 from fundamentals.ledger.run_draft import GUIDANCE, recall
 from fundamentals.memory.pg_store import PgMemoryStore
 
@@ -130,6 +130,15 @@ SEALED = (
     " AND subject_id = %s AND kind = 'REQUEST_CHANGES'"
 )
 VERSIONS = "SELECT id FROM eqos.report_versions"
+IMPORT_SEALS = (
+    "SELECT subject_id FROM eqos.decisions WHERE subject_kind = 'REPORT_VERSION' "
+    "AND kind = 'IMPORT_SEAL'"
+)
+STEMS = (
+    "SELECT v.id, r.period, r.kind, v.content_hash, "
+    "row_number() OVER (PARTITION BY v.report_id ORDER BY v.id) FROM eqos.report_versions v "
+    "JOIN eqos.reports r ON r.id = v.report_id WHERE r.entity_id = %s"
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -160,7 +169,7 @@ def _pilot3(
     window = Window(rig)
     assert window.reconciled.equal(), "PILOT-3: the legacy copy does not reconcile"
     window.move(CUTOVER)
-    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest, rig=rig)
+    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest, rig=rig, replayable=True)
 
     def no_sqlite(*_: object) -> Any:
         raise AssertionError("PILOT-3: the pilot reached a SQLite store")
@@ -253,7 +262,9 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
             f"PILOT-4: {quarter} QoQ priors do not cite the predecessor's facts"
         )
     exported = pilot.tmp_path / f"export-{version_id}.md"
-    assert main(["ledger", "export", str(version_id), "--out", str(exported)]) == 0
+    assert main(["ledger", "export", str(version_id), "--out", str(exported)]) == 0, (
+        f"PILOT-4: {quarter} export failed"
+    )
     body = exported.read_bytes()
     assert hashlib.sha256(body).hexdigest() == version.content_hash, f"PILOT-4: {quarter} hash"
     assert body.decode().count(FILED_SUFFIX) == len(filed), f"PILOT-4: {quarter} suffix"
@@ -274,12 +285,38 @@ def _pilot5_line(
     pilot: Pilot, quarter: str, result: PipelineResult, memory: dict[str, int]
 ) -> tuple[str, datetime]:
     """PILOT-5: the run's sealed memory line: none through PQ1, A and G in PQ2, A and G′ but
-    not the retired G in PQ3."""
+    not the retired G nor B (promoted after PQ3's recall) in PQ3; A needs revalidation only
+    after PQ1's failing retrospective check."""
     line, boundary = _line(pilot, result)
     listed = {name for name, item in memory.items() if f"memory:{item} " in line}
     want = {Q0: set(), Q1: set(), Q2: {"A", "G"}, Q3: {"A", "G2"}}[quarter]
     assert listed == want, f"PILOT-5: {quarter} memory line lists {sorted(listed)} ≠ {sorted(want)}"
+    if "A" in want:
+        flag = "yes" if quarter == Q3 else "no"
+        assert f"memory:{memory['A']} (needs revalidation: {flag}; " in line, (
+            f"PILOT-5: {quarter} does not flag A's revalidation {flag}"
+        )
     return line, boundary
+
+
+def _pilot5_late(
+    pilot: Pilot, monkeypatch: pytest.MonkeyPatch, final: dict[str, int], memory: dict[str, int]
+) -> None:
+    """Before PQ3: a retrospective check of PQ1 fails A's support, and B (on PQ2's revenue) is
+    staged, to be promoted once PQ3 has recalled and before it persists its draft."""
+    validated = pilot.validate(final[Q1], RunMode.RETROSPECTIVE)
+    assert validated.mode is RunMode.RETROSPECTIVE, "PILOT-5: PQ1 retrospective validation"
+    draft = _item(pilot, _claim_id(pilot, final[Q2], "fact.revenue"), "PQ2's figures check MATCH")
+    with pilot.pg_db.runtime_pool() as runtime:
+        memory["B"] = PgMemoryStore(runtime).stage(draft)
+    run_pipeline = fundamentals_cli.run_pipeline
+
+    def promote_first(*args: Any, **kwargs: Any) -> Any:
+        monkeypatch.setattr(fundamentals_cli, "run_pipeline", run_pipeline)
+        _promote(pilot, memory["B"])
+        return run_pipeline(*args, **kwargs)
+
+    monkeypatch.setattr(fundamentals_cli, "run_pipeline", promote_first)
 
 
 def _pilot5_promote(pilot: Pilot, quarter: str, version_id: int, memory: dict[str, int]) -> None:
@@ -301,13 +338,17 @@ def _pilot5_promote(pilot: Pilot, quarter: str, version_id: int, memory: dict[st
 def _pilot5(
     pilot: Pilot, lines: list[tuple[PipelineResult, str, datetime]], memory: dict[str, int]
 ) -> None:
-    """PILOT-5: each line replays at its boundary, later events are excluded, nothing is
-    retrievable at a run's source cutoff, and G′'s provenance carries G and its support."""
+    """PILOT-5: each line replays at its boundary, later events are excluded (B, promoted
+    between PQ3's recall and its draft, is absent from PQ3's line and retrieved later), nothing
+    is retrievable at a run's source cutoff, and G′'s provenance carries G and its support."""
     created = [pilot.query(_CREATED, result.draft_version_id)[0][0] for result, _, _ in lines]
     boundaries = [boundary for _, _, boundary in lines]
     for at, made, following in zip(boundaries, created, [*boundaries[1:], None], strict=True):
         assert at < made and (following is None or made < following), "PILOT-5: boundaries"
+    ((promoted,),) = pilot.query(_PROMOTED, memory["B"])
+    assert boundaries[-1] < promoted < created[-1], "PILOT-5: B is not a late event of PQ3"
     with pilot.pg_db.runtime_pool() as runtime:
+        assert f"memory:{memory['B']} " in recall(runtime, pilot.entity_id), "PILOT-5: B"
         for result, line, at in lines:
             assert recall(runtime, pilot.entity_id, at=at) == line, f"PILOT-5: replay at {at}"
             cutoff = result.update.source_cutoff
@@ -326,21 +367,30 @@ def _pilot5(
 # PILOT-6, PILOT-9, PILOT-10, PILOT-13 -------------------------------------------------------
 
 
-def _pilot6(pilot: Pilot, memory: dict[str, int]) -> None:
-    """PILOT-6: the read-only stock export writes every sealed narrative at its content hash
-    and every promoted item in ``memory.md``."""
+def _pilot6(pilot: Pilot, memory: dict[str, int], reviewed: list[int]) -> None:
+    """PILOT-6: the read-only stock export writes exactly the five reviewed run versions and the
+    imported sealed ones (the q0 thesis and each configured earnings update), each narrative at
+    its content hash, and every promoted item in ``memory.md``."""
     out = pilot.tmp_path / "stock-export"
     command = ["ledger", "export", "--stock", STOCK, "--status-notes", "--memory"]
     assert main([*command, "--out", str(out)]) == 0, "PILOT-6: the stock export failed"
-    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
-        cursor = conn.cursor()
-        versions = stock_versions(cursor, stock_entity(cursor, STOCK))
-    for version in versions:
-        body = out / STOCK / _NARRATIVE.format(stem=_STEM.format(**version.model_dump()))
-        digest = hashlib.sha256(body.read_bytes()).hexdigest()
-        assert digest == version.content_hash, f"PILOT-6: version {version.version_id} hash"
+    imported = {row[0] for row in pilot.query(IMPORT_SEALS)}
+    sealed = 1 + len(load(REPO / DEFAULT_IMPORT_CONFIG)["earnings_updates"])
+    assert len(imported) == sealed and len(reviewed) == 5, "PILOT-6: the version inventory"
+    stems = {row[0]: row[1:] for row in pilot.query(STEMS, pilot.entity_id)}
+    expected = {
+        _NARRATIVE.format(stem=_STEM.format(period=period, report_kind=kind, position=n)): digest
+        for version_id, (period, kind, digest, n) in stems.items()
+        if version_id in imported | set(reviewed)
+    }
+    names = {path.name for path in (out / STOCK).glob("*.md")} - {_MEMORY_FILE}
+    narratives = {name for name in names if not name.endswith(".status.md")}
+    assert narratives == set(expected), f"PILOT-6: exported {sorted(narratives ^ set(expected))}"
+    for name, digest in expected.items():
+        found = hashlib.sha256((out / STOCK / name).read_bytes()).hexdigest()
+        assert found == digest, f"PILOT-6: {name} hash"
     exported = (out / STOCK / _MEMORY_FILE).read_text(encoding="utf-8")
-    for name in ("A", "G2"):
+    for name in ("A", "G2", "B"):
         assert f"## Memory item {memory[name]}:" in exported, f"PILOT-6: {name} not in memory.md"
 
 
@@ -445,15 +495,16 @@ def _pilot11_drill(pilot: Pilot, clean_id: int) -> None:
 
 def _review(
     pilot: Pilot, monkeypatch: pytest.MonkeyPatch, version_id: int, reject: str | None = None
-) -> tuple[str, ...]:
+) -> int:
     """PILOT-12: submit, then ``review start|claim|finish``: every review-set claim accepted
-    and APPROVE, or ``reject`` rejected and REQUEST_CHANGES. Returns the review set."""
+    and APPROVE, or ``reject`` rejected and REQUEST_CHANGES. Returns the version."""
     with pilot.pg_db.runtime_pool() as runtime:
         lifecycle.submit(runtime, version_id, **pilot.sources())
     keys, session = _review_set(pilot, version_id), pilot.tmp_path / f"review-{version_id}"
     assert _start(version_id, session) == 0, f"PILOT-12: review start {version_id}"
     for key in keys:
-        assert _claim(session, key, REJECTED if key == reject else ACCEPTED) == 0, key
+        status = _claim(session, key, REJECTED if key == reject else ACCEPTED)
+        assert status == 0, f"PILOT-12: review claim {key} on {version_id}"
     kind, flags = (
         (DecisionKind.REQUEST_CHANGES, []) if reject else (DecisionKind.APPROVE, _sources(pilot))
     )
@@ -461,24 +512,26 @@ def _review(
     if not reject:
         ((approvals,),) = pilot.query(APPROVALS, version_id)
         assert approvals == 1, f"PILOT-4: version {version_id} has no owner APPROVE"
-    return keys
+    return version_id
 
 
-def _pilot12(pilot: Pilot, reviewed: dict[int, tuple[str, ...]], rejected: int) -> None:
-    """PILOT-12: one session per version covering its review set; v1's scripted rejection;
-    the successor re-reviews only the rejected claim (its accepted QoQ siblings rerun
-    unchanged, decision 6); the report total is both PQ2 sessions."""
-    for version_id, keys in reviewed.items():
+def _pilot12(pilot: Pilot, reviewed: list[int], rejected: int) -> None:
+    """PILOT-12: one session per version reviewing exactly its review set: every stored claim
+    of a full version, only the rejected claim of the successor (its accepted QoQ siblings
+    rerun unchanged, decision 6); v1's scripted rejection; the report total is both PQ2
+    sessions."""
+    successor = min(v for v in reviewed if v > rejected)
+    for version_id in reviewed:
         assert len(pilot.query(SESSIONS, version_id)) == 1, f"PILOT-12: {version_id} sessions"
+        claims = {claim.claim_key for claim in pilot.version(version_id).claims}
+        want = {QOQ[0]} if version_id == successor else claims
         events = {key for key, *_ in pilot.query(EVENTS, version_id)}
-        assert set(keys) <= events, f"PILOT-12: {version_id} review set not covered"
+        assert events == want, f"PILOT-12: {version_id} reviewed {sorted(events ^ want)[:5]}"
     scripted = {
         (key, *(("rejected", "wording") if key == QOQ[0] else ("accepted", "none")))
-        for key in reviewed[rejected]
+        for key in (claim.claim_key for claim in pilot.version(rejected).claims)
     }
     assert set(pilot.query(EVENTS, rejected)) == scripted, "PILOT-12: v1's rejection"
-    successor = min(v for v in reviewed if v > rejected)
-    assert reviewed[successor] == (QOQ[0],), "PILOT-12: the successor's review set"
     total = sum(pilot.query(SESSIONS, v)[0][0] for v in (rejected, successor))
     with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
         found = review.summary(conn.cursor(), successor).report_wall_clock_minutes
@@ -496,7 +549,8 @@ def test_pilot_end_to_end(
     dictionary: CanonicalDictionary,
     calls: Calls,
 ) -> None:
-    """PILOT-3, PILOT-8 ``ADD``; per quarter the run, PILOT-1, 2, 4, 5, 11 (i)/(ii), 12; then
+    """PILOT-3, PILOT-8 ``ADD``; per quarter the run, PILOT-1, 2, 4, 5 (PQ3's late event),
+    11 (i)/(ii), 12; then
     PILOT-6, 13, 10, 11 (iii), the PILOT-8 refusal and PILOT-9 (``docs/plans/PILOT-E2E.md``)."""
     pilot = _pilot3(pg_db, tmp_path, monkeypatch, ingest)
     _ticking(monkeypatch, T0)
@@ -505,10 +559,12 @@ def test_pilot_end_to_end(
     runs: list[int] = []
     memory: dict[str, int] = {}
     lines: list[tuple[PipelineResult, str, datetime]] = []
-    reviewed: dict[int, tuple[str, ...]] = {}
+    reviewed: list[int] = []
     rejected = 0
     for index, quarter in enumerate(QUARTERS):
         prior = final.get(QUARTERS[index - 1]) if index else None
+        if quarter == Q3:
+            _pilot5_late(pilot, monkeypatch, final, memory)
         result = _pilot11_resume(pilot, ingest) if quarter == Q1 else pilot.run(quarter)
         version = pilot.version(result.draft_version_id or 0)
         pilot1(pilot, quarter, dictionary, version)
@@ -517,16 +573,16 @@ def test_pilot_end_to_end(
         lines.append((result, *_pilot5_line(pilot, quarter, result, memory)))
         if quarter == Q2:
             rejected = result.draft_version_id or 0
-            reviewed[rejected] = _review(pilot, monkeypatch, rejected, reject=QOQ[0])
+            reviewed.append(_review(pilot, monkeypatch, rejected, reject=QOQ[0]))
             result = _pilot11_rework(pilot, rejected, calls)
             _pilot4(pilot, quarter, result, prior)
             lines.append((result, *_pilot5_line(pilot, quarter, result, memory)))
         final[quarter] = result.draft_version_id or 0
-        reviewed[final[quarter]] = _review(pilot, monkeypatch, final[quarter])
+        reviewed.append(_review(pilot, monkeypatch, final[quarter]))
         _pilot5_promote(pilot, quarter, final[quarter], memory)
     _pilot5(pilot, lines, memory)
     _pilot12(pilot, reviewed, rejected)
-    _pilot6(pilot, memory)
+    _pilot6(pilot, memory, reviewed)
     with pg_db.runtime_pool() as pool:
         pilot13(pool, runs, "live")
     pilot10(pilot, monkeypatch, runs)

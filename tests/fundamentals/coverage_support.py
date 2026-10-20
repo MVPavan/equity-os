@@ -124,10 +124,12 @@ def batched(
     snapshots: SnapshotStore,
     *,
     complete: bool = True,
+    run: int | None = None,
 ) -> int:
     """SEED: the stock as an admitted (PARTIAL) member of a one-member batch, completed unless
     ``complete`` is false; returns the batch id. The runtime writes the onboarding record, the
-    same-entity run and, when the stock has none, a synthetic ISIN; the owner registers a
+    same-entity stub run unless ``run`` names a real one and, when the stock has none, a synthetic
+    ISIN; the owner registers a
     SYNTHETIC screen export in ``snapshots`` and writes the rest."""
     tag = uuid.uuid4().hex
     source_id, surface = SCREEN_EXPORT
@@ -150,8 +152,9 @@ def batched(
         if found is None:
             conn.execute(_SECURITY, (isin, entity_id))
         ((record,),) = conn.execute(_RECORD, (entity_id,)).fetchall()
-        scope = Jsonb({"scope": {"entity_ids": [entity_id]}})
-        ((run,),) = conn.execute(_RUN, (tag, scope, "0" * 64)).fetchall()
+        if run is None:
+            scope = Jsonb({"scope": {"entity_ids": [entity_id]}})
+            ((run,),) = conn.execute(_RUN, (tag, scope, "0" * 64)).fetchall()
     ids: dict[str, object] = {"tag": tag, "isin": isin, "entity": entity_id}
     ids |= {"capture": ref.capture_ref_id, "record": record, "compare": run}
     with pools[PgRole.OWNER].connection() as conn, conn.transaction():
@@ -164,10 +167,14 @@ def batched(
 
 
 def watchlist(
-    pools: Mapping[PgRole, ConnectionPool], entity_id: int, snapshots: SnapshotStore
+    pools: Mapping[PgRole, ConnectionPool],
+    entity_id: int,
+    snapshots: SnapshotStore,
+    run: int | None = None,
 ) -> DecisionRecord:
-    """SEED: the stock covered by a completed batch, then the owner's ``ADD``."""
-    batched(pools, entity_id, snapshots)
+    """SEED: the stock covered by a completed batch (on ``run`` if given), then the owner's
+    ``ADD``."""
+    batched(pools, entity_id, snapshots, run=run)
     return lifecycle.decide(
         pools[PgRole.OWNER],
         subject_kind=SubjectKind.WATCHLIST,

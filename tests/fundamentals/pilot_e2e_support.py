@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 from collections import defaultdict
 from datetime import date
 from fractions import Fraction
@@ -27,12 +28,12 @@ from stage1_e2e_support import RUNS, SCREENER, SECTIONS, SNAPSHOTS, VERSION, row
 from stage5_support import cli
 from test_backup_restore import use_env
 from test_evidence_vendor import screener, tijori
-from test_frozen_manifests import REPO, load, source
+from test_frozen_manifests import REPO, load, source, xbrl_index
 from vendor_retained_support import retained_page, stage_registered
 
 import fundamentals.api.cli as fundamentals_cli
 from fundamentals.api.compare_cli import add_compare_parser, run_compare
-from fundamentals.canon.dictionary import CanonicalDictionary
+from fundamentals.canon.dictionary import CanonicalDictionary, FormulaOperand
 from fundamentals.compare.queue import overlay_boundary, read_overlay
 from fundamentals.compare.routing import route_pair_draft, route_status_draft
 from fundamentals.compare.run import load_results
@@ -68,6 +69,7 @@ H3_ROW = "opex_excl_finance_and_da|Q|-|DERIVED"  # stage1 pre_registered H3 (PIL
 OPM_ROW = "opm_pct|Q|-|DERIVED"  # stage1 pre_registered C7_OPM (PILOT-1)
 SEGMENT_BLOCK = "segment_revenue"  # the PQ3 PDF block eqos-ghv leaves unlocated
 TIJORI = "tijori/financials"
+SIDES = {Representation.XBRL, Representation.PDF}  # an admission run's first-party sides
 EVIDENCE = (1,)  # a placeholder attempt id: routing reads no evidence, a draft needs one
 ALL_CITED = (
     "SELECT source_sha256 FROM eqos.numeric_claims WHERE source_sha256 IS NOT NULL UNION "
@@ -100,51 +102,96 @@ def compare_run(quarter: str, pilot: Pilot) -> int:
 # PILOT-1 -----------------------------------------------------------------------------------
 
 
-def inventory(
-    dictionary: CanonicalDictionary, quarter: str
-) -> tuple[set[tuple[str, str, str]], set[str], set[str]]:
-    """The quarter's expected undimensioned row identities (canonical id, period, value
-    identity) from the pinned dictionary — non-deprecated rows outside shareholding over the
-    quarter, year-to-date and closing-instant periods, a fiscal Q4's additive flows also derived
-    (FY − 9M) — and the templated ids and periods a dimensioned row may take."""
+def inventory(dictionary: CanonicalDictionary, quarter: str) -> set[tuple[str, str, str, str]]:
+    """The quarter's expected row identities (canonical id, period, dims, value identity) from
+    the pinned dictionary — non-deprecated rows outside shareholding over the quarter,
+    year-to-date and closing-instant periods, a fiscal Q4's additive flows also derived
+    (FY − 9M) — templated rows at the members the package discloses, templated formulas where
+    every operand is disclosed."""
     span = doc(PILOT_CONFIGS[quarter])["quarter"]
     start, end = date.fromisoformat(span["period_start"]), date.fromisoformat(span["period_end"])
     year = date(end.year - (end.month < 4), 4, 1)
-    periods = {f"{start}..{end}", f"{year}..{end}", str(end)}
-    rows: set[tuple[str, str, str]] = set()
-    templated: set[str] = set()
+    durations, instant = {f"{begin}..{end}" for begin in {start, year}}, str(end)
+    reported = disclosed(quarter, durations, instant)
+    rows = {(*row, "REPORTED") for row in reported}
     for row in dictionary.rows:
         if row.family is StatementFamily.SHAREHOLDING or row.deprecated_by:
             continue
-        if row.dimension_template is not None:
-            templated.add(row.canonical_id)
-            continue
         identity = "DERIVED" if row.family is StatementFamily.DERIVED else "REPORTED"
-        if row.period_nature is PeriodNature.INSTANT:
-            rows.add((row.canonical_id, str(end), identity))
-            continue
-        rows |= {(row.canonical_id, f"{begin}..{end}", identity) for begin in {start, year}}
+        if row.dimension_template is None:
+            nature = {instant} if row.period_nature is PeriodNature.INSTANT else durations
+            found = {(period, "-") for period in nature}
+        elif row.formula is None:
+            found = {(p, d) for c, p, d in reported if c == row.canonical_id}
+        else:
+            found = set.intersection(*(members(reported, op) for op in row.formula.operands))
+        rows |= {(row.canonical_id, p, d, identity) for p, d in found}
         if end.month == 3 and (row.period_aggregation or "").endswith("ADDITIVE_DURATION"):
-            rows.add((row.canonical_id, f"{start}..{end}", "DERIVED"))
-    return rows, templated, periods
+            rows |= {
+                (row.canonical_id, p, d, "DERIVED") for p, d in found if p == f"{start}..{end}"
+            }
+    return rows
+
+
+def members(reported: set[tuple[str, str, str]], operand: FormulaOperand) -> set[tuple[str, str]]:
+    """A formula operand's disclosed (period, dims), an aggregated axis set to its output."""
+    found = {(p, d) for c, p, d in reported if c == operand.canonical_id}
+    if (aggregation := operand.aggregation) is None:
+        return found
+    member = f"{aggregation.axis}={aggregation.output_member}"
+    return {(p, re.sub(f"{aggregation.axis}=[^,]+", member, d)) for p, d in found}
+
+
+def disclosed(quarter: str, durations: set[str], instant: str) -> set[tuple[str, str, str]]:
+    """The quarter's disclosed dimensioned row identities (canonical id, period, dims): each
+    pinned-mapping ``XBRL_DESCRIPTION`` entry's concept on its axis in the retained XBRL, the
+    member named by its ``DescriptionOfReportableSegment`` as the dictionary's segment template
+    instantiates it; and each pinned PDF entry's fixed members at its column periods."""
+    mappings = REPO / "config/mappings"
+    files = load(mappings / f"{PINS[-1]}.yaml")["entry_files"]
+    entries = {f: load(mappings / f)["entries"] for f in files if f.startswith(("xbrl/", "pdf/"))}
+    index = xbrl_index(source(MANIFEST, f"X-{quarter}")[0])
+    facts = [(concept, *fact) for (concept, _), found in index.items() for fact in found]
+    names = {
+        dims[0].split("=")[1]: re.sub(r"[^a-z0-9]+", "_", (element.text or "").lower()).strip("_")
+        for concept, element, _, dims in facts
+        if concept == "DescriptionOfReportableSegment"
+    }
+    rows: set[tuple[str, str, frozenset[tuple[str, str]]]] = set()
+    for f, found in entries.items():
+        for entry in found:
+            canonical, selector = entry["canonical_id"], entry["selector"]
+            fixed = entry.get("dimension_members", {})
+            if entry.get("member_source") == "XBRL_DESCRIPTION":
+                for concept, _, period, dims in facts:
+                    if concept == selector["native_field"] and len(dims) == 1:
+                        axis, member = dims[0].split("=")
+                        if axis == selector["dimension_axis"] and period in durations | {instant}:
+                            pairs = fixed | {"segment": names[member]}
+                            rows.add((canonical, period, frozenset(pairs.items())))
+            elif fixed and f.startswith("pdf/"):
+                periods = durations if entry["period_rule"] == "COLUMN_DURATION" else {instant}
+                rows |= {(canonical, period, frozenset(fixed.items())) for period in periods}
+    return {(c, p, ",".join(f"{k}={v}" for k, v in sorted(d))) for c, p, d in rows}
 
 
 def pilot1(
     pilot: Pilot, quarter: str, dictionary: CanonicalDictionary, version: VersionDraft
 ) -> None:
-    """PILOT-1: the admission run's rows are the expected inventory, each located manifest
-    figure is a ``VALUE`` at its lexeme on both sides, nothing is zero-filled, and PQ0's frozen
-    PBT, OPM and PQ3's segment block hold."""
+    """PILOT-1: the admission run's row identities are the expected inventory, each applicable
+    row has its XBRL and PDF sides, each located manifest figure is a ``VALUE`` at its lexeme on
+    exactly those two sides, nothing is zero-filled, and PQ0's frozen PBT, OPM and PQ3's
+    segment block hold."""
     with pilot.pg_db.runtime_pool() as pool:
         rows = load_results(compare_run(quarter, pilot), pool=pool)
-    expected, templated, periods = inventory(dictionary, quarter)
+    expected = inventory(dictionary, quarter)
     found = set()
     for row in rows:
         canonical, period, _, dims, identity = row.row_id.split("|")
-        if dims == "-":
-            found.add((canonical, period, identity))
-        else:
-            assert canonical in templated and period in periods, f"PILOT-1: extra row {row.row_id}"
+        found.add((canonical, period, dims, identity))
+        sides = {side.representation for side in row.source_values}
+        applicable = row.applicability is not ApplicabilityStatus.NOT_APPLICABLE
+        assert sides == (SIDES if applicable else set()), f"PILOT-1: {row.row_id} sides {sides}"
         for side in row.source_values:
             assert side.state is SourceState.VALUE or side.value is None, (
                 f"PILOT-1: {row.row_id} carries a value with no extraction (zero fill)"
@@ -156,7 +203,7 @@ def pilot1(
         if not key.startswith("fact."):
             continue
         measured = claims[key].measurement_key
-        assert measured is not None
+        assert measured is not None, f"PILOT-1: {quarter} {key} has no measurement key"
         (row,) = [
             r
             for r in rows
@@ -170,6 +217,9 @@ def pilot1(
             Representation.PDF: Fraction(node["pdf"]["lex"].replace(",", ""))
             * UNIT_SCALE[located["u"]],
         }
+        assert sorted(side.representation for side in row.source_values) == sorted(SIDES), (
+            f"PILOT-1: {quarter} {key} sides are not one XBRL and one PDF"
+        )
         for side in row.source_values:
             want = lexemes[side.representation]
             assert side.state is SourceState.VALUE and Fraction(side.value or 0) == want, (
@@ -186,6 +236,8 @@ def pilot1(
         literal = Fraction(pilot1["opm"]["lex"])
         assert round(Fraction(xbrl.value or 0), 2) == literal, f"PILOT-1: {OPM_ROW} ≠ {literal}"
     if quarter == Q3:
+        segments = [row for row in expected if row[0] == SEGMENT_BLOCK and row[2] != "-"]
+        assert segments, "PILOT-1: PQ3 has no segments"
         for row in rows:
             for side in row.source_values:
                 if row.key.dimensions.pairs and side.representation is Representation.PDF:
@@ -347,8 +399,8 @@ def no_fetch(url: str) -> bytes:
 
 def pilot10(pilot: Pilot, monkeypatch: pytest.MonkeyPatch, runs: list[int]) -> None:
     """PILOT-10 under the real store clock: classify, back up, list exactly the eligible blobs
-    and none held, purge only listed captures, restore with replay into a fresh test database
-    and verify every held blob's hash there (PILOT-13 replays the restored runs)."""
+    and none held, purge only listed captures, ``db restore --replay-runs`` into a fresh test
+    database (PILOT-13: every run replays there) and verify every held blob's hash there."""
     root, sets, settings = pilot.rig.snapshots, pilot.tmp_path / "sets", pilot.pg_db.settings
     assert cli("retention", "classify")[0] == 0, "PILOT-10: classify failed"
     code, out = cli("db", "backup", "--out", str(sets), "--snapshot-root", str(root))
@@ -376,18 +428,24 @@ def pilot10(pilot: Pilot, monkeypatch: pytest.MonkeyPatch, runs: list[int]) -> N
         f"PILOT-10: the purge expired unlisted captures: {out}"
     )
     target, restored = mint_name(settings), pilot.tmp_path / "restored"
+    replayed: list[int] = []
+
+    def spy(run_ids: tuple[int, ...], *args: Any) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        replayed.extend(run_ids)
+        return replay(run_ids, *args)
+
+    monkeypatch.setattr("fundamentals.pg.backup.replay", spy)
     try:
         use_env(monkeypatch, pilot.pg_db, settings.db)  # restore names only its target
         code, out = cli(
             *("db", "restore", "--set", str(set_dir), "--database", target),
             *("--snapshot-root", str(restored), "--live-snapshot-root", str(root)),
-            *("--backup-dir", str(sets)),  # --replay-runs reads the seed run's stub manifest
+            *("--backup-dir", str(sets), "--replay-runs", "--config-root", str(CONFIG)),
         )
         use_env(monkeypatch, pilot.pg_db, pilot.pg_db.dbname)
         check = RestoreCheck.model_validate_json(out.strip().splitlines()[-1])
-        assert code == 0 and check.ok, f"PILOT-10: restore {check}"
-        with pilot.pg_db.model_copy(update={"dbname": target}).runtime_pool() as pool:
-            pilot13(pool, runs, "restored")
+        assert code == 0 and check.ok and not check.replay_expired, f"PILOT-10: restore {check}"
+        assert set(runs) <= set(replayed), "PILOT-13: the restore did not replay every run"
         with psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname=target)) as conn:
             captures = conn.execute(CAPTURES).fetchall()
         snapshots = SnapshotStore(restored)

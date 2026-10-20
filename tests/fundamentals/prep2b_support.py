@@ -118,10 +118,13 @@ class Pilot:
         rig: Rig | None = None,
         transcripts: tuple[str, ...] = tuple(QUARTERS),
         imported: bool = True,
+        replayable: bool = False,
     ) -> None:
         """``rig``: one whose originals are already registered; ``transcripts``: the quarters
         whose transcript is admitted as a first-party capture; ``imported``: whether the sealed
-        versions are imported now."""
+        versions are imported now; ``replayable``: whether the watchlist batch names a real
+        comparison run of the first quarter (so ``db restore --replay-runs`` can replay it)
+        instead of a stub."""
         self.pg_db, self.tmp_path, self.entity_id = pg_db, tmp_path, ingest.entity_id
         if rig is None:
             rig = Rig(pg_db, tmp_path)
@@ -134,15 +137,16 @@ class Pilot:
         self.catalog = ledger_catalog(
             REPO_ROOT / DEFAULT_WATCHLIST, STOCK, [issuer_config(q) for q in QUARTERS]
         )
-        with pg_db.runtime_pool() as runtime, pg_db.owner_pool() as owner:
-            pools = {PgRole.RUNTIME: runtime, PgRole.OWNER: owner}
-            watchlist(pools, self.entity_id, self.snapshots)
-            for quarter in transcripts:
-                self.admit_transcript(quarter, runtime)
-            self.store_id = create_native_store(runtime, "pilot")
         self.period_ends = {quarter: end for quarter, kind, end in xbrls if kind == XBRL_KIND}
         for quarter, kind, period_end in xbrls:
             self.evidence_ingest(quarter, kind, period_end)
+        run = self.compare_run(next(iter(self.period_ends))) if replayable else None
+        with pg_db.runtime_pool() as runtime, pg_db.owner_pool() as owner:
+            pools = {PgRole.RUNTIME: runtime, PgRole.OWNER: owner}
+            watchlist(pools, self.entity_id, self.snapshots, run)
+            for quarter in transcripts:
+                self.admit_transcript(quarter, runtime)
+            self.store_id = create_native_store(runtime, "pilot")
         (tmp_path / "config").mkdir(exist_ok=True)
         shutil.copyfile(REPO_ROOT / DEFAULT_IMPORT_CONFIG, tmp_path / DEFAULT_IMPORT_CONFIG)
         self.retained = tmp_path / "retained"
