@@ -211,9 +211,13 @@ def in_namespace(context: Mapping[str, object], schema_identity: str) -> bool:
 
 
 def matches_dimensions(
-    context: Mapping[str, object], schema_identity: str, axis: str | None
+    context: Mapping[str, object],
+    schema_identity: str,
+    axis: str | None,
+    member: str | None = None,
 ) -> bool:
-    """Dimension identities must name this schema's explicit axis and member namespaces."""
+    """Dimension identities must name this schema's explicit axis and member namespaces,
+    and the selector's member when it names one."""
     native = context.get("dimensions")
     axes = context.get(CONTEXT_DIMENSION_AXES)
     found = tuple(axes) if isinstance(axes, list | tuple) else ()
@@ -230,6 +234,7 @@ def matches_dimensions(
         and pair[0] == wanted
         and isinstance(pair[1], str)
         and pair[1].startswith(f"{{{schema_identity}}}")
+        and (member is None or pair[1] == f"{{{schema_identity}}}{member}")
     )
 
 
@@ -247,7 +252,9 @@ def selects(entry: MappingEntry, occurrence: Occurrence) -> bool:
         is_instant = occurrence.period.instant is not None
         if is_instant != (selector.period_shape is PeriodShape.INSTANT):
             return False
-        return matches_dimensions(context, entry.schema_identity, selector.dimension_axis)
+        return matches_dimensions(
+            context, entry.schema_identity, selector.dimension_axis, selector.dimension_member
+        )
     return selector_matches(selector, context)
 
 

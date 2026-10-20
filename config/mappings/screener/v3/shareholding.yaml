@@ -1,0 +1,48 @@
+# Screener shareholding page entries (plan D8 Task 3, R10-R12; d8-probe.md §6, §13.5 S1-S6). Only
+# quarterly page rows carry selectors, on the printed label path; the yearly rows, No. of
+# Shareholders and every drill-down holder stay UNMAPPED diagnostics (S7-S14). Unproven tier.
+source: screener-subscriber
+surface: SCREENER_SHAREHOLDING
+schema_identity: screener-shareholding-tree-v1
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  member_source: SECURITY_ISIN
+  period_rule: COLUMN_INSTANT
+  period_kinds: [INSTANT]
+entries:
+  - entry_id: screener.shp.promoters
+    selector: {statement_family: SHAREHOLDING, labels: ['Promoters'], path: ['Promoters'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: sebi_promoter_group, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S1, ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''promoters'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 3 "(A)"; A consistent (tree aid T2, TS). ETERNAL has no row (A unfiled). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: screener.shp.fiis
+    selector: {statement_family: SHAREHOLDING, labels: ['FIIs'], path: ['FIIs'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: institutions_foreign, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S2, ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''foreign_institutions'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 8 "(2) Institutions (Foreign)"; B2 consistent, FPI I+II refuted on ETERNAL. Boundary assumed: B3 and C1 unplaced (R12). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: screener.shp.diis
+    selector: {statement_family: SHAREHOLDING, labels: ['DIIs'], path: ['DIIs'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: institutions_domestic, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S3 (Sol ruling 4), ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''domestic_institutions'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 7 "(1) Institutions (Domestic)". B1 only as the approximate closest aggregate: exact equivalence refuted on ETERNAL and TITAN (domestic SWF, p. 8 "(h)"); boundary assumed (R12). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: screener.shp.government
+    selector: {statement_family: SHAREHOLDING, labels: ['Government'], path: ['Government'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: sovereign_wealth_funds_domestic, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S4 (Sol ruling 1), ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''government'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 8 "(h) Sovereign Wealth Funds" under B(1); the label-corresponding B3 is refuted. Assumed closest direct category, not an established equivalence; SWF+B3 also survives, so B3 stays unplaced (R12; R11 label correspondence relaxed for this node only). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: screener.shp.public
+    selector: {statement_family: SHAREHOLDING, labels: ['Public'], path: ['Public'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: non_institutions, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S5, ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''public'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 9 "(4) Non- institutions"; B4 consistent, B4+C2 refuted on ETERNAL and TITAN. Boundary assumed: B3 unplaced (R12). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: screener.shp.others
+    selector: {statement_family: SHAREHOLDING, labels: ['Others'], path: ['Others'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: employee_benefit_trust, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 S6, ruled by Sol §13.6; <div id="quarterly-shp">, the row whose hook is showShareholders(''others'', ''quarterly'', this); captures R/<SYM>/gen-2/03.bin sha256 APARINDS b47a0bd2…, ETERNAL 48f28dd5…, TITAN 419600f9…. Format rows R/reference/gen-1/02.bin (sha256 f069059d…) p. 12 "(2) Employee Benefit Trust", p. 13 "(C) = (C1) + (C2)"; C2 consistent; C has no TS percentage fact. Boundary assumed: C1 empty only by declaration (§11.2). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'

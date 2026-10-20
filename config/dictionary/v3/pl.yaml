@@ -1,0 +1,179 @@
+# P&L rows, SEBI results format (inventory §2a). Every filed line item; one id per measure.
+# First-party anchors cited in `meaning` are the inventory's observations (Apar X-Q2/X-Q4, X-BSE,
+# X9, Apar Q2 FY26 PDF p3). Excluded inventory rows and the reasons are in the v1 manifest.
+family: PL
+defaults:
+  value_kind: CURRENCY_AMOUNT
+  period_nature: DURATION
+  sign_convention: POSITIVE_AS_LABELLED
+  aggregation_behaviour: SUMMABLE_ACROSS_MEMBERS
+  period_aggregation: ADDITIVE_DURATION
+  applicability_rule_id: results.every_period
+  basis_applicability: [CONSOLIDATED, STANDALONE]
+rows:
+  - canonical_id: sales
+    meaning: Sales of products and services, before other operating income. PDF "1 Sales" (Apar p3); no XBRL element observed.
+  - canonical_id: other_operating_income
+    meaning: Other operating revenue. PDF "2 Other operating incomes" (Apar p3); no XBRL element observed.
+  - canonical_id: revenue_from_operations
+    meaning: Revenue from operations (sales plus other operating income). XBRL RevenueFromOperations; PDF "3 Revenue from operations (1+2)".
+  - canonical_id: excise_duty
+    meaning: Excise duty, a legacy pre-GST line of the SEBI results format. Unevidenced in first-party captures (absent from every observed XBRL instance and the Apar PDF); declared from the legacy format. Annual periodicity per inventory 2a.
+    applicability_rule_id: results.annual_disclosure
+  - canonical_id: other_income
+    meaning: Other income, excluding exceptional items. XBRL OtherIncome; PDF "4 Other incomes".
+  - canonical_id: total_income
+    meaning: Total income (revenue from operations plus other income). XBRL Income; PDF "5 Total income (3+4)".
+  - canonical_id: cost_of_materials_consumed
+    meaning: Cost of materials consumed. XBRL CostOfMaterialsConsumed; PDF "(a) Costs of materials consumed".
+  - canonical_id: purchases_of_stock_in_trade
+    meaning: Purchases of stock-in-trade. XBRL PurchasesOfStockInTrade; PDF "(b) Purchases of stock-in-trade".
+  - canonical_id: changes_in_inventories
+    meaning: Changes in inventories of finished goods, work-in-progress and stock-in-trade; positive is a charge (a decrease in inventories). XBRL ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade; PDF "(c) Changes in inventories".
+  - canonical_id: employee_benefits_expense
+    meaning: Employee benefits expense. XBRL EmployeeBenefitExpense; PDF "(d) Employee benefits expense".
+  - canonical_id: finance_costs
+    meaning: Finance costs. XBRL FinanceCosts; PDF "(e) Finance costs".
+  - canonical_id: depreciation_amortisation
+    meaning: Depreciation, depletion and amortisation expense. XBRL DepreciationDepletionAndAmortisationExpense; PDF "(f) Depreciation and amortisation expense".
+  - canonical_id: other_expenses
+    meaning: Other expenses (total line). XBRL OtherExpenses; PDF "(g) Other expenses".
+  - canonical_id: other_expenses_detail
+    meaning: One itemised other-expense line, per member of the other_expense_detail template. XBRL OtherExpenses on DetailsOfOtherExpensesAxis with DescriptionOfOtherExpenses (Apar X-Q2); issuer-dependent in PDFs (Apar prints none).
+    dimension_template: other_expense_detail
+  - canonical_id: total_expenses
+    meaning: Total expenses. XBRL Expenses; PDF "6 Total expenses".
+  - canonical_id: profit_before_exceptional_items_and_tax
+    meaning: Profit before exceptional items and tax. XBRL ProfitBeforeExceptionalItemsAndTax.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: exceptional_items_before_tax
+    meaning: Exceptional items before tax; positive is a gain. XBRL ExceptionalItemsBeforeTax (SONACOMS Q3 FY25 -5.70 crore).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_before_tax
+    meaning: Profit before tax, before the share of profit of associates and joint ventures (the XBRL ProfitBeforeTax position; Apar Q2 FY26 340.56 crore = PDF line 7). Used by the effective tax rate (spec D6). Assigned by evidenced arithmetic or layout, never by the label "Profit before tax".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: share_of_profit_associates_jv
+    meaning: Share of profit or loss of associates and joint ventures (equity method). XBRL ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod (after tax in the XBRL arithmetic); PDF Apar "8 Share in net profit/(loss) of associates" (before tax).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_before_tax_incl_associates
+    meaning: Headline profit before tax, after the share of associates and joint ventures. PDF Apar "9 Profit before tax (7+8)" (340.53 crore, Q2 FY26); in XBRL constructed as profit_before_tax + share_of_profit_associates_jv when not reported separately, otherwise absent, never substituted (spec §1). Used by the PBT margin.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    headline: true
+  - canonical_id: current_tax
+    meaning: Current tax. XBRL CurrentTax (includes earlier-years tax in Apar X-Q4); PDF "(a) Current tax".
+  - canonical_id: deferred_tax
+    meaning: Deferred tax; positive is a charge. XBRL DeferredTax; PDF "(b) Deferred tax".
+  - canonical_id: tax_earlier_years
+    meaning: Tax relating to earlier years. PDF "(c) Current tax in respect of earlier years"; no XBRL element (folded into CurrentTax by Apar).
+  - canonical_id: tax_expense
+    meaning: Total tax expense on continuing operations. XBRL TaxExpense; Apar PDF prints no total (sum of its (a)+(b)+(c)).
+  - canonical_id: profit_continuing_after_tax
+    meaning: Net profit from continuing operations, before the share of associates in the XBRL layout. XBRL ProfitLossForPeriodFromContinuingOperations. Tijori qt_c "Net Profit" maps here, never to profit_for_period (spec §2).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_discontinued_before_tax
+    meaning: Profit or loss from discontinued operations before tax. XBRL ProfitLossFromDiscontinuedOperationsBeforeTax.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: tax_discontinued
+    meaning: Tax expense of discontinued operations. XBRL TaxExpenseOfDiscontinuedOperations.
+  - canonical_id: profit_discontinued_after_tax
+    meaning: Profit or loss from discontinued operations after tax. XBRL ProfitLossFromDiscontinuedOperationsAfterTax.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: regulatory_deferral_net_movement
+    meaning: Net movement in regulatory deferral account balances related to profit or loss and the related deferred tax movement. XBRL NetMovementInRegulatoryDeferralAccountBalancesRelatedToProfitOrLossAndTheRelatedDeferredTaxMovement.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_for_period
+    meaning: Profit for the period, including the share of associates and non-controlling interests. XBRL ProfitLossForPeriod; PDF Apar "11 Profit after tax (9-10)" (251.70 crore, Q2 FY26).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_attributable_owners
+    meaning: Profit attributable to owners of the parent. XBRL ProfitOrLossAttributableToOwnersOfParent; PDF "(a) Owners of the Company".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: profit_attributable_nci
+    meaning: Profit attributable to non-controlling interests. XBRL ProfitOrLossAttributableToNonControllingInterests; PDF "(b) Non-controlling interest".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: oci_not_reclassified_items
+    meaning: OCI A(i), items that will not be reclassified to profit or loss (total). XBRL AmountOfItemThatWillNotBeReclassifiedToProfitAndLoss; PDF "(A)(i)".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: oci_not_reclassified_items_detail
+    meaning: One OCI A(i) item, per member of the oci_not_reclassified_detail template. XBRL AmountOfItemThatWillNotBeReclassifiedToProfitAndLoss on ItemsThatWillNotBeReclassifiedToProfitAndLossAxis (inventory 2a, OCI A(i) row; spec §1 OCI detail template).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    dimension_template: oci_not_reclassified_detail
+  - canonical_id: oci_not_reclassified_tax
+    meaning: OCI A(ii), income tax relating to items that will not be reclassified; positive is a charge. XBRL IncomeTaxRelatingToItemsThatWillNotBeReclassifiedToProfitOrLoss (in-bse-fin spelling …Itmes…); PDF "(A)(ii)".
+  - canonical_id: oci_reclassified_items
+    meaning: OCI B(i), items that will be reclassified to profit or loss (total). XBRL AmountOfItemThatWillBeReclassifiedToProfitAndLoss; PDF "(B)(i)".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: oci_reclassified_items_detail
+    meaning: One OCI B(i) item, per member of the oci_reclassified_detail template. XBRL AmountOfItemThatWillBeReclassifiedToProfitAndLoss on ItemsThatWillBeReclassifiedToProfitAndLossAxis (observed in every retained Apar instance; spec §1 OCI detail template).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    dimension_template: oci_reclassified_detail
+  - canonical_id: oci_reclassified_tax
+    meaning: OCI B(ii), income tax relating to items that will be reclassified; positive is a charge. XBRL IncomeTaxRelatingToItemsThatWillBeReclassifiedToProfitOrLoss (in-bse-fin …Itmes…); PDF "(B)(ii)".
+  - canonical_id: oci_net
+    meaning: Other comprehensive income, net of tax. XBRL OtherComprehensiveIncomeNetOfTaxes; PDF "12 Other comprehensive incomes".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: total_comprehensive_income
+    meaning: Total comprehensive income for the period. XBRL ComprehensiveIncomeForThePeriod; PDF "13 Total comprehensive income".
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: tci_attributable_owners
+    meaning: Total comprehensive income attributable to owners. PDF "Total comprehensive incomes attributable to (a) Owners". XBRL ComprehensiveIncomeForThePeriodAttributableToOwnersOfParent is suspect (Apar X-Q2 carries the OCI-owners figure).
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: tci_attributable_nci
+    meaning: Total comprehensive income attributable to non-controlling interests. XBRL ComprehensiveIncomeForThePeriodAttributableToOwnersOfParentNonControllingInterests (X-BSE, X-Q4); PDF.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: oci_attributable_owners
+    meaning: Other comprehensive income attributable to owners. PDF only; no distinct XBRL element.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: oci_attributable_nci
+    meaning: Other comprehensive income attributable to non-controlling interests. PDF only.
+    sign_convention: SIGNED_PROFIT_POSITIVE
+  - canonical_id: paid_up_equity_capital
+    meaning: Paid-up equity share capital at the closing date of a results column. XBRL PaidUpValueOfEquityShareCapital, filed in the column's duration context (Apar Q2 FY26 OneD and FourD, 40.17 crore) and normalised to the instant at that context's end date; PDF "14 Paid up share Capital". A balance, so never period-derived.
+    period_nature: INSTANT
+    period_aggregation: NONE
+  - canonical_id: face_value_per_share
+    meaning: Face value per equity share at the closing date of a results column. XBRL FaceValueOfEquityShareCapital, filed in the column's duration context (Apar X-Q2 INTEGRATED_FILING_INDAS_1560713 has OneD and FourD both 10 in the retained capture, so the inventory's FourD = 0 quirk is not reproduced) and normalised to the instant at that context's end date; PDF inside the line-14 label.
+    value_kind: PER_SHARE_AMOUNT
+    period_nature: INSTANT
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: reserves_excl_revaluation
+    meaning: Reserves excluding revaluation reserve at the closing date of the annual column. XBRL ReserveExcludingRevaluationReserves (present in Apar's annual filings X-Q4 and INTEGRATED_FILING_INDAS_1675395, absent from X-Q1, X-Q2 and the Q3 filing), normalised to the instant at its context's end date; PDF "15 Reserves excluding revaluation reserve" (FY column only). A balance, so never period-derived.
+    period_nature: INSTANT
+    period_aggregation: NONE
+    applicability_rule_id: results.annual_disclosure
+  - canonical_id: eps_basic
+    meaning: Basic EPS from continuing and discontinued operations. XBRL BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations; PDF "16 EPS - Basic". Never summed across periods.
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: eps_basic_continuing
+    meaning: Basic EPS from continuing operations. XBRL BasicEarningsLossPerShareFromContinuingOperations.
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: eps_basic_discontinued
+    meaning: Basic EPS from discontinued operations. XBRL BasicEarningsLossPerShareFromDiscontinuedOperations.
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: eps_diluted
+    meaning: Diluted EPS from continuing and discontinued operations. XBRL DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations; PDF "Diluted".
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: eps_diluted_continuing
+    meaning: Diluted EPS from continuing operations. XBRL DilutedEarningsLossPerShareFromContinuingOperations.
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE
+  - canonical_id: eps_diluted_discontinued
+    meaning: Diluted EPS from discontinued operations. XBRL DilutedEarningsLossPerShareFromDiscontinuedOperations.
+    value_kind: PER_SHARE_AMOUNT
+    sign_convention: SIGNED_PROFIT_POSITIVE
+    aggregation_behaviour: NOT_SUMMABLE
+    period_aggregation: NONE

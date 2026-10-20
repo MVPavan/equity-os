@@ -1,0 +1,30 @@
+# Upstox share-holdings entries, diagnostic-only (plan D8 Task 3, R10-R12; d8-probe.md §6, §13.5
+# U1-U3). Selectors match the JSON category key as a one-label path. mutual_funds and other_dii
+# stay UNMAPPED (explicit R12 scope exclusion, U4-U5). Unproven tier.
+source: upstox
+surface: share-holdings
+schema_identity: upstox-share-holdings-v1
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  member_source: SECURITY_ISIN
+  period_rule: COLUMN_INSTANT
+  period_kinds: [INSTANT]
+entries:
+  - entry_id: upstox.shp.promoters
+    selector: {statement_family: SHAREHOLDING, labels: ['promoters'], path: ['promoters'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: sebi_promoter_group, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 U1, ruled by Sol §13.6; data[category=promoters]; captures R/<SYM>/gen-2/ 14.bin APARINDS 23d2bd69…, 15.bin ETERNAL a24ec17a…, 17.bin TITAN a0aa6079…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 3 "(A)"; consistent. docs/research/upstox-api-schemas/fundamentals.md:163 documents the value as "Percentage of total shares" (evidence metadata; it does not define A+B+C2, so the assumption stays, R10). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: upstox.shp.fii
+    selector: {statement_family: SHAREHOLDING, labels: ['fii'], path: ['fii'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: institutions_foreign, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 U2, ruled by Sol §13.6; data[category=fii]; captures R/<SYM>/gen-2/ 14.bin APARINDS 23d2bd69…, 15.bin ETERNAL a24ec17a…, 17.bin TITAN a0aa6079…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 8 "(2) Institutions (Foreign)"; B2 consistent, FPI I+II refuted. Boundary assumed: B3 unplaced (R12). docs/research/upstox-api-schemas/fundamentals.md:163 documents the value as "Percentage of total shares" (evidence metadata; it does not define A+B+C2, so the assumption stays, R10). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: upstox.shp.retail_and_other
+    selector: {statement_family: SHAREHOLDING, labels: ['retail_and_other'], path: ['retail_and_other'], periodicity: quarterly}
+    canonical_id: shp_non_institutions_plus_employee_trust_pct
+    dimension_members: {shareholding_category: non_institutions_plus_employee_benefit_trust, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 U3, ruled by Sol §13.6; data[category=retail_and_other]; captures R/<SYM>/gen-2/ 14.bin APARINDS 23d2bd69…, 15.bin ETERNAL a24ec17a…, 17.bin TITAN a0aa6079…. Format rows R/reference/gen-1/02.bin (sha256 f069059d…) p. 9 "(4)", p. 12 "(C2)"; B4 + C2 consistent, B4 refuted. Boundary assumed: B3 unplaced (R12). docs/research/upstox-api-schemas/fundamentals.md:163 documents the value as "Percentage of total shares" (evidence metadata; it does not define A+B+C2, so the assumption stays, R10). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'

@@ -1,0 +1,60 @@
+# Tijori shareholding entries (plan D8 Task 3, R10-R12; d8-probe.md §6, §7, §13.5 T1-T8). Selectors
+# match the printed label path, never myid. LLP, Shares held by Custodians - DR, No. of
+# Shareholders and every holder row stay UNMAPPED diagnostics (T9-T11). Unproven tier.
+source: tijori
+surface: shareholding
+schema_identity: tijori-shareholding-tree-v1
+defaults:
+  tier: EQUIVALENCE_UNPROVEN
+  member_source: SECURITY_ISIN
+  period_rule: COLUMN_INSTANT
+  period_kinds: [INSTANT]
+entries:
+  - entry_id: tijori.shp.promoter
+    selector: {statement_family: SHAREHOLDING, labels: ['Promoter'], path: ['Promoter'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: sebi_promoter_group, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T1, ruled by Sol §13.6; table company_detailed, label path [Promoter] (myid Promoter is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 3 "(A)"; A consistent. ETERNAL prints a dash (A unfiled). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.indian_promoters
+    selector: {statement_family: SHAREHOLDING, labels: ['Indian Promoters'], path: ['Promoter', 'Indian Promoters'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: promoter_indian, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T2, ruled by Sol §13.6; table company_detailed, label path [Promoter, Indian Promoters] (myid IndianPromoters is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format rows R/reference/gen-1/02.bin (sha256 f069059d…) p. 4 "(1) Indian", p. 5 "(A)= (A)(1)+(A)(2)"; consistent where filed. Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.foreign_promoters
+    selector: {statement_family: SHAREHOLDING, labels: ['Foreign Promoters'], path: ['Promoter', 'Foreign Promoters'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: promoter_foreign, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T3 (Sol ruling 3), ruled by Sol §13.6; table company_detailed, label path [Promoter, Foreign Promoters] (myid ForeignPromoters is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 5 "(2) Foreign". Structural and arithmetically untested: Tijori prints a dash at Jun''26 in all three; a dash stays a marker, never zero. Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.public_shareholding
+    selector: {statement_family: SHAREHOLDING, labels: ['Public Shareholding'], path: ['Public Shareholding'], periodicity: quarterly}
+    canonical_id: shp_public_shareholding_plus_employee_trust_pct
+    dimension_members: {shareholding_category: public_shareholding_plus_employee_benefit_trust, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T4, ruled by Sol §13.6; table company_detailed, label path [Public Shareholding] (myid PublicShareholding is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Boundary fixed by structure (§7: the row1 set partitions the register, so the label is T - A - C1 = B + C2, with C2 under it in ETERNAL); format rows R/reference/gen-1/02.bin (sha256 f069059d…) p. 3 "(B)", "(C2)"; B + C2 consistent, B refuted. Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.institutions
+    selector: {statement_family: SHAREHOLDING, labels: ['Institutions'], path: ['Public Shareholding', 'Institutions'], periodicity: quarterly}
+    canonical_id: shp_institutions_domestic_plus_foreign_pct
+    dimension_members: {shareholding_category: institutions_domestic_plus_institutions_foreign, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T5, ruled by Sol §13.6; table company_detailed, label path [Public Shareholding, Institutions] (myid Institutions is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format rows R/reference/gen-1/02.bin (sha256 f069059d…) p. 7 "(1) Institutions (Domestic)", p. 8 "(2) Institutions (Foreign)"; B1 + B2 consistent. Boundary assumed: B3 unplaced (R12). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.non_institutions
+    selector: {statement_family: SHAREHOLDING, labels: ['Non-Institutions'], path: ['Public Shareholding', 'Non-Institutions'], periodicity: quarterly}
+    canonical_id: shp_non_institutions_plus_employee_trust_pct
+    dimension_members: {shareholding_category: non_institutions_plus_employee_benefit_trust, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T6, ruled by Sol §13.6; table company_detailed, label path [Public Shareholding, Non-Institutions] (myid Non-Institutions is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 9 "(4) Non- institutions", C2 placed under it by ETERNAL''s trust row (§6); B4 + C2 consistent, B4 refuted. Boundary assumed: B3 unplaced (R12). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.individual_up_to_2_lakh
+    selector: {statement_family: SHAREHOLDING, labels: ['Individual < 2 lac'], path: ['Public Shareholding', 'Non-Institutions', 'Individual < 2 lac'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: resident_individuals_up_to_2_lakh, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED, BOUNDARY_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T7, ruled by Sol §13.6; table company_detailed, label path [Public Shareholding, Non-Institutions, Individual < 2 lac] (myid Individual<2lac is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 10 "(g) Resident Individuals holding nominal share capital up to Rs. 2 lakhs"; consistent, R2L + NRI refuted. Boundary assumed: the label omits "Resident". Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'
+  - entry_id: tijori.shp.iepf
+    selector: {statement_family: SHAREHOLDING, labels: ['Investor Education and Protection Fund (IEPF)'], path: ['Public Shareholding', 'Non-Institutions', 'Investor Education and Protection Fund (IEPF)'], periodicity: quarterly}
+    canonical_id: shp_holding_pct
+    dimension_members: {shareholding_category: investor_education_protection_fund, denominator: TOTAL_SHARES}
+    assumptions: [DENOMINATOR_ASSUMED]
+    evidence_ref: 'd8-probe.md §13.5 T8, ruled by Sol §13.6; table company_detailed, label path [Public Shareholding, Non-Institutions, Investor Education and Protection Fund (IEPF)] (myid InvestorEducationandProtectionFund(IEPF) is a capture locator only); captures R/<SYM>/gen-2/ 13.bin APARINDS 91a84714…, 14.bin ETERNAL ded8ab33…, 16.bin TITAN 61ea44ca…. Format row R/reference/gen-1/02.bin (sha256 f069059d…) p. 10 "(f) Investor Education and Protection Fund (IEPF)"; APARINDS consistent (node occurs in APARINDS only). Denominator TOTAL_SHARES assumed (plan D8 R10, owner exception 2026-10-20): the filing''s SCRR base A+B+C2 (d8-probe.md §11.2); not vendor-stated.'

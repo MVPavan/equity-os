@@ -1,0 +1,150 @@
+# Dimension templates (data spec §1 "Numeric only", §4 dimension set). Names of segments, items,
+# holders and share classes are dimension members, never rows. ENTITY_EVIDENCE members are
+# recorded per entity from the filing text that defines them; CLOSED_LIST members are fixed here.
+templates:
+  - template_id: segment
+    axes:
+      - axis: segment
+        member_source: ENTITY_EVIDENCE
+        aggregate_members: [reportable_segments_total]
+        instantiation: >-
+          One member per reportable segment, recorded per entity (segment_members) with its
+          evidencing DescriptionOfReportableSegment occurrence. Member id = the filed description
+          lower-cased, every run of non-alphanumeric characters replaced by one underscore, leading
+          and trailing underscores removed (e.g. "Power / Telecom cables" -> power_telecom_cables).
+          Aligned by evidenced description, never by context ordinal (Apar "Others" is member 02 in
+          FY25 and 04 in FY26). reportable_segments_total is the declared output of dimensional
+          aggregation over an entity's members.
+      - axis: elimination_basis
+        member_source: CLOSED_LIST
+        members:
+          - member: PRE_ELIMINATION
+          - member: POST_ELIMINATION
+        instantiation: >-
+          Whether a segment figure is before or after inter-segment elimination. Apar XBRL segment
+          assets are post-elimination while the PDF prints them pre-elimination (inventory 2d), so
+          the two are distinct keys and never paired.
+  - template_id: other_expense_detail
+    axes:
+      - axis: other_expense_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per itemised other-expense line: XBRL OtherExpenses on DetailsOfOtherExpensesAxis
+          (e.g. OtherExpenses1Member), named by DescriptionOfOtherExpenses; member id from the
+          description as for segments.
+  - template_id: oci_not_reclassified_detail
+    axes:
+      - axis: oci_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per OCI item that will not be reclassified to profit or loss: XBRL
+          AmountOfItemThatWillNotBeReclassifiedToProfitAndLoss on
+          ItemsThatWillNotBeReclassifiedToProfitAndLossAxis, named by
+          DescriptionOfItemThatWillNotBeReclassifiedToProfitAndLoss; member id from the description.
+  - template_id: oci_reclassified_detail
+    axes:
+      - axis: oci_item
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per OCI item that will be reclassified to profit or loss: XBRL
+          AmountOfItemThatWillBeReclassifiedToProfitAndLoss on
+          ItemsThatWillBeReclassifiedToProfitAndLossAxis, named by
+          DescriptionOfItemThatWillBeReclassifiedToProfitAndLoss; member id from the description.
+  - template_id: shareholding_category
+    axes:
+      - axis: shareholding_category
+        member_source: CLOSED_LIST
+        # Parents only where the inventory's own descriptions state the containment (2e):
+        # other_dii is "DII excl. mutual funds (insurance, banks, ...)".
+        members:
+          - member: promoter_group
+          - member: fpi
+          - member: dii
+          - member: mutual_funds
+            parent: dii
+          - member: other_dii
+            parent: dii
+          - member: insurance
+            parent: other_dii
+          - member: government
+          - member: public
+          - member: others
+          - member: custodian_dr
+          # v3 (plan D8 R4, R11; d8-probe.md §11.2, §13.5): SEBI Regulation 31 format categories,
+          # parents from the format (R/reference/gen-1/02.bin, sha256 f069059d…, pages cited), bound
+          # to in-bse-shp members by label. The v2 members above stay declared and unused by v7.
+          - member: sebi_promoter_group  # (A) p. 3; ShareholdingOfPromoterAndPromoterGroupMember
+          - member: promoter_indian  # A(1) p. 4-5; IndianMember
+            parent: sebi_promoter_group
+          - member: promoter_foreign  # A(2) p. 5; ForeignMember
+            parent: sebi_promoter_group
+          - member: public_shareholding  # (B) p. 11; PublicShareholdingMember
+          - member: institutions_domestic  # B(1) p. 7-8; InstitutionsDomesticMember
+            parent: public_shareholding
+          - member: sovereign_wealth_funds_domestic  # B(1)(h) p. 8; SovereignWealthFundsDomesticMember
+            parent: institutions_domestic
+          - member: institutions_foreign  # B(2) p. 8; InstitutionsForeignMember
+            parent: public_shareholding
+          - member: central_state_government  # B(3) p. 9; GovernmentsMember
+            parent: public_shareholding
+          - member: non_institutions  # B(4) p. 9-11; NonInstitutionsMember
+            parent: public_shareholding
+          - member: investor_education_protection_fund  # B(4)(f) p. 10; InvestorEducationAndProtectionFundMember
+            parent: non_institutions
+          - member: resident_individuals_up_to_2_lakh  # B(4)(g) p. 10; ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember
+            parent: non_institutions
+          - member: non_promoter_non_public  # (C) p. 13; SharesHeldByNonPromoterNonPublicShareholdersMember
+          - member: custodian_dr_holders  # (C1) p. 12; reserved: no member in any instance (§11.2)
+            parent: non_promoter_non_public
+          - member: employee_benefit_trust  # (C2) p. 12; EmployeeBenefitsTrustsMember
+            parent: non_promoter_non_public
+        # v3 (plan D8 R5, R12; d8-probe.md §13.5 T4-T6, U3): basket outputs of the derived rows.
+        aggregate_members:
+          - public_shareholding_plus_employee_benefit_trust
+          - non_institutions_plus_employee_benefit_trust
+          - institutions_domestic_plus_institutions_foreign
+        instantiation: >-
+          Shareholding categories of inventory 2e (promoter and promoter group, FPI, DII, mutual
+          funds, DII excluding mutual funds, insurance companies, government, public, others,
+          custodians/DRs). A category never sums with a member it contains.
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+          - member: PROMOTER_HOLDING
+        instantiation: The denominator a percentage is stated against (data spec §4).
+  - template_id: shareholding_holder
+    axes:
+      - axis: holder
+        member_source: ENTITY_EVIDENCE
+        instantiation: >-
+          One member per named holder disclosed in the filing (vendor drill-downs list holders at
+          or above 1 %); the disclosure threshold travels as occurrence metadata (spec §4).
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+        instantiation: The denominator a percentage is stated against (data spec §4).
+  - template_id: shareholding_pledge
+    axes:
+      - axis: share_class
+        member_source: ENTITY_EVIDENCE
+        instantiation: One member per share class, from the entity's security identity (spec §3).
+      - axis: denominator
+        member_source: CLOSED_LIST
+        members:
+          - member: TOTAL_SHARES
+          - member: VOTING_RIGHTS
+          - member: PROMOTER_HOLDING
+        instantiation: >-
+          The denominator the pledged or encumbered percentage is stated against: the data spec §4
+          denominator list. Which of them an SHP prints for encumbrance is unevidenced (no SHP
+          filing is ingested; inventory 2e), so none is assumed.

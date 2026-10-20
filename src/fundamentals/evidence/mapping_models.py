@@ -47,6 +47,14 @@ class MemberSource(StrEnum):
     """Where a templated entry's entity-evidence member comes from."""
 
     XBRL_DESCRIPTION = "XBRL_DESCRIPTION"
+    SECURITY_ISIN = "SECURITY_ISIN"
+
+
+class MappingAssumption(StrEnum):
+    """An owner-sanctioned assumption an entry's pairing rests on (plan D8 R10, R12)."""
+
+    DENOMINATOR_ASSUMED = "DENOMINATOR_ASSUMED"
+    BOUNDARY_ASSUMED = "BOUNDARY_ASSUMED"
 
 
 class UnitTransform(StrEnum):
@@ -76,6 +84,7 @@ class Selector(BaseModel):
     native_field: str | None = None
     period_shape: PeriodShape | None = None
     dimension_axis: str | None = None
+    dimension_member: str | None = None
     statement_family: StatementFamily | None = None
     labels: tuple[str, ...] = ()
     section: str | None = None
@@ -84,6 +93,8 @@ class Selector(BaseModel):
     section_parent_equals: str | None = None
     label_ordinal: int | None = Field(default=None, ge=1)
     column_header: str | None = None
+    path: tuple[str, ...] = ()
+    periodicity: str | None = None
 
     @model_validator(mode="after")
     def _one_kind(self) -> Selector:
@@ -113,11 +124,8 @@ class Selector(BaseModel):
         if (self.native_field is None) != (other.native_field is None):
             return False
         if self.native_field is not None:
-            return (self.native_field, self.period_shape, self.dimension_axis) == (
-                other.native_field,
-                other.period_shape,
-                other.dimension_axis,
-            )
+            fields = ("native_field", "period_shape", "dimension_axis", "dimension_member")
+            return all(getattr(self, name) == getattr(other, name) for name in fields)
         labels = {tuple(normalize_text_tokens(label)) for label in self.labels}
         return (
             self.statement_family == other.statement_family
@@ -157,6 +165,7 @@ class MappingEntry(BaseModel):
     period_rule: PdfPeriodRule | None = None
     tier: EvidenceTier = EvidenceTier.EQUIVALENCE_UNPROVEN
     qualification: QualificationScope | None = None
+    assumptions: tuple[MappingAssumption, ...] = ()
     basis: frozenset[Basis] = ALL_BASES
     period_kinds: frozenset[PeriodKind] = ALL_PERIOD_KINDS
     evidence_ref: str = Field(min_length=1)
@@ -317,6 +326,11 @@ def selector_matches(selector: Selector, context: Mapping[str, object]) -> bool:
         selector.label_ordinal is not None
         and context.get("label_ordinal") != selector.label_ordinal
     ):
+        return False
+    path = context.get("path")
+    if selector.path and (not isinstance(path, list | tuple) or tuple(path) != selector.path):
+        return False
+    if selector.periodicity not in (None, context.get("periodicity")):
         return False
     return selector.column_header is None or _contains(
         normalize_text_tokens(str(context.get("column_header", ""))),

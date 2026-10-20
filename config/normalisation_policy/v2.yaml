@@ -1,0 +1,46 @@
+# Normalisation policy v2 (plan D8 Task 3): v1 verbatim plus the shareholding percentage units.
+# A raw value becomes exact base units as value x 10^raw_scale
+# with the mapping entry's sign; a raw unit means exactly one value kind and currency. A row whose
+# raw unit is not listed, or means another value kind than its canonical row, is INVALID
+# (UNIT_MISMATCH). Dash rules are construction-scoped: a printed dash contributes exact zero to the
+# named operand of the named construction only; the dash occurrence's own interpretation keeps no
+# value (data spec section 1, Missing-value states).
+version: v2
+units:
+  - raw_unit: "iso4217:INR"
+    value_kind: CURRENCY_AMOUNT
+    currency: INR
+    evidence_ref: "XBRL unit INR (measure iso4217:INR), every retained Apar instance"
+  - raw_unit: "iso4217:INR/xbrli:shares"
+    value_kind: PER_SHARE_AMOUNT
+    currency: INR
+    evidence_ref: "XBRL unit INRPerShare (iso4217:INR divided by xbrli:shares), every retained Apar instance"
+  - raw_unit: INR
+    value_kind: CURRENCY_AMOUNT
+    currency: INR
+    evidence_ref: "PDF printed unit 'Rs. in crores' (Task 11 unit marker, raw scale 7)"
+  - raw_unit: INR per share
+    value_kind: PER_SHARE_AMOUNT
+    currency: INR
+    evidence_ref: "PDF EPS heading 'Earnings per share (EPS) (Rs.)' (Task 11 unit marker, raw scale 0)"
+  - raw_unit: "xbrli:pure"
+    value_kind: PERCENTAGE
+    currency: null
+    evidence_ref: >-
+      d8-probe.md §3 l.111 and §9 E5 l.318: NSE SHP XBRL percentages are unit pure fractions (A for
+      APARINDS 0.5776). Normalized x100 exactly once by the first-party extractor (nse-shp-v1) emitting
+      raw_scale 2 with the lexeme, unit and decimals kept (plan D8 R5); this rule adds no scale.
+  - raw_unit: percent
+    value_kind: PERCENTAGE
+    currency: null
+    evidence_ref: >-
+      Vendor percent, raw scale 0 (the lexeme vendor_screener already emits for Unit.PERCENT): Screener
+      "Numbers in percentages" (d8-probe.md §6 l.183, l.194), Tijori unit cell "in %" (§6 l.196),
+      Upstox "Percentage of total shares" (§6 l.211).
+dash_rules:
+  - rule_id: apar-pdf-tax-earlier-years-dash
+    construction_rule_id: pdf.tax_expense
+    operand_name: earlier_years
+    evidence_ref: >-
+      Q2 FY26 results PDF (sha256 8be1b8de) p3 quarter column: (a) 89.13 + (b) (0.30) with (c)
+      printed "-" equals X-Q2 TaxExpense 88.83 crore, so the printed dash reads as zero in this sum.
