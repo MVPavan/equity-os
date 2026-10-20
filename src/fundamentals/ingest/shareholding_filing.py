@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from fundamentals.contracts.source_catalog import (
     SCREENER_DOCS,
+    SCREENER_INVESTORS,
     SCREENER_SHAREHOLDING,
     SEBI_REGULATION,
     SHP_LISTING,
@@ -30,6 +31,7 @@ SHP_ORIGINS = {
     SHP_TAXONOMY: "nsearchives.nseindia.com",
     SEBI_REGULATION: "www.sebi.gov.in",
     SCREENER_DOCS: "www.screener.in",
+    SCREENER_INVESTORS: "www.screener.in",
 }
 
 

@@ -235,6 +235,8 @@ SHP_LISTING = ("nse", "SHAREHOLDING_LISTING")
 SHP_XBRL = ("nse-shareholding-xbrl", "NSE_SHP_XBRL")
 SCREENER_SHAREHOLDING = ("screener-subscriber", "SCREENER_SHAREHOLDING")
 TIJORI_SHAREHOLDING = ("tijori", "shareholding")
+# The Screener drill-down behind a shareholding-table hook (plan D8 Task 1b).
+SCREENER_INVESTORS = ("screener-subscriber", "SCREENER_INVESTORS")
 # The Tijori overview page a screen review reads (plan D7-screen-export S5).
 TIJORI_OVERVIEW = ("tijori", "overview")
 UPSTOX_SHAREHOLDING = ("upstox", "share-holdings")
@@ -301,6 +303,9 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
     *(
         _surface(*pair, Representation.HTML, SourceRole.INDEPENDENT_VENDOR, _SUBSCRIBER_RIGHTS)
         for pair in (SCREENER_SHAREHOLDING, TIJORI_SHAREHOLDING, TIJORI_OVERVIEW)
+    ),
+    _surface(
+        *SCREENER_INVESTORS, Representation.JSON, SourceRole.INDEPENDENT_VENDOR, _SUBSCRIBER_RIGHTS
     ),
     _surface(*UPSTOX_SHAREHOLDING, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC),
 )
