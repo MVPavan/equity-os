@@ -30,7 +30,7 @@ source-backed update of what changed in facts, management commitments, calculati
 uncertainties and thesis.
 
 **The backend is complete when the pilot in §4 passes.** The pilot is one company over four
-quarters, run on the backend. Every number in it must be stored, cross-checked and traceable, and
+quarters, run on the backend. Every number in it must be stored, cross-checked (except PILOT-4's labelled single-source filed values) and traceable, and
 every claim reviewable.
 
 Beyond this file (decision register `docs/blueprint/funda-blueprint-implementation-decision-register-v2.md`):
@@ -99,9 +99,9 @@ pilot manifest (PREP-7), never from code output.
 | ID | Capability | Pass condition |
 |---|---|---|
 | PILOT-1 | Ingest and extraction check (D1a) | All four quarters' XBRL and PDF ingested. Every applicable row has a state, and none is filled with zero. PQ0 (Q2 FY26) matches the manifest: PBT 340.56 / 340.53 crore, OPM 8.06% |
-| PILOT-2 | Corroboration (D1b) | Screener and Tijori compared per quarter; the Apar opex gap against Screener equals its pre-registered outcome; every untrusted outcome has a queue item |
+| PILOT-2 | Corroboration (D1b) | Screener and Tijori compared per quarter; the Apar opex gap against Screener equals its pre-registered outcome; each row's queue items are exactly those the routing policy proposes (e.g. none for that opex `ANOMALY / NOISE` or inapplicable rows), and operational unavailability keeps its failure evidence |
 | PILOT-3 | PostgreSQL only (D2) | Legacy Apar facts reconciled; the pilot opens no SQLite store |
-| PILOT-4 | Ledger (D3) | Each update is a ledger version. 100% of material numerical claims cite a fact id or calculation trace (guidance: its source quote), and the claim check passes. Each version carries the retrospective label and both cutoffs. Reviewer approval is recorded. Export reproduces each version's hash |
+| PILOT-4 | Ledger (D3) | Each update is a ledger version. 100% of material numerical claims cite a fact id or calculation trace (guidance: its source quote; a comparator-period figure, or a filed tax total that cannot be admitted, may cite the company's directly filed exchange value, labelled single-source and not cross-checked, unless the predecessor quarter's admitted fact exists — owner PavanMV 2026-10-20), and the claim check passes. Each version carries the retrospective label and both cutoffs. Reviewer approval is recorded. Export reproduces each version's hash |
 | PILOT-5 | Memory (D4) | Items promoted after PQ1 (Q3 FY26) are retrieved in PQ2 and PQ3 with provenance, at the actual sequential evaluation boundaries (after the prior promotion, later events excluded). A contradicted item is surfaced. Separately, retrieval at a historical source cutoff returns nothing the pilot created |
 | PILOT-6 | Views (D5) | Each version and the promoted memory render read-only |
 | PILOT-7 | Onboarding (D6) | A held-out second company onboards by identifier alone and produces a comparison report |
@@ -118,6 +118,10 @@ pilot manifest (PREP-7), never from code output.
   This sets `PILOT_PROVEN: YES` in the brief and closes Phase 0.5.
 - **FAIL:** any check that fails names the backend part at fault. That part is reopened, fixed and
   re-verified, then the pilot is re-run from the failed check onward.
+- **CONDITIONAL** (owner PavanMV, 2026-10-20): the verdict may be CONDITIONAL while D8 stays parked
+  in the gate. PILOT-9 is not met while D8 is parked. PILOT-5's contradiction clause is NOT MET
+  (untestable on Apar's retained sources; nothing fabricated); the requirement stands. PASS, Phase 0.5
+  closure and `PILOT_PROVEN: YES` stay reserved for fully satisfied acceptance.
 
 PILOT-12 depends on the owner reviewing four reports; it is the one step that cannot run
 autonomously. Whether the workflow actually saves review time is judged at Phase 1 (register

@@ -34,6 +34,10 @@ blueprint field lists as accepted contracts.
    share-count bridges, risk measures — deterministic code with registered
    traces only.
 7. **Every material numerical claim links to a fact ID or calculation trace;**
+   amendment (owner PavanMV 2026-10-20): a comparator-period figure, or a filed
+   tax total that cannot be admitted, may cite the company's directly filed
+   first-party exchange value, labelled in the report as single-source and not
+   cross-checked, unless the predecessor quarter's admitted fact exists;
    every material factual claim resolves to an exact source location (page,
    table cell, timestamp).
 8. **Output is labeled by epistemic class** — observed / computed / inferred /
