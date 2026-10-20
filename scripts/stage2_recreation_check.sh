@@ -8,6 +8,7 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$REPO"
 MAIN_DB=eqos_stage2_main
 APAR=data/raw/watchlist/aparinds
+PAYLOAD_OUT=${1:-}  # optional: where a passing run copies its reconciliation payload
 die() { echo "stage2-check: FAIL: $*" >&2; exit 1; }
 say() { echo "stage2-check: $*" >&2; }
 hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
@@ -74,7 +75,14 @@ PORT=$(free_port) FRESH_PORT=$(free_port)
 [ "$PORT" != "$LIVE_PORT" ] && [ "$FRESH_PORT" != "$LIVE_PORT" ] && [ "$PORT" != "$FRESH_PORT" ] ||
   die "port collision"
 
-# Guard 3: a complete 0600 env file per instance, with throwaway credentials never printed.
+# Guard 3: a complete 0600 env file per instance, with throwaway credentials never printed, and
+# a 0700 secrets dir of randomized group-role logins, so ~/.secrets is never read.
+mkdir -m 700 "$ROOT/secrets"
+for file in $(uv run python -c 'from fundamentals.pg.role_secrets import LOGIN_SUFFIX
+from fundamentals.pg.settings import GROUP_ROLES
+print(*(group + LOGIN_SUFFIX for group in GROUP_ROLES.values()))'); do
+  (umask 077 && printf '%s_stage2:%s\n' "${file%.login}" "$(hex 24)" >"$ROOT/secrets/$file")
+done
 write_env() {
   (umask 077 && cat >"$ROOT/$1.env" <<EOF
 EQOS_PG_HOST=127.0.0.1
@@ -90,6 +98,7 @@ EQOS_PG_STATEMENT_TIMEOUT_MS=30000
 EQOS_PG_POOL_MIN_SIZE=1
 EQOS_PG_POOL_MAX_SIZE=4
 EQOS_PG_DATA_DIR=$3
+EQOS_SECRETS_DIR=$ROOT/secrets
 EOF
   )
   mkdir -m 755 "$3"  # the postgres user must traverse the bind mount, as on the live dir
@@ -209,7 +218,10 @@ in_env "$P" uv run pytest -q -p no:cacheprovider tests/fundamentals/test_data_st
 # 7. Fresh instance: restore B1 with replay.
 say "up $F on 127.0.0.1:$FRESH_PORT"
 up "$F" "$FRESH_PORT"
+in_env "$F" uv run fundamentals db bootstrap >/dev/null  # group roles and the purge login
 mkdir -m 700 "$ROOT/snap-fresh"  # empty; the store anchors an existing root under its owner
 in_env "$F" uv run fundamentals db restore --set "$B1" --database "eqos_test_fresh_$(hex 6)" \
-  --snapshot-root "$ROOT/snap-fresh" --replay-runs >/dev/null || die "fresh-instance restore"
+  --snapshot-root "$ROOT/snap-fresh" --live-snapshot-root "$ROOT/snap" --replay-runs >/dev/null ||
+  die "fresh-instance restore"
+[ -z "$PAYLOAD_OUT" ] || cp -- "$ROOT/reconciliation.payload" "$PAYLOAD_OUT"
 say "PASS"
