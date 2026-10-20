@@ -8,7 +8,7 @@ Gate test: `tests/fundamentals/test_pilot_e2e.py` (one ordered `test_pilot_end_t
 `tests/fundamentals/pilot_e2e_support.py`). Expected values come only from the frozen
 `pilot_manifest.yaml`; failing assertions begin `PILOT-n:`.
 
-Full suite at `7c640ad`: `uv run pytest tests/fundamentals` 4291 passed, 9 skipped (1:31:35), exit 0. `mypy --strict src` and ruff clean. `scripts/verify_project.sh` runs after the production cutover.
+Full suite at `7c640ad`: `uv run pytest tests/fundamentals` 4291 passed, 9 skipped (1:31:35), exit 0. `mypy --strict src` and ruff clean. `scripts/verify_project.sh` after the production cutover: every row PASS (Pilot, Pytest, Mypy, Ruff, frozen manifests), "Project incomplete: 0 failed, 1 not built" (D8), exit 1 as expected.
 
 ## Checks
 
@@ -93,7 +93,7 @@ Commits: `171bd47`, `38eac49`, `4c318e4`, `4de844d`, `7c640ad`.
 
 ## Open external items
 
-- Production cutover `eqos-3zl`: plan approved; awaiting the owner's role-login files.
+- Production cutover `eqos-3zl`: done 2026-10-20 (status OPEN; legacy 43/43 EQUAL to fresh).
 - Owner blind drill `eqos-4j2.30`.
 - Owner review timing (PILOT-12; Owner Q1 in the plan).
 - D8 shareholding (PILOT-9; `eqos-4j2.32`).
