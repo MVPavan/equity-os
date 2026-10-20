@@ -26,7 +26,7 @@ from test_transcript_admission import issuer_config
 from tests.fundamentals.test_source_intake_cli import INTAKE_TIME, intake_fixture
 
 import fundamentals.api.cli as cli
-from fundamentals.api import compare_cli
+from fundamentals.api import compare_cli, source_admission
 from fundamentals.api.cli import _build_parser, main, run_command
 from fundamentals.api.config import load_config
 from fundamentals.api.source_admission import RETROSPECTIVE, SourceAdmissionError
@@ -644,6 +644,26 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
     assert families and all(family.startswith(ADMITTED_FAMILY) for (family,) in families)
     assert pilot.query(MAPPED_VERSIONS) == [("v6",)]
     assert seen & {LedgerStatus.REAFFIRMED.value, LedgerStatus.MODIFIED.value}
+
+
+def test_a_lagging_process_clock_still_passes_as_known(
+    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """eqos-4j2.23: the store stamps every write, so a process clock behind the store's must not
+    put the run's own facts after its derivation cutoff (``POST_CUTOFF``)."""
+    lag = timedelta(seconds=2)
+
+    class Lagging(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> Lagging:
+            return super().now(tz) - lag  # type: ignore[return-value]
+
+    monkeypatch.setattr(cli, "datetime", Lagging)
+    monkeypatch.setattr(source_admission, "actual_clock", lambda: Lagging.now(UTC))
+    version_id = pilot.run("FY26_Q2").draft_version_id
+    assert version_id is not None
+    states = pilot.validate(version_id).claim_states
+    assert [key for key, state in states if state is not ClaimState.MATCH] == []
 
 
 def _guidance_claims(claims: tuple[NumericClaim, ...]) -> dict[str, NumericClaim]:

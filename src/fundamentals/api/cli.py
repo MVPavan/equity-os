@@ -122,7 +122,11 @@ from fundamentals.ledger.run_draft import (
     write_run_draft,
 )
 from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
-from fundamentals.output.earnings_update import REQUIRED_ROLES, EarningsUpdate
+from fundamentals.output.earnings_update import (
+    REQUIRED_ROLES,
+    EarningsUpdate,
+    render_earnings_update,
+)
 from fundamentals.pg.cutover import open_fact_store
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -395,6 +399,13 @@ def run_command(
                 comparators_acquired_at=prior.first_seen,
                 before_commit=before_commit,
                 skip_roles=frozenset(FactRole),  # facts come only from admission
+            )
+            # The store stamps the run's writes, so its derivation cutoff is the store's clock.
+            update = result.update.model_copy(
+                update={"derivation_cutoff": repository.store_clock()}
+            )
+            result = result.model_copy(
+                update={"update": update, "markdown": render_earnings_update(update)}
             )
             draft = RunDraft(
                 period=period,
