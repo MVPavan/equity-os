@@ -61,7 +61,7 @@ time.
 | D4 | Long-term memory with separate promotion | Ledger Stage 2 e2e green | Complete (Sol APPROVE 2026-10-15) |
 | D5 | Generated read-only views | Ledger Stage 3 e2e green | Complete (Sol APPROVE 2026-10-15) |
 | D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Complete (Sol APPROVE 2026-10-17); D6b extractor v2 complete |
-| D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Tasks 1–4 done; Tasks 5–6 wait on the owner's Screener CSV export |
+| D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Complete (Sol APPROVE 2026-10-18; direct-query screen export, no owner CSV needed) |
 | D8 | Shareholding filing source | Stage 3 e2e green | Parked (owner ruling 2026-10-17) |
 | D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
 | PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
@@ -119,9 +119,11 @@ pilot manifest (PREP-7), never from code output.
 - **FAIL:** any check that fails names the backend part at fault. That part is reopened, fixed and
   re-verified, then the pilot is re-run from the failed check onward.
 - **CONDITIONAL** (owner PavanMV, 2026-10-20): the verdict may be CONDITIONAL while D8 stays parked
-  in the gate. PILOT-9 is not met while D8 is parked. PILOT-5's contradiction clause is NOT MET
-  (untestable on Apar's retained sources; nothing fabricated); the requirement stands. PASS, Phase 0.5
-  closure and `PILOT_PROVEN: YES` stay reserved for fully satisfied acceptance.
+  in the gate. PILOT-9 is not met while D8 is parked. PASS, Phase 0.5 closure and `PILOT_PROVEN: YES` stay reserved
+  for fully satisfied acceptance.
+- **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
+  retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
+  not hold back its verdict; nothing is fabricated. It is tested on a later stock that has one.
 
 PILOT-12 depends on the owner reviewing four reports; it is the one step that cannot run
 autonomously. Whether the workflow actually saves review time is judged at Phase 1 (register
