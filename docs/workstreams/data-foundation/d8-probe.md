@@ -3,7 +3,9 @@
 Status: complete. Sol ruled on §9 (REQUEST_CHANGES; dispositions in [`plans/D8.md`](plans/D8.md) "Probe
 ruling dispositions"). §11 adds the Task 2b definitional evidence and supersedes §4's hierarchy
 basis, §5's thresholds and §9's surface table where they differ. §12 (2026-10-20) records how each
-vendor nests its shareholding, for the owner exception; §12.6 records the owner's Q3 ruling. Plan: [`plans/D8.md`](plans/D8.md)
+vendor nests its shareholding, for the owner exception; §12.6 records the owner's Q3 ruling. §13
+(2026-10-20, Task 2c) records the gen-2 tree capture, the tree inventory and the node rulings, for
+Sol to rule before Task 3. Plan: [`plans/D8.md`](plans/D8.md)
 Task 2, R2–R5, R8, Q1. Live requests 2026-10-17 09:58:06–09:58:58 UTC: one sequential pass, 3 s
 spacing, 18 requests, 18 × HTTP 200 (`OK`), no failed request, so no `gen-2`. Credentials came only
 from `source scripts/credentials.sh` (no refresh was needed and none was printed). Every Screener page
@@ -827,3 +829,290 @@ consistency-only as evidence. Because first-party percentages are `PRECISION_UNS
 formal pairs stay refused; the pairing, absent-as-zero included, is the plan's labelled report-time
 point check (R12), never a stored zero. Apar candidates per vendor are plan R12's table; Task 2c rules
 them in §13. Nesting depth is unchanged (§12.2): Tijori 3, Screener 2, Upstox 1.
+
+## 13. Tree capture and node rulings (plan D8 Task 2c)
+
+### 13.1 Capture
+
+One sequential pass on 2026-10-20, 15:57:00–15:59:34 UTC, 3 s spacing, 49 requests, 49 × `OK`, no
+failed request. The driver is `scratchpad/d8-resume/drive_gen2.py`
+(`f3c50577bcc57a09c183658dd08c4302c6e9099e858cd92ac9f22034a3036e4e`). It runs Task 2's driver
+`acquire()` unchanged (§1 hash `e56e958a…`): `acquiring_fetch(live_transport(), …)`, `allowed` from
+`ingest/shareholding_filing.authorised` against `VENDOR_SURFACES` (the master through D6's
+`discovery.authorised`), and `write_generation`. After the Screener page it sends one
+`("screener-subscriber","SCREENER_INVESTORS")` request per `Company.showShareholders('<bucket>',
+'<periodicity>', this)` hook, in page order: every hook of `<div id="quarterly-shp">`, then every hook
+of `<div id="yearly-shp">`. Each URL is `https://www.screener.in/api/3/<company_id>/investors/<bucket>/<periodicity>/`,
+with `company_id` the page's single `data-company-id` (211, 1274894, 3437). The driver stops before
+any drill-down if the page has no single company id, lacks either table, or has a hook outside them
+or in the wrong table. Run log: `drive_gen2.log`
+(`edf5fc23a40ab67a2924418e051415c4798c3ca1a4298988479aa4a7a0e3e268`). Credentials came only from
+`source scripts/credentials.sh` (no refresh was triggered, nothing printed). Each Screener page has
+a logout link, and each Tijori page has `is_auth` = `true`.
+
+Root `R/<SYM>/gen-2/`: issuer = symbol, `as_of` 2026-10-20, generation 2, authorisation
+`plan D8 Task 2c tree capture (plan Sol r7 APPROVE 5dcacf6; catalog faa5359)`. `gen-1` is
+retained untouched. Hooks were re-discovered on gen-2, not hardcoded: quarterly 4/5/6 and yearly
+5/5/6 (APARINDS/ETERNAL/TITAN), the same as gen-1 (§12.3). That makes 31 drill-down bodies.
+
+**Verification.** `sha256sum -c` over the 52 files listed in `scratchpad/d8-resume/gen2_sha256.txt`
+(`a87945427c4ae3dd686fd1c80d2f1344ff70afc760efa3bca928dc61e68ba0b8`) passes for every line.
+`scratchpad/d8-resume/replay_gen2.py`
+(`cdeca1dd96b741abbab35de07f52426933e20bc5972f34b0d838e61a62956472`) loads each generation with
+`replay_fetch` (the `as_of` check passes) and serves every entry: 15/15, 16/16 and 18/18 with a body.
+
+**Structure against §12: unchanged.** Screener: one `quarterly-shp` and one `yearly-shp` table,
+whose rows (labels, hooks, a hook-less `No. of Shareholders` row) equal gen-1's. No drill-down
+body carries any key other than a `Mon YYYY` period or `setAttributes`, so there is no third level
+and nothing is `UNSUPPORTED_SCHEMA` (R11 Depth). Tijori: `company_detailed` row1/row2/row3 counts
+are 4/4/21, 4/4/13 and 4/4/27, as in §12.2, with no row4. Upstox: five categories. Maximum depth is
+**Screener 2, Tijori 3, Upstox 1**. The only change is content: every Tijori column window now
+ends `Sep'26` (in gen-1 only ETERNAL's did). The instant is read by header (§12.2).
+
+### 13.2 File hashes
+
+| File | Surface (`source`, `surface`) | Drill-down (bucket/periodicity) | Bytes | SHA-256 | Same bytes in gen-1 |
+|---|---|---|---|---|---|
+| `APARINDS/gen-2/00.bin` | `nse`, `EQUITY_L` | — | 184984 | `64bc3997cc8e6d67f77fec2d04e4f74c45d7f7cb712ffd55c0885fb5a56722d8` | no |
+| `APARINDS/gen-2/01.bin` | `nse`, `SHAREHOLDING_LISTING` | — | 19116 | `625ced745407ba622760e765b6cfdda5ed19dd45badbf8f313cb6e3ab9374e23` | `gen-1/01.bin` |
+| `APARINDS/gen-2/02.bin` | `nse-shareholding-xbrl`, `NSE_SHP_XBRL` | — | 288488 | `619f5c1434879cae4619b064899b6fdf21a6d247d1101e9b488fb4711b2340dd` | `gen-1/02.bin` |
+| `APARINDS/gen-2/03.bin` | `screener-subscriber`, `SCREENER_SHAREHOLDING` | — | 311701 | `b47a0bd24dd90bb7cb189ec4f6d3ae0d33f7c2ce3c7e3b1766270ec4170fe4aa` | no |
+| `APARINDS/gen-2/04.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | promoters/quarterly | 8039 | `7a11c9220783a26656d5fb69957742b00eda286399f2dfe8316a1a6db717cf9d` | no |
+| `APARINDS/gen-2/05.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/quarterly | 303 | `a3b9c314cbb5ea60f4e9eacce0a82d6f20637ce32e45e8bb09b5ac100e23b1f4` | no |
+| `APARINDS/gen-2/06.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/quarterly | 3588 | `706550ff872cb920e29fc3fda63c973d285b835a368ecf8c39f8429cd29e9cda` | no |
+| `APARINDS/gen-2/07.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/quarterly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `APARINDS/gen-2/08.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | promoters/yearly | 7698 | `2eda3d2ada6e092bcd37202a51d9522943c32f9581d455ab72933ada2b6a5532` | no |
+| `APARINDS/gen-2/09.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/yearly | 1020 | `42f96d54fa8d962d6833f107148a8855db527c6d7d5443834a9761428b1fd1cf` | no |
+| `APARINDS/gen-2/10.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/yearly | 5217 | `a5bb76d23d2df2ca5a67551d32e96867bf41f94282a8229138147f30e6088efa` | no |
+| `APARINDS/gen-2/11.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | government/yearly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `APARINDS/gen-2/12.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/yearly | 152 | `b572011ace39b14f68226d3b8615c4a978d5fee8847062146266ccdab039dd6b` | no |
+| `APARINDS/gen-2/13.bin` | `tijori`, `shareholding` | — | 318886 | `91a8471464c23c08bf1b2b26ab9c3d0294da6f7c38b65765bf0285562a14f4f3` | no |
+| `APARINDS/gen-2/14.bin` | `upstox`, `share-holdings` | — | 927 | `23d2bd69b99a6d807643c8ca573585e6a744dc375f24b0c62129f06e3c1a9672` | `gen-1/05.bin` |
+| `APARINDS/gen-2/discovery-manifest.json` | — | — | — | `1a8e27dafed1c44a5fab6d2aa796eda0e5c88631332315d00a313a9507e2b74e` | — |
+| `ETERNAL/gen-2/00.bin` | `nse`, `EQUITY_L` | — | 184984 | `64bc3997cc8e6d67f77fec2d04e4f74c45d7f7cb712ffd55c0885fb5a56722d8` | no |
+| `ETERNAL/gen-2/01.bin` | `nse`, `SHAREHOLDING_LISTING` | — | 25297 | `b2ab7fc891a23387c78a0b6ea094cf972cd2268167d08311f59eeaa738ada1aa` | `gen-1/01.bin` |
+| `ETERNAL/gen-2/02.bin` | `nse-shareholding-xbrl`, `NSE_SHP_XBRL` | — | 231916 | `739e378840b2fcd1c9621281660c55d54f8fd9d6d606a6c296618159f0b6a7e8` | `gen-1/02.bin` |
+| `ETERNAL/gen-2/03.bin` | `screener-subscriber`, `SCREENER_SHAREHOLDING` | — | 238583 | `48f28dd526ac8e341839d8a121cfa03b3f9764a6b0a74ceb03a5ced7d1fc1be8` | no |
+| `ETERNAL/gen-2/04.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/quarterly | 3218 | `d5ce1b34c4adf4b2e27ae0079c287a27066a2cd7c6d907a059eb4fde425a6979` | no |
+| `ETERNAL/gen-2/05.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/quarterly | 5674 | `d16e1a93971af9ea5e3be84cbab1f1fc98bf09595305b9ab227620dba9071430` | no |
+| `ETERNAL/gen-2/06.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | government/quarterly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `ETERNAL/gen-2/07.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/quarterly | 932 | `8d9f05b0496b50248be7d71f46025b906b74a2b08a4d294fc94feddd78488ca3` | no |
+| `ETERNAL/gen-2/08.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | others/quarterly | 365 | `a45e63ea158f7c61d6b629a648a8e4f22e59d255ce4f796123d325ca1a0a7447` | no |
+| `ETERNAL/gen-2/09.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/yearly | 2953 | `7956c3fb48f845b95c055de8ec02d9a7e5b249b5daabd9d39c8846c6dfe7b35a` | no |
+| `ETERNAL/gen-2/10.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/yearly | 3651 | `bef32c5ac4cb106a484e50da5e9a307cc1e6d5471860a23b8d5aa8a5a0d2e091` | no |
+| `ETERNAL/gen-2/11.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | government/yearly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `ETERNAL/gen-2/12.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/yearly | 2770 | `097a3f408641e80283d07c9fa822cd684d94ff3800cf440fce2ac8c5aa56c500` | no |
+| `ETERNAL/gen-2/13.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | others/yearly | 245 | `0c4418257a6c43e6fac3c31e99b129ce6b760d99dd5d6e5a41b38356416446f2` | no |
+| `ETERNAL/gen-2/14.bin` | `tijori`, `shareholding` | — | 290346 | `ded8ab334f43bf9649ca28c88d35d68cd4b54da11524ca76528d7c2e3b15294e` | no |
+| `ETERNAL/gen-2/15.bin` | `upstox`, `share-holdings` | — | 926 | `a24ec17a0e4bab5def88e8e0fd05c00a7598d7a7645901ab2bbee758fa424fc2` | `gen-1/05.bin` |
+| `ETERNAL/gen-2/discovery-manifest.json` | — | — | — | `ddfffe683b11cf345dc22a7d00bc1272ed22c15343d02cbbb49c1b72fe3cad55` | — |
+| `TITAN/gen-2/00.bin` | `nse`, `EQUITY_L` | — | 184984 | `64bc3997cc8e6d67f77fec2d04e4f74c45d7f7cb712ffd55c0885fb5a56722d8` | no |
+| `TITAN/gen-2/01.bin` | `nse`, `SHAREHOLDING_LISTING` | — | 18826 | `6cc59d46bcf5ef58b115ba0ea1951c9e3b39c21645cfb84d9da48ebb400a49e3` | `gen-1/01.bin` |
+| `TITAN/gen-2/02.bin` | `nse-shareholding-xbrl`, `NSE_SHP_XBRL` | — | 1624948 | `bb74c426966eae7419fdbbcf6f141944ef9eb2336b18889d0e1d8932169329b3` | `gen-1/02.bin` |
+| `TITAN/gen-2/03.bin` | `screener-subscriber`, `SCREENER_SHAREHOLDING` | — | 257269 | `419600f91c5011c4bd6b41c542de71268f377214fb2bcda84b92f18be7cc71f6` | no |
+| `TITAN/gen-2/04.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | promoters/quarterly | 102165 | `f9bce17c748794ce4d201d47cda2fad711d7c45b601190152da94d94605a2f29` | no |
+| `TITAN/gen-2/05.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/quarterly | 148 | `02e6dfedc86d0e2225e686be324aa8f828586eeb6302517377e5b4e9a601aa2c` | no |
+| `TITAN/gen-2/06.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/quarterly | 1666 | `c8ba785cd951c5b632ee379d8e15ea71a28098702d68218bc2dddf1a37a98851` | no |
+| `TITAN/gen-2/07.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | government/quarterly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `TITAN/gen-2/08.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/quarterly | 901 | `62d2111206b8c5b58822b79c9d605e84769565bc9b3c4cff9973581fe0cf8552` | no |
+| `TITAN/gen-2/09.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | others/quarterly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `TITAN/gen-2/10.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | promoters/yearly | 70114 | `96ac176beb456571c940d3c05da20409b065c86aee1a80ceae7de740e872ff0b` | no |
+| `TITAN/gen-2/11.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | foreign_institutions/yearly | 975 | `2a20e4b2324d7d95c36162ef101a814741191de4497c3a6ec530074e79b48752` | no |
+| `TITAN/gen-2/12.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | domestic_institutions/yearly | 2257 | `bd05afd82524396b7913a5df4e0c6c40324f2ae2b4be888e384d567034e930c2` | no |
+| `TITAN/gen-2/13.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | government/yearly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `TITAN/gen-2/14.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | public/yearly | 862 | `1f2860c0d670d46fee1698edfa5a15e6002e45e2d8788775946be40f0d536d41` | no |
+| `TITAN/gen-2/15.bin` | `screener-subscriber`, `SCREENER_INVESTORS` | others/yearly | 2 | `44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` | no |
+| `TITAN/gen-2/16.bin` | `tijori`, `shareholding` | — | 331080 | `61ea44ca4de347dd03caa1361cd0ed207fa01bf9f586de112700c4ff95fa3376` | no |
+| `TITAN/gen-2/17.bin` | `upstox`, `share-holdings` | — | 926 | `a0aa60795f21211b4e967d77f701b2f065b6e58f8b149ad9b4207b06b2d8a22a` | `gen-1/05.bin` |
+| `TITAN/gen-2/discovery-manifest.json` | — | — | — | `79eebab15acc60f86735a7fa617b833b50aeaf495a3a2315f53eea4a12bc1fba` | — |
+
+### 13.3 gen-2 against gen-1 (revisions)
+
+- **SHP XBRL: no revision.** Each `gen-2/02.bin` is byte-identical to its `gen-1/02.bin`. The
+  SHA-256 equals §1 for all three companies (the table above, last column).
+- The listing (`01.bin`) is byte-identical too, so it still has one 30-JUN-2026 row per company
+  with `revisedData` `N`. The Upstox bodies are byte-identical (`gen-1/05.bin`).
+- Every Jun 2026 value the gen-1 aid reads equals its gen-2 value: Screener quarterly rows, Tijori
+  row1/row2 and Upstox categories (tree aid T3). The Screener and Tijori pages differ in bytes
+  only, and §1's rulings are re-checked over gen-2 in tree aid T2: every TS verdict there equals
+  aid table 4's.
+
+### 13.4 Inventory
+
+The inventory is tree aid T1 together with its companion T1h, both generated by the aid (§13.7)
+and held only in private evidence (§13.7 retention): they reproduce vendor readings, so neither is
+in Git.
+- **T1** lists every non-holder node, every Tijori and Upstox node (Tijori holders included), and
+  a per-list summary of Screener holders.
+- **T1h** lists every Screener drill-down holder (1,057 rows).
+
+Every T1/T1h row carries the printed label, the printed parent label, the ordered label path (a
+JSON list of printed labels, e.g. `["Promoter", "Indian Promoters"]`), depth, periodicity, the
+source node id and parent id (Tijori `myid` / `data-parent`; Screener bucket / drill-down key), and
+every offered period's value or printed marker. Task 3 selectors match the label path; ids are
+capture locators only (as in `ingest/tijori_shareholding.py`).
+
+Wholly empty nodes are included:
+- the `{}` buckets: APARINDS quarterly `public` and yearly `government`; ETERNAL quarterly and
+  yearly `government`; TITAN quarterly and yearly `government` and `others`;
+- the Tijori rows that print `—` in every column (`["Promoter", "Foreign Promoters"]` and
+  `["Shares held by Custodians - DR"]`; ETERNAL's whole `["Promoter"]` branch).
+
+A period missing from a node is listed as not offered, never as zero.
+
+Node counts (nodes / holders):
+
+| Vendor | APARINDS | ETERNAL | TITAN |
+|---|---|---|---|
+| Screener | 120 / 109 | 109 / 97 | 865 / 851 |
+| Tijori | 29 / 18 | 21 / 12 | 35 / 26 |
+| Upstox | 5 / 0 | 5 / 0 | 5 / 0 |
+
+A Screener holder is a drill-down key. A Tijori holder is a row3 node other than the class-named
+`Individual < 2 lac`, `Investor Education and Protection Fund (IEPF)` and `LLP` (§12.2). That split is a
+judgment by label. No yearly Screener table or yearly holder offers `Jun 2026`: the yearly columns
+are the March year-ends plus the latest quarter.
+
+### 13.5 Node rulings
+
+Each ruling below applies to the node path in every company where the node occurs.
+
+- **Basis.** R5 and R12, with R11's three conditions: label correspondence to a format row, a
+  matching parent, and one surviving basket or its R12 closest aggregate. One scoped relaxation:
+  S4 drops R11's literal label correspondence under the owner's closest-aggregate decision
+  (Sol ruling 1, §13.6).
+- **Denominator.** Every mapped entry takes R10's `TOTAL_SHARES` (A+B+C2, §11.2) with
+  `DENOMINATOR_ASSUMED`.
+- **Labels.** **D** = denominator assumed; **Bd** = `BOUNDARY_ASSUMED`; **Z** = "absent category
+  taken as zero". Z is a point-check label decided per company at report time (R12). It is never an
+  entry assumption. It is noted where the evidence shows the absence.
+- **Locators.** Format locators are `R/reference/gen-1/02.bin` page and phrase. Vendor locators are
+  `R/<SYM>/gen-2/`:
+  - Screener page `03.bin`, `<div id="quarterly-shp">`, the row whose hook is
+    `showShareholders('<bucket>', 'quarterly', this)`;
+  - Tijori `13.bin` / `14.bin` / `16.bin`, table `company_detailed`, the printed label path
+    (`myid` is a capture locator only);
+  - Upstox `14.bin` / `15.bin` / `17.bin`, `data[category=…]`.
+- **Arithmetic.** "T2" cites tree aid T2: gen-2 filings, TS = exact share counts, tolerance
+  0.03 pp. A match establishes nothing, and a mismatch refutes.
+
+| # | Vendor node (periodicity) | Occurs in | Locator | Format row | Ruling | Labels | T2 (TS) and reason |
+|---|---|---|---|---|---|---|---|
+| S1 | Screener `Promoters` (quarterly) | APARINDS, TITAN | hook `promoters` | p. 3 "(A) Promoter & Promoter Group" | **A** | D (ETERNAL: no row; A unfiled, Z) | A consistent +0.0008, +0.0042 |
+| S2 | Screener `FIIs` (quarterly) | all | hook `foreign_institutions` | p. 8 "(2) Institutions (Foreign)" | **B2** | D, Bd (B3, C1 unplaced) | B2 consistent +0.0057, +0.0113, +0.0056; FPI1+FPI2 refuted on ETERNAL (+1.6565) |
+| S3 | Screener `DIIs` (quarterly) | all | hook `domestic_institutions` | p. 7 "(1) Institutions (Domestic)" | **B1**, labelled approximate closest aggregate (R12; Sol ruling 4) | D, Bd (known domestic-SWF boundary difference, p. 8 "(h) Sovereign Wealth Funds") | Exact equivalence refuted: B1 −0.1054 on ETERNAL and −0.1875 on TITAN, which stay POINT_CHECK there. B1 − SWF is consistent but a construction outside the approved scope (R12 "Still refused") |
+| S4 | Screener `Government` (quarterly) | ETERNAL, TITAN | hook `government` | p. 8 "(h) Sovereign Wealth Funds" under B1 (label-corresponding p. 9 "(3)", B3, is refuted) | **`SovereignWealthFundsDomesticMember`** (domestic SWF; new v3 subcategory member), assumed closest direct category, not an established equivalence (Sol ruling 1) | D, Bd; R11 label correspondence relaxed for this node only | SWF consistent +0.0031, +0.0034; B3 refuted (+0.1079, +0.1873). SWF+B3 also consistent (+0.0010, +0.0007), so B3 stays unplaced: arithmetic does not prove its exclusion |
+| S5 | Screener `Public` (quarterly) | all | hook `public` | p. 9 "(4) Non- institutions" | **B4** | D, Bd (B3 unplaced) | B4 consistent +0.0058, −0.0030, −0.0163; B4+C2 refuted (−4.6138, −0.0697) |
+| S6 | Screener `Others` (quarterly) | ETERNAL, TITAN | hook `others` | p. 12 "(2) Employee Benefit Trust …"; p. 13 "(C) = (C1) + (C2)" | **C2** | D, Bd (C1 unplaced: empty only by declaration, §11.2) | C2 consistent −0.0008, −0.0034. C has no TS percentage fact (§8), so C is not the closest pairable aggregate |
+| S7 | Screener `No. of Shareholders` (quarterly) | all | hook-less row | — | **UNMAPPED** | — | A count, not a percentage; no first-party percentage aggregate (R12, as for Tijori `["No. of Shareholders"]`) |
+| S8–S14 | Screener yearly rows `Promoters`, `FIIs`, `DIIs`, `Government`, `Public`, `Others`, `No. of Shareholders` | per company (§6 sets plus APARINDS `Government`) | `<div id="yearly-shp">` | — | **UNMAPPED** (7) | — | R11: only quarterly rows carry selectors. The yearly table offers no `Jun 2026` (T1). Diagnostics |
+| T1 | Tijori `["Promoter"]` | all | `myid="Promoter"` | p. 3 "(A)" | **A** | D (ETERNAL prints `—`; A unfiled, Z) | A consistent +0.0008, +0.0042 |
+| T2 | Tijori `["Promoter", "Indian Promoters"]` | all | `myid="IndianPromoters"` | p. 4 "(1) Indian", p. 5 "(A)= (A)(1)+(A)(2)" | **`IndianMember`** (A(1); new v3 subcategory member, R11) | D | Filed APARINDS and TITAN; consistent +0.0008, +0.0042. ETERNAL prints `—` and files none |
+| T3 | Tijori `["Promoter", "Foreign Promoters"]` | all | `myid="ForeignPromoters"` | p. 5 "(2) Foreign" | **`ForeignMember`** (A(2); new v3 subcategory member) | D | Structural mapping, arithmetically untested (Sol ruling 3): Tijori prints `—` at Jun'26 in all three. TITAN files a zero `ForeignMember` (T2 TS 0.0000). Dashes stay markers: no VALUE candidate, no zero comparison |
+| T4 | Tijori `["Public Shareholding"]` | all | `myid="PublicShareholding"` | p. 3 "(B)", "(C2)"; §7 row1 partition | **B + C2** (v3 derived row) | D; no Bd (structure fixes it, §7); APARINDS: C2 unfiled, Z | B+C2 consistent −0.0008, +0.0000, −0.0042; B refuted (+4.6108, +0.0492) |
+| T5 | Tijori `["Public Shareholding", "Institutions"]` | all | `myid="Institutions"` | p. 7 "(1) Institutions (Domestic)", p. 8 "(2) Institutions (Foreign)" | **B1 + B2** (v3 derived row) | D, Bd (B3 unplaced) | B1+B2 consistent −0.0066, −0.0042, −0.0118 |
+| T6 | Tijori `["Public Shareholding", "Non-Institutions"]` | all | `myid="Non-Institutions"` | p. 9 "(4) Non- institutions"; C2 placed under it by ETERNAL's trust row (§6) | **B4 + C2** (v3 derived row) | D, Bd (B3 unplaced); APARINDS: C2 unfiled, Z | B4+C2 consistent −0.0042, +0.0062, +0.0103; B4 refuted (+4.6170, +0.0637) |
+| T7 | Tijori `["Public Shareholding", "Non-Institutions", "Individual < 2 lac"]` | all | `myid="Individual<2lac"` | p. 10 "(g) Resident Individuals holding nominal share capital up to Rs. 2 lakhs" | **`ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember`** (new v3 subcategory member) | D, Bd (residency boundary assumed: the label omits "Resident") | Consistent +0.0044, −0.0008, −0.0006; R2L + NRI refuted (−0.4843, −0.4356, −0.8033) |
+| T8 | Tijori `["Public Shareholding", "Non-Institutions", "Investor Education and Protection Fund (IEPF)"]` | APARINDS | `myid="InvestorEducationandProtectionFund(IEPF)"` | p. 10 "(f) Investor Education and Protection Fund (IEPF)" | **`InvestorEducationAndProtectionFundMember`** (new v3 subcategory member) | D | APARINDS consistent −0.0034. TITAN files IEPF (0.4149) but Tijori has no such node; ETERNAL has neither |
+| T9 | Tijori `["Public Shareholding", "Non-Institutions", "LLP"]` | APARINDS | `myid="LLP"` | none ("LLP" does not occur in 02.bin's text) | **UNMAPPED** | — | No format row and no filed member |
+| T10 | Tijori `["Shares held by Custodians - DR"]` | all | `myid="SharesheldbyCustodians-DR"` | — | **UNMAPPED** | — | R12 "Still refused"; prints `—` in every column |
+| T11 | Tijori `["No. of Shareholders"]` | all | `myid="No.ofShareholders"` | — | **UNMAPPED** | — | R12 "Still refused" (a count) |
+| U1 | Upstox `promoters` | all | `data[category=promoters]` | p. 3 "(A)" | **A** | D (ETERNAL nil with A unfiled, Z) | Consistent within tolerance (absent counted 0, consistency only) |
+| U2 | Upstox `fii` | all | `data[category=fii]` | p. 8 "(2) Institutions (Foreign)" | **B2** | D, Bd | Consistent −0.0043, +0.0013, −0.0044; FPI1+FPI2 refuted (+1.6465) |
+| U3 | Upstox `retail_and_other` | all | `data[category=retail_and_other]` | p. 9 "(4)"; p. 12 "(C2)" | **B4 + C2** (v3 derived row) | D, Bd; APARINDS: C2 unfiled, Z | Consistent −0.0042, +0.0062, +0.0003; B4 refuted (+4.6170, +0.0537) |
+| U4 | Upstox `mutual_funds` | all | `data[category=mutual_funds]` | — | **UNMAPPED** | — | Explicit R12 scope exclusion (Sol ruling 2), not weaker evidence; MF is consistent (T2) |
+| U5 | Upstox `other_dii` | all | `data[category=other_dii]` | — | **UNMAPPED** | — | Explicit R12 scope exclusion; B1 − MF would be a vendor construction |
+
+**Holders are listed, never ruled:**
+- every Screener drill-down key (T1h);
+- every Tijori holder row (T1), including ETERNAL's C2 trust row and TITAN's two
+  `RekhaJhunjhunwala` / `REKHAJHUNJHUNWALA` rows (by `myid`), which Tijori keeps separately.
+
+No holder absence and no vendor `—` becomes zero.
+
+**Counts.** 30 non-holder nodes are ruled: **17 to a key, 13 `UNMAPPED`**.
+
+| Vendor | To a key | `UNMAPPED` |
+|---|---|---|
+| Screener | 6 | 8 (quarterly `No. of Shareholders`, plus the 7 yearly rows) |
+| Tijori | 8 | 3 |
+| Upstox | 3 | 2 |
+
+**For Task 3, these rulings need:**
+- the v3 derived rows B + C2, B4 + C2 and B1 + B2, which matches the plan;
+- five subcategory members, each filed by an instance: `IndianMember`, `ForeignMember`,
+  `ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember`,
+  `InvestorEducationAndProtectionFundMember` and `SovereignWealthFundsDomesticMember`, each with
+  its first-party selector;
+- Tijori selectors on the printed label paths above, never on `myid`.
+
+### 13.6 Sol rulings (2026-10-20, `scratchpad/execution/d8/s13-sol.md`)
+
+1. **Screener `Government` (S4) → domestic SWF**, D and Bd. The owner names government among the
+   categories that get a labelled closest-aggregate comparison, so B3's refutation no longer
+   leaves S4 unmapped. SWF is the assumed closest direct category, not an established
+   equivalence. SWF+B3 also survives, so B3 stays unplaced in the evidence. R11's literal label
+   correspondence is relaxed for S4 only. Yearly `Government` stays a diagnostic.
+2. **Subcategory scope.** The four Tijori mappings (T2, T3, T7, T8) stay: R11 admits these nested
+   categories. Upstox `mutual_funds` and `other_dii` stay `UNMAPPED` as an explicit R12 scope
+   exclusion. That is a scope difference, not evidence that the Upstox numeric match is weaker.
+3. **T3 `["Promoter", "Foreign Promoters"]` → `ForeignMember`** is structural and arithmetically
+   untested. TITAN files a zero `ForeignMember` while Tijori prints `—`, so a vendor dash is
+   distinct from a filed zero. Every dash is preserved: no VALUE candidate, no zero comparison.
+4. **S3 `DIIs` → B1** only as R12's labelled approximate closest aggregate. Exact equivalence is
+   refuted, and the expected ETERNAL and TITAN results stay `POINT_CHECK` (known SWF boundary
+   difference). B1 − SWF is outside the approved construction scope.
+5. **Holder inventory.** Superseded by Sol's re-review (`scratchpad/execution/d8/s13-r2-sol.md`):
+   Screener and Tijori are `_SUBSCRIBER_RIGHTS` sources, so the full inventory (T1, T1h) is held
+   in private evidence under the vendor window, and only its manifest (§13.7) is committed. Plan
+   Task 2c's "every node/value in the probe" is met by that linked, privately retained inventory.
+
+### 13.7 Inventory manifest (the outputs are private; no vendor readings here)
+
+**Generator.** `aids/tree_aid.py`
+(`abf2a412e0dafaf7f414547d66585c427cd1faecaf2745b861c1edd4150b777a`), with Task 2's `aids/aid.py`
+beside it (`65b2f50…`, §1; its unused standalone CLI is removed, helpers unchanged). Standard library only; no `fundamentals` import. It is the
+reviewed scratchpad aid (`d0a18cd6…`) with only its import path and output directory changed;
+its output text is unchanged, so the T1h header still names the scratchpad path.
+
+**Reproduction** (offline, over the retained generations):
+
+```
+python3 -I -B docs/workstreams/data-foundation/aids/tree_aid.py data/raw/shareholding data/raw/shareholding/d8-tree-inventory
+```
+
+**Inputs.** `R/<SYM>/gen-2/` for APARINDS, ETERNAL and TITAN (every file and hash in §13.2), the
+gen-1 Screener, Tijori and Upstox pages for T3 (§1), and each `gen-2/02.bin` filing.
+
+**Outputs** in `R/d8-tree-inventory/` (gitignored under `data/`; regenerated 2026-10-20, both
+digests equal the reviewed run's):
+
+| File | Content | Bytes | SHA-256 |
+|---|---|---|---|
+| `tree_aid_output.md` | T1, T2, T3 | 65123 | `54472493cf5f76eabc047d64a0616f98642b44b38a2f10ee18ec30927a20bd0b` |
+| `tree_aid_holders.md` | T1h | 301525 | `7a7412d890d4ba7bf2ce253d31b6d09e7d10b55f2718b8572f85da8d24bc9bf7` |
+
+**Schema.** T1 and T1h rows: `#` (node index), periodicity, depth, printed label, printed parent
+label, label path (JSON list of printed labels), node id, parent id, note, offered periods with
+value or printed marker. T2: vendor, label path, company, vendor value, candidate basket, members
+not filed, then TS % / diff / verdict and VR % / diff / verdict. T3: vendor, company, node, gen-1,
+gen-2, equal.
+
+**Counts.** T1: 160 rows (non-holder nodes, Tijori and Upstox nodes, Screener holder-list
+summaries); T1h: 1,057 Screener holder rows; node and depth counts per vendor and company in §13.4
+(maximum depth Screener 2, Tijori 3, Upstox 1, §13.1). T2: 111 rows. T3: 57 rows, all equal.
+
+**Rulings and permitted outcomes.** The semantic rulings are §13.5–§13.6. The permitted outcomes
+are the comparison outcomes there: verdicts (`CONSISTENT` / `REFUTED` at 0.03 pp), deltas and
+dispositions (ledger spec "Derived amounts"; amendment `2026-10-12-a05-derived-amounts`). Vendor
+values themselves stay in the private outputs.
+
+**Retention.** Each output inherits the actual retention and licence-end constraints of every
+vendor capture contributing to it, including gen-1 (registered 2026-10-17) and Upstox, not only
+the gen-2 Screener and Tijori captures (registered 2026-10-20; ledger spec §5 `VENDOR` window: four
+quarters from registration, extended only by an open queue item, never past licence end). T1h alone
+contains gen-2 Screener payload. When any contained payload must expire, delete the whole mixed
+artifact or regenerate it without the expired material; the same rule applies to backups. This
+probe and its review records do not hold them. After recorded expiry this manifest remains;
+reproduction is unavailable under `ORIGINAL_EXPIRED` semantics (the CLI does not report that status),
+and no recapture is needed.
