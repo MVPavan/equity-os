@@ -27,7 +27,7 @@ from fundamentals.compare.policy import ComparisonPolicy, load_comparison_policy
 from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
 from fundamentals.contracts.config_versions import DEFAULT_VERSION as DEFAULT_VERSION
 from fundamentals.contracts.config_versions import ConfigVersions as ConfigVersions
-from fundamentals.contracts.evidence import PinnedVersions, VendorExtractorPin
+from fundamentals.contracts.evidence import FilingFamily, PinnedVersions, VendorExtractorPin
 from fundamentals.contracts.evidence import VersionPin as Pin
 from fundamentals.contracts.versioning import VersionContentDriftError
 from fundamentals.evidence import vendor_screener, vendor_tijori, vendor_upstox
@@ -40,6 +40,7 @@ from fundamentals.evidence.mapping import (
 )
 from fundamentals.evidence.pdf_adapter import PDF_EXTRACTOR_VERSION
 from fundamentals.evidence.repository import EvidenceRepository, VersionPin
+from fundamentals.evidence.shareholding_filing import SHP_EXTRACTOR_VERSION
 from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 
 DICTIONARY_DIR = "dictionary"
@@ -72,6 +73,15 @@ EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
         "ingest/pdf_source.py",
     ),
 }
+# The SHP adapter (``nse-shp-v1``) and every parser and identity module it imports (plan D8 R6).
+SHP_EXTRACTOR_SOURCES = (
+    "evidence/shareholding_filing.py",
+    "evidence/xbrl_adapter.py",
+    "extract/xbrl_parser.py",
+    "extract/xbrl_dimensions.py",
+    "evidence/member_identity.py",
+    "ingest/xbrl_identity.py",
+)
 EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
     Representation.XBRL: XBRL_EXTRACTOR_VERSION,
     Representation.PDF: PDF_EXTRACTOR_VERSION,
@@ -156,12 +166,23 @@ class LoadedConfig(BaseModel):
     pinned: PinnedVersions
 
 
-def extractor_pin(representation: Representation, *, version: str | None = None) -> Pin:
+def extractor_pin(
+    representation: Representation,
+    *,
+    version: str | None = None,
+    family: FilingFamily = FilingFamily.FINANCIAL_RESULTS,
+) -> Pin:
     """The chosen extractor version plus its current source files' bytes.
 
     Ingestion may explicitly name a re-extraction version; comparison defaults to the
-    current adapter version. Both paths use the same content hashing contract.
+    current adapter version. Both paths use the same content hashing contract. The
+    shareholding family has its own XBRL extractor (plan D8 R6).
     """
+    if family is FilingFamily.SHAREHOLDING:
+        if representation is not Representation.XBRL:
+            raise ValueError(f"the shareholding family has no {representation} extractor")
+        chosen = SHP_EXTRACTOR_VERSION if version is None else version
+        return Pin(version=chosen, content_sha256=_sources_sha256(chosen, SHP_EXTRACTOR_SOURCES))
     chosen = EXTRACTOR_VERSIONS[representation] if version is None else version
     return Pin(
         version=chosen, content_sha256=_sources_sha256(chosen, EXTRACTOR_SOURCES[representation])

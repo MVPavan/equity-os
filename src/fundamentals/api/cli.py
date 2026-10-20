@@ -59,6 +59,7 @@ from fundamentals.api.screener_cli_dispatch import dispatch_screener_command
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     dispatch_screener_watchlist_corroborate_command,
 )
+from fundamentals.api.shareholding_cli import dispatch_shareholding_command
 from fundamentals.api.source_admission import (
     NativeSourceEvidenceResolver,
     SourceAdmissionError,
@@ -663,6 +664,9 @@ def main(
     onboard_exit_code = dispatch_onboard_command(args)
     if onboard_exit_code is not None:
         return onboard_exit_code
+
+    if (shareholding_exit_code := dispatch_shareholding_command(args)) is not None:
+        return shareholding_exit_code
 
     coverage_exit_code = dispatch_coverage_command(args)
     if coverage_exit_code is not None:

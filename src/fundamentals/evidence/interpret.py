@@ -66,6 +66,7 @@ from fundamentals.evidence.mapping import (
     matches_dimensions,
 )
 from fundamentals.evidence.pdf_adapter import CONTEXT_HEADER_MONTHS, parse_printed_number
+from fundamentals.evidence.shareholding_filing import CONTEXT_SECURITY_ISIN
 from fundamentals.evidence.xbrl_adapter import (
     CONTEXT_MEMBER_DESCRIPTIONS,
     CONTEXT_PERIOD_AMBIGUOUS,
@@ -75,6 +76,8 @@ from fundamentals.evidence.xbrl_adapter import (
 TRACE_MISSING_STATE = "missing_state"
 TRACE_REASON = "reason"
 SEGMENT_AXIS = "segment"
+SHARE_CLASS_AXIS = "share_class"
+TRACE_ASSUMPTIONS = "assumptions"
 _NO_VALUE_STATES = frozenset(
     {
         MissingValueState.NIL,
@@ -213,6 +216,8 @@ def interpret(
     (entry,) = entries
     common["mapping_entry_id"] = entry.entry_id
     trace["entry_sign"] = entry.sign
+    if entry.assumptions:
+        trace[TRACE_ASSUMPTIONS] = [assumption.value for assumption in entry.assumptions]
     row = dictionary.row(entry.canonical_id)
     period = _key_period(occurrence, entry, fiscal_year_end_month, trace)
     # Resolved before the period check so an ambiguous row still traces its member.
@@ -650,7 +655,7 @@ def _refuse(trace: dict[str, object], rule: PdfPeriodRule) -> None:
 def _dimensions(
     occurrence: Occurrence, entry: MappingEntry, trace: dict[str, object]
 ) -> DimensionSet | None:
-    """The entry's fixed members plus the evidenced segment member, if the entry takes one."""
+    """The entry's fixed members plus the evidenced segment or share-class member, if any."""
     members = dict(entry.dimension_members)
     if occurrence.representation is Representation.XBRL and not matches_dimensions(
         occurrence.native_context, entry.schema_identity, entry.selector.dimension_axis
@@ -667,6 +672,12 @@ def _dimensions(
             return None
         members[SEGMENT_AXIS] = member_slug(str(found["text"]))
         trace["member_description"] = dict(found)
+    if entry.member_source is MemberSource.SECURITY_ISIN:
+        isin = occurrence.native_context.get(CONTEXT_SECURITY_ISIN)
+        if not isinstance(isin, str) or not isin:
+            trace[TRACE_REASON] = "no validated security ISIN for the share class"
+            return None
+        members[SHARE_CLASS_AXIS] = isin
     return DimensionSet.of(members)
 
 

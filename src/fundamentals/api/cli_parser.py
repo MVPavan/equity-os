@@ -29,6 +29,7 @@ from fundamentals.api.screener_watchlist_cli import add_screener_watchlist_parse
 from fundamentals.api.screener_watchlist_corroborate_cli import (
     add_screener_watchlist_corroborate_parser,
 )
+from fundamentals.api.shareholding_cli import add_shareholding_parser
 from fundamentals.api.thesis_cli import THESIS_COMMAND, add_thesis_parser, add_wave_arg
 from fundamentals.api.thesis_impact_cli import add_thesis_impact_parser
 from fundamentals.api.three_source_cli import add_three_source_parser
@@ -225,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_legacy_parser(subparsers)
     add_compare_parser(subparsers)
     add_onboard_parser(subparsers)
+    add_shareholding_parser(subparsers)
     add_coverage_parser(subparsers)
     add_retention_parser(subparsers)
     add_ledger_parser(subparsers)
