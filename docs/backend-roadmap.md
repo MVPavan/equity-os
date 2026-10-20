@@ -44,7 +44,7 @@ Beyond this file (decision register `docs/blueprint/funda-blueprint-implementati
 |---|---|---|---|
 | **Backend core** (data foundation) | Shared PostgreSQL store, dictionary, comparator, ledger, memory, views, onboarding, coverage, shareholding, retention | [core roadmap](workstreams/data-foundation/roadmap.md), [core definition](workstreams/data-foundation/core.md) | epics D1a–D9, label `ws-data-foundation` |
 | **Pilot prerequisites** | Workflow and register items the pilot needs that the core does not build | §3 rows PREP-1…PREP-8 | `eqos-4j2`, register §B |
-| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3) | §4 | `eqos-4j2.8` |
+| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3) | §4; [report](evidence/pilot/report.md): CONDITIONAL on D8 (PILOT-9 not met) | `eqos-4j2.8` |
 | Deferred | Screener/Tijori breadth via the capability registry (`eqos-kx4.5`); Tijori Stack (`eqos-d37`) | — | not needed for the pilot |
 
 Order: D1a → D1b → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → PREP-1…PREP-8 → Pilot. One worker runs at a
@@ -124,6 +124,8 @@ pilot manifest (PREP-7), never from code output.
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
   not hold back its verdict; nothing is fabricated. It is tested on a later stock that has one.
+
+Pilot report: [evidence/pilot/report.md](evidence/pilot/report.md) (verdict CONDITIONAL on D8).
 
 PILOT-12 depends on the owner reviewing four reports; it is the one step that cannot run
 autonomously. Whether the workflow actually saves review time is judged at Phase 1 (register
