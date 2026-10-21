@@ -24,13 +24,14 @@ from fundamentals.compare.definitions import (
     publish_definition_set,
 )
 from fundamentals.compare.policy import ComparisonPolicy, load_comparison_policy
+from fundamentals.contracts import source_catalog as catalog
 from fundamentals.contracts.canonical import FIRST_PARTY_REPRESENTATIONS, Representation
 from fundamentals.contracts.config_versions import DEFAULT_VERSION as DEFAULT_VERSION
 from fundamentals.contracts.config_versions import ConfigVersions as ConfigVersions
 from fundamentals.contracts.evidence import FilingFamily, PinnedVersions, VendorExtractorPin
 from fundamentals.contracts.evidence import VersionPin as Pin
 from fundamentals.contracts.versioning import VersionContentDriftError
-from fundamentals.evidence import vendor_screener, vendor_tijori, vendor_upstox
+from fundamentals.evidence import vendor_screener, vendor_shareholding, vendor_tijori, vendor_upstox
 from fundamentals.evidence.alignment import AlignmentRuleSet, load_alignment_rules
 from fundamentals.evidence.mapping import (
     MappingSet,
@@ -87,9 +88,34 @@ EXTRACTOR_VERSIONS: Mapping[Representation, str] = {
     Representation.PDF: PDF_EXTRACTOR_VERSION,
 }
 _VENDOR_INGEST = "evidence/vendor_ingest.py"
-# Per vendor source: the extractor version and the adapter, parser and identity/basis check
-# source files it hashes.
-VENDOR_EXTRACTORS: Mapping[str, tuple[str, tuple[str, ...]]] = {
+_SCREENER_SHP = (
+    vendor_shareholding.SCREENER_VERSION,
+    (
+        "evidence/vendor_shareholding.py",
+        *(f"ingest/screener_{name}.py" for name in ("shareholding", "company_artifacts")),
+        *(f"ingest/screener_{name}.py" for name in ("company_discovery", "company_models")),
+        *(f"ingest/screener_{name}.py" for name in ("financials_models", "financials_tables")),
+        *(f"ingest/screener_{name}.py" for name in ("session_models", "session_page")),
+        _VENDOR_INGEST,
+    ),
+)
+_TIJORI_SHP = ("shareholding", "shareholding_table", "shareholding_breakup", "page", "tables")
+# Per ``(source, surface)``, else per source: the version and the adapter/parser files hashed.
+VENDOR_EXTRACTORS: Mapping[str | tuple[str, str], tuple[str, tuple[str, ...]]] = {
+    catalog.SCREENER_SHAREHOLDING: _SCREENER_SHP,
+    catalog.SCREENER_INVESTORS: _SCREENER_SHP,
+    catalog.TIJORI_SHAREHOLDING: (
+        vendor_shareholding.TIJORI_VERSION,
+        (
+            "evidence/vendor_shareholding.py",
+            *(f"ingest/tijori_{name}.py" for name in (*_TIJORI_SHP, "common")),
+            _VENDOR_INGEST,
+        ),
+    ),
+    catalog.UPSTOX_SHAREHOLDING: (
+        vendor_shareholding.UPSTOX_VERSION,
+        ("evidence/vendor_shareholding.py", "ingest/upstox_retention.py", _VENDOR_INGEST),
+    ),
     vendor_screener.SOURCE: (
         vendor_screener.EXTRACTOR_VERSION,
         (
@@ -193,7 +219,7 @@ def vendor_extractor_pin(
     source_id: str, surface: str, *, version: str | None = None
 ) -> VendorExtractorPin:
     """A vendor surface's extractor version (current unless named) plus its sources' bytes."""
-    current, sources = VENDOR_EXTRACTORS[source_id]
+    current, sources = VENDOR_EXTRACTORS.get((source_id, surface)) or VENDOR_EXTRACTORS[source_id]
     version = current if version is None else version
     return VendorExtractorPin(
         source_id=source_id,

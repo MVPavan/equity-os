@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 import shutil
 import socket
 from collections.abc import Iterator
@@ -22,9 +23,14 @@ from typing import Any
 
 import pytest
 import yaml
+from lxml import html  # type: ignore[import-untyped]
+from onboarding_support import count
 from pg_support import PgTestDatabase, cloned_database
 from pydantic import ValidationError
 from test_shareholding_filing import (
+    COMPANIES,
+    EVIDENCE_TABLES,
+    GEN,
     INSTANT,
     OFF_QUARTER,
     RAW,
@@ -39,6 +45,7 @@ from test_shareholding_filing import (
     _seed,
 )
 from test_shareholding_filing import guarded as guarded  # the fixture, re-exported
+from test_shareholding_filing import ingested as ingested  # the fixture, re-exported
 
 from fundamentals.api.cli import main
 from fundamentals.canon.dictionary import (
@@ -49,6 +56,7 @@ from fundamentals.canon.dictionary import (
     load_dictionary,
 )
 from fundamentals.canon.formula import CurrencyMismatchError, resolve_operand_keys
+from fundamentals.compare import run_config
 from fundamentals.compare.run import (
     DatabaseIdentity,
     RunExitStatus,
@@ -60,8 +68,9 @@ from fundamentals.compare.run import (
     replay_run,
     request_for,
 )
-from fundamentals.compare.run_config import LoadedConfig, load_run_config
+from fundamentals.compare.run_config import LoadedConfig, load_run_config, vendor_extractor_pin
 from fundamentals.compare.run_store import RunStore
+from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import (
     Basis,
     Representation,
@@ -78,10 +87,28 @@ from fundamentals.contracts.comparison import (
     SourceState,
 )
 from fundamentals.contracts.config_versions import ConfigVersions
-from fundamentals.contracts.evidence import FilingFamily, VersionPin
+from fundamentals.contracts.evidence import (
+    AcquisitionAttempt,
+    AttemptStage,
+    FilingFamily,
+    Interpretation,
+    InterpretationStatus,
+    MissingValueState,
+    Occurrence,
+    VersionPin,
+)
 from fundamentals.contracts.measurement_key import DimensionSet, MeasurementKey, PeriodInterval
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.source_catalog import SHP_LISTING, SHP_XBRL
+from fundamentals.contracts.source_catalog import (
+    SCREENER_INVESTORS,
+    SCREENER_SHAREHOLDING,
+    SHP_LISTING,
+    SHP_XBRL,
+    TIJORI_SHAREHOLDING,
+    UPSTOX_SHAREHOLDING,
+)
+from fundamentals.entity.discovery import MANIFEST_NAME
+from fundamentals.evidence.interpret import input_digest
 from fundamentals.evidence.mapping import matches_dimensions
 from fundamentals.evidence.mapping_models import MappingAssumption, selector_matches
 from fundamentals.evidence.repository import EvidenceRepository
@@ -566,3 +593,274 @@ def test_family_later_revision_supersedes_within_its_family(
     read = {v.interpretation_id for r in rows for v in r.source_values} - {None}
     assert read and read <= {item.interpretation_id for item in revised}
     assert _states(guarded, _run(shareholding=False)[1]) == before
+
+
+# --- stage D8.3 (Task 6): vendor trees, pins and vendor request failures ---------------------
+
+VENDOR = (SCREENER_SHAREHOLDING, SCREENER_INVESTORS, TIJORI_SHAREHOLDING, UPSTOX_SHAREHOLDING)
+# d8-probe.md §13.4 node counts per company; Screener as (nodes, drill-down holders).
+SCREENER_TREE = {"APARINDS": (120, 109), "ETERNAL": (109, 97), "TITAN": (865, 851)}
+TIJORI_TREE = {"APARINDS": 29, "ETERNAL": 21, "TITAN": 35}
+CUSTODIANS_DR = "SharesheldbyCustodians-DR"  # Tijori myid; a dash in every column (§13.4)
+# The existing vendor extractor pins, computed at HEAD 2e22dec before Task 6.
+EXISTING_PINS = {
+    ("screener-subscriber", "SCREENER_FINANCIALS"): (
+        "screener-v1",
+        "9ffad9ac400ba8913edf7bdc69151ce24448ed53311ee4d9c7e82f64d90b15a0",
+    ),
+    ("tijori", "financials"): (
+        "tijori-v4",
+        "f7f3689c338667cae8a99adcc2ba4bf0fade9294a3ccea690c3b63c57f099901",
+    ),
+    ("upstox", "income-statement"): (
+        "upstox-v2",
+        "351b2aed43565d6191d1afb5ffeeb568f9d03ede9cd55a41ba96b06611249478",
+    ),
+}
+Evidence = list[tuple[AcquisitionAttempt, tuple[Occurrence, ...], dict[int | None, Interpretation]]]
+
+
+def _vendor(db: PgTestDatabase, entity_id: int) -> Evidence:
+    """Each vendor attempt at the instant, with its capture's occurrences and interpretations."""
+    found: Evidence = []
+    with db.runtime_pool() as pool:
+        repository = EvidenceRepository(pool)
+        for attempt in repository.list_attempts(entity_id, INSTANT):
+            if (attempt.source_id, attempt.surface) not in VENDOR or attempt.capture is None:
+                continue
+            ref = attempt.capture.capture_ref_id
+            assert ref is not None
+            rows = {row.occurrence_id: row for row in repository.list_capture_interpretations(ref)}
+            found.append((attempt, repository.list_capture_occurrences(ref), rows))
+    return found
+
+
+def _entries(root: Path, symbol: str) -> list[dict[str, Any]]:
+    return list(json.loads((root / symbol / GEN / MANIFEST_NAME).read_bytes())["entries"])
+
+
+def _node(occurrence: Occurrence) -> tuple[Any, ...]:
+    context = occurrence.native_context
+    return tuple(context["path"]), context["source_node_id"], context["periodicity"]
+
+
+def _offered(raw: dict[str, Any]) -> list[str]:
+    return [key for key in raw if key != "setAttributes"]
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_tree_every_node_and_printed_cell_is_one_occurrence(
+    ingested: tuple[PgTestDatabase, Path, dict[str, int]],
+) -> None:
+    """Owner amendment (R11): over gen-2 every vendor node has one node occurrence and one cell
+    occurrence per printed cell, with label, parent, path, depth and periodicity. The inventory
+    equals §13.4 and the retained bodies: Tijori's custodians row keeps its dashes, a holder
+    lacking a period has no cell for it, Apar's empty bucket has no holder, and no value is a
+    zero that was not printed."""
+    db, _, entities = ingested
+    late_holder = False
+    for symbol, entity_id in entities.items():
+        bodies = {e["sha256"]: e for e in _entries(RAW, symbol) if e["filename"]}
+        nodes: dict[str, list[dict[str, Any]]] = {"screener-subscriber": [], "tijori": []}
+        empty = 0
+        for attempt, occurrences, rows in _vendor(db, entity_id):
+            assert attempt.outcome is ExtractionOutcome.COMPLETE and attempt.capture is not None
+            entry = bodies[attempt.capture.blob_sha256]
+            body = (RAW / symbol / GEN / entry["filename"]).read_bytes()
+            heads: dict[tuple[Any, ...], dict[str, Any]] = {}
+            cells: dict[tuple[Any, ...], list[str]] = {}
+            for occurrence in occurrences:
+                row, context = rows[occurrence.occurrence_id], occurrence.native_context
+                path = context["path"]
+                assert context["label"] == path[-1] and context["depth"] == len(path)
+                assert context["parent"] == (path[-2] if len(path) > 1 else None)
+                if context["kind"] == "NODE":
+                    assert occurrence.raw_value_text is None and row.key is None
+                    assert row.status is InterpretationStatus.UNMAPPED
+                    assert _node(occurrence) not in heads
+                    heads[_node(occurrence)] = context
+                else:
+                    cells.setdefault(_node(occurrence), []).append(context["period_label"])
+                if row.value == 0:
+                    assert occurrence.missing_state is MissingValueState.ZERO_PRINTED
+                    assert Decimal(str(occurrence.raw_value_text).rstrip("%")) == 0
+                if occurrence.missing_state is not MissingValueState.VALUE:
+                    assert row.value in (None, 0)
+            assert set(cells) <= set(heads)
+            assert all(cells.get(key, []) == head["periods"] for key, head in heads.items())
+            if attempt.source_id == "upstox":
+                assert {h["label"]: h["periods"] for h in heads.values()} == {
+                    item["category"]: [point["period"] for point in item["history"]]
+                    for item in json.loads(body)["data"]
+                }
+                continue
+            nodes[attempt.source_id].extend(heads.values())
+            if attempt.surface == SCREENER_INVESTORS[1]:
+                holders = json.loads(body)
+                assert {h["label"]: h["periods"] for h in heads.values()} == {
+                    name: _offered(values) for name, values in holders.items()
+                }
+                empty += not holders
+                late_holder |= any(
+                    h["periodicity"] == "quarterly" and "Jun 2026" not in h["periods"]
+                    for h in heads.values()
+                )
+            elif attempt.surface == SCREENER_SHAREHOLDING[1]:
+                root = html.fromstring(body)
+                for periodicity in ("quarterly", "yearly"):
+                    table = root.xpath(f"//div[@id='{periodicity}-shp']//table")[0]
+                    labels = [th.text_content().strip() for th in table.xpath(".//thead//th")[1:]]
+                    page = [h for h in heads.values() if h["periodicity"] == periodicity]
+                    assert len(page) == len(table.xpath(".//tbody/tr[td]"))
+                    assert all(h["periods"] == labels for h in page)
+            else:
+                rows_html = html.fromstring(body).xpath(
+                    "//table[@id='company_detailed']//tr[@myid]"
+                )
+                assert len(heads) == len(rows_html) == TIJORI_TREE[symbol]
+                (dr,) = [key for key in heads if key[1] == CUSTODIANS_DR]
+                dashes = [
+                    o for o in occurrences if _node(o) == dr and o.native_context["kind"] == "CELL"
+                ]
+                assert dashes and all(o.missing_state is MissingValueState.DASH for o in dashes)
+                assert {o.raw_value_text for o in dashes} == {"—"}
+        screener = nodes["screener-subscriber"]
+        holders = [node for node in screener if node["depth"] == 2]
+        assert (len(screener), len(holders)) == SCREENER_TREE[symbol]
+        if symbol == APAR:  # quarterly ``public`` and yearly ``government`` are ``{}`` (§13.4)
+            assert empty == 2
+            quarterly = [n for n in screener if n["periodicity"] == "quarterly"]
+            assert any(n["path"] == ["Public"] for n in quarterly)
+            assert not any(n["parent"] == "Public" for n in quarterly)
+    assert late_holder
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_tree_cells_land_at_v7_keys_and_off_quarter_months_are_ambiguous(
+    ingested: tuple[PgTestDatabase, Path, dict[str, int]],
+) -> None:
+    """A ruled quarterly cell is keyed at its v7 category, the assumed denominator and the share
+    class, with the assumption traced; the yearly row is a diagnostic; Apar's ``Aug 2026``
+    column (Upstox, d8-probe.md §6) is ``PERIOD_AMBIGUOUS`` and keyless."""
+    db, _, entities = ingested
+    cells = {
+        (attempt.surface, *_node(o)[0::2], o.native_context["period_label"]): rows[o.occurrence_id]
+        for attempt, occurrences, rows in _vendor(db, entities[APAR])
+        for o in occurrences
+        if o.native_context["kind"] == "CELL"
+    }
+    members = {
+        "shareholding_category": "sebi_promoter_group",
+        "denominator": "TOTAL_SHARES",
+        "share_class": COMPANIES[APAR][0],
+    }
+    for surface, label in (("SCREENER_SHAREHOLDING", "Promoters"), ("share-holdings", "promoters")):
+        june = cells[(surface, (label,), "quarterly", "Jun 2026")]
+        assert june.key is not None and june.period == PeriodInterval.at(INSTANT)
+        assert dict(june.key.dimensions.pairs) == members
+        assert june.transform_trace["assumptions"] == ["DENOMINATOR_ASSUMED"]
+    yearly = cells[("SCREENER_SHAREHOLDING", ("Promoters",), "yearly", "Mar 2026")]
+    assert yearly.status is InterpretationStatus.UNMAPPED and yearly.key is None
+    august = cells[("share-holdings", ("promoters",), "quarterly", "Aug 2026")]
+    assert august.status is InterpretationStatus.PERIOD_AMBIGUOUS and august.key is None
+    assert august.canonical_id == "shp_holding_pct"
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_tree_a_deeper_drilldown_level_is_unsupported_schema(
+    guarded: PgTestDatabase, tmp_path: Path
+) -> None:
+    """A drill-down holder carrying ``isExpandable`` is an unread level: the body is refused
+    ``UNSUPPORTED_SCHEMA`` with no occurrence, never read short (R11 Depth)."""
+    entity_id = _seed(guarded, APAR)
+    (bucket,) = [e for e in _entries(RAW, APAR) if e["url"].endswith("/promoters/quarterly/")]
+
+    def edit(folder: Path, entries: list[dict[str, Any]]) -> None:
+        path = folder / bucket["filename"]
+        path.write_bytes(path.read_bytes().replace(b'": {"', b'": {"isExpandable": true, "', 1))
+
+    assert _ingest(_marked(tmp_path / "raw", APAR, edit), tmp_path / "snapshots", APAR) == 0
+    evidence = _vendor(guarded, entity_id)
+    refused = [(a, o) for a, o, _ in evidence if a.outcome is not ExtractionOutcome.COMPLETE]
+    ((attempt, occurrences),) = refused
+    assert (attempt.source_id, attempt.surface) == SCREENER_INVESTORS
+    assert attempt.outcome is ExtractionOutcome.UNSUPPORTED_SCHEMA
+    assert attempt.reason is not None and "isExpandable" in attempt.reason
+    assert occurrences == ()
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_pins_existing_vendor_extractors_are_unchanged_and_tree_sources_are_pinned(
+    guarded: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``screener-v1``, ``tijori-v4`` and ``upstox-v2`` pins equal HEAD's. The tree surfaces
+    pin their own versions, and one changed byte in the tree extractor under its pinned version
+    is drift, refused before any vendor evidence is written."""
+    for pair, pinned in EXISTING_PINS.items():
+        pin = vendor_extractor_pin(*pair)
+        assert (pin.version, pin.content_sha256) == pinned
+    versions = {pair: vendor_extractor_pin(*pair).version for pair in VENDOR}
+    assert set(versions.values()) == {"screener-shp-v1", "tijori-shp-v1", "upstox-shp-v1"}
+    _seed(guarded, APAR)
+    snapshots = tmp_path / "snapshots"
+    assert _ingest(RAW, snapshots, APAR) == 0
+    source = tmp_path / "src"
+    shutil.copytree(run_config._SOURCE_ROOT, source, ignore=shutil.ignore_patterns("__pycache__"))
+    extractor = source / "evidence" / "vendor_shareholding.py"
+    extractor.write_bytes(extractor.read_bytes() + b"\n")
+    monkeypatch.setattr(run_config, "_SOURCE_ROOT", source)
+    before = {table: count(guarded, table) for table in EVIDENCE_TABLES}
+    assert _ingest(RAW, snapshots, APAR) != 0
+    assert {table: count(guarded, table) for table in EVIDENCE_TABLES} == before
+    for pair, pinned in EXISTING_PINS.items():
+        pin = vendor_extractor_pin(*pair)
+        assert (pin.version, pin.content_sha256) == pinned
+
+
+def _fail_first(pair: tuple[str, str]) -> Any:
+    """The first request on ``pair`` answered HTTP 503 with no body; a failed Screener page
+    offers no drill-down, so its bucket requests are not made."""
+
+    def edit(folder: Path, entries: list[dict[str, Any]]) -> None:
+        entry = next(e for e in entries if (e["source_id"], e["surface"]) == pair)
+        (folder / entry["filename"]).unlink()
+        entry.update(outcome="HTTP_503", filename=None, sha256=None, bytes=None)
+        if pair == SCREENER_SHAREHOLDING:
+            entries[:] = [
+                e for e in entries if (e["source_id"], e["surface"]) != SCREENER_INVESTORS
+            ]
+
+    return edit
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    "pair", [SCREENER_SHAREHOLDING, SCREENER_INVESTORS, UPSTOX_SHAREHOLDING], ids=lambda p: p[1]
+)
+def test_vendor_failed_request_is_its_attempt(
+    guarded: PgTestDatabase, tmp_path: Path, pair: tuple[str, str]
+) -> None:
+    """R8: after a complete generation, a later one whose Screener page, drill-down or Upstox
+    request failed records that request as one capture-less attempt; ingest still succeeds and
+    the earlier evidence is untouched (its run consequences are Task 6's run half)."""
+    entity_id = _seed(guarded, APAR)
+    snapshots = tmp_path / "snapshots"
+    assert _ingest(RAW, snapshots, APAR) == 0
+    before = _vendor(guarded, entity_id)
+    raw = _marked(tmp_path / "raw", APAR, _fail_first(pair))
+    (entry,) = [e for e in _entries(raw, APAR) if e["outcome"] != "OK"]
+    assert _ingest(raw, snapshots, APAR) == 0
+    with guarded.runtime_pool() as pool:
+        attempts = EvidenceRepository(pool).list_attempts(entity_id, INSTANT)
+    (failed,) = [a for a in attempts if a.capture is None]
+    identity = {"source_id": pair[0], "surface": pair[1], "request_key": entry["request_key"]}
+    assert (failed.stage, failed.source_id, failed.surface) == (AttemptStage.ACQUISITION, *pair)
+    assert failed.outcome is ExtractionOutcome.FAILED and failed.period_end == INSTANT
+    assert failed.reason is not None and entry["request_key"] in failed.reason
+    assert failed.input_sha256 == input_digest({**identity, "capture_id": None})
+    assert _vendor(guarded, entity_id) == before
