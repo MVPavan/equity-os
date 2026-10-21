@@ -224,9 +224,9 @@ supersession only (was Q5). Open:
   (PILOT-5's contradiction clause waived for this pilot, owner 2026-10-20); Sol approved; `docs/backend-roadmap.md` Pilot row and §4 links.
 - Tasks 1–3 are committed at their own completion, in order (the e2e last, in Task 3).
 - Record bead rulings with `bd` notes; close `eqos-4j2.27` after Task 2. Keep `eqos-4j2.8` open: the
-  verdict is CONDITIONAL (D8) and Owner Q1–Q2 are open.
-- Verify: `uv run pytest tests/fundamentals`; `scripts/verify_project.sh` (`Pilot | PASS`; non-zero
-  exit with exactly `1 not built`, D8); `git status`.
+  verdict is CONDITIONAL on the open [conditions](../backend-roadmap.md#pilot-conditions).
+- Verify: `uv run pytest tests/fundamentals`; `scripts/verify_project.sh` exit 0, every row PASS
+  (superseded by [PILOT-9](PILOT-9.md) Task 4); `git status`.
 
 ## Risks
 

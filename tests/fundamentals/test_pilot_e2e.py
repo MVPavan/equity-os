@@ -590,7 +590,11 @@ def test_pilot_end_to_end(
         _pilot5_promote(pilot, quarter, final[quarter], memory)
     _pilot5(pilot, lines, memory, final)
     _pilot12(pilot, reviewed, rejected)
-    runs += [pilot9(pilot, quarter) for quarter in QUARTERS]
+    for quarter in QUARTERS:
+        try:
+            runs.append(pilot9(pilot, quarter))
+        except (LookupError, ValueError, IndexError) as error:  # message omitted: may hold values
+            raise AssertionError(f"PILOT-9: {quarter} {type(error).__name__}") from error
     _pilot6(pilot, memory, reviewed)
     with pg_db.runtime_pool() as pool:
         pilot13(pool, runs, "live")
