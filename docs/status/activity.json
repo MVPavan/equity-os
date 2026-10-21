@@ -1,7 +1,7 @@
 {
   "now": {
-    "title": "D8 shareholding: Sol phase review and phase gate (eqos-17r)",
-    "detail": "All five D8 stages done. Task 8 Stage 3 e2e passes against the Sol-approved manifest (f23393e). Now: Sol phase-end review round 1 and the full phase gate (tests/fundamentals + verify_project.sh). Then closing review, PILOT-9, pilot verdict.",
+    "title": "D8 shareholding: Sol phase review round 3 (eqos-17r)",
+    "detail": "Phase review r1 REQUEST_CHANGES (1 P1, 9 P2, 1 P3) fixed in c611f2c/7d990d0; r2 resolved all, re-approved the Stage 3 manifest, left two bookkeeping blockers, now fixed. Full suite 4377 passed / 4 failed (2 fixed, 1 flaky rerun-green, 1 the PILOT-9 tripwire awaiting close-out). Sol r3 and verify_project.sh running.",
     "stage": "D8"
   },
   "next": [
@@ -12,6 +12,10 @@
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 phase review: r1 REQUEST_CHANGES (vendor readings in tracked docs, absence/zero, per-instant package, drill-down binding, failure records, identity gate -> *-shp-v2 extractors, calendar, caps) fixed in c611f2c; r2 resolved all and re-approved the manifest (8fa84c7d); order check and File map follow-ups committed, e2e revision 7d990d0."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 Task 8 committed (f23393e): Stage 3 e2e through the CLI on a fresh test database matches the frozen manifest for APARINDS, ETERNAL and TITAN (rows, sides, keyless, tree, report point-check lines); no source change needed. All five D8 stages closed; Sol phase review started."
