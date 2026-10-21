@@ -1,15 +1,20 @@
 {
   "now": {
-    "title": "D8 phase re-review r4 with PILOT-9 (eqos-17r, eqos-4j2.32)",
-    "detail": "Full gate exit 0 at 79c9bbb: every row PASS including Pilot; 4393 passed, 9 skipped (1:51:01); mypy and ruff clean. Pilot report updated (8072ffe). Sol r4 now rules on R3-1, the PILOT-9 exit and the report.",
+    "title": "D8 + PILOT-9: fresh closing review (eqos-17r, eqos-4j2.32)",
+    "detail": "Sol D8 r4 APPROVE: R3-1 resolved, D8 phase exit met, pilot report approved (conditions 1 and 6 met). Two P3s fixed in f81bd75 (PILOT-9 prefix on lookup failures; PILOT-E2E verify line); pilot e2e green again. A fresh Sol session now does the closing review.",
     "stage": "D8"
   },
   "next": [
-    "Sol D8 r4 verdict, then a fresh closing review; close eqos-17r and eqos-4j2.32",
+    "Closing review verdict; close eqos-17r and eqos-4j2.32",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
-    "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
+    "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval",
+    "PILOT-7 via the D6 exit row"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "Sol D8 phase re-review r4 APPROVE: four-quarter PILOT-9 coverage real, D8 exit met, pilot report approved; verdict stays CONDITIONAL. Two P3 fixes committed (f81bd75), pilot e2e re-run green (284 s)."
+    },
     {
       "date": "2026-10-21",
       "text": "Full verify_project.sh gate exit 0 at 79c9bbb: D1a-D9, frozen manifests, amendment records, Pilot, Pytest (4393 passed, 9 skipped), Mypy, Ruff all PASS. The PILOT-9 tripwire is gone; pilot condition 'verify_project exit 0' met."
