@@ -362,7 +362,7 @@ def _leaf_families(dictionary: CanonicalDictionary, key: MeasurementKey) -> set[
 @pytest.mark.retained
 def test_family_shareholding_run_through_the_cli(stored: tuple[PgTestDatabase, int]) -> None:
     """Only shareholding rows, filing-only with extraction NOT_APPLICABLE, no currency, under
-    ``nse-shp-v1``; the replay reproduces them. (The plan's ``FILING_ONLY`` predates R10: an
+    the SHP extractor; the replay reproduces them. (The plan's ``FILING_ONLY`` predates R10: an
     unsupported-precision percentage is ``NOT_COMPARABLE``, an unfiled line ``NO_SOURCE``.)"""
     db, run_id = stored
     dictionary = load_dictionary(CONFIG_ROOT / "dictionary", "v3")
@@ -446,8 +446,9 @@ def test_family_direct_sides_keep_the_filed_value_and_residuals_refuse(
 @pytest.mark.pg
 @pytest.mark.retained
 def test_family_non_quarter_end_instant_runs(guarded: PgTestDatabase, tmp_path: Path) -> None:
-    """The Task 4 off-quarter generation runs at its own instant (no fiscal periods read)."""
-    _seed(guarded, APAR)
+    """The Task 4 off-quarter generation ingests, runs and replays at its own instant with no
+    fiscal calendar recorded at all (R6: an instant reads none)."""
+    _seed(guarded, APAR, calendar=False)
 
     def edit(folder: Path, entries: list[dict[str, Any]]) -> None:
         _rewrite(SHP_LISTING, b'"date":"30-JUN-2026"', b'"date":"13-AUG-2026"')(folder, entries)
@@ -459,6 +460,21 @@ def test_family_non_quarter_end_instant_runs(guarded: PgTestDatabase, tmp_path: 
     with guarded.runtime_pool() as pool:
         rows = load_results(run_id, pool=pool)
     assert rows and {row.key.period for row in rows} == {PeriodInterval.at(OFF_QUARTER)}
+    _replays(guarded, run_id)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_family_failed_acquisition_without_calendar_is_unavailable(
+    guarded: PgTestDatabase, tmp_path: Path
+) -> None:
+    """R6: with no fiscal calendar recorded a failed listing still gives the specified
+    ``INCOMPLETE`` run (never a calendar error), and it replays."""
+    _seed(guarded, APAR, calendar=False)
+    raw = _marked(tmp_path / "raw", APAR, _fail(SHP_LISTING, "HTTP_503"))
+    assert _ingest(raw, tmp_path / "snapshots", APAR) != 0
+    code, run_id = _run()
+    assert code == RunExitStatus.INCOMPLETE
     _replays(guarded, run_id)
 
 

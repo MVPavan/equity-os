@@ -4,8 +4,9 @@ Pure over a run's frozen evidence and rows, so a stored run and ``replay_run``'s
 same checks; it never enters a status, tier, row or fact. Candidates are the vendor sides
 ``VendorSides`` selects holding a printed number (its exact lexeme is the vendor value) at a key
 resolving to a first-party category or basket, with or without a row. A member with no stored
-first-party value counts as zero only when the selected package was extracted and no
-occurrence's context bears it or a descendant.
+first-party value counts as zero only when the key's selected package was extracted, no
+occurrence's context bears it or a format descendant, and every filed category's format
+ancestry is known.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.compare.resolve import ReplayTraces
 from fundamentals.compare.resolve_models import ResolvedInputs
 from fundamentals.compare.run_config import LoadedConfig
+from fundamentals.compare.run_family import ANY_FISCAL_MONTH
 from fundamentals.compare.run_models import (
     ResultRow,
     RunInputDisposition,
@@ -31,6 +33,7 @@ from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.comparison import PairOutcome, SourceRole, SourceState
 from fundamentals.contracts.evidence import (
+    FilingPackage,
     Interpretation,
     InterpretationReason,
     MissingValueState,
@@ -39,10 +42,10 @@ from fundamentals.contracts.evidence import (
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.evidence.interpret import TRACE_ASSUMPTIONS
 from fundamentals.evidence.mapping_models import MappingAssumption
+from fundamentals.evidence.shareholding_filing import CATEGORY_AXIS_NATIVE, FORMAT_PARENT, SHP_TOTAL
 
 CATEGORY_AXIS = "shareholding_category"
 ZERO = Decimal(0)
-_ANY_MONTH = 3  # an instant's period kind ignores the fiscal calendar
 _SELECTED = (RunInputKind.PACKAGE, RunInputDisposition.SELECTED)
 # A printed vendor number: selected, or refused only for its undeclared precision (Upstox).
 _NUMBERS = (MissingValueState.VALUE, MissingValueState.ZERO_PRINTED)
@@ -53,6 +56,7 @@ _PRINTED = {
 NO_PACKAGE = "no selected, successfully extracted shareholding package"
 _FILED = "category {member} is filed in the package with no stored value at this key"
 _UNRESOLVED = "category {member} has no first-party selector, so its absence is unknown"
+_UNPLACED = "filed categories {names} have no known format parent, so {member}'s absence is unknown"
 
 
 class PointVerdict(StrEnum):
@@ -108,26 +112,19 @@ def point_checks(
         if value.source_role is SourceRole.FIRST_PARTY and value.value is not None
     }
     chosen = {item.ref_id for item in inputs.inputs if (item.kind, item.disposition) == _SELECTED}
-    package = next((item for item in inputs.packages if item.package_id in chosen), None)
-    capture = package.members[Representation.XBRL].capture.capture_ref_id if package else None
-    filed = [item for item in inputs.occurrences if item.capture.capture_ref_id == capture]
-    outcomes = {
-        item.outcome
-        for item in inputs.attempts
-        if item.capture is not None and item.capture.capture_ref_id == capture
-    }
     by_id = {item.interpretation_id: item for item in inputs.interpretations}
     checks = []
     for key in sorted(keys, key=lambda item: item.digest()):
         canonical_id, basket = _basket(config, key)
-        reason = None if outcomes == {ExtractionOutcome.COMPLETE} else NO_PACKAGE
+        package, filed = _selected(inputs, chosen, key)
+        reason = None if filed is not None else NO_PACKAGE
         values = {member: stored.get(_identity(key, canonical_id, member)) for member in basket}
         for member in [member for member, value in values.items() if value is None]:
-            reason = reason or _absent(config, member, filed)
+            reason = reason or _absent(config, member, filed or ())
         zeros = () if reason else tuple(member for member, value in values.items() if value is None)
         point = None if reason else sum((value or ZERO for value in values.values()), ZERO)
         pairs = next((row.pairs for row in rows if row.key == key), ())
-        for side in vendors.sides(key, _ANY_MONTH):
+        for side in vendors.sides(key, ANY_FISCAL_MONTH):
             stored_side, occurrence = side.stored, side.occurrence
             number = occurrence is not None and occurrence.missing_state in _NUMBERS
             if (stored_side.state, stored_side.reason) not in _PRINTED or not number:
@@ -176,26 +173,58 @@ def _identity(key: MeasurementKey, canonical_id: str, member: str = "") -> tuple
     return canonical_id, key.entity_id, key.period, key.basis, frozenset(pairs.items())
 
 
+def _selected(
+    inputs: ResolvedInputs, chosen: set[int], key: MeasurementKey
+) -> tuple[FilingPackage | None, list[Occurrence] | None]:
+    """The key's selected package (its entity, instant, basis and framework) and, when its
+    extraction completed, the occurrences filed in it."""
+    scope = (key.entity_id, key.period.instant, key.basis, key.framework)
+    package = next(
+        (
+            item
+            for item in inputs.packages
+            if item.package_id in chosen
+            and (item.entity_id, item.reporting_period_end, item.basis, item.framework) == scope
+        ),
+        None,
+    )
+    capture = package.members[Representation.XBRL].capture.capture_ref_id if package else None
+    outcomes = {
+        item.outcome
+        for item in inputs.attempts
+        if item.capture is not None and item.capture.capture_ref_id == capture
+    }
+    if outcomes != {ExtractionOutcome.COMPLETE}:
+        return package, None
+    return package, [item for item in inputs.occurrences if item.capture.capture_ref_id == capture]
+
+
 def _absent(config: LoadedConfig, member: str, filed: Sequence[Occurrence]) -> str | None:
-    """Why a member without a stored value is not zero; ``None`` when the filing omits it and
-    every category it contains (the mapping set's first-party selectors name the filed members)."""
-    axis = config.dictionary.template(CATEGORY_AXIS).axis(CATEGORY_AXIS)
-    family = {member}
-    for _ in axis.members if axis else ():
-        family |= {item.member for item in axis.members if item.parent in family} if axis else set()
-    names = {
+    """Why a member without a stored value is not zero; ``None`` when no filed category is its
+    first-party member or a format descendant of it, and every filed category is placed."""
+    roots = {
         entry.selector.dimension_member
         for entry in config.mapping_set.entries
-        if entry.dimension_members.get(CATEGORY_AXIS) in family
+        if entry.selector.dimension_axis == CATEGORY_AXIS_NATIVE
+        and entry.dimension_members.get(CATEGORY_AXIS) == member
     } - {None}
-    if not names:
+    if not roots:
         return _UNRESOLVED.format(member=member)
     bearing = {
         str(value).rsplit(":", 1)[-1]
         for item in filed
-        for _, value in cast(list[list[str]], item.native_context.get("dimensions") or [])
+        for axis, value in cast(list[list[str]], item.native_context.get("dimensions") or [])
+        if str(axis).rsplit(":", 1)[-1] == CATEGORY_AXIS_NATIVE
     }
-    return _FILED.format(member=member) if names & bearing else None
+    unplaced = sorted(bearing - FORMAT_PARENT.keys() - {SHP_TOTAL})
+    if unplaced:
+        return _UNPLACED.format(names=unplaced, member=member)
+    for name in bearing:
+        while name not in roots and name in FORMAT_PARENT:
+            name = FORMAT_PARENT[name]
+        if name in roots:
+            return _FILED.format(member=member)
+    return None
 
 
 def assumptions_of(reading: Interpretation) -> tuple[MappingAssumption, ...]:

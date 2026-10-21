@@ -8,6 +8,7 @@ values, never vendor readings; Task 7's manifest freezes them.
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,8 @@ from test_shareholding_vendor import runs as runs  # the fixture, re-exported
 from fundamentals.compare.point_check import NO_PACKAGE, PointCheck, PointVerdict, point_checks
 from fundamentals.compare.report import ZERO_LABEL, point_line
 from fundamentals.compare.run import ResultRow, load_results, replay_inputs, replay_run
+from fundamentals.compare.run_models import RunInput, RunInputDisposition, RunInputKind
+from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.comparison import PairOutcome, SourceRole
 from fundamentals.contracts.evidence import Occurrence
 from fundamentals.contracts.source_catalog import SCREENER_SHAREHOLDING
@@ -223,3 +226,87 @@ def test_point_check_refuses_rather_than_zero(
         assert check.verdict is PointVerdict.POINT_REFUSED and check.point_value is None
         assert check.reason is not None and reason in check.reason
         assert point_line(check) in _printed(run_id, root)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_point_check_refuses_zero_while_an_unmapped_descendant_is_filed(
+    runs: dict[str, int], ingested: tuple[PgTestDatabase, Path, dict[str, int]]
+) -> None:
+    """R12: with Apar's B1 aggregate removed from the filing and its stored value, the filed
+    (unmapped) mutual-funds subcategory still bears B1, so B1 is never taken as zero."""
+    db = ingested[0]
+    with db.runtime_pool() as pool:
+        inputs, request, config = replay_inputs(runs[APAR], pool=pool, config_root=CONFIG_ROOT)
+        rows = load_results(runs[APAR], pool=pool)
+    filed = [
+        o for o in inputs.occurrences if "InstitutionsDomesticMember" not in str(o.native_context)
+    ]
+    assert any("MutualFundsOrUTIMember" in str(o.native_context) for o in filed)
+    unstored = [
+        r for r in rows if dict(r.key.dimensions.pairs).get(CATEGORY) != "institutions_domestic"
+    ]
+    marked = inputs.model_copy(update={"occurrences": tuple(filed)})
+    cell = (SCREENER, "institutions_domestic")
+    (check,) = [c for c in point_checks(unstored, marked, request, config) if _category(c) == cell]
+    assert check.verdict is PointVerdict.POINT_REFUSED and check.zero_members == ()
+    assert check.reason is not None and "institutions_domestic is filed" in check.reason
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_point_check_takes_each_key_s_own_instant_package(
+    runs: dict[str, int], ingested: tuple[PgTestDatabase, Path, dict[str, int]]
+) -> None:
+    """R12: a second selected package at another instant, listed first and filing ETERNAL's
+    absent promoter category, changes no check: each key reads its own instant's package, so
+    the promoter zero and the cited package stand."""
+    db = ingested[0]
+    with db.runtime_pool() as pool:
+        inputs, request, config = replay_inputs(runs["ETERNAL"], pool=pool, config_root=CONFIG_ROOT)
+        rows = load_results(runs["ETERNAL"], pool=pool)
+    checks = point_checks(rows, inputs, request, config)
+    (package,) = inputs.packages
+    member = package.members[Representation.XBRL]
+    capture = member.capture.model_copy(update={"capture_ref_id": 10**9})
+    other = package.model_copy(
+        update={
+            "package_id": 10**9,
+            "reporting_period_end": date(2026, 3, 31),
+            "members": {Representation.XBRL: member.model_copy(update={"capture": capture})},
+        }
+    )
+    (attempt,) = [a for a in inputs.attempts if a.capture == member.capture]
+    category = next(
+        o for o in inputs.occurrences if "CategoryOfShareholdersAxis" in str(o.native_context)
+    )
+    axis = next(
+        a
+        for a, _ in category.native_context["dimensions"]
+        if a.endswith("CategoryOfShareholdersAxis")
+    )
+    promoter = category.model_copy(
+        update={
+            "capture": capture,
+            "native_context": category.native_context
+            | {"dimensions": [[axis, "in-bse-shp:ShareholdingOfPromoterAndPromoterGroupMember"]]},
+        }
+    )
+    marked = inputs.model_copy(
+        update={
+            "packages": (other, package),
+            "attempts": (*inputs.attempts, attempt.model_copy(update={"capture": capture})),
+            "occurrences": (*inputs.occurrences, promoter),
+            "inputs": (
+                RunInput(
+                    kind=RunInputKind.PACKAGE,
+                    ref_id=10**9,
+                    disposition=RunInputDisposition.SELECTED,
+                ),
+                *inputs.inputs,
+            ),
+        }
+    )
+    assert point_checks(rows, marked, request, config) == checks
+    zero = next(c for c in checks if _category(c) == (UPSTOX, "sebi_promoter_group"))
+    assert zero.package_id == package.package_id and zero.zero_members == ("sebi_promoter_group",)

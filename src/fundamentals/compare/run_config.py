@@ -74,7 +74,7 @@ EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
         "ingest/pdf_source.py",
     ),
 }
-# The SHP adapter (``nse-shp-v1``) and every parser and identity module it imports (plan D8 R6).
+# The SHP adapter (``nse-shp-v2``) and every parser and identity module it imports (plan D8 R6).
 SHP_EXTRACTOR_SOURCES = (
     "evidence/shareholding_filing.py",
     "evidence/xbrl_adapter.py",

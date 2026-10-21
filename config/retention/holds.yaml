@@ -5,6 +5,7 @@
 manifests:
   - tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/stage2_manifest.yaml
+  - tests/fundamentals/fixtures/data_foundation/stage3_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage1_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage2_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage3_manifest.yaml

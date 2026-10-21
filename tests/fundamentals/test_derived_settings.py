@@ -462,12 +462,16 @@ def _seed_bytes(relative: str) -> bytes:
     ).stdout
 
 
+# The seed commit predates the (source, surface) shareholding extractors (D8).
+SEED_VENDORS = [key for key in VENDOR_EXTRACTORS if isinstance(key, str)]
+
+
 def _seed_pins(root: Path) -> list[VersionPin]:
     """Every extractor pin computed from the seed commit's bytes of its sources, the first-party
     ones at the seed versions (call with ``run_config._SOURCE_ROOT`` patched to ``root``)."""
     for relative in {
         *(path for paths in EXTRACTOR_SOURCES.values() for path in paths),
-        *(path for _, paths in VENDOR_EXTRACTORS.values() for path in paths),
+        *(path for key in SEED_VENDORS for path in VENDOR_EXTRACTORS[key][1]),
     }:
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_bytes(_seed_bytes(relative))
@@ -481,7 +485,7 @@ def _seed_pins(root: Path) -> list[VersionPin]:
     ]
     vendors = [
         vendor_version_pin(run_config.vendor_extractor_pin(source_id, "-"))
-        for source_id in VENDOR_EXTRACTORS
+        for source_id in SEED_VENDORS
     ]
     return first_party + vendors
 

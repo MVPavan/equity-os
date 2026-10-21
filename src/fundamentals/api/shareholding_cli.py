@@ -1,13 +1,15 @@
 """``fundamentals shareholding acquire|ingest`` (plan D8 Task 4, R8).
 
 ``acquire`` writes the next generation under ``<raw-root>/<SYMBOL>/`` through the live
-transport (an operator run, never scheduled). ``ingest`` replays one generation: a failed
-listing or SHP request is recorded as its acquisition attempt and the command stops before
-any capture is registered (exit non-zero); otherwise every successful capture is registered
-and the first-party submissions are ingested against the issuer held at the instant. Then each
-vendor capture is interpreted by its tree extractor (Task 6), bound to the issuer's share class
-at the instant; a failed vendor request is its capture-less attempt (R8), and decides nothing
-here.
+transport (an operator run, never scheduled); a parser refusal mid-sequence still writes the
+completed requests as that (failed) generation and exits non-zero. ``ingest`` replays one
+generation. Every failed request, first-party or vendor, is its capture-less acquisition attempt
+(R8). A failed listing or SHP request stops the command before any capture is registered (exit
+non-zero); otherwise every successful capture is registered in one transaction, refused whole
+when one is an expired or purging registration (D9), and the first-party submissions are
+ingested against the issuer held at the instant. Then each vendor capture is interpreted by its
+tree extractor (Task 6), bound to the issuer's share class at the instant (a drill-down to its
+generation's page capture). No fiscal calendar is read: every period is an instant (R6).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from psycopg_pool import ConnectionPool
 from fundamentals.api.onboard_cli import live_transport
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.compare.run_config import VENDOR_EXTRACTORS, LoadedConfig, load_run_config
+from fundamentals.compare.run_family import ANY_FISCAL_MONTH
 from fundamentals.compare.run_models import RunExitStatus
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.config_versions import ConfigVersions
@@ -50,12 +53,12 @@ from fundamentals.entity.discovery import (
     DiscoveryManifest,
     Request,
     acquiring_fetch,
+    register_capture,
     replay_fetch,
-    store_captures,
     write_generation,
 )
 from fundamentals.entity.identity_layers import latest_slice
-from fundamentals.evidence.capture_retention import ingest_vendor_retained
+from fundamentals.evidence.capture_retention import capture_registration, ingest_vendor_retained
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.shareholding_ingest import (
     BASIS,
@@ -70,8 +73,8 @@ from fundamentals.evidence.vendor_shareholding import (
     ShareholdingBinding,
     extract_vendor_shareholding,
 )
+from fundamentals.ingest.screener_session_models import ScreenerSessionError
 from fundamentals.ingest.shareholding_filing import acquire
-from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -87,7 +90,6 @@ PAUSE_SECONDS = 3  # the probe's spacing between live requests (d8-probe.md §1)
 SHAREHOLDING_VERSIONS = ConfigVersions(dictionary="v3", mapping_set="v7", normalisation_policy="v2")
 _FIRST_PARTY = (SHP_LISTING, SHP_XBRL)
 _VENDOR = (SCREENER_SHAREHOLDING, SCREENER_INVESTORS, TIJORI_SHAREHOLDING, UPSTOX_SHAREHOLDING)
-_NO_FISCAL_YEAR_END = "entity {entity_id} has no evidenced fiscal-year-end month"
 _NO_ENTITY = "no entity holds NSE symbol {symbol} at {instant}"
 _FAILURES = (
     OSError,
@@ -97,6 +99,7 @@ _FAILURES = (
     DatabaseUnavailableError,
     SnapshotError,
 )
+_UNREADABLE = (ValueError, LookupError, ScreenerSessionError)  # a parser's refusal of a body
 
 
 def add_shareholding_parser(
@@ -145,13 +148,21 @@ def _acquire(args: argparse.Namespace) -> int:
         time.sleep(PAUSE_SECONDS)
         return send(request)
 
-    fetch = acquiring_fetch(paced, lambda: datetime.now(UTC), [])
-    log = acquire(args.symbol, args.instant, fetch, tijori_slug=slug.identifiers.tijori_slug)
+    log: list[Capture] = []
+    fetch = acquiring_fetch(paced, lambda: datetime.now(UTC), log)
+    refused = None
+    try:
+        acquire(args.symbol, args.instant, fetch, tijori_slug=slug.identifiers.tijori_slug)
+    except _UNREADABLE as error:  # the completed requests are kept for diagnosis (R8)
+        refused = error
     folder = root / f"{GENERATION_PREFIX}{generation}"
     write_generation(folder, args.symbol, AUTHORIZATION, generation, log)
     failed = [item for item in log if item.response.outcome != OK]
     sys.stdout.write(f"shareholding {args.symbol}: {folder} ({len(log)} requests, ")
     sys.stdout.write(f"{len(failed)} failed)\n")
+    if refused is not None:
+        sys.stderr.write(f"shareholding {args.symbol} refused: {refused}\n")
+        return RunExitStatus.FAILURE
     return RunExitStatus.SUCCESS if not failed else RunExitStatus.INCOMPLETE
 
 
@@ -163,27 +174,30 @@ def _ingest(args: argparse.Namespace) -> int:
         repository = EvidenceRepository(pool)
         repository.pin_versions(shareholding_pins(config))
         entity_id = _entity(pool, args.symbol, args.instant)
-        failed = [
+        failed = [item for item in captures if item.response.outcome != OK]
+        stop = any(_pair(item) in _FIRST_PARTY for item in failed)
+        store = SnapshotStore(args.snapshot_root)
+        usable = [item for item in captures if item.response.outcome == OK]
+        refs: list[CaptureReference] = []
+        if not stop:
+            with store.prepare_ordinary_output(), capture_registration(pool) as registration:
+                refs = [register_capture(store, registration, item)[1] for item in usable]
+                for ref in refs:
+                    registration.refuse_gone(ref)
+        failures = [
             failed_attempt(
-                item.request.source_id,
-                item.request.surface,
+                *_pair(item),
                 item.request.key,
                 item.response.outcome,
                 entity_id=entity_id,
                 instant=args.instant,
             )
-            for item in captures
-            if (item.request.source_id, item.request.surface) in _FIRST_PARTY
-            and item.response.outcome != OK
+            for item in failed
         ]
-        if failed:
-            for attempt in repository.put_attempts(failed):
-                sys.stderr.write(f"shareholding {args.symbol}: {attempt.reason}\n")
+        for attempt in repository.put_attempts(failures) if failures else ():
+            sys.stderr.write(f"shareholding {args.symbol}: {attempt.reason}\n")
+        if stop:
             return RunExitStatus.FAILURE
-        store = SnapshotStore(args.snapshot_root)
-        usable = [item for item in captures if item.response.outcome == OK]
-        with store.prepare_ordinary_output():
-            refs = [ref for _, ref in store_captures(store, repository, usable)]
         registered = list(zip(usable, refs, strict=True))
         identifiers = repository.issuer_identifiers(entity_id, as_of=args.instant)
         report = ingest_shareholding(
@@ -203,10 +217,8 @@ def _ingest(args: argparse.Namespace) -> int:
         complete = all(item.outcome is ExtractionOutcome.COMPLETE for item in report.attempts)
         vendor = []
         if complete and report.packages:
-            binding = _binding(args, captures, _share_class(pool, entity_id, args.instant))
-            vendor = _vendors(
-                args, captures, registered, binding, entity_id, repository, store, config
-            )
+            binding = _binding(args, registered, _share_class(pool, entity_id, args.instant))
+            vendor = _vendors(args, registered, binding, entity_id, repository, store, config)
     for attempt in (*report.attempts, *vendor):
         sys.stdout.write(f"shareholding {args.symbol}: {attempt.outcome.value} ")
         sys.stdout.write(f"{attempt.reason or ''}\n")
@@ -215,25 +227,30 @@ def _ingest(args: argparse.Namespace) -> int:
 
 
 def _binding(
-    args: argparse.Namespace, captures: Sequence[Capture], isin: str | None
+    args: argparse.Namespace,
+    registered: Sequence[tuple[Capture, CaptureReference]],
+    isin: str | None,
 ) -> ShareholdingBinding:
-    """The configured vendor identities, the share class at the instant and the Screener page."""
+    """The configured vendor identities, the share class at the instant and the Screener page
+    with its capture id."""
     ids = load_watchlist_config(args.config_root / WATCHLIST).stock(args.symbol).identifiers
-    pages = [item.response.body for item in captures if _pair(item) == SCREENER_SHAREHOLDING]
-    page = next((body for body in pages if body), b"")
+    pages = [
+        (i.response.body, r.capture_id) for i, r in registered if _pair(i) == SCREENER_SHAREHOLDING
+    ]
+    page, page_capture_id = next(iter(pages), (b"", ""))
     return ShareholdingBinding(
         symbol=args.symbol,
         security_isin=isin,
         screener_company_id=ids.screener_company_id,
         tijori_slug=ids.tijori_slug,
         tijori_company_id=ids.tijori_company_id,
-        page=page,
+        page=page or b"",
+        page_capture_id=page_capture_id,
     )
 
 
 def _vendors(
     args: argparse.Namespace,
-    captures: Sequence[Capture],
     registered: Sequence[tuple[Capture, CaptureReference]],
     binding: ShareholdingBinding,
     entity_id: int,
@@ -241,29 +258,12 @@ def _vendors(
     store: SnapshotStore,
     config: LoadedConfig,
 ) -> list[AcquisitionAttempt]:
-    """Each vendor request's attempt: its tree ingest, or its failure (R8)."""
-    year_end = repository.settings_as_of(
-        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock(), args.instant
-    )
-    if year_end is None:
-        raise LookupError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
-    refs = {item.request.key: ref for item, ref in registered}
+    """Each registered vendor capture's tree ingest attempt."""
     attempts: list[AcquisitionAttempt] = []
-    for item in captures:
+    for item, ref in registered:
         pair = _pair(item)
         if pair not in _VENDOR:
             continue
-        if item.response.outcome != OK:
-            failed = failed_attempt(
-                *pair,
-                item.request.key,
-                item.response.outcome,
-                entity_id=entity_id,
-                instant=args.instant,
-            )
-            attempts += repository.put_attempts([failed])
-            continue
-        ref = refs[item.request.key]
         request = VendorIngestRequest(
             source_id=pair[0],
             surface=pair[1],
@@ -275,10 +275,10 @@ def _vendors(
             basis=BASIS,
             framework=FRAMEWORK,
         )
-        extract = partial(
-            extract_vendor_shareholding,
-            binding=binding.model_copy(update={"url": item.request.url}),
-        )
+        update: dict[str, object] = {"url": item.request.url}
+        if pair != SCREENER_INVESTORS:  # only a drill-down is held to its generation's page
+            update |= {"page": b"", "page_capture_id": ""}
+        extract = partial(extract_vendor_shareholding, binding=binding.model_copy(update=update))
         report = ingest_vendor_retained(
             request,
             repository=repository,
@@ -289,7 +289,7 @@ def _vendors(
             mapping_set=config.mapping_set,
             policy=config.normalisation_policy,
             rounding_policy=config.rounding,
-            fiscal_year_end_month=int(year_end.value_text),
+            fiscal_year_end_month=ANY_FISCAL_MONTH,
         )
         attempts.append(report.attempt)
     return attempts

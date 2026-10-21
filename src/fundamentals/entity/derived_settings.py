@@ -20,14 +20,19 @@ from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.observation import AccountingFramework
-from fundamentals.contracts.onboarding import ANCHOR_UNITS, VerificationState, VerificationUnit
+from fundamentals.contracts.onboarding import (
+    ANCHOR_UNITS,
+    VerificationState,
+    VerificationUnit,
+    as_of_for,
+)
 from fundamentals.contracts.source_catalog import (
     NSE_INTEGRATED_LISTING,
     NSE_MASTER,
     NSE_RESULTS_LISTING,
     NSE_XBRL_INSTANCE,
 )
-from fundamentals.entity.discovery import FILINGS_CHECKED, Discovery, as_of_for
+from fundamentals.entity.discovery import FILINGS_CHECKED, Discovery
 from fundamentals.entity.verification import financial_rule
 from fundamentals.evidence import repository_rows as rows_sql
 from fundamentals.extract.xbrl_parser import iter_raw_facts

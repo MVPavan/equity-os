@@ -82,6 +82,12 @@ class Registration:
         identity = (ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         return rows_sql.capture_of(self._rows(rows_sql.SELECT_CAPTURE_REF, identity)[0])
 
+    def refuse_gone(self, ref: CaptureReference) -> None:
+        """Raise :class:`OriginalExpiredError` when the registration is expired or being purged."""
+        state = CaptureState(self._rows(_STATE, (ref.capture_ref_id,))[0]["capture_state"])
+        if state in _GONE:
+            raise OriginalExpiredError(f"ORIGINAL_EXPIRED: capture {ref.capture_ref_id} is {state}")
+
     def _rows(self, query: LiteralString, params: tuple[object, ...]) -> list[dict[str, Any]]:
         """One parameterised statement's rows as column dicts."""
         with self._conn.cursor(row_factory=dict_row) as cursor:

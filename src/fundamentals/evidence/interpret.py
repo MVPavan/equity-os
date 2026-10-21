@@ -66,7 +66,7 @@ from fundamentals.evidence.mapping import (
     matches_dimensions,
 )
 from fundamentals.evidence.pdf_adapter import CONTEXT_HEADER_MONTHS, parse_printed_number
-from fundamentals.evidence.shareholding_filing import CONTEXT_SECURITY_ISIN, SHP_EXTRACTOR_VERSION
+from fundamentals.evidence.shareholding_filing import CONTEXT_SECURITY_ISIN, SHP_EXTRACTOR_VERSIONS
 from fundamentals.evidence.xbrl_adapter import (
     CONTEXT_MEMBER_DESCRIPTIONS,
     CONTEXT_PERIOD_AMBIGUOUS,
@@ -709,7 +709,7 @@ def normalise_occurrence_value(
     if occurrence.precision_kind is PrecisionKind.UNSUPPORTED:
         trace[TRACE_REASON] = "no usable declared precision"
         # An SHP percentage keeps its exact value, never an interval: R12's point-check input.
-        kept = exact if occurrence.extractor_version == SHP_EXTRACTOR_VERSION else None
+        kept = exact if occurrence.extractor_version in SHP_EXTRACTOR_VERSIONS else None
         return kept, None, InterpretationReason.PRECISION_UNSUPPORTED
     value = exact_decimal(exact)
     if occurrence.precision_kind is PrecisionKind.EXACT:

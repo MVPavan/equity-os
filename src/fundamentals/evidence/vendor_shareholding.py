@@ -63,9 +63,10 @@ from fundamentals.ingest.tijori_shareholding_table import TijoriShareholdingSche
 from fundamentals.ingest.tijori_tables import TijoriParseError
 from fundamentals.ingest.upstox_retention import PATH_PARAMETER
 
-SCREENER_VERSION = "screener-shp-v1"
-TIJORI_VERSION = "tijori-shp-v1"
-UPSTOX_VERSION = "upstox-shp-v1"
+SCREENER_VERSION = "screener-shp-v2"  # v2: a drill-down records its page capture (D8 F4)
+TIJORI_VERSION = "tijori-shp-v2"  # v2 with it: this module is in every tree extractor's pin
+UPSTOX_VERSION = "upstox-shp-v2"
+PAGE_CAPTURE = "page_capture_id"  # a drill-down holder's parent page capture (R11 generation)
 SCHEMA = {
     SCREENER_SHAREHOLDING: "screener-shareholding-tree-v1",
     SCREENER_INVESTORS: "screener-investors-tree-v1",
@@ -101,7 +102,7 @@ Cells = tuple[tuple[str, str | None, Decimal | None], ...]  # (period label, lex
 class ShareholdingBinding(BaseModel):
     """The API layer's binding for one capture: the share class resolved at the instant
     (``None`` leaves every occurrence keyless), the request URL, and the generation's Screener
-    page, which a drill-down is held to."""
+    page and its capture id, which a drill-down is held to."""
 
     model_config = ConfigDict(frozen=True)
     symbol: str
@@ -111,6 +112,7 @@ class ShareholdingBinding(BaseModel):
     tijori_company_id: int
     url: str = ""
     page: bytes = b""
+    page_capture_id: str = ""
 
 
 class _Node(BaseModel):
@@ -200,12 +202,9 @@ def _screener_bucket(
     """Every holder of one drill-down, held to the page row it expands (level 2)."""
     parts = urlsplit(binding.url).path.strip("/").split("/")  # api/3/<id>/investors/<b>/<p>
     if len(parts) != 6 or parts[2] != str(binding.screener_company_id):
-        raise VendorExtractionError(
-            ExtractionOutcome.IDENTITY_REJECTED,
-            _FOREIGN.format(
-                what=binding.url, seen=parts[2:3], expected=binding.screener_company_id
-            ),
-        )
+        expected = binding.screener_company_id
+        reason = _FOREIGN.format(what=binding.url, seen=parts[2:3], expected=expected)
+        raise VendorExtractionError(ExtractionOutcome.IDENTITY_REJECTED, reason)
     bucket, periodicity = parts[4], Periodicity(parts[5])
     _refuse_deeper(body)
     tables = _screener_tables(binding.page, binding.screener_company_id, record.retrieved_at)
@@ -239,7 +238,8 @@ def _screener_bucket(
                 "table_key": f"investors:{bucket}:{periodicity.value}",
                 "holder": holder.holder,
             },
-            disclosure={**listed, "bucket": bucket, "person_url": holder.person_url},
+            disclosure={**listed, "bucket": bucket, "person_url": holder.person_url}
+            | {PAGE_CAPTURE: binding.page_capture_id},
         )
         for holder in parsed.holders
     ]

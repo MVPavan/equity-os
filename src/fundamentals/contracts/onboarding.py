@@ -9,10 +9,19 @@ outcomes. ``UNIT_SURFACES`` names the base run representation each excludable un
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date, datetime
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.config_versions import ConfigVersions
+
+INDIA = ZoneInfo("Asia/Kolkata")
+
+
+def as_of_for(retrieved_at: datetime) -> date:
+    """C13: the Asia/Kolkata date of the master's retrieval."""
+    return retrieved_at.astimezone(INDIA).date()
 
 
 class VerificationUnit(StrEnum):

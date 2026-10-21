@@ -14,8 +14,8 @@ declared periodicity differs (no precedence between tables is ever recorded); bo
 with the first-party representative for the corroboration status. Upstox pairs with it and
 with Screener as a diagnostic, and when extraction is not ``AGREE`` every vendor also pairs
 with the other first-party representation as a diagnostic. Diagnostics never enter a status.
-A decided Screener page also selects its drill-down captures (plan D8 R11): per request key the
-latest available complete one, so ``routing`` queues their holders; they decide no cell.
+A decided Screener page also selects its drill-down captures (plan D8 R11): those whose holders
+(only a complete drill-down has any) record that page capture, so ``routing`` queues them.
 
 A vendor mapping whose scope names a filing taxonomy is qualified only against the selected
 filing: its schema and its proven conditions, never the vendor capture's own (spec §2).
@@ -62,7 +62,6 @@ from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.qualification import qualification_context, scoped_tier
 from fundamentals.contracts.source_catalog import (
-    SCREENER_INVESTORS,
     SCREENER_SHAREHOLDING,
     surface_authority,
 )
@@ -74,6 +73,7 @@ from fundamentals.evidence.selection import (
     matches_key,
     period_end,
 )
+from fundamentals.evidence.vendor_shareholding import PAGE_CAPTURE
 
 SCREENER = "screener-subscriber"
 NO_ATTEMPT = "NO_ATTEMPT"
@@ -148,25 +148,17 @@ class VendorSides:
     def selected_captures(self) -> set[int]:
         """Captures that decided a side, plus a decided Screener page's drill-downs (R11)."""
         pages = {
-            (item.entity_id, item.basis, item.period_end)
+            item.capture.capture_id
             for item in self._attempts
             if (item.source_id, item.surface) == SCREENER_SHAREHOLDING
             and item.capture is not None
             and item.capture.capture_ref_id in self._decided
         }
-        latest: dict[str, AcquisitionAttempt] = {}
-        for item in sorted(
-            self._attempts, key=lambda found: (found.attempted_at, found.attempt_id)
-        ):
-            if (
-                (item.source_id, item.surface) == SCREENER_INVESTORS
-                and (item.entity_id, item.basis, item.period_end) in pages
-                and item.capture is not None
-                and item.capture.registered_at <= self._request.cutoff
-            ):
-                latest[item.capture.request_key] = item
-        drills = [i.capture for i in latest.values() if i.outcome is ExtractionOutcome.COMPLETE]
-        return self._decided | {capture.capture_ref_id or 0 for capture in drills if capture}
+        return self._decided | {
+            item.capture.capture_ref_id or 0
+            for item in self._occurrences.values()
+            if item.disclosure.get(PAGE_CAPTURE) in pages
+        }
 
     def row(
         self,

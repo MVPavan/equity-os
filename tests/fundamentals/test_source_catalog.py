@@ -130,12 +130,10 @@ def test_unregistered_shareholding_surface_is_logged_not_authorised_and_never_se
         sent.append(item)
         return 200, b"<xbrl/>"
 
-    for table, outcome in (
-        (tuple(a for a in VENDOR_SURFACES if (a.source_id, a.surface) != SHP_XBRL), NOT_AUTHORISED),
-        (VENDOR_SURFACES, OK),
-    ):
-        log: list[Capture] = []
-        fetch = acquiring_fetch(send, lambda: datetime(2026, 10, 17, tzinfo=UTC), log)
+    log: list[Capture] = []
+    fetch = acquiring_fetch(send, lambda: datetime(2026, 10, 17, tzinfo=UTC), log)
+    unregistered = tuple(a for a in VENDOR_SURFACES if (a.source_id, a.surface) != SHP_XBRL)
+    for table in (unregistered, VENDOR_SURFACES):
         fetch(request, authorised(request, table))
-        assert log[0].response.outcome == outcome
+    assert [item.response.outcome for item in log] == [NOT_AUTHORISED, OK]
     assert sent == [request]

@@ -66,7 +66,7 @@ from fundamentals.compare.engine_rows import (
 )
 from fundamentals.compare.resolve_models import ResolvedInputs
 from fundamentals.compare.run_config import LoadedConfig
-from fundamentals.compare.run_family import RUN_FAMILIES
+from fundamentals.compare.run_family import ANY_FISCAL_MONTH, RUN_FAMILIES
 from fundamentals.compare.run_models import (
     ResultRow,
     RunRequest,
@@ -441,7 +441,10 @@ class RunEngine:
         )
 
     def _fiscal_year_end(self, entity_id: int, period_end: date) -> int:
-        """The fiscal-year-end month governing the period by the cutoff."""
+        """The fiscal-year-end month governing the period by the cutoff; none is read for a
+        family of instants, whose period kinds ignore it (plan D8 R6)."""
+        if not RUN_FAMILIES[self._family].fiscal_calendar:
+            return ANY_FISCAL_MONTH
         return fiscal_year_end(self._inputs.settings, entity_id, self._cutoff, period_end)
 
     def segment_members_of(self, entity_id: int) -> tuple[SegmentMemberRecord, ...]:

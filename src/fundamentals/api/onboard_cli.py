@@ -269,11 +269,8 @@ def live_transport() -> Send:
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
-        if (
-            upstox
-            and (request.source_id, request.surface) in UPSTOX_ROUTED
-            and urlsplit(request.url)[:2] == ("https", discovery.ORIGINS[UPSTOX_STATEMENT])
-        ):
+        api = urlsplit(request.url)[:2] == ("https", discovery.ORIGINS[UPSTOX_STATEMENT])
+        if upstox and (request.source_id, request.surface) in UPSTOX_ROUTED and api:
             headers["Authorization"] = f"Bearer {upstox.access_token.get_secret_value()}"
         try:
             with opener.open(

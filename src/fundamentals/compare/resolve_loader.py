@@ -1,14 +1,13 @@
 """The as-of and list reads one run makes before it computes (D1a Task 9).
 
-Only execution reaches this module; replay reloads the stored ids instead. Per entity it
-reads the fiscal calendar, basis status and segment members recorded by the cutoff; per
-(entity, basis, period end) the eligible results packages (plus the same fiscal year's
-nine-month package when a ``YEAR`` package is present), their member captures'
-interpretations under the pinned triple, the witness and selected occurrences, and the
-available attempts; and finally every eligible comparative of the selected keys. Only members
-and attempts on the scope's requested sources (first-party surfaces) are read, plus the
-requested vendor surfaces' attempts of the scope's period end and their captures'
-interpretations.
+Only execution reaches this module; replay reloads the stored ids instead. It reads the
+basis status, segment members and (a results run only) fiscal calendar recorded by the cutoff;
+per (entity, basis, period end) the eligible packages (plus the same fiscal year's nine-month
+package when a ``YEAR`` package is present), their member captures' interpretations under the
+pinned triple, the witness and selected occurrences, and the available attempts; and finally
+every eligible comparative of the selected keys. Only members and attempts on the scope's
+requested sources (first-party surfaces) are read, plus the requested vendor surfaces'
+attempts of the scope's period end and their captures' interpretations.
 """
 
 from __future__ import annotations
@@ -145,7 +144,8 @@ class RunLoader:
         """Eligible packages (and a ``YEAR`` package's nine-month package) and attempts."""
         ends = [end]
         packages = self._eligible(entity_id, basis, end)
-        fiscal_month = self._fiscal_month(entity_id, end)
+        calendar = RUN_FAMILIES[self._family].fiscal_calendar
+        fiscal_month = self._fiscal_month(entity_id, end) if calendar else None
         if fiscal_month is not None and any(
             package.reporting_kind is PeriodKind.YEAR for package in packages
         ):

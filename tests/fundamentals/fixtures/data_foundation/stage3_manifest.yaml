@@ -16,7 +16,7 @@ header:
       hand (fix round 1): APARINDS direct, VOTING_RIGHTS, subcategory, derived and scalar rows, and its
       keyless group totals against Sol r1''s independent APARINDS counts (Screener 120 + 116, Upstox 5
       + 2); row totals 20/22/27 against Sol''s traced totals.'}
-  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-21, payload_sha256: 33212e98deaf6c5e03c04d09c9b620974be42691e39f543ecac7e3383b8ac2e9}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-21, payload_sha256: 8fa84c7daf832db9ab1ccf456f9f2c0036bc534ef8c3e5a29e876a6e58f378d7}
   notation: {approval: 'header.approval.payload_sha256 = sha256 of this file''s bytes with the one line
       starting ''  approval:'' (and its newline) removed; the approval verdict is valid only for that
       payload', row_key: '<canonical_id>|I|denominator=<d>,share_class=<ISIN>,shareholding_category=<member>|REPORTED|DERIVED,
@@ -84,14 +84,15 @@ header:
     framework: UNKNOWN
     dictionary: v3
     mapping_set: v7
-    extractors: [nse-shp-v1, screener-shp-v1, tijori-shp-v1, upstox-shp-v1]
+    extractors: [nse-shp-v2, screener-shp-v2, tijori-shp-v2, upstox-shp-v2]
     mode: AS_KNOWN
   units: {PERCENTAGE: '%', COUNT: shares (exact count; the stage1 UNITS name of an integer count)}
   row_units: {shp_holding_pct: '%', shp_public_shareholding_plus_employee_trust_pct: '%', shp_non_institutions_plus_employee_trust_pct: '%',
     shp_institutions_domestic_plus_foreign_pct: '%', shp_num_shareholders: shares}
-  cli: {ingest: fundamentals shareholding ingest --symbol <SYM> --raw-root data/raw/shareholding --snapshot-root
-      <tmp> --generation 2, run: fundamentals compare run --family shareholding --entity <KEY> --period-end
-      2026-06-30 --basis standalone --mode as_known --dictionary v3 --mapping-set v7 --vendor screener-subscriber/SCREENER_SHAREHOLDING
+  cli: {ingest: fundamentals shareholding ingest --symbol <SYM> --instant 2026-06-30 --raw-root data/raw/shareholding
+      --snapshot-root <tmp> --generation 2, run: fundamentals compare run --family shareholding --entity <KEY> --period-end
+      2026-06-30 --basis standalone --mode as_known --dictionary v3 --mapping-set v7 --normalisation-policy v2
+      --vendor screener-subscriber/SCREENER_SHAREHOLDING
       --vendor screener-subscriber/SCREENER_INVESTORS --vendor tijori/shareholding --vendor upstox/share-holdings,
     report: fundamentals compare report --family shareholding --entity <KEY> --period-end 2026-06-30 --basis
       standalone}

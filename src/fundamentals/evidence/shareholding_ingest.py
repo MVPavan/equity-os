@@ -6,20 +6,22 @@ Later broadcasts supersede earlier ones through the existing package lineage. By
 only through D9's ``read_retained``, so an expired or purging capture is refused
 (``ORIGINAL_EXPIRED``) before any write. An extraction refusal is one attempt and nothing else.
 Re-ingesting unchanged inputs reuses the attempt generation, occurrences, interpretations
-and package, and writes nothing. A failed listing or SHP request is recorded apart from usable
-evidence as one capture-less ``ACQUISITION`` attempt (``failed_attempt``).
+and package, and writes nothing. A failed request is recorded apart from usable evidence as one
+capture-less ``ACQUISITION`` attempt (``failed_attempt``). Every period is an instant, so no
+fiscal calendar is read (R6).
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date
 from typing import TYPE_CHECKING
 
 import structlog
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.compare.run_family import ANY_FISCAL_MONTH
 from fundamentals.contracts.acquisition_outcome import (
     ExtractionOutcome,
     OutcomeCode,
@@ -55,7 +57,6 @@ from fundamentals.evidence.shareholding_filing import (
     extract_shareholding,
 )
 from fundamentals.ingest.shareholding_filing import listing_date
-from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.store.snapshot_store import SnapshotStore
 
 if TYPE_CHECKING:
@@ -67,7 +68,6 @@ FRAMEWORK = AccountingFramework.UNKNOWN
 _NATIVE_KIND = "shareholding-discovery"
 _TRANSPORT = frozenset({"TIMEOUT", "TRANSPORT_ERROR"})
 _FAILED = "request {key} failed: {outcome}"
-_NO_FISCAL_YEAR_END = "entity {entity_id} has no evidenced fiscal-year-end month"
 _NOT_LISTED = "SHP instance {url} is not in the listing"
 
 
@@ -105,33 +105,25 @@ class _Outcome(BaseModel):
 
 
 def shareholding_pins(config: LoadedConfig) -> list[VersionPin]:
-    """The mapping set, normalisation policy and ``nse-shp-v1`` content this ingest rests on."""
+    """The mapping set, normalisation policy and SHP extractor content this ingest rests on."""
     from fundamentals.compare.run_config import extractor_pin
 
     extractor = extractor_pin(Representation.XBRL, family=FilingFamily.SHAREHOLDING)
+    mapping_set, policy = config.mapping_set, config.normalisation_policy
     return [
-        VersionPin(
-            artifact="mapping_set",
-            version=config.mapping_set.version,
-            content_sha256=config.mapping_set.content_sha256,
-        ),
-        VersionPin(
-            artifact="normalisation_policy",
-            version=config.normalisation_policy.version,
-            content_sha256=config.normalisation_policy.content_sha256,
-        ),
-        VersionPin(
-            artifact="extractor_xbrl",
-            version=extractor.version,
-            content_sha256=extractor.content_sha256,
-        ),
+        VersionPin(artifact=name, version=version, content_sha256=sha)
+        for name, version, sha in (
+            ("mapping_set", mapping_set.version, mapping_set.content_sha256),
+            ("normalisation_policy", policy.version, policy.content_sha256),
+            ("extractor_xbrl", extractor.version, extractor.content_sha256),
+        )
     ]
 
 
 def failed_attempt(
     source_id: str, surface: str, request_key: str, outcome: str, *, entity_id: int, instant: date
 ) -> AcquisitionAttempt:
-    """One failed listing or SHP request as a capture-less ``ACQUISITION`` attempt (R8)."""
+    """One failed request as a capture-less ``ACQUISITION`` attempt (R8)."""
     code = OutcomeCode.TRANSPORT_ERROR if outcome in _TRANSPORT else OutcomeCode.REQUEST_REJECTED
     record = _Outcome(
         outcome=OutcomeRecord(code=code, native_kind=_NATIVE_KIND, native_value=outcome)
@@ -173,12 +165,11 @@ def ingest_shareholding(
     content, and ``OriginalExpiredError`` (nothing written) for an expired capture.
     """
     repository.pin_versions(shareholding_pins(config))
-    pool = repository._pool
+    pool, entity_id = repository._pool, generation.entity_id
     rows = json.loads(read_retained(pool, snapshots, generation.listing)[1])
     by_url = {str(row.get("xbrl", "")): row for row in rows}
-    bodies = [(url, ref, read_retained(pool, snapshots, ref)[1]) for url, ref in generation.filings]
-    submissions = []
-    for url, ref, body in bodies:
+    submissions = []  # every body is read (expiry refused) before any write
+    for url, ref in generation.filings:
         if url not in by_url:
             raise ValueError(_NOT_LISTED.format(url=url))
         raw = str(by_url[url]["broadcastDate"])
@@ -187,8 +178,17 @@ def ingest_shareholding(
             knowledge_time=parse_filed_at(raw.title()),
             knowledge_time_raw=raw,
         )
-        submissions.append((listing, ref, body))
-    scope_of = _scope(generation, repository, config)
+        submissions.append((listing, ref, read_retained(pool, snapshots, ref)[1]))
+    scope = CaptureScope(
+        capture=generation.listing,
+        entity_id=generation.entity_id,
+        basis=BASIS,
+        framework=FRAMEWORK,
+        mapping_set=config.mapping_set,
+        policy=config.normalisation_policy,
+        dictionary=config.dictionary,
+        fiscal_year_end_month=ANY_FISCAL_MONTH,  # instants ignore the fiscal calendar (R6)
+    )
     attempts: list[AcquisitionAttempt] = []
     packages: list[int] = []
     occurrences = interpretations = 0
@@ -197,7 +197,7 @@ def ingest_shareholding(
         attempts.append(attempt)
         if attempt.outcome is not ExtractionOutcome.COMPLETE:
             continue
-        interpreted = _interpretations(found, scope_of(ref), repository)
+        interpreted = _interpretations(found, scope.model_copy(update={"capture": ref}), repository)
         packages.append(_package(generation, repository, ref, listing, interpreted))
         occurrences += len(found)
         interpretations += len(interpreted)
@@ -207,11 +207,10 @@ def ingest_shareholding(
             knowledge_cutoff=max(item[0].knowledge_time for item in submissions),
             first_seen_cutoff=repository.store_clock(),
         )
+        listed = repository.list_packages(entity_id, FilingFamily.SHAREHOLDING, generation.instant)
         head = select_package(
-            repository.list_packages(
-                generation.entity_id, FilingFamily.SHAREHOLDING, generation.instant
-            ),
-            entity_id=generation.entity_id,
+            listed,
+            entity_id=entity_id,
             family=FilingFamily.SHAREHOLDING,
             statement_family=StatementFamily.SHAREHOLDING,
             basis=BASIS,
@@ -220,21 +219,15 @@ def ingest_shareholding(
             boundary=boundary,
         )
         selected = head.package_id if head is not None else None
-    _LOG.info(
-        "shareholding ingest",
-        entity_id=generation.entity_id,
-        instant=str(generation.instant),
-        packages=packages,
-        occurrences=occurrences,
-        interpretations=interpretations,
-    )
-    return ShareholdingIngestReport(
+    report = ShareholdingIngestReport(
         packages=tuple(packages),
         selected=selected,
         attempts=tuple(attempts),
         occurrences=occurrences,
         interpretations=interpretations,
     )
+    _LOG.info("shareholding ingest", entity_id=entity_id, **report.model_dump(exclude={"attempts"}))
+    return report
 
 
 def _generation(
@@ -283,34 +276,6 @@ def _generation(
     return written, found
 
 
-def _scope(
-    generation: ShareholdingGeneration, repository: EvidenceRepository, config: LoadedConfig
-) -> Callable[[CaptureReference], CaptureScope]:
-    """Each capture's interpretation scope under the evidenced fiscal-year-end month."""
-    record = repository.settings_as_of(
-        generation.entity_id,
-        SettingKey.FISCAL_YEAR_END_MONTH,
-        repository.store_clock(),
-        generation.instant,
-    )
-    if record is None:
-        raise LookupError(_NO_FISCAL_YEAR_END.format(entity_id=generation.entity_id))
-
-    def scope(capture: CaptureReference) -> CaptureScope:
-        return CaptureScope(
-            capture=capture,
-            entity_id=generation.entity_id,
-            basis=BASIS,
-            framework=FRAMEWORK,
-            mapping_set=config.mapping_set,
-            policy=config.normalisation_policy,
-            dictionary=config.dictionary,
-            fiscal_year_end_month=int(record.value_text),
-        )
-
-    return scope
-
-
 def _interpretations(
     occurrences: Sequence[Occurrence], scope: CaptureScope, repository: EvidenceRepository
 ) -> tuple[Interpretation, ...]:
@@ -352,14 +317,12 @@ def _package(
 ) -> int:
     """The submission's package, superseding the latest earlier broadcast at this instant."""
     assert listing.instant is not None
-    earlier = [
-        package
-        for package in repository.list_packages(
-            generation.entity_id, FilingFamily.SHAREHOLDING, listing.instant
-        )
-        if package.knowledge_time < listing.knowledge_time
-    ]
+    listed = repository.list_packages(
+        generation.entity_id, FilingFamily.SHAREHOLDING, listing.instant
+    )
+    earlier = [package for package in listed if package.knowledge_time < listing.knowledge_time]
     supersedes = earlier[-1].package_id if earlier else None
+    lineage = {"xbrl": ref.blob_sha256, "supersedes_package_id": supersedes}
     member = PackageMember(
         representation=Representation.XBRL,
         capture=ref,
@@ -380,9 +343,7 @@ def _package(
         replaced_statements=frozenset(),
         statements_present=frozenset({StatementFamily.SHAREHOLDING}),
         members={Representation.XBRL: member},
-        evidence_sha256=canonical_sha256(
-            {"xbrl": ref.blob_sha256, "supersedes_package_id": supersedes}
-        ),
+        evidence_sha256=canonical_sha256(lineage),
     )
     keyed = sorted({row.occurrence_id for row in interpretations if row.key and row.occurrence_id})
     return repository.put_package(package, statement_evidence={StatementFamily.SHAREHOLDING: keyed})

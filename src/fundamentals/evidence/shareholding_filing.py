@@ -1,20 +1,21 @@
-"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v1``).
+"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v2``).
 
 Extraction only, so the version pin hashes what decides each occurrence. The instance is
 read with the results parser's context and unit readers (``extract/xbrl_dimensions.py``
 underneath, unedited). Before anything is kept: every fact is in the one supported
 taxonomy (else ``UNSUPPORTED_SCHEMA``), the filed shareholding date
 (``DateOfReport`` and its context instant) equals the listing row's date (else
-``PARSE_FAILED``, R4), and every context entity and ISIN, symbol and scrip fact names the
-issuer held at the instant (else ``IDENTITY_REJECTED``). Every fact is then one occurrence;
-a ``pure`` percentage fraction carries raw scale 2 with its lexeme, unit and ``decimals``
-kept (R5), and its declared ``INF`` precision is unsupported (R5 Precision). Each occurrence
+``PARSE_FAILED``, R4), and every parsed context's entity (used by a fact or not) and every
+ISIN, symbol and scrip fact names the issuer held at the instant (else ``IDENTITY_REJECTED``).
+Every fact is then one occurrence; a ``pure`` percentage fraction carries raw scale 2 with
+its lexeme, unit and ``decimals`` kept (R5), and its declared ``INF`` precision is
+unsupported (R5 Precision). Each occurrence
 records the validated filing ISIN and its list's completeness (R4 Completeness).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime
 from typing import Any
 
@@ -54,6 +55,7 @@ from fundamentals.extract.xbrl_parser import (
     _parse_units,
     _period_interval,
     _raw_periods,
+    _XbrlContext,
 )
 from fundamentals.ingest.xbrl_identity import (
     ACCEPTED_ENTITY_IDS_BY_ISIN,
@@ -62,7 +64,8 @@ from fundamentals.ingest.xbrl_identity import (
     SEBI_SCRIP_ENTITY_SCHEME,
 )
 
-SHP_EXTRACTOR_VERSION = "nse-shp-v1"
+SHP_EXTRACTOR_VERSION = "nse-shp-v2"  # v2: the identity gate covers every context (D8 F8)
+SHP_EXTRACTOR_VERSIONS = frozenset({"nse-shp-v1", SHP_EXTRACTOR_VERSION})
 # d8-probe.md §3: the BSE SHP taxonomy every retained instance files under, and its scrip scheme.
 SHP_NAMESPACE = "http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp"
 SHP_FORMAT_VERSION = "in-bse-shp/2025-10-31"
@@ -76,6 +79,37 @@ PERCENT_SCALE = 2  # R5: a pure fraction is x100 a percentage, exactly once
 COMPLETE, THRESHOLDED, UNKNOWN = "COMPLETE", "THRESHOLDED", "UNKNOWN"
 TOTAL_SHARES = "TOTAL_SHARES"
 _TYPED = "typed:"
+CATEGORY_AXIS_NATIVE = "CategoryOfShareholdersAxis"
+SHP_TOTAL = "ShareholdingPatternMember"
+# Each ``<Name>Member`` the retained instances file on the native axis, under its format parent by
+# label correspondence (R/reference/gen-1/02.bin pp. 3-13; d8-probe.md §11.2), mapped or not.
+_FORMAT_CHILDREN = {
+    "ShareholdingPattern": "ShareholdingOfPromoterAndPromoterGroup PublicShareholding "
+    "SharesHeldByNonPromoterNonPublicShareholders",
+    "ShareholdingOfPromoterAndPromoterGroup": "Indian Foreign",
+    "Indian": "IndividualsOrHinduUndividedFamily CentralGovernmentOrStateGovernmentS "
+    "OtherIndianShareholders",
+    "Foreign": "OtherForeignShareholders",
+    "PublicShareholding": "InstitutionsDomestic InstitutionsForeign Governments NonInstitutions",
+    "InstitutionsDomestic": "MutualFundsOrUTI AlternativeInvestmentFunds Banks InsuranceCompanies "
+    "ProvidentFundsOrPensionFunds SovereignWealthFundsDomestic NBFCsRegisteredWithRBI "
+    "OtherFinancialInstitutions",
+    "InstitutionsForeign": "ForeignDirectInvestment "
+    "InstitutionsForeignPortfolioInvestorCategoryOne "
+    "InstitutionsForeignPortfolioInvestorCategoryTwo OtherInstitutionsForeign",
+    "Governments": "CentralGovernmentOrPresidentOfIndia",
+    "NonInstitutions": "DirectorsAndDirectorsRelatives KeyManagerialPersonnel "
+    "InvestorEducationAndProtectionFund NonResidentIndians ForeignNationals ForeignCompanies "
+    "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh BodiesCorporate "
+    "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh "
+    "OtherNonInstitutions",
+    "SharesHeldByNonPromoterNonPublicShareholders": "EmployeeBenefitsTrusts",
+}
+FORMAT_PARENT = {
+    f"{child}Member": f"{parent}Member"
+    for parent, children in _FORMAT_CHILDREN.items()
+    for child in children.split()
+}
 # d8-probe.md §11.3: SEBI format notes (02.bin p. 11 Table III note 2; p. 13 Table IV note 2)
 # "names of the shareholders holding 1% or more than 1% of shares of the listed entity".
 _FORMAT_THRESHOLD = (
@@ -149,7 +183,9 @@ def extract_shareholding(
 ) -> ShareholdingExtraction:
     """Every fact of one SHP instance as an occurrence, or the refusal (see module docstring)."""
     try:
-        facts = _facts(etree.fromstring(body))
+        root = etree.fromstring(body)
+        contexts = _parse_contexts(root)
+        facts = _facts(root, contexts)
     except (etree.XMLSyntaxError, XbrlParseError, ValueError) as error:
         return ShareholdingExtraction(outcome=ExtractionOutcome.PARSE_FAILED, reason=str(error))
     namespaces = {fact.namespace_uri for fact in facts}
@@ -166,7 +202,7 @@ def extract_shareholding(
     if instants != {(str(listing.instant), str(listing.instant))}:
         reason = _INSTANT_CONFLICT.format(found=sorted(map(str, instants)), listing=listing.instant)
         return ShareholdingExtraction(outcome=ExtractionOutcome.PARSE_FAILED, reason=reason)
-    refusal = _identity_refusal(facts, identifiers)
+    refusal = _identity_refusal(contexts.values(), facts, identifiers)
     if refusal is not None:
         return ShareholdingExtraction(outcome=ExtractionOutcome.IDENTITY_REJECTED, reason=refusal)
     isins = {(fact.raw_text or "").strip() for fact in facts if _local(fact) == ISIN_CONCEPT}
@@ -177,9 +213,9 @@ def extract_shareholding(
     )
 
 
-def _facts(root: Any) -> tuple[RawXbrlFact, ...]:
+def _facts(root: Any, contexts: Mapping[str, _XbrlContext]) -> tuple[RawXbrlFact, ...]:
     """Every context-bound fact as filed (a fact on an unknown context is a parse failure)."""
-    contexts, units, raw_periods = _parse_contexts(root), _parse_units(root), _raw_periods(root)
+    units, raw_periods = _parse_units(root), _raw_periods(root)
     facts = []
     for order, element in enumerate(root.iter()):
         context_ref = element.get("contextRef") if isinstance(element.tag, str) else None
@@ -215,7 +251,9 @@ def _facts(root: Any) -> tuple[RawXbrlFact, ...]:
     return tuple(facts)
 
 
-def _identity_refusal(facts: tuple[RawXbrlFact, ...], identifiers: IssuerIdentifiers) -> str | None:
+def _identity_refusal(
+    contexts: Iterable[_XbrlContext], facts: tuple[RawXbrlFact, ...], identifiers: IssuerIdentifiers
+) -> str | None:
     """The first context entity or identity fact that names another issuer (R4 identity gate)."""
     symbols = {identifiers.nse_symbol, *ACCEPTED_ENTITY_IDS_BY_ISIN.get(identifiers.isin, ())}
     scrip = {identifiers.bse_scrip}
@@ -230,10 +268,11 @@ def _identity_refusal(facts: tuple[RawXbrlFact, ...], identifiers: IssuerIdentif
         SCRIP_CODE_CONCEPT: scrip,
         SYMBOL_CONCEPT: symbols,
     }
+    for context in contexts:
+        if context.entity_id not in by_scheme.get(context.entity_scheme, set()):
+            what = f"context entity ({context.entity_scheme})"
+            return _IDENTITY_CONFLICT.format(what=what, found=context.entity_id, expected=scrip)
     for fact in facts:
-        if fact.entity_id not in by_scheme.get(fact.entity_scheme, set()):
-            what = f"context entity ({fact.entity_scheme})"
-            return _IDENTITY_CONFLICT.format(what=what, found=fact.entity_id, expected=scrip)
         expected = by_concept.get(_local(fact))
         found = (fact.raw_text or "").strip()
         if expected is not None and found not in expected:

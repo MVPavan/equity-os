@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -281,7 +282,7 @@ def test_pins_existing_vendor_extractors_are_unchanged_and_tree_sources_are_pinn
         pin = vendor_extractor_pin(*pair)
         assert (pin.version, pin.content_sha256) == pinned
     versions = {pair: vendor_extractor_pin(*pair).version for pair in VENDOR}
-    assert set(versions.values()) == {"screener-shp-v1", "tijori-shp-v1", "upstox-shp-v1"}
+    assert set(versions.values()) == {"screener-shp-v2", "tijori-shp-v2", "upstox-shp-v2"}
     _seed(guarded, APAR)
     snapshots = tmp_path / "snapshots"
     assert _ingest(RAW, snapshots, APAR) == 0
@@ -624,6 +625,52 @@ def test_vendor_failure_in_the_run(
     )
     expected = RunStatus.INCOMPLETE if pair == SCREENER_SHAREHOLDING else before
     assert manifest.status is expected
+
+
+def _hook_removed(folder: Path, entries: list[dict[str, Any]]) -> None:
+    """The page's first drill-down hook is gone, so its bucket request is not made."""
+    (page,) = [e for e in entries if (e["source_id"], e["surface"]) == SCREENER_SHAREHOLDING]
+    path = folder / page["filename"]
+    path.write_bytes(path.read_bytes().replace(b"showShareholders(", b"noHook(", 1))
+    first = next(e for e in entries if (e["source_id"], e["surface"]) == SCREENER_INVESTORS)
+    entries.remove(first)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    "change", [_fail_first(SCREENER_INVESTORS), _hook_removed], ids=["failed", "removed"]
+)
+def test_drill_downs_are_held_to_their_page_generation(
+    guarded: PgTestDatabase, tmp_path: Path, change: Any
+) -> None:
+    """R11: a later generation's Screener captures (every vendor retrieval a second later),
+    with one drill-down failed or its hook removed, decides the run; only drill-downs recorded
+    against that generation's page are selected, so no earlier holder is queued."""
+    entity_id = _seed(guarded, APAR)
+    snapshots = tmp_path / "snapshots"
+    assert _ingest(RAW, snapshots, APAR) == 0
+    earlier = {a.capture.capture_ref_id for a, _, _ in _vendor(guarded, entity_id)}
+
+    def later(folder: Path, entries: list[dict[str, Any]]) -> None:
+        for entry in entries:
+            if (entry["source_id"], entry["surface"]) in VENDOR:
+                at = datetime.fromisoformat(entry["retrieved_at"]) + timedelta(seconds=1)
+                entry["retrieved_at"] = at.isoformat()
+        change(folder, entries)
+
+    assert _ingest(_marked(tmp_path / "raw", APAR, later), snapshots, APAR) == 0
+    _, run_id = _vendor_run(APAR)
+    with guarded.runtime_pool() as pool:
+        held = [
+            o.capture.capture_ref_id
+            for item in read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool)).open_items
+            if item.key is None and item.source_refs[0].surface == SCREENER_INVESTORS[1]
+            for o in EvidenceRepository(pool).get_occurrences(
+                item_inputs(pool, item.item_id)["occurrence_id"]
+            )
+        ]
+    assert held and not set(held) & earlier
 
 
 @pytest.mark.pg

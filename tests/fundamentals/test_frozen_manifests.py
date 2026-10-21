@@ -753,8 +753,7 @@ def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
 
 @per_manifest
 def test_approved_payload_preceded_its_e2e(path: Path) -> None:
-    """The e2e's first commit is a child of a commit whose manifest carries its own APPROVE
-    over the current payload (``approved``)."""
+    """The e2e's first commit follows a self-approved manifest; its latest the current one's."""
     e2e = E2E[path.name.removesuffix("_manifest.yaml")]
     if not (REPO / e2e).exists():
         return
@@ -764,7 +763,9 @@ def test_approved_payload_preceded_its_e2e(path: Path) -> None:
 
     added = git("log", "--diff-filter=A", "--format=%H", "--", e2e).split()
     assert added, f"{e2e} is not committed"
-    approved(git("show", f"{added[-1].decode()}^:{path.relative_to(REPO)}"), path.read_bytes())
+    first, latest = added[-1].decode(), git("log", "-1", "--format=%H", "--", e2e).decode()[:40]
+    approved(old := git("show", f"{first}^:{path.relative_to(REPO)}"), old)
+    approved(git("show", f"{latest}^:{path.relative_to(REPO)}"), path.read_bytes())
 
 
 @per_manifest

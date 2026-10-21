@@ -8,6 +8,7 @@ Marked generations are copies under ``tmp_path`` with one named edit and a rehas
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -24,7 +25,7 @@ from onboarding_support import count, rows, seed
 from pg_support import PgTestDatabase, cloned_database
 from pydantic import SecretStr
 
-from fundamentals.api import onboard_cli
+from fundamentals.api import onboard_cli, shareholding_cli
 from fundamentals.api.cli import main
 from fundamentals.api.shareholding_cli import SHAREHOLDING_VERSIONS, _replayed
 from fundamentals.api.watchlist_config import load_watchlist_config
@@ -93,6 +94,7 @@ SEBI_ROWS = {
     "SharesHeldByNonPromoterNonPublicShareholdersMember": "non_promoter_non_public",
 }
 SEED_STATE = "INSERT INTO eqos.capture_states (capture_ref_id, state) VALUES (%s, %s)"
+GUARD = "reject_row_mutation"  # 0001: evidence rows refuse UPDATE and DELETE
 EVIDENCE_TABLES = (
     "capture_refs",
     "capture_addresses",
@@ -177,9 +179,17 @@ def _ingest(raw: Path, snapshots: Path, symbol: str, instant: date = INSTANT) ->
     )
 
 
-def _seed(db: PgTestDatabase, symbol: str) -> int:
+def _seed(db: PgTestDatabase, symbol: str, *, calendar: bool = True) -> int:
+    """A seeded issuer; without ``calendar`` its fiscal-year-end setting is removed (evidence
+    rows are immutable, so the guard trigger is lifted for that one test-database delete)."""
     isin, scrip = COMPANIES[symbol]
-    return seed(db, symbol, isin, symbol, scrip)
+    entity_id = seed(db, symbol, isin, symbol, scrip)
+    if not calendar:
+        with db.migrator_connection() as conn:
+            conn.execute(f"ALTER TABLE eqos.settings_records DISABLE TRIGGER {GUARD}")
+            conn.execute("DELETE FROM eqos.settings_records WHERE entity_id = %s", (entity_id,))
+            conn.execute(f"ALTER TABLE eqos.settings_records ENABLE TRIGGER {GUARD}")
+    return entity_id
 
 
 def _counts(db: PgTestDatabase) -> dict[str, int]:
@@ -482,6 +492,18 @@ def _fail(pair: tuple[str, str], outcome: str) -> Callable[[Path, list[dict[str,
     return edit
 
 
+def _foreign_context(folder: Path, entries: list[dict[str, Any]]) -> None:
+    """Add a context no fact uses, naming another issuer's scrip (R4: every context counts)."""
+    (entry,) = [e for e in entries if (e["source_id"], e["surface"]) == SHP_XBRL]
+    path = folder / entry["filename"]
+    root = etree.fromstring(path.read_bytes())
+    context = copy.deepcopy(next(root.iter(f"{X}context")))
+    context.set("id", "UnusedForeign")
+    context.find(f".//{X}identifier").text = COMPANIES["TITAN"][1]
+    root.append(context)
+    path.write_bytes(etree.tostring(root))
+
+
 @pytest.mark.pg
 @pytest.mark.retained
 @pytest.mark.parametrize(
@@ -491,8 +513,9 @@ def _fail(pair: tuple[str, str], outcome: str) -> Callable[[Path, list[dict[str,
         (_rewrite(SHP_XBRL, b"2025-10-31/in-bse", b"2099-01-01/in-bse"), "UNSUPPORTED_SCHEMA"),
         (_rewrite(SHP_XBRL, b'ScripCode">532259<', b'ScripCode">500114<', 1), "IDENTITY_REJECTED"),
         (_rewrite(SHP_XBRL, b">INE372A01015<", b">INE280A01028<"), "IDENTITY_REJECTED"),
+        (_foreign_context, "IDENTITY_REJECTED"),
     ],
-    ids=["listing-date", "namespace", "context-entity", "isin-fact"],
+    ids=["listing-date", "namespace", "context-entity", "isin-fact", "unused-context"],
 )
 def test_refusals_write_nothing_but_their_attempt(
     guarded: PgTestDatabase, tmp_path: Path, edit: Any, outcome: str
@@ -558,7 +581,7 @@ def test_a_withheld_public_holder_has_no_occurrence(
 def test_pins_refuse_a_changed_shp_source_before_writing(
     guarded: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One changed byte in a listed SHP source under ``nse-shp-v1`` is drift, refused before
+    """One changed byte in a listed SHP source under its pinned version is drift, refused before
     any write; the results XBRL pin does not move."""
     _seed(guarded, "APARINDS")
     config = load_run_config(CONFIG, SHAREHOLDING_VERSIONS)
@@ -584,8 +607,8 @@ def test_pins_refuse_a_changed_shp_source_before_writing(
 def test_an_expired_registration_is_refused_before_any_write(
     guarded: PgTestDatabase, tmp_path: Path, state: str
 ) -> None:
-    """D9: an expired or purge-pending SHP capture is ``ORIGINAL_EXPIRED``; no evidence or
-    attempt row is added."""
+    """D9: an expired or purge-pending SHP capture is ``ORIGINAL_EXPIRED``; the generation's
+    other captures are not registered either, and no evidence or attempt row is added."""
     entity_id = _seed(guarded, "APARINDS")
     snapshots = tmp_path / "snapshots"
     captures = [c for c in _replayed(RAW / "APARINDS", 2) if c.request.surface == SHP_XBRL[1]]
@@ -594,11 +617,11 @@ def test_an_expired_registration_is_refused_before_any_write(
         ((_, ref),) = store_captures(store, EvidenceRepository(pool), captures)
     with guarded.migrator_connection() as conn:
         conn.execute(SEED_STATE, (ref.capture_ref_id, state))
+    before = _counts(guarded)
     assert _ingest(RAW, snapshots, "APARINDS") != 0
+    assert _counts(guarded) == before  # refs, addresses, attempts, evidence and packages
     with guarded.runtime_pool() as pool:
         assert EvidenceRepository(pool).list_attempts(entity_id, INSTANT) == ()
-    counts = _counts(guarded)
-    assert counts["occurrences"] == counts["interpretations"] == counts["filing_packages"] == 0
 
 
 @pytest.mark.pg
@@ -650,3 +673,62 @@ def test_a_failed_first_party_request_is_its_attempt_alone(
     assert counts["acquisition_attempts"] == 1
     assert counts["capture_refs"] == counts["filing_packages"] == counts["occurrences"] == 0
     assert counts["interpretations"] == 0
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    ("first_party", "expected"),
+    [
+        (_fail(SHP_LISTING, "HTTP_503"), (SHP_LISTING[1], "FAILED")),
+        (
+            _rewrite(SHP_XBRL, b"2025-10-31/in-bse", b"2099-01-01/in-bse"),
+            (SHP_XBRL[1], "UNSUPPORTED_SCHEMA"),
+        ),
+    ],
+    ids=["listing-failed", "filing-refused"],
+)
+def test_a_failed_vendor_request_is_recorded_whatever_the_first_party(
+    guarded: PgTestDatabase, tmp_path: Path, first_party: Any, expected: tuple[str, str]
+) -> None:
+    """R8: a failed vendor request is its capture-less attempt even when the first party's
+    request failed or its extraction was refused (recording it needs no package)."""
+    entity_id = _seed(guarded, "APARINDS")
+
+    def edit(folder: Path, entries: list[dict[str, Any]]) -> None:
+        first_party(folder, entries)
+        _fail(UPSTOX_SHAREHOLDING, "HTTP_503")(folder, entries)
+
+    raw = _marked(tmp_path / "raw", "APARINDS", edit)
+    assert _ingest(raw, tmp_path / "snapshots", "APARINDS") != 0
+    with guarded.runtime_pool() as pool:
+        attempts = EvidenceRepository(pool).list_attempts(entity_id, INSTANT)
+    failed = (UPSTOX_SHAREHOLDING[1], "FAILED")
+    assert sorted((a.surface, a.outcome.value) for a in attempts) == sorted([expected, failed])
+    assert [a.capture for a in attempts if a.surface == UPSTOX_SHAREHOLDING[1]] == [None]
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("pair", [SHP_LISTING, SCREENER_SHAREHOLDING], ids=lambda p: p[1])
+def test_a_parser_refusal_keeps_its_failed_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair: tuple[str, str]
+) -> None:
+    """R8: HTTP 200 with a body the acquisition's parser refuses (malformed listing JSON, an
+    unidentified Screener page) exits non-zero yet writes the completed requests, bodies
+    included, as that generation; the retry is the next generation. No network is used."""
+    folder = RAW / "APARINDS" / GEN
+    entries = json.loads((folder / MANIFEST_NAME).read_bytes())["entries"]
+    bodies = {e["url"]: (folder / e["filename"]).read_bytes() for e in entries if e["filename"]}
+    bad = next(e["url"] for e in entries if (e["source_id"], e["surface"]) == pair)
+    bodies[bad] = b"<html>unreadable</html>"
+    monkeypatch.setattr(shareholding_cli, "live_transport", lambda: lambda r: (200, bodies[r.url]))
+    monkeypatch.setattr(shareholding_cli, "PAUSE_SECONDS", 0)
+    argv = ["shareholding", "acquire", "--symbol", "APARINDS", "--instant", INSTANT.isoformat()]
+    argv += ["--raw-root", str(tmp_path), "--config-root", str(CONFIG)]
+    for generation in (1, 2):
+        assert main(argv) != 0
+        written = tmp_path / "APARINDS" / f"gen-{generation}"
+        made = json.loads((written / MANIFEST_NAME).read_bytes())["entries"]
+        assert [e["url"] for e in made] == [e["url"] for e in entries[: len(made)]]
+        assert made[-1]["url"] == bad and {e["outcome"] for e in made} == {"OK"}
+        assert (written / made[-1]["filename"]).read_bytes() == bodies[bad]

@@ -21,7 +21,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, LiteralString, NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
-from zoneinfo import ZoneInfo
 
 import psycopg
 from pydantic import BaseModel, ConfigDict
@@ -36,6 +35,7 @@ from fundamentals.contracts.onboarding import (
     Verdict,
     VerificationState,
     VerificationUnit,
+    as_of_for,
 )
 from fundamentals.contracts.snapshot import (
     CAPTURE_SCHEMA_VERSION,
@@ -119,7 +119,6 @@ UPSTOX_ROUTE = "default"
 TIMEOUT = "TIMEOUT"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
 FILINGS_CHECKED = 2
-INDIA = ZoneInfo("Asia/Kolkata")
 _IN = "IN"
 _HTTPS = "https"
 _NSE_WWW, _NSE_ARCHIVES = "www.nseindia.com", "nsearchives.nseindia.com"
@@ -162,8 +161,7 @@ _BAD_REPLAY = "replay generation {folder}: {why}"
 
 
 def screener_search_url(symbol: str) -> str:
-    """The Screener search request for ``symbol``, its query URL-encoded (``M&M`` stays one
-    value)."""
+    """The Screener search request for ``symbol``, its query URL-encoded (``M&M`` is one value)."""
     return _SCREENER_SEARCH_URL.format(query=urlencode({"q": symbol, "v": 3, "fts": 1}))
 
 
@@ -270,11 +268,6 @@ def request_key(surface: str, url: str) -> str:
     parts = urlsplit(url)
     pairs = sorted([("path", parts.path), *parse_qsl(parts.query, keep_blank_values=True)])
     return f"{surface}|" + "&".join(f"{key}={value}" for key, value in pairs)
-
-
-def as_of_for(retrieved_at: datetime) -> date:
-    """C13: the Asia/Kolkata date of the master's retrieval."""
-    return retrieved_at.astimezone(INDIA).date()
 
 
 def authorised(request: Request, table: tuple[SurfaceAuthority, ...]) -> bool:
@@ -643,8 +636,7 @@ def _expected(
 def store_captures(
     store: SnapshotStore, repository: EvidenceRepository, captures: Sequence[Capture]
 ) -> list[tuple[VerificationUnit, CaptureReference]]:
-    """Publish and register each body in its own registration (with its URL), in order:
-    ``(unit, ref)``."""
+    """Publish and register each body in its own registration (with its URL): ``(unit, ref)``."""
     registered = []
     for item in captures:
         with capture_registration(repository._pool) as registration:

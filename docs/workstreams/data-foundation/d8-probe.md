@@ -21,7 +21,7 @@ against `VENDOR_SURFACES` (the master uses D6's `discovery.authorised`), and wri
 (`e895935121b93dff6eb9bbe884ba9cadc294837b88b08b6d0e857b158485cf37`, standard library only, no
 `fundamentals` import). Its output `aid_output.md` is
 **`fe5e8a2b459a34731845b97b9fbce0f3bad12590cc96f57c15f9d83bbeee4c6d`** and is reproduced
-verbatim in §10. Every number in §4–§8 is a value from §10, or a raw byte value quoted with its
+verbatim in §10, less table 4's private vendor-value column. Every number in §4–§8 is a value from §10, or a raw byte value quoted with its
 locator.
 
 ## 1. Generations and file hashes
@@ -258,7 +258,7 @@ under R5.
 
 ## 8. Consistency table
 
-The table is aid tables 1–6 (§10), reproduced verbatim from the hashed output. The ruling-bearing
+The table is aid tables 1–6 (§10), reproduced verbatim from the hashed output (table 4's vendor values private). The ruling-bearing
 rows are table 4's. No ruling above rests on a match alone.
 
 **Absent-as-zero arithmetic is consistency-only (Sol ruling issue 8).** Aid table 2 ("absent
@@ -336,7 +336,7 @@ Not escalations: R3 holds (one XBRL per submission, no second representation). T
 holds (`DateOfReport` = listing `date` = context instant 2026-06-30). Knowledge time is
 `broadcastDate`. ETERNAL has no promoter group, so it has no first-party A occurrence.
 
-## 10. Aid output (verbatim, `fe5e8a2b459a34731845b97b9fbce0f3bad12590cc96f57c15f9d83bbeee4c6d`)
+## 10. Aid output (verbatim less table 4's vendor values, `fe5e8a2b459a34731845b97b9fbce0f3bad12590cc96f57c15f9d83bbeee4c6d`)
 
 ## Aid table 1 — filed SEBI rows (pct = filed fraction x 100; exact = shares / T x 100)
 
