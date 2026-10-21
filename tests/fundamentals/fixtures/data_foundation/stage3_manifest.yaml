@@ -16,7 +16,7 @@ header:
       hand (fix round 1): APARINDS direct, VOTING_RIGHTS, subcategory, derived and scalar rows, and its
       keyless group totals against Sol r1''s independent APARINDS counts (Screener 120 + 116, Upstox 5
       + 2); row totals 20/22/27 against Sol''s traced totals.'}
-  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-21, payload_sha256: 731ea8be74398e1b5b4308b58f8f4f293ae06a31d1f9c06b8a31d6d75b6550d6}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-21, payload_sha256: 9c20b6c3005396ef3be93457365c074eb825a81a2a17d61c23d19e2c1a704f35}
   notation: {approval: 'header.approval.payload_sha256 = sha256 of this file''s bytes with the one line
       starting ''  approval:'' (and its newline) removed; the approval verdict is valid only for that
       payload', row_key: '<canonical_id>|I|denominator=<d>,share_class=<ISIN>,shareholding_category=<member>|REPORTED|DERIVED,
@@ -84,7 +84,7 @@ header:
     framework: UNKNOWN
     dictionary: v3
     mapping_set: v8
-    extractors: [nse-shp-v3, screener-shp-v2, tijori-shp-v2, upstox-shp-v2]
+    extractors: [nse-shp-v4, screener-shp-v2, tijori-shp-v2, upstox-shp-v2]
     mode: AS_KNOWN
   units: {PERCENTAGE: '%', COUNT: shares (exact count; the stage1 UNITS name of an integer count)}
   row_units: {shp_holding_pct: '%', shp_public_shareholding_plus_employee_trust_pct: '%', shp_non_institutions_plus_employee_trust_pct: '%',
