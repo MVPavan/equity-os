@@ -1,17 +1,22 @@
 {
   "now": {
-    "title": "PILOT-9: Sep 2025 filing uses the older SHP taxonomy (eqos-4j2.32)",
-    "detail": "D8 code passes verify_project (D1a-D9 PASS; Pilot FAIL = the PILOT-9 tripwire). PILOT-9 plan approved (46b0b54). Three quarters acquired; Dec 2025 and Mar 2026 ingest, Sep 2025 refused: SEBI SHP taxonomy 2025-05-31 not accepted by nse-shp-v2. Studying the taxonomy diff and a minimal version-bump amendment.",
+    "title": "PILOT-9 Task 2: frozen shareholding section of the pilot manifest (eqos-4j2.32)",
+    "detail": "A1 landed: nse-shp-v3 + mapping set v8 accept the 2025-05-31 SHP taxonomy (035678d); all three acquired quarters ingest. Stage 3 manifest re-approved by Sol at 731ea8be (0f6df2d); its order check stays pending until Task 3's e2e commit. Next: independent Opus author writes the pilot shareholding section.",
     "stage": "D8"
   },
   "next": [
-    "PILOT-9 Amendment A1 (older SHP taxonomy) -> Sol review",
-    "PILOT-9 Tasks 2-4: frozen shareholding section, real pilot coverage, reconciliation",
-    "D8 fresh closing review; PILOT-9 MET only on new evidence",
+    "PILOT-9 Task 2: frozen shareholding section + private companion -> Sol review",
+    "PILOT-9 Task 3: real four-quarter coverage in the pilot e2e",
+    "PILOT-9 Task 4: reconciliation, verify_project, report",
+    "D8 phase re-review r4 + fresh closing review; close eqos-17r",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "PILOT-9 Amendment A1: Sol r1 -> r2 APPROVE (dfc5b29). Commit (a) 035678d: nse-shp-v3, mapping set v8 (13 2025-05 entries, equivalence unproven); Sep 2025 now ingests. Commit (b) 0f6df2d: Stage 3 manifest re-approved by Sol, no expected value changed."
+    },
     {
       "date": "2026-10-21",
       "text": "PILOT-9 plan Sol r1 REQUEST_CHANGES (6 P2, 4 P3) -> r2 (2 P2) -> r3 APPROVE (46b0b54). Task 1 acquired Apar SHP gen-4/5/6 for Sep 2025, Dec 2025, Mar 2026 (all requests OK after one Upstox 401 retry). Sep 2025 filing refused: older SHP taxonomy 2025-05-31."
