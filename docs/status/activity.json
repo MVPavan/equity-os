@@ -1,11 +1,11 @@
 {
   "now": {
-    "title": "D8 shareholding: Task 6 vendor readers next (eqos-17r)",
-    "detail": "Production cutover done (eqos-3zl); pilot report verdict CONDITIONAL on D8 (PILOT-9). D8 resumed under the owner shareholding exception, plan Sol r7 APPROVE. Tasks 1b-5 committed (faa5359, 59baf73, b21e362, 1adf30e, 43c348b). Next: Task 6 Screener/Tijori/Upstox shareholding readers with the full nested holder tree and the R12 point check; then Task 7 frozen Stage 3 manifest, Task 8 Stage 3 e2e, Sol phase review.",
+    "title": "D8 shareholding: Task 6b pairing and point check next (eqos-17r)",
+    "detail": "Tasks 1b-6a committed. 6a (vendor tree extractors and ingest) done: no Tijori drift, 183 tests passed. Next: 6b vendor pairing at ruled keys, R12 point check, assumed-denominator report labels; then Task 7 manifest, Task 8 Stage 3 e2e, Sol phase review.",
     "stage": "D8"
   },
   "next": [
-    "D8 Task 6: vendor shareholding readers, nested tree (R11), point check (R12)",
+    "D8 Task 6b: pairing, R12 point check, report labels",
     "D8 Task 7: frozen Stage 3 manifest; Task 8: Stage 3 e2e",
     "D8 Sol phase review loop and closing review",
     "Mark PILOT-9 met; pilot verdict CONDITIONAL -> PASS; roadmap",
@@ -13,6 +13,10 @@
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 Task 6a committed: screener/tijori/upstox-shp-v1 tree extractors (full nested holder tree, matches probe §13 inventory) and vendor ingest; existing pins unchanged. 183 tests passed, mypy and ruff clean."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 Task 5 committed (43c348b): shareholding run family and loader family, INSTANT kinds applicable, exact filed percentages kept for the point check. 132 tests passed, mypy and ruff clean."
