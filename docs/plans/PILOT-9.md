@@ -672,3 +672,6 @@ preserved, scheme alias, both B(4) parents, Stage 3 move and deferral), with the
   Task 3's e2e commit; test unchanged.
 - A1-5 (counts and wording): signatures 514/498/497, text block in gen-4/gen-5 only; 13 selectors
   with one fact, eight with none; neither `.xsd` retained, 404 vs never requested.
+
+**A1 erratum (D8 closing C7):** the `v8.yaml` header comment names the vendor extractors as v1; the
+bound versions are `screener/tijori/upstox-shp-v2` (first party `nse-shp-v4` since closing C3).

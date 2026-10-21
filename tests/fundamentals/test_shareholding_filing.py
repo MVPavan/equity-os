@@ -16,6 +16,7 @@ import shutil
 import socket
 from collections.abc import Callable, Iterator
 from datetime import date
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -503,15 +504,20 @@ def _fail(pair: tuple[str, str], outcome: str) -> Callable[[Path, list[dict[str,
     return edit
 
 
-def _foreign_context(folder: Path, entries: list[dict[str, Any]]) -> None:
-    """Add a context no fact uses, naming another issuer's scrip (R4: every context counts)."""
+def _foreign_context(folder: Path, entries: list[dict[str, Any]], kind: str = "unused") -> None:
+    """Add a context naming another issuer's scrip (R4: every context counts): ``unused`` under a
+    fresh id, ``no-id``, or ``duplicate`` just before the valid context whose id it repeats (C3)."""
     (entry,) = [e for e in entries if (e["source_id"], e["surface"]) == SHP_XBRL]
     path = folder / entry["filename"]
     root = etree.fromstring(path.read_bytes())
-    context = copy.deepcopy(next(root.iter(f"{X}context")))
-    context.set("id", "UnusedForeign")
+    valid = next(root.iter(f"{X}context"))
+    context = copy.deepcopy(valid)
     context.find(f".//{X}identifier").text = COMPANIES["TITAN"][1]
-    root.append(context)
+    if kind == "unused":
+        context.set("id", "UnusedForeign")
+    elif kind == "no-id":
+        del context.attrib["id"]
+    (valid.addprevious if kind == "duplicate" else root.append)(context)
     path.write_bytes(etree.tostring(root))
 
 
@@ -526,7 +532,7 @@ def _mixed_namespace(folder: Path, entries: list[dict[str, Any]]) -> None:
 
 
 _Q2, _Q4 = (GEN, INSTANT), (GEN4, INSTANT4)
-_LISTING_DATE = _rewrite(SHP_LISTING, b'"date":"30-JUN-2026"', b'"date":"29-JUN-2026"')
+_INSTANCE_DATE = _rewrite(SHP_XBRL, b"2026-06-30", b"2026-06-29")  # C1 refuses a moved listing
 _NAMESPACE = _rewrite(SHP_XBRL, b"2025-10-31/in-bse", b"2099-01-01/in-bse")
 _SCRIP = _rewrite(SHP_XBRL, b'ScripCode">532259<', b'ScripCode">500114<', 1)
 _ISIN = _rewrite(SHP_XBRL, b">INE372A01015<", b">INE280A01028<")
@@ -537,11 +543,13 @@ _ISIN = _rewrite(SHP_XBRL, b">INE372A01015<", b">INE280A01028<")
 @pytest.mark.parametrize(
     ("quarter", "edit", "outcome"),
     [
-        pytest.param(_Q2, _LISTING_DATE, "PARSE_FAILED", id="listing-date"),
+        pytest.param(_Q2, _INSTANCE_DATE, "PARSE_FAILED", id="instance-date"),
         pytest.param(_Q2, _NAMESPACE, "UNSUPPORTED_SCHEMA", id="namespace"),
         pytest.param(_Q2, _SCRIP, "IDENTITY_REJECTED", id="context-entity"),
         pytest.param(_Q2, _ISIN, "IDENTITY_REJECTED", id="isin-fact"),
         pytest.param(_Q2, _foreign_context, "IDENTITY_REJECTED", id="unused-context"),
+        pytest.param(_Q2, partial(_foreign_context, kind="duplicate"), "PARSE_FAILED", id="dup-id"),
+        pytest.param(_Q2, partial(_foreign_context, kind="no-id"), "PARSE_FAILED", id="no-id"),
         pytest.param(_Q4, _SCRIP, "IDENTITY_REJECTED", id="gen4-context-entity"),
         pytest.param(_Q4, _foreign_context, "IDENTITY_REJECTED", id="gen4-unused-context"),
         pytest.param(_Q4, _mixed_namespace, "UNSUPPORTED_SCHEMA", id="gen4-mixed-namespace"),
@@ -574,7 +582,7 @@ def test_a_2025_05_31_filing_stays_in_its_taxonomy(guarded: PgTestDatabase, tmp_
     _, occurrences, by_occurrence = _evidence(guarded, entity_id, INSTANT4)
     for occurrence in occurrences:
         context = occurrence.native_context
-        assert occurrence.extractor_version == "nse-shp-v3"
+        assert occurrence.extractor_version == "nse-shp-v4"
         assert context[CONTEXT_NAMESPACE] == context[CONTEXT_SCHEMA_IDENTITY] == SHP_NS4
         for axis, member in context["dimension_qnames"]:
             assert axis.startswith(f"{{{SHP_NS4}}}")
@@ -775,17 +783,18 @@ def test_a_failed_vendor_request_is_recorded_whatever_the_first_party(
 
 @pytest.mark.retained
 @pytest.mark.parametrize("pair", [SHP_LISTING, SCREENER_SHAREHOLDING], ids=lambda p: p[1])
+@pytest.mark.parametrize("body", [b"<html>unreadable</html>", b'{"error": "no data"}', b"[null]"])
 def test_a_parser_refusal_keeps_its_failed_generation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair: tuple[str, str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair: tuple[str, str], body: bytes
 ) -> None:
-    """R8: HTTP 200 with a body the acquisition's parser refuses (malformed listing JSON, an
-    unidentified Screener page) exits non-zero yet writes the completed requests, bodies
+    """R8: HTTP 200 with a body the acquisition's parser refuses (malformed or wrong-shaped listing
+    JSON, an unidentified Screener page) exits non-zero yet writes the completed requests, bodies
     included, as that generation; the retry is the next generation. No network is used."""
     folder = RAW / "APARINDS" / GEN
     entries = json.loads((folder / MANIFEST_NAME).read_bytes())["entries"]
     bodies = {e["url"]: (folder / e["filename"]).read_bytes() for e in entries if e["filename"]}
     bad = next(e["url"] for e in entries if (e["source_id"], e["surface"]) == pair)
-    bodies[bad] = b"<html>unreadable</html>"
+    bodies[bad] = body
     monkeypatch.setattr(shareholding_cli, "live_transport", lambda: lambda r: (200, bodies[r.url]))
     monkeypatch.setattr(shareholding_cli, "PAUSE_SECONDS", 0)
     argv = ["shareholding", "acquire", "--symbol", "APARINDS", "--instant", INSTANT.isoformat()]

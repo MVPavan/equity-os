@@ -1,14 +1,11 @@
 """Ingest one shareholding generation's first-party submissions (plan D8 Task 4, R8).
 
-Each retained SHP instance is one ``SHAREHOLDING`` package (``STANDALONE``, framework
-``UNKNOWN``, period end the filed instant, knowledge time the listing's broadcast time).
-Later broadcasts supersede earlier ones through the existing package lineage. Bytes are read
-only through D9's ``read_retained``, so an expired or purging capture is refused
-(``ORIGINAL_EXPIRED``) before any write. An extraction refusal is one attempt and nothing else.
-Re-ingesting unchanged inputs reuses the attempt generation, occurrences, interpretations
-and package, and writes nothing. A failed request is recorded apart from usable evidence as one
-capture-less ``ACQUISITION`` attempt (``failed_attempt``). Every period is an instant, so no
-fiscal calendar is read (R6).
+Each retained SHP instance is one ``SHAREHOLDING`` package (``STANDALONE``, ``UNKNOWN``, period
+end the requested instant, knowledge time the listing's broadcast) superseding the latest earlier
+broadcast; an instance listed at another instant is refused before any write. Bytes are read only
+through D9's ``read_retained`` (an expired or purging capture is refused, ``ORIGINAL_EXPIRED``,
+before any write). An extraction refusal is one attempt and nothing else; an unchanged re-ingest
+writes nothing; a failed request is one capture-less ``ACQUISITION`` attempt. No calendar (R6).
 """
 
 from __future__ import annotations
@@ -68,7 +65,7 @@ FRAMEWORK = AccountingFramework.UNKNOWN
 _NATIVE_KIND = "shareholding-discovery"
 _TRANSPORT = frozenset({"TIMEOUT", "TRANSPORT_ERROR"})
 _FAILED = "request {key} failed: {outcome}"
-_NOT_LISTED = "SHP instance {url} is not in the listing"
+_NOT_LISTED = "SHP instance {url} is not listed at the requested instant {instant}"
 
 
 class ShareholdingGeneration(BaseModel):
@@ -159,22 +156,20 @@ def ingest_shareholding(
     snapshots: SnapshotStore,
     config: LoadedConfig,
 ) -> ShareholdingIngestReport:
-    """Pin, read, extract, interpret and package each submission (see module docstring).
-
-    Raises ``VersionContentDriftError`` (nothing written) when a pinned version names other
-    content, and ``OriginalExpiredError`` (nothing written) for an expired capture.
-    """
+    """Pin, read, extract, interpret and package each submission (see module docstring). Raises,
+    with nothing written, ``VersionContentDriftError`` for a pin naming other content,
+    ``OriginalExpiredError`` for an expired capture and ``ValueError`` for an off-instant one."""
     repository.pin_versions(shareholding_pins(config))
-    pool, entity_id = repository._pool, generation.entity_id
+    pool, entity_id, instant = repository._pool, generation.entity_id, generation.instant
     rows = json.loads(read_retained(pool, snapshots, generation.listing)[1])
-    by_url = {str(row.get("xbrl", "")): row for row in rows}
+    at = {str(row.get("xbrl", "")): row for row in rows if listing_date(row.get("date")) == instant}
     submissions = []  # every body is read (expiry refused) before any write
     for url, ref in generation.filings:
-        if url not in by_url:
-            raise ValueError(_NOT_LISTED.format(url=url))
-        raw = str(by_url[url]["broadcastDate"])
+        if url not in at:  # never stored under an instant it was not filed at
+            raise ValueError(_NOT_LISTED.format(url=url, instant=instant))
+        raw = str(at[url]["broadcastDate"])
         listing = ShareholdingListing(
-            instant=listing_date(by_url[url].get("date")),
+            instant=instant,
             knowledge_time=parse_filed_at(raw.title()),
             knowledge_time_raw=raw,
         )
@@ -315,13 +310,19 @@ def _package(
     listing: ShareholdingListing,
     interpretations: Sequence[Interpretation],
 ) -> int:
-    """The submission's package, superseding the latest earlier broadcast at this instant."""
-    assert listing.instant is not None
+    """The submission's package (kept on re-ingest), superseding the latest earlier broadcast."""
     listed = repository.list_packages(
-        generation.entity_id, FilingFamily.SHAREHOLDING, listing.instant
+        generation.entity_id, FilingFamily.SHAREHOLDING, generation.instant
     )
-    earlier = [package for package in listed if package.knowledge_time < listing.knowledge_time]
-    supersedes = earlier[-1].package_id if earlier else None
+    held = {
+        (p.members[Representation.XBRL].capture.blob_sha256, p.knowledge_time): p.package_id
+        for p in listed
+    }
+    if (package_id := held.get((ref.blob_sha256, listing.knowledge_time))) is not None:
+        return package_id  # a re-ingest keeps its package, whatever was imported since
+    earlier = [p for p in listed if p.knowledge_time < listing.knowledge_time]
+    latest = max(earlier, key=lambda p: (p.knowledge_time, p.package_id or 0), default=None)
+    supersedes = latest.package_id if latest else None  # by knowledge time, then id
     lineage = {"xbrl": ref.blob_sha256, "supersedes_package_id": supersedes}
     member = PackageMember(
         representation=Representation.XBRL,
@@ -334,7 +335,7 @@ def _package(
         package_id=None,
         entity_id=generation.entity_id,
         family=FilingFamily.SHAREHOLDING,
-        reporting_period_end=listing.instant,
+        reporting_period_end=generation.instant,
         basis=BASIS,
         framework=FRAMEWORK,
         reporting_kind=PeriodKind.INSTANT,

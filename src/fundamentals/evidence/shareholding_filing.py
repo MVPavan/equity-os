@@ -1,16 +1,16 @@
-"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v3``).
+"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v4``).
 
 Extraction only, so the version pin hashes what decides each occurrence. The instance is
 read with the results parser's context and unit readers (``extract/xbrl_dimensions.py``
-underneath, unedited). Before anything is kept: every fact is in one supported
-taxonomy (else ``UNSUPPORTED_SCHEMA``), the filed shareholding date
-(``DateOfReport`` and its context instant) equals the listing row's date (else
-``PARSE_FAILED``, R4), and every parsed context's entity (used by a fact or not) and every
+underneath, unedited). Before anything is kept: every context has its own id (else
+``PARSE_FAILED``), every fact is in one supported taxonomy (else ``UNSUPPORTED_SCHEMA``), the
+filed shareholding date (``DateOfReport`` and its context instant) equals the listing row's date
+(else ``PARSE_FAILED``, R4), and every context's entity (used by a fact or not) and every
 ISIN, symbol and scrip fact names the issuer held at the instant (else ``IDENTITY_REJECTED``).
 Every fact is then one occurrence; a ``pure`` percentage fraction carries raw scale 2 with
 its lexeme, unit and ``decimals`` kept (R5), and its declared ``INF`` precision is
-unsupported (R5 Precision). Each occurrence
-records the validated filing ISIN and its list's completeness (R4 Completeness).
+unsupported (R5 Precision). Each occurrence records the validated filing ISIN and its list's
+completeness (R4 Completeness).
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ from fundamentals.evidence.member_identity import (
 from fundamentals.evidence.xbrl_adapter import _missing_state, _precision, anchor_key_of
 from fundamentals.extract.xbrl_parser import (
     _NIL_TRUE,
+    _XBRLI,
     _XSI_NIL,
     PURE_MEASURE,
     RawXbrlFact,
@@ -64,9 +65,8 @@ from fundamentals.ingest.xbrl_identity import (
     SEBI_SCRIP_ENTITY_SCHEME,
 )
 
-# v2: the identity gate covers every context (D8 F8); v3: the 2025-05-31 taxonomy (PILOT-9 A1)
-SHP_EXTRACTOR_VERSION = "nse-shp-v3"
-SHP_EXTRACTOR_VERSIONS = frozenset({"nse-shp-v1", "nse-shp-v2", SHP_EXTRACTOR_VERSION})
+SHP_EXTRACTOR_VERSION = "nse-shp-v4"  # v2 every context (F8); v3 PILOT-9 A1; v4 context ids (C3)
+SHP_EXTRACTOR_VERSIONS = frozenset(f"nse-shp-v{n}" for n in range(1, 5))  # v1 to the current
 # d8-probe.md §3, PILOT-9 A1: each BSE SHP taxonomy an instance may file under (its format date),
 # and their scrip schemes. Occurrences keep the filed namespace.
 SHP_FORMAT_VERSIONS = {
@@ -160,6 +160,7 @@ _INSTANT_CONFLICT = (
     "DateOfReport (value, context instant) {found} is not the listing date {listing}"
 )
 _IDENTITY_CONFLICT = "{what} {found!r} is not the issuer's {expected}"
+_CONTEXT_IDS = "a context has no id, an empty id or a repeated id"
 
 
 class ShareholdingListing(BaseModel):
@@ -192,6 +193,9 @@ def extract_shareholding(
     """Every fact of one SHP instance as an occurrence, or the refusal (see module docstring)."""
     try:
         root = etree.fromstring(body)
+        ids = [(context.get("id") or "").strip() for context in root.findall(f"{_XBRLI}context")]
+        if "" in ids or len(set(ids)) != len(ids):  # the keyed map would hide a context
+            raise XbrlParseError(_CONTEXT_IDS)
         contexts = _parse_contexts(root)
         facts = _facts(root, contexts)
     except (etree.XMLSyntaxError, XbrlParseError, ValueError) as error:

@@ -42,6 +42,7 @@ INVESTORS_URL = "https://www.screener.in/api/3/{company_id}/investors/{bucket}/{
 TIJORI_URL = "https://www.tijorifinance.com/company/{slug}/shareholding/"
 UPSTOX_URL = "https://api.upstox.com/v2/fundamentals/{isin}/share-holdings"
 LISTING_DATE = "%d-%b-%Y"
+_LISTING_SHAPE = "the SHP listing is not a JSON list of objects"
 # The only origin each D8 surface may be requested from (https, exact host).
 SHP_ORIGINS = {
     SHP_LISTING: "www.nseindia.com",
@@ -92,7 +93,10 @@ def acquire(symbol: str, instant: date, fetch: Fetch, *, tijori_slug: str) -> li
     master = get(VerificationUnit.EXCHANGE, NSE_MASTER, EQUITY_MASTER_URL)
     isins = master_rows(master, symbol) if master else []
     listing = get(VerificationUnit.EXCHANGE, SHP_LISTING, LISTING_URL.format(symbol=symbol))
-    for row in json.loads(listing) if listing else []:
+    rows = json.loads(listing) if listing else []
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError(_LISTING_SHAPE)  # a caller's parser refusal: completed requests kept
+    for row in rows:
         link = str(row.get("xbrl", ""))
         if listing_date(row.get("date")) == instant and link.startswith(f"{_HTTPS}://"):
             get(VerificationUnit.XBRL_ENTITY, SHP_XBRL, link)
