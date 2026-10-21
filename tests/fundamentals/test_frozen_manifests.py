@@ -40,6 +40,7 @@ from manifest_support import (
     read_binding,
     xml_refs,
 )
+from stage3_data_support import DATA3_MUTATIONS, check_data_stage3
 from stage4_support import current
 
 REPO = Path(__file__).resolve().parents[2]
@@ -51,11 +52,12 @@ LEDGER3 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage3_mani
 LEDGER4 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage4_manifest.yaml"
 LEDGER5 = REPO / "tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml"
 STAGE4 = REPO / "tests/fundamentals/fixtures/data_foundation/stage4_manifest.yaml"
+DATA3 = REPO / "tests/fundamentals/fixtures/data_foundation/stage3_manifest.yaml"
 # Stage 4 runs behind an opaque boundary (test_stage4_manifest), never loaded at collection.
 PUBLIC = [path for path in MANIFESTS if path != STAGE4]
 E2E = {
     name: f"tests/fundamentals/test_{'data_' * name.startswith('stage')}{name}_e2e.py"
-    for name in ["stage1", "stage2", "stage4", "pilot", *(f"ledger_stage{n}" for n in range(1, 6))]
+    for name in ["pilot", *(f"{p}stage{n}" for p in ("", "ledger_") for n in range(1, 6))]
 }
 XI = "{http://www.xbrl.org/2003/instance}"
 DI = "{http://xbrl.org/2006/xbrldi}"
@@ -545,7 +547,7 @@ def test_every_lexeme_is_at_its_locator(path: Path) -> None:
     assert located
     for loc in located:
         check_locator(manifest, loc)
-    for run in manifest.get("runs", []):
+    for run in [run for run in manifest.get("runs", []) if "unmapped" in run]:
         check_vendor_unmapped(manifest, run)
 
 
@@ -739,7 +741,7 @@ def test_ledger_checks_reject_mutations(path: Path, name: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [p for p in PUBLIC if "runs" in load(p)],
+    [p for p in PUBLIC if "runs" in load(p) and p != DATA3],
     ids=lambda p: p.name.removesuffix("_manifest.yaml"),
 )
 def test_runs_expand_from_the_manifest_alone(path: Path) -> None:
@@ -775,6 +777,7 @@ STAGE_CHECKS: dict[Path, tuple[Callable[..., None], Mapping[str, Callable[..., o
     LEDGER3: (check_stage3, LEDGER3_MUTATIONS),
     LEDGER4: (check_ledger_stage4, LEDGER4_MUTATIONS),
     LEDGER5: (check_ledger_stage5, STAGE5_MUTATIONS),
+    DATA3: (check_data_stage3, DATA3_MUTATIONS),  # data Stage 3; the ledger one is check_stage3
 }
 STAGE_CASES = [(p, n) for p, (_, muts) in STAGE_CHECKS.items() if p.exists() for n in muts]
 

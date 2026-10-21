@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
@@ -86,3 +87,47 @@ def vendor_rows(kind: str, path: Path) -> Iterator[tuple[str, str, str, list[str
         for block in ("income_statement", "full_statement"):
             for name, history in upstox_entries(path, block):
                 yield block, name, name, [h["period"] for h in history]
+
+
+def shp_table(path: Path, tab: str) -> tuple[list[str], list[tuple[str, str | None, list[str]]]]:
+    """A Screener shareholding tab (quarterly-shp / yearly-shp, the first under #shareholding):
+    period heads and each row's label ('+' dropped), drill-down bucket (None: no hook), cells."""
+    section = html.fromstring(path.read_bytes()).get_element_by_id("shareholding")
+    (table,) = section.xpath(f".//*[@id='{tab}']")[0].xpath(".//table")
+    rows: list[tuple[str, str | None, list[str]]] = []
+    for tr in table.xpath(".//tbody/tr"):
+        label, *cells = [text(td) for td in tr.xpath("./td")]
+        hooks = re.findall(r"showShareholders\('(\w+)', '(\w+)'", " ".join(tr.xpath(".//@onclick")))
+        assert all(period == tab.split("-")[0] for _, period in hooks), (path, label)
+        rows.append((label.removesuffix("+").strip(), hooks[0][0] if hooks else None, cells))
+    return [text(th) for th in table.xpath(".//thead//th")][1:], rows
+
+
+def shp_bucket(path: Path) -> dict[str, dict[str, str]]:
+    """A Screener drill-down body: holder -> {period: value}; any other nested key refuses."""
+    body = json.loads(path.read_bytes())
+    for periods in body.values():
+        assert all(re.fullmatch(r"[A-Z][a-z]{2} \d{4}", k) for k in periods if k != "setAttributes")
+    return {name: {k: v for k, v in p.items() if k != "setAttributes"} for name, p in body.items()}
+
+
+def tijori_html(path: Path) -> tuple[list[str], list[tuple[int, str, str, list[str]]]]:
+    """Tijori's #company_detailed tree: column heads and each row's (level, myid, data-parent,
+    [label, *cells])."""
+    (table,) = html.fromstring(path.read_bytes()).xpath("//table[@id='company_detailed']")
+    head, *rows = table.xpath(".//tr")
+
+    def cells(tr: Any) -> list[str]:
+        return [text(c) for c in tr.xpath("./th|./td")]
+
+    found = [
+        (int(tr.get("class")[3:]), tr.get("myid"), tr.get("data-parent"), cells(tr)) for tr in rows
+    ]
+    return cells(head)[1:], found
+
+
+def upstox_shp(path: Path) -> list[tuple[str, dict[str, str]]]:
+    """Upstox share-holdings: (category, {period: value lexeme}) per data entry."""
+    body = json.loads(path.read_bytes(), parse_float=str, parse_int=str)
+    assert body["status"] == "success", path
+    return [(e["category"], {h["period"]: h["value"] for h in e["history"]}) for e in body["data"]]
