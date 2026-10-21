@@ -125,7 +125,7 @@ pilot manifest (PREP-7), never from code output.
   2. PILOT-11 (iii) blind drill `eqos-4j2.30` (owner).
   3. PILOT-12 owner review timing (Owner Q1; hand review `eqos-4j2.21`).
   4. PILOT-7 via the D6 exit row.
-  5. `scripts/verify_project.sh` exit 0.
+  5. `scripts/verify_project.sh` exit 0 — met 2026-10-21 at `79c9bbb` ([report](evidence/pilot/report.md)); re-run after any later change.
   6. Reviewer approval of the report.
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does

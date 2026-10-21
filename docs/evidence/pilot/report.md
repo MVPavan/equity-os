@@ -9,9 +9,9 @@ Gate test: `tests/fundamentals/test_pilot_e2e.py` (one ordered `test_pilot_end_t
 `tests/fundamentals/pilot_e2e_support.py`). Expected values come only from the frozen
 `pilot_manifest.yaml`; failing assertions begin `PILOT-n:`.
 
-Full suite at `7c640ad`: `uv run pytest tests/fundamentals` 4291 passed, 9 skipped (1:31:35), exit 0. `mypy --strict src` and ruff clean. `scripts/verify_project.sh` after the production cutover: every row PASS (Pilot, Pytest, Mypy, Ruff, frozen manifests), "Project incomplete: 0 failed, 1 not built" (D8), exit 1 as expected.
+Full gate at `79c9bbb` (2026-10-21, 14:32:55Z–16:45:11Z): `scripts/verify_project.sh` exit 0, every row PASS (D1a–D9, frozen manifests, amendment records, Pilot, Pytest, Mypy, Ruff, Ruff format); `uv run pytest tests/fundamentals` 4393 passed, 9 skipped (1:51:01); `mypy --strict src` no issues in 326 files; ruff clean. Pilot e2e 242.6 s in the gate.
 
-Gate logs: <pending verify_project.sh run>
+Gate logs: `scratchpad/project-verification.A2OzM2/` (`14.log` Pilot, `15.log` Pytest, `16.log` Mypy, `17.log` Ruff, `18.log` Ruff format, `10.log` D8; local, not committed).
 
 ## Checks
 
