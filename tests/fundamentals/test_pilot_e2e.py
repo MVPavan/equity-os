@@ -593,8 +593,8 @@ def test_pilot_end_to_end(
     for quarter in QUARTERS:
         try:
             runs.append(pilot9(pilot, quarter))
-        except (LookupError, ValueError, IndexError) as error:  # message omitted: may hold values
-            raise AssertionError(f"PILOT-9: {quarter} {type(error).__name__}") from error
+        except (LookupError, ValueError, IndexError) as error:  # message, chain omitted: values
+            raise AssertionError(f"PILOT-9: {quarter} {type(error).__name__}") from None
     _pilot6(pilot, memory, reviewed)
     with pg_db.runtime_pool() as pool:
         pilot13(pool, runs, "live")

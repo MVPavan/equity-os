@@ -246,7 +246,7 @@ def test_stage3_end_to_end(guarded: PgTestDatabase, tmp_path: Path) -> None:
             for name, side in sides.items():
                 rich["rows"][key]["vendors"][name] |= {"v": side["v"], "iv": _printed(side)}
         found = diff(expected(rich, entity_id, MANIFEST), actual(run, rows, items))
-        problems += [f"{symbol} {line.split(chr(10))[0]}" for line in found]  # no values shown
+        problems += [f"{symbol} {line.split(':', 1)[0]}" for line in found]  # row key, field only
         # Each vendor side's node and assumption labels (R10, R12).
         bound = {
             _key(row.key): {
@@ -273,8 +273,9 @@ def test_stage3_end_to_end(guarded: PgTestDatabase, tmp_path: Path) -> None:
         assert (code, dict(queue)) == (run["exit"], run["counts"]["queue"]), symbol
 
         # The full tree inventory against the companion (owner amendment).
-        want_tree = _inventory(vendor, symbol).values()
-        assert tree == {node["id"]: node for nodes in want_tree for node in nodes}, symbol
+        inventory = {n["id"]: n for nodes in _inventory(vendor, symbol).values() for n in nodes}
+        off = sorted(n for n in tree.keys() | inventory.keys() if tree.get(n) != inventory.get(n))
+        assert not off, (symbol, off)  # node ids only
 
         # Packages and lineage; each links one XBRL representation, so extraction is
         # NOT_APPLICABLE (R3, the rows' ext status above).
@@ -295,7 +296,8 @@ def test_stage3_end_to_end(guarded: PgTestDatabase, tmp_path: Path) -> None:
             for check, reading in zip(checks, vendor["point_checks"][run["run"]], strict=True)
         ]
         order = lambda line: (line["key"], line["source"])  # noqa: E731
-        assert sorted(printed, key=order) == sorted(want, key=order), symbol
+        off = sorted({order(x) for x in printed + want if printed.count(x) != want.count(x)})
+        assert not off, (symbol, off)  # point key and source only
         queued = [line.split("\t") for line in out.splitlines() if line.startswith("queue\t")]
         unmapped = [line for line in queued if line[3] == "UNMAPPED"]
         assert len(unmapped) == sum(item.key is None for item in items) and all(
