@@ -14,6 +14,8 @@ declared periodicity differs (no precedence between tables is ever recorded); bo
 with the first-party representative for the corroboration status. Upstox pairs with it and
 with Screener as a diagnostic, and when extraction is not ``AGREE`` every vendor also pairs
 with the other first-party representation as a diagnostic. Diagnostics never enter a status.
+A decided Screener page also selects its drill-down captures (plan D8 R11): per request key the
+latest available complete one, so ``routing`` queues their holders; they decide no cell.
 
 A vendor mapping whose scope names a filing taxonomy is qualified only against the selected
 filing: its schema and its proven conditions, never the vendor capture's own (spec §2).
@@ -59,7 +61,11 @@ from fundamentals.contracts.evidence import (
 from fundamentals.contracts.evidence_tier import EvidenceTier
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.qualification import qualification_context, scoped_tier
-from fundamentals.contracts.source_catalog import surface_authority
+from fundamentals.contracts.source_catalog import (
+    SCREENER_INVESTORS,
+    SCREENER_SHAREHOLDING,
+    surface_authority,
+)
 from fundamentals.evidence.derived import TraceStore
 from fundamentals.evidence.repository_calc import CONSTRUCTION_TRACE, trace_from_json
 from fundamentals.evidence.selection import (
@@ -136,7 +142,31 @@ class VendorSides:
         for _, source, surface, schema in tables:
             schemas[(source, surface)].add(schema)
         self._shared = {surface for surface, found in schemas.items() if len(found) > 1}
-        self.selected_captures: set[int] = set()
+        self._decided: set[int] = set()
+
+    @property
+    def selected_captures(self) -> set[int]:
+        """Captures that decided a side, plus a decided Screener page's drill-downs (R11)."""
+        pages = {
+            (item.entity_id, item.basis, item.period_end)
+            for item in self._attempts
+            if (item.source_id, item.surface) == SCREENER_SHAREHOLDING
+            and item.capture is not None
+            and item.capture.capture_ref_id in self._decided
+        }
+        latest: dict[str, AcquisitionAttempt] = {}
+        for item in sorted(
+            self._attempts, key=lambda found: (found.attempted_at, found.attempt_id)
+        ):
+            if (
+                (item.source_id, item.surface) == SCREENER_INVESTORS
+                and (item.entity_id, item.basis, item.period_end) in pages
+                and item.capture is not None
+                and item.capture.registered_at <= self._request.cutoff
+            ):
+                latest[item.capture.request_key] = item
+        drills = [i.capture for i in latest.values() if i.outcome is ExtractionOutcome.COMPLETE]
+        return self._decided | {capture.capture_ref_id or 0 for capture in drills if capture}
 
     def row(
         self,
@@ -148,7 +178,7 @@ class VendorSides:
         first_party: Mapping[Representation, ComparisonSide],
     ) -> VendorRow:
         """The row's vendor sides, pairs and corroboration status (module docstring)."""
-        sides = self._sides(key, fiscal_month)
+        sides = self.sides(key, fiscal_month)
         xbrl, pdf = first_party[Representation.XBRL], first_party[Representation.PDF]
         chosen = representative(xbrl, pdf)
         rep = Representation.XBRL if chosen is xbrl else Representation.PDF
@@ -227,7 +257,7 @@ class VendorSides:
         tier = scoped_tier(entry.tier, entry.qualification, context).tier
         return vendor.model_copy(update={"side": side.model_copy(update={"tier": tier})})
 
-    def _sides(self, key: MeasurementKey, fiscal_month: int) -> list[VendorSide]:
+    def sides(self, key: MeasurementKey, fiscal_month: int) -> list[VendorSide]:
         """One side per requested vendor table mapping the row, conflicts marked."""
         kind = key.period.kind(fiscal_month)
         tables = {
@@ -362,7 +392,7 @@ class VendorSides:
         """The complete capture's one current interpretation of the key in one table."""
         assert attempt.capture is not None and attempt.capture.capture_ref_id is not None
         capture = attempt.capture.capture_ref_id
-        self.selected_captures.add(capture)
+        self._decided.add(capture)
         extractor = self._triple.extractor(
             attempt.representation, source_id=attempt.source_id, surface=attempt.surface
         )

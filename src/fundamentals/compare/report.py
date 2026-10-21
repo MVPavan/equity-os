@@ -8,8 +8,9 @@ or the attempt that decided a failed side), extraction and corroboration, pair o
 reason, difference, gap, definition record and adjustments, the headline marker and
 surfaced restatements, then the row's open queue items and its trust at the overlay time the
 header states (items without a measurement key, i.e. ``UNMAPPED`` occurrences, list in the
-header). Currency amounts also print in crore, two decimals. ``NOT_APPLICABLE`` rows list
-their rule id only. The dictionary must be the one the run pinned, by content.
+header), then each R12 point check (D8). An assumed vendor side's anchor carries its assumption
+labels. Currency amounts also print in crore, two decimals. ``NOT_APPLICABLE`` rows list their
+rule id only. The dictionary must be the one the run pinned, by content.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Protocol
 
 from fundamentals.canon.dictionary import CanonicalDictionary
+from fundamentals.compare.point_check import PointCheck, assumptions_of
 from fundamentals.compare.run_models import (
     PairRecord,
     ResultRow,
@@ -35,6 +37,7 @@ from fundamentals.contracts.evidence import Interpretation, Occurrence
 from fundamentals.contracts.measurement_key import MeasurementKey
 from fundamentals.contracts.review_queue import QueueDisposition, QueueItem, QueueOverlay
 from fundamentals.contracts.versioning import VersionContentDriftError
+from fundamentals.evidence.mapping_models import MappingAssumption
 
 CRORE = Decimal(10) ** 7
 CRORE_PLACES = Decimal("0.01")
@@ -81,6 +84,12 @@ _INPUT = "  {kind}\t{id}"
 _TRUST = "  trusted\t{trusted}"
 _CAPTURE_ANCHOR = "capture:{capture}:{anchor}"
 _CONSTRUCTION_ANCHOR = "construction:{rule}"
+_ASSUMED = "\tassumed={label}"
+ASSUMPTION_LABELS = {
+    MappingAssumption.DENOMINATOR_ASSUMED: "denominator assumed, not vendor-stated",
+    MappingAssumption.BOUNDARY_ASSUMED: "boundary assumed",
+}
+ZERO_LABEL = "absent category taken as zero"
 
 
 class AnchorReader(Protocol):
@@ -120,6 +129,9 @@ def source_anchors(reader: AnchorReader, results: Sequence[ResultRow]) -> dict[i
         if occurrence is not None:
             anchors[item.interpretation_id] = _CAPTURE_ANCHOR.format(
                 capture=occurrence.capture.capture_ref_id, anchor=occurrence.anchor_key
+            ) + "".join(
+                _ASSUMED.format(label=ASSUMPTION_LABELS[assumed])
+                for assumed in assumptions_of(item)
             )
         elif item.construction_rule_id is not None:
             anchors[item.interpretation_id] = _CONSTRUCTION_ANCHOR.format(
@@ -135,8 +147,9 @@ def render_report(
     dictionary: CanonicalDictionary,
     anchors: Mapping[int, str],
     overlay: QueueOverlay,
+    checks: Sequence[PointCheck] = (),
 ) -> str:
-    """The run header and one block per result row, in ``row_id`` order, at ``overlay``.
+    """The run header, point checks and one block per result row, in ``row_id`` order.
 
     Raises ``VersionContentDriftError`` when ``dictionary`` is not the run's pinned one.
     """
@@ -162,6 +175,7 @@ def render_report(
     ]
     lines.extend(_FAILURE.format(failure=failure) for failure in manifest.operational_failures)
     lines.extend(queue_line(item) for item in overlay.open_items if item.key is None)
+    lines.extend(point_line(check) for check in checks)
     headlines = {row.canonical_id for row in dictionary.rows if row.headline}
     for result in sorted(results, key=lambda item: item.row_id):
         lines.extend(
@@ -230,25 +244,49 @@ def _row_lines(
 def queue_line(item: QueueItem) -> str:
     """One queue item: id, severity, outcome, route, reason code, the full measurement key
     (canonical row, period, basis, dimension members), its sources and the diagnostic flag."""
-    key = item.key
-    identity = NONE_TEXT
-    if key is not None:
-        members = ",".join(f"{axis}={member}" for axis, member in key.dimensions.pairs)
-        identity = ":".join(
-            part
-            for part in (key.canonical_id, period_text(key.period), key.basis.value, members)
-            if part
-        )
     return _QUEUE.format(
         item=item.item_id,
         severity=item.severity.value,
         outcome=item.outcome,
         route=item.routing_reason,
         reason=NONE_TEXT if item.reason_code is None else item.reason_code.value,
-        key=identity,
+        key=NONE_TEXT if item.key is None else _key_text(item.key),
         sources=",".join(f"{ref.source_role.value}:{_source(ref)}" for ref in item.source_refs)
         or NONE_TEXT,
         diagnostic=_DIAGNOSTIC if item.diagnostic else "",
+    )
+
+
+def point_line(check: PointCheck) -> str:
+    """One R12 point check: verdict, source, key, both values and their difference, member
+    values, package, formal outcome, refusal reason and every assumption label."""
+    labels = [ASSUMPTION_LABELS[assumed] for assumed in check.assumptions]
+    labels += [ZERO_LABEL] if check.zero_members else []
+    point, vendor = check.point_value, check.vendor_value
+    fields = {
+        "key": _key_text(check.key),
+        "vendor": vendor,
+        "first_party": point,
+        "difference": None if point is None or vendor is None else vendor - point,
+        "members": ",".join(
+            f"{member}={NONE_TEXT if value is None else value}" for member, value in check.members
+        ),
+        "package": check.package_id,
+        "outcome": check.outcome,
+        "reason": check.reason,
+        "labels": ";".join(labels) or None,
+    }
+    text = (f"{name}={NONE_TEXT if value is None else value}" for name, value in fields.items())
+    return "\t".join(("point", check.verdict, check.source, *text))
+
+
+def _key_text(key: MeasurementKey) -> str:
+    """A full measurement key: canonical row, period, basis and dimension members."""
+    members = ",".join(f"{axis}={member}" for axis, member in key.dimensions.pairs)
+    return ":".join(
+        part
+        for part in (key.canonical_id, period_text(key.period), key.basis.value, members)
+        if part
     )
 
 

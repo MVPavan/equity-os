@@ -45,6 +45,7 @@ from fundamentals.canon.dictionary import DictionaryLoadError, load_dictionary
 from fundamentals.canon.interval import RoundingPolicyError
 from fundamentals.compare.definitions import DefinitionSetError
 from fundamentals.compare.engine_attempts import RunResolutionError
+from fundamentals.compare.point_check import PointCheck, point_checks
 from fundamentals.compare.policy import ComparisonPolicyError
 from fundamentals.compare.queue import (
     item_inputs,
@@ -68,6 +69,7 @@ from fundamentals.compare.run import (
     execute_run,
     exit_status,
     load_results,
+    replay_inputs,
     request_for,
 )
 from fundamentals.compare.run_config import DEFAULT_VERSION, DICTIONARY_DIR, ConfigVersions
@@ -284,10 +286,16 @@ def _report(args: argparse.Namespace) -> int:
         results = load_results(run_id, pool=pool)
         anchors = source_anchors(EvidenceRepository(pool), results)
         overlay = read_overlay(pool, run_id=run_id, as_of=_as_of(pool, args.as_of))
+        checks: tuple[PointCheck, ...] = ()  # R12, over the run's frozen evidence (plan D8)
+        if record.manifest.scope.family is FilingFamily.SHAREHOLDING:
+            frozen = replay_inputs(run_id, pool=pool, config_root=args.config_root)
+            checks = point_checks(results, *frozen)
     dictionary = load_dictionary(
         args.config_root / DICTIONARY_DIR, record.manifest.pinned.dictionary.version
     )
-    report = render_report(record, results, dictionary=dictionary, anchors=anchors, overlay=overlay)
+    report = render_report(
+        record, results, dictionary=dictionary, anchors=anchors, overlay=overlay, checks=checks
+    )
     sys.stdout.write(report)
     return int(RunExitStatus.SUCCESS)
 

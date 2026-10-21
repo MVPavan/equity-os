@@ -70,6 +70,7 @@ __all__ = [
     "exit_status",
     "load_results",
     "operational_failures",
+    "replay_inputs",
     "replay_run",
     "request_for",
 ]
@@ -182,6 +183,20 @@ def replay_run(
     Extractors are not re-run: the manifest's extractor pins stand. Every other artifact is
     reloaded at its pinned version and refused if its content drifted.
     """
+    inputs, request, config = replay_inputs(
+        run_id, pool=pool, config_root=config_root, reader=reader
+    )
+    return recompute(inputs, request, config=config)
+
+
+def replay_inputs(
+    run_id: int,
+    *,
+    pool: ConnectionPool,
+    config_root: Path,
+    reader: ReplayReader | None = None,
+) -> tuple[ResolvedInputs, RunRequest, LoadedConfig]:
+    """A stored run's frozen evidence (by id), request and pinned config, as replay reads them."""
     manifest = RunStore(pool).read_manifest(run_id)
     pinned = manifest.pinned
     extractors = {
@@ -209,7 +224,7 @@ def replay_run(
             pinned_sha256=pinned.definition_set.content_sha256,
             actual_sha256=stored_set.content_sha256,
         )
-    return recompute(inputs, request, config=config)
+    return inputs, request, config
 
 
 def load_results(run_id: int, *, pool: ConnectionPool) -> tuple[ResultRow, ...]:

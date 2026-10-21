@@ -203,7 +203,7 @@ def _ingest(args: argparse.Namespace) -> int:
         complete = all(item.outcome is ExtractionOutcome.COMPLETE for item in report.attempts)
         vendor = []
         if complete and report.packages:
-            binding = _binding(args, captures, identifiers.isin)
+            binding = _binding(args, captures, _share_class(pool, entity_id, args.instant))
             vendor = _vendors(
                 args, captures, registered, binding, entity_id, repository, store, config
             )
@@ -215,7 +215,7 @@ def _ingest(args: argparse.Namespace) -> int:
 
 
 def _binding(
-    args: argparse.Namespace, captures: Sequence[Capture], isin: str
+    args: argparse.Namespace, captures: Sequence[Capture], isin: str | None
 ) -> ShareholdingBinding:
     """The configured vendor identities, the share class at the instant and the Screener page."""
     ids = load_watchlist_config(args.config_root / WATCHLIST).stock(args.symbol).identifiers
@@ -320,6 +320,18 @@ def _entity(pool: ConnectionPool, symbol: str, instant: date) -> int:
     if len(held) != 1:
         raise LookupError(_NO_ENTITY.format(symbol=symbol, instant=instant))
     return held.pop()
+
+
+def _share_class(pool: ConnectionPool, entity_id: int, instant: date) -> str | None:
+    """The one security ISIN the entity holds at the instant; with several, none (R4 Share
+    class: vendor occurrences stay keyless)."""
+    with pool.connection() as conn:
+        held = {
+            item.value
+            for item in latest_slice(conn, instant)
+            if item.entity_id == entity_id and item.namespace is IdentifierNamespace.ISIN
+        }
+    return held.pop() if len(held) == 1 else None
 
 
 def _pair(item: Capture) -> tuple[str, str]:
