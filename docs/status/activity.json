@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "D8 shareholding: Sol phase review round 3 (eqos-17r)",
-    "detail": "Phase review r1 REQUEST_CHANGES (1 P1, 9 P2, 1 P3) fixed in c611f2c/7d990d0; r2 resolved all, re-approved the Stage 3 manifest, left two bookkeeping blockers, now fixed. Full suite 4377 passed / 4 failed (2 fixed, 1 flaky rerun-green, 1 the PILOT-9 tripwire awaiting close-out). Sol r3 and verify_project.sh running.",
+    "title": "PILOT-9: Sep 2025 filing uses the older SHP taxonomy (eqos-4j2.32)",
+    "detail": "D8 code passes verify_project (D1a-D9 PASS; Pilot FAIL = the PILOT-9 tripwire). PILOT-9 plan approved (46b0b54). Three quarters acquired; Dec 2025 and Mar 2026 ingest, Sep 2025 refused: SEBI SHP taxonomy 2025-05-31 not accepted by nse-shp-v2. Studying the taxonomy diff and a minimal version-bump amendment.",
     "stage": "D8"
   },
   "next": [
-    "Sol D8 phase review loop, then fresh closing review",
-    "Phase gate: full tests/fundamentals suite and verify_project.sh D8 PASS",
-    "Mark PILOT-9 met; pilot verdict CONDITIONAL -> PASS; roadmap",
+    "PILOT-9 Amendment A1 (older SHP taxonomy) -> Sol review",
+    "PILOT-9 Tasks 2-4: frozen shareholding section, real pilot coverage, reconciliation",
+    "D8 fresh closing review; PILOT-9 MET only on new evidence",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "PILOT-9 plan Sol r1 REQUEST_CHANGES (6 P2, 4 P3) -> r2 (2 P2) -> r3 APPROVE (46b0b54). Task 1 acquired Apar SHP gen-4/5/6 for Sep 2025, Dec 2025, Mar 2026 (all requests OK after one Upstox 401 retry). Sep 2025 filing refused: older SHP taxonomy 2025-05-31."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 phase review: r1 REQUEST_CHANGES (vendor readings in tracked docs, absence/zero, per-instant package, drill-down binding, failure records, identity gate -> *-shp-v2 extractors, calendar, caps) fixed in c611f2c; r2 resolved all and re-approved the manifest (8fa84c7d); order check and File map follow-ups committed, e2e revision 7d990d0."
