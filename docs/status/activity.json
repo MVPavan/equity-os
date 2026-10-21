@@ -1,18 +1,21 @@
 {
   "now": {
-    "title": "PILOT-9 Task 2: frozen shareholding section of the pilot manifest (eqos-4j2.32)",
-    "detail": "A1 landed: nse-shp-v3 + mapping set v8 accept the 2025-05-31 SHP taxonomy (035678d); all three acquired quarters ingest. Stage 3 manifest re-approved by Sol at 731ea8be (0f6df2d); its order check stays pending until Task 3's e2e commit. Next: independent Opus author writes the pilot shareholding section.",
+    "title": "PILOT-9 Task 3: real four-quarter shareholding coverage in the pilot e2e (eqos-4j2.32)",
+    "detail": "Task 2 committed: pilot manifest gains a hand-authored shareholding section for Sep 2025, Dec 2025, Mar 2026 (20 rows each; 11/11/14 point checks) plus Jun 2026 via Stage 3; Sol r1 APPROVE 93164041, no findings. Order checks pending until Task 3's e2e commit.",
     "stage": "D8"
   },
   "next": [
-    "PILOT-9 Task 2: frozen shareholding section + private companion -> Sol review",
-    "PILOT-9 Task 3: real four-quarter coverage in the pilot e2e",
+    "PILOT-9 Task 3: replace the PILOT-9 tripwire with real coverage",
     "PILOT-9 Task 4: reconciliation, verify_project, report",
     "D8 phase re-review r4 + fresh closing review; close eqos-17r",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "PILOT-9 Task 2 committed: frozen shareholding section for FY26 Q2-Q4 (one submission per quarter, 60 rows, 36 point lines, 39 first-party locators) and check_shareholding with 8 refused mutations. Sol r1 APPROVE, no findings; vendor readings only in the private companion."
+    },
     {
       "date": "2026-10-21",
       "text": "PILOT-9 Amendment A1: Sol r1 -> r2 APPROVE (dfc5b29). Commit (a) 035678d: nse-shp-v3, mapping set v8 (13 2025-05 entries, equivalence unproven); Sep 2025 now ingests. Commit (b) 0f6df2d: Stage 3 manifest re-approved by Sol, no expected value changed."
