@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "D8 shareholding: Task 7 frozen Stage 3 manifest next (eqos-17r)",
-    "detail": "Tasks 1b-6 committed. Task 6 (vendor tree extractors, pairing, R12 point check, assumed-denominator labels) done. Next: Task 7 frozen Stage 3 manifest, Task 8 Stage 3 e2e, then Sol phase review.",
+    "title": "D8 shareholding: Task 8 Stage 3 e2e next (eqos-17r.5)",
+    "detail": "D8.1-D8.4 closed. Frozen Stage 3 manifest committed with Sol r2 APPROVE (d420549); vendor readings kept only in a private gitignored companion. Next: Task 8 Stage 3 end-to-end over the CLI on a fresh test database, then the Sol phase review loop.",
     "stage": "D8"
   },
   "next": [
-    "D8 Task 7: frozen Stage 3 manifest; Task 8: Stage 3 e2e",
+    "D8 Task 8: Stage 3 e2e (watch TITAN listing vs filing ISIN)",
     "D8 Sol phase review loop and closing review",
     "Mark PILOT-9 met; pilot verdict CONDITIONAL -> PASS; roadmap",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 Task 7 committed (d420549): independent frozen Stage 3 manifest, 41 point checks, 1,194 tree nodes; Sol r1 REQUEST_CHANGES (9 P2, 1 P3) -> r2 APPROVE. Vendor readings split into a private companion per Sol's subscriber-rights ruling. D8.2-D8.4 closed."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 Task 6b committed: vendor pairing at ruled keys, R12 point check (POINT_EQUAL/CHECK/REFUSED), 'denominator assumed, not vendor-stated' labels, share-class keyless when ambiguous. 110 tests passed (worker regression 233), mypy and ruff clean. Over cap for Sol review: point_check.py 204/150, report.py 410/400."
