@@ -44,7 +44,7 @@ Beyond this file (decision register `docs/blueprint/funda-blueprint-implementati
 |---|---|---|---|
 | **Backend core** (data foundation) | Shared PostgreSQL store, dictionary, comparator, ledger, memory, views, onboarding, coverage, shareholding, retention | [core roadmap](workstreams/data-foundation/roadmap.md), [core definition](workstreams/data-foundation/core.md) | epics D1a–D9, label `ws-data-foundation` |
 | **Pilot prerequisites** | Workflow and register items the pilot needs that the core does not build | §3 rows PREP-1…PREP-8 | `eqos-4j2`, register §B |
-| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3) | §4; [report](evidence/pilot/report.md): CONDITIONAL on D8 (PILOT-9 not met) | `eqos-4j2.8` |
+| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3) | §4; [report](evidence/pilot/report.md): CONDITIONAL (PILOT-9 met; open [conditions](#pilot-conditions)) | `eqos-4j2.8` |
 | Deferred | Screener/Tijori breadth via the capability registry (`eqos-kx4.5`); Tijori Stack (`eqos-d37`) | — | not needed for the pilot |
 
 Order: D1a → D1b → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → PREP-1…PREP-8 → Pilot. One worker runs at a
@@ -118,14 +118,20 @@ pilot manifest (PREP-7), never from code output.
   This sets `PILOT_PROVEN: YES` in the brief and closes Phase 0.5.
 - **FAIL:** any check that fails names the backend part at fault. That part is reopened, fixed and
   re-verified, then the pilot is re-run from the failed check onward.
-- **CONDITIONAL** (owner PavanMV, 2026-10-20): the verdict may be CONDITIONAL while D8 stays parked
-  in the gate. PILOT-9 is not met while D8 is parked. PASS, Phase 0.5 closure and `PILOT_PROVEN: YES` stay reserved
-  for fully satisfied acceptance.
+- <a id="pilot-conditions"></a>**CONDITIONAL** (owner PavanMV, 2026-10-20; amended by
+  [PILOT-9](plans/PILOT-9.md) Decision 7): the verdict is CONDITIONAL while any condition below is
+  open. PASS, Phase 0.5 closure and `PILOT_PROVEN: YES` stay reserved. Conditions:
+  1. D8's own phase approval (Sol D8 r4).
+  2. PILOT-11 (iii) blind drill `eqos-4j2.30` (owner).
+  3. PILOT-12 owner review timing (Owner Q1; hand review `eqos-4j2.21`).
+  4. PILOT-7 via the D6 exit row.
+  5. `scripts/verify_project.sh` exit 0.
+  6. Reviewer approval of the report.
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
   not hold back its verdict; nothing is fabricated. It is tested on a later stock that has one.
 
-Pilot report: [evidence/pilot/report.md](evidence/pilot/report.md) (verdict CONDITIONAL on D8).
+Pilot report: [evidence/pilot/report.md](evidence/pilot/report.md) (verdict CONDITIONAL on the [conditions](#pilot-conditions)).
 
 PILOT-12 depends on the owner reviewing four reports; it is the one step that cannot run
 autonomously. Whether the workflow actually saves review time is judged at Phase 1 (register

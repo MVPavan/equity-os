@@ -8,6 +8,8 @@ Status: **approved — gpt-6.1-sol APPROVE, 2026-10-20** (r1 REQUEST_CHANGES 2/4
 1/1/0, ruled by the orchestrator after 3 rounds → fresh closing review 0/2/1 → r2 0/1/0 → r3 APPROVE). Owner
 decisions of 2026-10-20 (PavanMV): citation amendment (§ PILOT-4 citation route), PILOT-5 contradiction NOT
 MET, D8 stays gated and the verdict is CONDITIONAL on D8.
+PILOT-9 is planned and met in [PILOT-9](PILOT-9.md) (2026-10-21); its Decision 2 supersedes the
+out-of-scope line on `pilot_manifest.yaml`, and its Decision 7 restates the verdict conditions.
 
 **Goal:** one `pg` + `retained` test on a disposable `eqos_test_*` database. It runs the PREP-7
 preflight, drives Apar PQ0 (Q2 FY26) → PQ1 (Q3 FY26) → PQ2 (Q4 FY26) → PQ3 (Q1 FY27) on PostgreSQL,
@@ -123,7 +125,7 @@ Every expected value comes from the manifests or a recorded probe; no number is 
 | PILOT-6 | `ledger export --stock APARINDS --status-notes --memory` as the runtime role, read-only transaction | Non-zero exit; a narrative not hashing to its `content_hash`; `memory.md` missing a promoted id | — |
 | PILOT-7 | — | — | D6 exit `test_data_stage4_e2e.py` (holdout stays blind) |
 | PILOT-8 | Watchlist head is the owner `ADD`; at the end owner `REMOVE` via `ledger decide`, then a runtime draft | Head not `ADD`; draft not refused "is not on the watchlist", or any row written | — |
-| PILOT-9 | Vacuity over every version | Any shareholding key or section | **NOT MET; verdict CONDITIONAL on D8** (owner, 2026-10-20). Vacuity is recorded, not counted as met |
+| PILOT-9 | Per quarter, the Task 3 block of [PILOT-9](PILOT-9.md) (`pilot_e2e_support.pilot9`): CLI `shareholding ingest`, `compare run --family shareholding` and `compare report` at the quarter's instant against the frozen `shareholding` section; then `_pilot9_vacuity` over every version | Any drift from the frozen section (`PILOT-9: <quarter>`); any shareholding key or section in a version | Citation clause vacuous: no update uses shareholding, asserted by `_pilot9_vacuity` (PILOT-9 Decision 3) |
 | PILOT-10 | Real store clock: `retention classify`, `db backup`, `retention purge --dry-run --snapshot-root <tmp>`, `purge`, `db restore --replay-runs` into a fresh `eqos_test_*` | Listed set ≠ `retention.eligibility` eligible set; listed ∩ hold roots (manifest package hashes via `holds.yaml`, version-cited blobs) ≠ ∅; `restore_check.replay(admission + vendor run ids)` ≠ `((), ())`; a held blob fails its hash | Records actual counts; an empty purge is not observed deletion. Positive deletion: D9 exit |
 | PILOT-11 | (i) PQ1 run interrupted after `admit_run` (`interrupted(..., cli, "admit_run", after=True)`), then retried. (ii) PQ2 v1 rejected on `cmp.revenue.qoq.prior` through `review start\|claim\|finish` (`REQUEST_CHANGES`); `rework.plan`; successor approved. (iii) Last: `_shadow(_seeds(PQ0 claims))` | (i) with `test_prep3_resume.ids/added/delta/claims`: interrupted attempt leaves no version and committed admissions but no selections; retry reuses the registered comparison run (no new `runs` row), adds no `fact_rows`/`fact_admissions`, keeps every committed logical id (committed facts ⊆ admitted rows, committed traces ⊆ cited), every new trace is cited (no orphan), exactly one PQ1 draft. (ii) plan ≠ `QOQ`; with the PREP-5 `calls` spies (`test_prep5_rework.py:399–419`): `conclude` keys ≠ the QOQ trace keys, `admit_run` ≠ `[0]`, `select_admitted` ≠ `[]`, fact/admission counts change; carried claims or ordered lines differ; successor not v(N+1) of the predecessor with its digest. (iii) states ≠ `ANSWER`; owner APPROVE not refused | Detecting review-only seeds needs the owner's blind run `eqos-4j2.30`; stays unmet until independent evidence exists |
 | PILOT-12 | **Five run-generated versions** (PQ0, PQ1, PQ2 rejected, PQ2 successor, PQ3) each reviewed through `review start\|claim\|finish` with scripted dispositions and the `_ticking` clock; **four final approved** quarter versions | A version without exactly one `review_sessions` row; `claim_reviews` not covering its review set; PQ2 v1's category/dispositions ≠ the scripted rejection; the successor's review set ≠ its rework rereview set; report-chain totals ≠ the sum of both PQ2 sessions | Scripted times are instrumentation only; the owner's real review of four reports (Owner Q1) |
@@ -136,7 +138,7 @@ Every expected value comes from the manifests or a recorded probe; no number is 
 | `eqos-4j2.23` derivation clock | Blocks; Task 1 fixes it (PG path: cutoff from `repository.store_clock`) |
 | `eqos-4j2.27` citation contract | **Open; Task 2 implements it** (§ PILOT-4 citation route); closes when its PG tests pass. Export check: the test hashes single-version exports; no CLI guard needed |
 | `eqos-4j2.26` thesis-impact YAML | Parked: the pilot never calls it (Evidence 3). Not evidence the command's authority problem is fixed |
-| `eqos-4j2.32` PILOT-9 | Shareholding unused (Evidence 4); PILOT-9 NOT MET, verdict CONDITIONAL on D8 (owner, 2026-10-20); open until D8 is built |
+| `eqos-4j2.32` PILOT-9 | Met by [PILOT-9](PILOT-9.md); closes on Sol D8 r4 APPROVE |
 | `eqos-ghv` PQ3 segment | Not blocking; the test asserts an explicit failure state. The parser bug stays open |
 | `eqos-4j2.21` submit CLI | Not blocking; the test submits via `lifecycle.submit`. Needed first if the owner reviews by hand |
 | `eqos-4j2.22` legacy impersonation | Parked (2026-10-18); this test does not reopen it |
@@ -218,8 +220,8 @@ supersession only (was Q5). Open:
 
 - Sol phase review of Tasks 1–3 per `04-agent-stack.md`, then a fresh closing review.
 - `docs/evidence/pilot/report.md`: each check with its evidence and "not met / external" reason; the
-  34 filed values listed as single-source, not cross-checked; verdict **CONDITIONAL on D8** (PILOT-9
-  not met) (PILOT-5's contradiction clause waived for this pilot, owner 2026-10-20); Sol approved; `docs/backend-roadmap.md` Pilot row and §4 links.
+  34 filed values listed as single-source, not cross-checked; verdict **CONDITIONAL** on the open [conditions](../backend-roadmap.md#pilot-conditions) (PILOT-9 met, [PILOT-9](PILOT-9.md) Task 4)
+  (PILOT-5's contradiction clause waived for this pilot, owner 2026-10-20); Sol approved; `docs/backend-roadmap.md` Pilot row and §4 links.
 - Tasks 1–3 are committed at their own completion, in order (the e2e last, in Task 3).
 - Record bead rulings with `bd` notes; close `eqos-4j2.27` after Task 2. Keep `eqos-4j2.8` open: the
   verdict is CONDITIONAL (D8) and Owner Q1–Q2 are open.
