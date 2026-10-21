@@ -1,16 +1,19 @@
 {
   "now": {
-    "title": "PILOT-9: full verify_project.sh gate running (eqos-4j2.32)",
-    "detail": "Task 4 docs committed (79c9bbb): pilot report marks PILOT-9 MET; verdict stays CONDITIONAL with one conditions list in the roadmap (D8 r4 approval, owner blind drill, PILOT-12 timing, PILOT-7 via D6, verify_project exit 0, report review). Full gate started 2026-10-21; then Sol D8 phase re-review r4.",
+    "title": "D8 phase re-review r4 with PILOT-9 (eqos-17r, eqos-4j2.32)",
+    "detail": "Full gate exit 0 at 79c9bbb: every row PASS including Pilot; 4393 passed, 9 skipped (1:51:01); mypy and ruff clean. Pilot report updated (8072ffe). Sol r4 now rules on R3-1, the PILOT-9 exit and the report.",
     "stage": "D8"
   },
   "next": [
-    "Fill gate log paths in the pilot report",
-    "Sol D8 phase re-review r4 + fresh closing review; close eqos-17r and eqos-4j2.32",
+    "Sol D8 r4 verdict, then a fresh closing review; close eqos-17r and eqos-4j2.32",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "Full verify_project.sh gate exit 0 at 79c9bbb: D1a-D9, frozen manifests, amendment records, Pilot, Pytest (4393 passed, 9 skipped), Mypy, Ruff all PASS. The PILOT-9 tripwire is gone; pilot condition 'verify_project exit 0' met."
+    },
     {
       "date": "2026-10-21",
       "text": "PILOT-9 Task 4 docs committed: report PILOT-9 MET with acquisition record, vendor-timing and citation wording; roadmap holds the single conditions list; PILOT-E2E.md row and eqos-4j2.32 ruling updated."
