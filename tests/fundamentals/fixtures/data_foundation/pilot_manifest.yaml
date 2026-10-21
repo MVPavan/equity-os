@@ -2,7 +2,7 @@ header:
   manifest: pilot
   spec: docs/plans/PREP-7.md (docs/backend-roadmap.md PREP-7)
   hand_verification: {verifier: claude-opus-5-5 (PREP-7 Task 1 authoring aid), date: '2026-10-19', method: 'Audited scripted verbatim transcription; no human read the filings. A reviewed authoring aid (scratchpad, never committed) read only its literal INPUTS: the retained XBRL instances (lxml), the results PDFs (pymupdf word boxes, each cell bound to its label row and header-verified column), the retrieval manifest (json), the pilot configs, ledger_import.yaml and stage1 (yaml). It imported no fundamentals or test code and read no code output. Figures are XBRL lexemes at complete locators bound to each claim key''s member, concept, period, dims and unit (PREP-7 Decision 3); current figures are cross-checked against the results PDF; derived values are exact Fractions over the bound operands. The suite re-checks all of it from the bytes; Sol approves the payload.'}
-  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-19, payload_sha256: ad188b0dfa059fe6ab952d1cfaa7ebdf2d12cdbbc98d61ac1fa4cc378fd0dda3}
+  approval: {reviewer: gpt-6.1-sol, verdict: APPROVE, date: 2026-10-21, payload_sha256: 93164041b9cc1734aaa258ef8a062a0d8321170836e39a4a978f562d3f5566b7}
   notation: {value: 'v exact decimal or p/q; iv [lo, hi]. A figure''s v is its XBRL lex / UNIT_SCALE[u] (INR 10^7 = crore, INRPerShare 1), iv half-width 10^-d / 2 in the same unit (INF: 0); no locator carries sign. A derived node is {expr, v}: expr over the bound operands'' v re-evaluates to v exactly; pct and calc.3 are emitted as v quantized to 0.01 ROUND_HALF_EVEN', xbrl_locator: 'src, c (concept local name), ctx (contextRef), u (unitRef), d (decimals), lex, per (effective period after the DateOfStart/End re-periodisation); no dims = an undimensioned context', pdf_locator: 'src, pg, label (as printed in the text layer), col (a column id of header.pdf_columns[src][pg]), lex. Binding as stage1 header.notation.pdf_locator: label instance = a word equal to its first token with every token among the words to its right within 7pt; the cell is the words within 5pt of that y inside the column''s x band and must equal [lex]; a band is bound to its header by the words inside it on header_y. Printed lexemes drop grouping commas, read (x) as negative; a lone ''-'' or ''.'' is a zero marker read as exact 0. The unit is crore', field_locator: 'src, path (dotted JSON/YAML path), lex (the value as text)', claims: 'quarters[Q].claims = the run''s 46 numerical claim keys (fact.<role>, cmp.<role>.<qoq|yoy>.<prior|abs|pct>, calc.1..calc.4); aux holds the share of associates operand. calc.2 pdf_parts are the tax component cells (current, deferred, earlier years) whose sum corroborates it', package: 'quarters[Q].package: the five input members {xbrl, results_pdf, transcript_pdf, qoq, yoy}: config source_id, retrieval-manifest entry (quarter, kind) and sha256', approval: 'header.approval.payload_sha256 = sha256 of this file''s bytes with the one line starting ''  approval:'' (and its newline) removed'}
   pdf_columns:
     R-FY26_Q2:
@@ -68,6 +68,55 @@ header:
   - {label: T-FY26_Q3, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q3-transcript.pdf, sha256: 66df508c06619698e5eb2122ae9564b6ec938dac696cddd84aed2d2133a89d02}
   - {label: T-FY26_Q4, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY26_Q4-transcript.pdf, sha256: 69aba177cad6f3435e81057f80b6336623f1855bd464dfba0e81ed20cca95c3c}
   - {label: T-FY27_Q1, kind: pdf, path: data/raw/watchlist/aparinds/nse_pdf/APARINDS-FY27_Q1-transcript.pdf, sha256: 78a312c86f58ea515f3eea3763e02a1e977104f282256e774e428d2a898304e5}
+  - {label: P0-EQ, kind: csv, path: data/raw/shareholding/APARINDS/gen-4/00.bin, sha256: a6a09d6f397db028efcb4191a8aa5f0475a5f47697c070a27d48fd0795092810}
+  - {label: P0-LST, kind: listing_json, path: data/raw/shareholding/APARINDS/gen-4/01.bin, sha256: 625ced745407ba622760e765b6cfdda5ed19dd45badbf8f313cb6e3ab9374e23}
+  - {label: P0-X, kind: xbrl, path: data/raw/shareholding/APARINDS/gen-4/02.bin, sha256: da04239888e8e1f8773b2ce032398dda4420c4dcb1aa3a842e7a7230934871e4}
+  - {label: P0-SCR, kind: screener_shp_html, path: data/raw/shareholding/APARINDS/gen-4/03.bin, sha256: e3fafc04ad5663b1cc4ca0afea652ebd7b61e9f9919ff1b402ad1ca572061b3c}
+  - {label: P0-INV-04, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/04.bin, sha256: 7a11c9220783a26656d5fb69957742b00eda286399f2dfe8316a1a6db717cf9d}
+  - {label: P0-INV-05, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/05.bin, sha256: a3b9c314cbb5ea60f4e9eacce0a82d6f20637ce32e45e8bb09b5ac100e23b1f4}
+  - {label: P0-INV-06, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/06.bin, sha256: 706550ff872cb920e29fc3fda63c973d285b835a368ecf8c39f8429cd29e9cda}
+  - {label: P0-INV-07, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/07.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P0-INV-08, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/08.bin, sha256: 2eda3d2ada6e092bcd37202a51d9522943c32f9581d455ab72933ada2b6a5532}
+  - {label: P0-INV-09, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/09.bin, sha256: 42f96d54fa8d962d6833f107148a8855db527c6d7d5443834a9761428b1fd1cf}
+  - {label: P0-INV-10, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/10.bin, sha256: a5bb76d23d2df2ca5a67551d32e96867bf41f94282a8229138147f30e6088efa}
+  - {label: P0-INV-11, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/11.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P0-INV-12, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-4/12.bin, sha256: b572011ace39b14f68226d3b8615c4a978d5fee8847062146266ccdab039dd6b}
+  - {label: P0-TIJ, kind: tijori_shp_html, path: data/raw/shareholding/APARINDS/gen-4/13.bin, sha256: 451db225e87322f6fc2fa2e7ead32f26f8670b417ebaf705bca6c3d10521c80d}
+  - {label: P0-UPX, kind: upstox_shp_json, path: data/raw/shareholding/APARINDS/gen-4/14.bin, sha256: 23d2bd69b99a6d807643c8ca573585e6a744dc375f24b0c62129f06e3c1a9672}
+  - {label: P0-MAN, kind: discovery_manifest, path: data/raw/shareholding/APARINDS/gen-4/discovery-manifest.json, sha256: c44514a2d0ff50676d618dfa891285a33602576932a9e14c22a979e893bf8013}
+  - {label: P1-EQ, kind: csv, path: data/raw/shareholding/APARINDS/gen-5/00.bin, sha256: a6a09d6f397db028efcb4191a8aa5f0475a5f47697c070a27d48fd0795092810}
+  - {label: P1-LST, kind: listing_json, path: data/raw/shareholding/APARINDS/gen-5/01.bin, sha256: 625ced745407ba622760e765b6cfdda5ed19dd45badbf8f313cb6e3ab9374e23}
+  - {label: P1-X, kind: xbrl, path: data/raw/shareholding/APARINDS/gen-5/02.bin, sha256: d3b0cb71826fd70d9d4cf679df767b2238696286cec031c8257b5cd12298e52c}
+  - {label: P1-SCR, kind: screener_shp_html, path: data/raw/shareholding/APARINDS/gen-5/03.bin, sha256: 473457c9af7c0a82fb21407b9e0ffa87e4ea813a0533c434ff989eab9a42a004}
+  - {label: P1-INV-04, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/04.bin, sha256: 7a11c9220783a26656d5fb69957742b00eda286399f2dfe8316a1a6db717cf9d}
+  - {label: P1-INV-05, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/05.bin, sha256: a3b9c314cbb5ea60f4e9eacce0a82d6f20637ce32e45e8bb09b5ac100e23b1f4}
+  - {label: P1-INV-06, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/06.bin, sha256: 706550ff872cb920e29fc3fda63c973d285b835a368ecf8c39f8429cd29e9cda}
+  - {label: P1-INV-07, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/07.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P1-INV-08, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/08.bin, sha256: 2eda3d2ada6e092bcd37202a51d9522943c32f9581d455ab72933ada2b6a5532}
+  - {label: P1-INV-09, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/09.bin, sha256: 42f96d54fa8d962d6833f107148a8855db527c6d7d5443834a9761428b1fd1cf}
+  - {label: P1-INV-10, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/10.bin, sha256: a5bb76d23d2df2ca5a67551d32e96867bf41f94282a8229138147f30e6088efa}
+  - {label: P1-INV-11, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/11.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P1-INV-12, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-5/12.bin, sha256: b572011ace39b14f68226d3b8615c4a978d5fee8847062146266ccdab039dd6b}
+  - {label: P1-TIJ, kind: tijori_shp_html, path: data/raw/shareholding/APARINDS/gen-5/13.bin, sha256: de5019c754dc13daab1d6fdbeb4b2f2ee207aec765ee8306e9ddfc1516f6f129}
+  - {label: P1-UPX, kind: upstox_shp_json, path: data/raw/shareholding/APARINDS/gen-5/14.bin, sha256: 23d2bd69b99a6d807643c8ca573585e6a744dc375f24b0c62129f06e3c1a9672}
+  - {label: P1-MAN, kind: discovery_manifest, path: data/raw/shareholding/APARINDS/gen-5/discovery-manifest.json, sha256: 222fe129168ebcac497c8f46bb535b3a26be17394eb585abd107bd55dcb02bec}
+  - {label: P2-EQ, kind: csv, path: data/raw/shareholding/APARINDS/gen-6/00.bin, sha256: a6a09d6f397db028efcb4191a8aa5f0475a5f47697c070a27d48fd0795092810}
+  - {label: P2-LST, kind: listing_json, path: data/raw/shareholding/APARINDS/gen-6/01.bin, sha256: 625ced745407ba622760e765b6cfdda5ed19dd45badbf8f313cb6e3ab9374e23}
+  - {label: P2-X, kind: xbrl, path: data/raw/shareholding/APARINDS/gen-6/02.bin, sha256: 60ebe97d65c3b0e4decbfb27b9a3ceb70a4d38443b14dce6d61f4b9673c996a9}
+  - {label: P2-SCR, kind: screener_shp_html, path: data/raw/shareholding/APARINDS/gen-6/03.bin, sha256: 17312811e0ceeeeed960d70482682d073a5e63237ed958c966c5e5d81fbce7e5}
+  - {label: P2-INV-04, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/04.bin, sha256: 7a11c9220783a26656d5fb69957742b00eda286399f2dfe8316a1a6db717cf9d}
+  - {label: P2-INV-05, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/05.bin, sha256: a3b9c314cbb5ea60f4e9eacce0a82d6f20637ce32e45e8bb09b5ac100e23b1f4}
+  - {label: P2-INV-06, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/06.bin, sha256: 706550ff872cb920e29fc3fda63c973d285b835a368ecf8c39f8429cd29e9cda}
+  - {label: P2-INV-07, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/07.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P2-INV-08, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/08.bin, sha256: 2eda3d2ada6e092bcd37202a51d9522943c32f9581d455ab72933ada2b6a5532}
+  - {label: P2-INV-09, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/09.bin, sha256: 42f96d54fa8d962d6833f107148a8855db527c6d7d5443834a9761428b1fd1cf}
+  - {label: P2-INV-10, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/10.bin, sha256: a5bb76d23d2df2ca5a67551d32e96867bf41f94282a8229138147f30e6088efa}
+  - {label: P2-INV-11, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/11.bin, sha256: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a}
+  - {label: P2-INV-12, kind: screener_investors_json, path: data/raw/shareholding/APARINDS/gen-6/12.bin, sha256: b572011ace39b14f68226d3b8615c4a978d5fee8847062146266ccdab039dd6b}
+  - {label: P2-TIJ, kind: tijori_shp_html, path: data/raw/shareholding/APARINDS/gen-6/13.bin, sha256: 9f22b60401a2e97fa97a534504f582ec68df412bc9563cd3cfa5b5288b2030c4}
+  - {label: P2-UPX, kind: upstox_shp_json, path: data/raw/shareholding/APARINDS/gen-6/14.bin, sha256: 23d2bd69b99a6d807643c8ca573585e6a744dc375f24b0c62129f06e3c1a9672}
+  - {label: P2-MAN, kind: discovery_manifest, path: data/raw/shareholding/APARINDS/gen-6/discovery-manifest.json, sha256: 33ace5f75ba6e29566e97ce4e8b0a880ef220b97d9e3fe727f43d9eff6e02b7f}
+  - {label: S3, kind: manifest, path: tests/fundamentals/fixtures/data_foundation/stage3_manifest.yaml, sha256: fc7a5b12929f4e4ff3a340b2de071fcddd22c66e1937cebb5d1503472e2425b3}
 quarters:
   FY26_Q2:
     source_cutoff:
@@ -746,3 +795,1913 @@ pilot_checks:
     pair: {src: STAGE1, path: pre_registered.H3.outcome.pair, lex: ANOMALY}
     triage: {src: STAGE1, path: pre_registered.H3.outcome.triage, lex: NOISE}
     queue: {src: STAGE1, path: pre_registered.H3.outcome.queue, lex: none}
+shareholding:
+  hand_verification: {verifier: claude-opus-5-5 (PILOT-9 Task 2 author), date: '2026-10-21', method: 'Authored
+      under plan D8 R9: a scratchpad aid (no fundamentals import) read only the pinned APARINDS gen-4/5/6
+      bytes (lxml for the SHP XBRL, json for the listings and discovery manifests, tests/fundamentals/manifest_locators.py
+      for the Screener, Tijori and Upstox captures), the Stage 3 header and its approved APARINDS node
+      rulings (applied by node path, same tree shape in every generation), and ran no D8 code, run output
+      or database. Rows, sides, pairs, queue and statuses follow the Stage 3 header.notation; the aid
+      reproduced Stage 3''s approved APARINDS rows, point checks and package from gen-2 exactly before
+      authoring. Values are verbatim lexemes; point-check sums are exact Fraction arithmetic recorded
+      as expressions. Single-submission rule: each instant has one unrevised listing row, broadcast before
+      its source cutoff.'}
+  notation: 'as the pinned Stage 3 header.notation (field_locator, xbrl_locator, side, pair, queue, point_check).
+    quarters.<Q>.run uses the Stage 3 run schema without keyless, exclusions and counts; vendor_locator
+    {node: <id>} keys the companion runs[<run>].nodes map {file (a header source label of that generation),
+    periodicity, path, source_node_id, column (the instant''s native period header)}; the companion runs[<run>].sides[<row
+    key>][<vendor>] holds every VALUE side''s lexeme and value and runs[<run>].point_checks (same index)
+    each point-check reading. A vendor side carries at and labels only where its ruled node prints a cell
+    at the instant column (Upstox prints no Sep 2025 or Dec 2025 column: NO_VALUE, no point line). FY27_Q1
+    is the pinned Stage 3 run, package and point checks.'
+  stage3: S3
+  companion:
+    path: data/raw/shareholding/pilot-manifest/pilot_vendor.yaml
+    sha256: 97e9fb5cf11616391a5e1d85f1ad186871be414a50b6448efaeaaf192542d9e5
+    rows: {sides: 33, point_checks: 36, nodes: 36}
+  cli: {ingest: fundamentals shareholding ingest --symbol APARINDS --instant <INSTANT> --raw-root data/raw/shareholding
+      --snapshot-root <tmp> --generation <GEN>, run: fundamentals compare run --family shareholding --entity
+      APARINDS --period-end <INSTANT> --basis standalone --mode as_known --dictionary v3 --mapping-set
+      v8 --normalisation-policy v2 --vendor screener-subscriber/SCREENER_SHAREHOLDING --vendor screener-subscriber/SCREENER_INVESTORS
+      --vendor tijori/shareholding --vendor upstox/share-holdings, report: fundamentals compare report
+      --family shareholding --entity APARINDS --period-end <INSTANT> --basis standalone}
+  quarters:
+    FY26_Q2:
+      instant: '2025-09-30'
+      generation: 4
+      package:
+        stored:
+        - instance: P0-X
+          lineage: null
+          links: [xbrl]
+          at:
+          - {src: P0-LST, path: '[5].recordId', lex: '202526'}
+          - {src: P0-LST, path: '[5].date', lex: 30-SEP-2025}
+          - {src: P0-LST, path: '[5].broadcastDate', lex: '14-OCT-2025 19:15:27'}
+          - {src: P0-LST, path: '[5].submissionDate', lex: 14-OCT-2025}
+          - {src: P0-LST, path: '[5].xbrl', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/SHP_1548120_14102025071519_WEB.xml'}
+          - {src: P0-LST, path: '[5].revisedData', lex: N}
+          - {src: P0-LST, path: '[5].isin', lex: INE372A01015}
+        selected: 0
+      run:
+        run: APARINDS-SHP-2025-09-30
+        entity: APARINDS
+        instant: '2025-09-30'
+        keys:
+          I: {instant: '2025-09-30'}
+        source_vector:
+          first_party: [xbrl]
+          vendors:
+            screener-subscriber/SCREENER_SHAREHOLDING: {role: INDEPENDENT_VENDOR}
+            screener-subscriber/SCREENER_INVESTORS: {role: INDEPENDENT_VENDOR, selection: diagnostic (R11;
+                no mapping)}
+            tijori/shareholding: {role: INDEPENDENT_VENDOR}
+            upstox/share-holdings: {role: DIAGNOSTIC}
+        defaults: {}
+        default_rows: {}
+        rows:
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2264'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0925'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: PercentageOfTotalVotingRights
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.1035'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: PercentageOfTotalVotingRights
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: PercentageOfTotalVotingRights
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: Indian_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=IndianMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/1}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2264'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/30}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0925'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/28}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InvestorEducationAndProtectionFund_ContextI
+                u: pure
+                d: INF
+                lex: '0.0028'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=InvestorEducationAndProtectionFundMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/25}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.1035'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/47}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh_ContextI
+                u: pure
+                d: INF
+                lex: '0.0801'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/24}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P0-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-09-30'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/0}
+                labels: ['denominator assumed, not vendor-stated']
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/0}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/13}
+                labels: ['denominator assumed, not vendor-stated']
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/23}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/14}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_num_shareholders|I|-|REPORTED:
+            xbrl: {s: NO_VALUE}
+            vendors: {}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NO_SOURCE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NO_SOURCE}
+        status: COMPLETE
+        exit: 0
+      point_checks:
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/28}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0925'}
+        zero: []
+        expr: (0.0925) * 100
+        v: '9.25'
+        verdict: POINT_CHECK
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/30}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2264'}
+        zero: []
+        expr: (0.2264) * 100
+        v: '22.64'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/47}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.1035'}
+        zero: []
+        expr: (0.1035) * 100
+        v: '10.35'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/1}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/13}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED',
+          lex: '0.4223'}
+        zero: [employee_benefit_trust]
+        expr: (0.4223 + 0) * 100
+        v: '42.23'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', absent category taken as zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/14}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2264'}
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0925'}
+        zero: []
+        expr: (0.2264 + 0.0925) * 100
+        v: '31.89'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/23}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.1035'}
+        zero: [employee_benefit_trust]
+        expr: (0.1035 + 0) * 100
+        v: '10.35'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed, absent category taken as
+            zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/24}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED',
+          lex: '0.0801'}
+        zero: []
+        expr: (0.0801) * 100
+        v: '8.01'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/25}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED',
+          lex: '0.0028'}
+        zero: []
+        expr: (0.0028) * 100
+        v: '0.28'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+    FY26_Q3:
+      instant: '2025-12-31'
+      generation: 5
+      package:
+        stored:
+        - instance: P1-X
+          lineage: null
+          links: [xbrl]
+          at:
+          - {src: P1-LST, path: '[4].recordId', lex: '205812'}
+          - {src: P1-LST, path: '[4].date', lex: 31-DEC-2025}
+          - {src: P1-LST, path: '[4].broadcastDate', lex: '16-JAN-2026 16:36:40'}
+          - {src: P1-LST, path: '[4].submissionDate', lex: 16-JAN-2026}
+          - {src: P1-LST, path: '[4].xbrl', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/SHP_1602404_16012026043631_WEB.xml'}
+          - {src: P1-LST, path: '[4].revisedData', lex: N}
+          - {src: P1-LST, path: '[4].isin', lex: INE372A01015}
+        selected: 0
+      run:
+        run: APARINDS-SHP-2025-12-31
+        entity: APARINDS
+        instant: '2025-12-31'
+        keys:
+          I: {instant: '2025-12-31'}
+        source_vector:
+          first_party: [xbrl]
+          vendors:
+            screener-subscriber/SCREENER_SHAREHOLDING: {role: INDEPENDENT_VENDOR}
+            screener-subscriber/SCREENER_INVESTORS: {role: INDEPENDENT_VENDOR, selection: diagnostic (R11;
+                no mapping)}
+            tijori/shareholding: {role: INDEPENDENT_VENDOR}
+            upstox/share-holdings: {role: DIAGNOSTIC}
+        defaults: {}
+        default_rows: {}
+        rows:
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2321'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0935'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: PercentageOfTotalVotingRights
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.0967'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: PercentageOfTotalVotingRights
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: PercentageOfTotalVotingRights
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: Indian_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=IndianMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/1}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2321'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/30}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0935'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/28}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InvestorEducationAndProtectionFund_ContextI
+                u: pure
+                d: INF
+                lex: '0.003'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=InvestorEducationAndProtectionFundMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/25}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.0967'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/47}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh_ContextI
+                u: pure
+                d: INF
+                lex: '0.0741'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/24}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P1-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2025-12-31'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/0}
+                labels: ['denominator assumed, not vendor-stated']
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/0}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/13}
+                labels: ['denominator assumed, not vendor-stated']
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/23}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/14}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_num_shareholders|I|-|REPORTED:
+            xbrl: {s: NO_VALUE}
+            vendors: {}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NO_SOURCE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NO_SOURCE}
+        status: COMPLETE
+        exit: 0
+      point_checks:
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/28}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0935'}
+        zero: []
+        expr: (0.0935) * 100
+        v: '9.35'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/30}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2321'}
+        zero: []
+        expr: (0.2321) * 100
+        v: '23.21'
+        verdict: POINT_CHECK
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/47}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.0967'}
+        zero: []
+        expr: (0.0967) * 100
+        v: '9.67'
+        verdict: POINT_CHECK
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/1}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/13}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED',
+          lex: '0.4223'}
+        zero: [employee_benefit_trust]
+        expr: (0.4223 + 0) * 100
+        v: '42.23'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', absent category taken as zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/14}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2321'}
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0935'}
+        zero: []
+        expr: (0.2321 + 0.0935) * 100
+        v: '32.56'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/23}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.0967'}
+        zero: [employee_benefit_trust]
+        expr: (0.0967 + 0) * 100
+        v: '9.67'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed, absent category taken as
+            zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/24}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED',
+          lex: '0.0741'}
+        zero: []
+        expr: (0.0741) * 100
+        v: '7.41'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/25}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED',
+          lex: '0.003'}
+        zero: []
+        expr: (0.003) * 100
+        v: '0.3'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+    FY26_Q4:
+      instant: '2026-03-31'
+      generation: 6
+      package:
+        stored:
+        - instance: P2-X
+          lineage: null
+          links: [xbrl]
+          at:
+          - {src: P2-LST, path: '[3].recordId', lex: '207887'}
+          - {src: P2-LST, path: '[3].date', lex: 31-MAR-2026}
+          - {src: P2-LST, path: '[3].broadcastDate', lex: '10-APR-2026 16:03:37'}
+          - {src: P2-LST, path: '[3].submissionDate', lex: 10-APR-2026}
+          - {src: P2-LST, path: '[3].xbrl', lex: 'https://nsearchives.nseindia.com/corporate/xbrl/SHP_1648747_10042026040326_WEB.xml'}
+          - {src: P2-LST, path: '[3].revisedData', lex: N}
+          - {src: P2-LST, path: '[3].isin', lex: INE372A01015}
+        selected: 0
+      run:
+        run: APARINDS-SHP-2026-03-31
+        entity: APARINDS
+        instant: '2026-03-31'
+        keys:
+          I: {instant: '2026-03-31'}
+        source_vector:
+          first_party: [xbrl]
+          vendors:
+            screener-subscriber/SCREENER_SHAREHOLDING: {role: INDEPENDENT_VENDOR}
+            screener-subscriber/SCREENER_INVESTORS: {role: INDEPENDENT_VENDOR, selection: diagnostic (R11;
+                no mapping)}
+            tijori/shareholding: {role: INDEPENDENT_VENDOR}
+            upstox/share-holdings: {role: DIAGNOSTIC}
+        defaults: {}
+        default_rows: {}
+        rows:
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2415'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: PercentageOfTotalVotingRights
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0937'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: PercentageOfTotalVotingRights
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.0871'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: PercentageOfTotalVotingRights
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: PercentageOfTotalVotingRights
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: Indian_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=IndianMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/1}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsDomestic_ContextI
+                u: pure
+                d: INF
+                lex: '0.2415'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsDomesticMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/30}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InstitutionsForeign_ContextI
+                u: pure
+                d: INF
+                lex: '0.0937'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=InstitutionsForeignMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/28}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings:
+                s: INVALID
+                why: PRECISION_UNSUPPORTED
+                at: {node: APARINDS/upstox/1}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            - {a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null, diag: true}
+            - {a: screener-subscriber/SCREENER_SHAREHOLDING, b: upstox/share-holdings, out: NOT_COMPARABLE,
+              why: PRECISION_UNSUPPORTED, diff: null, gap: null, diag: true}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, diag: true}
+            - {'on': pair, sev: MEDIUM, a: screener-subscriber/SCREENER_SHAREHOLDING, b: upstox/share-holdings,
+              out: NOT_COMPARABLE, diag: true}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: InvestorEducationAndProtectionFund_ContextI
+                u: pure
+                d: INF
+                lex: '0.0029'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=InvestorEducationAndProtectionFundMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/25}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: NonInstitutions_ContextI
+                u: pure
+                d: INF
+                lex: '0.0871'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=NonInstitutionsMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/47}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: PublicShareholding_ContextI
+                u: pure
+                d: INF
+                lex: '0.4223'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=PublicShareholdingMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh_ContextI
+                u: pure
+                d: INF
+                lex: '0.0669'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING: {s: NO_VALUE}
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/24}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED:
+            xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              at:
+              - src: P2-X
+                c: ShareholdingAsAPercentageOfTotalNumberOfShares
+                ctx: ShareholdingOfPromoterAndPromoterGroup_ContextI
+                u: pure
+                d: INF
+                lex: '0.5777'
+                per: '2026-03-31'
+                dims: [CategoryOfShareholdersAxis=ShareholdingOfPromoterAndPromoterGroupMember]
+            vendors:
+              screener-subscriber/SCREENER_SHAREHOLDING:
+                s: VALUE
+                at: {node: APARINDS/screener/0}
+                labels: ['denominator assumed, not vendor-stated']
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/0}
+                labels: ['denominator assumed, not vendor-stated']
+              upstox/share-holdings:
+                s: INVALID
+                why: PRECISION_UNSUPPORTED
+                at: {node: APARINDS/upstox/0}
+                labels: ['denominator assumed, not vendor-stated']
+            pairs:
+            - {a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED,
+              diff: null, gap: null}
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            - {a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null, diag: true}
+            - {a: screener-subscriber/SCREENER_SHAREHOLDING, b: upstox/share-holdings, out: NOT_COMPARABLE,
+              why: PRECISION_UNSUPPORTED, diff: null, gap: null, diag: true}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: screener-subscriber/SCREENER_SHAREHOLDING, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, diag: true}
+            - {'on': pair, sev: MEDIUM, a: screener-subscriber/SCREENER_SHAREHOLDING, b: upstox/share-holdings,
+              out: NOT_COMPARABLE, diag: true}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/13}
+                labels: ['denominator assumed, not vendor-stated']
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/23}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+              upstox/share-holdings:
+                s: INVALID
+                why: PRECISION_UNSUPPORTED
+                at: {node: APARINDS/upstox/3}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            - {a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null, diag: true}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: upstox/share-holdings, out: NOT_COMPARABLE, diag: true}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding:
+                s: VALUE
+                at: {node: APARINDS/tijori/14}
+                labels: ['denominator assumed, not vendor-stated', boundary assumed]
+            pairs:
+            - {a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED, diff: null,
+              gap: null}
+            queue:
+            - {'on': pair, sev: MEDIUM, a: xbrl, b: tijori/shareholding, out: NOT_COMPARABLE}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_public_shareholding_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_non_institutions_plus_employee_trust_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+              upstox/share-holdings: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          ? shp_institutions_domestic_plus_foreign_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+          : xbrl:
+              s: INVALID
+              why: PRECISION_UNSUPPORTED
+              calc: OPERAND_INVALID
+              operands: ['shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+                'shp_holding_pct|I|denominator=VOTING_RIGHTS,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED']
+            vendors:
+              tijori/shareholding: {s: NO_VALUE}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NOT_COMPARABLE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NOT_COMPARABLE, why: PRECISION_UNSUPPORTED}
+          shp_num_shareholders|I|-|REPORTED:
+            xbrl: {s: NO_VALUE}
+            vendors: {}
+            pairs: []
+            queue:
+            - {'on': corroboration, out: NO_SOURCE, sev: MEDIUM}
+            ext: {status: NOT_APPLICABLE}
+            cor: {status: NO_SOURCE}
+        status: COMPLETE
+        exit: 0
+      point_checks:
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/28}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0937'}
+        zero: []
+        expr: (0.0937) * 100
+        v: '9.37'
+        verdict: POINT_CHECK
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/30}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2415'}
+        zero: []
+        expr: (0.2415) * 100
+        v: '24.15'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED
+        vendor: screener-subscriber/SCREENER_SHAREHOLDING
+        at: {node: APARINDS/screener/47}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.0871'}
+        zero: []
+        expr: (0.0871) * 100
+        v: '8.71'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/1}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=promoter_indian|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_public_shareholding_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/13}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=public_shareholding|REPORTED',
+          lex: '0.4223'}
+        zero: [employee_benefit_trust]
+        expr: (0.4223 + 0) * 100
+        v: '42.23'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', absent category taken as zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_institutions_domestic_plus_foreign_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic_plus_institutions_foreign|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/14}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_domestic|REPORTED',
+          lex: '0.2415'}
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0937'}
+        zero: []
+        expr: (0.2415 + 0.0937) * 100
+        v: '33.52'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/23}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.0871'}
+        zero: [employee_benefit_trust]
+        expr: (0.0871 + 0) * 100
+        v: '8.71'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed, absent category taken as
+            zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/24}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=resident_individuals_up_to_2_lakh|REPORTED',
+          lex: '0.0669'}
+        zero: []
+        expr: (0.0669) * 100
+        v: '6.69'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED
+        vendor: tijori/shareholding
+        at: {node: APARINDS/tijori/25}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=investor_education_protection_fund|REPORTED',
+          lex: '0.0029'}
+        zero: []
+        expr: (0.0029) * 100
+        v: '0.29'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED
+        vendor: upstox/share-holdings
+        at: {node: APARINDS/upstox/0}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=sebi_promoter_group|REPORTED',
+          lex: '0.5777'}
+        zero: []
+        expr: (0.5777) * 100
+        v: '57.77'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated']
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED
+        vendor: upstox/share-holdings
+        at: {node: APARINDS/upstox/1}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=institutions_foreign|REPORTED',
+          lex: '0.0937'}
+        zero: []
+        expr: (0.0937) * 100
+        v: '9.37'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+      - key: shp_non_institutions_plus_employee_trust_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions_plus_employee_benefit_trust|DERIVED
+        vendor: upstox/share-holdings
+        at: {node: APARINDS/upstox/3}
+        members:
+        - {key: 'shp_holding_pct|I|denominator=TOTAL_SHARES,share_class=INE372A01015,shareholding_category=non_institutions|REPORTED',
+          lex: '0.0871'}
+        zero: [employee_benefit_trust]
+        expr: (0.0871 + 0) * 100
+        v: '8.71'
+        verdict: POINT_EQUAL
+        labels: ['denominator assumed, not vendor-stated', boundary assumed, absent category taken as
+            zero]
+        formal: NOT_COMPARABLE/PRECISION_UNSUPPORTED
+    FY27_Q1: {instant: '2026-06-30', generation: 2, run: APARINDS-SHP-2026-06-30}

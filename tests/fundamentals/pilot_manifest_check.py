@@ -12,14 +12,17 @@ import copy
 import hashlib
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from fractions import Fraction
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pytest
+from manifest_locators import shp_table, tijori_html, upstox_shp
+from stage3_data_support import LISTED, P, Z, facts, number, row_key
 from test_frozen_manifests import (
     REPO,
     ROW_TOL,
@@ -39,6 +42,12 @@ from test_frozen_manifests import (
 Node = dict[str, Any]
 LEDGER_IMPORT = "config/ledger_import.yaml"
 STAGE1 = "tests/fundamentals/fixtures/data_foundation/stage1_manifest.yaml"
+STAGE3 = "tests/fundamentals/fixtures/data_foundation/stage3_manifest.yaml"
+SHP_GENERATIONS = {"FY26_Q2": 4, "FY26_Q3": 5, "FY26_Q4": 6}  # PILOT-9 Task 1; FY27_Q1 is Stage 3's
+GEN = "data/raw/shareholding/APARINDS/gen-{}"
+COLUMN = {"screener_shp_html": "%b %Y", "tijori_shp_html": "%b'%y", "upstox_shp_json": "%b %Y"}
+A_VR = row_key(P, "VOTING_RIGHTS", "INE372A01015", "sebi_promoter_group")  # PQ0 mutations
+ASSUMED, FORMAL = "denominator assumed, not vendor-stated", "NOT_COMPARABLE/PRECISION_UNSUPPORTED"
 CONFIGS = {  # Decision 5 (test_prep2b_cutoffs.py:19-24): Q4 runs from the -pg copy
     "FY26_Q2": "config/aparinds-fy26-q2.yaml",
     "FY26_Q3": "config/aparinds-fy26-q3.yaml",
@@ -252,6 +261,8 @@ def check_pilot(m: Node) -> None:
     assert list(m["quarters"]) == imports["earnings_updates"] == list(CONFIGS), "quarters"
     paths = {imports["retrieval_manifest"], STAGE1}
     paths |= {path for q in CONFIGS for _, path, _ in files(doc(CONFIGS[q])).values()}
+    for root in map(GEN.format, SHP_GENERATIONS.values()):  # PILOT-9 generations, every file
+        paths |= {STAGE3, *(str(file.relative_to(REPO)) for file in (REPO / root).iterdir())}
     sources = m["header"]["sources"]
     labels = {s["path"]: s["label"] for s in sources}
     assert {s["path"]: s["sha256"] for s in sources} == {p: sha(p) for p in paths}, "sources"
@@ -269,6 +280,72 @@ def check_pilot(m: Node) -> None:
     found = {k: (loc.keys(), loc["src"], loc["path"]) for k, loc in located.items()}
     wanted = {k: ({"src", "path", "lex"}, labels[STAGE1], path) for k, path in fields.items()}
     assert found == wanted, "pilot_checks"
+    check_shareholding(m, labels)
+
+
+def cell(m: Node, node: Node, day: date, root: str) -> str:
+    """The cell a companion node locates (manifest_locators) in its quarter's generation."""
+    path, kind = source(m, node["file"])
+    assert path.parent == REPO / root and node["column"] == f"{day:{COLUMN[kind]}}", "column"
+    if kind == "upstox_shp_json":
+        found = {(name, name): periods for name, periods in upstox_shp(path)}
+    elif kind == "screener_shp_html":
+        heads, rows = shp_table(path, f"{node['periodicity']}-shp")
+        found = {(label, str(hook)): dict(zip(heads, c, strict=True)) for label, hook, c in rows}
+    else:
+        heads, tree = tijori_html(path)
+        found = {(c[0], myid): dict(zip(heads, c[1:], strict=True)) for _, myid, _, c in tree}
+    return found[node["path"][-1], node["source_node_id"]][node["column"]]
+
+
+def check_shareholding(m: Node, labels: dict[str, str]) -> None:
+    """PILOT-9 Task 2: each quarter against its generation's bytes and the companion; FY27_Q1."""
+    pin, quarters = m["shareholding"]["companion"], m["shareholding"]["quarters"]  # vendor readings
+    assert "_vendor" in m or sha(pin["path"]) == pin["sha256"], "companion"
+    stage3 = parsed(source(m, m["shareholding"]["stage3"])[0])
+    readings = m.get("_vendor") or doc(pin["path"])
+    header, (run3,) = stage3["header"], [r["run"] for r in stage3["runs"] if "APAR" in r["run"]]
+    pinned = {"instant": header["instant"], "generation": 2, "run": run3}
+    assert list(quarters) == list(CONFIGS) and quarters["FY27_Q1"] == pinned, "FY27_Q1"
+    for q, gen in SHP_GENERATIONS.items():
+        quarter, root = quarters[q], GEN.format(gen)
+        run, day, src = quarter["run"], date.fromisoformat(quarter["instant"]), f"{root}/01.bin"
+        assert (quarter["generation"], run["run"]) == (gen, f"APARINDS-SHP-{day}"), f"run {q}"
+        listing, entries = doc(src), doc(f"{root}/discovery-manifest.json")["entries"]
+        (i,) = [i for i, row in enumerate(listing) if row["date"] == f"{day:%d-%b-%Y}".upper()]
+        (entry,) = [e for e in entries if e["url"] == listing[i]["xbrl"]]
+        at = [{"src": labels[src], "path": f"[{i}].{f}", "lex": str(listing[i][f])} for f in LISTED]
+        links = [field for field, value in listing[i].items() if str(value).startswith("http")]
+        instance = labels[path := f"{root}/{entry['filename']}"]
+        stored = {"instance": instance, "lineage": None, "links": links, "at": at}
+        assert quarter["package"] == {"stored": [stored], "selected": 0}, f"package {q}"
+        filed = {"filed_at_nse": listing[i]["broadcastDate"], "retrieved_at": entry["retrieved_at"]}
+        admitted(filed, datetime.fromisoformat(m["quarters"][q]["source_cutoff"]["v"]))
+        rows, bearing = run["rows"], set().union(*facts(path)[1].values())
+        lex = {key: row["xbrl"]["at"][0]["lex"] for key, row in rows.items() if "at" in row["xbrl"]}
+        located = {loc["src"] for row in rows.values() for loc in row["xbrl"].get("at", [])}
+        assert lex and located == {instance}, f"xbrl {q}"
+        valued = {(k, s): v for k, r in rows.items() for s, v in r["vendors"].items() if "at" in v}
+        paired = {k for k, r in rows.items() if r["pairs"]} | {k for k, _ in valued}
+        assert not {k for k in paired if "VOTING_RIGHTS" in k}, f"paired {q}"  # R10: TOTAL_SHARES
+        checks, own = quarter["point_checks"], readings["runs"][run["run"]]
+        assert sorted((c["key"], c["vendor"]) for c in checks) == sorted(valued), f"points {q}"
+        assert own["nodes"].keys() == {v["at"]["node"] for v in valued.values()}, f"nodes {q}"
+        for check, read in zip(checks, own["point_checks"], strict=True):
+            side, (cid, _, dims, _) = valued[check["key"], check["vendor"]], check["key"].split("|")
+            den, isin, cat = (d.split("=")[1] for d in dims.split(","))
+            keys = {k: row_key(P, den, isin, k) for k in header["baskets"].get(cid, [0, [cat]])[1]}
+            zero = [member for member, k in keys.items() if k not in lex]
+            assert not {d for z in zero for d in header["descendants"][z]} & bearing, f"zero {q}"
+            present = [{"key": k, "lex": lex[k]} for k in keys.values() if k in lex]
+            terms = " + ".join([p["lex"] for p in present] + ["0"] * len(zero))
+            want = {"at": side["at"], "members": present, "zero": zero, "expr": f"({terms}) * 100"}
+            want |= {"labels": side["labels"] + [Z] * bool(zero), "formal": FORMAL}
+            assert {k: check[k] for k in want} == want and side["labels"][0] == ASSUMED, q
+            shown = cell(m, own["nodes"][side["at"]["node"]], day, root)
+            assert [read["lex"], read["v"]] == [shown, str(number(shown))], f"point {q}"
+            assert side["s"] != "VALUE" or own["sides"][check["key"]][check["vendor"]] == read, q
+        assert all(valued[k, s]["s"] == "VALUE" for k, x in own["sides"].items() for s in x), q
 
 
 def generic(m: Node) -> None:
@@ -357,6 +434,24 @@ def package(m: Node, q: str, index: int) -> Node:
     return m["quarters"][q]["package"][index]
 
 
+def shp(m: Node, q: str = Q0) -> Node:
+    """A PILOT-9 quarter of the shareholding section (PQ0 by default)."""
+    return cast(Node, m["shareholding"]["quarters"][q])
+
+
+def readings_copy(m: Node) -> Node:
+    """PQ0's readings in a companion copy injected into the manifest (``_vendor``)."""
+    injected = m.setdefault("_vendor", copy.deepcopy(doc(m["shareholding"]["companion"]["path"])))
+    return dict(injected["runs"][shp(m)["run"]["run"]])
+
+
+def bump(m: Node) -> None:
+    """PQ0's first point-check lexeme one unit up in its last printed decimal."""
+    read = readings_copy(m)["point_checks"][0]
+    step = Decimal(1).scaleb(int(Decimal(read["v"]).as_tuple().exponent))
+    read["lex"] = read["lex"].replace(read["v"], str(Decimal(read["v"]) + step))
+
+
 PILOT_MUTATIONS: dict[str, Callable[[Node], object]] = {
     "cutoff-utc-misreading": shift_cutoff,
     "package-sha256": lambda m: package(m, Q0, 3).update(sha256=package(m, Q1, 4)["sha256"]),
@@ -391,6 +486,14 @@ PILOT_MUTATIONS: dict[str, Callable[[Node], object]] = {
         m, Q0, "fact.revenue", None, {"src": "R-FY26_Q3", "col": "Q-1"}
     ),
     "id-only": lambda m: package(m, Q0, 1).update(source_id="aparinds-fy26-q3-results-pdf"),
+    "shp-deleted-run": lambda m: shp(m, Q1).pop("run"),
+    "shp-paired-denominator": lambda m: shp(m)["run"]["rows"][A_VR]["pairs"].append({"a": "xbrl"}),
+    "shp-dropped-label": lambda m: shp(m)["point_checks"][1]["labels"].pop(),
+    "shp-filed-zero": lambda m: shp(m)["point_checks"][6]["zero"].append("public_shareholding"),
+    "shp-companion-value": bump,
+    "shp-node-column": lambda m: [*readings_copy(m)["nodes"].values()][0].update(column="Jun 2025"),
+    "shp-late": lambda m: shp(m)["package"]["stored"][0]["at"][2].update(lex="08-NOV-2025"),
+    "shp-stage3-pin": lambda m: m["header"]["sources"][-1].update(sha256=sha(STAGE1)),
 }
 SEMANTIC = {  # binding probe -> the refusal check_pilot must raise once generic passes
     "wrong-quarter": f"member {Q0} fact.revenue",
