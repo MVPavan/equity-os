@@ -1,5 +1,5 @@
 """PILOT-E2E support (``test_pilot_e2e.py``): the frozen pilot manifest, and the PILOT-1,
-PILOT-2, PILOT-10 and PILOT-13 checks over one pilot database.
+PILOT-2, PILOT-9, PILOT-10 and PILOT-13 checks over one pilot database.
 
 Every expected number is read from ``pilot_manifest.yaml`` or the ``stage1_manifest.yaml`` it
 pins; every failing assertion begins ``PILOT-n:``.
@@ -8,6 +8,7 @@ pins; every failing assertion begins ``PILOT-n:``.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import re
 from collections import defaultdict
@@ -18,21 +19,26 @@ from typing import Any
 
 import psycopg
 import pytest
+import stage1_e2e_support as s1
+import test_data_stage3_e2e as s3
 from evidence_support import CONFIG
 from pg_support import mint_name
+from pilot_manifest_check import ASSUMED, COLUMN, UNIT_SCALE, doc, sha, sha_of
 from pilot_manifest_check import CONFIGS as PILOT_CONFIGS
-from pilot_manifest_check import UNIT_SCALE, doc
 from prep2b_support import PINS, STOCK, Pilot
 from stage1_e2e_support import MANIFEST as STAGE1
 from stage1_e2e_support import RUNS, SCREENER, SECTIONS, SNAPSHOTS, VERSION, row_key
+from stage3_data_support import SCR, VENDORS, companion
 from stage5_support import cli
 from test_backup_restore import use_env
 from test_evidence_vendor import screener, tijori
-from test_frozen_manifests import REPO, load, source, xbrl_index
+from test_frozen_manifests import DATA3, REPO, load, source, xbrl_index
+from test_shareholding_filing import RAW
 from vendor_retained_support import retained_page, stage_registered
 
 import fundamentals.api.cli as fundamentals_cli
 from fundamentals.api.compare_cli import add_compare_parser, run_compare
+from fundamentals.api.shareholding_cli import _entity
 from fundamentals.canon.dictionary import CanonicalDictionary, FormulaOperand
 from fundamentals.compare.queue import overlay_boundary, read_overlay
 from fundamentals.compare.routing import route_pair_draft, route_status_draft
@@ -48,9 +54,11 @@ from fundamentals.contracts.canonical import (
     StatementFamily,
 )
 from fundamentals.contracts.comparison import CorroborationStatus, PairKind, SourceState
+from fundamentals.contracts.evidence import FilingFamily
 from fundamentals.contracts.ledger import VersionDraft
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.retention import HoldRoot
+from fundamentals.evidence.capture_intake import parse_filed_at
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.vendor_ingest import VendorIngestRequest, ingest_vendor
 from fundamentals.pg.backup import RestoreCheck
@@ -77,6 +85,11 @@ ALL_CITED = (
     "ON c.id = n.capture_ref_id"
 )
 CAPTURES = "SELECT source_id, surface, request_key, capture_id, blob_sha256 FROM eqos.capture_refs"
+SHP = MANIFEST["shareholding"]
+SHP_LABELS = {source["sha256"]: source["label"] for source in MANIFEST["header"]["sources"]}
+IDENTITY = load(REPO / "config/identity/aparinds.yaml")
+NODE = ("file", "periodicity", "path", "source_node_id", "column")  # a vendor side's evidence
+ROLES = (("sebi_promoter", "promoter"), ("public", "non_institutions"), "institutions")  # R12
 
 
 def fail(prefix: str, check: Any, *args: Any) -> None:
@@ -385,6 +398,116 @@ def pilot2(
         }
         assert got == want, f"PILOT-2: {H3_ROW} {got} ≠ {want}"
     return record.run_id
+
+
+# PILOT-9 ------------------------------------------------------------------------------------
+
+
+def shp_frozen(quarter: str) -> tuple[Any, ...]:
+    """A quarter's frozen run, point checks, vendor sides and readings (a probe's ``_vendor`` or the
+    hashed companion), nodes (file as SHA-256), package, hash→label map; FY27_Q1's from Stage 3."""
+    frozen, pin = SHP["quarters"][quarter], SHP["companion"]
+    if "package" in frozen:
+        assert "_vendor" in MANIFEST or sha(pin["path"]) == pin["sha256"], "PILOT-9: companion"
+        own = (MANIFEST.get("_vendor") or doc(pin["path"]))["runs"][frozen["run"]["run"]]
+        nodes = {i: n | {"file": sha_of(MANIFEST, n["file"])} for i, n in own["nodes"].items()}
+        found = frozen["run"], frozen["point_checks"], own["sides"], own["point_checks"], nodes
+        return *found, frozen["package"], SHP_LABELS
+    pinned = sha(str(DATA3.relative_to(REPO))) == sha_of(MANIFEST, SHP["stage3"])
+    assert source(MANIFEST, SHP["stage3"])[0] == DATA3 and pinned, "PILOT-9: the Stage 3 pin"
+    (run,) = [run for run in s3.MANIFEST["runs"] if run["run"] == frozen["run"]]
+    vendor, day, name = companion(s3.MANIFEST), date.fromisoformat(frozen["instant"]), run["run"]
+    gen2 = {Path(s["path"]).name: s for s in s3.HEADER["sources"] if f"{STOCK}/gen-2" in s["path"]}
+    nodes = {
+        n["id"]: n
+        | {"file": f["sha256"], "column": day.strftime(COLUMN[f["kind"]])}
+        | {"source_node_id": n["source_node_id"] or n["label"]}
+        for tree in vendor["tree"][STOCK].values()
+        for n in tree
+        if (f := gen2[n["file"]])["kind"] in COLUMN  # aggregate tables, not drill-downs
+    }
+    head = run, s3.MANIFEST["point_checks"][name], vendor["sides"][name]
+    return *head, vendor["point_checks"][name], nodes, s3.MANIFEST["packages"][STOCK], s3.LABELS
+
+
+def pilot9(pilot: Pilot, quarter: str) -> int:
+    """PILOT-9 at a quarter's instant: issuer identity, then the CLI ingest, run and report against
+    the frozen rows, filing, vendor evidence and point lines. Returns the run id."""
+    run, checks, sides, readings, nodes, package, labels = shp_frozen(quarter)
+    frozen, where = SHP["quarters"][quarter], f"PILOT-9: {quarter}"
+    instant, day = frozen["instant"], date.fromisoformat(frozen["instant"])
+    with pilot.pg_db.runtime_pool() as pool:
+        held = EvidenceRepository(pool).issuer_identifiers(pilot.entity_id, as_of=day)
+        found = (_entity(pool, STOCK, day), held.isin, held.nse_symbol, held.bse_scrip)
+    assert found == (pilot.entity_id, IDENTITY["isin"], STOCK, IDENTITY["bse_scrip"]), where
+    slots = {"<INSTANT>": instant, "<GEN>": str(frozen["generation"])}
+    slots |= {"<tmp>": str(pilot.rig.snapshots), "data/raw/shareholding": str(RAW)}
+    fill = re.compile("|".join(slots))  # the recorded command, slots filled
+    argv = {c: fill.sub(lambda m: slots[m[0]], text).split()[1:] for c, text in SHP["cli"].items()}
+    assert s3._cli(*argv["ingest"])[0] == 0, f"{where} ingest"
+    code, out = s3._cli(*argv["run"])
+    run_id = int(out.split("\n")[0].split("\t")[1])
+    assert code == run["exit"], f"{where} run exit {code}"
+    with pilot.pg_db.runtime_pool() as pool:
+        repository = EvidenceRepository(pool)
+        rows = load_results(run_id, pool=pool)
+        items = list(read_overlay(pool, run_id=run_id, as_of=overlay_boundary(pool)).open_items)
+        packages = repository.list_packages(pilot.entity_id, FilingFamily.SHAREHOLDING, day)
+        interpreted = repository.get_interpretations(  # the vendor sides' readings
+            [i for r in rows for v in r.source_values if v.source_id and (i := v.interpretation_id)]
+        )
+        occurrences = repository.get_occurrences([o for r in interpreted if (o := r.occurrence_id)])
+    by_id, evidence = {o.occurrence_id: o for o in occurrences}, {}
+    for reading in interpreted:  # each vendor side's capture, native node and labels
+        cell = by_id[reading.occurrence_id]
+        context: dict[str, Any] = {**cell.native_context, "file": cell.capture.blob_sha256}
+        context |= {"column": context.get("period_label"), "path": list(context["path"])}
+        at = {field: context[field] for field in NODE}
+        evidence[reading.interpretation_id] = {"at": at, "labels": s3._labels(reading)}
+    rich = copy.deepcopy(run)
+    for key, name, side in ((k, n, s) for k, named in sides.items() for n, s in named.items()):
+        rich["rows"][key]["vendors"][name] |= {"v": side["v"], "iv": s3._printed(side)}
+    drift = s1.diff(s1.expected(rich, pilot.entity_id, s3.MANIFEST), s1.actual(run, rows, items))
+    assert not (drift := [line.split(":")[0] for line in drift]), f"{where} {drift}"  # no values
+    formal = {(p.outcome.value, p.reason and p.reason.value) for r in rows for p in r.pairs}
+    assert formal <= {("NOT_COMPARABLE", "PRECISION_UNSUPPORTED")}, f"{where} pairs {formal}"
+    stored = [
+        (x["instance"], x["lineage"], x["links"], parse_filed_at(x["at"][2]["lex"].title()))
+        for x in package["stored"]
+    ]
+    assert [s3._package(p, labels) for p in packages] == stored, f"{where} filing"
+    bound = {
+        s3._key(row.key): {
+            f"{v.source_id}/{v.surface}": evidence[v.interpretation_id]
+            for v in row.source_values
+            if v.source_id is not None and v.interpretation_id is not None
+        }
+        for row in rows
+    }
+    want_bound = {
+        key: {
+            name: {"at": {f: nodes[side["at"]["node"]][f] for f in NODE}, "labels": side["labels"]}
+            for name, side in row.get("vendors", {}).items()
+            if "at" in side
+        }
+        for key, row in run["rows"].items()
+    }
+    assert bound == want_bound, f"{where} vendor evidence"
+    code, out = s3._cli(*argv["report"])
+    shown = code == 0 and f"run\t{run_id}\n" in out and f"status\t{run['status']}" in out
+    assert shown, f"{where} report run or status"
+    printed = [s3._point(line) for line in out.splitlines() if line.startswith("point\t")]
+    selected = packages[package["selected"]].package_id
+    frozen_points = zip(checks, readings, strict=True)
+    want_points = [s3._want_point(c, r, selected, instant=instant) for c, r in frozen_points]
+    order = lambda line: (line["key"], line["source"])  # noqa: E731
+    same = sorted(printed, key=order) == sorted(want_points, key=order)
+    assert same, f"{where} point lines"  # a bare name: no vendor value is introspected
+    assert all(line["labels"].startswith(ASSUMED) for line in printed), f"{where} labels"
+    for vendor in (SCR, VENDORS["tijori"]):  # R12: promoter, public and institution lines
+        named = {line["key"].rsplit("=", 1)[1] for line in printed if line["source"] == vendor}
+        assert all(any(n.startswith(r) for n in named) for r in ROLES), f"{where} {vendor} R12"
+    return run_id
 
 
 def pilot13(pool: Any, runs: list[int], where: str) -> None:

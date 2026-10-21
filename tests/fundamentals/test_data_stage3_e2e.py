@@ -78,12 +78,13 @@ def _printed(side: dict[str, Any]) -> list[str]:
     return [str(Decimal(side["v"]) - half), str(Decimal(side["v"]) + half)]
 
 
-def _package(package: FilingPackage) -> tuple[Any, ...]:
-    """A stored package as the manifest records it: instance, lineage, links and knowledge
-    time (the listing's broadcast, ``at[2]`` in stage3_data_support.LISTED order)."""
+def _package(package: FilingPackage, labels: dict[str, str] = LABELS) -> tuple[Any, ...]:
+    """A stored package as the manifest records it: instance (its label in ``labels``), lineage,
+    links and knowledge time (the listing's broadcast, ``at[2]`` in stage3_data_support.LISTED
+    order)."""
     xbrl = package.members[Representation.XBRL].capture.blob_sha256
     links = [member.value.lower() for member in package.members]
-    return LABELS[xbrl], package.supersedes_package_id, links, package.knowledge_time
+    return labels[xbrl], package.supersedes_package_id, links, package.knowledge_time
 
 
 def _key(key: MeasurementKey) -> str:
@@ -191,7 +192,10 @@ def _point(line: str) -> dict[str, Any]:
 
 
 def _want_point(
-    check: dict[str, Any], reading: dict[str, Any], package: int | None
+    check: dict[str, Any],
+    reading: dict[str, Any],
+    package: int | None,
+    instant: str = HEADER["instant"],
 ) -> dict[str, Any]:
     """A manifest point check (vendor value from the companion) as a parsed report line."""
     cid, _, dims, _ = check["key"].split("|")
@@ -203,7 +207,7 @@ def _want_point(
     return {
         "verdict": check["verdict"],
         "source": check["vendor"],
-        "key": f"{cid}:{HEADER['instant']}:STANDALONE:{dims}",
+        "key": f"{cid}:{instant}:STANDALONE:{dims}",
         "vendor": vendor,
         "first_party": point,
         "difference": vendor - point,

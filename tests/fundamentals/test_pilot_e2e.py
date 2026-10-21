@@ -2,11 +2,11 @@
 
 On a disposable ``eqos_test_*`` database: the legacy store is reconciled and cut over, then Apar
 PQ0 (FY26_Q2) → PQ1 → PQ2 → PQ3 (FY27_Q1) run, are compared with both vendors, reviewed and
-approved; export, replay, retention, backup and restore follow. Every expected number comes from
-the frozen ``pilot_manifest.yaml`` (or the ``stage1_manifest.yaml`` it pins) and every failing
-assertion begins ``PILOT-n:`` (``docs/plans/PILOT-E2E.md``, PILOT checks). Verdict inputs this
-test cannot supply stay external: PILOT-5's contradiction clause is waived for this pilot and
-PILOT-9 is NOT MET until D8 is built (owner, 2026-10-20).
+approved, then each quarter's shareholding is compared (PILOT-9); export, replay, retention, backup
+and restore follow. Every expected number comes from the frozen ``pilot_manifest.yaml`` (or the
+``stage1_manifest.yaml``/``stage3_manifest.yaml`` it pins) and every failing assertion begins
+``PILOT-n:`` (``docs/plans/PILOT-E2E.md``, PILOT checks; ``docs/plans/PILOT-9.md``). Verdict inputs
+this test cannot supply stay external: PILOT-5's contradiction clause is waived for this pilot.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from pilot_e2e_support import (
     frozen_value,
     pilot1,
     pilot2,
+    pilot9,
     pilot10,
     pilot13,
     vendor_captures,
@@ -99,7 +100,6 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 CABLES = "ledger.cables_revenue_growth.annual.consolidated"
 FILED_COUNTS = {Q0: 13, Q1: 7, Q2: 7, Q3: 7}  # Evidence 2: PQ0 cites no predecessor fact
-D8_EXIT = REPO / "tests/fundamentals/test_data_stage3_e2e.py"  # verify_project.sh's D8 row
 WATCHLIST_HEAD = (
     "SELECT kind FROM eqos.decisions WHERE subject_kind = 'WATCHLIST' AND subject_id = %s "
     "ORDER BY id DESC LIMIT 1"
@@ -403,9 +403,9 @@ def _pilot6(pilot: Pilot, memory: dict[str, int], reviewed: list[int]) -> None:
         assert f"## Memory item {memory[name]}:" in exported, f"PILOT-6: {name} not in memory.md"
 
 
-def _pilot9(pilot: Pilot, dictionary: CanonicalDictionary) -> None:
-    """PILOT-9: no version carries a shareholding key or section (vacuity, recorded only); the
-    check stays NOT MET while D8's exit test is absent, so the verdict is CONDITIONAL."""
+def _pilot9_vacuity(pilot: Pilot, dictionary: CanonicalDictionary) -> None:
+    """PILOT-9: no version carries a shareholding key or section, so no update uses
+    shareholding and its citation clause is vacuous (PILOT-9 Decision 3)."""
     shareholding = {
         r.canonical_id for r in dictionary.rows if r.family is StatementFamily.SHAREHOLDING
     }
@@ -416,7 +416,6 @@ def _pilot9(pilot: Pilot, dictionary: CanonicalDictionary) -> None:
         assert not keys & shareholding and not any("shareholding" in s for s in sections), (
             f"PILOT-9: version {version_id} carries shareholding"
         )
-    assert not D8_EXIT.exists(), "PILOT-9: D8 is built; the CONDITIONAL verdict needs review"
 
 
 # PILOT-11, PILOT-12 -------------------------------------------------------------------------
@@ -559,8 +558,8 @@ def test_pilot_end_to_end(
     calls: Calls,
 ) -> None:
     """PILOT-3, PILOT-8 ``ADD``; per quarter the run, PILOT-1, 2, 4, 5 (PQ3's late event),
-    11 (i)/(ii), 12; then
-    PILOT-6, 13, 10, 11 (iii), the PILOT-8 refusal and PILOT-9 (``docs/plans/PILOT-E2E.md``)."""
+    11 (i)/(ii), 12; then PILOT-9 per quarter, PILOT-6, 13, 10, 11 (iii), the PILOT-8 refusal
+    and PILOT-9's vacuity (``docs/plans/PILOT-E2E.md``)."""
     pilot = _pilot3(pg_db, tmp_path, monkeypatch, ingest)
     _ticking(monkeypatch, T0)
     captures = vendor_captures(pilot)
@@ -591,10 +590,11 @@ def test_pilot_end_to_end(
         _pilot5_promote(pilot, quarter, final[quarter], memory)
     _pilot5(pilot, lines, memory, final)
     _pilot12(pilot, reviewed, rejected)
+    runs += [pilot9(pilot, quarter) for quarter in QUARTERS]
     _pilot6(pilot, memory, reviewed)
     with pg_db.runtime_pool() as pool:
         pilot13(pool, runs, "live")
     pilot10(pilot, monkeypatch, runs)
     _pilot11_drill(pilot, final[Q0])
     _pilot8(pilot, monkeypatch)
-    _pilot9(pilot, dictionary)
+    _pilot9_vacuity(pilot, dictionary)
