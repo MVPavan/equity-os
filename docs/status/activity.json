@@ -1,17 +1,21 @@
 {
   "now": {
-    "title": "D8 shareholding: Task 8 Stage 3 e2e next (eqos-17r.5)",
-    "detail": "D8.1-D8.4 closed. Frozen Stage 3 manifest committed with Sol r2 APPROVE (d420549); vendor readings kept only in a private gitignored companion. Next: Task 8 Stage 3 end-to-end over the CLI on a fresh test database, then the Sol phase review loop.",
+    "title": "D8 shareholding: Sol phase review and phase gate (eqos-17r)",
+    "detail": "All five D8 stages done. Task 8 Stage 3 e2e passes against the Sol-approved manifest (f23393e). Now: Sol phase-end review round 1 and the full phase gate (tests/fundamentals + verify_project.sh). Then closing review, PILOT-9, pilot verdict.",
     "stage": "D8"
   },
   "next": [
-    "D8 Task 8: Stage 3 e2e (watch TITAN listing vs filing ISIN)",
-    "D8 Sol phase review loop and closing review",
+    "Sol D8 phase review loop, then fresh closing review",
+    "Phase gate: full tests/fundamentals suite and verify_project.sh D8 PASS",
     "Mark PILOT-9 met; pilot verdict CONDITIONAL -> PASS; roadmap",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 Task 8 committed (f23393e): Stage 3 e2e through the CLI on a fresh test database matches the frozen manifest for APARINDS, ETERNAL and TITAN (rows, sides, keyless, tree, report point-check lines); no source change needed. All five D8 stages closed; Sol phase review started."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 Task 7 committed (d420549): independent frozen Stage 3 manifest, 41 point checks, 1,194 tree nodes; Sol r1 REQUEST_CHANGES (9 P2, 1 P3) -> r2 APPROVE. Vendor readings split into a private companion per Sol's subscriber-rights ruling. D8.2-D8.4 closed."
