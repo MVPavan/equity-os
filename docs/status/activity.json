@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "PILOT-9 Task 4: reconcile pilot report and roadmap, full gate (eqos-4j2.32)",
-    "detail": "Task 3 committed (0c333df): the pilot e2e runs all four Apar quarters through the CLI and matches the frozen section; tripwire removed. Pilot e2e 238 s, Stage 3 e2e 95 s, both green. Frozen-manifest order checks for pilot and Stage 3 now pass (187/187).",
+    "title": "PILOT-9: full verify_project.sh gate running (eqos-4j2.32)",
+    "detail": "Task 4 docs committed (79c9bbb): pilot report marks PILOT-9 MET; verdict stays CONDITIONAL with one conditions list in the roadmap (D8 r4 approval, owner blind drill, PILOT-12 timing, PILOT-7 via D6, verify_project exit 0, report review). Full gate started 2026-10-21; then Sol D8 phase re-review r4.",
     "stage": "D8"
   },
   "next": [
-    "PILOT-9 Task 4: report, PILOT-E2E.md, roadmap conditions; verify_project.sh",
-    "D8 phase re-review r4 + fresh closing review; close eqos-17r and eqos-4j2.32",
+    "Fill gate log paths in the pilot report",
+    "Sol D8 phase re-review r4 + fresh closing review; close eqos-17r and eqos-4j2.32",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "PILOT-9 Task 4 docs committed: report PILOT-9 MET with acquisition record, vendor-timing and citation wording; roadmap holds the single conditions list; PILOT-E2E.md row and eqos-4j2.32 ruling updated."
+    },
     {
       "date": "2026-10-21",
       "text": "PILOT-9 Task 3 committed: four-quarter shareholding coverage in the pilot e2e (ingest, run, report per quarter; rows, pairs, filing and vendor identity, point lines). No manifest/code mismatch; three drift probes fail with PILOT-9. Order checks closed."
