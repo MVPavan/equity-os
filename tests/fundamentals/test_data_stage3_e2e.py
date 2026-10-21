@@ -46,9 +46,6 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 MANIFEST = load(DATA3)
 HEADER = MANIFEST["header"]
 INSTANT = date.fromisoformat(HEADER["instant"])
-SCOPE = ("--period-end", HEADER["instant"], "--basis", "standalone", "--family", "shareholding")
-PINS = ("--dictionary", "v3", "--mapping-set", "v7", "--normalisation-policy", "v2")
-VENDORS = [arg for surface in HEADER["source_vector"]["vendors"] for arg in ("--vendor", surface)]
 TREE_NAMES = {"screener-subscriber": "screener", "tijori": "tijori", "upstox": "upstox"}
 LABELS = {source["sha256"]: source["label"] for source in HEADER["sources"]}
 
@@ -59,6 +56,14 @@ def _cli(*argv: str) -> tuple[int, str]:
     with contextlib.redirect_stdout(out):
         code = main(list(argv))
     return code, out.getvalue()
+
+
+def _recorded(command: str, **slots: str) -> list[str]:
+    """A header.cli command's argv (after ``fundamentals``), slots filled: run as recorded."""
+    text = HEADER["cli"][command].replace("data/raw/shareholding", str(RAW))
+    for slot, value in slots.items():
+        text = text.replace(f"<{slot}>", value)
+    return text.split()[1:]
 
 
 def _labels(reading: Interpretation) -> list[str]:
@@ -213,16 +218,13 @@ def _want_point(
 def test_stage3_end_to_end(guarded: PgTestDatabase, tmp_path: Path) -> None:
     vendor = companion(MANIFEST)  # fails on a fresh clone: the retained readings are absent
     entities = {symbol: _seed(guarded, symbol) for symbol in COMPANIES}
-    snapshots = tmp_path / "snapshots"
-    ingest = ("--raw-root", str(RAW), "--snapshot-root", str(snapshots), "--generation", "2")
     for symbol in sorted(HEADER["filings"]):
-        argv = ("--symbol", symbol, "--instant", HEADER["instant"], *ingest)
-        assert _cli("shareholding", "ingest", *argv)[0] == 0, symbol
+        assert _cli(*_recorded("ingest", SYM=symbol, tmp=str(tmp_path / "s")))[0] == 0, symbol
 
     problems: list[str] = []
     for run in MANIFEST["runs"]:
         symbol, entity_id = run["entity"], entities[run["entity"]]
-        code, out = _cli("compare", "run", "--entity", symbol, *SCOPE, *PINS, *VENDORS)
+        code, out = _cli(*_recorded("run", KEY=symbol))
         run_id = int(out.split("\n")[0].split("\t")[1])
         with guarded.runtime_pool() as pool:
             repository = EvidenceRepository(pool)
@@ -280,7 +282,7 @@ def test_stage3_end_to_end(guarded: PgTestDatabase, tmp_path: Path) -> None:
         selected = packages[stored["selected"]].package_id
 
         # compare report: every R12 point check with its labels, never an error (owner amendment).
-        code, out = _cli("compare", "report", "--entity", symbol, *SCOPE)
+        code, out = _cli(*_recorded("report", KEY=symbol))
         assert code == 0 and f"run\t{run_id}\n" in out and f"status\t{run['status']}" in out
         printed = [_point(line) for line in out.splitlines() if line.startswith("point\t")]
         checks = MANIFEST["point_checks"][run["run"]]
