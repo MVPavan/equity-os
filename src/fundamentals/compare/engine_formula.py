@@ -153,7 +153,7 @@ class FormulaRows:
         key: MeasurementKey,
         *,
         fiscal_month: int,
-        currency: str,
+        currency: str | None,
         shared: bool = False,
     ) -> FormulaEvaluation:
         """Both representations' traced values and the derived extraction result.
@@ -240,7 +240,7 @@ class FormulaRows:
         *,
         representation: Representation,
         fiscal_month: int,
-        currency: str,
+        currency: str | None,
     ) -> QualificationContext:
         """The actual formula key's selected statement package and pinned conditions.
 
@@ -323,7 +323,7 @@ class FormulaRows:
         return next(rep for rep in REPRESENTATIONS if rep in package.members)
 
     def _leaf_keys(
-        self, row: DictionaryRow, key: MeasurementKey, currency: str
+        self, row: DictionaryRow, key: MeasurementKey, currency: str | None
     ) -> list[MeasurementKey]:
         """Every reported operand key under a formula key: nested, aggregated and role keys."""
         assert row.formula is not None
@@ -384,7 +384,7 @@ class FormulaRows:
         return found
 
     def _operand_extractions(
-        self, row: DictionaryRow, key: MeasurementKey, *, fiscal_month: int, currency: str
+        self, row: DictionaryRow, key: MeasurementKey, *, fiscal_month: int, currency: str | None
     ) -> dict[str, OperandExtraction] | None:
         """Every operand's two values, shared as evaluated, and own extraction; ``None`` if one is
         not a plain pair.

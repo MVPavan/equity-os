@@ -162,7 +162,7 @@ def selected_side(
         surface=surface,
         state=selection.state,
         reason=selection.reason,
-        value=operand.value if valued else None,
+        value=operand.value if valued else (None if chosen is None else chosen.value),
         lower=None if interval is None else exact_decimal(interval.lower),
         upper=None if interval is None else exact_decimal(interval.upper),
         interpretation_id=None if chosen is None else chosen.interpretation_id,

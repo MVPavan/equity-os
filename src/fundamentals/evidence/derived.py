@@ -94,7 +94,7 @@ class _Evaluation(BaseModel):
     policy: RoundingPolicy
     repository: TraceStore
     dictionary: CanonicalDictionary
-    reporting_currency: str
+    reporting_currency: str | None
     segment_members: tuple[SegmentMemberRecord, ...]
 
 
@@ -149,7 +149,7 @@ def evaluate_derived(
     policy: RoundingPolicy,
     repository: TraceStore,
     dictionary: CanonicalDictionary,
-    reporting_currency: str,
+    reporting_currency: str | None,
     segment_members: Sequence[SegmentMemberRecord] = (),
     qualification_for: QualificationFor | None = None,
     fiscal_year_end_month: int = 3,

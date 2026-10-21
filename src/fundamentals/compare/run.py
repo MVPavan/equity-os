@@ -22,12 +22,13 @@ from fundamentals.compare.routing import route_run
 from fundamentals.compare.run_config import (
     ConfigVersions,
     LoadedConfig,
+    extractor_pin,
     load_run_config,
     pin_config,
     require_pins,
 )
+from fundamentals.compare.run_family import RUN_FAMILIES
 from fundamentals.compare.run_models import (
-    FIRST_PARTY_SOURCES,
     DatabaseIdentity,
     ResultRow,
     RunExitStatus,
@@ -45,7 +46,7 @@ from fundamentals.compare.run_models import (
 from fundamentals.compare.run_store import PublishHook, RunStore
 from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
-from fundamentals.contracts.evidence import RunMode, VendorExtractorPin, VersionPin
+from fundamentals.contracts.evidence import FilingFamily, RunMode, VendorExtractorPin, VersionPin
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.review_queue import QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -90,21 +91,30 @@ def request_for(
     code_version: str,
     database_identity: DatabaseIdentity,
     mode: RunMode = RunMode.AS_KNOWN,
-    sources: tuple[str, ...] = FIRST_PARTY_SOURCES,
+    sources: tuple[str, ...] | None = None,
     vendors: tuple[tuple[str, str], ...] = (),
     versions: ConfigVersions | None = None,
     extractor_pins: Mapping[Representation, VersionPin] | None = None,
+    family: FilingFamily = FilingFamily.FINANCIAL_RESULTS,
 ) -> RunRequest:
-    """A one-entity, one-period request pinned to the config root's artifacts at ``versions``."""
+    """A one-entity, one-period request pinned to the config root's artifacts at ``versions``.
+
+    Sources default to the family's first-party surfaces, and a shareholding request pins
+    the family's XBRL extractor (plan D8 R6).
+    """
     scope = RunScope(
         entity_ids=(entity_id,),
         period_ends=(period_end,),
         bases=(basis,),
-        sources=sources,
+        sources=RUN_FAMILIES[family].sources if sources is None else sources,
         vendors=vendors,
+        family=family,
     )
     config = load_run_config(
-        config_root, versions, extractor_pins=extractor_pins, vendors=scope.vendors
+        config_root,
+        versions,
+        extractor_pins=_extractors(family, extractor_pins),
+        vendors=scope.vendors,
     )
     return RunRequest(
         scope=scope,
@@ -287,9 +297,18 @@ def _config(
     config = load_run_config(
         config_root,
         ConfigVersions.of(request.pinned),
-        extractor_pins=extractor_pins,
+        extractor_pins=_extractors(request.scope.family, extractor_pins),
         vendors=request.scope.vendors,
         vendor_pins=vendor_pins,
     )
     require_pins(config, request.pinned)
     return config
+
+
+def _extractors(
+    family: FilingFamily, pins: Mapping[Representation, VersionPin] | None
+) -> Mapping[Representation, VersionPin] | None:
+    """Explicit pins, else the shareholding family's own XBRL extractor (plan D8 R6)."""
+    if pins is None and family is FilingFamily.SHAREHOLDING:
+        return {Representation.XBRL: extractor_pin(Representation.XBRL, family=family)}
+    return pins

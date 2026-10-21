@@ -23,10 +23,10 @@ from collections.abc import Iterable
 from datetime import date
 
 from fundamentals.canon.applicability import (
-    REPORTING_KINDS,
     ApplicabilityContext,
     ApplicabilityDecision,
     decide_applicability,
+    reporting_kinds,
 )
 from fundamentals.canon.dictionary import DictionaryRow, PeriodAggregationKind
 from fundamentals.canon.period_aggregation import (
@@ -45,6 +45,7 @@ from fundamentals.compare.engine_attempts import (
 from fundamentals.compare.engine_context import (
     basis_status,
     fiscal_year_end,
+    reporting_currency,
     segment_bases,
     segment_members,
 )
@@ -65,6 +66,7 @@ from fundamentals.compare.engine_rows import (
 )
 from fundamentals.compare.resolve_models import ResolvedInputs
 from fundamentals.compare.run_config import LoadedConfig
+from fundamentals.compare.run_family import RUN_FAMILIES
 from fundamentals.compare.run_models import (
     ResultRow,
     RunRequest,
@@ -73,11 +75,9 @@ from fundamentals.compare.run_models import (
 )
 from fundamentals.compare.tables import ExtractionResult, extraction_status
 from fundamentals.compare.vendor_sides import VendorSides
-from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
     Basis,
-    DocumentType,
     PeriodKind,
     PeriodNature,
     ReportingRegime,
@@ -120,7 +120,6 @@ _OUTSIDE_RESULTS = frozenset({StatementFamily.SHAREHOLDING})
 OPENING_NOT_RESOLVED = "OPENING_NOT_RESOLVED"
 SOURCE_NOT_REQUESTED = "SOURCE_NOT_REQUESTED"
 _KINDS = "statement families {families} come from packages of reporting kinds {kinds}"
-_CURRENCY = "entity {entity_id} period {period_end}: evidenced reporting currencies {found}"
 _DUPLICATE_ROWS = "row ids repeat within one run: {ids}"
 
 Key = tuple[str, Representation]
@@ -145,6 +144,8 @@ class RunEngine:
         self._boundary = EligibilityBoundary.at(request.cutoff)
         self._triple = request.pinned.triple()
         self._surfaces = frozenset(request.scope.sources)
+        self._family = request.scope.family
+        self._framework = RUN_FAMILIES[self._family].framework
         self._rows = {row.canonical_id: row for row in config.dictionary.rows}
         self._occurrences: dict[int, Occurrence] = {}
         self._witness_occurrence: dict[int, Occurrence] = {}
@@ -178,6 +179,7 @@ class RunEngine:
             mode=request.mode,
             triple=self._triple,
             surfaces=self._surfaces,
+            prerequisites=RUN_FAMILIES[self._family].prerequisites,
         )
         self._package_cache: dict[tuple[int, Basis, date, StatementFamily], FilingPackage | None]
         self._package_cache = {}
@@ -242,8 +244,7 @@ class RunEngine:
     ) -> Iterable[tuple[DictionaryRow, MeasurementKey, tuple[PeriodInterval, ...]]]:
         """Every reported row's keys over the scope, with their group's fiscal periods."""
         for entity_id, basis, end in self._groups():
-            periods = fiscal_periods(end, self._fiscal_year_end(entity_id, end))
-            currency = self._currency(entity_id, basis, end)
+            periods, currency = self._group_periods(entity_id, basis, end)
             for row in self._result_rows():
                 if row.formula is None:
                     for key in self._keys(row, entity_id, basis, end, periods, currency):
@@ -258,16 +259,45 @@ class RunEngine:
                     yield entity_id, basis, end
 
     def _result_rows(self) -> Iterable[DictionaryRow]:
-        """Dictionary rows a results run reports: current rows outside shareholding."""
+        """Current dictionary rows of the run's family: a results run reports rows outside
+        shareholding; a shareholding run, rows (formula rows by their operands) inside it."""
+        shareholding = self._family is FilingFamily.SHAREHOLDING
         for row in self._config.dictionary.rows:
-            if row.family not in _OUTSIDE_RESULTS and row.deprecated_by is None:
+            if row.deprecated_by is not None:
+                continue
+            if not shareholding and row.family not in _OUTSIDE_RESULTS:
                 yield row
+            elif (
+                shareholding
+                and ({row.family} if row.formula is None else self._formulas.families(row))
+                <= _OUTSIDE_RESULTS
+            ):
+                yield row
+
+    def _group_periods(
+        self, entity_id: int, basis: Basis, end: date
+    ) -> tuple[tuple[PeriodInterval, ...], str | None]:
+        """A group's periods and reporting currency: the fiscal periods and evidenced currency
+        for results; the instant alone and no currency for shareholding (plan D8 R6)."""
+        if self._family is FilingFamily.SHAREHOLDING:
+            return (PeriodInterval.at(end),), None
+        periods = fiscal_periods(end, self._fiscal_year_end(entity_id, end))
+        items = (
+            item
+            for package in self._inputs.packages
+            if self._in_group(package, entity_id, basis, end)
+            for member in package.members.values()
+            if member.capture.surface in self._surfaces
+            for item in self._by_capture.get(member.capture.capture_ref_id or 0, ())
+            if self._request.mode is RunMode.RETROSPECTIVE or item.recorded_at <= self._cutoff
+        )
+        statuses, cutoff = self._inputs.basis_statuses, self._cutoff
+        return periods, reporting_currency(items, statuses, entity_id, basis, end, cutoff)
 
     def _group_rows(self, entity_id: int, basis: Basis, end: date) -> list[ResultRow]:
         """Every row of one (entity, basis, period end)."""
         fiscal_month = self._fiscal_year_end(entity_id, end)
-        periods = fiscal_periods(end, fiscal_month)
-        currency = self._currency(entity_id, basis, end)
+        periods, currency = self._group_periods(entity_id, basis, end)
         contexts: dict[frozenset[StatementFamily], ApplicabilityContext] = {}
         rows: list[ResultRow] = []
         for row in self._result_rows():
@@ -311,7 +341,7 @@ class RunEngine:
                 canonical_id=row.canonical_id,
                 period=period,
                 basis=basis,
-                framework=RUN_FRAMEWORK,
+                framework=self._framework,
                 currency=currency if row.value_kind in MONETARY else None,
                 value_kind=row.value_kind,
                 dimensions=dimensions,
@@ -382,7 +412,8 @@ class RunEngine:
         if len(kinds) > 1:
             raise RunResolutionError(_KINDS.format(families=sorted(families), kinds=kinds))
         kind = kinds[0] if kinds else periods[-1].kind(fiscal_month)
-        if kind not in REPORTING_KINDS:
+        document_type = RUN_FAMILIES[self._family].document_type
+        if kind not in reporting_kinds(document_type):
             raise RunResolutionError(f"package reporting kind {kind} is not a reporting kind")
         disclosed = {
             item.key.canonical_id
@@ -398,7 +429,7 @@ class RunEngine:
             present.update(package.statements_present)
         return ApplicabilityContext(
             regime=ReportingRegime.IN_LODR,
-            document_type=DocumentType.FINANCIAL_RESULTS,
+            document_type=document_type,
             statements_present=frozenset(present),
             period_kind=kind,
             requested_basis=basis,
@@ -417,45 +448,13 @@ class RunEngine:
         """The entity's segment members recorded by the cutoff."""
         return segment_members(self._inputs.segment_members, entity_id, self._cutoff)
 
-    def _currency(self, entity_id: int, basis: Basis, end: date) -> str | None:
-        """The one reporting currency the eligible packages' monetary lines evidence.
-
-        ``None`` for a consolidated request of an evidenced standalone-only entity with no
-        consolidated package: no currency is evidenced (none is borrowed from standalone) and
-        every row is ``NOT_APPLICABLE`` before any value is read.
-        """
-        found = {
-            item.key.currency
-            for package in self._inputs.packages
-            if self._in_group(package, entity_id, basis, end)
-            for member in package.members.values()
-            if member.capture.surface in self._surfaces
-            for item in self._by_capture.get(member.capture.capture_ref_id or 0, ())
-            if item.key is not None
-            and item.key.value_kind is ValueKind.CURRENCY_AMOUNT
-            and item.key.currency is not None
-            and (self._request.mode is RunMode.RETROSPECTIVE or item.recorded_at <= self._cutoff)
-        }
-        if (
-            not found
-            and basis is Basis.CONSOLIDATED
-            and basis_status(self._inputs.basis_statuses, entity_id, self._cutoff)
-            is BasisStatus.STANDALONE_ONLY
-        ):
-            return None
-        if len(found) != 1:
-            raise RunResolutionError(
-                _CURRENCY.format(entity_id=entity_id, period_end=end, found=sorted(found))
-            )
-        return str(next(iter(found)))
-
     def _in_group(self, package: FilingPackage, entity_id: int, basis: Basis, end: date) -> bool:
-        """Whether a package is an eligible results package of one group."""
+        """Whether a package is an eligible package of the run's family in one group."""
         return (
             package.entity_id == entity_id
             and package.basis is basis
-            and package.framework is RUN_FRAMEWORK
-            and package.family is RUN_FAMILY
+            and package.framework is self._framework
+            and package.family is self._family
             and package.reporting_period_end == end
             and package.eligible(self._boundary)
         )
@@ -476,10 +475,10 @@ class RunEngine:
                     )
                 ],
                 entity_id=entity_id,
-                family=RUN_FAMILY,
+                family=self._family,
                 statement_family=family,
                 basis=basis,
-                framework=RUN_FRAMEWORK,
+                framework=self._framework,
                 period_end=end,
                 boundary=self._boundary,
             )
@@ -653,7 +652,6 @@ class RunEngine:
         currency: str | None,
     ) -> ResultRow:
         """An applicable formula row evaluated per representation with stored traces (Task 7)."""
-        assert currency is not None
         evaluated = self._formulas.evaluate(row, key, fiscal_month=fiscal_month, currency=currency)
         return self._compared(
             key,

@@ -61,6 +61,7 @@ _UNLISTED = "values given for unlisted members {members}"
 _NOT_AGGREGATE_KEY = "output key has no {axis!r} = {member!r} dimension"
 _DIGEST_MISMATCH = "result trace is for key digest {trace}, not {key}"
 _CURRENCY_MISMATCH = "{name!r} is in currency {given}, not {expected}; D1a never converts"
+_NO_CURRENCY = "a {kind} key needs a reporting currency and none is evidenced"
 _SELECTION_NEEDS_SOURCE = (
     "a selected VALUE operand names its selection source; only a missing operand or a "
     "computed one whose constituents are in its child trace may leave it empty"
@@ -231,7 +232,7 @@ def resolve_operand_keys(
     operand: FormulaOperand,
     *,
     dictionary: CanonicalDictionary,
-    reporting_currency: str,
+    reporting_currency: str | None,
 ) -> tuple[MeasurementKey, ...]:
     """The role-aligned key(s) an operand reads for ``output``.
 
@@ -302,7 +303,7 @@ def evaluate_formula(
     policy: RoundingPolicy,
     *,
     dictionary: CanonicalDictionary,
-    reporting_currency: str,
+    reporting_currency: str | None,
     qualification: QualificationContext,
     value_identity: ValueIdentity = ValueIdentity.DERIVED,
     revision_incompatible: bool = False,
@@ -604,7 +605,7 @@ def _operand_key(
     canonical_id: str,
     period: PeriodInterval,
     kind: ValueKind,
-    reporting_currency: str,
+    reporting_currency: str | None,
 ) -> MeasurementKey:
     """An operand key sharing the output's entity, basis, framework and dimensions."""
     return output.model_copy(
@@ -617,9 +618,14 @@ def _operand_key(
     )
 
 
-def _currency(kind: ValueKind, reporting_currency: str) -> str | None:
-    """The reporting currency for a monetary kind; no currency for a dimensionless one."""
-    return reporting_currency if kind in _MONETARY_KINDS else None
+def _currency(kind: ValueKind, reporting_currency: str | None) -> str | None:
+    """The reporting currency for a monetary kind (refused, never invented, when there is
+    none: plan D8 R6); no currency for a dimensionless one."""
+    if kind not in _MONETARY_KINDS:
+        return None
+    if reporting_currency is None:
+        raise CurrencyMismatchError(_NO_CURRENCY.format(kind=kind))
+    return reporting_currency
 
 
 def _aligned(name: str, given: OperandValue, expected: MeasurementKey) -> OperandValue:

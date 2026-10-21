@@ -111,9 +111,11 @@ class AttemptStates:
         mode: RunMode,
         triple: InterpretationTriple,
         surfaces: Iterable[str],
+        prerequisites: Iterable[tuple[Representation, str]] = (),
     ) -> None:
         self._attempts = tuple(attempts)
         self._surfaces = frozenset(surfaces)
+        self._prerequisites = frozenset(prerequisites)
         self._member_captures = frozenset(member_captures)
         self._cutoff = cutoff
         self._mode = mode
@@ -128,11 +130,25 @@ class AttemptStates:
     ) -> Cell | None:
         """The imposed cell, or ``None`` when selection decides.
 
-        First match wins: a failed latest acquisition with no member; a non-``COMPLETE``
-        overall attempt of the latest pinned-extractor generation; a non-``COMPLETE``
-        family attempt in that generation; a member with no available generation.
+        First match wins: a failed latest prerequisite acquisition (the SHP listing, plan D8
+        R8) or a failed latest acquisition with no member; a non-``COMPLETE`` overall attempt
+        of the latest pinned-extractor generation; a non-``COMPLETE`` family attempt in that
+        generation; a member with no available generation.
         """
         member = self._member(package, representation)
+        prerequisite = [
+            attempt
+            for attempt in self._attempts
+            if (representation, attempt.surface) in self._prerequisites
+            and attempt.stage is AttemptStage.ACQUISITION
+            and (attempt.entity_id, attempt.period_end) == (key.entity_id, period_end(key.period))
+            and attempt.basis is key.basis
+            and attempt_available(attempt, cutoff=self._cutoff, mode=self._mode, extractor="")
+        ]
+        if member is None and prerequisite:
+            latest = max(prerequisite, key=_attempt_order)
+            if latest.outcome is not ExtractionOutcome.COMPLETE:
+                return _imposed(key, representation, package, latest)
         candidates = [
             attempt
             for attempt in self._attempts

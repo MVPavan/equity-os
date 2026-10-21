@@ -8,13 +8,13 @@ closed with ``RunResolutionError``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
 
 from fundamentals.compare.engine_attempts import RunResolutionError
 from fundamentals.contracts.basis_status import BasisStatus
-from fundamentals.contracts.canonical import Basis
-from fundamentals.contracts.evidence import Occurrence
+from fundamentals.contracts.canonical import Basis, ValueKind
+from fundamentals.contracts.evidence import Interpretation, Occurrence
 from fundamentals.evidence.interpret import SEGMENT_AXIS
 from fundamentals.evidence.mapping import CONTEXT_BASIS
 from fundamentals.evidence.repository import (
@@ -27,6 +27,41 @@ from fundamentals.pg.identity_seed import SettingKey
 _NO_FISCAL_YEAR_END = "entity {entity_id} has no fiscal-year-end month recorded by the cutoff"
 _NO_BASIS_STATUS = "entity {entity_id} has no basis status recorded by the cutoff"
 _BASES = frozenset(basis.value for basis in Basis)
+_CURRENCY = "entity {entity_id} period {period_end}: evidenced reporting currencies {found}"
+
+
+def reporting_currency(
+    items: Iterable[Interpretation],
+    statuses: Sequence[BasisStatusRecord],
+    entity_id: int,
+    basis: Basis,
+    end: date,
+    cutoff: datetime,
+) -> str | None:
+    """The one reporting currency the group's monetary lines evidence.
+
+    ``None`` for a consolidated request of an evidenced standalone-only entity with no
+    consolidated package: no currency is evidenced (none is borrowed from standalone) and
+    every row is ``NOT_APPLICABLE`` before any value is read.
+    """
+    found = {
+        item.key.currency
+        for item in items
+        if item.key is not None
+        and item.key.value_kind is ValueKind.CURRENCY_AMOUNT
+        and item.key.currency is not None
+    }
+    if (
+        not found
+        and basis is Basis.CONSOLIDATED
+        and basis_status(statuses, entity_id, cutoff) is BasisStatus.STANDALONE_ONLY
+    ):
+        return None
+    if len(found) != 1:
+        raise RunResolutionError(
+            _CURRENCY.format(entity_id=entity_id, period_end=end, found=sorted(found))
+        )
+    return str(next(iter(found)))
 
 
 def fiscal_year_end(

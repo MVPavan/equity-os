@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from fundamentals.contracts.basis_status import BasisStatus
 from fundamentals.contracts.canonical import (
@@ -34,7 +34,16 @@ REPORTING_KINDS: frozenset[PeriodKind] = frozenset(
     {PeriodKind.QUARTER, PeriodKind.HALF_YEAR, PeriodKind.NINE_MONTH, PeriodKind.YEAR}
 )
 RULES_KEY = "rules"
+# A shareholding pattern is filed at an instant, its own reporting kind (plan D8 R4).
+_INSTANT_KINDS = REPORTING_KINDS | {PeriodKind.INSTANT}
 _NOT_REPORTING_KIND = "applicability needs a package reporting kind, got {kind}"
+
+
+def reporting_kinds(document_type: DocumentType | None) -> frozenset[PeriodKind]:
+    """The package reporting kinds a document type is filed under."""
+    if document_type is DocumentType.SHAREHOLDING_PATTERN:
+        return _INSTANT_KINDS
+    return REPORTING_KINDS
 
 
 class ApplicabilityRule(BaseModel):
@@ -82,9 +91,10 @@ class ApplicabilityContext(BaseModel):
 
     @field_validator("period_kind")
     @classmethod
-    def _reporting_kind(cls, kind: PeriodKind) -> PeriodKind:
-        """Refuse kinds no package reports under, such as TTM or an instant."""
-        if kind not in REPORTING_KINDS:
+    def _reporting_kind(cls, kind: PeriodKind, info: ValidationInfo) -> PeriodKind:
+        """Refuse kinds no package of the document type reports under, such as TTM, or an
+        instant outside a shareholding pattern."""
+        if kind not in reporting_kinds(info.data.get("document_type")):
             raise ValueError(_NOT_REPORTING_KIND.format(kind=kind))
         return kind
 

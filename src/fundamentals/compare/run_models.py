@@ -16,6 +16,7 @@ from enum import IntEnum, StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from fundamentals.compare.run_family import RUN_FAMILIES
 from fundamentals.compare.tables import TaggingAdjustment
 from fundamentals.contracts.canonical import (
     ApplicabilityStatus,
@@ -38,10 +39,9 @@ from fundamentals.contracts.comparison import (
 from fundamentals.contracts.comparison import (
     SourceRole as SourceRole,
 )
-from fundamentals.contracts.evidence import PinnedVersions, RunMode
+from fundamentals.contracts.evidence import FilingFamily, PinnedVersions, RunMode
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.source_catalog import SurfaceNotAuthorisedError, surface_authority
-from fundamentals.evidence.capture_intake import FirstPartySurface
 
 NO_DIMENSIONS = "-"
 _ROW_ID_SEPARATOR = "|"
@@ -51,9 +51,10 @@ _NAIVE_CUTOFF = "a run cutoff carries its UTC offset"
 _ONE_ENTITY = "a D1a run covers exactly one entity, got {count}: run each entity on its own"
 _NO_SOURCES = "a run requests at least one first-party source"
 _UNKNOWN_SOURCES = "requested sources {unknown} are not first-party surfaces {known}"
+_FAMILY_BASES = "a {family} run covers bases {bases}, got {got}"
 _NOT_A_VENDOR = "{vendor} has role {role}, not a comparison vendor role"
 _VENDOR_ROLES = (SourceRole.INDEPENDENT_VENDOR, SourceRole.DIAGNOSTIC)
-FIRST_PARTY_SOURCES = tuple(sorted(surface.value for surface in FirstPartySurface))
+FIRST_PARTY_SOURCES = RUN_FAMILIES[FilingFamily.FINANCIAL_RESULTS].sources
 
 
 class RunStatus(StrEnum):
@@ -116,6 +117,8 @@ class RunScope(BaseModel):
     and attempts on any other surface never decide a side. ``vendors`` names registered
     vendor ``(source, surface)`` entries (omitted when empty, so first-party scopes serialize
     as in D1a). Row ids carry no entity, so a run holds exactly one entity (D1a/D1b ruling).
+    ``family`` (omitted at ``FINANCIAL_RESULTS``, so D1a identities stand) fixes which
+    first-party sources and bases the scope may name (plan D8 R6).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -125,6 +128,10 @@ class RunScope(BaseModel):
     bases: tuple[Basis, ...]
     sources: tuple[str, ...]
     vendors: tuple[tuple[str, str], ...] = Field(default=(), exclude_if=lambda value: not value)
+    family: FilingFamily = Field(
+        default=FilingFamily.FINANCIAL_RESULTS,
+        exclude_if=lambda value: value is FilingFamily.FINANCIAL_RESULTS,
+    )
 
     @field_validator("entity_ids")
     @classmethod
@@ -137,12 +144,9 @@ class RunScope(BaseModel):
     @field_validator("sources")
     @classmethod
     def _first_party_sources(cls, sources: tuple[str, ...]) -> tuple[str, ...]:
-        """Refuse an empty or unknown source; keep them sorted, each once."""
+        """Refuse an empty source list; keep them sorted, each once."""
         if not sources:
             raise ValueError(_NO_SOURCES)
-        unknown = sorted(set(sources) - set(FIRST_PARTY_SOURCES))
-        if unknown:
-            raise ValueError(_UNKNOWN_SOURCES.format(unknown=unknown, known=FIRST_PARTY_SOURCES))
         return tuple(sorted(set(sources)))
 
     @field_validator("vendors")
@@ -160,6 +164,19 @@ class RunScope(BaseModel):
             if role not in _VENDOR_ROLES:
                 raise ValueError(_NOT_A_VENDOR.format(vendor=f"{source_id}/{surface}", role=role))
         return tuple(sorted(set(vendors)))
+
+    @model_validator(mode="after")
+    def _family_boundary(self) -> RunScope:
+        """Refuse a source outside the family's first-party surfaces, or a basis it lacks."""
+        family = RUN_FAMILIES[self.family]
+        unknown = sorted(set(self.sources) - set(family.sources))
+        if unknown:
+            raise ValueError(_UNKNOWN_SOURCES.format(unknown=unknown, known=family.sources))
+        if family.bases is not None and self.bases != family.bases:
+            raise ValueError(
+                _FAMILY_BASES.format(family=self.family.value, bases=family.bases, got=self.bases)
+            )
+        return self
 
 
 class DatabaseIdentity(BaseModel):

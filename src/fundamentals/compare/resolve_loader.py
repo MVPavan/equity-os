@@ -16,9 +16,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import date
 
-from fundamentals.compare.engine import RUN_FAMILY, RUN_FRAMEWORK
 from fundamentals.compare.engine_attempts import attempt_available, fiscal_periods, nine_months
 from fundamentals.compare.resolve_models import ResolvedInputs
+from fundamentals.compare.run_family import RUN_FAMILIES
 from fundamentals.compare.run_models import RunRequest
 from fundamentals.compare.run_store import RunStore
 from fundamentals.contracts.canonical import (
@@ -29,6 +29,7 @@ from fundamentals.contracts.canonical import (
 )
 from fundamentals.contracts.evidence import (
     AcquisitionAttempt,
+    AttemptStage,
     CaptureReference,
     EligibilityBoundary,
     FilingPackage,
@@ -57,6 +58,9 @@ class RunLoader:
         self._triple = request.pinned.triple()
         self._surfaces = frozenset(request.scope.sources)
         self._vendors = frozenset(request.scope.vendors)
+        self._family = request.scope.family
+        self._framework = RUN_FAMILIES[self._family].framework
+        self._prerequisites = {surface for _, surface in RUN_FAMILIES[self._family].prerequisites}
         self._captures: dict[int, CaptureReference] = {}
         self._packages: dict[int, FilingPackage] = {}
         self._statements: dict[int, PackageStatementRecord] = {}
@@ -164,15 +168,20 @@ class RunLoader:
         with ``vendors``, the requested vendor surfaces' too, with their captures' evidence."""
         for attempt in self._repository.list_attempts(entity_id, period_end):
             vendor = vendors and (attempt.source_id, attempt.surface) in self._vendors
+            prerequisite = (
+                attempt.surface in self._prerequisites and attempt.stage is AttemptStage.ACQUISITION
+            )
             if (
-                (vendor or attempt.surface in self._surfaces)
+                (vendor or prerequisite or attempt.surface in self._surfaces)
                 and attempt.basis is basis
-                and attempt.framework is RUN_FRAMEWORK
+                and attempt.framework is self._framework
                 and attempt_available(
                     attempt,
                     cutoff=self._request.cutoff,
                     mode=self._request.mode,
-                    extractor=self._triple.extractor(
+                    extractor=""
+                    if prerequisite
+                    else self._triple.extractor(
                         attempt.representation,
                         source_id=attempt.source_id,
                         surface=attempt.surface,
@@ -204,24 +213,24 @@ class RunLoader:
         return int(record.value_text)
 
     def _eligible(self, entity_id: int, basis: Basis, period_end: date) -> list[FilingPackage]:
-        """Eligible results packages of one basis, framework and period end."""
+        """Eligible packages of the run's family, one basis, framework and period end."""
         return [
             package
-            for package in self._repository.list_packages(entity_id, RUN_FAMILY, period_end)
+            for package in self._repository.list_packages(entity_id, self._family, period_end)
             if package.basis is basis
-            and package.framework is RUN_FRAMEWORK
+            and package.framework is self._framework
             and package.eligible(self._boundary)
             and any(member.capture.surface in self._surfaces for member in package.members.values())
         ]
 
     def _in_scope(self, package: FilingPackage) -> bool:
-        """An eligible results package of a scoped entity and basis (a comparative's)."""
+        """An eligible package of the run's family, entity and basis (a comparative's)."""
         scope = self._request.scope
         return (
             package.entity_id in scope.entity_ids
             and package.basis in scope.bases
-            and package.framework is RUN_FRAMEWORK
-            and package.family is RUN_FAMILY
+            and package.framework is self._framework
+            and package.family is self._family
             and package.eligible(self._boundary)
             and any(member.capture.surface in self._surfaces for member in package.members.values())
         )

@@ -55,6 +55,7 @@ from fundamentals.contracts.comparison import (
     Triage,
 )
 from fundamentals.contracts.evidence import (
+    FilingFamily,
     Interpretation,
     PinnedVersions,
     VendorExtractorPin,
@@ -109,7 +110,9 @@ _RUN_BY_ID: LiteralString = (
     "SELECT id, identity_hash, manifest, manifest_sha256 FROM eqos.runs WHERE id = %s"
 )
 _LATEST_RUN: LiteralString = (
-    "SELECT id FROM eqos.runs WHERE manifest @> %s ORDER BY created_at DESC, id DESC LIMIT 1"
+    "SELECT id FROM eqos.runs WHERE manifest @> %s "
+    "AND manifest->'scope'->>'family' IS NOT DISTINCT FROM %s "
+    "ORDER BY created_at DESC, id DESC LIMIT 1"
 )
 _INSERT_VERSION: LiteralString = (
     "INSERT INTO eqos.run_versions (run_id, pin, version, content_sha256, source_id, surface) "
@@ -345,8 +348,15 @@ class RunStore:
 
     # --- reads ----------------------------------------------------------------------
 
-    def latest_run(self, entity_id: int, period_end: date, basis: Basis) -> int | None:
-        """The latest stored run whose scope covers this entity, period end and basis."""
+    def latest_run(
+        self,
+        entity_id: int,
+        period_end: date,
+        basis: Basis,
+        family: FilingFamily = FilingFamily.FINANCIAL_RESULTS,
+    ) -> int | None:
+        """The latest stored run of one family whose scope covers this entity, period end
+        and basis; a scope naming no family is a results run."""
         scope = {
             "scope": {
                 "entity_ids": [entity_id],
@@ -354,7 +364,8 @@ class RunStore:
                 "bases": [basis.value],
             }
         }
-        found = self._fetch(_LATEST_RUN, (Jsonb(scope),))
+        named = None if family is FilingFamily.FINANCIAL_RESULTS else family.value
+        found = self._fetch(_LATEST_RUN, (Jsonb(scope), named))
         return int(found[0]["id"]) if found else None
 
     def read_manifest(self, run_id: int) -> RunManifest:

@@ -3,9 +3,9 @@
     compare run --entity <entity_key> --period-end <YYYY-MM-DD> --basis consolidated
         [--cutoff <ISO-8601 with offset>] [--mode as_known|retrospective] [--config-root config]
         [--vendor <source>/<surface> ...] [--dictionary v1] [--mapping-set v1]
-        [--alignment-rules v1]
+        [--normalisation-policy v1] [--alignment-rules v1] [--family <family>]
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
-        [--as-of <ISO-8601 with offset>] [--config-root config]
+        [--family <family>] [--as-of <ISO-8601 with offset>] [--config-root config]
     compare queue list --run <id> [--as-of <ISO-8601 with offset>]
         [--severity HIGH|MEDIUM|LOW ...] [--status open|disposed|all]
     compare queue show --run <id> --item <id> [--as-of <ISO-8601 with offset>]
@@ -73,7 +73,7 @@ from fundamentals.compare.run import (
 from fundamentals.compare.run_config import DEFAULT_VERSION, DICTIONARY_DIR, ConfigVersions
 from fundamentals.compare.run_store import PublishRetriesExhaustedError, RunReadError, RunStore
 from fundamentals.contracts.canonical import Basis
-from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.evidence import FilingFamily, RunMode
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.review_queue import DispositionKind, QueueOverlay, QueueSeverity
 from fundamentals.contracts.versioning import VersionContentDriftError
@@ -124,6 +124,8 @@ _FAILED_EVENT = "compare_command_failed"
 _SUMMARY = "run\t{run_id}\nstatus\t{status}\ncreated\t{created}"
 _BASES = {basis.value.lower(): basis for basis in Basis}
 _MODES = {mode.value.lower(): mode for mode in RunMode}
+_FAMILIES = {family.value.lower(): family for family in FilingFamily}
+_RESULTS = FilingFamily.FINANCIAL_RESULTS.value.lower()
 
 
 class CompareCommandError(ValueError):
@@ -144,12 +146,15 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     run.add_argument("--vendor", action="append", default=[], type=_vendor)
     run.add_argument("--dictionary", default=DEFAULT_VERSION)
     run.add_argument("--mapping-set", default=DEFAULT_VERSION)
+    run.add_argument("--normalisation-policy", default=DEFAULT_VERSION)
     run.add_argument("--alignment-rules", default=DEFAULT_VERSION)
+    run.add_argument("--family", choices=sorted(_FAMILIES), default=_RESULTS)
     report = actions.add_parser(REPORT_ACTION, help=_REPORT_HELP)
     report.add_argument("--run", type=int)
     report.add_argument("--entity")
     report.add_argument("--period-end", type=date.fromisoformat)
     report.add_argument("--basis", choices=sorted(_BASES))
+    report.add_argument("--family", choices=sorted(_FAMILIES), default=_RESULTS)
     report.add_argument("--as-of", type=_aware_cutoff)
     report.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     queue = actions.add_parser(QUEUE_ACTION, help=_QUEUE_HELP).add_subparsers(
@@ -262,8 +267,10 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
             versions=ConfigVersions(
                 dictionary=args.dictionary,
                 mapping_set=args.mapping_set,
+                normalisation_policy=args.normalisation_policy,
                 alignment_rules=args.alignment_rules,
             ),
+            family=_FAMILIES[args.family],
         )
         return execute_run(request, pool=pool, config_root=args.config_root)
 
@@ -382,7 +389,8 @@ def _latest(pool: ConnectionPool, args: argparse.Namespace) -> int:
     if args.entity is None or args.period_end is None or args.basis is None:
         raise CompareCommandError(_REPORT_SCOPE)
     entity_id = _entity_id(EvidenceRepository(pool), args.entity)
-    run_id = RunStore(pool).latest_run(entity_id, args.period_end, _BASES[args.basis])
+    family = _FAMILIES[args.family]
+    run_id = RunStore(pool).latest_run(entity_id, args.period_end, _BASES[args.basis], family)
     if run_id is None:
         raise CompareCommandError(
             _NO_RUN.format(entity=args.entity, period_end=args.period_end, basis=args.basis)

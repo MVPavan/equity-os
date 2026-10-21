@@ -369,7 +369,7 @@ def derived_extraction_status(
     rounding: RoundingPolicy,
     qualification: QualificationContext,
     dictionary: CanonicalDictionary,
-    reporting_currency: str,
+    reporting_currency: str | None,
 ) -> ExtractionResult:
     """The extraction table over a formula evaluated per representation.
 
@@ -673,7 +673,7 @@ def _re_evaluated(
     rounding: RoundingPolicy,
     qualification: QualificationContext,
     dictionary: CanonicalDictionary,
-    reporting_currency: str,
+    reporting_currency: str | None,
 ) -> Interval | None:
     """One representation's formula interval with its accepted adjustments applied."""
     values = {name: operand.side(representation) for name, operand in operands.items()}
