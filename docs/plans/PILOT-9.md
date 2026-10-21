@@ -496,3 +496,179 @@ implementers; Task 3 only reads Task 2's files.
   the producing seam cited.
 - Note, PQ3 companion adapter: `FY27_Q1` nodes read from the pinned Stage 3 companion tree and
   normalized in Task 3; no tree inventory or `stage3_data_support.py` change.
+
+## Amendment A1: SHP taxonomy 2025-05-31
+
+**Trigger.** Task 1 retained gen-4 (2025-09-30), gen-5 (2025-12-31) and gen-6 (2026-03-31); gen-3 is
+kept as the failed attempt. gen-5 and gen-6 smoke-ingest with exit 0. gen-4 refuses
+`UNSUPPORTED_SCHEMA`: its facts are in `http://www.bseindia.com/xbrl/shp/2025-05-31/in-bse-shp`.
+Decision 6 stops the plan. This amendment is the re-plan, and it bumps D8 versions. Evidence:
+`scratchpad/execution/d8/pilot9-taxonomy-note.md` (structural counts corrected below, A1-5).
+
+**Findings** (gen-4 `02.bin` against gen-5, gen-6 and gen-2 `02.bin`; structural, not ingestion):
+- Concept local names, units, `decimals`, axes and context shapes are the same. Concept×dimension×
+  unit×decimals signatures: gen-4 has 514; gen-5 has 498, all in gen-4; gen-6 has 497, all in gen-4.
+  The text block `DisclosureOfNotesOnShareholdingPatternExplanatoryTextBlock` is in gen-4 and gen-5,
+  absent from gen-6. The prefix `in-bse-shp` is the same, so concept QName text matches; the
+  expanded QNames do not.
+- Of the 21 `shareholding_filing/v1/shp.yaml` selectors, by local name and category member, 13
+  have exactly one fact in each of gen-4/5/6 and eight have none (`central_state_government` ×2,
+  `non_promoter_non_public` ×2, `employee_benefit_trust` ×2, `promoter_foreign`,
+  `sovereign_wealth_funds_domestic`); none has more than one (`scratchpad/execution/d8/tools/shp_selectors.py`).
+- `DateOfReport`, `ISIN`, `Symbol`, `ScripCode` and the DR declaration (`false`) have the same shapes.
+- **Second refusal behind the first.** The context entity scheme is
+  `http://www.bseindia.com/bse-shp/ScripCode` (2025-10-31: `…/in-bse-shp/ScripCode`), scrip `532259`
+  in all 133 contexts. Under `nse-shp-v2` the identity gate (`shareholding_filing.py:254–280`)
+  would reject gen-4.
+- Four members appear only in gen-4, each carrying only zero ESOP/diluted facts (zero is filed, not
+  absent). Two, `RelativesOfPromotersOtherThanPromoterGroupMember` and
+  `TrustsWhereAnyPersonBelongingToPromoterAndPromoterGroupIsTrusteeOrBeneficiaryOrAuthorOfTrustMember`,
+  have no `FORMAT_PARENT`, so `point_check._absent` (`point_check.py:202–227`, `:219`) would
+  report `UNPLACED` for PQ0. The format places them under B(4): `R/reference/gen-1/02.bin` p. 9
+  "(d) Relatives of promoters", p. 10 "(e) Trusts where any person belonging to 'Promoter and
+  Promoter Group'…". Neither is filed in the three Stage 3 gen-2 filings.
+- **Meaning.** SEBI circular 2025/35 (`02.bin`, in force from the quarter ending 30 June 2025) is the
+  one format both taxonomies encode. No BSE or SEBI taxonomy change note is retained, and neither
+  `.xsd` is retained: the 2025-10-31 URL is recorded `HTTP_404` (d8-probe §11.1); the 2025-05-31
+  URL was never requested, so its availability is untested. The equivalence is an inference by
+  identical local name, unit, structure and governing format, the label-binding grade of
+  d8-probe §11.2. It is not taxonomy-wide semantic identity, and no owner financial judgment is
+  involved (Sol A1 r1 ruling).
+
+**Goal.** Occurrences stay namespace-faithful. `nse-shp-v3` extracts 2025-05-31 and 2025-10-31 SHP
+instances, each under its own filed namespace. Mapping set v8 adds 2025-05-31-scoped entries for the
+13 evidenced selectors; the v7 files are unchanged. Dictionary v3 and policy v2 are unchanged.
+`nse-shp-v1`/`v2` and mapping set v7 are not edited in place (D8 R1); v2 stays a recorded name, like
+v1, no longer reproducible from source.
+
+**Files.**
+
+| File | Change | Lines (now → max) |
+|---|---|---|
+| `src/fundamentals/evidence/shareholding_filing.py` | Changes listed below | 360 → ≤ 372 |
+| `config/mappings/shareholding_filing/v2/shp.yaml` | New: 13 entries, `schema_identity` 2025-05-31 | new, ≤ 80 |
+| `config/mappings/v8.yaml` | New: v7 plus `shareholding_filing/v2/shp.yaml` | new, ≤ 28 |
+| `src/fundamentals/api/shareholding_cli.py` | `:89–90` mapping set `v7` → `v8` | 339 → 339 |
+| `tests/fundamentals/test_shareholding_filing.py` | One gen-4 test; three refusal ids; helpers take the generation | 734 → ≤ 800 |
+| `tests/fundamentals/test_shareholding_compare.py` | `:197` `--mapping-set v7` → `v8` | 591 → 591 |
+| `tests/fundamentals/fixtures/data_foundation/stage3_manifest.yaml` | `:86` `v7` → `v8`; `:87` `nse-shp-v2` → `nse-shp-v3`; `:94` `--mapping-set v7` → `v8`; `:19` Sol re-approval | — |
+| `docs/workstreams/data-foundation/plans/D8.md` | `:535` adds "`shareholding_filing/v2/shp.yaml`, `v8.yaml`: PILOT-9 A1"; `:537` adds "`nse-shp-v3`: PILOT-9 A1"; `:546` cap ≤ 740 → ≤ 800 | — |
+
+`shareholding_filing.py` changes:
+- `:67–68`: `SHP_EXTRACTOR_VERSION = "nse-shp-v3"`; `SHP_EXTRACTOR_VERSIONS` gains `"nse-shp-v2"`.
+- `:70–71`: `SHP_NAMESPACE`/`SHP_FORMAT_VERSION` become one map `SHP_FORMAT_VERSIONS` from each
+  accepted filed namespace to its format date: 2025-05-31 → `in-bse-shp/2025-05-31`,
+  2025-10-31 → `in-bse-shp/2025-10-31`. No other `src/` module reads either name.
+- `:192`: refuse `UNSUPPORTED_SCHEMA` unless the facts' namespaces are exactly one key of that map
+  (`len(namespaces) == 1` and a subset of its keys). Mixed or unknown namespaces still refuse.
+- `:303`: `CONTEXT_SCHEMA_IDENTITY` is the filed `fact.namespace_uri`. `CONTEXT_NAMESPACE`,
+  `CONTEXT_DIMENSION_AXES`, `dimension_qnames`, `concept_qname`, `dimensions`, anchors and raw bytes
+  stay as parsed. No `filed_namespace` key.
+- `:338`: `format_version` is `SHP_FORMAT_VERSIONS[fact.namespace_uri]`.
+- `:260–265`: `by_scheme` gains `http://www.bseindia.com/bse-shp/ScripCode` → the held scrip, as
+  another BSE-scrip scheme. Every context (used or not) and every ISIN/Symbol/ScripCode fact is
+  still checked against the temporally held issuer.
+- `:101–105`: `_FORMAT_CHILDREN["NonInstitutions"]` gains `RelativesOfPromotersOtherThanPromoterGroup`
+  and `TrustsWhereAnyPersonBelongingToPromoterAndPromoterGroupIsTrusteeOrBeneficiaryOrAuthorOfTrust`,
+  so both map to `NonInstitutionsMember` in `FORMAT_PARENT`.
+
+`shareholding_filing/v2/shp.yaml` (precedent `xbrl/v5/in_capmkt.yaml:1–5`):
+- Header and `defaults` as v1 (`source`, `surface`, `tier: EQUIVALENCE_UNPROVEN`, `member_source`,
+  `period_kinds`); `schema_identity: http://www.bseindia.com/xbrl/shp/2025-05-31/in-bse-shp`.
+- One entry per selector with a gen-4 fact (the 13 above): selector, `canonical_id` and
+  `dimension_members` copied from v1; `entry_id` is the v1 id plus `.2025_05` (unique, so
+  `mapping.py:407–415` passes). The eight selectors with no fact get no entry.
+- `evidence_ref`: the v1 entry's format row and denominator citation, plus "PILOT-9 A1: same local
+  name, unit, decimals and context shape filed in APARINDS gen-4/02.bin (sha256 da042398…, instant
+  2025-09-30, namespace 2025-05-31); SEBI format 2025/35 in force from the quarter ending
+  2025-06-30; equivalence to the 2025-10-31 entry inferred, not proven from definitions (neither
+  .xsd retained); scope: these observed shapes only."
+
+**Interfaces.**
+- No change to `mapping.py`, `interpret.py`, `point_check.py`, `run_config.py` or the v7 files.
+  `matches`/`selects` (`mapping.py:158–173`, `:241–258`, `:208–237`) already scope each entry to
+  its own schema; `supported_schemas` (`:383`) gains 2025-05-31 from the entries. `_absent` reads
+  local names, so its roots are unchanged.
+- A 2025-05-31 occurrence selects only a `.2025_05` entry; a 2025-10-31 occurrence only a v1 entry.
+
+**Ripple.**
+- A run cannot pin v2 and v3, or v7 and v8, side by side for SHP. Ingest writes the single module
+  constant and the CLI's fixed config (`shareholding_cli.py:90`); interpretations are reused only
+  under equal (mapping set, policy, extractor) pins (`shareholding_ingest.py:284–290`);
+  `extractor_pin` hashes current source (`run_config.py:207–211`). Stage 3 therefore moves to
+  `nse-shp-v3` and v8, and the compare test's run args to v8 (`test_shareholding_compare.py:197`).
+- Stage 3's expected measurement rows and outcomes are predicted unchanged (gen-2 is 2025-10-31; the
+  new entries and members do not occur in it). That is a prediction pending execution, not byte
+  equality of run artifacts or pins.
+- The Stage 3 manifest's payload changes at `:86`, `:87` and `:94` (`:13` is authoring history and
+  stays). It needs a fresh `payload_sha256` and Sol `APPROVE`, and is committed before Task 3's
+  commit to `test_data_stage3_e2e.py`. Task 2 pins that re-approved Stage 3 file by SHA-256 (`:110`).
+- PILOT-9 Constraints (`:31–32`) read mapping set `v8` and extractor `nse-shp-v3`. The Out-of-scope
+  line "Any D8 code, config, mapping or extractor change" (`:22`) and the File-map line "every `src/`
+  file stays unedited" (`:153–154`) are superseded for the files above only. Vendor mappings,
+  dictionary v3, policy v2, outcome rules, assumption labels, retention, acquisition, and the
+  settled verdict/citation rulings are unchanged. Task 1 resumes at the gen-4 smoke ingest.
+
+**Verification.**
+1. New test `test_a_2025_05_31_filing_stays_in_its_taxonomy` (medium, `pg`, `retained`):
+   `_seed` APARINDS, ingest `APARINDS/gen-4` (`da042398…`) at 2025-09-30 (`_ingest`/`_evidence`
+   take the generation and instant), exit 0. It asserts:
+   - every occurrence has `extractor_version` `nse-shp-v3`, `CONTEXT_NAMESPACE` and
+     `schema_identity` 2025-05-31, every `dimension_qnames` axis and explicit member in
+     `{2025-05-31}`, and `disclosure.format_version` `in-bse-shp/2025-05-31`;
+   - the interpretations' `mapping_entry_id`s with a value are exactly the 13 `.2025_05` ids, one
+     occurrence each; no v1 id is used;
+   - `FORMAT_PARENT` of both new members is `NonInstitutionsMember`;
+   - ancestry: `point_check._absent(v8, "non_institutions", filed)`, with `filed` = gen-4's
+     occurrences minus those on `NonInstitutionsMember`, returns the `_FILED` reason, not `None`
+     (a filed new member keeps B(4) from becoming an absent zero). `_absent` is called directly
+     because `point_checks` needs a full run; this is the boundary Sol named.
+2. `test_refusals_write_nothing_but_their_attempt` (`test_shareholding_filing.py:505–532`) gains a
+   quarter parameter (gen-2/2026-06-30 for its five ids; gen-4/2025-09-30 for three new ids), and
+   `_marked` (`:455`) takes the generation. New ids, each asserting its attempt outcome and zero
+   occurrences, interpretations and packages:
+   - `gen4-context-entity`: first `ScripCode">532259<` (a `bse-shp/ScripCode` context identifier)
+     → another scrip, `IDENTITY_REJECTED`;
+   - `gen4-unused-context`: `_foreign_context` (`:495`) on gen-4, `IDENTITY_REJECTED`;
+   - `gen4-mixed-namespace`: a new editor retags one fact into the 2025-10-31 namespace,
+     `UNSUPPORTED_SCHEMA`.
+3. `uv run pytest tests/fundamentals/test_shareholding_filing.py tests/fundamentals/test_shareholding_vendor.py tests/fundamentals/test_shareholding_compare.py tests/fundamentals/test_data_stage3_e2e.py tests/fundamentals/test_frozen_manifests.py`
+   is green except `test_approved_payload_preceded_its_e2e[stage3]`, recorded as pending (A1-4;
+   the same handling as the pilot at `:283–288`): it compares the current payload with the parent
+   of the latest committed `test_data_stage3_e2e.py` change, which is still the old manifest
+   (`test_frozen_manifests.py:755–768`, `manifest_support.py:266–272`). The test is not edited or
+   weakened. `test_manifest_is_approved[stage3]` passes. `uv run mypy --strict`, `uv run ruff check`
+   and `uv run ruff format --check` are clean on the touched files.
+4. The Task 1 smoke ingest of gen-4, gen-5 and gen-6 under v3/v8 exits 0.
+5. Order: commit (a) A1 code, config, tests and D8.md; commit (b) the Stage 3 manifest after Sol
+   re-approval; then Task 2 and Task 3 as planned. After Task 3's e2e commits, run
+   `test_approved_payload_preceded_its_e2e[pilot]` and `[stage3]`, record both closed, then the
+   plan-exit gate.
+
+**Risks.**
+- The equivalence is unproven from taxonomy definitions. Task 2 checks extraction, selection and
+  arithmetic against independently read bytes; it cannot detect a concept whose definition or
+  denominator changed while its name, lexeme, unit and dimensions did not. A contradicting
+  definition, if one is retained later, requires re-review of every interpretation under a
+  `.2025_05` entry, not a PQ0-only conclusion.
+- Any persistent store with `nse-shp-v2`/v7 pinned keeps those rows; new ingests re-extract under
+  v3/v8 (the R1 design).
+
+**Sol must review:** that the rewrite implements the r1 rulings (config-side v8, filed namespaces
+preserved, scheme alias, both B(4) parents, Stage 3 move and deferral), with the 13-entry subset.
+
+**A1 r1 dispositions** (`scratchpad/execution/d8/pilot9-a1-r1-sol.md`):
+- A1-1 (preserve native identities; v8): adopted. No namespace rewrite or `filed_namespace`;
+  `schema_identity`/`format_version` from the filed namespace; new `shareholding_filing/v2/shp.yaml`
+  (13 entries, `.2025_05` ids, `EQUIVALENCE_UNPROVEN`, A1 evidence) and `v8.yaml`; CLI, compare
+  test, Stage 3 pins/command and Constraints move to v8.
+- A1-2 (manifest cannot detect a semantic change): Risks restated as the limitation; contradiction
+  triggers re-review of all `.2025_05` interpretations; evidence scope stated in each `evidence_ref`.
+- A1-3 (verification misses identity and ancestry): gen-4 test asserts filed namespace, expanded
+  dimension identities, format date, both B(4) parents and the `_absent` ancestry consequence; three
+  gen-4 refusal ids (wrong scrip under the old scheme, unused context, mixed namespace) assert
+  nothing persisted.
+- A1-4 (Stage 3 order check): `[stage3]` recorded pending during A1, closed with `[pilot]` after
+  Task 3's e2e commit; test unchanged.
+- A1-5 (counts and wording): signatures 514/498/497, text block in gen-4/gen-5 only; 13 selectors
+  with one fact, eight with none; neither `.xsd` retained, 404 vs never requested.
