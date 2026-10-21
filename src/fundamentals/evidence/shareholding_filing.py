@@ -1,8 +1,8 @@
-"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v2``).
+"""SHP XBRL instance to lossless occurrences (plan D8 Task 4, extractor ``nse-shp-v3``).
 
 Extraction only, so the version pin hashes what decides each occurrence. The instance is
 read with the results parser's context and unit readers (``extract/xbrl_dimensions.py``
-underneath, unedited). Before anything is kept: every fact is in the one supported
+underneath, unedited). Before anything is kept: every fact is in one supported
 taxonomy (else ``UNSUPPORTED_SCHEMA``), the filed shareholding date
 (``DateOfReport`` and its context instant) equals the listing row's date (else
 ``PARSE_FAILED``, R4), and every parsed context's entity (used by a fact or not) and every
@@ -64,12 +64,19 @@ from fundamentals.ingest.xbrl_identity import (
     SEBI_SCRIP_ENTITY_SCHEME,
 )
 
-SHP_EXTRACTOR_VERSION = "nse-shp-v2"  # v2: the identity gate covers every context (D8 F8)
-SHP_EXTRACTOR_VERSIONS = frozenset({"nse-shp-v1", SHP_EXTRACTOR_VERSION})
-# d8-probe.md §3: the BSE SHP taxonomy every retained instance files under, and its scrip scheme.
-SHP_NAMESPACE = "http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp"
-SHP_FORMAT_VERSION = "in-bse-shp/2025-10-31"
-SHP_SCRIP_ENTITY_SCHEME = "http://www.bseindia.com/in-bse-shp/ScripCode"
+# v2: the identity gate covers every context (D8 F8); v3: the 2025-05-31 taxonomy (PILOT-9 A1)
+SHP_EXTRACTOR_VERSION = "nse-shp-v3"
+SHP_EXTRACTOR_VERSIONS = frozenset({"nse-shp-v1", "nse-shp-v2", SHP_EXTRACTOR_VERSION})
+# d8-probe.md §3, PILOT-9 A1: each BSE SHP taxonomy an instance may file under (its format date),
+# and their scrip schemes. Occurrences keep the filed namespace.
+SHP_FORMAT_VERSIONS = {
+    "http://www.bseindia.com/xbrl/shp/2025-05-31/in-bse-shp": "in-bse-shp/2025-05-31",
+    "http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp": "in-bse-shp/2025-10-31",
+}
+SHP_SCRIP_ENTITY_SCHEMES = (
+    "http://www.bseindia.com/in-bse-shp/ScripCode",
+    "http://www.bseindia.com/bse-shp/ScripCode",
+)
 STANDALONE = "STANDALONE"  # R4: a SHAREHOLDING package is stored STANDALONE
 CONTEXT_SECURITY_ISIN = "security_isin"
 # §3: the shareholding date, context MainI (the category rows' instant; other instants are
@@ -102,7 +109,8 @@ _FORMAT_CHILDREN = {
     "InvestorEducationAndProtectionFund NonResidentIndians ForeignNationals ForeignCompanies "
     "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh BodiesCorporate "
     "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh "
-    "OtherNonInstitutions",
+    "OtherNonInstitutions RelativesOfPromotersOtherThanPromoterGroup "
+    "TrustsWhereAnyPersonBelongingToPromoterAndPromoterGroupIsTrusteeOrBeneficiaryOrAuthorOfTrust",
     "SharesHeldByNonPromoterNonPublicShareholders": "EmployeeBenefitsTrusts",
 }
 FORMAT_PARENT = {
@@ -147,7 +155,7 @@ _UNKNOWN_REASONS: Mapping[str, str] = {
 _UNEVIDENCED = (
     "no retained evidence states this list's threshold or completeness (d8-probe.md §11.3)"
 )
-_FOREIGN_NAMESPACE = "facts outside {expected}: {found}"
+_FOREIGN_NAMESPACE = "facts not in exactly one of {expected}: {found}"
 _INSTANT_CONFLICT = (
     "DateOfReport (value, context instant) {found} is not the listing date {listing}"
 )
@@ -189,9 +197,9 @@ def extract_shareholding(
     except (etree.XMLSyntaxError, XbrlParseError, ValueError) as error:
         return ShareholdingExtraction(outcome=ExtractionOutcome.PARSE_FAILED, reason=str(error))
     namespaces = {fact.namespace_uri for fact in facts}
-    if namespaces != {SHP_NAMESPACE}:
+    if len(namespaces) != 1 or not namespaces <= SHP_FORMAT_VERSIONS.keys():
         reason = _FOREIGN_NAMESPACE.format(
-            expected=SHP_NAMESPACE, found=sorted(map(str, namespaces))
+            expected=sorted(SHP_FORMAT_VERSIONS), found=sorted(map(str, namespaces))
         )
         return ShareholdingExtraction(outcome=ExtractionOutcome.UNSUPPORTED_SCHEMA, reason=reason)
     instants = {
@@ -261,7 +269,7 @@ def _identity_refusal(
         NSE_ENTITY_SCHEME: symbols,
         SEBI_SCRIP_ENTITY_SCHEME: scrip,
         BSE_SCRIP_ENTITY_SCHEME: scrip,
-        SHP_SCRIP_ENTITY_SCHEME: scrip,
+        **dict.fromkeys(SHP_SCRIP_ENTITY_SCHEMES, scrip),
     }
     by_concept = {
         ISIN_CONCEPT: {identifiers.isin},
@@ -300,7 +308,7 @@ def _occurrence(
         precision_kind=precision,
         declared_precision=declared,
         native_context={
-            CONTEXT_SCHEMA_IDENTITY: SHP_NAMESPACE,
+            CONTEXT_SCHEMA_IDENTITY: fact.namespace_uri,
             CONTEXT_BASIS: STANDALONE,
             CONTEXT_LOCAL_NAME: _local(fact),
             CONTEXT_NAMESPACE: fact.namespace_uri,
@@ -335,7 +343,7 @@ def _completeness(fact: RawXbrlFact) -> dict[str, object]:
     """R4 Completeness: a category fact is complete; a list is thresholded only on evidence."""
     lists = [axis.rsplit(":", 1)[-1] for axis, value in fact.dimensions if value.startswith(_TYPED)]
     disclosure: dict[str, object] = {
-        "format_version": SHP_FORMAT_VERSION,
+        "format_version": SHP_FORMAT_VERSIONS[str(fact.namespace_uri)],
         "completeness": COMPLETE,
         "threshold_pct": None,
         "threshold_denominator": None,

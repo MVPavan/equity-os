@@ -1,5 +1,6 @@
 """Shareholding-pattern acquisition (plan D8): the transport boundary (Task 1), and stage D8.2
-acceptance (Task 4) over the retained gen-2 generations of APARINDS, ETERNAL and TITAN.
+acceptance (Task 4) over the retained gen-2 generations of APARINDS, ETERNAL and TITAN, plus
+APARINDS gen-4 on the 2025-05-31 taxonomy (PILOT-9 Amendment A1).
 
 Ingest runs through ``fundamentals shareholding ingest`` into ``eqos_test_*`` databases with the
 socket guard on. Spot values are read from the retained XBRL with lxml here, never written down.
@@ -29,7 +30,7 @@ from fundamentals.api import onboard_cli, shareholding_cli
 from fundamentals.api.cli import main
 from fundamentals.api.shareholding_cli import SHAREHOLDING_VERSIONS, _replayed
 from fundamentals.api.watchlist_config import load_watchlist_config
-from fundamentals.compare import run_config
+from fundamentals.compare import point_check, run_config
 from fundamentals.compare.run_config import extractor_pin, load_run_config
 from fundamentals.contracts.acquisition_outcome import ExtractionOutcome
 from fundamentals.contracts.canonical import Basis, Representation, StatementFamily
@@ -59,8 +60,10 @@ from fundamentals.entity import discovery
 from fundamentals.entity.discovery import MANIFEST_NAME, Request, replay_fetch, store_captures
 from fundamentals.evidence.capture_intake import parse_filed_at
 from fundamentals.evidence.interpret import input_digest
+from fundamentals.evidence.mapping import CONTEXT_NAMESPACE, CONTEXT_SCHEMA_IDENTITY
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.selection import select_package
+from fundamentals.evidence.shareholding_filing import FORMAT_PARENT
 from fundamentals.evidence.shareholding_ingest import shareholding_pins
 from fundamentals.ingest.shareholding_filing import acquire, authorised, listing_date
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -73,6 +76,7 @@ RAW = REPO / "data" / "raw" / "shareholding"
 INSTANT = date(2026, 6, 30)
 OFF_QUARTER = date(2026, 8, 13)
 GEN = "gen-2"
+GEN4, INSTANT4 = "gen-4", date(2025, 9, 30)  # PILOT-9 A1: the 2025-05-31 taxonomy filing
 # Public identifiers from the probe record (d8-probe.md §1, §3): ISIN, BSE scrip.
 COMPANIES = {
     "APARINDS": ("INE372A01015", "532259"),
@@ -82,6 +86,7 @@ COMPANIES = {
 X = "{http://www.xbrl.org/2003/instance}"
 XBRLDI = "{http://xbrl.org/2006/xbrldi}"
 SHP_NS = "http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp"
+SHP_NS4 = "http://www.bseindia.com/xbrl/shp/2025-05-31/in-bse-shp"
 TS, VR = "ShareholdingAsAPercentageOfTotalNumberOfShares", "PercentageOfTotalVotingRights"
 # A, B, B1-B4 and C (plan Task 4 Verification, Interpretations).
 SEBI_ROWS = {
@@ -169,12 +174,15 @@ def _refuse_socket(*_: object) -> None:
     raise OSError("socket guard: no network in replay")
 
 
-def _ingest(raw: Path, snapshots: Path, symbol: str, instant: date = INSTANT) -> int:
+def _ingest(
+    raw: Path, snapshots: Path, symbol: str, instant: date = INSTANT, generation: str = GEN
+) -> int:
     """``fundamentals shareholding ingest`` over one generation."""
+    number = generation.removeprefix("gen-")
     return main(
         [
             *("shareholding", "ingest", "--symbol", symbol, "--instant", instant.isoformat()),
-            *("--raw-root", str(raw), "--snapshot-root", str(snapshots), "--generation", "2"),
+            *("--raw-root", str(raw), "--snapshot-root", str(snapshots), "--generation", number),
         ]
     )
 
@@ -242,11 +250,11 @@ def _filed(symbol: str) -> dict[tuple[str, str], str]:
     }
 
 
-def _evidence(db: PgTestDatabase, entity_id: int) -> tuple[Any, ...]:
+def _evidence(db: PgTestDatabase, entity_id: int, instant: date = INSTANT) -> tuple[Any, ...]:
     """The SHP capture's occurrences and interpretations, keyed by occurrence id."""
     with db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
-        packages = repository.list_packages(entity_id, FilingFamily.SHAREHOLDING, INSTANT)
+        packages = repository.list_packages(entity_id, FilingFamily.SHAREHOLDING, instant)
         capture = packages[0].members[Representation.XBRL].capture
         assert capture.capture_ref_id is not None
         occurrences = repository.list_capture_occurrences(capture.capture_ref_id)
@@ -452,10 +460,13 @@ def test_reingest_adds_nothing(
     assert _counts(db) == before
 
 
-def _marked(root: Path, symbol: str, edit: Callable[[Path, list[dict[str, Any]]], None]) -> Path:
-    """A copy of the symbol's gen-2 with one edit, its manifest rehashed; returns the raw root."""
-    folder = root / symbol / GEN
-    shutil.copytree(RAW / symbol / GEN, folder)
+_Edit = Callable[[Path, list[dict[str, Any]]], None]
+
+
+def _marked(root: Path, symbol: str, edit: _Edit, generation: str = GEN) -> Path:
+    """A copy of the symbol's generation with one edit, its manifest rehashed; returns the root."""
+    folder = root / symbol / generation
+    shutil.copytree(RAW / symbol / generation, folder)
     manifest = json.loads((folder / MANIFEST_NAME).read_bytes())
     edit(folder, manifest["entries"])
     for entry in manifest["entries"]:
@@ -504,32 +515,86 @@ def _foreign_context(folder: Path, entries: list[dict[str, Any]]) -> None:
     path.write_bytes(etree.tostring(root))
 
 
+def _mixed_namespace(folder: Path, entries: list[dict[str, Any]]) -> None:
+    """Retag one 2025-05-31 fact into the 2025-10-31 namespace (one filing, two taxonomies)."""
+    (entry,) = [e for e in entries if (e["source_id"], e["surface"]) == SHP_XBRL]
+    path = folder / entry["filename"]
+    root = etree.fromstring(path.read_bytes())
+    fact = next(element for element in root.iter() if element.get("contextRef") is not None)
+    fact.tag = f"{{{SHP_NS}}}{etree.QName(fact).localname}"
+    path.write_bytes(etree.tostring(root))
+
+
+_Q2, _Q4 = (GEN, INSTANT), (GEN4, INSTANT4)
+_LISTING_DATE = _rewrite(SHP_LISTING, b'"date":"30-JUN-2026"', b'"date":"29-JUN-2026"')
+_NAMESPACE = _rewrite(SHP_XBRL, b"2025-10-31/in-bse", b"2099-01-01/in-bse")
+_SCRIP = _rewrite(SHP_XBRL, b'ScripCode">532259<', b'ScripCode">500114<', 1)
+_ISIN = _rewrite(SHP_XBRL, b">INE372A01015<", b">INE280A01028<")
+
+
 @pytest.mark.pg
 @pytest.mark.retained
 @pytest.mark.parametrize(
-    ("edit", "outcome"),
+    ("quarter", "edit", "outcome"),
     [
-        (_rewrite(SHP_LISTING, b'"date":"30-JUN-2026"', b'"date":"29-JUN-2026"'), "PARSE_FAILED"),
-        (_rewrite(SHP_XBRL, b"2025-10-31/in-bse", b"2099-01-01/in-bse"), "UNSUPPORTED_SCHEMA"),
-        (_rewrite(SHP_XBRL, b'ScripCode">532259<', b'ScripCode">500114<', 1), "IDENTITY_REJECTED"),
-        (_rewrite(SHP_XBRL, b">INE372A01015<", b">INE280A01028<"), "IDENTITY_REJECTED"),
-        (_foreign_context, "IDENTITY_REJECTED"),
+        pytest.param(_Q2, _LISTING_DATE, "PARSE_FAILED", id="listing-date"),
+        pytest.param(_Q2, _NAMESPACE, "UNSUPPORTED_SCHEMA", id="namespace"),
+        pytest.param(_Q2, _SCRIP, "IDENTITY_REJECTED", id="context-entity"),
+        pytest.param(_Q2, _ISIN, "IDENTITY_REJECTED", id="isin-fact"),
+        pytest.param(_Q2, _foreign_context, "IDENTITY_REJECTED", id="unused-context"),
+        pytest.param(_Q4, _SCRIP, "IDENTITY_REJECTED", id="gen4-context-entity"),
+        pytest.param(_Q4, _foreign_context, "IDENTITY_REJECTED", id="gen4-unused-context"),
+        pytest.param(_Q4, _mixed_namespace, "UNSUPPORTED_SCHEMA", id="gen4-mixed-namespace"),
     ],
-    ids=["listing-date", "namespace", "context-entity", "isin-fact", "unused-context"],
 )
 def test_refusals_write_nothing_but_their_attempt(
-    guarded: PgTestDatabase, tmp_path: Path, edit: Any, outcome: str
+    guarded: PgTestDatabase, tmp_path: Path, quarter: tuple[str, date], edit: Any, outcome: str
 ) -> None:
     """A marked Apar submission gives its status and writes no occurrence, interpretation or
     package."""
+    generation, instant = quarter
     entity_id = _seed(guarded, "APARINDS")
-    raw = _marked(tmp_path / "raw", "APARINDS", edit)
-    assert _ingest(raw, tmp_path / "snapshots", "APARINDS") != 0
+    raw = _marked(tmp_path / "raw", "APARINDS", edit, generation)
+    assert _ingest(raw, tmp_path / "snapshots", "APARINDS", instant, generation) != 0
     with guarded.runtime_pool() as pool:
-        attempts = EvidenceRepository(pool).list_attempts(entity_id, INSTANT)
+        attempts = EvidenceRepository(pool).list_attempts(entity_id, instant)
     assert [(a.surface, a.outcome.value) for a in attempts] == [(SHP_XBRL[1], outcome)]
     counts = _counts(guarded)
     assert counts["occurrences"] == counts["interpretations"] == counts["filing_packages"] == 0
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_2025_05_31_filing_stays_in_its_taxonomy(guarded: PgTestDatabase, tmp_path: Path) -> None:
+    """PILOT-9 A1: gen-4 keeps its filed 2025-05-31 identities and selects only the 13
+    ``.2025_05`` entries; its two new B(4) members are placed under B(4), so a filed child keeps
+    B(4) from reading as an absent zero."""
+    entity_id = _seed(guarded, "APARINDS")
+    assert _ingest(RAW, tmp_path / "snapshots", "APARINDS", INSTANT4, GEN4) == 0
+    _, occurrences, by_occurrence = _evidence(guarded, entity_id, INSTANT4)
+    for occurrence in occurrences:
+        context = occurrence.native_context
+        assert occurrence.extractor_version == "nse-shp-v3"
+        assert context[CONTEXT_NAMESPACE] == context[CONTEXT_SCHEMA_IDENTITY] == SHP_NS4
+        for axis, member in context["dimension_qnames"]:
+            assert axis.startswith(f"{{{SHP_NS4}}}")
+            assert member.startswith(("typed:", f"{{{SHP_NS4}}}"))
+        assert occurrence.disclosure["format_version"] == "in-bse-shp/2025-05-31"
+    config = load_run_config(CONFIG, SHAREHOLDING_VERSIONS)
+    ids = sorted(e.entry_id for e in config.mapping_set.entries if e.entry_id.endswith(".2025_05"))
+    used = [row.mapping_entry_id for row in by_occurrence.values() if row.mapping_entry_id]
+    assert len(ids) == 13 and sorted(used) == ids
+    new = [
+        m for m in FORMAT_PARENT if m.startswith(("RelativesOfPromoters", "TrustsWhereAnyPerson"))
+    ]
+    assert len(new) == 2 and {FORMAT_PARENT[m] for m in new} == {"NonInstitutionsMember"}
+    filed = [
+        o
+        for o in occurrences
+        if not any(v.endswith(":NonInstitutionsMember") for _, v in o.native_context["dimensions"])
+    ]
+    reason = point_check._absent(config, "non_institutions", filed)
+    assert reason == point_check._FILED.format(member="non_institutions")
 
 
 @pytest.mark.pg

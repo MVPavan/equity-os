@@ -1,0 +1,26 @@
+# Mapping set v8 (PILOT-9 Amendment A1): v7 unchanged plus the 2025-05-31 SHP taxonomy entries.
+# Extractor versions bound to these selectors: nse-shp-v3 (first party), screener-shp-v1,
+# tijori-shp-v1 and upstox-shp-v1.
+version: v8
+normalisation_policy_version: v2
+entry_files:
+- xbrl/v1/in_capmkt.yaml
+- xbrl/v5/in_capmkt.yaml
+- xbrl/v3/in_bse_fin.yaml
+- pdf/v2/results_layout.yaml
+- screener/v2/financials.yaml
+- tijori/v3/financials.yaml
+- upstox/v2/summary.yaml
+- upstox/v2/full_statement.yaml
+- shareholding_filing/v1/shp.yaml
+- shareholding_filing/v2/shp.yaml
+- screener/v3/shareholding.yaml
+- tijori/v4/shareholding.yaml
+- upstox/v3/shareholding.yaml
+construction_files:
+- constructions/v1.yaml
+- constructions/v2.yaml
+- screener/v2/constructions.yaml
+statement_anchor_files:
+- statement_anchors/v1.yaml
+- statement_anchors/v2.yaml

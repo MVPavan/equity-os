@@ -86,8 +86,8 @@ WATCHLIST = "watchlist.yaml"
 GENERATION_PREFIX = "gen-"
 AUTHORIZATION = "fundamentals shareholding acquire (plan D8 Task 4)"
 PAUSE_SECONDS = 3  # the probe's spacing between live requests (d8-probe.md §1)
-# Dictionary v3, mapping set v7 and normalisation policy v2 (plan D8 Task 3).
-SHAREHOLDING_VERSIONS = ConfigVersions(dictionary="v3", mapping_set="v7", normalisation_policy="v2")
+# Dictionary v3, mapping set v8 and normalisation policy v2 (plan D8 Task 3; PILOT-9 A1).
+SHAREHOLDING_VERSIONS = ConfigVersions(dictionary="v3", mapping_set="v8", normalisation_policy="v2")
 _FIRST_PARTY = (SHP_LISTING, SHP_XBRL)
 _VENDOR = (SCREENER_SHAREHOLDING, SCREENER_INVESTORS, TIJORI_SHAREHOLDING, UPSTOX_SHAREHOLDING)
 _NO_ENTITY = "no entity holds NSE symbol {symbol} at {instant}"

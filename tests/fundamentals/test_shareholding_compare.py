@@ -194,7 +194,7 @@ APAR = "APARINDS"
 RESULTS_MANIFEST = REPO_ROOT / "data" / "raw" / "watchlist" / "aparinds" / "retrieval-manifest.json"
 RESULTS_XBRL = "INTEGRATED_FILING_INDAS_1701114_24072026063426_WEB.xml"  # Q1 FY27, 2026-06-30
 SHP_ARGS: tuple[str, ...] = ("--family", "shareholding", "--dictionary", "v3")
-SHP_ARGS += ("--mapping-set", "v7", "--normalisation-policy", "v2")
+SHP_ARGS += ("--mapping-set", "v8", "--normalisation-policy", "v2")
 # The results set that reads the in-capmkt 2026-01-31 taxonomy Apar's Q1 FY27 XBRL files.
 RESULTS_ARGS = ("--dictionary", "v2", "--mapping-set", "v6")
 # ``request_for``'s default-family JSON digest and run identity at HEAD 70647c0 (plan D8 Task 5),
