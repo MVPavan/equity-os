@@ -1,18 +1,34 @@
 {
   "now": {
-    "title": "Pilot exit test next (eqos-4j2.8)",
-    "detail": "All three pilot-blocking gaps done: memory (eqos-4j2.25), alignment 24/24 (eqos-4j2.33), fact admission (eqos-4j2.24). Full suite 4281 passed. Next: plan and build tests/fundamentals/test_pilot_e2e.py (PILOT-1..13 on test databases). The live pilot run still waits on the owner-gated equity_os cutover (eqos-3zl).",
-    "stage": "PREP"
+    "title": "D8 shareholding: Task 6 vendor readers next (eqos-17r)",
+    "detail": "Production cutover done (eqos-3zl); pilot report verdict CONDITIONAL on D8 (PILOT-9). D8 resumed under the owner shareholding exception, plan Sol r7 APPROVE. Tasks 1b-5 committed (faa5359, 59baf73, b21e362, 1adf30e, 43c348b). Next: Task 6 Screener/Tijori/Upstox shareholding readers with the full nested holder tree and the R12 point check; then Task 7 frozen Stage 3 manifest, Task 8 Stage 3 e2e, Sol phase review.",
+    "stage": "D8"
   },
   "next": [
-    "Plan and build the pilot exit test tests/fundamentals/test_pilot_e2e.py (eqos-4j2.8)",
-    "Owner: GO-AHEAD for the equity_os cutover (eqos-3zl) before the live pilot",
-    "PQ3 segment statement still not located (eqos-ghv) — pilot test decides if needed",
+    "D8 Task 6: vendor shareholding readers, nested tree (R11), point check (R12)",
+    "D8 Task 7: frozen Stage 3 manifest; Task 8: Stage 3 e2e",
+    "D8 Sol phase review loop and closing review",
+    "Mark PILOT-9 met; pilot verdict CONDITIONAL -> PASS; roadmap",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
-    "Owner: check equity_os for tijori-v4/screener-v1 pins made Oct 17-19 (may drift after 96b8a5d)",
-    "Owner: disable systemd-timesyncd in WSL (clock backsteps)"
+    "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 Task 5 committed (43c348b): shareholding run family and loader family, INSTANT kinds applicable, exact filed percentages kept for the point check. 132 tests passed, mypy and ruff clean."
+    },
+    {
+      "date": "2026-10-20",
+      "text": "D8 Tasks 1b-4 committed: Screener drill-down surface (faa5359), gen-2 tree probe (59baf73), dictionary v3 / mapping set v7 / normalisation v2 (b21e362), NSE SHP acquisition and nse-shp-v1 adapter (1adf30e)."
+    },
+    {
+      "date": "2026-10-20",
+      "text": "D8 resumed under the owner shareholding exception (assumed denominator labelled; full nested tree; absent category = zero); plan Sol r7 APPROVE (5dcacf6)."
+    },
+    {
+      "date": "2026-10-20",
+      "text": "Production cutover of equity_os done (eqos-3zl); PILOT-3 met. Pilot exit test built (eqos-4j2.8); pilot report verdict CONDITIONAL on D8 (e93872c)."
+    },
     {
       "date": "2026-10-19",
       "text": "PREP-8 closed: verify_project.sh registers the pilot exit tests/fundamentals/test_pilot_e2e.py; real run 0 failed, 2 not built (D8 parked, pilot). Dashboard PREP row and D8 parked label fixed (77c9980)."

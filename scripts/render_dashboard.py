@@ -26,7 +26,7 @@ PHASES = [  # (label, epic id, name)
     ("D5", "eqos-tfb", "Generated views"),
     ("D6", "eqos-h4h", "Identifier-only onboarding"),
     ("D7", "eqos-3oq", "Coverage model"),
-    ("D8", "eqos-17r", "Shareholding filing source — parked (owner 2026-10-17)"),
+    ("D8", "eqos-17r", "Shareholding filing source — resumed (owner 2026-10-20)"),
     ("D9", "eqos-4fc", "Retention and replay"),
 ]
 # Pilot prerequisites are not all beads; their state is recorded here and updated by hand.
