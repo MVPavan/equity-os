@@ -1,17 +1,20 @@
 {
   "now": {
-    "title": "PILOT-9 Task 3: real four-quarter shareholding coverage in the pilot e2e (eqos-4j2.32)",
-    "detail": "Task 2 committed: pilot manifest gains a hand-authored shareholding section for Sep 2025, Dec 2025, Mar 2026 (20 rows each; 11/11/14 point checks) plus Jun 2026 via Stage 3; Sol r1 APPROVE 93164041, no findings. Order checks pending until Task 3's e2e commit.",
+    "title": "PILOT-9 Task 4: reconcile pilot report and roadmap, full gate (eqos-4j2.32)",
+    "detail": "Task 3 committed (0c333df): the pilot e2e runs all four Apar quarters through the CLI and matches the frozen section; tripwire removed. Pilot e2e 238 s, Stage 3 e2e 95 s, both green. Frozen-manifest order checks for pilot and Stage 3 now pass (187/187).",
     "stage": "D8"
   },
   "next": [
-    "PILOT-9 Task 3: replace the PILOT-9 tripwire with real coverage",
-    "PILOT-9 Task 4: reconciliation, verify_project, report",
-    "D8 phase re-review r4 + fresh closing review; close eqos-17r",
+    "PILOT-9 Task 4: report, PILOT-E2E.md, roadmap conditions; verify_project.sh",
+    "D8 phase re-review r4 + fresh closing review; close eqos-17r and eqos-4j2.32",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "PILOT-9 Task 3 committed: four-quarter shareholding coverage in the pilot e2e (ingest, run, report per quarter; rows, pairs, filing and vendor identity, point lines). No manifest/code mismatch; three drift probes fail with PILOT-9. Order checks closed."
+    },
     {
       "date": "2026-10-21",
       "text": "PILOT-9 Task 2 committed: frozen shareholding section for FY26 Q2-Q4 (one submission per quarter, 60 rows, 36 point lines, 39 first-party locators) and check_shareholding with 8 refused mutations. Sol r1 APPROVE, no findings; vendor readings only in the private companion."
