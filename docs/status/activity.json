@@ -1,17 +1,20 @@
 {
   "now": {
-    "title": "D8 closing review fixes (eqos-17r)",
-    "detail": "Fresh Sol closing review: REQUEST_CHANGES with 5 P2 input-validation gaps the frozen examples don't reach (ingest instant mismatch, revision predecessor order, malformed context ids, listing shape, a vendor reading copied into dictionary v3). Frozen data, arithmetic and verdict wording confirmed. Opus fix round running; C3 brings nse-shp-v4 and Stage 3 + pilot manifest re-approval; C5 grandfathered under eqos-rkb.",
+    "title": "D8: final full gate running after closing-review fixes (eqos-17r)",
+    "detail": "Sol closing r2 APPROVE: C1-C4 fixed (instant check, predecessor by knowledge time, context-id guard as nse-shp-v4, listing shape), C5 grandfathered under eqos-rkb, C6/C7 done; Stage 3 and pilot manifests re-approved (9c20b6c3 / bc41586e). Committed 2c8288d, 379c743, 02a90cb; approval and order checks 187/187. Full verify_project.sh started 17:47Z.",
     "stage": "D8"
   },
   "next": [
-    "Closing-review fix round -> Sol re-review -> manifest re-approvals -> full gate",
-    "Close eqos-17r and eqos-4j2.32",
+    "Final gate green -> close eqos-17r and eqos-4j2.32",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
-    "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval (now includes dictionary v2/v3 entry)",
+    "Owner: PILOT-12 timing; eqos-rkb history-rewrite approval (includes dictionary v2/v3 entry)",
     "PILOT-7 via the D6 exit row"
   ],
   "log": [
+    {
+      "date": "2026-10-21",
+      "text": "D8 closing fixes: Sol r2 APPROVE, all five P2 resolved (C5 by recorded exception). nse-shp-v4; new regression tests for wrong instant, out-of-order revisions, malformed context ids and listing shape. Both frozen manifests re-sealed; order checks pass."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 fresh closing review REQUEST_CHANGES: C1-C4 ingest/identity/lineage/acquisition gaps reproduced off-database; C5 dictionary v3 vendor-reading copy (grandfathered, added to eqos-rkb); P3 C6 failure-output hardening, C7 v8 comment. No P1; pilot evidence and verdict wording confirmed."
