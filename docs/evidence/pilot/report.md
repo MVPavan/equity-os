@@ -9,7 +9,7 @@ Gate test: `tests/fundamentals/test_pilot_e2e.py` (one ordered `test_pilot_end_t
 `tests/fundamentals/pilot_e2e_support.py`). Expected values come only from the frozen
 `pilot_manifest.yaml`; failing assertions begin `PILOT-n:`.
 
-Full gate at `8500bf2` (code as `02a90cb`, after the D8 closing-review fixes; 2026-10-21, 20:04:02Z–22:11:05Z): `scripts/verify_project.sh` exit 0, every row PASS (D1a–D9, frozen manifests, amendment records, Pilot, Pytest, Mypy, Ruff, Ruff format); `uv run pytest tests/fundamentals` 4401 passed, 9 skipped (1:45:44); `mypy --strict src` no issues in 326 files; ruff clean. Pilot e2e 248.1 s in the gate. The preceding run at `02a90cb` failed only `test_stage2_end_to_end` ("derivation clock moved backwards", wall-clock guard); it passed alone and in this run; known flake `eqos-0bp` (cause not yet diagnosed).
+Full gate at `032258a` (code as `4a7e50a`, after the D8 closing-review fixes; 2026-10-21, 20:04:02Z–22:11:05Z): `scripts/verify_project.sh` exit 0, every row PASS (D1a–D9, frozen manifests, amendment records, Pilot, Pytest, Mypy, Ruff, Ruff format); `uv run pytest tests/fundamentals` 4401 passed, 9 skipped (1:45:44); `mypy --strict src` no issues in 326 files; ruff clean. Pilot e2e 248.1 s in the gate. The preceding run at `4a7e50a` failed only `test_stage2_end_to_end` ("derivation clock moved backwards", wall-clock guard); it passed alone and in this run; known flake `eqos-0bp` (cause not yet diagnosed).
 
 Gate logs: `scratchpad/project-verification.7Y9zfv/` (`14.log` Pilot, `15.log` Pytest, `16.log` Mypy, `17.log` Ruff, `18.log` Ruff format, `10.log` D8; local, not committed).
 
@@ -25,7 +25,7 @@ Gate logs: `scratchpad/project-verification.7Y9zfv/` (`14.log` Pilot, `15.log` P
 | PILOT-6 | MET | `ledger export --stock APARINDS --status-notes --memory` as the runtime role, read-only; narratives hash to `content_hash`; `memory.md` lists the promoted ids |
 | PILOT-7 | EXTERNAL | D6 exit `tests/fundamentals/test_data_stage4_e2e.py`; the holdout stays blind and was not touched |
 | PILOT-8 | MET | Head is the owner `ADD`; after owner `REMOVE` a runtime draft is refused "is not on the watchlist" with report/version counts unchanged |
-| PILOT-9 | MET | Per quarter, `pilot_e2e_support.pilot9` (Task 3 block, `0c333df`) matches the frozen `shareholding` section; citation clause vacuous (`_pilot9_vacuity`). See § PILOT-9 |
+| PILOT-9 | MET | Per quarter, `pilot_e2e_support.pilot9` (Task 3 block, `70bbb1f`) matches the frozen `shareholding` section; citation clause vacuous (`_pilot9_vacuity`). See § PILOT-9 |
 | PILOT-10 | MET | Real-clock classify, backup, dry-run, purge, guarded `db restore --replay-runs`: listed set equals the eligible set, no hold root listed, held blobs hash-verified. An empty purge is not observed deletion; positive deletion is D9's exit |
 | PILOT-11 | MET except blind drill (EXTERNAL) | (i) interrupt after `admit_run`, retry without duplication; (ii) PQ2 v1 rejected on `cmp.revenue.qoq.prior`, only QoQ lines rerun, successor v(N+1) approved; (iii) seeded shadow states are not `ANSWER` and owner approval is refused. Detecting review-only seeds needs the owner's blind run `eqos-4j2.30` |
 | PILOT-12 | MET (instrumentation); owner timing EXTERNAL | Five run-generated versions each have exactly one `review_sessions` row, full `claim_reviews` coverage, the scripted PQ2 rejection and the two-session report totals. Scripted times are instrumentation only; the owner's real review of four reports is open |
@@ -82,7 +82,7 @@ Generated from `pilot_manifest.yaml` (`v` as frozen; EPS in INR per share, other
 
 Plan: [PILOT-9](../../plans/PILOT-9.md). Evidence: the Task 3 block of `test_pilot_end_to_end`
 (`runs += [pilot9(pilot, quarter) for quarter in QUARTERS]`, helper `pilot_e2e_support.pilot9`,
-commit `0c333df`) against the `shareholding` section of `pilot_manifest.yaml` (commit `564b6d2`,
+commit `70bbb1f`) against the `shareholding` section of `pilot_manifest.yaml` (commit `eab81b0`,
 gpt-6.1-sol APPROVE 2026-10-21, payload `93164041b9cc1734aaa258ef8a062a0d8321170836e39a4a978f562d3f5566b7`;
 review `scratchpad/execution/d8/pilot9-task2-r1-sol.md`). Vendor readings live only in the private,
 hash-pinned companion, not in git.
@@ -111,8 +111,8 @@ hash-pinned companion, not in git.
   historical update evidence and do not establish point-in-time vendor knowledge. The first-party side
   is cutoff-clean. Run times: each run is created on a fresh test database when the e2e runs and is not retained; the cited execution is the gate run under "Gate logs".
 - Versions (Amendment A1): the 2025-09-30 filing is in the 2025-05-31 SHP taxonomy, so extraction
-  moved to `nse-shp-v3` and mapping set v8 (`035678d`); the Stage 3 manifest was re-approved at
-  payload `731ea8be74398e1b5b4308b58f8f4f293ae06a31d1f9c06b8a31d6d75b6550d6` (`0f6df2d`).
+  moved to `nse-shp-v3` and mapping set v8 (`8b036b7`); the Stage 3 manifest was re-approved at
+  payload `731ea8be74398e1b5b4308b58f8f4f293ae06a31d1f9c06b8a31d6d75b6550d6` (`698fcd6`).
 - Runtime (2026-10-21): pilot e2e 237.9 s; Stage 3 e2e 94.5 s.
 
 ## Acquisition
@@ -145,7 +145,7 @@ Reviewer gpt-6.1-sol, all 2026-10-20.
 - Closing review: 1 P2 (`FILED` accepted outside the comparator/tax keys), 1 P3 (PILOT-5 support and
   `MODIFIED` not bound). Both fixed; re-review APPROVE.
 
-Commits: `171bd47`, `38eac49`, `4c318e4`, `4de844d`, `7c640ad`.
+Commits: `33b73de`, `11bb672`, `47981be`, `1dbbb90`, `9b2e7d1`.
 
 ## Open external items
 

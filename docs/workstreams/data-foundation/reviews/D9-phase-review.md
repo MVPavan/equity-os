@@ -7,12 +7,12 @@ Reviewer: GPT-6.1 Sol (reasoning effort high), fresh session per round. Approver
 
 | Round | Basis | Verdict | Findings | Fixed in |
 |---|---|---|---|---|
-| Phase review r1 | D9 Tasks 1–9 (`d046216`..`4f0d4ca`) | REVISE | F1–F18 | `081b501` |
-| Re-review r2 | `081b501` | REVISE | F1, F9, F10 partial → G1–G5 | `45e5e95` |
-| Re-review r3 | `45e5e95` | REVISE | G1 partial → H1–H2 | `72a9434` (orchestrator rulings, loop at 3 rounds) |
-| Fresh critical review | whole phase at `72a9434` | REVISE | K1–K8 (5 P1, 3 P2) | `9e979e7` |
-| Re-review | `9e979e7` | REVISE | K3 partial, two regressions → L1–L3 | `1f54c2d` |
-| Re-review 2 | `1f54c2d` | **APPROVE** | none; K1–K8 and L1–L3 fixed | — |
+| Phase review r1 | D9 Tasks 1–9 (`8dd1b53`..`b72103a`) | REVISE | F1–F18 | `38077cb` |
+| Re-review r2 | `38077cb` | REVISE | F1, F9, F10 partial → G1–G5 | `65bb74d` |
+| Re-review r3 | `65bb74d` | REVISE | G1 partial → H1–H2 | `8b41f29` (orchestrator rulings, loop at 3 rounds) |
+| Fresh critical review | whole phase at `8b41f29` | REVISE | K1–K8 (5 P1, 3 P2) | `3859728` |
+| Re-review | `3859728` | REVISE | K3 partial, two regressions → L1–L3 | `3183817` |
+| Re-review 2 | `3183817` | **APPROVE** | none; K1–K8 and L1–L3 fixed | — |
 
 ## Orchestrator rulings carried by the approval
 
@@ -31,7 +31,7 @@ Reviewer: GPT-6.1 Sol (reasoning effort high), fresh session per round. Approver
 
 ## Verification at approval
 
-`ruff format --check`, `ruff check`, `mypy --strict src` clean. Full suite at `1f54c2d`:
+`ruff format --check`, `ruff check`, `mypy --strict src` clean. Full suite at `3183817`:
 4102 passed, 8 skipped, 2 failed — both the WSL wall-clock backstep in `test_pipeline_e2e`
 ("derivation clock moved backwards", `api/source_admission.py`), non-D9, reproduces in isolation
 about 2 runs in 5, tracked `eqos-0bp`. The ledger Stage 5 e2e (D9 exit) passes.

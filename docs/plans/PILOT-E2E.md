@@ -59,7 +59,7 @@ minimal-code rule (2026-10-14).
    25) and cables margin (9.5–10 / 10–11) are compatible.
 8. **Clock.** The derivation cutoff is the process clock (`api/pipeline.py:575` `completed()`); PG
    stamps rows with the store clock (`eqos-4j2.23`).
-9. `PILOT_TARGET` is set; the manifest is committed and approved (payload `ad188b0d…`) in `1b74d77`,
+9. `PILOT_TARGET` is set; the manifest is committed and approved (payload `ad188b0d…`) in `5e373b9`,
    before any e2e commit, so Decision 8's history check holds.
 10. **Label carrier (contract probe).** `NumericClaim.qualifiers` is persisted
    (`numeric_claims.qualifiers text[]`, no CHECK), hashed into the sealed digest

@@ -1,7 +1,7 @@
 # Source-of-truth matrix (register B-03, pilot prerequisite PREP-4)
 
 Status: **approved** — reviewer gpt-6.1-sol, verdict APPROVE, 2026-10-18 (r1 REVISE 11 findings,
-r2 APPROVE; two P3 wording notes applied). Recorded at HEAD `4052428`. The register file is hash-pinned
+r2 APPROVE; two P3 wording notes applied). Recorded at HEAD `3aab59a`. The register file is hash-pinned
 (`scripts/equity_os_blueprint/validate_ledger_structural.py`), so B-03's approval is recorded here and in the roadmap.
 
 What this is: for each artifact class, the store that wins as the code exists **now**. Where the

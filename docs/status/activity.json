@@ -1,7 +1,7 @@
 {
   "now": {
     "title": "D8 shareholding complete; pilot verdict CONDITIONAL on owner items",
-    "detail": "D8 (eqos-17r) and PILOT-9 (eqos-4j2.32) closed. Final gate exit 0 at 8500bf2: every row PASS, 4401 passed, 9 skipped. Pilot conditions met: D8 approval, verify_project exit 0, report approval. Open: owner blind drill (eqos-4j2.30), PILOT-12 timing, PILOT-7 via D6 exit row.",
+    "detail": "D8 (eqos-17r) and PILOT-9 (eqos-4j2.32) closed. Final gate exit 0 at 032258a: every row PASS, 4401 passed, 9 skipped. Pilot conditions met: D8 approval, verify_project exit 0, report approval. Open: owner blind drill (eqos-4j2.30), PILOT-12 timing, PILOT-7 via D6 exit row.",
     "stage": "Pilot"
   },
   "next": [
@@ -14,7 +14,7 @@
   "log": [
     {
       "date": "2026-10-21",
-      "text": "D8 closed. Final verify_project.sh exit 0 at 8500bf2 (4401 passed, 9 skipped; Pilot e2e 248 s). Prior run's single Stage 2 clock-guard failure passed alone and on rerun; folded into known flake eqos-0bp. eqos-17r and eqos-4j2.32 closed."
+      "text": "D8 closed. Final verify_project.sh exit 0 at 032258a (4401 passed, 9 skipped; Pilot e2e 248 s). Prior run's single Stage 2 clock-guard failure passed alone and on rerun; folded into known flake eqos-0bp. eqos-17r and eqos-4j2.32 closed."
     },
     {
       "date": "2026-10-21",
@@ -26,11 +26,11 @@
     },
     {
       "date": "2026-10-21",
-      "text": "Sol D8 phase re-review r4 APPROVE: four-quarter PILOT-9 coverage real, D8 exit met, pilot report approved; verdict stays CONDITIONAL. Two P3 fixes committed (f81bd75), pilot e2e re-run green (284 s)."
+      "text": "Sol D8 phase re-review r4 APPROVE: four-quarter PILOT-9 coverage real, D8 exit met, pilot report approved; verdict stays CONDITIONAL. Two P3 fixes committed (052a702), pilot e2e re-run green (284 s)."
     },
     {
       "date": "2026-10-21",
-      "text": "Full verify_project.sh gate exit 0 at 79c9bbb: D1a-D9, frozen manifests, amendment records, Pilot, Pytest (4393 passed, 9 skipped), Mypy, Ruff all PASS. The PILOT-9 tripwire is gone; pilot condition 'verify_project exit 0' met."
+      "text": "Full verify_project.sh gate exit 0 at 0b887e3: D1a-D9, frozen manifests, amendment records, Pilot, Pytest (4393 passed, 9 skipped), Mypy, Ruff all PASS. The PILOT-9 tripwire is gone; pilot condition 'verify_project exit 0' met."
     },
     {
       "date": "2026-10-21",
@@ -46,23 +46,23 @@
     },
     {
       "date": "2026-10-21",
-      "text": "PILOT-9 Amendment A1: Sol r1 -> r2 APPROVE (dfc5b29). Commit (a) 035678d: nse-shp-v3, mapping set v8 (13 2025-05 entries, equivalence unproven); Sep 2025 now ingests. Commit (b) 0f6df2d: Stage 3 manifest re-approved by Sol, no expected value changed."
+      "text": "PILOT-9 Amendment A1: Sol r1 -> r2 APPROVE (06420a3). Commit (a) 8b036b7: nse-shp-v3, mapping set v8 (13 2025-05 entries, equivalence unproven); Sep 2025 now ingests. Commit (b) 698fcd6: Stage 3 manifest re-approved by Sol, no expected value changed."
     },
     {
       "date": "2026-10-21",
-      "text": "PILOT-9 plan Sol r1 REQUEST_CHANGES (6 P2, 4 P3) -> r2 (2 P2) -> r3 APPROVE (46b0b54). Task 1 acquired Apar SHP gen-4/5/6 for Sep 2025, Dec 2025, Mar 2026 (all requests OK after one Upstox 401 retry). Sep 2025 filing refused: older SHP taxonomy 2025-05-31."
+      "text": "PILOT-9 plan Sol r1 REQUEST_CHANGES (6 P2, 4 P3) -> r2 (2 P2) -> r3 APPROVE (376dfd8). Task 1 acquired Apar SHP gen-4/5/6 for Sep 2025, Dec 2025, Mar 2026 (all requests OK after one Upstox 401 retry). Sep 2025 filing refused: older SHP taxonomy 2025-05-31."
     },
     {
       "date": "2026-10-21",
-      "text": "D8 phase review: r1 REQUEST_CHANGES (vendor readings in tracked docs, absence/zero, per-instant package, drill-down binding, failure records, identity gate -> *-shp-v2 extractors, calendar, caps) fixed in c611f2c; r2 resolved all and re-approved the manifest (8fa84c7d); order check and File map follow-ups committed, e2e revision 7d990d0."
+      "text": "D8 phase review: r1 REQUEST_CHANGES (vendor readings in tracked docs, absence/zero, per-instant package, drill-down binding, failure records, identity gate -> *-shp-v2 extractors, calendar, caps) fixed in ae8a77b; r2 resolved all and re-approved the manifest (8fa84c7d); order check and File map follow-ups committed, e2e revision 075f7e9."
     },
     {
       "date": "2026-10-21",
-      "text": "D8 Task 8 committed (f23393e): Stage 3 e2e through the CLI on a fresh test database matches the frozen manifest for APARINDS, ETERNAL and TITAN (rows, sides, keyless, tree, report point-check lines); no source change needed. All five D8 stages closed; Sol phase review started."
+      "text": "D8 Task 8 committed (5e8c51b): Stage 3 e2e through the CLI on a fresh test database matches the frozen manifest for APARINDS, ETERNAL and TITAN (rows, sides, keyless, tree, report point-check lines); no source change needed. All five D8 stages closed; Sol phase review started."
     },
     {
       "date": "2026-10-21",
-      "text": "D8 Task 7 committed (d420549): independent frozen Stage 3 manifest, 41 point checks, 1,194 tree nodes; Sol r1 REQUEST_CHANGES (9 P2, 1 P3) -> r2 APPROVE. Vendor readings split into a private companion per Sol's subscriber-rights ruling. D8.2-D8.4 closed."
+      "text": "D8 Task 7 committed (62514a2): independent frozen Stage 3 manifest, 41 point checks, 1,194 tree nodes; Sol r1 REQUEST_CHANGES (9 P2, 1 P3) -> r2 APPROVE. Vendor readings split into a private companion per Sol's subscriber-rights ruling. D8.2-D8.4 closed."
     },
     {
       "date": "2026-10-21",
@@ -74,39 +74,39 @@
     },
     {
       "date": "2026-10-21",
-      "text": "D8 Task 5 committed (43c348b): shareholding run family and loader family, INSTANT kinds applicable, exact filed percentages kept for the point check. 132 tests passed, mypy and ruff clean."
+      "text": "D8 Task 5 committed (d9c5c49): shareholding run family and loader family, INSTANT kinds applicable, exact filed percentages kept for the point check. 132 tests passed, mypy and ruff clean."
     },
     {
       "date": "2026-10-20",
-      "text": "D8 Tasks 1b-4 committed: Screener drill-down surface (faa5359), gen-2 tree probe (59baf73), dictionary v3 / mapping set v7 / normalisation v2 (b21e362), NSE SHP acquisition and nse-shp-v1 adapter (1adf30e)."
+      "text": "D8 Tasks 1b-4 committed: Screener drill-down surface (49b9df1), gen-2 tree probe (e3afbc8), dictionary v3 / mapping set v7 / normalisation v2 (e29a541), NSE SHP acquisition and nse-shp-v1 adapter (b355db0)."
     },
     {
       "date": "2026-10-20",
-      "text": "D8 resumed under the owner shareholding exception (assumed denominator labelled; full nested tree; absent category = zero); plan Sol r7 APPROVE (5dcacf6)."
+      "text": "D8 resumed under the owner shareholding exception (assumed denominator labelled; full nested tree; absent category = zero); plan Sol r7 APPROVE (b6c4ec2)."
     },
     {
       "date": "2026-10-20",
-      "text": "Production cutover of equity_os done (eqos-3zl); PILOT-3 met. Pilot exit test built (eqos-4j2.8); pilot report verdict CONDITIONAL on D8 (e93872c)."
+      "text": "Production cutover of equity_os done (eqos-3zl); PILOT-3 met. Pilot exit test built (eqos-4j2.8); pilot report verdict CONDITIONAL on D8 (3fa81e0)."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-8 closed: verify_project.sh registers the pilot exit tests/fundamentals/test_pilot_e2e.py; real run 0 failed, 2 not built (D8 parked, pilot). Dashboard PREP row and D8 parked label fixed (77c9980)."
+      "text": "PREP-8 closed: verify_project.sh registers the pilot exit tests/fundamentals/test_pilot_e2e.py; real run 0 failed, 2 not built (D8 parked, pilot). Dashboard PREP row and D8 parked label fixed (5300285)."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-7 frozen pilot manifest closed: plan 792fee2 (Sol r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; closing REVISE 7 → REVISE 2 → APPROVE); manifest + check 1b74d77, payload ad188b0d… (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs ab83c9d. Full suite 4250 passed, 9 skipped."
+      "text": "PREP-7 frozen pilot manifest closed: plan 95606ba (Sol r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; closing REVISE 7 → REVISE 2 → APPROVE); manifest + check 5e373b9, payload ad188b0d… (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs 824df54. Full suite 4250 passed, 9 skipped."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-6 review telemetry closed: Tasks 1-4 (542902f, 45700e6, 776bcba, fd03d08); Sol phase r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE (7fc0584); closing REVISE 3 → APPROVE (ae2da10). Post-review full suite found 8 table-enumeration/import test regressions, fixed 020521c; final full suite 4219 passed, 9 skipped."
+      "text": "PREP-6 review telemetry closed: Tasks 1-4 (aeecbf1, 3c118f6, 794c077, c5ac728); Sol phase r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE (eb682a0); closing REVISE 3 → APPROVE (ed7c32f). Post-review full suite found 8 table-enumeration/import test regressions, fixed 59e052c; final full suite 4219 passed, 9 skipped."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-6 plan approved (f9c5b72): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) → r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) → APPROVE. Filed eqos-4j2.30."
+      "text": "PREP-6 plan approved (2230ba9): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) → r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) → APPROVE. Filed eqos-4j2.30."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-5 rejected-claim rework closed: Tasks 1-5 (e304766, 96cedc5, 4f50b25, 768116f, ead2fa6); Sol phase r1 REVISE 3 (duplicate keys, placeholder/claim agreement, carried order) fixed 53bfb79, r2 APPROVE; closing review REVISE 2 (display style before writes, duplicate-claim test) fixed, APPROVE. HEAD failures root-caused: screen-export edits drifted pinned extractor sources (restored, 96b8a5d) and a stale stage2 e2e fixture."
+      "text": "PREP-5 rejected-claim rework closed: Tasks 1-5 (c8de258, 4c1c4c6, 85d7266, 3c43d9a, 827fa49); Sol phase r1 REVISE 3 (duplicate keys, placeholder/claim agreement, carried order) fixed b6e6db8, r2 APPROVE; closing review REVISE 2 (display style before writes, duplicate-claim test) fixed, APPROVE. HEAD failures root-caused: screen-export edits drifted pinned extractor sources (restored, de7ae29) and a stale stage2 e2e fixture."
     },
     {
       "date": "2026-10-18",
@@ -114,35 +114,35 @@
     },
     {
       "date": "2026-10-18",
-      "text": "D7 and D9 closed. Screen-export phase r2 APPROVE; fresh closing review REVISE (11), fixes 95e96bd (8), 3 parked as beads (publish-before-register residue, owner-SQL member sealing, concurrent diagnostic GET); re-review APPROVE. Beads eqos-351, eqos-3oq, eqos-4fc closed."
+      "text": "D7 and D9 closed. Screen-export phase r2 APPROVE; fresh closing review REVISE (11), fixes ca5c86c (8), 3 parked as beads (publish-before-register residue, owner-SQL member sealing, concurrent diagnostic GET); re-review APPROVE. Beads eqos-351, eqos-3oq, eqos-4fc closed."
     },
     {
       "date": "2026-10-18",
-      "text": "PREP-2/2b/3 closed: fresh closing review found 3 (native selection of imported fact passed historical checks; legacy/run-bound citations lacked issuer checks; coexisting mapping versions blocked runs); fixed f8bcc8b; Sol APPROVE. Screen-export phase r1 fixes 1880497 + c450ce5 (migration 0038); holds list gains the Stage 4 manifest. Filed eqos-4j2.23 (process-clock cutoff vs store clock)."
+      "text": "PREP-2/2b/3 closed: fresh closing review found 3 (native selection of imported fact passed historical checks; legacy/run-bound citations lacked issuer checks; coexisting mapping versions blocked runs); fixed 95d49bc; Sol APPROVE. Screen-export phase r1 fixes cf8258a + 82e81fe (migration 0038); holds list gains the Stage 4 manifest. Filed eqos-4j2.23 (process-clock cutoff vs store clock)."
     },
     {
       "date": "2026-10-18",
-      "text": "Owner direction: run screen formulas directly, save nothing at the vendors. Probed live (Screener raw-query page has its own export form, full CSV; Tijori advanced search returns all rows). Amendment and plan revised, Sol r1 REVISE (4), r2 APPROVE (0b3ae46); exporter adapted (962be61); one live run recorded. PREP-2/2b phase review r1 REVISE (8, 3 P1 reproduced), fixes 73dad2b incl. migration 0036. PREP-3 plan r1 REVISE (11), r2 REVISE (2)."
+      "text": "Owner direction: run screen formulas directly, save nothing at the vendors. Probed live (Screener raw-query page has its own export form, full CSV; Tijori advanced search returns all rows). Amendment and plan revised, Sol r1 REVISE (4), r2 APPROVE (4ccf313); exporter adapted (a201ec2); one live run recorded. PREP-2/2b phase review r1 REVISE (8, 3 P1 reproduced), fixes d8380c7 incl. migration 0036. PREP-3 plan r1 REVISE (11), r2 REVISE (2)."
     },
     {
       "date": "2026-10-18",
-      "text": "Screen export Tasks 3-5 done (a8a1d24, 116e3f2): vendor export transport for both vendors, paired runs and binding (0034), review queue, other-vendor reads and OPEN_SCREEN_REVIEW hold (0035). Catalog gained screen_results, SCREEN_DEFINITION and Tijori overview surfaces (orchestrator ruling). 310 related tests pass."
+      "text": "Screen export Tasks 3-5 done (a4c76ec, 0cb4efb): vendor export transport for both vendors, paired runs and binding (0034), review queue, other-vendor reads and OPEN_SCREEN_REVIEW hold (0035). Catalog gained screen_results, SCREEN_DEFINITION and Tijori overview surfaces (orchestrator ruling). 310 related tests pass."
     },
     {
       "date": "2026-10-18",
-      "text": "Screen-export Task 2 done (c56ec39, eqos-8hp): legacy Screener ?q= screen subsystem deleted (about -4,160 lines); 631 related tests pass. Tasks 3-5 dispatched."
+      "text": "Screen-export Task 2 done (e176fef, eqos-8hp): legacy Screener ?q= screen subsystem deleted (about -4,160 lines); 631 related tests pass. Tasks 3-5 dispatched."
     },
     {
       "date": "2026-10-18",
-      "text": "PREP-2b done (246187c, 83643a8, dbcb68e): IST cutoffs fixed; computed claims trace-backed; retrospective admission pinned to the retrieval manifest; each run writes a validated DRAFT (FY26_Q2 to FY27_Q1 sequence approved in test); JSON management ledger deleted (about -1,500 lines); migration 0033. Full suite 4077 passed, 8 skipped, 0 failed. Screen-export amendment approved (caeeb12)."
+      "text": "PREP-2b done (be511e3, 8f5b1ca, 3748eaf): IST cutoffs fixed; computed claims trace-backed; retrospective admission pinned to the retrieval manifest; each run writes a validated DRAFT (FY26_Q2 to FY27_Q1 sequence approved in test); JSON management ledger deleted (about -1,500 lines); migration 0033. Full suite 4077 passed, 8 skipped, 0 failed. Screen-export amendment approved (701f01c)."
     },
     {
       "date": "2026-10-18",
-      "text": "PREP-2b plan: Sol r1 REVISE (12), r2 REVISE (retrospective contract, other-income truncation 19.72/33.65, IST cutoffs), r3 APPROVE. Found: no proof any Apar original was held before its cutoff (all retrieved 2026-09-06/07), so the pilot is a labelled retrospective workflow demonstration; all Apar cutoffs were 5h30 late (IST read as UTC, eqos-4j2.18). Screen-export live probe committed (b148489); plan r1, r2 REVISE."
+      "text": "PREP-2b plan: Sol r1 REVISE (12), r2 REVISE (retrospective contract, other-income truncation 19.72/33.65, IST cutoffs), r3 APPROVE. Found: no proof any Apar original was held before its cutoff (all retrieved 2026-09-06/07), so the pilot is a labelled retrospective workflow demonstration; all Apar cutoffs were 5h30 late (IST read as UTC, eqos-4j2.18). Screen-export live probe committed (cd4d81a); plan r1, r2 REVISE."
     },
     {
       "date": "2026-10-18",
-      "text": "PREP-2 committed (dceb5a7): plan Sol r1 REVISE (12) -> split run-to-ledger-draft to PREP-2b -> r2 APPROVE. Pilot configs name store sqlite-cb02b0f12a1708d0; a run without an OPEN PG store refuses and never opens SQLite. Q4 uses aparinds-fy26-q4-pg.yaml because the Stage 5 manifest pins the original's bytes. Full suite 4104 passed, 2 failed (that pin, fixed; one clock flake)."
+      "text": "PREP-2 committed (73ad8ba): plan Sol r1 REVISE (12) -> split run-to-ledger-draft to PREP-2b -> r2 APPROVE. Pilot configs name store sqlite-cb02b0f12a1708d0; a run without an OPEN PG store refuses and never opens SQLite. Q4 uses aparinds-fy26-q4-pg.yaml because the Stage 5 manifest pins the original's bytes. Full suite 4104 passed, 2 failed (that pin, fixed; one clock flake)."
     },
     {
       "date": "2026-10-18",
@@ -150,11 +150,11 @@
     },
     {
       "date": "2026-10-18",
-      "text": "D9 closed: fresh critical review found 8 recovery/restore gaps (K1-K8, fixed 9e979e7), re-review found K3 partial and two regressions (L1-L3, fixed 1f54c2d), re-review 2 APPROVE. Record: reviews/D9-phase-review.md. Full suite 4102 passed, 2 WSL clock flakes."
+      "text": "D9 closed: fresh critical review found 8 recovery/restore gaps (K1-K8, fixed 3859728), re-review found K3 partial and two regressions (L1-L3, fixed 3183817), re-review 2 APPROVE. Record: reviews/D9-phase-review.md. Full suite 4102 passed, 2 WSL clock flakes."
     },
     {
       "date": "2026-10-18",
-      "text": "D9 phase-end review: round 1 (F1-F18) fixed in 081b501, round 2 (G1-G5: journal witness, exact tombstone closure, exact numerics, locked trace reads, retry history) in 45e5e95, round 3 (H1-H2: required witness choice, purge-first checked) in 72a9434 under orchestrator rulings. Full suite 4089 passed, one WSL clock flake."
+      "text": "D9 phase-end review: round 1 (F1-F18) fixed in 38077cb, round 2 (G1-G5: journal witness, exact tombstone closure, exact numerics, locked trace reads, retry history) in 65bb74d, round 3 (H1-H2: required witness choice, purge-first checked) in 8b41f29 under orchestrator rulings. Full suite 4089 passed, one WSL clock flake."
     },
     {
       "date": "2026-10-18",

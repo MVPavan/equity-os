@@ -27,7 +27,7 @@ locator.
 ## 1. Generations and file hashes
 
 All three are `gen-1`: issuer = symbol, `as_of` 2026-10-17, authorisation string
-`plan D8 Task 2 probe (plan approved 54251e0; catalog 32850ca)`. `replay_fetch` loads each one,
+`plan D8 Task 2 probe (plan approved 47a6426; catalog ee03ecd)`. `replay_fetch` loads each one,
 serves every entry and passes the `as_of` check (run 2026-10-17).
 
 | File | Surface (`source`, `surface`) | Bytes | SHA-256 |
@@ -851,7 +851,7 @@ or in the wrong table. Run log: `drive_gen2.log`
 a logout link, and each Tijori page has `is_auth` = `true`.
 
 Root `R/<SYM>/gen-2/`: issuer = symbol, `as_of` 2026-10-20, generation 2, authorisation
-`plan D8 Task 2c tree capture (plan Sol r7 APPROVE 5dcacf6; catalog faa5359)`. `gen-1` is
+`plan D8 Task 2c tree capture (plan Sol r7 APPROVE b6c4ec2; catalog 49b9df1)`. `gen-1` is
 retained untouched. Hooks were re-discovered on gen-2, not hardcoded: quarterly 4/5/6 and yearly
 5/5/6 (APARINDS/ETERNAL/TITAN), the same as gen-1 (§12.3). That makes 31 drill-down bodies.
 

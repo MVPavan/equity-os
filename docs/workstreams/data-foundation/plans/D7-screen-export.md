@@ -284,7 +284,7 @@ Unchanged: pairing both vendors, captures and row locators, S4 binding, S5 revie
 reads and `OPEN_SCREEN_REVIEW`, ≥ 2 s pacing, no-retry Tijori, fail-closed refusals, S6 derived
 fixture rule, Tasks 5 and 7. Everything below overrides the named text above.
 
-- **Task 2** (done, `c56ec39`) stays: the legacy `screener-screen` subsystem is gone. Its goal line
+- **Task 2** (done, `e176fef`) stays: the legacy `screener-screen` subsystem is gone. Its goal line
   "nothing can request `/screen/raw/?query=`" no longer holds; only `coverage export` requests it,
   through `ScreenerSessionSource.fetch_navigation` (which already redacts `query` in logged URLs).
 
@@ -340,8 +340,8 @@ fixture rule, Tasks 5 and 7. Everything below overrides the named text above.
   owner command, `d7-stage4` configured as `Market Capitalization > 20000` at both vendors (probe:
   Screener 380 rows, Tijori 376, all five members in both). Derived rule unchanged; the Screener page
   is reduced to the textarea and page info. Task 3's textarea element is already pinned by the probe.
-- **Status of Tasks 3–5 and stale text (r1-4).** Tasks 3–5 are committed (`a8a1d24`: 3–4;
-  `116e3f2`: 5) against the saved-screen design and need the direct-query adaptation above in a
+- **Status of Tasks 3–5 and stale text (r1-4).** Tasks 3–5 are committed (`a4c76ec`: 3–4;
+  `0cb4efb`: 5) against the saved-screen design and need the direct-query adaptation above in a
   follow-up change, with no new SQL: the committed migrations are `0034_screen_export.sql` (Task 4)
   and `0035_screen_review.sql` (Task 5), immutable. Overrides: the constraints' "`0033`, `0034`" mean
   `0034`/`0035` as committed; Task 5's `0034` (views, dispositions, reads, holds arm) means

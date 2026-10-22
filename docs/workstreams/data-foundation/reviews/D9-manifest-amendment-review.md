@@ -5,7 +5,7 @@ Reviewer: gpt-6.1-sol
 Date: 2026-10-18  
 Reviewed payload SHA-256: `d33c46b76b57ebac5184ce0535507cb85361d6768c0620b2be1aba371b926500`
 
-Approval covers only the r4 delta from `174f1e6` in the Stage 5 manifest and its structural checker. It does not establish Task 9 runtime acceptance.
+Approval covers only the r4 delta from `ea1d626` in the Stage 5 manifest and its structural checker. It does not establish Task 9 runtime acceptance.
 
 **Per-claim verdicts**
 
@@ -15,7 +15,7 @@ Approval covers only the r4 delta from `174f1e6` in the Stage 5 manifest and its
 
 3. **U-APQ interpretation values and counts — APPROVE.** Independent fixture enumeration gives 12 row groups with four history points each: 48 occurrences. Five selected groups give 20 INVALID interpretations; seven unselected groups give 28 UNMAPPED interpretations. Pre-D9 interpretation code leaves UNMAPPED values null and returns no value for unsupported precision. Removing `interpretations.value` from `cleared_before` corrects an unattainable non-null precondition. The replacement explicitly freezes the null baseline and exact counts. [Manifest:396](/data/codes/equity-os/tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml:396)
 
-4. **Mapping sets — APPROVE.** Both X-Q4 and X-Q5 reference the 2026-01-31 taxonomy. Mapping set v5 supplies its entries and predates D9 (`ba1c068` is an ancestor of `b873865`). The vendor entry files are shared with v4. Fresh inspection confirms that none of the three v5-only files contains a fixture blob hash, so this change adds no fixture qualification hold. [Manifest:66](/data/codes/equity-os/tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml:66), [v5 configuration:1](/data/codes/equity-os/config/mappings/v5.yaml:1)
+4. **Mapping sets — APPROVE.** Both X-Q4 and X-Q5 reference the 2026-01-31 taxonomy. Mapping set v5 supplies its entries and predates D9 (`ba1c068` is an ancestor of `da39b45`). The vendor entry files are shared with v4. Fresh inspection confirms that none of the three v5-only files contains a fixture blob hash, so this change adds no fixture qualification hold. [Manifest:66](/data/codes/equity-os/tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml:66), [v5 configuration:1](/data/codes/equity-os/config/mappings/v5.yaml:1)
 
 5. **Extended provenance — ACCEPTED.** The header discloses the implementation-disagreement trigger, independent re-derivation, named pre-D9 sources, and the author’s declaration of no D9/e2e-code access. My independent checks support the amended expectations. The author’s access history remains a declaration, not something this review independently proves. [Manifest:5](/data/codes/equity-os/tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml:5)
 

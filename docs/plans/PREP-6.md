@@ -9,7 +9,7 @@ and each of PQ1–PQ3, with per-claim dispositions and correction categories"). 
 (:63). PREP-5 open question 3 (`docs/plans/PREP-5.md`): PREP-6 may read `decisions.rejected_claims`
 as its rejected disposition if its review set also covers additions, replacements and
 presentation changes.
-Status: **implemented** (commits `542902f`, `45700e6`, `776bcba`, `7fc0584`, `ae2da10`). Plan
+Status: **implemented** (commits `aeecbf1`, `3c118f6`, `794c077`, `eb682a0`, `ed7c32f`). Plan
 approved — Sol (gpt-6.1-sol) APPROVE 2026-10-19: plan review r1 REVISE (13) → r2 APPROVE;
 closing review r1 REVISE (1 P1, 4 P2) → r2 APPROVE. See Realisation.
 **Goal:** the owner reviews a submitted ledger version claim by claim with `fundamentals review`.
@@ -799,7 +799,7 @@ REVISE (3) → APPROVE.
 
 - `lifecycle.record_decision` and `append_decision` take a `before_insert` hook, run after every
   check and just before the first insert. `review.finish` uses it to stop `command_handling_ms`
-  at that point (`7fc0584`).
+  at that point (`eb682a0`).
 - `LEDGER_FAILURES` in `api/ledger_cli.py` is widened so the ledger and review CLIs refuse
-  expired originals and snapshot and YAML errors with exit 2 (`ae2da10`).
+  expired originals and snapshot and YAML errors with exit 2 (`ed7c32f`).
 - `ledger/review.py` came out larger than estimated: 345 lines after the review fixes (336 at Task 2). Sol found no reduction.

@@ -348,7 +348,7 @@ Dependencies: 3. Risks: low.
 | # | Finding | Change |
 |---|---|---|
 | 4 | Retries re-enter `Pilot.registered()`, making new capture ids and refs that differ from the locator | Task 1 S1: each case keeps the original manifest bytes, approved context and register argv and retries the same CLI command; `registered()` is never called again after an interruption |
-| 9 | Run persistence order wrong | Verified against 73dad2b: `cli.run_command` passes a `before_commit` hook to `run_pipeline`; the hook (`bind_computed`) runs after the render and before fact writes. Order is now traces (S3c) → facts/selections (S3d) → draft (S3e); S3 table, failure table and Task 2 assertions match |
+| 9 | Run persistence order wrong | Verified against d8380c7: `cli.run_command` passes a `before_commit` hook to `run_pipeline`; the hook (`bind_computed`) runs after the render and before fact writes. Order is now traces (S3c) → facts/selections (S3d) → draft (S3e); S3 table, failure table and Task 2 assertions match |
 | n1 | `SUPERSEDED` in the state table | Removed: it describes an older version with an approved descendant, not the head |
 | n2 | Purge wording | A blob with no registered users reports `UNREGISTERED`; `UNKNOWN_LINK` applies when deletion meets the orphan link |
 | n3 | Baselines function-scoped | Accepted by Sol; no new test infrastructure, the plan's "module-scoped" baseline wording is now "function-scoped" |

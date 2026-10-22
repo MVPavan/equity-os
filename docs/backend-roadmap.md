@@ -62,10 +62,10 @@ time.
 | D5 | Generated read-only views | Ledger Stage 3 e2e green | Complete (Sol APPROVE 2026-10-15) |
 | D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Complete (Sol APPROVE 2026-10-17); D6b extractor v2 complete |
 | D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Complete (Sol APPROVE 2026-10-18; direct-query screen export, no owner CSV needed) |
-| D8 | Shareholding filing source | Stage 3 e2e green | Complete (Sol phase r4 APPROVE 2026-10-21; closing review fixes approved, `nse-shp-v4`; gate exit 0 at `8500bf2`) |
+| D8 | Shareholding filing source | Stage 3 e2e green | Complete (Sol phase r4 APPROVE 2026-10-21; closing review fixes approved, `nse-shp-v4`; gate exit 0 at `032258a`) |
 | D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
 | PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
-| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Done: PREP-2/2b (`docs/plans/PREP-2b.md`); pilot configs name only the PostgreSQL store and the run writes the D3 ledger; closing review Sol APPROVE 2026-10-18 (`f8bcc8b`); legacy impersonation parked `eqos-4j2.22` |
+| PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Done: PREP-2/2b (`docs/plans/PREP-2b.md`); pilot configs name only the PostgreSQL store and the run writes the D3 ledger; closing review Sol APPROVE 2026-10-18 (`95d49bc`); legacy impersonation parked `eqos-4j2.22` |
 | PREP-3 | Resumable workflow with defined states, retries and failure states (register B-01) | Interrupt-and-resume test per step | Done: `tests/fundamentals/test_prep3_resume.py`; states and failure states in `docs/plans/PREP-3.md`; closing review Sol APPROVE 2026-10-18 |
 | PREP-4 | Source-of-truth matrix (B-03) | Matrix approved by the reviewer | Done: [matrix](blueprint/source-of-truth-matrix.md), Sol APPROVE 2026-10-18 (r1 REVISE 11 → r2 APPROVE). Pilot gaps it records: `eqos-4j2.24` fact admission, `.25` memory, `.26` thesis-impact, `.27` PILOT-4 citation contract |
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Done: [plan](plans/PREP-5.md), `tests/fundamentals/test_prep5_rework.py`; migration 0039 (`decisions.rejected_claims`, bounded `operand_count`), selective rework with a pre-write gate, `--full-successor` recovery. Sol phase APPROVE 2026-10-19 (r1 REVISE 3 → r2 APPROVE; closing REVISE 2 → APPROVE) |
@@ -125,7 +125,7 @@ pilot manifest (PREP-7), never from code output.
   2. PILOT-11 (iii) blind drill `eqos-4j2.30` (owner).
   3. PILOT-12 owner review timing (Owner Q1; hand review `eqos-4j2.21`).
   4. PILOT-7 via the D6 exit row.
-  5. `scripts/verify_project.sh` exit 0 — met 2026-10-21 at `8500bf2` after the D8 closing-review fixes ([report](evidence/pilot/report.md)). Re-run after any later code change.
+  5. `scripts/verify_project.sh` exit 0 — met 2026-10-21 at `032258a` after the D8 closing-review fixes ([report](evidence/pilot/report.md)). Re-run after any later code change.
   6. Reviewer approval of the report — met 2026-10-21, Sol D8 r4 APPROVE.
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
