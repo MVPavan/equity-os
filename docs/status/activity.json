@@ -1,17 +1,22 @@
 {
   "now": {
-    "title": "D8 shareholding complete; pilot verdict CONDITIONAL on owner items",
-    "detail": "D8 (eqos-17r) and PILOT-9 (eqos-4j2.32) closed. Final gate exit 0 at 032258a: every row PASS, 4401 passed, 9 skipped. Pilot conditions met: D8 approval, verify_project exit 0, report approval. Open: owner blind drill (eqos-4j2.30), PILOT-12 timing, PILOT-7 via D6 exit row.",
+    "title": "Post-D8 hardening: eqos-rkb rewrite adopted, eqos-z53 awaiting owner credential files",
+    "detail": "Local-only history rewrite adopted: D8 doc vendor readings removed from all 187 rewritten unpushed commits (pickaxe 0/152); pushed history unchanged; old->new map in docs/history/. Dictionary v1-v3 still carry two vendor readings: owner decision before any push. z53 committed; PG suites wait for ~/.secrets/eqos_admin.login and eqos_migrator.login. PILOT-7 met via the D6 exit row.",
     "stage": "Pilot"
   },
   "next": [
+    "Owner: create the two z53 credential files, then PG suites + full gate",
+    "Owner: dictionary vendor-reading disposition before any push of main",
     "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
     "Owner: PILOT-12 timing (Owner Q1; hand review eqos-4j2.21)",
-    "PILOT-7 via the D6 exit row",
-    "Owner: eqos-rkb history-rewrite approval (includes dictionary v2/v3 entry)",
-    "Flake eqos-0bp: derivation-clock guard under full-suite load"
+    "End-to-end analysis with the owner",
+    "Owner: WSL clock fix for flake eqos-0bp"
   ],
   "log": [
+    {
+      "date": "2026-10-22",
+      "text": "eqos-rkb: local-only rewrite adopted after a Sol-reviewed dry run (procedure rulings applied); readings gone from main and the stage2 branch; backup bundle kept privately. eqos-z53 committed (admin/migrator credentials out of runtime settings). PILOT-7 met via the D6 exit row. Clock flake beads merged into eqos-0bp."
+    },
     {
       "date": "2026-10-21",
       "text": "D8 closed. Final verify_project.sh exit 0 at 032258a (4401 passed, 9 skipped; Pilot e2e 248 s). Prior run's single Stage 2 clock-guard failure passed alone and on rerun; folded into known flake eqos-0bp. eqos-17r and eqos-4j2.32 closed."
