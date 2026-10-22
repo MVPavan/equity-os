@@ -62,7 +62,7 @@ time.
 | D5 | Generated read-only views | Ledger Stage 3 e2e green | Complete (Sol APPROVE 2026-10-15) |
 | D6 | Onboarding a company by identifier alone | Stage 4 e2e green on a held-out company | Complete (Sol APPROVE 2026-10-17); D6b extractor v2 complete |
 | D7 | Coverage: universe registry, screens, watchlist | Ledger Stage 4 e2e green | Complete (Sol APPROVE 2026-10-18; direct-query screen export, no owner CSV needed) |
-| D8 | Shareholding filing source | Stage 3 e2e green | Resumed 2026-10-20 (owner exception); plan amendment awaits Sol re-review |
+| D8 | Shareholding filing source | Stage 3 e2e green | Complete (Sol phase r4 APPROVE 2026-10-21; closing review fixes approved, `nse-shp-v4`; gate exit 0 at `8500bf2`) |
 | D9 | Retention, purge and replay after deletion | Ledger Stage 5 e2e green | Complete (Sol APPROVE 2026-10-18) |
 | PREP-1 | Mappings for the SEBI 2026-01-31 XBRL taxonomy; fix Q4 FY26 PDF revenue rows | Q4 FY26 and Q1 FY27 Apar filings (PQ2, PQ3) extract with no `UNSUPPORTED_SCHEMA` | Done `ba1c068` (mapping set v5; `eqos-51d` closed) |
 | PREP-2 | Earnings-review workflow reads only PostgreSQL: facts, comparison results, ledger, memory | No pilot code path opens the legacy SQLite store | Done: PREP-2/2b (`docs/plans/PREP-2b.md`); pilot configs name only the PostgreSQL store and the run writes the D3 ledger; closing review Sol APPROVE 2026-10-18 (`f8bcc8b`); legacy impersonation parked `eqos-4j2.22` |
