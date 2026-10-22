@@ -1,18 +1,20 @@
 {
   "now": {
-    "title": "Post-D8 hardening: eqos-rkb rewrite adopted, eqos-z53 awaiting owner credential files",
-    "detail": "Local-only history rewrite adopted: D8 doc vendor readings removed from all 187 rewritten unpushed commits (pickaxe 0/152); pushed history unchanged; old->new map in docs/history/. Dictionary v1-v3 still carry two vendor readings: owner decision before any push. z53 committed; PG suites wait for ~/.secrets/eqos_admin.login and eqos_migrator.login. PILOT-7 met via the D6 exit row.",
+    "title": "Apar pilot PASS: Phase 0.5 closed, PILOT_PROVEN: YES",
+    "detail": "Sol APPROVE PASS 2026-10-22. Every D-phase exit and PILOT-1..13 pass under the owner amendments; verify_project.sh exit 0 at 3093f606 (4401 passed, 9 skipped). Credentials moved to ~/.secrets (z53), D8 doc readings purged from unpushed history (rkb), dictionary notes accepted as disclosed. Next: end-to-end analysis with the owner.",
     "stage": "Pilot"
   },
   "next": [
-    "Owner: create the two z53 credential files, then PG suites + full gate",
-    "Owner: dictionary vendor-reading disposition before any push of main",
-    "Owner: blind run of the PREP-6 drill (eqos-4j2.30)",
-    "Owner: PILOT-12 timing (Owner Q1; hand review eqos-4j2.21)",
-    "End-to-end analysis with the owner",
-    "Owner: WSL clock fix for flake eqos-0bp"
+    "End-to-end analysis of the system with the owner",
+    "Phase 1 planning: 2-3 companies",
+    "Flaky tests: eqos-0bp (host clock), eqos-7fa, eqos-1kq",
+    "Hardening backlog (P2/P3 beads)"
   ],
   "log": [
+    {
+      "date": "2026-10-22",
+      "text": "Apar four-quarter pilot PASS (Sol APPROVE). Phase 0.5 closed; PILOT_PROVEN: YES. Owner removed the blind-drill and review-timing conditions (autonomous system). Full gate exit 0 at 3093f606."
+    },
     {
       "date": "2026-10-22",
       "text": "eqos-rkb: local-only rewrite adopted after a Sol-reviewed dry run (procedure rulings applied); readings gone from main and the stage2 branch; backup bundle kept privately. eqos-z53 committed (admin/migrator credentials out of runtime settings). PILOT-7 met via the D6 exit row. Clock flake beads merged into eqos-0bp."
