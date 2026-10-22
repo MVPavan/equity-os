@@ -9,9 +9,9 @@ Gate test: `tests/fundamentals/test_pilot_e2e.py` (one ordered `test_pilot_end_t
 `tests/fundamentals/pilot_e2e_support.py`). Expected values come only from the frozen
 `pilot_manifest.yaml`; failing assertions begin `PILOT-n:`.
 
-Full gate at `032258a` (code as `4a7e50a`, after the D8 closing-review fixes; 2026-10-21, 20:04:02Z–22:11:05Z): `scripts/verify_project.sh` exit 0, every row PASS (D1a–D9, frozen manifests, amendment records, Pilot, Pytest, Mypy, Ruff, Ruff format); `uv run pytest tests/fundamentals` 4401 passed, 9 skipped (1:45:44); `mypy --strict src` no issues in 326 files; ruff clean. Pilot e2e 248.1 s in the gate. The preceding run at `4a7e50a` failed only `test_stage2_end_to_end` ("derivation clock moved backwards", wall-clock guard); it passed alone and in this run; known flake `eqos-0bp` (cause not yet diagnosed).
+Full gate at `3093f606` (after the eqos-rkb history rewrite and the eqos-z53 credentials change; 2026-10-22, 13:45:43Z–15:53:35Z): `scripts/verify_project.sh` exit 0, every row PASS (D1a–D9, frozen manifests, amendment records, Pilot, Pytest, Mypy, Ruff, Ruff format); `uv run pytest tests/fundamentals` 4401 passed, 9 skipped (1:46:43); `mypy --strict src` no issues in 326 files; ruff clean. Pilot e2e 218.5 s; D6 held-out onboarding 3 passed. Later commits are docs and bead exports only. An earlier run at `4a7e50a` failed only `test_stage2_end_to_end` ("derivation clock moved backwards"); known host-clock flake `eqos-0bp`.
 
-Gate logs: `scratchpad/project-verification.7Y9zfv/` (`14.log` Pilot, `15.log` Pytest, `16.log` Mypy, `17.log` Ruff, `18.log` Ruff format, `10.log` D8; local, not committed).
+Gate logs: `scratchpad/project-verification.iJXRxo/` (`14.log` Pilot, `15.log` Pytest, `16.log` Mypy, `17.log` Ruff, `18.log` Ruff format, `10.log` D8; local, not committed).
 
 ## Checks
 

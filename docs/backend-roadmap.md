@@ -125,7 +125,7 @@ pilot manifest (PREP-7), never from code output.
   2. ~~PILOT-11 (iii) owner blind drill `eqos-4j2.30`~~ — removed by the owner, PavanMV, 2026-10-22: the system is autonomous and the owner is not a verifier or drill subject.
   3. ~~PILOT-12 owner review timing (Owner Q1)~~ — removed by the owner, 2026-10-22, same ruling; PILOT-12 is met by its instrumentation.
   4. PILOT-7 via the D6 exit row — met 2026-10-21: D6 row PASS in the gate at `032258a` (`test_data_stage4_e2e.py`, 3 passed, held-out company; the holdout stays blind).
-  5. `scripts/verify_project.sh` exit 0 — met 2026-10-21 at `032258a` after the D8 closing-review fixes ([report](evidence/pilot/report.md)). Re-run after any later code change.
+  5. `scripts/verify_project.sh` exit 0 — met 2026-10-22 at `3093f606` after the eqos-rkb rewrite and eqos-z53 ([report](evidence/pilot/report.md)). Re-run after any later code change.
   6. Reviewer approval of the report — met 2026-10-21, Sol D8 r4 APPROVE.
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
