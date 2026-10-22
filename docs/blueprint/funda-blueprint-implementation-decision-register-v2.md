@@ -51,7 +51,7 @@ The wording in this register is authoritative for implementation gates. Narrativ
 | B-01 | Critical | Implement fixed, resumable earnings-review workflow | State definitions, allowed transitions, failure states, immutable step outputs, idempotent retries, and resume behavior documented and tested | A-04, A-10, A-11 | Open |
 | B-02 | Critical | Produce three real incremental earnings updates | Quarters 1–3 each consume the approved preceding thesis and include sources, facts, changes, management ledger, thesis impact, falsifiers, calculations, open questions, and approval record | B-01, B-03–B-07, B-11–B-14 | Open |
 | B-03 | Critical | Establish source-of-truth matrix | Approved authority table for raw documents, SQL facts, claims, calculations, narrative memory, derivative indices, evidence packages, and reports | — | Open |
-| B-04 | Critical | Measure analyst review economics without invalid percentiles | Record each report's total review time; claim count; per-claim disposition and time; source-locate and calculation-check time; accepted/edited/rejected/deferred counts; correction categories; no report-level P90 is used at n=3 | A-03, A-13, B-13 | Open |
+| B-04 | Critical | Measure analyst review economics without invalid percentiles | Record each report's total review time; claim count; per-claim disposition and time; source-locate and calculation-check time; accepted/edited/rejected/deferred counts; correction categories; no report-level P90 is used at n=3 | A-03, A-13, B-13 | Open (report-level review time: Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions) |
 | B-05 | Critical | Derive minimum source and fact schemas from actual use | Schema supports raw/normalized values, dimensions, scope, source location, valid time, knowledge time, revisions, definition version, and quality/reconciliation status | A-06, B-11, B-12 | Open |
 | B-06 | Critical | Derive minimum typed claim schema | Subject, registered predicate, object, scope, horizon, epistemic class, confidence, materiality result/policy version, status, evidence direction, and supersession are represented | A-10, B-12 | Open |
 | B-07 | High | Define minimum deterministic compute | Approved MVP list with input, trace, code-version, missing-input, and reproducibility contracts | A-04 | Open |
@@ -60,7 +60,7 @@ The wording in this register is authoritative for implementation gates. Narrativ
 | B-10 | High | Decide which speculative blueprint fields to remove or defer | Schema-delta document showing retained, deleted, added, and deferred fields with reasons | B-02, B-05, B-06 | Open |
 | B-11 | Critical | Specify fact identity, revision-family, and correction semantics | Source occurrence, extraction result, measurement key, revision family, and canonical selection are distinguished; issuer restatement, source correction, parser re-extraction, manual correction, and normalization-policy change have separate reasons; prior-period comparative handling is tested | A-06, B-12 | Open |
 | B-12 | Critical | Establish versioned metric and predicate registries | Registry definitions, aliases, object/unit/dimension rules, addition approval, deprecation, and versioning exist; every structured fact/claim resolves to a registered entry; embedding-assisted dedup is optional | A-04, A-06 | Open |
-| B-13 | High | Add reviewer-bias and measurement controls | Quarter 0 is not reused for assisted work; instrumentation is symmetric and overhead measured; shadow-mode seeded-error drills cannot be promoted; false-accept/false-reject results are stratified by materiality and epistemic class; optional external spot review procedure defined | A-03, A-08, A-13 | Open |
+| B-13 | High | Add reviewer-bias and measurement controls | Quarter 0 is not reused for assisted work; instrumentation is symmetric and overhead measured; shadow-mode seeded-error drills cannot be promoted; false-accept/false-reject results are stratified by materiality and epistemic class; optional external spot review procedure defined | A-03, A-08, A-13 | Open (owner blind drill: Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions) |
 | B-14 | Critical | Demonstrate human-feedback rework path | A rejected claim triggers the correct invalidation cascade; evidence package v(N+1) is created; only affected calculations/claims are rerun; prior package remains immutable; partial revalidation and reapproval succeed | B-01, B-11 | Open |
 
 ---
@@ -136,7 +136,7 @@ The wording in this register is authoritative for implementation gates. Narrativ
 
 - the bootstrap thesis is approved;
 - Quarter 0 manual baseline/bootstrap and three real assisted updates for Quarters 1–3 have been produced and reviewed;
-- the manual baseline and all three report-level review times are recorded;
+- the manual baseline and all three report-level review times are recorded; (Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions; review times were never measured.)
 - claim-level review telemetry and correction categories are available without invalid percentile claims;
 - the source-of-truth matrix is approved;
 - fact identity/revision rules and metric/predicate registries are in use;

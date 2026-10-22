@@ -27,14 +27,9 @@ commitments, calculations, uncertainties, and thesis.
   `reconcile`, `thesis`, `news`, `output`, `verify`, `entity`, `api`, `contracts`)
   with tests under `tests/`. Sources: NSE/BSE filings, Screener, Tijori, Upstox.
 - **Pilot company:** Apar Industries (epic eqos-4j2), not INFY.
-- **Product verdict:** `PILOT_PROVEN: NO`, `CORE_RESEARCH_RELEASE: NO`,
-  `VISION_SATISFIED: NO`. No Apar successor report has been generated.
-- **Development paused at the owner's request** since 2026-10-03. Resume entry
-  point: `docs/evidence/product-completion/handoff-2026-10-03.md`.
-- **Human decisions pending:** starting-fact/commitment confirmation
-  (eqos-4j2.3) and the monitoring aggregation/recovery policy (eqos-4j2.14).
-  Plain-language questions:
-  `docs/evidence/product-completion/questions-for-project-owner.md`.
+- **Product verdict:** `PILOT_PROVEN: YES` (Apar pilot PASS 2026-10-22:
+  `docs/evidence/pilot/report.md`), `CORE_RESEARCH_RELEASE: NO`,
+  `VISION_SATISFIED: NO`.
 
 ## Stack
 

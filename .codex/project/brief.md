@@ -21,6 +21,8 @@ commitments, calculations, uncertainties, and thesis.
 
 ## Current state
 
+**Current (2026-10-22):** first-party code exists and the Apar pilot is PASS (`PILOT_PROVEN: YES`); see `.claude/project/brief.md` and `docs/evidence/pilot/report.md`. The paragraph below is the original Phase 0A-era state.
+
 No first-party source code, no CI, no README. The repo holds the agent harness
 (`.codex/`), beads tracking (`.beads/`), and two authoritative blueprint docs
 under `docs/blueprint/` (the **v2 decision register is the operational

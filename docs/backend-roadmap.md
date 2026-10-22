@@ -44,7 +44,7 @@ Beyond this file (decision register `docs/blueprint/funda-blueprint-implementati
 |---|---|---|---|
 | **Backend core** (data foundation) | Shared PostgreSQL store, dictionary, comparator, ledger, memory, views, onboarding, coverage, shareholding, retention | [core roadmap](workstreams/data-foundation/roadmap.md), [core definition](workstreams/data-foundation/core.md) | epics D1a–D9, label `ws-data-foundation` |
 | **Pilot prerequisites** | Workflow and register items the pilot needs that the core does not build | §3 rows PREP-1…PREP-8 | `eqos-4j2`, register §B |
-| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3) | §4; [report](evidence/pilot/report.md): CONDITIONAL (PILOT-9 met; open [conditions](#pilot-conditions)) | `eqos-4j2.8` |
+| **Pilot** (verification phase) | Phase 0.5 on the backend: Apar, PQ0 baseline plus three assisted updates (PQ1–PQ3); complete | §4; [report](evidence/pilot/report.md): **PASS 2026-10-22**, gpt-6.1-sol approved; gate `3093f606`, exit 0. PILOT-5 contradiction waived (2026-10-20); owner blind drill/timing removed (2026-10-22, `2d6d510a`); filed-value and PILOT-9 assumption/timing limits disclosed in the report | `eqos-4j2.8` — close at PASS |
 | Deferred | Screener/Tijori breadth via the capability registry (`eqos-kx4.5`); Tijori Stack (`eqos-d37`) | — | not needed for the pilot |
 
 Order: D1a → D1b → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → PREP-1…PREP-8 → Pilot. One worker runs at a
@@ -69,12 +69,12 @@ time.
 | PREP-3 | Resumable workflow with defined states, retries and failure states (register B-01) | Interrupt-and-resume test per step | Done: `tests/fundamentals/test_prep3_resume.py`; states and failure states in `docs/plans/PREP-3.md`; closing review Sol APPROVE 2026-10-18 |
 | PREP-4 | Source-of-truth matrix (B-03) | Matrix approved by the reviewer | Done: [matrix](blueprint/source-of-truth-matrix.md), Sol APPROVE 2026-10-18 (r1 REVISE 11 → r2 APPROVE). Pilot gaps it records: `eqos-4j2.24` fact admission, `.25` memory, `.26` thesis-impact, `.27` PILOT-4 citation contract |
 | PREP-5 | Rejected-claim rework path and evidence-package versioning (B-14) | A rejected claim reruns only affected claims and produces v(N+1) | Done: [plan](plans/PREP-5.md), `tests/fundamentals/test_prep5_rework.py`; migration 0039 (`decisions.rejected_claims`, bounded `operand_count`), selective rework with a pre-write gate, `--full-successor` recovery. Sol phase APPROVE 2026-10-19 (r1 REVISE 3 → r2 APPROVE; closing REVISE 2 → APPROVE) |
-| PREP-6 | Review telemetry wired to ledger claims (B-04, B-13); seeded-error drill | Per-claim disposition and time recorded; drill errors caught | Done: [plan](plans/PREP-6.md), `tests/fundamentals/test_prep6_review.py`; migration 0040 (`review_sessions`, `claim_reviews`, owner-only, written with the decision by `fundamentals review finish`). "Drill errors caught" as ruled: gate seeds caught mechanically; per-claim disposition and time recorded and scored; a miss detected; review-seed detection pending `eqos-4j2.30`. B-13: met — Quarter 0 not reused, symmetric instrumentation; partial — overhead (command-handling time only), shadow drills not promotable (disposable-database isolation), false-accept/false-reject (no materiality stratum); not met — optional external spot review. Sol plan review r1 REVISE 13 → r2 APPROVE; plan closing review REVISE 5 → APPROVE; phase review r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE; phase closing review REVISE 3 → APPROVE; all 2026-10-19 |
+| PREP-6 | Review telemetry wired to ledger claims (B-04, B-13); seeded-error drill | Per-claim disposition and time recorded; drill errors caught | Done: [plan](plans/PREP-6.md), `tests/fundamentals/test_prep6_review.py`; migration 0040 (`review_sessions`, `claim_reviews`, owner-only, written with the decision by `fundamentals review finish`). "Drill errors caught" as ruled: gate seeds caught mechanically; per-claim disposition and time recorded and scored; a miss detected; review-seed human detection never measured and removed as a condition (owner ruling 2026-10-22). B-13: met — Quarter 0 not reused, symmetric instrumentation; partial — overhead (command-handling time only), shadow drills not promotable (disposable-database isolation), false-accept/false-reject (no materiality stratum); not met — optional external spot review. Sol plan review r1 REVISE 13 → r2 APPROVE; plan closing review REVISE 5 → APPROVE; phase review r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE; phase closing review REVISE 3 → APPROVE; all 2026-10-19 |
 | PREP-7 | Frozen pilot manifest | Expected values hand-verified from the four quarters' filings, reviewer-approved, committed before the pilot test; per quarter the IST-correct source cutoff, the reviewed package (ids + sha256) and the retrospective designation | Done: [plan](plans/PREP-7.md), `tests/fundamentals/fixtures/data_foundation/pilot_manifest.yaml` (payload `ad188b0d…`), checked by `tests/fundamentals/pilot_manifest_check.py` / `test_pilot_manifest_check.py`. "Hand-verified" as ruled: scripted verbatim transcription from the filings' bytes (XBRL bound by concept/period/unit, PDF cells cross-checked, derivations recomputed), independently re-derived by the reviewer; **no human read the filings**. Sol plan review r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; plan closing REVISE 7 → REVISE 2 → APPROVE; phase review APPROVE (P3 notes); phase closing APPROVE; all 2026-10-19. The pilot test's HEAD-identical preflight is PREP-8's |
 | PREP-8 | `scripts/verify_project.sh` | Runs every D-phase exit plus the pilot test; PASS/FAIL per part | Done: foundation `9781763`; pilot exit registered as `tests/fundamentals/test_pilot_e2e.py` (PREP-7 Decision 8). Run 2026-10-19: every built exit PASS, full suite 4250 passed, mypy and ruff PASS; `Project incomplete: 0 failed, 2 not built` (D8 parked; pilot test is `eqos-4j2.8`). The pilot's manifest preflight lives in the pilot test |
 
 Estimate (inference from D1a only): D1a–D9 take 3–6 weeks of continuous running, and PREP work plus
-the pilot take about 1–2 weeks more. The pilot also needs the owner's time (§4, PILOT-12).
+the pilot take about 1–2 weeks more. The pilot runs autonomously; owner review time is not measured (owner ruling 2026-10-22).
 
 ## 4. Pilot acceptance: how the pilot decides completion
 
@@ -108,8 +108,8 @@ pilot manifest (PREP-7), never from code output.
 | PILOT-8 | Coverage (D7) | Apar is on the watchlist through the decision chain; drafting for a non-watchlisted stock is refused |
 | PILOT-9 | Shareholding (D8) | Each quarter's promoter, public and institution aggregates are compared against vendors and cited where the update uses them; each comparison is cited with its assumption labels ("denominator assumed, not vendor-stated" for Screener, Tijori and Upstox; "boundary assumed", "absent category taken as zero" where applicable; owner exception and Q3 ruling, PavanMV 2026-10-20) |
 | PILOT-10 | Retention and replay (D9) | After the pilot, a purge dry-run lists only eligible blobs. Purge, restore and replay of the PQ0 run reproduce its results, and no held evidence is deleted |
-| PILOT-11 | Workflow integrity (PREP-3…PREP-6) | One step is interrupted and resumes without duplication. One claim is rejected → only affected claims rerun → package v(N+1). The seeded-error drill is caught |
-| PILOT-12 | Review measurement (register §F) | Owner review time recorded for PQ0 and each of PQ1–PQ3, with per-claim dispositions and correction categories |
+| PILOT-11 | Workflow integrity (PREP-3…PREP-6) | One step is interrupted and resumes without duplication. One claim is rejected → only affected claims rerun → package v(N+1). The mechanical seeded-error gate is caught; the owner blind drill on review-only seeds was removed (owner ruling 2026-10-22) |
+| PILOT-12 | Review measurement (register §F) | Review instrumentation: per-claim dispositions and correction categories recorded for PQ0 and each of PQ1–PQ3. Owner review time is not measured (owner ruling 2026-10-22) |
 | PILOT-13 | Reproducibility | Each quarter's comparison run replays from its manifest. Full suite, mypy and ruff are clean |
 
 **Verdict.**
@@ -126,13 +126,12 @@ pilot manifest (PREP-7), never from code output.
   3. ~~PILOT-12 owner review timing (Owner Q1)~~ — removed by the owner, 2026-10-22, same ruling; PILOT-12 is met by its instrumentation.
   4. PILOT-7 via the D6 exit row — met 2026-10-21: D6 row PASS in the gate at `032258a` (`test_data_stage4_e2e.py`, 3 passed, held-out company; the holdout stays blind).
   5. `scripts/verify_project.sh` exit 0 — met 2026-10-22 at `3093f606` after the eqos-rkb rewrite and eqos-z53 ([report](evidence/pilot/report.md)). Re-run after any later code change.
-  6. Reviewer approval of the report — met 2026-10-21, Sol D8 r4 APPROVE.
+  6. Reviewer approval of the report — met 2026-10-21 (Sol D8 r4 APPROVE); reconfirmed for PASS 2026-10-22 (`scratchpad/execution/pilot-verdict-sol.md`, gpt-6.1-sol APPROVE PASS).
 - **PILOT-5 contradiction clause waived for the Apar pilot** (owner PavanMV, 2026-10-20): Apar's
   retained sources contain no genuine contradiction, so the clause is closed for this pilot and does
   not hold back its verdict; nothing is fabricated. It is tested on a later stock that has one.
 
-Pilot report: [evidence/pilot/report.md](evidence/pilot/report.md) (verdict CONDITIONAL on the [conditions](#pilot-conditions)).
+Pilot report: [evidence/pilot/report.md](evidence/pilot/report.md) (verdict PASS 2026-10-22; all conditions above are met or removed).
 
-PILOT-12 depends on the owner reviewing four reports; it is the one step that cannot run
-autonomously. Whether the workflow actually saves review time is judged at Phase 1 (register
+PILOT-12 is met by its instrumentation; the owner does not review the pilot reports (owner ruling 2026-10-22). Whether the workflow actually saves review time is judged at Phase 1 (register
 C-12), not here.

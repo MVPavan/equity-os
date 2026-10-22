@@ -704,10 +704,10 @@ Risk: low.
 
 - `eqos-4j2.8` (assisted updates Q1–Q3, owner reviewing each, seeded-error drill). PREP-6 supplies
   the instrument and the automated drill. The bead stays open: the reviews themselves are
-  PILOT-12. Note on it that review-seed detection is deferred to `eqos-4j2.30` (open question 1).
+  PILOT-12. Note on it that review-seed detection is deferred to `eqos-4j2.30` (open question 1). (Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions.)
 - `eqos-4j2.30` (owner blind run of the seeded drill; named by the orchestrator's r1 ruling, not
   checked here with `bd`). It tracks what PREP-6's drill does
-  not demonstrate: that review-class seeds are detected by a reviewer not given the answer key.
+  not demonstrate: that review-class seeds are detected by a reviewer not given the answer key. (Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions; never measured.)
 - `eqos-4j2.21` (no `ledger submit` CLI). Reviews need `IN_REVIEW` versions, so PILOT-12 operators
   submit through Python. That is unchanged and stated as a limitation.
 - `eqos-tqf` (real panel reviewer adapter and CLI). No overlap: panel decisions carry no

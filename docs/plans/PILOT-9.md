@@ -393,7 +393,7 @@ Approach:
   (owner); PILOT-12 owner review timing (Owner Q1; hand review `eqos-4j2.21`); PILOT-7 via the D6
   exit row; `verify_project.sh` exit 0; reviewer approval of the report. The roadmap definition
   becomes: the verdict is CONDITIONAL while any listed condition is open; PASS, Phase 0.5 closure and
-  `PILOT_PROVEN: YES` stay reserved.
+  `PILOT_PROVEN: YES` stay reserved. (Superseded 2026-10-22: owner ruling, owner not in the loop — see docs/backend-roadmap.md#pilot-conditions; PASS recorded 2026-10-22.)
 - **`PILOT-E2E.md`:** PILOT-9 row (test action = Task 3 block; failure = `PILOT-9:` drift;
   citation clause vacuous, vacuity asserted); `eqos-4j2.32` met by this plan, closing on Sol D8 r4
   APPROVE; Task 4 verdict line; pointer to this plan.
@@ -401,7 +401,7 @@ Approach:
   instants, Upstox `NO_VALUE` at PQ0/PQ1, the vacuous citation clause and the label assertion
   (Decision 3), and the later-acquired-comparison wording with capture and run times (Decision 4);
   § Acquisition (Decision 1); the gate log paths; verdict "CONDITIONAL" linking the conditions.
-  `eqos-3zl` done (2026-10-20); `eqos-4j2.8` stays open.
+  `eqos-3zl` done (2026-10-20); `eqos-4j2.8` stays open. (Superseded 2026-10-22: PASS recorded, `eqos-4j2.8` closes; owner not in the loop — see docs/backend-roadmap.md#pilot-conditions.)
 - **Gate.** One `scripts/verify_project.sh` run after the Task 3 and Task 4 commits. Its retained
   `scratchpad/project-verification.*` logs (Pytest, Mypy, Ruff, Ruff format, D8, Pilot) are the
   full-suite and quality evidence; read each log's status. Rerun only after a later change or a
@@ -410,7 +410,7 @@ Approach:
   approval and the reconciled report.
 - **Commits** (explicit files, in order): manifest + check (Task 2), e2e + `_want_point`/`_package` (Task 3),
   docs (Task 4). Refresh the status files after each.
-- **Beads** (orchestrator): `eqos-4j2.32` closes on r4 APPROVE; `eqos-4j2.8` stays open.
+- **Beads** (orchestrator): `eqos-4j2.32` closes on r4 APPROVE; `eqos-4j2.8` stays open. (Superseded 2026-10-22: `eqos-4j2.8` closes at PASS; owner not in the loop — see docs/backend-roadmap.md#pilot-conditions.)
 
 Verification:
 - The verifier's Pytest log: zero failures, skips no more than the existing 9; Mypy and both Ruff

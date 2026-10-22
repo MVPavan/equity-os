@@ -126,7 +126,7 @@ svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-ser
   <div class="kpi"><div class="v">6 / 10</div><div class="l">core phases complete on test databases (D1a–D5)</div></div>
   <div class="kpi"><div class="v">40 / 66</div><div class="l">roadmap stages closed (roadmap progress table)</div></div>
   <div class="kpi"><div class="v">D6</div><div class="l">current phase: tasks 0b, 1a, 1b done; Task 2 in progress</div></div>
-  <div class="kpi"><div class="v">NO</div><div class="l"><code>PILOT_PROVEN</code>: the pilot hasn't run yet</div></div>
+  <div class="kpi"><div class="v">YES</div><div class="l"><code>PILOT_PROVEN</code>: Apar pilot PASS 2026-10-22</div></div>
 </div>
 
 <!-- ============================================================ -->
@@ -442,12 +442,12 @@ svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-ser
 
 <!-- Workflow -->
 <div class="card" id="c-workflow">
-<h3>Earnings-review workflow and the pilot <span class="pill plan">planned · PREP, PILOT</span></h3>
+<h3>Earnings-review workflow and the pilot <span class="pill plan">PILOT PASS 2026-10-22</span></h3>
 <div class="grid">
 <div>Purpose</div><div>The first product workflow: given a company's new quarterly package and the approved prior thesis, produce a reviewable, source-backed update of what changed in facts, management commitments, calculations, uncertainties and thesis.</div>
 <div>Pilot scope</div><div>Apar consolidated: PQ0 = Q2 FY26 (manual baseline and bootstrap thesis), then PQ1 = Q3 FY26, PQ2 = Q4 FY26 and PQ3 = Q1 FY27 as assisted updates.</div>
 <div>Checks</div><div>PILOT-1 ingest and extraction (PBT 340.56 / 340.53, OPM 8.06%); 2 corroboration; 3 PostgreSQL only; 4 every material number cites a fact or trace; 5 memory promoted after PQ1 is retrieved in PQ2–PQ3; 6 views; 7 a held-out second company onboards; 8 watchlist gating; 9 shareholding; 10 purge, restore and replay; 11 interrupt-and-resume, rework producing v(N+1), seeded-error drill; 12 your review time recorded per quarter; 13 reproducibility. The verdict is PASS only if every D-phase exit and all 13 checks pass and <code>scripts/verify_project.sh</code> exits 0.</div>
-<div>Owner time</div><div>PILOT-12 needs you to review four reports. It's the one step that can't run autonomously.</div>
+<div>Owner time</div><div>None: the pilot ran autonomously; owner blind drill and review timing were removed by owner ruling 2026-10-22.</div>
 </div>
 </div>
 
@@ -618,7 +618,7 @@ corroboration:  ANOMALY          queue: none          trusted: no</code></pre>
 <tr><td>D8</td><td>Exchange shareholding filing as a first-party source</td><td><span class="pill plan">planned</span></td></tr>
 <tr><td>D9</td><td>Retention classes, holds, purge, re-fetch, restore</td><td><span class="pill plan">planned</span></td></tr>
 <tr><td>PREP-1…8</td><td>2026-taxonomy mappings and Q4 PDF fix; PostgreSQL-only workflow; resumable workflow (B-01); source-of-truth matrix (B-03); rework path (B-14); review telemetry and seeded-error drill; frozen pilot manifest; <code>verify_project.sh</code></td><td><span class="pill plan">mostly open</span></td></tr>
-<tr><td>Pilot</td><td>Apar, four quarters, PILOT-1…13 → <code>PILOT_PROVEN</code></td><td><span class="pill plan">planned</span></td></tr>
+<tr><td>Pilot</td><td>Apar, four quarters, PILOT-1…13 → <code>PILOT_PROVEN</code></td><td><span class="pill plan">PASS 2026-10-22</span></td></tr>
 <tr><td>After</td><td>Release Phase 1 (2–3 companies, analyst-effort gates), Phase 2 (memory evaluation), then conditional GBrain, debate, backtesting and execution</td><td><span class="pill plan">gated</span></td></tr>
 </table>
 <p class="note">The roadmap's estimate is an inference from D1a only: 2–3 days per phase of wall-clock time, about 3–6 weeks for D1a–D9 and 1–2 weeks more for PREP and the pilot. API rate limits are named as the biggest schedule risk.</p>

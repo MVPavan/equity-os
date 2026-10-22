@@ -1,8 +1,8 @@
 # Pilot report: Apar, PQ0–PQ3 (PILOT-E2E)
 
-**Verdict: CONDITIONAL** while any of the roadmap's [conditions](../../backend-roadmap.md#pilot-conditions) is open. PILOT-9 is met
-([PILOT-9](../../plans/PILOT-9.md)). PASS, Phase 0.5 closure and `PILOT_PROVEN: YES` stay reserved.
-`eqos-4j2.8` stays open.
+**Verdict: PASS — 2026-10-22.** Every D-phase exit and PILOT-1…PILOT-13 passes under the recorded owner amendments; `scripts/verify_project.sh` exited 0 at `3093f606` (2026-10-22, 13:45:43Z–15:53:35Z); gpt-6.1-sol approves this report.
+Owner amendments: PILOT-5 contradiction clause waived (2026-10-20); PILOT-11 owner blind drill and PILOT-12 owner timing removed (2026-10-22, `2d6d510a`); PILOT-4's labelled single-source filed-value exception and PILOT-9's disclosed assumptions/timing limits remain in force.
+**Phase 0.5 closed; `PILOT_PROVEN: YES`.** Close `eqos-4j2.8`; all [conditions](../../backend-roadmap.md#pilot-conditions) are met or removed. Review: `scratchpad/execution/pilot-verdict-sol.md`.
 
 Plan: [PILOT-E2E](../../plans/PILOT-E2E.md). Checks: [backend roadmap §4](../../backend-roadmap.md).
 Gate test: `tests/fundamentals/test_pilot_e2e.py` (one ordered `test_pilot_end_to_end`; helpers in
@@ -27,8 +27,8 @@ Gate logs: `scratchpad/project-verification.iJXRxo/` (`14.log` Pilot, `15.log` P
 | PILOT-8 | MET | Head is the owner `ADD`; after owner `REMOVE` a runtime draft is refused "is not on the watchlist" with report/version counts unchanged |
 | PILOT-9 | MET | Per quarter, `pilot_e2e_support.pilot9` (Task 3 block, `70bbb1f`) matches the frozen `shareholding` section; citation clause vacuous (`_pilot9_vacuity`). See § PILOT-9 |
 | PILOT-10 | MET | Real-clock classify, backup, dry-run, purge, guarded `db restore --replay-runs`: listed set equals the eligible set, no hold root listed, held blobs hash-verified. An empty purge is not observed deletion; positive deletion is D9's exit |
-| PILOT-11 | MET (owner blind drill removed by owner ruling 2026-10-22) | (i) interrupt after `admit_run`, retry without duplication; (ii) PQ2 v1 rejected on `cmp.revenue.qoq.prior`, only QoQ lines rerun, successor v(N+1) approved; (iii) seeded shadow states are not `ANSWER` and owner approval is refused. Human detection of review-only seeds is no longer a condition: the owner is not in the loop (ruling 2026-10-22) |
-| PILOT-12 | MET (instrumentation; owner timing removed by owner ruling 2026-10-22) | Five run-generated versions each have exactly one `review_sessions` row, full `claim_reviews` coverage, the scripted PQ2 rejection and the two-session report totals. Scripted times are instrumentation; owner review timing is not measured (owner ruling 2026-10-22) |
+| PILOT-11 | MET (owner blind drill removed by owner ruling 2026-10-22) | (i) interrupt after `admit_run`, retry without duplication; (ii) PQ2 v1 rejected on `cmp.revenue.qoq.prior`, only QoQ lines rerun, successor v(N+1) approved; (iii) seeded shadow states equal the `ANSWER` mapping (other keys MATCH), and approval of the shadow is refused. Human detection of review-only seeds is not demonstrated and is no longer a pilot condition (owner ruling 2026-10-22) |
+| PILOT-12 | MET (instrumentation; owner timing removed by owner ruling 2026-10-22) | Five run-generated versions each have exactly one `review_sessions` row, complete coverage of each version's required review set; the PQ2 successor rereviews the rejected claim, with accepted unchanged claims carried forward, the scripted PQ2 rejection and the two-session report totals. Scripted times are instrumentation; owner review timing is not measured (owner ruling 2026-10-22) |
 | PILOT-13 | MET | `restore_check.replay` returns `((), ())` on the live and the restored database. Suite, mypy and ruff: see the full-suite line |
 
 ## Filed values (single source, not cross-checked)
@@ -83,7 +83,7 @@ Generated from `pilot_manifest.yaml` (`v` as frozen; EPS in INR per share, other
 Plan: [PILOT-9](../../plans/PILOT-9.md). Evidence: the Task 3 block of `test_pilot_end_to_end`
 (`runs += [pilot9(pilot, quarter) for quarter in QUARTERS]`, helper `pilot_e2e_support.pilot9`,
 commit `70bbb1f`) against the `shareholding` section of `pilot_manifest.yaml` (commit `eab81b0`,
-gpt-6.1-sol APPROVE 2026-10-21, payload `93164041b9cc1734aaa258ef8a062a0d8321170836e39a4a978f562d3f5566b7`;
+gpt-6.1-sol APPROVE 2026-10-21, original payload `93164041b9cc1734aaa258ef8a062a0d8321170836e39a4a978f562d3f5566b7` (history; superseded by the final sealed approval below);
 review `scratchpad/execution/d8/pilot9-task2-r1-sol.md`). Vendor readings live only in the private,
 hash-pinned companion, not in git.
 
@@ -112,7 +112,8 @@ hash-pinned companion, not in git.
   is cutoff-clean. Run times: each run is created on a fresh test database when the e2e runs and is not retained; the cited execution is the gate run under "Gate logs".
 - Versions (Amendment A1): the 2025-09-30 filing is in the 2025-05-31 SHP taxonomy, so extraction
   moved to `nse-shp-v3` and mapping set v8 (`8b036b7`); the Stage 3 manifest was re-approved at
-  payload `731ea8be74398e1b5b4308b58f8f4f293ae06a31d1f9c06b8a31d6d75b6550d6` (`698fcd6`).
+  payload `731ea8be74398e1b5b4308b58f8f4f293ae06a31d1f9c06b8a31d6d75b6550d6` (`698fcd6`) — history (A1 era).
+- Final sealed approvals (current; gpt-6.1-sol APPROVE 2026-10-21; closing review `scratchpad/execution/d8/closing-r2-sol.md`, sealed by `7f4683ab`): `pilot_manifest.yaml` payload `bc41586e45129a024cff8690ddd32004ae578cefb6bed4438d5e555e8e745e95`, full file `4405d5f6…`; `stage3_manifest.yaml` payload `9c20b6c3005396ef3be93457365c074eb825a81a2a17d61c23d19e2c1a704f35`, full file `a61ebd2f…`, pinning mapping set v8 and `nse-shp-v4`.
 - Runtime (2026-10-21): pilot e2e 237.9 s; Stage 3 e2e 94.5 s.
 
 ## Acquisition
@@ -139,7 +140,9 @@ has one.
 
 ## Review record
 
-Reviewer gpt-6.1-sol, all 2026-10-20.
+Reviewer gpt-6.1-sol.
+
+2026-10-20:
 
 - Phase review: r1 (6 P2, 1 P3), r2 (2 P2), r3 APPROVE.
 - Closing review: 1 P2 (`FILED` accepted outside the comparator/tax keys), 1 P3 (PILOT-5 support and
@@ -147,8 +150,12 @@ Reviewer gpt-6.1-sol, all 2026-10-20.
 
 Commits: `33b73de`, `11bb672`, `47981be`, `1dbbb90`, `9b2e7d1`.
 
+2026-10-21: D8 phase review r4 APPROVE; D8 closing review r2 APPROVE (`scratchpad/execution/d8/closing-r2-sol.md`).
+
+2026-10-22: PASS approval (`scratchpad/execution/pilot-verdict-sol.md`, VERDICT: APPROVE PASS).
+
 ## Open external items
 
 - Production cutover `eqos-3zl`: done 2026-10-20 (status OPEN; legacy 43/43 EQUAL to fresh).
-- The roadmap's [conditions](../../backend-roadmap.md#pilot-conditions), which include the owner blind drill `eqos-4j2.30`, owner review
-  timing (PILOT-12; Owner Q1) and D8's phase approval (Sol D8 r4, which also closes `eqos-4j2.32`).
+- The roadmap's [conditions](../../backend-roadmap.md#pilot-conditions) are all met or removed. The owner blind drill
+  `eqos-4j2.30` and owner review timing (PILOT-12; Owner Q1) were removed by owner ruling 2026-10-22 (never measured); D8's phase approval (Sol D8 r4) is met.
