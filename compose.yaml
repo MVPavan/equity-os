@@ -10,7 +10,9 @@ services:
     environment:
       POSTGRES_DB: ${EQOS_PG_DB:?set EQOS_PG_DB in .env}
       POSTGRES_USER: ${EQOS_PG_USER:?set EQOS_PG_USER in .env}
-      POSTGRES_PASSWORD: ${EQOS_PG_PASSWORD:?set EQOS_PG_PASSWORD in .env}
+      # Read only when initializing an empty data dir; the admin password is not kept in .env
+      # (bead eqos-z53), so supply it from the shell for that first `up`.
+      POSTGRES_PASSWORD: ${EQOS_PG_PASSWORD:-}
     ports:
       - "127.0.0.1:${EQOS_PG_PORT:?set EQOS_PG_PORT in .env}:5432"
     volumes:

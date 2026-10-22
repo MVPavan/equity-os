@@ -3,7 +3,9 @@
 Per session the harness creates ``<prefix>tpl_<hex>``, migrates it as the
 migrator role and closes every connection to it. It also creates one randomized login per
 group role (``GROUP_ROLES``), writes their 0600 credential files to a temporary secrets
-directory, and drops the logins at session end (plan D3, D2). Per test
+directory, and drops the logins at session end (plan D3, D2). The admin and migrator logins come
+from the real secrets directory, as for any privileged command; the harness copies them into the
+temporary one for CLI subprocesses and deletes those copies at session end (bead eqos-z53). Per test
 it clones a fresh ``<prefix><hex>`` from that template and drops it afterwards. Nothing ever
 deletes rows: the evidence triggers forbid it, and dropping the clone is the
 cleanup.
@@ -29,7 +31,15 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from fundamentals.pg.migrations import apply_migrations, create_login
 from fundamentals.pg.pool import open_pool
-from fundamentals.pg.role_secrets import LOGIN_SUFFIX, SECRETS_DIR_ENV, RoleLogin
+from fundamentals.pg.role_secrets import (
+    CREDENTIAL_FILES,
+    LOGIN_SUFFIX,
+    SECRETS_DIR_ENV,
+    PrivilegedPgSettings,
+    RoleLogin,
+    RoleSecretError,
+    load_privileged,
+)
 from fundamentals.pg.settings import ENV_PREFIX, GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import (
     MAINTENANCE_DB,
@@ -53,13 +63,15 @@ def mint_name(settings: PgSettings, *, template: bool = False) -> str:
     return name
 
 
-def load_test_settings() -> PgSettings:
+def load_test_settings() -> PrivilegedPgSettings:
     """Settings for the harness, failing (never skipping) when they are incomplete."""
     try:
-        settings = PgSettings()
+        settings = load_privileged(os.environ)
     except ValidationError as exc:
         missing = sorted(ENV_PREFIX + str(error["loc"][0]).upper() for error in exc.errors())
         pytest.fail(f"PostgreSQL test settings incomplete; set {', '.join(missing)}", pytrace=False)
+    except RoleSecretError as exc:
+        pytest.fail(f"PostgreSQL test credentials unusable: {exc}", pytrace=False)
     check_prefix(settings)
     return settings
 
@@ -73,7 +85,7 @@ class PgTestDatabase(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     dbname: str
-    settings: PgSettings
+    settings: PrivilegedPgSettings
     logins: dict[PgRole, RoleLogin] = Field(default_factory=dict)
     secrets_dir: Path | None = None
 
@@ -111,17 +123,38 @@ class PgTestDatabase(BaseModel):
             f"{ENV_PREFIX}HOST": settings.host,
             f"{ENV_PREFIX}PORT": str(settings.port),
             f"{ENV_PREFIX}DB": self.dbname,
-            f"{ENV_PREFIX}USER": settings.user,
-            f"{ENV_PREFIX}PASSWORD": settings.password.get_secret_value(),
-            f"{ENV_PREFIX}MIGRATOR_PASSWORD": settings.migrator_password.get_secret_value(),
             f"{ENV_PREFIX}RUNTIME_PASSWORD": settings.runtime_password.get_secret_value(),
             f"{ENV_PREFIX}TEST_DB_PREFIX": settings.test_db_prefix,
             **({SECRETS_DIR_ENV: str(self.secrets_dir)} if self.secrets_dir else {}),
         }
 
 
+def _write_login(directory: Path, role: PgRole, login: RoleLogin) -> Path:
+    """Write ``login`` to the role's new 0600 credential file in ``directory``."""
+    path = directory / f"{CREDENTIAL_FILES[role]}{LOGIN_SUFFIX}"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(f"{login.login}:{login.password.get_secret_value()}\n")
+    return path
+
+
 @contextmanager
-def _session_logins(settings: PgSettings, directory: Path) -> Iterator[dict[PgRole, RoleLogin]]:
+def privileged_copies(settings: PrivilegedPgSettings, directory: Path) -> Iterator[None]:
+    """Copy the admin and migrator logins into ``directory`` for CLI subprocesses; delete the
+    copies after, so the real passwords never outlive the test."""
+    pairs = ((PgRole.ADMIN, settings.admin), (PgRole.MIGRATOR, settings.migrator))
+    paths = [_write_login(directory, role, login) for role, login in pairs]
+    try:
+        yield
+    finally:
+        for path in paths:
+            path.unlink()
+
+
+@contextmanager
+def _session_logins(
+    settings: PrivilegedPgSettings, directory: Path
+) -> Iterator[dict[PgRole, RoleLogin]]:
     """Create one randomized login per group role and its 0600 file; drop the logins after."""
     logins = {
         role: RoleLogin(
@@ -135,10 +168,7 @@ def _session_logins(settings: PgSettings, directory: Path) -> Iterator[dict[PgRo
         with psycopg.connect(admin_conninfo, autocommit=True) as admin:
             for role, login in logins.items():
                 create_login(admin, role, login)
-                path = directory / f"{GROUP_ROLES[role]}{LOGIN_SUFFIX}"
-                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                    handle.write(f"{login.login}:{login.password.get_secret_value()}\n")
+                _write_login(directory, role, login)
         yield logins
     finally:
         with psycopg.connect(admin_conninfo, autocommit=True) as admin:
@@ -161,7 +191,7 @@ def pg_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgTestData
             settings.conninfo(PgRole.MIGRATOR, dbname=name), autocommit=True
         ) as migrator:
             apply_migrations(migrator, MIGRATIONS_DIR)
-        with _session_logins(settings, directory) as logins:
+        with privileged_copies(settings, directory), _session_logins(settings, directory) as logins:
             yield PgTestDatabase(
                 dbname=name, settings=settings, logins=logins, secrets_dir=directory
             )

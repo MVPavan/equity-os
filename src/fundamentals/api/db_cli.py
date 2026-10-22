@@ -7,7 +7,8 @@
         (--live-snapshot-root L | --unwitnessed) [--config-root config]
     db create-test --suffix S
 
-All read ``PgSettings`` here, at the composition root. ``bootstrap`` runs as the admin role over
+All read ``PrivilegedPgSettings`` here, at the composition root: the admin and migrator logins
+come from their credential files (bead eqos-z53). ``bootstrap`` runs as the admin role over
 the ``postgres`` maintenance database; ``migrate`` runs as the migrator role, which owns every
 object it creates. ``backup`` writes a matched set of ``EQOS_PG_DB``; ``restore`` names the new
 ``eqos_test_*`` ``--database``, exits nonzero unless every check passes, and as the purge login
@@ -45,9 +46,10 @@ from fundamentals.pg.role_secrets import (
     MissingRoleSecretError,
     RoleSecretError,
     load_login,
+    load_privileged,
     secrets_dir,
 )
-from fundamentals.pg.settings import GROUP_ROLES, PgRole, PgSettings
+from fundamentals.pg.settings import GROUP_ROLES, PgRole
 from fundamentals.pg.test_databases import HarnessGuardError, create_test_database
 from fundamentals.retention.purge_first import restore_purge_first
 
@@ -109,9 +111,9 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
     """Run the selected ``db`` action, or return ``None`` for any other command."""
     if args.command != DB_COMMAND:
         return None
-    settings = PgSettings()
     action = getattr(args, _ACTION_DEST)
     try:
+        settings = load_privileged(os.environ)
         if action == CREATE_TEST_ACTION:
             name = f"{TEST_DATABASE_PREFIX}{args.suffix}_{uuid.uuid4().hex[:12]}"
             create_test_database(settings, name)

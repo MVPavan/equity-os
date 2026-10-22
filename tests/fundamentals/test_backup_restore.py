@@ -34,6 +34,7 @@ from fundamentals.pg.backup import (
     verify_set,
     write_backup,
 )
+from fundamentals.pg.role_secrets import PrivilegedPgSettings
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.pg_fact_store import PgFactStore, create_native_store
 
@@ -47,7 +48,7 @@ LATE = (
 BOUND = "SELECT DISTINCT capture_ref_id FROM eqos.legacy_evidence_bindings"
 
 
-def databases(settings: PgSettings) -> set[str]:
+def databases(settings: PrivilegedPgSettings) -> set[str]:
     """Every database name on the instance."""
     with psycopg.connect(settings.conninfo(PgRole.ADMIN, dbname="postgres")) as conn:
         return {row[0] for row in conn.execute("SELECT datname FROM pg_database").fetchall()}
@@ -59,11 +60,11 @@ def query(settings: PgSettings, dbname: str, statement: str) -> list[Any]:
         return [row[0] for row in conn.execute(statement).fetchall()]
 
 
-def late_registration(settings: PgSettings, dbname: str) -> tuple[str, ...]:
+def late_registration(settings: PrivilegedPgSettings, dbname: str) -> tuple[str, ...]:
     """A client prefix that registers one capture after the snapshot is exported, before the
     dump starts, then runs the real client."""
     psql = [*DEFAULT_CLIENT_PREFIX, "psql", "-v", "ON_ERROR_STOP=1", "-q", "-h", settings.host]
-    psql += ["-p", str(settings.port), "-U", settings.user, "-d", dbname, "-c", LATE]
+    psql += ["-p", str(settings.port), "-U", settings.admin.login, "-d", dbname, "-c", LATE]
     return ("sh", "-c", f'{shlex.join(psql)} >/dev/null && exec "$@"', "sh", *DEFAULT_CLIENT_PREFIX)
 
 

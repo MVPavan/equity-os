@@ -3,7 +3,9 @@
 Read once, at a composition root, from the untracked ``.env`` and the process
 environment; business modules receive a pool or a connection, never settings.
 Passwords are ``SecretStr`` and validation errors hide their input, so a missing
-field can never echo a credential into a log or a test report.
+field can never echo a credential into a log or a test report. Only the runtime password is
+read here; the admin and migrator logins come from credential files, and only the privileged
+commands load them (``role_secrets.PrivilegedPgSettings``, bead eqos-z53).
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ APPLICATION_NAME = "equity-os"
 _STATEMENT_TIMEOUT_OPTION = "-c statement_timeout={ms}"
 _ROLE_OPTION = " -c role={group}"
 _LOGIN_MISMATCH = "role {role} {verb} a login from a credential file"
+_PRIVILEGED_ONLY = "role {role} needs privileged settings"
 
 
 class PgRole(StrEnum):
@@ -53,10 +56,10 @@ GROUP_ROLES: dict[PgRole, str] = {
 
 
 class PgSettings(BaseSettings):
-    """Host, port, database, the three role credentials and the access limits.
+    """Host, port, database, the runtime credential and the access limits.
 
     ``extra="ignore"`` because ``.env`` also holds keys only compose reads
-    (``EQOS_PG_DATA_DIR``).
+    (``EQOS_PG_DATA_DIR``, ``EQOS_PG_USER``); an admin or migrator password left there is ignored.
     """
 
     model_config = SettingsConfigDict(
@@ -70,9 +73,6 @@ class PgSettings(BaseSettings):
     host: str
     port: int
     db: str
-    user: str
-    password: SecretStr
-    migrator_password: SecretStr
     runtime_password: SecretStr
     connect_timeout_s: int = 5
     statement_timeout_ms: int = 30000
@@ -110,9 +110,7 @@ class PgSettings(BaseSettings):
         )
 
     def _credentials(self, role: PgRole) -> tuple[str, SecretStr]:
-        """The login name and password for one role."""
-        if role is PgRole.ADMIN:
-            return self.user, self.password
-        if role is PgRole.MIGRATOR:
-            return MIGRATOR_ROLE_NAME, self.migrator_password
+        """The runtime login; any other role needs ``PrivilegedPgSettings``."""
+        if role is not PgRole.RUNTIME:
+            raise ValueError(_PRIVILEGED_ONLY.format(role=role.value))
         return RUNTIME_ROLE_NAME, self.runtime_password

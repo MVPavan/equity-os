@@ -58,8 +58,8 @@ from fundamentals.pg.retention_io import (
     reconcile_licence_ends,
     session_shared,
 )
-from fundamentals.pg.role_secrets import RoleLogin
-from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.pg.role_secrets import PrivilegedPgSettings, RoleLogin
+from fundamentals.pg.settings import PgRole
 from fundamentals.pg.test_databases import (
     check_test_db_name,
     create_test_database,
@@ -193,7 +193,7 @@ class RestoreCheck(BaseModel):
 
 
 def write_backup(
-    settings: PgSettings,
+    settings: PrivilegedPgSettings,
     *,
     database: str,
     snapshot_root: Path,
@@ -307,7 +307,7 @@ def verify_set(set_dir: Path) -> BackupManifest:
 
 def restore_backup(
     set_dir: Path,
-    settings: PgSettings,
+    settings: PrivilegedPgSettings,
     *,
     database: str,
     snapshot_root: Path,
@@ -477,7 +477,7 @@ def _inventories_consistent(manifest: BackupManifest) -> bool:
 
 def _client(
     prefix: Sequence[str],
-    settings: PgSettings,
+    settings: PrivilegedPgSettings,
     database: str,
     args: tuple[str, ...],
     *,
@@ -485,8 +485,9 @@ def _client(
     stdout: IO[bytes] | None = None,
 ) -> None:
     """Run one PostgreSQL client as the admin role; the password travels only in the env."""
-    target = ("-h", settings.host, "-p", str(settings.port), "-U", settings.user, "-d", database)
-    env = {**os.environ, _PASSWORD_ENV: settings.password.get_secret_value()}
+    admin = settings.admin
+    target = ("-h", settings.host, "-p", str(settings.port), "-U", admin.login, "-d", database)
+    env = {**os.environ, _PASSWORD_ENV: admin.password.get_secret_value()}
     try:
         subprocess.run(
             [*prefix, *args, *target], stdin=stdin, stdout=stdout, stderr=subprocess.PIPE,

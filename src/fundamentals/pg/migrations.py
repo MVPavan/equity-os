@@ -19,13 +19,12 @@ import structlog
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.pg.role_secrets import RoleLogin
+from fundamentals.pg.role_secrets import PrivilegedPgSettings, RoleLogin
 from fundamentals.pg.settings import (
     GROUP_ROLES,
     MIGRATOR_ROLE_NAME,
     RUNTIME_ROLE_NAME,
     PgRole,
-    PgSettings,
 )
 
 MIGRATION_SUFFIX = ".sql"
@@ -110,7 +109,7 @@ def create_login(admin: psycopg.Connection, role: PgRole, login: RoleLogin) -> N
     _log.info("pg_role_created", role=login.login, group=group)
 
 
-def bootstrap_roles(admin: psycopg.Connection, settings: PgSettings, dbname: str) -> None:
+def bootstrap_roles(admin: psycopg.Connection, settings: PrivilegedPgSettings, dbname: str) -> None:
     """Create the migrator, runtime and group roles if missing and grant them the database.
 
     An existing role is never altered — not its password, not its attributes —
@@ -119,7 +118,7 @@ def bootstrap_roles(admin: psycopg.Connection, settings: PgSettings, dbname: str
     with admin.transaction():
         ensure_group_roles(admin)
         for role_name, password in (
-            (MIGRATOR_ROLE_NAME, settings.migrator_password),
+            (MIGRATOR_ROLE_NAME, settings.migrator.password),
             (RUNTIME_ROLE_NAME, settings.runtime_password),
         ):
             if admin.execute(_ROLE_EXISTS, (role_name,)).fetchone() is None:

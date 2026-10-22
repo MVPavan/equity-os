@@ -16,6 +16,7 @@ from psycopg import sql
 
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.migrations import bootstrap_roles
+from fundamentals.pg.role_secrets import PrivilegedPgSettings
 from fundamentals.pg.settings import GROUP_ROLES, MIGRATOR_ROLE_NAME, PgRole, PgSettings
 
 MAINTENANCE_DB = "postgres"
@@ -60,7 +61,7 @@ def _default_connector(conninfo: str) -> psycopg.Connection:
 
 
 def create_test_database(
-    settings: PgSettings,
+    settings: PrivilegedPgSettings,
     name: str,
     *,
     template: str | None = None,
@@ -91,7 +92,7 @@ def create_test_database(
         admin.execute(sql.SQL("ALTER DATABASE {} ALLOW_CONNECTIONS true").format(database))
 
 
-def open_test_database(settings: PgSettings, name: str) -> None:
+def open_test_database(settings: PrivilegedPgSettings, name: str) -> None:
     """Grant a closed test database to every role (restore's last step)."""
     check_test_db_name(name, settings)
     with _default_connector(settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)) as admin:
@@ -99,7 +100,7 @@ def open_test_database(settings: PgSettings, name: str) -> None:
 
 
 def drop_test_database(
-    settings: PgSettings, name: str, *, connect: AdminConnector = _default_connector
+    settings: PrivilegedPgSettings, name: str, *, connect: AdminConnector = _default_connector
 ) -> None:
     """Drop a guarded test database, terminating any connection left open to it."""
     check_test_db_name(name, settings)

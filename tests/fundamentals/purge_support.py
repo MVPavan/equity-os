@@ -44,11 +44,11 @@ OPEN_RUNS = "SELECT count(*) FROM eqos.purge_runs r WHERE NOT EXISTS (SELECT 1 F
 KILLER = """import os, signal, sys
 from pathlib import Path
 from fundamentals.pg.backup import write_backup
-from fundamentals.pg.role_secrets import load_login, secrets_dir
-from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.pg.role_secrets import load_login, load_privileged, secrets_dir
+from fundamentals.pg.settings import PgRole
 from fundamentals.retention.purge import purge
 db, root, sets, step = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4]
-settings = PgSettings()
+settings = load_privileged(os.environ)
 def kill(at):
     if at == step:
         os.kill(os.getpid(), signal.SIGKILL)

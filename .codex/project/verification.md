@@ -34,9 +34,9 @@ pipeline checks. The authoritative copy is `.claude/project/verification.md`.
 Two pytest markers gate what the suite needs beyond the checkout:
 
 - `pg` — needs the compose PostgreSQL service up (`docker compose up -d postgres`) and
-  `.env` complete: `EQOS_PG_HOST`, `EQOS_PG_PORT`, `EQOS_PG_DB`, `EQOS_PG_USER`,
-  `EQOS_PG_PASSWORD`, `EQOS_PG_MIGRATOR_PASSWORD`, `EQOS_PG_RUNTIME_PASSWORD` (see
-  `.env.example`). Each test gets its own `eqos_test_*` database cloned from a migrated
+  `.env` complete: `EQOS_PG_HOST`, `EQOS_PG_PORT`, `EQOS_PG_DB`, `EQOS_PG_RUNTIME_PASSWORD`
+  (see `.env.example`), plus `eqos_admin.login` and `eqos_migrator.login` in
+  `${EQOS_SECRETS_DIR:-~/.secrets}` (bead eqos-z53). Each test gets its own `eqos_test_*` database cloned from a migrated
   template and dropped afterwards; the harness never touches `EQOS_PG_DB`.
 - `retained` — reads the gitignored retained Apar originals under
   `data/raw/watchlist/aparinds/`, pinned by SHA-256.

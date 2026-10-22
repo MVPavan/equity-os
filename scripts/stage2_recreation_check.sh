@@ -76,8 +76,12 @@ PORT=$(free_port) FRESH_PORT=$(free_port)
   die "port collision"
 
 # Guard 3: a complete 0600 env file per instance, with throwaway credentials never printed, and
-# a 0700 secrets dir of randomized group-role logins, so ~/.secrets is never read.
+# a 0700 secrets dir of randomized group-role, admin and migrator logins (both instances share
+# the admin and migrator ones), so ~/.secrets is never read.
 mkdir -m 700 "$ROOT/secrets"
+ADMIN_PASSWORD=$(hex 24)
+(umask 077 && printf 'eqos_stage2_admin:%s\n' "$ADMIN_PASSWORD" >"$ROOT/secrets/eqos_admin.login" &&
+  printf 'eqos_migrator:%s\n' "$(hex 24)" >"$ROOT/secrets/eqos_migrator.login")
 for file in $(uv run python -c 'from fundamentals.pg.role_secrets import LOGIN_SUFFIX
 from fundamentals.pg.settings import GROUP_ROLES
 print(*(group + LOGIN_SUFFIX for group in GROUP_ROLES.values()))'); do
@@ -89,8 +93,7 @@ EQOS_PG_HOST=127.0.0.1
 EQOS_PG_PORT=$2
 EQOS_PG_DB=$MAIN_DB
 EQOS_PG_USER=eqos_stage2_admin
-EQOS_PG_PASSWORD=$(hex 24)
-EQOS_PG_MIGRATOR_PASSWORD=$(hex 24)
+EQOS_PG_PASSWORD=$ADMIN_PASSWORD
 EQOS_PG_RUNTIME_PASSWORD=$(hex 24)
 EQOS_PG_TEST_DB_PREFIX=eqos_test_
 EQOS_PG_CONNECT_TIMEOUT_S=5

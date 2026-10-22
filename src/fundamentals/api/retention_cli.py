@@ -45,7 +45,12 @@ from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.pg.backup import BackupError, write_backup
 from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.retention_io import AuthorityError
-from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
+from fundamentals.pg.role_secrets import (
+    RoleSecretError,
+    load_login,
+    load_privileged,
+    secrets_dir,
+)
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.retention.holds import pinned_roots
 from fundamentals.retention.purge import (
@@ -181,8 +186,8 @@ def _purge(
     run: Callable[..., PurgeReport] = purge,
 ) -> int:
     """Run one purge (or ``run``, a licence end) with the live fetcher and a held final backup;
-    print what it did."""
-    settings = PgSettings()
+    print what it did. The final backup dumps as the admin login (bead eqos-z53)."""
+    settings = load_privileged(os.environ)
     login = load_login(PgRole.PURGE, secrets_dir(os.environ))
 
     def final_backup(conn: psycopg.Connection[Any]) -> Path:

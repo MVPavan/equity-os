@@ -20,9 +20,11 @@ from pg_support import (
     check_prefix,
     create_database,
     drop_database,
+    privileged_copies,
 )
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
+from pydantic import SecretStr
 
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
@@ -31,7 +33,12 @@ from fundamentals.pg.migrations import (
     MigrationNameError,
     apply_migrations,
 )
-from fundamentals.pg.role_secrets import LOGIN_SUFFIX, SECRETS_DIR_ENV
+from fundamentals.pg.role_secrets import (
+    LOGIN_SUFFIX,
+    SECRETS_DIR_ENV,
+    PrivilegedPgSettings,
+    RoleLogin,
+)
 from fundamentals.pg.settings import ENV_PREFIX, GROUP_ROLES, PgRole, PgSettings
 from fundamentals.pg.test_databases import MAINTENANCE_DB, HarnessGuardError
 
@@ -108,18 +115,18 @@ def test_misnamed_migration_file_is_refused(tmp_path: Path) -> None:
         apply_migrations(_NeverUsed(), tmp_path)  # type: ignore[arg-type]
 
 
-def _synthetic_settings(**overrides: object) -> PgSettings:
+def _synthetic_settings(**overrides: object) -> PrivilegedPgSettings:
+    placeholder = RoleLogin(login="admin", password=SecretStr("not-a-secret"))
     values: dict[str, object] = {
         "host": "127.0.0.1",
         "port": 1,
         "db": "equity_os",
-        "user": "admin",
-        "password": "not-a-secret",
-        "migrator_password": "not-a-secret",
+        "admin": placeholder,
+        "migrator": placeholder,
         "runtime_password": "not-a-secret",
     }
     values.update(overrides)
-    return PgSettings(_env_file=None, **values)  # type: ignore[arg-type]
+    return PrivilegedPgSettings(_env_file=None, **values)  # type: ignore[arg-type]
 
 
 class _ConnectSpy:
@@ -183,10 +190,12 @@ def test_harness_lifecycle_connection_names_the_maintenance_database() -> None:
     assert spy.targets == [(MAINTENANCE_DB, "admin"), (MAINTENANCE_DB, "admin")]
 
 
-def test_settings_load_with_compose_only_keys_in_env_file(
+def test_runtime_settings_never_hold_admin_or_migrator_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``.env`` also carries ``EQOS_PG_DATA_DIR``, which only compose reads."""
+    """An admin login can ``SET ROLE eqos_owner``, so a runtime process must not hold one: even
+    an ``.env`` still carrying the admin and migrator passwords yields settings that cannot
+    connect as either, and keep neither value (bead eqos-z53). Compose-only keys are ignored."""
     for key in [key for key in os.environ if key.startswith(ENV_PREFIX)]:
         monkeypatch.delenv(key)
     env_file = tmp_path / ".env"
@@ -198,8 +207,8 @@ def test_settings_load_with_compose_only_keys_in_env_file(
                 "EQOS_PG_PORT=55432",
                 "EQOS_PG_DB=equity_os",
                 "EQOS_PG_USER=equity_os",
-                "EQOS_PG_PASSWORD=placeholder",
-                "EQOS_PG_MIGRATOR_PASSWORD=placeholder",
+                "EQOS_PG_PASSWORD=admin-placeholder",
+                "EQOS_PG_MIGRATOR_PASSWORD=migrator-placeholder",
                 "EQOS_PG_RUNTIME_PASSWORD=placeholder",
             )
         ),
@@ -209,6 +218,11 @@ def test_settings_load_with_compose_only_keys_in_env_file(
     assert (settings.host, settings.port, settings.db) == ("127.0.0.1", 55432, "equity_os")
     assert settings.test_db_prefix == "eqos_test_"
     assert "placeholder" not in repr(settings)
+    for role in (PgRole.ADMIN, PgRole.MIGRATOR):
+        with pytest.raises(ValueError, match="needs privileged settings"):
+            settings.conninfo(role)
+    held = str(settings.model_dump())
+    assert "admin-placeholder" not in held and "migrator-placeholder" not in held
 
 
 @pytest.mark.pg
@@ -244,23 +258,25 @@ def test_db_bootstrap_creates_file_named_logins_and_refuses_a_foreign_one(
         path.write_text(f"{login}:{password}\n")
         path.chmod(0o600)
 
-    member = "SELECT pg_has_role(%s, %s, 'MEMBER')"
-    admin_info = settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)
-    try:
-        credential(PgRole.PANEL, fresh)
-        assert main(["db", "bootstrap"]) == EXIT_OK
-        with psycopg.connect(admin_info, autocommit=True) as admin:
-            assert admin.execute(member, (fresh, GROUP_ROLES[PgRole.PANEL])).fetchone() == (True,)
-            admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(foreign)))
-        login = conninfo_to_dict(settings.conninfo(PgRole.RUNTIME, dbname=pg_db.dbname))
-        with psycopg.connect(**{**login, "user": fresh, "password": password}) as conn:
-            assert conn.execute("SELECT current_user").fetchone() == (fresh,)
-        credential(PgRole.OWNER, foreign)
-        assert main(["db", "bootstrap"]) == EXIT_REFUSED
-        with psycopg.connect(admin_info, autocommit=True) as admin:
-            owner = GROUP_ROLES[PgRole.OWNER]
-            assert admin.execute(member, (foreign, owner)).fetchone() == (False,)
-    finally:
-        with psycopg.connect(admin_info, autocommit=True) as admin:
-            for role in (fresh, foreign):
-                admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+    with privileged_copies(settings, tmp_path):
+        member = "SELECT pg_has_role(%s, %s, 'MEMBER')"
+        admin_info = settings.conninfo(PgRole.ADMIN, dbname=MAINTENANCE_DB)
+        try:
+            credential(PgRole.PANEL, fresh)
+            assert main(["db", "bootstrap"]) == EXIT_OK
+            with psycopg.connect(admin_info, autocommit=True) as admin:
+                panel = GROUP_ROLES[PgRole.PANEL]
+                assert admin.execute(member, (fresh, panel)).fetchone() == (True,)
+                admin.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(foreign)))
+            login = conninfo_to_dict(settings.conninfo(PgRole.RUNTIME, dbname=pg_db.dbname))
+            with psycopg.connect(**{**login, "user": fresh, "password": password}) as conn:
+                assert conn.execute("SELECT current_user").fetchone() == (fresh,)
+            credential(PgRole.OWNER, foreign)
+            assert main(["db", "bootstrap"]) == EXIT_REFUSED
+            with psycopg.connect(admin_info, autocommit=True) as admin:
+                owner = GROUP_ROLES[PgRole.OWNER]
+                assert admin.execute(member, (foreign, owner)).fetchone() == (False,)
+        finally:
+            with psycopg.connect(admin_info, autocommit=True) as admin:
+                for role in (fresh, foreign):
+                    admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
