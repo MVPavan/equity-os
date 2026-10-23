@@ -6,6 +6,7 @@
     db restore --set DIR --database D --snapshot-root R [--backup-dir DIR] [--replay-runs]
         (--live-snapshot-root L | --unwitnessed) [--config-root config]
     db create-test --suffix S
+    db check-live [--migrations-dir migrations] [--identity config/identity/aparinds.yaml]
 
 All read ``PrivilegedPgSettings`` here, at the composition root: the admin and migrator logins
 come from their credential files (bead eqos-z53). ``bootstrap`` runs as the admin role over
@@ -16,6 +17,8 @@ purges first what the authority files in ``--backup-dir`` (default the set's par
 after the set, refusing a journal not extending the head witnessed in ``--live-snapshot-root``
 (``--unwitnessed``: live store lost; a journal rolled back with its witness is undetectable;
 plan D9 R11, R12). ``create-test`` prints a new guarded ``eqos_test_<suffix>_<hex>`` database.
+``check-live`` reads ``EQOS_PG_DB`` read-only as the migrator and exits nonzero naming the first
+failed live-state check; it refuses an ``eqos_test_*`` target (bead eqos-px2).
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.retention_purge import PurgeRefusedError
 from fundamentals.pg.approvals import TEST_DATABASE_PREFIX
 from fundamentals.pg.backup import BackupError, restore_backup, write_backup
+from fundamentals.pg.identity_seed import load_issuer_identity
+from fundamentals.pg.live_check import LiveCheckError, check_live
 from fundamentals.pg.migrations import (
     LoginRoleError,
     MigrationChecksumError,
@@ -59,9 +64,11 @@ MIGRATE_ACTION = "migrate"
 BACKUP_ACTION = "backup"
 RESTORE_ACTION = "restore"
 CREATE_TEST_ACTION = "create-test"
+CHECK_LIVE_ACTION = "check-live"
 MAINTENANCE_DB = "postgres"
 DEFAULT_MIGRATIONS_DIR = "migrations"
 DEFAULT_CONFIG_ROOT = "config"
+DEFAULT_LIVE_ISSUER = "config/identity/aparinds.yaml"
 
 _ACTION_DEST = "db_action"
 _MIGRATIONS_DIR_FLAG = "--migrations-dir"
@@ -75,6 +82,8 @@ _MIGRATIONS_DIR_HELP = "directory of NNNN_<snake>.sql migration files"
 _BACKUP_HELP = "write a matched backup set of EQOS_PG_DB and its referenced captures"
 _RESTORE_HELP = "restore a verified set into a new eqos_test_* database and check it"
 _CREATE_TEST_HELP = "create a guarded eqos_test_<suffix>_<hex> database and print its name"
+_CHECK_LIVE_HELP = "read-only check that EQOS_PG_DB is migrated, seeded and has an OPEN store"
+_LIVE_OK = "live ok\t{dbname}"
 _BOOTSTRAPPED = "bootstrapped\t{dbname}"
 _PUBLISHED = "published\t{path}"
 _APPLIED_HEADER = "applied\t{count}"
@@ -105,6 +114,11 @@ def add_db_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser
     restore.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     create_test = actions.add_parser(CREATE_TEST_ACTION, help=_CREATE_TEST_HELP)
     create_test.add_argument("--suffix", required=True)
+    check_live_parser = actions.add_parser(CHECK_LIVE_ACTION, help=_CHECK_LIVE_HELP)
+    check_live_parser.add_argument(
+        _MIGRATIONS_DIR_FLAG, default=DEFAULT_MIGRATIONS_DIR, help=_MIGRATIONS_DIR_HELP
+    )
+    check_live_parser.add_argument("--identity", type=Path, default=Path(DEFAULT_LIVE_ISSUER))
 
 
 def dispatch_db_command(args: argparse.Namespace) -> int | None:
@@ -118,6 +132,18 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
             name = f"{TEST_DATABASE_PREFIX}{args.suffix}_{uuid.uuid4().hex[:12]}"
             create_test_database(settings, name)
             sys.stdout.write(name + "\n")
+            return EXIT_OK
+        if action == CHECK_LIVE_ACTION:
+            if settings.db.startswith(TEST_DATABASE_PREFIX):
+                raise LiveCheckError(f"database: {settings.db} is a test database")
+            with psycopg.connect(settings.conninfo(PgRole.MIGRATOR)) as migrator:
+                check_live(
+                    migrator,
+                    database=settings.db,
+                    migrations_dir=Path(args.migrations_dir),
+                    issuer=load_issuer_identity(args.identity),
+                )
+            sys.stdout.write(_LIVE_OK.format(dbname=settings.db) + "\n")
             return EXIT_OK
         if action == BACKUP_ACTION:
             published = write_backup(
@@ -161,6 +187,7 @@ def dispatch_db_command(args: argparse.Namespace) -> int | None:
         LoginRoleError,
         AuthorityError,
         PurgeRefusedError,
+        LiveCheckError,
     ) as refusal:
         structlog.get_logger("fundamentals.db").warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=str(refusal)

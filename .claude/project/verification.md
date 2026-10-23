@@ -58,6 +58,10 @@ when reporting a run that used them, because the D1a Verify cells require both g
 `uv run pytest tests/fundamentals` and `scripts/verify.sh gate` therefore need the compose
 service up.
 
+`uv run fundamentals db check-live` (the `Live DB` row of `scripts/verify_project.sh`) is the
+read-only live check: it fails naming the check unless `EQOS_PG_DB` (never `eqos_test_*`) has every
+migration recorded with its sha256, the APARINDS fiscal setting and an `OPEN` legacy store.
+
 ### Stage 2 recreation check (D2)
 
 D2 adds migrations `0010_legacy_fact_store.sql` and `0011_fact_admissions.sql`. Its exit also

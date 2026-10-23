@@ -69,6 +69,8 @@ run_command "Pytest" uv run pytest tests/fundamentals
 run_command "Mypy" uv run mypy --strict src
 run_command "Ruff" uv run ruff check src tests/fundamentals
 run_command "Ruff format" uv run ruff format --check src tests/fundamentals
+# Live DB (bead eqos-px2): tests above use only eqos_test_* databases; this reads EQOS_PG_DB.
+run_command "Live DB" uv run fundamentals db check-live
 
 if [ "${failed}" -ne 0 ] || [ "${not_built}" -ne 0 ]; then
   printf 'Project incomplete: %s failed, %s not built.\n' "${failed}" "${not_built}"

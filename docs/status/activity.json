@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "E2E analysis: live DB recovered (eqos-89z); findings filed",
-    "detail": "Live equity_os had been running on empty ephemeral Docker Desktop storage since 2026-10-14; the 10-20 cutover was lost. Restored from post-cutover backup B2 (Sol-approved script, all checks pass); mount-sentinel guard now live; fresh backup 7ac5a42b equals B2. Analysis findings: current_tax false alarm (eqos-dol), PDF decimal loss (eqos-n21), queue load/severity (eqos-4vl), live-state preflight (eqos-px2). Production holds evidence and comparisons only, no reports.",
+    "title": "E2E analysis: research output is a data sheet (eqos-bnx); live health check added",
+    "detail": "db check-live now guards the live DB (gate row 'Live DB'). The analysis found the analyst sections (drivers, thesis impact, falsifiers, open questions, memory draft) are hard-coded placeholders; decision register A-04/B-02 remain Critical/Open. The pilot PASS proves the plumbing, not research output.",
     "stage": "Analysis"
   },
   "next": [
-    "Continue E2E analysis: research output depth (analyst layer is placeholders)",
-    "Live-state preflight (eqos-px2)",
-    "Mapping/extraction fixes: eqos-dol, eqos-n21; queue policy eqos-4vl",
-    "Phase 1 planning: 2-3 companies"
+    "Research slice 1: deterministic falsifier status in reports",
+    "Research slice 2: segment lines (fix eqos-djv/ghv)",
+    "Research slice 3: spec for model-drafted analyst sections (Sol-reviewed)",
+    "Mapping/extraction fixes: eqos-dol, eqos-n21; queue policy eqos-4vl"
   ],
   "log": [
+    {
+      "date": "2026-10-23",
+      "text": "eqos-px2: fundamentals db check-live (read-only live-state check) + 'Live DB' gate row. E2E finding eqos-bnx: report analyst sections are placeholders; A-04/B-02 unmet."
+    },
     {
       "date": "2026-10-23",
       "text": "eqos-89z: live PG found serving empty VM storage since 10-14 (Docker Desktop bind race after WSL restarts). Restored B2 into equity_os (Sol APPROVE after 3 rounds); compose sentinel guard committed (3e744344); fresh backup equals B2."

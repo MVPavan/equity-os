@@ -187,6 +187,14 @@ def apply_migrations(
             migrator.execute(_UNLOCK, (MIGRATION_LOCK_KEY,))
 
 
+def migration_checksums(migrations_dir: Path) -> dict[str, str]:
+    """Each migration file's name and the sha256 the runner records for it."""
+    return {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in _migration_files(migrations_dir)
+    }
+
+
 def _migration_files(migrations_dir: Path) -> tuple[Path, ...]:
     """The directory's ``.sql`` files in filename order, refusing any misnamed one."""
     files = sorted(
