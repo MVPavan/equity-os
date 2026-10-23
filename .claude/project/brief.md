@@ -30,6 +30,9 @@ commitments, calculations, uncertainties, and thesis.
 - **Product verdict:** `PILOT_PROVEN: YES` (Apar pilot PASS 2026-10-22:
   `docs/evidence/pilot/report.md`), `CORE_RESEARCH_RELEASE: NO`,
   `VISION_SATISFIED: NO`.
+  Scope (2026-10-23, eqos-bnx): the PASS proves the pipeline (PILOT-1…13), not research
+  content. The report's analyst sections are still placeholders, so register A-04/B-02 are
+  unmet. They must be met before Phase 1 and `CORE_RESEARCH_RELEASE`.
 
 ## Stack
 
