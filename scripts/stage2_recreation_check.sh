@@ -105,6 +105,7 @@ EQOS_SECRETS_DIR=$ROOT/secrets
 EOF
   )
   mkdir -m 755 "$3"  # the postgres user must traverse the bind mount, as on the live dir
+  touch "$3/.eqos-host-mount"  # compose refuses a data dir without it
 }
 write_env "$P" "$PORT" "$ROOT/data"
 write_env "$F" "$FRESH_PORT" "$ROOT/data-fresh"

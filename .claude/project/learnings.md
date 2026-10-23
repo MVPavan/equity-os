@@ -331,3 +331,18 @@ Format per entry:
 - Apply: a migration that adds a table also adds it to a family set in
   `tests/fundamentals/ledger_support.py` (or its family's support module). Run the full suite
   before the phase review, not after it.
+
+## Docker Desktop can bind the PG data dir to empty VM storage after a WSL restart  (2026-10-23)
+
+- Observed: after WSL restarts (2026-10-14, 10-15, 10-22), Docker Desktop restarted
+  `equity-os-postgres-1` before the WSL path was visible. The bind resolved to an empty
+  VM-local filesystem (`none`, 16G), and the image entrypoint ran initdb. All DB work for
+  9 days, including the production cutover, went to storage that the next restart wiped.
+  The 4401-test gate stayed green because it uses only isolated test DBs. Recovered from
+  backup B2 (eqos-89z).
+- Why it matters: data loss is silent. The app sees a healthy, empty server.
+- Apply: `compose.yaml` refuses to start without `$EQOS_PG_DATA_DIR/.eqos-host-mount`.
+  Never create that sentinel anywhere but the verified real data dir. Apply compose changes
+  with `docker compose up -d postgres` (a restart keeps the old config). If PG looks empty,
+  run `docker exec equity-os-postgres-1 df -h /var/lib/postgresql`: it must show the host
+  disk, not `none`.
