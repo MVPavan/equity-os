@@ -14,7 +14,9 @@ the stock's promoted memory at a store-clock boundary before the pipeline starts
 sealed in the heading and nothing else reads it (PILOT-GAP memory). A QoQ prior cites the
 predecessor run version's admitted ``fact.<role>`` when its key, value and file are the fact's
 (``predecessor``, PILOT-4), checked before the run's first write and swapped in at the write;
-that version's comparison runs join the draft's pins.
+that version's comparison runs join the draft's pins. The derived falsifier sections and
+their threshold claims follow, bound to the thesis approved at the derivation cutoff
+(:mod:`falsifier_status`).
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from fundamentals.ledger import store
 from fundamentals.ledger.citations import _FILE_CAPTURES, _first_party
 from fundamentals.ledger.claim_check import UNITS, quote_qualifiers
 from fundamentals.ledger.display import FILED, content_hash
+from fundamentals.ledger.falsifier_status import approved_thesis, derived, evaluate
 from fundamentals.ledger.import_mapping import (
     BOUNDS_STYLE,
     CONTRACT_FIELDS,
@@ -311,8 +314,14 @@ def write_run_draft(
         for text, claim in _guidance(cursor, run.guidance, update, prior, catalog):
             body.add(GUIDANCE, text, carried.get(claim.claim_key, claim))
         claims = predecessor(prior, tuple(body.claims.values()))
+        assert update.derivation_cutoff is not None
+        bound = approved_thesis(cursor, entity_id, update.nse_symbol, update.derivation_cutoff)
+        by_key = {claim.claim_key: claim for claim in claims}
+        rows = () if bound is None else evaluate(bound, by_key, run.lines)
+        falsifiers, thresholds = derived(bound, rows)
         _check_sources(cursor, claims, run, prior, catalog)
-        sections = _sections(run, prior, body.lines)
+        sections = _sections(run, prior, body.lines, falsifiers)
+        claims += thresholds
         kind = ReportKind.EARNINGS_UPDATE
         row = cursor.execute(_REPORT, (entity_id, run.period, kind.value)).fetchone()
         report_id = (
@@ -320,7 +329,6 @@ def write_run_draft(
             if row is not None
             else store.create_report(cursor, entity_id=entity_id, period=run.period, kind=kind)
         )
-        assert update.derivation_cutoff is not None
         version_id = store.create_version(
             cursor,
             VersionDraft(
@@ -622,10 +630,13 @@ def check_blobs(
 
 
 def _sections(
-    run: RunDraft, prior: Prior, lines: Mapping[str, list[str]]
+    run: RunDraft,
+    prior: Prior,
+    lines: Mapping[str, list[str]],
+    falsifiers: Sequence[tuple[str, str]],
 ) -> tuple[ReportSection, ...]:
-    """The heading, then each section's lines; every number is a claim placeholder or a
-    structural date, id or digest."""
+    """The heading, then each section's lines, then the derived falsifier sections; every
+    number is a claim placeholder or a structural date, id or digest."""
     update, retrospective = run.update, run.retrospective
     assert update.source_cutoff is not None and update.derivation_cutoff is not None
     designation = (
@@ -654,6 +665,7 @@ def _sections(
         f"{full}Originals first seen: {seen}.\n{run.memory}\n\n"
     )
     bodies = [(HEADING, heading)] + [(key, section_body(key, lines[key])) for key in INTROS]
+    bodies += falsifiers
     return tuple(
         ReportSection(ordinal=ordinal, section_key=key, body=body)
         for ordinal, (key, body) in enumerate(bodies)

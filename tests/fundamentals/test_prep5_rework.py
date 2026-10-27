@@ -5,73 +5,58 @@ version under review, in an immutable column; a stored trace's operand set canno
 Task 2: a rejected version's package inputs and rerun set are derived from its verified rows.
 Task 3: a rework run derives only the rerun lines and refuses any other movement before writing;
 ``--full-successor`` reruns the version whole; the head is re-checked before and at the write.
-Task 4 (PILOT-11): a corrected comparator filing reworks its dependent claims into an approved
-v(N+1); a correction reaching a carried claim, or a source outside the cutoff or the package,
-refuses before any write.
+Task 4 (PILOT-11) lives in ``test_prep5_corrected_filing``.
 """
 
 from __future__ import annotations
 
-import dataclasses
-import hashlib
 import io
-import json
 import sqlite3
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import date
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import Decimal
 from fractions import Fraction
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
-import yaml
-from evidence_support import Ingest, ingest, policy
+from evidence_support import ingest, policy
 from ledger_support import RULING, SELF_CITED, Ledger, claim, ledger
 from pg_evidence_schema_support import _insert, _trace, runtime, seeded
 from pg_support import PgTestDatabase
-from prep2b_support import COMPARATOR_KIND, COUNTS, STOCK, Pilot
+from prep2b_support import COUNTS, Pilot
+from prep5_support import _correct, _rerun
 from psycopg import errors
-from retained_support import (
-    APAR_MANIFEST,
-    INPUTS_DIR,
-    STORE_DIR,
-    XBRL_DIR,
-    apar_original,
-    manifest_entry,
-)
 from test_prep2b_run_draft import dictionary, mapping_set
 
 from fundamentals.api import cli
-from fundamentals.api.cli import _build_parser, main, run_command
-from fundamentals.api.ledger_cli import DEFAULT_IMPORT_CONFIG
-from fundamentals.api.pipeline import PipelineResult
+from fundamentals.api.cli import main
 from fundamentals.canon.formula import CalculationTrace, TraceOperand
-from fundamentals.contracts.canonical import Representation
-from fundamentals.contracts.fact import CanonicalStatus
 from fundamentals.contracts.ledger import (
     Citation,
     CitationKind,
-    ClaimState,
     DecisionKind,
-    NumericClaim,
     SubjectKind,
     VersionStatus,
 )
-from fundamentals.evidence.capture_intake import retained_intake_from_manifest
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
-from fundamentals.evidence.xbrl_adapter import parse_instance
-from fundamentals.extract.xbrl_parser import RawXbrlFact
 from fundamentals.ledger import lifecycle, rework, run_draft, run_traces, store
-from fundamentals.ledger.run_traces import CHANGES, RunDraftError, _Binder
+from fundamentals.ledger.falsifier_status import DERIVED
+from fundamentals.ledger.run_traces import CHANGES, MARGIN_KEY, RunDraftError, _Binder
 from fundamentals.pg.settings import PgRole
-from fundamentals.store.pg_fact_store import PgFactStore
 
-__all__ = ["dictionary", "ingest", "ledger", "mapping_set", "policy", "runtime", "seeded"]
+__all__ = [
+    "_correct",
+    "dictionary",
+    "ingest",
+    "ledger",
+    "mapping_set",
+    "policy",
+    "runtime",
+    "seeded",
+]
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -338,30 +323,59 @@ GAP = "calc.1"  # the income − revenue gap
 CABLES = "ledger.cables_revenue_growth.annual.consolidated"
 
 
+PBT_CHANGES = tuple(
+    f"cmp.profit_before_tax.{kind}.{part}"
+    for kind in ("qoq", "yoy")
+    for part in ("prior", "abs", "pct")
+)
+ETR, HEADLINE = "calc.3", "calc.4"  # the ETR (tax / PBT) and headline PBT (PBT + associates)
+
+
 @pytest.mark.parametrize(
     ("rejected", "rerun"),
     [
         ("cmp.revenue.qoq.prior", set(QOQ)),
-        ("fact.revenue", {"fact.revenue", *QOQ, *YOY, GAP}),
+        ("fact.revenue", {"fact.revenue", *QOQ, *YOY, GAP, MARGIN_KEY}),
         (CABLES, {CABLES}),
+        (
+            MARGIN_KEY,
+            {
+                MARGIN_KEY,
+                "fact.revenue",
+                *QOQ,
+                *YOY,
+                GAP,
+                "fact.profit_before_tax",
+                *PBT_CHANGES,
+                ETR,
+                HEADLINE,
+            },
+        ),
     ],
-    ids=["comparator-prior", "current-fact", "guidance"],
+    ids=["comparator-prior", "current-fact", "guidance", "margin"],
 )
 def test_a_rejection_reruns_the_lines_sharing_its_inputs(
     submitted_q2: tuple[Pilot, int], rejected: str, rerun: set[str]
 ) -> None:
     """Affected = the rejected claim and every claim sharing one of its inputs (one hop), closed
     over the lines they sit on: a comparator prior reruns its own changes line, the current
-    revenue fact every revenue change and the income gap (with the line-mate priors), a
-    guidance quote only itself. Everything else is carried untouched."""
+    revenue fact every revenue change, the income gap and the PBT margin (with the line-mate
+    priors), a guidance quote only itself, and the margin every claim on its revenue or its PBT
+    (the PBT changes, the ETR and the headline PBT). Everything else is carried untouched; the
+    derived falsifier sections and their threshold claims are neither."""
     pilot, version = submitted_q2
     assert _plan(pilot, version) is None
     _request_changes(pilot, version, rejected)
     found = _plan(pilot, version)
     assert found is not None
     assert found.rerun == rerun
-    assert found.carried == {c.claim_key for c in pilot.version(version).claims} - rerun
-    for section in pilot.version(version).sections[1:]:
+    drafted = pilot.version(version)
+    own = {c.claim_key for c in drafted.claims if c.section_key not in DERIVED}
+    assert found.carried == own - rerun
+    assert not any(key.startswith("thesis.") for key in found.carried | found.rerun)
+    for section in drafted.sections[1:]:
+        if section.section_key in DERIVED:
+            continue
         body, lines = section.body.splitlines(), found.lines[section.section_key]
         assert len(found.scaffolds[section.section_key].splitlines()) + len(lines) == len(body)
 
@@ -417,26 +431,6 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     spy(cli, "admit_run", lambda outcome, *_: outcome.created)
     spy(cli, "select_admitted", lambda revision, *_: revision.fact.revision_family)
     return found
-
-
-def _rerun(
-    pilot: Pilot,
-    *flags: str,
-    edit: Callable[[dict[str, Any]], None] | None = None,
-    manifest: Path = APAR_MANIFEST,
-) -> PipelineResult:
-    """FY26_Q2 run again on ``manifest``; ``edit`` corrects its config first (a new approved
-    config, A3)."""
-    context, argv = pilot.registered("FY26_Q2")
-    if edit is not None:
-        path = Path(argv[argv.index("--config") + 1])
-        body = yaml.safe_load(path.read_text(encoding="utf-8"))
-        edit(body)
-        path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        context = dataclasses.replace(context, approved_config_sha256=digest)
-    args = _build_parser().parse_args([*argv, "--retrospective", str(manifest), *flags])
-    return run_command(args, intake_context=context)
 
 
 def _rules(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -496,10 +490,10 @@ def test_a_rework_reruns_only_the_rejected_lines(
     submitted_q2: tuple[Pilot, int], calls: Calls
 ) -> None:
     """Rejecting the revenue fact with no correction looks up, computes and stores exactly the
-    revenue lines' inputs and traces (the unaffected calculations never execute, not merely
-    deduplicate); the revenue fact is re-admitted from the same comparison run, so no fact row,
-    admission or selection is new; every carried claim is N's row, cited and resolved, on N's
-    line, although the run built it unbound (Sol r2 1)."""
+    revenue lines' (and the PBT margin's) inputs and traces (the unaffected calculations never
+    execute, not merely deduplicate); the revenue fact is re-admitted from the same comparison
+    run, so no fact row, admission or selection is new; every carried claim is N's row, cited
+    and resolved, on N's line, although the run built it unbound (Sol r2 1)."""
     pilot, version = submitted_q2
     _request_changes(pilot, version, "fact.revenue")
     found = _plan(pilot, version)
@@ -513,10 +507,10 @@ def test_a_rework_reruns_only_the_rejected_lines(
         for key, claim in before.items()
         if claim.measurement_key
     }
-    traced = (*QOQ[1:], *YOY[1:], GAP)
+    traced = (*QOQ[1:], *YOY[1:], GAP, MARGIN_KEY)
     assert sorted(calls["conclude"]) == sorted(digest[key] for key in traced)
     assert len(calls["put_calculation_trace"]) == len(traced)
-    assert set(calls["operand"]) == {digest[key] for key in GAP_INPUTS}
+    assert set(calls["operand"]) == {digest[key] for key in (*GAP_INPUTS, PBT)}
     assert calls["admit_run"] == [0] and calls["select_admitted"] == []
     assert _counts(pilot)[:FACTS] == facts
     pilot.admitted(new)
@@ -738,249 +732,3 @@ def test_a_rework_refuses_a_head_that_moved(
         for name in WRITES:
             assert calls[name] == [], name
         assert after == before
-
-
-Q1 = "FY26_Q1"
-CORRECTED_KIND = "xbrl-consolidated-comparator-corrected"
-# FY26_Q1's consolidated revenue from operations as its comparator filing states it, in ₹.
-Q1_REVENUE = 51_041_600_000
-REVENUE_FACT = b'<in-capmkt:RevenueFromOperations contextRef="OneD" decimals="-5" unitRef="INR">%d<'
-CRORE = 10**7
-LATE = "01-Dec-2025 10:00:00"  # after FY26_Q2's source cutoff
-_CAPTURE_BLOB = """SELECT c.blob_sha256 FROM eqos.interpretations i
-JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s"""
-_TRACE_BLOBS = """SELECT DISTINCT c.blob_sha256 FROM eqos.calculation_trace_operands o
-JOIN eqos.interpretations i ON i.id = o.interpretation_id
-JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE o.calculation_trace_id = %s"""
-
-
-def _facts(body: bytes, ingest: Ingest) -> tuple[RawXbrlFact, ...]:
-    """Every fact of an instance as evidence ingest reads it."""
-    return parse_instance(body, mapping_set=ingest.mapping_set).facts
-
-
-def _correct(
-    pilot: Pilot, ingest: Ingest, *, filed_at: str | None = None, original: bool = True
-) -> tuple[str, Callable[[], PipelineResult]]:
-    """FY26_Q1's comparator restated with revenue ₹100 crore higher, published (by default) when
-    the original was, entered in a copy of the retrieval manifest the run is pinned to and
-    evidence-ingested; returns its digest and the FY26_Q2 rerun pointing ``comparators.qoq`` at
-    it. ``original=False`` drops the original filing from the manifest copy."""
-    entry = manifest_entry(Q1, COMPARATOR_KIND)
-    body = apar_original(Q1, COMPARATOR_KIND).read_bytes()
-    assert body.count(REVENUE_FACT % Q1_REVENUE) == 1
-    corrected = body.replace(REVENUE_FACT % Q1_REVENUE, REVENUE_FACT % (Q1_REVENUE + 100 * CRORE))
-    pairs = zip(_facts(body, ingest), _facts(corrected, ingest), strict=True)
-    changed = [new for old, new in pairs if old != new]
-    assert [fact.raw_text for fact in changed] == [str(Q1_REVENUE + 100 * CRORE)]
-    path = pilot.tmp_path / INPUTS_DIR / XBRL_DIR / f"corrected-{entry['filename']}"
-    path.write_bytes(corrected)
-    sha = hashlib.sha256(corrected).hexdigest()
-    manifest = json.loads(APAR_MANIFEST.read_text(encoding="utf-8"))
-    if not original:
-        manifest["entries"] = [e for e in manifest["entries"] if e["sha256"] != entry["sha256"]]
-    manifest["entries"].append(
-        entry
-        | {"kind": CORRECTED_KIND, "filename": path.name, "sha256": sha, "bytes": len(corrected)}
-        | {"filed_at_nse": filed_at or entry["filed_at_nse"]}
-    )
-    copy = pilot.tmp_path / "retrieval-manifest-corrected.json"
-    copy.write_text(json.dumps(manifest), encoding="utf-8")
-    pin = pilot.tmp_path / DEFAULT_IMPORT_CONFIG
-    text = pin.read_text(encoding="utf-8")
-    pinned = hashlib.sha256(APAR_MANIFEST.read_bytes()).hexdigest()
-    assert text.count(pinned) == 1
-    pin.write_text(text.replace(pinned, hashlib.sha256(copy.read_bytes()).hexdigest()))
-    intake = retained_intake_from_manifest(
-        copy,
-        issuer=STOCK,
-        quarter=Q1,
-        kinds={Representation.XBRL: CORRECTED_KIND},
-        store_root=(pilot.tmp_path / STORE_DIR).absolute(),
-        input_root=(pilot.tmp_path / INPUTS_DIR).absolute(),
-        issuer_config=None,
-    )
-    ingest.run(intake, date(2025, 6, 30))
-
-    def point(config: dict[str, Any]) -> None:
-        config["comparators"]["qoq"] |= {"local_path": str(path), "sha256": sha}
-
-    return sha, partial(_rerun, pilot, edit=point, manifest=copy)
-
-
-def _blob(pilot: Pilot, claim: NumericClaim) -> str:
-    """The capture blob of the interpretation a figure cites."""
-    ((found,),) = pilot.query(_CAPTURE_BLOB, claim.citation.interpretation_id)
-    return str(found)
-
-
-def _sealed(pilot: Pilot, version: int) -> tuple[VersionStatus, str, str, rework.Rework | None]:
-    """The version's status, sealed digest, content hash and rework (package inputs, rerun set)."""
-    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
-        cursor = conn.cursor()
-        status = lifecycle.version_status(cursor, version)
-        digest = store.sealed_digest(cursor, version)
-    return status, digest, pilot.version(version).content_hash, _plan(pilot, version)
-
-
-def test_corrected_filing_reworks_only_dependent_claims(
-    submitted_q2: tuple[Pilot, int],
-    ingest: Ingest,
-    calls: Calls,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """PILOT-11: a restated QoQ comparator moves only the rejected prior's changes line. v(N+1)
-    carries the values recomputed from the new filing; every other claim keeps N's citation,
-    the other QoQ priors the old filing's (finding 4); only the two dependent calculations run,
-    no fact row, admission or selection is new; v(N+1) is approved and N's package is as it was."""
-    pilot, version = submitted_q2
-    monkeypatch.setattr("sys.stdin", io.StringIO(RULING))
-    command = ["ledger", "decide", V.value, str(version), REQUEST.value, "--claim", QOQ[0]]
-    assert main(command) == 0
-    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
-        assert rework.rejected(conn.cursor(), version) == (QOQ[0],)
-    baseline = _sealed(pilot, version)
-    assert baseline[3] is not None and baseline[3].rerun == set(QOQ)
-    sha, rerun = _correct(pilot, ingest)
-    facts = _counts(pilot)[:FACTS]
-    new = rerun().draft_version_id
-    assert new is not None and _successor(pilot, version) == new
-    numbers = pilot.query("SELECT eqos.version_number(%s), eqos.version_number(%s)", version, new)
-    assert numbers[0][1] == numbers[0][0] + 1
-    old = {c.claim_key: c for c in pilot.version(version).claims}
-    claims = {c.claim_key: c for c in pilot.version(new).claims}
-    current, prior = old["fact.revenue"].value, old[QOQ[0]].value
-    assert current is not None and prior is not None
-    prior += 100  # a run states amounts in ₹ crore
-    pct = ((current - prior) / prior * 100).quantize(Decimal(1).scaleb(-2), ROUND_HALF_EVEN)
-    expected = dict(zip(QOQ, (prior, current - prior, pct), strict=True))
-    assert {key: claims[key].value for key in QOQ} == expected
-    assert all(old[key].value != value for key, value in expected.items())
-    assert _blob(pilot, claims[QOQ[0]]) == sha
-    for key in QOQ[1:]:
-        trace = claims[key].citation.calculation_trace_id
-        assert trace != old[key].citation.calculation_trace_id
-        assert sha in {row[0] for row in pilot.query(_TRACE_BLOBS, trace)}
-    digest = {key: c.measurement_key.digest() for key, c in old.items() if c.measurement_key}
-    assert sorted(calls["conclude"]) == sorted(digest[key] for key in QOQ[1:])
-    assert len(calls["put_calculation_trace"]) == 2
-    assert set(calls["operand"]) == {digest["fact.revenue"], digest[QOQ[0]]}
-    assert calls["admit_run"] == [0] and calls["select_admitted"] == []
-    assert _counts(pilot)[:FACTS] == facts
-    unchanged = {key: c for key, c in claims.items() if key not in QOQ}
-    assert unchanged == {key: c for key, c in old.items() if key not in QOQ}
-    assert _lines(pilot, new) == _lines(pilot, version)
-    original = manifest_entry(Q1, COMPARATOR_KIND)["sha256"]
-    priors = [key for key in unchanged if key.endswith(".qoq.prior")]
-    assert priors and {_blob(pilot, claims[key]) for key in priors} == {original}
-    pilot.approve(new)
-    assert _sealed(pilot, new)[0] is VersionStatus.APPROVED
-    assert _sealed(pilot, version) == baseline
-    assert baseline[0] is VersionStatus.CHANGES_REQUESTED
-
-
-def test_a_corrected_filing_reaching_a_carried_claim_refuses_before_writing(
-    submitted_q2: tuple[Pilot, int], ingest: Ingest, calls: Calls
-) -> None:
-    """With PBT rejected, the restated comparator moves the carried revenue QoQ line: carrying
-    N's value would publish a stale one, taking the new one would bypass review."""
-    pilot, version = submitted_q2
-    _request_changes(pilot, version, PBT)
-    _, rerun = _correct(pilot, ingest)
-    before = _counts(pilot)
-    with pytest.raises(RunDraftError, match=QOQ[0]):
-        rerun()
-    for name in WRITES:
-        assert calls[name] == [], name
-    assert _counts(pilot) == before
-
-
-@pytest.mark.parametrize("case", ["late", "outside", "omitted"])
-def test_a_rework_source_outside_its_package_refuses_before_writing(
-    submitted_q2: tuple[Pilot, int],
-    ingest: Ingest,
-    calls: Calls,
-    monkeypatch: pytest.MonkeyPatch,
-    case: str,
-) -> None:
-    """The corrected filing published after the cutoff, a capture outside the run's package,
-    and the original filing that carried claims still cite missing from the manifest each
-    refuse before the rerun's traces are stored (closing r2 3, r3 1): at the draft write they
-    would follow it."""
-    pilot, version = submitted_q2
-    _request_changes(pilot, version, QOQ[0])
-    original = manifest_entry(Q1, COMPARATOR_KIND)["sha256"]
-    sha, rerun = _correct(
-        pilot, ingest, filed_at=LATE if case == "late" else None, original=case != "omitted"
-    )
-    if case == "outside":
-        check = cli.check_blobs
-
-        def narrowed(*args: Any, allowed: set[str], **kwargs: Any) -> None:
-            check(*args, allowed=allowed - {sha}, **kwargs)
-
-        monkeypatch.setattr(cli, "check_blobs", narrowed)
-    named = {
-        "late": f"past the source cutoff .*{sha[:12]}",
-        "outside": f"not in the run's package: {sha[:12]}",
-        "omitted": f"past the source cutoff .*{original[:12]}",
-    }[case]
-    before = _counts(pilot)
-    with pytest.raises(RunDraftError, match=named):
-        rerun()
-    for name in WRITES:
-        assert calls[name] == [], name
-    assert _counts(pilot) == before
-
-
-def test_a_head_citing_run_written_facts_reworks_only_in_full(
-    pg_db: PgTestDatabase, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, ingest: Any
-) -> None:
-    """A head written before fact admission (its pipeline-written fact rows cited, no pinned
-    comparison run) cannot carry those facts: a selective rework refuses naming
-    ``--full-successor`` and writes nothing; the full successor cites six admitted facts and
-    the old head still validates."""
-    pilot = Pilot(pg_db, tmp_path, monkeypatch, ingest)
-    results: list[PipelineResult] = []
-    with pytest.MonkeyPatch.context() as patch:
-        real_pipeline, real_write = cli.run_pipeline, cli.write_run_draft
-        real_create = store.create_version
-
-        def pipeline(**kwargs: Any) -> PipelineResult:
-            """The pre-admission pipeline: it writes and selects every role's fact."""
-            results.append(real_pipeline(**kwargs | {"skip_roles": frozenset()}))
-            return results[-1]
-
-        def write(pool: Any, prior: run_draft.Prior, run: run_draft.RunDraft, **kw: Any) -> int:
-            """The draft citing the pipeline's canonical rows, as before admission."""
-            stored = PgFactStore(pool, pilot.store_id)
-            facts = {
-                revision.revision_family.split(":")[1]: stored.fact_ref(revision.row_id)
-                for revision in results[-1].stored_revisions
-                if revision.canonical_status is CanonicalStatus.CANONICAL
-            }
-            return real_write(pool, prior, run.model_copy(update={"facts": facts}), **kw)
-
-        patch.setattr(cli, "run_pipeline", pipeline)
-        patch.setattr(cli, "_admit", lambda *_: {})
-        patch.setattr(cli, "write_run_draft", write)
-        patch.setattr(
-            store,
-            "create_version",
-            lambda cursor, draft: real_create(
-                cursor, draft.model_copy(update={"pinned_run_ids": ()})
-            ),
-        )
-        old = pilot.run("FY26_Q2").draft_version_id
-    assert old is not None and pilot.version(old).pinned_run_ids == ()
-    with pg_db.runtime_pool() as runtime:
-        lifecycle.submit(runtime, old, **pilot.sources())
-    _request_changes(pilot, old, "fact.revenue")
-    before = _counts(pilot)
-    with pytest.raises(RunDraftError, match=f"version {old} predates fact admission"):
-        _rerun(pilot)
-    assert _counts(pilot) == before
-    new = _rerun(pilot, "--full-successor").draft_version_id
-    assert new is not None
-    pilot.admitted(new)
-    assert {state for _, state in pilot.validate(old).claim_states} == {ClaimState.MATCH}

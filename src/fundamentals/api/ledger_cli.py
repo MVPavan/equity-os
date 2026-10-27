@@ -8,7 +8,8 @@
         [--mode as_known|retrospective] [--watchlist config/watchlist.yaml]
         [--issuer-config <yaml>]...
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
-        [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]...
+        [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]... [--thesis-successor]
+        (--thesis-successor imports only the configured successor thesis onto the chain)
     ledger stage <item.yaml>   (a MemoryItemDraft; an exact retry prints the same id)
     ledger export <version id> [--out PATH]   (narrative bytes; stdout unless --out)
     ledger export --stock <symbol> --out <dir> [--status-notes] [--memory]
@@ -51,7 +52,12 @@ from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger.export import export_version, status_note, stock_entity, stock_versions
-from fundamentals.ledger.importer import import_versions, load_import_config
+from fundamentals.ledger.importer import (
+    ImportedVersion,
+    import_thesis_successor,
+    import_versions,
+    load_import_config,
+)
 from fundamentals.ledger.lifecycle import decide, validate
 from fundamentals.memory import retrieval
 from fundamentals.memory.export import format_memory
@@ -147,6 +153,7 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     imports.add_argument("--repo", type=Path, default=Path())
     imports.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
     imports.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    imports.add_argument("--thesis-successor", action="store_true")
     stage = actions.add_parser(STAGE_ACTION, help=_STAGE_HELP)
     stage.add_argument("item", type=Path)
     export = actions.add_parser(EXPORT_ACTION, help=_EXPORT_HELP)
@@ -243,8 +250,15 @@ def _import(args: argparse.Namespace) -> int:
     snapshots = SnapshotStore(args.snapshot_root.resolve())
     login = load_login(PgRole.PANEL, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.PANEL, login=login) as pool:
-        results = import_versions(
-            pool, config, repo=args.repo.resolve(), catalog=catalog, snapshots=snapshots
+        repo = args.repo.resolve()
+        results: tuple[ImportedVersion, ...] = (
+            (
+                import_thesis_successor(
+                    pool, config, repo=repo, catalog=catalog, snapshots=snapshots
+                ),
+            )
+            if args.thesis_successor
+            else import_versions(pool, config, repo=repo, catalog=catalog, snapshots=snapshots)
         )
     lines = [
         _IMPORTED.format(

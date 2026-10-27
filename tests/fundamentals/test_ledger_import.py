@@ -17,7 +17,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -30,18 +30,24 @@ from retained_support import STORE_DIR
 
 from fundamentals.api.cli import main
 from fundamentals.api.screener_cli_dispatch import EXIT_REFUSED
+from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
+    Citation,
     CitationKind,
     ClaimState,
     DeciderRole,
     DecisionKind,
+    NumericClaim,
     ReportKind,
+    Rounding,
     SubjectKind,
     VersionStatus,
 )
 from fundamentals.ledger import store
 from fundamentals.ledger.display import content_hash, narrative, render_section
+from fundamentals.ledger.falsifier_status import approved_thesis, derived, evaluate
 from fundamentals.ledger.import_mapping import (
     UNMAPPED_FIELDS,
     LosslessError,
@@ -52,11 +58,15 @@ from fundamentals.ledger.import_mapping import (
 from fundamentals.ledger.importer import (
     ImportConfig,
     evidence_holds,
+    import_thesis_successor,
     import_versions,
     load_import_config,
 )
 from fundamentals.ledger.lifecycle import version_status
+from fundamentals.ledger.run_traces import CALCS, Line
+from fundamentals.output.pnl_lines import ETR_LABEL
 from fundamentals.pg.settings import PgRole
+from fundamentals.verify.thesis_predicates import Disposition, parse_thesis
 
 __all__ = ["cited"]
 
@@ -558,3 +568,138 @@ def test_failed_version_persists_nothing_and_other_bytes_give_historical(
         "SELECT DISTINCT decider FROM eqos.decisions WHERE subject_kind = %s",
         SubjectKind.REPORT_VERSION.value,
     ) == [(DeciderRole.PANEL.value,)]
+
+
+SUCCESSOR_MD = "docs/evidence/phase-0.5/q0-thesis-successor-1.md"
+SUCCESSOR_YAML = "docs/evidence/phase-0.5/q0-thesis-successor-1.yaml"
+Q0_ETR, FILED_ETR = b"effective_tax_rate_pct", b"filed_effective_tax_rate_pct"
+TODAY = "2026-10-23T10:00:00+00:00"
+ROWS = (
+    "SELECT (SELECT count(*) FROM eqos.report_versions), (SELECT count(*) FROM eqos.decisions), "
+    "(SELECT count(*) FROM eqos.import_sources)"
+)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_thesis_successor_imports_onto_the_chain(cited: Cited, tmp_path: Path) -> None:
+    """The successor (F5 re-registered on the filed tax rate) refuses with nothing written
+    while its evidence fails, then imports as Q0's ``APPROVED`` successor, which ``SUPERSEDED``
+    Q0 and is the thesis a run binds, evaluating F5 on the ETR line; a repeat refuses."""
+    repo = tmp_path / "repo"
+    config = load_import_config(CONFIG)
+    for path in (config.retrieval_manifest, LEDGER):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / path, repo / path)
+    q0_commit = _commit(repo, {Q0_MD: read(Q0_MD), Q0_YAML: read(Q0_YAML)}, TODAY)
+    twin = read(Q0_YAML).replace(Q0_ETR, FILED_ETR)
+    files = {SUCCESSOR_MD: read(Q0_MD).replace(Q0_ETR, FILED_ETR), SUCCESSOR_YAML: twin}
+    successor_commit = _commit(repo, files, TODAY)
+    today = date.fromisoformat(TODAY[:10])
+    q0 = config.q0.model_copy(update={"evidence_commit": q0_commit, "decided_on": today})
+    entry = q0.model_copy(
+        update={
+            "markdown": SUCCESSOR_MD,
+            "twin": SUCCESSOR_YAML,
+            "evidence_commit": successor_commit,
+        }
+    )
+    late = entry.model_copy(update={"decided_on": date(2026, 10, 24)})
+    body = {"earnings_updates": (), "q0": q0}
+    wrong, right = (config.model_copy(update=body | {"thesis_successor": e}) for e in (late, entry))
+    panel, sources = cited.pools[PgRole.PANEL], {"catalog": cited.catalog}
+    sources |= {"snapshots": cited.snapshots}
+    (root,) = import_versions(panel, right, repo=repo, **sources)
+    assert root.status is VersionStatus.APPROVED and root.version_id is not None
+    before = cited.query(ROWS)
+    refused = import_thesis_successor(panel, wrong, repo=repo, **sources)
+    assert refused.failure and cited.query(ROWS) == before
+    with cited.runtime() as cursor:
+        assert version_status(cursor, root.version_id) is VersionStatus.APPROVED
+    imported = import_thesis_successor(panel, right, repo=repo, **sources)
+    assert imported.status is VersionStatus.APPROVED and imported.version_id is not None
+    ((entity_id,),) = cited.query(
+        "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s", config.stock
+    )
+    with cited.runtime() as cursor:
+        assert store.read_version(cursor, imported.version_id).predecessor_id == root.version_id
+        assert version_status(cursor, root.version_id) is VersionStatus.SUPERSEDED
+        bound = approved_thesis(cursor, entity_id, config.stock, datetime.now(UTC))
+        digest = store.sealed_digest(cursor, imported.version_id)
+    assert bound is not None and bound.version_id == imported.version_id
+    after = cited.query(ROWS)
+    again = import_thesis_successor(panel, right, repo=repo, **sources)
+    assert "already imported" in (again.failure or "") and cited.query(ROWS) == after
+    (f5,) = (f for f in parse_thesis(twin).falsifiers if f.falsifier_id == "F5")
+    assert f5.predicate.threshold is not None
+    etr = NumericClaim(
+        claim_key="calc.3",
+        section_key=CALCS,
+        citation=Citation(kind=CitationKind.CALCULATION),
+        value_kind=ValueKind.PERCENTAGE,
+        unit="%",
+        value=f5.predicate.threshold,
+        precision=2,
+        rounding=Rounding.ROUND_HALF_EVEN,
+        epistemic_class=EpistemicClass.COMPUTED,
+    )
+    rows = evaluate(bound, {}, (Line(section=CALCS, label=ETR_LABEL, claims=(etr,)),))
+    (row,) = (r for r in rows if r.falsifier_id == "F5")
+    held = Disposition.WEAKENED if f5.predicate.holds(etr.value or 0) else Disposition.HELD
+    assert (row.disposition, row.claim_key) == (held, "calc.3")
+    (threshold,) = derived(bound, rows)[1]
+    ((row_id,),) = cited.query(
+        "SELECT id FROM eqos.numeric_claims WHERE version_id = %s AND claim_key = 'falsifier.F5'",
+        imported.version_id,
+    )
+    assert threshold.claim_key == "thesis.F5"
+    assert threshold.citation == Citation(
+        kind=CitationKind.THESIS_CLAIM, cited_claim_id=row_id, cited_sealed_digest=digest
+    )
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_successor_a_run_could_not_bind_is_refused(cited: Cited, tmp_path: Path) -> None:
+    """A successor that maps losslessly but whose twin the binder rejects (an op the parser
+    does not register, another stock's symbol) is refused with nothing written, so Q0 stays
+    the approved head a run binds."""
+    repo = tmp_path / "repo"
+    config = load_import_config(CONFIG)
+    for path in (config.retrieval_manifest, LEDGER):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / path, repo / path)
+    q0_commit = _commit(repo, {Q0_MD: read(Q0_MD), Q0_YAML: read(Q0_YAML)}, TODAY)
+    q0 = config.q0.model_copy(
+        update={"evidence_commit": q0_commit, "decided_on": date.fromisoformat(TODAY[:10])}
+    )
+    sources = {"catalog": cited.catalog, "snapshots": cited.snapshots}
+    panel = cited.pools[PgRole.PANEL]
+    body = {"earnings_updates": (), "q0": q0}
+    (root,) = import_versions(panel, config.model_copy(update=body), repo=repo, **sources)
+    assert root.version_id is not None
+    ((entity_id,),) = cited.query(
+        "SELECT id FROM eqos.reporting_entities WHERE entity_key = %s", config.stock
+    )
+    md, twin = read(Q0_MD), read(Q0_YAML)
+    unparseable = (
+        md.replace(b"revenue_yoy_pct LT ", b"revenue_yoy_pct BETWEEN "),
+        twin.replace(b'op: "LT"', b'op: "BETWEEN"', 1),
+    )
+    other_stock = (md.replace(b"APARINDS", b"OTHERCO"), twin.replace(b"APARINDS", b"OTHERCO"))
+    for bad_md, bad_twin in (unparseable, other_stock):
+        commit = _commit(repo, {SUCCESSOR_MD: bad_md, SUCCESSOR_YAML: bad_twin}, TODAY)
+        entry = q0.model_copy(
+            update={"markdown": SUCCESSOR_MD, "twin": SUCCESSOR_YAML, "evidence_commit": commit}
+        )
+        before = cited.query(ROWS)
+        refused = import_thesis_successor(
+            panel,
+            config.model_copy(update=body | {"thesis_successor": entry}),
+            repo=repo,
+            **sources,
+        )
+        assert "could not bind" in (refused.failure or "") and cited.query(ROWS) == before
+        with cited.runtime() as cursor:
+            bound = approved_thesis(cursor, entity_id, config.stock, datetime.now(UTC))
+        assert bound is not None and bound.version_id == root.version_id

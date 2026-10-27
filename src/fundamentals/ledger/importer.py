@@ -5,7 +5,10 @@ first (D8). Every version is mapped in memory (:mod:`fundamentals.ledger.import_
 that maps losslessly then persists in its own transaction: report, version with its import
 sources, QA records, ``IMPORT_SEAL`` and, for Q0 when the evidence rule holds,
 ``IMPORTED_APPROVAL``. Each then gets a ``RETROSPECTIVE`` validation. A version that does not
-map persists nothing.
+map persists nothing. ``import_thesis_successor`` imports the configured successor thesis as the
+next version of the stock's thesis chain, on the same mapping, seal and evidence rule; it
+persists nothing unless the evidence holds and the chain's head is the ``APPROVED`` version it
+pinned, and never imports the same twin twice (plan RESEARCH-1 Task 4).
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from psycopg import Cursor
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict, Field
 
+from fundamentals.compare.queue import lock_queue
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     CitationKind,
@@ -38,6 +42,7 @@ from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
 from fundamentals.ledger.claim_check import cutoff_instant
 from fundamentals.ledger.display import content_hash
+from fundamentals.ledger.falsifier_status import bindable_thesis
 from fundamentals.ledger.import_mapping import (
     UPDATE_FILES,
     LosslessError,
@@ -45,7 +50,7 @@ from fundamentals.ledger.import_mapping import (
     map_earnings_update,
     map_q0,
 )
-from fundamentals.ledger.lifecycle import validate, version_status
+from fundamentals.ledger.lifecycle import _LOCK, validate, version_status
 from fundamentals.store.snapshot_store import SnapshotStore
 
 IMPORT_AUTHOR = "ledger-import"
@@ -61,6 +66,12 @@ ORDER BY f.origin_id LIMIT 1"""
 _CAPTURE: LiteralString = (
     "SELECT id FROM eqos.capture_refs WHERE blob_sha256 = %s ORDER BY id LIMIT 1"
 )
+_THESIS: LiteralString = """SELECT r.id, max(v.id) FROM eqos.reports r
+JOIN eqos.report_versions v ON v.report_id = r.id
+WHERE r.entity_id = %s AND r.period = %s AND r.kind = 'BOOTSTRAP_THESIS' GROUP BY r.id"""
+_HEAD: LiteralString = "SELECT max(id) FROM eqos.report_versions WHERE report_id = %s"
+_IMPORTED: LiteralString = """SELECT 1 FROM eqos.import_sources i
+JOIN eqos.report_versions v ON v.id = i.version_id WHERE v.report_id = %s AND i.sha256 = %s"""
 _log = structlog.get_logger(__name__)
 _Files = tuple[tuple[str, bytes], ...]
 
@@ -91,6 +102,11 @@ class ImportConfig(BaseModel):
     reports_dir: str
     earnings_updates: tuple[str, ...]
     q0: Q0Import
+    thesis_successor: Q0Import | None = None
+
+
+class ImportRefusedError(RuntimeError):
+    """A thesis successor that must not be persisted; nothing of it is."""
 
 
 class ImportedVersion(BaseModel):
@@ -184,6 +200,56 @@ def import_versions(
     return tuple(results)
 
 
+def import_thesis_successor(
+    pool: ConnectionPool,
+    config: ImportConfig,
+    *,
+    repo: Path,
+    catalog: SourceCatalog,
+    snapshots: SnapshotStore,
+) -> ImportedVersion:
+    """Import the configured successor thesis onto the stock's thesis chain through ``pool``
+    (the panel role); refused, it persists nothing."""
+    entry, kind = config.thesis_successor, ReportKind.BOOTSTRAP_THESIS
+    if entry is None:
+        return ImportedVersion(period=config.q0.period, kind=kind, failure="no thesis_successor")
+    files = tuple((path, (repo / path).read_bytes()) for path in (entry.markdown, entry.twin))
+    try:
+        version = map_q0(files[0][1], files[1][1], cutoff=entry.cutoff)
+        try:
+            bindable_thesis(files, config.stock)
+        except ValueError as error:
+            raise ImportRefusedError(f"a run could not bind the successor: {error}") from error
+        approval = evidence_holds(repo, entry.evidence_commit, dict(files), entry.decided_on)
+        if approval is None:
+            raise ImportRefusedError("the successor's evidence does not hold")
+        with pool.connection() as conn, conn.cursor() as cursor:
+            row = cursor.execute(_ENTITY, (config.stock,)).fetchone()
+            assert row is not None, config.stock
+            entity_id = int(row[0])
+            found = cursor.execute(_THESIS, (entity_id, entry.period)).fetchone()
+        if found is None:
+            raise ImportRefusedError(f"no {entry.period} thesis to succeed")
+        version_id = _persist(
+            pool, version, files, entity_id, entry.period, kind, approval, entry, *found
+        )
+    except (LosslessError, ImportRefusedError) as failure:
+        _log.error("ledger_import_refused", period=entry.period, kind=kind, detail=str(failure))
+        return ImportedVersion(period=entry.period, kind=kind, failure=str(failure))
+    validate(
+        pool,
+        version_id,
+        mode=RunMode.RETROSPECTIVE,
+        catalog=catalog,
+        snapshots=snapshots,
+        bound=dict(version.bound),
+    )
+    with pool.connection() as conn, conn.cursor() as cursor:
+        status = version_status(cursor, version_id)
+    _log.info("ledger_version_imported", period=entry.period, kind=kind, version_id=version_id)
+    return ImportedVersion(period=entry.period, kind=kind, version_id=version_id, status=status)
+
+
 def evidence_holds(
     repo: Path, commit: str, files: Mapping[str, bytes], decided_on: date
 ) -> str | None:
@@ -217,13 +283,32 @@ def _persist(
     kind: ReportKind,
     approval: str | None,
     q0: Q0Import,
+    report_id: int | None = None,
+    predecessor_id: int | None = None,
 ) -> int:
-    """Store one mapped version, its QA records and its import decisions in one transaction."""
+    """Store one mapped version, its QA records and its import decisions in one transaction; on
+    ``report_id`` as the successor of ``predecessor_id``, which must be its ``APPROVED`` head,
+    unless a version there already holds the twin."""
     with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
-        report_id = store.create_report(cursor, entity_id=entity_id, period=period, kind=kind)
+        if report_id is None:
+            report_id = store.create_report(cursor, entity_id=entity_id, period=period, kind=kind)
+        else:
+            assert predecessor_id is not None
+            lock_queue(cursor)  # its approval supersedes, a support-falsifying write (0017)
+            cursor.execute(_LOCK, (SubjectKind.REPORT_VERSION.value, predecessor_id))
+            head = cursor.execute(_HEAD, (report_id,)).fetchone()
+            assert head is not None
+            if head[0] != predecessor_id or (
+                version_status(cursor, predecessor_id) is not VersionStatus.APPROVED
+            ):
+                raise ImportRefusedError(f"version {predecessor_id} is not the APPROVED head")
+            twin = hashlib.sha256(files[-1][1]).hexdigest()
+            if cursor.execute(_IMPORTED, (report_id, twin)).fetchone() is not None:
+                raise ImportRefusedError(f"twin {twin[:12]} already imported")
         claims = tuple(_cited(cursor, claim) for claim in version.claims)
         draft = VersionDraft(
             report_id=report_id,
+            predecessor_id=predecessor_id,
             author=IMPORT_AUTHOR,
             knowledge_cutoff=cutoff_instant(version.cutoff),
             content_hash=content_hash(version.sections, claims),

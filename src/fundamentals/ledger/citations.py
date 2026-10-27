@@ -4,7 +4,9 @@
 and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
 behind them; an interpretation ``FIGURE`` with no run its own mapped value), a quote only a
 non-vendor capture, a ``COMPARISON`` its own run and key, a
-``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, an admitted fact
+``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, a ``THESIS_CLAIM``
+a falsifier threshold of the entity's bootstrap thesis whose version an approval recorded at the
+pinned sealed digest (its earliest such approval's time is the input time), an admitted fact
 only its admissions under the citing version's pinned runs, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
@@ -133,6 +135,14 @@ _POLICY: LiteralString = """SELECT d.policy_value, d.policy_unit, d.recorded_at
 FROM eqos.decisions d JOIN eqos.reports r ON r.id = d.subject_id
 WHERE d.id = %s AND d.subject_kind = 'REPORT' AND d.kind = 'SET_POLICY'
     AND d.decider = 'OWNER' AND r.entity_id = %s"""
+_THESIS_CLAIM: LiteralString = """SELECT c.value, c.unit, c.value_kind, d.recorded_at
+FROM eqos.numeric_claims c JOIN eqos.report_versions v ON v.id = c.version_id
+JOIN eqos.reports r ON r.id = v.report_id
+JOIN eqos.decisions d ON d.subject_kind = 'REPORT_VERSION' AND d.subject_id = c.version_id
+WHERE c.id = %s AND r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'
+    AND starts_with(c.claim_key, 'falsifier.') AND d.kind IN ('APPROVE', 'IMPORTED_APPROVAL')
+    AND d.sealed_digest = %s AND d.sealed_digest = eqos.version_sealed_digest(c.version_id)
+ORDER BY d.recorded_at, d.id LIMIT 1"""
 # Every interpretation behind the cited traces and interpretations, through trace operands,
 # nested traces and constructed interpretations' operands.
 _INPUTS: LiteralString = (
@@ -257,6 +267,17 @@ def resolve_citation(
             )
         if citation.kind is CitationKind.POLICY:
             return _policy(own, claim, entity_id)
+        if citation.kind is CitationKind.THESIS_CLAIM:
+            params = (citation.cited_claim_id, entity_id, citation.cited_sealed_digest)
+            row = own.execute(_THESIS_CLAIM, params).fetchone()
+            if row is None:
+                return None
+            return ResolvedCitation(
+                value=row["value"],
+                unit=row["unit"],
+                value_kind=ValueKind(row["value_kind"]),
+                times=((InputTime.POLICY, row["recorded_at"]),),
+            )
     return None
 
 

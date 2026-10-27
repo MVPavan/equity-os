@@ -61,6 +61,7 @@ class CitationKind(StrEnum):
     SOURCE_QUOTE = "SOURCE_QUOTE"
     COMPARISON = "COMPARISON"
     POLICY = "POLICY"
+    THESIS_CLAIM = "THESIS_CLAIM"
 
 
 class Rounding(StrEnum):
@@ -137,7 +138,9 @@ class Verdict(StrEnum):
 class Citation(BaseModel):
     """The one record a claim cites; the columns each kind sets are fixed by the schema.
 
-    A ``POLICY`` citation with no decision is a self-citation (imports only).
+    A ``POLICY`` citation with no decision is a self-citation (imports only). A
+    ``THESIS_CLAIM`` cites an approved thesis claim by row id, pinned to its version's sealed
+    digest.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -154,6 +157,8 @@ class Citation(BaseModel):
     quote: str | None = None
     pair_outcome_id: int | None = None
     policy_decision_id: int | None = None
+    cited_claim_id: int | None = None
+    cited_sealed_digest: str | None = None
 
 
 class NumericClaim(BaseModel):

@@ -76,7 +76,6 @@ from fundamentals.api.thesis_cli import (
     dispatch_adjudicate_command,
     dispatch_thesis_command,
 )
-from fundamentals.api.thesis_impact_cli import dispatch_thesis_impact_command
 from fundamentals.api.three_source_cli import dispatch_three_source_command
 from fundamentals.api.tijori_cli_dispatch import dispatch_tijori_command
 from fundamentals.api.upstox_cli import dispatch_upstox_command
@@ -702,10 +701,6 @@ def main(
     thesis_exit_code = dispatch_thesis_command(args)
     if thesis_exit_code is not None:
         return thesis_exit_code
-
-    thesis_impact_exit_code = dispatch_thesis_impact_command(args)
-    if thesis_impact_exit_code is not None:
-        return thesis_impact_exit_code
 
     logger.info(
         "run_invoked",

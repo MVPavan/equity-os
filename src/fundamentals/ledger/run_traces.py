@@ -7,8 +7,9 @@ it), and must equal the run's value. Each result is computed exactly from those 
 packaged by ``conclude``; it must equal the run's value at the trace's stored scale. Nothing is
 stored unless every value holds. Formulas
 (version ``1``, operands ``DURATION`` under their own keys): ``run.difference`` a − b,
-``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100 and the registered
-``effective_tax_rate_pct`` tax / PBT × 100. Keys follow the import's (``measurement_key``,
+``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100, ``run.ratio_pct`` a / b × 100 (the PBT
+margin, PBT before associates over revenue) and the registered ``effective_tax_rate_pct``
+tax / PBT × 100. Keys follow the import's (``measurement_key``,
 ``change_key``); claim keys are the import's claim keys. The bound claims come back as the
 draft's changes and calculations lines. With a ``Carry`` (a rework, PREP-5) each line is first
 built unbound and only the lines it does not carry are bound; it is closed before any trace is
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 from fractions import Fraction
 from functools import cache, partial
 from pathlib import Path
@@ -73,6 +74,9 @@ from fundamentals.output.pnl_lines import (
 ROUNDING_POLICY = Path(__file__).resolve().parents[3] / "config" / "rounding_policy" / "v1.yaml"
 DIFFERENCE, SUM, CHANGE_PCT = "run.difference", "run.sum", "run.change_pct"
 ETR = "effective_tax_rate_pct"
+RATIO_PCT = "run.ratio_pct"
+MARGIN_KEY = "calc.pbt_margin"
+MARGIN_LABEL = "PBT margin, PBT before associates over revenue (PBT / revenue × 100, %)"
 FORMULA_VERSION = "1"
 TAX, SHARE = "tax_expense", "share_of_profit_associates_jv"
 CHANGES, CALCS = "changes", "calculations"
@@ -274,8 +278,10 @@ class _Binder:
             elif formula == CHANGE_PCT:
                 ratio = a.interval.sub(b.interval).div(b.interval)
                 point = ((a.exact - b.exact) / b.exact * 100, ratio.mul(_HUNDRED))
-            else:
+            elif formula in (ETR, RATIO_PCT):
                 point = (a.exact / b.exact * 100, a.interval.div(b.interval).mul(_HUNDRED))
+            else:
+                raise RunDraftError(f"{name}: unknown formula {formula}")
         except (UndefinedDivisionError, ZeroDivisionError) as error:
             raise RunDraftError(f"{name}: {formula} is undefined: {error}") from error
         entries = [(operand, TemporalRole.DURATION, value) for operand, value in operands]
@@ -399,6 +405,27 @@ def bind_computed(
         else:
             raise RunDraftError(f"{name}: no formula for {label!r}")
         lines.append(Line(section=CALCS, label=label, claims=(claim,)))
+    revenue = facts.get(FactRole.REVENUE)
+    if revenue is None or not revenue.value:
+        lines.append(Line(section=CALCS, label=MARGIN_LABEL))
+    else:
+        margin = (pbt / revenue.value * 100).quantize(Decimal("0.01"), ROUND_HALF_EVEN)
+        operands = (
+            reported("pbt", FactRole.PROFIT_BEFORE_TAX),
+            reported("revenue", FactRole.REVENUE),
+        )
+        claim = binder.trace(
+            MARGIN_KEY,
+            CALCS,
+            RATIO_PCT,
+            binder.key(MARGIN_LABEL, PERCENT),
+            operands,
+            margin,
+            PERCENT,
+            precision=RUN_PERCENT_PLACES,
+            rounding=Rounding.ROUND_HALF_EVEN,
+        )
+        lines.append(Line(section=CALCS, label=MARGIN_LABEL, claims=(claim,)))
     if check is not None:
         check(tuple(claim for line in lines for claim in line.claims))
     bound = []

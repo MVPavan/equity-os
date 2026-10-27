@@ -30,11 +30,19 @@ from fundamentals.contracts.ledger import (
     ClaimState,
     NumericClaim,
 )
+from fundamentals.contracts.role import FactRole
 from fundamentals.evidence.mapping import MappingSet, load_mapping_set
 from fundamentals.ledger.citations import resolve_citation
 from fundamentals.ledger.claim_check import check_claim
-from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
-from fundamentals.output.pnl_lines import GAP_LABEL, format_crore
+from fundamentals.ledger.run_traces import (
+    MARGIN_KEY,
+    MARGIN_LABEL,
+    Line,
+    RunDraftError,
+    _shown,
+    bind_computed,
+)
+from fundamentals.output.pnl_lines import GAP_LABEL, OPERAND_MISSING, format_crore
 from fundamentals.store.fact_store import FactStore
 
 __all__ = ["ingest", "policy"]
@@ -229,3 +237,33 @@ def test_an_older_mapping_versions_interpretations_do_not_block_the_run(
         )
     )
     assert {_state(ingest, claim) for claim in claims.values()} == {ClaimState.MATCH}
+
+
+@pytest.mark.parametrize("revenue", ["zero", "missing"])
+def test_a_margin_without_revenue_is_a_claimless_line(
+    ingest: Ingest, tmp_path: Path, revenue: str
+) -> None:
+    """A zero or missing revenue (its changes and the income gap dropped) gives the PBT margin
+    no claim and no trace: the line renders ``OPERAND_MISSING`` instead of dividing."""
+    update = _run("fy27-q1", tmp_path).update
+    _ingest(ingest, "fy27-q1")
+    (fact,) = (fact for fact in update.facts if fact.role is FactRole.REVENUE)
+    others = tuple(f for f in update.facts if f is not fact)
+    facts = others if revenue == "missing" else (*others, fact.model_copy(update={"value": 0}))
+    changed = update.model_copy(
+        update={
+            "facts": facts,
+            "comparatives": tuple(
+                c for c in update.comparatives if c.concept_qname != fact.concept_qname
+            ),
+            "calculations": tuple(c for c in update.calculations if c.label != GAP_LABEL),
+        }
+    )
+    count = _traces(ingest)
+    lines = bind_computed(ingest.repository, changed, entity_id=ingest.entity_id, versions=VERSIONS)
+    (margin,) = (line for line in lines if line.label == MARGIN_LABEL)
+    assert margin.claims == () and _shown(margin) == f"- {MARGIN_LABEL} = {OPERAND_MISSING}"
+    claims = _claims(lines)
+    assert MARGIN_KEY not in claims
+    traced = [c for c in claims.values() if c.citation.calculation_trace_id is not None]
+    assert _traces(ingest) - count == len(traced)

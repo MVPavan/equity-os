@@ -12,6 +12,10 @@ line's keys are its text's placeholders, which must be its claims' and new to th
 of carried keys must equal the version's and takes its claims; a line of rerun keys only is
 rerun; any other refuses, as does a carried line missing or out of the version's order, or a
 changed section scaffold.
+
+The derived falsifier sections and their threshold claims are re-derived on every write, so a
+rework neither carries nor reruns them; a rejection naming one, or of a version written before
+them, refuses (plan RESEARCH-1 D7).
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
+from fundamentals.ledger.falsifier_status import DERIVED, THESIS_IMPACT
 from fundamentals.ledger.run_traces import RunDraftError
 
 Atom = tuple[str, str]
@@ -209,8 +214,18 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
     if not keys:
         return None
     version = store.read_version(cursor, head)
-    claims = {claim.claim_key: claim for claim in version.claims}
-    cited = [claim.citation for claim in version.claims]
+    if all(section.section_key != THESIS_IMPACT for section in version.sections):
+        raise RunDraftError(
+            f"version {head} predates the falsifier sections; rerun with --full-successor"
+        )
+    claims = {c.claim_key: c for c in version.claims if c.section_key not in DERIVED}
+    if derived := sorted(set(keys) - set(claims)):
+        raise RunDraftError(
+            f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "
+            "instead"
+        )
+    sections = [section for section in version.sections if section.section_key not in DERIVED]
+    cited = [claim.citation for claim in claims.values()]
     trace_ids = [c.calculation_trace_id for c in cited if c.calculation_trace_id is not None]
     traces = {t.trace_id: t for t in repository.get_calculation_traces(trace_ids)}
     operands = (o for t in traces.values() for o in t.trace.operands)
@@ -234,7 +249,7 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
         section.section_key: tuple(
             (line, _keys(line)) for line in section.body.splitlines() if PLACEHOLDER.search(line)
         )
-        for section in version.sections
+        for section in sections
         if section.ordinal  # the heading (ordinal 0) is run metadata
     }
     rerun = frozenset(affected).union(
@@ -249,5 +264,5 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
         rerun=rerun,
         carried=carried,
         blobs=frozenset(blob for key in carried for blob, _ in atoms[key]),
-        scaffolds={s.section_key: scaffold(s.body) for s in version.sections if s.ordinal},
+        scaffolds={s.section_key: scaffold(s.body) for s in sections if s.ordinal},
     )

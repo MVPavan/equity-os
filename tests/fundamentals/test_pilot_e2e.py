@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import operator
 import sqlite3
 import subprocess
 from datetime import datetime
@@ -22,6 +23,7 @@ from typing import Any
 
 import psycopg
 import pytest
+import yaml
 from evidence_support import Ingest, ingest, policy
 from ledger_support import CONTENT_HASH, CUTOFF
 from manifest_support import approved
@@ -91,7 +93,9 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.memory import MemoryStatus, SupportTarget
 from fundamentals.ledger import lifecycle, review, store
 from fundamentals.ledger.display import FILED, FILED_SUFFIX
+from fundamentals.ledger.falsifier_status import FALSIFIER_STATUS, THESIS_IMPACT
 from fundamentals.ledger.run_draft import GUIDANCE, recall
+from fundamentals.ledger.run_traces import MARGIN_KEY
 from fundamentals.memory.pg_store import PgMemoryStore
 
 __all__ = ["calls", "dictionary", "ingest", "mapping_set", "policy"]
@@ -114,6 +118,20 @@ CITED = (
     "JOIN eqos.capture_refs c ON c.id = n.capture_ref_id WHERE n.version_id = %s"
 )
 CLAIM_ID = "SELECT id FROM eqos.numeric_claims WHERE version_id = %s AND claim_key = %s"
+THESIS = (
+    "SELECT v.id FROM eqos.report_versions v JOIN eqos.reports r ON r.id = v.report_id "
+    "WHERE r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'"
+)
+Q0_THESIS = REPO / "docs/evidence/phase-0.5/q0-approved-thesis.yaml"
+# The thesis's metric ids as this test measures them (the margin is derived below), and its ops.
+MEASURED = {
+    "revenue_yoy_pct": "cmp.revenue.yoy.pct",
+    "pbt_margin_pct": MARGIN_KEY,
+    "pat_yoy_pct": "cmp.profit_for_period.yoy.pct",
+    "eps_yoy_pct": "cmp.basic_eps.yoy.pct",
+}
+OPS = {"LT": operator.lt, "LTE": operator.le, "GT": operator.gt, "GTE": operator.ge}
+SUPERSEDED_F5 = "UNRESOLVED (definition superseded, pending approval)"
 SESSIONS = (
     "SELECT extract(epoch FROM finished_at - started_at) FROM eqos.review_sessions "
     "WHERE version_id = %s"
@@ -235,21 +253,33 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     package = {member["sha256"] for member in frozen["package"]}
     fail("PILOT-4", citations_allowed, _cited(pilot, version_id), package, _cited(pilot, prior))
     claims = {claim.claim_key: claim for claim in version.claims}
+    statuses = _falsifiers(pilot, quarter, version)
+    thresholds = {f"thesis.{fid}" for fid in statuses}
     figures = {k for k, c in claims.items() if c.citation.kind is not CitationKind.SOURCE_QUOTE}
-    assert figures == CLAIM_KEYS, f"PILOT-4: {quarter} keys {sorted(figures ^ CLAIM_KEYS)}"
+    want_keys = CLAIM_KEYS | {MARGIN_KEY} | thresholds
+    assert figures == want_keys, f"PILOT-4: {quarter} keys {sorted(figures ^ want_keys)}"
     for key in CLAIM_KEYS:
         got, want = Fraction(claims[key].value or 0), frozen_value(quarter, key)
         assert got == want, f"PILOT-4: {quarter} {key} {got} ≠ {want}"
+    margin = Fraction(claims[MARGIN_KEY].value or 0)
+    assert margin == _margin(quarter), f"PILOT-4: {quarter} margin {margin}"
     filed = {key for key, claim in claims.items() if FILED in claim.qualifiers}
+    _, thesis_digest, falsifier_ids = _thesis(pilot)
     for key, claim in claims.items():
         cited = claim.citation
         if claim.section_key == GUIDANCE:
             assert cited.kind is CitationKind.SOURCE_QUOTE, f"PILOT-4: {key} is not a quote"
             continue
+        falsifier = key.replace("thesis.", "falsifier.", 1)
         routed = (
             (cited.kind is CitationKind.FIGURE and cited.fact_origin is not None)
             or (cited.kind is CitationKind.CALCULATION and cited.calculation_trace_id is not None)
             or (cited.kind is CitationKind.FIGURE and key in filed)
+            or (
+                cited.kind is CitationKind.THESIS_CLAIM
+                and cited.cited_claim_id == falsifier_ids.get(falsifier)
+                and cited.cited_sealed_digest == thesis_digest
+            )
         )
         assert routed, f"PILOT-4: {quarter} {key} cites no fact, trace or labelled filed value"
     priors = {key for key in filed if key.startswith("cmp.") and key.endswith(".prior")}
@@ -270,6 +300,45 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     assert body.decode().count(FILED_SUFFIX) == len(filed), f"PILOT-4: {quarter} suffix"
     states = set(dict(pilot.validate(version_id).claim_states).values())
     assert states == {ClaimState.MATCH}, f"PILOT-4: {quarter} claim check {states}"
+
+
+def _margin(quarter: str) -> Fraction:
+    """The PBT margin from the frozen PBT and revenue, at two places half-even."""
+    exact = frozen_value(quarter, "fact.profit_before_tax") / frozen_value(quarter, "fact.revenue")
+    return Fraction(round(exact * 100 * 100), 100)
+
+
+def _thesis(pilot: Pilot) -> tuple[int, str, dict[str, int]]:
+    """The imported Q0 thesis version, its sealed digest and its falsifier claims' row ids."""
+    ((version_id,),) = pilot.query(THESIS, pilot.entity_id)
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        digest = store.sealed_digest(conn.cursor(), version_id)
+    keys = [c.claim_key for c in pilot.version(version_id).claims]
+    return version_id, digest, {key: _claim_id(pilot, version_id, key) for key in keys}
+
+
+def _falsifiers(pilot: Pilot, quarter: str, version: VersionDraft) -> dict[str, bool]:
+    """RESEARCH-1: the derived sections follow the guidance, name Q0 and its digest, and show
+    each of F1-F4 triggered exactly when the Q0 twin's predicate holds on the frozen value (F5,
+    superseded, is unresolved). Returns whether each evaluated falsifier triggered."""
+    keys = [section.section_key for section in version.sections]
+    assert keys[-3:] == [GUIDANCE, THESIS_IMPACT, FALSIFIER_STATUS], f"RESEARCH-1: {keys}"
+    thesis_id, digest, _ = _thesis(pilot)
+    impact, rows = (section.body for section in version.sections[-2:])
+    assert f"version:{thesis_id} (sealed digest {digest})" in impact, "RESEARCH-1: Q0 not named"
+    lines = {line.split()[1]: line for line in rows.splitlines() if line.startswith("- ")}
+    found = {}
+    for falsifier in yaml.safe_load(Q0_THESIS.read_bytes())["falsifiers"]:
+        fid, predicate = falsifier["falsifier_id"], falsifier["predicate"]
+        if fid == "F5":
+            assert lines[fid].endswith(SUPERSEDED_F5), f"RESEARCH-1: {quarter} F5 {lines[fid]}"
+            continue
+        key = MEASURED[predicate["metric_id"]]
+        value = _margin(quarter) if key == MARGIN_KEY else frozen_value(quarter, key)
+        found[fid] = OPS[predicate["op"]](value, Fraction(str(predicate["threshold"])))
+        status = "WEAKENED (triggered)" if found[fid] else "HELD (not triggered)"
+        assert lines[fid].endswith(status), f"RESEARCH-1: {quarter} {lines[fid]}"
+    return found
 
 
 # PILOT-5 ------------------------------------------------------------------------------------

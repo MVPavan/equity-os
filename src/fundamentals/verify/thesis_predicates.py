@@ -1,4 +1,4 @@
-"""Frozen approved-thesis predicates and their YAML loader."""
+"""Frozen approved-thesis predicates, their rule and the thesis twin's parser."""
 
 from __future__ import annotations
 
@@ -6,13 +6,10 @@ import hashlib
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
-
-PREDICATE_REGISTRY_VERSION = "2026-09-07.1"
 
 
 class PredicateOp(StrEnum):
@@ -23,6 +20,14 @@ class PredicateOp(StrEnum):
     GT = "GT"
     GTE = "GTE"
     OUTSIDE_BAND = "OUTSIDE_BAND"
+
+
+class Disposition(StrEnum):
+    """The possible outcomes of a deterministic falsifier evaluation."""
+
+    WEAKENED = "WEAKENED"
+    HELD = "HELD"
+    UNRESOLVED = "UNRESOLVED"
 
 
 class FalsifierPredicate(BaseModel):
@@ -46,6 +51,23 @@ class FalsifierPredicate(BaseModel):
         elif self.threshold is None or self.band is not None:
             raise ValueError(f"{self.op.value} requires only a threshold")
         return self
+
+    def holds(self, value: Decimal) -> bool:
+        """Return whether a sourced metric triggers this registered predicate."""
+        if self.op is PredicateOp.LT:
+            assert self.threshold is not None
+            return value < self.threshold
+        if self.op is PredicateOp.LTE:
+            assert self.threshold is not None
+            return value <= self.threshold
+        if self.op is PredicateOp.GT:
+            assert self.threshold is not None
+            return value > self.threshold
+        if self.op is PredicateOp.GTE:
+            assert self.threshold is not None
+            return value >= self.threshold
+        assert self.band is not None
+        return value < self.band[0] or value > self.band[1]
 
 
 class ThesisFalsifier(BaseModel):
@@ -82,13 +104,12 @@ class ApprovedThesis(BaseModel):
         return self
 
 
-def load_thesis(path: Path) -> ApprovedThesis:
-    """Load and hash an analyst-authored thesis YAML file."""
+def parse_thesis(content: bytes) -> ApprovedThesis:
+    """Parse and hash an analyst-authored thesis YAML twin."""
     try:
-        content = path.read_bytes()
         payload = yaml.safe_load(content)
-    except (OSError, yaml.YAMLError) as error:
-        raise ValueError(f"cannot load thesis {path}: {error}") from error
+    except yaml.YAMLError as error:
+        raise ValueError(f"cannot parse thesis: {error}") from error
     if not isinstance(payload, dict):
         raise ValueError("thesis YAML must contain an object")
     data: dict[str, Any] = dict(payload)

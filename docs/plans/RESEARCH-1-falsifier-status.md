@@ -718,3 +718,14 @@ Task 6. The recommendation is to keep the thesis definition, labelled explicitly
 | note | Successor-F5 integration assertion | Task 4 test: successor's `filed_effective_tax_rate_pct` evaluates on the `ETR_LABEL` claim (not `UNRESOLVED`) and `thesis.F5` cites the successor's row and digest. | Task 4 |
 
 No disagreements.
+
+## Phase review (r1, gpt-6.1-sol, 2026-10-26)
+
+Tasks 1–5 implemented. Sol's phase review r1 requested three fixes; re-review r2 (gpt-6.1-sol,
+2026-10-27) found all three fixed: **APPROVE**. Closing fresh review pending.
+
+| # | Finding (gpt-6.1-sol phase r1) | Fix |
+|---|---|---|
+| 1 | P2 successor import can approve a thesis the binder cannot read (`map_q0` accepts `BETWEEN` and a wrong-stock pair) | `falsifier_status.bindable_thesis` (single YAML twin, `parse_thesis`, symbol) is the binder's own check; `approved_thesis` and `import_thesis_successor` both call it, the import before any write. Test: both bad successors refuse, row counts and the approved head unchanged. |
+| 2 | P2 red proof missing (Risks: test-first; `verify.sh gate` needs `RESEARCH-1-red.json`) | **Recovered after implementation, not run first.** `scripts/verify.sh red RESEARCH-1 tests/fundamentals/test_pilot_e2e.py::test_pilot_end_to_end` in a detached worktree at `bb86aa48`, the final test copied in byte-identical, plus a names-only shim (`THESIS_IMPACT`, `FALSIFIER_STATUS`, `MARGIN_KEY` strings, no behaviour) so it imports. Red for the right reason: the `_falsifiers` assertion found no derived sections. Proof in `scratchpad/gate/` (its `note` field records this). |
+| 3 | P2 `test_prep5_rework.py` over 800 lines | Pure moves: Task 4 (PILOT-11) cases to `test_prep5_corrected_filing.py`; `_rerun` and `_correct` with its constants to `prep5_support.py` (re-exported from `test_prep5_rework`, so `test_prep6_review.py` and `test_pilot_e2e.py` stay untouched); the RESEARCH-1 derived/pre-slice rework case to `test_falsifier_status.py`. |

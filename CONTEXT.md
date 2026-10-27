@@ -106,7 +106,7 @@ The registered record of inputs, assumptions, outputs, and code version behind a
 _Avoid_: scratchpad (model scratchpads are never a product record)
 
 **Thesis**:
-The current **approved analytical view** of a company — versioned narrative, never "current truth". Updates are incremental and diff-reviewed.
+The current **approved analytical view** of a company — versioned narrative, never "current truth". Updates are incremental and diff-reviewed. Every run draft derives `thesis_impact` and `observable_falsifiers`: each falsifier's code-computed status against the thesis version approved at its derivation cutoff, threshold cited as a `THESIS_CLAIM`.
 _Avoid_: current truth, recommendation (a regulated research-distribution concept — gated by the distribution boundary)
 
 **Management ledger**:

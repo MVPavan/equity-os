@@ -187,15 +187,20 @@ class Ledger:
         *,
         approve: bool = False,
         digest: str | None = None,
+        **update: Any,
     ) -> int:
         """An imported version sealed by ``IMPORT_SEAL`` (with ``digest``, else its own) and
         optionally approved, in one panel transaction; a successor's approval supersedes, so it
-        takes the queue lock before the version's store-clock read (plan D4, M4)."""
+        takes the queue lock before the version's store-clock read (plan D4, M4). ``update``
+        replaces draft fields (claims, import sources)."""
         draft = self.version_draft(
             report_id,
             predecessor_id,
-            claims=(SELF_CITED,),
-            import_sources=(("q0-approved-thesis.md", b"# Q0\n"),),
+            **{
+                "claims": (SELF_CITED,),
+                "import_sources": (("q0-approved-thesis.md", b"# Q0\n"),),
+                **update,
+            },
         )
         with self._cursor(PgRole.PANEL) as cursor:
             if predecessor_id is not None:

@@ -29,7 +29,13 @@ from fundamentals.verify.quote_anchor import guidance_quote_holds
 IST_OFFSET = timedelta(hours=5, minutes=30)
 AS_KNOWN_ONLY = frozenset({InputTime.RECORDED, InputTime.SELECTED, InputTime.POLICY})
 VALUED = frozenset(
-    {CitationKind.FIGURE, CitationKind.CALCULATION, CitationKind.POLICY, CitationKind.COMPARISON}
+    {
+        CitationKind.FIGURE,
+        CitationKind.CALCULATION,
+        CitationKind.POLICY,
+        CitationKind.COMPARISON,
+        CitationKind.THESIS_CLAIM,
+    }
 )
 CRORE, PER_SHARE, PERCENT = "INR crore", "INR per share", "%"
 # The closed unit table of keyed claims: each unit's value kind, currency and scale. A run-store
