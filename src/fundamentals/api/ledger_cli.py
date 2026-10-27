@@ -7,6 +7,9 @@
     ledger check --version <id> --stock <symbol> --snapshot-root <dir>
         [--mode as_known|retrospective] [--watchlist config/watchlist.yaml]
         [--issuer-config <yaml>]...
+    ledger submit <version id> --stock <symbol> --snapshot-root <dir>
+        [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]...
+        (seals a DRAFT for review: prints its decision id and sealed digest)
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
         [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]... [--thesis-successor]
         (--thesis-successor imports only the configured successor thesis onto the chain)
@@ -17,12 +20,11 @@
         <dir>/<symbol>/, which must be fresh or empty: nothing is overwritten)
 
 The composition root: ``decide`` runs as the owner login from its credential file; ``check``,
-``stage`` and ``export`` run as the runtime role and ``import`` as the panel login (no model call);
-``check``, ``import`` and an approving ``decide`` get the stock's source catalog and the
-snapshot store; each ``--issuer-config`` adds that config's PDF declarations to the catalog
-(plan D4, Task 3b). Any refusal, or a
-version that does not import, exits ``EXIT_REFUSED`` with a structlog error that names no
-credential.
+``submit``, ``stage`` and ``export`` run as the runtime role and ``import`` as the panel login
+(no model call); ``check``, ``submit``, ``import`` and an approving ``decide`` get the stock's
+source catalog and the snapshot store; each ``--issuer-config`` adds that config's PDF
+declarations to the catalog (plan D4, Task 3b). Any refusal, or a version that does not import,
+exits ``EXIT_REFUSED`` with a structlog error that names no credential.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ from fundamentals.ledger.importer import (
     import_versions,
     load_import_config,
 )
-from fundamentals.ledger.lifecycle import decide, validate
+from fundamentals.ledger.lifecycle import decide, submit, validate
 from fundamentals.memory import retrieval
 from fundamentals.memory.export import format_memory
 from fundamentals.memory.pg_store import PgMemoryStore
@@ -70,6 +72,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 LEDGER_COMMAND = "ledger"
 DECIDE_ACTION = "decide"
 CHECK_ACTION = "check"
+SUBMIT_ACTION = "submit"
 IMPORT_ACTION = "import"
 EXPORT_ACTION = "export"
 STAGE_ACTION = "stage"
@@ -80,6 +83,7 @@ _ACTION_DEST = "ledger_action"
 _HELP = "decide report-ledger subjects and check report versions"
 _DECIDE_HELP = "record an owner decision; the verbatim ruling is read from stdin"
 _CHECK_HELP = "check every claim of a version and append the validation"
+_SUBMIT_HELP = "seal a draft for review as the runtime role"
 _IMPORT_HELP = "import the configured retained versions as the panel role"
 _STAGE_HELP = "stage a memory item from a YAML MemoryItemDraft as the runtime role"
 _EXPORT_HELP = (
@@ -89,6 +93,7 @@ _EXPORT_HELP = (
 _POLICY_FIELDS = ("key", "value", "unit")
 _DECISION = "decision\t{id}"
 _MEMORY_ITEM = "memory item {id}"
+_SUBMITTED = "decision\t{id}\nsealed_digest\t{digest}"
 _VALIDATION = "validation\t{id}\nmode\t{mode}"
 _STATE = "{key}\t{state}"
 _IMPORTED = "{period}\t{kind}\t{version_id}\t{outcome}"
@@ -124,8 +129,8 @@ LEDGER_FAILURES = (
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``ledger`` with its ``decide``, ``check``, ``import``, ``stage`` and ``export``
-    actions."""
+    """Register ``ledger`` with its ``decide``, ``check``, ``submit``, ``import``, ``stage`` and
+    ``export`` actions."""
     parser = subparsers.add_parser(LEDGER_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     decision = actions.add_parser(DECIDE_ACTION, help=_DECIDE_HELP)
@@ -147,6 +152,12 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     check.add_argument("--mode", choices=sorted(_MODES), default=RunMode.AS_KNOWN.value.lower())
     check.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
     check.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    submission = actions.add_parser(SUBMIT_ACTION, help=_SUBMIT_HELP)
+    submission.add_argument("version", type=int)
+    submission.add_argument("--stock", required=True)
+    submission.add_argument("--snapshot-root", type=Path, required=True)
+    submission.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    submission.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     imports = actions.add_parser(IMPORT_ACTION, help=_IMPORT_HELP)
     imports.add_argument("--snapshot-root", type=Path, required=True)
     imports.add_argument("--config", type=Path, default=DEFAULT_IMPORT_CONFIG)
@@ -173,6 +184,7 @@ def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
         actions = {
             DECIDE_ACTION: _decide,
             CHECK_ACTION: _check,
+            SUBMIT_ACTION: _submit,
             IMPORT_ACTION: _import,
             STAGE_ACTION: _stage,
             EXPORT_ACTION: _export,
@@ -224,6 +236,14 @@ def _check(args: argparse.Namespace) -> int:
     lines += [_STATE.format(key=key, state=state) for key, state in validation.claim_states]
     lines += [str(state) for state in validation.version_states]
     sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
+def _submit(args: argparse.Namespace) -> int:
+    """Submit one draft as the runtime role and print the decision and its sealed digest."""
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        record = submit(pool, args.version, **decision_sources(args))
+    sys.stdout.write(_SUBMITTED.format(id=record.id, digest=record.sealed_digest) + "\n")
     return EXIT_OK
 
 
