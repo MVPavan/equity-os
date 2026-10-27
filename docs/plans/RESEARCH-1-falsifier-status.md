@@ -739,3 +739,208 @@ Orchestrator ruling: reading A (rates rounded to 2 places before the spread, as 
 stored ETR has 2 places) over reading B (26.75). D8: F2 keeps the before-associates numerator and
 threshold, labelled. Review: gpt-6.1-sol r1 REQUEST_CHANGES (provenance misattributed to the 1.0.0
 council), r2 **APPROVE** 2026-10-27.
+
+## Amendment A1 (2026-10-27): live ledger is empty
+
+**Facts (read-only checks on `equity_os`, 2026-10-27).**
+- The ledger is empty: 0 rows in `reports`, `report_versions`, `decisions`, `import_sources`,
+  `legacy_acquisitions`, `batch_completions` and `screens`. The live DB was restored on 2026-10-23
+  (eqos-89z). The pilot ran its ledger steps only on disposable `eqos_test_*` DBs.
+- What live does hold, from the 10-20 cutover:
+  - entity 1 `APARINDS`;
+  - fact store `sqlite-cb02b0f12a1708d0` (`LEGACY_SQLITE`), the `fact_store_id` in every
+    `config/aparinds-*.yaml`;
+  - comparison runs 1–4 (`AS_KNOWN`, period ends 2025-09-30 … 2026-06-30);
+  - 8 captures: the four run-quarter XBRLs and four results PDFs. They were registered by
+    `evidence ingest` against the snapshot root `data/raw/snapshots/v1`
+    (`data/cutover/run-20261020T122425Z/exits.log`).
+  - Missing: no transcript capture, and no capture of the comparator XBRLs `a3c8…`, `c44a…`,
+    `3ba6…` and `9438…`.
+- `0042` is applied, `db check-live` passes, and successor 1.1.0 is committed (445f70dd) and
+  configured (91b5f688). The evidence commits exist with matching dates: `4f0afa25` is dated
+  2026-09-07 and `445f70dd` 2026-10-27.
+
+**Route: full import, option (a) (orchestrator ruling r2, reversing r1).** Import with
+`config/ledger_import.yaml`: the four legacy `EARNINGS_UPDATE`s (FY26_Q2 … FY27_Q1), then Q0, then
+the successor.
+- The r1 premise was that the legacy versions unblock nothing. Sol r2 P1 showed it is false:
+  their sealed imports carry the `bound` guidance contracts a runtime draft's guidance quotes need
+  (binding below).
+- Their placeholder sections 6/7 become permanent `HISTORICAL` history. That is acceptable under
+  the import contract (`docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md:260`;
+  Sol r1).
+- No code change, and no new config: the thesis-only config is deleted.
+
+**Guidance binding (verified from code, read-only; Sol r2 P1).**
+- A runtime guidance line is a `SOURCE_QUOTE` claim on its transcript capture
+  (`run_draft.py:532-562`). The draft is not imported, so its contract comes from
+  `bound_contract` (`lifecycle.py:268-271`). Unbound, the claim is `QUOTE_MEANING_MISMATCH`
+  (`claim_check.py:119-121`), which fails the draft's `AS_KNOWN` validation at write
+  (`run_draft.py:346-360`) and approval (`lifecycle.py:426-427`).
+- `bound_contract` (`citations.py:284-316`) matches imported `SOURCE_QUOTE` claims of the entity
+  with the same quote and the same `quote_location`, i.e. the blob plus the parsed anchor
+  (`0017:7-16`). Only versions whose panel `IMPORT_SEAL` seals them as they stand count
+  (`citations.py:170-185`). The contract is read from the version's management-ledger import
+  source, at the imported claim's key. Exactly one distinct contract must result.
+- There is **no time or cutoff filter**. The binding reads the sealed imports present when the
+  draft is validated, so import order and the run's cutoffs do not matter once the base import
+  has landed.
+- Write-free check (`scratchpad/research1-a1/binding_check.py`, no DB): maps the four updates
+  and re-extracts FY26_Q2 guidance from the retained transcript `c9ed50d3…` with the
+  `config/aparinds-fy26-q2.yaml` rules.
+  - `conductor_ebitda_per_mt` `p12.b5.27:60` "guidance of 30,000 per metric ton" meets the
+    FY26_Q2 and FY26_Q3 imported claim `ledger.conductor_ebitda_per_mt.medium_term.consolidated`.
+  - `cables_revenue_growth` `p20.b20.44:75` "guiding a growth of 25% year on" meets the FY26_Q2
+    imported claim `ledger.cables_revenue_growth.annual.consolidated`.
+  - Each binds one contract, and it equals the runtime claim's asserted contract (metric,
+    `consolidated`, horizon, unit, `constant_currency=false`), as `claim_check.py:158-165`
+    requires.
+- **Chain root.** With the full import, a FY26_Q2 run finds the imported `HISTORICAL` FY26_Q2
+  head. That head is closed (`lifecycle.py:103`, `run_draft.py:421-426`) and has no rejection, so
+  there is no rework (`rework.py:211-215`). FY26_Q2 is still the bootstrap period
+  (`run_draft.py:251-252`), so no prior is needed. The draft goes on the existing FY26_Q2 report
+  with the imported head as predecessor (`run_draft.py:327-336`), and its approval supersedes a
+  `HISTORICAL` head (`lifecycle.py:102`). So the FY26_Q2 run can bind both guidance quotes.
+- **What (a) does not supply.** The runtime claim needs a non-null `capture_ref_id` for the
+  transcript blob (`citations.py:290-291`); otherwise there are no bindings. Live has no transcript
+  capture, which Task 7 prerequisite 2 covers. The import's own quote claims may stay
+  unresolved (`importer.py:345-365`), but they bind through `source_sha256`, so that does not
+  matter. No other binding route is needed.
+
+**What the base import writes** (panel login; `importer.py:143-200,277-342`). Separate commits,
+not one transaction:
+1. Acquisitions: one transaction inserts the 23 retrieval-manifest entries into
+   `legacy_acquisitions`, `ON CONFLICT DO NOTHING` (`store.py:280-290`).
+2. Five versions, in this order: FY26_Q2, FY26_Q3, FY26_Q4, FY27_Q1, then Q0. Each takes two
+   transactions:
+   - `_persist`: report, version, sections, claims, QA records and import sources, plus
+     `IMPORT_SEAL`. Q0 alone also gets `IMPORTED_APPROVAL`. An update has 3 import sources (md,
+     json, management ledger; `importer.py:154-155`). Q0 has 2.
+   - Then one `RETROSPECTIVE` validation (`lifecycle.py:189-201`), with one
+     `validation_claim_states` row per claim (`store.py:242-245`). An import has no
+     version-state rows, because `found` is empty (`lifecycle.py:275-279`).
+   - Status: an update is `HISTORICAL` (seal only, `lifecycle.py:95`), and Q0 is `APPROVED`.
+   - A mapping refusal skips that version and the rest still persist (`importer.py:169-180`).
+3. The successor does the same as Q0, onto Q0's report. It first checks that Q0 is the `APPROVED`
+   head and that its twin is not imported (`importer.py:230-232,300-307`). `_THESIS` selects
+   `kind = 'BOOTSTRAP_THESIS'` (`importer.py:69-71`), so the FY26_Q2 `EARNINGS_UPDATE` report
+   does not interfere. The successor still imports onto the Q0 chain.
+
+**Expected count deltas** (derived from the code above and the write-free mapping, not observed;
+the rehearsal confirms them). The write-free mapping gives: FY26_Q2 12 sections / 47 claims /
+3 QA, FY26_Q3 12/48/3, FY26_Q4 12/49/3, FY27_Q1 12/49/3, and Q0 8/5/0. That makes 56 / 198 / 12
+in total, which matches Sol r1.
+
+| Step | `reports` | `report_versions` | `decisions` | `import_sources` | `validations` | `legacy_acquisitions` | `report_sections` | `numeric_claims` | `qa_records` | `validation_claim_states` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| base import | +5 | +5 | +6 | +14 | +5 | +23 | +56 | +198 | +12 | +198 |
+| successor | 0 | +1 | +2 | +2 | +1 | 0 | +8 | +5 | 0 | +5 |
+
+All other tables are unchanged. **Permanent:** all of it.
+
+**Live sequence for Task 6 step 6.**
+- Counts: `uv run python scratchpad/research1-a1/counts.py <db>`.
+- Digests: `uv run python scratchpad/research1-task6/digests.py <out> <db>`.
+- Both run as the migrator role, read-only, and assert `current_database() == <db>`: `equity_os`
+  live, `eqos_test_a1` in the rehearsal.
+- check-live: `uv run fundamentals db check-live` on live. In the rehearsal, use
+  `uv run python scratchpad/research1-a1/check_rehearsal.py` instead. It calls `check_live`
+  directly with the CLI's default migrations dir and identity, because the CLI refuses test DBs
+  (`db_cli.py:136`). The CLI guard stays.
+
+1. **Preflight (live, read-only).** check-live → exit 0. Counts (`equity_os`) → `counts-0.tsv`,
+   with every ledger table 0. Digests → 0 versions.
+2. **Rehearsal.** Run on a restored copy before any live write.
+   - `uv run fundamentals db backup --out <scratch>/set --snapshot-root data/raw/snapshots/v1`.
+   - `uv run fundamentals db restore --set <scratch>/set --database eqos_test_a1
+     --snapshot-root <scratch>/root --live-snapshot-root data/raw/snapshots/v1`.
+     `<scratch>/root` is a new, empty directory, separate from the live root (`db_cli.py:105-112`).
+   - With `EQOS_PG_DB=eqos_test_a1`, run steps 3–6 exactly, with `--snapshot-root <scratch>/root`,
+     `check_rehearsal.py` for check-live, and `eqos_test_a1` as the helpers' database. Each
+     command must give its stated exit code, output and count deltas. Record the six version IDs
+     and every claim's validation state.
+3. `uv run fundamentals ledger import --snapshot-root data/raw/snapshots/v1` (default config
+   `config/ledger_import.yaml`) → exit 0. It prints five tab-separated lines: `FY26_Q2`,
+   `FY26_Q3`, `FY26_Q4` and `FY27_Q1` `EARNINGS_UPDATE <id> HISTORICAL`, then `FY26_Q2
+   BOOTSTRAP_THESIS <id> APPROVED`.
+4. check-live → exit 0. Counts → `counts-1.tsv`; the deltas from `counts-0` match the base row.
+   Digests → five versions.
+5. `uv run fundamentals ledger import --thesis-successor --snapshot-root data/raw/snapshots/v1` →
+   exit 0, one line `FY26_Q2 BOOTSTRAP_THESIS <id> APPROVED`.
+6. check-live → exit 0. Counts → `counts-2.tsv`; the deltas from `counts-1` match the successor
+   row. Digests → six versions, the first five unchanged.
+
+**Failure branch (any step 3–6 not as stated).**
+- Stop. Do not re-run an import.
+- Preserve the evidence: the command output, a fresh counts file, digests and each imported
+  version's status.
+- Classify the state by which commit landed (see "What the base import writes"):
+  - **Acquisitions only** (`legacy_acquisitions` 23, `reports` 0): no version exists, and the
+    acquisition insert is a no-op on repeat. Re-run step 3 once, after the cause is fixed.
+  - **Every expected version, some validations missing** (versions at the expected count,
+    `validations` short): a re-run would refuse. The base import hits `UNIQUE (entity_id, period,
+    kind)` (`0012:11`) on its first report, and the successor finds Q0 no longer the head.
+    Complete each version append-only with `uv run fundamentals ledger check --version <id>
+    --stock APARINDS --snapshot-root data/raw/snapshots/v1 --mode retrospective`. That
+    validation lacks the import's `bound` contracts (`importer.py:192`), so compare its claim
+    states with the rehearsal's; a difference goes to the orchestrator. Then continue at the next
+    count check.
+  - **Any other state** (fewer versions than expected, a refused line, a status other than
+    `HISTORICAL`/`APPROVED`/`SUPERSEDED` as stated, an unexpected table delta, or a check-live
+    failure): no further writes. The orchestrator rules on it.
+
+**Binding (item 2): the successor binds, and F5 is evaluated.**
+- `approved_thesis` walks the stock's thesis versions newest first (`falsifier_status.py:66-68,
+  102-105`). It takes the first `APPROVED` at `as_of = update.derivation_cutoff`
+  (`run_draft.py:317-318`).
+- That cutoff is the store clock read after the pipeline (`api/cli.py:408-412`).
+- `version_status(as_of=…)` counts a decision only when `recorded_at <= as_of`
+  (`lifecycle.py:117-150`). `recorded_at` is `store_now()` at insert (`0012:421`); `decided_on`
+  is not used for selection.
+- So any run after the successor import binds 1.1.0, and Q0 is then `SUPERSEDED` (F-6). Its
+  `THESIS_CLAIM` approval time precedes the cutoff.
+- A run *before* the import would bind 1.0.0 with F5 `UNRESOLVED`.
+
+**Task 7 is deferred** to a new prerequisites bead, created by the orchestrator. No `fundamentals
+run` can succeed on live today. Source preparation runs before ledger preflight (`api/cli.py:276`
+`prepare_pipeline_sources`, then `:343` `preflight`). The prerequisites, in dependency order:
+1. **Historical source admission (code).** This is the first refusal. Dropping
+   `--source-admission-manifest/--source-admission-store` does not help: those flags refuse
+   without an `ApprovedIntakeContext`, which only tests inject (`api/cli.py:219-223`). Without
+   them, local inputs take the current time as acquisition and first-seen. That exceeds every
+   config's historical cutoff (e.g. `config/aparinds-fy26-q2.yaml:22`, 2025-11-06), so the run
+   refuses `xbrl: source acquisition/first-seen/registration exceeds cutoff`
+   (`source_admission.py:338-345`). `--retrospective` only exempts evidence that carries a
+   registration (`:312-331`). Needed: a supported production route that admits retained,
+   registered captures for a historical run, e.g. building the intake context from the
+   registered capture store at the composition root. A transcript action alone is not enough.
+2. **Transcript capture route (code).** There is no production path:
+   `first_party_ingest.admit_transcript` is called only from tests. Needed: a thin `evidence`
+   action over it that registers each quarter's transcript PDF as a first-party capture, in a
+   form that prerequisite 1 can admit.
+   This capture is also what a runtime guidance quote binds through. With no capture,
+   `capture_ref_id` is null and nothing binds (`citations.py:290-291`). The sealed legacy
+   imports from step 3 supply the contracts (see "Guidance binding"), so no separate binding
+   route is needed.
+3. **Comparator captures (no code).** `preflight` needs a retained first-party capture for every
+   XBRL, comparators included (`run_draft.py:236-238,453-466`). Add one per comparator with
+   `evidence ingest … --member xbrl=xbrl-consolidated-comparator --quarter <q> --period-end
+   <d>` (`capture_intake.py:283`; manifest kind at `retrieval-manifest-v2.json:199`). Each uses
+   its own quarter and period end: FY25_Q2 2024-09-30 (`c44a…`), FY25_Q3 2024-12-31 (`3ba6…`),
+   FY25_Q4 2025-03-31 (`9438…`) and FY26_Q1 2025-06-30 (`a3c8…`). The pilot does the same
+   (`prep2b_support.py:162-178`).
+4. **Coverage and watchlist (no code; owner).** Every runtime draft needs `watchlisted(entity)`
+   (`0026:102-105`). An `ADD` needs an admitted result in a completed batch (`0026:7-13,63-66`).
+   Live has zero registry loads and listings, screen runs and members, and onboarding records.
+   `coverage batch` needs a screen run, resolves members through `registry_view`, then onboards
+   and compares each member (`coverage_cli.py:131,314`; `screens.py:85`). In order:
+   1. `coverage registry` loads a retained instrument capture.
+   2. `coverage export` (with review and dispose as needed) produces a screen run whose members
+      include an APARINDS listing that resolves in `registry_view` as `NSE_EQ`.
+   3. `coverage batch --screen-run <id> --members APARINDS …` gives APARINDS an admitted
+      onboarding and comparison result, and the batch completes.
+   4. The owner runs `ledger decide WATCHLIST 1 ADD`.
+5. **Chain root (no code).** FY26_Q3 needs an `APPROVED` FY26_Q2 earnings update
+   (`run_draft.py:252-257`). The imported FY26_Q2 head is only `HISTORICAL`; the run supersedes
+   it (see "Guidance binding"). So Task 7 starts with the FY26_Q2 bootstrap run and its approval,
+   which replaces Task 7 step 4. Task 7's argv is rewritten to the route from prerequisite 1.
