@@ -12,6 +12,7 @@ Authoritative docs and when to read them.
 | `CONTEXT.md` | Naming anything — the domain glossary; use its terms, avoid its listed synonyms |
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
+| `docs/goals/2026-10-27-research-report-targets.md` | **Designing research output** — the owner's target report content (forward view, risk probe, management credibility), doctrine adaptations, and source coverage gaps |
 | `docs/plans/2026-10-11-completion-work-list.md` | **Choosing what to work on next** — owner-accepted, deduplicated priority list of all remaining work to full vision, with dependencies and bead mapping |
 | `docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md` | **Building the data foundation** — approved spec: canonical field dictionary, XBRL-vs-PDF extraction check, filing-vs-vendor corroboration, PostgreSQL store and legacy migration |
 | `docs/specs/2026-10-12-report-ledger-memory-and-data-lifecycle.md` | **Reports, memory, coverage and retention** — approved spec: report ledger and long-term memory in PostgreSQL, panel approvals, screen-to-watchlist coverage, retention/purge; amends the data spec |

@@ -85,3 +85,6 @@ docs/goals/reviews/ledger/inventory/SEQ-08/
 
 # Local service configuration and credentials (see .env.example)
 .env
+
+# Owner-supplied vendor sample reports (Tijori Stack output; not ours to redistribute)
+docs/goals/sample-reports/
