@@ -42,7 +42,9 @@ readonly EXIT_DIAGNOSE=4
 # Re-pinned 2026-09-04: commit 3b64604 added an 8th, structural skip
 # (test_upstox_scope_guards excludes the transport module from its own
 # origin-string sweep by design — it is not a live fetch and cannot be removed).
-readonly BASELINE_SKIPS="${VERIFY_BASELINE_SKIPS:-8}"
+# Re-pinned 2026-10-27: commit a201ec2a (eqos-351) added a 9th, the opt-in live
+# screen export (RUN_SCREEN_EXPORT_LIVE).
+readonly BASELINE_SKIPS="${VERIFY_BASELINE_SKIPS:-9}"
 
 # A verbatim run of this many characters shared between a fixture and a real
 # captured page means the capture was pasted in rather than synthesised.

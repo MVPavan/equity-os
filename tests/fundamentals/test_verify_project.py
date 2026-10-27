@@ -91,7 +91,7 @@ def test_missing_parts_are_named_not_built_and_fail_closed(verifier) -> None:
     for label, _ in EXIT_TARGETS:
         assert statuses[label] == "NOT BUILT"
     assert statuses["Pilot"] == "NOT BUILT"
-    assert len(calls) == 4
+    assert len(calls) == 5
     assert all(statuses[label] == "PASS" for label in ("Pytest", "Mypy", "Ruff", "Ruff format"))
 
 
@@ -114,7 +114,7 @@ def test_failed_parts_do_not_stop_remaining_exits_or_quality_gates(verifier) -> 
     assert statuses["D9"] == "PASS"
     assert statuses["Amendment records"] == "PASS"
     assert statuses["Ruff format"] == "PASS"
-    assert calls[-1] == ["run", "ruff", "format", "--check", "src", "tests/fundamentals"]
+    assert calls[-1] == ["run", "fundamentals", "db", "check-live"]
 
 
 def test_dispatch_uses_authoritative_targets_without_pg_or_retained_exclusions(verifier) -> None:
@@ -130,6 +130,7 @@ def test_dispatch_uses_authoritative_targets_without_pg_or_retained_exclusions(v
         ["run", "mypy", "--strict", "src"],
         ["run", "ruff", "check", "src", "tests/fundamentals"],
         ["run", "ruff", "format", "--check", "src", "tests/fundamentals"],
+        ["run", "fundamentals", "db", "check-live"],
     ]
     assert result.returncode == 1
     assert _statuses(result)["Pilot"] == "NOT BUILT"
