@@ -4,6 +4,8 @@
         --period-end <YYYY-MM-DD> --basis consolidated --raw-root <dir> --snapshot-root <dir>
         [--member xbrl=<kind>] [--member pdf=<kind>] [--issuer-config <yaml>]
         [--config-root config]
+    evidence transcript --retrieval-manifest <json> --issuer <symbol> --quarter <FYyy_Qn>
+        --raw-root <dir> --snapshot-root <dir> --issuer-config <yaml>
 
 The composition root: ``PgSettings``, the runtime pool, the retained intake and the
 source catalog (design decision 12) are built here and nowhere else. ``--issuer-config``
@@ -33,9 +35,14 @@ from fundamentals.contracts.canonical import Basis, Representation
 from fundamentals.contracts.comparison import SourceState
 from fundamentals.contracts.evidence import FilingFamily
 from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.snapshot import INTAKE_RIGHTS
 from fundamentals.contracts.source_catalog import BUILTIN_SOURCES
 from fundamentals.evidence.capture_intake import IntakeError, retained_intake_from_manifest
-from fundamentals.evidence.first_party_ingest import IngestError, ingest_first_party
+from fundamentals.evidence.first_party_ingest import (
+    IngestError,
+    admit_transcript,
+    ingest_first_party,
+)
 from fundamentals.evidence.mapping import (
     MappingLoadError,
     load_mapping_set,
@@ -49,6 +56,9 @@ from fundamentals.store.snapshot_store import SnapshotStore
 
 EVIDENCE_COMMAND = "evidence"
 INGEST_ACTION = "ingest"
+TRANSCRIPT_ACTION = "transcript"
+TRANSCRIPT_KIND = "transcript"
+TRANSCRIPT_DECLARATION = "transcript_pdf"
 DEFAULT_CONFIG_ROOT = "config"
 # Default pins, as ``compare run``'s; a new normalisation version is a reviewed code change.
 DICTIONARY_VERSION = "v1"
@@ -67,12 +77,14 @@ EXIT_INCOMPLETE = 4
 _ACTION_DEST = "evidence_action"
 _HELP = "ingest first-party filings into the evidence store"
 _INGEST_HELP = "stage, extract and interpret one results package from retained originals"
+_TRANSCRIPT_HELP = "register one quarter's transcript PDF as a diagnostic first-party capture"
 _MEMBER_HELP = "a package member as <representation>=<manifest kind>, e.g. xbrl=xbrl-consolidated"
 _BAD_MEMBER = "--member {value!r} is not xbrl=<kind> or pdf=<kind>"
 _NO_MEMBER = "name at least one --member"
 _PDF_NEEDS_CONFIG = "a pdf member needs --issuer-config"
 _UNKNOWN_ISSUER = "issuer {issuer!r} is not seeded"
 _REFUSED_EVENT = "evidence_command_refused"
+_CAPTURE_REF = "capture_ref\t{capture_ref_id}\n"
 _SUMMARY = "package\t{package_id}\noccurrences\t{occurrences}"
 _COUNT_LINE = "interpretations\t{status}\t{count}"
 _ATTEMPT_LINE = "attempt\t{stage}\t{representation}\t{family}\t{outcome}"
@@ -84,7 +96,7 @@ class EvidenceCommandError(ValueError):
 
 
 def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``evidence`` and its ``ingest`` action."""
+    """Register ``evidence`` and its ``ingest`` and ``transcript`` actions."""
     parser = subparsers.add_parser(EVIDENCE_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     ingest = actions.add_parser(INGEST_ACTION, help=_INGEST_HELP)
@@ -100,14 +112,19 @@ def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     ingest.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     ingest.add_argument("--dictionary", default=DICTIONARY_VERSION)
     ingest.add_argument("--mapping-set", default=MAPPING_SET_VERSION)
+    transcript = actions.add_parser(TRANSCRIPT_ACTION, help=_TRANSCRIPT_HELP)
+    for flag in ("--retrieval-manifest", "--raw-root", "--snapshot-root", "--issuer-config"):
+        transcript.add_argument(flag, required=True, type=Path)
+    transcript.add_argument("--issuer", required=True)
+    transcript.add_argument("--quarter", required=True)
 
 
 def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
-    """Run ``evidence ingest``, or return ``None`` for any other command."""
+    """Run an ``evidence`` action, or return ``None`` for any other command."""
     if args.command != EVIDENCE_COMMAND:
         return None
     try:
-        return _ingest(args)
+        return _transcript(args) if args.evidence_action == TRANSCRIPT_ACTION else _ingest(args)
     except (
         EvidenceCommandError,
         IntakeError,
@@ -146,6 +163,7 @@ def _ingest(args: argparse.Namespace) -> int:
         store_root=args.snapshot_root.absolute(),
         input_root=args.raw_root.absolute(),
         issuer_config=args.issuer_config,
+        rights=INTAKE_RIGHTS,
     )
     catalog = BUILTIN_SOURCES
     pdf_specs = None
@@ -195,6 +213,28 @@ def _ingest(args: argparse.Namespace) -> int:
     )
     usable = report.package_id is not None and report.occurrence_count > 0
     return EXIT_OK if usable and not failed else EXIT_INCOMPLETE
+
+
+def _transcript(args: argparse.Namespace) -> int:
+    """Register the quarter's transcript PDF under its issuer config's pin; print its id."""
+    intake = retained_intake_from_manifest(
+        args.retrieval_manifest,
+        issuer=args.issuer,
+        quarter=args.quarter,
+        kinds={Representation.PDF: TRANSCRIPT_KIND},
+        store_root=args.snapshot_root.absolute(),
+        input_root=args.raw_root.absolute(),
+        issuer_config=args.issuer_config,
+        pdf_declaration=TRANSCRIPT_DECLARATION,
+        rights=INTAKE_RIGHTS,
+    )
+    catalog = with_issuer_pdfs(BUILTIN_SOURCES, load_config(args.issuer_config))
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        ref = admit_transcript(
+            EvidenceRepository(pool), SnapshotStore(args.snapshot_root), intake, catalog=catalog
+        )
+    sys.stdout.write(_CAPTURE_REF.format(capture_ref_id=ref.capture_ref_id))
+    return EXIT_OK
 
 
 def _members(values: list[str]) -> Mapping[Representation, str]:
