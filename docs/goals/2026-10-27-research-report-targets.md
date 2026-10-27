@@ -1,8 +1,10 @@
 # Research report targets (owner direction, 2026-10-27)
 
 The owner supplied three Tijori Stack sample reports (`docs/goals/sample-reports/`, kept out of git:
-vendor output). Equity-OS theses must carry **this kind of information**. They are not a template to
-copy, and they are not the limit of what we produce. Concalls are a required input.
+vendor output). Equity-OS theses must carry **this kind of information**. It is **one requirement among others**:
+the three kinds below are neither complete nor exhaustive. They are a floor the research output
+must cover, not the whole product vision (`docs/goals/equity-os-product-completion-gold.md`) and
+not a template to copy. Concalls are a required input.
 
 ## The three kinds of analysis
 
