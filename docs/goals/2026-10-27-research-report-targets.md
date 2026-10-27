@@ -33,11 +33,12 @@ not a template to copy. Concalls are a required input.
 |---|---|---|
 | Quarterly P&L, segments | NSE/BSE XBRL and results PDFs; Screener/Tijori | Have (PDF extraction bugs open) |
 | Multi-year P&L, balance sheet, cash flow | Screener/Tijori (10-year); half-year and annual XBRL | Vendor have; first-party balance sheet and cash flow not extracted |
-| Concall transcripts | Exchange filings (SEBI LODR, Reg. 30/46); Screener links | Retained for Apar only; **no production intake** (`eqos-dna`); Tijori concalls not static |
-| Investor presentations | Exchange filings; Screener links | **Missing** |
+| Concall transcripts, PPTs, recordings | Exchange filings (SEBI LODR, Reg. 30/46); Screener `#documents .concalls` (BSE links back to 2016); Tijori `#companyFilings` (own copies back to 2010) | Retained for Apar only; **no production intake** (`eqos-dna`, `eqos-msq`). Only Tijori's market-wide concall monitor is non-static |
+| Investor presentations | Exchange filings; Screener concall PPT links; Tijori `#companyFilings` | **Missing** (`eqos-msq`) |
 | Annual reports (notes, related parties, contingent liabilities, auditor remarks, capacity, capex plan) | Exchange filings; Screener links | **Missing** |
 | Credit-rating rationales | Exchange filings; rating-agency sites; Screener links | **Missing** |
 | Corporate announcements and events (capex, orders, approvals, fund raises, penalties) | NSE/BSE announcements; BSE/NSE/ET news; Tijori events | Partial |
+| Upcoming results and board meetings (daily trigger) | NSE `boardMeetings`; Screener `/upcoming-results/`; Tijori upcoming results | NSE and Screener unparsed; Tijori parsed; no scheduler |
 | Shareholding and pledges | Exchange shareholding filings; Screener/Tijori | Have |
 | Prices and valuation | Upstox | Have |
 | Peers (competitive position) | Screener peers; registry | Partial |
