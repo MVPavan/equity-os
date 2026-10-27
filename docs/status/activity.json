@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "Research slice 1 committed: deterministic falsifier status in run drafts (eqos-bnx)",
-    "detail": "Run drafts now carry falsifier sections computed by code against the thesis approved at the cutoff (ae1ed33e; Sol r2 APPROVE). Closing fresh Sol review running. Next: live successor thesis, migration 0042 applied live, Apar drafts regenerated.",
-    "stage": "Review"
+    "title": "Research slice 1: live ledger imported; successor thesis 1.1.0 live (eqos-bnx)",
+    "detail": "Migration 0042 applied live; Apar ledger imported (4 historical updates + Q0) and thesis 1.1.0 (F5 = filed tax / PBT > 26.74) is the approved thesis runs bind. Regenerating the Apar updates (Task 7) is blocked on live run prerequisites (eqos-dna).",
+    "stage": "Live"
   },
   "next": [
-    "Slice 1 live steps: successor thesis (F5 = tax / PBT), migrate 0042, regenerate Apar drafts",
+    "eqos-dna: live run prerequisites (historical source admission, transcript capture, comparator ingests, coverage + watchlist)",
+    "Then Task 7: regenerate Apar FY26_Q2..FY27_Q1 on live",
     "Research slice 2: segment lines (fix eqos-djv/ghv)",
-    "Research slice 3: spec for model-drafted analyst sections (Sol-reviewed)",
-    "Mapping/extraction fixes: eqos-dol, eqos-n21; queue policy eqos-4vl"
+    "Research slice 3: spec for model-drafted analyst sections (Sol-reviewed)"
   ],
   "log": [
+    {
+      "date": "2026-10-27",
+      "text": "eqos-bnx Task 6 on live: 0042 migrated; rehearsed then ran ledger import + successor (versions 1-6; 1.1.0 APPROVED, Q0 superseded). Sol APPROVE on successor thesis (r2) and amendment A1 (r3). Task 7 blocked -> eqos-dna."
+    },
     {
       "date": "2026-10-27",
       "text": "eqos-bnx slice 1 code committed (ae1ed33e): falsifier status, THESIS_CLAIM citations (migration 0042), ledger import --thesis-successor; thesis-impact retired. Gate 4417 passed; verifier test + skip baseline fixed (e28d4499)."

@@ -944,3 +944,15 @@ run` can succeed on live today. Source preparation runs before ledger preflight 
    (`run_draft.py:252-257`). The imported FY26_Q2 head is only `HISTORICAL`; the run supersedes
    it (see "Guidance binding"). So Task 7 starts with the FY26_Q2 bootstrap run and its approval,
    which replaces Task 7 step 4. Task 7's argv is rewritten to the route from prerequisite 1.
+
+### A1 execution record (2026-10-27)
+
+- Preflight: `db check-live` ok; ledger tables 0; 0 versions.
+- Rehearsal on `eqos_test_a1` (restored from backup `51dc155a…`, `faithful: true`): every exit
+  code, output line and count delta as stated; statuses 1–4 `HISTORICAL`, 5 (Q0) `SUPERSEDED`,
+  6 (1.1.0) `APPROVED`; `approved_thesis` binds 6.
+- Live: base import versions 1–5, successor version 6. Deltas identical to the rehearsal at both
+  steps; the first five sealed digests unchanged; `db check-live` ok after each step; statuses and
+  binding identical to the rehearsal. Post-import backup `dd747146e8c74ab6ac52123adc915d25`.
+- Task 7 deferred to `eqos-dna` (live run prerequisites).
+
