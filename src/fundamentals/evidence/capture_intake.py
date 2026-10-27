@@ -91,8 +91,8 @@ class RetainedCaptureBinding(BaseModel):
 class RetainedIntake(BaseModel):
     """Every member binding of one package, with the pinned store and input directories.
 
-    ``authority_ref`` is the manifest's recorded retrieval authority; it becomes the
-    capture's :class:`SnapshotRights` reference. ``results_pdf_source_id`` is the issuer
+    ``authority_ref`` is the manifest's recorded retrieval provenance; ``rights`` is the
+    captures' :class:`SnapshotRights`. ``results_pdf_source_id`` is the issuer
     config's declared results-PDF source (decision 12's only permitted PDF source).
     """
 
@@ -104,6 +104,7 @@ class RetainedIntake(BaseModel):
     retrieval_manifest_sha256: str
     issuer_config_sha256: str | None
     authority_ref: str = Field(min_length=1)
+    rights: SnapshotRights
     results_pdf_source_id: str | None = None
     store_anchor: DirectoryAnchor
     input_anchor: DirectoryAnchor
@@ -150,10 +151,12 @@ def retained_intake_from_manifest(
     input_root: Path,
     issuer_config: Path | None,
     pdf_declaration: str = "results_pdf",
+    rights: SnapshotRights | None = None,
 ) -> RetainedIntake:
     """Bind one package's members from the retrieval manifest; nothing is staged here.
 
-    ``pdf_declaration`` names the issuer-config block that pins the PDF member.
+    ``pdf_declaration`` names the issuer-config block that pins the PDF member; ``rights``
+    defaults to the manifest's recorded authority.
     """
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
@@ -183,6 +186,7 @@ def retained_intake_from_manifest(
             hashlib.sha256(issuer_config.read_bytes()).hexdigest() if issuer_config else None
         ),
         authority_ref=str(manifest["authorization"]),
+        rights=rights or SnapshotRights(authority_refs=(str(manifest["authorization"]),)),
         results_pdf_source_id=results_pdf.source_id if results_pdf is not None else None,
         store_anchor=DirectoryAnchor(store_root),
         input_anchor=DirectoryAnchor(input_root),
@@ -242,7 +246,7 @@ def stage_retained_member(
         request_key=request_key_for(binding),
         expected_sha256=binding.expected_sha256,
         media_type=MEDIA_TYPES[representation],
-        rights=SnapshotRights(authority_refs=(intake.authority_ref,)),
+        rights=intake.rights,
         path=binding.relative_path,
         clock=clock,
     )

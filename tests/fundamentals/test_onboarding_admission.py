@@ -60,6 +60,7 @@ from fundamentals.contracts.entity_identity import IdentifierNamespace
 from fundamentals.contracts.evidence import CaptureReference, FilingFamily
 from fundamentals.contracts.observation import AccountingFramework
 from fundamentals.contracts.onboarding import VerificationUnit
+from fundamentals.contracts.snapshot import INTAKE_RIGHTS
 from fundamentals.contracts.source_catalog import VENDOR_SURFACES
 from fundamentals.entity.discovery import (
     Discovery,
@@ -421,6 +422,7 @@ def _writers(db: PgTestDatabase, tmp_path: Path, snapshots: Path) -> dict[str, C
         retrieval_manifest_sha256="0" * 64,
         issuer_config_sha256=None,
         authority_ref="A05-DECISION-004",
+        rights=INTAKE_RIGHTS,
         store_anchor=DirectoryAnchor(store),
         input_anchor=DirectoryAnchor(inputs),
     )

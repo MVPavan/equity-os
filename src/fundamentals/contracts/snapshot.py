@@ -94,6 +94,7 @@ SECRET_PARAMETER_NAMES = frozenset(
 SECRET_VALUE_PATTERN = r"^(Bearer\s+)?[A-Za-z0-9_\-]{40,}$"
 _SECRET_VALUE_RE = re.compile(SECRET_VALUE_PATTERN)
 
+A05_DECISION_004 = "A05-DECISION-004"
 A05_DECISION_005 = "A05-DECISION-005"
 
 SECRET_NAME_REFUSED = "request parameter name is a credential: {name}"
@@ -250,6 +251,10 @@ class SnapshotRights(BaseModel):
         if not self.authority_refs:
             raise ValueError(NO_AUTHORITY_REF)
         return self
+
+
+# Private, personal, non-commercial source use (A05-DECISION-004): every retained-intake capture.
+INTAKE_RIGHTS = SnapshotRights(authority_refs=(A05_DECISION_004,))
 
 
 class CaptureRecord(BaseModel):
