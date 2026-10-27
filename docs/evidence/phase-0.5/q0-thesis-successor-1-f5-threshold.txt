@@ -1,0 +1,18 @@
+FY26_Q2 (2025-07-01..2025-09-30)
+  source  data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml sha256 90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799 context OneD
+  in-capmkt:TaxExpense       (filed total tax, ₹ crore)       88.83
+  in-capmkt:ProfitBeforeTax  (PBT before associates, ₹ crore) 340.56
+  rate = TaxExpense / ProfitBeforeTax × 100 = 26.083510  (2 places: 26.08)
+FY26_Q1 (2025-04-01..2025-06-30)
+  source  data/raw/watchlist/aparinds/nse/INTEGRATED_FILING_INDAS_1496866_29072025062446_WEB.xml sha256 a3c8d9d60e82ac1a0a8eaec0fdbb894155c7ff69db00eed91e454b8f153f2de1 context OneD
+  in-capmkt:TaxExpense       (filed total tax, ₹ crore)       89.61
+  in-capmkt:ProfitBeforeTax  (PBT before associates, ₹ crore) 352.51
+  rate = TaxExpense / ProfitBeforeTax × 100 = 25.420555  (2 places: 25.42)
+
+F5 threshold = FY26_Q2 rate + (FY26_Q2 rate − FY26_Q1 rate), 2 places ROUND_HALF_EVEN
+  A. rates rounded to 2 places first (as the Q0 derivation did): 26.08 + (26.08 − 25.42) = 26.74
+  B. unrounded rates, threshold rounded last: 26.75
+  A == B: False
+Q0 F5 predicate (q0-approved-thesis.yaml): effective_tax_rate_pct GT 26.78
+Recomputed threshold (A) differs from Q0's: True
+Recomputed threshold (B) differs from Q0's: True
