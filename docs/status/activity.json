@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "E2E analysis: research output is a data sheet (eqos-bnx); live health check added",
-    "detail": "db check-live now guards the live DB (gate row 'Live DB'). The analysis found the analyst sections (drivers, thesis impact, falsifiers, open questions, memory draft) are hard-coded placeholders; decision register A-04/B-02 remain Critical/Open. The pilot PASS proves the plumbing, not research output.",
-    "stage": "Analysis"
+    "title": "Research slice 1 committed: deterministic falsifier status in run drafts (eqos-bnx)",
+    "detail": "Run drafts now carry falsifier sections computed by code against the thesis approved at the cutoff (ae1ed33e; Sol r2 APPROVE). Closing fresh Sol review running. Next: live successor thesis, migration 0042 applied live, Apar drafts regenerated.",
+    "stage": "Review"
   },
   "next": [
-    "Research slice 1: deterministic falsifier status in reports",
+    "Slice 1 live steps: successor thesis (F5 = tax / PBT), migrate 0042, regenerate Apar drafts",
     "Research slice 2: segment lines (fix eqos-djv/ghv)",
     "Research slice 3: spec for model-drafted analyst sections (Sol-reviewed)",
     "Mapping/extraction fixes: eqos-dol, eqos-n21; queue policy eqos-4vl"
   ],
   "log": [
+    {
+      "date": "2026-10-27",
+      "text": "eqos-bnx slice 1 code committed (ae1ed33e): falsifier status, THESIS_CLAIM citations (migration 0042), ledger import --thesis-successor; thesis-impact retired. Gate 4417 passed; verifier test + skip baseline fixed (e28d4499)."
+    },
     {
       "date": "2026-10-23",
       "text": "eqos-px2: fundamentals db check-live (read-only live-state check) + 'Live DB' gate row. E2E finding eqos-bnx: report analyst sections are placeholders; A-04/B-02 unmet."
