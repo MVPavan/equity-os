@@ -5,6 +5,9 @@ from functools import partial
 
 import pytest
 from retention_support import record_of
+from vendor_surface_support import rig
+
+__all__ = ["rig"]
 
 from fundamentals.ingest.vendor_surface_fetch import Fetched
 from fundamentals.store.vendor_values_store import (
@@ -81,3 +84,18 @@ def test_yield_checks_and_cli(pg_db, first, second, version, check, monkeypatch,
     assert "skipped" in captured.err
     if check:
         assert check in captured.out and base.request.request_key in captured.out
+
+
+@pytest.mark.retained
+def test_retained_tracer_has_green_canary(rig, capsys):
+    from test_vendor_surface_tracer import run_capture
+
+    from fundamentals.api.cli import main
+
+    _, root = rig
+    assert run_capture(root) == 0
+    capsys.readouterr()
+    assert main(["vendor", "canary", "--yield-only"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "skipped" in captured.err
