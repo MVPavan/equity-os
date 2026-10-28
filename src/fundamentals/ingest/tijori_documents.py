@@ -69,7 +69,7 @@ def tijori_document_request(link: DocumentLink) -> Request | None:
         return None
     return Request(
         unit=VerificationUnit.EXCHANGE,
-        source_id="tijori-documents",
+        source_id="tijori",
         surface=f"TIJORI_{link.kind}",
         url=urlunsplit(parts._replace(path=quote(parts.path, safe="/%"))),
     )

@@ -388,11 +388,11 @@ def test_tijori_intake_and_citations(lane: Lane, capsys: pytest.CaptureFixture[s
     assert "CITE\tCORROBORATED\t17\n" in out and "CITE\tVENDOR_COPY\t86\n" in out
     with lane.db.runtime_pool() as pool, pool.connection() as conn:
         [(key,)] = conn.execute(
-            "SELECT request_key FROM eqos.capture_refs WHERE source_id='tijori-documents' "
+            "SELECT request_key FROM eqos.capture_refs WHERE source_id='tijori' "
             "AND surface='TIJORI_TRANSCRIPT' LIMIT 1"
         ).fetchall()
         store = SnapshotStore(args.snapshot_root)
-        record = store.list_captures("tijori-documents", "TIJORI_TRANSCRIPT", key)[0]
+        record = store.list_captures("tijori", "TIJORI_TRANSCRIPT", key)[0]
         assert record.rights.authority_refs == (
             "docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md",
         )

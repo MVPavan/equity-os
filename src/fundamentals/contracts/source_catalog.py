@@ -199,11 +199,6 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     _derived("screener"),
     _derived("screener-subscriber"),
     _derived("tijori"),
-    SourceDescriptor(
-        source_id="tijori-documents",
-        source_class=SourceClass.DERIVED,
-        evidence_role=EvidenceRole.DIAGNOSTIC_ONLY,
-    ),
     _derived("et-markets-rss", is_namespace=True),
     # Owner configuration and internal stores are not evidence. They are declared
     # derived so they can never satisfy the two-first-party requirement.
@@ -355,9 +350,8 @@ TIJORI_KINDS = {
     "Investor Presentation": DocumentKind.PRESENTATION,
     "Earnings Release": DocumentKind.RESULTS,
 }
-TIJORI_DOCUMENT_SURFACES = tuple(
-    ("tijori-documents", f"TIJORI_{kind}") for kind in TIJORI_KINDS.values()
-)
+# Under the ``tijori`` source id so Tijori's licence end covers its document copies.
+TIJORI_DOCUMENT_SURFACES = tuple(("tijori", f"TIJORI_{kind}") for kind in TIJORI_KINDS.values())
 VENDOR_SURFACES += tuple(
     _surface(*pair, Representation.PDF, SourceRole.DIAGNOSTIC, _SUBSCRIBER_RIGHTS)
     for pair in TIJORI_DOCUMENT_SURFACES

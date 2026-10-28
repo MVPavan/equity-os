@@ -1,9 +1,4 @@
 -- DOCS-1: listing coverage, occurrence revisions and per-revision document attempts.
--- Tijori's document copies are vendor-bounded like Tijori itself (R3).
-CREATE OR REPLACE FUNCTION eqos.is_vendor_source(source text) RETURNS boolean
-LANGUAGE sql IMMUTABLE AS $$
-    SELECT source IN ('screener', 'screener-subscriber', 'tijori', 'tijori-documents', 'upstox')
-$$;
 CREATE TABLE eqos.document_listings (
     id bigserial PRIMARY KEY,
     entity_id bigint NOT NULL,
