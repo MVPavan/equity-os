@@ -31,6 +31,16 @@ from fundamentals.contracts.canonical import Representation
 from fundamentals.contracts.comparison import SourceRole
 
 
+class DocumentKind(StrEnum):
+    """First-party document kinds retained without interpretation."""
+
+    TRANSCRIPT = "TRANSCRIPT"
+    PRESENTATION = "PRESENTATION"
+    ANNUAL_REPORT = "ANNUAL_REPORT"
+    CREDIT_RATING = "CREDIT_RATING"
+    RESULTS = "RESULTS"
+
+
 class SourceClass(StrEnum):
     """Whether a source is an authoritative first-party filing or a derived aggregator."""
 
@@ -194,6 +204,14 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     # derived so they can never satisfy the two-first-party requirement.
     _derived("watchlist-config"),
     _derived("news-store"),
+    *(
+        SourceDescriptor(
+            source_id=source,
+            source_class=SourceClass.FIRST_PARTY,
+            evidence_role=EvidenceRole.DIAGNOSTIC_ONLY,
+        )
+        for source in ("nse-documents", "bse-documents")
+    ),
 )
 
 _EXCHANGE_RIGHTS = "docs/evidence/phase-0a/a-05-rights-decision-004-private-use.md"
@@ -308,4 +326,25 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
         *SCREENER_INVESTORS, Representation.JSON, SourceRole.INDEPENDENT_VENDOR, _SUBSCRIBER_RIGHTS
     ),
     _surface(*UPSTOX_SHAREHOLDING, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC),
+)
+
+# DOCS-1 surfaces retain first-party bytes without reconciliation.
+DOCUMENT_LISTINGS = ("ANNOUNCEMENTS_LISTING", "BOARD_MEETINGS_LISTING", "ANNUAL_REPORTS_LISTING")
+DOCUMENT_HOSTS = {"nse-documents": "nsearchives.nseindia.com", "bse-documents": "www.bseindia.com"}
+VENDOR_SURFACES += (
+    *(
+        _surface("nse", surface, Representation.JSON, SourceRole.DIAGNOSTIC, _EXCHANGE_RIGHTS)
+        for surface in DOCUMENT_LISTINGS
+    ),
+    *(
+        _surface(
+            source,
+            f"{source[:3].upper()}_{kind}",
+            Representation.PDF,
+            SourceRole.DIAGNOSTIC,
+            _EXCHANGE_RIGHTS,
+        )
+        for source in DOCUMENT_HOSTS
+        for kind in DocumentKind
+    ),
 )

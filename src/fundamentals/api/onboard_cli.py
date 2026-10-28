@@ -264,7 +264,9 @@ def live_transport() -> Send:
         if request.url.startswith(NSE_API):  # the NSE API needs the client's primed session
             return _nse_send(request.url)
         headers = {"User-Agent": _AGENT}
-        if (request.source_id, request.surface) == BSE_PEER_SEARCH:
+        if (request.source_id, request.surface) == BSE_PEER_SEARCH or urlsplit(
+            request.url
+        ).netloc == "www.bseindia.com":
             headers |= _BSE_HEADERS
         cookie = cookies.get(request.source_id)
         if cookie:

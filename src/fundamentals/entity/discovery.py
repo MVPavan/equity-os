@@ -47,6 +47,8 @@ from fundamentals.contracts.snapshot import (
 )
 from fundamentals.contracts.source_catalog import (
     BSE_PEER_SEARCH,
+    DOCUMENT_HOSTS,
+    DOCUMENT_LISTINGS,
     NSE_INTEGRATED_LISTING,
     NSE_MASTER,
     NSE_RESULTS_LISTING,
@@ -58,6 +60,7 @@ from fundamentals.contracts.source_catalog import (
     UPSTOX_INSTRUMENTS,
     UPSTOX_ROUTED,
     UPSTOX_STATEMENT,
+    DocumentKind,
     SurfaceAuthority,
     SurfaceNotAuthorisedError,
     surface_authority,
@@ -95,6 +98,7 @@ from fundamentals.evidence.capture_retention import Registration, capture_regist
 from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.xbrl_adapter import parse_instance
+from fundamentals.ingest.http_session import ResponseTooLargeError
 from fundamentals.ingest.nse_filings import (
     EQUITY_MASTER_URL,
     INTEGRATED_LISTING,
@@ -118,6 +122,7 @@ NOT_AUTHORISED = "NOT_AUTHORISED"
 UPSTOX_ROUTE = "default"
 TIMEOUT = "TIMEOUT"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
+TOO_LARGE = "TOO_LARGE"
 FILINGS_CHECKED = 2
 _IN = "IN"
 _HTTPS = "https"
@@ -138,6 +143,14 @@ ORIGINS = {
     UPSTOX_INSTRUMENTS: "assets.upstox.com",
     UPSTOX_STATEMENT: "api.upstox.com",
 }
+ORIGINS.update({("nse", surface): _NSE_WWW for surface in DOCUMENT_LISTINGS})
+ORIGINS.update(
+    {
+        (source, f"{source[:3].upper()}_{kind}"): host
+        for source, host in DOCUMENT_HOSTS.items()
+        for kind in DocumentKind
+    }
+)
 _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text={isin}"
 _SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?{query}"
 _SCREENER_PAGE_URL = "https://www.screener.in/company/{symbol}/consolidated/"
@@ -319,6 +332,8 @@ def acquiring_fetch(send: Send, clock: Callable[[], datetime], log: list[Capture
             try:
                 status, body = send(request)
                 result = OK if status == 200 else f"HTTP_{status}"
+            except ResponseTooLargeError:
+                result = TOO_LARGE
             except TimeoutError:
                 result = TIMEOUT
             except OSError:
