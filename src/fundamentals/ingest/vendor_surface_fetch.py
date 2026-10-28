@@ -224,6 +224,8 @@ class VendorFetcher:
             raise ValueError("site request budget exhausted")
         if not self.lock.acquire(site):
             raise SiteBusy(site)
+        if marker.exists():
+            raise SiteStopped(site)
         session = self.sessions[site]
         headers = {"Cookie": f"{session.cookie_name}={session.session_cookie.get_secret_value()}"}
         if xhr:

@@ -46,6 +46,7 @@ from fundamentals.store.vendor_values_store import USABLE, VendorValuesStore
 
 SPECS = Path("config/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
+STOP_DIR = Path("data")
 
 
 def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -58,19 +59,20 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
         if name == "capture":
             parser.add_argument("--symbol", required=True)
             parser.add_argument("--tijori-slug")
-            parser.add_argument("--stop-dir", type=Path)
 
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true", required=True)
 
 
-def sessions() -> Mapping[Site, SiteSession]:
+def sessions(sites: set[Site]) -> Mapping[Site, SiteSession]:
     """Resolve existing environment credential readers only at this CLI edge."""
     found = {}
-    for site, credentials in (
-        (Site.SCREENER, _screener_credentials_from_env()),
-        (Site.TIJORI, _tijori_credentials_from_env()),
-    ):
+    readers = {
+        Site.SCREENER: _screener_credentials_from_env,
+        Site.TIJORI: _tijori_credentials_from_env,
+    }
+    for site in sites:
+        credentials = readers[site]()
         if credentials is not None and credentials.session_cookie is not None:
             found[site] = SiteSession(
                 site=site, session_cookie=credentials.session_cookie, cookie_name="sessionid"
@@ -84,7 +86,7 @@ def dispatch_vendor_command(
     opener_factory: Callable[[], OpenerDirector] = build_opener,
     pool_factory: Callable[[], ConnectionPool] = lambda: open_pool(PgSettings(), PgRole.RUNTIME),
     store_factory: Callable[[Path], SnapshotStore] = SnapshotStore,
-    sessions_factory: Callable[[], Mapping[Site, SiteSession]] = sessions,
+    sessions_factory: Callable[[set[Site]], Mapping[Site, SiteSession]] = sessions,
 ) -> int | None:
     """Construct the authorized boundaries, then capture or reparse finite specs."""
     if args.command != "vendor":
@@ -108,6 +110,12 @@ def dispatch_vendor_command(
         args.surface and set(args.surface) - {f"{SITE_NAME[s.site]}:{s.id}" for s in selected}
     ):
         raise ValueError("unknown vendor surface")
+    resolved_sessions: Mapping[Site, SiteSession] = {}
+    if args.vendor_command == "capture":
+        required = {spec.site for spec in selected} | {Site.SCREENER}
+        resolved_sessions = sessions_factory(required)
+        for site in required - resolved_sessions.keys():
+            raise ValueError(f"missing vendor session: {site}")
     store = store_factory(args.snapshot_root)
     with pool_factory() as pool:
         values = VendorValuesStore(pool)
@@ -134,9 +142,9 @@ def dispatch_vendor_command(
         locks = PgSiteLock(pool)
         fetcher = VendorFetcher(
             store,
-            sessions_factory(),
+            resolved_sessions,
             opener_factory(),
-            args.stop_dir or args.snapshot_root / "stops",
+            STOP_DIR,
             locks,
         )
         try:

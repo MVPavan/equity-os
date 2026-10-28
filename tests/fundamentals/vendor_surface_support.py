@@ -62,6 +62,7 @@ def rig(pg_db, tmp_path, monkeypatch):
     from fundamentals.api import cli, vendor_surface_cli
     from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession
 
+    monkeypatch.setattr(vendor_surface_cli, "STOP_DIR", tmp_path / "stops", raising=False)
     opener = RetainedOpener()
     root = tmp_path / "captures"
     session = SiteSession(
@@ -72,7 +73,7 @@ def rig(pg_db, tmp_path, monkeypatch):
         opener_factory=lambda: opener,
         pool_factory=pg_db.runtime_pool,
         store_factory=SnapshotStore,
-        sessions_factory=lambda: {Site.SCREENER: session},
+        sessions_factory=lambda sites: {Site.SCREENER: session},
     )
     monkeypatch.setattr(cli, "dispatch_vendor_command", dispatch)
     monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)

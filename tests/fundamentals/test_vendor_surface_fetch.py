@@ -213,3 +213,43 @@ def test_injected_standard_opener_cannot_follow_redirect(tmp_path):
     assert fetched.record.http_status == 302
     assert fetched.location == "https://example.com/document"
     assert calls == ["https://www.screener.in/chart/"]
+
+
+def test_stop_rechecked_after_site_lock(tmp_path):
+    from fundamentals.ingest.vendor_surface_fetch import Site, SiteStopped
+
+    class StoppingLock:
+        def acquire(self, site):
+            (tmp_path / f"STOP-{site}").write_text("another command stopped\n")
+            return True
+
+    opener = Opener()
+    client, _ = fetcher(tmp_path, opener, StoppingLock())
+    with pytest.raises(SiteStopped):
+        client.get(Site.SCREENER, "chart-api", "https://www.screener.in/chart/")
+    assert not opener.calls
+
+
+def test_sessions_resolve_only_selected_site(monkeypatch):
+    from fundamentals.api.vendor_surface_cli import sessions
+    from fundamentals.ingest.vendor_surface_fetch import Site
+
+    monkeypatch.setenv("SCREENER_SESSION_COOKIE", "synthetic")
+    monkeypatch.setenv("TIJORI_EMAIL", "synthetic@example.com")
+    monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
+    assert set(sessions({Site.SCREENER})) == {Site.SCREENER}
+
+
+def test_missing_session_refused_before_fetch():
+    from fundamentals.api.cli_parser import build_parser
+    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
+
+    args = build_parser().parse_args(
+        ["vendor", "capture", "--symbol", "APARINDS", "--surface", "screener:chart-api"]
+    )
+    with pytest.raises(ValueError, match="missing vendor session: screener-subscriber"):
+        dispatch_vendor_command(
+            args,
+            sessions_factory=lambda sites: {},
+            pool_factory=lambda: pytest.fail("credentials must be checked before opening the pool"),
+        )

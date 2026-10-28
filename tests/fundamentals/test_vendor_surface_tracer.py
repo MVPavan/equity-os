@@ -286,3 +286,15 @@ def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
     assert report["incomplete"]
     if mutation in ("missing", "empty"):
         assert report["expected"] == 2 and report["completed"] == 1
+
+
+def test_stop_shared_across_snapshot_roots(rig, capsys):
+    opener, root = rig
+    opener.stop = True
+    run_capture(root)
+    capsys.readouterr()
+    before = len(opener.calls)
+    run_capture(root.with_name("other-captures"))
+    report = json.loads(capsys.readouterr().out)
+    assert report["stopped_sites"] == ["screener-subscriber"]
+    assert len(opener.calls) == before
