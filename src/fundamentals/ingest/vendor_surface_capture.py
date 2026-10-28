@@ -81,9 +81,9 @@ def parse_and_record(
     ref: CaptureReference,
     record: CaptureRecord,
     request: Request,
+    body: Body | None = None,
 ) -> tuple[OutcomeStatus, ...]:
     """Read registered bytes and atomically store each logical surface's parse result."""
-    body = None
     context = ParseContext(
         ids=request.ids,
         basis=request.basis,
@@ -159,7 +159,7 @@ def capture(
     pool: ConnectionPool,
     values: VendorValuesStore,
     request: Request,
-) -> CaptureReference:
+) -> tuple[CaptureReference, Body | None]:
     """Register before parsing, including the response that durably stops a site."""
     try:
         fetched = fetcher.get(request.spec.site, request.spec.id, request.url, xhr=request.spec.xhr)
@@ -181,8 +181,14 @@ def capture(
             )
         raise
     ref = register(pool, fetched)
-    parse_and_record(store, values, ref, fetched.record, request)
-    return ref
+    body = (
+        Body(raw=store.read_body(fetched.record))
+        if fetched.record.http_status == 200
+        and fetched.record.effective_body_completeness is BodyCompleteness.COMPLETE
+        else None
+    )
+    parse_and_record(store, values, ref, fetched.record, request, body)
+    return ref, body
 
 
 def reparse(

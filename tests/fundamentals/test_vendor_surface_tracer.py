@@ -27,7 +27,17 @@ def run_capture(root):
     )
 
 
-def test_tracer_cli_retained_chart(rig, pg_db, capsys):
+def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch):
+    from fundamentals.ingest import vendor_surface_parse
+
+    parses = []
+    original = vendor_surface_parse.parse_document
+
+    def counted(text):
+        parses.append(True)
+        return original(text)
+
+    monkeypatch.setattr(vendor_surface_parse, "parse_document", counted)
     opener, root = rig
     assert run_capture(root) == 0
     report = json.loads(capsys.readouterr().out)
@@ -39,6 +49,7 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys):
         "stopped_sites": [],
     }
     assert len(opener.calls) == 7
+    assert len(parses) == 1
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
             "SELECT column_label, count(*) FROM eqos.vendor_values "
@@ -222,3 +233,49 @@ def test_kept_parent_dispatches_section_parser(rig, pg_db, monkeypatch):
         assert conn.execute(
             "SELECT status FROM eqos.vendor_outcomes WHERE surface='section-proof'"
         ).fetchone() == ("EMPTY",)
+
+
+@pytest.mark.parametrize("mutation", ["basis", "missing", "empty", "anonymous", "identity"])
+def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
+    from fundamentals.ingest.screener_session_page import parse_document
+
+    opener, root = rig
+    original = opener.open
+
+    def mutated(request, timeout):
+        response = original(request, timeout)
+        if request.full_url.startswith("https://www.screener.in/company/"):
+            from lxml import html
+
+            tree = parse_document(response.read().decode())
+            if mutation == "basis":
+                tree.xpath('//*[@id="company-info"]')[0].attrib.pop("data-warehouse-id")
+            elif mutation == "missing":
+                for control in tree.xpath('//*[@id="chart"]//*[@name="metrics"]'):
+                    control.getparent().remove(control)
+            elif mutation == "empty":
+                for control in tree.xpath('//*[@id="chart"]//*[@name="metrics"]'):
+                    control.set("value", "")
+            elif mutation == "anonymous":
+                for form in tree.xpath('//form[@action="/logout/"]'):
+                    form.getparent().remove(form)
+            else:
+                tree.xpath('//*[@id="company-info"]')[0].set("data-company-id", "1")
+            import io
+            from urllib.error import HTTPError
+
+            response = HTTPError(
+                request.full_url, 200, "fixture", response.headers, io.BytesIO(html.tostring(tree))
+            )
+        return response
+
+    monkeypatch.setattr(opener, "open", mutated)
+    run_capture(root)
+    report = json.loads(capsys.readouterr().out)
+    if mutation == "basis":
+        assert len(opener.calls) == 7 and report["completed"] == 1
+    else:
+        assert len(opener.calls) == 1
+    assert report["incomplete"]
+    if mutation in ("missing", "empty"):
+        assert report["expected"] == 2 and report["completed"] == 1

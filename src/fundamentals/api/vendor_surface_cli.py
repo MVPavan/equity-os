@@ -18,10 +18,10 @@ from fundamentals.api.env_credentials import (
     _tijori_credentials_from_env,
 )
 from fundamentals.api.watchlist_config import load_watchlist_config
-from fundamentals.ingest.screener_session_models import Basis
+from fundamentals.ingest.screener_session_models import Basis, ScreenerSessionError
+from fundamentals.ingest.screener_session_page import assert_logged_in, read_identity
 from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
 from fundamentals.ingest.vendor_surface_capture import (
-    TOPOLOGY_UNKNOWN,
     WATCHLIST,
     Request,
     RunReport,
@@ -38,7 +38,6 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteStopped,
     VendorFetcher,
 )
-from fundamentals.ingest.vendor_surface_parse import Body
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -144,7 +143,7 @@ def dispatch_vendor_command(
             while pending:
                 request = pending.pop(0)
                 try:
-                    ref = capture(fetcher, store, pool, values, request)
+                    ref, body = capture(fetcher, store, pool, values, request)
                 except SiteStopped as error:
                     stopped.append(error.site)
                     incomplete.append(request.url)
@@ -165,19 +164,23 @@ def dispatch_vendor_command(
                 completed += int(usable)
                 if not usable:
                     incomplete.append(request.url)
-                if (
-                    request.spec.id == "company-page"
-                    and chart is not None
-                    and (usable or any(detail == TOPOLOGY_UNKNOWN for _, detail in outcomes))
-                ):
-                    record = store.get_capture(
-                        ref.source_id, ref.surface, ref.request_key, ref.capture_id
-                    )
-                    tree = Body(raw=store.read_body(record)).tree()
-                    company = tree.xpath('//*[@id="company-info"]/@data-company-id')[0]
+                if request.spec.id == "company-page" and chart is not None and body is not None:
+                    tree = body.tree()
+                    try:
+                        assert_logged_in(tree)
+                        company, _ = read_identity(tree)
+                    except ScreenerSessionError:
+                        continue
+                    if company != ids.screener_company_id:
+                        continue
                     metrics = dict.fromkeys(
-                        tree.xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
+                        metric
+                        for metric in tree.xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
+                        if metric
                     )
+                    if not metrics:
+                        expected += 1
+                        incomplete.append("screener:chart-api discovery")
                     children = [
                         Request(
                             spec=chart,
