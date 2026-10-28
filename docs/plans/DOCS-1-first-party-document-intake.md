@@ -604,7 +604,9 @@ the same kind in the issuer's latest revisions:
 - **Other kinds:** NSE announcement links whose broadcast date (IST) lies in
   `[row date − 7, row date + 7]`. Its **coverage** is that the union of `OK` announcement spans
   (each capped at its retrieval date, as `coverage` does; adjacent spans join) contains the whole
-  interval. A row without a day-level date is `UNDATED` and has no candidates.
+  interval. A month-only row date (Step 0 ruling, 2026-10-28) uses `[first day of month − 7,
+  last day of month + 7]`, and its month decides the 2023-07-01 cutoff. A row with no month is
+  `UNDATED` and has no candidates.
 - **Unresolved:** for a TRANSCRIPT, any `CONCALL_UNRESOLVED` announcement (from `latest` +
   `classify_announcement`, dated by `an_dt`) inside the interval.
 - **Row date** for the 2023-07-01 test: the row's date; a year-only annual-report label `Y`
@@ -615,7 +617,7 @@ the same kind in the issuer's latest revisions:
 
 **Precedence (first that holds; computed only for a Tijori copy with an `OK` attempt — otherwise
 Task 4's pending or `GAP` rule applies):**
-1. Non-annual row without a day-level date → `UNDATED` (it has no date or candidates, so no
+1. Non-annual row without a month → `UNDATED` (it has no date or candidates, so no
    higher outcome can hold).
 2. A candidate digest equals the Tijori SHA-256 → `CORROBORATED`, citing the lowest
    `capture_ref_id`, then the lowest member name.
@@ -799,6 +801,21 @@ Risks:
   back to Task 3; common `MISMATCH` opens the identity-rule bead. The LIVE-RUN-1 transcript
   SHA-256 check also covers the matching Tijori copies.
 - **Step 4** checks the Tijori rows and captures as well.
+
+### A1 Step 0 record and orchestrator rulings (2026-10-28)
+
+Step 0 (Sol, APARINDS): page `200`; counts AR 16, Earnings Release 14, Presentation 52,
+Conference Call 53 (all equal the probe); prefix `files.tijorifinance.com/insight/india/4290/<Kind>/`;
+cookieless document GETs return `200` PDF (no cookie needed); **no row carries a day-level date**
+(month only). Rulings:
+1. **Month-only dates** do not stop A1. The candidate interval widens to the whole month ± 7 days
+   (above). Citability is unchanged: a hash match is identity at any window width, and `nse-none`
+   still needs full OK coverage of the wider interval, so a wider window can only add `AMBIGUOUS`,
+   never a wrong citation. Step 0's "no day-level date → stop" is superseded by this ruling.
+2. **Earnings Release → `RESULTS`.** Its first page reads "Financial Results of the Company for
+   the Financial Year ended March 31, 2026", the results statement.
+3. **Annual year label = NSE `toYr`:** the one pair checked (2026 = 2026) agrees, so the label is
+   used.
 
 ### A1 open question
 
