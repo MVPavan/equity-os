@@ -86,7 +86,11 @@ def table_rows(conn: psycopg.Connection[Any], tables: list[str]) -> Rows:
         for table in tables:
             query = sql.SQL("SELECT to_jsonb(t) FROM eqos.{} t").format(sql.Identifier(table))
             rows[table] = {
-                row.get("id", json.dumps(row, sort_keys=True, default=str)): row
+                (
+                    (row["outcome_id"], row["table_key"], row["row_index"], row["column_index"])
+                    if table == "vendor_values"
+                    else row.get("id", json.dumps(row, sort_keys=True, default=str))
+                ): row
                 for (row,) in cursor.execute(query).fetchall()
             }
     return rows

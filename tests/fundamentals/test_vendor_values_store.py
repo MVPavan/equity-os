@@ -10,6 +10,7 @@ from retention_support import record_of, restore_args
 
 from fundamentals.ingest.vendor_surface_fetch import Fetched
 from fundamentals.pg.backup import restore_backup, write_backup
+from fundamentals.pg.restore_check import table_rows
 from fundamentals.pg.settings import PgRole
 from fundamentals.store.snapshot_store import SnapshotStore
 
@@ -123,6 +124,8 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
     _, pool, ref, values = setup_store(pg_db, tmp_path)
     with pool:
         values.record(ref, outcome(), row_count=2)
+        with pool.connection() as conn:
+            before = table_rows(conn, ["vendor_values"])["vendor_values"]
         with pg_db.role_pool(PgRole.PURGE) as purges, purges.connection() as conn:
             conn.execute(
                 "INSERT INTO eqos.capture_states (capture_ref_id,state) "
@@ -131,6 +134,7 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
             )
             conn.execute("SELECT eqos.tombstone_vendor_capture(%s)", (ref.capture_ref_id,))
         with pool.connection() as conn:
+            assert table_rows(conn, ["vendor_values"])["vendor_values"].keys() == before.keys()
             assert conn.execute(
                 "SELECT row_index, column_index, value, raw_text, row_label, column_label, link "
                 "FROM eqos.vendor_values ORDER BY row_index"
