@@ -365,9 +365,9 @@ class _Pass:
                 kind = classify_announcement(row)
                 unresolved |= link.kind == "TRANSCRIPT" and kind == "CONCALL_UNRESOLVED"
                 filed = observed_link(surface, row)
-                if filed is None or filed.kind != link.kind:
+                if (filed.kind if filed else kind) != link.kind:
                     continue
-                req = document_request(filed)
+                req = document_request(filed) if filed else None
                 if req is None:
                     candidates.append((None, "UNAVAILABLE", ()))
                     continue

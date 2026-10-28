@@ -492,6 +492,20 @@ def test_unmapped_annual_candidate_is_unavailable(
     assert "CITE\tNSE_UNAVAILABLE\t1\n" in capsys.readouterr().out
 
 
+def test_unmapped_announcement_candidate_is_unavailable(
+    lane: Lane, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A listed NSE transcript whose attachment cannot be mapped keeps its Tijori copy uncitable."""
+    transcript = next(r for r in lane.retained if "about Transcript" in r["attchmntText"])
+    host = urlsplit(transcript["attchmntFile"]).netloc
+    row = transcript | {
+        "attchmntFile": transcript["attchmntFile"].replace(host, "archives.nseindia.com")
+    }
+    tijori(lane, row)
+    lane.run()
+    assert "CITE\tNSE_UNAVAILABLE\t1\n" in capsys.readouterr().out
+
+
 def test_backfill_honours_its_range_after_daily_coverage(lane: Lane) -> None:
     """Existing daily coverage cannot move a backfill's start past its requested --from."""
     assert lane.run() == 0
