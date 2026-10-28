@@ -117,11 +117,31 @@ mode_red() {
 
   echo "verify.sh red ${slice} · $(date -u +%Y-%m-%dT%H:%MZ)"
 
-  ( cd "${REPO_ROOT}" && uv run pytest "$@" -q --tb=no -rA ) >"${log}" 2>&1
+  local imported
+  imported="$(mktemp)"
+  ( cd "${REPO_ROOT}" && uv run python - "${REPO_ROOT}" "${imported}" "$@" -q --tb=no -rA <<'PYEOF'
+import pathlib, sys, pytest
+
+root = pathlib.Path(sys.argv[1])
+status = pytest.main(sys.argv[3:])
+# Inspect the test process itself: this includes transitive helpers, dynamically
+# imported support and pytest's conftests, without scanning unrelated test files.
+paths = set()
+for module in tuple(sys.modules.values()):
+    filename = getattr(module, "__file__", None)
+    if filename:
+        path = pathlib.Path(filename).resolve()
+        if path.is_relative_to(root / "tests") and path.suffix == ".py":
+            paths.add(str(path.relative_to(root)))
+pathlib.Path(sys.argv[2]).write_text("\n".join(sorted(paths)))
+raise SystemExit(status)
+PYEOF
+  ) >"${log}" 2>&1
   local outcomes
   outcomes="$(grep -E '^(PASSED|FAILED|ERROR) ' "${log}" || true)"
 
   if [ -z "${outcomes}" ]; then
+    rm -f "${imported}"
     echo "collect        FAIL  no tests collected from: $*"
     echo "log            ${log#"${REPO_ROOT}/"}"
     echo "ROUTE: CONTRACT  the acceptance tests do not exist or do not collect"
@@ -138,7 +158,7 @@ mode_red() {
   collected="$( cd "${REPO_ROOT}" && uv run pytest "$@" -q --collect-only 2>/dev/null | grep '::' || true )"
 
   VERIFY_ROOT="${REPO_ROOT}" VERIFY_SLICE="${slice}" VERIFY_TARGETS="$*" \
-  VERIFY_OUTCOMES="${outcomes}" VERIFY_COLLECTED="${collected}" \
+  VERIFY_OUTCOMES="${outcomes}" VERIFY_COLLECTED="${collected}" VERIFY_IMPORTED="${imported}" \
     python3 - "${proof}" <<'PYEOF'
 import hashlib, json, os, sys, datetime, pathlib
 
@@ -161,17 +181,11 @@ for line in os.environ["VERIFY_OUTCOMES"].splitlines():
     )
     tests.append({"nodeid": match or rest.split(" - ", 1)[0].strip(), "outcome": outcome})
 
-# Hash the acceptance files themselves. The gate later re-hashes them, which
-# catches an implementer editing the contract even when the file is untracked
-# and `git diff` would show nothing.
-#
-# Two sources, deliberately. Files derived from node ids are the tests. Files
-# named as targets that collect NO tests are the shared support modules — the
-# synthetic fixture builders and the transport seam. Those carry as much of the
-# contract as the assertions do, and protecting only the node-id files would
-# leave an implementer free to weaken a fixture until the test it feeds passes.
+# Seal acceptance files, explicit support targets, and local modules loaded by
+# pytest. Fixtures and conftests carry the contract even when they yield no ids.
 paths = {root / nodeid.split("::", 1)[0] for nodeid in {t["nodeid"] for t in tests}}
 paths |= {root / a for a in os.environ["VERIFY_TARGETS"].split() if (root / a).is_file()}
+paths |= {root / p for p in pathlib.Path(os.environ["VERIFY_IMPORTED"]).read_text().splitlines()}
 files = []
 for path in paths:
     if path.is_file():
@@ -190,6 +204,7 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({
 }, indent=2) + "\n")
 PYEOF
 
+  rm -f "${imported}"
   echo "collected      OK    ${total} acceptance tests"
   echo "proof          ${proof#"${REPO_ROOT}/"}"
   if [ -n "${passed}" ]; then
