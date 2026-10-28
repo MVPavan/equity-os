@@ -8,7 +8,7 @@ import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 from urllib.request import OpenerDirector, build_opener
 
 from psycopg_pool import ConnectionPool
@@ -182,8 +182,14 @@ def dispatch_vendor_command(
                     children = [
                         Request(
                             spec=chart,
-                            url=f"https://{SITE_AUTHORITY[page.site]}/api/company/{company}/chart/?"
-                            + urlencode({"q": metric, "days": 10000, "consolidated": ""}),
+                            url=f"https://{SITE_AUTHORITY[page.site]}"
+                            + chart.path.format_map(
+                                {
+                                    "company_id": company,
+                                    "metric-set": quote(metric, safe=""),
+                                    "n": 10000,
+                                }
+                            ),
                             ids=ids,
                             due_since=None,
                         )

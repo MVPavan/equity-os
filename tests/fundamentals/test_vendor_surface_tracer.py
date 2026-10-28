@@ -197,3 +197,28 @@ def test_incomplete_body_never_parsed(rig, pg_db, group):
             Request(spec=spec, url="https://www.screener.in/chart/", ids=None, due_since=None),
         )
         assert [state.value for state in states] == ["UNUSABLE"]
+
+
+def test_kept_parent_dispatches_section_parser(rig, pg_db, monkeypatch):
+    from fundamentals.api import vendor_surface_cli
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry, company_page
+
+    original = vendor_surface_cli.load_specs
+
+    def with_section(path, catalog):
+        page, chart = original(path, catalog)
+        return page.model_copy(update={"sections": ("section-proof",)}), chart
+
+    monkeypatch.setattr(vendor_surface_cli, "load_specs", with_section)
+    monkeypatch.setitem(
+        PARSERS,
+        (Site.SCREENER, "section-proof"),
+        ParserEntry(version="screener:section-proof.v1", parse=company_page),
+    )
+    _, root = rig
+    assert run_capture(root) == 0
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert conn.execute(
+            "SELECT status FROM eqos.vendor_outcomes WHERE surface='section-proof'"
+        ).fetchone() == ("EMPTY",)

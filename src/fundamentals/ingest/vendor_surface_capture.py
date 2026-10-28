@@ -116,7 +116,7 @@ def parse_and_record(
                     version = f"{SITE_NAME[request.spec.site]}:gate.topology.v1"
                     digest = parser_sha256(topology_gate)
                     detail = TOPOLOGY_UNKNOWN
-                elif request.spec.group is ParseGroup.NONE:
+                elif request.spec.group is ParseGroup.NONE and surface == request.spec.id:
                     status = OutcomeStatus.KEPT
                 else:
                     parsed = entry.parse(body, context)
