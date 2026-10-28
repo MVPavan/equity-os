@@ -56,7 +56,7 @@ DENY_KEYS = DENY_WORDS | frozenset(
     "ack acked mark mark_read mark_as_seen seen read dismiss".split()
 )
 NAMED_PATHS = (
-    "/in/watchlist/company/",
+    "/in/watchlist/",
     "/watchlist/",
     "/api/portfolio/task-status/",
     "/api/portfolio/refresh-status/",
@@ -151,7 +151,7 @@ def normalise(url: str) -> str:
 def is_denied(url: str) -> bool:
     """Apply runbook §1 to a normalized URL, exempting company slugs."""
     parts = urlsplit(url)
-    path = parts.path.lower()
+    path = parts.path.lower().rstrip("/") + "/"
     if any(key.lower() in DENY_KEYS for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
         return True
     if path == "/in/edit-columns/" or (

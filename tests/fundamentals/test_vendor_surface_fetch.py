@@ -178,3 +178,14 @@ def test_partial_busy_and_budget(tmp_path: Path):
     with pytest.raises(SiteBusy):
         busy.get(Site.SCREENER, "chart-api", fetched.url)
     assert len(opener.calls) == 1
+
+
+def test_normalised_account_paths(tmp_path):
+    from fundamentals.ingest.vendor_surface_fetch import Site
+
+    opener = Opener()
+    client, _ = fetcher(tmp_path, opener)
+    for path in ("/%2e%2e/watchlist/", "//in//watchlist"):
+        with pytest.raises(ValueError):
+            client.get(Site.SCREENER, "chart-api", "https://www.screener.in" + path)
+    assert not opener.calls
