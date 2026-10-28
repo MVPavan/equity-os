@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlsplit
@@ -15,6 +16,17 @@ if TYPE_CHECKING:
 
 def screener_chart(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     """Read exact numbers by dataset/point position, preserving display text."""
+
+    def valid_value(value: object) -> bool:
+        return (
+            value is None
+            or isinstance(value, tuple)
+            or (
+                isinstance(value, str)
+                and re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", value) is not None
+            )
+        )
+
     # A tuple tags a JSON number while retaining its exact lexeme, unlike a JSON string.
     document = json.loads(body.raw, parse_float=lambda raw: (raw,), parse_int=lambda raw: (raw,))
     if not isinstance(document, dict) or not isinstance(document.get("datasets"), list):
@@ -31,13 +43,21 @@ def screener_chart(body: Body, context: ParseContext) -> tuple[VendorValue, ...]
         for row, point in enumerate(dataset["values"]):
             if (
                 not isinstance(point, list)
-                or len(point) != 2
+                or len(point) not in (2, 3)
                 or not isinstance(point[0], str)
-                or (point[1] is not None and not isinstance(point[1], tuple))
+                or not valid_value(point[1])
+                or (
+                    len(point) == 3
+                    and (
+                        not isinstance(point[2], dict)
+                        or point[2].keys() != {"delivery"}
+                        or not valid_value(point[2]["delivery"])
+                    )
+                )
             ):
-                raise ValueError("chart point must be [date string, number or null]")
-            raw = point[1][0] if point[1] is not None else "null"
-            value = Decimal(raw) if point[1] is not None else None
+                raise ValueError("invalid chart point or delivery metadata")
+            raw = point[1][0] if isinstance(point[1], tuple) else point[1]
+            value = Decimal(raw) if raw is not None else None
             values.append(
                 VendorValue(
                     table_key=metric_set,
@@ -46,7 +66,7 @@ def screener_chart(body: Body, context: ParseContext) -> tuple[VendorValue, ...]
                     locator=f"/datasets/{column}/values/{row}/1",
                     row_label=str(point[0]),
                     column_label=dataset["label"],
-                    raw_text=raw,
+                    raw_text=raw if raw is not None else "null",
                     value=value,
                     expected_numeric=True,
                 )

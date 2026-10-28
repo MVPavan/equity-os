@@ -29,22 +29,43 @@ def run_capture(root):
 
 
 @pytest.mark.parametrize(
-    "chart",
+    "chart,expected_values",
     [
-        None,
-        '{"datasets": {"label": "Price", "values": []}}',
-        '{"datasets": ["invalid"]}',
-        '{"datasets": [{"label": "Price", "values": {"2026-10-28": 9107.50}}]}',
-        '{"datasets": [{"label": "Price", "values": ["123"]}]}',
-        '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1, 2]]}]}',
-        '{"datasets": [{"label": "Price", "values": [[123, 1]]}]}',
-        '{"datasets": [{"label": "Price", "values": [["2026-10-28", "123"]]}]}',
-        '{"datasets": [{"label": "Price", "values": [["2026-10-28", true]]}]}',
-        '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1e-8], '
-        '["2026-10-29", 1e20], ["2026-10-30", null]]}]}',
+        (None, None),
+        ('{"datasets": {"label": "Price", "values": []}}', []),
+        ('{"datasets": ["invalid"]}', []),
+        ('{"datasets": [{"label": "Price", "values": {"2026-10-28": 9107.50}}]}', []),
+        ('{"datasets": [{"label": "Price", "values": ["123"]}]}', []),
+        ('{"datasets": [{"label": "Price", "values": [["2026-10-28", 1, 2]]}]}', []),
+        ('{"datasets": [{"label": "Price", "values": [[123, 1]]}]}', []),
+        (
+            '{"datasets": [{"label": "Price", "values": [["2026-10-28", "123"]]}]}',
+            [("123", Decimal("123"))],
+        ),
+        ('{"datasets": [{"label": "Price", "values": [["2026-10-28", "abc"]]}]}', []),
+        ('{"datasets": [{"label": "Price", "values": [["2026-10-28", true]]}]}', []),
+        (
+            '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1, '
+            '{"delivery": 45, "extra": 1}]]}]}',
+            [],
+        ),
+        (
+            '{"datasets": [{"label": "Price", "values": [["2026-10-28", "9107.50", '
+            '{"delivery": "-45.00"}]]}]}',
+            [("9107.50", Decimal("9107.50"))],
+        ),
+        (
+            '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1e-8], '
+            '["2026-10-29", 1e20], ["2026-10-30", null]]}]}',
+            [
+                ("1e-8", Decimal("0.00000001")),
+                ("1e20", Decimal("100000000000000000000")),
+                ("null", None),
+            ],
+        ),
     ],
 )
-def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart):
+def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart, expected_values):
     from fundamentals.ingest import vendor_surface_parse
 
     parses = []
@@ -72,31 +93,30 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart):
     monkeypatch.setattr(opener, "open", chart_response)
     assert run_capture(root) == 0
     report = json.loads(capsys.readouterr().out)
+    completed = 2 if chart is None or expected_values else 1
     assert report == {
         "expected": 7,
-        "completed": 1 if chart is not None and "1e-8" not in chart else 2,
+        "completed": completed,
         "refused": [],
-        "incomplete": opener.calls[1 if chart is not None and "1e-8" not in chart else 2 :],
+        "incomplete": opener.calls[completed:],
         "stopped_sites": [],
     }
     assert len(opener.calls) == 7
     assert len(parses) == 1
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         if chart is not None:
+            status = "FAILED"
+            if expected_values:
+                status = "PARTIAL" if any(value is None for _, value in expected_values) else "OK"
             assert conn.execute(
                 "SELECT status FROM eqos.vendor_outcomes "
                 "WHERE surface='chart-api' ORDER BY id LIMIT 1"
-            ).fetchone() == (("PARTIAL",) if "1e-8" in chart else ("FAILED",))
-            assert conn.execute(
-                "SELECT raw_text,value FROM eqos.vendor_values ORDER BY row_index"
-            ).fetchall() == (
-                [
-                    ("1e-8", Decimal("0.00000001")),
-                    ("1e20", Decimal("100000000000000000000")),
-                    ("null", None),
-                ]
-                if "1e-8" in chart
-                else []
+            ).fetchone() == (status,)
+            assert (
+                conn.execute(
+                    "SELECT raw_text,value FROM eqos.vendor_values ORDER BY row_index"
+                ).fetchall()
+                == expected_values
             )
             return
         assert conn.execute(
