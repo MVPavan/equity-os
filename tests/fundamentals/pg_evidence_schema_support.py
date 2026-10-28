@@ -29,6 +29,7 @@ from psycopg.types.json import Jsonb
 from retention_support import RETENTION_TABLES
 
 from fundamentals.pg.settings import SCHEMA_NAME, PgRole
+from fundamentals.store.vendor_values_store import VENDOR_TABLES
 
 pytestmark = pytest.mark.pg
 
@@ -645,7 +646,7 @@ def _tables(conn: psycopg.Connection) -> list[str]:
         (SCHEMA_NAME,),
     ).fetchall()
     excluded = LEDGER_TABLES | REVIEW_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES
-    excluded |= RETENTION_TABLES
+    excluded |= RETENTION_TABLES | VENDOR_TABLES
     return [row[0] for row in rows if row[0] not in excluded]
 
 

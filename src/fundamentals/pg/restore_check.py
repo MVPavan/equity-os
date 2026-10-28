@@ -74,6 +74,7 @@ TOMBSTONES = {
     "calculation_trace_operands": Tombstone(clear=_EXACT),
     "result_source_values": Tombstone(clear=_VALUES),
     "acquisition_attempts": Tombstone(clear=("reason",)),
+    "vendor_values": Tombstone(clear=("value", "raw_text", "row_label", "column_label", "link")),
 }
 
 
@@ -107,6 +108,11 @@ def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
         return {key for key, row in before[table].items() if test(row)}
 
     return {
+        "vendor_values": {
+            key
+            for key, row in before.get("vendor_values", {}).items()
+            if row["capture_ref_id"] in vendor
+        },
         "occurrences": pick("occurrences", lambda r: r["capture_ref_id"] in vendor),
         "interpretations": interps,
         "calculation_traces": traces,
