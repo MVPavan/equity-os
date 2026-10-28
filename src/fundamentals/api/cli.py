@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sys
 from collections import Counter
 from contextlib import ExitStack
@@ -138,6 +139,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 # The pins a pilot run's comparison run must name, by content (PILOT-GAP admission Decision 8).
 PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v6", alignment_rules="v2")
 _CONFIG_DIR = "config"  # as ``compare run``'s default config root
+TEMPORAL_SOURCES_KEY = "temporal_sources"
 _ADMITTED_IN: LiteralString = (
     "SELECT 1 FROM eqos.fact_admissions WHERE store_id = %s AND fact_origin = %s"
     " AND fact_origin_id = %s AND run_id = ANY(%s)"
@@ -712,9 +714,17 @@ def main(
     result = run_command(args, intake_context=intake_context)
 
     if args.out_json:
-        write_bytes_no_clobber(
-            Path(args.out_json), result.update.model_dump_json(indent=2).encode("utf-8")
-        )
+        payload = result.update.model_dump_json(indent=2)
+        if result.update.retrospective:
+            # Contract (c) evidence: each role's admission mode and registration (the pipeline
+            # admits its sources in ``SourceRole`` order).
+            artifact = json.loads(payload)
+            artifact[TEMPORAL_SOURCES_KEY] = {
+                role.value: source.model_dump(mode="json")
+                for role, source in zip(SourceRole, result.temporal_evidence.sources, strict=True)
+            }
+            payload = json.dumps(artifact, indent=2, ensure_ascii=False)
+        write_bytes_no_clobber(Path(args.out_json), payload.encode("utf-8"))
         logger.info("json_artifact_written", out_json=args.out_json)
 
     if args.out:

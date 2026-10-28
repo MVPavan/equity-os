@@ -196,8 +196,11 @@ def test_stage_and_run_admit_registered_originals_retrospectively(
     assert operator_cli.main(argv) == 0
 
     (result,) = results
-    assert [source.mode for source in result.temporal_evidence.sources] == [RETROSPECTIVE] * 3
-    assert json.loads((out / "q2.json").read_bytes())["retrospective"] is True
+    written = json.loads((out / "q2.json").read_bytes())
+    assert written["retrospective"] is True
+    assert {role: source["mode"] for role, source in written["temporal_sources"].items()} == {
+        role: RETROSPECTIVE for role in ("xbrl", "results_pdf", "transcript_pdf")
+    }
     version_id = result.draft_version_id
     assert version_id is not None
     heading = pilot.version(version_id).sections[0].body
