@@ -94,7 +94,7 @@ ruled on its flags. ICICIGI stays, with its tier corrected to Mid. LAURUSLABS ra
 100, so Aurobindo is the Mid pharma. Neither site shows NSE series, so the BE condition is
 dropped and the nano pick is by Screener market cap alone.
 
-**Politeness.** Every request goes through `scratchpad/vendor-crawl/fetch.py`, which is the only
+**Politeness.** Every request goes through `scripts/vendor_crawl/fetch.py`, which is the only
 network path. It allows GET only, to two allowlisted hosts, and does not follow redirects. Across
 all crawlers there is an 8 s gap per site and a cap of 1,200 requests per site per day. Any 403,
 429 or 503, or a redirect to login, writes a STOP file for that site. A URL cache stops repeat
