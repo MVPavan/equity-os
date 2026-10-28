@@ -27,7 +27,23 @@ def run_capture(root):
     )
 
 
-def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch):
+@pytest.mark.parametrize(
+    "chart",
+    [
+        None,
+        '{"datasets": {"label": "Price", "values": []}}',
+        '{"datasets": ["invalid"]}',
+        '{"datasets": [{"label": "Price", "values": {"2026-10-28": 9107.50}}]}',
+        '{"datasets": [{"label": "Price", "values": ["123"]}]}',
+        '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1, 2]]}]}',
+        '{"datasets": [{"label": "Price", "values": [[123, 1]]}]}',
+        '{"datasets": [{"label": "Price", "values": [["2026-10-28", "123"]]}]}',
+        '{"datasets": [{"label": "Price", "values": [["2026-10-28", true]]}]}',
+        '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1e-8], '
+        '["2026-10-29", 1e20], ["2026-10-30", null]]}]}',
+    ],
+)
+def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart):
     from fundamentals.ingest import vendor_surface_parse
 
     parses = []
@@ -39,18 +55,49 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch):
 
     monkeypatch.setattr(vendor_surface_parse, "parse_document", counted)
     opener, root = rig
+    original_open = opener.open
+
+    def chart_response(request, timeout):
+        import io
+        from urllib.error import HTTPError
+
+        response = original_open(request, timeout)
+        if chart is not None and "/chart/" in request.full_url and response.code == 200:
+            return HTTPError(
+                request.full_url, 200, "fixture", response.headers, io.BytesIO(chart.encode())
+            )
+        return response
+
+    monkeypatch.setattr(opener, "open", chart_response)
     assert run_capture(root) == 0
     report = json.loads(capsys.readouterr().out)
     assert report == {
         "expected": 7,
-        "completed": 2,
+        "completed": 1 if chart is not None and "1e-8" not in chart else 2,
         "refused": [],
-        "incomplete": opener.calls[2:],
+        "incomplete": opener.calls[1 if chart is not None and "1e-8" not in chart else 2 :],
         "stopped_sites": [],
     }
     assert len(opener.calls) == 7
     assert len(parses) == 1
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        if chart is not None:
+            assert conn.execute(
+                "SELECT status FROM eqos.vendor_outcomes "
+                "WHERE surface='chart-api' ORDER BY id LIMIT 1"
+            ).fetchone() == (("PARTIAL",) if "1e-8" in chart else ("FAILED",))
+            assert conn.execute(
+                "SELECT raw_text,value FROM eqos.vendor_values ORDER BY row_index"
+            ).fetchall() == (
+                [
+                    ("1e-8", Decimal("0.00000001")),
+                    ("1e20", Decimal("100000000000000000000")),
+                    ("null", None),
+                ]
+                if "1e-8" in chart
+                else []
+            )
+            return
         assert conn.execute(
             "SELECT column_label, count(*) FROM eqos.vendor_values "
             "GROUP BY column_label ORDER BY column_label"
