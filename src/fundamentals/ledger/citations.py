@@ -144,7 +144,8 @@ WHERE c.id = %s AND r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'
     AND d.sealed_digest = %s AND d.sealed_digest = eqos.version_sealed_digest(c.version_id)
 ORDER BY d.recorded_at, d.id LIMIT 1"""
 # Every interpretation behind the cited traces and interpretations, through trace operands,
-# nested traces and constructed interpretations' operands.
+# nested traces and constructed interpretations' operands, in id order so the pinned input
+# fingerprint does not depend on the query plan.
 _INPUTS: LiteralString = (
     """WITH RECURSIVE traces(id) AS (
     SELECT unnest(%(traces)s::bigint[])
@@ -163,7 +164,8 @@ SELECT c.source_id, i.recorded_at, i.occurrence_id, oc.knowledge_time,
     + """ AS first_seen
 FROM interps x JOIN eqos.interpretations i ON i.id = x.id
 JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
-LEFT JOIN eqos.occurrences oc ON oc.id = i.occurrence_id"""
+LEFT JOIN eqos.occurrences oc ON oc.id = i.occurrence_id
+ORDER BY i.id"""
 )
 # M9: the imported quote claims of the entity at the drafted quote's location, with every import
 # source of their versions; only a version its panel IMPORT_SEAL sealed as it stands counts.

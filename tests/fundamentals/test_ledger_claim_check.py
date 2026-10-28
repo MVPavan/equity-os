@@ -17,9 +17,19 @@ from typing import Any
 
 import psycopg
 import pytest
-from ledger_cited_support import Cited, cited
+from ledger_cited_support import OPERAND, Cited, cited
 from ledger_support import SELF_CITED, Ledger, ledger
-from pg_evidence_schema_support import SHA_A, _capture, _insert, runtime, seeded
+from pg_evidence_schema_support import (
+    NOW,
+    SHA_A,
+    _capture,
+    _insert,
+    _interpretation,
+    _occurrence,
+    _trace,
+    runtime,
+    seeded,
+)
 from selection_support import key
 
 from fundamentals.contracts.canonical import ValueKind
@@ -454,6 +464,44 @@ def test_a_trace_does_not_resolve_on_another_issuers_report(cited: Cited) -> Non
     now = datetime.now(UTC)
     state = check_claim(claim, resolved, mode=RunMode.AS_KNOWN, cutoff=now, imported=False)
     assert state is ClaimState.UNRESOLVED
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_traces_inputs_resolve_the_same_in_any_row_order(cited: Cited) -> None:
+    """A trace resolves identically whichever order the store returns its operands' rows in:
+    the approval panel compares two checks of one version, and a plan change between them
+    (here hash versus sort de-duplication) must not change the pinned input fingerprint."""
+    ((capture,),) = cited.query(
+        "SELECT capture_ref_id FROM eqos.interpretations WHERE id = %s", cited.ids["selected"]
+    )
+    with cited.pools[PgRole.RUNTIME].connection() as conn, conn.transaction():
+        trace = _insert(conn, "calculation_traces", _trace("a" * 64))
+        for days in range(6):
+            anchor = f"permutation-{days}"
+            time = {"knowledge_time": NOW + timedelta(days=days)}
+            occurrence = _insert(conn, "occurrences", _occurrence(capture, anchor, **time))
+            row = _interpretation(cited.entity_id, capture, occurrence, key_digest=anchor)
+            operand = OPERAND | {"ordinal": days, "calculation_trace_id": trace}
+            interpretation = _insert(conn, "interpretations", row)
+            _insert(
+                conn, "calculation_trace_operands", operand | {"interpretation_id": interpretation}
+            )
+    citation = Citation(kind=CitationKind.CALCULATION, calculation_trace_id=trace)
+    claim = cited.first_party_trace().model_copy(update={"citation": citation})
+    first = cited.resolve(claim)
+    with cited.runtime() as cursor:
+        cursor.execute("SET LOCAL enable_hashagg = off")
+        second = resolve_citation(
+            cursor,
+            claim,
+            entity_id=cited.entity_id,
+            overlay_position=datetime.now(UTC),
+            catalog=cited.catalog,
+            snapshots=cited.snapshots,
+        )
+    assert first is not None and len(first.times) == 24
+    assert first == second
 
 
 @pytest.mark.pg
