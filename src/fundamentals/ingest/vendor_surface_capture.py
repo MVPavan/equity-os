@@ -238,6 +238,7 @@ def reparse(
                     parser_version=entry.version,
                     parser_sha256=parser_sha256(entry.parse),
                     status=OutcomeStatus.UNUSABLE,
+                    symbol=None,
                     detail="verified company binding unavailable",
                 ),
                 row_count=0,
