@@ -156,7 +156,7 @@ Lane 3 audit by gpt-6.1-sol (2026-10-28), read-only. The orchestrator spot-check
 
 ### F17 — P2 — Invariant: a committed recording script switches to one machine's main checkout
 
-**Evidence:** tracked `scripts/equity_os_blueprint/record_inventory_batch_by_kind.sh:4` runs `cd /data/codes/equity-os`; `:16-18` stages and commits there. The script has only `set -u` (`:3`), so a failed `cd` does not stop execution. Its first generator pipeline (`:6`) also lacks pipefail, letting a successful `cut` hide generator failure.
+**Evidence:** tracked `scripts/equity_os_blueprint/record_inventory_batch_by_kind.sh:4` runs `cd` to a hard-coded machine-local repo path; `:16-18` stages and commits there. The script has only `set -u` (`:3`), so a failed `cd` does not stop execution. Its first generator pipeline (`:6`) also lacks pipefail, letting a successful `cut` hide generator failure.
 
 **Failure inference:** invocation in an isolated worktree operates on the main checkout; on another host a failed `cd` permits the mutating workflow to continue in the caller's unrelated directory. Violates invariant 1 and defeats checkout isolation. **Smallest fix:** derive the repository root from the script location and make changing directory/generation fail the command immediately. No Git command was executed by this script during the review.
 

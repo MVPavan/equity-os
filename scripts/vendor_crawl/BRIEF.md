@@ -8,7 +8,7 @@ Describe surfaces; do not collect data.
 
 ## Hard rules
 1. **Network.** Run `python3 -I scripts/vendor_crawl/fetch.py <your-crawler-id> <url>` from
-   the repo root (/data/codes/equity-os). This is the only way you may reach the network: no
+   the repo root. This is the only way you may reach the network: no
    curl, wget, browser, or other HTTP client. Each call prints one JSON line. The `body` field
    is a path, and you may read only the bodies printed for your own calls.
 2. **Read only GET pages that change nothing.** Never fetch logout links, and never fetch any
