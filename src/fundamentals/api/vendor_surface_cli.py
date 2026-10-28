@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.request import OpenerDirector, build_opener
 
+from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg_pool import ConnectionPool
 
 from fundamentals.api.env_credentials import (
@@ -173,11 +174,11 @@ def dispatch_vendor_command(
                 if not usable:
                     incomplete.append(request.url)
                 if request.spec.id == "company-page" and chart is not None and body is not None:
-                    tree = body.tree()
                     try:
+                        tree = body.tree()
                         assert_logged_in(tree)
                         company, _ = read_identity(tree)
-                    except ScreenerSessionError:
+                    except (ScreenerSessionError, ParserError, UnicodeDecodeError):
                         continue
                     if company != ids.screener_company_id:
                         continue

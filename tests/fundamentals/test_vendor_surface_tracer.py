@@ -249,7 +249,9 @@ def test_kept_parent_dispatches_section_parser(rig, pg_db, monkeypatch):
         ).fetchone() == ("EMPTY",)
 
 
-@pytest.mark.parametrize("mutation", ["basis", "missing", "empty", "anonymous", "identity"])
+@pytest.mark.parametrize(
+    "mutation", ["basis", "missing", "empty", "anonymous", "identity", "empty-body", "invalid-utf8"]
+)
 def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
     from fundamentals.ingest.screener_session_page import parse_document
 
@@ -259,7 +261,19 @@ def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
     def mutated(request, timeout):
         response = original(request, timeout)
         if request.full_url.startswith("https://www.screener.in/company/"):
+            import io
+            from urllib.error import HTTPError
+
             from lxml import html
+
+            if mutation in ("empty-body", "invalid-utf8"):
+                return HTTPError(
+                    request.full_url,
+                    200,
+                    "fixture",
+                    response.headers,
+                    io.BytesIO(b"" if mutation == "empty-body" else b"\xff"),
+                )
 
             tree = parse_document(response.read().decode())
             if mutation == "basis":
@@ -275,9 +289,6 @@ def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
                     form.getparent().remove(form)
             else:
                 tree.xpath('//*[@id="company-info"]')[0].set("data-company-id", "1")
-            import io
-            from urllib.error import HTTPError
-
             response = HTTPError(
                 request.full_url, 200, "fixture", response.headers, io.BytesIO(html.tostring(tree))
             )
@@ -293,6 +304,8 @@ def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
     assert report["incomplete"]
     if mutation in ("missing", "empty"):
         assert report["expected"] == 2 and report["completed"] == 1
+    if mutation in ("empty-body", "invalid-utf8"):
+        assert report["expected"] == 1 and report["completed"] == 0
 
 
 def test_stop_shared_across_snapshot_roots(rig, capsys):
