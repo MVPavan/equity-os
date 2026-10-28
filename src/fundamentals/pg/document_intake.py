@@ -154,3 +154,28 @@ class DocumentIntake:
                 break
             end = max(end or stop, stop)
         return end
+
+
+RETENTION_SHARED = "SELECT eqos.retention_shared()"
+
+# Read statements shared with the composition root; SQL stays in this module.
+COVERED = (
+    "SELECT DISTINCT subject_id FROM eqos.decisions "
+    "WHERE subject_kind='WATCHLIST' AND eqos.watchlisted(subject_id) ORDER BY subject_id"
+)
+INTAKE_ISSUERS = (
+    "SELECT DISTINCT entity_id,symbol FROM eqos.document_listings ORDER BY entity_id,symbol"
+)
+REGISTERED = (
+    "SELECT 1 FROM eqos.capture_refs WHERE source_id=%s AND surface=%s "
+    "AND request_key=%s AND capture_id=%s"
+)
+FAILED_START = (
+    "WITH spans AS (SELECT span_from,span_to,outcome,"
+    "LEAST(span_to,(retrieved_at AT TIME ZONE 'Asia/Kolkata')::date) AS stop "
+    "FROM eqos.document_listings WHERE entity_id=%s AND surface=%s AND span_from IS NOT NULL) "
+    "SELECT min(f.span_from) FROM spans f WHERE f.outcome<>'OK' AND NOT coalesce("
+    "(SELECT range_agg(daterange(s.span_from,s.stop+1,'[)')) "
+    "@> daterange(f.span_from,GREATEST(f.span_from,f.stop)+1,'[)') "
+    "FROM spans s WHERE s.outcome='OK' AND s.stop>=s.span_from),false)"
+)
