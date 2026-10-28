@@ -308,4 +308,4 @@ def test_parser_error_detail_survives_licence_end_without_content(
             assert conn.execute(
                 "SELECT detail FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
                 (ref.capture_ref_id,),
-            ).fetchone() == (("ScreenerSessionError" if session_error else "ValidationError"),)
+            ).fetchone() == (("ScreenerSessionError" if session_error else "ValueError"),)
