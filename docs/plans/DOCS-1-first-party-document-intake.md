@@ -3,12 +3,17 @@
 **Origin:** bead `eqos-msq`; owner targets `docs/goals/2026-10-27-research-report-targets.md`.
 Endpoints, counts and hosts: 2026-10-27 APARINDS probe (`scratchpad/vendor-doc-probe/summary.md`).
 Builds on `docs/plans/LIVE-RUN-1-prerequisites.md` (`eqos-dna`) without duplicating it.
+**Amendment A1** (Tijori primary listing, owner 2026-10-28): approved by gpt-6.1-sol r2 APPROVE
+2026-10-28 after r1 REQUEST_CHANGES (13) fixed under orchestrator rulings; r2 notes applied.
 **Revision:** r3, fixing Sol r2 `REQUEST_CHANGES` (1–8) by orchestrator ruling: intake state moves
 from JSONL events, D8 generation manifests and a tar sidecar into append-only Postgres tables.
 **Goal:** for every covered issuer, transcripts, investor presentations, annual reports,
 NSE-filed credit-rating documents and results documents are located on NSE (Screener used only
 to find links), downloaded from an allowed first-party host, verified, and registered as
-retained captures under A05-DECISION-004. A daily job records every NSE board-meeting and
+retained captures under A05-DECISION-004. Amendment A1 adds Tijori `#companyFilings` as the
+primary listing: every document it lists is fetched as a vendor copy under A05-DECISION-005 and
+is cited only when an NSE capture is byte-identical (the NSE record is cited) or NSE absence is
+proven or it predates 2023-07-01 (the labelled copy is cited). A daily job records every NSE board-meeting and
 announcement revision with its observed time, retries pending documents within a bound, and
 keeps exactly one bead per released result or concall. Apar is backfilled with 8–12 quarters of
 transcripts and presentations and 5 annual reports.
@@ -17,7 +22,8 @@ transcripts and presentations and 5 annual reports.
   and the bead's "first-party balance sheet and cash flow" item. Follow-up bead.
 - DOCS-1 transcripts as run inputs or `SOURCE_QUOTE` targets: runs keep LIVE-RUN-1's
   manifest-bound route (`evidence transcript`, LIVE-RUN-1 Task 2). Follow-up bead.
-- Rating-agency hosts, issuer websites, Tijori copies, recordings (OD-1, OD-2, OD-4, OD-5); BSE's
+- Rating-agency hosts, issuer websites, recordings (OD-1, OD-4, OD-5); Tijori AI reports and Con
+  Call Summary (A1); BSE's
   403 (OD-3); unpacking annual-report ZIPs (14 of 17 NSE entries); moving `bse_pdf_source.py`
   onto the shared rules (follow-up bead).
 - Edits to the news lane (`news_nse.py`, `news/store.py`) or use of D8 generation manifests;
@@ -161,7 +167,7 @@ as covered, and a failed fetch must be kept (invariant 13). Observations do not 
 | # | Decision | Recommendation |
 |---|---|---|
 | OD-1 | **Credit-rating PDFs on CARE/ICRA.** A05-004 covers NSE/BSE only (`a-05-…-004:17`). | **Use only NSE-filed rating announcements; add no rights record now.** Screener's 6 agency links are observed and never fetched. Task 5 records for each NSE rating document whether it is a **rationale** or only an **intimation**; no rationale → open the rights-research bead (agency terms unread; no claim made about them). |
-| OD-2 | **Tijori-hosted copies.** | **Never.** Tijori bars copying outside personal non-commercial storing (`docs/research/vendor-terms-screener-tijori-2026-10.md:61, 69`); an evidence package reconstructs only from exchange originals (CONTEXT "Evidence package"). A quarter with no first-party copy is a gap. |
+| OD-2 | **Tijori-hosted copies.** | **Superseded by Amendment A1 (owner, 2026-10-28).** Tijori `#companyFilings` is the primary listing and every listed document is fetched from Tijori. A byte-identical NSE capture is the cited record (`CORROBORATED`). Where NSE absence is proven, or the filing predates 2023-07-01, the Tijori copy is cited as a labelled vendor copy (`VENDOR_COPY`) under A05-005, which allows personal non-commercial storing (`docs/research/vendor-terms-screener-tijori-2026-10.md:61, 69`). Every other outcome is retained but uncitable. A Tijori copy is never treated as an exchange original. |
 | OD-3 | **BSE 403.** | **Separate bead (systematic-debugging).** NSE is primary. BSE requests record `HTTP_403` and are never worked around. Also affects `news_bse` and `goal_runner`'s live PDF path. |
 | OD-4 | **Recordings.** | **Out of scope.** Likely over 32 MiB, no transcription path. The NSE "Link of Recording" row is still an observation. |
 | OD-5 | **Issuer-site host.** | **Exclude from v1.** A05-004 does not name issuer websites; every in-window Apar transcript and PPT is on BSE (R4). |
@@ -523,3 +529,280 @@ loop did not converge in 3 rounds, so the orchestrator rules on the r3 residuals
   during the rehearsal before the daily window is trusted.
 
 The plan is approved on these rulings. The phase-end Sol review covers the implementation.
+
+## Amendment A1 — Tijori primary listing (owner, 2026-10-28; r1 fixes Sol A1-r1 1–13)
+
+**Ruling (binding; overrides conflicting text above, including OD-2).** BSE returns 403, and
+Tijori has copies back to 2010. Tijori `#companyFilings` is therefore the **primary** listing,
+and every document it lists is fetched from `files.tijorifinance.com` and retained under
+A05-DECISION-005 (`docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md`,
+scope "documents"). A Tijori copy is never an exchange original, and only two outcomes are
+**citable**:
+- `CORROBORATED`: an NSE capture, or a PDF member of an NSE ZIP, has the Tijori copy's SHA-256.
+  The cited record is that NSE capture (and member).
+- `VENDOR_COPY`: NSE absence is proven (`nse-none`, below), or the document predates
+  2023-07-01 with no NSE candidate (`nse-unlisted`, the owner/orchestrator historical exception). The cited record is
+  the Tijori copy, labelled vendor copy.
+
+Every other outcome (`MISMATCH`, `AMBIGUOUS`, `NSE_PENDING`, `NSE_UNAVAILABLE`, `UNDATED`,
+`ZIP_UNREADABLE`) is retained but **uncitable**, counted in daily output and reported by Task 5.
+v1 has no manual-resolution mechanism; if `MISMATCH` proves common, a later bead adds an
+identity rule. The daily trigger stays NSE board meetings and announcements. Out of scope:
+Tijori AI reports (`/reports/`), Con Call Summary (a modal with 0 links) and recordings.
+
+**Facts (probe 2026-10-27, `scratchpad/vendor-doc-probe/summary.md`, and code):**
+- Tijori company_id 4290, slug `apar-industries-limited`. `GET /company/<slug>/` renders a
+  static `#companyFilings` table: Annual Report 16 (2011–2026), Earnings Release 14 (2022–2026),
+  Investor Presentation 52 (2013–2026), Conference Call 53 (2010–2026), Con Call Summary 0.
+  That is 135 links, all under `files.tijorifinance.com/insight/india/4290/<Kind>/`. The page
+  was not retained, and no Tijori document was downloaded.
+- This is the page the code already fetches as `TIJORI_OVERVIEW = ("tijori", "overview")`
+  (`contracts/source_catalog.py:241`; registered as `INDEPENDENT_VENDOR`, HTML, A05-005, `:305`;
+  URL `{base}/company/{slug}/`, `ingest/tijori_source.py:123`). The fetch is authenticated with
+  a 30 s timeout and 3 attempts (`tijori_source.py:164-165, 558`), via
+  `fetch_overview_bytes` (`ingest/tijori_screen_fetch.py:51`). The identity gate is
+  `TijoriSource.parse_overview_bytes(..., section=COMPANY_DETAILS)` (`tijori_source.py:450`),
+  used by `coverage/screen_review.py:305-318`; it checks the `company_details_data` symbol and
+  company_id (`ingest/tijori_overview.py:108-157`).
+- `ORIGINS` has no entry for `TIJORI_OVERVIEW` (`entity/discovery.py:128-140`), and
+  `authorised` requires one (`:273-281`). `live_transport` sends the Tijori session cookie only
+  when `source_id == "tijori"` (`api/onboard_cli.py:257-270`).
+- APARINDS's verified Tijori identifiers are in `config/watchlist.yaml:331-332`
+  (`needs_verification: []`), and the gate is `unverified_tijori_fields()`
+  (`api/watchlist_config.py:133`).
+- Task 1's `DocumentIntake.attempts` returns outcomes only, and its OK-span query `_OK_SPANS`
+  is private (`pg/document_intake.py`), so the match needs two additive reads (Interfaces).
+
+**Design (no DDL; no change to any Task 1–4 interface; additional SELECTs only):**
+1. The Tijori page reuses `TIJORI_OVERVIEW`, just as Task 2 reuses `SCREENER_PAGE`. It becomes
+   one more **unwindowed listing** in `documents backfill` and `documents daily`, behind a
+   `--tijori` flag. Its rows are `DocumentLink`s keyed by full URL, query string included, as
+   Screener links are (Task 3); a changed URL is a new occurrence. They go through
+   `record_listing` unchanged.
+2. Document surfaces are `("tijori-documents", f"TIJORI_{kind}")` for each mapped kind. Each is
+   PDF, `SourceRole.DIAGNOSTIC`, `_SUBSCRIBER_RIGHTS`, on `files.tijorifinance.com`, and the
+   source gets one `SourceDescriptor(source_id="tijori-documents",
+   source_class=SourceClass.DERIVED, evidence_role=EvidenceRole.DIAGNOSTIC_ONLY)`. Task 4 step 4
+   (attempts, bounds, `GAP`, recovery) applies unchanged. Only the link-to-request map widens:
+   `document_request(link) or tijori_document_request(link)`.
+3. **The citation is computed at read time** by a pure function over the latest revisions,
+   their OK attempts' `body_sha256`, and ZIP member digests pre-computed before the call. A1
+   adds no table and no migration 0044.
+4. `daily --tijori` also refreshes the NSE annual-report listing (the whole listing, no
+   `--annual-reports` cap), so pending NSE annual reports are fetched by step 4 as usual.
+5. Tijori revisions never create beads; step 5 reads announcement revisions only. NSE-only
+   documents are still fetched exactly as before.
+
+**Candidates.** The kind map is Annual Report → ANNUAL_REPORT, Conference Call → TRANSCRIPT,
+Investor Presentation → PRESENTATION, and Earnings Release → RESULTS only if Step 0 rules it the
+results statement (otherwise Earnings Release is skipped in v1, like Con Call Summary). Any
+other heading carrying links is refused (layout drift). Candidates are NSE `DocumentLink`s of
+the same kind in the issuer's latest revisions:
+- **ANNUAL_REPORT:** NSE annual-report entries whose `toYr` equals the row's year label, if
+  Step 0 confirmed the label; otherwise every NSE annual-report entry (match by SHA-256 only).
+  Its **coverage** is an `OK` annual-report listing fetch on this run.
+- **Other kinds:** NSE announcement links whose broadcast date (IST) lies in
+  `[row date − 7, row date + 7]`. Its **coverage** is that the union of `OK` announcement spans
+  (each capped at its retrieval date, as `coverage` does; adjacent spans join) contains the whole
+  interval. A row without a day-level date is `UNDATED` and has no candidates.
+- **Unresolved:** for a TRANSCRIPT, any `CONCALL_UNRESOLVED` announcement (from `latest` +
+  `classify_announcement`, dated by `an_dt`) inside the interval.
+- **Row date** for the 2023-07-01 test: the row's date; a year-only annual-report label `Y`
+  counts as `Y-12-31`, so the exception is never widened.
+- **Candidate state:** `OK` with digests (the capture's SHA-256, or for a ZIP the SHA-256 of
+  each `.pdf` member), `PENDING`, `UNAVAILABLE` (terminal or exhausted under Task 4 step 4,
+  `TOO_LARGE` included) or `ZIP_UNREADABLE`.
+
+**Precedence (first that holds; computed only for a Tijori copy with an `OK` attempt — otherwise
+Task 4's pending or `GAP` rule applies):**
+1. Non-annual row without a day-level date → `UNDATED` (it has no date or candidates, so no
+   higher outcome can hold).
+2. A candidate digest equals the Tijori SHA-256 → `CORROBORATED`, citing the lowest
+   `capture_ref_id`, then the lowest member name.
+3. Row date before 2023-07-01 with no candidate → `VENDOR_COPY nse-unlisted` (orchestrator ruling
+   2026-10-28: an NSE candidate that exists, e.g. a pre-2023 annual report, falls through to 4–5,
+   because the owner rule keeps an existing NSE original as the record). No candidate, no
+   unresolved row, and covered → `VENDOR_COPY nse-none`.
+4. ≥ 2 candidates, or an unresolved row → `AMBIGUOUS`.
+5. Exactly one candidate: `PENDING` → `NSE_PENDING`; `UNAVAILABLE` → `NSE_UNAVAILABLE`;
+   `ZIP_UNREADABLE` → `ZIP_UNREADABLE`; `OK` → `MISMATCH`. No candidate, not covered →
+   `NSE_PENDING`.
+
+**ZIP digests.** For each NSE `ANNUAL_REPORT` OK capture whose body starts `PK\x03\x04`, the CLI
+opens it with stdlib `zipfile` from memory and streams each `.pdf` member through `sha256` in
+chunks, stopping at 64 MiB decompressed per member; nothing is written to disk. A corrupt,
+encrypted or over-cap archive makes that candidate `ZIP_UNREADABLE`. The member name is kept in
+the result.
+
+### Step 0 (orchestrator, before Task 4b; network, read-only)
+
+A throwaway `scratchpad/docs-1/capture_tijori_page.py` does four things:
+1. Builds `TijoriSource(TijoriSourceConfig(credentials=_tijori_credentials_from_env()))`.
+2. Calls `fetch_overview_bytes(source, "apar-industries-limited")`.
+3. Runs the identity gate (`parse_overview_bytes`, expected `APARINDS` / 4290).
+4. Writes the bytes, mode 600, to the gitignored
+   `data/raw/watchlist/aparinds/docs-probe-2026-10-28/tijori_company_apar-industries-limited.html`.
+
+It prints only these, and no body or cookie: the SHA-256; per-heading link counts; the
+`#companyFilings` column labels; how many rows carry a day-level date.
+
+It then GETs the first Annual Report link without the cookie (30 s timeout, no retry) and prints
+only the HTTP status and whether the body starts with `%PDF-`. Outcomes:
+- **`200` + `%PDF-`:** no cookie needed.
+- **`401`/`403`, or a login HTML page:** Task 4b adds `"tijori-documents"` to `live_transport`'s
+  cookie map (one line, `onboard_cli.py:257-260`). The owner's own session on Tijori's own host,
+  no evasion. Step 0 repeats the GET with the cookie and must see `200` + `%PDF-`; else stop.
+- **Any other response** (non-`200`, a non-PDF non-login `200`, or a transport failure): stop and
+  report.
+
+Two document checks (downloads to the same gitignored directory, mode 600; facts only in notes):
+- **Earnings Release.** Open the first Earnings Release file. If it is the quarterly results
+  statement, the kind is RESULTS; otherwise Earnings Release is skipped in v1.
+- **Annual-report year label.** Download the Tijori annual report labelled with the latest year
+  and the NSE `toYr` entry for that year (URL from the retained 2026-10-27 probe JSON). Equal
+  SHA-256, or the same fiscal year on both covers → the label holds; otherwise annual reports
+  match by SHA-256 only.
+
+Drift: a heading count below the probe's, or a missing heading → stop. Higher counts (new
+filings) are recorded and pinned by the tests. No row with a day-level date → stop (every
+non-annual row would be `UNDATED`). Facts go in the `eqos-msq` notes.
+
+### Task 4b: Tijori `#companyFilings` reader and listing
+
+Goal: an identity-checked Tijori page yields every mapped-heading link as a `DocumentLink`.
+`documents backfill`/`daily --tijori` records the page as a listing and fetches each link on its
+Tijori surface under A05-005. Each fetched Tijori copy gets a read-time `Citation`. A page for
+another company, an off-prefix link or a missing table yields nothing.
+
+Files:
+- Create: `src/fundamentals/ingest/tijori_documents.py` (reader, request map, ZIP digests, match
+  rule)
+- Modify: `src/fundamentals/contracts/source_catalog.py` (the Tijori document surfaces and the
+  `tijori-documents` descriptor), `src/fundamentals/entity/discovery.py` (`ORIGINS`:
+  `TIJORI_OVERVIEW` → `www.tijorifinance.com`, document surfaces → `files.tijorifinance.com`),
+  `src/fundamentals/pg/document_intake.py` (two reads), `src/fundamentals/api/documents_cli.py`
+  and `src/fundamentals/api/cli_parser.py` (`--tijori`; `--config-root` also on `daily`, default
+  `config`); `src/fundamentals/api/onboard_cli.py` only if Step 0 requires the cookie
+- Test: `tests/fundamentals/test_tijori_documents.py` (new, `retained`); add cases to
+  `tests/fundamentals/test_documents_daily.py`
+
+Interfaces:
+- `TIJORI_KINDS: Mapping[str, DocumentKind]` (the kind map per Step 0); `TIJORI_SKIPPED`
+  (headings ignored); `TIJORI_DOCUMENT_SURFACES` (one comprehension over the kinds).
+- `read_tijori_documents(page: bytes, *, slug: str, expected_symbol: str,
+  expected_company_id: int) -> tuple[DocumentLink, ...]`. It runs the identity gate first, so
+  `TijoriOverviewIdentityError` propagates. It reads `//*[@id="companyFilings"]` rows. Fields:
+  `period` = the row's label, `filed_at` = the row's date when it has one, `found_on = "tijori"`.
+  It raises `ValueError` when `#companyFilings` is missing or has no heading rows, when an
+  unknown heading has links, or when any link under a mapped heading is not
+  `https://files.tijorifinance.com/insight/india/<expected_company_id>/…`. A table with headings
+  and no links is a valid empty listing.
+- `tijori_document_request(link: DocumentLink) -> Request | None`. Only for `https` on
+  `files.tijorifinance.com`; it percent-encodes the path (`Annual Report` contains a space).
+  Task 3's `document_request` still returns `None` for that host, and its test stands.
+- `zip_pdf_digests(body: bytes) -> tuple[tuple[str, str], ...] | None` (member name, SHA-256;
+  `None` = unreadable).
+- `Citation(StrEnum)`: `CORROBORATED`, `VENDOR_COPY`, `AMBIGUOUS`, `NSE_PENDING`,
+  `NSE_UNAVAILABLE`, `MISMATCH`, `UNDATED`, `ZIP_UNREADABLE`; `CITABLE = {CORROBORATED,
+  VENDOR_COPY}`. `Candidate(BaseModel, frozen)`: `capture_ref_id: int | None`, `state`,
+  `digests: tuple[tuple[str, str], ...]` (member `""` for a plain PDF).
+  `cite(row_date: date | None, annual: bool, tijori_sha256: str, candidates:
+  Sequence[Candidate], *, unresolved: bool, covered: bool) -> tuple[Citation, str]` (pure; the
+  second value is the reason for `VENDOR_COPY`, else `"<capture_ref_id>[:<member>]"` for
+  `CORROBORATED`, else `""`). `covers(spans, start, end) -> bool` (pure).
+- `DocumentIntake` (additive SELECTs, no DDL): `ok_attempt(observation_id, url) ->
+  tuple[str, int, str] | None` (the OK attempt's `body_sha256`, `capture_ref_id` and its
+  `capture_refs.capture_id`, one SELECT with a join); `ok_spans(entity_id, surface) ->
+  list[tuple[date, date]]` (runs the existing `_OK_SPANS`). The CLI reads a ZIP body with the
+  existing `store.list_captures` + `store.read_body`, picking the record by `capture_id`.
+
+Approach (in `documents_cli`, per covered issuer, only with `--tijori`):
+- The stock comes from `<config-root>/watchlist.yaml` by NSE symbol.
+  `unverified_tijori_fields()` must be empty; otherwise, or if the stock is absent, print
+  `UNCOVERED\t<SYMBOL>\ttijori\t-\t-`.
+- Fetch the page with `acquiring_fetch(live_transport())` on `TIJORI_OVERVIEW`: one request,
+  spaced 3 s, on the existing 30 s timeout path. On failure record the listing with its outcome
+  and print `UNCOVERED`. On `TijoriOverviewIdentityError` print `refused tijori identity`; on the
+  reader's `ValueError` print `refused tijori listing`; both are `INCOMPLETE`, as Screener is.
+- With `daily --tijori`, read the NSE annual-report listing too (Design 4).
+- Otherwise run Task 4 step 3 (one transaction) and step 4.
+- After step 4, build candidates per Tijori copy and call `cite`. Print one line per outcome,
+  zeros included, summed over issuers: `CITE\t<outcome>\t<count>`. Exit code unchanged.
+- Size: about 170 lines of Python (reader ~45, ZIP digests ~15, `cite` + `covers` ~35, catalog,
+  descriptor and origins ~10, intake reads ~10, CLI ~55, cookie ≤ 1). Two SELECT strings, no DDL.
+  Total DOCS-1 ≈ 600 lines of Python plus the 0043 migration.
+
+Verification (slice `DOCS-1-T4b`): `scripts/verify.sh red DOCS-1-T4b
+tests/fundamentals/test_tijori_documents.py tests/fundamentals/test_documents_daily.py` records
+each new test failing first. Then `scripts/verify.sh gate DOCS-1-T4b`. Every Task 1–4 test stays
+green and unmodified, and runs without `--tijori` send no Tijori request.
+
+Test seams:
+- **Reader (`retained`, Step 0 fixture pinned by full SHA-256).** Counts are the probe's unless
+  Step 0 recorded new ones: ANNUAL_REPORT 16, PRESENTATION 52, TRANSCRIPT 53, RESULTS 14 if
+  mapped. There are no Con Call Summary links. Every path starts `/insight/india/4290/` on
+  `files.tijorifinance.com`. ANNUAL_REPORT years run 2011–2026 and TRANSCRIPT years 2010–2026.
+  `expected_company_id=4291` and `expected_symbol="APARIND"` each raise. Every link maps to a
+  `tijori-documents` request, and `document_request` maps none of them.
+- **Reader negatives (small, synthetic pages that pass the identity gate):** a page with one
+  Annual Report link under `/insight/india/4291/` raises `ValueError`; a page without
+  `#companyFilings` raises `ValueError`.
+- **Match rule (small, synthetic):**
+  - One case per precedence line (1–5).
+  - One permutation case: two candidates whose digests both match, given in both orders, cite
+    the lower `capture_ref_id` each time.
+  - Interval edge: spans ending at row date + 6 → `NSE_PENDING`; ending at + 7 → `VENDOR_COPY
+    nse-none`.
+  - A post-2023-07-01 TRANSCRIPT with a `CONCALL_UNRESOLVED` row in its interval is `AMBIGUOUS`.
+  - ZIP: a member byte-identical to the Tijori PDF → `CORROBORATED` with that member name; a ZIP
+    whose only member differs → `MISMATCH`; malformed bytes → `ZIP_UNREADABLE`.
+- **CLI (`pg`, fake `send`, as Task 4):**
+  - A `--tijori` run registers Tijori copies with A05-005 `authority_refs` on
+    `("tijori-documents", "TIJORI_TRANSCRIPT")`.
+  - A Tijori transcript byte-identical to the NSE one prints `CITE\tCORROBORATED\t1`.
+  - A Tijori-only presentation in a covered interval prints `CITE\tVENDOR_COPY\t1`.
+  - The second identical run sends no document request and creates no bead; Tijori rows never
+    create a bead.
+  - A wrong-company page prints `refused tijori identity`, and the exit is `INCOMPLETE`.
+  - A covered issuer missing from `watchlist.yaml` prints `UNCOVERED … tijori`.
+  - A Tijori `HTTP_403` five times gives `GAP` and no sixth request.
+
+Dependencies: Tasks 1–4 (it lands after them; the Task 1–4 code is not touched beyond the named
+additive lines) and Step 0.
+
+Risks:
+- **Medium: the ±7-day interval is inferred.** An NSE filing more than 7 days from the Tijori
+  row date falls outside it, so that Tijori copy is cited `nse-none` although NSE has it. Task 5's
+  sample of `nse-none` is the check.
+- **NSE ZIP annual reports** corroborate through a byte-identical PDF member; a re-rendered PDF
+  is `MISMATCH` (uncitable at any age). A corrupt or over-64 MiB member is
+  `ZIP_UNREADABLE`. Tijori ARs over 32 MiB are `TOO_LARGE` gaps.
+
+### Effect on Task 5 (overrides its text where they conflict)
+
+- **Command.** Steps 1–2 run `documents backfill --symbol APARINDS --from 2023-07-01
+  --to 2026-10-27 --annual-reports 17 --screener --tijori --config-root config …`. All 17 NSE
+  annual reports give every Tijori AR (2011–2026) a candidate. The step 5 daily prompt adds
+  `--tijori --config-root config`, and its report list (Task 5 step 5 (3)) adds every `CITE`
+  line.
+- **Requests.** The run adds one page, ~135 Tijori documents (probe count) and ≤ 12 more NSE
+  annual reports. That is ~150 requests at 3 s, ~8 min, in a single pass (the listing is
+  unwindowed), for the rehearsal and again live. Each daily run adds two listing requests.
+- **Acceptance.** A quarter or year counts if it has a registered NSE original **or** a
+  registered Tijori copy whose citation is `CORROBORATED` or `VENDOR_COPY`. The report shows
+  separate columns: NSE original; `CORROBORATED`; `VENDOR_COPY` (`nse-none` / `nse-unlisted`);
+  and the count of each uncitable outcome. "Counts first-party only" is replaced by this
+  labelled union. BSE `HTTP_403` stops being an allowed blocked-gap reason wherever a citable
+  Tijori copy exists.
+- **Step 3 additions.** Report counts per outcome and per kind; no rate thresholds. The
+  orchestrator inspects a sample of each uncitable outcome and of `nse-none`: an R5 miss goes
+  back to Task 3; common `MISMATCH` opens the identity-rule bead. The LIVE-RUN-1 transcript
+  SHA-256 check also covers the matching Tijori copies.
+- **Step 4** checks the Tijori rows and captures as well.
+
+### A1 open question
+
+1. **NSE depth before 2023-07** (orchestrator recommendation: no for now). Pre-2023-07-01
+   Tijori copies with no NSE candidate are cited `nse-unlisted` under the historical exception.
+   Listing NSE further back costs about one pass (12 spans) per year per windowed listing and
+   would only add corroboration. This does not affect the Task 5 window.

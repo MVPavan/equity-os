@@ -54,7 +54,7 @@ The mandatory label on output: observed / computed / inferred / forecast / opini
 _Avoid_: confidence level (that is a separate field)
 
 **Evidence package**:
-The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record).
+The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record). Exception (owner 2026-10-28, DOCS-1 A1): a document with no exchange original may be cited as a labelled Tijori vendor copy; it reconstructs only by hash-matched re-fetch from Tijori.
 _Avoid_: context (unqualified)
 
 **Pilot source package**:

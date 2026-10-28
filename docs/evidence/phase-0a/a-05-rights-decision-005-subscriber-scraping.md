@@ -54,3 +54,13 @@ The prior bounded evaluations (`A05-DECISION-002`, bd memory
 The decider is the product-owner/source-rights authority, is informed of
 these facts, and **accepts the ToS-conflict risk for private personal
 non-commercial subscriber use only.** This is not legal advice.
+
+## Addendum — Tijori document copies (owner PavanMV, 2026-10-28)
+
+Within the private boundary above, Tijori `#companyFilings` is the primary
+document **listing**, and its copies are fetched. Where NSE holds the same
+filing, the NSE original is retained and is the cited record (Tijori only
+corroborates). Where NSE holds no original, the Tijori copy may be cited,
+labelled as a vendor copy, never as an exchange original. Numbers stay
+traceable to first-party evidence where it exists. Design:
+`docs/plans/DOCS-1-first-party-document-intake.md` Amendment A1.
