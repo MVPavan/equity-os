@@ -226,7 +226,13 @@ class VendorFetcher:
         LOG.info("vendor_surface_fetch", site=site, url=urlunsplit((*parts[:3], "", "")))
         retrieved_at = datetime.now(UTC)
         status, location, media, encoding, raw, completeness, issue = (
-            None, None, None, None, None, BodyCompleteness.ABSENT, None
+            None,
+            None,
+            None,
+            None,
+            None,
+            BodyCompleteness.ABSENT,
+            None,
         )
         try:
             try:
