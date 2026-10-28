@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from urllib.request import OpenerDirector, build_opener
@@ -19,6 +20,7 @@ from fundamentals.api.env_credentials import (
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.ingest.http_session import NoRedirectHandler
 from fundamentals.ingest.screener_session_models import Basis
+from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
 from fundamentals.ingest.vendor_surface_capture import (
     TOPOLOGY_UNKNOWN,
     WATCHLIST,
@@ -60,6 +62,9 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
             parser.add_argument("--tijori-slug")
             parser.add_argument("--stop-dir", type=Path)
 
+    canary = commands.add_parser("canary")
+    canary.add_argument("--yield-only", action="store_true", required=True)
+
 
 def sessions() -> Mapping[Site, SiteSession]:
     """Resolve existing environment credential readers only at this CLI edge."""
@@ -86,6 +91,15 @@ def dispatch_vendor_command(
     """Construct the authorized boundaries, then capture or reparse finite specs."""
     if args.command != "vendor":
         return None
+    if args.vendor_command == "canary":
+        with pool_factory() as pool:
+            drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+        sys.stderr.write(
+            "company cadence check skipped: covered_universe is unavailable before Task 14\n"
+        )
+        for item in drift:
+            sys.stdout.write(item.model_dump_json() + "\n")
+        return int(any(item.check != NO_BASELINE for item in drift))
     specs = load_specs(SPECS, CATALOG)
     selected = [
         spec
