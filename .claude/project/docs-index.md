@@ -14,6 +14,8 @@ Authoritative docs and when to read them.
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
 | `docs/goals/2026-10-27-research-report-targets.md` | **Designing research output** — the owner's target report content (forward view, risk probe, management credibility), doctrine adaptations, and source coverage gaps |
 | `docs/research/2026-10-28-screener-tijori-extraction-audit.md` | **Vendor capture completeness** — Screener/Tijori surface matrix (captured / raw-only / missing), raw-first and drift findings, gap plan |
+| `docs/research/2026-10-28-repo-critical-audit.md` | **Known defects outside vendor ingest** — 23 ranked findings (invariants, drift, correctness, dead code, size) with file:line |
+| `docs/research/2026-10-28-pdf-extraction-bug-diagnosis.md` | **PDF extraction bugs** — root cause and fix location for eqos-ghv/djv/n21/dol |
 | `docs/plans/2026-10-28-parallel-sol-lanes.md` | **Using spare Sol capacity** — independent lanes off the critical path (vendor full-extraction audit, gate speed, PDF bug diagnosis, repo audit, RESEARCH-3 plan) |
 | `docs/plans/2026-10-11-completion-work-list.md` | **Choosing what to work on next** — owner-accepted, deduplicated priority list of all remaining work to full vision, with dependencies and bead mapping |
 | `docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md` | **Building the data foundation** — approved spec: canonical field dictionary, XBRL-vs-PDF extraction check, filing-vs-vendor corroboration, PostgreSQL store and legacy migration |
