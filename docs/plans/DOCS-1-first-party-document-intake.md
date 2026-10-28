@@ -822,6 +822,13 @@ cookieless document GETs return `200` PDF (no cookie needed); **no row carries a
 Bead external refs key on the entity id, not the symbol (final critical review: a symbol change
 duplicated release beads); the symbol stays in the bead title and output lines.
 
+**ZIP trust boundary (orchestrator ruling, 2026-10-28).** Only STORED and DEFLATED members are
+hashed; others are `ZIP_UNREADABLE` (zipfile bounds each DEFLATE read). Parked, accepted risk:
+`zipfile` truncates a member to its declared size before the CRC check, so an archive *crafted*
+to declare a prefix's size and CRC could hash a prefix. A false `CORROBORATED` would need that
+prefix to equal an entire Tijori PDF, which cannot arise by accident in an exchange-hosted
+filing; exchange archives are not treated as adversarial, so no custom deflate parser is built.
+
 ### A1 open question
 
 1. **NSE depth before 2023-07** (orchestrator recommendation: no for now). Pre-2023-07-01
