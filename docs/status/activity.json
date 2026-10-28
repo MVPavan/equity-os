@@ -5,10 +5,9 @@
     "stage": "Build"
   },
   "next": [
-    "LIVE-RUN-1 gates, then Sol phase review, then the live Apar run (owner: watchlist add)",
-    "DOCS-1 Tasks 1-4 (Sol worktree), then a review and merge after LIVE-RUN-1 closes",
-    "RESEARCH-3 plan (S1 risk probe first)",
-    "DOCS-1 Task 4b (Tijori listing) after the Tasks 1-4 trim"
+    "LIVE-RUN-1 gates (T2-T4 running; T1 re-run), Sol phase review, live Apar run (owner: watchlist add)",
+    "DOCS-1: full gate on branch, merge after LIVE-RUN-1, live migration 0043, Apar backfill (Task 5)",
+    "RESEARCH-3 plan (S1 risk probe first)"
   ],
   "log": [
     {
@@ -562,6 +561,10 @@
     {
       "date": "2026-10-28",
       "text": "eqos-msq DOCS-1 Amendment A1 approved (Sol r2): Tijori #companyFilings primary listing; NSE original cited where it exists, Tijori copy only when NSE absence is proven or pre-2023-07"
+    },
+    {
+      "date": "2026-10-28",
+      "text": "eqos-msq DOCS-1 phase approved (Sol): NSE + Screener + Tijori document intake, daily trigger, citation rule; branch awaits full gate and merge after LIVE-RUN-1"
     }
   ]
 }
