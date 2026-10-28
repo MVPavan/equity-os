@@ -13,6 +13,7 @@ Authoritative docs and when to read them.
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
 | `docs/goals/2026-10-27-research-report-targets.md` | **Designing research output** — the owner's target report content (forward view, risk probe, management credibility), doctrine adaptations, and source coverage gaps |
+| `docs/research/2026-10-28-screener-tijori-extraction-audit.md` | **Vendor capture completeness** — Screener/Tijori surface matrix (captured / raw-only / missing), raw-first and drift findings, gap plan |
 | `docs/plans/2026-10-28-parallel-sol-lanes.md` | **Using spare Sol capacity** — independent lanes off the critical path (vendor full-extraction audit, gate speed, PDF bug diagnosis, repo audit, RESEARCH-3 plan) |
 | `docs/plans/2026-10-11-completion-work-list.md` | **Choosing what to work on next** — owner-accepted, deduplicated priority list of all remaining work to full vision, with dependencies and bead mapping |
 | `docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md` | **Building the data foundation** — approved spec: canonical field dictionary, XBRL-vs-PDF extraction check, filing-vs-vendor corroboration, PostgreSQL store and legacy migration |
