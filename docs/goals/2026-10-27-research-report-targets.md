@@ -43,3 +43,7 @@ not a template to copy. Concalls are a required input.
 | Prices and valuation | Upstox | Have |
 | Peers (competitive position) | Screener peers; registry | Partial |
 | Industry, capacity and market-share context | Industry bodies; disclosures | **Missing**; mostly narrative, labelled |
+
+**Owner requirement (2026-10-28):** capture and retain everything Screener and Tijori show to the
+owner's subscriber accounts, whether used today or not (A05-DECISION-005, private use). Audit and
+gap plan: `docs/plans/2026-10-28-parallel-sol-lanes.md` lane 0.
