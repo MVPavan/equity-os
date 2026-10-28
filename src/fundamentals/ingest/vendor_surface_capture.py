@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -208,17 +209,40 @@ def reparse(
                 AND o.surface=%s AND o.parser_version=%s) ORDER BY c.id""",
             (spec.site, "vs." + spec.id, spec.id, entry.version),
         ).fetchall()
-    stocks = load_watchlist_config(WATCHLIST).stocks
+    bindings = [company_ids(stock) for stock in load_watchlist_config(WATCHLIST).stocks]
     for row in rows:
         ref = capture_of(row)
         ids = next(
             (
-                company_ids(stock)
-                for stock in stocks
-                if stock.symbol == row["symbol"] or f"/company/{stock.symbol}/" in row["url"]
+                binding
+                for binding in bindings
+                if binding.nse_symbol == row["symbol"]
+                or f"/company/{binding.nse_symbol}/" in row["url"]
             ),
             None,
         )
+        if ids is None and row["symbol"] is None and spec.id == "chart-api":
+            matches = [
+                binding
+                for binding in bindings
+                if binding.screener_company_id is not None
+                and urlsplit(row["url"]).path
+                == f"/api/company/{binding.screener_company_id}/chart/"
+            ]
+            ids = matches[0] if len(matches) == 1 else None
+        if spec.id == "chart-api" and ids is None:
+            values.record(
+                ref,
+                Outcome(
+                    surface=spec.id,
+                    parser_version=entry.version,
+                    parser_sha256=parser_sha256(entry.parse),
+                    status=OutcomeStatus.UNUSABLE,
+                    detail="verified company binding unavailable",
+                ),
+                row_count=0,
+            )
+            continue
         basis = (
             (Basis.CONSOLIDATED if "/consolidated/" in row["url"] else Basis.STANDALONE)
             if spec.id == "company-page"

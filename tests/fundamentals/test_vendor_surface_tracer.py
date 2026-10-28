@@ -78,7 +78,8 @@ def test_stop_registered_before_run_ends(rig, pg_db, capsys):
         ).fetchone() == (1,)
 
 
-def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch):
+@pytest.mark.parametrize("previous_outcome", [True, False])
+def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch, previous_outcome):
     from fundamentals.ingest import vendor_surface_parse as parsing
     from fundamentals.ingest.vendor_surface_fetch import Site
 
@@ -87,17 +88,23 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch)
     entry = parsing.PARSERS[key]
 
     def broken(body, context):
+        if not previous_outcome:
+            raise SystemExit("fixture interruption after registration")
         raise ValueError("fixture parser failure")
 
     monkeypatch.setitem(
         parsing.PARSERS, key, parsing.ParserEntry(version="screener:chart-api.v0", parse=broken)
     )
-    run_capture(root)
+    if previous_outcome:
+        run_capture(root)
+    else:
+        with pytest.raises(SystemExit, match="after registration"):
+            run_capture(root)
     capsys.readouterr()
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
             "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='FAILED'"
-        ).fetchone() == (1,)
+        ).fetchone() == (int(previous_outcome),)
 
     def with_identity(body, context):
         assert context.ids is not None
