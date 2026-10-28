@@ -71,8 +71,12 @@ def company_ids(stock: StockConfig) -> CompanyIds:
         isin=ids.isin or "",
         tijori_slug=None if ids.unverified_tijori_fields() else ids.tijori_slug,
         tijori_company_id=None if ids.unverified_tijori_fields() else ids.tijori_company_id,
-        screener_company_id=None if ids.unverified_screener_fields() else ids.screener_company_id,
-        topology=None if ids.unverified_screener_fields() else basis_topology(stock),
+        screener_company_id=None
+        if "screener_company_id" in ids.needs_verification
+        else ids.screener_company_id,
+        topology=None
+        if any(field.startswith("screener_warehouse_id_") for field in ids.needs_verification)
+        else basis_topology(stock),
     )
 
 
@@ -151,6 +155,11 @@ def parse_and_record(
 
 def topology_gate(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     """The versioned refusal when the request has no bound basis topology."""
+    return ()
+
+
+def identity_gate(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """The versioned refusal when retained chart bytes have no matching company binding."""
     return ()
 
 
@@ -236,19 +245,26 @@ def reparse(
                 == f"/api/company/{binding.screener_company_id}/chart/"
             ]
             ids = matches[0] if len(matches) == 1 else None
-        if spec.id == "chart-api" and ids is None:
-            values.record(
-                ref,
-                Outcome(
-                    surface=spec.id,
-                    parser_version=entry.version,
-                    parser_sha256=parser_sha256(entry.parse),
-                    status=OutcomeStatus.UNUSABLE,
-                    symbol=None,
-                    detail="verified company binding unavailable",
-                ),
-                row_count=0,
-            )
+        if spec.id == "chart-api" and (
+            ids is None
+            or ids.screener_company_id is None
+            or urlsplit(row["url"]).path != f"/api/company/{ids.screener_company_id}/chart/"
+        ):
+            version = f"{SITE_NAME[spec.site]}:gate.identity.v1"
+            assert ref.capture_ref_id is not None
+            if not values.has_outcome(ref.capture_ref_id, spec.id, version):
+                values.record(
+                    ref,
+                    Outcome(
+                        surface=spec.id,
+                        parser_version=version,
+                        parser_sha256=parser_sha256(identity_gate),
+                        status=OutcomeStatus.UNUSABLE,
+                        symbol=None,
+                        detail="verified company binding unavailable",
+                    ),
+                    row_count=0,
+                )
             continue
         basis = (
             (Basis.CONSOLIDATED if "/consolidated/" in row["url"] else Basis.STANDALONE)

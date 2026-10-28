@@ -4,6 +4,7 @@ import json
 from decimal import Decimal
 
 import pytest
+import yaml
 from vendor_surface_support import rig
 
 from fundamentals.api.cli import main
@@ -146,7 +147,11 @@ def test_stop_registered_before_run_ends(rig, pg_db, capsys, monkeypatch, regist
 
 
 @pytest.mark.parametrize("previous_outcome", [True, False])
-def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch, previous_outcome):
+@pytest.mark.parametrize("binding", ["valid", "missing", "mismatch"])
+def test_failed_parser_and_network_free_reparse(
+    rig, pg_db, capsys, monkeypatch, previous_outcome, binding, tmp_path
+):
+    from fundamentals.ingest import vendor_surface_capture as capturing
     from fundamentals.ingest import vendor_surface_parse as parsing
     from fundamentals.ingest.vendor_surface_fetch import Site
 
@@ -173,7 +178,10 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch,
             "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='FAILED'"
         ).fetchone() == (int(previous_outcome),)
 
+    attempts = []
+
     def with_identity(body, context):
+        attempts.append(True)
         assert context.ids is not None
         assert context.ids.nse_symbol == "APARINDS"
         assert context.ids.screener_company_id == 211
@@ -181,11 +189,56 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch,
 
     monkeypatch.setitem(parsing.PARSERS, key, entry.model_copy(update={"parse": with_identity}))
     before = len(opener.calls)
+    watchlist = capturing.WATCHLIST
+    if binding != "valid":
+        config = yaml.safe_load(watchlist.read_text())
+        if binding == "missing":
+            config["stocks"] = [
+                stock
+                for stock in config["stocks"]
+                if stock["identifiers"]["nse_symbol"] != "APARINDS"
+            ]
+        else:
+            stock = next(
+                stock
+                for stock in config["stocks"]
+                if stock["identifiers"]["nse_symbol"] == "APARINDS"
+            )
+            stock["identifiers"]["screener_company_id"] = 999999999
+        config_path = tmp_path / "watchlist.yaml"
+        config_path.write_text(yaml.safe_dump(config))
+        monkeypatch.setattr(capturing, "WATCHLIST", config_path)
+        for _ in range(2):
+            assert (
+                main(
+                    [
+                        "vendor",
+                        "reparse",
+                        "--surface",
+                        "screener:chart-api",
+                        "--snapshot-root",
+                        str(root),
+                    ]
+                )
+                == 0
+            )
+        assert attempts == []
+        with pg_db.runtime_pool() as pool, pool.connection() as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM eqos.vendor_outcomes WHERE parser_version=%s",
+                (entry.version,),
+            ).fetchone() == (0,)
+            assert conn.execute(
+                "SELECT DISTINCT status,detail FROM eqos.vendor_outcomes "
+                "WHERE parser_version='screener:gate.identity.v1'"
+            ).fetchall() == [("UNUSABLE", "verified company binding unavailable")]
+        monkeypatch.setattr(capturing, "WATCHLIST", watchlist)
     assert (
         main(["vendor", "reparse", "--surface", "screener:chart-api", "--snapshot-root", str(root)])
         == 0
     )
     assert len(opener.calls) == before
+    assert attempts == [True]
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
             "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='OK' AND symbol='APARINDS'"
@@ -193,17 +246,20 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch,
         assert conn.execute("SELECT count(*) FROM eqos.vendor_values").fetchone() == (992,)
 
 
-def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch):
+def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch, tmp_path):
     from fundamentals.api import vendor_surface_cli
     from fundamentals.ingest import vendor_surface_capture as capturing
 
-    original = capturing.company_ids
-    monkeypatch.setattr(
-        capturing,
-        "company_ids",
-        lambda stock: original(stock).model_copy(update={"topology": None}),
+    watchlist = capturing.WATCHLIST
+    config = yaml.safe_load(watchlist.read_text())
+    stock = next(
+        stock for stock in config["stocks"] if stock["identifiers"]["nse_symbol"] == "APARINDS"
     )
-    monkeypatch.setattr(vendor_surface_cli, "company_ids", capturing.company_ids)
+    stock["identifiers"]["needs_verification"] = ["screener_warehouse_id_standalone"]
+    config_path = tmp_path / "watchlist.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    monkeypatch.setattr(vendor_surface_cli, "WATCHLIST", config_path)
+    monkeypatch.setattr(capturing, "WATCHLIST", config_path)
     opener, root = rig
     run_capture(root)
     report = json.loads(capsys.readouterr().out)
@@ -214,7 +270,7 @@ def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch):
             "WHERE parser_version='screener:gate.topology.v1'"
         ).fetchone() == ("topology unknown",)
         assert conn.execute("SELECT count(*) FROM eqos.vendor_values").fetchone() == (992,)
-    monkeypatch.setattr(capturing, "company_ids", original)
+    monkeypatch.setattr(capturing, "WATCHLIST", watchlist)
     assert (
         main(
             [
