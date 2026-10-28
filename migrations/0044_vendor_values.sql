@@ -1,4 +1,5 @@
 -- VENDOR-SURFACE Phase 1. 0001--0043 are immutable; 0043 belongs to DOCS-1.
+ALTER TABLE eqos.capture_addresses ADD COLUMN location text;
 CREATE TABLE eqos.vendor_parser_versions (
     parser_version text PRIMARY KEY,
     parser_sha256 text NOT NULL CHECK (parser_sha256 ~ '^[0-9a-f]{64}$')

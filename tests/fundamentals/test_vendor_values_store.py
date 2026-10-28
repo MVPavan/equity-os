@@ -26,7 +26,8 @@ def setup_store(pg_db, tmp_path):
     store.put_capture(record, b"fixture")
     pool = pg_db.runtime_pool()
     ref = register(
-        pool, Fetched(record=record, url="https://www.tijorifinance.com/chart/", location=None)
+        pool,
+        Fetched(record=record, url="https://www.tijorifinance.com/chart/", location="/%6cogin/"),
     )
     return store, pool, ref, VendorValuesStore(pool)
 
@@ -187,9 +188,27 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
 
 
 def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path):
+    from fundamentals.api.cli_parser import build_parser
+    from fundamentals.store.vendor_values_store import register
+
+    for command in ("capture", "reparse"):
+        args = build_parser().parse_args(
+            ["vendor", command, "--surface", "screener:chart-api"]
+            + (["--symbol", "APARINDS"] if command == "capture" else [])
+        )
+        assert args.snapshot_root == Path("data/raw/snapshots/v1")
     store, pool, ref, values = setup_store(pg_db, tmp_path)
+    existing = record_of(b"exchange", "nse", "EQUITY_L")
+    store.put_capture(existing, b"exchange")
     with pool:
+        register(pool, Fetched(record=existing, url="https://nse.example/", location=None))
         values.record(ref, outcome(), row_count=2)
+    # Reopen the registration independently before archiving it.
+    with pg_db.runtime_pool() as reopened, reopened.connection() as conn:
+        assert conn.execute(
+            "SELECT location FROM eqos.capture_addresses WHERE capture_ref_id=%s",
+            (ref.capture_ref_id,),
+        ).fetchone() == ("/%6cogin/",)
     saved = write_backup(
         pg_db.settings,
         database=pg_db.dbname,
@@ -215,6 +234,11 @@ def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path
                 "SELECT count(*) FROM eqos.vendor_values WHERE capture_ref_id=%s",
                 (ref.capture_ref_id,),
             ).fetchone() == (2,)
+            assert conn.execute(
+                "SELECT location FROM eqos.capture_addresses WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchone() == ("/%6cogin/",)
+        assert SnapshotStore(restored_root).read_body(existing) == b"exchange"
         record = SnapshotStore(restored_root).get_capture(
             ref.source_id, ref.surface, ref.request_key, ref.capture_id
         )

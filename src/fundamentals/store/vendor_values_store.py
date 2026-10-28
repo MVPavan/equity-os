@@ -95,6 +95,7 @@ def register(pool: ConnectionPool, fetched: Fetched) -> CaptureReference:
                 first_seen_at=now,
             ),
             url=fetched.url,
+            location=fetched.location,
         )
 
 

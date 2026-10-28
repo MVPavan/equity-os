@@ -54,7 +54,7 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     for name in ("capture", "reparse"):
         parser = commands.add_parser(name)
         parser.add_argument("--surface", nargs="+", default=[], required=name == "reparse")
-        parser.add_argument("--snapshot-root", type=Path, default=Path("data/vendor-surface"))
+        parser.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
         if name == "capture":
             parser.add_argument("--symbol", required=True)
             parser.add_argument("--tijori-slug")
