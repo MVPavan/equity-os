@@ -82,7 +82,7 @@ class RapidOcrEngine:
         """Lazily build and cache the RapidOCR engine, or fail closed if the extra is absent."""
         if self._engine is None:
             try:
-                from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-untyped]
+                from rapidocr_onnxruntime import RapidOCR
             except ImportError as error:
                 raise OcrEngineUnavailableError(_OCR_MISSING_MESSAGE) from error
             self._engine = RapidOCR()
