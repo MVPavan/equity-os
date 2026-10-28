@@ -63,10 +63,30 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch):
         assert conn.execute("SELECT count(*) FROM eqos.vendor_outcomes").fetchone() == (7,)
 
 
-def test_stop_registered_before_run_ends(rig, pg_db, capsys):
+@pytest.mark.parametrize("registration_fails", [False, True])
+def test_stop_registered_before_run_ends(rig, pg_db, capsys, monkeypatch, registration_fails):
+    from fundamentals.api.vendor_surface_cli import STOP_DIR
+    from fundamentals.ingest import vendor_surface_capture as capturing
+
+    original = capturing.register
+    marker = STOP_DIR / "STOP-screener-subscriber"
+
+    def checked_register(pool, fetched):
+        assert not marker.exists()
+        if fetched.record.http_status == 429 and registration_fails:
+            raise RuntimeError("fixture registration failure")
+        return original(pool, fetched)
+
+    monkeypatch.setattr(capturing, "register", checked_register)
     opener, root = rig
     opener.stop = True
+    if registration_fails:
+        with pytest.raises(RuntimeError, match="fixture registration failure"):
+            run_capture(root)
+        assert marker.exists()
+        return
     assert run_capture(root) == 0
+    assert marker.exists()
     report = json.loads(capsys.readouterr().out)
     assert report["stopped_sites"] == ["screener-subscriber"]
     assert report["expected"] == 7 and report["completed"] == 2

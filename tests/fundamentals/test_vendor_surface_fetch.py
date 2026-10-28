@@ -141,6 +141,8 @@ def test_refused_before_open(tmp_path, url):
     ("status", "location", "stop"),
     [
         (429, None, True),
+        (429, "https://[", True),
+        (302, "https://[", False),
         (403, None, True),
         (503, None, True),
         (302, "/login/", True),
@@ -160,10 +162,7 @@ def test_response_retained_before_stop(tmp_path, status, location, stop):
             client.get(Site.SCREENER, "chart-api", "https://www.screener.in/api/chart/")
         fetched = raised.value.fetched
         assert fetched is not None
-        assert (tmp_path / "STOP-screener-subscriber").exists()
-        fresh, _ = fetcher(tmp_path, opener)
-        with pytest.raises(SiteStopped):
-            fresh.get(Site.SCREENER, "chart-api", "https://www.screener.in/api/chart/")
+        assert not (tmp_path / "STOP-screener-subscriber").exists()
     else:
         fetched = client.get(Site.SCREENER, "chart-api", "https://www.screener.in/api/chart/")
     assert fetched.location == location

@@ -166,20 +166,26 @@ def capture(
         fetched = fetcher.get(request.spec.site, request.spec.id, request.url, xhr=request.spec.xhr)
     except SiteStopped as error:
         if error.fetched is not None:
-            ref = register(pool, error.fetched)
-            entry = PARSERS[request.spec.site, request.spec.id]
-            values.record(
-                ref,
-                Outcome(
-                    surface=request.spec.id,
-                    parser_version=entry.version,
-                    parser_sha256=parser_sha256(entry.parse),
-                    status=OutcomeStatus.UNUSABLE,
-                    symbol=request.ids.nse_symbol if request.ids else None,
-                    detail=type(error).__name__,
-                ),
-                row_count=0,
-            )
+            try:
+                ref = register(pool, error.fetched)
+                entry = PARSERS[request.spec.site, request.spec.id]
+                values.record(
+                    ref,
+                    Outcome(
+                        surface=request.spec.id,
+                        parser_version=entry.version,
+                        parser_sha256=parser_sha256(entry.parse),
+                        status=OutcomeStatus.UNUSABLE,
+                        symbol=request.ids.nse_symbol if request.ids else None,
+                        detail=type(error).__name__,
+                    ),
+                    row_count=0,
+                )
+            finally:
+                fetcher.stop_dir.mkdir(parents=True, exist_ok=True)
+                (fetcher.stop_dir / f"STOP-{error.site}").write_text(
+                    f"{error.fetched.record.capture_id} {error.fetched.record.http_status}\n"
+                )
         raise
     ref = register(pool, fetched)
     body = (

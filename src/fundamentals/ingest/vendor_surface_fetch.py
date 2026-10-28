@@ -302,12 +302,16 @@ class VendorFetcher:
         )
         self.store.put_capture(record, raw)
         fetched = Fetched(record=record, url=url, location=location)
-        target = urlsplit(normalise(urljoin(url, location or "")))
-        login = target.netloc.lower() == parts.netloc.lower() and any(
-            word in target.path.lower() for word in ("login", "signin")
-        )
-        if status in (403, 429, 503) or (status is not None and 300 <= status < 400 and login):
-            self.stop_dir.mkdir(parents=True, exist_ok=True)
-            marker.write_text(f"{record.capture_id} {status}\n")
+        if status in (403, 429, 503):
             raise SiteStopped(site, fetched)
+        if status is not None and 300 <= status < 400:
+            try:
+                target = urlsplit(normalise(urljoin(url, location or "")))
+                login = target.netloc.lower() == parts.netloc.lower() and any(
+                    word in target.path.lower() for word in ("login", "signin")
+                )
+            except ValueError:
+                login = False
+            if login:
+                raise SiteStopped(site, fetched)
         return fetched
