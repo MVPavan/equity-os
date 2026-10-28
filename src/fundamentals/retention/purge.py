@@ -116,11 +116,13 @@ _GONE = frozenset({CaptureState.EXPIRED, CaptureState.PURGE_PENDING})
 _KEPT = frozenset({CaptureState.RETAINED, CaptureState.RESTORED})
 
 
-def dry_run(conn: psycopg.Connection[Any], pinned: Pinned) -> tuple[EligibleBlob, ...]:
+def dry_run(
+    conn: psycopg.Connection[Any], pinned: Pinned, *, config_root: Path = Path("config")
+) -> tuple[EligibleBlob, ...]:
     """The blobs eligible now; refused while any capture is unclassified (R2)."""
     with conn.transaction():
         refuse_unclassified(conn)
-        facts, now = _facts(conn, pinned)
+        facts, now = _facts(conn, pinned, config_root)
     return eligible_blobs(facts, now)
 
 
@@ -143,6 +145,7 @@ def purge(
     fetch: Fetch,
     final_backup: FinalBackup | None,
     checkpoint: Checkpoint,
+    config_root: Path = Path("config"),
 ) -> PurgeReport:
     """Recover any open run, then purge every eligible blob in a new run (R8)."""
     conninfo = settings.conninfo(PgRole.PURGE, dbname=database, login=login)
@@ -150,18 +153,18 @@ def purge(
         reconcile_licence_ends(conn, authority := read_authority(backup_dir))
         refuse_unclassified(conn)
         with conn.transaction():
-            facts, now = _facts(conn, pinned)
+            facts, now = _facts(conn, pinned, config_root)
         exchange = _eligible_facts(facts, now, RetentionClass.EXCHANGE_REFETCHABLE)
         probes = probe(conn, exchange, fetch)
         session_exclusive(conn)
         matched = {source for source, outcome in probes.items() if outcome.matched}
-        run = _Run(conn, snapshot_root, backup_dir, pinned, final_backup, checkpoint)
+        run = _Run(conn, snapshot_root, backup_dir, pinned, final_backup, checkpoint, config_root)
         run.halted = frozenset(probes.keys() - matched)
         for (open_run,) in conn.execute(_OPEN_RUNS).fetchall():
             run.converge(open_run)
         run_id = new_run(conn, authority)
         with conn.transaction():
-            facts, now = _facts(conn, pinned)
+            facts, now = _facts(conn, pinned, config_root)
             for fact in _eligible_facts(facts, now):
                 if fact.base_class is not _EXCHANGE or fact.source_id in matched:
                     conn.execute(_STATE, (fact.capture_ref_id, CaptureState.PURGE_PENDING, run_id))
@@ -186,10 +189,12 @@ def new_run(conn: psycopg.Connection[Any], authority: Authority) -> int:
     return int(conn.execute(_NEW_RUN, (last,)).fetchall()[0][0])
 
 
-def _facts(conn: psycopg.Connection[Any], pinned: Pinned) -> tuple[tuple[CaptureFacts, ...], Any]:
+def _facts(
+    conn: psycopg.Connection[Any], pinned: Pinned, config_root: Path
+) -> tuple[tuple[CaptureFacts, ...], Any]:
     """Every non-expired capture's facts and the store clock, in the caller's transaction."""
     ((now,),) = conn.execute(_NOW).fetchall()
-    return capture_facts(conn, pinned), now
+    return capture_facts(conn, pinned, config_root=config_root), now
 
 
 def _eligible_facts(
@@ -211,9 +216,11 @@ class _Run:
         pinned: Pinned,
         final_backup: FinalBackup | None,
         checkpoint: Checkpoint,
+        config_root: Path = Path("config"),
     ) -> None:
         self.conn, self.backup_dir, self.root = conn, backup_dir, snapshot_root
         self.store = SnapshotStore(snapshot_root)
+        self.config_root = config_root
         self.pinned, self.final_backup, self.checkpoint = pinned, final_backup, checkpoint
         self.expired: list[int] = []
         self.cancelled: list[tuple[int, str]] = []
@@ -236,7 +243,7 @@ class _Run:
             raise PurgeRefusedError(f"run {run_id}'s COMPLETE disagrees with its committed states")
         advance_head(self.backup_dir, self.root)
         with self.conn.transaction():
-            facts, now = _facts(self.conn, self.pinned)
+            facts, now = _facts(self.conn, self.pinned, self.config_root)
         verdicts = {f.capture_ref_id: (f, _decision(f, now)) for f in facts}
         eligible = {(b.source_id, b.blob_sha256) for b in eligible_blobs(facts, now)}
         eligible -= {
@@ -407,6 +414,7 @@ def record_licence_end(
     fetch: Fetch,
     final_backup: FinalBackup | None,
     checkpoint: Checkpoint,
+    config_root: Path = Path("config"),
 ) -> PurgeReport:
     """An owner's vendor licence end (R11), each step idempotent: the store marker, the file
     entry, the database row, then a purge that expires all the source's material, holds
@@ -429,6 +437,7 @@ def record_licence_end(
         snapshot_root=snapshot_root,
         backup_dir=backup_dir,
         pinned=pinned,
+        config_root=config_root,
         fetch=fetch,
         final_backup=final_backup,
         checkpoint=checkpoint,

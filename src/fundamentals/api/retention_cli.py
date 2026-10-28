@@ -167,7 +167,7 @@ def _dry_run(config_root: Path) -> int:
         if left:
             sys.stdout.write("".join(f"unclassified\t{s}\t{f}\n" for s, f in left))
             return EXIT_REFUSED
-        blobs = dry_run(conn, pinned)
+        blobs = dry_run(conn, pinned, config_root=config_root)
         incidents = conn.execute(INCIDENTS).fetchall()
     lines = [
         f"eligible\t{b.source_id}\t{b.blob_sha256}\t{b.since.isoformat()}\t"
@@ -206,6 +206,7 @@ def _purge(
         snapshot_root=snapshot_root,
         backup_dir=backup_dir,
         pinned=pinned_roots(config_root),
+        config_root=config_root,
         fetch=live_fetch,
         final_backup=final_backup,
         checkpoint=_no_checkpoint,

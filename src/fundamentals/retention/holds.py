@@ -21,9 +21,6 @@ from fundamentals.contracts.retention import CaptureFacts, HoldRoot
 from fundamentals.ledger.numeral_scan import LOCATION_MARKER
 
 HOLDS_FILE = Path("retention") / "holds.yaml"
-VENDOR_SURFACE_PREFIX: str = yaml.safe_load((Path("config") / HOLDS_FILE).read_text())[
-    "keep_surface_prefix"
-]
 MAPPINGS_DIR = "mappings"
 FIXTURE_KEY = "capture_sha256"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -173,12 +170,17 @@ def _hashes(node: object, key: str = "") -> Iterator[tuple[str, str]]:
 
 
 def capture_facts(
-    conn: psycopg.Connection[Any], pinned: dict[HoldRoot, frozenset[str]]
+    conn: psycopg.Connection[Any],
+    pinned: dict[HoldRoot, frozenset[str]],
+    *,
+    config_root: Path = Path("config"),
 ) -> tuple[CaptureFacts, ...]:
     """The retention facts of every non-expired capture, in one statement's snapshot."""
     params = {
         "marker": LOCATION_MARKER.pattern,
-        "keep_prefix": VENDOR_SURFACE_PREFIX,
+        "keep_prefix": yaml.safe_load((config_root / HOLDS_FILE).read_text())[
+            "keep_surface_prefix"
+        ],
         "fixtures": sorted(pinned.get(HoldRoot.QUALIFICATION_FIXTURE, ())),
         "manifests": sorted(pinned.get(HoldRoot.MANIFEST_INPUT, ())),
     }

@@ -488,3 +488,29 @@ def test_registered_vendor_surface_has_keep_root(world: World) -> None:
     capture = world.capture(("tijori", "vs.chart-api"))
     assert facts_of(world.rt, capture).holds == {HoldRoot.VENDOR_SURFACE_KEEP}
     assert facts_of(world.rt, world.capture(("tijori", "financials"))).holds == set()
+
+
+def test_vendor_keep_prefix_uses_injected_config_without_import_io(world, tmp_path, monkeypatch):
+    import importlib
+    from pathlib import Path
+
+    from fundamentals.retention import holds
+    from fundamentals.retention.purge import dry_run
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_text", lambda *args, **kwargs: pytest.fail("import read config"))
+        importlib.reload(holds)
+    root = tmp_path / "config"
+    (root / "retention").mkdir(parents=True)
+    (root / HOLDS_FILE).write_text('manifests: []\nkeep_surface_prefix: "custom."\n')
+    capture = world.capture(("tijori", "custom.chart-api"))
+    default = world.capture(("tijori", "vs.chart-api"))
+    pinned = pinned_roots(root)
+    facts = {
+        fact.capture_ref_id: fact for fact in capture_facts(world.rt, pinned, config_root=root)
+    }
+    assert facts[capture].holds == {HoldRoot.VENDOR_SURFACE_KEEP}
+    assert facts[default].holds == set()
+    assert not any(
+        capture in blob.capture_ref_ids for blob in dry_run(world.rt, pinned, config_root=root)
+    )
