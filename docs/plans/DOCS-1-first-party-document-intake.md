@@ -365,8 +365,8 @@ Approach — one pass, in order (requests spaced 3 s, `shareholding_cli.PAUSE_SE
       and `record_attempt` (outcome, real `attempted_at`, `body_sha256`, `capture_ref_id`).
    Terminal or exhausted → `GAP\t<SYMBOL>\t<kind>\t<occurrence_key>\t<outcome>` every run.
 5. **Reconcile beads** from *all* latest revisions in the DB: RESULTS/TRANSCRIPT/PRESENTATION →
-   ref `docs-trigger:<SYMBOL>:<occurrence_key>` (label `update-run`; revisions add none);
-   CONCALL_UNRESOLVED → `docs-candidate:<SYMBOL>:<occurrence_key>` (label `doc-classification`;
+   ref `docs-trigger:<entity_id>:<occurrence_key>` (label `update-run`; revisions add none);
+   CONCALL_UNRESOLVED → `docs-candidate:<entity_id>:<occurrence_key>` (label `doc-classification`;
    description names date and filename; classifying is a human ruling). One lookup per run:
    `bd list --all --external-contains docs- --limit 0 --json --brief`; non-zero exit, timeout or
    unparsable JSON → `BD_LOOKUP_FAILED`, nothing created, `FAILURE`; an empty list is valid. Each
@@ -816,6 +816,11 @@ cookieless document GETs return `200` PDF (no cookie needed); **no row carries a
    the Financial Year ended March 31, 2026", the results statement.
 3. **Annual year label = NSE `toYr`:** the one pair checked (2026 = 2026) agrees, so the label is
    used.
+
+### Phase-review deviation (2026-10-28)
+
+Bead external refs key on the entity id, not the symbol (final critical review: a symbol change
+duplicated release beads); the symbol stays in the bead title and output lines.
 
 ### A1 open question
 
