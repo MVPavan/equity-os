@@ -333,7 +333,7 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
     _surface(*UPSTOX_SHAREHOLDING, Representation.JSON, SourceRole.DIAGNOSTIC, _UPSTOX_DIAGNOSTIC),
 )
 
-# DOCS-1 surfaces retain first-party bytes without reconciliation.
+# DOCS-1 surfaces retain first-party bytes, never interpreted: identity-only, not vendor.
 DOCUMENT_LISTINGS = ("ANNOUNCEMENTS_LISTING", "BOARD_MEETINGS_LISTING", "ANNUAL_REPORTS_LISTING")
 DOCUMENT_HOSTS = {"nse-documents": "nsearchives.nseindia.com", "bse-documents": "www.bseindia.com"}
 DOCUMENT_ORIGINS = {
@@ -342,10 +342,10 @@ DOCUMENT_ORIGINS = {
     for kind in DocumentKind
 }
 VENDOR_SURFACES += tuple(
-    _surface("nse", surface, Representation.JSON, SourceRole.DIAGNOSTIC, _EXCHANGE_RIGHTS)
+    _surface("nse", surface, Representation.JSON, SourceRole.IDENTITY, _EXCHANGE_RIGHTS)
     for surface in DOCUMENT_LISTINGS
 ) + tuple(
-    _surface(*pair, Representation.PDF, SourceRole.DIAGNOSTIC, _EXCHANGE_RIGHTS)
+    _surface(*pair, Representation.PDF, SourceRole.IDENTITY, _EXCHANGE_RIGHTS)
     for pair in DOCUMENT_ORIGINS
 )
 
