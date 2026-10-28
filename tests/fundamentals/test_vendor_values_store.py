@@ -245,3 +245,67 @@ def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path
         assert SnapshotStore(restored_root).read_body(record) == b"fixture"
     finally:
         drop_database(pg_db.settings, target)
+
+
+@pytest.mark.parametrize("session_error", [False, True])
+def test_parser_error_detail_survives_licence_end_without_content(
+    pg_db, tmp_path, monkeypatch, session_error
+):
+    from fundamentals.ingest.screener_session_models import ScreenerSessionError
+    from fundamentals.ingest.vendor_surface_capture import Request, parse_and_record
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.store.vendor_values_store import register
+
+    store, pool, _, values = setup_store(pg_db, tmp_path)
+    raw = b'{"datasets":[{"label":["vendor-private-text"],"values":[["date",1]]}]}'
+    record = record_of(raw, "tijori", "vs.chart-api")
+    store.put_capture(record, raw)
+    spec = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )[1]
+    if session_error:
+
+        def rejected(body, context):
+            raise ScreenerSessionError(body.raw.decode())
+
+        monkeypatch.setitem(
+            PARSERS,
+            (Site.SCREENER, "chart-api"),
+            ParserEntry(version="screener:malformed.v1", parse=rejected),
+        )
+    with pool:
+        ref = register(
+            pool,
+            Fetched(
+                record=record, url="https://www.tijorifinance.com/chart/?q=price", location=None
+            ),
+        )
+        parse_and_record(
+            store,
+            values,
+            ref,
+            record,
+            Request(
+                spec=spec,
+                url="https://www.tijorifinance.com/chart/?q=price",
+                ids=None,
+                due_since=None,
+            ),
+        )
+        with pg_db.owner_pool() as owners, owners.connection() as owner:
+            owner.execute("INSERT INTO eqos.licence_ends (source_id) VALUES ('tijori')")
+        with pg_db.role_pool(PgRole.PURGE) as purges, purges.connection() as conn:
+            conn.execute(
+                "INSERT INTO eqos.capture_states (capture_ref_id,state) "
+                "VALUES (%s,'PURGE_PENDING')",
+                (ref.capture_ref_id,),
+            )
+            conn.execute("SELECT eqos.tombstone_vendor_capture(%s)", (ref.capture_ref_id,))
+        with pool.connection() as conn:
+            assert conn.execute(
+                "SELECT detail FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchone() == (("ScreenerSessionError" if session_error else "ValidationError"),)

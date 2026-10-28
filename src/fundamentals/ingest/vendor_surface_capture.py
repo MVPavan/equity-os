@@ -126,9 +126,9 @@ def parse_and_record(
                         else (OutcomeStatus.OK if parsed else OutcomeStatus.EMPTY)
                     )
         except ScreenerSessionError as error:
-            detail = str(error)
+            detail = type(error).__name__
         except Exception as error:
-            status, detail = OutcomeStatus.FAILED, f"{type(error).__name__}: {error}"
+            status, detail = OutcomeStatus.FAILED, type(error).__name__
         assert ref.capture_ref_id is not None
         if not values.has_outcome(ref.capture_ref_id, surface, version):
             values.record(
@@ -175,7 +175,7 @@ def capture(
                     parser_sha256=parser_sha256(entry.parse),
                     status=OutcomeStatus.UNUSABLE,
                     symbol=request.ids.nse_symbol if request.ids else None,
-                    detail=str(error),
+                    detail=type(error).__name__,
                 ),
                 row_count=0,
             )
@@ -198,7 +198,9 @@ def reparse(
     entry = PARSERS[spec.site, spec.id]
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(
-            """SELECT c.*, a.url FROM eqos.capture_refs c
+            """SELECT c.*, a.url, (SELECT o.symbol FROM eqos.vendor_outcomes o
+                WHERE o.capture_ref_id=c.id AND o.symbol IS NOT NULL ORDER BY o.id LIMIT 1)
+                AS symbol FROM eqos.capture_refs c
             JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id
             WHERE c.source_id=%s AND c.surface=%s
             AND eqos.capture_state(c.id) IN ('RETAINED','RESTORED')
@@ -210,7 +212,11 @@ def reparse(
     for row in rows:
         ref = capture_of(row)
         ids = next(
-            (company_ids(stock) for stock in stocks if f"/company/{stock.symbol}/" in row["url"]),
+            (
+                company_ids(stock)
+                for stock in stocks
+                if stock.symbol == row["symbol"] or f"/company/{stock.symbol}/" in row["url"]
+            ),
             None,
         )
         basis = (

@@ -98,7 +98,14 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch)
         assert conn.execute(
             "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='FAILED'"
         ).fetchone() == (1,)
-    monkeypatch.setitem(parsing.PARSERS, key, entry)
+
+    def with_identity(body, context):
+        assert context.ids is not None
+        assert context.ids.nse_symbol == "APARINDS"
+        assert context.ids.screener_company_id == 211
+        return entry.parse(body, context)
+
+    monkeypatch.setitem(parsing.PARSERS, key, entry.model_copy(update={"parse": with_identity}))
     before = len(opener.calls)
     assert (
         main(["vendor", "reparse", "--surface", "screener:chart-api", "--snapshot-root", str(root)])
@@ -107,7 +114,7 @@ def test_failed_parser_and_network_free_reparse(rig, pg_db, capsys, monkeypatch)
     assert len(opener.calls) == before
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
-            "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='OK'"
+            "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='OK' AND symbol='APARINDS'"
         ).fetchone() == (1,)
         assert conn.execute("SELECT count(*) FROM eqos.vendor_values").fetchone() == (992,)
 
