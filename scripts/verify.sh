@@ -13,9 +13,9 @@
 #
 #   scripts/verify.sh red      <slice> <pytest-target>...  capture the red proof
 #   scripts/verify.sh baseline <slice>                     record a refactor baseline
-#   scripts/verify.sh gate     <slice>                     the gate itself
+#   scripts/verify.sh gate     <slice> [<slice>...]        the gate itself
 #
-# Contract: prints at most 8 status lines plus one ROUTE line. Tracebacks NEVER
+# Contract: prints at most 8 status lines per slice plus one ROUTE line. Tracebacks NEVER
 # reach stdout — they go to the log file, because a red gate is the one path
 # that can put 2,000 tokens of traceback into the orchestrator's context, where
 # every later call in the session re-sends it.
@@ -94,7 +94,7 @@ usage() {
 usage:
   scripts/verify.sh red  <slice> <pytest-target>...   capture the red proof
   scripts/verify.sh baseline <slice>                  record a refactor baseline
-  scripts/verify.sh gate <slice>                      run the gate
+  scripts/verify.sh gate <slice> [<slice>...]         run the gate
   scripts/verify.sh reseal <slice> <proof-file> [new-file...]
                                                       re-hash after a REOPENED
                                                       contract; orchestrator only
@@ -291,13 +291,15 @@ mode_gate() {
   fi
 
   mkdir -p "${GATE_DIR}"
+  local route="${EXIT_PASS}" reason=""
+  local shared_log="" shared_cov="" shared_lint=""
+  for slice in "$@"; do
   local ts log proof
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   log="${GATE_DIR}/${slice}-${ts}.log"
   proof="${GATE_DIR}/${slice}-red.json"
   : >"${log}"
 
-  local route="${EXIT_PASS}" reason=""
   local l_untouched l_red l_gate l_skips l_cov l_rails
 
   note() { printf '%s\n' "$1" >>"${log}"; }
@@ -399,9 +401,14 @@ PYEOF
 
   # 2 — the gate. One pytest run, with coverage, so the loop stays cheap.
   local covjson="${GATE_DIR}/${slice}-${ts}-cov.json"
+  if [ -z "${shared_log}" ]; then
   note "=== pytest ==="
   uv run pytest "${TEST_SCOPE}" -q --tb=short -rA \
     "--cov=${COV_SCOPE}" "--cov-report=json:${covjson}" --cov-report= >>"${log}" 2>&1
+  else
+    cp "${shared_log}" "${log}"
+    covjson="${shared_cov}"
+  fi
   local failed n_failed n_skipped
   failed="$(cap_names "$(awk '/^(FAILED|ERROR) /{print $2}' "${log}")")"
   n_failed="$(grep -cE '^(FAILED|ERROR) ' "${log}" || true)"
@@ -437,9 +444,16 @@ PYEOF
     [ -n "${big_src}" ] && lint_fail="${lint_fail}${lint_fail:+,}over-800-lines(${big_src})"
   fi
 
+  if [ -z "${shared_log}" ]; then
   run_check "ruff-check"  ruff check "${SRC_SCOPE}" "${TEST_SCOPE}"
   run_check "ruff-format" ruff format --check "${SRC_SCOPE}" "${TEST_SCOPE}"
   run_check "mypy"        mypy --strict "${SRC_SCOPE}"
+  shared_log="$(mktemp)"
+  cp "${log}" "${shared_log}"
+  shared_cov="${covjson}"; shared_lint="${lint_fail}"
+  else
+    lint_fail="${shared_lint}"
+  fi
 
   if [ "${n_failed}" -gt 0 ] || [ -n "${lint_fail}" ]; then
     local parts=""
@@ -676,6 +690,8 @@ PYEOF
   echo "${l_cov}"
   echo "${l_rails}"
   echo "log              ${log#"${REPO_ROOT}/"}"
+  done
+  rm -f "${shared_log}"
   case "${route}" in
     "${EXIT_PASS}")     echo "ROUTE: PASS      review may begin" ;;
     "${EXIT_IMPL}")     echo "ROUTE: IMPL      ${reason}" ;;
@@ -752,7 +768,7 @@ PYEOF
 case "$1" in
   red)      shift; mode_red "$@" ;;
   baseline) shift; mode_baseline "$1" ;;
-  gate)     shift; mode_gate "$1" ;;
+  gate)     shift; mode_gate "$@" ;;
   reseal) shift; mode_reseal "$@" ;;
   *)    usage ;;
 esac
