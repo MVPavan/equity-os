@@ -6,7 +6,6 @@ import argparse
 import calendar
 import fcntl
 import hashlib
-import json
 import subprocess
 import sys
 import time
@@ -301,11 +300,9 @@ class _Pass:
         if surface == REPORTS:
             rows.sort(key=lambda item: int(item[1]["toYr"]), reverse=True)
             return rows[: self.args.annual_reports] if self.backfill and not self.tijori else rows
-        accepted = [(key, row) for key, row in rows if row.get("sm_isin") == isin]
-        if len(accepted) != len(json.loads(body)):
-            sys.stderr.write(f"refused listing rows\t{symbol}\t{surface}\n")
-            self.incomplete = True
-        return accepted
+        if any(row.get("sm_isin") != isin for _, row in rows):
+            raise ValueError("refused listing rows")
+        return rows
 
     def _documents(self, entity: int, symbol: str) -> None:
         """Complete each latest revision's pending document within its attempt bound."""
@@ -443,7 +440,7 @@ class _Pass:
                     if candidate
                     else ("TRIGGER", "docs-trigger", "update-run")
                 )
-                ref, filed = f"{prefix}:{symbol}:{key}", row.get("an_dt", "")
+                ref, filed = f"{prefix}:{entity}:{key}", row.get("an_dt", "")
                 action = "exists"
                 if ref not in refs:
                     description = f"{kind} filed {filed}; attachment {row.get('attchmntFile', '')}"

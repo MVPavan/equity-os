@@ -456,12 +456,20 @@ def test_middle_span_on_day_ten(lane: Lane, capsys: pytest.CaptureFixture[str]) 
     assert lane.run() == 0 and "UNCOVERED" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    "refuse",
+    [
+        lambda row: {k: v for k, v in row.items() if k != "seq_id"},
+        lambda row: row | {"sm_isin": "INE000A01000"},
+    ],
+    ids=["unkeyed", "other-isin"],
+)
 def test_refused_issuer_row_is_not_proof_of_absence(
-    lane: Lane, capsys: pytest.CaptureFixture[str]
+    lane: Lane, capsys: pytest.CaptureFixture[str], refuse: Any
 ) -> None:
-    """A span with an issuer row the intake could not key cannot prove NSE lacks the document."""
+    """A span with an issuer row the intake refused cannot prove NSE lacks the document."""
     row = next(r for r in lane.retained if "Investor Presentation" in r["attchmntText"])
-    tijori(lane, {k: v for k, v in row.items() if k != "seq_id"})
+    tijori(lane, refuse(row))
     lane.run()
     lane.args.documents_command = "daily"
     assert lane.run() == 4
@@ -528,3 +536,16 @@ def test_backfill_honours_its_range_after_daily_coverage(lane: Lane) -> None:
         ["01-07-2026"],
         ["01-08-2026"],
     ]
+
+
+def test_symbol_change_keeps_one_bead_per_occurrence(lane: Lane) -> None:
+    """A renamed issuer's filings are the same occurrences, so they never get a second bead."""
+    assert lane.run() == 0 and lane.refs
+    beads = set(lane.refs)
+    with lane.db.runtime_pool() as pool, pool.connection() as conn:
+        conn.execute(
+            "INSERT INTO eqos.document_listings (entity_id,symbol,surface,span_from,span_to,"
+            "retrieved_at,outcome,capture_ref_id) SELECT entity_id,'APARNEW',surface,span_from,"
+            "span_to,retrieved_at,outcome,capture_ref_id FROM eqos.document_listings LIMIT 1"
+        )
+    assert lane.run() == 0 and lane.refs == beads

@@ -6,7 +6,7 @@ from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
@@ -141,3 +141,14 @@ def test_zip_with_undecodable_member_name_is_unreadable() -> None:
     with ZipFile(stream, "w") as archive:
         archive.writestr("\u00e9.pdf", b"%PDF-same")
     assert zip_pdf_digests(stream.getvalue().replace("\u00e9".encode(), b"\xff\xfe")) is None
+
+
+def test_zip_over_total_decompression_budget_is_unreadable() -> None:
+    """Small members that together inflate past the archive budget are one unreadable candidate."""
+    from fundamentals.ingest.tijori_documents import zip_pdf_digests
+
+    stream = BytesIO()
+    with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
+        for index in range(9):
+            archive.writestr(f"{index}.pdf", bytes(8 * 1024 * 1024))
+    assert len(stream.getvalue()) < 200_000 and zip_pdf_digests(stream.getvalue()) is None

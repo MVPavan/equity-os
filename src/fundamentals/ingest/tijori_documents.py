@@ -77,13 +77,14 @@ def tijori_document_request(link: DocumentLink) -> Request | None:
 
 def zip_pdf_digests(body: bytes) -> tuple[tuple[str, str], ...] | None:
     try:
-        digests = []
+        digests, budget = [], 64 * 1024 * 1024
         with zipfile.ZipFile(BytesIO(body)) as archive:
             for member in archive.infolist():
                 if member.flag_bits & 1:
                     return None
                 if member.filename.lower().endswith(".pdf"):
-                    if member.file_size > 64 * 1024 * 1024:
+                    budget -= member.file_size
+                    if budget < 0:
                         return None
                     with archive.open(member) as stream:
                         digest = hashlib.file_digest(

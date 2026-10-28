@@ -24,7 +24,10 @@ COVERED = (
     "SELECT DISTINCT subject_id FROM eqos.decisions "
     "WHERE subject_kind='WATCHLIST' AND eqos.watchlisted(subject_id) ORDER BY subject_id"
 )
-INTAKE_ISSUERS = "SELECT DISTINCT entity_id,symbol FROM eqos.document_listings ORDER BY 1,2"
+INTAKE_ISSUERS = (
+    "SELECT DISTINCT ON (entity_id) entity_id,symbol FROM eqos.document_listings "
+    "ORDER BY entity_id,id DESC"
+)
 REGISTERED = (
     "SELECT 1 FROM eqos.capture_refs WHERE source_id=%s AND surface=%s "
     "AND request_key=%s AND capture_id=%s"
