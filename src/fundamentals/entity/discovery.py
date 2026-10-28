@@ -55,6 +55,8 @@ from fundamentals.contracts.source_catalog import (
     NSE_XBRL_INSTANCE,
     SCREENER_PAGE,
     SCREENER_SEARCH,
+    TIJORI_DOCUMENT_SURFACES,
+    TIJORI_OVERVIEW,
     TIJORI_PAGE,
     TIJORI_SEARCH,
     UPSTOX_INSTRUMENTS,
@@ -139,6 +141,8 @@ ORIGINS = {
     SCREENER_PAGE: _SCREENER,
     TIJORI_SEARCH: _TIJORI,
     TIJORI_PAGE: _TIJORI,
+    TIJORI_OVERVIEW: _TIJORI,
+    **dict.fromkeys(TIJORI_DOCUMENT_SURFACES, "files.tijorifinance.com"),
     UPSTOX_INSTRUMENTS: "assets.upstox.com",
     UPSTOX_STATEMENT: "api.upstox.com",
 }

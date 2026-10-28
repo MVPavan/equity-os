@@ -344,3 +344,88 @@ def test_backfill_checks_screener_identity_never_fetches_agency_and_respects_cov
         )
     lane.sent.clear()
     assert lane.run() == 4 and not lane.sent
+
+
+def test_tijori_intake_and_citations(lane: Lane, capsys: pytest.CaptureFixture[str]) -> None:
+    from test_tijori_documents import page
+
+    args = lane.args
+    args.tijori, args.config_root = True, Path("config")
+    lane.status["overview"] = (200, page())
+    lane.rows = [r for r in lane.rows if "about Transcript" in r["attchmntText"]]
+    lane.board = []
+    lane.at = datetime(2026, 8, 8, tzinfo=UTC)
+    args.documents_command = "backfill"
+    args.from_date, args.to_date = date(2026, 6, 24), date(2026, 8, 6)
+    args.symbol, args.annual_reports, args.screener = "APARINDS", 17, False
+    assert lane.run() == 0
+    out = capsys.readouterr().out
+    assert "CITE\tCORROBORATED\t17\n" in out and "CITE\tVENDOR_COPY\t86\n" in out
+    with lane.db.runtime_pool() as pool, pool.connection() as conn:
+        [(key,)] = conn.execute(
+            "SELECT request_key FROM eqos.capture_refs WHERE source_id='tijori-documents' "
+            "AND surface='TIJORI_TRANSCRIPT' LIMIT 1"
+        ).fetchall()
+        store = SnapshotStore(args.snapshot_root)
+        record = store.list_captures("tijori-documents", "TIJORI_TRANSCRIPT", key)[0]
+        assert record.rights.authority_refs == (
+            "docs/evidence/phase-0a/a-05-rights-decision-005-subscriber-scraping.md",
+        )
+    args.documents_command = "daily"
+    assert lane.run() == 0
+    assert "CITE\tVENDOR_COPY\t87\n" in capsys.readouterr().out
+    lane.sent.clear()
+    assert lane.run() == 0 and len(lane.refs) == 1
+    assert not any(r.source_id.endswith("-documents") for r in lane.sent)
+    lane.status["overview"] = (200, page().replace(b'"symbol": "APARINDS"', b'"symbol": "APARIND"'))
+    assert lane.run() == 4 and "refused tijori identity" in capsys.readouterr().err
+
+
+def test_tijori_gaps_and_missing_config(lane: Lane, capsys: pytest.CaptureFixture[str]) -> None:
+    from test_tijori_documents import page
+
+    args = lane.args
+    args.tijori, args.config_root = True, lane.root
+    (lane.root / "watchlist.yaml").write_text("raw_dir: data/raw\nstocks: []\n")
+    assert lane.run() == 4 and "UNCOVERED\tAPARINDS\ttijori" in capsys.readouterr().out
+    args.config_root = Path("config")
+    lane.status["overview"], lane.status["TIJORI_TRANSCRIPT"] = (200, page()), (403, b"")
+    for _ in range(5):
+        assert lane.run() == 4
+    lane.sent.clear()
+    assert lane.run() == 4 and "GAP\tAPARINDS\tTRANSCRIPT" in capsys.readouterr().out
+    assert not any(r.surface == "TIJORI_TRANSCRIPT" for r in lane.sent)
+
+
+def test_covered_issuer_absent_config_or_nse_symbol(
+    lane: Lane, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from fundamentals.api import documents_cli
+
+    lane.args.config_root = lane.root
+    (lane.root / "watchlist.yaml").write_text("raw_dir: data/raw\nstocks: []\n")
+    assert lane.run() == 0  # an ADDed issuer absent from this config is still processed
+    from fundamentals.entity.identity_layers import latest_slice
+
+    monkeypatch.setattr(
+        documents_cli,
+        "latest_slice",
+        lambda c, d: [h for h in latest_slice(c, d) if h.namespace.value != "NSE_SYMBOL"],
+    )
+    lane.sent.clear()
+    assert lane.run() == 4 and "UNCOVERED_ISSUER" in capsys.readouterr().out and not lane.sent
+
+
+def test_middle_span_on_day_ten(lane: Lane, capsys: pytest.CaptureFixture[str]) -> None:
+    assert lane.run() == 0
+    lane.at += timedelta(days=10)
+    lane.sent.clear()
+    from fundamentals.ingest.first_party_documents import MEETINGS, nse_listing_url
+
+    url = nse_listing_url(MEETINGS, "APARINDS", date(2026, 11, 24), date(2026, 12, 24))
+    lane.status[url] = (403, b"")
+    assert lane.run() == 4
+    assert len([r for r in lane.sent if r.surface == "BOARD_MEETINGS_LISTING"]) == 2
+    assert capsys.readouterr().out.count("UNCOVERED\tAPARINDS\tBOARD_MEETINGS_LISTING") == 3
+    lane.status.pop(url)
+    assert lane.run() == 0 and "UNCOVERED" not in capsys.readouterr().out

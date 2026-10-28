@@ -17,6 +17,7 @@ from fundamentals.contracts.source_catalog import (
     DOCUMENT_HOSTS,
     DOCUMENT_LISTINGS,
     SCREENER_PAGE,
+    TIJORI_OVERVIEW,
     DocumentKind,
 )
 from fundamentals.entity.discovery import Request
@@ -88,7 +89,7 @@ def classify_announcement(row: dict[str, Any]) -> AnnouncementClass:
 def observed_link(surface: str, payload: dict[str, Any]) -> DocumentLink | None:
     """The document an observed revision names: filed NSE archive attachments, annual-report
     entries and Screener links; board-meeting notices and other filings name none."""
-    if surface == SCREENER_PAGE[1]:
+    if surface in (SCREENER_PAGE[1], TIJORI_OVERVIEW[1]):
         return DocumentLink.model_validate(payload)
     if surface == REPORTS:
         url = payload["fileName"]

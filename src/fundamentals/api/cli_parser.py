@@ -231,6 +231,8 @@ def build_parser() -> argparse.ArgumentParser:
     backfill = actions.add_parser("backfill")
     for command in (daily, backfill):
         command.add_argument("--snapshot-root", type=Path, required=True)
+        command.add_argument("--tijori", action="store_true")
+        command.add_argument("--config-root", type=Path, default=Path("config"))
     daily.add_argument("--lock-root", type=Path, required=True)
     backfill.set_defaults(lock_root=Path("data/raw/documents"))
     backfill.add_argument("--symbol", required=True)
@@ -238,7 +240,6 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--to", dest="to_date", type=date.fromisoformat, required=True)
     backfill.add_argument("--annual-reports", type=int, default=5)
     backfill.add_argument("--screener", action="store_true")
-    backfill.add_argument("--config-root", type=Path, default=Path("config"))
     add_shareholding_parser(subparsers)
     add_coverage_parser(subparsers)
     add_retention_parser(subparsers)

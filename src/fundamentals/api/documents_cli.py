@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import fcntl
 import hashlib
 import json
 import subprocess
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from datetime import date, datetime, timedelta
@@ -26,6 +28,7 @@ from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import (
     NSE_MASTER,
     SCREENER_PAGE,
+    TIJORI_OVERVIEW,
     VENDOR_SURFACES,
     DocumentKind,
 )
@@ -43,12 +46,15 @@ from fundamentals.entity.discovery import (
 from fundamentals.entity.identity_layers import latest_slice
 from fundamentals.entity.verification import master_rows
 from fundamentals.evidence.capture_retention import Registration
+from fundamentals.ingest import tijori_documents as tj
 from fundamentals.ingest.first_party_documents import (
     ANNOUNCEMENTS,
     IST,
     MEETINGS,
+    NSE_TIME,
     REPORTS,
     AnnouncementClass,
+    DocumentLink,
     classify_announcement,
     document_request,
     listing_rows,
@@ -58,6 +64,7 @@ from fundamentals.ingest.first_party_documents import (
 )
 from fundamentals.ingest.nse_filings import EQUITY_MASTER_URL
 from fundamentals.ingest.screener_documents import read_screener_documents
+from fundamentals.ingest.tijori_overview_models import TijoriOverviewIdentityError
 from fundamentals.pg.document_intake import (
     COVERED,
     INTAKE_ISSUERS,
@@ -77,6 +84,7 @@ BD_LOOKUP = ("list", "--all", "--external-contains", "docs-", "--limit", "0", "-
 BD_ROWS = TypeAdapter(list[dict[str, object]])
 BACKFILL = "backfill"
 LOCK_NAME = "documents.lock"
+TIJORI = TIJORI_OVERVIEW[1]
 SCREENER = SCREENER_PAGE[1]
 SCREENER_URL = "https://www.screener.in/company/{}/consolidated/"
 PARSE_ERROR = "PARSE_ERROR"
@@ -133,6 +141,9 @@ class _Pass:
         self.intake = DocumentIntake(conn)
         self.backfill = args.documents_command == BACKFILL
         self.incomplete = False
+        self.citations: Counter[str] = Counter()
+        self.annual_ok = False
+        self.tijori = getattr(args, "tijori", False)
 
     def run(self, bd: BdRunner) -> int:
         """Steps 1-6 of the plan in order; bd reconciliation reads every retained issuer."""
@@ -146,11 +157,16 @@ class _Pass:
         surfaces: tuple[str, ...] = (ANNOUNCEMENTS, MEETINGS)
         if self.backfill:
             surfaces += (REPORTS, SCREENER) if self.args.screener else (REPORTS,)
+        if self.tijori:
+            surfaces += (TIJORI,) if self.backfill else (REPORTS, TIJORI)
         for entity, symbol, isin in issuers:
             verified = [found for _, found in master_rows(master, symbol)] == [isin]
             for surface in surfaces:
                 self._listing(entity, symbol, isin if verified else None, surface)
             self._documents(entity, symbol)
+        if self.tijori:
+            for outcome in tj.CITATIONS:
+                sys.stdout.write(f"CITE\t{outcome}\t{self.citations[outcome]}\n")
         if not self._beads(bd):
             return RunExitStatus.FAILURE
         return RunExitStatus.INCOMPLETE if self.incomplete else RunExitStatus.SUCCESS
@@ -205,14 +221,28 @@ class _Pass:
         for index, span in enumerate(spans):
             if index >= MAX_SPANS or not self._span(entity, symbol, isin, surface, span):
                 for span_from, span_to in spans[index:]:
-                    sys.stdout.write(f"UNCOVERED\t{symbol}\t{surface}\t{span_from}\t{span_to}\n")
+                    sys.stdout.write(
+                        f"UNCOVERED\t{symbol}\t{'tijori' if surface == TIJORI else surface}"
+                        f"\t{span_from}\t{span_to}\n"
+                    )
                 self.incomplete = True
                 return
 
     def _span(self, entity: int, symbol: str, isin: str | None, surface: str, span: Span) -> bool:
         """Fetch one listing span and commit its body, listing row and revisions together."""
         span_from, span_to = span
-        if surface == SCREENER:
+        if surface == TIJORI:
+            try:
+                config = load_watchlist_config(self.args.config_root / "watchlist.yaml")
+                self.stock = config.stock(symbol).identifiers
+                if self.stock.unverified_tijori_fields():
+                    return False
+            except ValueError:
+                return False
+            request = _exchange(
+                *TIJORI_OVERVIEW, f"https://www.tijorifinance.com/company/{self.stock.tijori_slug}/"
+            )
+        elif surface == SCREENER:
             request = _exchange(SCREENER_PAGE[0], surface, SCREENER_URL.format(symbol))
         else:
             url = nse_listing_url(surface, symbol, span_from or self.today, span_to or self.today)
@@ -222,8 +252,12 @@ class _Pass:
         if outcome == OK:
             try:
                 observations = self._parse(symbol, isin, surface, cast(bytes, response.body))
+            except TijoriOverviewIdentityError:
+                sys.stderr.write("refused tijori identity\n")
+                outcome, self.incomplete = PARSE_ERROR, True
             except (ValueError, KeyError, TypeError):
-                refused = "screener identity" if surface == SCREENER else f"listing\t{symbol}"
+                labels = {TIJORI: "tijori listing", SCREENER: "screener identity"}
+                refused = labels.get(surface, f"listing\t{symbol}")
                 sys.stderr.write(f"refused {refused}\t{surface}\n")
                 outcome, self.incomplete = PARSE_ERROR, True
         with self._registered(request, response, outcome == OK) as ref_id:
@@ -238,6 +272,8 @@ class _Pass:
                 capture_ref_id=ref_id,
             )
             self.intake.record_listing(listing, observations)
+        if surface == REPORTS:
+            self.annual_ok = outcome == OK
         return outcome == OK
 
     def _parse(
@@ -246,6 +282,14 @@ class _Pass:
         """Observations of one listing body; rows for another ISIN are refused."""
         if isin is None:
             raise ValueError("refused master identity")
+        if surface == TIJORI:
+            links = tj.read_tijori_documents(
+                body,
+                slug=self.stock.tijori_slug,
+                expected_symbol=symbol,
+                expected_company_id=self.stock.tijori_company_id,
+            )
+            return [(link.url, link.model_dump(mode="json")) for link in links]
         if surface == SCREENER:
             config = load_watchlist_config(self.args.config_root / "watchlist.yaml")
             expected = config.stock(symbol).identifiers.screener_company_id
@@ -254,7 +298,7 @@ class _Pass:
         rows = listing_rows(surface, body)
         if surface == REPORTS:
             rows.sort(key=lambda item: int(item[1]["toYr"]), reverse=True)
-            return rows[: self.args.annual_reports]
+            return rows[: self.args.annual_reports] if self.backfill else rows
         accepted = [(key, row) for key, row in rows if row.get("sm_isin") == isin]
         if len(accepted) != len(json.loads(body)):
             sys.stderr.write(f"refused listing rows\t{symbol}\t{surface}\n")
@@ -263,10 +307,12 @@ class _Pass:
 
     def _documents(self, entity: int, symbol: str) -> None:
         """Complete each latest revision's pending document within its attempt bound."""
-        for surface in (ANNOUNCEMENTS, REPORTS, SCREENER):
+        for surface in (ANNOUNCEMENTS, REPORTS, SCREENER) + ((TIJORI,) if self.tijori else ()):
             for observation in self.intake.latest(entity, surface):
                 link = observed_link(surface, observation.payload)
                 request = document_request(link) if link else None
+                if link and self.tijori:
+                    request = request or tj.tijori_document_request(link)
                 if link is None or request is None:
                     continue
                 outcomes = self.intake.attempts(observation.id, request.url)
@@ -279,6 +325,62 @@ class _Pass:
                     if _closed(outcomes):
                         gap = f"{symbol}\t{link.kind}\t{observation.occurrence_key}\t{outcomes[-1]}"
                         sys.stdout.write(f"GAP\t{gap}\n")
+
+        for obs in self.intake.latest(entity, TIJORI) if self.tijori else []:
+            link = cast(DocumentLink, observed_link(TIJORI, obs.payload))
+            request = cast(Request, tj.tijori_document_request(link))
+            ok = self.intake.ok_attempt(obs.id, request.url)
+            if ok is None:
+                continue
+            annual = link.kind == DocumentKind.ANNUAL_REPORT
+            day = link.filed_at.date() if link.filed_at else None
+            if annual:
+                day = date(int(link.period), 12, 31)
+            start, stop = (day or self.today) - timedelta(days=7), day or self.today
+            if day and not annual and len(link.period.split()) == 2:
+                stop = day.replace(day=calendar.monthrange(day.year, day.month)[1])
+            stop += timedelta(days=7)
+            surface = REPORTS if annual else ANNOUNCEMENTS
+            candidates: list[tj.Candidate] = []
+            unresolved = False
+            for other in self.intake.latest(entity, surface):
+                row = other.payload
+                if annual:
+                    if str(row["toYr"]) != link.period:
+                        continue
+                elif (
+                    not day or not start <= datetime.strptime(row["an_dt"], NSE_TIME).date() <= stop
+                ):
+                    continue
+                kind = classify_announcement(row)
+                unresolved |= link.kind == "TRANSCRIPT" and kind == "CONCALL_UNRESOLVED"
+                filed = observed_link(surface, row)
+                if filed is None or filed.kind != link.kind:
+                    continue
+                req = cast(Request, document_request(filed))
+                success = self.intake.ok_attempt(other.id, req.url)
+                digests: tuple[tuple[str, str], ...] = ()
+                state, ref = "PENDING", None
+                if success:
+                    sha, ref, capture = success
+                    digests, state = (("", sha),), OK
+                    if annual:
+                        key = hashlib.sha256(req.key.encode()).hexdigest()
+                        records = self.store.list_captures(req.source_id, req.surface, key)
+                        record = next(r for r in records if r.capture_id == capture)
+                        body = self.store.read_body(record)
+                        if body.startswith(b"PK\x03\x04"):
+                            zipped = tj.zip_pdf_digests(body)
+                            digests = zipped or ()
+                            state = OK if zipped is not None else "ZIP_UNREADABLE"
+                elif _closed(self.intake.attempts(other.id, req.url)):
+                    state = "UNAVAILABLE"
+                candidates.append((ref, state, digests))
+            covered = self.annual_ok
+            if not annual:
+                covered = tj.covers(self.intake.ok_spans(entity, ANNOUNCEMENTS), start, stop)
+            result = tj.cite(day, annual, ok[0], candidates, unresolved=unresolved, covered=covered)
+            self.citations[result[0]] += 1
 
     def _attempt(self, observation: Observation, kind: DocumentKind, request: Request) -> str:
         """Register a crash remnant without a request, else fetch; record one attempt."""

@@ -56,6 +56,11 @@ _OK_SPANS = (
     f"SELECT span_from,{_STOP} FROM eqos.document_listings WHERE entity_id=%s AND surface=%s "
     f"AND outcome='OK' AND span_from<={_STOP} ORDER BY span_from"
 )
+_OK_ATTEMPT = (
+    "SELECT a.body_sha256,a.capture_ref_id,c.capture_id FROM eqos.document_attempts a "
+    "JOIN eqos.capture_refs c ON c.id=a.capture_ref_id "
+    "WHERE a.observation_id=%s AND a.url=%s AND a.outcome='OK' ORDER BY a.id LIMIT 1"
+)
 _FIRST_SPAN = "SELECT min(span_from) FROM eqos.document_listings WHERE entity_id=%s AND surface=%s"
 
 
@@ -138,3 +143,11 @@ class DocumentIntake:
         first: date | None
         [(first,)] = self.conn.execute(_FIRST_SPAN, (entity_id, surface)).fetchall()
         return first
+
+    def ok_attempt(self, observation_id: int, url: str) -> tuple[str, int, str] | None:
+        """The registered successful attempt and its store capture identity."""
+        return self.conn.execute(_OK_ATTEMPT, (observation_id, url)).fetchone()
+
+    def ok_spans(self, entity_id: int, surface: str) -> list[tuple[date, date]]:
+        """Successful listing intervals capped at their retrieval date."""
+        return self.conn.execute(_OK_SPANS, (entity_id, surface)).fetchall()
