@@ -87,6 +87,8 @@ KEYS = "ack acked mark mark_read mark_as_seen seen read dismiss".split()
         "/results/concall-summaries/",
         "/%2e%2e/watchlist/../delete/",
         "//in//watchlist/company/1",
+        "/capsules/1/delete/stock-alerts/",
+        "/capsules/delete/stock-alerts/",
     ],
 )
 def test_deny_list(path):
@@ -121,6 +123,8 @@ def test_read_only_exceptions(path):
         "https://user@www.screener.in/",
         "https://www.screener.in/%2e%2e/delete/",
         "https://www.screener.in//in//watchlist/company/1",
+        "https://www.screener.in/%2e%2e/watchlist/",
+        "https://www.screener.in//in//watchlist",
     ],
 )
 def test_refused_before_open(tmp_path, url):
@@ -140,6 +144,8 @@ def test_refused_before_open(tmp_path, url):
         (403, None, True),
         (503, None, True),
         (302, "/login/", True),
+        (302, "/%6cogin/", True),
+        (302, "https://WWW.SCREENER.IN/login/", True),
         (302, "https://example.com/document", False),
         (302, "https://example.com/login/", False),
     ],
@@ -180,17 +186,6 @@ def test_partial_busy_and_budget(tmp_path: Path):
     with pytest.raises(SiteBusy):
         busy.get(Site.SCREENER, "chart-api", fetched.url)
     assert len(opener.calls) == 1
-
-
-def test_normalised_account_paths(tmp_path):
-    from fundamentals.ingest.vendor_surface_fetch import Site
-
-    opener = Opener()
-    client, _ = fetcher(tmp_path, opener)
-    for path in ("/%2e%2e/watchlist/", "//in//watchlist"):
-        with pytest.raises(ValueError):
-            client.get(Site.SCREENER, "chart-api", "https://www.screener.in" + path)
-    assert not opener.calls
 
 
 def test_injected_standard_opener_cannot_follow_redirect(tmp_path):

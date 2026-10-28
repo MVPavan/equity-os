@@ -18,7 +18,6 @@ from fundamentals.api.env_credentials import (
     _tijori_credentials_from_env,
 )
 from fundamentals.api.watchlist_config import load_watchlist_config
-from fundamentals.ingest.http_session import NoRedirectHandler
 from fundamentals.ingest.screener_session_models import Basis
 from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
 from fundamentals.ingest.vendor_surface_capture import (
@@ -83,7 +82,7 @@ def sessions() -> Mapping[Site, SiteSession]:
 def dispatch_vendor_command(
     args: argparse.Namespace,
     *,
-    opener_factory: Callable[[], OpenerDirector] = lambda: build_opener(NoRedirectHandler()),
+    opener_factory: Callable[[], OpenerDirector] = build_opener,
     pool_factory: Callable[[], ConnectionPool] = lambda: open_pool(PgSettings(), PgRole.RUNTIME),
     store_factory: Callable[[Path], SnapshotStore] = SnapshotStore,
     sessions_factory: Callable[[], Mapping[Site, SiteSession]] = sessions,

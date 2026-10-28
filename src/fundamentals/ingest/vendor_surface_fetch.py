@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import posixpath
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -154,9 +155,7 @@ def is_denied(url: str) -> bool:
     path = parts.path.lower().rstrip("/") + "/"
     if any(key.lower() in DENY_KEYS for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
         return True
-    if path == "/in/edit-columns/" or (
-        path.startswith("/capsules/") and path.endswith("/stock-alerts/")
-    ):
+    if path == "/in/edit-columns/" or re.fullmatch(r"/capsules/[0-9]+/stock-alerts/", path):
         return False
     if path.startswith(NAMED_PATHS) or (
         path.startswith("/annual-reports/") and path.endswith("/summary/")
@@ -301,8 +300,8 @@ class VendorFetcher:
         )
         self.store.put_capture(record, raw)
         fetched = Fetched(record=record, url=url, location=location)
-        target = urlsplit(urljoin(url, location or ""))
-        login = target.netloc == parts.netloc and any(
+        target = urlsplit(normalise(urljoin(url, location or "")))
+        login = target.netloc.lower() == parts.netloc.lower() and any(
             word in target.path.lower() for word in ("login", "signin")
         )
         if status in (403, 429, 503) or (status is not None and 300 <= status < 400 and login):
