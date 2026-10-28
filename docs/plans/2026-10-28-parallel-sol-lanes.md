@@ -21,6 +21,13 @@ parallel without touching its files.
 | 3 | **Whole-repo critical audit**: invariant violations, dead code, oversized modules (e.g. `goal_runner.py`, eqos-4ff) and spec drift, judged against "could this be half the code?" | new beads from its findings | Reviewer (read-only) | Ranked findings, which become beads | No |
 | 4 | **RESEARCH-3 plan**, from the approved spec `docs/specs/2026-10-27-research-3-thesis-analysis.md` (S1 risk probe → S2 credibility → S3 narrate). Execution waits for LIVE-RUN-1 | eqos-bnx | Plan author, or reviewer if Opus writes it | The plan, reviewed by a fresh Sol session | **Yes** if Sol writes it |
 
+**Owner decision (2026-10-28):**
+- Lanes 1, 2 and 3 are approved, with Sol implementing lane 1. The orchestrator is accountable
+  for their quality.
+- Lane 4 is not run now.
+- Sequencing: lanes 1–3 start only after the lane 0 Screener/Tijori report has been presented to
+  the owner.
+
 **Not worth running now:**
 - **BSE 403:** Tijori now covers most of what the BSE copies would add.
 - **Daily-trigger scheduling:** it needs a short spec conversation with the owner first.
