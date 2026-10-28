@@ -152,3 +152,15 @@ def test_zip_over_total_decompression_budget_is_unreadable() -> None:
         for index in range(9):
             archive.writestr(f"{index}.pdf", bytes(8 * 1024 * 1024))
     assert len(stream.getvalue()) < 200_000 and zip_pdf_digests(stream.getvalue()) is None
+
+
+def test_zip_with_unbounded_compression_method_is_unreadable() -> None:
+    """Only stored or deflated members are hashed; LZMA/BZIP2 expand without an output bound."""
+    from zipfile import ZIP_LZMA
+
+    from fundamentals.ingest.tijori_documents import zip_pdf_digests
+
+    stream = BytesIO()
+    with ZipFile(stream, "w", ZIP_LZMA) as archive:
+        archive.writestr("report.pdf", b"%PDF-same")
+    assert zip_pdf_digests(stream.getvalue()) is None

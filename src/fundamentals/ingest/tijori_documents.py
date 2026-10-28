@@ -75,12 +75,16 @@ def tijori_document_request(link: DocumentLink) -> Request | None:
     )
 
 
+# zipfile bounds each DEFLATE read; BZIP2/LZMA output is unbounded before truncation.
+BOUNDED_METHODS = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+
+
 def zip_pdf_digests(body: bytes) -> tuple[tuple[str, str], ...] | None:
     try:
         digests, budget = [], 64 * 1024 * 1024
         with zipfile.ZipFile(BytesIO(body)) as archive:
             for member in archive.infolist():
-                if member.flag_bits & 1:
+                if member.flag_bits & 1 or member.compress_type not in BOUNDED_METHODS:
                     return None
                 if member.filename.lower().endswith(".pdf"):
                     budget -= member.file_size
