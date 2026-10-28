@@ -115,7 +115,8 @@ def test_unresolved_missing_sequence_and_non_exchange_links_fail_closed() -> Non
     assert classify_announcement(row) == "CONCALL_UNRESOLVED"
     assert observed_link("ANNOUNCEMENTS_LISTING", row) is None
     assert classify_announcement(row | {"desc": "Other"}) == "OTHER"
-    assert listing_rows("ANNOUNCEMENTS_LISTING", json.dumps([row]).encode()) == []
+    with pytest.raises(ValueError):
+        listing_rows("ANNOUNCEMENTS_LISTING", json.dumps([row]).encode())
     for host in ("www.careratings.com", "apar.com", "files.tijorifinance.com", "www.bseindia.com"):
         link = DocumentLink(
             kind=DocumentKind.TRANSCRIPT,

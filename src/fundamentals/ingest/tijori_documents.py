@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import cast
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from lxml import html  # type: ignore[import-untyped]
 
@@ -47,7 +47,9 @@ def read_tijori_documents(
         for index, cell in enumerate(cells):
             for anchor in cell.xpath(".//a[@href]"):
                 url, kind = anchor.get("href"), TIJORI_KINDS[heading]
-                if not url.startswith(f"https://{HOST}/insight/india/{expected_company_id}/"):
+                segments = set(unquote(urlsplit(url).path).split("/"))
+                prefix = f"https://{HOST}/insight/india/{expected_company_id}/"
+                if not url.startswith(prefix) or segments & {".", ".."}:
                     raise ValueError("wrong company prefix")
                 year, label = years[index].text_content().strip(), anchor.text_content().strip()
                 period = year if kind == DocumentKind.ANNUAL_REPORT else f"{label} {year}"
@@ -89,7 +91,15 @@ def zip_pdf_digests(body: bytes) -> tuple[tuple[str, str], ...] | None:
                         ).hexdigest()
                     digests.append((member.filename, digest))
         return tuple(digests)
-    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, OSError, zlib.error):
+    except (
+        zipfile.BadZipFile,
+        RuntimeError,
+        NotImplementedError,
+        EOFError,
+        OSError,
+        zlib.error,
+        UnicodeDecodeError,
+    ):
         return None
 
 
@@ -131,9 +141,10 @@ def cite(
     return outcome.get(state, state), ""
 
 
-def covers(spans: Sequence[tuple[date, date]], start: date, end: date) -> bool:
+def reach(spans: Sequence[tuple[date, date]], start: date) -> date:
+    """The first day from `start` that the joined spans do not cover."""
     for first, last in sorted(spans):
         if first > start:
             break
         start = max(start, last + timedelta(days=1))
-    return start > end
+    return start

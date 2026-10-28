@@ -10,7 +10,7 @@ import json
 import subprocess
 import sys
 import time
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from datetime import date, datetime, timedelta
@@ -112,7 +112,9 @@ def run_documents(
             conn = stack.enter_context(pool.connection())
             conn.autocommit = True
             today = clock().astimezone(IST).date()
-            return _Pass(args, conn, store, acquiring_fetch(send, clock, []), today).run(bd)
+            return _Pass(
+                args, conn, store, acquiring_fetch(send, clock, deque(maxlen=0)), today
+            ).run(bd)
     except (
         OSError,
         LookupError,
@@ -204,15 +206,15 @@ class _Pass:
             yield ref.capture_ref_id if ref else None
 
     def _listing(self, entity: int, symbol: str, isin: str | None, surface: str) -> None:
-        """Read a listing's spans from its coverage; the first failure stops the advance."""
-        covered = self.intake.coverage(entity, surface)
-        default = self.args.from_date if self.backfill else self.today - OVERLAP
-        first = self.intake.first_span(entity, surface)
-        start = covered - OVERLAP if covered else min(default, first or default)
-        horizon = MEETING_HORIZON if surface == MEETINGS else timedelta()
-        end = self.args.to_date if self.backfill else self.today + horizon
+        """Read a listing from its first uncovered day; the first failure stops the advance."""
         spans: list[Span] = [(None, None)]
         if surface in (ANNOUNCEMENTS, MEETINGS):
+            first = self.intake.first_span(entity, surface) or self.today
+            low = self.args.from_date if self.backfill else min(self.today - OVERLAP, first)
+            gap = tj.reach(self.intake.ok_spans(entity, surface), low)
+            start = max(low, gap - OVERLAP - timedelta(days=1))
+            horizon = MEETING_HORIZON if surface == MEETINGS else timedelta()
+            end = self.args.to_date if self.backfill else self.today + horizon
             spans = []
             while start <= end:
                 stop = min(start + SPAN, end)
@@ -298,7 +300,7 @@ class _Pass:
         rows = listing_rows(surface, body)
         if surface == REPORTS:
             rows.sort(key=lambda item: int(item[1]["toYr"]), reverse=True)
-            return rows[: self.args.annual_reports] if self.backfill else rows
+            return rows[: self.args.annual_reports] if self.backfill and not self.tijori else rows
         accepted = [(key, row) for key, row in rows if row.get("sm_isin") == isin]
         if len(accepted) != len(json.loads(body)):
             sys.stderr.write(f"refused listing rows\t{symbol}\t{surface}\n")
@@ -308,7 +310,11 @@ class _Pass:
     def _documents(self, entity: int, symbol: str) -> None:
         """Complete each latest revision's pending document within its attempt bound."""
         for surface in (ANNOUNCEMENTS, REPORTS, SCREENER) + ((TIJORI,) if self.tijori else ()):
-            for observation in self.intake.latest(entity, surface):
+            observations = self.intake.latest(entity, surface)
+            if surface == REPORTS and self.backfill:
+                observations.sort(key=lambda o: int(o.payload["toYr"]), reverse=True)
+                del observations[self.args.annual_reports :]
+            for observation in observations:
                 link = observed_link(surface, observation.payload)
                 request = document_request(link) if link else None
                 if link and self.tijori:
@@ -326,7 +332,11 @@ class _Pass:
                         gap = f"{symbol}\t{link.kind}\t{observation.occurrence_key}\t{outcomes[-1]}"
                         sys.stdout.write(f"GAP\t{gap}\n")
 
-        for obs in self.intake.latest(entity, TIJORI) if self.tijori else []:
+        if not self.tijori:
+            return
+        nse = {surface: self.intake.latest(entity, surface) for surface in (REPORTS, ANNOUNCEMENTS)}
+        spans = self.intake.ok_spans(entity, ANNOUNCEMENTS)
+        for obs in self.intake.latest(entity, TIJORI):
             link = cast(DocumentLink, observed_link(TIJORI, obs.payload))
             request = cast(Request, tj.tijori_document_request(link))
             ok = self.intake.ok_attempt(obs.id, request.url)
@@ -343,7 +353,7 @@ class _Pass:
             surface = REPORTS if annual else ANNOUNCEMENTS
             candidates: list[tj.Candidate] = []
             unresolved = False
-            for other in self.intake.latest(entity, surface):
+            for other in nse[surface]:
                 row = other.payload
                 if annual:
                     if str(row["toYr"]) != link.period:
@@ -357,7 +367,10 @@ class _Pass:
                 filed = observed_link(surface, row)
                 if filed is None or filed.kind != link.kind:
                     continue
-                req = cast(Request, document_request(filed))
+                req = document_request(filed)
+                if req is None:
+                    candidates.append((None, "UNAVAILABLE", ()))
+                    continue
                 success = self.intake.ok_attempt(other.id, req.url)
                 digests: tuple[tuple[str, str], ...] = ()
                 state, ref = "PENDING", None
@@ -378,7 +391,7 @@ class _Pass:
                 candidates.append((ref, state, digests))
             covered = self.annual_ok
             if not annual:
-                covered = tj.covers(self.intake.ok_spans(entity, ANNOUNCEMENTS), start, stop)
+                covered = tj.reach(spans, start) > stop
             result = tj.cite(day, annual, ok[0], candidates, unresolved=unresolved, covered=covered)
             self.citations[result[0]] += 1
 

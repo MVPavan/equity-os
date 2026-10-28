@@ -27,6 +27,8 @@ from fundamentals.pg.settings import PgRole
 from fundamentals.store.snapshot_store import SnapshotStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
+DATE_KEYS = ("from_date", "to_date")
+NSE_DAY = "%d-%b-%Y"
 
 
 class Lane:
@@ -37,7 +39,8 @@ class Lane:
         self.at = datetime(2026, 10, 27, 12, tzinfo=UTC)
         self.tick = 0
         self.entity = seed(db, "APARINDS", "INE372A01015", "APARINDS", "532259")
-        self.rows = json.loads(read_probe("nse_announcements.json"))
+        self.retained = json.loads(read_probe("nse_announcements.json"))
+        self.rows = [r | {"an_dt": "26-Oct-2026" + r["an_dt"][11:]} for r in self.retained]
         self.board = json.loads(read_probe("nse_board_meetings.json"))
         self.reports = read_probe("nse_annual_reports.json")
         self.page = read_probe("company_APARINDS_consolidated.html")
@@ -70,7 +73,12 @@ class Lane:
                 b"SYMBOL,NAME OF COMPANY,SERIES,ISIN NUMBER\nAPARINDS,Synthetic,EQ,INE372A01015\n",
             )
         if request.surface == "ANNOUNCEMENTS_LISTING":
-            return 200, json.dumps(self.rows).encode()
+            query = parse_qs(urlsplit(request.url).query)
+            first, last = (datetime.strptime(query[k][0], "%d-%m-%Y") for k in DATE_KEYS)
+            rows = [
+                r for r in self.rows if first <= datetime.strptime(r["an_dt"][:11], NSE_DAY) <= last
+            ]
+            return 200, json.dumps(rows).encode()
         if request.surface == "BOARD_MEETINGS_LISTING":
             return 200, json.dumps(self.board).encode()
         if request.surface == "ANNUAL_REPORTS_LISTING":
@@ -140,6 +148,7 @@ def test_repeat_is_idempotent_and_future_meeting_amendments_are_seen(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The future horizon is reread daily; shared document bytes retain both URL identities."""
+    from fundamentals.ingest.tijori_documents import reach
     from fundamentals.pg.document_intake import DocumentIntake
 
     assert lane.run() == 0
@@ -165,7 +174,8 @@ def test_repeat_is_idempotent_and_future_meeting_amendments_are_seen(
         assert meeting in [r["bm_date"] for r in lane.board]
         with lane.db.runtime_pool() as pool, pool.connection() as conn:
             intake = DocumentIntake(conn)
-            assert intake.coverage(lane.entity, "BOARD_MEETINGS_LISTING") == lane.at.date()
+            spans = intake.ok_spans(lane.entity, "BOARD_MEETINGS_LISTING")
+            assert reach(spans, date(2026, 10, 24)) == lane.at.date() + timedelta(days=1)
             assert date(2026, 11, 3 + (offset == 2)) in [
                 datetime.strptime(o.payload["bm_date"], "%d-%b-%Y").date()
                 for o in intake.latest(lane.entity, "BOARD_MEETINGS_LISTING")
@@ -346,18 +356,33 @@ def test_backfill_checks_screener_identity_never_fetches_agency_and_respects_cov
     assert lane.run() == 4 and not lane.sent
 
 
+def tijori(lane: Lane, *rows: dict[str, Any], annual_reports: int = 17) -> argparse.Namespace:
+    """A Tijori backfill of 2026-06-24..08-06, run on 08-08, over the given NSE announcements."""
+    from test_tijori_documents import page
+
+    lane.status["overview"] = (200, page())
+    lane.rows, lane.board, lane.at = list(rows), [], datetime(2026, 8, 8, tzinfo=UTC)
+    lane.args = argparse.Namespace(
+        **vars(lane.args)
+        | dict(
+            documents_command="backfill",
+            tijori=True,
+            config_root=Path("config"),
+            symbol="APARINDS",
+            from_date=date(2026, 6, 24),
+            to_date=date(2026, 8, 6),
+            annual_reports=annual_reports,
+            screener=False,
+        )
+    )
+    return lane.args
+
+
 def test_tijori_intake_and_citations(lane: Lane, capsys: pytest.CaptureFixture[str]) -> None:
     from test_tijori_documents import page
 
-    args = lane.args
-    args.tijori, args.config_root = True, Path("config")
-    lane.status["overview"] = (200, page())
-    lane.rows = [r for r in lane.rows if "about Transcript" in r["attchmntText"]]
-    lane.board = []
-    lane.at = datetime(2026, 8, 8, tzinfo=UTC)
-    args.documents_command = "backfill"
-    args.from_date, args.to_date = date(2026, 6, 24), date(2026, 8, 6)
-    args.symbol, args.annual_reports, args.screener = "APARINDS", 17, False
+    transcript = next(r for r in lane.retained if "about Transcript" in r["attchmntText"])
+    args = tijori(lane, transcript)
     assert lane.run() == 0
     out = capsys.readouterr().out
     assert "CITE\tCORROBORATED\t17\n" in out and "CITE\tVENDOR_COPY\t86\n" in out
@@ -429,3 +454,63 @@ def test_middle_span_on_day_ten(lane: Lane, capsys: pytest.CaptureFixture[str]) 
     assert capsys.readouterr().out.count("UNCOVERED\tAPARINDS\tBOARD_MEETINGS_LISTING") == 3
     lane.status.pop(url)
     assert lane.run() == 0 and "UNCOVERED" not in capsys.readouterr().out
+
+
+def test_refused_issuer_row_is_not_proof_of_absence(
+    lane: Lane, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A span with an issuer row the intake could not key cannot prove NSE lacks the document."""
+    row = next(r for r in lane.retained if "Investor Presentation" in r["attchmntText"])
+    tijori(lane, {k: v for k, v in row.items() if k != "seq_id"})
+    lane.run()
+    lane.args.documents_command = "daily"
+    assert lane.run() == 4
+    out, err = capsys.readouterr()
+    assert "refused listing" in err and "CITE\tVENDOR_COPY\t86\n" in out
+
+
+def test_annual_cap_limits_downloads_not_candidates(
+    lane: Lane, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An NSE annual report beyond the download cap keeps its Tijori copy uncitable."""
+    tijori(lane, annual_reports=5)
+    assert lane.run() == 0
+    out = capsys.readouterr().out
+    assert len([r for r in lane.sent if r.surface == "NSE_ANNUAL_REPORT"]) == 5
+    assert "CITE\tCORROBORATED\t5\n" in out and "CITE\tVENDOR_COPY\t86\n" in out
+
+
+def test_unmapped_annual_candidate_is_unavailable(
+    lane: Lane, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A listed NSE original with no fetchable route blocks citation instead of crashing."""
+    reports = json.loads(lane.reports)
+    reports["data"][0]["fileName"] = "https://archives.nseindia.com/report.pdf"
+    lane.reports = json.dumps(reports).encode()
+    tijori(lane)
+    lane.run()
+    assert "CITE\tNSE_UNAVAILABLE\t1\n" in capsys.readouterr().out
+
+
+def test_backfill_honours_its_range_after_daily_coverage(lane: Lane) -> None:
+    """Existing daily coverage cannot move a backfill's start past its requested --from."""
+    assert lane.run() == 0
+    lane.rows = lane.retained
+    lane.args = argparse.Namespace(
+        **vars(lane.args)
+        | dict(
+            documents_command="backfill",
+            symbol="APARINDS",
+            from_date=date(2026, 7, 1),
+            to_date=date(2026, 8, 6),
+            annual_reports=5,
+            screener=False,
+        )
+    )
+    lane.sent.clear()
+    assert lane.run() == 0
+    sent = [r.url for r in lane.sent if r.surface == "ANNOUNCEMENTS_LISTING"]
+    assert [parse_qs(urlsplit(url).query)["from_date"] for url in sent] == [
+        ["01-07-2026"],
+        ["01-08-2026"],
+    ]

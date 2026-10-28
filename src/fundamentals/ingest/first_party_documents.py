@@ -119,12 +119,14 @@ def stable_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def listing_rows(surface: str, body: bytes) -> list[tuple[str, dict[str, Any]]]:
-    """Occurrence key and stable payload per row; an announcement without a sequence is dropped
-    (the caller counts and reports it)."""
+    """Occurrence key and stable payload per row; an announcement without a sequence refuses
+    the listing, so its span never proves absence."""
     parsed = json.loads(body)
     rows: list[dict[str, Any]] = parsed["data"] if surface == REPORTS else parsed
     if surface == ANNOUNCEMENTS:
-        return [(str(row["seq_id"]), stable_row(row)) for row in rows if row.get("seq_id")]
+        if not all(row.get("seq_id") for row in rows):
+            raise ValueError("announcement without seq_id")
+        return [(str(row["seq_id"]), stable_row(row)) for row in rows]
     if surface == REPORTS:
         return [(row["fileName"], stable_row(row)) for row in rows]
     return [("|".join(row[field] for field in MEETING_KEY), stable_row(row)) for row in rows]

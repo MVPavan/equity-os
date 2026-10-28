@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
@@ -128,15 +128,6 @@ class DocumentIntake:
         """Append one fetch outcome in the caller's capture-registration transaction."""
         params = (observation_id, url, attempted_at, outcome, body_sha256, capture_ref_id)
         self.conn.execute(_INSERT_ATTEMPT, params)
-
-    def coverage(self, entity_id: int, surface: str) -> date | None:
-        """End of the unbroken successful span union, capped at each fetch's IST date."""
-        end: date | None = None
-        for start, stop in self.conn.execute(_OK_SPANS, (entity_id, surface)).fetchall():
-            if end is not None and start > end + timedelta(days=1):
-                break
-            end = stop if end is None else max(end, stop)
-        return end
 
     def first_span(self, entity_id: int, surface: str) -> date | None:
         """Earliest span ever requested, OK or failed, so a failed first span is not skipped."""

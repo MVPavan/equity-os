@@ -91,7 +91,7 @@ def test_precedence(
 
 
 def test_zip_matching_permutation_and_interval() -> None:
-    from fundamentals.ingest.tijori_documents import cite, covers, zip_pdf_digests
+    from fundamentals.ingest.tijori_documents import cite, reach, zip_pdf_digests
 
     sha = hashlib.sha256(b"%PDF-same").hexdigest()
     stream = BytesIO()
@@ -106,7 +106,38 @@ def test_zip_matching_permutation_and_interval() -> None:
     result = cite(DAY, True, "different", candidates[:1], unresolved=False, covered=True)
     assert result == ("MISMATCH", "")
     for end, expected in [(7, "NSE_PENDING"), (8, "VENDOR_COPY")]:
-        covered = covers(
-            [(date(2026, 6, 24), date(2026, 7, end))], date(2026, 6, 24), date(2026, 7, 8)
+        covered = reach([(date(2026, 6, 24), date(2026, 7, end))], date(2026, 6, 24)) > date(
+            2026, 7, 8
         )
         assert cite(DAY, False, sha, [], unresolved=False, covered=covered)[0] == expected
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("path", ["4290/../4291/a.pdf", "4290/%2e%2E/4291/a.pdf", "4290/./a.pdf"])
+def test_reader_refuses_dot_segments(path: str) -> None:
+    """A link that leaves the company's folder after the prefix is another company's file."""
+    from lxml import html
+
+    from fundamentals.ingest.tijori_documents import read_tijori_documents
+
+    tree = html.fromstring(page())
+    tree.xpath('//*[@id="companyFilings"]//a[@href]')[0].set(
+        "href", f"https://files.tijorifinance.com/insight/india/{path}"
+    )
+    with pytest.raises(ValueError, match="wrong company prefix"):
+        read_tijori_documents(
+            html.tostring(tree),
+            slug="apar-industries-limited",
+            expected_symbol="APARINDS",
+            expected_company_id=4290,
+        )
+
+
+def test_zip_with_undecodable_member_name_is_unreadable() -> None:
+    """A corrupt member name is one unreadable candidate, not a failed pass."""
+    from fundamentals.ingest.tijori_documents import zip_pdf_digests
+
+    stream = BytesIO()
+    with ZipFile(stream, "w") as archive:
+        archive.writestr("\u00e9.pdf", b"%PDF-same")
+    assert zip_pdf_digests(stream.getvalue().replace("\u00e9".encode(), b"\xff\xfe")) is None

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, MutableSequence, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, LiteralString, NoReturn
@@ -318,7 +318,9 @@ def replay_fetch(folder: Path) -> Fetch:
     return fetch
 
 
-def acquiring_fetch(send: Send, clock: Callable[[], datetime], log: list[Capture]) -> Fetch:
+def acquiring_fetch(
+    send: Send, clock: Callable[[], datetime], log: MutableSequence[Capture]
+) -> Fetch:
     """Fetch through a live transport, logging every exchange (failures keep no body); a request
     not authorised is logged ``NOT_AUTHORISED`` and never sent."""
 

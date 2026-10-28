@@ -35,7 +35,7 @@ def test_revisions_returning_to_old_payload_and_coverage(pg_db: PgTestDatabase) 
         assert len(latest) == 1 and latest[0].payload == {"value": "A"}
         assert latest[0].observed_at == at + timedelta(seconds=2)
         assert conn.execute("SELECT count(*) FROM eqos.document_observations").fetchone() == (3,)
-        assert intake.coverage(1, "ANNOUNCEMENTS_LISTING") is None
+        assert intake.ok_spans(1, "ANNOUNCEMENTS_LISTING") == []
         for table in ("document_listings", "document_observations", "document_attempts"):
             for action in ("UPDATE {} SET id=id", "DELETE FROM {}", "TRUNCATE {}"):
                 with pytest.raises(psycopg.Error), conn.transaction():
