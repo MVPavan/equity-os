@@ -1,14 +1,14 @@
 {
   "now": {
-    "title": "Research slice 1: live ledger imported; successor thesis 1.1.0 live (eqos-bnx)",
-    "detail": "Migration 0042 applied live; Apar ledger imported (4 historical updates + Q0) and thesis 1.1.0 (F5 = filed tax / PBT > 26.74) is the approved thesis runs bind. Regenerating the Apar updates (Task 7) is blocked on live run prerequisites (eqos-dna).",
-    "stage": "Live"
+    "title": "LIVE-RUN-1 code done; gates running. RESEARCH-3 spec approved. DOCS-1 building (Sol, worktree)",
+    "detail": "LIVE-RUN-1 Tasks 1-4 committed (operator launcher, evidence transcript, ledger submit, ledger panel); full-suite gates running before the phase review and the live Apar run. RESEARCH-3 spec (risk probe, management credibility, ledger narrate) approved by Sol r4. DOCS-1 document intake Tasks 1-4 being implemented by Sol in a separate worktree.",
+    "stage": "Build"
   },
   "next": [
-    "eqos-dna: live run prerequisites (historical source admission, transcript capture, comparator ingests, coverage + watchlist)",
-    "Then Task 7: regenerate Apar FY26_Q2..FY27_Q1 on live",
-    "Research slice 2: segment lines (fix eqos-djv/ghv)",
-    "Research slice 3: spec for model-drafted analyst sections (Sol-reviewed)"
+    "LIVE-RUN-1 gates, then Sol phase review, then the live Apar run (owner: watchlist add)",
+    "DOCS-1 Tasks 1-4 (Sol worktree), then a review and merge after LIVE-RUN-1 closes",
+    "RESEARCH-3 plan (S1 risk probe first)",
+    "Tijori #companyFilings fallback amendment to DOCS-1 (owner proposal)"
   ],
   "log": [
     {
@@ -546,6 +546,18 @@
     {
       "date": "2026-10-19",
       "text": "Fact admission (eqos-4j2.24): runs admit facts through a pinned comparison run; Sol-approved; full suite 4281 passed. All pilot-blocking gaps closed."
+    },
+    {
+      "date": "2026-10-28",
+      "text": "eqos-dna LIVE-RUN-1 Tasks 1-4 committed: fundamentals-operator launcher, evidence transcript, ledger submit, ledger panel"
+    },
+    {
+      "date": "2026-10-28",
+      "text": "eqos-msq DOCS-1 plan committed (Sol r3 + orchestrator rulings); Sol implementing Tasks 1-4 in a worktree"
+    },
+    {
+      "date": "2026-10-28",
+      "text": "eqos-bnx RESEARCH-3 spec approved r4 (Sol); C-12 amended to machine effort; invariant 7 extended to filed raw amounts"
     }
   ]
 }
