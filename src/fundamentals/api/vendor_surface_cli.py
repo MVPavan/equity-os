@@ -165,10 +165,10 @@ def dispatch_vendor_command(
                     continue
                 with pool.connection() as conn:
                     outcomes = conn.execute(
-                        "SELECT status, detail FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                        "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
                         (ref.capture_ref_id,),
                     ).fetchall()
-                usable = all(status in USABLE for status, _ in outcomes)
+                usable = all(status in USABLE for (status,) in outcomes)
                 completed += int(usable)
                 if not usable:
                     incomplete.append(request.url)
@@ -204,7 +204,6 @@ def dispatch_vendor_command(
                             due_since=None,
                         )
                         for metric in metrics
-                        if metric
                     ]
                     expected += len(children)
                     pending.extend(children)
