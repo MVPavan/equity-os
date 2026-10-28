@@ -71,23 +71,28 @@ account pages.
 | RELIANCE | Conglomerate | Large | all 3 |
 | APARINDS | Manufacturing (pilot baseline) | Mid | all 3 |
 | NETWEB | Standalone-only | Small | all 3 |
-| SME on NSE Emerge (rule) | Half-yearly reporting | Micro | all 3 |
+| ANONDITA (rule: SME on NSE Emerge) | Half-yearly reporting | Micro | all 3 |
 | CREDITACC | NBFC | Small | Opus + Sol |
-| ICICIGI | General insurer | Large | Opus + Sol |
+| ICICIGI | General insurer | Mid (no Large general insurer exists) | Opus + Sol |
 | TCS | IT services | Large | Opus + Sol |
 | LGEINDIA | Recent IPO | Large | Opus + Sol |
-| LAURUSLABS | Pharma | Mid | Sol + Astra |
+| AUROPHARMA (replaces LAURUSLABS, now Large) | Pharma | Mid | Sol + Astra |
 | HINDUNILVR | FMCG, foreign-parent subsidiary | Large | Sol + Astra |
 | GODREJPROP | Real estate | Mid | Sol + Astra |
-| SME on BSE (rule) | Half-yearly, BSE-only | Micro | Sol + Astra |
+| PPEL / 544844 (rule: SME on BSE) | Half-yearly, BSE-only | Micro | Sol + Astra |
 | NTPC | Public-sector utility | Large | Astra + Opus |
 | ETERNAL | Renamed (Zomato) | Large | Astra + Opus |
-| Mainboard micro-cap (rule) | Thin coverage | Micro | Astra + Opus |
-| Nano-cap on the BE series (rule) | Trade-for-trade | Nano | Astra + Opus |
+| ASIANENE (rule: mainboard micro-cap) | Thin coverage | Micro | Astra + Opus |
+| KIRANVYPAR (rule: mainboard nano-cap) | Thin coverage | Nano | Astra + Opus |
 
 **Rule picks** (`eqos-aa6.2`): the largest company by market cap in the band, among those with at
 least two filed periods. Every company's tier and listing is verified on the sites before
 crawling.
+
+Picks (2026-10-28, `eqos-aa6.2`): a picker checked all 18 on both sites. The orchestrator
+ruled on its flags. ICICIGI stays, with its tier corrected to Mid. LAURUSLABS ranks in the top
+100, so Aurobindo is the Mid pharma. Neither site shows NSE series, so the BE condition is
+dropped and the nano pick is by Screener market cap alone.
 
 **Politeness.** Every request goes through `scratchpad/vendor-crawl/fetch.py`, which is the only
 network path. It allows GET only, to two allowlisted hosts, and does not follow redirects. Across
