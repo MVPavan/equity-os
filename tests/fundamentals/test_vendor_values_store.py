@@ -190,13 +190,11 @@ def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path
     store, pool, ref, values = setup_store(pg_db, tmp_path)
     with pool:
         values.record(ref, outcome(), row_count=2)
-    # Use installed native clients; this test never invokes Docker.
     saved = write_backup(
         pg_db.settings,
         database=pg_db.dbname,
         snapshot_root=tmp_path / "store",
         out_dir=tmp_path / "sets",
-        client_prefix=(),
     )
     target = mint_name(pg_db.settings)
     restored_root = tmp_path / "restored"
@@ -206,7 +204,6 @@ def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path
             pg_db.settings,
             database=target,
             snapshot_root=restored_root,
-            client_prefix=(),
             replay_runs=False,
             config_root=Path("config"),
             **restore_args(pg_db, saved, restored_root, live=None),
