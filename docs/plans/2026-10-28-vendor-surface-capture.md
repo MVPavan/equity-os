@@ -410,7 +410,7 @@ table:
   `//in//watchlist` denied after normalisation;
 - `http://`, `screener.in` (no `www`), `www.screener.in:8443` and `user@www.screener.in` refused;
 - a fake 429 stores the capture and raises `SiteStopped` carrying the stored `Fetched`; the
-  coordinator registers it before writing the marker, including when registration fails;
+  coordinator attempts registration before writing the marker, including when registration fails;
 - a 302 to `/login/` stops the site; a 302 off-host is stored with its `Location` and no stop;
 - a truncated read stores `BodyCompleteness.PARTIAL`;
 - a held `SiteLock` raises `SiteBusy`.
@@ -578,7 +578,7 @@ Interfaces:
   - `reparse(store, pool, values, spec) -> int` (captures with no outcome under the spec's
     current parser version, including topology-gated ones).
   - `dispatch_vendor_command(args, *, opener_factory, pool_factory, store_factory, sessions_factory) -> int | None`.
-  - CLI: `vendor capture --symbol S [--tijori-slug T] [--surface site:id ...] [--snapshot-root PATH] (all capture roots share the `data/STOP-<site>` directory)`, `vendor reparse --surface site:id`.
+  - CLI: `vendor capture --symbol S [--tijori-slug T] [--surface site:id ...] [--snapshot-root PATH]`, `vendor reparse --surface site:id`; all capture roots share `data/STOP-<site>`.
 
 Approach:
 - Outcome rules in `parse_and_record`, first match wins: a non-OK HTTP capture → `UNUSABLE`
