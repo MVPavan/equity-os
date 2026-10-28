@@ -129,8 +129,7 @@ def test_attempts_pin_routes_rights_times_and_refuse_wrong_bytes(
                     else None,
                     ref_id,
                 )
-            attempts = intake.attempts(observation.id, request.url)
-            assert attempts[0].outcome == expected
+            assert intake.attempts(observation.id, request.url) == [expected]
         assert conn.execute("SELECT count(*) FROM eqos.capture_refs").fetchone() == (2,)
         assert conn.execute(
             "SELECT body_sha256 IS NOT NULL, capture_ref_id FROM eqos.document_attempts "

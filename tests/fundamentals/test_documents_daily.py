@@ -109,16 +109,14 @@ class Lane:
 
     def counts(self) -> tuple[int, int, int]:
         """Observe committed revisions, attempts and document registrations."""
+        queries = (
+            "SELECT count(*) FROM eqos.document_observations",
+            "SELECT count(*) FROM eqos.document_attempts",
+            "SELECT count(*) FROM eqos.capture_refs WHERE source_id='nse-documents'",
+        )
         with self.db.runtime_pool() as pool, pool.connection() as conn:
-            values = tuple(
-                conn.execute(query).fetchall()[0][0]
-                for query in (
-                    "SELECT count(*) FROM eqos.document_observations",
-                    "SELECT count(*) FROM eqos.document_attempts",
-                    "SELECT count(*) FROM eqos.capture_refs WHERE source_id='nse-documents'",
-                )
-            )
-            return values[0], values[1], values[2]
+            observations, attempts, captures = (conn.execute(q).fetchall()[0][0] for q in queries)
+            return observations, attempts, captures
 
 
 @pytest.fixture
@@ -153,16 +151,8 @@ def test_repeat_is_idempotent_and_future_meeting_amendments_are_seen(
     assert lane.run() == 0 and lane.counts() == baseline
     assert not any(r.source_id.endswith("-documents") for r in lane.sent)
     assert capsys.readouterr().out.count("\texists") == 3
-    assert (
-        len(
-            [
-                b
-                for b in SnapshotStore(lane.args.snapshot_root).blob_inventory()
-                if b.source_id == "nse-documents"
-            ]
-        )
-        == 1
-    )
+    blobs = SnapshotStore(lane.args.snapshot_root).blob_inventory()
+    assert [b.source_id for b in blobs].count("nse-documents") == 1
     future = next(row for row in lane.board if row["bm_date"] == "29-Oct-2026")
     for offset, meeting in ((1, "03-Nov-2026"), (2, "04-Nov-2026")):
         lane.at += timedelta(days=1)

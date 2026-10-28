@@ -4,40 +4,44 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict
 
 from fundamentals.contracts.onboarding import VerificationUnit
-from fundamentals.contracts.source_catalog import DOCUMENT_HOSTS, DOCUMENT_LISTINGS, DocumentKind
+from fundamentals.contracts.source_catalog import (
+    DOCUMENT_HOSTS,
+    DOCUMENT_LISTINGS,
+    SCREENER_PAGE,
+    DocumentKind,
+)
 from fundamentals.entity.discovery import Request
 
+ANNOUNCEMENTS, MEETINGS, REPORTS = DOCUMENT_LISTINGS
 VOLATILE_KEYS = ("difference", "diff", "sysTime")
+MEETING_KEY = ("bm_symbol", "bm_purpose", "bm_timestamp")
 CONCALL_CATEGORY = "Analysts/Institutional Investor Meet/Con. Call Updates"
-NSE_API = "https://www.nseindia.com/api/"
-ENDPOINTS = dict(
-    zip(
-        DOCUMENT_LISTINGS,
-        ("corporate-announcements", "corporate-board-meetings", "annual-reports"),
-        strict=True,
-    )
-)
-NSE_HOST = DOCUMENT_HOSTS["nse-documents"]
-BSE_HOST = DOCUMENT_HOSTS["bse-documents"]
-IST = ZoneInfo("Asia/Kolkata")
-NSE_TIME = "%d-%b-%Y %H:%M:%S"
-NSE_DATE = "%d-%b-%Y"
-ROWS = TypeAdapter(list[dict[str, Any]])
 CONCALL_SUBJECTS = {
     "about transcript": "TRANSCRIPT",
     "about schedule of meet": "CONCALL_SCHEDULE",
     "about link of recording": "CONCALL_RECORDING",
 }
+NSE_API = "https://www.nseindia.com/api/"
+ENDPOINTS = {
+    ANNOUNCEMENTS: "corporate-announcements",
+    MEETINGS: "corporate-board-meetings",
+    REPORTS: "annual-reports",
+}
+NSE_HOST = DOCUMENT_HOSTS["nse-documents"]
+BSE_HOST = DOCUMENT_HOSTS["bse-documents"]
+ANN_PDF_OPEN = "/stockinfo/AnnPdfOpen.aspx"
+IST = ZoneInfo("Asia/Kolkata")
+NSE_TIME = "%d-%b-%Y %H:%M:%S"
+NSE_DATE = "%d-%b-%Y"
 
 
 class DocumentLink(BaseModel):
@@ -70,14 +74,8 @@ def classify_announcement(row: dict[str, Any]) -> AnnouncementClass:
     """Classify only the retained category/subject combinations; unfamiliar concalls abstain."""
     desc, text = row.get("desc", ""), " ".join(row.get("attchmntText", "").lower().split())
     if desc == CONCALL_CATEGORY:
-        return next(
-            (
-                AnnouncementClass(kind)
-                for subject, kind in CONCALL_SUBJECTS.items()
-                if subject in text
-            ),
-            AnnouncementClass.CONCALL_UNRESOLVED,
-        )
+        found = (kind for subject, kind in CONCALL_SUBJECTS.items() if subject in text)
+        return AnnouncementClass(next(found, AnnouncementClass.CONCALL_UNRESOLVED))
     if desc == "Investor Presentation":
         return AnnouncementClass.PRESENTATION
     if desc.startswith("Credit Rating"):
@@ -87,19 +85,30 @@ def classify_announcement(row: dict[str, Any]) -> AnnouncementClass:
     return AnnouncementClass.OTHER
 
 
-def announcement_link(row: dict[str, Any]) -> DocumentLink | None:
-    """Only classified document filings with the exact NSE archive attachment host."""
-    kind, url = classify_announcement(row), row.get("attchmntFile", "")
-    if kind.value not in DocumentKind or urlsplit(url).netloc != NSE_HOST:
+def observed_link(surface: str, payload: dict[str, Any]) -> DocumentLink | None:
+    """The document an observed revision names: filed NSE archive attachments, annual-report
+    entries and Screener links; board-meeting notices and other filings name none."""
+    if surface == SCREENER_PAGE[1]:
+        return DocumentLink.model_validate(payload)
+    if surface == REPORTS:
+        url = payload["fileName"]
+        return DocumentLink(
+            kind=DocumentKind.ANNUAL_REPORT,
+            period=str(payload["toYr"]),
+            url=url,
+            host=urlsplit(url).netloc,
+            found_on=surface,
+        )
+    kind, url = classify_announcement(payload), payload.get("attchmntFile", "")
+    if surface != ANNOUNCEMENTS or kind not in DocumentKind or urlsplit(url).netloc != NSE_HOST:
         return None
-    filed = datetime.strptime(row["an_dt"], NSE_TIME).replace(tzinfo=IST)
     return DocumentLink(
         kind=DocumentKind(kind),
-        period=row["an_dt"],
+        period=payload["an_dt"],
         url=url,
         host=NSE_HOST,
-        found_on=DOCUMENT_LISTINGS[0],
-        filed_at=filed,
+        found_on=surface,
+        filed_at=datetime.strptime(payload["an_dt"], NSE_TIME).replace(tzinfo=IST),
     )
 
 
@@ -109,22 +118,15 @@ def stable_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def listing_rows(surface: str, body: bytes) -> list[tuple[str, dict[str, Any]]]:
-    """Parse occurrence keys; a missing announcement sequence is visibly refused."""
+    """Occurrence key and stable payload per row; an announcement without a sequence is dropped
+    (the caller counts and reports it)."""
     parsed = json.loads(body)
-    rows = ROWS.validate_python(parsed["data"] if surface == DOCUMENT_LISTINGS[2] else parsed)
-    result = []
-    for row in rows:
-        if surface == DOCUMENT_LISTINGS[0]:
-            if not row.get("seq_id"):
-                sys.stderr.write("refused announcement without seq_id\n")
-                continue
-            key = str(row["seq_id"])
-        elif surface == DOCUMENT_LISTINGS[1]:
-            key = "|".join(row[field] for field in ("bm_symbol", "bm_purpose", "bm_timestamp"))
-        else:
-            key = row["fileName"]
-        result.append((key, stable_row(row)))
-    return result
+    rows: list[dict[str, Any]] = parsed["data"] if surface == REPORTS else parsed
+    if surface == ANNOUNCEMENTS:
+        return [(str(row["seq_id"]), stable_row(row)) for row in rows if row.get("seq_id")]
+    if surface == REPORTS:
+        return [(row["fileName"], stable_row(row)) for row in rows]
+    return [("|".join(row[field] for field in MEETING_KEY), stable_row(row)) for row in rows]
 
 
 def meeting_date(payload: dict[str, Any]) -> date | None:
@@ -133,24 +135,10 @@ def meeting_date(payload: dict[str, Any]) -> date | None:
     return datetime.strptime(raw, NSE_DATE).date() if raw else None
 
 
-def annual_report_links(body: bytes) -> list[DocumentLink]:
-    """One annual-report link per NSE entry, including retained ZIP originals."""
-    return [
-        DocumentLink(
-            kind=DocumentKind.ANNUAL_REPORT,
-            period=str(row["toYr"]),
-            url=row["fileName"],
-            host=urlsplit(row["fileName"]).netloc,
-            found_on=DOCUMENT_LISTINGS[2],
-        )
-        for _, row in listing_rows(DOCUMENT_LISTINGS[2], body)
-    ]
-
-
 def nse_listing_url(surface: str, symbol: str, from_date: date, to_date: date) -> str:
     """The wrapper's documented listing route with inclusive calendar dates."""
     query = {"index": "equities", "symbol": symbol}
-    if surface != DOCUMENT_LISTINGS[2]:
+    if surface != REPORTS:
         query |= {
             "from_date": from_date.strftime("%d-%m-%Y"),
             "to_date": to_date.strftime("%d-%m-%Y"),
@@ -161,10 +149,10 @@ def nse_listing_url(surface: str, symbol: str, from_date: date, to_date: date) -
 def document_request(link: DocumentLink) -> Request | None:
     """Map only exact HTTPS exchange hosts; AnnPdfOpen names an AttachHis PDF."""
     parts, url = urlsplit(link.url), link.url
-    source = next((source for source, host in DOCUMENT_HOSTS.items() if parts.netloc == host), None)
+    source = next((s for s, host in DOCUMENT_HOSTS.items() if parts.netloc == host), None)
     if parts.scheme != "https" or source is None:
         return None
-    if parts.netloc == BSE_HOST and parts.path == "/stockinfo/AnnPdfOpen.aspx":
+    if parts.netloc == BSE_HOST and parts.path == ANN_PDF_OPEN:
         name = parse_qs(parts.query).get("Pname", [""])[0]
         if not re.fullmatch(r"[\w.-]+\.pdf", name):
             return None

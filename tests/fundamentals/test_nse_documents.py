@@ -31,11 +31,10 @@ def read_probe(name: str) -> bytes:
 def test_nse_listings_preserve_occurrences_and_classify_only_filed_documents() -> None:
     """Schedules/recordings stay observations; volatile clocks cannot create revisions."""
     from fundamentals.ingest.first_party_documents import (
-        announcement_link,
-        annual_report_links,
         classify_announcement,
         listing_rows,
         meeting_date,
+        observed_link,
         stable_row,
     )
 
@@ -43,33 +42,27 @@ def test_nse_listings_preserve_occurrences_and_classify_only_filed_documents() -
     rows = listing_rows("ANNOUNCEMENTS_LISTING", announcements)
     assert len(rows) == len({key for key, _ in rows}) == 41
     counts = Counter(str(classify_announcement(row)) for _, row in rows)
-    assert {
-        kind: counts[kind]
-        for kind in (
-            "TRANSCRIPT",
-            "CONCALL_SCHEDULE",
-            "CONCALL_RECORDING",
-            "PRESENTATION",
-            "CREDIT_RATING",
-            "RESULTS",
-            "CONCALL_UNRESOLVED",
-        )
-    } == {
-        "TRANSCRIPT": 1,
-        "CONCALL_SCHEDULE": 2,
-        "CONCALL_RECORDING": 1,
-        "PRESENTATION": 1,
-        "CREDIT_RATING": 1,
-        "RESULTS": 1,
-        "CONCALL_UNRESOLVED": 0,
-    }
+    expected = dict(
+        TRANSCRIPT=1,
+        CONCALL_SCHEDULE=2,
+        CONCALL_RECORDING=1,
+        PRESENTATION=1,
+        CREDIT_RATING=1,
+        RESULTS=1,
+        CONCALL_UNRESOLVED=0,
+    )
+    assert {kind: counts[kind] for kind in expected} == expected
     for kind, filed in (("TRANSCRIPT", date(2026, 7, 31)), ("RESULTS", date(2026, 7, 24))):
-        link = next(announcement_link(row) for _, row in rows if classify_announcement(row) == kind)
+        link = next(
+            observed_link("ANNOUNCEMENTS_LISTING", row)
+            for _, row in rows
+            if classify_announcement(row) == kind
+        )
         assert link is not None and link.filed_at is not None and link.filed_at.date() == filed
     assert all(
         link.host == "nsearchives.nseindia.com"
         for _, row in rows
-        if (link := announcement_link(row))
+        if (link := observed_link("ANNOUNCEMENTS_LISTING", row))
     )
     board = read_probe("nse_board_meetings.json")
     meetings = listing_rows("BOARD_MEETINGS_LISTING", board)
@@ -84,7 +77,11 @@ def test_nse_listings_preserve_occurrences_and_classify_only_filed_documents() -
         stable_row(payload | {"difference": "changed", "diff": "changed", "sysTime": "changed"})
         == payload
     )
-    reports = list(annual_report_links(read_probe("nse_annual_reports.json")))
+    reports = [
+        link
+        for _, row in listing_rows("ANNUAL_REPORTS_LISTING", read_probe("nse_annual_reports.json"))
+        if (link := observed_link("ANNUAL_REPORTS_LISTING", row))
+    ]
     assert len(reports) == 17
     assert Counter(Path(urlsplit(link.url).path).suffix.lower() for link in reports) == {
         ".pdf": 3,
@@ -99,28 +96,26 @@ def test_nse_listings_preserve_occurrences_and_classify_only_filed_documents() -
     ]
 
 
-def test_unresolved_missing_sequence_and_non_exchange_links_fail_closed(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_unresolved_missing_sequence_and_non_exchange_links_fail_closed() -> None:
     """A familiar word outside the exact category cannot turn a notice into a transcript."""
     from fundamentals.contracts.source_catalog import DocumentKind
     from fundamentals.ingest.first_party_documents import (
         DocumentLink,
-        announcement_link,
         classify_announcement,
         document_request,
         listing_rows,
         nse_listing_url,
+        observed_link,
     )
 
     row = dict(
         desc="Analysts/Institutional Investor Meet/Con. Call Updates",
         attchmntText="Issuer has informed the Exchange about Concall Transcript Submission",
     )
-    assert classify_announcement(row) == "CONCALL_UNRESOLVED" and announcement_link(row) is None
+    assert classify_announcement(row) == "CONCALL_UNRESOLVED"
+    assert observed_link("ANNOUNCEMENTS_LISTING", row) is None
     assert classify_announcement(row | {"desc": "Other"}) == "OTHER"
     assert listing_rows("ANNOUNCEMENTS_LISTING", json.dumps([row]).encode()) == []
-    assert "refused" in capsys.readouterr().err
     for host in ("www.careratings.com", "apar.com", "files.tijorifinance.com", "www.bseindia.com"):
         link = DocumentLink(
             kind=DocumentKind.TRANSCRIPT,

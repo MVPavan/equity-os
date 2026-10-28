@@ -47,8 +47,8 @@ from fundamentals.contracts.snapshot import (
 )
 from fundamentals.contracts.source_catalog import (
     BSE_PEER_SEARCH,
-    DOCUMENT_HOSTS,
     DOCUMENT_LISTINGS,
+    DOCUMENT_ORIGINS,
     NSE_INTEGRATED_LISTING,
     NSE_MASTER,
     NSE_RESULTS_LISTING,
@@ -60,7 +60,6 @@ from fundamentals.contracts.source_catalog import (
     UPSTOX_INSTRUMENTS,
     UPSTOX_ROUTED,
     UPSTOX_STATEMENT,
-    DocumentKind,
     SurfaceAuthority,
     SurfaceNotAuthorisedError,
     surface_authority,
@@ -143,14 +142,7 @@ ORIGINS = {
     UPSTOX_INSTRUMENTS: "assets.upstox.com",
     UPSTOX_STATEMENT: "api.upstox.com",
 }
-ORIGINS.update({("nse", surface): _NSE_WWW for surface in DOCUMENT_LISTINGS})
-ORIGINS.update(
-    {
-        (source, f"{source[:3].upper()}_{kind}"): host
-        for source, host in DOCUMENT_HOSTS.items()
-        for kind in DocumentKind
-    }
-)
+ORIGINS |= DOCUMENT_ORIGINS | {("nse", surface): _NSE_WWW for surface in DOCUMENT_LISTINGS}
 _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text={isin}"
 _SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?{query}"
 _SCREENER_PAGE_URL = "https://www.screener.in/company/{symbol}/consolidated/"
