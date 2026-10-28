@@ -38,6 +38,9 @@ blueprint field lists as accepted contracts.
    tax total that cannot be admitted, may cite the company's directly filed
    first-party exchange value, labelled in the report as single-source and not
    cross-checked, unless the predecessor quarter's admitted fact exists;
+   extension (owner 2026-10-28, RESEARCH-3 OD-2): the risk probe may show the
+   filed raw balance-sheet and cash-flow amounts it uses beside its ratios,
+   each cited to its filed fact and never typed or computed by a model;
    every material factual claim resolves to an exact source location (page,
    table cell, timestamp).
 8. **Output is labeled by epistemic class** — observed / computed / inferred /
