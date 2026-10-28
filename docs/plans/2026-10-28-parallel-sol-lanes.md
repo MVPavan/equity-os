@@ -55,3 +55,43 @@ The audit answers four questions:
    surface? Is any module monolithic or above 800 lines?
 4. **Gap plan.** What is the smallest way to capture every uncovered surface? Raw capture
    first; parsers only where the data is used.
+
+## VENDOR-SURFACE crawl (epic eqos-aa6, owner 2026-10-28)
+
+The owner asked for three models (Opus 5.5 high, GPT-6.1 Sol high, GPT-6 Astra high) to crawl
+Screener and Tijori independently and find every surface. GPT-6 Astra joins for this crawl only,
+as a one-off exception the owner named to the agent stack. Coverage: the core six are crawled by
+all three models; every other company by two. All three models also crawl the market-wide and
+account pages.
+
+| Company | Type | Tier | Crawlers |
+|---|---|---|---|
+| HDFCBANK | Bank | Large | all 3 |
+| HDFCLIFE | Life insurer | Large | all 3 |
+| RELIANCE | Conglomerate | Large | all 3 |
+| APARINDS | Manufacturing (pilot baseline) | Mid | all 3 |
+| NETWEB | Standalone-only | Small | all 3 |
+| SME on NSE Emerge (rule) | Half-yearly reporting | Micro | all 3 |
+| CREDITACC | NBFC | Small | Opus + Sol |
+| ICICIGI | General insurer | Large | Opus + Sol |
+| TCS | IT services | Large | Opus + Sol |
+| LGEINDIA | Recent IPO | Large | Opus + Sol |
+| LAURUSLABS | Pharma | Mid | Sol + Astra |
+| HINDUNILVR | FMCG, foreign-parent subsidiary | Large | Sol + Astra |
+| GODREJPROP | Real estate | Mid | Sol + Astra |
+| SME on BSE (rule) | Half-yearly, BSE-only | Micro | Sol + Astra |
+| NTPC | Public-sector utility | Large | Astra + Opus |
+| ETERNAL | Renamed (Zomato) | Large | Astra + Opus |
+| Mainboard micro-cap (rule) | Thin coverage | Micro | Astra + Opus |
+| Nano-cap on the BE series (rule) | Trade-for-trade | Nano | Astra + Opus |
+
+**Rule picks** (`eqos-aa6.2`): the largest company by market cap in the band, among those with at
+least two filed periods. Every company's tier and listing is verified on the sites before
+crawling.
+
+**Politeness.** Every request goes through `scratchpad/vendor-crawl/fetch.py`, which is the only
+network path. It allows GET only, to two allowlisted hosts, and does not follow redirects. Across
+all crawlers there is an 8 s gap per site and a cap of 1,200 requests per site per day. Any 403,
+429 or 503, or a redirect to login, writes a STOP file for that site. A URL cache stops repeat
+fetches of the same page. Crawlers alternate between sites. They make no POSTs and take no paid,
+AI or settings actions.
