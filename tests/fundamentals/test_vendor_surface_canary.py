@@ -30,7 +30,10 @@ pytestmark = pytest.mark.pg
         (10, None, 1, "MISSING_OUTCOME"),
     ],
 )
-def test_yield_checks_and_cli(pg_db, first, second, version, check, monkeypatch, capsys):
+@pytest.mark.parametrize("recovered_out_of_order", [False, True])
+def test_yield_checks_and_cli(
+    pg_db, first, second, version, check, monkeypatch, capsys, recovered_out_of_order
+):
     from fundamentals.api import cli
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
     from fundamentals.contracts.snapshot import CaptureRecord
@@ -39,6 +42,7 @@ def test_yield_checks_and_cli(pg_db, first, second, version, check, monkeypatch,
     base = record_of(b"fixture", "tijori", "vs.chart-api")
     with pg_db.runtime_pool() as pool:
         values = VendorValuesStore(pool)
+        captures = []
         for index, count in enumerate((first, second)):
             record = CaptureRecord.make(
                 base.request,
@@ -54,6 +58,8 @@ def test_yield_checks_and_cli(pg_db, first, second, version, check, monkeypatch,
                 pool,
                 Fetched(record=record, url="https://www.tijorifinance.com/chart/", location=None),
             )
+            captures.append((ref, count, index))
+        for ref, count, index in reversed(captures) if recovered_out_of_order else captures:
             if count is not None:
                 values.record(
                     ref,
