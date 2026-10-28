@@ -481,3 +481,10 @@ def test_holds_yaml_lists_the_public_manifests() -> None:
         if path.name != OPAQUE_MANIFEST
     )
     assert sorted(listed) == public
+
+
+def test_registered_vendor_surface_has_keep_root(world: World) -> None:
+    """Only the new surface namespace acquires the vendor keep root."""
+    capture = world.capture(("tijori", "vs.chart-api"))
+    assert facts_of(world.rt, capture).holds == {HoldRoot.VENDOR_SURFACE_KEEP}
+    assert facts_of(world.rt, world.capture(("tijori", "financials"))).holds == set()

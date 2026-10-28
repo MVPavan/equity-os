@@ -21,6 +21,9 @@ from fundamentals.contracts.retention import CaptureFacts, HoldRoot
 from fundamentals.ledger.numeral_scan import LOCATION_MARKER
 
 HOLDS_FILE = Path("retention") / "holds.yaml"
+VENDOR_SURFACE_PREFIX: str = yaml.safe_load((Path("config") / HOLDS_FILE).read_text())[
+    "keep_surface_prefix"
+]
 MAPPINGS_DIR = "mappings"
 FIXTURE_KEY = "capture_sha256"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -90,6 +93,8 @@ WITH RECURSIVE edges(from_kind, from_id, to_kind, to_id) AS MATERIALIZED (
         WHERE blob_sha256 = ANY (%(fixtures)s)
     UNION ALL SELECT 'MANIFEST_INPUT', 'C', id FROM eqos.capture_refs
         WHERE blob_sha256 = ANY (%(manifests)s)
+    UNION ALL SELECT 'VENDOR_SURFACE_KEEP', 'C', id FROM eqos.capture_refs
+        WHERE starts_with(surface, %(keep_prefix)s)
 ), reach(root, kind, id) AS (
     SELECT root, kind, id FROM roots WHERE id IS NOT NULL
     UNION
@@ -173,6 +178,7 @@ def capture_facts(
     """The retention facts of every non-expired capture, in one statement's snapshot."""
     params = {
         "marker": LOCATION_MARKER.pattern,
+        "keep_prefix": VENDOR_SURFACE_PREFIX,
         "fixtures": sorted(pinned.get(HoldRoot.QUALIFICATION_FIXTURE, ())),
         "manifests": sorted(pinned.get(HoldRoot.MANIFEST_INPUT, ())),
     }
