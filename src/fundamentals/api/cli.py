@@ -82,6 +82,7 @@ from fundamentals.api.upstox_cli import dispatch_upstox_command
 from fundamentals.api.upstox_crosscheck_cli import dispatch_upstox_crosscheck_command
 from fundamentals.api.upstox_sensitivity_cli import dispatch_upstox_sensitivity_command
 from fundamentals.api.validate_cli import dispatch_validate_command
+from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.compare.run_config import (
     ComparisonSemanticsError,
@@ -701,6 +702,9 @@ def main(
     thesis_exit_code = dispatch_thesis_command(args)
     if thesis_exit_code is not None:
         return thesis_exit_code
+
+    if (vendor_exit := dispatch_vendor_command(args)) is not None:
+        return vendor_exit
 
     logger.info(
         "run_invoked",
