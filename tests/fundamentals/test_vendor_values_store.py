@@ -5,6 +5,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from pg_evidence_schema_support import _insert
 from pg_support import PgTestDatabase, drop_database, mint_name
 from retention_support import record_of, restore_args
 
@@ -100,8 +101,49 @@ def test_licence_end_and_immutable_tables(pg_db, tmp_path):
     _, pool, ref, values = setup_store(pg_db, tmp_path)
     with pool:
         values.record(ref, outcome(), row_count=2)
+        with pool.connection() as conn:
+            evidence = _insert(
+                conn,
+                "evidence_inputs",
+                {"kind": "ISSUER_IDENTITY", "label": "fixture", "content_sha256": "d" * 64},
+            )
+            entity = _insert(
+                conn,
+                "reporting_entities",
+                {
+                    "entity_key": "FIXTURE",
+                    "market": "IN",
+                    "display_name": "Fixture",
+                    "evidence_input_id": evidence,
+                },
+            )
+            conn.execute(
+                "INSERT INTO eqos.vendor_basis_bindings "
+                "(entity_id,basis,screener_company_id,warehouse_id,capture_ref_id,evidence) "
+                "VALUES (%s,'STANDALONE',1,2,%s,'FIRST_CAPTURE')",
+                (entity, ref.capture_ref_id),
+            )
+            for role in ("eqos_runtime", "eqos_panel", "eqos_owner", "eqos_purge"):
+                for table in (
+                    "vendor_parser_versions",
+                    "vendor_outcomes",
+                    "vendor_values",
+                    "vendor_basis_bindings",
+                ):
+                    assert conn.execute(
+                        "SELECT has_table_privilege(%s,%s,'SELECT'), "
+                        "has_table_privilege(%s,%s,'INSERT'), "
+                        "has_table_privilege(%s,%s,'UPDATE,DELETE,TRUNCATE')",
+                        (role, "eqos." + table) * 3,
+                    ).fetchone() == (True, role == "eqos_runtime", False)
+
         with pg_db.migrator_connection() as conn:
-            for table in ("vendor_parser_versions", "vendor_outcomes", "vendor_values"):
+            for table in (
+                "vendor_parser_versions",
+                "vendor_outcomes",
+                "vendor_values",
+                "vendor_basis_bindings",
+            ):
                 for statement in (
                     f"UPDATE eqos.{table} SET "
                     + (
