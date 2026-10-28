@@ -14,6 +14,7 @@ Authoritative docs and when to read them.
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
 | `docs/goals/2026-10-27-research-report-targets.md` | **Designing research output** — the owner's target report content (forward view, risk probe, management credibility), doctrine adaptations, and source coverage gaps |
 | `docs/research/2026-10-28-screener-tijori-extraction-audit.md` | **Vendor capture completeness** — Screener/Tijori surface matrix (captured / raw-only / missing), raw-first and drift findings, gap plan |
+| `docs/research/vendor-surface/` | **Every Screener/Tijori subscriber surface** — 3-model crawl catalog (`catalog.yaml`, 202 surfaces, `existing` vs code), ranked gaps (`new-surfaces.md`), not-GET-capturable list, `runbook.md` (redo the crawl, deny-list, drift canaries); gateway `scripts/vendor_crawl/fetch.py` |
 | `docs/research/2026-10-28-repo-critical-audit.md` | **Known defects outside vendor ingest** — 23 ranked findings (invariants, drift, correctness, dead code, size) with file:line |
 | `docs/research/2026-10-28-pdf-extraction-bug-diagnosis.md` | **PDF extraction bugs** — root cause and fix location for eqos-ghv/djv/n21/dol |
 | `docs/plans/2026-10-28-parallel-sol-lanes.md` | **Using spare Sol capacity** — independent lanes off the critical path (vendor full-extraction audit, gate speed, PDF bug diagnosis, repo audit, RESEARCH-3 plan) |
