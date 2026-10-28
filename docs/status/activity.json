@@ -8,7 +8,7 @@
     "LIVE-RUN-1 gates, then Sol phase review, then the live Apar run (owner: watchlist add)",
     "DOCS-1 Tasks 1-4 (Sol worktree), then a review and merge after LIVE-RUN-1 closes",
     "RESEARCH-3 plan (S1 risk probe first)",
-    "Tijori #companyFilings fallback amendment to DOCS-1 (owner proposal)"
+    "DOCS-1 Task 4b (Tijori listing) after the Tasks 1-4 trim"
   ],
   "log": [
     {
@@ -558,6 +558,10 @@
     {
       "date": "2026-10-28",
       "text": "eqos-bnx RESEARCH-3 spec approved r4 (Sol); C-12 amended to machine effort; invariant 7 extended to filed raw amounts"
+    },
+    {
+      "date": "2026-10-28",
+      "text": "eqos-msq DOCS-1 Amendment A1 approved (Sol r2): Tijori #companyFilings primary listing; NSE original cited where it exists, Tijori copy only when NSE absence is proven or pre-2023-07"
     }
   ]
 }
