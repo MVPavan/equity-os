@@ -8,6 +8,7 @@ from functools import partial
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import OpenerDirector
 
 import pytest
 from pydantic import SecretStr
@@ -22,10 +23,11 @@ def load_request_index():
     return json.loads(INDEX.read_text())
 
 
-class RetainedOpener:
+class RetainedOpener(OpenerDirector):
     """A finite fake: the retained page, one chart metric set, otherwise 404."""
 
     def __init__(self, stop=False):
+        super().__init__()
         self.rows, self.calls, self.stop = load_request_index(), [], stop
 
     def open(self, request, timeout):

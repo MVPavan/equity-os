@@ -5,6 +5,7 @@ import io
 from email.message import Message
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.request import OpenerDirector
 
 import pytest
 from pydantic import SecretStr
@@ -12,10 +13,11 @@ from pydantic import SecretStr
 from fundamentals.contracts.snapshot import BodyCompleteness
 
 
-class Opener:
+class Opener(OpenerDirector):
     """A bounded in-memory HTTP boundary, with a call log."""
 
     def __init__(self, status=200, location=None, partial=False):
+        super().__init__()
         self.status, self.partial, self.calls = status, partial, []
         self.headers = Message()
         self.headers["Content-Type"] = "text/plain"
@@ -189,3 +191,30 @@ def test_normalised_account_paths(tmp_path):
         with pytest.raises(ValueError):
             client.get(Site.SCREENER, "chart-api", "https://www.screener.in" + path)
     assert not opener.calls
+
+
+def test_injected_standard_opener_cannot_follow_redirect(tmp_path):
+    from urllib.request import HTTPSHandler, build_opener
+    from urllib.response import addinfourl
+
+    from fundamentals.ingest.vendor_surface_fetch import Site
+
+    calls = []
+
+    class Responses(HTTPSHandler):
+        def https_open(self, request):
+            calls.append(request.full_url)
+            headers = Message()
+            if len(calls) == 1:
+                headers["Location"] = "https://example.com/document"
+            response = addinfourl(
+                io.BytesIO(b"fixture"), headers, request.full_url, 302 if len(calls) == 1 else 200
+            )
+            response.msg = "fixture"
+            return response
+
+    client, _ = fetcher(tmp_path, build_opener(Responses()))
+    fetched = client.get(Site.SCREENER, "chart-api", "https://www.screener.in/chart/")
+    assert fetched.record.http_status == 302
+    assert fetched.location == "https://example.com/document"
+    assert calls == ["https://www.screener.in/chart/"]

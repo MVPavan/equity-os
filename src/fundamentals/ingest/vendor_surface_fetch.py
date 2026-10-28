@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
-from urllib.request import OpenerDirector, Request
+from urllib.request import HTTPRedirectHandler, OpenerDirector, Request
 
 import structlog
 from psycopg import Connection
@@ -26,7 +26,7 @@ from fundamentals.contracts.snapshot import (
     CaptureRecord,
     RequestIdentity,
 )
-from fundamentals.ingest.http_session import RequestPacer, read_bounded_capture
+from fundamentals.ingest.http_session import NoRedirectHandler, RequestPacer, read_bounded_capture
 from fundamentals.ingest.tijori_capture import (
     TIJORI_RIGHTS,
     classify_http_status,
@@ -194,6 +194,14 @@ class VendorFetcher:
         timeout_seconds: float = 30.0,
         max_bytes: int = 20_000_000,
     ) -> None:
+        # Returning None from NoRedirectHandler does not suppress a second redirect handler.
+        # urllib initializes this registry; its type stubs omit the attribute.
+        handlers: dict[str, dict[int | str, list[object]]] = vars(opener)["handle_error"]
+        for chain in handlers.get("http", {}).values():
+            chain[:] = [
+                handler for handler in chain if not isinstance(handler, HTTPRedirectHandler)
+            ]
+        opener.add_handler(NoRedirectHandler())
         self.store, self.sessions, self.opener = store, sessions, opener
         self.stop_dir, self.lock = stop_dir, lock
         self.budget, self.timeout, self.max_bytes = site_budget, timeout_seconds, max_bytes
