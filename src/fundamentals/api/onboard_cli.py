@@ -100,6 +100,7 @@ from fundamentals.entity.discovery import (
     store_captures,
     write_generation,
 )
+from fundamentals.entity.discovery_origins import ORIGINS
 from fundamentals.entity.verification import outcome, tijori_candidate
 from fundamentals.evidence import vendor_screener, vendor_tijori, vendor_upstox
 from fundamentals.evidence.capture_intake import (
@@ -271,7 +272,7 @@ def live_transport() -> Send:
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
-        api = urlsplit(request.url)[:2] == ("https", discovery.ORIGINS[UPSTOX_STATEMENT])
+        api = urlsplit(request.url)[:2] == ("https", ORIGINS[UPSTOX_STATEMENT])
         if upstox and (request.source_id, request.surface) in UPSTOX_ROUTED and api:
             headers["Authorization"] = f"Bearer {upstox.access_token.get_secret_value()}"
         try:
