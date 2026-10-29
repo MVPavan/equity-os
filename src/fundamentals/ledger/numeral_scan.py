@@ -32,8 +32,8 @@ _STRUCTURAL = re.compile(
             # provenance hashes, never a number in scientific notation
             r"\b(?:hash|sha256|commit|digest)[ \t:=]+(?!\d+(?:\.\d+)?e[+-]?\d+\b)"
             r"(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b",
-            r"\b[a-z][a-z_]*[-:#]\d+\b|\b[A-Z]\d{1,2}\b",  # ids: run-12, decision:42, F1
-            r"× 100\b",  # registered formula literal
+            r"\b(?:run-\d+|decision:\d+|F\d{1,2})\b",  # rendered identifiers
+            r"(?:\bPBT / revenue|\(current − prior\) / prior) × 100\b",  # formulas
         )
     ),
     re.MULTILINE,
