@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.contracts.comparative import ConceptComparative
 from fundamentals.contracts.observation import Observation
 from fundamentals.reconcile.agreement import AgreementStatus, SourceClass
+from fundamentals.reconcile.gold_file import RegressReport
 
 
 class SourceKind(StrEnum):
@@ -106,6 +107,7 @@ class DodEvaluation(BaseModel):
     gold_file_written: bool
     no_unsourced_number: bool
     no_missing_material_concepts: bool
+    no_gold_drift: bool = True
 
     @property
     def met(self) -> bool:
@@ -116,6 +118,7 @@ class DodEvaluation(BaseModel):
             and self.gold_file_written
             and self.no_unsourced_number
             and self.no_missing_material_concepts
+            and self.no_gold_drift
         )
 
 
@@ -139,6 +142,7 @@ class StockReport(BaseModel):
     blockers: tuple[str, ...]
     identifiers_to_verify: tuple[str, ...]
     comparatives: tuple[ConceptComparative, ...] = ()
+    gold_regression: RegressReport | None = None
     diagnostic_label: str = (
         "Retrospective current-data diagnostic; this cannot prove historical possession or "
         "absence of hindsight."

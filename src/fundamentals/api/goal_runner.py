@@ -127,7 +127,13 @@ from fundamentals.reconcile.fact_view import (
 from fundamentals.reconcile.fact_view import (
     select_first_party as _select_first_party,
 )
-from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, write_gold_file
+from fundamentals.reconcile.gold_file import (
+    DEFAULT_GOLD_DIR,
+    gold_file_path,
+    read_gold_file,
+    regress,
+    write_gold_file,
+)
 from fundamentals.reconcile.report import (
     ALL_SOURCE_KINDS as ALL_SOURCE_KINDS,
 )
@@ -316,9 +322,9 @@ def reconcile_stock(
     """Reconcile every material fact across the collected sources and score the DoD.
 
     Pure of network I/O: it consumes already-pulled observations, so it is the
-    deterministic core the tests drive directly. Writes the per-stock gold file
-    only when at least one first-party source produced a fact (never an empty
-    reference), and evaluates the goal's Definition of Done.
+    deterministic core the tests drive directly. Creates the per-stock gold file
+    only when absent and facts exist; reruns regress against the retained baseline
+    and evaluate the goal's Definition of Done.
     """
     concepts = stock.concepts
     derived_map = _derived_concept_map(concepts.roles)
@@ -365,12 +371,19 @@ def reconcile_stock(
         if src.status is SourceStatus.BLOCKED and src.note
     )
 
-    gold_path: str | None = None
-    if results:
-        written = write_gold_file(stock.symbol, stock.quarter.label, results, out_dir=out_dir)
-        gold_path = str(written)
+    path = gold_file_path(stock.symbol, stock.quarter.label, out_dir)
+    if not path.exists() and results:
+        write_gold_file(stock.symbol, stock.quarter.label, results, out_dir=out_dir)
+    regression = regress(read_gold_file(path), results) if path.exists() else None
+    gold_path = str(path) if regression is not None else None
 
-    dod = _evaluate_dod(facts, cross_foot_results, missing, gold_written=gold_path is not None)
+    dod = _evaluate_dod(
+        facts,
+        cross_foot_results,
+        missing,
+        gold_written=gold_path is not None,
+        no_gold_drift=regression is None or not regression.has_drift,
+    )
     outcome = _stock_outcome(first_party_reachable, dod, results)
     discrepancies = tuple(fact for fact in facts if fact.needs_human_review)
 
@@ -395,6 +408,7 @@ def reconcile_stock(
         missing_material_concepts=tuple(missing),
         cross_foot=cross_foot,
         gold_file_path=gold_path,
+        gold_regression=regression,
         dod=dod,
         blockers=blockers,
         identifiers_to_verify=stock.identifiers.needs_verification,
@@ -407,6 +421,7 @@ def _evaluate_dod(
     missing: Sequence[str],
     *,
     gold_written: bool,
+    no_gold_drift: bool,
 ) -> DodEvaluation:
     """Evaluate every clause of the goal's Definition of Done."""
     material_facts_agreed = bool(facts) and all(
@@ -421,6 +436,7 @@ def _evaluate_dod(
         material_facts_agreed=material_facts_agreed,
         cross_foot_holds=cross_foot_holds,
         gold_file_written=gold_written,
+        no_gold_drift=no_gold_drift,
         no_unsourced_number=no_unsourced_number,
         no_missing_material_concepts=not missing,
     )
