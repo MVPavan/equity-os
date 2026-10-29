@@ -3,25 +3,25 @@
 import hashlib
 import json
 import re
-import tokenize
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from pathlib import Path
+from tokenize import TokenError
 from typing import Any, LiteralString
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlsplit
 
 from lxml import html  # type: ignore[import-untyped]
 from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.contracts.snapshot import BodyCompleteness, CaptureRecord
+from fundamentals.contracts.snapshot import BodyCompleteness
 from fundamentals.ingest.screener_company_discovery import read_page_hooks
 from fundamentals.ingest.screener_financials_tables import schedule_parents
 from fundamentals.ingest.screener_session_models import ScreenerSessionError
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
+    Fetched,
     Site,
     SiteBusy,
     SiteStopped,
@@ -114,12 +114,40 @@ def yield_drift(pool: ConnectionPool, since: datetime) -> tuple[Drift, ...]:
     return tuple(found)
 
 
+def _cls(name: str) -> str:
+    """XPath predicate for one class token."""
+    return f'contains(concat(" ",normalize-space(@class)," ")," {name} ")'
+
+
 _PERIOD = re.compile(r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4}|TTM")
-_TABLE = '//table[contains(concat(" ",normalize-space(@class)," ")," data-table ")]'
+_TABLE = f"//table[{_cls('data-table')}]"
 _SECTIONS = (
     "chart analysis peers quarters profit-loss balance-sheet cash-flow "
     "ratios insights shareholding documents"
 ).split()
+_UTILS = re.compile(r"https://cdn-static\.screener\.in/js/(utils\.[a-f0-9]+\.js)")
+_HANDLERS = ("showSchedule", "showShareholders", "showSegment")
+_BASIS = '//*[@data-company-id="211"][@data-warehouse-id="6594631"][@data-consolidated="true"]'
+_GROWTH = '//*[@id="profit-loss"]//table[contains(@class,"ranges-table")]//tr[td]'
+_BLOCKS = "custom_ratios forensics revenuemix operationalmetrics company_filings".split()
+# An event row pairs a populated event cell with populated content; a card has header and body.
+_EVENT = (
+    f"//tr[td[{_cls('event')}][normalize-space()] and td[{_cls('content')}][normalize-space()]]"
+)
+_CARD = (
+    f"//*[{_cls('result_item')}][*[{_cls('result_item__header')}][normalize-space()]]"
+    f"[*[{_cls('result_item__body')}][normalize-space()]]"
+)
+_MALFORMED = (
+    ValueError,
+    LookupError,
+    TypeError,
+    AttributeError,
+    ParserError,
+    ScreenerSessionError,
+    TokenError,
+)
+Markers = Callable[[bytes], dict[str, bool]]
 
 
 def _text(node: Any) -> str:
@@ -127,288 +155,288 @@ def _text(node: Any) -> str:
     return " ".join(node.text_content().split())
 
 
+def _full(value: Any, kind: type = list) -> bool:
+    """A non-empty container of the expected kind."""
+    return isinstance(value, kind) and bool(value)
+
+
 def _periods(tree: Any, section: str) -> list[Any]:
     """Read period headings only from a section's data table."""
-    return [
-        node
-        for node in tree.xpath(f'//*[@id="{section}"]' + _TABLE + "//th")
-        if _PERIOD.fullmatch(_text(node))
-    ]
+    nodes = tree.xpath(f'//*[@id="{section}"]' + _TABLE + "//th")
+    return [node for node in nodes if _PERIOD.fullmatch(_text(node))]
 
 
-def _markers(name: str, raw: bytes) -> dict[str, bool]:
-    """Evaluate the runbook's structural markers without reading financial values."""
-    if name in ("S4", "S5", "S6", "T4", "T5"):
-        data = json.loads(raw)
-        if name == "S4":
-            return {
-                "period_objects": bool(data)
-                and isinstance(data, dict)
-                and all(
-                    isinstance(value, dict)
-                    and bool(value)
-                    and all(key != "TTM" and _PERIOD.fullmatch(key) for key in value)
-                    for value in data.values()
-                )
-            }
-        if name == "S5":
-            return {
-                "holders": isinstance(data, dict)
-                and bool(data)
-                and all(isinstance(value, dict) and value for value in data.values())
-            }
-        if name == "S6":
-            datasets = data["datasets"]
-            return {
-                "datasets": all(
-                    any(
-                        d["metric"] == label and isinstance(d["values"], list) and d["values"]
-                        for d in datasets
-                    )
-                    for label in ("Price", "DMA50", "DMA200", "Volume")
-                )
-            }
-        payload = data["data"]
-        payload = json.loads(payload) if isinstance(payload, str) else payload
-        return {
-            "envelope": data["status"] == 200,
-            "eod_price" if name == "T4" else "fund_flow": isinstance(payload, dict)
-            and isinstance(payload["eod_price"], list)
-            and bool(payload["eod_price"])
-            if name == "T4"
-            else isinstance(payload, list)
-            and bool(payload)
-            and all(
-                item["name"] and isinstance(item["data"], dict) and item["data"] for item in payload
-            ),
-        }
+def _islands(tree: Any) -> dict[str, Any]:
+    """Decode a page's JSON script islands by id."""
+    nodes = tree.xpath('//script[@type="application/json"]')
+    return {node.get("id"): json.loads(node.text or "null") for node in nodes}
+
+
+def _aligned(table: Any, rows: Any) -> bool:
+    """Every row's value list is as long as the table's non-empty report dates."""
+    dates = table["report_dates"]
+    return (
+        bool(dates)
+        and _full(rows)
+        and all(_full(r["value"]) and len(r["value"]) == len(dates) for r in rows)
+    )
+
+
+def _envelope(raw: bytes) -> tuple[bool, Any]:
+    """Read Tijori's `{data, status}` envelope, decoding string-encoded data."""
+    data = json.loads(raw)
+    payload = data["data"]
+    return data["status"] == 200, json.loads(payload) if isinstance(payload, str) else payload
+
+
+def _s1(raw: bytes) -> dict[str, bool]:
+    """Company page: sections, session, basis, handlers, documents, growth and statements."""
     tree = html.fromstring(raw)
-    if name == "S1":
-        hooks = read_page_hooks(tree)
-        decoded = (len(schedule_parents(tree)), len(hooks.investors), len(hooks.segments))
-        counts = tuple(
-            sum(
-                bool(re.search(r"\b" + handler + r"\s*\(", value))
-                for value in tree.xpath("//*[@onclick]/@onclick")
-            )
-            for handler in ("showSchedule", "showShareholders", "showSegment")
+    hooks = read_page_hooks(tree)
+    decoded = (len(schedule_parents(tree)), len(hooks.investors), len(hooks.segments))
+    onclicks = tree.xpath("//*[@onclick]/@onclick")
+    counts = tuple(sum(bool(re.search(rf"\b{h}\s*\(", v)) for v in onclicks) for h in _HANDLERS)
+    checks = {
+        "sections": tree.xpath("//section[@id]/@id") == _SECTIONS,
+        "session": tree.xpath(
+            'boolean(//a[@href="/user/account/"] and //form[@action="/logout/"])'
+        ),
+        "identity_basis": tree.xpath(f"boolean({_BASIS})"),
+        "handlers": counts == decoded and counts[0] > 0 and counts[1] > 0,
+        "documents": {"Announcements", "Annual reports", "Credit ratings", "Concalls"}
+        <= {_text(n) for n in tree.xpath('//*[@id="documents"]//h3')},
+        "growth_rows": all(len(row.xpath("./td | ./th")) == 2 for row in tree.xpath(_GROWTH)),
+    }
+    for section in ("quarters", "profit-loss", "balance-sheet", "cash-flow", "ratios"):
+        periods = _periods(tree, section)
+        tables = tree.xpath(f'//*[@id="{section}"]' + _TABLE)
+        rows = tables[0].xpath(".//tr[td]") if len(tables) == 1 else []
+        cells = [row.xpath("./td")[1:] for row in rows]
+        checks[section] = (
+            bool(periods and cells)
+            and all(len(row) == len(periods) for row in cells)
+            and any(all(_text(cell) for cell in row) for row in cells)
         )
-        checks = {
-            "sections": tree.xpath("//section[@id]/@id") == _SECTIONS,
-            "session": bool(tree.xpath('//a[@href="/user/account/"]'))
-            and bool(tree.xpath('//form[@action="/logout/"]')),
-            "identity_basis": bool(
-                tree.xpath(
-                    '//*[@data-company-id="211" and '
-                    '@data-warehouse-id="6594631" and @data-consolidated="true"]'
-                )
-            ),
-            "handlers": counts == decoded and counts[0] > 0 and counts[1] > 0,
-            "documents": {"Announcements", "Annual reports", "Credit ratings", "Concalls"}
-            <= {_text(n) for n in tree.xpath('//*[@id="documents"]//h3')},
-            "growth_rows": all(
-                len(row.xpath("./td | ./th")) == 2
-                for row in tree.xpath(
-                    '//*[@id="profit-loss"]//table[contains(@class,"ranges-table")]//tr[td]'
-                )
-            ),
-        }
-        for section in ("quarters", "profit-loss", "balance-sheet", "cash-flow", "ratios"):
-            periods = _periods(tree, section)
-            tables = tree.xpath(f'//*[@id="{section}"]' + _TABLE)
-            rows = tables[0].xpath(".//tr[td]") if len(tables) == 1 else []
-            cells = [row.xpath("./td")[1:] for row in rows]
-            checks[section] = (
-                bool(periods and cells)
-                and all(len(row) == len(periods) for row in cells)
-                and any(all(_text(cell) for cell in row) for row in cells)
-            )
-        return checks
-    if name == "S2":
-        return {
-            "empty_shell": bool(tree.xpath('//section[@id="quarters"]' + _TABLE))
-            and not _periods(tree, "quarters")
-        }
-    if name == "S3":
-        periods = _periods(tree, "quarters")
-        return {
-            "half_yearly": any(
-                "Half Yearly Results" in _text(n) for n in tree.xpath('//*[@id="quarters"]//h2')
-            ),
-            "months": bool(periods) and all(_text(n).split()[0] in ("Mar", "Sep") for n in periods),
-        }
-    if name == "S7":
-        match = re.search(r"\bgetUrls\([^)]*\)\s*{(.*?)\n\s*}", raw.decode(), re.S)
-        urls = match[1] if match else ""
-        return {
-            "getUrls": all(
-                re.search(r"\b" + marker + r"\b", urls)
-                for marker in ("getChartMetric", "tradeData", "getSegments")
-            )
-        }
-    islands = {
-        node.get("id"): json.loads(node.text or "null")
-        for node in tree.xpath('//script[@type="application/json"]')
-    }
-    if name == "T1":
-        custom = islands["custom_fin_table"]
-        peers = islands["peers_table_data"]
-        return {
-            "company": bool(islands["company_details_data"]["company"])
-            and bool(islands["company_details_data"]["company_id"]),
-            "companyId": type(islands["companyId"]) is int and islands["companyId"] > 0,
-            "ratios_table": isinstance(islands["ratios_table"], list)
-            and bool(islands["ratios_table"])
-            and all(
-                row["name"] and row["value"] not in (None, "", [], {})
-                for row in islands["ratios_table"]
-            ),
-            "custom_fin_table": isinstance(custom, list)
-            and bool(custom)
-            and all(
-                table["report_dates"]
-                and table["data"]["sub_rows"]
-                and all(
-                    isinstance(row["value"], list)
-                    and len(row["value"]) == len(table["report_dates"])
-                    for row in table["data"]["sub_rows"]
-                )
-                for table in custom
-            ),
-            "ms-charts": bool(islands["ms-charts"])
-            and all(row["data"] for row in islands["ms-charts"]),
-            "peers_table_data": isinstance(peers, list)
-            and any(row.get("columns") for row in peers)
-            and any(row.get("data") for row in peers),
-            "corporate_actions": any(
-                isinstance(v, list) and v for v in islands["corporate_actions"].values()
-            ),
-            "blocks": all(
-                tree.xpath(f'//*[@id="{key}"]')
-                for key in (
-                    "custom_ratios",
-                    "forensics",
-                    "revenuemix",
-                    "operationalmetrics",
-                    "company_filings",
-                )
-            ),
-            "op_metrics": b"company_op_metrics/4290/" in raw,
-            "price_chart_absent": "price_chart" not in islands,
-        }
-    if name == "T2":
-        tables = islands["fin_tables_data"]
-        return {
-            "tables": len(tables) == 15 and {"qt_c", "qt_s", "growth"} <= tables.keys(),
-            "statement_rows": all(
-                table["report_dates"]
-                and table["data"]
-                and all(
-                    isinstance(row["value"], list)
-                    and bool(row["value"])
-                    and len(row["value"]) == len(table["report_dates"])
-                    for row in table["data"]
-                )
-                for table in tables.values()
-            ),
-        }
-    if name == "T3":
-        chart, trend = (read_js_var(raw, key) for key in ("chartData", "trendData"))
-        return {
-            "sections": all(
-                tree.xpath(f'//*[@id="{key}"]') for key in ("overview", "trend", "detailed")
-            ),
-            "chartData": isinstance(chart, list) and len(chart) >= 2,
-            "trendData": isinstance(trend, list)
-            and bool(trend)
-            and all(row["data"] for row in trend),
-            "detailed": bool(tree.xpath('//*[@id="detailed"]//table//tr[td]')),
-        }
-    if name == "T6":
-        return {
-            "events": bool(tree.xpath('//*[contains(concat(" ",@class," ")," event ")]')),
-            "cursor": any(
-                re.fullmatch(r"\d{2}/\d{2}/\d{6}:\d{2}:\d{2,8}", _text(n))
-                for n in tree.xpath('//tr[contains(concat(" ",@class," ")," d-none ")]/td[1]')
-            ),
-        }
+    return checks
+
+
+def _s2(raw: bytes) -> dict[str, bool]:
+    """Empty-shell company: a quarters table with no periods."""
+    tree = html.fromstring(raw)
+    shell = tree.xpath(f'boolean(//section[@id="quarters"]{_TABLE})')
+    return {"empty_shell": shell and not _periods(tree, "quarters")}
+
+
+def _s3(raw: bytes) -> dict[str, bool]:
+    """Half-yearly company: Mar and Sep periods only."""
+    tree = html.fromstring(raw)
+    periods = _periods(tree, "quarters")
+    headings = [_text(n) for n in tree.xpath('//*[@id="quarters"]//h2')]
     return {
-        "result_cards": bool(tree.xpath('//*[contains(concat(" ",@class," ")," result_item ")]'))
+        "half_yearly": any("Half Yearly Results" in heading for heading in headings),
+        "months": bool(periods) and all(_text(n).split()[0] in ("Mar", "Sep") for n in periods),
     }
 
 
-def _check(name: str, record: CaptureRecord, raw: bytes) -> tuple[str, ...]:
-    """Fail closed on status, truncated bodies and missing or malformed markers."""
-    if record.http_status != (302 if name in ("S8", "T8") else 200):
-        return (name + ".http_status",)
-    if record.effective_body_completeness != BodyCompleteness.COMPLETE:
-        return (name + ".body_completeness",)
-    if name in ("S8", "T8"):
-        return ()
-    try:
-        return tuple(name + "." + key for key, passed in _markers(name, raw).items() if not passed)
-    except (
-        ValueError,
-        KeyError,
-        TypeError,
-        IndexError,
-        AttributeError,
-        ParserError,
-        ScreenerSessionError,
-        tokenize.TokenError,
-        SyntaxError,
-    ):
-        return (name + ".structure",)
+def _s4(raw: bytes) -> dict[str, bool]:
+    """Schedule rows keyed by month periods."""
+    data = json.loads(raw)
+    months = (
+        _full(v, dict) and all(k != "TTM" and _PERIOD.fullmatch(k) for k in v)
+        for v in data.values()
+    )
+    return {"period_objects": _full(data, dict) and all(months)}
+
+
+def _s5(raw: bytes) -> dict[str, bool]:
+    """At least one holder, each a record of period-keyed holdings."""
+    data = json.loads(raw)
+    holders = (isinstance(v, dict) and any(_PERIOD.fullmatch(k) for k in v) for v in data.values())
+    return {"holders": _full(data, dict) and all(holders)}
+
+
+def _s6(raw: bytes) -> dict[str, bool]:
+    """Price, moving averages and volume series."""
+    series = {d["metric"] for d in json.loads(raw)["datasets"] if _full(d["values"])}
+    return {"datasets": {"Price", "DMA50", "DMA200", "Volume"} <= series}
+
+
+def _s7(raw: bytes) -> dict[str, bool]:
+    """The utils script still names the chart, trade and segment endpoints."""
+    match = re.search(r"\bgetUrls\([^)]*\)\s*{(.*?)\n\s*}", raw.decode(), re.S)
+    names = set(re.findall(r"\w+", match[1])) if match else set()
+    return {"getUrls": {"getChartMetric", "tradeData", "getSegments"} <= names}
+
+
+def _t1(raw: bytes) -> dict[str, bool]:
+    """Company page islands and blocks."""
+    tree = html.fromstring(raw)
+    islands = _islands(tree)
+    company, ratios, custom, peers = (
+        islands[key]
+        for key in ("company_details_data", "ratios_table", "custom_fin_table", "peers_table_data")
+    )
+    return {
+        "company": bool(company["company"] and company["company_id"]),
+        "companyId": type(islands["companyId"]) is int and islands["companyId"] > 0,
+        "ratios_table": _full(ratios)
+        and all(r["name"] and r["value"] not in (None, "", [], {}) for r in ratios),
+        "custom_fin_table": _full(custom)
+        and all(_aligned(t, t["data"]["sub_rows"]) for t in custom),
+        "ms-charts": bool(islands["ms-charts"]) and all(r["data"] for r in islands["ms-charts"]),
+        "peers_table_data": isinstance(peers, list)
+        and any(r.get("columns") for r in peers)
+        and any(r.get("data") for r in peers),
+        "corporate_actions": any(_full(v) for v in islands["corporate_actions"].values()),
+        "blocks": all(tree.xpath(f'//*[@id="{key}"]') for key in _BLOCKS),
+        "op_metrics": b"company_op_metrics/4290/" in raw,
+        "price_chart_absent": "price_chart" not in islands,
+    }
+
+
+def _t2(raw: bytes) -> dict[str, bool]:
+    """Fifteen financial tables with aligned statement rows."""
+    tables = _islands(html.fromstring(raw))["fin_tables_data"]
+    return {
+        "tables": len(tables) == 15 and {"qt_c", "qt_s", "growth"} <= tables.keys(),
+        "statement_rows": all(_aligned(t, t["data"]) for t in tables.values()),
+    }
+
+
+def _t3(raw: bytes) -> dict[str, bool]:
+    """Shareholding sections, labelled chart slices, trend point series and the detailed table."""
+    tree = html.fromstring(raw)
+    chart, trend = (read_js_var(raw, key) for key in ("chartData", "trendData"))
+    return {
+        "sections": all(
+            tree.xpath(f'//*[@id="{key}"]') for key in ("overview", "trend", "detailed")
+        ),
+        "chartData": _full(chart)
+        and all(_full(r) and len(r) == 2 and _full(r[0], str) for r in chart),
+        "trendData": _full(trend)
+        and all(_full(s["data"]) and all(map(_full, s["data"])) for s in trend),
+        "detailed": tree.xpath('boolean(//*[@id="detailed"]//table//tr[td])'),
+    }
+
+
+def _t4(raw: bytes) -> dict[str, bool]:
+    """Daily prices inside the envelope."""
+    envelope, payload = _envelope(raw)
+    return {
+        "envelope": envelope,
+        "eod_price": isinstance(payload, dict) and _full(payload["eod_price"]),
+    }
+
+
+def _t5(raw: bytes) -> dict[str, bool]:
+    """Named fund-flow series inside the envelope."""
+    envelope, payload = _envelope(raw)
+    series = (item["name"] and _full(item["data"], dict) for item in payload)
+    return {"envelope": envelope, "fund_flow": _full(payload) and all(series)}
+
+
+def _t6(raw: bytes) -> dict[str, bool]:
+    """Populated timeline event rows and the next-page cursor."""
+    tree = html.fromstring(raw)
+    cursors = tree.xpath(f"//tr[{_cls('d-none')}]/td[1]")
+    return {
+        "events": tree.xpath(f"boolean({_EVENT})"),
+        "cursor": any(re.fullmatch(r"\d{2}/\d{2}/\d{6}:\d{2}:\d{2,8}", _text(n)) for n in cursors),
+    }
+
+
+def _t7(raw: bytes) -> dict[str, bool]:
+    """At least one populated result card."""
+    return {"result_cards": html.fromstring(raw).xpath(f"boolean({_CARD})")}
 
 
 class Canary(BaseModel):
-    """A runbook request and its pure retained-body check."""
+    """A runbook request and its pure retained-body markers."""
 
     model_config = ConfigDict(frozen=True)
     name: str
     site: Site
     url: str
-    check: Callable[[CaptureRecord, bytes], tuple[str, ...]]
+    status: int = 200
+    # Redirect controls carry no body markers; `location` is a required redirect path.
+    markers: Markers = lambda raw: {}
+    location: str | None = None
+
+    def check(self, fetched: Fetched, raw: bytes) -> tuple[str, ...]:
+        """Fail closed on status, truncated bodies, redirect target and malformed markers."""
+        record = fetched.record
+        if record.http_status != self.status:
+            return (self.name + ".http_status",)
+        if record.effective_body_completeness != BodyCompleteness.COMPLETE:
+            return (self.name + ".body_completeness",)
+        target, here = urlsplit(urljoin(fetched.url, fetched.location or "")), urlsplit(fetched.url)
+        if self.location and (target.netloc, target.path) != (here.netloc, self.location):
+            return (self.name + ".location",)
+        try:
+            return tuple(f"{self.name}.{key}" for key, ok in self.markers(raw).items() if not ok)
+        except _MALFORMED:
+            return (self.name + ".structure",)
 
 
-CANARIES: tuple[Canary, ...] = tuple(
-    Canary(
-        name=name,
-        site=site,
-        url=f"https://{SITE_AUTHORITY[site]}{path}",
-        check=partial(_check, name),
-    )
-    for site, name, path in (
-        (Site.SCREENER, "S1", "/company/APARINDS/consolidated/"),
-        (Site.SCREENER, "S2", "/company/NETWEB/consolidated/"),
-        (Site.SCREENER, "S3", "/company/ANONDITA/"),
-        (
-            Site.SCREENER,
-            "S4",
-            "/api/company/211/schedules/?parent={parent}&section=quarters&consolidated=true",
-        ),
-        (Site.SCREENER, "S5", "/api/3/211/investors/promoters/quarterly/"),
-        (
-            Site.SCREENER,
-            "S6",
-            "/api/company/211/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true",
-        ),
-        (Site.SCREENER, "S7", "/static/js/{utils}"),
-        (Site.SCREENER, "S8", "/company/actions/211/"),
-        (Site.TIJORI, "T1", "/company/apar-industries-limited/"),
-        (Site.TIJORI, "T2", "/company/apar-industries-limited/financials/"),
-        (Site.TIJORI, "T3", "/company/apar-industries-limited/shareholding/"),
-        (Site.TIJORI, "T4", "/api/v1/ind/chartdata/4290/price/"),
-        (Site.TIJORI, "T5", "/api/v1/ind/fund_flow_analysis_data/4290/"),
-        (Site.TIJORI, "T6", "/timeline/company/?company_id=4290&timestamp=0"),
-        (
-            Site.TIJORI,
-            "T7",
-            "/results/quarterly-results/api/?page=2&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=&daterange={dates}",
-        ),
-        (Site.TIJORI, "T8", "/"),
-    )
+def _canary(
+    name: str, path: str, markers: Markers | None = None, location: str | None = None
+) -> Canary:
+    """Bind a runbook row; S rows are Screener, T rows Tijori, and no markers means a redirect."""
+    site = Site.SCREENER if name.startswith("S") else Site.TIJORI
+    url = f"https://{SITE_AUTHORITY[site]}{path}"
+    if markers is None:
+        return Canary(name=name, site=site, url=url, status=302, location=location)
+    return Canary(name=name, site=site, url=url, markers=markers)
+
+
+CANARIES: tuple[Canary, ...] = (
+    _canary("S1", "/company/APARINDS/consolidated/", _s1),
+    _canary("S2", "/company/NETWEB/consolidated/", _s2),
+    _canary("S3", "/company/ANONDITA/", _s3),
+    _canary(
+        "S4", "/api/company/211/schedules/?parent={parent}&section=quarters&consolidated=true", _s4
+    ),
+    _canary("S5", "/api/3/211/investors/promoters/quarterly/", _s5),
+    _canary(
+        "S6", "/api/company/211/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true", _s6
+    ),
+    _canary("S7", "/static/js/{utils}", _s7),
+    _canary("S8", "/company/actions/211/"),
+    _canary("T1", "/company/apar-industries-limited/", _t1),
+    _canary("T2", "/company/apar-industries-limited/financials/", _t2),
+    _canary("T3", "/company/apar-industries-limited/shareholding/", _t3),
+    _canary("T4", "/api/v1/ind/chartdata/4290/price/", _t4),
+    _canary("T5", "/api/v1/ind/fund_flow_analysis_data/4290/", _t5),
+    _canary("T6", "/timeline/company/?company_id=4290&timestamp=0", _t6),
+    _canary(
+        "T7",
+        "/results/quarterly-results/api/?page=2&sort_by=latest&mcap=&timeline_type=all"
+        "&sectors=&company_ids=&daterange={dates}",
+        _t7,
+    ),
+    _canary("T8", "/", location="/dashboard/"),
 )
+
+
+def _dependencies(raw: bytes) -> dict[str, str]:
+    """Read S4's schedule parent and S7's utils script, each only when its own hook is valid."""
+    tree = html.fromstring(raw)
+    parents = [
+        match[1]
+        for value in tree.xpath('//*[@id="quarters"]//*[@onclick]/@onclick')
+        for match in re.findall(r"showSchedule\s*\(\s*(['\"])(.*?)\1", value)
+    ]
+    utils = [
+        match[1] for src in tree.xpath("//script[@src]/@src") if (match := _UTILS.fullmatch(src))
+    ]
+    return ({"parent": quote(parents[0], safe="")} if parents else {}) | (
+        {"utils": utils[0]} if len(utils) == 1 else {}
+    )
+
+
+def _drift(canary: Canary, key: str, check: str, detail: str) -> Drift:
+    """Name one failed canary check against its request."""
+    return Drift(site=canary.site, surface=canary.name, request_key=key, check=check, detail=detail)
 
 
 def run_canaries(
@@ -417,92 +445,61 @@ def run_canaries(
     """Fetch fresh, register every response, record checks, then inspect capture yield."""
     found: list[Drift] = []
     end = datetime.now(UTC)
-    variables: dict[str, str] = {
+    variables = {
         "dates": (end - timedelta(days=7)).strftime("%m/%d/%Y") + "," + end.strftime("%m/%d/%Y")
     }
     values = VendorValuesStore(pool)
     digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     for canary in CANARIES:
-        url = canary.url
+        stopped, url = False, canary.url
         try:
-            url = url.format_map(variables)
-        except KeyError:
-            found.append(
-                Drift(
-                    site=canary.site,
-                    surface=canary.name,
-                    request_key=request_key(url),
-                    check=canary.name + ".dependency",
-                    detail="S1 hook unavailable",
-                )
-            )
-            continue
-        stopped = False
-        fetched = None
-        try:
+            url = canary.url.format_map(variables)
             fetched = fetcher.get(canary.site, canary.name, url)
-        except (SiteStopped, SiteBusy, ValueError) as error:
-            fetched = error.fetched if isinstance(error, SiteStopped) else None
-            stopped = isinstance(error, SiteStopped)
-            if fetched is None:
+        except (KeyError, SiteStopped, SiteBusy, ValueError) as error:
+            if not isinstance(error, SiteStopped) or error.fetched is None:
+                # A missing S1 hook leaves a placeholder unformatted.
+                check = ".dependency" if isinstance(error, KeyError) else ".fetch"
                 found.append(
-                    Drift(
-                        site=canary.site,
-                        surface=canary.name,
-                        request_key=request_key(url),
-                        check=canary.name + ".fetch",
-                        detail=type(error).__name__,
-                    )
+                    _drift(canary, request_key(url), canary.name + check, type(error).__name__)
                 )
                 continue
+            fetched, stopped = error.fetched, True
         try:
             ref = register(pool, fetched)
+            with pool.connection() as conn:
+                [address] = conn.execute(
+                    "SELECT url, location FROM eqos.capture_addresses WHERE capture_ref_id=%s",
+                    (ref.capture_ref_id,),
+                ).fetchall()
+            registered = fetched.model_copy(update={"url": address[0], "location": address[1]})
             raw = (
                 store.read_body(fetched.record)
                 if fetched.record.effective_body_completeness == BodyCompleteness.COMPLETE
                 else b""
             )
-            checks = canary.check(fetched.record, raw)
-            if canary.name == "T8" and fetched.location != "/dashboard/":
-                checks += ("T8.location",)
-            if canary.name == "S1" and not checks:
-                tree = html.fromstring(raw)
-                parents = tree.xpath('//*[@id="quarters"]//*[@onclick]/@onclick')
-                matches = [
-                    re.search(r"showSchedule\s*\(\s*(['\"])(.*?)\1", value) for value in parents
-                ]
-                parent = next((match[2] for match in matches if match), None)
-                if parent is not None:
-                    variables["parent"] = quote(parent, safe="")
-                scripts = [
-                    re.fullmatch(r"https://cdn-static\.screener\.in/js/(utils\.[a-f0-9]+\.js)", src)
-                    for src in tree.xpath("//script[@src]/@src")
-                ]
-                utils = [match[1] for match in scripts if match]
-                if len(utils) == 1:
-                    variables["utils"] = utils[0]
+            # A stop is a named refusal whatever status the canary expected.
+            checks = (canary.name + ".refused",) if stopped else canary.check(registered, raw)
+            if canary.name == "S1" and raw:
+                variables |= _dependencies(raw)
             values.record(
                 ref,
                 Outcome(
                     surface=canary.name,
                     parser_version=f"canary.{canary.name}.v1",
                     parser_sha256=digest,
-                    status=OutcomeStatus.FAILED if checks else OutcomeStatus.OK,
+                    status=OutcomeStatus.UNUSABLE
+                    if stopped
+                    else OutcomeStatus.FAILED
+                    if checks
+                    else OutcomeStatus.OK,
                     symbol=None,
                     detail=", ".join(checks) if checks else None,
                 ),
                 row_count=0,
             )
-            found.extend(
-                Drift(
-                    site=canary.site,
-                    surface=canary.name,
-                    request_key=fetched.record.request.request_key,
-                    check=check,
-                    detail="runbook marker failed",
-                )
-                for check in checks
-            )
+            key = fetched.record.request.request_key
+            detail = "site stopped" if stopped else "runbook marker failed"
+            found.extend(_drift(canary, key, check, detail) for check in checks)
         finally:
             if stopped:
                 fetcher.stop_dir.mkdir(parents=True, exist_ok=True)
