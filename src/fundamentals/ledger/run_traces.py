@@ -39,7 +39,7 @@ from fundamentals.canon.interval import (
 )
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import Representation, TemporalRole, ValueKind
-from fundamentals.contracts.comparative import RUN_PERCENT_PLACES
+from fundamentals.contracts.comparative import RUN_PERCENT_PLACES, TAXONOMY_DRIFT_PREFIX
 from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
 from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import CaptureReference, Interpretation, InterpretationStatus
@@ -91,6 +91,9 @@ _Operand = tuple[str, OperandValue]
 _Lookup = Callable[[], _Operand]
 CRORE_STYLE = "group-intl,trim"
 CRORE_UNIT = f"{CRORE_STYLE},unit"
+DRIFT_NOTE = (
+    "taxonomy drift accepted in the issuer config: {drift}; both figures read as {canonical}"
+)
 
 
 class RunDraftError(RuntimeError):
@@ -99,7 +102,8 @@ class RunDraftError(RuntimeError):
 
 class Line(BaseModel):
     """One changes or calculations line: its label, its bound claims in display order, each
-    cited to its stored trace or interpretation, and why a value is not available."""
+    cited to its stored trace or interpretation, why a value is not available, and the basis of
+    an accepted taxonomy drift."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -107,6 +111,7 @@ class Line(BaseModel):
     label: str
     claims: tuple[NumericClaim, ...] = ()
     unavailable: str | None = None
+    drift: str | None = None
 
 
 class Carry(Protocol):
@@ -365,8 +370,16 @@ def bind_computed(
                     )
                 )
             reason = change.percent_unavailable_reason
+            drift = (change.taxonomy_drift or "").removeprefix(TAXONOMY_DRIFT_PREFIX)
+            note = DRIFT_NOTE.format(drift=drift, canonical=key.canonical_id) if drift else None
             lines.append(
-                Line(section=CHANGES, label=label, claims=tuple(claims), unavailable=reason)
+                Line(
+                    section=CHANGES,
+                    label=label,
+                    claims=tuple(claims),
+                    unavailable=reason,
+                    drift=note,
+                )
             )
     xbrl = facts[FactRole.PROFIT_BEFORE_TAX].sources[0]
 
@@ -465,6 +478,8 @@ def _shown(line: Line) -> str:
         shown += f", {_slot(percent[0], 'plus,unit')}"
     else:
         shown += f"; percent change not available ({line.unavailable})"
+    if line.drift:
+        shown += f"; {line.drift}"
     return f"{shown} {refs(keys)}"
 
 

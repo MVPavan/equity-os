@@ -21,6 +21,7 @@ their threshold claims follow, bound to the thesis approved at the derivation cu
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping, Sequence, Set
 from datetime import date, datetime
 from typing import Any, LiteralString
@@ -100,6 +101,8 @@ FACT_PREFIX, QOQ_PRIOR = "fact.", ".qoq.prior"
 GUIDANCE = "management_ledger"
 CARRIED = LedgerStatus.CARRIED
 NONE = "- none"
+FISCAL_PERIOD = re.compile(r"FY\d{2,4}(?:_Q[1-4])?")
+UNSPECIFIED = " (target period not specified by the extracted guidance)"
 INTROS = {
     RESULTS: "{{e:observed}} Reported consolidated figures:",
     CHANGES: "{{e:observed}} {{e:computed}} Prior figures and changes (current − prior; "
@@ -523,11 +526,16 @@ def _guidance(
 
 def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
     """A guidance line."""
-    key = claim.claim_key
+    key, note = claim.claim_key, "" if _specified(claim.horizon) else UNSPECIFIED
     return (
         f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
-        f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}" {refs([key])}'
+        f'{claim.horizon}{note} — {status.value}: "{_slot(key, QUOTE_STYLE)}" {refs([key])}'
     )
+
+
+def _specified(horizon: str | None) -> bool:
+    """Whether ``horizon`` names a fiscal year or fiscal quarter, never an inferred one."""
+    return horizon is not None and FISCAL_PERIOD.fullmatch(horizon) is not None
 
 
 def _quote(
