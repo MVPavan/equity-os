@@ -715,6 +715,9 @@ def capture_company(
             incomplete.append(request.url)
             continue
         except (SiteBusy, ValueError):
+            # An identity page that was never read proves nothing: its site's dependents wait.
+            if request.spec.id in ("company-page", "company-financials"):
+                blocked.add(request.spec.site)
             (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
                 request.url
             )

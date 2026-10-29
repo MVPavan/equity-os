@@ -423,6 +423,26 @@ def test_identity_acquisition_failure_is_recorded(company_rig, run_company, raw,
     assert report.refused
 
 
+def test_busy_identity_acquisition_blocks_dependents(company_rig, run_company, monkeypatch):
+    # Both identity pages meet a busy site lock; a dependent must not run once the lock frees.
+    opener, ids = company_rig("APARINDS")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    selected = tuple(
+        s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", "company-trades")
+    )
+    acquire, busy = PgSiteLock.acquire, iter((True, True))
+    monkeypatch.setattr(
+        PgSiteLock, "acquire", lambda self, site: not next(busy, False) and acquire(self, site)
+    )
+    report, captures, _, _ = run_company(opener, ids, selected)
+    assert captures == {}
+    assert report.completed == 0
+    assert report.expected == len(report.refused) + len(report.incomplete)
+
+
 def test_shareholder_whitespace_uses_matched_control(company_rig, run_company):
     opener, ids = company_rig("APARINDS")
     for url, row in opener.rows.items():
