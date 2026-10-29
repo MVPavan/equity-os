@@ -459,7 +459,9 @@ def run_canaries(
             if not isinstance(error, SiteStopped) or error.fetched is None:
                 # A missing S1 hook leaves a placeholder unformatted.
                 check = ".dependency" if isinstance(error, KeyError) else ".fetch"
-                found.append(_drift(canary, request_key(url), canary.name + check, repr(error)))
+                found.append(
+                    _drift(canary, request_key(url), canary.name + check, type(error).__name__)
+                )
                 continue
             fetched, stopped = error.fetched, True
         try:
