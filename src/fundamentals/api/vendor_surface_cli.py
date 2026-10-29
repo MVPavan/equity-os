@@ -36,6 +36,7 @@ from fundamentals.ingest.vendor_surface_capture import (
     reparse,
 )
 from fundamentals.ingest.vendor_surface_claims import extract_text
+from fundamentals.ingest.vendor_surface_due import capture_due
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
     PgSiteLock,
@@ -79,6 +80,9 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
 
     text = commands.add_parser("extract-text")
     text.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
+
+    due = commands.add_parser("capture-due")
+    due.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
 
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true")
@@ -165,6 +169,22 @@ def dispatch_vendor_command(
         for item in drift:
             sys.stdout.write(item.model_dump_json() + "\n")
         return int(any(item.check != NO_BASELINE or not args.yield_only for item in drift))
+    if args.vendor_command == "capture-due":
+        now = datetime.now(UTC)
+        specs = load_specs(SPECS, CATALOG)
+        resolved = sessions_factory({spec.site for spec in specs})
+        for site in {spec.site for spec in specs} - resolved.keys():
+            raise ValueError(f"missing vendor session: {site}")
+        store = store_factory(args.snapshot_root)
+        with pool_factory() as pool:
+            locks = PgSiteLock(pool)
+            fetcher = VendorFetcher(store, resolved, opener_factory(), STOP_DIR, locks)
+            try:
+                report = capture_due(fetcher, store, pool, VendorValuesStore(pool), specs, now)
+            finally:
+                locks.close()
+        sys.stdout.write(report.model_dump_json() + "\n")
+        return int(bool(report.stopped_sites or report.refused))
     specs = load_specs(SPECS, CATALOG)
     selected = [
         spec

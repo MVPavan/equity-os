@@ -80,3 +80,15 @@ Exact-request acceptance is incomplete until matching responses are retained: th
 - **Catalog entries.** Record one entry per URL pattern. Its example URL must be fetched exactly, and its sha256 must come from the gateway. Name fields only; never copy values.
 - **Snapshots.** Reference bodies live in `data/raw/vendor-surface/<date>/<site>/` (gitignored), one file per distinct body; section entries point at their parent page body plus an `anchor`. `snapshots-index.json` rows carry `kind`: `response` (200), `error` (non-200, with `status` and any `location`) or `discovery` (the script or page that names a never-fetched or non-200 surface). The 2026-10-28 consolidation used throwaway generators hand-mapped to that crawl's three outputs (not committed); a new crawl consolidates fresh against this catalog and never overwrites an earlier date's store.
 - **Diffing.** A full recrawl always repeats the whole §2 navigation and the §3 script-discovery walk. The canaries check only their named surfaces; passing canaries never narrow discovery. Then diff the new catalog's ids and contents against the previous run.
+
+## 6. Scheduled capture
+
+- **One cron line.** The owner's crontab runs the cadence command once a day, after 00:00 UTC (cron reads the machine's local time; any one daily slot works). `EQOS_REPO` is the checkout's root, set in the crontab; the log directory must exist:
+
+  ```
+  30 2 * * * cd "$EQOS_REPO" && set -a && . ./.env && set +a && uv run --no-sync fundamentals vendor capture-due >> data/logs/vendor-capture-due.jsonl 2>&1
+  ```
+
+  Each run writes one JSON report line (expected, completed, refused, incomplete, stopped sites) and exits 1 when a site is stopped or a request was refused. A second run on the same UTC day does no new work unless a feed shows a new event or an acquisition is unfinished.
+- **`STOP-<site>` reset.** A 403, 429, 503 or login redirect writes `data/STOP-<site>` and stops that site for every later run. Remove the file only after a person has diagnosed the cause (session expired, rate limit, site change); the next run resumes the site's due work oldest first.
+- **Site lock.** Each command holds one PostgreSQL session advisory lock per site for its whole run. A second command on the same site (an overlapping cron run, or a manual `vendor capture`) refuses that site at start; it is never run in parallel.
