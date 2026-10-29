@@ -88,9 +88,6 @@ TIJORI_SURFACES = (
     "company-shareholding",
     "shareholding-detailed",
     "company-search-api",
-    "financials-balance-sheet-snapshot",
-    "financials-fundflow-analysis",
-    "financials-cash-flow-analysis",
 )
 
 

@@ -199,6 +199,8 @@ for _site, _section_names in (
         "overview-quick-view overview-company-timeline-sidepanel overview-knowledgebase "
         "overview-popular-queries overview-discussions-and-analysis overview-operationalmetrics "
         "financials-price financials-reverse-dcf financials-faqfinancials "
+        "financials-balance-sheet-snapshot financials-fundflow-analysis "
+        "financials-cash-flow-analysis "
         "shareholding-faqshareholding",
     ),
 ):

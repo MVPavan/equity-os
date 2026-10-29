@@ -201,9 +201,6 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
     }
     allowed = {
         ("company-benchmarking", "ValueError"),  # G3 parent belongs to Phase 4.
-        ("financials-balance-sheet-snapshot", "ReaderError"),
-        ("financials-fundflow-analysis", "ReaderError"),
-        ("financials-cash-flow-analysis", "ReaderError"),
     }
     if symbol == "HDFCBANK":
         allowed.add(("segments-api", "SegmentReconciliationError"))
@@ -242,7 +239,7 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
         assert unexpected == set()
         if symbol == "APARINDS":
             # Every financials section has an explicit outcome. The three widget shells hold no
-            # reader input on the page (their data is the analysis APIs), so they fail closed.
+            # data on the page (their data is the analysis APIs), so they are kept, not parsed.
             sections = conn.execute(
                 "SELECT o.surface, o.status, o.detail FROM eqos.vendor_outcomes o JOIN eqos.c"
                 "apture_refs c ON c.id=o.capture_ref_id WHERE c.surface='vs.company-financials'"
@@ -254,9 +251,7 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
             }
             assert len(sections) == 13
             assert all(
-                (status, detail) == ("FAILED", "ReaderError")
-                if surface in shells
-                else status in ("OK", "PARTIAL", "KEPT")
+                status == "KEPT" if surface in shells else status in ("OK", "PARTIAL", "KEPT")
                 for surface, status, detail in sections
             )
             assert conn.execute(

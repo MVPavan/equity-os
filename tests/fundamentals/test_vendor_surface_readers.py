@@ -312,12 +312,13 @@ def test_cell_addresses_survive_label_changes():
         "financials-cash-flow-analysis",
     ],
 )
-def test_widget_shells_fail_with_reader_detail(pg_db, tmp_path, surface):
+def test_widget_shells_are_kept_not_parsed(pg_db, tmp_path, surface):
+    """Empty chart containers on the page; their data is the analysis APIs (G4)."""
     body, context = retained("tijori", "company-financials", "APARINDS")
     outcomes = record(
         pg_db, tmp_path, Site.TIJORI, surface, body, context.model_copy(update={"basis": None})
     )
-    assert outcomes[0][0:2] == ("FAILED", "ReaderError")
+    assert outcomes[0][0] == "KEPT"
 
 
 @pytest.mark.pg
