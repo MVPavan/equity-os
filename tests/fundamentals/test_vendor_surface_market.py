@@ -14,7 +14,7 @@ from vendor_surface_support import load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
-from fundamentals.ingest.vendor_surface_expand import EXPANSIONS
+from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, MARKET_PARENTS
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_parse import (
     PARSERS,
@@ -24,6 +24,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     register_tables,
 )
 from fundamentals.ingest.vendor_surface_specs import (
+    SITE_NAME,
     Cadence,
     ParseGroup,
     Scope,
@@ -38,6 +39,13 @@ MARKET_SPECS = load_specs(
     Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
 )
 register_tables(MARKET_SPECS)  # The CLI root binds table parsers; this suite calls capture_market.
+
+
+# Rows outside the plan's traversal table whose only retained advertisement is never fetched.
+MARKET_GAPS = {
+    "capsule": "advertised only on the account dashboard (/dash/), which is not traversed",
+    "insider-summary": "advertised only on the account dashboard; its retained fetch is a 302",
+}
 
 
 class MarketOpener(OpenerDirector):
@@ -249,34 +257,34 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
 @pytest.mark.parametrize(
     "hub_names",
     [
-        "explore screens-list product-prices markets macro people-search",
-        "sector-page ideas-dashboard filter-popular-queries-api filter-public-queries-api",
+        "explore screens-list hs-search-api search-page markets macro people-search",
+        "sector-page screen-page ideas-dashboard filter-popular-queries-api",
     ],
 )
-def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_names):
+def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
 
     opener, pool, run = market_rig
     hubs = set(hub_names.split())
     requests = tuple(
         Request(
             spec=next(
-                s
-                for s in MARKET_SPECS
-                if s.id == row["id"]
-                and s.site == (Site.SCREENER if row["site"] == "screener" else Site.TIJORI)
+                s for s in MARKET_SPECS if s.id == row["id"] and SITE_NAME[s.site] == row["site"]
             ),
             url=row["url"],
             ids=None,
             due_since=None,
         )
         for row in opener.rows.values()
-        if row["id"] in hubs and row.get("status") == 200
+        if row["id"] in hubs and row.get("status") == 200 and row["kind"] == "response"
     )
     report = run(MARKET_SPECS, requests=requests)
     expected = (
         (
             "/people/",
             "/screens/",
+            "/commodity/",
+            "/api/hs/",
+            "/sector/",
             "/api/v1/macro/chart/",
             "/api/v1/sector/index-data/",
             "/api/v1/sector/index-metric-data/",
@@ -286,6 +294,7 @@ def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_n
             "/api/v1/sector/ms-chart/",
             "/api/v1/sector/company-opm/",
             "/api/v1/sector/area-chart/",
+            "/user/",
             "/ideas-dashboard/",
             "/api/filter_queries/popular-query/results/",
         )
@@ -293,15 +302,8 @@ def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_n
     assert all(
         any(urlsplit(url).path.startswith(prefix) for url in opener.calls) for prefix in expected
     )
-    if "markets" in hubs:
-        for site, surface in [
-            ("screener", "index-page"),
-            ("screener", "hs-data-api"),
-            ("screener", "commodity-page"),
-            ("screener", "user-public-profile"),
-            ("tijori", "sector-page"),
-        ]:
-            assert f"{site}:{surface}: no advertised children" in report.incomplete
+    gaps = {entry for entry in report.incomplete if entry.endswith("no advertised children")}
+    assert gaps == ({"screener:capsule: no advertised children"} if "explore" in hubs else set())
     assert not any("/user/account/" in url for url in opener.calls)
 
 
@@ -316,6 +318,27 @@ def retained_context(row, spec):
         capture_id="retained-market",
         parent={"spec": spec.model_dump()},
     )
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    "spec", [s for s in MARKET_SPECS if s.expand in MARKET_PARENTS], ids=lambda s: s.id
+)
+def test_every_traversal_row_has_retained_children(spec):
+    children = [
+        request
+        for row in load_request_index().values()
+        if row["id"] in MARKET_PARENTS[spec.expand]
+        and row["site"] == SITE_NAME[spec.site]
+        and row["kind"] == "response"
+        and row.get("status") == 200
+        for request in EXPANSIONS[spec.expand](
+            Body(raw=Path(row["path"]).read_bytes()), retained_context(row, spec)
+        )
+    ]
+    # A zero here is a wrong hub or reader, unless the row is a named gap.
+    assert bool(children) == (spec.id not in MARKET_GAPS)
+    assert all("{" not in r.url and "//" not in urlsplit(r.url).path for r in children)
 
 
 @pytest.mark.retained

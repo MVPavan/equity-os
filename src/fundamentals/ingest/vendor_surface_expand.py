@@ -343,15 +343,15 @@ EXPANSIONS: Mapping[str, Callable[[Body, ParseContext], tuple[Request, ...]]] = 
 # Parent ids are finite; only these retained advertisements may create requests.
 MARKET_PARENTS = {
     "screener_market_levels": ("market-overview", "market-level"),
-    "screener_indices": ("explore",),
+    "screener_indices": ("company-page",),
     "screener_people": ("people-search",),
-    "screener_hs": ("product-prices",),
-    "screener_commodities": ("product-prices",),
+    "screener_hs": ("hs-search-api",),
+    "screener_commodities": ("hs-search-api",),
     "screener_screens": ("screens-list",),
-    "screener_authors": ("screens-list",),
+    "screener_authors": ("screen-page",),
     "screener_capsules": ("explore",),
     "screener_insiders": ("trades-feed",),
-    "tijori_sectors": ("markets",),
+    "tijori_sectors": ("search-page",),
     "tijori_indices": ("markets",),
     "tijori_widgets": ("markets",),
     "tijori_sector_charts": ("sector-page",),
@@ -409,12 +409,24 @@ def tijori_market_tree(body: Body) -> dict[str, Any]:
     return dict(json.loads(body.tree().xpath('//script[@id="data"]/text()')[0]))
 
 
-def tijori_sectors(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Expand only sector slugs actually published in the market tree."""
-    nodes = tijori_market_tree(body)["headlines"]["children"]
+def screener_indices(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Index pages are advertised only as a company page's benchmark tags."""
     return market_children(
-        context,
-        ("/sector/" + quote(node["slug"], safe="") for node in nodes if node.get("slug")),
+        context, body.tree().xpath('//a[contains(@class,"Click+Benchmark")]/@href')
+    )
+
+
+def screener_hs(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """HS codes come from the search API's commodity links."""
+    spec = child_spec(context)
+    codes = re.findall(r"/commodity/([0-9]+)/", body.raw.decode())
+    return market_children(context, (spec.path.replace("{hs_code}", code) for code in codes))
+
+
+def tijori_sectors(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Sector slugs are the search page's published sector options."""
+    return market_children(
+        context, body.tree().xpath('//option[starts-with(@value,"/sector/")]/@value')
     )
 
 
@@ -485,6 +497,8 @@ MARKET_EXPANSIONS.update(
         function.__name__: function
         for function in (
             screener_market_levels,
+            screener_indices,
+            screener_hs,
             tijori_sectors,
             tijori_indices,
             tijori_index_metrics,
