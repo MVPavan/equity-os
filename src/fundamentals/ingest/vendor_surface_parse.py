@@ -196,6 +196,7 @@ for _site, _section_names in (
     (Site.SCREENER, "section-chart section-analysis section-peers"),
     (
         Site.TIJORI,
+        "company-benchmarking "
         "overview-quick-view overview-company-timeline-sidepanel overview-knowledgebase "
         "overview-popular-queries overview-discussions-and-analysis overview-operationalmetrics "
         "financials-price financials-reverse-dcf financials-faqfinancials "
