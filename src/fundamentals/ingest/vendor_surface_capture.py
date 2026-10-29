@@ -373,6 +373,7 @@ def retained_graph(
     fixed = company_requests(specs, ids)
     admitted: dict[str, Request] = {}
     proven: set[Site | Basis] = set()
+    verified_captures: set[str] = set()
     for request in (r for r in fixed if r.spec.id in IDENTITY_PAGES):
         for record, sha in captures.get(request.url, []):
             body = Body(raw=store.read_body(record))
@@ -385,6 +386,7 @@ def retained_graph(
                     continue
                 proven.add(request.basis)
             proven.add(request.spec.site)
+            verified_captures.add(record.capture_id)
             admitted[request.url] = request
     admitted.update(
         (r.url, r)
@@ -401,6 +403,8 @@ def retained_graph(
         ):
             continue
         for record, sha in captures.get(request.url, []):
+            if request.spec.id in IDENTITY_PAGES and record.capture_id not in verified_captures:
+                continue
             body = Body(raw=store.read_body(record))
             children, _ = advertised(request, body, request.context(record, sha), specs, peers)
             fresh = [child for child in children if child.url not in admitted]
