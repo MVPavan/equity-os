@@ -914,3 +914,51 @@ def test_company_index_routes_preserve_each_parents_expansion_gap(due_rig):
     children, gaps = company_routes(rig.store, rig.pool, pick("company-page", "index-page"))
     assert children  # The other routed parent still advertises index pages.
     assert gaps == (f"screener:index-page:{request_key(missing)}: no advertised children",)
+
+
+def test_results_rows_use_latest_parse_of_capture(pg_db, tmp_path):
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest import vendor_surface_due as due
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.store.snapshot_store import SnapshotStore
+    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    from vendor_surface_support import capture_response, load_request_index
+
+    row = next(
+        r
+        for r in load_request_index().values()
+        if r["id"] == "results-latest" and r.get("status") == 200
+    )
+    spec = next(s for s in specs if s.id == "results-latest")
+    with pg_db.runtime_pool() as pool:
+        ref = capture_response(
+            pool,
+            SnapshotStore(tmp_path / "raw"),
+            tmp_path / "stops",
+            cap.Request(spec=spec, url=row["url"], ids=None, due_since=None),
+            Path(row["path"]).read_bytes(),
+        )
+        rows = due.results_rows(pool, (spec,))
+        assert rows
+        assert set(rows.values()) == {due.retrieved_at(ref.capture_id)}
+        VendorValuesStore(pool).record(
+            ref,
+            Outcome(
+                surface=spec.id,
+                parser_version="review:results-corrected.v3",
+                parser_sha256="0" * 64,
+                status=OutcomeStatus.EMPTY,
+                symbol=None,
+                detail=None,
+            ),
+            row_count=0,
+        )
+        remaining = len(due.results_rows(pool, (spec,)))
+    assert remaining == 0, f"{remaining} superseded results rows still generate triggers"
