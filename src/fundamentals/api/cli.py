@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from collections import Counter
 from contextlib import ExitStack
@@ -34,6 +35,7 @@ from fundamentals.api.compare_cli import dispatch_compare_command
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.coverage_cli import dispatch_coverage_command
 from fundamentals.api.db_cli import dispatch_db_command
+from fundamentals.api.documents_cli import run_documents
 from fundamentals.api.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
@@ -51,7 +53,7 @@ from fundamentals.api.ledger_cli import (
 )
 from fundamentals.api.legacy_cli import dispatch_legacy_command
 from fundamentals.api.news_cli import dispatch_news_command
-from fundamentals.api.onboard_cli import dispatch_onboard_command
+from fundamentals.api.onboard_cli import dispatch_onboard_command, live_transport
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_cli import dispatch_report_command
 from fundamentals.api.retention_cli import dispatch_retention_command
@@ -665,6 +667,16 @@ def main(
     onboard_exit_code = dispatch_onboard_command(args)
     if onboard_exit_code is not None:
         return onboard_exit_code
+
+    if args.command == "documents":
+        return run_documents(
+            args,
+            send=live_transport(),
+            clock=lambda: datetime.now(UTC),
+            bd=lambda argv: subprocess.run(
+                ["bd", *argv], timeout=30, capture_output=True, text=True
+            ),
+        )
 
     if (shareholding_exit_code := dispatch_shareholding_command(args)) is not None:
         return shareholding_exit_code

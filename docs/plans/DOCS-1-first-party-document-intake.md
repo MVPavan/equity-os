@@ -112,7 +112,7 @@ transcripts and presentations and 5 annual reports.
 3. **Types.** `DocumentKind(StrEnum)` in `contracts/source_catalog.py` builds the document
    surfaces; ingestion imports it (existing direction, `entity/discovery.py:48`). NSE/Screener
    readers are pure functions; the DB access is one small module; the CLI orchestrates.
-4. **Surfaces** (all `SourceRole.DIAGNOSTIC`, `_EXCHANGE_RIGHTS`): `("nse",
+4. **Surfaces** (exchange surfaces `SourceRole.IDENTITY` — never interpreted; Tijori document copies are vendor; `_EXCHANGE_RIGHTS`): `("nse",
    ANNOUNCEMENTS_LISTING | BOARD_MEETINGS_LISTING | ANNUAL_REPORTS_LISTING)` on `www.nseindia.com`;
    `("nse-documents", NSE_<KIND>)` on `nsearchives.nseindia.com`; `("bse-documents", BSE_<KIND>)` on
    `www.bseindia.com`. The Screener page reuses `SCREENER_PAGE` (A05-005). No document can

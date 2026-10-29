@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, MutableSequence, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, LiteralString, NoReturn
-from urllib.parse import parse_qsl, urlencode, urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import psycopg
 from pydantic import BaseModel, ConfigDict
@@ -62,6 +62,16 @@ from fundamentals.contracts.source_catalog import (
     SurfaceNotAuthorisedError,
     surface_authority,
 )
+from fundamentals.entity.discovery_origins import (
+    BSE_URL,
+    INSTRUMENTS_URL,
+    ORIGINS,
+    SCREENER_PAGE_URL,
+    STATEMENT_URL,
+    TIJORI_PAGE_URL,
+    TIJORI_SEARCH_URL,
+    screener_search_url,
+)
 from fundamentals.entity.identity_layers import (
     IdentifierRef,
     issuer_values,
@@ -95,6 +105,7 @@ from fundamentals.evidence.capture_retention import Registration, capture_regist
 from fundamentals.evidence.mapping import MappingSet, UnsupportedSchemaError
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.xbrl_adapter import parse_instance
+from fundamentals.ingest.http_session import ResponseTooLargeError
 from fundamentals.ingest.nse_filings import (
     EQUITY_MASTER_URL,
     INTEGRATED_LISTING,
@@ -118,36 +129,10 @@ NOT_AUTHORISED = "NOT_AUTHORISED"
 UPSTOX_ROUTE = "default"
 TIMEOUT = "TIMEOUT"
 TRANSPORT_ERROR = "TRANSPORT_ERROR"
+TOO_LARGE = "TOO_LARGE"
 FILINGS_CHECKED = 2
 _IN = "IN"
 _HTTPS = "https"
-_NSE_WWW, _NSE_ARCHIVES = "www.nseindia.com", "nsearchives.nseindia.com"
-_SCREENER, _TIJORI = "www.screener.in", "www.tijorifinance.com"
-# The only origin each surface may be requested from (https, exact host): a listing's XBRL link
-# or any other evidenced URL cannot send an authorised request elsewhere.
-ORIGINS = {
-    NSE_MASTER: _NSE_ARCHIVES,
-    NSE_RESULTS_LISTING: _NSE_WWW,
-    NSE_INTEGRATED_LISTING: _NSE_WWW,
-    NSE_XBRL_INSTANCE: _NSE_ARCHIVES,
-    BSE_PEER_SEARCH: "api.bseindia.com",
-    SCREENER_SEARCH: _SCREENER,
-    SCREENER_PAGE: _SCREENER,
-    TIJORI_SEARCH: _TIJORI,
-    TIJORI_PAGE: _TIJORI,
-    UPSTOX_INSTRUMENTS: "assets.upstox.com",
-    UPSTOX_STATEMENT: "api.upstox.com",
-}
-_BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/PeerSmartSearch/w?Type=SS&text={isin}"
-_SCREENER_SEARCH_URL = "https://www.screener.in/api/company/search/?{query}"
-_SCREENER_PAGE_URL = "https://www.screener.in/company/{symbol}/consolidated/"
-_TIJORI_SEARCH_URL = "https://www.tijorifinance.com/api/v1/ind/company_search/?q={isin}"
-_TIJORI_PAGE_URL = "https://www.tijorifinance.com/company/{slug}/financials/"
-_INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz"
-_STATEMENT_URL = (
-    "https://api.upstox.com/v2/fundamentals/{isin}/income-statement"
-    "?fs=true&time_period=quarterly&type=consolidated"
-)
 _MEDIA_TYPE = "application/octet-stream"
 _NATIVE_KIND = "onboarding-discovery"
 _INPUT_LABEL = "discovery:{symbol}:{unit}"
@@ -158,11 +143,6 @@ _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
 _ABORT_AUTH = "{surface} is not authorised"
 _BAD_REPLAY = "replay generation {folder}: {why}"
-
-
-def screener_search_url(symbol: str) -> str:
-    """The Screener search request for ``symbol``, its query URL-encoded (``M&M`` is one value)."""
-    return _SCREENER_SEARCH_URL.format(query=urlencode({"q": symbol, "v": 3, "fts": 1}))
 
 
 class Recorded(BaseModel):
@@ -309,7 +289,9 @@ def replay_fetch(folder: Path) -> Fetch:
     return fetch
 
 
-def acquiring_fetch(send: Send, clock: Callable[[], datetime], log: list[Capture]) -> Fetch:
+def acquiring_fetch(
+    send: Send, clock: Callable[[], datetime], log: MutableSequence[Capture]
+) -> Fetch:
     """Fetch through a live transport, logging every exchange (failures keep no body); a request
     not authorised is logged ``NOT_AUTHORISED`` and never sent."""
 
@@ -319,6 +301,8 @@ def acquiring_fetch(send: Send, clock: Callable[[], datetime], log: list[Capture
             try:
                 status, body = send(request)
                 result = OK if status == 200 else f"HTTP_{status}"
+            except ResponseTooLargeError:
+                result = TOO_LARGE
             except TimeoutError:
                 result = TIMEOUT
             except OSError:
@@ -532,7 +516,7 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
         )
     ] + [framework_state(instance, body) for instance, body in zip(instances, bodies, strict=True)]
     run.set(xbrl, deciding(verdicts))
-    peer = run.anchor(exchange, BSE_PEER_SEARCH, _BSE_URL.format(isin=run.isin))
+    peer = run.anchor(exchange, BSE_PEER_SEARCH, BSE_URL.format(isin=run.isin))
     verdict, run.scrip = exchange_state(peer, run.isin, checked)
     run.set(exchange, verdict)
     _resolve(run, conn, run.scrip)
@@ -552,24 +536,24 @@ def _vendors(run: _Run) -> None:
         found = screener_candidate(search, symbol)
         if not isinstance(found, int):
             return found
-        page = run.get(screener, SCREENER_PAGE, _SCREENER_PAGE_URL.format(symbol=symbol))
+        page = run.get(screener, SCREENER_PAGE, SCREENER_PAGE_URL.format(symbol=symbol))
         return screener_page_state(page, found, symbol, scrip)
 
     def tijori_check() -> Verdict:
         found = tijori_candidate(
-            run.get(tijori, TIJORI_SEARCH, _TIJORI_SEARCH_URL.format(isin=isin))
+            run.get(tijori, TIJORI_SEARCH, TIJORI_SEARCH_URL.format(isin=isin))
         )
         if not isinstance(found, str):
             return found
-        page = run.get(tijori, TIJORI_PAGE, _TIJORI_PAGE_URL.format(slug=found))
+        page = run.get(tijori, TIJORI_PAGE, TIJORI_PAGE_URL.format(slug=found))
         return tijori_page_state(page, found, symbol)
 
     def upstox_check() -> Verdict:
-        rows = run.get(upstox, UPSTOX_INSTRUMENTS, _INSTRUMENTS_URL)
+        rows = run.get(upstox, UPSTOX_INSTRUMENTS, INSTRUMENTS_URL)
         verdict = upstox_rows_state(rows, isin, symbol, scrip)
         if verdict != VERIFIED:
             return verdict
-        url = _STATEMENT_URL.format(isin=isin)
+        url = STATEMENT_URL.format(isin=isin)
         return upstox_statement_state(run.get(upstox, UPSTOX_STATEMENT, url), url)
 
     run.vendor(screener, screener_check)
