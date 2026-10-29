@@ -30,7 +30,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteSession,
     VendorFetcher,
 )
-from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
+from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -169,13 +169,13 @@ def _capture_page(
         slug=quote(stock.identifiers.tijori_slug, safe="")
     )
     request = Request(
-        spec=SurfaceSpec(
-            site=Site.TIJORI,
-            id=surface,
-            scope=Scope.COMPANY,
-            path=path,
-            group=ParseGroup.READER,
-            cadence=Cadence.AFTER_RESULTS,
+        spec=next(
+            spec
+            for spec in load_specs(
+                _REPO_ROOT / "config/vendor_surface/surfaces.yaml",
+                _REPO_ROOT / "docs/research/vendor-surface/catalog.yaml",
+            )
+            if spec.site == Site.TIJORI and spec.id == surface
         ),
         url=url,
         ids=company_ids(stock),

@@ -530,3 +530,120 @@ def test_t8_needs_a_same_host_dashboard_redirect(location, passed):
     record = record_of(b"").model_copy(update={"http_status": 302})
     fetched = Fetched(record=record, url=canary.url, location=location)
     assert canary.check(fetched, b"") == (() if passed else ("T8.location",))
+
+
+@pytest.mark.parametrize(
+    "initial", ["company-benchmarking", "benchmarking-benchmarking-financial", "claims-only"]
+)
+def test_missing_logical_outcomes_are_detected_until_parent_dispatch_completes(pg_db, initial):
+    from fundamentals.ingest.vendor_surface_canary import yield_drift
+
+    required = [
+        "company-benchmarking",
+        "benchmarking-benchmarking-financial",
+        "benchmarking-benchmarking-business",
+    ]
+    record = record_of(b"fixture", "tijori", "vs.company-benchmarking")
+    with pg_db.runtime_pool() as pool:
+        ref = register(
+            pool,
+            Fetched(
+                record=record,
+                url="https://www.tijorifinance.com/company/x/benchmarking/",
+                location=None,
+            ),
+        )
+        values = VendorValuesStore(pool)
+
+        def record_outcome(surface, version):
+            values.record(
+                ref,
+                Outcome(
+                    surface=surface,
+                    parser_version=version,
+                    parser_sha256="a" * 64,
+                    status=OutcomeStatus.KEPT,
+                    symbol=None,
+                    detail=None,
+                ),
+                row_count=0,
+            )
+
+        record_outcome(
+            initial if initial != "claims-only" else required[0],
+            "claims:fake:v1" if initial == "claims-only" else "parent.v1",
+        )
+        drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+        assert [(d.surface, d.check) for d in drift] == [
+            (surface, "MISSING_OUTCOME") for surface in required if surface != initial
+        ]
+        for surface in required:
+            if surface != initial:
+                record_outcome(surface, "completed.v1")
+        assert yield_drift(pool, datetime.min.replace(tzinfo=UTC)) == ()
+
+
+@pytest.mark.retained
+def test_full_canary_reports_no_baseline_without_failure(
+    pg_db, tmp_path, monkeypatch, capsys, canary_opener
+):
+    from pydantic import SecretStr
+    from fundamentals.api import cli
+    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
+    from fundamentals.contracts.snapshot import CaptureRecord
+    from fundamentals.ingest.vendor_surface_canary import CANARIES
+    from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession, request_key
+    from fundamentals.store.snapshot_store import SnapshotStore
+
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
+    monkeypatch.setattr("fundamentals.api.vendor_surface_cli.STOP_DIR", tmp_path / "stops")
+    canary = next(c for c in CANARIES if c.name == "S6")
+    store = SnapshotStore(tmp_path / "store")
+    raw = canary_opener.bodies["S6"]
+    base = record_of(raw, Site.SCREENER, "vs.S6")
+    record = CaptureRecord.make(
+        base.request.model_copy(update={"request_key": request_key(canary.url)}),
+        base.retrieved_at,
+        200,
+        "application/json",
+        None,
+        base.body,
+        base.outcome,
+        base.rights,
+    )
+    store.put_capture(record, raw)
+    with pg_db.runtime_pool() as pool:
+        ref = register(pool, Fetched(record=record, url=canary.url, location=None))
+        VendorValuesStore(pool).record(
+            ref,
+            Outcome(
+                surface="S6",
+                parser_version="canary.S6.v0",
+                parser_sha256="a" * 64,
+                status=OutcomeStatus.EMPTY,
+                symbol=None,
+                detail=None,
+            ),
+            row_count=0,
+        )
+    monkeypatch.setattr(
+        cli,
+        "dispatch_vendor_command",
+        partial(
+            dispatch_vendor_command,
+            pool_factory=pg_db.runtime_pool,
+            opener_factory=lambda: canary_opener,
+            sessions_factory=lambda sites: {
+                site: SiteSession(
+                    site=site, session_cookie=SecretStr("synthetic"), cookie_name="sessionid"
+                )
+                for site in sites
+            },
+        ),
+    )
+    capsys.readouterr()
+    result = cli.main(["vendor", "canary", "--snapshot-root", str(tmp_path / "store")])
+    assert [json.loads(line)["check"] for line in capsys.readouterr().out.splitlines()] == [
+        "NO_BASELINE"
+    ]
+    assert result == 0

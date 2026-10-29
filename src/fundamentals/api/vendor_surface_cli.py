@@ -179,7 +179,7 @@ def dispatch_vendor_command(
             drift += overdue(pool, store, load_specs(SPECS, CATALOG), now)
         for item in drift:
             sys.stdout.write(item.model_dump_json() + "\n")
-        return int(any(item.check != NO_BASELINE or not args.yield_only for item in drift))
+        return int(any(item.check != NO_BASELINE for item in drift))
     if args.vendor_command == "capture-due":
         now = datetime.now(UTC)
         specs = load_specs(SPECS, CATALOG)

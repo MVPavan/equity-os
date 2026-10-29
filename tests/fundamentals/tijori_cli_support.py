@@ -115,7 +115,7 @@ def assert_raw_first(kind, case, opener, pg_db, tmp_path, monkeypatch):
         rows = conn.execute(
             "SELECT c.source_id,c.surface,c.request_key,c.capture_id,c.blob_sha256,"
             "c.record_sha256,o.status FROM eqos.capture_refs c JOIN eqos.vendor_outcomes o "
-            "ON o.capture_ref_id=c.id"
+            "ON o.capture_ref_id=c.id WHERE o.surface=substring(c.surface from 4)"
         ).fetchall()
         assert len(rows) == 1
         source, surface, key, capture_id, digest, record_digest, status = rows[0]

@@ -83,6 +83,7 @@ def rig(pg_db, tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(vendor_surface_cli, "load_specs", tracer_specs)
+    monkeypatch.setattr("fundamentals.ingest.vendor_surface_canary.load_specs", tracer_specs)
     monkeypatch.setattr(vendor_surface_cli, "STOP_DIR", tmp_path / "stops", raising=False)
     opener = RetainedOpener()
     root = tmp_path / "captures"

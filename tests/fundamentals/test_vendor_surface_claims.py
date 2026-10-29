@@ -233,7 +233,7 @@ def test_extraction_outcome_cannot_mask_a_cell_yield_drop(pg_db, tmp_path):
             values.record(ref, cell, row_count=count)
         assert extract_text(pool, store, model, settings) == 2
         drift = yield_drift(pool, datetime(2000, 1, 1, tzinfo=UTC))
-    assert [(d.surface, d.check, d.detail) for d in drift] == [
+    assert [(d.surface, d.check, d.detail) for d in drift if d.check != "MISSING_OUTCOME"] == [
         ("company-page", "ROW_COUNT_DROP", "10 -> 4 rows")
     ]
 
