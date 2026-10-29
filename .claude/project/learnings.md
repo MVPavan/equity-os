@@ -384,3 +384,18 @@ Format per entry:
 - Why it matters: the gate fails on environment, not code, and it costs a full run.
 - Apply: `systemd-run --user --collect -p UMask=0022 -E PATH="$PATH" -E HOME="$HOME"
   --working-directory=<checkout> bash -c 'umask 0022; ...'`. Then wait on a `done` marker file.
+
+## Full suite on xdist: 2h39m serial -> 25m on 16 workers  (2026-10-29)
+
+- Observed: serial gate suite 9554 s (2:39:14), 4438 passed. `-n 16 --dist load`: 32m23s,
+  but module fixtures were rebuilt on every worker (60-160 s setups) and 9 tests failed
+  "configuration ancestor changed during operation: /tmp" — the approved-config loader
+  refuses when any ancestor's ctime moves, and `/tmp`'s moved ~15x a minute.
+  `-n 16 --dist loadfile` with tmp_path under `~/.cache/equity-os/pytest-tmp`: 25m01s,
+  4443 passed; the only reds were "clock moved backwards" flakes that pass in isolation.
+  Slowest single tests (contended): stage4 e2e 425 s, pilot e2e 412 s — the floor.
+- Why it matters: tmp_path under `/tmp` turns that refusal into a flake; tmp_path under a
+  checkout breaks the `test_verify_*` sandbox repos (they inherit its `pyproject.toml`).
+- Apply: run the full suite through `scripts/verify.sh` (`suite_pytest`), or pass the same
+  `-n 16 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
+  `sys.modules` in-process, which xdist workers would hide.

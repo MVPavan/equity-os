@@ -23,7 +23,8 @@ The `fundamentals` uv project (Python 3.12+) landed with Slice 0. Its gate:
 - `uv run ruff check src tests/fundamentals` and
   `uv run ruff format --check src tests/fundamentals`
 - `uv run mypy --strict src`
-- `uv run pytest tests/fundamentals`
+- `uv run pytest tests/fundamentals -n 16 --dist loadfile` (xdist; the gate also sets
+  `PYTEST_DEBUG_TEMPROOT` outside `/tmp` — see `scripts/verify.sh` `suite_pytest`)
 
 Scope ruff/pytest to owned paths: a bare `uv run ruff check` / `uv run pytest`
 also scans pre-existing non-`fundamentals` files (`.codex/`, `scripts/`, and
