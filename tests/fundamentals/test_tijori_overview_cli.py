@@ -345,10 +345,8 @@ def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
 
 
 def test_companion_capture_registers_g2_sections(pg_db, tmp_path, monkeypatch):
-    from pathlib import Path
-
     from fundamentals.ingest.vendor_surface_parse import PARSERS
-    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.ingest.vendor_surface_specs import ParseGroup, load_specs
 
     specs = load_specs(
         Path("config/vendor_surface/surfaces.yaml"),
@@ -358,8 +356,6 @@ def test_companion_capture_registers_g2_sections(pg_db, tmp_path, monkeypatch):
 
     from fundamentals.api import tijori_overview_cli as cli
     from fundamentals.api.watchlist_config import load_watchlist_config
-    from fundamentals.ingest.tijori_source import TijoriCredentials
-    from fundamentals.ingest.vendor_surface_specs import ParseGroup
 
     for s in specs:
         if s.group is ParseGroup.TABLE:

@@ -513,12 +513,7 @@ def test_unreadable_numeric_g2_column_remains_expected(pg_db, tmp_path, surface,
     from lxml import etree
     from vendor_surface_support import load_request_index
 
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    register_tables(specs)
-    spec = next(s for s in specs if s.id == surface)
+    spec = next(s for s in MARKET_SPECS if s.id == surface)
     for row in load_request_index().values():
         if row["id"] != surface or row.get("status") != 200:
             continue

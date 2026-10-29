@@ -210,7 +210,6 @@ def test_shareholding_final_log_excludes_quarantine_labels(pg_db, tmp_path, monk
     from vendor_surface_support import retained
 
     from fundamentals.api import tijori_shareholding_cli as cli
-    from fundamentals.ingest.tijori_source import TijoriCredentials
 
     body, ctx = retained("tijori", "company-shareholding", "APARINDS")
     record = SimpleNamespace(retrieved_at=ctx.retrieved_at)

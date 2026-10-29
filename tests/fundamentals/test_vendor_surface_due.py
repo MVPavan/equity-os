@@ -917,32 +917,20 @@ def test_company_index_routes_preserve_each_parents_expansion_gap(due_rig):
 
 
 def test_results_rows_use_latest_parse_of_capture(pg_db, tmp_path):
-    from pathlib import Path
-
-    from fundamentals.ingest import vendor_surface_capture as cap
-    from fundamentals.ingest import vendor_surface_due as due
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-    from fundamentals.store.snapshot_store import SnapshotStore
-    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    from vendor_surface_support import capture_response, load_request_index
+    from vendor_surface_support import capture_response
 
     row = next(
         r
         for r in load_request_index().values()
         if r["id"] == "results-latest" and r.get("status") == 200
     )
-    spec = next(s for s in specs if s.id == "results-latest")
+    spec = next(s for s in SPECS if s.id == "results-latest")
     with pg_db.runtime_pool() as pool:
         ref = capture_response(
             pool,
             SnapshotStore(tmp_path / "raw"),
             tmp_path / "stops",
-            cap.Request(spec=spec, url=row["url"], ids=None, due_since=None),
+            Request(spec=spec, url=row["url"], ids=None, due_since=None),
             Path(row["path"]).read_bytes(),
         )
         rows = due.results_rows(pool, (spec,))
@@ -965,27 +953,14 @@ def test_results_rows_use_latest_parse_of_capture(pg_db, tmp_path):
 
 
 def test_covered_peers_not_restricted_to_yaml(due_rig, monkeypatch):
-    from datetime import UTC, datetime
-    from pathlib import Path
-
-    from fundamentals.ingest import vendor_surface_capture as cap
-    from fundamentals.ingest.vendor_surface_fetch import Site
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    from types import SimpleNamespace
-
     from fundamentals.ingest.vendor_surface_parse import CompanyIds
 
     rig = due_rig
-    specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
-    rig.run(specs, datetime(2026, 10, 29, 12, tzinfo=UTC))
-    monkeypatch.setattr(cap, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
+    specs = pick("company-page", site=Site.SCREENER)
+    rig.run(specs, NOW)
+    monkeypatch.setattr(capture, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
     monkeypatch.setattr(due, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
-    assert cap.registered_ids(rig.pool, rig.store, "APARINDS").screener_company_id is not None
+    assert capture.registered_ids(rig.pool, rig.store, "APARINDS").screener_company_id is not None
     ids = CompanyIds(
         nse_symbol="SELF",
         isin="review",
@@ -994,5 +969,5 @@ def test_covered_peers_not_restricted_to_yaml(due_rig, monkeypatch):
         screener_company_id=1,
         topology=None,
     )
-    count = len(cap.covered_peers(rig.pool, rig.store, ids))
+    count = len(capture.covered_peers(rig.pool, rig.store, ids))
     assert count == 1, f"{count} registry-only covered peers returned despite retained verified id"
