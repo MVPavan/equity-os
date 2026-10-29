@@ -1,17 +1,14 @@
 """Company breadth over retained bodies, with HTTP as the only fake boundary."""
 
 import hashlib
-import io
 import json
 import re
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import OpenerDirector
 
 import pytest
 import yaml
 from pydantic import SecretStr
-from vendor_surface_support import load_request_index, retained
+from vendor_surface_support import RetainedResponseOpener, load_request_index, retained
 
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_parse import register_tables
@@ -22,7 +19,7 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 
-class CompanyOpener(OpenerDirector):
+class CompanyOpener(RetainedResponseOpener):
     """Serve exact retained addresses and keep unretained requests as explicit refusals."""
 
     def __init__(self, symbol):
@@ -33,16 +30,6 @@ class CompanyOpener(OpenerDirector):
             {url: row for url, row in load_request_index().items() if url not in self.rows}
         )
         self.calls, self.overrides = [], {}
-
-    def open(self, request, timeout):
-        self.calls.append(request.full_url)
-        row = self.rows.get(request.full_url)
-        raw, status = b"unretained", 404
-        if row and row.get("path"):
-            raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-        raw, status = self.overrides.get(request.full_url, (raw, status))
-        return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
 
 
 @pytest.fixture
@@ -935,3 +922,51 @@ def test_replay_uses_each_captures_parent_not_oldest(
                 "ob.parser_version='review:parents.v2' AND a.raw_text<>b.raw_text"
             ).fetchone()[0]
         assert changed == 0, f"{changed} child captures replayed against another parent capture"
+
+
+def test_slug_verifier_sanitizes_frozen_reader_logs(company_rig, run_company):
+    from pathlib import Path
+
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_parse import Body
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    import json
+
+    import structlog.testing
+    from lxml import etree
+
+    opener, ids = company_rig("HDFCBANK", slug=False)
+    ids = ids.model_copy(update={"tijori_company_id": None})
+    search = "https://www.tijorifinance.com/api/v1/ind/company_search/?q=synthetic-isin"
+    opener.overrides[search] = (
+        json.dumps([{"type": "companies", "slug": "hdfc-bank-limited"}]).encode(),
+        200,
+    )
+    url = "https://www.tijorifinance.com/company/hdfc-bank-limited/financials/"
+    tree = Body(raw=Path(opener.rows[url]["path"]).read_bytes()).tree()
+    island = tree.xpath('//script[@id="fin_tables_data"]')[0]
+    island.text = '{"review_private_sentinel":{},' + island.text.lstrip()[1:]
+    opener.overrides[url] = etree.tostring(tree), 200
+    specs = tuple(s for s in specs if s.site is Site.TIJORI and s.id == "company-financials")
+    with structlog.testing.capture_logs() as logs:
+        run_company(opener, ids, specs)
+    leaked = sum("review_private_sentinel" in str(entry) for entry in logs)
+    assert leaked == 0, f"{leaked} unsanitized reader log events during slug verification"
+
+
+def test_company_and_market_share_retained_transport(company_rig, run_company):
+    from test_vendor_surface_market import MarketOpener
+
+    opener, ids = company_rig("APARINDS")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    report, _, _, _ = run_company(opener, ids, tuple(s for s in specs if s.id == "company-page"))
+    assert report.completed
+    assert CompanyOpener.open is MarketOpener.open

@@ -1,16 +1,12 @@
 """Raw-first market traversal and durable pagination over retained responses."""
 
-import hashlib
-import io
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import OpenerDirector
 
 import pytest
 from pydantic import SecretStr
-from vendor_surface_support import load_request_index
+from vendor_surface_support import RetainedResponseOpener, load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
@@ -48,22 +44,7 @@ MARKET_GAPS = {
 }
 
 
-class MarketOpener(OpenerDirector):
-    """Serve retained bodies and explicit synthetic pagination at the HTTP boundary."""
-
-    def __init__(self):
-        super().__init__()
-        self.rows, self.calls, self.overrides = load_request_index(), [], {}
-
-    def open(self, request, timeout):
-        self.calls.append(request.full_url)
-        row = self.rows.get(request.full_url)
-        raw, status = b"unretained", 404
-        if row and row.get("path"):
-            raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-        raw, status = self.overrides.get(request.full_url, (raw, status))
-        return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
+MarketOpener = RetainedResponseOpener
 
 
 @pytest.fixture
@@ -561,8 +542,9 @@ def test_nonfeed_market_table_refreshes_all_pages(market_rig):
     request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
     for number in (1, 2):
         raw = (
-            f'<table class="data-table"><thead><tr><th>Company</th><th>Revenue</th></tr></thead><tbody><tr><td><a href="/company/C{number}/">Company</a></td><td>1</td></tr></tbody></table>'
-            + ('<a href="?p=2">Next</a>' if number == 1 else "")
+            '<table class="data-table"><thead><tr><th>Company</th><th>Revenue</th></tr>'
+            f'</thead><tbody><tr><td><a href="/company/C{number}/">Company</a></td>'
+            "<td>1</td></tr></tbody></table>" + ('<a href="?p=2">Next</a>' if number == 1 else "")
         ).encode()
         opener.overrides[url if number == 1 else url + "?p=2"] = raw, 200
     run((), requests=(request,))

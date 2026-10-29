@@ -32,6 +32,24 @@ def load_request_index():
     return requests
 
 
+class RetainedResponseOpener(OpenerDirector):
+    """Serve retained bodies and explicit synthetic pagination at the HTTP boundary."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows, self.calls, self.overrides = load_request_index(), [], {}
+
+    def open(self, request, timeout):
+        self.calls.append(request.full_url)
+        row = self.rows.get(request.full_url)
+        raw, status = b"unretained", 404
+        if row and row.get("path"):
+            raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
+            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+        raw, status = self.overrides.get(request.full_url, (raw, status))
+        return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
+
+
 class RetainedOpener(OpenerDirector):
     """A finite fake: the retained page, one chart metric set, otherwise 404."""
 

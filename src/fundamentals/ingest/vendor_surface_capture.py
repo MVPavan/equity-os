@@ -43,6 +43,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     kept_section,
     parser_sha256,
 )
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 from fundamentals.ingest.vendor_surface_specs import (
     SITE_NAME,
     Cadence,
@@ -647,7 +648,10 @@ def resolve_tijori_slug(
         due_since=None,
     )
     ref, page = capture(fetcher, fetcher.store, pool, values, request, parse=False)
-    state = tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
+    with sanitized_reader_logs("tijori", spec.id):
+        state = (
+            tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
+        )
     values.record(
         ref,
         Outcome(

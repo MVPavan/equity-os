@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -522,18 +524,27 @@ def tijori_reader(surface: str, body: Body, context: ParseContext) -> Any:
     raise ReaderError("no reader")
 
 
+@contextmanager
+def sanitized_reader_logs(site: str, surface: str) -> Iterator[None]:
+    """Keep vendor-derived fields out of reader logs, restoring the caller's processors."""
+    config = structlog.get_config()
+
+    def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
+        return {"event": "vendor_surface_reader", "site": site, "surface": surface}
+
+    structlog.configure(processors=[sanitize, *config["processors"]])
+    try:
+        yield
+    finally:
+        structlog.configure(**config)
+
+
 def make_reader(site: str, surface: str) -> Parser:
     """Bind one logical surface to a namespaced retained-body adapter."""
 
     def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
         """Run a reader without allowing its failures to become kept captures."""
-        config = structlog.get_config()
-
-        def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
-            return {"event": "vendor_surface_reader", "site": site, "surface": surface}
-
-        structlog.configure(processors=[sanitize, *config["processors"]])
-        try:
+        with sanitized_reader_logs(site, surface):
             document = (screener_reader if site == "screener" else tijori_reader)(
                 surface, body, context
             )
@@ -542,7 +553,5 @@ def make_reader(site: str, surface: str) -> Parser:
             ):
                 return document
             return reader_values(document, context.basis.value if context.basis else None)
-        finally:
-            structlog.configure(**config)
 
     return parse

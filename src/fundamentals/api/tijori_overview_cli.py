@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote
 from urllib.request import build_opener
 
@@ -30,6 +27,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteSession,
     VendorFetcher,
 )
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -96,7 +94,7 @@ def run_tijori_overview_command(
     record, raw, url = _capture_page(
         stock, credentials, args.snapshot_root, "company-overview", "/company/{slug}/"
     )
-    with _sanitized_builder_logs("company-overview"):
+    with sanitized_reader_logs("tijori", "company-overview"):
         sections = build_tijori_overview(
             raw,
             slug=stock.identifiers.tijori_slug,
@@ -192,18 +190,3 @@ def _capture_page(
             return record, store.read_body(record), url
         finally:
             locks.close()
-
-
-@contextmanager
-def _sanitized_builder_logs(surface: str) -> Iterator[None]:
-    """Apply the retained-reader log policy during CLI artifact building."""
-    config = structlog.get_config()
-
-    def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
-        return {"event": "vendor_surface_reader", "site": "tijori", "surface": surface}
-
-    structlog.configure(processors=[sanitize, *config["processors"]])
-    try:
-        yield
-    finally:
-        structlog.configure(**config)
