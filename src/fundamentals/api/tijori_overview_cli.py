@@ -4,20 +4,34 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from urllib.parse import quote
+from urllib.request import build_opener
 
 import structlog
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
-from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.api.watchlist_config import StockConfig, load_watchlist_config
+from fundamentals.contracts.snapshot import CaptureRecord
+from fundamentals.ingest.tijori_overview import build_tijori_overview
 from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSection,
     TijoriOverviewSectionBase,
 )
-from fundamentals.ingest.tijori_source import (
-    TijoriCredentials,
-    TijoriSource,
-    TijoriSourceConfig,
+from fundamentals.ingest.tijori_source import TijoriCredentials
+from fundamentals.ingest.tijori_tables import TijoriFetchError
+from fundamentals.ingest.vendor_surface_capture import Request, capture, company_ids
+from fundamentals.ingest.vendor_surface_fetch import (
+    SITE_AUTHORITY,
+    PgSiteLock,
+    Site,
+    SiteSession,
+    VendorFetcher,
 )
+from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
+from fundamentals.pg.pool import open_pool
+from fundamentals.pg.settings import PgRole, PgSettings
+from fundamentals.store.snapshot_store import SnapshotStore
+from fundamentals.store.vendor_values_store import VendorValuesStore
 
 TIJORI_OVERVIEW_COMMAND = "tijori-overview"
 
@@ -27,6 +41,7 @@ _DEFAULT_OUT_ROOT = _REPO_ROOT / "data" / "raw" / "watchlist" / "tijori-overview
 _SUMMARY_HEADER = "section\tisland\tstatus\telements\tplan_tier"
 _UNKNOWN_PLAN_TIER = "unknown"
 _NOT_BUILT = "-"
+_STOP_DIR = Path("data")
 
 
 def add_tijori_overview_parser(
@@ -38,6 +53,7 @@ def add_tijori_overview_parser(
         help="acquire the typed Tijori overview-page data sections for one watchlist stock",
     )
     parser.add_argument("--stock", required=True, help="watchlist NSE symbol, e.g. TITAN")
+    parser.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
     parser.add_argument(
         "--section",
         choices=tuple(section.value for section in TijoriOverviewSection),
@@ -74,11 +90,16 @@ def run_tijori_overview_command(
             f"Tijori identifiers for {stock.symbol} are not verified: {', '.join(unverified)}"
         )
 
-    source = TijoriSource(TijoriSourceConfig(credentials=credentials))
-    sections = source.fetch_overview(
+    record, raw, url = _capture_page(
+        stock, credentials, args.snapshot_root, "company-overview", "/company/{slug}/"
+    )
+    sections = build_tijori_overview(
+        raw,
         slug=stock.identifiers.tijori_slug,
         expected_symbol=stock.symbol,
         expected_company_id=stock.identifiers.tijori_company_id,
+        source_url=url,
+        retrieved_at=record.retrieved_at,
         section=None if args.section is None else TijoriOverviewSection(args.section),
     )
 
@@ -129,3 +150,41 @@ def render_tijori_overview_summary(sections: tuple[TijoriOverviewSectionBase, ..
         for outcome in metadata.section_outcomes
     )
     return "\n".join(lines)
+
+
+def _capture_page(
+    stock: StockConfig, credentials: TijoriCredentials, root: Path, surface: str, path: str
+) -> tuple[CaptureRecord, bytes, str]:
+    """Register one Tijori response and its reader outcome before building CLI artifacts."""
+    assert credentials.session_cookie is not None
+    session = SiteSession(
+        site=Site.TIJORI, session_cookie=credentials.session_cookie, cookie_name="sessionid"
+    )
+    store = SnapshotStore(root)
+    url = f"https://{SITE_AUTHORITY[Site.TIJORI]}" + path.format(
+        slug=quote(stock.identifiers.tijori_slug, safe="")
+    )
+    request = Request(
+        spec=SurfaceSpec(
+            site=Site.TIJORI,
+            id=surface,
+            scope=Scope.COMPANY,
+            path=path,
+            group=ParseGroup.READER,
+            cadence=Cadence.AFTER_RESULTS,
+        ),
+        url=url,
+        ids=company_ids(stock),
+        due_since=None,
+    )
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        locks = PgSiteLock(pool)
+        try:
+            fetcher = VendorFetcher(store, {Site.TIJORI: session}, build_opener(), _STOP_DIR, locks)
+            ref, body = capture(fetcher, store, pool, VendorValuesStore(pool), request)
+            if body is None:
+                raise TijoriFetchError("Tijori page capture is unusable")
+            record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
+            return record, store.read_body(record), url
+        finally:
+            locks.close()

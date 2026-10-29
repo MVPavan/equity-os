@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 import pytest
+from tijori_cli_support import assert_raw_first
+from tijori_cli_support import tijori_cli_capture as tijori_cli_capture
 
 from fundamentals.api.cli import main
 from fundamentals.ingest.tijori_overview_models import (
@@ -15,6 +17,8 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSectionsAbsentError,
 )
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource
+
+pytestmark = [pytest.mark.pg, pytest.mark.usefixtures("tijori_cli_capture")]
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_overview.html"
 _ALL_SECTION_FILES = [
@@ -317,3 +321,9 @@ def test_overview_cli_requires_an_injected_session_cookie(
 
     with pytest.raises(SystemExit, match="required for tijori-overview"):
         main(["tijori-overview", "--stock", "TITAN", "--out", str(tmp_path / "out")])
+
+
+@pytest.mark.parametrize("case", ["ok", "failed", "stopped"])
+def test_overview_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
+    """Every raw response is registered before parsing or a durable stop."""
+    assert_raw_first("overview", case, tijori_cli_capture, pg_db, tmp_path, monkeypatch)
