@@ -35,14 +35,19 @@ def _text(node: Any) -> str:
     return " ".join(" ".join(node.itertext()).split())
 
 
-def _number(cell: VendorValue, raw: str, unit: str | None = None) -> VendorValue:
+def measurement(cell: VendorValue, raw: str, unit: str | None = None) -> VendorValue:
     """Read a measurement's scalar and displayed suffix; only a missing marker is unexpected."""
-    match = re.fullmatch(r"([+\-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+))\s*([^\d]*)", raw)
+    match = re.fullmatch(r"([₹$€£¥]?)\s*([+\-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+))\s*([^\d]*)", raw)
     return cell.model_copy(
         update={
             "raw_text": raw,
-            "value": Decimal(match[1].replace(",", "")) if match else None,
-            "unit": unit or (match[2].strip() or None if match else None),
+            "value": Decimal(match[2].replace(",", "")) if match else None,
+            "unit": unit
+            or (
+                " ".join(part for part in (match[1], match[3].strip()) if part) or None
+                if match
+                else None
+            ),
             "expected_numeric": raw.strip().lower() not in MISSING,
         }
     )
@@ -60,7 +65,7 @@ def screener_insights(body: Body, context: ParseContext) -> tuple[VendorValue, .
             display = node.xpath("./span/span[1]")
             raw = _text(display[0]) if display else _text(node)
             value = (
-                _number(cell, raw, metadata.split("・")[0].strip() or None)
+                measurement(cell, raw, metadata.split("・")[0].strip() or None)
                 if cell.column_index
                 else cell
             )
@@ -89,7 +94,7 @@ def screener_compare(body: Body, context: ParseContext) -> tuple[VendorValue, ..
             if "text" in (header.get("class") or "").split()
         }
         values += (
-            cell if cell.column_index in descriptors else _number(cell, cell.raw_text)
+            cell if cell.column_index in descriptors else measurement(cell, cell.raw_text)
             for cell in read_html_table(tree, f"(//table)[{index + 1}]", f"compare:{index}")
         )
     return tuple(values)
@@ -98,7 +103,7 @@ def screener_compare(body: Body, context: ParseContext) -> tuple[VendorValue, ..
 def benchmark_financial(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     """Read the financial KPI table including empty group rows and n/a cells."""
     return tuple(
-        _number(cell, cell.raw_text) if cell.column_index else cell
+        measurement(cell, cell.raw_text) if cell.column_index else cell
         for cell in read_html_table(
             body.tree(), '//*[@id="benchmarking-financial"]//table', "benchmark-financial"
         )

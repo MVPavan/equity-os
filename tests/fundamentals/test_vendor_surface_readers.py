@@ -507,3 +507,58 @@ def test_absent_forensic_count_keeps_positions():
 
     assert red(absent) == red(document) == 1
     assert outcome(reader_values((absent,))) == outcome(reader_values((document,)))
+
+
+# Exact positional cells read by code from the retained event bodies.
+EVENT_CELLS = {
+    "quarterly-results": [
+        ("reader/items/0/metrics", 0, 0, "₹30.00 Cr.", Decimal("30.00"), "₹ Cr.", True),
+        ("reader/items/0/rows", 1, 0, "24.27%", Decimal("24.27"), "%", True),
+        ("reader/items/1/rows", 4, 0, "-135 bps", Decimal("-135"), "bps", True),
+        ("reader/items/0/rows", 0, 0, "-", None, None, False),
+    ],
+    "company-timeline-api": [
+        ("reader/events/10/tables/0", 0, 1, "9.35%", Decimal("9.35"), "%", True),
+        ("reader/events/10/tables/0", 0, 3, "95131", Decimal("95131"), None, True),
+        ("reader/events/17/tables/0", 0, 1, "-", None, None, False),
+        ("reader/events/10/tables/0", 0, 0, "Sales", None, None, False),
+    ],
+}
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize("surface", ["quarterly-results", "company-timeline-api"])
+def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
+    body, context = retained("tijori", surface)
+    context = context.model_copy(update={"basis": None})
+    values = parse("tijori", surface, body, context)
+    assert outcome(values) == "OK"
+    assert PARSERS[Site.TIJORI, surface].version == f"tijori:{surface}.reader.v2"
+    assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "OK"
+    positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
+    for table, row, column, raw, value, unit, numeric in EVENT_CELLS[surface]:
+        cell = positions[table, row, column]
+        assert (cell.raw_text, cell.value, cell.unit, cell.expected_numeric) == (
+            raw,
+            value,
+            unit,
+            numeric,
+        )
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize("surface", ["quarterly-results", "company-timeline-api"])
+def test_unreadable_event_measurement_stays_partial(pg_db, tmp_path, surface):
+    body, context = retained("tijori", surface)
+    context = context.model_copy(update={"basis": None})
+    original = next(
+        v.raw_text
+        for v in parse("tijori", surface, body, context)
+        if v.expected_numeric and v.raw_text.endswith("%")
+    )
+    assert original.encode() in body.raw
+    body = Body(raw=body.raw.replace(original.encode(), b"12?3%", 1))
+    values = parse("tijori", surface, body, context)
+    (cell,) = [v for v in values if v.raw_text == "12?3%"]
+    assert cell.value is None and cell.expected_numeric
+    assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "PARTIAL"

@@ -139,7 +139,9 @@ def test_retained_cells_and_label_evidence(pg_db, tmp_path, monkeypatch, symbol)
                 from fundamentals.ingest.vendor_surface_cells import cell_labels
 
                 samples = cell_labels(pool, site, surface)
-                assert samples and entry.version.endswith(f":{surface}.v1")
+                assert samples and entry.version.endswith(
+                    f":{surface}.v{1 if surface == 'benchmarking-benchmarking-business' else 2}"
+                )
                 if surface == "company-compare":
                     assert any(s.per_share for s in samples)
                 if surface == "section-insights":
