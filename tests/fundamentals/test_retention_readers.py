@@ -15,9 +15,10 @@ from typing import Any
 
 import psycopg
 import pytest
+from pg_evidence_schema_support import _insert, _interpretation, _occurrence
 from pg_support import PgTestDatabase
 from psycopg_pool import ConnectionPool
-from purge_support import PDF, XBRL, Env, env
+from purge_support import PDF, XBRL, Env, entity, env
 from retention_support import dispose
 from stage1_e2e_support import RUNS, SCREENER, Stage
 
@@ -67,6 +68,9 @@ def test_an_expired_quoted_capture_is_refused_not_unresolved(env: Env) -> None:
     ``OriginalExpiredError`` naming it, instead of reading as an unresolved citation."""
     ref = env.capture(b"%PDF-1.4 synthetic", ("bse-results-pdf", PDF))
     with env.db.migrator_connection() as conn:
+        entity_id = entity(conn)
+        occurrence = _insert(conn, "occurrences", _occurrence(ref.capture_ref_id, "quote"))
+        _insert(conn, "interpretations", _interpretation(entity_id, ref.capture_ref_id, occurrence))
         conn.execute(SEED_STATE, (ref.capture_ref_id, "EXPIRED"))
     snapshots = env.store
     with env.pool.connection() as conn, conn.cursor() as cursor:
@@ -75,6 +79,8 @@ def test_an_expired_quoted_capture_is_refused_not_unresolved(env: Env) -> None:
                 cursor,
                 str(ref.capture_ref_id),
                 "p1.b0.0:2",
+                entity_id=entity_id,
+                cutoff=datetime.now(UTC),
                 catalog=BUILTIN_SOURCES,
                 snapshots=snapshots,
             )
