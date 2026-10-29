@@ -171,6 +171,9 @@ PARSERS[Site.TIJORI, "shareholding-trend"] = ParserEntry(
 )
 
 # Task 12: Market series.
+# Task 15: G3 positional cells (imports kept in this merge-local block).
+from fundamentals.ingest import vendor_surface_cells as cells  # noqa: E402
+
 PARSERS.update(
     {
         (site, surface): ParserEntry(version=f"{name}:{surface}.v1", parse=parser)
@@ -194,3 +197,15 @@ for _site, _name, _surfaces in (
         PARSERS[_site, _surface] = ParserEntry(
             version=f"{_name}:{_surface}.reader.v1", parse=make_reader(_name, _surface)
         )
+            (Site.SCREENER, "screener", "section-insights", cells.screener_insights),
+            (Site.SCREENER, "screener", "company-compare", cells.screener_compare),
+            (
+                Site.TIJORI,
+                "tijori",
+                "benchmarking-benchmarking-financial",
+                cells.benchmark_financial,
+            ),
+            (Site.TIJORI, "tijori", "benchmarking-benchmarking-business", cells.benchmark_business),
+        )
+    }
+)
