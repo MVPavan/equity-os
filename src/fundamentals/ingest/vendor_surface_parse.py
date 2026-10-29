@@ -148,8 +148,14 @@ for _site, _name, _surfaces in (
     (Site.TIJORI, "tijori", TIJORI_SURFACES),
 ):
     for _surface in _surfaces:
+        _version = (
+            2
+            if _name == "tijori" and _surface in ("quarterly-results", "company-timeline-api")
+            else 1
+        )
         PARSERS[_site, _surface] = ParserEntry(
-            version=f"{_name}:{_surface}.reader.v1", parse=make_reader(_name, _surface)
+            version=f"{_name}:{_surface}.reader.v{_version}",
+            parse=make_reader(_name, _surface),
         )
 
 # Task 15: G3 positional cells (imports kept in this merge-local block).
@@ -157,7 +163,10 @@ from fundamentals.ingest import vendor_surface_cells as cells  # noqa: E402
 
 PARSERS.update(
     {
-        (site, surface): ParserEntry(version=f"{name}:{surface}.v1", parse=parser)
+        (site, surface): ParserEntry(
+            version=f"{name}:{surface}.v{1 if parser is cells.benchmark_business else 2}",
+            parse=parser,
+        )
         for site, name, surface, parser in (
             (Site.SCREENER, "screener", "section-insights", cells.screener_insights),
             (Site.SCREENER, "screener", "company-compare", cells.screener_compare),

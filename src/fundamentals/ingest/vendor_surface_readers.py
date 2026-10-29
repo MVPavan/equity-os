@@ -38,6 +38,7 @@ from fundamentals.ingest.tijori_shareholding import (
 )
 from fundamentals.ingest.tijori_source import TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableCell, TijoriTableRow
+from fundamentals.ingest.vendor_surface_cells import measurement
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
@@ -116,22 +117,29 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 )
                 label = provenance.row_label or provenance.row_path or label
                 header = provenance.column_label or header
-            result.append(
-                VendorValue(
-                    table_key=key,
-                    row_index=row,
-                    column_index=column,
-                    raw_text=raw,
-                    value=value,
-                    locator=locator,
-                    row_label=label,
-                    column_label=header,
-                    unit=unit,
-                    basis=scope,
-                    padded=column in padding,
-                    expected_numeric=numeric and column not in padding,
-                )
+            if isinstance(document, te.TijoriCompanyTimeline) and header == "col0":
+                numeric = False
+            cell = VendorValue(
+                table_key=key,
+                row_index=row,
+                column_index=column,
+                raw_text=raw,
+                value=value,
+                locator=locator,
+                row_label=label,
+                column_label=header,
+                unit=unit,
+                basis=scope,
+                padded=column in padding,
+                expected_numeric=numeric and column not in padding,
             )
+            if (
+                isinstance(document, (te.TijoriQuarterlyResults, te.TijoriCompanyTimeline))
+                and cell.expected_numeric
+                and value is None
+            ):
+                cell = measurement(cell, raw, unit)
+            result.append(cell)
 
     def cells(
         items: Any,
