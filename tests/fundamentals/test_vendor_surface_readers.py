@@ -452,3 +452,31 @@ def test_event_measurements_expect_numbers(surface):
     values = reader_values(document)
     assert [v.expected_numeric for v in values if v.raw_text == "unreadable"] == [True]
     assert outcome(values) == "PARTIAL"
+
+
+def test_quarantined_screener_row_is_kept():
+    from lxml import etree
+
+    body, context = retained("screener", "company-page", "APARINDS")
+    root = body.tree()
+    row = root.xpath("//section[@id='quarters']//table[contains(@class,'data-table')]//tr[td]")[0]
+    etree.SubElement(row, "td").text = "1"
+    values = parse("screener", "section-quarters", Body(raw=etree.tostring(root)), context)
+    kept = [v for v in values if v.table_key.endswith(":quarantined")]
+    assert len(kept) == len(row.xpath("td")) - 1  # every period lexeme, the label excluded
+    assert all(v.value is None and v.expected_numeric for v in kept)
+    assert outcome(values) == "PARTIAL"
+
+
+def test_unaligned_tijori_shareholding_is_partial():
+    from fundamentals.ingest.vendor_surface_readers import reader_values, tijori_reader
+
+    body, context = retained("tijori", "company-shareholding", "APARINDS")
+    document = tijori_reader("company-shareholding", body, context)
+    row = document.rows[0]
+    row = row.model_copy(
+        update={"cells": (), "unaligned_raw_values": tuple(c.raw_text for c in row.cells)}
+    )
+    values = reader_values(document.model_copy(update={"rows": (row,)}))
+    assert len(values) == len(document.rows[0].cells)
+    assert outcome(values) == "PARTIAL"

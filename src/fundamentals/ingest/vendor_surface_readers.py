@@ -163,6 +163,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
         scope: str | None = basis,
         padding: frozenset[int] = frozenset(),
         numeric: bool = True,
+        default_unit: str | None = None,
     ) -> None:
         for index, row in enumerate(items):
             positioned = (
@@ -175,7 +176,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 sc.PeerRow,
             )
             index = row.position if isinstance(row, positioned) else index
-            unit = row.unit if isinstance(row, (sf.TableRow, sc.BucketRow)) else None
+            unit = row.unit if isinstance(row, (sf.TableRow, sc.BucketRow)) else default_unit
             cells(row.cells, key, index, unit, scope, padding, numeric)
             if isinstance(
                 row,
@@ -196,6 +197,14 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                     scope,
                 )
 
+    def quarantine(items: tuple[sf.QuarantinedRow, ...], key: str) -> None:
+        for row in items:
+            emit(
+                ((raw, None, None, True) for raw in row.raw_cells),
+                key + ":quarantined",
+                row.position,
+            )
+
     def series(items: Any, key: str, unit: str | None = None) -> None:
         for index, point in enumerate(items):
             emit(((point.raw_value_text, point.value, None, True),), key, index, unit)
@@ -211,9 +220,11 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                     convert(item, f"{key}/{index}")
             case sf.SectionTable(table_id=table, rows=items, growth_tables=growth):
                 rows(items, table)
+                quarantine(node.quarantined, table)
                 convert(growth, table + "/ranges-table")
             case sc.ShareholdingTable(rows=items) | sc.PeersTable(rows=items):
                 rows(items, key)
+                quarantine(node.quarantined, key)
             case sf.GrowthTable(rows=items):
                 for growth_row in items:
                     cells((growth_row,), key, growth_row.position, growth_row.unit)
@@ -224,9 +235,11 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case sc.SegmentTable(lines=items):
                 for line in items:
                     rows(line.rows, f"{key}/lines/{line.position}")
+                    quarantine(line.quarantined, f"{key}/lines/{line.position}")
             case sc.RelatedPartyTable(parties=items):
                 for party in items:
                     rows(party.lines, f"{key}/parties/{party.position}")
+                    quarantine(party.quarantined, f"{key}/parties/{party.position}")
             case sc.CorporateActionsTable(tabs=items):
                 for tab in items:
                     emit(
@@ -257,8 +270,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 )
                 rows(items, table, scope, padded)
             case TijoriShareholding(rows=items):
-                for index, holding_row in enumerate(items):
-                    cells(holding_row.cells, key, index, node.unit_label)
+                rows(items, key, default_unit=node.unit_label)
             case to.TijoriRatiosSection(ratios=items):
                 for index, overview_ratio in enumerate(items):
                     cells((overview_ratio.amount,), key, index, overview_ratio.unit)
