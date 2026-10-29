@@ -20,6 +20,18 @@ from fundamentals.ingest.screener_session_page import (
 )
 from fundamentals.ingest.vendor_surface_fetch import Site
 from fundamentals.ingest.vendor_surface_series import screener_chart
+from fundamentals.ingest.vendor_surface_tables import (
+    screener_announcements,
+    screener_documents,
+    screener_trades,
+    tijori_brands,
+    tijori_connections,
+    tijori_customers,
+    tijori_filings,
+    tijori_shareholding_overview,
+    tijori_shareholding_trend,
+    tijori_suppliers,
+)
 from fundamentals.store.vendor_values_store import VendorValue
 
 
@@ -101,3 +113,35 @@ PARSERS: dict[tuple[Site, str], ParserEntry] = {
         version="screener:company-page.v1", parse=company_page
     ),
 }
+
+# Task 10: G2 company tables and lists.
+PARSERS[Site.SCREENER, "section-documents"] = ParserEntry(
+    version="screener:section-documents.v1", parse=screener_documents
+)
+PARSERS[Site.SCREENER, "company-trades"] = ParserEntry(
+    version="screener:company-trades.v1", parse=screener_trades
+)
+PARSERS[Site.SCREENER, "company-announcements"] = ParserEntry(
+    version="screener:company-announcements.v1", parse=screener_announcements
+)
+PARSERS[Site.TIJORI, "overview-company-filings"] = ParserEntry(
+    version="tijori:overview-company-filings.v1", parse=tijori_filings
+)
+PARSERS[Site.TIJORI, "overview-customers"] = ParserEntry(
+    version="tijori:overview-customers.v1", parse=tijori_customers
+)
+PARSERS[Site.TIJORI, "overview-suppliers"] = ParserEntry(
+    version="tijori:overview-suppliers.v1", parse=tijori_suppliers
+)
+PARSERS[Site.TIJORI, "overview-brands"] = ParserEntry(
+    version="tijori:overview-brands.v1", parse=tijori_brands
+)
+PARSERS[Site.TIJORI, "overview-connections"] = ParserEntry(
+    version="tijori:overview-connections.v1", parse=tijori_connections
+)
+PARSERS[Site.TIJORI, "shareholding-overview"] = ParserEntry(
+    version="tijori:shareholding-overview.v1", parse=tijori_shareholding_overview
+)
+PARSERS[Site.TIJORI, "shareholding-trend"] = ParserEntry(
+    version="tijori:shareholding-trend.v1", parse=tijori_shareholding_trend
+)
