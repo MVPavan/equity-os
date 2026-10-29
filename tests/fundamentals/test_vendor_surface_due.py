@@ -520,3 +520,51 @@ def test_canary_names_an_overdue_covered_request(due_rig):
     assert overdue(rig.pool, rig.store, specs, day + DAY) == ()
     (late,) = overdue(rig.pool, rig.store, specs, day + 185 * DAY)
     assert (late.surface, late.check) == ("company-financials", COMPANY_OVERDUE)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_historical_results_rows_keep_their_first_retrieval(due_rig):
+    from fundamentals.store.vendor_values_store import VendorValue
+
+    rig = due_rig
+    rig.run(pick("robots", "changelog", site=Site.SCREENER), NOW)
+    with rig.pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        older, newer = map(
+            capture_of,
+            cursor.execute(
+                "SELECT * FROM eqos.capture_refs WHERE surface LIKE 'vs.%%' ORDER BY capture_id"
+            ).fetchall(),
+        )
+
+    def cell(column, label, text, link=None):
+        return VendorValue(
+            table_key="quarterly-results-api:feed",
+            row_index=0,
+            column_index=column,
+            locator=f"/fixture/{column}",
+            row_label="Apar",
+            column_label=label,
+            raw_text=text,
+            value=None,
+            link=link,
+        )
+
+    v1 = (
+        cell(0, "Company", "Apar", "/company/apar-industries-limited/"),
+        cell(1, "Row ID", "Sep 2026"),
+    )
+    # Version 1 recorded no key cells; version 2 keys the same period heading.
+    for ref, version, cells in ((older, 1, v1), (newer, 2, (*v1, cell(2, "Key 0", "Sep 2026")))):
+        outcome = Outcome(
+            surface="quarterly-results-api",
+            parser_version=f"tijori:quarterly-results-api.v{version}",
+            parser_sha256=str(version) * 64,
+            status=OutcomeStatus.KEPT,
+            symbol=None,
+            detail=None,
+            values=cells,
+        )
+        VendorValuesStore(rig.pool).record(ref, outcome, row_count=len(cells))
+    (first,) = due.results_rows(rig.pool, SPECS).values()
+    assert first == due.retrieved_at(older.capture_id)

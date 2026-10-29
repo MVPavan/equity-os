@@ -48,7 +48,8 @@ WHERE c.surface LIKE 'vs.%%' ORDER BY c.id, o.surface, o.traversal_key IS NULL, 
 PERIODS = """SELECT v.capture_ref_id, max(to_date(v.column_label, 'Mon YYYY'))
 FROM eqos.vendor_values v JOIN eqos.capture_refs c ON c.id = v.capture_ref_id
 WHERE c.surface = ANY(%s) AND v.column_label ~ '^[A-Z][a-z]{2} [0-9]{4}$' GROUP BY 1"""
-FEED_VALUES = """SELECT v.*, o.surface AS feed, c.capture_id AS retrieved FROM eqos.vendor_values v
+FEED_VALUES = """SELECT v.*, o.surface AS feed, o.parser_version, c.capture_id AS retrieved
+FROM eqos.vendor_values v
 JOIN eqos.vendor_outcomes o ON o.id = v.outcome_id
 JOIN eqos.capture_refs c ON c.id = v.capture_ref_id
 WHERE o.surface = ANY(%s) AND o.status = ANY(%s) AND v.table_key = o.surface || ':feed'
@@ -166,7 +167,8 @@ def results_rows(
     for _, group in groupby(rows, key=lambda row: row["outcome_id"]):
         cells = list(group)
         values = tuple(VendorValue.model_validate(row) for row in cells)
-        for item in feed_rows(feeds[cells[0]["feed"]], values):
+        legacy = cells[0]["parser_version"].endswith(".v1")
+        for item in feed_rows(feeds[cells[0]["feed"]], values, legacy):
             company = "/".join(urlsplit(item.company).path.split("/")[2:3])
             first.setdefault((company, item.row_id), retrieved_at(cells[0]["retrieved"]))
     return first
