@@ -831,3 +831,24 @@ def test_retained_tree_expands_a_traversal_first_page(due_rig):
     # A traversal's children are what its first page advertises, as the live run expanded them.
     assert "https://www.screener.in/market/IN10/IN1098/" in urls
     assert "https://www.screener.in/market/IN10/IN1099/" not in urls
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_stale_parent_gates_failed_descendants_until_refresh(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-page", "schedules-api")
+    sales = next(u for u in rig.opener.rows if "schedules/?parent=Sales&section=profit-loss&c" in u)
+    rig.opener.overrides[sales] = b"unavailable", 404
+    rig.run(specs, NOW)
+    rig.opener.new_results_row()
+    for day in range(1, 11):
+        rig.run(specs, NOW + day * DAY)
+        assert sales not in rig.opener.calls
+        queued, _ = due.due_requests(rig.pool, rig.store, specs, NOW + day * DAY)
+        assert sales not in {r.url for r in queued}
+    found = states(rig, specs)
+    assert found[("company-page", Basis.CONSOLIDATED)] is due.ObligationState.EXHAUSTED
+    assert found[("schedules-api", Basis.CONSOLIDATED)] is due.ObligationState.EXHAUSTED
+    queued, notes = due.due_requests(rig.pool, rig.store, specs, NOW + 11 * DAY)
+    assert sales not in {r.url for r in queued}
+    assert "APARINDS:screener:schedules-api:consolidated: INCOMPLETE" in notes

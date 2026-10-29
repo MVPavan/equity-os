@@ -385,7 +385,19 @@ def due_requests(
         )
         pending = {traversal_key(r): r for o in obligations for r in o.retry}
         spent = {k for o in obligations for k in o.spent} - pending.keys()
-        queue(tree(roots, seen, expand), pending, spent, f"{ids.nse_symbol}: ")
+        nodes = tree(roots, seen, expand)
+        unsettled = {
+            (o.site, o.surface, o.basis)
+            for o in obligations
+            if o.state is not ObligationState.SATISFIED
+        }
+        spent |= {
+            k
+            for k, n in nodes.items()
+            if (n.request.spec.site, n.request.spec.id, n.request.basis) in unsettled
+            and k not in pending
+        }
+        queue(nodes, pending, spent, f"{ids.nse_symbol}: ")
     due.sort(key=lambda r: (r.due_since is not None, r.due_since or now))
     return tuple(due), tuple(dict.fromkeys(notes))
 
