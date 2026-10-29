@@ -91,7 +91,7 @@ def test_yield_checks_and_cli(
         check in ("ROW_COUNT_DROP", "MISSING_OUTCOME")
     )
     captured = capsys.readouterr()
-    assert "skipped" in captured.err
+    assert "skipped" not in captured.err
     if check:
         assert check in captured.out and base.request.request_key in captured.out
 
@@ -108,7 +108,7 @@ def test_retained_tracer_has_green_canary(rig, capsys):
     assert main(["vendor", "canary", "--yield-only"]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "skipped" in captured.err
+    assert "skipped" not in captured.err
 
 
 FIXED = datetime(2026, 10, 28, 9, 30, tzinfo=UTC)

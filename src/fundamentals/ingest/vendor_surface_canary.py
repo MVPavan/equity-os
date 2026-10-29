@@ -20,6 +20,8 @@ from fundamentals.contracts.snapshot import BodyCompleteness
 from fundamentals.ingest.screener_company_discovery import read_page_hooks
 from fundamentals.ingest.screener_financials_tables import schedule_parents
 from fundamentals.ingest.screener_session_models import ScreenerSessionError
+from fundamentals.ingest.vendor_surface_capture import company_requests
+from fundamentals.ingest.vendor_surface_due import covered_universe, history
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
     Fetched,
@@ -29,6 +31,8 @@ from fundamentals.ingest.vendor_surface_fetch import (
     VendorFetcher,
     request_key,
 )
+from fundamentals.ingest.vendor_surface_market import traversal_key
+from fundamentals.ingest.vendor_surface_specs import Cadence, SurfaceSpec
 from fundamentals.ingest.vendor_surface_tables import read_js_var
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import (
@@ -44,6 +48,13 @@ DROP_FACTOR = 2
 NO_BASELINE = "NO_BASELINE"
 ROW_COUNT_DROP = "ROW_COUNT_DROP"
 MISSING_OUTCOME = "MISSING_OUTCOME"
+COMPANY_OVERDUE = "COMPANY_OVERDUE"
+# Statements follow quarterly results, so a quarter is their nominal cadence.
+PERIOD = {
+    Cadence.DAILY: timedelta(days=1),
+    Cadence.WEEKLY: timedelta(days=7),
+    Cadence.AFTER_RESULTS: timedelta(days=92),
+}
 # Capture ids start with the fixed-width UTC retrieval timestamp (through microseconds).
 _YIELD: LiteralString = """
 WITH history AS (
@@ -113,6 +124,28 @@ def yield_drift(pool: ConnectionPool, since: datetime) -> tuple[Drift, ...]:
                 )
             )
     return tuple(found)
+
+
+def overdue(
+    pool: ConnectionPool, store: SnapshotStore, specs: tuple[SurfaceSpec, ...], now: datetime
+) -> tuple[Drift, ...]:
+    """Covered companies' fixed requests with no usable capture within twice their cadence."""
+    seen = history(pool, specs)
+    return tuple(
+        Drift(
+            site=request.spec.site,
+            surface=request.spec.id,
+            request_key=request_key(request.url),
+            check=COMPANY_OVERDUE,
+            detail=f"no usable capture within twice its {request.spec.cadence} cadence",
+        )
+        for ids in covered_universe(pool, store)
+        for request in company_requests(specs, ids)
+        if not any(
+            s.usable and s.retrieved_at > now - 2 * PERIOD[request.spec.cadence]
+            for s in seen.get(traversal_key(request), [])
+        )
+    )
 
 
 def _cls(name: str) -> str:
