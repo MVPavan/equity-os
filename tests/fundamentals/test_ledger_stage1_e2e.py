@@ -21,6 +21,7 @@ import pytest
 from coverage_support import watchlist
 from ledger_support import (
     COVERAGE_TABLES,
+    DOCUMENT_TABLES,
     IDENTITY_TABLES,
     LEDGER_TABLES,
     MEMORY_TABLES,
@@ -413,6 +414,7 @@ def test_ledger_stage1_end_to_end(
     )
     tables = [*STAGE2["backup"]["tables"], *(t["table"] for t in MANIFEST["backup_tables"])]
     tables += MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
+    tables += DOCUMENT_TABLES
     assert sorted(verify_set(sets).table_counts) == sorted(tables)
     fresh = mint_name(rig.settings)
     try:

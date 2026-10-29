@@ -82,6 +82,8 @@ COVERAGE_TABLES = REGISTRY_TABLES | {
     *("capture_batches", "batch_member_results", "batch_completions"),
     *("screen_member_dispositions", "screen_other_vendor_reads"),
 }
+# 0043's document intake: refusal matrix in test_document_intake.
+DOCUMENT_TABLES = frozenset({"document_listings", "document_observations", "document_attempts"})
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64
 PINNED_INPUTS = "1" * 64
