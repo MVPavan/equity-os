@@ -4,9 +4,199 @@
   path: /company/{symbol}/[consolidated/]
   group: NONE
   cadence: AFTER_RESULTS
+  sections: [section-chart, section-analysis, section-peers, section-quarters, section-profit-loss, section-balance-sheet, section-cash-flow, section-ratios, section-insights, section-shareholding, section-documents]
 - site: screener-subscriber
   id: chart-api
   scope: COMPANY
   path: /api/company/{company_id}/chart/?q={metric-set}&days={n}&consolidated=
   group: SERIES
   cadence: DAILY
+
+# Task 10: G2 company tables and lists (logical sections are not fetched).
+- site: screener-subscriber
+  id: section-documents
+  scope: COMPANY
+  path: /company/{symbol}/[consolidated/]#documents
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="documents"]
+- site: screener-subscriber
+  id: company-trades
+  scope: COMPANY
+  path: /trades/company-{company_id}/
+  group: TABLE
+  cadence: WEEKLY
+  selector: //div[starts-with(@id,"trades-")]/table
+  xhr: true
+- site: screener-subscriber
+  id: company-announcements
+  scope: COMPANY
+  path: /announcements/{recent|important|search}/{company_id}/
+  group: TABLE
+  cadence: WEEKLY
+  selector: //ul[@class="list-links"]
+  xhr: true
+- site: tijori
+  id: overview-company-filings
+  scope: COMPANY
+  path: /company/{slug}/#company_filings
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="companyFilings"]
+- site: tijori
+  id: overview-customers
+  scope: COMPANY
+  path: /company/{slug}/#customers
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="customers"]
+- site: tijori
+  id: overview-suppliers
+  scope: COMPANY
+  path: /company/{slug}/#suppliers
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="suppliers"]
+- site: tijori
+  id: overview-brands
+  scope: COMPANY
+  path: /company/{slug}/#brands
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="brands"]
+- site: tijori
+  id: overview-connections
+  scope: COMPANY
+  path: /company/{slug}/#connections
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="connections"]
+- site: tijori
+  id: shareholding-overview
+  scope: COMPANY
+  path: /company/{slug}/shareholding/#overview
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="company_detailed"]
+- site: tijori
+  id: shareholding-trend
+  scope: COMPANY
+  path: /company/{slug}/shareholding/#trend
+  group: TABLE
+  cadence: AFTER_RESULTS
+  selector: //*[@id="trend"]
+
+# Task 13: G2 market tables and feeds.
+- {cadence: DAILY, feed: true, group: TABLE, id: results-latest, path: '/results/latest/?p=&mcap=&result_update_date__day=&__month=&__year=', scope: MARKET, selector: '//*[@data-page-results]/div[table]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: upcoming-results, path: '/upcoming-results/?p=&mcap=&sme=&watchlist=&result_date__month=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: concalls-feed, path: '/concalls/[upcoming/]?p=&o=&date__year=&q=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: annual-reports-feed, path: '/annual-reports/?p=&mcap=&optimism=&sectors=&watchlist=', scope: MARKET, selector: '//*[@data-annual-report]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: announcements-feed, path: '/announcements/[all/|results/]', scope: MARKET, selector: '//div[contains(concat(" ",@class," ")," announcement-item ")]', site: screener-subscriber}
+- {cadence: WEEKLY, group: TABLE, id: market-pulse, path: /filings/, scope: MARKET, selector: '//main//li/a[div]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: corporate-actions-feed, path: '/actions/{bonus|buyback|dividend|right|split}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: trades-feed, path: '/trades/{bulk|block|insiders|sast}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: ipo, path: '/ipo/[recent/|below-price/|rights/]', scope: MARKET, selector: '//main//table[not(ancestor::table)]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: ratings-feed, path: '/ratings/?search={company}', scope: MARKET, selector: '//ul[@class="items"]/li', site: screener-subscriber}
+- {cadence: WEEKLY, group: TABLE, id: market-level, path: '/market/{IN..}/[{IN....}/[{IN......}/[{IN.........}/]]]', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber, expand: screener_market_levels}
+- {cadence: WEEKLY, group: TABLE, id: index-page, path: '/company/{index_code}/', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber, expand: screener_indices}
+- {cadence: WEEKLY, group: TABLE, id: person-page, path: '/people/{id}/{slug}/', scope: MARKET, selector: //main//table, site: screener-subscriber, expand: screener_people}
+- {cadence: WEEKLY, group: TABLE, id: screen-raw, path: '/screen/raw/?query={q}&sort=&order=&page=', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: quarterly-results-api, path: '/results/quarterly-results/api/?page=&sort_by=&mcap=&timeline_type=&sectors=&company_ids=', scope: MARKET, selector: '//div[@class="result_item"]', site: tijori}
+- {cadence: DAILY, feed: true, group: TABLE, id: upcoming-events-api, path: '/results/upcoming-events/api/?page=&mcap=&timeline_type=&type=', scope: MARKET, selector: '//div[@class="table_container"]/table[not(contains(@class,"loader"))]', site: tijori}
+- {cadence: WEEKLY, group: TABLE, id: raw-materials, path: /in/raw-materials, scope: MARKET, selector: '//table[starts-with(@id,"rawmaterial__table__")]', site: tijori}
+- {cadence: WEEKLY, group: TABLE, id: idea-page, path: '/ideas-dashboard/{slug}/', scope: MARKET, selector: '//div[@class="cards_container"]/div', site: tijori, expand: tijori_ideas}
+- {cadence: WEEKLY, group: TABLE, id: idea-card-body, path: '/ideas-dashboard/{slug}/card-body/', scope: MARKET, selector: '//div[@class="card_row"]', site: tijori, expand: tijori_idea_cards}
+
+- {site: screener-subscriber, id: quick-ratios-api, scope: COMPANY, path: '/api/company/{warehouse_id}/quick_ratios/', group: READER, cadence: WEEKLY}
+- {site: screener-subscriber, id: peers-api, scope: COMPANY, path: '/api/company/{warehouse_id}/peers/[?consolidated=true]', group: READER, cadence: WEEKLY}
+- {site: screener-subscriber, id: schedules-api, scope: COMPANY, path: '/api/company/{company_id}/schedules/?parent={row}&section={section}&consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_schedules}
+- {site: screener-subscriber, id: investors-api, scope: COMPANY, path: '/api/3/{company_id}/investors/{class}/{quarterly|yearly}/', group: READER, cadence: WEEKLY, expand: screener_investors}
+- {site: screener-subscriber, id: segments-api, scope: COMPANY, path: '/api/segments/{company_id}/{quarters|profit-loss}/{segment_type}/?consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_segments}
+- {site: screener-subscriber, id: forecasts, scope: COMPANY, path: '/forecasts/{company_id}/?consolidated=', group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: related-party, scope: COMPANY, path: '/results/rpt/{company_id}/[consolidated/]', group: READER, cadence: WEEKLY}
+- {site: screener-subscriber, id: corporate-actions-modal, scope: COMPANY, path: '/company/actions/{company_id}/', group: READER, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: commentary-modal, scope: COMPANY, path: '/wiki/company/{company_id}/commentary/v2/', group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: quarter-source-pdf, expand: advertised_links, scope: COMPANY, path: '/company/source/quarter/{company_id}/{month}/{year}/', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: company-overview, scope: COMPANY, path: '/company/{slug}/', group: READER, cadence: WEEKLY, sections: [overview-custom-ratios, overview-quick-view, overview-company-timeline-sidepanel, overview-custom-financials, overview-forensics, overview-marketshare, overview-revenuemix, overview-operationalmetrics, overview-competitors, overview-brands, overview-corporateactions, overview-connections, overview-suppliers, overview-customers, overview-knowledgebase, overview-popular-queries, overview-company-filings, overview-discussions-and-analysis]}
+- {site: tijori, id: company-financials, scope: COMPANY, path: '/company/{slug}/financials/', group: READER, cadence: AFTER_RESULTS, sections: [financials-price, financials-growth-table, financials-balance-sheet, financials-balance-sheet-snapshot, financials-fundflow-analysis, financials-profit-and-loss, financials-cash-flow, financials-cash-flow-analysis, financials-ratios, financials-quarterly-results, financials-reverse-dcf, financials-faqfinancials]}
+- {site: tijori, id: financials-popup-chart-api, scope: COMPANY, path: '/api/v1/ind/financial_statement_popup_chart_data/{company_id}/{field}/{source}/{fs_name}/', group: SERIES, cadence: AFTER_RESULTS, expand: tijori_popup_fields}
+- {site: tijori, id: financial-statement-compare-api, scope: COMPANY, path: '/api/v1/ind/financial_statement_compare/{company_id}/{column_selector}', group: SERIES, cadence: AFTER_RESULTS, expand: tijori_compare_selector}
+- {site: tijori, id: company-shareholding, scope: COMPANY, path: '/company/{slug}/shareholding/', group: READER, cadence: WEEKLY, sections: [shareholding-overview, shareholding-trend, shareholding-detailed, shareholding-faqshareholding]}
+- {site: tijori, id: shareholding-detail-chart-api, expand: advertised_links, scope: COMPANY, path: '/api/v1/ind/shareholding_detailed_chart_data/{company_id}/{field}/{source}', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: company-benchmarking, scope: COMPANY, path: '/company/{slug}/benchmarking/', group: CELLS, cadence: WEEKLY, sections: [benchmarking-benchmarking-financial, benchmarking-benchmarking-business]}
+- {site: tijori, id: company-reports, scope: COMPANY, path: '/company/{slug}/reports/', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: chartdata-price-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/price/', group: SERIES, cadence: DAILY}
+- {site: tijori, id: chartdata-valuation-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/{pe|ev_by_ebitda|market_cap_to_sales|price_book|net_sales|...}/', group: SERIES, cadence: DAILY}
+- {site: tijori, id: chartdata-median-pe-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/median-pe/', group: SERIES, cadence: DAILY}
+- {site: tijori, id: capex-api, scope: COMPANY, path: '/api/v1/ind/capex/{company_id}/', group: SERIES, cadence: WEEKLY}
+- {site: tijori, id: debt-api, scope: COMPANY, path: '/api/v1/ind/debt/{company_id}/', group: SERIES, cadence: WEEKLY}
+- {site: tijori, id: fund-flow-api, scope: COMPANY, path: '/api/v1/ind/fund_flow_analysis_data/{company_id}/', group: READER, cadence: WEEKLY}
+- {site: tijori, id: cash-flow-waterfall-api, scope: COMPANY, path: '/api/v1/ind/cash_flow_waterfall/{company_id}/', group: READER, cadence: WEEKLY}
+- {site: tijori, id: balance-sheet-snapshot-api, scope: COMPANY, path: '/api/v1/ind/balance_sheet_snap_shot/{company_id}/', group: READER, cadence: WEEKLY}
+- {site: tijori, id: op-metrics-api, scope: COMPANY, path: '/api/v1/ind/company_op_metrics/{company_id}/{metric_id}/[?onlygraph=True]', group: READER, cadence: WEEKLY, expand: tijori_op_metrics}
+- {site: tijori, id: revenue-mix-history-api, scope: COMPANY, path: '/api/rmix/historic/graph/{item_id}', group: SERIES, cadence: WEEKLY, expand: tijori_revenue_mix_items}
+- {site: tijori, id: market-share-api, scope: COMPANY, path: '/api/v1/ind/company_market_share_data/{ticker}/', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: market-share-peer-companies-api, expand: advertised_links, scope: COMPANY, path: '/api/v1/ind/market_share_peer_companies/{company_id}/{chart_company_id}/', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: company-timeline-api, scope: COMPANY, path: '/timeline/company/?company_id={id}&timestamp={cursor}', group: READER, cadence: WEEKLY}
+- {site: screener-subscriber, id: company-compare, scope: MARKET, path: "/company/compare/?codes={company_id},{company_id}", group: CELLS, cadence: WEEKLY, expand: screener_compare_peers}
+
+# Task 11: finite market hubs and retained-only surfaces.
+- {site: screener-subscriber, id: company-search-api, scope: MARKET, path: '/api/company/search/?q={q}&v=5[&fts=1]', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: ratio-search-api, scope: MARKET, path: '/api/ratio/search/?q={q}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: explore, scope: MARKET, path: /explore/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: screens-list, scope: MARKET, path: '/screens/?page={n}', group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: screen-page, scope: MARKET, path: '/screens/{screen_id}/{slug}/?page={n}', group: NONE, cadence: WEEKLY, expand: screener_screens}
+- {site: screener-subscriber, id: sectors-filter-api, scope: MARKET, path: '/api/get/sectors/?url_name={screen|goto_sublist|company_page}&...', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: market-overview, scope: MARKET, path: /market/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: people-search, scope: MARKET, path: /people/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: fii-page, scope: MARKET, path: /fii/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: fii-api, scope: MARKET, path: /api/fii/, group: SERIES, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: insider-summary, scope: MARKET, path: '/trades/insider-summary-{id}/', group: NONE, cadence: WEEKLY, expand: screener_insiders}
+- {site: screener-subscriber, id: product-prices, scope: MARKET, path: /hs/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: hs-search-api, scope: MARKET, path: '/api/hs/search/?q={term}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: screener-subscriber, id: commodity-page, scope: MARKET, path: '/commodity/{hs_code}/', group: NONE, cadence: WEEKLY, expand: screener_commodities}
+- {site: screener-subscriber, id: hs-data-api, scope: MARKET, path: '/api/hs/{hs_code}/data/', group: SERIES, cadence: WEEKLY, expand: screener_hs, xhr: true}
+- {site: screener-subscriber, id: ratio-gallery, scope: MARKET, path: /ratios/gallery/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: user-public-profile, scope: MARKET, path: '/user/{id}/', group: NONE, cadence: WEEKLY, expand: screener_authors}
+- {site: screener-subscriber, id: capsule, scope: MARKET, path: '/capsules/{id}/{slug}/', group: NONE, cadence: WEEKLY, expand: screener_capsules}
+- {site: screener-subscriber, id: changelog, scope: MARKET, path: /docs/changelog/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: features, scope: MARKET, path: /features/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: guides, scope: MARKET, path: '/guides/{about-us|terms|privacy|refunds|creating-screens|hs-codes}/', group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: support, scope: MARKET, path: /support/, group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: sitemap, scope: MARKET, path: '/sitemap.xml -> /sitemap-{screens|companies|posts|static}.xml', group: NONE, cadence: WEEKLY}
+- {site: screener-subscriber, id: robots, scope: MARKET, path: /robots.txt, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: company-search-api, scope: MARKET, path: '/api/v1/ind/company_search/?q={q}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: financial-company-search-api, scope: MARKET, path: '/api/v1/ind/financial_company_search/?q={q}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: universal-search-api, scope: MARKET, path: '/api/india/universal_search/?q={q}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: search-page, scope: MARKET, path: /in/search/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: markets, scope: MARKET, path: /in/markets, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: macro, scope: MARKET, path: /in/macro, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: macro-chart-api, scope: MARKET, path: '/api/v1/macro/chart/{indicator_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_macro, xhr: true}
+- {site: tijori, id: sector-page, scope: MARKET, path: '/sector/{slug}', group: NONE, cadence: WEEKLY, expand: tijori_sectors}
+- {site: tijori, id: sector-ms-chart-api, scope: MARKET, path: '/api/v1/sector/ms-chart/{chart_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_sector_charts, xhr: true}
+- {site: tijori, id: sector-company-opm-api, scope: MARKET, path: '/api/v1/sector/company-opm/{metric_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_sector_charts, xhr: true}
+- {site: tijori, id: sector-area-chart-api, scope: MARKET, path: '/api/v1/sector/area-chart/{metric_id}/', group: NONE, cadence: WEEKLY, expand: tijori_sector_charts, xhr: true}
+- {site: tijori, id: index-search-api, scope: MARKET, path: '/api/v1/sector/index-search/{q}/', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: index-data-api, scope: MARKET, path: '/api/v1/sector/index-data/{index_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_indices, xhr: true}
+- {site: tijori, id: index-metric-data-api, scope: MARKET, path: '/api/v1/sector/index-metric-data/{index_id}/{metric}', group: SERIES, cadence: WEEKLY, expand: tijori_index_metrics, xhr: true}
+- {site: tijori, id: filter, scope: MARKET, path: '/filter/[?qt=basic]', group: NONE, cadence: WEEKLY}
+- {site: tijori, id: filter-popular-queries, scope: MARKET, path: /filter/popular-queries/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: filter-popular-queries-api, scope: MARKET, path: /api/filter_queries/popular-query/, group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: filter-public-queries, scope: MARKET, path: /filter/public-queries/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: filter-public-queries-api, scope: MARKET, path: '/api/filter_queries/search/?limit=&offset=', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: filter-field-catalog-api, scope: MARKET, path: '/api/filter_queries/filter_field_search/?q=&query_type={financials|...}', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: filter-advanced-search-api, scope: MARKET, path: '/api/filter_queries/advanced_search/?financial={query}&...', group: NONE, cadence: WEEKLY, xhr: true}
+- {site: tijori, id: ideas-dashboard, scope: MARKET, path: /in/ideas-dashboard/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: quarterly-results, scope: MARKET, path: /results/quarterly-results/, group: READER, cadence: WEEKLY}
+- {site: tijori, id: upcoming-events, scope: MARKET, path: /results/upcoming-events/, group: READER, cadence: WEEKLY}
+- {site: tijori, id: concall-monitor, scope: MARKET, path: /results/concall-monitor/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: reports-store, scope: MARKET, path: /reports/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: features, scope: MARKET, path: /features/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: faq, scope: MARKET, path: /in/faq/ (+ /faq/data/), group: NONE, cadence: WEEKLY}
+- {site: tijori, id: whats-new, scope: MARKET, path: /whats-new/, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: sitemap, scope: MARKET, path: /sitemap.xml, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: robots, scope: MARKET, path: /robots.txt, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: llms-txt, scope: MARKET, path: /llms.txt, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: policy-pages, scope: MARKET, path: /support | /privacy-policy | /terms-of-use | /cancellation-policy, group: NONE, cadence: WEEKLY}
+- {site: tijori, id: markets-indices-widget-api, scope: MARKET, path: '/api/v1/{table}/{field}/{activeIndex}/', group: NONE, cadence: WEEKLY, expand: tijori_widgets, xhr: true}
+- {site: tijori, id: filter-popular-query-results-api, scope: MARKET, path: '/api/filter_queries/popular-query/results/?financial={query}&is_checked=&whales=&is_sme=', group: NONE, cadence: WEEKLY, expand: tijori_queries, xhr: true}

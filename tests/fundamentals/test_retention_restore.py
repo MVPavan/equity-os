@@ -107,6 +107,20 @@ RUN = (
 ENDS = "SELECT source_id FROM eqos.licence_ends ORDER BY 1"
 RECORDED = "SELECT count(*) FROM eqos.purge_records WHERE capture_ref_id = %s"
 STATES = "SELECT count(*) FROM eqos.capture_states"
+PROPOSALS = "SELECT label, prompt, raw_response, reason, units FROM eqos.vendor_label_proposals"
+PROPOSE = (
+    "INSERT INTO eqos.vendor_label_proposals (source_id,surface,label,units,field,reason,"
+    "epistemic_class,model_id,prompt_version,dictionary_version,prompt,raw_response) VALUES "
+    "('tijori','chart-api','Sales','{PRIVATE_UNIT_SENTINEL}','sales','MAPPED','inferred','m','v1','v3','p','r'),"
+    "('tijori','chart-api','Odd','{}',NULL,'LABEL_ALTERED',NULL,'m','v1','v3','p','r'),"
+    "('tijori','chart-api','Sales','{PRIVATE_UNIT_SENTINEL}',NULL,'MODEL_UNMAPPED',NULL,'correction:owner',"
+    "'v1','v3','','')"
+)
+REDACTED = [
+    (None, None, None, reason, None) for reason in ("MAPPED", "LABEL_ALTERED", "MODEL_UNMAPPED")
+]
+VENDOR_UNITS = "SELECT unit FROM eqos.vendor_values"
+
 UNDISPOSED = (
     "SELECT id FROM eqos.queue_items q WHERE NOT EXISTS "
     "(SELECT 1 FROM eqos.queue_dispositions d WHERE d.item_id = q.id)"
@@ -181,6 +195,20 @@ def test_a_licence_end_purges_the_vendor_and_restores_expire_it(
     with env.db.migrator_connection() as conn:
         assert verdict(conn, tijori[0]).kind is EligibilityKind.HELD
     env.store.put_capture(record_of(b"r1-unregistered", *VENDOR), b"r1-unregistered")
+    with env.db.migrator_connection() as conn:
+        conn.execute(PROPOSE)
+        conn.execute("INSERT INTO eqos.vendor_parser_versions VALUES ('units.v1',%s)", ("a" * 64,))
+        outcome_id = conn.execute(
+            "INSERT INTO eqos.vendor_outcomes "
+            "(capture_ref_id,surface,parser_version,status,row_count) "
+            "VALUES (%s,'chart-api','units.v1','OK',1) RETURNING id",
+            (held.capture_ref_id,),
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO eqos.vendor_values (outcome_id,capture_ref_id,table_key,row_index,"
+            "column_index,locator,unit) VALUES (%s,%s,'t',0,0,'/0','PRIVATE_UNIT_SENTINEL')",
+            (outcome_id, held.capture_ref_id),
+        )
     before = aside(env.backup(), tmp_path)
     args = ["--source", TIJORI, "--ended-on", "2026-10-01", "--reason", "r1"]
     args += ["--snapshot-root", str(env.root), "--backup-dir", str(env.sets)]
@@ -191,6 +219,8 @@ def test_a_licence_end_purges_the_vendor_and_restores_expire_it(
     assert (env.root / ".retention" / "licence-ended" / TIJORI).is_file()
     assert [e.source_id for e in read_authority(env.sets).licence_ends] == [TIJORI]
     assert env.sql(ENDS) == [(TIJORI,)]
+    assert sorted(env.sql(PROPOSALS), key=str) == sorted(REDACTED, key=str)
+    assert env.sql(VENDOR_UNITS) == [(None,)]
     assert [env.state(ref) for ref in (held, plain)] == ["EXPIRED", "EXPIRED"]
     assert [env.sql(RECORDED, c)[0][0] for c in tijori] == [1, 1]
     assert bodies(env.root, TIJORI) == [] and env.has_body(kept)
@@ -201,6 +231,8 @@ def test_a_licence_end_purges_the_vendor_and_restores_expire_it(
 
     check, root = restore(env, env.sets / final, (target := mint()))
     assert check.ok, check
+    assert on(env, target, VENDOR_UNITS) == [(None,)]
+    assert sorted(on(env, target, PROPOSALS), key=str) == sorted(REDACTED, key=str)
     for ref in (held, plain):
         assert on(env, target, STATE, ref.capture_ref_id) == [("EXPIRED",)]
         SnapshotStore(root).read_record(*ids(ref), ref.record_sha256)
@@ -217,6 +249,8 @@ def test_a_licence_end_purges_the_vendor_and_restores_expire_it(
     store_root = env.root.parent / f"restored-{target}"
     check, root = restore(env, before, target, first=marked)
     assert check.ok, check
+    assert sorted(on(env, target, PROPOSALS), key=str) == sorted(REDACTED, key=str)
+    assert on(env, target, VENDOR_UNITS) == [(None,)]
     assert [on(env, target, STATE, c)[0][0] for c in tijori] == ["EXPIRED", "EXPIRED"]
     assert bodies(root, TIJORI) == []
     with pytest.raises(LicenceEndedError):

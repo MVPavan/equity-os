@@ -1,0 +1,49 @@
+# Model-drafted dictionary-v3 key; model-checked by GPT-6.1 Sol (high), 2026-10-29; not human-checked. No vendor readings.
+- {site: screener, surface: company-compare,
+   label: "OPM %", field: opm_pct,
+   why: "opm_pct.meaning: EBITDA excluding other income as a percentage of revenue from operations; matching Screener margin. Missing/mixed units remain subject to accept."}
+- {site: screener, surface: company-compare,
+   label: "Material Cost %", field: material_cost_pct,
+   why: "material_cost_pct.meaning explicitly names Screener Material Cost %, including stock-in-trade; missing/mixed units remain subject to accept."}
+- {site: screener, surface: company-compare,
+   label: "Employee Cost %", field: employee_cost_pct,
+   why: "employee_cost_pct.meaning explicitly names Screener Employee Cost %, employee benefits expense as a percentage of revenue from operations; units remain subject to accept."}
+- {site: screener, surface: company-compare,
+   label: "EPS", field: null,
+   why: "eps_basic.meaning requires basic EPS from continuing and discontinued operations; EPS does not establish that scope or basic versus diluted, and units are missing."}
+- {site: screener, surface: company-compare,
+   label: "Stock P/E", field: null,
+   why: "eps_basic.meaning is Basic EPS from continuing and discontinued operations, a per-share amount; a valuation multiple is different and v3 has no P/E field."}
+- {site: screener, surface: company-compare,
+   label: "Tax %", field: effective_tax_rate_pct,
+   why: "config/dictionary/v3/derived.yaml effective_tax_rate_pct.evidence records Screener \"Tax %\" = tax_expense / profit_before_tax x 100, measured 9/9; the retained row sits under Profit before tax in the Quarterly Results and Profit & Loss tables."}
+- {site: screener, surface: section-insights,
+   label: "CASA ratio", field: null,
+   why: "opm_pct.meaning is Operating profit margin, not a deposit composition ratio; v3 has no CASA field."}
+- {site: screener, surface: section-insights,
+   label: "Gross NPA ratio", field: null,
+   why: "opm_pct.meaning is Operating profit margin, not a nonperforming-loan percentage; v3 has no NPA field."}
+- {site: screener, surface: section-insights,
+   label: "13th Month Persistency", field: null,
+   why: "opm_pct.meaning is EBITDA excluding other income as a percentage of revenue from operations, not insurance retention; no v3 persistency field."}
+- {site: screener, surface: section-insights,
+   label: "AUM", field: null,
+   why: "total_assets.meaning describes the balance-sheet asset total; assets under management are not necessarily owned assets, and have no v3 field."}
+- {site: screener, surface: section-insights,
+   label: "Conductor Division Order Book", field: null,
+   why: "revenue_from_operations.meaning is Revenue from operations; unfulfilled orders for one division are not recognized revenue and have no v3 field."}
+- {site: tijori, surface: benchmarking-benchmarking-financial,
+   label: "Cost To Income Ratio", field: null,
+   why: "opm_pct.meaning is EBITDA excluding other income divided by revenue from operations; a bank cost-to-income ratio is a different measure."}
+- {site: tijori, surface: benchmarking-benchmarking-financial,
+   label: "Value Of New Business Margin (VNB)", field: null,
+   why: "net_profit_margin_pct.meaning specifies net profit from continuing operations before associates divided by revenue from operations; VNB margin is a different insurance measure."}
+- {site: tijori, surface: benchmarking-benchmarking-financial,
+   label: "5yr Avg Operating Profit Margin", field: null,
+   why: "opm_pct.meaning specifies the period operating margin; an average over several years cannot be represented by that period field."}
+- {site: tijori, surface: benchmarking-benchmarking-business,
+   label: "Conductor", field: null,
+   why: "revenue_from_operations.meaning is Revenue from operations; a segment name without a measure or code-read unit cannot identify that field."}
+- {site: tijori, surface: benchmarking-benchmarking-business,
+   label: "Equity", field: null,
+   why: "equity_share_capital.meaning is Equity share capital; an investment allocation label does not establish issuer share capital and has no unit."}

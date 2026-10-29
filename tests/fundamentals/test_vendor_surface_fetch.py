@@ -81,6 +81,32 @@ KEYS = "ack acked mark mark_read mark_as_seen seen read dismiss".split()
     + [f"/ok/?{key}=true" for key in WORDS + KEYS]
     + [
         "/in/watchlist/company/1",
+        "/user/account/",
+        "/portfolio/",
+        "/in/alerts/",
+        "/in/edit-columns/",
+        "/capsules/1/stock-alerts/",
+        "/alerts/",
+        "/api/portfolio/family_summary/",
+        "/settings/",
+        "/profile/",
+        "/",
+        "/notebook/1/",
+        "/api/company/sublists/1/",
+        "/screen/new/",
+        "/announcements/user-filters/",
+        "/dash/1/",
+        "/user/stocks/1/",
+        "/user/columns/",
+        "/user/quick_ratios/",
+        "/user/push-notifications/",
+        "/ratios/",
+        "/premium/member/",
+        "/filter/saved-queries/",
+        "/api/filter_queries/search/?owner=true&limit=10",
+        "/plans/",
+        "/in/timeline/self/more?timestamp=0",
+        "/dashboard/",
         "/api/portfolio/task-status/",
         "/annual-reports/1/summary/",
         "/concalls/summary/1/",
@@ -101,11 +127,7 @@ def test_deny_list(path):
     "path",
     [
         "/company/ask-automotive-ltd/",
-        "/in/edit-columns/",
-        "/capsules/1/stock-alerts/",
-        "/filter/saved-queries/",
-        "/alerts/",
-        "/api/portfolio/family_summary/",
+        "/ratios/gallery/",
     ],
 )
 def test_read_only_exceptions(path):
@@ -252,3 +274,33 @@ def test_missing_session_refused_before_fetch():
             sessions_factory=lambda sites: {},
             pool_factory=lambda: pytest.fail("credentials must be checked before opening the pool"),
         )
+
+
+def test_fetch_logs_only_request_identity(tmp_path):
+    import structlog
+
+    from fundamentals.ingest.vendor_surface_fetch import Site, request_key
+
+    events = []
+    config = structlog.get_config()
+
+    def collect(logger, method, event):
+        if event.get("event") == "vendor_surface_fetch":
+            events.append(event.copy())
+        raise structlog.DropEvent
+
+    structlog.configure(processors=[collect])
+    url = "https://www.screener.in/company/PRIVATE_PATH_SENTINEL/?parent=PRIVATE_QUERY_SENTINEL"
+    try:
+        client, _ = fetcher(tmp_path, Opener())
+        client.get(Site.SCREENER, "company-page", url)
+    finally:
+        structlog.configure(**config)
+    assert events == [
+        {
+            "event": "vendor_surface_fetch",
+            "site": Site.SCREENER,
+            "surface": "company-page",
+            "request_key": request_key(url),
+        }
+    ]

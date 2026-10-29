@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import posixpath
-import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -50,13 +49,29 @@ SITE_AUTHORITY: Mapping[Site, str] = {
 DENY_WORDS = frozenset(
     (
         "logout delete remove add create rename save edit follow unfollow subscribe toggle upgrade "
-        "payment alert connect sync reset refresh ai flag ask mark share-by-email"
+        "payment alert alerts account portfolio settings profile connect sync reset refresh "
+        "ai flag ask mark share-by-email"
     ).split()
 )
 DENY_KEYS = DENY_WORDS | frozenset(
     "ack acked mark mark_read mark_as_seen seen read dismiss".split()
 )
 NAMED_PATHS = (
+    "/notebook/",
+    "/api/company/sublists/",
+    "/screen/new/",
+    "/announcements/user-filters/",
+    "/dash/",
+    "/user/stocks/",
+    "/user/columns/",
+    "/user/quick_ratios/",
+    "/user/push-notifications/",
+    "/ratios/new/",
+    "/premium/",
+    "/filter/saved-queries/",
+    "/plans/",
+    "/in/timeline/",
+    "/dashboard/",
     "/in/watchlist/",
     "/watchlist/",
     "/api/portfolio/task-status/",
@@ -153,10 +168,11 @@ def is_denied(url: str) -> bool:
     """Apply runbook §1 to a normalized URL, exempting company slugs."""
     parts = urlsplit(url)
     path = parts.path.lower().rstrip("/") + "/"
-    if any(key.lower() in DENY_KEYS for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
+    if path in ("/", "/ratios/") or any(
+        key.lower() in DENY_KEYS or (key.lower() == "owner" and value.lower() == "true")
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+    ):
         return True
-    if path == "/in/edit-columns/" or re.fullmatch(r"/capsules/[0-9]+/stock-alerts/", path):
-        return False
     if path.startswith(NAMED_PATHS) or (
         path.startswith("/annual-reports/") and path.endswith("/summary/")
     ):
@@ -232,7 +248,7 @@ class VendorFetcher:
             headers["X-Requested-With"] = "XMLHttpRequest"
         self.pacers[site].wait_for_slot()
         self.counts[site] += 1
-        LOG.info("vendor_surface_fetch", site=site, url=urlunsplit((*parts[:3], "", "")))
+        LOG.info("vendor_surface_fetch", site=site, surface=surface, request_key=request_key(url))
         retrieved_at = datetime.now(UTC)
         status, location, media, encoding, raw, completeness, issue = (
             None,
