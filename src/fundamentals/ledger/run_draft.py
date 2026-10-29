@@ -21,6 +21,7 @@ their threshold claims follow, bound to the thesis approved at the derivation cu
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping, Sequence, Set
 from datetime import date, datetime
 from typing import Any, LiteralString
@@ -65,6 +66,7 @@ from fundamentals.ledger.import_mapping import (
     _slot,
     _valued,
     measurement_key,
+    refs,
 )
 from fundamentals.ledger.importer import _ENTITY
 from fundamentals.ledger.lifecycle import (
@@ -80,6 +82,9 @@ from fundamentals.ledger.run_traces import (
     CALCS,
     CHANGES,
     CRORE_UNIT,
+    DISCLOSED,
+    NOT_PERFORMED,
+    OPEN_QUESTIONS,
     Carry,
     Line,
     RunDraftError,
@@ -99,13 +104,32 @@ FACT_PREFIX, QOQ_PRIOR = "fact.", ".qoq.prior"
 GUIDANCE = "management_ledger"
 CARRIED = LedgerStatus.CARRIED
 NONE = "- none"
+FISCAL_PERIOD = re.compile(r"FY\d{2,4}(?:_Q[1-4])?")
+UNSPECIFIED = " (target period not specified by the extracted guidance)"
 INTROS = {
     RESULTS: "{{e:observed}} Reported consolidated figures:",
     CHANGES: "{{e:observed}} {{e:computed}} Prior figures and changes (current − prior; "
     "(current − prior) / prior × 100):",
     CALCS: "{{e:computed}} {{e:observed}} Derived values (the filed tax is observed):",
     GUIDANCE: "{{e:forecast}} Management guidance, each quote-anchored in its transcript:",
+    OPEN_QUESTIONS: "{{e:computed}} Questions the extracted data leaves open (this pipeline "
+    "drafts no analyst questions, so the list does not show that no others exist):",
+    NOT_PERFORMED: "{{e:computed}} This version does not contain:",
 }
+NOT_DONE = (
+    "- forward scenarios",
+    "- forensic checks",
+    "- a management-credibility assessment",
+    "- a narrative thesis-impact assessment",
+    "- materiality decisions: no claim carries a materiality decision, because the pipeline "
+    "produces no materiality policy, candidate inventory or per-claim decision",
+)
+QUESTION = (
+    "- Which fiscal year or window applies to {label}? Why it matters: the "
+    "guidance cannot be checked against an outcome period without it. Evidence required: the "
+    "transcript context around the quoted guidance {ref}, or a later management statement "
+    "naming the period. Status: open; owner not assigned."
+)
 _REPORT: LiteralString = (
     "SELECT id FROM eqos.reports WHERE entity_id = %s AND period = %s AND kind = %s"
 )
@@ -312,7 +336,10 @@ def write_run_draft(
         for line in run.lines:
             body.add(line.section, _shown(line), *line.claims)
         for text, claim in _guidance(cursor, run.guidance, update, prior, catalog):
-            body.add(GUIDANCE, text, carried.get(claim.claim_key, claim))
+            shown = carried.get(claim.claim_key, claim)
+            body.add(GUIDANCE, text, shown)
+            if not _specified(shown.horizon):
+                body.lines[OPEN_QUESTIONS].append(_question(shown))
         claims = predecessor(prior, tuple(body.claims.values()))
         assert update.derivation_cutoff is not None
         bound = approved_thesis(cursor, entity_id, update.nse_symbol, update.derivation_cutoff)
@@ -496,7 +523,7 @@ def _results(
         claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
         if ref is not None:
             claim = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
-        yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}", claim
+        yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)} {refs([name])}", claim
 
 
 def _guidance(
@@ -522,11 +549,21 @@ def _guidance(
 
 def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
     """A guidance line."""
-    key = claim.claim_key
+    key, note = claim.claim_key, "" if _specified(claim.horizon) else UNSPECIFIED
     return (
         f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
-        f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}"'
+        f'{claim.horizon}{note} — {status.value}: "{_slot(key, QUOTE_STYLE)}" {refs([key])}'
     )
+
+
+def _question(claim: NumericClaim) -> str:
+    """The outstanding question of a guidance claim whose horizon names no fiscal period."""
+    return QUESTION.format(label=claim.metric_label or claim.metric, ref=refs([claim.claim_key]))
+
+
+def _specified(horizon: str | None) -> bool:
+    """Whether ``horizon`` names a fiscal year or fiscal quarter, never an inferred one."""
+    return horizon is not None and FISCAL_PERIOD.fullmatch(horizon) is not None
 
 
 def _quote(
@@ -635,8 +672,8 @@ def _sections(
     lines: Mapping[str, list[str]],
     falsifiers: Sequence[tuple[str, str]],
 ) -> tuple[ReportSection, ...]:
-    """The heading, then each section's lines, then the derived falsifier sections; every
-    number is a claim placeholder or a structural date, id or digest."""
+    """The heading, then each section's lines, the derived falsifier sections and the
+    disclosures; every number is a claim placeholder or a structural date, id or digest."""
     update, retrospective = run.update, run.retrospective
     assert update.source_cutoff is not None and update.derivation_cutoff is not None
     designation = (
@@ -664,8 +701,13 @@ def _sections(
         f"Prior: {'none (bootstrap period)' if prior.version_id is None else pinned}.\n"
         f"{full}Originals first seen: {seen}.\n{run.memory}\n\n"
     )
-    bodies = [(HEADING, heading)] + [(key, section_body(key, lines[key])) for key in INTROS]
+    keys = [key for key in INTROS if key not in DISCLOSED]
+    bodies = [(HEADING, heading)] + [(key, section_body(key, lines[key])) for key in keys]
     bodies += falsifiers
+    bodies += [
+        (OPEN_QUESTIONS, section_body(OPEN_QUESTIONS, lines[OPEN_QUESTIONS])),
+        (NOT_PERFORMED, section_body(NOT_PERFORMED, NOT_DONE)),
+    ]
     return tuple(
         ReportSection(ordinal=ordinal, section_key=key, body=body)
         for ordinal, (key, body) in enumerate(bodies)

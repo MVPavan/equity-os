@@ -282,6 +282,7 @@ class DisplayStyle(BaseModel):
     range_form: RangeForm = RangeForm.DASH
     trim: bool = False
     quote: bool = False
+    ref: bool = False
 
 
 class GuidanceContract(BaseModel):

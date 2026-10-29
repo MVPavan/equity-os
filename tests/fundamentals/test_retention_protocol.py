@@ -109,6 +109,7 @@ GUARDED = frozenset(
     | {"interpretation_condition_evidence", "construction_traces", "calculation_trace_operands"}
     | {"result_source_values", "run_inputs", "acquisition_attempts", "package_members"}
     | {"vendor_parser_versions", "vendor_outcomes", "vendor_values", "vendor_basis_bindings"}
+    | {"vendor_label_proposals", "vendor_text_claims"}
 )
 GUARD_TABLES = (
     "SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
