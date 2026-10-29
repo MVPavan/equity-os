@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 from urllib.request import build_opener
 
@@ -93,15 +96,16 @@ def run_tijori_overview_command(
     record, raw, url = _capture_page(
         stock, credentials, args.snapshot_root, "company-overview", "/company/{slug}/"
     )
-    sections = build_tijori_overview(
-        raw,
-        slug=stock.identifiers.tijori_slug,
-        expected_symbol=stock.symbol,
-        expected_company_id=stock.identifiers.tijori_company_id,
-        source_url=url,
-        retrieved_at=record.retrieved_at,
-        section=None if args.section is None else TijoriOverviewSection(args.section),
-    )
+    with _sanitized_builder_logs("company-overview"):
+        sections = build_tijori_overview(
+            raw,
+            slug=stock.identifiers.tijori_slug,
+            expected_symbol=stock.symbol,
+            expected_company_id=stock.identifiers.tijori_company_id,
+            source_url=url,
+            retrieved_at=record.retrieved_at,
+            section=None if args.section is None else TijoriOverviewSection(args.section),
+        )
 
     out_dir = Path(args.out).resolve() if args.out else _DEFAULT_OUT_ROOT / stock.symbol
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,3 +192,18 @@ def _capture_page(
             return record, store.read_body(record), url
         finally:
             locks.close()
+
+
+@contextmanager
+def _sanitized_builder_logs(surface: str) -> Iterator[None]:
+    """Apply the retained-reader log policy during CLI artifact building."""
+    config = structlog.get_config()
+
+    def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
+        return {"event": "vendor_surface_reader", "site": "tijori", "surface": surface}
+
+    structlog.configure(processors=[sanitize, *config["processors"]])
+    try:
+        yield
+    finally:
+        structlog.configure(**config)

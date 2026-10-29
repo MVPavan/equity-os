@@ -180,3 +180,23 @@ def test_shareholding_cli_requires_an_injected_session_cookie(
 def test_shareholding_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
     """Every raw response is registered before parsing or a durable stop."""
     assert_raw_first("shareholding", case, tijori_cli_capture, pg_db, tmp_path, monkeypatch)
+
+
+def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
+    """Raw-first artifact building must sanitize pinned-reader diagnostics too."""
+    from lxml import etree, html
+
+    marker = "PRIVATE_LOG_SENTINEL"
+    tree = html.fromstring(_FIXTURE.read_bytes())
+    tree.xpath('//script[@id="plan_details"]')[0].text = json.dumps(
+        {"name": {"private": marker}, "plan_tier": {"private": marker}}
+    )
+    for script in tree.xpath("//script[not(@src)]"):
+        if script.text:
+            script.text = script.text.replace(
+                'var subcategory = "overview"', f'var subcategory = "{marker}"'
+            )
+    monkeypatch.setenv("TIJORI_SESSION_COOKIE", "synthetic")
+    monkeypatch.setattr(TijoriSource, "_fetch_shareholding_bytes", lambda *a: etree.tostring(tree))
+    assert main(["tijori-shareholding", "--stock", "TITAN", "--out", str(tmp_path / "out")]) == 0
+    assert marker not in capsys.readouterr().err
