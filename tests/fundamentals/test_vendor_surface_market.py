@@ -378,3 +378,22 @@ def test_announcements_continue_through_the_show_more_timestamp(market_rig):
         market.traversal_key(request)
     )
     assert market.progress(pool, market.traversal_key(request)).resume_page is None
+
+
+def test_hub_requests_include_optional_bases_and_named_companions():
+    found = {
+        (r.spec.id, urlsplit(r.url).path, urlsplit(r.url).query)
+        for r in market.market_requests(MARKET_SPECS, None)
+    }
+    # `[x]` is optional in the catalog: the bare page is a real, distinct listing.
+    assert {
+        ("concalls-feed", "/concalls/", "p=&o=&date__year=&q="),
+        ("concalls-feed", "/concalls/upcoming/", "p=&o=&date__year=&q="),
+        ("ipo", "/ipo/", ""),
+        ("ipo", "/ipo/recent/", ""),
+        ("announcements-feed", "/announcements/", ""),
+        ("filter", "/filter/", ""),
+        ("filter", "/filter/", "qt=basic"),
+        ("faq", "/in/faq/", ""),
+        ("faq", "/faq/data/", ""),
+    } <= found

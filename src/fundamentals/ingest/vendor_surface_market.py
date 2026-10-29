@@ -135,13 +135,13 @@ def query_url(url: str, **params: str) -> str:
 
 
 def alternatives(path: str) -> list[str]:
-    """Expand catalog `[a|b]` and `{a|b}` notation into its finite concrete paths."""
+    """Expand catalog optional `[a|b]` and required `{a|b}` notation into concrete paths."""
     match = re.search(r"\[([^\[\]]+)\]|\{([^{}]*\|[^{}]*)\}", path)
     if match is None:
         return [path]
     return [
         concrete
-        for item in (match[1] or match[2]).split("|")
+        for item in (match[1] or match[2]).split("|") + ([""] if match[1] else [])
         if item != "..."
         for concrete in alternatives(path[: match.start()] + item + path[match.end() :])
     ]
@@ -157,7 +157,7 @@ def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tup
             path = path.split(" -> ")[0]
             for token in re.findall(r"\{([^{}]+)\}", path):
                 path = path.replace("{" + token + "}", "1" if token == "n" else "")
-            path = path.replace("&...", "").replace(" (+ /faq/data/)", "")
+            path = re.sub(r" \(\+ (\S+)\)", r" | \1", path.replace("&...", ""))
             for variant in path.split(" | "):
                 requests.append(
                     Request(
