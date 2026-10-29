@@ -195,7 +195,7 @@ def test_retained_tables_are_registered_and_stored(pg_db, tmp_path, monkeypatch,
                             expected_blocks.add("Credit ratings")
                         assert {r[3] for r in stored} == expected_blocks
                         assert all(r[0].startswith("documents:") for r in stored)
-                assert entry.version == f"{site_name}:{surface}.v1"
+                assert entry.version == f"{site_name}:{surface}.v3"
 
 
 def test_table_cells_keep_labels_links_and_reject_ragged_rows():

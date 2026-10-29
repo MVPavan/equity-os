@@ -27,7 +27,7 @@ NUMERIC_COLUMNS = {
     "trades-insider-trades": {1, 2, 3},
     "trades-sast-trades": {3, 4},
     "trades-block-deals": {2, 3},
-    "trades-bulk-deals": {2, 3},
+    "trades-bulk-deals": {1, 2, 3},
     "corporate-actions-feed": {4, 5},
     "trades-feed": {4},
     "raw-materials": set(range(2, 8)),
@@ -102,11 +102,15 @@ def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValu
         if len(cells) != len(headers):
             raise ValueError("ragged table row")
         for column, cell in enumerate(cells):
-            values.append(
-                _cell(cell, table_key, row, column, _text(cells[0]), headers[column]).model_copy(
-                    update={"expected_numeric": column in numeric}
-                )
-            )
+            value = _cell(cell, table_key, row, column, _text(cells[0]), headers[column])
+            expected = column in numeric and value.raw_text.lower() not in {
+                "",
+                "-",
+                "–",
+                "—",
+                "n/a",
+            }
+            values.append(value.model_copy(update={"expected_numeric": expected}))
             values.extend(
                 _cell(
                     link,
