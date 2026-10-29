@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, urljoin, urlsplit
 
 from fundamentals.ingest.screener_company_discovery import investor_hooks
 from fundamentals.ingest.screener_company_models import Periodicity, SegmentHook
@@ -309,3 +309,160 @@ EXPANSIONS: Mapping[str, Callable[[Body, ParseContext], tuple[Request, ...]]] = 
         advertised_links,
     )
 }
+
+
+# Parent ids are finite; only these retained advertisements may create requests.
+MARKET_PARENTS = {
+    "screener_market_levels": ("market-overview", "market-level"),
+    "screener_indices": ("explore",),
+    "screener_people": ("people-search",),
+    "screener_hs": ("product-prices",),
+    "screener_commodities": ("product-prices",),
+    "screener_screens": ("screens-list",),
+    "screener_authors": ("screens-list",),
+    "screener_capsules": ("explore",),
+    "screener_insiders": ("trades-feed",),
+    "tijori_sectors": ("markets",),
+    "tijori_indices": ("markets",),
+    "tijori_widgets": ("markets",),
+    "tijori_sector_charts": ("sector-page",),
+    "tijori_index_metrics": ("markets",),
+    "tijori_macro": ("macro",),
+    "tijori_ideas": ("ideas-dashboard",),
+    "tijori_idea_cards": ("idea-page",),
+    "tijori_queries": ("filter-popular-queries-api", "filter-public-queries-api"),
+}
+
+
+def child_spec(context: ParseContext) -> SurfaceSpec:
+    """The child surface whose expansion runs over this retained parent."""
+    assert context.parent is not None
+    return SurfaceSpec.model_validate(context.parent["spec"])
+
+
+def market_children(context: ParseContext, paths: Iterable[str]) -> tuple[Request, ...]:
+    """Deduplicate concrete market addresses advertised by one retained parent."""
+    spec = child_spec(context)
+    return tuple(
+        Request(spec=spec, url=urljoin(context.url, path), ids=None, due_since=None)
+        for path in dict.fromkeys(paths)
+    )
+
+
+def market_links(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Match this finite endpoint template against retained URL advertisements."""
+    spec = child_spec(context)
+    path = spec.path.split("?")[0]
+    pattern = re.escape(path)
+    for token in re.findall(r"\{([^{}]+)\}", path):
+        replacement = r"[0-9]+" if token in {"id", "screen_id", "hs_code"} else r"[A-Za-z0-9_-]+"
+        pattern = pattern.replace(re.escape("{" + token + "}"), replacement)
+    urls = re.findall(pattern, body.raw.decode())
+    return market_children(context, urls)
+
+
+def screener_market_levels(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Visit every advertised industry path and all four ancestor levels."""
+    paths = dict.fromkeys(
+        "/market/" + "/".join(parts[:depth]) + "/"
+        for path in body.tree().xpath("//a/@href")
+        if re.fullmatch(
+            r"/market/IN[0-9]{2}/(?:IN[0-9]{4}/)?(?:IN[0-9]{6}/)?(?:IN[0-9]{9}/)?", path
+        )
+        for parts in [path.strip("/").split("/")[1:]]
+        for depth in range(1, len(parts) + 1)
+    )
+    return market_children(context, paths)
+
+
+def tijori_market_tree(body: Body) -> dict[str, Any]:
+    """Read the retained market tree's explicitly declared groups."""
+    return dict(json.loads(body.tree().xpath('//script[@id="data"]/text()')[0]))
+
+
+def tijori_sectors(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Expand only sector slugs actually published in the market tree."""
+    nodes = tijori_market_tree(body)["headlines"]["children"]
+    return market_children(
+        context,
+        ("/sector/" + quote(node["slug"], safe="") for node in nodes if node.get("slug")),
+    )
+
+
+def tijori_indices(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Index ids belong to groups; niche ids identify sectors."""
+    spec = child_spec(context)
+    nodes = tijori_market_tree(body)["groups"]["children"]
+    return market_children(
+        context,
+        (spec.path.replace("{index_id}", str(node["id"])) for node in nodes if "id" in node),
+    )
+
+
+def tijori_index_metrics(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Use metrics advertised by the market index table cells."""
+    requests = tijori_indices(body, context)
+    metrics = body.tree().xpath("//*[@data-widget]//*[@field]/@field")
+    return tuple(
+        request.model_copy(update={"url": request.url.replace("{metric}", quote(metric, safe=""))})
+        for request in requests
+        for metric in dict.fromkeys(metrics)
+    )
+
+
+def tijori_queries(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Fetch only popular/public queries present on the first API result page."""
+    spec = child_spec(context)
+    data = json.loads(body.raw)
+    rows = (
+        data["results"] if "results" in data else [row for group in data.values() for row in group]
+    )
+    return market_children(
+        context,
+        (
+            spec.path.replace("{query}", quote(row["financial_query"], safe=""))
+            for row in rows
+            if row.get("financial_query")
+        ),
+    )
+
+
+def tijori_idea_cards(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """The card fragment is the one fixed child of the retained idea page."""
+    return market_children(context, (urlsplit(context.url).path.rstrip("/") + "/card-body/",))
+
+
+def tijori_widgets(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Expand only widget, field and index triples actually present in the hub."""
+    spec = child_spec(context)
+    return market_children(
+        context,
+        (
+            spec.path.format(
+                table=table.get("data-widget"),
+                field=cell.get("field"),
+                activeIndex=row.get("tjiid"),
+            )
+            for table in body.tree().xpath("//*[@data-widget]")
+            for row in table.xpath(".//*[@tjiid]")
+            for cell in row.xpath(".//*[@field]")
+        ),
+    )
+
+
+MARKET_EXPANSIONS = dict.fromkeys(MARKET_PARENTS, market_links)
+MARKET_EXPANSIONS.update(
+    {
+        function.__name__: function
+        for function in (
+            screener_market_levels,
+            tijori_sectors,
+            tijori_indices,
+            tijori_index_metrics,
+            tijori_queries,
+            tijori_idea_cards,
+            tijori_widgets,
+        )
+    }
+)
+EXPANSIONS = {**EXPANSIONS, **MARKET_EXPANSIONS}
