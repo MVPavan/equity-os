@@ -401,5 +401,8 @@ Format per entry:
 - Why it matters: tmp_path under `/tmp` turns that refusal into a flake; tmp_path under a
   checkout breaks the `test_verify_*` sandbox repos (they inherit its `pyproject.toml`).
 - Apply: run the full suite through `scripts/verify.sh` (`suite_pytest`), or pass the same
-  `-n 16 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
+  `-n 8 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
   `sys.modules` in-process, which xdist workers would hide.
+- Owner cap (2026-10-29): at most 8 workers in total across everything running at once (the
+  machine is shared; 16 throttled other work). The gate uses 8; concurrent worker lanes use
+  `-n 4` each, or `-n 8` only when running alone.
