@@ -342,3 +342,41 @@ def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(TijoriSource, "_fetch_overview_bytes", lambda *a: etree.tostring(tree))
     assert main(["tijori-overview", "--stock", "TITAN", "--out", str(tmp_path / "out")]) == 0
     assert marker not in capsys.readouterr().err
+
+
+def test_companion_capture_registers_g2_sections(pg_db, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from fundamentals.ingest.vendor_surface_parse import PARSERS
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    from test_vendor_surface_market import MarketOpener
+
+    from fundamentals.api import tijori_overview_cli as cli
+    from fundamentals.api.watchlist_config import load_watchlist_config
+    from fundamentals.ingest.tijori_source import TijoriCredentials
+    from fundamentals.ingest.vendor_surface_specs import ParseGroup
+
+    for s in specs:
+        if s.group is ParseGroup.TABLE:
+            monkeypatch.delitem(PARSERS, (s.site, s.id), raising=False)
+    stock = load_watchlist_config(Path("config/watchlist.yaml")).stock("APARINDS")
+    monkeypatch.setattr(cli, "open_pool", lambda *a: pg_db.runtime_pool())
+    monkeypatch.setattr(cli, "build_opener", MarketOpener)
+    monkeypatch.setattr(cli, "_STOP_DIR", tmp_path / "stops")
+    cli._capture_page(
+        stock,
+        TijoriCredentials(session_cookie="synthetic"),
+        tmp_path / "captures",
+        "company-shareholding",
+        "/company/{slug}/shareholding/",
+    )
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        missing = conn.execute(
+            "SELECT count(*) FROM eqos.vendor_outcomes WHERE parser_version LIKE '%.unavailable.v1'"
+        ).fetchone()[0]
+    assert missing == 0, f"{missing} G2 section parsers unavailable in fresh CLI process"
