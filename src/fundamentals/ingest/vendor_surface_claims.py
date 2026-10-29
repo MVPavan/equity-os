@@ -17,6 +17,7 @@ from fundamentals.ingest.vendor_surface_model import LabelModel, ModelNotSelecte
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
 
+PROMPT_VERSION = "spans.v2"  # bump whenever SYSTEM changes
 SYSTEM = (
     "Select names and claims in the supplied source. Return only a JSON array of "
     '{"kind":"NAME"|"CLAIM","start":integer,"end":integer}. '
@@ -101,7 +102,7 @@ def extract_text(
         raise ModelNotSelected("owner-selected model is not configured")
     if model.model_id != settings.model_id:
         raise ValueError("configured model differs from proposal model")
-    version = f"claims:{model.model_id}:{settings.prompt_version}"
+    version = f"claims:{model.model_id}:{PROMPT_VERSION}"
     digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     values = VendorValuesStore(pool)
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
@@ -144,7 +145,7 @@ def extract_text(
                         span.end,
                         source[span.start : span.end],
                         model.model_id,
-                        settings.prompt_version,
+                        PROMPT_VERSION,
                         EpistemicClass.INFERRED,
                     ),
                 )
