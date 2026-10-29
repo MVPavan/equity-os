@@ -106,7 +106,6 @@ def test_retained_market_hub_reaches_four_levels(market_rig):
 
 @pytest.mark.pg
 def test_page_cap_resumes_and_advances_only_after_boundary(market_rig, monkeypatch):
-
     monkeypatch.setattr(market, "MAX_FEED_PAGES", 2)
     opener, pool, run = market_rig
     spec = next(s for s in MARKET_SPECS if s.id == "announcements-feed")
@@ -243,7 +242,6 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
     ],
 )
 def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
-
     opener, pool, run = market_rig
     hubs = set(hub_names.split())
     requests = tuple(
@@ -492,17 +490,7 @@ def test_ambiguous_terminal_page_persists_incomplete_and_prior_boundary(market_r
 
 
 def test_traversal_checkpoint_hides_yield_drop(market_rig):
-    from datetime import UTC, datetime
-    from pathlib import Path
-
-    from fundamentals.ingest import vendor_surface_capture as cap
     from fundamentals.ingest.vendor_surface_canary import ROW_COUNT_DROP, yield_drift
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
 
     def announcement_page(count):
         return (
@@ -516,9 +504,9 @@ def test_traversal_checkpoint_hides_yield_drop(market_rig):
         ).encode()
 
     opener, pool, run = market_rig
-    spec = next(s for s in specs if s.id == "announcements-feed")
+    spec = next(s for s in MARKET_SPECS if s.id == "announcements-feed")
     url = "https://www.screener.in/announcements/all/"
-    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    request = Request(spec=spec, url=url, ids=None, due_since=None)
     for count in (10, 1):
         opener.overrides[url] = announcement_page(count), 200
         run((), requests=(request,))
@@ -527,19 +515,10 @@ def test_traversal_checkpoint_hides_yield_drop(market_rig):
 
 
 def test_nonfeed_market_table_refreshes_all_pages(market_rig):
-    from pathlib import Path
-
-    from fundamentals.ingest import vendor_surface_capture as cap
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
     opener, pool, run = market_rig
-    spec = next(s for s in specs if s.id == "market-level")
+    spec = next(s for s in MARKET_SPECS if s.id == "market-level")
     url = "https://www.screener.in/market/IN10/"
-    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    request = Request(spec=spec, url=url, ids=None, due_since=None)
     for number in (1, 2):
         raw = (
             '<table class="data-table"><thead><tr><th>Company</th><th>Revenue</th></tr>'
@@ -558,11 +537,7 @@ def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys, monke
     monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
     import argparse
 
-    from pydantic import SecretStr
-    from test_vendor_surface_market import MarketOpener
-
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
-    from fundamentals.ingest.vendor_surface_fetch import SiteSession
 
     opener = MarketOpener()
     args = argparse.Namespace(

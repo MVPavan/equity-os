@@ -11,8 +11,18 @@ from fundamentals.ingest.screener_session_models import Basis
 from fundamentals.ingest.vendor_surface_capture import Request
 from fundamentals.ingest.vendor_surface_fetch import Site
 from fundamentals.ingest.vendor_surface_parse import PARSERS, Body
-from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
+from fundamentals.ingest.vendor_surface_specs import (
+    Cadence,
+    ParseGroup,
+    Scope,
+    SurfaceSpec,
+    load_specs,
+)
 from fundamentals.store.snapshot_store import SnapshotStore
+
+SPECS = load_specs(
+    Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
+)
 
 
 def parse(site, surface, body, context):
@@ -62,18 +72,10 @@ def test_fragment_readers(surface, pg_db, tmp_path):
         context = context.model_copy(update={"basis": Basis.CONSOLIDATED})
     if surface in ("schedules-api", "segments-api", "investors-api"):
         from fundamentals.ingest.vendor_surface_expand import EXPANSIONS
-        from fundamentals.ingest.vendor_surface_specs import load_specs
 
         basis = "consolidated"
         page, page_context = retained("screener", "company-page", context.ids.nse_symbol, basis)
-        spec = next(
-            s
-            for s in load_specs(
-                Path("config/vendor_surface/surfaces.yaml"),
-                Path("docs/research/vendor-surface/catalog.yaml"),
-            )
-            if s.id == surface and s.site is Site.SCREENER
-        )
+        spec = next(s for s in SPECS if s.id == surface and s.site is Site.SCREENER)
         requests = EXPANSIONS[spec.expand](
             page, page_context.model_copy(update={"parent": {"spec": spec.model_dump()}})
         )
@@ -350,17 +352,9 @@ def test_growth_rows_keep_source_positions():
 
 def test_popup_expands_nested_financial_rows():
     from fundamentals.ingest.vendor_surface_expand import tijori_popup_fields
-    from fundamentals.ingest.vendor_surface_specs import load_specs
 
     body, context = retained("tijori", "company-financials", "HDFCBANK")
-    spec = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.id == "financials-popup-chart-api"
-    )
+    spec = next(s for s in SPECS if s.id == "financials-popup-chart-api")
     requests = tijori_popup_fields(
         body, context.model_copy(update={"parent": {"spec": spec.model_dump()}})
     )
@@ -385,18 +379,10 @@ def test_reader_logs_exclude_vendor_text():
 def test_retained_hdfc_segment_reconciliation_refusal():
     from fundamentals.ingest.screener_company_models import SegmentReconciliationError
     from fundamentals.ingest.vendor_surface_expand import screener_segments
-    from fundamentals.ingest.vendor_surface_specs import load_specs
 
     body, context = retained("screener", "segments-api", "HDFCBANK", "consolidated")
     page, parent = retained("screener", "company-page", "HDFCBANK", "consolidated")
-    spec = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.id == "segments-api"
-    )
+    spec = next(s for s in SPECS if s.id == "segments-api")
     request = next(
         r
         for r in screener_segments(
@@ -576,19 +562,13 @@ def test_replay_reprocesses_reader_v1_without_pin_drift(
     pg_db, tmp_path, monkeypatch, site, surface, owner_id
 ):
     from fundamentals.ingest.vendor_surface_capture import reparse
-    from fundamentals.ingest.vendor_surface_specs import load_specs
     from fundamentals.store.vendor_values_store import VendorValuesStore
 
     name = "screener" if site is Site.SCREENER else "tijori"
     body, context = retained(name, owner_id, "APARINDS", "consolidated")
-    owner = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.site is site and s.id == owner_id
-    ).model_copy(update={"sections": (surface,) if surface != owner_id else ()})
+    owner = next(s for s in SPECS if s.site is site and s.id == owner_id).model_copy(
+        update={"sections": (surface,) if surface != owner_id else ()}
+    )
     spec = owner.model_copy(update={"id": surface, "sections": (), "group": ParseGroup.READER})
     current = PARSERS[site, surface]
     old_version = f"{name}:{surface}.reader.v1"
@@ -638,19 +618,11 @@ def test_g0_series_preserves_source_timestamp_label(pg_db, tmp_path):
     from psycopg.rows import dict_row
 
     from fundamentals.ingest.vendor_surface_readers import tijori_reader
-    from fundamentals.ingest.vendor_surface_specs import load_specs
 
     body, context = retained("tijori", "op-metrics-api")
     context = context.model_copy(update={"parent": {"metric_id": 126}, "basis": None})
     document = tijori_reader("op-metrics-api", body, context)
-    spec = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.id == "op-metrics-api"
-    )
+    spec = next(s for s in SPECS if s.id == "op-metrics-api")
     with pg_db.runtime_pool() as pool:
         ref = capture_response(
             pool,

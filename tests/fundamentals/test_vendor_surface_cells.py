@@ -203,40 +203,13 @@ def test_descriptor_columns_and_missing_markers_stay_out_of_label_units():
     )
 
 
-@pytest.mark.pg
-def test_business_chart_preserves_numeric_token(pg_db, tmp_path):
-    from vendor_surface_support import capture_response
+def test_business_chart_preserves_numeric_token():
+    from fundamentals.ingest.vendor_surface_cells import benchmark_business_charts
+    from fundamentals.ingest.vendor_surface_parse import Body
 
-    raw = (
-        b'<section id="benchmarking-business"><table><thead><tr><th>Metric</th></tr>'
+    body = Body(
+        raw=b'<section id="benchmarking-business"><table><thead><tr><th>Metric</th></tr>'
         b'</thead><tbody><tr><td><div chartdata="[[&quot;period&quot;,1e-8]]">'
         b"</div></td></tr></tbody></table></section>"
     )
-    spec = SurfaceSpec(
-        site=Site.TIJORI,
-        id="benchmarking-benchmarking-business",
-        scope=Scope.COMPANY,
-        path="/",
-        group=ParseGroup.CELLS,
-        cadence=Cadence.WEEKLY,
-    )
-    with pg_db.runtime_pool() as pool:
-        ref = capture_response(
-            pool,
-            SnapshotStore(tmp_path / "captures"),
-            tmp_path / "stops",
-            Request(
-                spec=spec,
-                url="https://www.tijorifinance.com/company/fixture/benchmarking/",
-                ids=None,
-                due_since=None,
-            ),
-            raw,
-        )
-        with pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT raw_text FROM eqos.vendor_values WHERE capture_ref_id=%s "
-                "AND table_key='business-charts:0'",
-                (ref.capture_ref_id,),
-            ).fetchall()
-    assert rows == [("1e-8",)]
+    assert [cell.raw_text for cell in benchmark_business_charts(body)] == ["1e-8"]

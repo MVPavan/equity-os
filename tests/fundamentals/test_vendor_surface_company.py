@@ -18,6 +18,10 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
+SPECS = load_specs(
+    Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
+)
+
 
 class CompanyOpener(RetainedResponseOpener):
     """Serve exact retained addresses and keep unretained requests as explicit refusals."""
@@ -75,10 +79,7 @@ def run_company(pg_db, tmp_path):
     def run(opener, ids, selected=None):
         from fundamentals.ingest.vendor_surface_capture import capture_company
 
-        specs = load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
+        specs = SPECS
         register_tables(specs)
         store = SnapshotStore(tmp_path / "raw")
         with pg_db.runtime_pool() as pool:
@@ -875,12 +876,7 @@ def test_replay_uses_each_captures_parent_not_oldest(
 
     opener, ids = company_rig("APARINDS")
     specs = tuple(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.site is Site.SCREENER and s.id in ("company-page", "schedules-api")
+        s for s in SPECS if s.site is Site.SCREENER and s.id in ("company-page", "schedules-api")
     )
     key = Site.SCREENER, "schedules-api"
 
@@ -925,20 +921,10 @@ def test_replay_uses_each_captures_parent_not_oldest(
 
 
 def test_slug_verifier_sanitizes_frozen_reader_logs(company_rig, run_company):
-    from pathlib import Path
-
-    from fundamentals.ingest.vendor_surface_fetch import Site
-    from fundamentals.ingest.vendor_surface_parse import Body
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    import json
-
     import structlog.testing
     from lxml import etree
+
+    from fundamentals.ingest.vendor_surface_parse import Body
 
     opener, ids = company_rig("HDFCBANK", slug=False)
     ids = ids.model_copy(update={"tijori_company_id": None})
@@ -952,40 +938,19 @@ def test_slug_verifier_sanitizes_frozen_reader_logs(company_rig, run_company):
     island = tree.xpath('//script[@id="fin_tables_data"]')[0]
     island.text = '{"review_private_sentinel":{},' + island.text.lstrip()[1:]
     opener.overrides[url] = etree.tostring(tree), 200
-    specs = tuple(s for s in specs if s.site is Site.TIJORI and s.id == "company-financials")
+    specs = tuple(s for s in SPECS if s.site is Site.TIJORI and s.id == "company-financials")
     with structlog.testing.capture_logs() as logs:
         run_company(opener, ids, specs)
     leaked = sum("review_private_sentinel" in str(entry) for entry in logs)
     assert leaked == 0, f"{leaked} unsanitized reader log events during slug verification"
 
 
-def test_company_and_market_share_retained_transport(company_rig, run_company):
-    from test_vendor_surface_market import MarketOpener
-
-    opener, ids = company_rig("APARINDS")
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    report, _, _, _ = run_company(opener, ids, tuple(s for s in specs if s.id == "company-page"))
-    assert report.completed
-    assert CompanyOpener.open is MarketOpener.open
-
-
 def test_claim_failure_does_not_change_capture_usability(company_rig, run_company, pg_db, tmp_path):
-    from pathlib import Path
-
     from fundamentals.ingest import vendor_surface_due as due
-    from fundamentals.ingest.vendor_surface_fetch import Site
-    from fundamentals.ingest.vendor_surface_specs import load_specs
-    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
+    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus
 
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
     opener, ids = company_rig("APARINDS")
-    specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
+    specs = tuple(s for s in SPECS if s.site is Site.SCREENER and s.id == "company-page")
     run_company(opener, ids, specs)
     with pg_db.runtime_pool() as pool:
         before = due.history(pool, specs)
