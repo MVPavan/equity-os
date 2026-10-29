@@ -8,11 +8,12 @@ from pathlib import Path
 import structlog
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
-from fundamentals.api.tijori_overview_cli import _capture_page, _sanitized_builder_logs
+from fundamentals.api.tijori_overview_cli import _capture_page
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.ingest.tijori_common import TijoriIslandStatus
 from fundamentals.ingest.tijori_shareholding import TijoriShareholding, build_tijori_shareholding
 from fundamentals.ingest.tijori_source import TijoriCredentials
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 
 TIJORI_SHAREHOLDING_COMMAND = "tijori-shareholding"
 
@@ -73,7 +74,7 @@ def run_tijori_shareholding_command(
         "company-shareholding",
         "/company/{slug}/shareholding/",
     )
-    with _sanitized_builder_logs("company-shareholding"):
+    with sanitized_reader_logs("tijori", "company-shareholding"):
         shareholding = build_tijori_shareholding(
             raw,
             slug=stock.identifiers.tijori_slug,
@@ -93,7 +94,7 @@ def run_tijori_shareholding_command(
         stock=stock.symbol,
         rows=len(shareholding.rows),
         columns=len(shareholding.column_period_labels),
-        quarantined_rows=shareholding.cardinality_mismatch_rows,
+        quarantined_rows=len(shareholding.cardinality_mismatch_rows),
         path=str(out_path),
     )
     return shareholding

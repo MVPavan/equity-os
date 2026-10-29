@@ -60,7 +60,12 @@ PERIOD = {
 }
 # Capture ids start with the fixed-width UTC retrieval timestamp (through microseconds).
 _YIELD: LiteralString = """
-WITH history AS (
+WITH current AS (
+    SELECT DISTINCT ON (capture_ref_id, surface) * FROM eqos.vendor_outcomes
+    WHERE traversal_key IS NULL AND NOT starts_with(parser_version,'claims:')
+        AND parser_version NOT LIKE '%%.slug.v1'
+    ORDER BY capture_ref_id,surface,id DESC
+), history AS (
     SELECT c.source_id, o.surface, c.request_key, o.row_count, o.recorded_at,
         lag(o.row_count) OVER (PARTITION BY c.source_id,c.request_key,o.surface,o.parser_version
             ORDER BY left(c.capture_id,23),o.id) AS previous,
@@ -68,7 +73,7 @@ WITH history AS (
             ORDER BY left(c.capture_id,23),o.id) AS prior_version,
         row_number() OVER (PARTITION BY c.source_id,c.request_key,o.surface
             ORDER BY left(c.capture_id,23) DESC,o.id DESC) AS latest
-    FROM eqos.vendor_outcomes o JOIN eqos.capture_refs c ON c.id=o.capture_ref_id
+    FROM current o JOIN eqos.capture_refs c ON c.id=o.capture_ref_id
     WHERE o.status=ANY(%s) AND c.source_id=ANY(%s) AND NOT starts_with(o.parser_version,'claims:')
 )
 SELECT source_id,surface,request_key,row_count,previous FROM history

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from fundamentals.contracts.provenance import Provenance
 from fundamentals.entity.verification import screener_candidate, tijori_candidate
 from fundamentals.ingest import screener_company_artifacts as sc
 from fundamentals.ingest import screener_company_fragments as fragments
@@ -210,9 +213,15 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 row.position,
             )
 
-    def series(items: Any, key: str, unit: str | None = None) -> None:
+    def series(items: Any, key: str, provenance: Provenance, unit: str | None = None) -> None:
         for index, point in enumerate(items):
-            emit(((point.raw_value_text, point.value, None, True),), key, index, unit)
+            anchor = provenance.model_copy(
+                update={
+                    "row_label": point.timestamp_raw_text,
+                    "context_ref": f"{provenance.context_ref}/{index}/1",
+                }
+            )
+            emit(((point.raw_value_text, point.value, anchor, True),), key, index, unit)
 
     def windows(items: Any, key: str) -> None:
         for index, window in enumerate(items):
@@ -285,7 +294,12 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case to.TijoriMarketShareSection(charts=items):
                 for index, chart in enumerate(items):
                     cells((chart.latest_value,), key + "/charts", index, chart.unit)
-                    series(chart.series, f"{key}/charts/{index}/series", chart.unit)
+                    series(
+                        chart.series,
+                        f"{key}/charts/{index}/series",
+                        chart.series_provenance,
+                        chart.unit,
+                    )
             case to.TijoriPeersSection(rows=items):
                 rows(items, key)
             case te.TijoriUpcomingEvents(rows=items):
@@ -295,7 +309,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case (
                 to.TijoriPriceSeriesSection(points=items) | ta.TijoriOpMetricsSection(points=items)
             ):
-                series(items, key)
+                series(items, key, node.series_provenance)
             case to.TijoriPriceChartPeersSection():
                 pass
             case to.TijoriRevenueMixSection(break_ups=items):
@@ -522,18 +536,27 @@ def tijori_reader(surface: str, body: Body, context: ParseContext) -> Any:
     raise ReaderError("no reader")
 
 
+@contextmanager
+def sanitized_reader_logs(site: str, surface: str) -> Iterator[None]:
+    """Keep vendor-derived fields out of reader logs, restoring the caller's processors."""
+    config = structlog.get_config()
+
+    def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
+        return {"event": "vendor_surface_reader", "site": site, "surface": surface}
+
+    structlog.configure(processors=[sanitize, *config["processors"]])
+    try:
+        yield
+    finally:
+        structlog.configure(**config)
+
+
 def make_reader(site: str, surface: str) -> Parser:
     """Bind one logical surface to a namespaced retained-body adapter."""
 
     def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
         """Run a reader without allowing its failures to become kept captures."""
-        config = structlog.get_config()
-
-        def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
-            return {"event": "vendor_surface_reader", "site": site, "surface": surface}
-
-        structlog.configure(processors=[sanitize, *config["processors"]])
-        try:
+        with sanitized_reader_logs(site, surface):
             document = (screener_reader if site == "screener" else tijori_reader)(
                 surface, body, context
             )
@@ -542,7 +565,5 @@ def make_reader(site: str, surface: str) -> Parser:
             ):
                 return document
             return reader_values(document, context.basis.value if context.basis else None)
-        finally:
-            structlog.configure(**config)
 
     return parse

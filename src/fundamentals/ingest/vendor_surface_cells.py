@@ -11,6 +11,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from fundamentals.ingest.vendor_surface_fetch import Site
+from fundamentals.ingest.vendor_surface_series import numeric_cell
 from fundamentals.ingest.vendor_surface_tables import read_html_table, read_js_var
 from fundamentals.store.vendor_values_store import VendorValue
 
@@ -128,16 +129,14 @@ def benchmark_business_charts(body: Body) -> tuple[VendorValue, ...]:
         data = read_js_var(("var chart = " + chart.get("chartdata") + ";").encode(), "chart")
         for row, (label, number) in enumerate(data):
             values.append(
-                VendorValue(
-                    table_key=f"business-charts:{chart_index}",
-                    row_index=row,
-                    column_index=column,
-                    locator=tree.getroottree().getpath(chart) + f"/@chartdata/{row}/1",
-                    row_label=label,
-                    column_label=_text(header),
-                    raw_text=str(number),
-                    value=number,
-                    expected_numeric=True,
+                numeric_cell(
+                    number,
+                    f"business-charts:{chart_index}",
+                    row,
+                    column,
+                    tree.getroottree().getpath(chart) + f"/@chartdata/{row}/1",
+                    label,
+                    _text(header),
                 )
             )
     return tuple(values)

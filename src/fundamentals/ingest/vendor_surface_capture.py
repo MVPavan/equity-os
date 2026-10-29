@@ -43,6 +43,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     kept_section,
     parser_sha256,
 )
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 from fundamentals.ingest.vendor_surface_specs import (
     SITE_NAME,
     Cadence,
@@ -328,25 +329,14 @@ def identity_refusal(request: Request, body: Body) -> str | None:
         return type(error).__name__
 
 
-def covered_peers(pool: ConnectionPool, ids: CompanyIds) -> tuple[int, ...]:
-    """Screener ids of the other covered companies, the only peers a comparison may name."""
-    with pool.connection() as conn:
-        covered = {
-            row[0]
-            for row in conn.execute(
-                "SELECT id FROM eqos.reporting_entities WHERE eqos.watchlisted(id)"
-            )
-        }
-        peer_symbols = {
-            row.value
-            for row in latest_slice(conn)
-            if row.entity_id in covered and row.value != ids.nse_symbol
-        }
+def covered_peers(pool: ConnectionPool, store: SnapshotStore, ids: CompanyIds) -> tuple[int, ...]:
+    """Covered NSE peers, using registry evidence with configuration overrides."""
+    from fundamentals.ingest.vendor_surface_due import covered_universe
+
     return tuple(
-        binding.screener_company_id
-        for stock in load_watchlist_config(WATCHLIST).stocks
-        if stock.symbol in peer_symbols
-        and (binding := company_ids(stock)).screener_company_id is not None
+        peer.screener_company_id
+        for peer in covered_universe(pool, store)
+        if peer.nse_symbol != ids.nse_symbol and peer.screener_company_id is not None
     )
 
 
@@ -401,7 +391,7 @@ def retained_graph(
         and (r.basis is None or r.basis in proven)
         and r.spec.id not in IDENTITY_PAGES
     )
-    queue, peers = list(admitted.values()), covered_peers(pool, ids)
+    queue, peers = list(admitted.values()), covered_peers(pool, store, ids)
     while queue:
         request = queue.pop()
         if request.spec.id != "company-page" and not any(
@@ -475,7 +465,6 @@ def reparse(
         ).fetchall()
     rows = [row for row in retained if row["surface"] == "vs." + owner.id]
     bindings = [company_ids(stock) for stock in load_watchlist_config(WATCHLIST).stocks]
-    graphs: dict[str, dict[str, Request]] = {}
     count = 0
     for row in rows:
         ref = capture_of(row)
@@ -508,9 +497,22 @@ def reparse(
                 ids = ids.model_copy(
                     update={"topology": bind_topology(pool, store, ids, entity_id, {})}
                 )
-        if ids is not None and ids.nse_symbol not in graphs:
-            graphs[ids.nse_symbol] = retained_graph(store, pool, specs, ids, retained)
-        request = graphs[ids.nse_symbol].get(row["url"]) if ids else None
+        graph = (
+            retained_graph(
+                store,
+                pool,
+                specs,
+                ids,
+                sorted(
+                    (r for r in retained if r["capture_id"][:23] <= row["capture_id"][:23]),
+                    key=lambda r: r["capture_id"],
+                    reverse=True,
+                ),
+            )
+            if ids
+            else {}
+        )
+        request = graph.get(row["url"])
         refusal = None
         if spec.scope is Scope.COMPANY and request is None:
             refusal = "verified company binding unavailable"
@@ -635,7 +637,10 @@ def resolve_tijori_slug(
         due_since=None,
     )
     ref, page = capture(fetcher, fetcher.store, pool, values, request, parse=False)
-    state = tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
+    with sanitized_reader_logs("tijori", spec.id):
+        state = (
+            tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
+        )
     values.record(
         ref,
         Outcome(
@@ -680,7 +685,7 @@ def capture_company(
     basis_refusals: dict[Basis, str] = {}
     with pool.connection() as conn:
         entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
-    peers = covered_peers(pool, ids)
+    peers = covered_peers(pool, store, ids)
     if not peers and any(s.id == "company-compare" for s in specs):
         incomplete.append("screener:company-compare: no other covered stocks")
     known = {r.url for r in company_requests(specs, ids)} if requests is not None else set()

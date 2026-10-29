@@ -1,16 +1,12 @@
 """Raw-first market traversal and durable pagination over retained responses."""
 
-import hashlib
-import io
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import OpenerDirector
 
 import pytest
 from pydantic import SecretStr
-from vendor_surface_support import load_request_index
+from vendor_surface_support import RetainedResponseOpener, load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
@@ -48,22 +44,7 @@ MARKET_GAPS = {
 }
 
 
-class MarketOpener(OpenerDirector):
-    """Serve retained bodies and explicit synthetic pagination at the HTTP boundary."""
-
-    def __init__(self):
-        super().__init__()
-        self.rows, self.calls, self.overrides = load_request_index(), [], {}
-
-    def open(self, request, timeout):
-        self.calls.append(request.full_url)
-        row = self.rows.get(request.full_url)
-        raw, status = b"unretained", 404
-        if row and row.get("path"):
-            raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-        raw, status = self.overrides.get(request.full_url, (raw, status))
-        return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
+MarketOpener = RetainedResponseOpener
 
 
 @pytest.fixture
@@ -508,3 +489,100 @@ def test_ambiguous_terminal_page_persists_incomplete_and_prior_boundary(market_r
     )
     assert not queued
     assert "screener:announcements-feed: INCOMPLETE" in notes
+
+
+def test_traversal_checkpoint_hides_yield_drop(market_rig):
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_canary import ROW_COUNT_DROP, yield_drift
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+
+    def announcement_page(count):
+        return (
+            "<main>"
+            + "".join(
+                '<div class="announcement-item"><a href="/company/FIXTURE/">Company</a>'
+                f'<a href="/event/{i}">Event</a><time datetime="2026-10-28">Date</time></div>'
+                for i in range(count)
+            )
+            + "</main>"
+        ).encode()
+
+    opener, pool, run = market_rig
+    spec = next(s for s in specs if s.id == "announcements-feed")
+    url = "https://www.screener.in/announcements/all/"
+    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    for count in (10, 1):
+        opener.overrides[url] = announcement_page(count), 200
+        run((), requests=(request,))
+    checks = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+    assert any(c.check == ROW_COUNT_DROP for c in checks), "10-to-1 feed shrink not detected"
+
+
+def test_nonfeed_market_table_refreshes_all_pages(market_rig):
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    opener, pool, run = market_rig
+    spec = next(s for s in specs if s.id == "market-level")
+    url = "https://www.screener.in/market/IN10/"
+    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    for number in (1, 2):
+        raw = (
+            '<table class="data-table"><thead><tr><th>Company</th><th>Revenue</th></tr>'
+            f'</thead><tbody><tr><td><a href="/company/C{number}/">Company</a></td>'
+            "<td>1</td></tr></tbody></table>" + ('<a href="?p=2">Next</a>' if number == 1 else "")
+        ).encode()
+        opener.overrides[url if number == 1 else url + "?p=2"] = raw, 200
+    run((), requests=(request,))
+    assert len(opener.calls) == 2
+    opener.calls.clear()
+    run((), requests=(request,))
+    assert len(opener.calls) == 2, "weekly non-feed snapshot stops after old company link on page 1"
+
+
+def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
+    import argparse
+
+    from pydantic import SecretStr
+    from test_vendor_surface_market import MarketOpener
+
+    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
+    from fundamentals.ingest.vendor_surface_fetch import SiteSession
+
+    opener = MarketOpener()
+    args = argparse.Namespace(
+        command="vendor",
+        vendor_command="capture",
+        market=True,
+        symbol=None,
+        surface=["tijori:sector-ms-chart-api"],
+        snapshot_root=tmp_path / "captures",
+        tijori_slug=None,
+    )
+    dispatch_vendor_command(
+        args,
+        opener_factory=lambda: opener,
+        pool_factory=pg_db.runtime_pool,
+        sessions_factory=lambda sites: {
+            s: SiteSession(site=s, session_cookie=SecretStr("synthetic"), cookie_name="sid")
+            for s in sites
+        },
+    )
+    capsys.readouterr()
+    count = len(opener.calls)
+    assert count > 0, f"{count} requests for selected market surface; its hub was omitted"

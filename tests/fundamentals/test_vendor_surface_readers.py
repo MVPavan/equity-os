@@ -244,8 +244,8 @@ def test_namespaced_search_outcomes(pg_db, tmp_path):
             context.model_copy(update={"basis": None}),
         )
     assert [(s, v) for s, _, v in outcomes] == [
-        ("OK", "screener:company-search-api.reader.v2"),
-        ("FAILED", "tijori:company-search-api.reader.v2"),
+        ("OK", "screener:company-search-api.reader.v4"),
+        ("FAILED", "tijori:company-search-api.reader.v4"),
     ]
     assert (Site.TIJORI, "filter-advanced-search-api") not in PARSERS
     assert (
@@ -533,7 +533,7 @@ def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
     context = context.model_copy(update={"basis": None})
     values = parse("tijori", surface, body, context)
     assert outcome(values) == "OK"
-    assert PARSERS[Site.TIJORI, surface].version == f"tijori:{surface}.reader.v3"
+    assert PARSERS[Site.TIJORI, surface].version == f"tijori:{surface}.reader.v5"
     assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "OK"
     positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
     for table, row, column, raw, value, unit, numeric in EVENT_CELLS[surface]:
@@ -627,6 +627,47 @@ def test_replay_reprocesses_reader_v1_without_pin_drift(
                 (ref.capture_ref_id, surface),
             ).fetchall()
         assert result[0] == (old_version, "EMPTY", 0)
-        assert result[1][0] == f"{name}:{surface}.reader.v2"
+        assert result[1][0] == f"{name}:{surface}.reader.v4"
         assert result[1][1] in ("OK", "PARTIAL") and result[1][2] > 0
         assert reparse(store, pool, values, spec, (owner,)) == 0
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_g0_series_preserves_source_timestamp_label(pg_db, tmp_path):
+    from psycopg.rows import dict_row
+
+    from fundamentals.ingest.vendor_surface_readers import tijori_reader
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    body, context = retained("tijori", "op-metrics-api")
+    context = context.model_copy(update={"parent": {"metric_id": 126}, "basis": None})
+    document = tijori_reader("op-metrics-api", body, context)
+    spec = next(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.id == "op-metrics-api"
+    )
+    with pg_db.runtime_pool() as pool:
+        ref = capture_response(
+            pool,
+            SnapshotStore(tmp_path / "captures"),
+            tmp_path / "stops",
+            Request(
+                spec=spec, url=context.url, ids=context.ids, parent=context.parent, due_since=None
+            ),
+            body.raw,
+        )
+        with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            values = cursor.execute(
+                "SELECT row_label,locator FROM eqos.vendor_values WHERE capture_ref_id=%s "
+                "ORDER BY row_index",
+                (ref.capture_ref_id,),
+            ).fetchall()
+    assert len(values) == len(document.points)
+    for index, (point, cell) in enumerate(zip(document.points, values, strict=True)):
+        assert cell["row_label"] == point.timestamp_raw_text
+        assert cell["locator"] == document.series_provenance.context_ref + f"/{index}/1"

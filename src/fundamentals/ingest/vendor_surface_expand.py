@@ -55,12 +55,16 @@ def lineage(spec: SurfaceSpec, specs: Iterable[SurfaceSpec]) -> tuple[SurfaceSpe
     by_id = {s.id: s for s in specs if s.site is spec.site}
     by_path = {s.path: s for s in by_id.values()}
     chain = [spec]
-    while (
-        parent := by_path.get(chain[-1].path.split("#")[0])
-        if "#" in chain[-1].path
-        else by_id.get(parent_surface(chain[-1]) or "")
-    ) is not None and parent not in chain:
-        chain.append(parent)
+    for current in chain:
+        parents = (
+            (by_path.get(current.path.split("#")[0]),)
+            if "#" in current.path
+            else tuple(
+                by_id.get(name or "")
+                for name in (parent_surface(current), *MARKET_PARENTS.get(current.expand or "", ()))
+            )
+        )
+        chain.extend(parent for parent in parents if parent is not None and parent not in chain)
     return tuple(chain)
 
 

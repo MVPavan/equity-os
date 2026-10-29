@@ -195,7 +195,7 @@ def test_retained_tables_are_registered_and_stored(pg_db, tmp_path, monkeypatch,
                             expected_blocks.add("Credit ratings")
                         assert {r[3] for r in stored} == expected_blocks
                         assert all(r[0].startswith("documents:") for r in stored)
-                assert entry.version == f"{site_name}:{surface}.v1"
+                assert entry.version == f"{site_name}:{surface}.v3"
 
 
 def test_table_cells_keep_labels_links_and_reject_ragged_rows():
@@ -494,3 +494,68 @@ def test_changed_parsers_never_reuse_a_base_revision_pin():
     pins |= {f"{SITE_NAME[s.site]}:{s.id}.traversal.v1": BASE_TRAVERSAL for s in MARKET_SPECS}
     # A drifted pin raises ParserVersionDrift on every capture already recorded under it.
     assert {v for v, sha in found.items() if pins.get(v, sha) != sha} == set()
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    "surface,header",
+    [
+        ("corporate-actions-feed", "Amount in Cr"),
+        ("market-level", "CMP Rs."),
+        ("results-latest", "YOY"),
+        ("quarterly-results-api", "YoY Growth"),
+        ("ipo", "ROCE"),
+        ("raw-materials", "1W"),
+    ],
+)
+def test_unreadable_numeric_g2_column_remains_expected(pg_db, tmp_path, surface, header):
+    from lxml import etree
+    from vendor_surface_support import load_request_index
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    register_tables(specs)
+    spec = next(s for s in specs if s.id == surface)
+    for row in load_request_index().values():
+        if row["id"] != surface or row.get("status") != 200:
+            continue
+        context = ParseContext(
+            ids=None,
+            basis=None,
+            url=row["url"],
+            retrieved_at=datetime.now(UTC),
+            body_sha256="",
+            capture_id="fixture",
+        )
+        body = Body(raw=Path(row["path"]).read_bytes())
+        cells = PARSERS[spec.site, surface].parse(body, context)
+        target = next((c for c in cells if c.column_label == header), None)
+        if target is not None:
+            break
+    assert target is not None
+    node = body.tree().xpath(target.locator)[0]
+    for child in list(node):
+        node.remove(child)
+    node.text = "unreadable"
+    with pg_db.runtime_pool() as pool:
+        ref = capture_response(
+            pool,
+            SnapshotStore(tmp_path / "captures"),
+            tmp_path / "stops",
+            Request(spec=spec, url=context.url, ids=None, due_since=None),
+            etree.tostring(body.tree()),
+        )
+        with pool.connection() as conn:
+            flagged = conn.execute(
+                "SELECT expected_numeric FROM eqos.vendor_values "
+                "WHERE capture_ref_id=%s AND raw_text='unreadable'",
+                (ref.capture_ref_id,),
+            ).fetchall()
+            assert flagged == [(True,)]
+            assert conn.execute(
+                "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchall() == [("PARTIAL",)]

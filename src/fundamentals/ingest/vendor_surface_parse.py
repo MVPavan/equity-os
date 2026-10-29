@@ -149,11 +149,11 @@ for _site, _name, _surfaces in (
     (Site.TIJORI, "tijori", TIJORI_SURFACES),
 ):
     for _surface in _surfaces:
-        # v2: shared converter (Phase 2 r2); v3: percent/crore decode (eqos-aa6.12.1).
+        # Shared sanitization and series conversion advance every reader pin.
         _version = (
-            3
+            5
             if _name == "tijori" and _surface in ("quarterly-results", "company-timeline-api")
-            else 2
+            else 4
         )
         PARSERS[_site, _surface] = ParserEntry(
             version=f"{_name}:{_surface}.reader.v{_version}",
@@ -166,7 +166,7 @@ from fundamentals.ingest import vendor_surface_cells as cells  # noqa: E402
 PARSERS.update(
     {
         (site, surface): ParserEntry(
-            version=f"{name}:{surface}.v{1 if parser is cells.benchmark_business else 2}",
+            version=f"{name}:{surface}.v4",
             parse=parser,
         )
         for site, name, surface, parser in (
@@ -191,8 +191,8 @@ def register_tables(specs: tuple[SurfaceSpec, ...]) -> None:
 
     for spec in specs:
         if spec.group is ParseGroup.TABLE:
-            # v2: market feeds identify unlinked rows by key cells (Phase 3 round 1).
-            version = "v2" if spec.scope is Scope.MARKET else "v1"
+            # Numeric table roles advance both company and market parser pins.
+            version = "v4" if spec.scope is Scope.MARKET else "v3"
             PARSERS[spec.site, spec.id] = ParserEntry(
                 version=f"{SITE_NAME[spec.site]}:{spec.id}.{version}",
                 parse=(market_parser if spec.scope is Scope.MARKET else company_parser)(spec),

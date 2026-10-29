@@ -1,17 +1,14 @@
 """Company breadth over retained bodies, with HTTP as the only fake boundary."""
 
 import hashlib
-import io
 import json
 import re
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import OpenerDirector
 
 import pytest
 import yaml
 from pydantic import SecretStr
-from vendor_surface_support import load_request_index, retained
+from vendor_surface_support import RetainedResponseOpener, load_request_index, retained
 
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_parse import register_tables
@@ -22,7 +19,7 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 
-class CompanyOpener(OpenerDirector):
+class CompanyOpener(RetainedResponseOpener):
     """Serve exact retained addresses and keep unretained requests as explicit refusals."""
 
     def __init__(self, symbol):
@@ -33,16 +30,6 @@ class CompanyOpener(OpenerDirector):
             {url: row for url, row in load_request_index().items() if url not in self.rows}
         )
         self.calls, self.overrides = [], {}
-
-    def open(self, request, timeout):
-        self.calls.append(request.full_url)
-        row = self.rows.get(request.full_url)
-        raw, status = b"unretained", 404
-        if row and row.get("path"):
-            raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-        raw, status = self.overrides.get(request.full_url, (raw, status))
-        return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
 
 
 @pytest.fixture
@@ -877,3 +864,146 @@ def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp
         ("company-benchmarking", "KEPT"),
     ]
     assert all(count > 0 for _, _, count in outcomes[:2])
+
+
+def test_replay_uses_each_captures_parent_not_oldest(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch
+):
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry
+    from fundamentals.store.vendor_values_store import VendorValue
+
+    opener, ids = company_rig("APARINDS")
+    specs = tuple(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.site is Site.SCREENER and s.id in ("company-page", "schedules-api")
+    )
+    key = Site.SCREENER, "schedules-api"
+
+    # Tag the parent's capture id instead of printing vendor readings.
+    def parent_stamp(body, context):
+        stamp = context.parent["page_section"].rows[0].cells[0].provenance.retrieved_at.isoformat()
+        return (
+            VendorValue(
+                table_key="review",
+                row_index=0,
+                column_index=0,
+                locator="review",
+                row_label="",
+                column_label="",
+                raw_text=stamp,
+                value=None,
+            ),
+        )
+
+    monkeypatch.setitem(PARSERS, key, ParserEntry(version="review:parents.v1", parse=parent_stamp))
+    for _ in range(2):
+        run_company(opener, ids, specs)
+    monkeypatch.setitem(PARSERS, key, ParserEntry(version="review:parents.v2", parse=parent_stamp))
+    with pg_db.runtime_pool() as pool:
+        cap.reparse(
+            SnapshotStore(tmp_path / "raw"),
+            pool,
+            VendorValuesStore(pool),
+            next(s for s in specs if s.id == "schedules-api"),
+            specs,
+        )
+        with pool.connection() as conn:
+            changed = conn.execute(
+                "SELECT count(*) FROM eqos.vendor_values a JOIN eqos.vendor_outcomes oa ON  "
+                "oa.id=a.outcome_id JOIN eqos.vendor_outcomes ob ON  "
+                "ob.capture_ref_id=oa.capture_ref_id AND ob.surface=oa.surface JOIN  "
+                "eqos.vendor_values b ON b.outcome_id=ob.id WHERE  "
+                "oa.parser_version='review:parents.v1' AND  "
+                "ob.parser_version='review:parents.v2' AND a.raw_text<>b.raw_text"
+            ).fetchone()[0]
+        assert changed == 0, f"{changed} child captures replayed against another parent capture"
+
+
+def test_slug_verifier_sanitizes_frozen_reader_logs(company_rig, run_company):
+    from pathlib import Path
+
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_parse import Body
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    import json
+
+    import structlog.testing
+    from lxml import etree
+
+    opener, ids = company_rig("HDFCBANK", slug=False)
+    ids = ids.model_copy(update={"tijori_company_id": None})
+    search = "https://www.tijorifinance.com/api/v1/ind/company_search/?q=synthetic-isin"
+    opener.overrides[search] = (
+        json.dumps([{"type": "companies", "slug": "hdfc-bank-limited"}]).encode(),
+        200,
+    )
+    url = "https://www.tijorifinance.com/company/hdfc-bank-limited/financials/"
+    tree = Body(raw=Path(opener.rows[url]["path"]).read_bytes()).tree()
+    island = tree.xpath('//script[@id="fin_tables_data"]')[0]
+    island.text = '{"review_private_sentinel":{},' + island.text.lstrip()[1:]
+    opener.overrides[url] = etree.tostring(tree), 200
+    specs = tuple(s for s in specs if s.site is Site.TIJORI and s.id == "company-financials")
+    with structlog.testing.capture_logs() as logs:
+        run_company(opener, ids, specs)
+    leaked = sum("review_private_sentinel" in str(entry) for entry in logs)
+    assert leaked == 0, f"{leaked} unsanitized reader log events during slug verification"
+
+
+def test_company_and_market_share_retained_transport(company_rig, run_company):
+    from test_vendor_surface_market import MarketOpener
+
+    opener, ids = company_rig("APARINDS")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    report, _, _, _ = run_company(opener, ids, tuple(s for s in specs if s.id == "company-page"))
+    assert report.completed
+    assert CompanyOpener.open is MarketOpener.open
+
+
+def test_claim_failure_does_not_change_capture_usability(company_rig, run_company, pg_db, tmp_path):
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_due as due
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    opener, ids = company_rig("APARINDS")
+    specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
+    run_company(opener, ids, specs)
+    with pg_db.runtime_pool() as pool:
+        before = due.history(pool, specs)
+        assert all(s.usable for items in before.values() for s in items)
+        ref = next(iter(before.values()))[0].ref
+        VendorValuesStore(pool).record(
+            ref,
+            Outcome(
+                surface="company-page",
+                parser_version="claims:fake:spans.v2:failed:1",
+                parser_sha256="0" * 64,
+                status=OutcomeStatus.FAILED,
+                symbol=None,
+                detail="TimeoutError",
+            ),
+            row_count=0,
+        )
+        after = due.history(pool, specs)
+        assert all(s.usable for items in after.values() for s in items), (
+            "claims failure overrides acquisition outcome"
+        )

@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote
 from urllib.request import build_opener
 
@@ -30,6 +27,8 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteSession,
     VendorFetcher,
 )
+from fundamentals.ingest.vendor_surface_parse import register_tables
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -96,7 +95,7 @@ def run_tijori_overview_command(
     record, raw, url = _capture_page(
         stock, credentials, args.snapshot_root, "company-overview", "/company/{slug}/"
     )
-    with _sanitized_builder_logs("company-overview"):
+    with sanitized_reader_logs("tijori", "company-overview"):
         sections = build_tijori_overview(
             raw,
             slug=stock.identifiers.tijori_slug,
@@ -168,15 +167,13 @@ def _capture_page(
     url = f"https://{SITE_AUTHORITY[Site.TIJORI]}" + path.format(
         slug=quote(stock.identifiers.tijori_slug, safe="")
     )
+    specs = load_specs(
+        _REPO_ROOT / "config/vendor_surface/surfaces.yaml",
+        _REPO_ROOT / "docs/research/vendor-surface/catalog.yaml",
+    )
+    register_tables(specs)
     request = Request(
-        spec=next(
-            spec
-            for spec in load_specs(
-                _REPO_ROOT / "config/vendor_surface/surfaces.yaml",
-                _REPO_ROOT / "docs/research/vendor-surface/catalog.yaml",
-            )
-            if spec.site == Site.TIJORI and spec.id == surface
-        ),
+        spec=next(spec for spec in specs if spec.site == Site.TIJORI and spec.id == surface),
         url=url,
         ids=company_ids(stock),
         due_since=None,
@@ -192,18 +189,3 @@ def _capture_page(
             return record, store.read_body(record), url
         finally:
             locks.close()
-
-
-@contextmanager
-def _sanitized_builder_logs(surface: str) -> Iterator[None]:
-    """Apply the retained-reader log policy during CLI artifact building."""
-    config = structlog.get_config()
-
-    def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
-        return {"event": "vendor_surface_reader", "site": "tijori", "surface": surface}
-
-    structlog.configure(processors=[sanitize, *config["processors"]])
-    try:
-        yield
-    finally:
-        structlog.configure(**config)

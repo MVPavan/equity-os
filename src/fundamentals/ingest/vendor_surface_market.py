@@ -37,7 +37,7 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
-TRAVERSAL_VERSION = "traversal.v3"
+TRAVERSAL_VERSION = "traversal.v4"
 # Index pages are advertised only by company pages: route through verified retained ones.
 COMPANY_PAGES = """SELECT DISTINCT ON (a.url) c.*, a.url FROM eqos.capture_refs c
 JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
@@ -358,7 +358,7 @@ def capture_market(
                 or bool(
                     boundary
                     and (
-                        (boundary.row_id and boundary.row_id in unique)
+                        (request.spec.feed and boundary.row_id and boundary.row_id in unique)
                         or (boundary.cursor and boundary.cursor == next_cursor)
                     )
                 )

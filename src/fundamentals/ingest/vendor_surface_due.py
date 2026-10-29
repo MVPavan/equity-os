@@ -51,12 +51,19 @@ HISTORY = """SELECT DISTINCT ON (c.id, o.surface, o.traversal_key IS NULL) c.*, 
     o.traversal_key IS NULL OR o.traversal_done AS done
 FROM eqos.capture_refs c JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
 JOIN eqos.vendor_outcomes o ON o.capture_ref_id = c.id AND o.parser_version NOT LIKE '%%.slug.v1'
-WHERE c.surface LIKE 'vs.%%' ORDER BY c.id, o.surface, o.traversal_key IS NULL, o.id DESC"""
+WHERE c.surface LIKE 'vs.%%' AND NOT starts_with(o.parser_version,'claims:')
+ORDER BY c.id, o.surface, o.traversal_key IS NULL, o.id DESC"""
 PERIODS = """SELECT outcome_id, max(to_date(column_label, 'Mon YYYY')) FROM eqos.vendor_values
 WHERE outcome_id = ANY(%s) AND column_label ~ '^[A-Z][a-z]{2} [0-9]{4}$' GROUP BY 1"""
-FEED_VALUES = """SELECT v.*, o.surface AS feed, o.parser_version, c.capture_id AS retrieved
+FEED_VALUES = """WITH current AS (
+SELECT DISTINCT ON (capture_ref_id, surface) * FROM eqos.vendor_outcomes
+WHERE traversal_key IS NULL AND NOT starts_with(parser_version,'claims:')
+    AND parser_version NOT LIKE '%%.slug.v1'
+ORDER BY capture_ref_id, surface, id DESC
+)
+SELECT v.*, o.surface AS feed, o.parser_version, c.capture_id AS retrieved
 FROM eqos.vendor_values v
-JOIN eqos.vendor_outcomes o ON o.id = v.outcome_id
+JOIN current o ON o.id = v.outcome_id
 JOIN eqos.capture_refs c ON c.id = v.capture_ref_id
 WHERE o.surface = ANY(%s) AND o.status = ANY(%s) AND v.table_key = o.surface || ':feed'
 ORDER BY c.capture_id, v.outcome_id"""
