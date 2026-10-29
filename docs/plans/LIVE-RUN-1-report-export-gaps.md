@@ -687,6 +687,12 @@ Environment and paths are LIVE-RUN-1 Task 5's (`scratchpad/live-run-1/live-scrat
 records exist in this build); it does not ask the panel to excuse it, and the panel may still withhold approval. 2 → recorded as an
 open question for the A-04 register owner (bead note on `eqos-dna.1`); LIVE-RUN-1 does not decide it.
 
+**Owner ruling (PavanMV, 2026-10-29), after the version 8 panel `REQUEST_CHANGES` (materiality only):**
+2 → materiality is out of scope for LIVE-RUN-1. LIVE-RUN-1 run drafts are approvable with materiality
+disclosed as not built; S06's materiality invariant does not bind them. S06 itself is unchanged (its
+amendment gate still governs any edit), and A-10 stays open as separate work. Version 8 stays
+`IN_REVIEW` and goes to a fresh Sol panel whose brief states this ruling.
+
 1. **Materiality (finding 1).** Code cannot meet S06 invariant 2: no materiality records exist.
    - (a) **Recommended.** Treat materiality as part of the disclosed A-04 product gap for
      LIVE-RUN-1, as the brief already does for analyst content. Task 4 discloses it in the

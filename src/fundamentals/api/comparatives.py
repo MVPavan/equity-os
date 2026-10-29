@@ -26,6 +26,7 @@ from fundamentals.extract.xbrl_parser import (
 from fundamentals.extract.xbrl_taxonomies import _ALL_TAXONOMIES
 from fundamentals.ingest.comparator_cache import (
     comparator_period_dir,
+    file_retrieved_at,
     quarantine_rejected_comparator,
 )
 from fundamentals.ingest.xbrl_identity import validate_nse_entity_identities
@@ -124,7 +125,7 @@ def _load_fixture(
             xml,
             source_id=CONSOLIDATED_SOURCE_ID,
             file_sha256=hashlib.sha256(xml).hexdigest(),
-            retrieved_at=stock.quarter.knowledge_cutoff,
+            retrieved_at=file_retrieved_at(fixture_path, hashlib.sha256(xml).hexdigest()),
             taxonomies=_ALL_TAXONOMIES,
         )
         _validate_entities(observations, stock)

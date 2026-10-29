@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -85,6 +85,7 @@ from fundamentals.ingest.bse_source import (
 from fundamentals.ingest.bse_source import (
     SOURCE_ID as BSE_XBRL_SOURCE_ID,
 )
+from fundamentals.ingest.comparator_cache import file_retrieved_at
 from fundamentals.ingest.ocr_engine import (
     OcrEngine,
     OcrEngineUnavailableError,
@@ -126,7 +127,13 @@ from fundamentals.reconcile.fact_view import (
 from fundamentals.reconcile.fact_view import (
     select_first_party as _select_first_party,
 )
-from fundamentals.reconcile.gold_file import DEFAULT_GOLD_DIR, write_gold_file
+from fundamentals.reconcile.gold_file import (
+    DEFAULT_GOLD_DIR,
+    gold_file_path,
+    read_gold_file,
+    regress,
+    write_gold_file,
+)
 from fundamentals.reconcile.report import (
     ALL_SOURCE_KINDS as ALL_SOURCE_KINDS,
 )
@@ -315,9 +322,9 @@ def reconcile_stock(
     """Reconcile every material fact across the collected sources and score the DoD.
 
     Pure of network I/O: it consumes already-pulled observations, so it is the
-    deterministic core the tests drive directly. Writes the per-stock gold file
-    only when at least one first-party source produced a fact (never an empty
-    reference), and evaluates the goal's Definition of Done.
+    deterministic core the tests drive directly. Creates the per-stock gold file
+    only when absent and facts exist; reruns regress against the retained baseline
+    and evaluate the goal's Definition of Done.
     """
     concepts = stock.concepts
     derived_map = _derived_concept_map(concepts.roles)
@@ -364,12 +371,19 @@ def reconcile_stock(
         if src.status is SourceStatus.BLOCKED and src.note
     )
 
-    gold_path: str | None = None
-    if results:
-        written = write_gold_file(stock.symbol, stock.quarter.label, results, out_dir=out_dir)
-        gold_path = str(written)
+    path = gold_file_path(stock.symbol, stock.quarter.label, out_dir)
+    if not path.exists() and results:
+        write_gold_file(stock.symbol, stock.quarter.label, results, out_dir=out_dir)
+    regression = regress(read_gold_file(path), results) if path.exists() else None
+    gold_path = str(path) if regression is not None else None
 
-    dod = _evaluate_dod(facts, cross_foot_results, missing, gold_written=gold_path is not None)
+    dod = _evaluate_dod(
+        facts,
+        cross_foot_results,
+        missing,
+        gold_written=gold_path is not None,
+        no_gold_drift=regression is None or not regression.has_drift,
+    )
     outcome = _stock_outcome(first_party_reachable, dod, results)
     discrepancies = tuple(fact for fact in facts if fact.needs_human_review)
 
@@ -394,6 +408,7 @@ def reconcile_stock(
         missing_material_concepts=tuple(missing),
         cross_foot=cross_foot,
         gold_file_path=gold_path,
+        gold_regression=regression,
         dod=dod,
         blockers=blockers,
         identifiers_to_verify=stock.identifiers.needs_verification,
@@ -406,6 +421,7 @@ def _evaluate_dod(
     missing: Sequence[str],
     *,
     gold_written: bool,
+    no_gold_drift: bool,
 ) -> DodEvaluation:
     """Evaluate every clause of the goal's Definition of Done."""
     material_facts_agreed = bool(facts) and all(
@@ -420,6 +436,7 @@ def _evaluate_dod(
         material_facts_agreed=material_facts_agreed,
         cross_foot_holds=cross_foot_holds,
         gold_file_written=gold_written,
+        no_gold_drift=no_gold_drift,
         no_unsourced_number=no_unsourced_number,
         no_missing_material_concepts=not missing,
     )
@@ -461,14 +478,14 @@ def collect_sources(
     split consolidated statement; when ``None`` a live run defaults to the on-CPU
     :class:`RapidOcrEngine` and a fixture run runs no OCR (tests inject a fake).
     """
-    retrieved_at = stock.quarter.knowledge_cutoff
+    retrieved_at = datetime.now(UTC)
     collected: list[CollectedSource] = []
     if SourceKind.NSE in kinds:
-        collected.append(_collect_nse(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_nse(stock, mode, repo_root))
     if SourceKind.BSE in kinds:
-        collected.append(_collect_bse(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_bse(stock, mode, repo_root))
     if SourceKind.SCREENER in kinds:
-        collected.append(_collect_screener(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_screener(stock, mode, repo_root))
     if SourceKind.TIJORI in kinds:
         collected.append(_collect_tijori(stock, mode, repo_root, tijori_credentials))
     if SourceKind.PDF in kinds:
@@ -501,16 +518,16 @@ def _ok(
     )
 
 
-def _collect_nse(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_nse(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the NSE Ind AS XBRL (always attempted; first-party primary)."""
     source_id = CONSOLIDATED_SOURCE_ID
     try:
         if mode is RunMode.FIXTURE:
             if stock.fixtures.nse is None:
                 return _skip(SourceKind.NSE, source_id, "no NSE fixture configured")
-            xml = (repo_root / stock.fixtures.nse).read_bytes()
+            path = repo_root / stock.fixtures.nse
+            xml = path.read_bytes()
+            retrieved_at = file_retrieved_at(path, _sha256(xml))
             observations = parse_observations(
                 xml,
                 source_id=source_id,
@@ -550,9 +567,7 @@ def _bse_period_label(stock: StockConfig) -> str:
     return stock.quarter.period_end.strftime(_BSE_PERIOD_LABEL_FORMAT)
 
 
-def _collect_bse(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_bse(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the BSE resultsSnapshot summary for the reviewed quarter (second host).
 
     BSE's ``resultsSnapshot`` is a first-party (BSE-hosted) *summary* source that
@@ -565,7 +580,7 @@ def _collect_bse(
     period_label = _bse_period_label(stock)
     try:
         if mode is RunMode.FIXTURE:
-            return _collect_bse_fixture(stock, repo_root, retrieved_at, period_label)
+            return _collect_bse_fixture(stock, repo_root, period_label)
         download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse"
         source = BseSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
         result = source.fetch_summary(period_label=period_label)
@@ -576,15 +591,14 @@ def _collect_bse(
     return _ok(SourceKind.BSE, source_id, result.observations)
 
 
-def _collect_bse_fixture(
-    stock: StockConfig, repo_root: Path, retrieved_at: datetime, period_label: str
-) -> CollectedSource:
+def _collect_bse_fixture(stock: StockConfig, repo_root: Path, period_label: str) -> CollectedSource:
     """Read a committed BSE fixture: a resultsSnapshot ``.json`` or an XBRL ``.xml``."""
     if stock.fixtures.bse is None:
         return _skip(SourceKind.BSE, SUMMARY_SOURCE_ID, "no BSE fixture configured")
     path = repo_root / stock.fixtures.bse
     if path.suffix == ".json":
         snapshot = _load_bse_snapshot(path)
+        retrieved_at = file_retrieved_at(path, _sha256(path.read_bytes()))
         result = BseSource.parse_summary(
             snapshot,
             period_label=period_label,
@@ -598,6 +612,7 @@ def _collect_bse_fixture(
             )
         return _ok(SourceKind.BSE, SUMMARY_SOURCE_ID, result.observations)
     xml = path.read_bytes()
+    retrieved_at = file_retrieved_at(path, _sha256(xml))
     observations = BseSource.parse(xml, file_sha256=_sha256(xml), retrieved_at=retrieved_at)
     return _ok(SourceKind.BSE, BSE_XBRL_SOURCE_ID, observations)
 
@@ -610,20 +625,21 @@ def _load_bse_snapshot(path: Path) -> dict[str, Any]:
     return parsed
 
 
-def _collect_screener(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_screener(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the Screener derived quarterly P&L (cross-check only; non-fatal)."""
     source_id = "screener"
     try:
         if mode is RunMode.FIXTURE:
             if stock.fixtures.screener is None:
                 return _skip(SourceKind.SCREENER, source_id, "no Screener fixture configured")
-            html = (repo_root / stock.fixtures.screener).read_text(encoding="utf-8")
+            path = repo_root / stock.fixtures.screener
+            raw = path.read_bytes()
+            digest = _sha256(raw)
+            retrieved_at = file_retrieved_at(path, digest)
             observations = parse_quarterly_pnl(
-                html,
+                raw.decode("utf-8"),
                 source_url=f"fixture://{stock.identifiers.screener_slug}",
-                file_sha256=_sha256(html.encode("utf-8")),
+                file_sha256=digest,
                 entity_id=stock.identifiers.screener_slug,
                 consolidated=True,
                 retrieved_at=retrieved_at,
@@ -657,9 +673,11 @@ def _collect_tijori(
         if mode is RunMode.FIXTURE:
             if stock.fixtures.tijori is None:
                 return _skip(SourceKind.TIJORI, source_id, "no Tijori fixture configured")
-            raw = (repo_root / stock.fixtures.tijori).read_bytes()
+            path = repo_root / stock.fixtures.tijori
+            raw = path.read_bytes()
             observations = TijoriSource.parse_pl_bytes(
                 raw,
+                retrieved_at=file_retrieved_at(path, _sha256(raw)),
                 slug=stock.identifiers.tijori_slug,
                 expected_symbol=stock.identifiers.nse_symbol,
                 expected_company_id=stock.identifiers.tijori_company_id,
@@ -811,6 +829,7 @@ def _collect_pdf_fixture(
     try:
         path = repo_root / stock.fixtures.results_pdf
         loaded = load_pdf(source_id=source_id, path=path, expected_sha256=stock.results_pdf.sha256)
+        retrieved_at = file_retrieved_at(path, loaded.file_sha256)
         observations = _pdf_observations(
             loaded, path, spec=_pdf_spec(stock), retrieved_at=retrieved_at, ocr_engine=ocr_engine
         )

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import NamedTuple
 
 import structlog
 
 from fundamentals.contracts.comparative import ComparatorKind
+from fundamentals.contracts.snapshot import CaptureRecord
 
 RAW_WATCHLIST_DIR = Path("data/raw/watchlist")
 MULTIPLE_DISTINCT_FILINGS_REASON = (
@@ -120,3 +121,17 @@ def quarantine_rejected_comparator(
         reason=reason,
     )
     return True
+
+
+def file_retrieved_at(path: Path, file_sha256: str) -> datetime:
+    """Use a retained capture's acquisition time, otherwise the current local read."""
+    record_path = path.parent / "record.json"
+    if not record_path.exists():
+        return datetime.now(UTC)
+    try:
+        record = CaptureRecord.model_validate_json(record_path.read_bytes())
+    except ValueError as error:
+        raise OSError("invalid retained capture record") from error
+    if record.complete_body_sha256 != file_sha256:
+        raise OSError("retained capture record does not match the read bytes")
+    return record.retrieved_at
