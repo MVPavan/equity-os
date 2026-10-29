@@ -397,29 +397,33 @@ def test_idle_second_run_and_results_obligations(due_rig, monkeypatch):
 
 @pytest.mark.pg
 @pytest.mark.retained
-def test_failed_expanded_schedule_alone_keeps_obligation_pending(due_rig, monkeypatch):
-    # Cadence, not reading: any retained schedule body is a usable instance, a 404 a failed one.
-    monkeypatch.setitem(
-        PARSERS,
-        (Site.SCREENER, "schedules-api"),
-        ParserEntry(version="screener:schedules-api.fixture.v1", parse=kept_section),
-    )
+def test_only_unrefreshed_schedules_are_refetched(due_rig):
     rig, specs = due_rig, pick("results-latest", "company-page", "schedules-api")
+    page, sales = (
+        PAGES[Basis.CONSOLIDATED],
+        next(
+            url for url in rig.opener.rows if "schedules/?parent=Sales&section=profit-loss&c" in url
+        ),
+    )
     day = datetime.now(UTC)
     rig.run(specs, day)
-    schedules = {url for url in rig.opener.calls if "/schedules/" in url}
-    retained = {url for url in schedules if url in rig.opener.rows}
-    assert retained and schedules - retained
+    schedules = {url for url in rig.opener.calls if "/schedules/" in url and "consolidated" in url}
+    assert sales in schedules and len(schedules) > 2
+    # The real reader: the new annual column appears on the page and in one schedule only.
     rig.opener.new_results_row()
-    for url in PAGES.values():
-        rig.opener.newer_period(url)
+    for url in (page, sales):
+        raw = Path(rig.opener.rows[url]["path"]).read_bytes()
+        rig.opener.overrides[url] = raw.replace(b"Mar 2026", b"Mar 2031"), 200
     rig.run(specs, day + DAY)
-    assert schedules <= set(rig.opener.calls)  # A new parent capture refreshes every child.
+    refetched = {url for url in rig.opener.calls if url in schedules}
+    # Nested schedules wait until their own parent schedule shows the new column.
+    assert page in rig.opener.calls and sales in refetched and schedules - refetched
     found = states(rig, specs)
-    assert found[("company-page", Basis.STANDALONE)] is due.ObligationState.SATISFIED
-    assert found[("schedules-api", Basis.STANDALONE)] is due.ObligationState.PENDING
+    assert found[("company-page", Basis.CONSOLIDATED)] is due.ObligationState.SATISFIED
+    assert found[("schedules-api", Basis.CONSOLIDATED)] is due.ObligationState.PENDING
     rig.run(specs, day + 2 * DAY)
-    assert {url for url in rig.opener.calls if FEED not in url} == schedules - retained
+    # The refreshed schedule is done; every stale or failed sibling is tried again.
+    assert {url for url in rig.opener.calls if url in schedules} == refetched - {sales}
 
 
 @pytest.mark.pg
