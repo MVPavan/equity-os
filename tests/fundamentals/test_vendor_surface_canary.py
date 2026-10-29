@@ -392,13 +392,7 @@ MUTATIONS = [
         {"S1.structure": FAILED, "S4.dependency": None, "S7.dependency": None},
         id="s1_blank",
     ),
-    pytest.param(
-        _set("locations", "T8", "https://[/dashboard/"),
-        {"T8.location": FAILED},
-        id="t8_malformed_location",
-    ),
     pytest.param(_set("locations", "S8", "/login/"), {"S8.refused": UNUSABLE}, id="s8_login"),
-    pytest.param(_set("locations", "T8", "/login/"), {"T8.refused": UNUSABLE}, id="t8_login"),
 ]
 
 
@@ -482,7 +476,6 @@ def test_canary_shapes_and_controls_cli(
             item.name for item in vendor_surface_canary.CANARIES
         ]
         assert all(status == "OK" for _, status, _, _ in outcomes)
-        assert outcomes[-1][3] == "/dashboard/"
         calls = {urlsplit(call.full_url).path: call for call in opener.calls}
         schedule = parse_qs(urlsplit(calls["/api/company/211/schedules/"].full_url).query)
         assert schedule["parent"] and schedule["section"] == ["quarters"]
@@ -524,9 +517,9 @@ def test_each_canary_check_rejects_bad_status_and_incomplete_body(canary_opener)
 )
 def test_t8_needs_a_same_host_dashboard_redirect(location, passed):
     """The logged-in marker is the resolved redirect target, not the Location spelling."""
-    from fundamentals.ingest.vendor_surface_canary import CANARIES
+    from fundamentals.ingest.vendor_surface_canary import _canary
 
-    canary = next(item for item in CANARIES if item.name == "T8")
+    canary = _canary("T8", "/", location="/dashboard/")
     record = record_of(b"").model_copy(update={"http_status": 302})
     fetched = Fetched(record=record, url=canary.url, location=location)
     assert canary.check(fetched, b"") == (() if passed else ("T8.location",))

@@ -56,6 +56,21 @@ DENY_KEYS = DENY_WORDS | frozenset(
     "ack acked mark mark_read mark_as_seen seen read dismiss".split()
 )
 NAMED_PATHS = (
+    "/notebook/",
+    "/api/company/sublists/",
+    "/screen/new/",
+    "/announcements/user-filters/",
+    "/dash/",
+    "/user/stocks/",
+    "/user/columns/",
+    "/user/quick_ratios/",
+    "/user/push-notifications/",
+    "/ratios/",
+    "/premium/",
+    "/filter/saved-queries/",
+    "/plans/",
+    "/in/timeline/",
+    "/dashboard/",
     "/in/watchlist/",
     "/watchlist/",
     "/api/portfolio/task-status/",
@@ -152,7 +167,10 @@ def is_denied(url: str) -> bool:
     """Apply runbook §1 to a normalized URL, exempting company slugs."""
     parts = urlsplit(url)
     path = parts.path.lower().rstrip("/") + "/"
-    if any(key.lower() in DENY_KEYS for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
+    if path == "/" or any(
+        key.lower() in DENY_KEYS or (key.lower() == "owner" and value.lower() == "true")
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+    ):
         return True
     if path.startswith(NAMED_PATHS) or (
         path.startswith("/annual-reports/") and path.endswith("/summary/")

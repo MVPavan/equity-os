@@ -468,7 +468,6 @@ CANARIES: tuple[Canary, ...] = (
         "&sectors=&company_ids=&daterange={dates}",
         _t7,
     ),
-    _canary("T8", "/", location="/dashboard/"),
 )
 
 
