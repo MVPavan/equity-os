@@ -35,6 +35,7 @@ from fundamentals.ingest.vendor_surface_capture import (
     company_ids,
     reparse,
 )
+from fundamentals.ingest.vendor_surface_claims import extract_text
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
     PgSiteLock,
@@ -77,6 +78,9 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     labels.add_argument("--site", choices=tuple(SITE_NAME.values()), required=True)
     labels.add_argument("--surface", required=True)
 
+    text = commands.add_parser("extract-text")
+    text.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
+
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true", required=True)
 
@@ -108,7 +112,7 @@ def dispatch_vendor_command(
     """Construct the authorized boundaries, then capture or reparse finite specs."""
     if args.command != "vendor":
         return None
-    if args.vendor_command == "map-labels":
+    if args.vendor_command in ("map-labels", "extract-text"):
         settings = ModelSettings.model_validate(yaml.safe_load(MODEL_CONFIG.read_text()))
         try:
             if not settings.model_id:
@@ -116,18 +120,24 @@ def dispatch_vendor_command(
         except ModelNotSelected as error:
             sys.stderr.write(str(error) + "\n")
             return 2
-        site = next(site for site, name in SITE_NAME.items() if name == args.site)
-        if not any(
-            s.site == site and s.id == args.surface and s.group == ParseGroup.CELLS
-            for s in load_specs(SPECS, CATALOG)
-        ):
-            raise ValueError("label mapping requires a G3 surface")
+        if args.vendor_command == "map-labels":
+            site = next(site for site, name in SITE_NAME.items() if name == args.site)
+            if not any(
+                s.site == site and s.id == args.surface and s.group == ParseGroup.CELLS
+                for s in load_specs(SPECS, CATALOG)
+            ):
+                raise ValueError("label mapping requires a G3 surface")
         key = (
             Path(os.environ.get("EQOS_SECRETS_DIR", "~/.secrets")).expanduser() / settings.key_file
         )
         model = ChatCompletionsModel(
             settings.model_id, settings.base_url, SecretStr(key.read_text().strip())
         )
+        if args.vendor_command == "extract-text":
+            with pool_factory() as pool:
+                count = extract_text(pool, store_factory(args.snapshot_root), model, settings)
+            sys.stdout.write(json.dumps({"processed": count}) + "\n")
+            return 0
         dictionary = load_dictionary(Path("config/dictionary"), settings.dictionary_version)
         fields = {row.canonical_id: row.value_kind for row in dictionary.rows}
         with pool_factory() as pool:
