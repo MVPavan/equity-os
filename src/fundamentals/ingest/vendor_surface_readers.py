@@ -302,7 +302,8 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 if counts:
                     numbers = (counts.green, counts.red, counts.neutral, counts.gray, counts.total)
                     counts_data = (
-                        (str(n), Decimal(n), None, True) for n in numbers if n is not None
+                        ("", None, None, False) if n is None else (str(n), Decimal(n), None, True)
+                        for n in numbers
                     )
                     emit(counts_data, key + "/counts")
                 for index, category in enumerate(node.quick_look.categories):

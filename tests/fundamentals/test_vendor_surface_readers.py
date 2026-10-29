@@ -480,3 +480,29 @@ def test_unaligned_tijori_shareholding_is_partial():
     values = reader_values(document.model_copy(update={"rows": (row,)}))
     assert len(values) == len(document.rows[0].cells)
     assert outcome(values) == "PARTIAL"
+
+
+def test_absent_forensic_count_keeps_positions():
+    from fundamentals.ingest.vendor_surface_readers import reader_values, tijori_reader
+
+    body, context = retained("tijori", "company-overview", "APARINDS")
+    (document,) = tijori_reader("overview-forensics", body, context)
+    counts = document.quick_look.counts
+    assert counts is not None and counts.green is not None and counts.red is not None
+    absent = document.model_copy(
+        update={
+            "quick_look": document.quick_look.model_copy(
+                update={"counts": counts.model_copy(update={"green": None})}
+            )
+        }
+    )
+
+    def red(doc):
+        return next(
+            v.column_index
+            for v in reader_values((doc,))
+            if v.table_key == "reader/0/counts" and v.value == counts.red
+        )
+
+    assert red(absent) == red(document) == 1
+    assert outcome(reader_values((absent,))) == outcome(reader_values((document,)))
