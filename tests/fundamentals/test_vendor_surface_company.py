@@ -500,9 +500,20 @@ def test_missing_expected_advertisement_is_a_gap(company_rig, run_company, surfa
     assert any(f"screener:{surface}:" in gap for gap in report.incomplete)
 
 
-@pytest.mark.parametrize("surface", ["section-documents", "schedules-api", "company-trades"])
+@pytest.mark.parametrize(
+    "surface,parent",
+    [
+        ("screener:section-documents", "company/APARINDS/"),
+        ("screener:schedules-api", "company/APARINDS/"),
+        ("screener:company-trades", "company/APARINDS/"),
+        ("tijori:op-metrics-api", "company/{slug}/"),
+        ("tijori:revenue-mix-history-api", "company/{slug}/"),
+        ("tijori:market-share-peer-companies-api", "company/{slug}/"),
+        ("tijori:shareholding-detail-chart-api", "company/{slug}/shareholding/"),
+    ],
+)
 def test_cli_selection_includes_identity_and_parents(
-    company_rig, pg_db, tmp_path, monkeypatch, capsys, surface
+    company_rig, pg_db, tmp_path, monkeypatch, capsys, surface, parent
 ):
     from argparse import Namespace
 
@@ -515,7 +526,7 @@ def test_cli_selection_includes_identity_and_parents(
         command="vendor",
         vendor_command="capture",
         symbol=ids.nse_symbol,
-        surface=[f"screener:{surface}"],
+        surface=[surface],
         snapshot_root=tmp_path / "cli",
         tijori_slug=None,
         market=False,
@@ -526,16 +537,17 @@ def test_cli_selection_includes_identity_and_parents(
             opener_factory=lambda: opener,
             pool_factory=pg_db.runtime_pool,
             sessions_factory=lambda sites: {
-                Site.SCREENER: SiteSession(
-                    site=Site.SCREENER, session_cookie=SecretStr("fixture"), cookie_name="sid"
-                )
+                site: SiteSession(site=site, session_cookie=SecretStr("fixture"), cookie_name="sid")
+                for site in sites
             },
         )
         == 0
     )
     capsys.readouterr()
-    assert any("/company/APARINDS/" in url for url in opener.calls)
+    assert any(url.endswith("/" + parent.format(slug=ids.tijori_slug)) for url in opener.calls)
     assert all("#" not in url for url in opener.calls)
+    if surface.startswith("tijori:"):
+        return  # The corpus retains no APARINDS bodies for these Tijori children.
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert (
             conn.execute(
@@ -543,7 +555,7 @@ def test_cli_selection_includes_identity_and_parents(
                     "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND statu"
                     "s IN ('OK','PARTIAL')"
                 ),
-                (surface,),
+                (surface.split(":")[1],),
             ).fetchone()[0]
             > 0
         )

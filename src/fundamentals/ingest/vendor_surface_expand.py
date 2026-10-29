@@ -21,11 +21,17 @@ from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, SurfaceSpec
 
 
-def expansion_name(spec: SurfaceSpec, parent: str) -> str | None:
-    """The declared parent relation, shared by acquisition and retained replay."""
-    if parent == spec.id == "schedules-api":
-        return "screener_nested_schedules"
-    expected = {
+def parent_surface(spec: SurfaceSpec) -> str | None:
+    """The surface whose retained response advertises this surface's requests, if any."""
+    if spec.id == "chart-api" or "{warehouse_id}" in spec.path:
+        return "company-page"
+    if spec.expand == "advertised_links":
+        return {
+            "quarter-source-pdf": "company-page",
+            "shareholding-detail-chart-api": "company-shareholding",
+            "market-share-peer-companies-api": "company-overview",
+        }[spec.id]
+    return {
         "screener_schedules": "company-page",
         "screener_investors": "company-page",
         "screener_segments": "company-page",
@@ -35,13 +41,27 @@ def expansion_name(spec: SurfaceSpec, parent: str) -> str | None:
         "tijori_popup_fields": "company-financials",
         "tijori_compare_selector": "company-financials",
     }.get(spec.expand or "")
-    if spec.expand == "advertised_links":
-        expected = {
-            "quarter-source-pdf": "company-page",
-            "shareholding-detail-chart-api": "company-shareholding",
-            "market-share-peer-companies-api": "company-overview",
-        }[spec.id]
-    return spec.expand if expected == parent else None
+
+
+def expansion_name(spec: SurfaceSpec, parent: str) -> str | None:
+    """The declared parent relation, shared by acquisition and retained replay."""
+    if parent == spec.id == "schedules-api":
+        return "screener_nested_schedules"
+    return spec.expand if spec.expand and parent_surface(spec) == parent else None
+
+
+def lineage(spec: SurfaceSpec, specs: Iterable[SurfaceSpec]) -> tuple[SurfaceSpec, ...]:
+    """The spec and every same-site surface it transitively needs: section owner or parent."""
+    by_id = {s.id: s for s in specs if s.site is spec.site}
+    by_path = {s.path: s for s in by_id.values()}
+    chain = [spec]
+    while (
+        parent := by_path.get(chain[-1].path.split("#")[0])
+        if "#" in chain[-1].path
+        else by_id.get(parent_surface(chain[-1]) or "")
+    ) is not None and parent not in chain:
+        chain.append(parent)
+    return tuple(chain)
 
 
 def child(

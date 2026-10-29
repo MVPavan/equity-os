@@ -28,6 +28,7 @@ from fundamentals.ingest.vendor_surface_canary import (
     yield_drift,
 )
 from fundamentals.ingest.vendor_surface_capture import (
+    IDENTITY_PAGES,
     WATCHLIST,
     capture_company,
     company_ids,
@@ -36,6 +37,7 @@ from fundamentals.ingest.vendor_surface_capture import (
 )
 from fundamentals.ingest.vendor_surface_claims import extract_text
 from fundamentals.ingest.vendor_surface_due import capture_due
+from fundamentals.ingest.vendor_surface_expand import lineage
 from fundamentals.ingest.vendor_surface_fetch import (
     PgSiteLock,
     Site,
@@ -209,16 +211,12 @@ def dispatch_vendor_command(
     ):
         raise ValueError("unknown vendor surface")
     if args.vendor_command == "capture":
-        requested = {(s.site, s.id) for s in selected}
-        parents = {(s.site, s.path.split("#")[0]) for s in selected if "#" in s.path}
+        needed = {(p.site, p.id) for s in selected for p in lineage(s, specs)}
         sites = {s.site for s in selected}
         selected = [
             s
             for s in specs
-            if (s.site, s.id) in requested
-            or (s.site, s.path) in parents
-            or s.site in sites
-            and s.id in ("company-page", "company-financials")
+            if (s.site, s.id) in needed or s.site in sites and s.id in IDENTITY_PAGES
         ]
     resolved_sessions: Mapping[Site, SiteSession] = {}
     if args.vendor_command == "capture":
