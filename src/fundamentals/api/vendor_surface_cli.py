@@ -21,7 +21,12 @@ from fundamentals.api.env_credentials import (
 )
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.canon.dictionary import load_dictionary
-from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, run_canaries, yield_drift
+from fundamentals.ingest.vendor_surface_canary import (
+    NO_BASELINE,
+    overdue,
+    run_canaries,
+    yield_drift,
+)
 from fundamentals.ingest.vendor_surface_capture import (
     WATCHLIST,
     capture_company,
@@ -138,6 +143,8 @@ def dispatch_vendor_command(
         sys.stdout.write(json.dumps({"proposed": count}) + "\n")
         return 0
     if args.vendor_command == "canary":
+        now = datetime.now(UTC)
+        store = store_factory(args.snapshot_root)
         with pool_factory() as pool:
             if args.yield_only:
                 drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
@@ -145,7 +152,6 @@ def dispatch_vendor_command(
                 resolved = sessions_factory(set(Site))
                 if set(Site) - resolved.keys():
                     raise ValueError("missing vendor session for canaries")
-                store = store_factory(args.snapshot_root)
                 locks = PgSiteLock(pool)
                 try:
                     drift = run_canaries(
@@ -155,9 +161,7 @@ def dispatch_vendor_command(
                     )
                 finally:
                     locks.close()
-        sys.stderr.write(
-            "company cadence check skipped: covered_universe is unavailable before Task 14\n"
-        )
+            drift += overdue(pool, store, load_specs(SPECS, CATALOG), now)
         for item in drift:
             sys.stdout.write(item.model_dump_json() + "\n")
         return int(any(item.check != NO_BASELINE or not args.yield_only for item in drift))

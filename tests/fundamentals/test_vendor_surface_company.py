@@ -153,6 +153,7 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
     }
     if symbol not in ("APARINDS", "HDFCBANK"):
         expected.remove("segments-api")
+    expected.add("index-page")  # Market scope: advertised only by company-page benchmark tags.
     gaps = {
         item.split(":")[1]
         for item in report.incomplete

@@ -612,10 +612,14 @@ def capture_company(
     values: VendorValuesStore,
     specs: tuple[SurfaceSpec, ...],
     ids: CompanyIds,
+    requests: tuple[Request, ...] | None = None,
 ) -> RunReport:
-    """Capture finite company obligations with site gates and retained expansions."""
-    from fundamentals.ingest.screener_financials_models import MAX_SCHEDULE_DEPTH
-    from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, child, expansion_name
+    """Capture company obligations, or a scheduled subset, through the site gates.
+
+    A scheduled subset captures only its requests (plus those a newly verified slug or company id
+    makes possible); advertised children wait for the scheduler's next round.
+    """
+    from fundamentals.ingest.vendor_surface_expand import advertised
 
     incomplete: list[str] = []
     refused: list[str] = []
@@ -646,6 +650,7 @@ def capture_company(
     )
     if not peers and any(s.id == "company-compare" for s in specs):
         incomplete.append("screener:company-compare: no other covered stocks")
+    known = {r.url for r in company_requests(specs, ids)} if requests is not None else set()
     discovery_expected = discovery_completed = 0
     if any(s.site is Site.TIJORI for s in specs) and ids.tijori_slug is None:
         before = fetcher.counts[Site.TIJORI]
@@ -665,7 +670,10 @@ def capture_company(
         ids = ids.model_copy(update={"tijori_slug": slug})
         if slug is None:
             incomplete.append("tijori:missing slug")
-    pending = list(company_requests(specs, ids))
+    pending = sorted(
+        (*(requests or ()), *(r for r in company_requests(specs, ids) if r.url not in known)),
+        key=lambda r: r.spec.id not in ("company-page", "company-financials"),
+    )
     expected = len(pending) + len(incomplete) + discovery_expected - len(cached)
     completed = discovery_completed - len(cached)
     incomplete.extend(
@@ -685,7 +693,7 @@ def capture_company(
         if request.spec.id == "company-timeline-api":
             from fundamentals.ingest.vendor_surface_market import capture_market
 
-            report = capture_market(fetcher, store, pool, values, (), requests=(request,))
+            report = capture_market(fetcher, store, pool, values, specs, requests=(request,))
             seen.add(request.url)
             expected += report.expected - 1
             completed += report.completed
@@ -758,9 +766,9 @@ def capture_company(
             and ids.tijori_company_id is None
         ):
             details = json.loads(body.tree().xpath('//script[@id="company_details"]/text()')[0])
+            locked = {r.url for r in company_requests(specs, ids)}
             ids = ids.model_copy(update={"tijori_company_id": details["company_id"]})
-            queued = {r.url for r in pending} | seen | {request.url}
-            discovered = [r for r in company_requests(specs, ids) if r.url not in queued]
+            discovered = [r for r in company_requests(specs, ids) if r.url not in locked]
             pending.extend(discovered)
             expected += len(discovered)
         if (
@@ -796,72 +804,15 @@ def capture_company(
             )
         if body is None or refusal is not None:
             continue
-        context = request.model_copy(update={"ids": ids}).context(record, ref.blob_sha256)
-        children: list[Request] = []
-
-        for spec in specs:
-            expansion = expansion_name(spec, request.spec.id)
-            if expansion is None:
-                continue
-            ctx = context.model_copy(
-                update={
-                    "parent": {**(request.parent or {}), "spec": spec.model_dump(), "peers": peers}
-                }
-            )
-            try:
-                expanded = EXPANSIONS[expansion](body, ctx)
-                if (
-                    expansion == "screener_nested_schedules"
-                    and (request.parent or {}).get("depth", 2) >= MAX_SCHEDULE_DEPTH
-                ):
-                    incomplete.extend(r.url + ": schedule depth limit" for r in expanded)
-                    expected += len(expanded)
-                    continue
-                children.extend(expanded)
-                if (
-                    not expanded
-                    and expansion != "screener_nested_schedules"
-                    and spec.id != "company-compare"
-                    and not (spec.id == "segments-api" and b"Product Segments" not in body.raw)
-                ):
-                    incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children")
-                    expected += 1
-            except (
-                ValueError,
-                KeyError,
-                IndexError,
-                TypeError,
-                StopIteration,
-                ScreenerSessionError,
-            ):
-                incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: expansion failed")
-                expected += 1
-        if request.spec.id == "company-page":
-            for spec in specs:
-                if spec.id == "chart-api":
-                    metrics = tuple(
-                        dict.fromkeys(
-                            body.tree().xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
-                        )
-                    )
-                    if not any(metrics):
-                        incomplete.append("screener:chart-api: no advertised metrics")
-                        expected += 1
-                    children.extend(
-                        child(
-                            spec,
-                            context.model_copy(update={"basis": None}),
-                            **{"metric-set": metric},
-                        )
-                        for metric in metrics
-                        if metric
-                    )
-                elif "{warehouse_id}" in spec.path and read_identity(body.tree())[1] is not None:
-                    children.append(
-                        child(spec, context, warehouse_id=read_identity(body.tree())[1])
-                    )
-        expected += len(children)
-        pending.extend(children)
+        request = request.model_copy(update={"ids": ids})
+        children, gaps = advertised(
+            request, body, request.context(record, ref.blob_sha256), specs, peers
+        )
+        incomplete.extend(gaps)
+        expected += len(gaps)
+        if requests is None:
+            expected += len(children)
+            pending.extend(children)
     for url, (ref, body, request) in cached.items():
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parse_and_record(store, values, ref, record, request, body, "company identity unverified")

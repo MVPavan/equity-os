@@ -9,15 +9,16 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
 
 from fundamentals.ingest.screener_company_models import InvestorHook, Periodicity, SegmentHook
-from fundamentals.ingest.screener_financials_models import Section
+from fundamentals.ingest.screener_financials_models import MAX_SCHEDULE_DEPTH, Section
 from fundamentals.ingest.screener_financials_schedules import parse_sub_rows
 from fundamentals.ingest.screener_financials_tables import read_section
-from fundamentals.ingest.screener_session_models import Basis
+from fundamentals.ingest.screener_session_models import Basis, ScreenerSessionError
+from fundamentals.ingest.screener_session_page import read_identity
 from fundamentals.ingest.screener_shareholding import read_shareholding_table
 from fundamentals.ingest.vendor_surface_capture import Request
 from fundamentals.ingest.vendor_surface_fetch import SITE_AUTHORITY, Site
 from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
-from fundamentals.ingest.vendor_surface_specs import SurfaceSpec
+from fundamentals.ingest.vendor_surface_specs import SITE_NAME, SurfaceSpec
 
 
 def expansion_name(spec: SurfaceSpec, parent: str) -> str | None:
@@ -509,3 +510,60 @@ MARKET_EXPANSIONS.update(
     }
 )
 EXPANSIONS = {**EXPANSIONS, **MARKET_EXPANSIONS}
+
+
+def advertised(
+    request: Request,
+    body: Body,
+    context: ParseContext,
+    specs: Iterable[SurfaceSpec],
+    peers: tuple[int, ...],
+) -> tuple[tuple[Request, ...], tuple[str, ...]]:
+    """One parent's advertised children, and every missing or failed expansion by fixed name."""
+    found: list[Request] = []
+    gaps: list[str] = []
+    for spec in specs:
+        name = expansion_name(spec, request.spec.id) or (
+            spec.expand if request.spec.id in MARKET_PARENTS.get(spec.expand or "", ()) else None
+        )
+        if name is None or spec.site is not request.spec.site:
+            continue
+        prefix = f"{SITE_NAME[spec.site]}:{spec.id}"
+        parent = {**(request.parent or {}), "spec": spec.model_dump(), "peers": peers}
+        try:
+            children = EXPANSIONS[name](body, context.model_copy(update={"parent": parent}))
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            StopIteration,
+            ScreenerSessionError,
+        ) as error:
+            gaps.append(f"{prefix}: expansion failed: {type(error).__name__}")
+            continue
+        if name == "screener_nested_schedules":
+            if children and (request.parent or {}).get("depth", 2) >= MAX_SCHEDULE_DEPTH:
+                gaps.append(f"{prefix}: schedule depth limit")
+                continue
+        elif (
+            not children
+            and spec.id != "company-compare"
+            and not (spec.id == "segments-api" and b"Product Segments" not in body.raw)
+        ):
+            gaps.append(f"{prefix}: no advertised children")
+        found.extend(children)
+    if request.spec.id == "company-page":
+        warehouse = read_identity(body.tree())[1]
+        for spec in specs:
+            if spec.id == "chart-api":
+                metrics = dict.fromkeys(
+                    body.tree().xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
+                )
+                if not any(metrics):
+                    gaps.append("screener:chart-api: no advertised metrics")
+                plain = context.model_copy(update={"basis": None})
+                found.extend(child(spec, plain, **{"metric-set": m}) for m in metrics if m)
+            elif "{warehouse_id}" in spec.path and warehouse is not None:
+                found.append(child(spec, context, warehouse_id=warehouse))
+    return tuple(found), tuple(gaps)
