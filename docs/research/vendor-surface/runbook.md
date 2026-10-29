@@ -60,7 +60,7 @@ All ids are for APARINDS: Screener company 211 and warehouse 6594631; Tijori slu
 | S2 | `/company/NETWEB/consolidated/` | 200; `section#quarters` exists, and its data table has zero period `<th>` (the empty-shell detector still works) |
 | S3 | `/company/ANONDITA/` | `#quarters` heading "Half Yearly Results"; period months are only Mar and Sep |
 | S4 | `/api/company/211/schedules/?parent={label from an S1 showSchedule button}&section=quarters&consolidated=true` | 200 JSON object with at least 1 key; every value is a non-empty object keyed by period labels (`Mon YYYY`). Anything else, including an error envelope, fails |
-| S5 | `/api/3/211/investors/promoters/quarterly/` | 200 JSON with at least 1 holder; every holder is an object keyed by period labels (`Mon YYYY`), so an error envelope fails |
+| S5 | `/api/3/211/investors/promoters/quarterly/` | 200 JSON with at least 1 holder; every holder is an object keyed by period labels (`Mon YYYY`) beside period fields and metadata (the retained fixture includes `setAttributes`), so an error envelope fails |
 | S6 | `/api/company/211/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true` | 200 JSON; `datasets` holds Price, DMA50, DMA200 and Volume, each with a non-empty `values` array |
 | S7 | `/static/js/utils.<hash>.js` | 200; `getUrls` contains `getChartMetric`, `tradeData` and `getSegments` |
 | S8 | `/company/actions/211/` with no header | 302 (a 200 would mean the modal's XHR-only protection has changed) |

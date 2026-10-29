@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from tokenize import TokenError
 from typing import Any, LiteralString
@@ -312,7 +313,10 @@ def _t3(raw: bytes) -> dict[str, bool]:
             tree.xpath(f'//*[@id="{key}"]') for key in ("overview", "trend", "detailed")
         ),
         "chartData": _full(chart)
-        and all(_full(r) and len(r) == 2 and _full(r[0], str) for r in chart),
+        and all(
+            _full(r) and len(r) == 2 and _full(r[0], str) and isinstance(r[1], Decimal)
+            for r in chart
+        ),
         "trendData": _full(trend)
         and all(_full(s["data"]) and all(map(_full, s["data"])) for s in trend),
         "detailed": tree.xpath('boolean(//*[@id="detailed"]//table//tr[td])'),
@@ -369,9 +373,13 @@ class Canary(BaseModel):
             return (self.name + ".http_status",)
         if record.effective_body_completeness != BodyCompleteness.COMPLETE:
             return (self.name + ".body_completeness",)
-        target, here = urlsplit(urljoin(fetched.url, fetched.location or "")), urlsplit(fetched.url)
-        if self.location and (target.netloc, target.path) != (here.netloc, self.location):
-            return (self.name + ".location",)
+        if self.location:
+            try:
+                target = urlsplit(urljoin(fetched.url, fetched.location or ""))
+            except ValueError:
+                return (self.name + ".location",)
+            if (target.netloc, target.path) != (urlsplit(fetched.url).netloc, self.location):
+                return (self.name + ".location",)
         try:
             return tuple(f"{self.name}.{key}" for key, ok in self.markers(raw).items() if not ok)
         except _MALFORMED:
@@ -480,7 +488,10 @@ def run_canaries(
             # A stop is a named refusal whatever status the canary expected.
             checks = (canary.name + ".refused",) if stopped else canary.check(registered, raw)
             if canary.name == "S1" and raw:
-                variables |= _dependencies(raw)
+                try:
+                    variables |= _dependencies(raw)
+                except _MALFORMED:
+                    pass
             values.record(
                 ref,
                 Outcome(
