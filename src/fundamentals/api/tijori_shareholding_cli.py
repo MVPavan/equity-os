@@ -94,7 +94,7 @@ def run_tijori_shareholding_command(
         stock=stock.symbol,
         rows=len(shareholding.rows),
         columns=len(shareholding.column_period_labels),
-        quarantined_rows=shareholding.cardinality_mismatch_rows,
+        quarantined_rows=len(shareholding.cardinality_mismatch_rows),
         path=str(out_path),
     )
     return shareholding
