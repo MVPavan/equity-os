@@ -31,10 +31,12 @@ from fundamentals.thesis.contracts import (
     ValidatedFactSet,
 )
 
-# A number token: optional currency prefix, digits with optional grouping/decimal,
-# optional percent suffix. Grouping and currency are stripped before parsing.
+# Preserve sign, currency and stated units when checking a draft amount.
 _NUMBER_RE = re.compile(
-    r"(?:₹|\$|rs\.?|inr|usd)?\s*(?P<num>\d[\d,]*(?:\.\d+)?)(?P<pct>\s*%)?",
+    r"(?P<sign>(?<!\w)[+−-])?\s*(?P<currency>₹|\$|rs\.?|inr|usd)?\s*"
+    r"(?P<num>(?:(?<!\d)[+−-]\s*)?\d[\d,]*(?:\.\d+)?)"
+    r"(?P<unit>\s*(?:(?:inr|usd)\s+)?(?:%|percent\b|per cent\b|crore\b|lakh\b|"
+    r"million\b|billion\b|per share\b|shares?\b|days?\b|times\b))?",
     re.IGNORECASE,
 )
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -95,11 +97,12 @@ class NumberHit(BaseModel):
     raw: str
     value: Decimal
     is_percent: bool
+    unit: str = ""
 
 
 def _to_decimal(raw: str) -> Decimal | None:
     """Parse a possibly grouped numeric string to a Decimal, or ``None``."""
-    cleaned = raw.replace(",", "").strip()
+    cleaned = re.sub(r"\s+", "", raw.replace(",", "").replace("−", "-"))
     if not cleaned:
         return None
     try:
@@ -112,14 +115,25 @@ def extract_numbers(text: str) -> list[NumberHit]:
     """Extract every numeric token from free text (currency/grouping tolerated)."""
     hits: list[NumberHit] = []
     for match in _NUMBER_RE.finditer(text):
-        value = _to_decimal(match.group("num"))
+        raw = (match.group("sign") or "") + match.group("num")
+        value = _to_decimal(raw)
         if value is None:
             continue
+        unit = (match.group("unit") or "").strip().upper()
+        if unit in {"PERCENT", "PER CENT"}:
+            unit = "%"
+        if not unit and re.search(r"\bEPS(?:\s+(?:of|is|was))?\s*$", text[: match.start()], re.I):
+            unit = "PER SHARE"
+        currency = (match.group("currency") or "").upper()
+        currency = {"₹": "INR", "RS": "INR", "RS.": "INR", "$": "USD"}.get(currency, currency)
+        if currency:
+            unit = (currency + " " + unit).strip()
         hits.append(
             NumberHit(
-                raw=match.group("num"),
+                raw=raw,
                 value=value,
-                is_percent=match.group("pct") is not None,
+                is_percent=unit == "%",
+                unit=unit,
             )
         )
     return hits
@@ -133,12 +147,12 @@ def _period_year(period: str | None) -> int | None:
 
 
 def known_numbers(fact_set: ValidatedFactSet) -> frozenset[Decimal]:
-    """Every number a draft may legitimately echo, derived from the fact set.
+    """Numeric tokens in the input prompt, not evidence for draft amounts.
 
     This is the validated fact values (retained and per-source), the reporting
     period's date components and nearby fiscal years, the quarter label's digits,
-    and each fact's first-party source count. A draft number outside this set is
-    an unsourced claim.
+    and each fact's first-party source count. Draft sourcing instead requires
+    a signed, unit-compatible retained fact value.
     """
     known: set[Decimal] = set()
     for fact in fact_set.facts:
@@ -180,12 +194,17 @@ def _scan_targets(draft: ThesisDraft) -> list[tuple[str, str]]:
     return targets
 
 
-def _unsourced_claims(draft: ThesisDraft, known: frozenset[Decimal]) -> list[UnsourcedClaim]:
+def _unsourced_claims(draft: ThesisDraft, fact_set: ValidatedFactSet) -> list[UnsourcedClaim]:
     """Flag every number in one draft that is not a validated fact."""
     claims: list[UnsourcedClaim] = []
     for section_label, text in _scan_targets(draft):
         for hit in extract_numbers(text):
-            if hit.value in known:
+            if any(
+                hit.value == _to_decimal(fact.value)
+                and hit.unit
+                in {fact.unit.upper(), fact.unit.upper().removeprefix(f"{fact.currency} ")}
+                for fact in fact_set.facts
+            ):
                 continue
             claims.append(
                 UnsourcedClaim(
@@ -335,12 +354,11 @@ def _divergences(draft_a: ThesisDraft, draft_b: ThesisDraft) -> list[Discrepancy
 
 def cross_verify(fact_set: ValidatedFactSet, drafts: Sequence[ThesisDraft]) -> CrossVerification:
     """Run number-checking on each usable draft and divergence-check the first two."""
-    known = known_numbers(fact_set)
     usable = [draft for draft in drafts if draft.is_usable]
 
     unsourced: list[UnsourcedClaim] = []
     for draft in usable:
-        unsourced.extend(_unsourced_claims(draft, known))
+        unsourced.extend(_unsourced_claims(draft, fact_set))
 
     discrepancies: list[Discrepancy] = []
     if len(usable) >= 2:
