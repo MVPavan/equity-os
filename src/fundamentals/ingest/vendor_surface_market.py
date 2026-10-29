@@ -22,7 +22,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     VendorFetcher,
     normalise,
 )
-from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, parser_sha256
+from fundamentals.ingest.vendor_surface_parse import Body, parser_sha256
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Scope, SurfaceSpec
 from fundamentals.ingest.vendor_surface_tables import feed_rows
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -328,14 +328,10 @@ def capture_market(
                 row_count=len(marks),
             )
             if page == 1:
-                context = ParseContext(
-                    ids=request.ids,
-                    basis=request.basis,
-                    url=request.url,
-                    retrieved_at=datetime.now(UTC),
-                    body_sha256=ref.blob_sha256,
-                    capture_id=ref.capture_id,
+                record = store.get_capture(
+                    ref.source_id, ref.surface, ref.request_key, ref.capture_id
                 )
+                context = request.context(record, ref.blob_sha256)
                 for spec in specs:
                     if spec.site != request.spec.site or request.spec.id not in MARKET_PARENTS.get(
                         spec.expand or "", ()

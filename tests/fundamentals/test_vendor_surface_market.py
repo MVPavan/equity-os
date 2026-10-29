@@ -407,3 +407,21 @@ def test_feed_page_without_unique_identities_is_reported(market_rig):
     spec = next(s for s in MARKET_SPECS if s.id == row["id"])
     report = run((), requests=(Request(spec=spec, url=row["url"], ids=None, due_since=None),))
     assert "screener:trades-feed: rows without a unique identity" in report.incomplete
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_market_children_expand_at_the_parent_retrieval_time(market_rig, tmp_path, monkeypatch):
+    from fundamentals.ingest.vendor_surface_fetch import request_key
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "ideas-dashboard")
+    hub = next(s for s in MARKET_SPECS if s.id == row["id"])
+    seen = []
+    monkeypatch.setitem(market.EXPANSIONS, "tijori_ideas", lambda body, ctx: seen.append(ctx) or ())
+    run(MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),))
+    record = SnapshotStore(tmp_path / "captures").get_capture(
+        Site.TIJORI.value, "vs." + hub.id, request_key(row["url"]), seen[0].capture_id
+    )
+    # Expansion time is evidence time: the parent's retrieval, never the expansion's clock.
+    assert seen[0].retrieved_at == record.retrieved_at
