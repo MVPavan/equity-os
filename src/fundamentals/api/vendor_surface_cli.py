@@ -47,11 +47,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
 )
 from fundamentals.ingest.vendor_surface_labels import map_labels
 from fundamentals.ingest.vendor_surface_market import capture_market
-from fundamentals.ingest.vendor_surface_model import (
-    ChatCompletionsModel,
-    ModelNotSelected,
-    ModelSettings,
-)
+from fundamentals.ingest.vendor_surface_model import ChatCompletionsModel, ModelSettings
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -118,11 +114,8 @@ def dispatch_vendor_command(
         return None
     if args.vendor_command in ("map-labels", "extract-text"):
         settings = ModelSettings.model_validate(yaml.safe_load(MODEL_CONFIG.read_text()))
-        try:
-            if not settings.model_id:
-                raise ModelNotSelected("owner-selected model is not configured")
-        except ModelNotSelected as error:
-            sys.stderr.write(str(error) + "\n")
+        if not settings.model_id:
+            sys.stderr.write("owner-selected model is not configured\n")
             return 2
         if args.vendor_command == "map-labels":
             site = next(site for site, name in SITE_NAME.items() if name == args.site)

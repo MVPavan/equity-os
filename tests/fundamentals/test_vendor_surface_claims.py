@@ -143,15 +143,6 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(pg_d
             ).fetchone() == (int(valid), int(not valid))
 
 
-def test_extract_cli_refuses_unselected_model_before_io():
-    from fundamentals.api.cli_parser import build_parser
-    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
-
-    refused = Mock(side_effect=AssertionError("no I/O before owner selection"))
-    args = build_parser().parse_args(["vendor", "extract-text"])
-    assert dispatch_vendor_command(args, pool_factory=refused, opener_factory=refused) == 2
-
-
 @pytest.mark.pg
 def test_extraction_outcome_cannot_mask_a_cell_yield_drop(pg_db, tmp_path):
     from datetime import UTC, datetime, timedelta

@@ -99,13 +99,18 @@ def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
             ).fetchone() == (None, "correction:owner")
 
 
-def test_cli_refuses_unselected_model_without_opening_boundaries():
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["map-labels", "--site", "tijori", "--surface", "company-benchmarking"],
+        ["extract-text"],
+    ],
+)
+def test_cli_refuses_unselected_model_without_opening_boundaries(command):
     from fundamentals.api.cli_parser import build_parser
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
 
-    args = build_parser().parse_args(
-        ["vendor", "map-labels", "--site", "tijori", "--surface", "company-benchmarking"]
-    )
+    args = build_parser().parse_args(["vendor", *command])
     refused = Mock(side_effect=AssertionError("unselected model must refuse before I/O"))
     assert dispatch_vendor_command(args, pool_factory=refused, opener_factory=refused) == 2
 
