@@ -12,8 +12,9 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ingest.vendor_surface_capture import Request, RunReport, capture
-from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, MARKET_PARENTS
+from fundamentals.ingest.vendor_surface_expand import MARKET_PARENTS, advertised
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
     Site,
@@ -37,6 +38,11 @@ from fundamentals.store.vendor_values_store import (
 
 MAX_FEED_PAGES = 20
 TRAVERSAL_VERSION = "traversal.v2"
+# Index pages are advertised only by company pages: route through verified retained ones.
+COMPANY_PAGES = """SELECT DISTINCT ON (a.url) c.*, a.url FROM eqos.capture_refs c
+JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
+JOIN eqos.vendor_outcomes o ON o.capture_ref_id = c.id AND o.surface = 'company-page'
+WHERE c.surface = 'vs.company-page' AND o.status = ANY(%s) ORDER BY a.url, c.capture_id DESC"""
 MOVING = frozenset(
     "p page cursor timestamp daterange date_from date_to ts same_ts_offset_count".split()
 )
@@ -182,6 +188,30 @@ def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tup
     return tuple(requests)
 
 
+def company_routes(
+    store: SnapshotStore, pool: ConnectionPool, specs: tuple[SurfaceSpec, ...]
+) -> tuple[tuple[Request, ...], tuple[str, ...]]:
+    """Market children of the latest verified company page per address, or the missing level."""
+    page = next((s for s in specs if s.id == "company-page"), None)
+    targets = [s for s in specs if "company-page" in MARKET_PARENTS.get(s.expand or "", ())]
+    if page is None or not targets:
+        return (), ()
+    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(COMPANY_PAGES, (list(USABLE),)).fetchall()
+    found: list[Request] = []
+    for row in rows:
+        ref = capture_of(row)
+        record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
+        parent = Request(spec=page, url=row["url"], ids=None, due_since=None)
+        body = Body(raw=store.read_body(record))
+        found.extend(
+            advertised(parent, body, parent.context(record, ref.blob_sha256), targets, ())[0]
+        )
+    if found:
+        return tuple(found), ()
+    return (), tuple(f"{named(s)}: no advertised children" for s in targets)
+
+
 def continuation(request: Request, body: Body, page: int) -> str | None:
     """Read explicit next-page links, show-more continuations, or the timeline cursor."""
     tree = body.tree()
@@ -234,14 +264,21 @@ def capture_market(
     *,
     requests: tuple[Request, ...] | None = None,
     today: date | None = None,
+    scheduled: bool = False,
 ) -> RunReport:
-    """Capture finite advertisements and resume each feed from registered evidence."""
+    """Capture finite advertisements and resume each feed from registered evidence.
+
+    A scheduled subset captures only its requests (each traversal to its end or cap); advertised
+    children wait for the scheduler, which enqueues the eligible ones.
+    """
     pending = list(market_requests(specs, pool) if requests is None else requests)
+    routes, gaps = company_routes(store, pool, specs) if requests is None else ((), ())
+    pending.extend(routes)
     seen: set[str] = set()
     stopped: list[Site] = []
-    incomplete: list[str] = []
+    incomplete: list[str] = list(gaps)
     refused: list[str] = []
-    expected = completed = 0
+    expected, completed = len(gaps), 0
     today = today or datetime.now(UTC).date()
     while pending:
         initial = pending.pop(0)
@@ -303,7 +340,9 @@ def capture_market(
                 if request.spec.feed
                 else [cell.link for cell in cells if cell.link]
             )
-            if request.spec.feed and len(set(row_ids)) < len(row_ids):
+            # An ambiguous feed identity can neither set nor reach a traversal boundary.
+            unique = [r for r in row_ids if row_ids.count(r) == 1] if request.spec.feed else row_ids
+            if len(unique) < len(row_ids):
                 incomplete.append(f"{named(request.spec)}: rows without a unique identity")
             next_url = continuation(request, body, page)
             next_cursor = (
@@ -313,11 +352,11 @@ def capture_market(
             done = next_url is None or bool(
                 boundary
                 and (
-                    (boundary.row_id and boundary.row_id in row_ids)
+                    (boundary.row_id and boundary.row_id in unique)
                     or (boundary.cursor and boundary.cursor == next_cursor)
                 )
             )
-            marks = mark("row_id", row_ids[0] if row_ids else None) + mark("cursor", next_cursor)
+            marks = mark("row_id", unique[0] if unique else None) + mark("cursor", next_cursor)
             values.record(
                 ref,
                 Outcome(
@@ -334,25 +373,15 @@ def capture_market(
                 ),
                 row_count=len(marks),
             )
-            if page == 1:
+            if page == 1 and not scheduled:
                 record = store.get_capture(
                     ref.source_id, ref.surface, ref.request_key, ref.capture_id
                 )
                 context = request.context(record, ref.blob_sha256)
-                for spec in specs:
-                    if spec.site != request.spec.site or request.spec.id not in MARKET_PARENTS.get(
-                        spec.expand or "", ()
-                    ):
-                        continue
-                    ctx = context.model_copy(update={"parent": {"spec": spec.model_dump()}})
-                    try:
-                        children = EXPANSIONS[spec.expand or ""](body, ctx)
-                    except (ValueError, KeyError, IndexError, TypeError):
-                        children = ()
-                    pending.extend(children)
-                    if not children:
-                        expected += 1
-                        incomplete.append(f"{named(spec)}: no advertised children")
+                children, gaps = advertised(request, body, context, specs, ())
+                pending.extend(children)
+                incomplete.extend(gaps)
+                expected += len(gaps)
             if done:
                 break
             if next_url == request.url:

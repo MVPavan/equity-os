@@ -418,7 +418,7 @@ def test_market_children_expand_at_the_parent_retrieval_time(market_rig, tmp_pat
     row = next(r for r in opener.rows.values() if r["id"] == "ideas-dashboard")
     hub = next(s for s in MARKET_SPECS if s.id == row["id"])
     seen = []
-    monkeypatch.setitem(market.EXPANSIONS, "tijori_ideas", lambda body, ctx: seen.append(ctx) or ())
+    monkeypatch.setitem(EXPANSIONS, "tijori_ideas", lambda body, ctx: seen.append(ctx) or ())
     run(MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),))
     record = SnapshotStore(tmp_path / "captures").get_capture(
         Site.TIJORI.value, "vs." + hub.id, request_key(row["url"]), seen[0].capture_id
@@ -444,3 +444,28 @@ def test_market_report_names_requests_without_vendor_addresses(market_rig):
         re.fullmatch(r"(screener|tijori):[a-z0-9-]+(:[0-9a-f]{64})?(: [a-z -]+)?", entry)
         for entry in (*report.incomplete, *report.refused)
     )
+
+
+@pytest.mark.pg
+def test_ambiguous_feed_identity_never_sets_or_reaches_a_boundary(market_rig):
+    opener, pool, run = market_rig
+    spec = next(s for s in MARKET_SPECS if s.id == "announcements-feed")
+    first, second = (f"https://www.screener.in/announcements/all/?p={n}" for n in (1, 2))
+    request = Request(spec=spec, url=first, ids=None, due_since=None)
+
+    def page(*events, more=False):
+        items = "".join(
+            '<div class="announcement-item"><a href="/company/FIXTURE/">Fixture</a>'
+            f'<a href="/event/{e}">Event</a><time datetime="2026-10-28">Date</time></div>'
+            for e in events
+        )
+        return f"<main>{items}{'<a href="?p=2">Next</a>' if more else ''}</main>".encode(), 200
+
+    opener.overrides[first] = page("A", "A", "B")
+    run((), requests=(request,))
+    # Two rows share /event/A, so the boundary is the newest identity that is unique.
+    assert market.progress(pool, market.traversal_key(request)).boundary.row_id == "/event/B"
+    opener.overrides |= {first: page("new", "A", "A", more=True), second: page("B")}
+    opener.calls.clear()
+    run((), requests=(request,))
+    assert opener.calls == [first, second]  # /event/A is ambiguous and cannot end the scan.
