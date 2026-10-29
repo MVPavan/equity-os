@@ -175,3 +175,85 @@ def test_string_envelope_keeps_lexemes_nulls_and_duplicate_series_names():
         ("-2.00%", Decimal("-2.00"), "%"),
     ]
     assert len({(cell.table_key, cell.row_index, cell.column_index) for cell in cells}) == 3
+
+
+MARKET_EXPECTED = {
+    "fii-api": (242, "/values/0", "615.99", "/values/1", "10047.07"),
+    "hs-data-api": (720, "/0/import_value", "20", "/0/export_value", "569"),
+    "macro-chart-api": (106, "/0/1", "11.38", "/1/1", "5.38"),
+    "sector-ms-chart-api": (1611, "/0/data/0/1", "51.43", "/0/data/1/1", "52.35"),
+    "sector-company-opm-api": (2389, "/0/data/0/1", "11.0", "/0/data/1/1", "11.2"),
+    "index-data-api": (2620, "/0/1", "100.0", "/1/1", "100.213"),
+    "index-metric-data-api": (3564, "/0/1", "38.42", "/1/1", "38.42"),
+}
+MARKET_REFERENCES = [
+    row
+    for row in load_request_index().values()
+    if row["id"] in MARKET_EXPECTED and row["status"] == 200
+]
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize("row", MARKET_REFERENCES, ids=lambda row: row["id"])
+@pytest.mark.parametrize("truncated", [False, True])
+def test_market_series_capture_preserves_cells_or_fails(pg_db, tmp_path, row, truncated):
+    """Market shapes must retain every point atomically, with HS identity in the key."""
+    site = Site.SCREENER if row["site"] == "screener" else Site.TIJORI
+    assert (site, row["id"]) in PARSERS
+    raw = Path(row["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+    store = SnapshotStore(tmp_path / "captures")
+    spec = SurfaceSpec(
+        site=site,
+        id=row["id"],
+        scope=Scope.MARKET,
+        path=urlsplit(row["url"]).path,
+        group=ParseGroup.SERIES,
+        cadence=Cadence.DAILY,
+    )
+    session = SiteSession(site=site, session_cookie=SecretStr("fixture"), cookie_name="sessionid")
+    with pg_db.runtime_pool() as pool:
+        locks = PgSiteLock(pool)
+        try:
+            fetcher = VendorFetcher(
+                store,
+                {site: session},
+                SeriesOpener(raw.rstrip()[:-1] if truncated else raw),
+                tmp_path / "stops",
+                locks,
+                spacing_seconds=0,
+            )
+            ref, _ = capture(
+                fetcher,
+                store,
+                pool,
+                VendorValuesStore(pool),
+                Request(spec=spec, url=row["url"], ids=None, due_since=None),
+            )
+        finally:
+            locks.close()
+        with pool.connection() as conn:
+            status, count, version = conn.execute(
+                "SELECT status,row_count,parser_version FROM eqos.vendor_outcomes "
+                "WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchone()
+            cells = conn.execute(
+                "SELECT locator,raw_text,value,table_key,row_index,column_index "
+                "FROM eqos.vendor_values WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchall()
+        assert version == f"{row['site']}:{row['id']}.v1"
+        if truncated:
+            assert (status, count, cells) == ("FAILED", 0, [])
+        else:
+            expected, first_path, first, second_path, second = MARKET_EXPECTED[row["id"]]
+            assert status in ("OK", "PARTIAL") and count == len(cells) == expected
+            assert len({tuple(cell[3:]) for cell in cells}) == count
+            by_locator = {cell[0]: cell[1:3] for cell in cells}
+            assert [by_locator[path] for path in (first_path, second_path)] == [
+                (text, Decimal(text)) for text in (first, second)
+            ]
+            if row["id"] == "hs-data-api":
+                assert {cell[3] for cell in cells} == {"74031100"}
