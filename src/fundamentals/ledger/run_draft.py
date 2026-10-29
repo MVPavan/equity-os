@@ -106,6 +106,7 @@ CARRIED = LedgerStatus.CARRIED
 NONE = "- none"
 FISCAL_PERIOD = re.compile(r"FY\d{2,4}(?:_Q[1-4])?")
 UNSPECIFIED = " (target period not specified by the extracted guidance)"
+UNCOMPARED = " (comparability not established)"
 INTROS = {
     RESULTS: "{{e:observed}} Reported consolidated figures:",
     CHANGES: "{{e:observed}} {{e:computed}} Prior figures and changes (current − prior; "
@@ -548,11 +549,14 @@ def _guidance(
 
 
 def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
-    """A guidance line."""
+    """A guidance line; a status against a predecessor (same key, so same horizon) is not a
+    comparison when the horizon names no fiscal period."""
     key, note = claim.claim_key, "" if _specified(claim.horizon) else UNSPECIFIED
+    uncompared = note and status in (LedgerStatus.MODIFIED, LedgerStatus.REAFFIRMED)
     return (
-        f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
-        f'{claim.horizon}{note} — {status.value}: "{_slot(key, QUOTE_STYLE)}" {refs([key])}'
+        f"- {claim.metric_label or claim.metric}: {_slot(key, f'{BOUNDS_STYLE},qual')} for "
+        f"{claim.horizon}{note} — {status.value}{UNCOMPARED if uncompared else ''}: "
+        f'"{_slot(key, QUOTE_STYLE)}" {refs([key])}'
     )
 
 

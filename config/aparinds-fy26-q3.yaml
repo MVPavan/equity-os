@@ -114,7 +114,7 @@ comparators:
 guidance:
   rules:
     - metric: cables_revenue_growth
-      label: Cables revenue growth guidance
+      label: "Cables revenue: management's description of a CAGR trajectory (lower bound only)"
       pattern: 'tracking on a (\d+)%-plus CAGR growth'
       horizon: annual
     - metric: cables_ebitda_margin
