@@ -482,4 +482,10 @@ def test_ledger_stage2_end_to_end(
     tables = [*STAGE2["backup"]["tables"]]
     tables += [t["table"] for m in (load(LEDGER), MANIFEST) for t in m["backup_tables"]]
     tables += IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
+    tables += [
+        "vendor_basis_bindings",
+        "vendor_outcomes",
+        "vendor_parser_versions",
+        "vendor_values",
+    ]
     assert sorted(verify_set(sets).table_counts) == sorted(tables)

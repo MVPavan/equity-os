@@ -413,6 +413,12 @@ def test_ledger_stage1_end_to_end(
     )
     tables = [*STAGE2["backup"]["tables"], *(t["table"] for t in MANIFEST["backup_tables"])]
     tables += MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
+    tables += [
+        "vendor_basis_bindings",
+        "vendor_outcomes",
+        "vendor_parser_versions",
+        "vendor_values",
+    ]
     assert sorted(verify_set(sets).table_counts) == sorted(tables)
     fresh = mint_name(rig.settings)
     try:
