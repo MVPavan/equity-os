@@ -490,8 +490,9 @@ Environment and paths are LIVE-RUN-1 Task 5's (`scratchpad/live-run-1/live-scrat
 - `db check-live` also follows every live write step. It runs on live only, because it refuses
   `eqos_test_*` databases (`src/fundamentals/api/db_cli.py:136`). In the rehearsal, run a copy
   of `$R/rehearsal-scratch/check0042.py` instead: it calls `check_live` directly on the named
-  `eqos_test_*` database. Its `migrations_dir` is `$R/migrations-0042`, the same directory
-  live's `db check-live --migrations-dir` uses (`live-scratch/lq.sh`).
+  `eqos_test_*` database. Its `migrations_dir` is `migrations/`, the same directory live's
+  `db check-live --migrations-dir` uses (`live-scratch/lq.sh`). Live was migrated 0042 -> 0045
+  on 2026-10-29 (owner ruling; backup c0d7d1cb0f2d42b9b274c368b75cc079 taken first).
 - Stop at the first deviation; never re-run a write step that partly committed.
 - Version 7's files (`$OUT/out/FY26_Q2.json`, `FY26_Q2.md`, `FY26_Q2-v7.md`,
   `$OUT/logs/*-FY26_Q2.*`, `$OUT/responses/FY26_Q2.*`) stay where they are, unchanged. Every
