@@ -1,4 +1,4 @@
-# Model-drafted dictionary-v3 key; separate Sol model-check PENDING. No vendor readings.
+# Model-drafted dictionary-v3 key; model-checked by GPT-6.1 Sol (high), 2026-10-29; not human-checked. No vendor readings.
 - {site: screener, surface: company-compare,
    label: "OPM %", field: opm_pct,
    why: "opm_pct.meaning: EBITDA excluding other income as a percentage of revenue from operations; matching Screener margin. Missing/mixed units remain subject to accept."}
