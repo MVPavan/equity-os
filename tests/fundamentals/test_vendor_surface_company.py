@@ -877,3 +877,61 @@ def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp
         ("company-benchmarking", "KEPT"),
     ]
     assert all(count > 0 for _, _, count in outcomes[:2])
+
+
+def test_replay_uses_each_captures_parent_not_oldest(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch
+):
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry
+    from fundamentals.store.vendor_values_store import VendorValue
+
+    opener, ids = company_rig("APARINDS")
+    specs = tuple(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.site is Site.SCREENER and s.id in ("company-page", "schedules-api")
+    )
+    key = Site.SCREENER, "schedules-api"
+
+    # Tag the parent's capture id instead of printing vendor readings.
+    def parent_stamp(body, context):
+        stamp = context.parent["page_section"].rows[0].cells[0].provenance.retrieved_at.isoformat()
+        return (
+            VendorValue(
+                table_key="review",
+                row_index=0,
+                column_index=0,
+                locator="review",
+                row_label="",
+                column_label="",
+                raw_text=stamp,
+                value=None,
+            ),
+        )
+
+    monkeypatch.setitem(PARSERS, key, ParserEntry(version="review:parents.v1", parse=parent_stamp))
+    for _ in range(2):
+        run_company(opener, ids, specs)
+    monkeypatch.setitem(PARSERS, key, ParserEntry(version="review:parents.v2", parse=parent_stamp))
+    with pg_db.runtime_pool() as pool:
+        cap.reparse(
+            SnapshotStore(tmp_path / "raw"),
+            pool,
+            VendorValuesStore(pool),
+            next(s for s in specs if s.id == "schedules-api"),
+            specs,
+        )
+        with pool.connection() as conn:
+            changed = conn.execute(
+                "SELECT count(*) FROM eqos.vendor_values a JOIN eqos.vendor_outcomes oa ON  "
+                "oa.id=a.outcome_id JOIN eqos.vendor_outcomes ob ON  "
+                "ob.capture_ref_id=oa.capture_ref_id AND ob.surface=oa.surface JOIN  "
+                "eqos.vendor_values b ON b.outcome_id=ob.id WHERE  "
+                "oa.parser_version='review:parents.v1' AND  "
+                "ob.parser_version='review:parents.v2' AND a.raw_text<>b.raw_text"
+            ).fetchone()[0]
+        assert changed == 0, f"{changed} child captures replayed against another parent capture"

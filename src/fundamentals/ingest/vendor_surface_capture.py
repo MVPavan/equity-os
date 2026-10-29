@@ -475,7 +475,6 @@ def reparse(
         ).fetchall()
     rows = [row for row in retained if row["surface"] == "vs." + owner.id]
     bindings = [company_ids(stock) for stock in load_watchlist_config(WATCHLIST).stocks]
-    graphs: dict[str, dict[str, Request]] = {}
     count = 0
     for row in rows:
         ref = capture_of(row)
@@ -508,9 +507,22 @@ def reparse(
                 ids = ids.model_copy(
                     update={"topology": bind_topology(pool, store, ids, entity_id, {})}
                 )
-        if ids is not None and ids.nse_symbol not in graphs:
-            graphs[ids.nse_symbol] = retained_graph(store, pool, specs, ids, retained)
-        request = graphs[ids.nse_symbol].get(row["url"]) if ids else None
+        graph = (
+            retained_graph(
+                store,
+                pool,
+                specs,
+                ids,
+                sorted(
+                    (r for r in retained if r["capture_id"][:23] <= row["capture_id"][:23]),
+                    key=lambda r: r["capture_id"],
+                    reverse=True,
+                ),
+            )
+            if ids
+            else {}
+        )
+        request = graph.get(row["url"])
         refusal = None
         if spec.scope is Scope.COMPANY and request is None:
             refusal = "verified company binding unavailable"
