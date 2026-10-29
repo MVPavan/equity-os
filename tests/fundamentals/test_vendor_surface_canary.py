@@ -1,6 +1,8 @@
 """Yield drift compares only like versions and reports every orphaned capture."""
 
 import copy
+import hashlib
+import inspect
 import json
 import re
 from datetime import UTC, datetime, timedelta
@@ -454,6 +456,17 @@ def test_canary_shapes_and_controls_cli(
             "JOIN eqos.capture_refs c ON c.id=o.capture_ref_id "
             "JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id ORDER BY o.id"
         ).fetchall()
+        digests = dict(
+            conn.execute(
+                "SELECT parser_version,parser_sha256 FROM eqos.vendor_parser_versions"
+            ).fetchall()
+        )
+        for canary in vendor_surface_canary.CANARIES:
+            if f"canary.{canary.name}.v1" in digests:
+                assert (
+                    digests[f"canary.{canary.name}.v1"]
+                    == hashlib.sha256(inspect.getsource(canary.markers).encode()).hexdigest()
+                )
         assert not yield_drift(pool, datetime.min.replace(tzinfo=UTC))
     assert len(outcomes) == len(opener.calls) == len(list(root.rglob("record.json")))
     recorded = {surface: (status, detail) for surface, status, detail, _ in outcomes}

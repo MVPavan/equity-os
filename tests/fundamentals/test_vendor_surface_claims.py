@@ -1,5 +1,7 @@
 """Models select offsets; code alone extracts and persists retained text."""
 
+import hashlib
+import inspect
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -140,6 +142,10 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(
             assert conn.execute(
                 "SELECT text,epistemic_class,span_start,span_end FROM eqos.vendor_text_claims"
             ).fetchall() == ([("Acme grows 12%", "inferred", 0, 14)] if valid else [])
+            assert conn.execute(
+                "SELECT parser_sha256 FROM eqos.vendor_parser_versions WHERE parser_version=%s",
+                ("claims:fake:spans.v2",),
+            ).fetchone() == (hashlib.sha256(inspect.getsource(extract_text).encode()).hexdigest(),)
             assert conn.execute(
                 "SELECT row_count,rejected_count FROM eqos.vendor_outcomes "
                 "WHERE parser_version='claims:fake:spans.v2'"

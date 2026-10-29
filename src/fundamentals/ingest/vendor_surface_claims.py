@@ -1,9 +1,9 @@
 """Select inferred spans while keeping all text and numbers code-sourced."""
 
 import hashlib
+import inspect
 import json
 from enum import StrEnum
-from pathlib import Path
 
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -103,7 +103,7 @@ def extract_text(
     if model.model_id != settings.model_id:
         raise ValueError("configured model differs from proposal model")
     version = f"claims:{model.model_id}:{PROMPT_VERSION}"
-    digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    digest = hashlib.sha256(inspect.getsource(extract_text).encode()).hexdigest()
     values = VendorValuesStore(pool)
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(

@@ -1,12 +1,12 @@
 """Runbook canaries and capture-yield drift over registered vendor evidence."""
 
 import hashlib
+import inspect
 import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from tokenize import TokenError
 from typing import Any, LiteralString
 from urllib.parse import quote, urljoin, urlsplit
@@ -490,7 +490,6 @@ def run_canaries(
         "dates": (end - timedelta(days=7)).strftime("%m/%d/%Y") + "," + end.strftime("%m/%d/%Y")
     }
     values = VendorValuesStore(pool)
-    digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     for canary in CANARIES:
         stopped, url = False, canary.url
         try:
@@ -530,7 +529,9 @@ def run_canaries(
                 Outcome(
                     surface=canary.name,
                     parser_version=f"canary.{canary.name}.v1",
-                    parser_sha256=digest,
+                    parser_sha256=hashlib.sha256(
+                        inspect.getsource(canary.markers).encode()
+                    ).hexdigest(),
                     status=OutcomeStatus.UNUSABLE
                     if stopped
                     else OutcomeStatus.FAILED
