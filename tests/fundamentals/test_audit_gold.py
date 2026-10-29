@@ -17,7 +17,9 @@ from fundamentals.api.goal_runner import (
 from fundamentals.reconcile.gold_file import DriftKind
 
 
-@pytest.mark.parametrize("change", ["value", "status", "missing", "new", "empty", "unchanged"])
+@pytest.mark.parametrize(
+    "change", ["value", "status", "missing", "new", "empty", "unchanged", "equivalent"]
+)
 def test_validation_preserves_baseline_and_reports_drift(tmp_path: Path, change: str) -> None:
     stock = _stock()
     kinds = frozenset({SourceKind.NSE, SourceKind.BSE})
@@ -34,12 +36,15 @@ def test_validation_preserves_baseline_and_reports_drift(tmp_path: Path, change:
     path = tmp_path / "SYNTH-Q3FY25.json"
     baseline = path.read_bytes()
     sources = collect_sources(stock, mode=RunMode.FIXTURE, repo_root=_REPO_ROOT, kinds=kinds)
-    if change == "value":
+    if change in {"value", "equivalent"}:
+        value = "5.000" if change == "equivalent" else "6"
         sources = [
             source.model_copy(
                 update={
                     "observations": tuple(
-                        obs.model_copy(update={"normalized_value": Decimal("6"), "raw_value": "6"})
+                        obs.model_copy(
+                            update={"normalized_value": Decimal(value), "raw_value": value}
+                        )
                         if obs.concept_qname == EPS
                         else obs
                         for obs in source.observations
@@ -70,7 +75,7 @@ def test_validation_preserves_baseline_and_reports_drift(tmp_path: Path, change:
     assert report.gold_file_path == str(path)
     regression = report.gold_regression
     assert regression is not None
-    if change == "unchanged":
+    if change in {"unchanged", "equivalent"}:
         assert not regression.has_drift
         assert report.outcome is StockOutcome.DONE
         assert report.dod.met
