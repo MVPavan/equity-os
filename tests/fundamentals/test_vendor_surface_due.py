@@ -984,6 +984,7 @@ def test_covered_peers_not_restricted_to_yaml(due_rig, monkeypatch):
     specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
     rig.run(specs, datetime(2026, 10, 29, 12, tzinfo=UTC))
     monkeypatch.setattr(cap, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
+    monkeypatch.setattr(due, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
     assert cap.registered_ids(rig.pool, rig.store, "APARINDS").screener_company_id is not None
     ids = CompanyIds(
         nse_symbol="SELF",
