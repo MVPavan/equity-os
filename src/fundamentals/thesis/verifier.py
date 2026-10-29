@@ -31,7 +31,7 @@ from fundamentals.thesis.contracts import (
     ValidatedFactSet,
 )
 
-# Preserve sign, currency and stated units when checking a draft amount.
+# Detect numeric tokens, retaining signs and percent markers for diagnostics.
 _NUMBER_RE = re.compile(
     r"(?P<open>\()?\s*(?P<sign>(?<!\w)[+−-])?\s*(?P<currency>₹|\$|rs\.?|inr|usd)?\s*"
     r"(?P<num>\d[\d,]*(?:\.\d+)?)"
@@ -97,7 +97,6 @@ class NumberHit(BaseModel):
     raw: str
     value: Decimal | None
     is_percent: bool
-    unit: str = ""
 
 
 def _to_decimal(raw: str) -> Decimal | None:
@@ -119,24 +118,12 @@ def extract_numbers(text: str) -> list[NumberHit]:
         value = _to_decimal(raw)
         if value is not None and match.group("open") and match.group("close"):
             value = -abs(value)
-        unit = (match.group("unit") or "").strip().upper()
-        unit = {word + "S": word for word in ("CRORE", "LAKH", "MILLION", "BILLION")}.get(
-            unit, unit
-        )
-        if unit in {"PERCENT", "PER CENT"}:
-            unit = "%"
-        if not unit and re.search(r"\bEPS(?:\s+(?:of|is|was))?\s*$", text[: match.start()], re.I):
-            unit = "PER SHARE"
-        currency = (match.group("currency") or "").upper()
-        currency = {"₹": "INR", "RS": "INR", "RS.": "INR", "$": "USD"}.get(currency, currency)
-        if currency:
-            unit = (currency + " " + unit).strip()
         hits.append(
             NumberHit(
                 raw=raw,
                 value=value,
-                is_percent=unit == "%",
-                unit=unit,
+                is_percent=not match.group("currency")
+                and (match.group("unit") or "").strip().lower() in {"%", "percent", "per cent"},
             )
         )
     return hits

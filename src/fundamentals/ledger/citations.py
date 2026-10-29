@@ -75,12 +75,8 @@ _FIRST_SEEN: LiteralString = """least(c.first_seen_at, (SELECT min(a.retrieved_a
 _CAPTURE: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
 )
-# Issuer bindings with knowledge time no later than the citing version's cutoff.
-_LOCATION_ISSUER: LiteralString = """SELECT 1
-FROM eqos.package_members m JOIN eqos.filing_packages p ON p.id = m.package_id
-WHERE m.capture_ref_id = %(capture)s AND p.entity_id = %(entity)s
-    AND m.knowledge_time_status = 'KNOWN' AND m.knowledge_time <= %(cutoff)s
-UNION ALL SELECT 1 FROM eqos.interpretations i
+# Issuer bindings known and recorded no later than the citing version's cutoff.
+_LOCATION_ISSUER: LiteralString = """SELECT 1 FROM eqos.interpretations i
 LEFT JOIN eqos.occurrences o ON o.id = i.occurrence_id
 WHERE i.capture_ref_id = %(capture)s AND i.entity_id = %(entity)s
     AND i.recorded_at <= %(cutoff)s
@@ -102,7 +98,7 @@ JOIN eqos.legacy_fact_translations t USING (target_store, row_handle)
 JOIN eqos.fact_rows f ON f.target_store = b.target_store AND f.handle = b.row_handle
 WHERE b.capture_ref_id = %(capture)s AND t.entity_id = %(entity)s
     AND CASE WHEN b.capture_ref_id = %(capture)s AND t.entity_id = %(entity)s
-        THEN f.knowledge_time::timestamptz END <= %(cutoff)s
+        THEN greatest(f.knowledge_time::timestamptz, f.created_at::timestamptz) END <= %(cutoff)s
 LIMIT 1"""
 # A fact's first selection time: a legacy-imported selection's own time, any other selection's
 # no earlier than its store-clock recording (0037), whatever the cited fact's origin.

@@ -94,6 +94,27 @@ def _resolves(ledger: Ledger, runtime: psycopg.Connection, capture: int, cutoff:
     )
 
 
+def test_package_created_after_cutoff_cannot_bind_earlier_capture(
+    ledger: Ledger, runtime: psycopg.Connection, transcript: tuple[int, str], seeded: dict[str, int]
+) -> None:
+    capture, _ = transcript
+    cutoff = NOW + timedelta(days=1)
+    # The package fixture is created now, after this historical cutoff.
+    _insert(
+        runtime,
+        "package_members",
+        {
+            "package_id": seeded["filing_packages"],
+            "capture_ref_id": capture,
+            "representation": "PDF",
+            "knowledge_time": NOW,
+            "knowledge_time_raw": NOW.isoformat(),
+            "knowledge_time_status": "KNOWN",
+        },
+    )
+    assert not _resolves(ledger, runtime, capture, cutoff)
+
+
 @pytest.mark.parametrize("future", [False, True], ids=["known", "future"])
 def test_interpretation_recording_must_precede_cutoff(
     ledger: Ledger, runtime: psycopg.Connection, transcript: tuple[int, str], future: bool

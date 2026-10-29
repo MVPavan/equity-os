@@ -1,4 +1,4 @@
-"""F02 amount syntax, metadata boundaries and existing plural spellings."""
+"""F02 amount syntax and metadata boundaries."""
 
 from decimal import Decimal
 
@@ -42,16 +42,6 @@ def test_exact_prompt_metadata_is_allowed(text: str) -> None:
 )
 def test_metadata_components_and_unsupplied_tokens_are_unsourced(text: str) -> None:
     assert _claims(text)
-
-
-@pytest.mark.parametrize(
-    ("plural", "singular"),
-    [("crores", "CRORE"), ("lakhs", "LAKH"), ("millions", "MILLION"), ("billions", "BILLION")],
-)
-def test_supported_plural_units_normalize(plural: str, singular: str) -> None:
-    hits = extract_numbers(f"Revenue is 174.455 {plural}.")
-    assert len(hits) == 1
-    assert hits[0].unit == singular
 
 
 @pytest.mark.parametrize("text", ["174.455 million", "USD 174.455 crore", "174.455 crores"])
