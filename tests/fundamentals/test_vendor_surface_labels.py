@@ -38,6 +38,12 @@ from fundamentals.ingest.vendor_surface_model import ChatCompletionsModel, Model
         ("EPS", {"%"}, True, '{"label":"EPS","field":"eps"}', "UNIT_INCOMPATIBLE"),
         ("Sales", {""}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
         ("Sales", {"Cr"}, False, '{"label":"Sales","field":"sales","value":9}', "MALFORMED_REPLY"),
+        *(
+            ("Sales", {unit}, False, '{"label":"Sales","field":"sales"}', "MAPPED")
+            for unit in ("INR Crore", "Rs crore", "Crs", "₹ crores")
+        ),
+        ("Sales", {"Crs", "MW"}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
+        ("Sales", {"MW"}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
     ],
 )
 def test_code_acceptance(label, units, per_share, reply, reason):

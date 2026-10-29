@@ -20,8 +20,8 @@ SYSTEM = (
 UNIT_KINDS: Mapping[str, frozenset[ValueKind]] = {
     **dict.fromkeys(
         (
-            "₹|rs|rs.|inr|cr|crore|crores|lakh|lakhs|₹ cr|rs. cr|₹ lakh|rs. lakh|"
-            "₹/sh|₹/share|rs/share"
+            "₹|rs|rs.|inr|cr|crs|crore|crores|lakh|lakhs|₹ cr|rs. cr|₹ lakh|rs. lakh|"
+            "inr crore|rs crore|₹ crores|₹/sh|₹/share|rs/share"
         ).split("|"),
         frozenset({ValueKind.CURRENCY_AMOUNT}),
     ),
