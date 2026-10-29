@@ -831,3 +831,86 @@ def test_retained_tree_expands_a_traversal_first_page(due_rig):
     # A traversal's children are what its first page advertises, as the live run expanded them.
     assert "https://www.screener.in/market/IN10/IN1098/" in urls
     assert "https://www.screener.in/market/IN10/IN1099/" not in urls
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_stale_parent_gates_failed_descendants_until_refresh(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-page", "schedules-api")
+    sales = next(u for u in rig.opener.rows if "schedules/?parent=Sales&section=profit-loss&c" in u)
+    rig.opener.overrides[sales] = b"unavailable", 404
+    rig.run(specs, NOW)
+    rig.opener.new_results_row()
+    for day in range(1, 11):
+        rig.run(specs, NOW + day * DAY)
+        assert sales not in rig.opener.calls
+        queued, _ = due.due_requests(rig.pool, rig.store, specs, NOW + day * DAY)
+        assert sales not in {r.url for r in queued}
+    found = states(rig, specs)
+    assert found[("company-page", Basis.CONSOLIDATED)] is due.ObligationState.EXHAUSTED
+    assert found[("schedules-api", Basis.CONSOLIDATED)] is due.ObligationState.EXHAUSTED
+    queued, notes = due.due_requests(rig.pool, rig.store, specs, NOW + 11 * DAY)
+    assert sales not in {r.url for r in queued}
+    assert "APARINDS:screener:schedules-api:consolidated: INCOMPLETE" in notes
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_pretrigger_capture_does_not_spend_new_triggers_daily_attempt(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-financials")
+    rig.opener.overrides[FINANCIALS] = b"unavailable", 404
+    rig.run(pick("company-financials"), NOW - timedelta(hours=3))
+    rig.opener.new_results_row()
+    rig.run(pick("results-latest"), NOW)
+    (ids,) = due.covered_universe(rig.pool, rig.store)
+    (trigger,) = due.pending_triggers(
+        ids,
+        specs,
+        capture.company_requests(specs, ids),
+        due.history(rig.pool, specs),
+        due.results_rows(rig.pool, specs),
+        due.expander(rig.store, specs, ()),
+    )
+    assert trigger.obligations[0].attempts == 0
+    later = NOW + timedelta(hours=1)
+    rig.run(specs, later)
+    assert FINANCIALS in rig.opener.calls
+    rig.run(specs, later + timedelta(hours=1))
+    assert FINANCIALS not in rig.opener.calls
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_rediscovery_preserves_frozen_retry_priority(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-page", "schedules-api")
+    sales = next(u for u in rig.opener.rows if "schedules/?parent=Sales&section=profit-loss&c" in u)
+    rig.opener.overrides[sales] = b"unavailable", 404
+    rig.run(specs, NOW)
+    rig.opener.new_results_row()
+    rig.opener.newer_period(PAGES[Basis.CONSOLIDATED])
+    rig.run(specs, NOW + DAY)
+    rig.run(pick("robots", site=Site.SCREENER), NOW + 2 * DAY)
+    # Refresh discovery without changing the tree frozen by the first satisfying capture.
+    daily_page = pick("company-page")[0].model_copy(update={"cadence": Cadence.DAILY})
+    rig.run((daily_page,), NOW + 3 * DAY)
+    specs += pick("robots", site=Site.SCREENER)
+    queued, _ = due.due_requests(rig.pool, rig.store, specs, NOW + 9 * DAY + timedelta(hours=1))
+    urls = [r.url for r in queued]
+    assert urls.index(sales) < urls.index("https://www.screener.in/robots.txt")
+    assert next(r.due_since.date() for r in queued if r.url == sales) == (NOW + DAY).date()
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_company_index_routes_preserve_each_parents_expansion_gap(due_rig):
+    from fundamentals.ingest.vendor_surface_fetch import request_key
+    from fundamentals.ingest.vendor_surface_market import company_routes
+
+    rig = due_rig
+    missing = PAGES[Basis.STANDALONE]
+    raw = Path(rig.opener.rows[missing]["path"]).read_bytes()
+    rig.opener.overrides[missing] = raw.replace(b"Click+Benchmark", b"NoBenchmark"), 200
+    rig.run(pick("company-page"), NOW)
+    children, gaps = company_routes(rig.store, rig.pool, pick("company-page", "index-page"))
+    assert children  # The other routed parent still advertises index pages.
+    assert gaps == (f"screener:index-page:{request_key(missing)}: no advertised children",)

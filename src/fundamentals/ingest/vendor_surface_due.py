@@ -29,7 +29,12 @@ from fundamentals.ingest.vendor_surface_capture import (
 )
 from fundamentals.ingest.vendor_surface_expand import advertised, expansion_name
 from fundamentals.ingest.vendor_surface_fetch import Site, VendorFetcher
-from fundamentals.ingest.vendor_surface_market import capture_market, market_requests, traversal_key
+from fundamentals.ingest.vendor_surface_market import (
+    capture_market,
+    market_requests,
+    progress,
+    traversal_key,
+)
 from fundamentals.ingest.vendor_surface_parse import Body, CompanyIds
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Cadence, Scope, SurfaceSpec
 from fundamentals.ingest.vendor_surface_tables import feed_rows
@@ -81,6 +86,7 @@ class Obligation(BaseModel):
     state: ObligationState
     retry: tuple[Request, ...]  # Open instances still to capture, at their parent's priority.
     spent: tuple[str, ...]  # Traversal keys of open instances out of attempts.
+    starts: dict[str, datetime]  # Retry eligibility begins after this instant, per instance.
 
 
 class Trigger(BaseModel):
@@ -297,6 +303,7 @@ def obligation(
     prefix = f"{SITE_NAME[spec.site]}:{spec.id}:"
     visited: set[str] = set()
     open_: dict[str, tuple[Request, int]] = {}
+    starts: dict[str, datetime] = {}
     while queue:
         request = queue.pop(0)
         if (key := traversal_key(request)) in visited:
@@ -318,6 +325,8 @@ def obligation(
         else:
             days = {s.retrieved_at.date() for s in captures if s.retrieved_at > start}
             open_[key] = request, len(days)
+            if len(days) < MAX_ATTEMPTS:
+                starts[key] = start
     state = ObligationState.SATISFIED
     if open_:
         spent = all(n >= MAX_ATTEMPTS for _, n in open_.values())
@@ -330,6 +339,7 @@ def obligation(
         state=state,
         retry=tuple(r for r, n in open_.values() if n < MAX_ATTEMPTS),
         spent=tuple(k for k, (_, n) in open_.items() if n >= MAX_ATTEMPTS),
+        starts=starts,
     )
 
 
@@ -344,16 +354,26 @@ def due_requests(
     notes: list[str] = []
 
     def queue(
-        nodes: dict[str, Node], pending: dict[str, Request], spent: set[str], label: str
+        nodes: dict[str, Node],
+        pending: dict[str, Request],
+        starts: dict[str, datetime],
+        spent: set[str],
+        label: str,
     ) -> None:
         """Queue due instances: obligation instances at most once a day, never when spent."""
         for key, node in {
-            **{k: Node(request=r, gaps=()) for k, r in pending.items()},
             **nodes,
+            **{k: Node(request=r, gaps=()) for k, r in pending.items()},
         }.items():
             request, hist, spec = node.request, seen.get(key, []), node.request.spec
-            notes.extend(label + gap for gap in node.gaps)
-            if key in spent or key in pending and any(s.retrieved_at >= today for s in hist):
+            notes.extend(label + gap for gap in nodes.get(key, node).gaps)
+            if spec.feed and progress(pool, key).resume_page is not None:
+                notes.append(f"{label}{SITE_NAME[spec.site]}:{spec.id}: INCOMPLETE")
+            if (
+                key in spent
+                or key in pending
+                and any(s.retrieved_at >= today and s.retrieved_at > starts[key] for s in hist)
+            ):
                 continue
             usable = [s for s in hist if s.usable]
             if request.basis and request.ids and request.ids.topology is None:
@@ -363,7 +383,7 @@ def due_requests(
             if is_due(spec, last, now, key in pending):
                 due.append(request.model_copy(update={"due_since": request.due_since or last}))
 
-    queue(tree(market_requests(specs, pool), seen, expander(store, specs, ())), {}, set(), "")
+    queue(tree(market_requests(specs, pool), seen, expander(store, specs, ())), {}, {}, set(), "")
     for ids in universe:
         peers = tuple(o.screener_company_id for o in universe if o != ids and o.screener_company_id)
         expand, roots = expander(store, specs, peers), company_requests(specs, ids)
@@ -383,9 +403,27 @@ def due_requests(
             )
             if missing is None
         )
-        pending = {traversal_key(r): r for o in obligations for r in o.retry}
+        pending: dict[str, Request] = {}
+        for request in sorted(
+            (r for o in obligations for r in o.retry),
+            key=lambda r: r.due_since or datetime.min.replace(tzinfo=UTC),
+        ):
+            pending.setdefault(traversal_key(request), request)
+        starts = {k: max(o.starts[k] for o in obligations if k in o.starts) for k in pending}
         spent = {k for o in obligations for k in o.spent} - pending.keys()
-        queue(tree(roots, seen, expand), pending, spent, f"{ids.nse_symbol}: ")
+        nodes = tree(roots, seen, expand)
+        unsettled = {
+            (o.site, o.surface, o.basis)
+            for o in obligations
+            if o.state is not ObligationState.SATISFIED
+        }
+        spent |= {
+            k
+            for k, n in nodes.items()
+            if (n.request.spec.site, n.request.spec.id, n.request.basis) in unsettled
+            and k not in pending
+        }
+        queue(nodes, pending, starts, spent, f"{ids.nse_symbol}: ")
     due.sort(key=lambda r: (r.due_since is not None, r.due_since or now))
     return tuple(due), tuple(dict.fromkeys(notes))
 

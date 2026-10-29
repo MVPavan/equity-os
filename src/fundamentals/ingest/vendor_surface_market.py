@@ -37,7 +37,7 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
-TRAVERSAL_VERSION = "traversal.v2"
+TRAVERSAL_VERSION = "traversal.v3"
 # Index pages are advertised only by company pages: route through verified retained ones.
 COMPANY_PAGES = """SELECT DISTINCT ON (a.url) c.*, a.url FROM eqos.capture_refs c
 JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
@@ -199,16 +199,19 @@ def company_routes(
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(COMPANY_PAGES, (list(USABLE),)).fetchall()
     found: list[Request] = []
+    gaps: list[str] = []
     for row in rows:
         ref = capture_of(row)
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parent = Request(spec=page, url=row["url"], ids=None, due_since=None)
         body = Body(raw=store.read_body(record))
-        found.extend(
-            advertised(parent, body, parent.context(record, ref.blob_sha256), targets, ())[0]
+        children, missing = advertised(
+            parent, body, parent.context(record, ref.blob_sha256), targets, ()
         )
-    if found:
-        return tuple(found), ()
+        found.extend(children)
+        gaps.extend(gap.replace(": ", f":{ref.request_key}: ", 1) for gap in missing)
+    if rows:
+        return tuple(found), tuple(gaps)
     return (), tuple(f"{named(s)}: no advertised children" for s in targets)
 
 
@@ -342,18 +345,22 @@ def capture_market(
             )
             # An ambiguous feed identity can neither set nor reach a traversal boundary.
             unique = [r for r in row_ids if row_ids.count(r) == 1] if request.spec.feed else row_ids
-            if len(unique) < len(row_ids):
+            ambiguous = len(unique) < len(row_ids)
+            if ambiguous:
                 incomplete.append(f"{named(request.spec)}: rows without a unique identity")
             next_url = continuation(request, body, page)
             next_cursor = (
                 dict(parse_qsl(urlsplit(next_url).query)).get("timestamp") if next_url else None
             )
             boundary = state.boundary
-            done = next_url is None or bool(
-                boundary
-                and (
-                    (boundary.row_id and boundary.row_id in unique)
-                    or (boundary.cursor and boundary.cursor == next_cursor)
+            done = not ambiguous and (
+                next_url is None
+                or bool(
+                    boundary
+                    and (
+                        (boundary.row_id and boundary.row_id in unique)
+                        or (boundary.cursor and boundary.cursor == next_cursor)
+                    )
                 )
             )
             marks = mark("row_id", unique[0] if unique else None) + mark("cursor", next_cursor)
@@ -363,9 +370,9 @@ def capture_market(
                     surface=request.spec.id,
                     parser_version=f"{named(request.spec)}.{TRAVERSAL_VERSION}",
                     parser_sha256=parser_sha256(continuation),
-                    status=OutcomeStatus.KEPT,
+                    status=OutcomeStatus.UNUSABLE if ambiguous else OutcomeStatus.KEPT,
                     symbol=request.ids.nse_symbol if request.ids else None,
-                    detail=None,
+                    detail="rows without a unique identity" if ambiguous else None,
                     values=marks,
                     traversal_key=key,
                     traversal_page=page,
@@ -382,7 +389,7 @@ def capture_market(
                 pending.extend(children)
                 incomplete.extend(gaps)
                 expected += len(gaps)
-            if done:
+            if done or ambiguous:
                 break
             if next_url == request.url:
                 incomplete.append(address(request) + ": repeated continuation")
