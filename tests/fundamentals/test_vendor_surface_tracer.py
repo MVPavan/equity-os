@@ -375,8 +375,12 @@ def test_kept_parent_dispatches_section_parser(rig, pg_db, monkeypatch):
     original = vendor_surface_cli.load_specs
 
     def with_section(path, catalog):
-        page, chart = original(path, catalog)
-        return page.model_copy(update={"sections": ("section-proof",)}), chart
+        return tuple(
+            spec.model_copy(update={"sections": ("section-proof",)})
+            if (spec.site, spec.id) == (Site.SCREENER, "company-page")
+            else spec
+            for spec in original(path, catalog)
+        )
 
     monkeypatch.setattr(vendor_surface_cli, "load_specs", with_section)
     monkeypatch.setitem(
