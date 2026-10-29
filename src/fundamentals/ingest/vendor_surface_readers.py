@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from fundamentals.contracts.provenance import Provenance
 from fundamentals.entity.verification import screener_candidate, tijori_candidate
 from fundamentals.ingest import screener_company_artifacts as sc
 from fundamentals.ingest import screener_company_fragments as fragments
@@ -212,9 +213,15 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 row.position,
             )
 
-    def series(items: Any, key: str, unit: str | None = None) -> None:
+    def series(items: Any, key: str, provenance: Provenance, unit: str | None = None) -> None:
         for index, point in enumerate(items):
-            emit(((point.raw_value_text, point.value, None, True),), key, index, unit)
+            anchor = provenance.model_copy(
+                update={
+                    "row_label": point.timestamp_raw_text,
+                    "context_ref": f"{provenance.context_ref}/{index}/1",
+                }
+            )
+            emit(((point.raw_value_text, point.value, anchor, True),), key, index, unit)
 
     def windows(items: Any, key: str) -> None:
         for index, window in enumerate(items):
@@ -287,7 +294,12 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case to.TijoriMarketShareSection(charts=items):
                 for index, chart in enumerate(items):
                     cells((chart.latest_value,), key + "/charts", index, chart.unit)
-                    series(chart.series, f"{key}/charts/{index}/series", chart.unit)
+                    series(
+                        chart.series,
+                        f"{key}/charts/{index}/series",
+                        chart.series_provenance,
+                        chart.unit,
+                    )
             case to.TijoriPeersSection(rows=items):
                 rows(items, key)
             case te.TijoriUpcomingEvents(rows=items):
@@ -297,7 +309,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case (
                 to.TijoriPriceSeriesSection(points=items) | ta.TijoriOpMetricsSection(points=items)
             ):
-                series(items, key)
+                series(items, key, node.series_provenance)
             case to.TijoriPriceChartPeersSection():
                 pass
             case to.TijoriRevenueMixSection(break_ups=items):

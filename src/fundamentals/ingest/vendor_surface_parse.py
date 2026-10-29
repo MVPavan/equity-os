@@ -151,9 +151,9 @@ for _site, _name, _surfaces in (
     for _surface in _surfaces:
         # v2: shared converter (Phase 2 r2); v3: percent/crore decode (eqos-aa6.12.1).
         _version = (
-            4
+            5
             if _name == "tijori" and _surface in ("quarterly-results", "company-timeline-api")
-            else 3
+            else 4
         )
         PARSERS[_site, _surface] = ParserEntry(
             version=f"{_name}:{_surface}.reader.v{_version}",
