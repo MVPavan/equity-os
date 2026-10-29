@@ -19,7 +19,8 @@ from fundamentals.api import tijori_overview_cli, tijori_shareholding_cli
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource, TijoriSourceConfig
 from fundamentals.ingest.tijori_tables import TijoriParseError
 from fundamentals.ingest.vendor_surface_canary import yield_drift
-from fundamentals.ingest.vendor_surface_fetch import SiteStopped
+from fundamentals.ingest.vendor_surface_fetch import Site, SiteStopped
+from fundamentals.ingest.vendor_surface_parse import PARSERS
 from fundamentals.store.snapshot_store import SnapshotStore
 
 
@@ -79,6 +80,19 @@ def assert_raw_first(kind, case, opener, pg_db, tmp_path, monkeypatch):
     )
     monkeypatch.setenv("TIJORI_SESSION_COOKIE", "synthetic")
     monkeypatch.setattr(TijoriSource, f"_fetch_{kind}_bytes", lambda *a: raw)
+    entry = PARSERS[Site.TIJORI, f"company-{kind}"]
+    parsed = []
+
+    def parse(body, context):
+        with pg_db.runtime_pool() as pool, pool.connection() as conn:
+            assert conn.execute("SELECT count(*) FROM eqos.capture_refs").fetchone() == (1,)
+        assert body.raw == raw and context.retrieved_at == clock
+        parsed.append(True)
+        return entry.parse(body, context)
+
+    monkeypatch.setitem(
+        PARSERS, (Site.TIJORI, f"company-{kind}"), entry.model_copy(update={"parse": parse})
+    )
     out = tmp_path / "artifacts"
     module = tijori_overview_cli if kind == "overview" else tijori_shareholding_cli
     command = getattr(module, f"run_tijori_{kind}_command")
@@ -96,6 +110,7 @@ def assert_raw_first(kind, case, opener, pg_db, tmp_path, monkeypatch):
         with pytest.raises(SiteStopped if case == "stopped" else TijoriParseError):
             command(args, credentials=credentials)
         assert not out.exists()
+    assert len(parsed) == (0 if case == "stopped" else 1)
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         rows = conn.execute(
             "SELECT c.source_id,c.surface,c.request_key,c.capture_id,c.blob_sha256,"
@@ -118,6 +133,8 @@ def assert_raw_first(kind, case, opener, pg_db, tmp_path, monkeypatch):
         assert yield_drift(pool, datetime.min.replace(tzinfo=UTC)) == ()
     assert (tmp_path / "stops" / "STOP-tijori").exists() == (case == "stopped")
     if case == "ok":
-        for path in out.glob("*.json"):
+        paths = list(out.glob("*.json"))
+        assert paths
+        for path in paths:
             metadata = json.loads(path.read_text())["metadata"]
             assert datetime.fromisoformat(metadata["retrieved_at"]) == clock
