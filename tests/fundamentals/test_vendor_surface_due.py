@@ -898,3 +898,19 @@ def test_rediscovery_preserves_frozen_retry_priority(due_rig):
     urls = [r.url for r in queued]
     assert urls.index(sales) < urls.index("https://www.screener.in/robots.txt")
     assert next(r.due_since.date() for r in queued if r.url == sales) == (NOW + DAY).date()
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_company_index_routes_preserve_each_parents_expansion_gap(due_rig):
+    from fundamentals.ingest.vendor_surface_fetch import request_key
+    from fundamentals.ingest.vendor_surface_market import company_routes
+
+    rig = due_rig
+    missing = PAGES[Basis.STANDALONE]
+    raw = Path(rig.opener.rows[missing]["path"]).read_bytes()
+    rig.opener.overrides[missing] = raw.replace(b"Click+Benchmark", b"NoBenchmark"), 200
+    rig.run(pick("company-page"), NOW)
+    children, gaps = company_routes(rig.store, rig.pool, pick("company-page", "index-page"))
+    assert children  # The other routed parent still advertises index pages.
+    assert gaps == (f"screener:index-page:{request_key(missing)}: no advertised children",)

@@ -199,16 +199,19 @@ def company_routes(
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(COMPANY_PAGES, (list(USABLE),)).fetchall()
     found: list[Request] = []
+    gaps: list[str] = []
     for row in rows:
         ref = capture_of(row)
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parent = Request(spec=page, url=row["url"], ids=None, due_since=None)
         body = Body(raw=store.read_body(record))
-        found.extend(
-            advertised(parent, body, parent.context(record, ref.blob_sha256), targets, ())[0]
+        children, missing = advertised(
+            parent, body, parent.context(record, ref.blob_sha256), targets, ()
         )
-    if found:
-        return tuple(found), ()
+        found.extend(children)
+        gaps.extend(gap.replace(": ", f":{ref.request_key}: ", 1) for gap in missing)
+    if rows:
+        return tuple(found), tuple(gaps)
     return (), tuple(f"{named(s)}: no advertised children" for s in targets)
 
 
