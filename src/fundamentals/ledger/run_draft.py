@@ -125,7 +125,7 @@ NOT_DONE = (
     "produces no materiality policy, candidate inventory or per-claim decision",
 )
 QUESTION = (
-    "- Which fiscal year or window does the {label} guidance cover? Why it matters: the "
+    "- Which fiscal year or window applies to {label}? Why it matters: the "
     "guidance cannot be checked against an outcome period without it. Evidence required: the "
     "transcript context around the quoted guidance {ref}, or a later management statement "
     "naming the period. Status: open; owner not assigned."

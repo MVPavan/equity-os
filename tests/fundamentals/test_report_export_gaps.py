@@ -31,7 +31,7 @@ UNSPECIFIED = "target period not specified by the extracted guidance"
 DRIFT = "taxonomy drift accepted in the issuer config: {drift}; both figures read as {canonical}"
 FALSIFIER_INTRO = "observed traced value, trigger condition (operator and thesis threshold), status"
 QUESTION = (
-    "- Which fiscal year or window does the {label} guidance cover? Why it matters: the "
+    "- Which fiscal year or window applies to {label}? Why it matters: the "
     "guidance cannot be checked against an outcome period without it. Evidence required: the "
     "transcript context around the quoted guidance {{{{c:{key}|ref}}}}, or a later management "
     "statement naming the period. Status: open; owner not assigned."
