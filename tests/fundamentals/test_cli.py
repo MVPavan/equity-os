@@ -292,3 +292,14 @@ def test_thesis_wave_filter_selects_only_that_waves_symbols(tmp_path: Path) -> N
     assert len(wave1_docs) == 1
     assert wave1_docs[0].fact_set.symbol == "TITAN"
     assert wave1_docs[0].status is ThesisDocumentStatus.OK
+
+
+def test_validate_json_labels_retrospective_diagnostic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert (
+        main(["validate", "--symbol", "TITAN", "--fixture", "--gold-dir", str(tmp_path / "gold")])
+        == 0
+    )
+    stock = json.loads(capsys.readouterr().out)[0]["stocks"][0]
+    assert "Retrospective current-data diagnostic" in stock.get("diagnostic_label", "")

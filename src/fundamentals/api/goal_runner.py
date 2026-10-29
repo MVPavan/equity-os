@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -85,6 +85,7 @@ from fundamentals.ingest.bse_source import (
 from fundamentals.ingest.bse_source import (
     SOURCE_ID as BSE_XBRL_SOURCE_ID,
 )
+from fundamentals.ingest.comparator_cache import file_retrieved_at
 from fundamentals.ingest.ocr_engine import (
     OcrEngine,
     OcrEngineUnavailableError,
@@ -461,7 +462,7 @@ def collect_sources(
     split consolidated statement; when ``None`` a live run defaults to the on-CPU
     :class:`RapidOcrEngine` and a fixture run runs no OCR (tests inject a fake).
     """
-    retrieved_at = stock.quarter.knowledge_cutoff
+    retrieved_at = datetime.now(UTC)
     collected: list[CollectedSource] = []
     if SourceKind.NSE in kinds:
         collected.append(_collect_nse(stock, mode, repo_root, retrieved_at))
@@ -510,7 +511,9 @@ def _collect_nse(
         if mode is RunMode.FIXTURE:
             if stock.fixtures.nse is None:
                 return _skip(SourceKind.NSE, source_id, "no NSE fixture configured")
-            xml = (repo_root / stock.fixtures.nse).read_bytes()
+            path = repo_root / stock.fixtures.nse
+            xml = path.read_bytes()
+            retrieved_at = file_retrieved_at(path, _sha256(xml))
             observations = parse_observations(
                 xml,
                 source_id=source_id,
@@ -585,6 +588,7 @@ def _collect_bse_fixture(
     path = repo_root / stock.fixtures.bse
     if path.suffix == ".json":
         snapshot = _load_bse_snapshot(path)
+        retrieved_at = file_retrieved_at(path, _sha256(path.read_bytes()))
         result = BseSource.parse_summary(
             snapshot,
             period_label=period_label,
@@ -598,6 +602,7 @@ def _collect_bse_fixture(
             )
         return _ok(SourceKind.BSE, SUMMARY_SOURCE_ID, result.observations)
     xml = path.read_bytes()
+    retrieved_at = file_retrieved_at(path, _sha256(xml))
     observations = BseSource.parse(xml, file_sha256=_sha256(xml), retrieved_at=retrieved_at)
     return _ok(SourceKind.BSE, BSE_XBRL_SOURCE_ID, observations)
 
@@ -619,7 +624,9 @@ def _collect_screener(
         if mode is RunMode.FIXTURE:
             if stock.fixtures.screener is None:
                 return _skip(SourceKind.SCREENER, source_id, "no Screener fixture configured")
-            html = (repo_root / stock.fixtures.screener).read_text(encoding="utf-8")
+            path = repo_root / stock.fixtures.screener
+            html = path.read_text(encoding="utf-8")
+            retrieved_at = file_retrieved_at(path, _sha256(html.encode("utf-8")))
             observations = parse_quarterly_pnl(
                 html,
                 source_url=f"fixture://{stock.identifiers.screener_slug}",
@@ -657,9 +664,11 @@ def _collect_tijori(
         if mode is RunMode.FIXTURE:
             if stock.fixtures.tijori is None:
                 return _skip(SourceKind.TIJORI, source_id, "no Tijori fixture configured")
-            raw = (repo_root / stock.fixtures.tijori).read_bytes()
+            path = repo_root / stock.fixtures.tijori
+            raw = path.read_bytes()
             observations = TijoriSource.parse_pl_bytes(
                 raw,
+                retrieved_at=file_retrieved_at(path, _sha256(raw)),
                 slug=stock.identifiers.tijori_slug,
                 expected_symbol=stock.identifiers.nse_symbol,
                 expected_company_id=stock.identifiers.tijori_company_id,
@@ -811,6 +820,7 @@ def _collect_pdf_fixture(
     try:
         path = repo_root / stock.fixtures.results_pdf
         loaded = load_pdf(source_id=source_id, path=path, expected_sha256=stock.results_pdf.sha256)
+        retrieved_at = file_retrieved_at(path, loaded.file_sha256)
         observations = _pdf_observations(
             loaded, path, spec=_pdf_spec(stock), retrieved_at=retrieved_at, ocr_engine=ocr_engine
         )

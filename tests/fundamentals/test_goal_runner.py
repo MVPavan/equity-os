@@ -174,7 +174,16 @@ def test_two_first_party_fixtures_reconcile_to_done(tmp_path: Path) -> None:
     assert report.discrepancies == ()
 
 
-def test_fixture_run_is_deterministic(tmp_path: Path) -> None:
+def test_fixture_run_is_deterministic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 29, tzinfo=UTC)
+
+    monkeypatch.setattr("fundamentals.api.goal_runner.datetime", FixedDatetime)
+    monkeypatch.setattr(
+        "fundamentals.ingest.comparator_cache.datetime", FixedDatetime, raising=False
+    )
     stock = _stock()
     first = run_stock(
         stock,
@@ -1019,3 +1028,58 @@ def test_collect_pdf_recovers_thermax_with_real_local_engine() -> None:
     assert got[INCOME] == Decimal("2539.27")
     assert got[PAT] == Decimal("113.73")
     assert got[EPS] == Decimal("10.29")
+
+
+@pytest.mark.parametrize("kind", [SourceKind.NSE, SourceKind.BSE, SourceKind.PDF])
+@pytest.mark.parametrize("retained", [False, True])
+def test_fixture_acquisition_is_real_not_cutoff(
+    tmp_path: Path, kind: SourceKind, retained: bool
+) -> None:
+    from fundamentals.contracts.acquisition_outcome import OutcomeCode, OutcomeRecord
+    from fundamentals.contracts.snapshot import (
+        INTAKE_RIGHTS,
+        BlobRef,
+        CaptureRecord,
+        RequestIdentity,
+    )
+
+    if kind is SourceKind.PDF:
+        path = tmp_path / "body.pdf"
+        stock = _pdf_ocr_stock(path, _write_pl_pdf(path))
+    else:
+        path = tmp_path / "body.xml"
+        fixture = _NSE_FIXTURE if kind is SourceKind.NSE else _BSE_FIXTURE
+        path.write_bytes((_REPO_ROOT / fixture).read_bytes())
+        stock = _stock(fixtures=FixturePaths(**{kind.value: str(path)}))
+    recorded_at = datetime(2026, 10, 28, 12, tzinfo=UTC)
+    if retained:
+        body = path.read_bytes()
+        record = CaptureRecord.make(
+            request=RequestIdentity(source_id="test", surface="results", request_key="synth"),
+            retrieved_at=recorded_at,
+            http_status=200,
+            media_type=None,
+            content_encoding=None,
+            body=BlobRef(
+                source_id="test",
+                content_sha256=hashlib.sha256(body).hexdigest(),
+                byte_count=len(body),
+            ),
+            outcome=OutcomeRecord(code=OutcomeCode.OK, native_kind="test", native_value="ok"),
+            rights=INTAKE_RIGHTS,
+        )
+        (tmp_path / "record.json").write_text(record.model_dump_json())
+    before = datetime.now(UTC)
+
+    sources = collect_sources(
+        stock, mode=RunMode.FIXTURE, repo_root=_REPO_ROOT, kinds=frozenset({kind})
+    )
+
+    after = datetime.now(UTC)
+    assert sources[0].status is SourceStatus.OK
+    assert sources[0].observations
+    times = {obs.provenance.retrieved_at for obs in sources[0].observations}
+    if retained:
+        assert times == {recorded_at}
+    else:
+        assert all(before <= at <= after for at in times)

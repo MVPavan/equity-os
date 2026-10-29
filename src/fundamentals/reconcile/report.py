@@ -139,6 +139,10 @@ class StockReport(BaseModel):
     blockers: tuple[str, ...]
     identifiers_to_verify: tuple[str, ...]
     comparatives: tuple[ConceptComparative, ...] = ()
+    diagnostic_label: str = (
+        "Retrospective current-data diagnostic; this cannot prove historical possession or "
+        "absence of hindsight."
+    )
 
     @property
     def available_sources(self) -> tuple[str, ...]:
