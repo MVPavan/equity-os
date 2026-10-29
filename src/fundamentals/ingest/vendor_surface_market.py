@@ -21,8 +21,9 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteStopped,
     VendorFetcher,
     normalise,
+    request_key,
 )
-from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, parser_sha256
+from fundamentals.ingest.vendor_surface_parse import Body, parser_sha256
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Scope, SurfaceSpec
 from fundamentals.ingest.vendor_surface_tables import feed_rows
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -35,7 +36,9 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
-MOVING = frozenset(("p", "page", "cursor", "timestamp", "daterange", "date_from", "date_to"))
+MOVING = frozenset(
+    "p page cursor timestamp daterange date_from date_to ts same_ts_offset_count".split()
+)
 
 
 class Boundary(BaseModel):
@@ -54,6 +57,16 @@ class Progress(BaseModel):
     boundary: Boundary | None
     resume_page: int | None
     resume_url: str | None
+
+
+def named(spec: SurfaceSpec) -> str:
+    """The site and surface naming a report entry, never a vendor address."""
+    return f"{SITE_NAME[spec.site]}:{spec.id}"
+
+
+def address(request: Request) -> str:
+    """A report entry for one request: its surface and address key, never the address."""
+    return f"{named(request.spec)}:{request_key(normalise(request.url))}"
 
 
 def traversal_key(request: Request) -> str:
@@ -133,13 +146,13 @@ def query_url(url: str, **params: str) -> str:
 
 
 def alternatives(path: str) -> list[str]:
-    """Expand catalog `[a|b]` and `{a|b}` notation into its finite concrete paths."""
+    """Expand catalog optional `[a|b]` and required `{a|b}` notation into concrete paths."""
     match = re.search(r"\[([^\[\]]+)\]|\{([^{}]*\|[^{}]*)\}", path)
     if match is None:
         return [path]
     return [
         concrete
-        for item in (match[1] or match[2]).split("|")
+        for item in (match[1] or match[2]).split("|") + ([""] if match[1] else [])
         if item != "..."
         for concrete in alternatives(path[: match.start()] + item + path[match.end() :])
     ]
@@ -155,7 +168,7 @@ def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tup
             path = path.split(" -> ")[0]
             for token in re.findall(r"\{([^{}]+)\}", path):
                 path = path.replace("{" + token + "}", "1" if token == "n" else "")
-            path = path.replace("&...", "").replace(" (+ /faq/data/)", "")
+            path = re.sub(r" \(\+ (\S+)\)", r" | \1", path.replace("&...", ""))
             for variant in path.split(" | "):
                 requests.append(
                     Request(
@@ -169,8 +182,12 @@ def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tup
 
 
 def continuation(request: Request, body: Body, page: int) -> str | None:
-    """Read explicit next-page links, Tijori show-more, or the timeline cursor."""
+    """Read explicit next-page links, show-more continuations, or the timeline cursor."""
     tree = body.tree()
+    for onclick in tree.xpath('//div[starts-with(@id,"show-more-")]/button/@onclick'):
+        query = re.search(r"Utils\.ajaxLoad\(event, '\?([^']+)'\)", onclick)
+        if query:
+            return query_url(request.url, **dict(parse_qsl(query[1])))
     if request.spec.id in {
         "screens-list",
         "screen-page",
@@ -248,17 +265,17 @@ def capture_market(
         for _ in range(MAX_FEED_PAGES + int(state.resume_page is not None)):
             expected += 1
             if request.spec.site in stopped:
-                refused.append(request.url)
+                refused.append(address(request))
                 break
             try:
                 ref, body = capture(fetcher, store, pool, values, request)
             except SiteStopped as error:
                 stopped.append(error.site)
-                incomplete.append(request.url)
+                incomplete.append(address(request))
                 break
             except (SiteBusy, ValueError):
                 (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
-                    request.url
+                    address(request)
                 )
                 break
             with pool.connection() as conn:
@@ -277,7 +294,7 @@ def capture_market(
                     ).fetchall()
             completed += int(usable)
             if not usable or body is None:
-                incomplete.append(request.url)
+                incomplete.append(address(request))
                 break
             cells = tuple(VendorValue.model_validate(row) for row in raw_values)
             row_ids = (
@@ -285,6 +302,8 @@ def capture_market(
                 if request.spec.feed
                 else [cell.link for cell in cells if cell.link]
             )
+            if request.spec.feed and len(set(row_ids)) < len(row_ids):
+                incomplete.append(f"{named(request.spec)}: rows without a unique identity")
             next_url = continuation(request, body, page)
             next_cursor = (
                 dict(parse_qsl(urlsplit(next_url).query)).get("timestamp") if next_url else None
@@ -315,14 +334,10 @@ def capture_market(
                 row_count=len(marks),
             )
             if page == 1:
-                context = ParseContext(
-                    ids=request.ids,
-                    basis=request.basis,
-                    url=request.url,
-                    retrieved_at=datetime.now(UTC),
-                    body_sha256=ref.blob_sha256,
-                    capture_id=ref.capture_id,
+                record = store.get_capture(
+                    ref.source_id, ref.surface, ref.request_key, ref.capture_id
                 )
+                context = request.context(record, ref.blob_sha256)
                 for spec in specs:
                     if spec.site != request.spec.site or request.spec.id not in MARKET_PARENTS.get(
                         spec.expand or "", ()
@@ -336,19 +351,17 @@ def capture_market(
                     pending.extend(children)
                     if not children:
                         expected += 1
-                        incomplete.append(
-                            f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children"
-                        )
+                        incomplete.append(f"{named(spec)}: no advertised children")
             if done:
                 break
             if next_url == request.url:
-                incomplete.append(request.url + ": repeated continuation")
+                incomplete.append(address(request) + ": repeated continuation")
                 break
             assert next_url is not None
             request = request.model_copy(update={"url": next_url})
             page += 1
         else:
-            incomplete.append(initial.url + ": page cap")
+            incomplete.append(address(initial) + ": page cap")
     return RunReport(
         expected=expected,
         completed=completed,

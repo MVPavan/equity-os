@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -13,9 +14,17 @@ from vendor_surface_support import load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, MARKET_PARENTS
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry
+from fundamentals.ingest.vendor_surface_parse import (
+    PARSERS,
+    Body,
+    ParseContext,
+    ParserEntry,
+    register_tables,
+)
 from fundamentals.ingest.vendor_surface_specs import (
+    SITE_NAME,
     Cadence,
     ParseGroup,
     Scope,
@@ -29,6 +38,14 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 MARKET_SPECS = load_specs(
     Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
 )
+register_tables(MARKET_SPECS)  # The CLI root binds table parsers; this suite calls capture_market.
+
+
+# Rows outside the plan's traversal table whose only retained advertisement is never fetched.
+MARKET_GAPS = {
+    "capsule": "advertised only on the account dashboard (/dash/), which is not traversed",
+    "insider-summary": "advertised only on the account dashboard; its retained fetch is a 302",
+}
 
 
 class MarketOpener(OpenerDirector):
@@ -240,34 +257,34 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
 @pytest.mark.parametrize(
     "hub_names",
     [
-        "explore screens-list product-prices markets macro people-search",
-        "sector-page ideas-dashboard filter-popular-queries-api filter-public-queries-api",
+        "explore screens-list hs-search-api search-page markets macro people-search",
+        "sector-page screen-page ideas-dashboard filter-popular-queries-api",
     ],
 )
-def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_names):
+def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
 
     opener, pool, run = market_rig
     hubs = set(hub_names.split())
     requests = tuple(
         Request(
             spec=next(
-                s
-                for s in MARKET_SPECS
-                if s.id == row["id"]
-                and s.site == (Site.SCREENER if row["site"] == "screener" else Site.TIJORI)
+                s for s in MARKET_SPECS if s.id == row["id"] and SITE_NAME[s.site] == row["site"]
             ),
             url=row["url"],
             ids=None,
             due_since=None,
         )
         for row in opener.rows.values()
-        if row["id"] in hubs and row.get("status") == 200
+        if row["id"] in hubs and row.get("status") == 200 and row["kind"] == "response"
     )
     report = run(MARKET_SPECS, requests=requests)
     expected = (
         (
             "/people/",
             "/screens/",
+            "/commodity/",
+            "/api/hs/",
+            "/sector/",
             "/api/v1/macro/chart/",
             "/api/v1/sector/index-data/",
             "/api/v1/sector/index-metric-data/",
@@ -277,6 +294,7 @@ def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_n
             "/api/v1/sector/ms-chart/",
             "/api/v1/sector/company-opm/",
             "/api/v1/sector/area-chart/",
+            "/user/",
             "/ideas-dashboard/",
             "/api/filter_queries/popular-query/results/",
         )
@@ -284,13 +302,145 @@ def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_n
     assert all(
         any(urlsplit(url).path.startswith(prefix) for url in opener.calls) for prefix in expected
     )
-    if "markets" in hubs:
-        for site, surface in [
-            ("screener", "index-page"),
-            ("screener", "hs-data-api"),
-            ("screener", "commodity-page"),
-            ("screener", "user-public-profile"),
-            ("tijori", "sector-page"),
-        ]:
-            assert f"{site}:{surface}: no advertised children" in report.incomplete
+    gaps = {entry for entry in report.incomplete if entry.endswith("no advertised children")}
+    assert gaps == ({"screener:capsule: no advertised children"} if "explore" in hubs else set())
     assert not any("/user/account/" in url for url in opener.calls)
+
+
+def retained_context(row, spec):
+    """The expansion context of one retained parent body for one child surface."""
+    return ParseContext(
+        ids=None,
+        basis=None,
+        url=row["url"],
+        retrieved_at=datetime(2026, 10, 28, tzinfo=UTC),
+        body_sha256=row["sha256"],
+        capture_id="retained-market",
+        parent={"spec": spec.model_dump()},
+    )
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    "spec", [s for s in MARKET_SPECS if s.expand in MARKET_PARENTS], ids=lambda s: s.id
+)
+def test_every_traversal_row_has_retained_children(spec):
+    children = [
+        request
+        for row in load_request_index().values()
+        if row["id"] in MARKET_PARENTS[spec.expand]
+        and row["site"] == SITE_NAME[spec.site]
+        and row["kind"] == "response"
+        and row.get("status") == 200
+        for request in EXPANSIONS[spec.expand](
+            Body(raw=Path(row["path"]).read_bytes()), retained_context(row, spec)
+        )
+    ]
+    # A zero here is a wrong hub or reader, unless the row is a named gap.
+    assert bool(children) == (spec.id not in MARKET_GAPS)
+    assert all("{" not in r.url and "//" not in urlsplit(r.url).path for r in children)
+
+
+@pytest.mark.retained
+def test_widget_requests_follow_the_expanding_metric_mapping():
+    spec = next(s for s in MARKET_SPECS if s.id == "markets-indices-widget-api")
+    row = next(r for r in load_request_index().values() if r["id"] == "markets")
+    raw = Path(row["path"]).read_bytes()
+    metrics = Body(raw=raw).tree().xpath('//*[contains(@class,"expanding_metric")]')
+    urls = [r.url for r in EXPANSIONS[spec.expand](Body(raw=raw), retained_context(row, spec))]
+    # The hub script requests only what a clicked metric names: its table, row and cell.
+    assert len(urls) == len(metrics)
+    widget = metrics[0].xpath("ancestor::table[1]/@data-widget")[0]
+    blank = raw.replace(f'data-widget="{widget}"'.encode(), b'data-widget=""')
+    fewer = EXPANSIONS[spec.expand](Body(raw=blank), retained_context(row, spec))
+    assert 0 < len(fewer) < len(urls)
+    assert all("//" not in urlsplit(r.url).path for r in fewer)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_announcements_continue_through_the_show_more_timestamp(market_rig):
+    from urllib.parse import urljoin
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "announcements-feed")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    request = Request(spec=spec, url=row["url"], ids=None, due_since=None)
+    raw = Path(row["path"]).read_bytes()
+    onclick = Body(raw=raw).tree().xpath('//div[starts-with(@id,"show-more-")]/button/@onclick')
+    next_url = urljoin(row["url"], onclick[0].split("'")[1])
+    opener.overrides[next_url] = raw.replace(b"Utils.ajaxLoad", b"Utils.disabled"), 200
+    report = run((), requests=(request,))
+    # Page 1 is not the whole feed: the source continues by timestamp and same-second offset.
+    assert opener.calls == [row["url"], next_url] and report.completed == 2
+    assert not report.incomplete
+    assert market.traversal_key(request.model_copy(update={"url": next_url})) == (
+        market.traversal_key(request)
+    )
+    assert market.progress(pool, market.traversal_key(request)).resume_page is None
+
+
+def test_hub_requests_include_optional_bases_and_named_companions():
+    found = {
+        (r.spec.id, urlsplit(r.url).path, urlsplit(r.url).query)
+        for r in market.market_requests(MARKET_SPECS, None)
+    }
+    # `[x]` is optional in the catalog: the bare page is a real, distinct listing.
+    assert {
+        ("concalls-feed", "/concalls/", "p=&o=&date__year=&q="),
+        ("concalls-feed", "/concalls/upcoming/", "p=&o=&date__year=&q="),
+        ("ipo", "/ipo/", ""),
+        ("ipo", "/ipo/recent/", ""),
+        ("announcements-feed", "/announcements/", ""),
+        ("filter", "/filter/", ""),
+        ("filter", "/filter/", "qt=basic"),
+        ("faq", "/in/faq/", ""),
+        ("faq", "/faq/data/", ""),
+    } <= found
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_feed_page_without_unique_identities_is_reported(market_rig):
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "trades-feed")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    report = run((), requests=(Request(spec=spec, url=row["url"], ids=None, due_since=None),))
+    assert "screener:trades-feed: rows without a unique identity" in report.incomplete
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_market_children_expand_at_the_parent_retrieval_time(market_rig, tmp_path, monkeypatch):
+    from fundamentals.ingest.vendor_surface_fetch import request_key
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "ideas-dashboard")
+    hub = next(s for s in MARKET_SPECS if s.id == row["id"])
+    seen = []
+    monkeypatch.setitem(market.EXPANSIONS, "tijori_ideas", lambda body, ctx: seen.append(ctx) or ())
+    run(MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),))
+    record = SnapshotStore(tmp_path / "captures").get_capture(
+        Site.TIJORI.value, "vs." + hub.id, request_key(row["url"]), seen[0].capture_id
+    )
+    # Expansion time is evidence time: the parent's retrieval, never the expansion's clock.
+    assert seen[0].retrieved_at == record.retrieved_at
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_market_report_names_requests_without_vendor_addresses(market_rig):
+    import re
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "filter-popular-queries-api")
+    hub = next(s for s in MARKET_SPECS if s.id == row["id"])
+    report = run(
+        MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),)
+    )
+    # Unretained query children stay gaps; the cron line logs only site, surface and key.
+    assert report.incomplete
+    assert all(
+        re.fullmatch(r"(screener|tijori):[a-z0-9-]+(:[0-9a-f]{64})?(: [a-z -]+)?", entry)
+        for entry in (*report.incomplete, *report.refused)
+    )
