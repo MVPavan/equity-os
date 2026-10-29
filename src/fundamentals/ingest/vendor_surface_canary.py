@@ -54,7 +54,7 @@ WITH history AS (
         row_number() OVER (PARTITION BY c.source_id,c.request_key,o.surface
             ORDER BY left(c.capture_id,23) DESC,o.id DESC) AS latest
     FROM eqos.vendor_outcomes o JOIN eqos.capture_refs c ON c.id=o.capture_ref_id
-    WHERE o.status=ANY(%s) AND c.source_id=ANY(%s)
+    WHERE o.status=ANY(%s) AND c.source_id=ANY(%s) AND NOT starts_with(o.parser_version,'claims:')
 )
 SELECT source_id,surface,request_key,row_count,previous FROM history
 WHERE latest=1 AND recorded_at >= %s
