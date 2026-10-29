@@ -204,7 +204,6 @@ def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
 
 def test_shareholding_final_log_excludes_quarantine_labels(pg_db, tmp_path, monkeypatch):
     import argparse
-
     from types import SimpleNamespace
 
     import structlog.testing
