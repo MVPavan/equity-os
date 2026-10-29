@@ -170,13 +170,16 @@ def evaluate(candidates: Sequence[tuple[LabelModel, Decimal, Decimal]]) -> str:
     table = [
         "# Vendor surface bake-off",
         "",
-        "Key: model-drafted; Sol model-check pending. Dictionary: v3.",
+        "Key: model-drafted; model-checked by GPT-6.1 Sol (high), 2026-10-29; not human-checked. "
+        "Dictionary: v3.",
         "Costs use configured input/output prices per million tokens.",
         "",
         "| Candidate | Positive accuracy | False mappings | Abstentions | "
         "Span precision | Span recall | Cost |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
+    if not candidates:
+        table.insert(4, "Candidate rows are pending the owner's candidate list and API key.")
     for name, labels, spans_score, cost in rows:
         name = name.replace("|", "\\|").replace("\n", " ")
         table.append(
