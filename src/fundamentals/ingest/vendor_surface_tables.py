@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.ingest.vendor_surface_series import numeric_cell, numeric_column, numeric_json
 from fundamentals.ingest.vendor_surface_specs import SurfaceSpec
 from fundamentals.store.vendor_values_store import VendorValue
 
@@ -45,7 +46,7 @@ def _cell(node: Any, key: str, row: int, column: int, label: str, header: str) -
         raw_text=raw,
         value=number,
         link=links[0] if links else None,
-        expected_numeric=bool(re.fullmatch(r"[+\-]?[\d,.]+%?", raw)),
+        expected_numeric=numeric_column(header),
     )
 
 
@@ -72,13 +73,27 @@ def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValu
             raise ValueError("ragged table row")
         for column, cell in enumerate(cells):
             values.append(_cell(cell, table_key, row, column, _text(cells[0]), headers[column]))
+            values.extend(
+                _cell(
+                    link,
+                    f"{table_key}:links:{column}",
+                    row,
+                    index,
+                    _text(cells[0]),
+                    headers[column],
+                )
+                for index, link in enumerate(cell.xpath(".//a[@href]")[1:], start=1)
+            )
     return tuple(values)
 
 
 def screener_trades(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Keep month dividers separately so repeated trade labels never collapse."""
     values: list[VendorValue] = []
-    for table in body.tree().xpath(selector):
+    tables = body.tree().xpath(selector)
+    if not tables:
+        raise ValueError("trade tables missing")
+    for table in tables:
         key = table.getparent().get("id")
         for row in table.xpath("./tbody/tr[td/@colspan]"):
             (cell,) = row.xpath("./td")
@@ -115,11 +130,14 @@ def _documents(tree: Any, key: str) -> tuple[VendorValue, ...]:
 def screener_documents(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Use each document heading to distinguish present blocks from absent kinds."""
     values: list[VendorValue] = []
-    for heading in body.tree().xpath(selector + "//h3"):
+    for index, heading in enumerate(body.tree().xpath(selector + "//h3")):
         block = heading
         while "documents" not in block.get("class", "").split():
             block = block.getparent()
-        values.extend(_documents(block, _text(heading)))
+        values.extend(
+            cell.model_copy(update={"row_label": _text(heading)})
+            for cell in _documents(block, f"documents:{index}")
+        )
     return tuple(values)
 
 
@@ -162,7 +180,7 @@ def read_js_var(body: bytes, name: str) -> Any:
             if token.type == tokenize.STRING
             else token.string
         )
-    return json.loads("".join(parts), parse_float=Decimal, parse_int=Decimal)
+    return numeric_json("".join(parts))
 
 
 def tijori_shareholding_overview(
@@ -172,18 +190,9 @@ def tijori_shareholding_overview(
     values = list(read_html_table(body.tree(), selector, "overview"))
     for row, (label, number) in enumerate(read_js_var(body.raw, "chartData")):
         values.append(
-            VendorValue(
-                table_key="chartData",
-                row_index=row,
-                column_index=0,
-                locator=f"var chartData/{row}/1",
-                row_label=label,
-                column_label="Shareholding",
-                raw_text="null" if number is None else str(number),
-                value=number,
-                expected_numeric=True,
-                unit="%",
-            )
+            numeric_cell(
+                number, "chartData", row, 0, f"var chartData/{row}/1", label, "Shareholding"
+            ).model_copy(update={"unit": "%"})
         )
     return tuple(values)
 
@@ -196,18 +205,15 @@ def tijori_shareholding_trend(
     for column, series in enumerate(read_js_var(body.raw, "trendData")):
         for row, (timestamp, number) in enumerate(series["data"]):
             values.append(
-                VendorValue(
-                    table_key="trendData",
-                    row_index=row,
-                    column_index=column,
-                    locator=f"var trendData/{column}/data/{row}/1",
-                    row_label=str(timestamp),
-                    column_label=series["name"],
-                    raw_text="null" if number is None else str(number),
-                    value=number,
-                    expected_numeric=True,
-                    unit="%",
-                )
+                numeric_cell(
+                    number,
+                    "trendData",
+                    row,
+                    column,
+                    f"var trendData/{column}/data/{row}/1",
+                    str(timestamp),
+                    series["name"],
+                ).model_copy(update={"unit": "%"})
             )
     return tuple(values)
 

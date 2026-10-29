@@ -1,26 +1,21 @@
 """G2 retained captures keep every cell and duplicate row under positional identities."""
 
 import hashlib
-import io
 import json
 from collections import Counter
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from email.message import Message
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import OpenerDirector
 
 import pytest
-from pydantic import SecretStr
+from vendor_surface_support import capture_response
 
-from fundamentals.ingest.vendor_surface_capture import Request, capture
-from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
+from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_fetch import Site
 from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext, register_tables
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.ingest.vendor_surface_tables import feed_rows, read_html_table, read_js_var
 from fundamentals.store.snapshot_store import SnapshotStore
-from fundamentals.store.vendor_values_store import VendorValuesStore
 
 SURFACES = {
     "screener": {
@@ -46,7 +41,7 @@ SURFACES = {
 
 # Two checked retained rows per surface; suppliers needs RELIANCE (APARINDS has one).
 CHECKED = {
-    "section-documents": ("Annual reports", 0, ["Annual Report 2026", "Annual Report 2025"]),
+    "section-documents": ("documents:1", 0, ["Annual Report 2026", "Annual Report 2025"]),
     "company-trades": ("trades-insider-trades", 1, ["-1,942", "-1,000"]),
     "company-announcements": (
         "Announcements",
@@ -99,116 +94,108 @@ def test_retained_tables_are_registered_and_stored(pg_db, tmp_path, monkeypatch,
     )
     store = SnapshotStore(tmp_path / "captures")
     with pg_db.runtime_pool() as pool:
-        locks = PgSiteLock(pool)
-        values = VendorValuesStore(pool)
-        try:
-            for site_name, surfaces in SURFACES.items():
-                site = Site.SCREENER if site_name == "screener" else Site.TIJORI
-                for surface, parent in surfaces.items():
-                    retained = [
-                        r
-                        for r in rows
-                        if (r["site"], r["symbol"], r["id"], r["status"])
-                        == (site_name, symbol, parent, 200)
-                        and "/search/" not in r["url"]
-                    ]
-                    if not retained:
-                        continue
-                    row = retained[0]
-                    raw = Path(row["path"]).read_bytes()
-                    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-                    if ragged and surface == "company-trades":
-                        from lxml import html
+        for site_name, surfaces in SURFACES.items():
+            site = Site.SCREENER if site_name == "screener" else Site.TIJORI
+            for surface, parent in surfaces.items():
+                retained = [
+                    r
+                    for r in rows
+                    if (r["site"], r["symbol"], r["id"], r["status"])
+                    == (site_name, symbol, parent, 200)
+                    and "/search/" not in r["url"]
+                ]
+                if not retained:
+                    continue
+                row = retained[0]
+                raw = Path(row["path"]).read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                if ragged and surface == "company-trades":
+                    from lxml import html
 
-                        tree = Body(raw=raw).tree()
-                        cell = tree.xpath("//table/tbody/tr[not(td/@colspan)]/td[2]")[0]
-                        cell.getparent().remove(cell)
-                        raw = html.tostring(tree, encoding="utf-8")
-                    entry = PARSERS[site, surface]
-                    spec = next(s for s in specs if (s.site, s.id) == (site, surface))
+                    tree = Body(raw=raw).tree()
+                    cell = tree.xpath("//table/tbody/tr[not(td/@colspan)]/td[2]")[0]
+                    cell.getparent().remove(cell)
+                    raw = html.tostring(tree, encoding="utf-8")
+                entry = PARSERS[site, surface]
+                spec = next(s for s in specs if (s.site, s.id) == (site, surface))
 
-                    def opened(self, request, timeout, row=row, raw=raw):
-                        assert request.full_url == row["url"] and timeout > 0
-                        return HTTPError(row["url"], 200, "fixture", Message(), io.BytesIO(raw))
-
-                    monkeypatch.setattr(OpenerDirector, "open", opened)
-                    session = SiteSession(
-                        site=site, session_cookie=SecretStr("synthetic"), cookie_name="sessionid"
+                ref = capture_response(
+                    pool,
+                    store,
+                    tmp_path / "stops",
+                    Request(spec=spec, url=row["url"], ids=None, due_since=None),
+                    raw,
+                )
+                with pool.connection() as conn:
+                    status, count = conn.execute(
+                        "SELECT status,row_count FROM eqos.vendor_outcomes "
+                        "WHERE capture_ref_id=%s AND surface=%s",
+                        (ref.capture_ref_id, surface),
+                    ).fetchone()
+                    absent = (
+                        surface
+                        in {"overview-customers", "overview-suppliers", "overview-connections"}
+                        and symbol in {"ETERNAL", "KIRANVYPAR", "HDFCLIFE"}
+                    ) or (surface == "overview-brands" and symbol in {"KIRANVYPAR", "HDFCLIFE"})
+                    absent |= surface == "overview-customers" and symbol == "RELIANCE"
+                    failed = ragged and surface == "company-trades"
+                    partial = surface == "company-trades" and symbol == "APARINDS" and not failed
+                    assert status == (
+                        "FAILED"
+                        if failed
+                        else "EMPTY"
+                        if absent
+                        else "PARTIAL"
+                        if partial
+                        else "OK"
                     )
-                    fetcher = VendorFetcher(
-                        store,
-                        {site: session},
-                        OpenerDirector(),
-                        tmp_path / "stops",
-                        locks,
-                        spacing_seconds=0,
-                    )
-                    ref, _ = capture(
-                        fetcher,
-                        store,
-                        pool,
-                        values,
-                        Request(spec=spec, url=row["url"], ids=None, due_since=None),
-                    )
-                    with pool.connection() as conn:
-                        status, count = conn.execute(
-                            "SELECT status,row_count FROM eqos.vendor_outcomes "
-                            "WHERE capture_ref_id=%s AND surface=%s",
-                            (ref.capture_ref_id, surface),
-                        ).fetchone()
-                        absent = (
-                            surface
-                            in {"overview-customers", "overview-suppliers", "overview-connections"}
-                            and symbol in {"ETERNAL", "KIRANVYPAR", "HDFCLIFE"}
-                        ) or (surface == "overview-brands" and symbol in {"KIRANVYPAR", "HDFCLIFE"})
-                        absent |= surface == "overview-customers" and symbol == "RELIANCE"
-                        failed = ragged and surface == "company-trades"
-                        assert status == ("FAILED" if failed else "EMPTY" if absent else "OK")
-                        if failed:
-                            assert count == 0
-                        stored = conn.execute(
-                            "SELECT table_key,row_index,column_index,row_label "
-                            "FROM eqos.vendor_values "
-                            "WHERE capture_ref_id=%s AND outcome_id IN "
-                            "(SELECT id FROM eqos.vendor_outcomes WHERE surface=%s)",
-                            (ref.capture_ref_id, surface),
+                    if partial:
+                        assert conn.execute(
+                            (
+                                "SELECT count(*) FROM eqos.vendor_values "
+                                "WHERE capture_ref_id=%s AND "
+                                "expected_numeric AND value IS NULL AND column_label='Percent'"
+                            ),
+                            (ref.capture_ref_id,),
+                        ).fetchone() == (1,)
+                    if failed:
+                        assert count == 0
+                    stored = conn.execute(
+                        "SELECT table_key,row_index,column_index,row_label "
+                        "FROM eqos.vendor_values "
+                        "WHERE capture_ref_id=%s AND outcome_id IN "
+                        "(SELECT id FROM eqos.vendor_outcomes WHERE surface=%s)",
+                        (ref.capture_ref_id, surface),
+                    ).fetchall()
+                    assert len(stored) == count
+                    assert len({r[:3] for r in stored}) == count
+                    if surface == "company-trades" and symbol == "APARINDS" and not ragged:
+                        assert len({r[1] for r in stored if r[0] == "trades-insider-trades"}) == 37
+                        assert max(Counter((r[0], r[3]) for r in stored if r[2] == 0).values()) > 1
+                    checked_symbol = "RELIANCE" if surface == "overview-suppliers" else "APARINDS"
+                    if symbol == checked_symbol and not failed:
+                        key, column, expected = CHECKED[surface]
+                        samples = conn.execute(
+                            "SELECT raw_text FROM eqos.vendor_values WHERE capture_ref_id=%s "
+                            "AND table_key=%s AND column_index=%s ORDER BY row_index LIMIT 2",
+                            (ref.capture_ref_id, key, column),
                         ).fetchall()
-                        assert len(stored) == count
-                        assert len({r[:3] for r in stored}) == count
-                        if surface == "company-trades" and symbol == "APARINDS" and not ragged:
-                            assert (
-                                len({r[1] for r in stored if r[0] == "trades-insider-trades"}) == 37
-                            )
-                            assert (
-                                max(Counter((r[0], r[3]) for r in stored if r[2] == 0).values()) > 1
-                            )
-                        checked_symbol = (
-                            "RELIANCE" if surface == "overview-suppliers" else "APARINDS"
-                        )
-                        if symbol == checked_symbol and not failed:
-                            key, column, expected = CHECKED[surface]
-                            samples = conn.execute(
-                                "SELECT raw_text FROM eqos.vendor_values WHERE capture_ref_id=%s "
-                                "AND table_key=%s AND column_index=%s ORDER BY row_index LIMIT 2",
-                                (ref.capture_ref_id, key, column),
-                            ).fetchall()
-                            assert [r[0] for r in samples] == expected
-                        if surface == "overview-connections" and symbol == "APARINDS":
-                            assert conn.execute(
-                                "SELECT DISTINCT column_label FROM eqos.vendor_values "
-                                "WHERE capture_ref_id=%s ORDER BY column_label",
-                                (ref.capture_ref_id,),
-                            ).fetchall() == [("Customers",), ("Suppliers",)]
-                        if surface == "section-documents":
-                            expected_blocks = {"Announcements", "Annual reports"}
-                            if symbol != "KIRANVYPAR":
-                                expected_blocks.add("Concalls")
-                            if symbol not in {"KIRANVYPAR", "ETERNAL"}:
-                                expected_blocks.add("Credit ratings")
-                            assert {r[0] for r in stored} == expected_blocks
-                    assert entry.version == f"{site_name}:{surface}.v1"
-        finally:
-            locks.close()
+                        assert [r[0] for r in samples] == expected
+                    if surface == "overview-connections" and symbol == "APARINDS":
+                        assert conn.execute(
+                            "SELECT DISTINCT column_label FROM eqos.vendor_values "
+                            "WHERE capture_ref_id=%s ORDER BY column_label",
+                            (ref.capture_ref_id,),
+                        ).fetchall() == [("Customers",), ("Suppliers",)]
+                    if surface == "section-documents":
+                        expected_blocks = {"Announcements", "Annual reports"}
+                        if symbol != "KIRANVYPAR":
+                            expected_blocks.add("Concalls")
+                        if symbol not in {"KIRANVYPAR", "ETERNAL"}:
+                            expected_blocks.add("Credit ratings")
+                        assert {r[3] for r in stored} == expected_blocks
+                        assert all(r[0].startswith("documents:") for r in stored)
+                assert entry.version == f"{site_name}:{surface}.v1"
 
 
 def test_table_cells_keep_labels_links_and_reject_ragged_rows():
@@ -338,29 +325,18 @@ def test_market_feed_date_failure_is_recorded(pg_db, tmp_path, monkeypatch, brok
         raw = raw.replace(b"28 October 2026", b"invalid full date", 1)
     spec = next(s for s in MARKET_SPECS if s.id == "upcoming-results")
 
-    def opened(self, request, timeout):
-        return HTTPError(row["url"], 200, "fixture", Message(), io.BytesIO(raw))
-
-    monkeypatch.setattr(OpenerDirector, "open", opened)
     store = SnapshotStore(tmp_path / "captures")
     with pg_db.runtime_pool() as pool:
-        locks = PgSiteLock(pool)
-        try:
-            session = SiteSession(
-                site=spec.site, session_cookie=SecretStr("test"), cookie_name="sid"
-            )
-            fetcher = VendorFetcher(store, {spec.site: session}, OpenerDirector(), tmp_path, locks)
-            request = Request(spec=spec, url=row["url"], ids=None, due_since=None)
-            ref, _ = capture(fetcher, store, pool, VendorValuesStore(pool), request)
-            with pool.connection() as conn:
-                status, count = conn.execute(
-                    "SELECT status,row_count FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
-                    (ref.capture_ref_id,),
-                ).fetchone()
-                assert status == ("FAILED" if broken else "OK")
-                assert (count == 0) if broken else (count > 0)
-        finally:
-            locks.close()
+        ref = capture_response(
+            pool, store, tmp_path, Request(spec=spec, url=row["url"], ids=None, due_since=None), raw
+        )
+        with pool.connection() as conn:
+            status, count = conn.execute(
+                "SELECT status,row_count FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                (ref.capture_ref_id,),
+            ).fetchone()
+            assert status == ("FAILED" if broken else "OK")
+            assert (count == 0) if broken else (count > 0)
 
 
 def test_registry_import_does_not_read_configuration(tmp_path):
@@ -373,3 +349,83 @@ def test_registry_import_does_not_read_configuration(tmp_path):
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr.decode()
+
+
+def test_unreadable_numeric_column_remains_expected():
+    tree = Body(
+        raw=(
+            b"<table><thead><tr><th>Name</th><th>Amount</th></tr></thead><tbody><t"
+            b"r><td>Label</td><td>unreadable</td></tr></tbody></table>"
+        )
+    ).tree()
+    cell = read_html_table(tree, ".", "fixture")[1]
+    assert cell.value is None and cell.expected_numeric
+
+
+def test_missing_trade_markup_fails():
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url="",
+        retrieved_at=datetime.now(UTC),
+        body_sha256="fixture",
+        capture_id="fixture",
+    )
+    with pytest.raises(ValueError, match="trade"):
+        PARSERS[Site.SCREENER, "company-trades"].parse(Body(raw=b"<p>unrelated</p>"), context)
+
+
+def test_filing_cell_keeps_every_link():
+    cells = read_html_table(
+        Body(
+            raw=(
+                b"<table><tr><th>Year</th><th>Files</th></tr><tr><td>2026</td><td><a h"
+                b'ref="/one">One</a><a href="/two">Two</a><a href="/three">Three</a></'
+                b"td></tr></table>"
+            )
+        ).tree(),
+        ".",
+        "filings",
+    )
+    assert {v.link for v in cells if v.link} == {"/one", "/two", "/three"}
+    assert len({(v.table_key, v.row_index, v.column_index) for v in cells}) == len(cells)
+
+
+def test_document_heading_is_label_not_identity():
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url="",
+        retrieved_at=datetime.now(UTC),
+        body_sha256="fixture",
+        capture_id="fixture",
+    )
+    raw = (
+        b'<section id="documents"><div class="documents"><h3>Original</h3><ul '
+        b'class="list-links"><li><a href="/report">Report</a></li></ul></div><'
+        b"/section>"
+    )
+    parser = PARSERS[Site.SCREENER, "section-documents"].parse
+    before = parser(Body(raw=raw), context)
+    after = parser(Body(raw=raw.replace(b"Original", b"Renamed")), context)
+    assert [(v.table_key, v.row_index, v.column_index) for v in before] == [
+        (v.table_key, v.row_index, v.column_index) for v in after
+    ]
+    assert any(v.row_label == "Renamed" for v in after)
+
+
+def test_shareholding_series_preserves_numeric_lexeme():
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url="",
+        retrieved_at=datetime.now(UTC),
+        body_sha256="fixture",
+        capture_id="fixture",
+    )
+    values = PARSERS[Site.TIJORI, "shareholding-trend"].parse(
+        Body(raw=b"<script>var trendData = [{'name':'Fixture','data':[[123,1e-8]]}];</script>"),
+        context,
+    )
+    assert values[0].raw_text == "1e-8"
+    assert values[0].value == Decimal("0.00000001")

@@ -1,25 +1,20 @@
 """G1 company series retain all cells and fail closed on broken reference bodies."""
 
 import hashlib
-import io
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
-from email.message import Message
 from pathlib import Path
-from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 import pytest
-from pydantic import SecretStr
-from vendor_surface_support import INDEX, RetainedOpener, load_request_index
+from vendor_surface_support import INDEX, capture_response, load_request_index
 
-from fundamentals.ingest.vendor_surface_capture import Request, capture
-from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
+from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_fetch import Site
 from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
 from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
 from fundamentals.store.snapshot_store import SnapshotStore
-from fundamentals.store.vendor_values_store import VendorValuesStore
 
 CONTEXT = ParseContext(
     ids=None,
@@ -57,19 +52,6 @@ REFERENCES = list(
 )
 
 
-class SeriesOpener(RetainedOpener):
-    """Serve exactly the selected retained response at the HTTP boundary."""
-
-    def __init__(self, raw):
-        super().__init__()
-        self.raw = raw
-
-    def open(self, request, timeout):
-        headers = Message()
-        headers["Content-Type"] = "application/json"
-        return HTTPError(request.full_url, 200, "fixture", headers, io.BytesIO(self.raw))
-
-
 @pytest.mark.pg
 @pytest.mark.retained
 @pytest.mark.parametrize("row", REFERENCES, ids=lambda row: row["id"] + "-" + row["sha256"][:12])
@@ -88,29 +70,14 @@ def test_series_capture_keeps_points_or_records_failed(pg_db, tmp_path, row, tru
         group=ParseGroup.SERIES,
         cadence=Cadence.DAILY,
     )
-    session = SiteSession(
-        site=Site.TIJORI, session_cookie=SecretStr("fixture"), cookie_name="sessionid"
-    )
     with pg_db.runtime_pool() as pool:
-        locks = PgSiteLock(pool)
-        try:
-            fetcher = VendorFetcher(
-                store,
-                {Site.TIJORI: session},
-                SeriesOpener(raw[:-1] if truncated else raw),
-                tmp_path / "stops",
-                locks,
-                spacing_seconds=0,
-            )
-            ref, _ = capture(
-                fetcher,
-                store,
-                pool,
-                VendorValuesStore(pool),
-                Request(spec=spec, url=row["url"], ids=None, due_since=None),
-            )
-        finally:
-            locks.close()
+        ref = capture_response(
+            pool,
+            store,
+            tmp_path / "stops",
+            Request(spec=spec, url=row["url"], ids=None, due_since=None),
+            raw[:-1] if truncated else raw,
+        )
         with pool.connection() as conn:
             status, count = conn.execute(
                 "SELECT status,row_count FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
@@ -212,27 +179,14 @@ def test_market_series_capture_preserves_cells_or_fails(pg_db, tmp_path, row, tr
         group=ParseGroup.SERIES,
         cadence=Cadence.DAILY,
     )
-    session = SiteSession(site=site, session_cookie=SecretStr("fixture"), cookie_name="sessionid")
     with pg_db.runtime_pool() as pool:
-        locks = PgSiteLock(pool)
-        try:
-            fetcher = VendorFetcher(
-                store,
-                {site: session},
-                SeriesOpener(raw.rstrip()[:-1] if truncated else raw),
-                tmp_path / "stops",
-                locks,
-                spacing_seconds=0,
-            )
-            ref, _ = capture(
-                fetcher,
-                store,
-                pool,
-                VendorValuesStore(pool),
-                Request(spec=spec, url=row["url"], ids=None, due_since=None),
-            )
-        finally:
-            locks.close()
+        ref = capture_response(
+            pool,
+            store,
+            tmp_path / "stops",
+            Request(spec=spec, url=row["url"], ids=None, due_since=None),
+            raw.rstrip()[:-1] if truncated else raw,
+        )
         with pool.connection() as conn:
             status, count, version = conn.execute(
                 "SELECT status,row_count,parser_version FROM eqos.vendor_outcomes "
