@@ -43,6 +43,7 @@ def outcome(version="tijori:chart-api.v1", digest="a" * 64, **changes):
         row_label="date",
         column_label="price",
         raw_text="12.5",
+        unit="PRIVATE_UNIT_SENTINEL",
         value=Decimal("12.5"),
         link="https://example.com/document",
     )
@@ -110,7 +111,7 @@ TABLES = {
 PROPOSAL = (
     "INSERT INTO eqos.vendor_label_proposals (source_id,surface,label,units,reason,model_id,"
     "prompt_version,dictionary_version,prompt,raw_response) VALUES "
-    "('tijori','chart-api','Sales','{Cr}','MODEL_UNMAPPED','m','v1','v3','p','r')"
+    "('tijori','chart-api','Sales','{PRIVATE_UNIT_SENTINEL}','MODEL_UNMAPPED','m','v1','v3','p','r')"
 )
 CLAIM = (
     "INSERT INTO eqos.vendor_text_claims (capture_ref_id,surface,kind,span_start,span_end,text,"
@@ -187,7 +188,7 @@ def test_licence_end_and_immutable_tables(pg_db, tmp_path):
         with pool.connection() as conn:
             after = table_rows(conn, ["vendor_label_proposals"])["vendor_label_proposals"]
             assert after == {
-                key: row | {"label": None, "prompt": None, "raw_response": None}
+                key: row | {"label": None, "prompt": None, "raw_response": None, "units": None}
                 for key, row in before.items()
             }
             for statement, params in ((PROPOSAL, ()), (CLAIM, (ref.capture_ref_id,))):
@@ -214,11 +215,11 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
         with pool.connection() as conn:
             assert table_rows(conn, ["vendor_values"])["vendor_values"].keys() == before.keys()
             assert conn.execute(
-                "SELECT row_index, column_index, value, raw_text, row_label, column_label, link "
+                "SELECT row_index, column_index, value, raw_text, row_label, column_label, link, unit "
                 "FROM eqos.vendor_values ORDER BY row_index"
             ).fetchall() == [
-                (0, 0, None, None, None, None, None),
-                (1, 0, None, None, None, None, None),
+                (0, 0, None, None, None, None, None, None),
+                (1, 0, None, None, None, None, None, None),
             ]
             assert conn.execute(
                 "SELECT kind,span_start,span_end,text FROM eqos.vendor_text_claims"

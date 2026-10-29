@@ -65,7 +65,7 @@ class Tombstone(BaseModel):
 
 
 TOMBSTONES = {
-    "vendor_label_proposals": Tombstone(clear=("label", "prompt", "raw_response")),
+    "vendor_label_proposals": Tombstone(clear=("label", "prompt", "raw_response", "units")),
     "vendor_text_claims": Tombstone(clear=("text",)),
     "occurrences": Tombstone(
         clear=("raw_value_text", "raw_sign"),
@@ -76,7 +76,9 @@ TOMBSTONES = {
     "calculation_trace_operands": Tombstone(clear=_EXACT),
     "result_source_values": Tombstone(clear=_VALUES),
     "acquisition_attempts": Tombstone(clear=("reason",)),
-    "vendor_values": Tombstone(clear=("value", "raw_text", "row_label", "column_label", "link")),
+    "vendor_values": Tombstone(
+        clear=("value", "raw_text", "row_label", "column_label", "link", "unit")
+    ),
 }
 
 
