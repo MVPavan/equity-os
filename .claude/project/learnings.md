@@ -363,6 +363,10 @@ Format per entry:
   a second gate run. Prove parity by diffing `find . -type f` between the checkouts, with
   `holdout` pruned. Then read the failure messages:
   "retained ... missing" or a FileNotFoundError under `data/` is environmental.
+- The reverse direction too (2026-10-29): when a worktree branch merges, copy any retained files
+  it added under `data/` back into main. DOCS-1's `docs-probe-2026-10-2{7,8}` stayed behind, and
+  main's first full run after the merge showed 28 failures, all of them that missing data. Before
+  merging, run the same `find` diff with the sides swapped.
 
 ## A stale `.mypy_cache` hid a mypy failure on main  (2026-10-28)
 
