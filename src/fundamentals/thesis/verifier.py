@@ -3,8 +3,8 @@
 Two guarantees, both produced by *code* (a model is used only to draft, never to
 police numbers — roadmap invariant 6):
 
-* **Unsourced-number detection.** Every number a draft emits is parsed and checked
-  against the validated fact set. Any number not backed by a validated fact — a
+* **Unsourced-number detection.** Analytical amounts in model-authored judgment are
+  flagged; facts are displayed by code. Any number not backed by a validated fact — a
   rounded figure, a computed ratio, a peer or historical number, a price target —
   is surfaced as an :class:`UnsourcedClaim`. It is a red flag, never a value to
   trust.
@@ -33,10 +33,10 @@ from fundamentals.thesis.contracts import (
 
 # Preserve sign, currency and stated units when checking a draft amount.
 _NUMBER_RE = re.compile(
-    r"(?P<sign>(?<!\w)[+−-])?\s*(?P<currency>₹|\$|rs\.?|inr|usd)?\s*"
-    r"(?P<num>(?:(?<!\d)[+−-]\s*)?\d[\d,]*(?:\.\d+)?)"
-    r"(?P<unit>\s*(?:(?:inr|usd)\s+)?(?:%|percent\b|per cent\b|crore\b|lakh\b|"
-    r"million\b|billion\b|per share\b|shares?\b|days?\b|times\b))?",
+    r"(?P<open>\()?\s*(?P<sign>(?<!\w)[+−-])?\s*(?P<currency>₹|\$|rs\.?|inr|usd)?\s*"
+    r"(?P<num>\d[\d,]*(?:\.\d+)?)"
+    r"(?P<unit>\s*(?:(?:inr|usd)\s+)?(?:%|percent\b|per cent\b|crores?\b|lakhs?\b|"
+    r"millions?\b|billions?\b|per share\b|shares?\b|days?\b|times\b))?(?P<close>\))?",
     re.IGNORECASE,
 )
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -95,7 +95,7 @@ class NumberHit(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     raw: str
-    value: Decimal
+    value: Decimal | None
     is_percent: bool
     unit: str = ""
 
@@ -117,9 +117,12 @@ def extract_numbers(text: str) -> list[NumberHit]:
     for match in _NUMBER_RE.finditer(text):
         raw = (match.group("sign") or "") + match.group("num")
         value = _to_decimal(raw)
-        if value is None:
-            continue
+        if value is not None and match.group("open") and match.group("close"):
+            value = -abs(value)
         unit = (match.group("unit") or "").strip().upper()
+        unit = {word + "S": word for word in ("CRORE", "LAKH", "MILLION", "BILLION")}.get(
+            unit, unit
+        )
         if unit in {"PERCENT", "PER CENT"}:
             unit = "%"
         if not unit and re.search(r"\bEPS(?:\s+(?:of|is|was))?\s*$", text[: match.start()], re.I):
@@ -195,17 +198,18 @@ def _scan_targets(draft: ThesisDraft) -> list[tuple[str, str]]:
 
 
 def _unsourced_claims(draft: ThesisDraft, fact_set: ValidatedFactSet) -> list[UnsourcedClaim]:
-    """Flag every number in one draft that is not a validated fact."""
+    """Judgment is qualitative; only exact prompt date/period tokens are metadata."""
     claims: list[UnsourcedClaim] = []
     for section_label, text in _scan_targets(draft):
-        for hit in extract_numbers(text):
-            if any(
-                hit.value == _to_decimal(fact.value)
-                and hit.unit
-                in {fact.unit.upper(), fact.unit.upper().removeprefix(f"{fact.currency} ")}
-                for fact in fact_set.facts
-            ):
-                continue
+        metadata = [fact_set.quarter]
+        if fact_set.period_start and fact_set.period_end:
+            metadata.extend((fact_set.period_start, fact_set.period_end))
+        amounts = re.sub(
+            r"(?<![\w-])(?:" + "|".join(re.escape(token) for token in metadata) + r")(?![\w-])",
+            " ",
+            text,
+        )
+        for hit in extract_numbers(amounts):
             claims.append(
                 UnsourcedClaim(
                     model_label=draft.model_label,

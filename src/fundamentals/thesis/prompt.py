@@ -36,14 +36,13 @@ _ROLE_PREAMBLE = (
 _FACTS_PREAMBLE = (
     "These are publicly disclosed figures, already cross-verified across independent "
     "first-party sources by a deterministic pipeline. Treat every value as fixed ground "
-    "truth. These are the ONLY numbers you may cite."
+    "truth. Facts are shown by code, not restated by the model."
 )
 
 _TASK_RULES = (
     "Rules (a violation is a red flag the cross-verifier will catch):\n"
-    "- Cite ONLY the facts above. Introduce NO new numbers — no estimates, ratios, "
-    "growth rates, price targets, multiples, historical figures, or peer numbers. If a "
-    "number is not in the facts above, do not write it.\n"
+    "- Judgment fields are qualitative, with no analytical amounts: facts are shown by code, "
+    "not restated by the model.\n"
     "- You supply drivers, thesis impact, observable falsifiers, key risks, and open "
     "questions. This is opinion, explicitly not fact.\n"
     "- Under needed_but_missing, name the data you would want but were not given "
@@ -117,7 +116,7 @@ def build_prompt(fact_set: ValidatedFactSet) -> str:
     lines.append(f"Basis: {fact_set.scope}, {fact_set.basis}, {currency}")
     lines.append("")
 
-    lines.append("## VALIDATED FACTS (ground truth — the only numbers you may cite)")
+    lines.append("## VALIDATED FACTS (ground truth — shown by code)")
     lines.append(_FACTS_PREAMBLE)
     lines.extend(_fact_line(fact) for fact in fact_set.facts)
     lines.append("")

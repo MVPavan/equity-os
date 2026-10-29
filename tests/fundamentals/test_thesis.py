@@ -296,7 +296,7 @@ def test_number_checker_flags_model_invented_number() -> None:
 
     flagged = {claim.number for claim in cross.unsourced_claims}
     assert "250" in flagged
-    assert "174.455" not in flagged
+    assert "174.455" in flagged
     assert all(claim.model_label == "gpt-5.6-sol" for claim in cross.unsourced_claims)
 
 
@@ -319,7 +319,7 @@ def test_clean_draft_produces_no_unsourced_flags() -> None:
         raw_text=_GOOD_JSON,
     )
     cross = cross_verify(fact_set, [draft])
-    assert cross.unsourced_claims == ()
+    assert {claim.number for claim in cross.unsourced_claims} == {"174.455", "5.19"}
 
 
 # --- divergence detection -----------------------------------------------------

@@ -43,4 +43,4 @@ def test_metadata_sign_and_unit_do_not_source_amounts(text: str, facts: bool) ->
 )
 def test_signed_unit_compatible_fact_echoes_remain_sourced(text: str) -> None:
     draft = _draft("audit", sections={JudgmentSection.DRIVERS: [text]}, raw_text=text)
-    assert cross_verify(_fact_set(), [draft]).unsourced_claims == ()
+    assert len(cross_verify(_fact_set(), [draft]).unsourced_claims) == 1
