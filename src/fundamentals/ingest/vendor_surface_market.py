@@ -35,7 +35,9 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
-MOVING = frozenset(("p", "page", "cursor", "timestamp", "daterange", "date_from", "date_to"))
+MOVING = frozenset(
+    "p page cursor timestamp daterange date_from date_to ts same_ts_offset_count".split()
+)
 
 
 class Boundary(BaseModel):
@@ -169,8 +171,12 @@ def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tup
 
 
 def continuation(request: Request, body: Body, page: int) -> str | None:
-    """Read explicit next-page links, Tijori show-more, or the timeline cursor."""
+    """Read explicit next-page links, show-more continuations, or the timeline cursor."""
     tree = body.tree()
+    for onclick in tree.xpath('//div[starts-with(@id,"show-more-")]/button/@onclick'):
+        query = re.search(r"Utils\.ajaxLoad\(event, '\?([^']+)'\)", onclick)
+        if query:
+            return query_url(request.url, **dict(parse_qsl(query[1])))
     if request.spec.id in {
         "screens-list",
         "screen-page",

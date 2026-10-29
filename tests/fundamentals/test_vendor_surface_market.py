@@ -355,3 +355,26 @@ def test_widget_requests_follow_the_expanding_metric_mapping():
     fewer = EXPANSIONS[spec.expand](Body(raw=blank), retained_context(row, spec))
     assert 0 < len(fewer) < len(urls)
     assert all("//" not in urlsplit(r.url).path for r in fewer)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_announcements_continue_through_the_show_more_timestamp(market_rig):
+    from urllib.parse import urljoin
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "announcements-feed")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    request = Request(spec=spec, url=row["url"], ids=None, due_since=None)
+    raw = Path(row["path"]).read_bytes()
+    onclick = Body(raw=raw).tree().xpath('//div[starts-with(@id,"show-more-")]/button/@onclick')
+    next_url = urljoin(row["url"], onclick[0].split("'")[1])
+    opener.overrides[next_url] = raw.replace(b"Utils.ajaxLoad", b"Utils.disabled"), 200
+    report = run((), requests=(request,))
+    # Page 1 is not the whole feed: the source continues by timestamp and same-second offset.
+    assert opener.calls == [row["url"], next_url] and report.completed == 2
+    assert not report.incomplete
+    assert market.traversal_key(request.model_copy(update={"url": next_url})) == (
+        market.traversal_key(request)
+    )
+    assert market.progress(pool, market.traversal_key(request)).resume_page is None
