@@ -19,8 +19,14 @@ INDEX = Path("docs/research/vendor-surface/snapshots-index.json")
 
 
 def load_request_index():
-    """Read only explicitly indexed reference bodies, verifying every returned body."""
-    return json.loads(INDEX.read_text())
+    """Read both indexes by URL, preserving the original fixtures on duplicates."""
+    rows = json.loads(INDEX.read_text()) + json.loads(
+        INDEX.with_name("kinds-index.json").read_text()
+    )
+    requests = {}
+    for row in rows:
+        requests.setdefault(row["url"], row)
+    return requests
 
 
 class RetainedOpener(OpenerDirector):
@@ -37,7 +43,7 @@ class RetainedOpener(OpenerDirector):
         identifier = "chart-api" if "/chart/" in parts.path else "company-page"
         row = next(
             item
-            for item in self.rows
+            for item in self.rows.values()
             if item["site"] == "screener"
             and item["id"] == identifier
             and item["kind"] == "response"
