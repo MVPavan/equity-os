@@ -108,6 +108,7 @@ GUARDED = frozenset(
     | {"namespace_verifications", "occurrences", "interpretations", "interpretation_operands"}
     | {"interpretation_condition_evidence", "construction_traces", "calculation_trace_operands"}
     | {"result_source_values", "run_inputs", "acquisition_attempts", "package_members"}
+    | {"vendor_parser_versions", "vendor_outcomes", "vendor_values", "vendor_basis_bindings"}
 )
 GUARD_TABLES = (
     "SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
@@ -241,10 +242,32 @@ def test_guard_v2_covers_rp3_and_refuses_payload_on_an_expired_capture(
     assert {row[0] for row in migrator.execute(GUARD_TABLES)} == GUARDED
     capture = register(runtime, "nse", "NSE_XBRL_INSTANCE")
     occurrence = _insert(runtime, "occurrences", _occurrence(capture, "p-1"))
+    runtime.execute(
+        "INSERT INTO eqos.vendor_parser_versions (parser_version, parser_sha256) VALUES (%s, %s)",
+        ("expiry-test.v1", "a" * 64),
+    )
+    outcome = _insert(
+        runtime,
+        "vendor_outcomes",
+        {
+            "capture_ref_id": capture,
+            "surface": "chart-api",
+            "parser_version": "expiry-test.v1",
+            "status": "OK",
+            "row_count": 1,
+        },
+    )
     migrator.execute(EXPIRE, (capture,))
     expired = pytest.raises(errors.ObjectNotInPrerequisiteState, match=RefusalCode.ORIGINAL_EXPIRED)
     with expired:
         _insert(runtime, "occurrences", _occurrence(capture, "p-2"))
+    with pytest.raises(errors.ObjectNotInPrerequisiteState, match=RefusalCode.ORIGINAL_EXPIRED):
+        runtime.execute(
+            "INSERT INTO eqos.vendor_values "
+            "(outcome_id, capture_ref_id, table_key, row_index, column_index, locator) "
+            "VALUES (%s, %s, 'price', 0, 0, '/0')",
+            (outcome, capture),
+        )
     with runtime.transaction():
         item = _insert(runtime, "queue_items", _queue_item(seeded["runs"]))
         assert _insert(runtime, "queue_item_inputs", {"item_id": item, "occurrence_id": occurrence})

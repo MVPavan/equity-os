@@ -51,6 +51,46 @@ CREATE TABLE eqos.vendor_basis_bindings (
     recorded_at timestamptz NOT NULL DEFAULT eqos.store_now(),
     UNIQUE (entity_id, basis)
 );
+-- The 0028 guard also refuses vendor payloads on captures that are no longer retained.
+CREATE OR REPLACE FUNCTION eqos.retention_guard() RETURNS trigger LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = pg_catalog, eqos AS $$
+DECLARE
+    rec         jsonb := to_jsonb(NEW);
+    captures    bigint[];
+    ended       text;
+    expired     bigint;
+BEGIN
+    PERFORM eqos.retention_shared();
+    captures := eqos.row_captures(TG_TABLE_NAME, rec);
+    SELECT l.source_id INTO ended FROM eqos.licence_ends l
+        WHERE l.source_id = rec ->> 'source_id'
+           OR l.source_id IN (SELECT source_id FROM eqos.capture_refs WHERE id = ANY (captures))
+        LIMIT 1;
+    IF ended IS NOT NULL THEN
+        RAISE EXCEPTION 'BEYOND_AUTHORITY: the % licence has ended; % refused', ended,
+            TG_TABLE_NAME USING ERRCODE = '42501';
+    END IF;
+    IF rec ->> 'citation_kind' = 'SOURCE_QUOTE'
+       AND EXISTS (SELECT 1 FROM eqos.capture_refs WHERE id = ANY (captures)
+                   AND eqos.is_vendor_source(source_id)) THEN
+        RAISE EXCEPTION 'BEYOND_AUTHORITY: a vendor capture cannot be quoted'
+            USING ERRCODE = '42501';
+    END IF;
+    IF rec ->> 'citation_kind' = 'SOURCE_QUOTE' OR TG_TABLE_NAME IN ('report_sections',
+        'legacy_evidence_bindings', 'occurrences', 'interpretations', 'interpretation_operands',
+        'interpretation_condition_evidence', 'construction_traces', 'calculation_trace_operands',
+        'result_source_values', 'run_inputs', 'acquisition_attempts', 'package_members',
+        'vendor_outcomes', 'vendor_values', 'vendor_basis_bindings') THEN
+        SELECT c INTO expired FROM unnest(captures) c
+            WHERE eqos.capture_state(c) NOT IN ('RETAINED', 'RESTORED') LIMIT 1;
+        IF expired IS NOT NULL THEN
+            RAISE EXCEPTION 'ORIGINAL_EXPIRED: capture % is not retained; % refused', expired,
+                TG_TABLE_NAME USING ERRCODE = '55000';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+
 DO $$
 DECLARE name text;
 BEGIN
