@@ -243,6 +243,10 @@ def company_parser(spec: SurfaceSpec) -> Parser:
     return parse
 
 
+# Unlinked table rows are identified by these fixed facts, never by amounts or prices.
+KEY_LABELS = frozenset(("Person", "Type", "Offer Type"))
+
+
 class FeedRow(BaseModel):
     """A source event identity with a date only when the source supplies one."""
 
@@ -262,6 +266,17 @@ def _feed_date(raw: str) -> date:
     return datetime.fromisoformat(raw).date()
 
 
+def _row_id(row: dict[str, VendorValue]) -> str:
+    """The source link, else a digest of the company and the row's declared key cells."""
+    if row["Row ID"].link:
+        return row["Row ID"].link
+    keys = [value.raw_text for label, value in sorted(row.items()) if label.startswith("Key")]
+    if not keys:
+        raise ValueError("feed row has no stable identity")
+    company = row["Company"].link or row["Company"].raw_text
+    return hashlib.sha256(json.dumps([company, *keys]).encode()).hexdigest()
+
+
 def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedRow, ...]:
     """Read persisted feed metadata, rejecting category hubs and other non-feeds."""
     if not spec.feed:
@@ -272,10 +287,7 @@ def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedR
             rows.setdefault(value.row_index, {})[value.column_label] = value
     return tuple(
         FeedRow(
-            row_id=row["Row ID"].link
-            or hashlib.sha256(
-                json.dumps([row["Company"].link, row["Row ID"].raw_text]).encode()
-            ).hexdigest(),
+            row_id=_row_id(row),
             company=row["Company"].link or row["Company"].raw_text,
             row_date=_feed_date(row["Date"].raw_text) if "Date" in row else None,
         )
@@ -284,7 +296,13 @@ def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedR
 
 
 def _feed_cells(
-    node: Any, company: Any, surface: str, row: int, dated: Any = None, event: Any = None
+    node: Any,
+    company: Any,
+    surface: str,
+    row: int,
+    dated: Any = None,
+    event: Any = None,
+    keys: tuple[Any, ...] = (),
 ) -> tuple[VendorValue, ...]:
     """Anchor event and company metadata to source text and links."""
     companies = company.xpath(
@@ -305,6 +323,7 @@ def _feed_cells(
     ]
     if dated is not None:
         fields.append(("Date", dated, None))
+    fields.extend((f"Key {index}", key, None) for index, key in enumerate(keys))
     return tuple(
         _cell(part, surface + ":feed", row, column, _text(company), label).model_copy(
             update={"link": link, "raw_text": part.get("datetime") or _text(part)}
@@ -344,7 +363,18 @@ def market_parser(spec: SurfaceSpec) -> Parser:
                         )
                         if date_node is not None and date_node.xpath('./div[@class="desktop"]'):
                             date_node = date_node.xpath('./div[@class="desktop"]')[0]
-                        values.extend(_feed_cells(tr, company, surface, event_index, date_node))
+                        keys = [
+                            cell
+                            for cell, label in zip(cells, headers, strict=True)
+                            if label in KEY_LABELS
+                        ]
+                        if date_node is not None:
+                            keys.append(date_node)
+                        values.extend(
+                            _feed_cells(
+                                tr, company, surface, event_index, date_node, keys=tuple(keys)
+                            )
+                        )
                         event_index += 1
             elif surface in {"results-latest", "quarterly-results-api"}:
                 table = node.xpath(".//table")[0]
@@ -358,7 +388,9 @@ def market_parser(spec: SurfaceSpec) -> Parser:
                     if surface == "results-latest"
                     else table.xpath("./thead/tr/th[4]")[0]
                 )
-                values.extend(_feed_cells(header, company, surface, index, date_node, event))
+                values.extend(
+                    _feed_cells(header, company, surface, index, date_node, event, (event,))
+                )
                 for column, part in enumerate(
                     header.xpath(
                         './/a[@href] | .//div[@class="metrics"]/div | '

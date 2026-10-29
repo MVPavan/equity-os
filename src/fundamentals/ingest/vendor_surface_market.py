@@ -58,6 +58,11 @@ class Progress(BaseModel):
     resume_url: str | None
 
 
+def named(spec: SurfaceSpec) -> str:
+    """The site and surface naming a report entry, never a vendor address."""
+    return f"{SITE_NAME[spec.site]}:{spec.id}"
+
+
 def traversal_key(request: Request) -> str:
     """Keep path/filter identity while excluding moving pagination parameters."""
     parts = urlsplit(normalise(request.url))
@@ -291,6 +296,8 @@ def capture_market(
                 if request.spec.feed
                 else [cell.link for cell in cells if cell.link]
             )
+            if request.spec.feed and len(set(row_ids)) < len(row_ids):
+                incomplete.append(f"{named(request.spec)}: rows without a unique identity")
             next_url = continuation(request, body, page)
             next_cursor = (
                 dict(parse_qsl(urlsplit(next_url).query)).get("timestamp") if next_url else None
@@ -342,9 +349,7 @@ def capture_market(
                     pending.extend(children)
                     if not children:
                         expected += 1
-                        incomplete.append(
-                            f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children"
-                        )
+                        incomplete.append(f"{named(spec)}: no advertised children")
             if done:
                 break
             if next_url == request.url:

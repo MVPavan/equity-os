@@ -296,7 +296,8 @@ def test_market_tables_and_feed_rows(surface):
     elif surface not in MARKET_NONFEEDS:
         events = feed_rows(spec, cells)
         assert len(events) >= 2 and all(e.row_id and e.company for e in events)
-        assert len({e.row_id for e in events}) == len(events)
+        # Two retained trades differ only by value; the market run reports that page.
+        assert len({e.row_id for e in events}) == len(events) - (surface == "trades-feed")
         assert events == feed_rows(spec, tuple(reversed(cells)))
         if surface in {"annual-reports-feed", "ratings-feed", "ipo", "results-latest"}:
             assert all(e.row_date is None for e in events)
@@ -429,3 +430,38 @@ def test_shareholding_series_preserves_numeric_lexeme():
     )
     assert values[0].raw_text == "1e-8"
     assert values[0].value == Decimal("0.00000001")
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    ("surface", "mutable"),
+    [("trades-feed", {"Value"}), ("corporate-actions-feed", {"Max Price", "Amount in Cr"})],
+)
+def test_unlinked_feed_rows_keep_identity_when_amounts_change(surface, mutable):
+    from lxml import html
+
+    row = next(r for r in MARKET_INDEX if r["id"] == surface and r["status"] == 200)
+    spec = next(s for s in MARKET_SPECS if s.id == surface)
+    raw = Path(row["path"]).read_bytes()
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url=row["url"],
+        retrieved_at=datetime(2026, 10, 28, tzinfo=UTC),
+        body_sha256=row["sha256"],
+        capture_id="retained-market",
+    )
+    tree = html.fromstring(raw)
+    table = tree.xpath(spec.selector)[0]
+    headers = [" ".join(th.text_content().split()) for th in table.xpath("./thead/tr/th")]
+    for tr in table.xpath("./tbody/tr[td]"):
+        for cell, label in zip(tr.xpath("./td | ./th"), headers, strict=True):
+            if label in mutable:
+                cell.text, cell[:] = "999", []
+    events = feed_rows(spec, PARSERS[spec.site, surface].parse(Body(raw=raw), context))
+    edited = PARSERS[spec.site, surface].parse(Body(raw=html.tostring(tree)), context)
+    # A revised amount or price is the same corporate action or trade, not a new event.
+    assert feed_rows(spec, edited) == events
+    unkeyed = tuple(v for v in edited if not v.column_label.startswith("Key"))
+    with pytest.raises(ValueError, match="stable identity"):
+        feed_rows(spec, unkeyed)

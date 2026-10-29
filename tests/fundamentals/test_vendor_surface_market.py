@@ -397,3 +397,13 @@ def test_hub_requests_include_optional_bases_and_named_companions():
         ("faq", "/in/faq/", ""),
         ("faq", "/faq/data/", ""),
     } <= found
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_feed_page_without_unique_identities_is_reported(market_rig):
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "trades-feed")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    report = run((), requests=(Request(spec=spec, url=row["url"], ids=None, due_since=None),))
+    assert "screener:trades-feed: rows without a unique identity" in report.incomplete
