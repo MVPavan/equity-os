@@ -84,7 +84,10 @@ def test_retained_aparinds_about_is_selected_without_other_page_sections():
 
 @pytest.mark.pg
 @pytest.mark.parametrize("valid", [True, False])
-def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(pg_db, tmp_path, valid):
+def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(
+    pg_db, tmp_path, valid, monkeypatch
+):
+    from fundamentals.ingest import vendor_surface_claims
     from fundamentals.ingest.vendor_surface_claims import extract_text
 
     raw = b'<div class="company-info"><div class="about">Acme grows 12%</div></div>'
@@ -119,10 +122,10 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(pg_d
                 "INSERT INTO eqos.vendor_parser_versions VALUES (%s,%s)",
                 ("claims:fake:rollback", "b" * 64),
             )
+        monkeypatch.setattr(vendor_surface_claims, "PROMPT_VERSION", "rollback")
         with pytest.raises(ParserVersionDrift):
-            extract_text(
-                pool, store, model, settings.model_copy(update={"prompt_version": "rollback"})
-            )
+            extract_text(pool, store, model, settings)
+        monkeypatch.undo()
         with pool.connection() as conn:
             assert conn.execute("SELECT count(*) FROM eqos.vendor_text_claims").fetchone() == (0,)
             assert conn.execute(
@@ -139,8 +142,47 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(pg_d
             ).fetchall() == ([("Acme grows 12%", "inferred", 0, 14)] if valid else [])
             assert conn.execute(
                 "SELECT row_count,rejected_count FROM eqos.vendor_outcomes "
-                "WHERE parser_version='claims:fake:spans.v1'"
+                "WHERE parser_version='claims:fake:spans.v2'"
             ).fetchone() == (int(valid), int(not valid))
+
+
+@pytest.mark.pg
+def test_changed_span_prompt_reprocesses_captures_done_under_the_old_identity(pg_db, tmp_path):
+    from fundamentals.ingest.vendor_surface_claims import extract_text
+
+    raw = b'<div class="company-info"><div class="about">Acme grows</div></div>'
+    store = SnapshotStore(tmp_path / "store")
+    record = record_of(raw, "screener-subscriber", "vs.company-page")
+    store.put_capture(record, raw)
+    settings = ModelSettings(
+        model_id="fake",
+        base_url="https://unused.example",
+        key_file="unused",
+        prompt_version="labels.v1",
+        dictionary_version="v3",
+    )
+    model = Mock(model_id="fake")
+    model.complete.return_value = ModelReply(
+        text='[{"kind":"CLAIM","start":0,"end":10}]', input_tokens=1, output_tokens=1
+    )
+    with pg_db.runtime_pool() as pool:
+        ref = register(
+            pool, Fetched(record=record, url="https://www.screener.in/company/X/", location=None)
+        )
+        values = VendorValuesStore(pool)
+        for version in ("screener:company-page.v1", "claims:fake:labels.v1"):
+            values.record(
+                ref, outcome(version=version, surface="company-page", values=()), row_count=0
+            )
+        assert extract_text(pool, store, model, settings) == 1
+        with pool.connection() as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM eqos.vendor_outcomes "
+                "WHERE parser_version='claims:fake:spans.v2'"
+            ).fetchone() == (1,)
+            assert conn.execute(
+                "SELECT prompt_version FROM eqos.vendor_text_claims"
+            ).fetchall() == [("spans.v2",)]
 
 
 @pytest.mark.pg
