@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 from collections import Counter
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from email.message import Message
 from pathlib import Path
@@ -15,9 +16,9 @@ from pydantic import SecretStr
 
 from fundamentals.ingest.vendor_surface_capture import Request, capture
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS, Body
+from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
 from fundamentals.ingest.vendor_surface_specs import load_specs
-from fundamentals.ingest.vendor_surface_tables import read_html_table, read_js_var
+from fundamentals.ingest.vendor_surface_tables import feed_rows, read_html_table, read_js_var
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
 
@@ -242,3 +243,120 @@ def test_script_literals_preserve_decimals_and_never_execute_code():
     ]
     with pytest.raises(ValueError):
         read_js_var(b"<script>var fixture = alert('forbidden');</script>", "fixture")
+
+
+MARKET_INDEX = json.loads(Path("docs/research/vendor-surface/snapshots-index.json").read_text())
+MARKET_SPECS = load_specs(
+    Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
+)
+MARKET_NONFEEDS = (
+    "market-pulse market-level index-page person-page screen-raw raw-materials idea-card-body"
+).split()
+MARKET_ROWS = {
+    "results-latest": ("Info Edg.(India)", "K P R Mill Ltd"),
+    "upcoming-results": ("TNA Solutions", "Vishal Nirmiti"),
+    "concalls-feed": ("Cholaman.Inv.&Fn", "Kalyani Cast-Tec"),
+    "annual-reports-feed": ("Powergrid Infra.", "Interise"),
+    "announcements-feed": ("Adani Enterp.", "Kalyani Steels"),
+    "market-pulse": ("Announcements", "Industries Overview"),
+    "corporate-actions-feed": ("Genus Power", "Auto.Corp.of Goa"),
+    "trades-feed": ("TVS Holdings", "TVS Holdings"),
+    "ipo": ("EAAA India", "BLS Polymers"),
+    "ratings-feed": ("IDBI Bank Limited", "IIFL Capital Services Limited"),
+    "market-level": ("HDFC Bank", "ICICI Bank"),
+    "index-page": ("Reliance Industries", "Bharti Airtel"),
+    "person-page": ("Multi Comm. Exc. 08 Jul, 2014", "Orient Cement 15 May, 2014"),
+    "screen-raw": ("ICICI AMC", "Nestle India"),
+    "quarterly-results-api": ("Kkalpana Plastick", "Hindustan Unilever"),
+    "upcoming-events-api": ("Adjia Technologies", "Vishal Nirmiti"),
+    "raw-materials": ("Acetone", "Caustic Soda Lye"),
+    "idea-page": (),
+    "idea-card-body": ("Seshasayee Paper", "Shakti Pumps (India)"),
+}
+
+
+@pytest.mark.retained
+@pytest.mark.parametrize("surface", MARKET_ROWS)
+def test_market_tables_and_feed_rows(surface):
+    row = next(r for r in MARKET_INDEX if r["id"] == surface and r["status"] == 200)
+    site = Site.SCREENER if row["site"] == "screener" else Site.TIJORI
+    entry = PARSERS[site, surface]
+    spec = next(s for s in MARKET_SPECS if (s.site, s.id) == (site, surface))
+    raw = Path(row["path"]).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url=row["url"],
+        retrieved_at=datetime(2026, 10, 28, tzinfo=UTC),
+        body_sha256=row["sha256"],
+        capture_id="retained-market",
+    )
+    cells = entry.parse(Body(raw=raw), context)
+    tree = Body(raw=raw).tree()
+    for cell in cells:
+        source = tree.xpath(cell.locator)[0]
+        text = " ".join(source.text_content().split())
+        assert cell.raw_text in text or cell.raw_text == source.get("datetime")
+    assert len({(v.table_key, v.row_index, v.column_index) for v in cells}) == len(cells)
+    for expected in MARKET_ROWS[surface]:
+        assert any(v.raw_text == expected for v in cells)
+    if surface == "idea-page":
+        assert cells == ()  # The only retained 200 explicitly reports no data.
+        with pytest.raises(ValueError):
+            entry.parse(Body(raw=raw.replace(b"card_tj no_data", b"card_tj changed")), context)
+    elif surface not in MARKET_NONFEEDS:
+        events = feed_rows(spec, cells)
+        assert len(events) >= 2 and all(e.row_id and e.company for e in events)
+        assert len({e.row_id for e in events}) == len(events)
+        assert events == feed_rows(spec, tuple(reversed(cells)))
+        if surface in {"annual-reports-feed", "ratings-feed", "ipo", "results-latest"}:
+            assert all(e.row_date is None for e in events)
+        elif surface == "quarterly-results-api":
+            assert events[0].row_date is None and any(e.row_date for e in events)
+        else:
+            assert all(e.row_date is not None for e in events)
+        if surface == "upcoming-results":
+            assert events[0].row_date == date(2026, 10, 28)
+        if surface == "annual-reports-feed":
+            assert any("2026" in v.raw_text for v in cells)
+        if surface == "ratings-feed":
+            assert [e.company for e in events[:2]] == list(MARKET_ROWS[surface])
+    else:
+        with pytest.raises(ValueError, match="feed"):
+            feed_rows(spec, cells)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize("broken", [False, True])
+def test_market_feed_date_failure_is_recorded(pg_db, tmp_path, monkeypatch, broken):
+    row = next(r for r in MARKET_INDEX if r["id"] == "upcoming-results" and r["status"] == 200)
+    raw = Path(row["path"]).read_bytes()
+    if broken:
+        raw = raw.replace(b"28 October 2026", b"invalid full date", 1)
+    spec = next(s for s in MARKET_SPECS if s.id == "upcoming-results")
+
+    def opened(self, request, timeout):
+        return HTTPError(row["url"], 200, "fixture", Message(), io.BytesIO(raw))
+
+    monkeypatch.setattr(OpenerDirector, "open", opened)
+    store = SnapshotStore(tmp_path / "captures")
+    with pg_db.runtime_pool() as pool:
+        locks = PgSiteLock(pool)
+        try:
+            session = SiteSession(
+                site=spec.site, session_cookie=SecretStr("test"), cookie_name="sid"
+            )
+            fetcher = VendorFetcher(store, {spec.site: session}, OpenerDirector(), tmp_path, locks)
+            request = Request(spec=spec, url=row["url"], ids=None, due_since=None)
+            ref, _ = capture(fetcher, store, pool, VendorValuesStore(pool), request)
+            with pool.connection() as conn:
+                status, count = conn.execute(
+                    "SELECT status,row_count FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                    (ref.capture_ref_id,),
+                ).fetchone()
+                assert status == ("FAILED" if broken else "OK")
+                assert (count == 0) if broken else (count > 0)
+        finally:
+            locks.close()

@@ -84,3 +84,24 @@
   group: TABLE
   cadence: AFTER_RESULTS
   selector: //*[@id="trend"]
+
+# Task 13: G2 market tables and feeds.
+- {cadence: DAILY, feed: true, group: TABLE, id: results-latest, path: '/results/latest/?p=&mcap=&result_update_date__day=&__month=&__year=', scope: MARKET, selector: '//*[@data-page-results]/div[table]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: upcoming-results, path: '/upcoming-results/?p=&mcap=&sme=&watchlist=&result_date__month=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: concalls-feed, path: '/concalls/[upcoming/]?p=&o=&date__year=&q=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: annual-reports-feed, path: '/annual-reports/?p=&mcap=&optimism=&sectors=&watchlist=', scope: MARKET, selector: '//*[@data-annual-report]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: announcements-feed, path: '/announcements/[all/|results/]', scope: MARKET, selector: '//div[contains(concat(" ",@class," ")," announcement-item ")]', site: screener-subscriber}
+- {cadence: DAILY, group: TABLE, id: market-pulse, path: /filings/, scope: MARKET, selector: '//main//li/a[div]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: corporate-actions-feed, path: '/actions/{bonus|buyback|dividend|right|split}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: trades-feed, path: '/trades/{bulk|block|insiders|sast}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: ipo, path: '/ipo/[recent/|below-price/|rights/]', scope: MARKET, selector: '//main//table[not(ancestor::table)]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: ratings-feed, path: '/ratings/?search={company}', scope: MARKET, selector: '//ul[@class="items"]/li', site: screener-subscriber}
+- {cadence: DAILY, group: TABLE, id: market-level, path: '/market/{IN..}/[{IN....}/[{IN......}/[{IN.........}/]]]', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber}
+- {cadence: DAILY, group: TABLE, id: index-page, path: '/company/{index_code}/', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber}
+- {cadence: DAILY, group: TABLE, id: person-page, path: '/people/{id}/{slug}/', scope: MARKET, selector: //main//table, site: screener-subscriber}
+- {cadence: DAILY, group: TABLE, id: screen-raw, path: '/screen/raw/?query={q}&sort=&order=&page=', scope: MARKET, selector: '//table[contains(@class,"data-table")]', site: screener-subscriber}
+- {cadence: DAILY, feed: true, group: TABLE, id: quarterly-results-api, path: '/results/quarterly-results/api/?page=&sort_by=&mcap=&timeline_type=&sectors=&company_ids=', scope: MARKET, selector: '//div[@class="result_item"]', site: tijori}
+- {cadence: DAILY, feed: true, group: TABLE, id: upcoming-events-api, path: '/results/upcoming-events/api/?page=&mcap=&timeline_type=&type=', scope: MARKET, selector: '//div[@class="table_container"]/table[not(contains(@class,"loader"))]', site: tijori}
+- {cadence: DAILY, group: TABLE, id: raw-materials, path: /in/raw-materials, scope: MARKET, selector: '//table[starts-with(@id,"rawmaterial__table__")]', site: tijori}
+- {cadence: DAILY, group: TABLE, id: idea-page, path: '/ideas-dashboard/{slug}/', scope: MARKET, selector: '//div[@class="cards_container"]/div', site: tijori}
+- {cadence: DAILY, group: TABLE, id: idea-card-body, path: '/ideas-dashboard/{slug}/card-body/', scope: MARKET, selector: '//div[@class="card_row"]', site: tijori}
