@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
@@ -314,6 +314,11 @@ def _sources(node: Any) -> Iterator[Mapping[str, Any]]:
 def _slot(claim_key: str, style: str) -> str:
     """A claim placeholder."""
     return f"{{{{c:{claim_key}|{style}}}}}"
+
+
+def refs(keys: Sequence[str]) -> str:
+    """The space-joined ``ref`` placeholders of ``keys``."""
+    return " ".join(_slot(key, "ref") for key in keys)
 
 
 def _bind(text: str, lines: list[str], claims: Iterable[NumericClaim], version: str) -> str:

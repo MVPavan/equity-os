@@ -61,6 +61,7 @@ from fundamentals.ledger.import_mapping import (
     _valued,
     change_key,
     measurement_key,
+    refs,
 )
 from fundamentals.output.earnings_update import _ROLE_LABELS, EarningsUpdate
 from fundamentals.output.pnl_lines import (
@@ -451,16 +452,20 @@ def _shown(line: Line) -> str:
     """A changes or calculations line with its claims' placeholders."""
     keys = [claim.claim_key for claim in line.claims]
     if line.section == CALCS:
-        style = CRORE_STYLE if keys and line.claims[0].unit == CRORE else ""
-        return f"- {line.label} = {_slot(keys[0], style) if keys else OPERAND_MISSING}"
+        if not keys:
+            return f"- {line.label} = {OPERAND_MISSING}"
+        style = CRORE_STYLE if line.claims[0].unit == CRORE else ""
+        return f"- {line.label} = {_slot(keys[0], style)} {refs(keys)}"
     if not keys:
         return f"- {line.label}: not available ({line.unavailable})"
     prior, change, *percent = keys
     shown = f"- {line.label}: prior {_slot(prior, CRORE_UNIT)}"
     shown += f"; change {_slot(change, f'plus,{CRORE_UNIT}')}"
     if percent:
-        return f"{shown}, {_slot(percent[0], 'plus,unit')}"
-    return f"{shown}; percent change not available ({line.unavailable})"
+        shown += f", {_slot(percent[0], 'plus,unit')}"
+    else:
+        shown += f"; percent change not available ({line.unavailable})"
+    return f"{shown} {refs(keys)}"
 
 
 def cite(claim: NumericClaim, **record: object) -> NumericClaim:

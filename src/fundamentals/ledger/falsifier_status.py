@@ -28,7 +28,7 @@ from fundamentals.contracts.ledger import (
     VersionStatus,
 )
 from fundamentals.ledger import store
-from fundamentals.ledger.import_mapping import _slot
+from fundamentals.ledger.import_mapping import _slot, refs
 from fundamentals.ledger.lifecycle import _LOCK, version_status
 from fundamentals.ledger.run_traces import CALCS, MARGIN_KEY, Line, RunDraftError
 from fundamentals.output.pnl_lines import ETR_LABEL
@@ -234,7 +234,8 @@ def derived(
         style = "plus,unit" if row.claim_key.startswith("cmp.") else ""
         triggered = "triggered" if row.disposition is Disposition.WEAKENED else "not triggered"
         lines.append(
-            f"{head}{_slot(row.claim_key, style)} {OPERATORS[row.op]} {_slot(name, '')}: "
+            f"{head}{_slot(row.claim_key, style)} {OPERATORS[row.op]} {_slot(name, '')} "
+            f"{refs([row.claim_key, name])}: "
             f"{row.disposition.value} ({triggered})"
         )
     bodies = ((THESIS_IMPACT, f"{impact}\n"), (FALSIFIER_STATUS, "\n".join(lines) + "\n"))

@@ -65,6 +65,7 @@ from fundamentals.ledger.import_mapping import (
     _slot,
     _valued,
     measurement_key,
+    refs,
 )
 from fundamentals.ledger.importer import _ENTITY
 from fundamentals.ledger.lifecycle import (
@@ -496,7 +497,7 @@ def _results(
         claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
         if ref is not None:
             claim = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
-        yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)}", claim
+        yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)} {refs([name])}", claim
 
 
 def _guidance(
@@ -525,7 +526,7 @@ def _guided(claim: NumericClaim, status: LedgerStatus) -> str:
     key = claim.claim_key
     return (
         f"- {claim.metric_label or claim.metric}: {_slot(key, BOUNDS_STYLE)} for "
-        f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}"'
+        f'{claim.horizon} — {status.value}: "{_slot(key, QUOTE_STYLE)}" {refs([key])}'
     )
 
 
