@@ -196,6 +196,7 @@ class EarningsUpdate(BaseModel):
     source_cutoff: datetime | None = None
     derivation_cutoff: datetime | None = None
     percent_places: int = 1
+    diagnostic_label: str | None = None
 
 
 def _format_bounds(lower: Decimal, upper: Decimal) -> str:
@@ -395,12 +396,30 @@ def render_earnings_update(update: EarningsUpdate) -> str:
 
     lines.append("## 1. event_and_cutoff")
     lines.append("")
+    cutoff = (
+        f"Configured historical cutoff (not enforced): **{update.knowledge_cutoff}**."
+        if update.diagnostic_label
+        else f"Information cutoff: **{update.knowledge_cutoff}**; anything later is out of scope."
+    )
     lines.append(
         f"Event under review: {update.issuer_name} {update.issuer_quarter_label} consolidated "
         f"results (issuer results PDF and NSE Ind AS XBRL), period "
-        f"{update.period_start} → {update.period_end}. Information cutoff: "
-        f"**{update.knowledge_cutoff}**; anything later is out of scope."
+        f"{update.period_start} → {update.period_end}. {cutoff}"
     )
+    if update.diagnostic_label:
+        lines.extend(["", update.diagnostic_label])
+        acquired = {
+            (source.source_id, source.retrieved_at.isoformat())
+            for fact in update.facts
+            for source in fact.sources
+        }
+        acquired.update(
+            (change.prior_source.source_id, change.prior_source.retrieved_at.isoformat())
+            for item in update.comparatives
+            for change in (item.qoq, item.yoy)
+            if change.prior_source is not None
+        )
+        lines.extend(f"Acquired: {source} at {at}." for source, at in sorted(acquired))
     lines.append("")
     if update.source_cutoff is not None and update.derivation_cutoff is not None:
         lines.append(

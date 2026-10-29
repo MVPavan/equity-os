@@ -248,6 +248,7 @@ def build_report(report: StockReport, stock: StockConfig) -> ReportBuild:
         knowledge_cutoff=stock.quarter.knowledge_cutoff.date().isoformat(),
         facts=tuple(rendered_facts),
         comparatives=report.comparatives,
+        diagnostic_label=report.diagnostic_label,
         comparatives_attempted=True,
         guidance=(),
         calculations=_calculations(role_values),

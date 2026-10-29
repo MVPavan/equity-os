@@ -17,6 +17,7 @@ a changed value, a changed status, or a fact that appeared or disappeared.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 
@@ -215,7 +216,8 @@ def regress(gold: GoldFile, fresh: list[AgreementResult]) -> RegressReport:
             continue
 
         fresh_value = _value_to_str(fresh_result.agreed_value)
-        if fresh_value != fact.value:
+        gold_value = None if fact.value is None else Decimal(fact.value)
+        if fresh_result.agreed_value != gold_value:
             drifts.append(
                 Drift(
                     kind=DriftKind.VALUE_DRIFT,
