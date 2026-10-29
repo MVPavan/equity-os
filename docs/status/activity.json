@@ -1,16 +1,32 @@
 {
   "now": {
-    "title": "Vendor-surface catalog done; LIVE-RUN-1 multi-slice gate running",
-    "detail": "Three models crawled Screener and Tijori across 18 companies; 202 surfaces catalogued in docs/research/vendor-surface/ with 155 ranked gaps, a deny-list and drift canaries. Next: the owner reads the report and the feature implementation plan (eqos-aa6.10) is written. LIVE-RUN-1 multi-slice gate still running; DOCS-1 waits on it.",
+    "title": "LIVE-RUN-1: FY26_Q2 approved; FY26_Q3 fix in progress",
+    "detail": "FY26_Q2 is APPROVED on live as version 8 (Sol panel, after the report-export fixes and the owner's materiality ruling). FY26_Q3 version 9 got REQUEST_CHANGES: the cables CAGR guidance was shown as annual point guidance and labelled MODIFIED. Fix eqos-dna.2 (honest label, 'N%-plus', comparability qualifier) is with Opus; then Sol review, a fresh rehearsal and the live rerun. Audit lane B merged; lane A gate rerunning.",
     "stage": "Build"
   },
   "next": [
-    "LIVE-RUN-1 multi-slice gate, Sol phase review, live Apar run (owner: watchlist add)",
-    "VENDOR-SURFACE implementation plan from the catalog (eqos-aa6.10; owner retention/universe/cadence decisions)",
-    "DOCS-1: full gate on branch, merge after LIVE-RUN-1, live migration 0043, Apar backfill (Task 5)",
-    "RESEARCH-3 plan (S1 risk probe first)"
+    "eqos-dna.2 guidance fix: gate, Sol review, merge; rehearse and rerun FY26_Q3 (version 10), Sol panel",
+    "FY26_Q4 and FY27_Q1: rehearsal then live step R, each Sol-approved before the next",
+    "Audit lane A (eqos-2tt, eqos-pi8, eqos-5df): gate PASS then merge",
+    "VS live exit runs after the owner refreshes the Screener cookie (eqos-aa6.16)"
   ],
   "log": [
+    {
+      "date": "2026-10-29",
+      "text": "LIVE-RUN-1 FY26_Q3 v9: Sol panel REQUEST_CHANGES (CAGR guidance shown as annual point, MODIFIED); recorded live (decision 15). Fix eqos-dna.2 ruled: honest presentation, no gate weakened; sealed-ledger misreading filed as eqos-dna.3."
+    },
+    {
+      "date": "2026-10-29",
+      "text": "LIVE-RUN-1 FY26_Q2 APPROVED as version 8 (live decision 13). Version 7 retired via panel; rerun, check (54 MATCH), F5 HELD, submit, export; every delta equal to the eqos_test_live2 rehearsal. Owner ruling: materiality out of scope for LIVE-RUN-1."
+    },
+    {
+      "date": "2026-10-29",
+      "text": "Merged eqos-dna1 (report-export gaps: claim refs, drift basis, horizons, falsifier wording, open questions, not-performed) 0c95e603, and audit lane B (eqos-bgz, eqos-4um) f0182cd3; gates PASS, Sol APPROVE."
+    },
+    {
+      "date": "2026-10-29",
+      "text": "VENDOR-SURFACE Phases 1-5 merged to main (7af05c51); live migrated to 0045 after a backup."
+    },
     {
       "date": "2026-10-28",
       "text": "eqos-aa6 VENDOR-SURFACE: Opus/Sol/Astra crawled Screener+Tijori (18 companies, polite gateway, no STOP); merged to 202 surfaces, 155 new or partial; Sol review loops closed (orchestrator ruling after 3 critical rounds). Committed 0d54c851."
@@ -97,7 +113,7 @@
     },
     {
       "date": "2026-10-21",
-      "text": "D8 Task 6a committed: screener/tijori/upstox-shp-v1 tree extractors (full nested holder tree, matches probe \u00a713 inventory) and vendor ingest; existing pins unchanged. 183 tests passed, mypy and ruff clean."
+      "text": "D8 Task 6a committed: screener/tijori/upstox-shp-v1 tree extractors (full nested holder tree, matches probe §13 inventory) and vendor ingest; existing pins unchanged. 183 tests passed, mypy and ruff clean."
     },
     {
       "date": "2026-10-21",
@@ -121,15 +137,15 @@
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-7 frozen pilot manifest closed: plan 95606ba (Sol r1 REVISE 12 \u2192 r2 REVISE 2 \u2192 r3 APPROVE; closing REVISE 7 \u2192 REVISE 2 \u2192 APPROVE); manifest + check 5e373b9, payload ad188b0d\u2026 (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs 824df54. Full suite 4250 passed, 9 skipped."
+      "text": "PREP-7 frozen pilot manifest closed: plan 95606ba (Sol r1 REVISE 12 → r2 REVISE 2 → r3 APPROVE; closing REVISE 7 → REVISE 2 → APPROVE); manifest + check 5e373b9, payload ad188b0d… (phase APPROVE with P3 notes, two fixed; closing APPROVE); docs 824df54. Full suite 4250 passed, 9 skipped."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-6 review telemetry closed: Tasks 1-4 (aeecbf1, 3c118f6, 794c077, c5ac728); Sol phase r1 REVISE 5 \u2192 r2 REVISE 1 \u2192 r3 APPROVE (eb682a0); closing REVISE 3 \u2192 APPROVE (ed7c32f). Post-review full suite found 8 table-enumeration/import test regressions, fixed 59e052c; final full suite 4219 passed, 9 skipped."
+      "text": "PREP-6 review telemetry closed: Tasks 1-4 (aeecbf1, 3c118f6, 794c077, c5ac728); Sol phase r1 REVISE 5 → r2 REVISE 1 → r3 APPROVE (eb682a0); closing REVISE 3 → APPROVE (ed7c32f). Post-review full suite found 8 table-enumeration/import test regressions, fixed 59e052c; final full suite 4219 passed, 9 skipped."
     },
     {
       "date": "2026-10-19",
-      "text": "PREP-6 plan approved (2230ba9): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) \u2192 r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) \u2192 APPROVE. Filed eqos-4j2.30."
+      "text": "PREP-6 plan approved (2230ba9): Sol r1 REVISE 13 (incl. diff-only re-review missing deletions/reorders; scripted drill proves scoring, not detection) → r2 APPROVE; closing review REVISE 5 (whole-body section comparison, REJECT keys, cumulative report time, overhead scope, exact timing tests) → APPROVE. Filed eqos-4j2.30."
     },
     {
       "date": "2026-10-19",
@@ -173,7 +189,7 @@
     },
     {
       "date": "2026-10-18",
-      "text": "PREP-2 audit: does not hold. fundamentals run opens SQLite when fact_store_id is unset (all four Apar configs) and saves the management ledger as JSON. Bead eqos-4j2.16; plan in progress. Backend roadmap \u00a73 states refreshed (were dated 2026-10-13)."
+      "text": "PREP-2 audit: does not hold. fundamentals run opens SQLite when fact_store_id is unset (all four Apar configs) and saves the management ledger as JSON. Bead eqos-4j2.16; plan in progress. Backend roadmap §3 states refreshed (were dated 2026-10-13)."
     },
     {
       "date": "2026-10-18",
@@ -237,7 +253,7 @@
     },
     {
       "date": "2026-10-17",
-      "text": "D6 complete. Phase-end Sol review r1 REJECT (7) \u2192 r2 REJECT (1) \u2192 r3 APPROVE; fresh critical review REJECT (8): four acceptance-test gaps fixed (8e72089, 616e070), re-review APPROVE; four production defects deferred to eqos-t3l by owner ruling, freeze check pinned at closure (D6.md Freeze step 6). Epic eqos-h4h closed."
+      "text": "D6 complete. Phase-end Sol review r1 REJECT (7) → r2 REJECT (1) → r3 APPROVE; fresh critical review REJECT (8): four acceptance-test gaps fixed (8e72089, 616e070), re-review APPROVE; four production defects deferred to eqos-t3l by owner ruling, freeze check pinned at closure (D6.md Freeze step 6). Epic eqos-h4h closed."
     },
     {
       "date": "2026-10-16",
@@ -253,7 +269,7 @@
     },
     {
       "date": "2026-10-16",
-      "text": "D6.1 done: Task 0b capability committed (6d07b9f, no HALT); D1.2 catalogue-exemption amendment (Sol r1 REJECT \u2192 r2 APPROVE, e6a6532); attempt 1 drawn (universe 174, 0 skips) and record committed with Sol APPROVE (9e7d407). Task 1b dispatched."
+      "text": "D6.1 done: Task 0b capability committed (6d07b9f, no HALT); D1.2 catalogue-exemption amendment (Sol r1 REJECT → r2 APPROVE, e6a6532); attempt 1 drawn (universe 174, 0 skips) and record committed with Sol APPROVE (9e7d407). Task 1b dispatched."
     },
     {
       "date": "2026-10-16",
@@ -261,7 +277,7 @@
     },
     {
       "date": "2026-10-15",
-      "text": "D5 complete (epic eqos-tfb closed): critical review REJECT (3) \u2192 fixes fde6b16 \u2192 re-review APPROVE; full suite 3601 passed. SQL-level SUBMIT hash gap filed as eqos-7pr. Roadmap 40/66 stages."
+      "text": "D5 complete (epic eqos-tfb closed): critical review REJECT (3) → fixes fde6b16 → re-review APPROVE; full suite 3601 passed. SQL-level SUBMIT hash gap filed as eqos-7pr. Roadmap 40/66 stages."
     },
     {
       "date": "2026-10-15",
@@ -281,11 +297,11 @@
     },
     {
       "date": "2026-10-15",
-      "text": "D4 complete (epic eqos-4hi closed): critical review REJECT (4) \u2192 fixes 92491c4, 607bb67 (migrations 0019\u20130020) \u2192 re-review APPROVE; full suite 3578 passed. Evidence-layer knowledge-time gaps parked as eqos-d60. Roadmap 35/66 stages. D5 planning started."
+      "text": "D4 complete (epic eqos-4hi closed): critical review REJECT (4) → fixes 92491c4, 607bb67 (migrations 0019–0020) → re-review APPROVE; full suite 3578 passed. Evidence-layer knowledge-time gaps parked as eqos-d60. Roadmap 35/66 stages. D5 planning started."
     },
     {
       "date": "2026-10-15",
-      "text": "D4 phase review: r1 REJECT (1 P1, 3 P2, 1 P3) \u2192 fix 078a99b (full suite 3569 passed) \u2192 r2 APPROVE. Fresh critical review dispatched."
+      "text": "D4 phase review: r1 REJECT (1 P1, 3 P2, 1 P3) → fix 078a99b (full suite 3569 passed) → r2 APPROVE. Fresh critical review dispatched."
     },
     {
       "date": "2026-10-15",
@@ -349,7 +365,7 @@
     },
     {
       "date": "2026-10-15",
-      "text": "D4 plan drafted by Opus (plans/D4.md, 5 tasks, migrations 0016\u20130017); Sol plan review r1 dispatched."
+      "text": "D4 plan drafted by Opus (plans/D4.md, 5 tasks, migrations 0016–0017); Sol plan review r1 dispatched."
     },
     {
       "date": "2026-10-15",
@@ -389,7 +405,7 @@
     },
     {
       "date": "2026-10-15",
-      "text": "Helper move committed (d1a886d); ledger Stage 1 manifest authored (payload cfb10c99\u2026), Sol review r1 dispatched."
+      "text": "Helper move committed (d1a886d); ledger Stage 1 manifest authored (payload cfb10c99…), Sol review r1 dispatched."
     },
     {
       "date": "2026-10-15",
@@ -441,7 +457,7 @@
     },
     {
       "date": "2026-10-15",
-      "text": "D3 plan Sol r2: REJECT on 1 residual P1 (pair binding); 17/18 fixed, G8\u2013G10 accepted."
+      "text": "D3 plan Sol r2: REJECT on 1 residual P1 (pair binding); 17/18 fixed, G8–G10 accepted."
     },
     {
       "date": "2026-10-15",
@@ -493,7 +509,7 @@
     },
     {
       "date": "2026-10-15",
-      "text": "D2.7 manifest fix r1: ETR bound to source locators; payload 2842ba14\u2026; sent to Sol r2."
+      "text": "D2.7 manifest fix r1: ETR bound to source locators; payload 2842ba14…; sent to Sol r2."
     },
     {
       "date": "2026-10-15",
