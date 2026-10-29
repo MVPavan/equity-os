@@ -4,6 +4,7 @@
   path: /company/{symbol}/[consolidated/]
   group: NONE
   cadence: AFTER_RESULTS
+  sections: [section-chart, section-analysis, section-peers, section-quarters, section-profit-loss, section-balance-sheet, section-cash-flow, section-ratios, section-insights, section-shareholding, section-documents]
 - site: screener-subscriber
   id: chart-api
   scope: COMPANY
@@ -105,3 +106,36 @@
 - {cadence: DAILY, group: TABLE, id: raw-materials, path: /in/raw-materials, scope: MARKET, selector: '//table[starts-with(@id,"rawmaterial__table__")]', site: tijori}
 - {cadence: DAILY, group: TABLE, id: idea-page, path: '/ideas-dashboard/{slug}/', scope: MARKET, selector: '//div[@class="cards_container"]/div', site: tijori}
 - {cadence: DAILY, group: TABLE, id: idea-card-body, path: '/ideas-dashboard/{slug}/card-body/', scope: MARKET, selector: '//div[@class="card_row"]', site: tijori}
+
+- {site: screener-subscriber, id: quick-ratios-api, scope: COMPANY, path: '/api/company/{warehouse_id}/quick_ratios/', group: READER, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: peers-api, scope: COMPANY, path: '/api/company/{warehouse_id}/peers/[?consolidated=true]', group: READER, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: schedules-api, scope: COMPANY, path: '/api/company/{company_id}/schedules/?parent={row}&section={section}&consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_schedules}
+- {site: screener-subscriber, id: investors-api, scope: COMPANY, path: '/api/3/{company_id}/investors/{class}/{quarterly|yearly}/', group: READER, cadence: AFTER_RESULTS, expand: screener_investors}
+- {site: screener-subscriber, id: segments-api, scope: COMPANY, path: '/api/segments/{company_id}/{quarters|profit-loss}/{segment_type}/?consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_segments}
+- {site: screener-subscriber, id: forecasts, scope: COMPANY, path: '/forecasts/{company_id}/?consolidated=', group: NONE, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: related-party, scope: COMPANY, path: '/results/rpt/{company_id}/[consolidated/]', group: READER, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: corporate-actions-modal, scope: COMPANY, path: '/company/actions/{company_id}/', group: READER, cadence: AFTER_RESULTS, xhr: true}
+- {site: screener-subscriber, id: commentary-modal, scope: COMPANY, path: '/wiki/company/{company_id}/commentary/v2/', group: NONE, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: quarter-source-pdf, expand: advertised_links, scope: COMPANY, path: '/company/source/quarter/{company_id}/{month}/{year}/', group: NONE, cadence: AFTER_RESULTS}
+- {site: tijori, id: company-overview, scope: COMPANY, path: '/company/{slug}/', group: READER, cadence: AFTER_RESULTS, sections: [overview-custom-ratios, overview-quick-view, overview-company-timeline-sidepanel, overview-custom-financials, overview-forensics, overview-marketshare, overview-revenuemix, overview-operationalmetrics, overview-competitors, overview-brands, overview-corporateactions, overview-connections, overview-suppliers, overview-customers, overview-knowledgebase, overview-popular-queries, overview-company-filings, overview-discussions-and-analysis]}
+- {site: tijori, id: company-financials, scope: COMPANY, path: '/company/{slug}/financials/', group: READER, cadence: AFTER_RESULTS, sections: [financials-price, financials-growth-table, financials-balance-sheet, financials-balance-sheet-snapshot, financials-fundflow-analysis, financials-profit-and-loss, financials-cash-flow, financials-cash-flow-analysis, financials-ratios, financials-quarterly-results, financials-reverse-dcf, financials-faqfinancials]}
+- {site: tijori, id: financials-popup-chart-api, scope: COMPANY, path: '/api/v1/ind/financial_statement_popup_chart_data/{company_id}/{field}/{source}/{fs_name}/', group: SERIES, cadence: AFTER_RESULTS, expand: tijori_popup_fields}
+- {site: tijori, id: financial-statement-compare-api, scope: COMPANY, path: '/api/v1/ind/financial_statement_compare/{company_id}/{column_selector}', group: SERIES, cadence: AFTER_RESULTS, expand: tijori_compare_selector}
+- {site: tijori, id: company-shareholding, scope: COMPANY, path: '/company/{slug}/shareholding/', group: READER, cadence: AFTER_RESULTS, sections: [shareholding-overview, shareholding-trend, shareholding-detailed, shareholding-faqshareholding]}
+- {site: tijori, id: shareholding-detail-chart-api, expand: advertised_links, scope: COMPANY, path: '/api/v1/ind/shareholding_detailed_chart_data/{company_id}/{field}/{source}', group: NONE, cadence: AFTER_RESULTS}
+- {site: tijori, id: company-benchmarking, scope: COMPANY, path: '/company/{slug}/benchmarking/', group: CELLS, cadence: AFTER_RESULTS, sections: [benchmarking-benchmarking-financial, benchmarking-benchmarking-business]}
+- {site: tijori, id: company-reports, scope: COMPANY, path: '/company/{slug}/reports/', group: NONE, cadence: AFTER_RESULTS}
+- {site: tijori, id: chartdata-price-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/price/', group: SERIES, cadence: AFTER_RESULTS}
+- {site: tijori, id: chartdata-valuation-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/{pe|ev_by_ebitda|market_cap_to_sales|price_book|net_sales|...}/', group: SERIES, cadence: AFTER_RESULTS}
+- {site: tijori, id: chartdata-median-pe-api, scope: COMPANY, path: '/api/v1/ind/chartdata/{company_id}/median-pe/', group: SERIES, cadence: AFTER_RESULTS}
+- {site: tijori, id: capex-api, scope: COMPANY, path: '/api/v1/ind/capex/{company_id}/', group: SERIES, cadence: AFTER_RESULTS}
+- {site: tijori, id: debt-api, scope: COMPANY, path: '/api/v1/ind/debt/{company_id}/', group: SERIES, cadence: AFTER_RESULTS}
+- {site: tijori, id: fund-flow-api, scope: COMPANY, path: '/api/v1/ind/fund_flow_analysis_data/{company_id}/', group: READER, cadence: AFTER_RESULTS}
+- {site: tijori, id: cash-flow-waterfall-api, scope: COMPANY, path: '/api/v1/ind/cash_flow_waterfall/{company_id}/', group: READER, cadence: AFTER_RESULTS}
+- {site: tijori, id: balance-sheet-snapshot-api, scope: COMPANY, path: '/api/v1/ind/balance_sheet_snap_shot/{company_id}/', group: READER, cadence: AFTER_RESULTS}
+- {site: tijori, id: op-metrics-api, scope: COMPANY, path: '/api/v1/ind/company_op_metrics/{company_id}/{metric_id}/[?onlygraph=True]', group: READER, cadence: AFTER_RESULTS, expand: tijori_op_metrics}
+- {site: tijori, id: revenue-mix-history-api, scope: COMPANY, path: '/api/rmix/historic/graph/{item_id}', group: SERIES, cadence: AFTER_RESULTS, expand: tijori_revenue_mix_items}
+- {site: tijori, id: market-share-api, scope: COMPANY, path: '/api/v1/ind/company_market_share_data/{ticker}/', group: NONE, cadence: AFTER_RESULTS}
+- {site: tijori, id: market-share-peer-companies-api, expand: advertised_links, scope: COMPANY, path: '/api/v1/ind/market_share_peer_companies/{company_id}/{chart_company_id}/', group: NONE, cadence: AFTER_RESULTS}
+- {site: tijori, id: company-timeline-api, scope: COMPANY, path: '/timeline/company/?company_id={id}&timestamp={cursor}', group: READER, cadence: AFTER_RESULTS}
+- {site: screener-subscriber, id: company-compare, scope: MARKET, path: "/company/compare/?codes={company_id},{company_id}", group: CELLS, cadence: AFTER_RESULTS, expand: screener_compare_peers}

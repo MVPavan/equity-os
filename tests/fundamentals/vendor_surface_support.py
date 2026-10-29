@@ -67,7 +67,17 @@ def rig(pg_db, tmp_path, monkeypatch):
     """Inject only external factories; exercise the production coordinator and stores."""
     from fundamentals.api import cli, vendor_surface_cli
     from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession
+    from fundamentals.ingest.vendor_surface_specs import load_specs
 
+    def tracer_specs(path, catalog):
+        """Keep the Phase 1 rig's two-surface contract as production breadth grows."""
+        return tuple(
+            spec.model_copy(update={"sections": ()})
+            for spec in load_specs(path, catalog)
+            if spec.id in ("company-page", "chart-api")
+        )
+
+    monkeypatch.setattr(vendor_surface_cli, "load_specs", tracer_specs)
     monkeypatch.setattr(vendor_surface_cli, "STOP_DIR", tmp_path / "stops", raising=False)
     opener = RetainedOpener()
     root = tmp_path / "captures"
