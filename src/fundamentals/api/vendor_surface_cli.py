@@ -25,7 +25,7 @@ from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.ingest.screener_session_models import Basis, ScreenerSessionError
 from fundamentals.ingest.screener_session_page import assert_logged_in, read_identity
-from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
+from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, run_canaries, yield_drift
 from fundamentals.ingest.vendor_surface_capture import (
     WATCHLIST,
     Request,
@@ -78,7 +78,8 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     labels.add_argument("--surface", required=True)
 
     canary = commands.add_parser("canary")
-    canary.add_argument("--yield-only", action="store_true", required=True)
+    canary.add_argument("--yield-only", action="store_true")
+    canary.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
 
 
 def sessions(sites: set[Site]) -> Mapping[Site, SiteSession]:
@@ -136,13 +137,28 @@ def dispatch_vendor_command(
         return 0
     if args.vendor_command == "canary":
         with pool_factory() as pool:
-            drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+            if args.yield_only:
+                drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+            else:
+                resolved = sessions_factory(set(Site))
+                if set(Site) - resolved.keys():
+                    raise ValueError("missing vendor session for canaries")
+                store = store_factory(args.snapshot_root)
+                locks = PgSiteLock(pool)
+                try:
+                    drift = run_canaries(
+                        VendorFetcher(store, resolved, opener_factory(), STOP_DIR, locks),
+                        store,
+                        pool,
+                    )
+                finally:
+                    locks.close()
         sys.stderr.write(
             "company cadence check skipped: covered_universe is unavailable before Task 14\n"
         )
         for item in drift:
             sys.stdout.write(item.model_dump_json() + "\n")
-        return int(any(item.check != NO_BASELINE for item in drift))
+        return int(any(item.check != NO_BASELINE or not args.yield_only for item in drift))
     specs = load_specs(SPECS, CATALOG)
     selected = [
         spec
