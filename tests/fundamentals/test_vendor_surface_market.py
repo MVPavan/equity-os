@@ -552,3 +552,36 @@ def test_nonfeed_market_table_refreshes_all_pages(market_rig):
     opener.calls.clear()
     run((), requests=(request,))
     assert len(opener.calls) == 2, "weekly non-feed snapshot stops after old company link on page 1"
+
+
+def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys):
+    import argparse
+
+    from pydantic import SecretStr
+    from test_vendor_surface_market import MarketOpener
+
+    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
+    from fundamentals.ingest.vendor_surface_fetch import SiteSession
+
+    opener = MarketOpener()
+    args = argparse.Namespace(
+        command="vendor",
+        vendor_command="capture",
+        market=True,
+        symbol=None,
+        surface=["tijori:sector-ms-chart-api"],
+        snapshot_root=tmp_path / "captures",
+        tijori_slug=None,
+    )
+    dispatch_vendor_command(
+        args,
+        opener_factory=lambda: opener,
+        pool_factory=pg_db.runtime_pool,
+        sessions_factory=lambda sites: {
+            s: SiteSession(site=s, session_cookie=SecretStr("synthetic"), cookie_name="sid")
+            for s in sites
+        },
+    )
+    capsys.readouterr()
+    count = len(opener.calls)
+    assert count > 0, f"{count} requests for selected market surface; its hub was omitted"
