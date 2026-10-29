@@ -101,7 +101,7 @@ BEGIN
         IF name = 'vendor_values' THEN
             EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
                 'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation_except_tombstone('
-                '''value'',''raw_text'',''row_label'',''column_label'',''link'')', name);
+                '''value'',''raw_text'',''row_label'',''column_label'',''link'',''unit'')', name);
         ELSE
             EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
                 'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation()', name);
@@ -166,6 +166,6 @@ BEGIN
     UPDATE eqos.acquisition_attempts SET reason = NULL
         WHERE stage = 'EXTRACTION' AND capture_ref_id = capture;
     UPDATE eqos.vendor_values SET value = NULL, raw_text = NULL, row_label = NULL,
-        column_label = NULL, link = NULL WHERE capture_ref_id = capture;
+        column_label = NULL, link = NULL, unit = NULL WHERE capture_ref_id = capture;
     PERFORM set_config('eqos.tombstone', '', true);
 END $$;

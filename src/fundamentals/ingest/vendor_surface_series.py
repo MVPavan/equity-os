@@ -5,13 +5,31 @@ from __future__ import annotations
 import json
 import re
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
     from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
+
+
+def numeric_column(label: str) -> bool:
+    """Numeric columns declared by the retained table and event contracts."""
+    return label in {
+        "Amount",
+        "Quantity",
+        "Avg Price",
+        "Price",
+        "Value in Rs. Lacs",
+        "Percent",
+        "Mcap",
+        "Market Cap",
+        "Revenue",
+        "Profit",
+        "Sales",
+        "EPS",
+    } or bool(re.fullmatch(r"(?:Mar|Jun|Sep|Dec) \d{4}", label))
 
 
 def screener_chart(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
@@ -72,3 +90,252 @@ def screener_chart(body: Body, context: ParseContext) -> tuple[VendorValue, ...]
                 )
             )
     return tuple(values)
+
+
+class _Number(Decimal):
+    """A JSON decimal retaining the original numeric token for raw_text."""
+
+    raw_text: str
+
+    def __new__(cls, raw: str) -> _Number:
+        number = super().__new__(cls, raw)
+        number.raw_text = raw
+        return number
+
+
+def numeric_json(raw: bytes | str) -> Any:
+    """Decode numeric tokens without a binary-float round trip."""
+    return json.loads(raw, parse_int=_Number, parse_float=_Number)
+
+
+def tijori_data(body: bytes) -> Any:
+    """Unwrap successful Tijori data, including its JSON-string variant."""
+    envelope = numeric_json(body)
+    if not isinstance(envelope, dict) or envelope["status"] != 200:
+        raise ValueError("invalid Tijori envelope")
+    data = envelope["data"]
+    return numeric_json(data) if isinstance(data, str) else data
+
+
+def numeric_cell(
+    raw: Any,
+    table: str,
+    row: int,
+    column: int,
+    locator: str,
+    row_label: str,
+    column_label: str,
+    basis: str | None = None,
+) -> VendorValue:
+    """Keep the original token and its independently addressable position."""
+    if raw is not None and not isinstance(raw, (Decimal, str)):
+        raise ValueError("invalid numeric cell")
+    text = raw.raw_text if isinstance(raw, _Number) else str(raw) if raw is not None else "null"
+    value = None if raw is None else Decimal(text.removesuffix("%").replace(",", ""))
+    if value is not None and not value.is_finite():
+        raise ValueError("non-finite numeric cell")
+    return VendorValue(
+        table_key=table,
+        row_index=row,
+        column_index=column,
+        locator=locator,
+        row_label=row_label,
+        column_label=column_label,
+        raw_text=text,
+        value=value,
+        unit="%" if text.endswith("%") else None,
+        basis=basis,
+        expected_numeric=True,
+    )
+
+
+def _pairs(data: Any, path: str, label: str) -> tuple[VendorValue, ...]:
+    """Read a positional date/value series; malformed points fail the whole parse."""
+    if not isinstance(data, list):
+        raise ValueError("series must be an array")
+    values = []
+    for row, point in enumerate(data):
+        if (
+            not isinstance(point, list)
+            or len(point) != 2
+            or not isinstance(point[0], (Decimal, str))
+        ):
+            raise ValueError("invalid series point")
+        values.append(numeric_cell(point[1], path, row, 0, f"{path}/{row}/1", str(point[0]), label))
+    return tuple(values)
+
+
+def tijori_price(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read end-of-day and intraday points plus the intraday headline cells."""
+    data = tijori_data(body.raw)
+    intraday = data["intraday_price"]
+    values = _pairs(data["eod_price"], "/data/eod_price", "eod_price")
+    values += _pairs(
+        intraday["intraday_price"], "/data/intraday_price/intraday_price", "intraday_price"
+    )
+    return values + tuple(
+        numeric_cell(
+            intraday[key], "/data/intraday_price", row, 0, f"/data/intraday_price/{key}", key, key
+        )
+        for row, key in enumerate(("latest_price", "change", "per_change"))
+    )
+
+
+def tijori_valuation(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read valuation history; the retained median-pe variant uses horizons."""
+    data = tijori_data(body.raw)
+    if urlsplit(context.url).path.rstrip("/").endswith("/median-pe"):
+        return tijori_median_pe(body, context)
+    return _pairs(data, "/data", urlsplit(context.url).path.rstrip("/").split("/")[-1])
+
+
+def tijori_median_pe(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every median-PE horizon, including explicitly missing values."""
+    data = tijori_data(body.raw)
+    if not isinstance(data, dict):
+        raise ValueError("median PE must be an object")
+    return tuple(
+        numeric_cell(raw, "/data", row, 0, f"/data/{key}", key, "median-pe")
+        for row, (key, raw) in enumerate(data.items())
+    )
+
+
+def _named(data: Any, path: str, label_key: str, points_key: str) -> tuple[VendorValue, ...]:
+    """Read named series without making mutable names their positional identity."""
+    if not isinstance(data, list):
+        raise ValueError("named series must be an array")
+    values: tuple[VendorValue, ...] = ()
+    for index, series in enumerate(data):
+        if not isinstance(series, dict) or not isinstance(series[label_key], str):
+            raise ValueError("invalid named series")
+        points = series[points_key]
+        values += _pairs(
+            numeric_json(points) if isinstance(points, str) else points,
+            f"{path}/{index}/{points_key}",
+            series[label_key],
+        )
+    return values
+
+
+def tijori_capex(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read all retained capital-expenditure series."""
+    return _named(tijori_data(body.raw), "/data", "name", "data")
+
+
+def tijori_debt(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read all retained debt series."""
+    return _named(tijori_data(body.raw), "/data", "name", "data")
+
+
+def tijori_revenue_mix(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read the history endpoint's context/graphdata envelope."""
+    envelope = numeric_json(body.raw)
+    if envelope["status"] != 200 or envelope["success"] is not True:
+        raise ValueError("invalid revenue-mix envelope")
+    return _named(envelope["context"], "/context", "fieldname", "graphdata")
+
+
+def tijori_popup(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every financial-popup history point."""
+    return _pairs(
+        tijori_data(body.raw), "/data", urlsplit(context.url).path.rstrip("/").split("/")[-1]
+    )
+
+
+def tijori_statement_compare(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read all nested statement values, growth and composition cells by position."""
+    values: list[VendorValue] = []
+
+    def rows(data: Any, path: str, dates: list[str], basis: str) -> None:
+        if not isinstance(data, list):
+            raise ValueError("statement rows must be an array")
+        for index, row in enumerate(data):
+            for field in ("value", "value_yoy", "value_perc"):
+                if not isinstance(row[field], list) or len(row[field]) != len(dates):
+                    raise ValueError("statement columns differ from report dates")
+                for column, raw in enumerate(row[field]):
+                    values.append(
+                        numeric_cell(
+                            raw,
+                            path + "/" + field,
+                            index,
+                            column,
+                            f"{path}/{index}/{field}/{column}",
+                            row["name"],
+                            dates[column],
+                            basis,
+                        )
+                    )
+            children = row["sub_section"]
+            child_path = f"{path}/{index}/sub_section"
+            rows([] if children == "" else children, child_path, dates, basis)
+
+    data = tijori_data(body.raw)
+    if not isinstance(data, list):
+        raise ValueError("statement tables must be an array")
+    for index, tables in enumerate(data):
+        for key, encoded in tables.items():
+            table = numeric_json(encoded)
+            dates = table["report_dates"]
+            if (
+                not isinstance(dates, list)
+                or not dates
+                or not all(isinstance(date, str) for date in dates)
+            ):
+                raise ValueError("invalid statement dates")
+            path = f"/data/{index}/{key}"
+            basis = "consolidated" if "_c_" in key else "standalone"
+            rows(table["data"], path + "/data", dates, basis)
+    return tuple(values)
+
+
+def screener_fii(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read the market flow values aligned with their period labels."""
+    data = numeric_json(body.raw)
+    labels, points = data["labels"], data["values"]
+    if not isinstance(labels, list) or not isinstance(points, list) or len(labels) != len(points):
+        raise ValueError("FII labels and values must be aligned arrays")
+    return tuple(
+        numeric_cell(raw, "/values", row, 0, f"/values/{row}", labels[row], data["group"])
+        for row, raw in enumerate(points)
+    )
+
+
+def screener_hs(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every HS trade metric, keeping the requested code as the table identity."""
+    data = numeric_json(body.raw)
+    if not isinstance(data, list):
+        raise ValueError("HS periods must be an array")
+    code = urlsplit(context.url).path.split("/")[-3]
+    return tuple(
+        numeric_cell(raw[field], code, row, column, f"/{row}/{field}", raw["period"], field)
+        for row, raw in enumerate(data)
+        for column, field in enumerate(
+            ("import_value", "export_value", "export_rate", "import_rate")
+        )
+    )
+
+
+def tijori_macro(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read the macro endpoint's bare array of timestamp/value pairs."""
+    return _pairs(numeric_json(body.raw), "", "macro")
+
+
+def tijori_sector_ms(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read each company's market-share history by its series position."""
+    return _named(numeric_json(body.raw), "", "short_name", "data")
+
+
+def tijori_sector_opm(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read each company's operating-margin history by its series position."""
+    return _named(numeric_json(body.raw), "", "short_name", "data")
+
+
+def tijori_index(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every index history point from the bare array."""
+    return _pairs(numeric_json(body.raw), "", "index")
+
+
+def tijori_index_metric(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every index metric point with the requested metric as its label."""
+    return _pairs(numeric_json(body.raw), "", urlsplit(context.url).path.rstrip("/").split("/")[-1])

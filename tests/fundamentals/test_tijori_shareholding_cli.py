@@ -7,10 +7,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tijori_cli_support import assert_raw_first
+from tijori_cli_support import tijori_cli_capture as tijori_cli_capture
 
 from fundamentals.api.cli import main
 from fundamentals.ingest.tijori_shareholding import TijoriShareholdingIdentityError
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource
+
+pytestmark = [pytest.mark.pg, pytest.mark.usefixtures("tijori_cli_capture")]
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_shareholding.html"
 _ARTIFACT_FILENAME = "shareholding.json"
@@ -170,3 +174,63 @@ def test_shareholding_cli_requires_an_injected_session_cookie(
 
     with pytest.raises(SystemExit, match="required for tijori-shareholding"):
         main(["tijori-shareholding", "--stock", "TITAN", "--out", str(tmp_path / "out")])
+
+
+@pytest.mark.parametrize("case", ["ok", "failed", "stopped"])
+def test_shareholding_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
+    """Every raw response is registered before parsing or a durable stop."""
+    assert_raw_first("shareholding", case, tijori_cli_capture, pg_db, tmp_path, monkeypatch)
+
+
+def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
+    """Raw-first artifact building must sanitize pinned-reader diagnostics too."""
+    from lxml import etree, html
+
+    marker = "PRIVATE_LOG_SENTINEL"
+    tree = html.fromstring(_FIXTURE.read_bytes())
+    tree.xpath('//script[@id="plan_details"]')[0].text = json.dumps(
+        {"name": {"private": marker}, "plan_tier": {"private": marker}}
+    )
+    for script in tree.xpath("//script[not(@src)]"):
+        if script.text:
+            script.text = script.text.replace(
+                'var subcategory = "overview"', f'var subcategory = "{marker}"'
+            )
+    monkeypatch.setenv("TIJORI_SESSION_COOKIE", "synthetic")
+    monkeypatch.setattr(TijoriSource, "_fetch_shareholding_bytes", lambda *a: etree.tostring(tree))
+    assert main(["tijori-shareholding", "--stock", "TITAN", "--out", str(tmp_path / "out")]) == 0
+    assert marker not in capsys.readouterr().err
+
+
+def test_shareholding_final_log_excludes_quarantine_labels(pg_db, tmp_path, monkeypatch):
+    import argparse
+    from types import SimpleNamespace
+
+    import structlog.testing
+    from vendor_surface_support import retained
+
+    from fundamentals.api import tijori_shareholding_cli as cli
+
+    body, ctx = retained("tijori", "company-shareholding", "APARINDS")
+    record = SimpleNamespace(retrieved_at=ctx.retrieved_at)
+    monkeypatch.setattr(cli, "_capture_page", lambda *a: (record, body.raw, ctx.url))
+    original = cli.build_tijori_shareholding
+
+    def with_quarantine(*a, **kw):
+        return original(*a, **kw).model_copy(
+            update={"cardinality_mismatch_rows": ("review_private_label",)}
+        )
+
+    monkeypatch.setattr(cli, "build_tijori_shareholding", with_quarantine)
+    with structlog.testing.capture_logs() as logs:
+        cli.run_tijori_shareholding_command(
+            argparse.Namespace(
+                stock="APARINDS",
+                config="config/watchlist.yaml",
+                out=str(tmp_path / "out"),
+                snapshot_root=tmp_path / "raw",
+            ),
+            credentials=TijoriCredentials(session_cookie="synthetic"),
+        )
+    leaked = sum("review_private_label" in str(event) for event in logs)
+    assert leaked == 0, f"{leaked} final-log events contain quarantined vendor labels"

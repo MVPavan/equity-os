@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 import pytest
+from tijori_cli_support import assert_raw_first
+from tijori_cli_support import tijori_cli_capture as tijori_cli_capture
 
 from fundamentals.api.cli import main
 from fundamentals.ingest.tijori_overview_models import (
@@ -15,6 +17,8 @@ from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSectionsAbsentError,
 )
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource
+
+pytestmark = [pytest.mark.pg, pytest.mark.usefixtures("tijori_cli_capture")]
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_overview.html"
 _ALL_SECTION_FILES = [
@@ -317,3 +321,58 @@ def test_overview_cli_requires_an_injected_session_cookie(
 
     with pytest.raises(SystemExit, match="required for tijori-overview"):
         main(["tijori-overview", "--stock", "TITAN", "--out", str(tmp_path / "out")])
+
+
+@pytest.mark.parametrize("case", ["ok", "failed", "stopped"])
+def test_overview_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
+    """Every raw response is registered before parsing or a durable stop."""
+    assert_raw_first("overview", case, tijori_cli_capture, pg_db, tmp_path, monkeypatch)
+
+
+def test_builder_logs_exclude_vendor_text(tmp_path, monkeypatch, capsys):
+    """Raw-first artifact building must sanitize pinned-reader diagnostics too."""
+    from lxml import etree, html
+
+    marker = "PRIVATE_LOG_SENTINEL"
+    tree = html.fromstring(_FIXTURE.read_bytes())
+    tree.xpath('//script[@id="plan_details"]')[0].text = json.dumps(
+        {"name": {"private": marker}, "plan_tier": {"private": marker}}
+    )
+    monkeypatch.setenv("TIJORI_SESSION_COOKIE", "synthetic")
+    monkeypatch.setattr(TijoriSource, "_fetch_overview_bytes", lambda *a: etree.tostring(tree))
+    assert main(["tijori-overview", "--stock", "TITAN", "--out", str(tmp_path / "out")]) == 0
+    assert marker not in capsys.readouterr().err
+
+
+def test_companion_capture_registers_g2_sections(pg_db, tmp_path, monkeypatch):
+    from fundamentals.ingest.vendor_surface_parse import PARSERS
+    from fundamentals.ingest.vendor_surface_specs import ParseGroup, load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    from test_vendor_surface_market import MarketOpener
+
+    from fundamentals.api import tijori_overview_cli as cli
+    from fundamentals.api.watchlist_config import load_watchlist_config
+
+    for s in specs:
+        if s.group is ParseGroup.TABLE:
+            monkeypatch.delitem(PARSERS, (s.site, s.id), raising=False)
+    stock = load_watchlist_config(Path("config/watchlist.yaml")).stock("APARINDS")
+    monkeypatch.setattr(cli, "open_pool", lambda *a: pg_db.runtime_pool())
+    monkeypatch.setattr(cli, "build_opener", MarketOpener)
+    monkeypatch.setattr(cli, "_STOP_DIR", tmp_path / "stops")
+    cli._capture_page(
+        stock,
+        TijoriCredentials(session_cookie="synthetic"),
+        tmp_path / "captures",
+        "company-shareholding",
+        "/company/{slug}/shareholding/",
+    )
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        missing = conn.execute(
+            "SELECT count(*) FROM eqos.vendor_outcomes WHERE parser_version LIKE '%.unavailable.v1'"
+        ).fetchone()[0]
+    assert missing == 0, f"{missing} G2 section parsers unavailable in fresh CLI process"
