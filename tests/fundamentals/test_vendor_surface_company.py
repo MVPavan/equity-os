@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import re
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import OpenerDirector
@@ -155,7 +156,7 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
     gaps = {
         item.split(":")[1]
         for item in report.incomplete
-        if item.startswith(("screener:", "tijori:"))
+        if re.match(r"(screener|tijori):[a-z0-9-]+: ", item)
     }
     # Only these catalog obligations can legitimately lack advertisements in this corpus.
     allowed_gaps = {

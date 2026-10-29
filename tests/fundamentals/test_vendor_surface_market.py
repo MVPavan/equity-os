@@ -425,3 +425,22 @@ def test_market_children_expand_at_the_parent_retrieval_time(market_rig, tmp_pat
     )
     # Expansion time is evidence time: the parent's retrieval, never the expansion's clock.
     assert seen[0].retrieved_at == record.retrieved_at
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_market_report_names_requests_without_vendor_addresses(market_rig):
+    import re
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "filter-popular-queries-api")
+    hub = next(s for s in MARKET_SPECS if s.id == row["id"])
+    report = run(
+        MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),)
+    )
+    # Unretained query children stay gaps; the cron line logs only site, surface and key.
+    assert report.incomplete
+    assert all(
+        re.fullmatch(r"(screener|tijori):[a-z0-9-]+(:[0-9a-f]{64})?(: [a-z -]+)?", entry)
+        for entry in (*report.incomplete, *report.refused)
+    )

@@ -21,6 +21,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteStopped,
     VendorFetcher,
     normalise,
+    request_key,
 )
 from fundamentals.ingest.vendor_surface_parse import Body, parser_sha256
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Scope, SurfaceSpec
@@ -61,6 +62,11 @@ class Progress(BaseModel):
 def named(spec: SurfaceSpec) -> str:
     """The site and surface naming a report entry, never a vendor address."""
     return f"{SITE_NAME[spec.site]}:{spec.id}"
+
+
+def address(request: Request) -> str:
+    """A report entry for one request: its surface and address key, never the address."""
+    return f"{named(request.spec)}:{request_key(normalise(request.url))}"
 
 
 def traversal_key(request: Request) -> str:
@@ -259,17 +265,17 @@ def capture_market(
         for _ in range(MAX_FEED_PAGES + int(state.resume_page is not None)):
             expected += 1
             if request.spec.site in stopped:
-                refused.append(request.url)
+                refused.append(address(request))
                 break
             try:
                 ref, body = capture(fetcher, store, pool, values, request)
             except SiteStopped as error:
                 stopped.append(error.site)
-                incomplete.append(request.url)
+                incomplete.append(address(request))
                 break
             except (SiteBusy, ValueError):
                 (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
-                    request.url
+                    address(request)
                 )
                 break
             with pool.connection() as conn:
@@ -288,7 +294,7 @@ def capture_market(
                     ).fetchall()
             completed += int(usable)
             if not usable or body is None:
-                incomplete.append(request.url)
+                incomplete.append(address(request))
                 break
             cells = tuple(VendorValue.model_validate(row) for row in raw_values)
             row_ids = (
@@ -349,13 +355,13 @@ def capture_market(
             if done:
                 break
             if next_url == request.url:
-                incomplete.append(request.url + ": repeated continuation")
+                incomplete.append(address(request) + ": repeated continuation")
                 break
             assert next_url is not None
             request = request.model_copy(update={"url": next_url})
             page += 1
         else:
-            incomplete.append(initial.url + ": page cap")
+            incomplete.append(address(initial) + ": page cap")
     return RunReport(
         expected=expected,
         completed=completed,
