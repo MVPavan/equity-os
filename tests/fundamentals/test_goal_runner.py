@@ -1030,7 +1030,9 @@ def test_collect_pdf_recovers_thermax_with_real_local_engine() -> None:
     assert got[EPS] == Decimal("10.29")
 
 
-@pytest.mark.parametrize("kind", [SourceKind.NSE, SourceKind.BSE, SourceKind.PDF])
+@pytest.mark.parametrize(
+    "kind", [SourceKind.NSE, SourceKind.BSE, SourceKind.PDF, SourceKind.SCREENER]
+)
 @pytest.mark.parametrize("retained", [False, True])
 def test_fixture_acquisition_is_real_not_cutoff(
     tmp_path: Path, kind: SourceKind, retained: bool
@@ -1046,6 +1048,11 @@ def test_fixture_acquisition_is_real_not_cutoff(
     if kind is SourceKind.PDF:
         path = tmp_path / "body.pdf"
         stock = _pdf_ocr_stock(path, _write_pl_pdf(path))
+    elif kind is SourceKind.SCREENER:
+        path = tmp_path / "body.html"
+        fixture = _REPO_ROOT / "tests/fundamentals/fixtures/synthetic_screener_quarters.html"
+        path.write_bytes(fixture.read_bytes().replace(b"\n", b"\r\n"))
+        stock = _stock(fixtures=FixturePaths(screener=str(path)))
     else:
         path = tmp_path / "body.xml"
         fixture = _NSE_FIXTURE if kind is SourceKind.NSE else _BSE_FIXTURE
@@ -1076,8 +1083,12 @@ def test_fixture_acquisition_is_real_not_cutoff(
     )
 
     after = datetime.now(UTC)
-    assert sources[0].status is SourceStatus.OK
+    assert sources[0].status is SourceStatus.OK, sources[0].note
     assert sources[0].observations
+    if kind is SourceKind.SCREENER:
+        assert {obs.provenance.file_sha256 for obs in sources[0].observations} == {
+            hashlib.sha256(path.read_bytes()).hexdigest()
+        }
     times = {obs.provenance.retrieved_at for obs in sources[0].observations}
     if retained:
         assert times == {recorded_at}

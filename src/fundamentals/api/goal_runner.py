@@ -481,11 +481,11 @@ def collect_sources(
     retrieved_at = datetime.now(UTC)
     collected: list[CollectedSource] = []
     if SourceKind.NSE in kinds:
-        collected.append(_collect_nse(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_nse(stock, mode, repo_root))
     if SourceKind.BSE in kinds:
-        collected.append(_collect_bse(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_bse(stock, mode, repo_root))
     if SourceKind.SCREENER in kinds:
-        collected.append(_collect_screener(stock, mode, repo_root, retrieved_at))
+        collected.append(_collect_screener(stock, mode, repo_root))
     if SourceKind.TIJORI in kinds:
         collected.append(_collect_tijori(stock, mode, repo_root, tijori_credentials))
     if SourceKind.PDF in kinds:
@@ -518,9 +518,7 @@ def _ok(
     )
 
 
-def _collect_nse(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_nse(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the NSE Ind AS XBRL (always attempted; first-party primary)."""
     source_id = CONSOLIDATED_SOURCE_ID
     try:
@@ -569,9 +567,7 @@ def _bse_period_label(stock: StockConfig) -> str:
     return stock.quarter.period_end.strftime(_BSE_PERIOD_LABEL_FORMAT)
 
 
-def _collect_bse(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_bse(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the BSE resultsSnapshot summary for the reviewed quarter (second host).
 
     BSE's ``resultsSnapshot`` is a first-party (BSE-hosted) *summary* source that
@@ -584,7 +580,7 @@ def _collect_bse(
     period_label = _bse_period_label(stock)
     try:
         if mode is RunMode.FIXTURE:
-            return _collect_bse_fixture(stock, repo_root, retrieved_at, period_label)
+            return _collect_bse_fixture(stock, repo_root, period_label)
         download_folder = repo_root / "data" / "raw" / "watchlist" / stock.symbol.lower() / "bse"
         source = BseSource(download_folder, scrip_code=stock.identifiers.bse_scrip)
         result = source.fetch_summary(period_label=period_label)
@@ -595,9 +591,7 @@ def _collect_bse(
     return _ok(SourceKind.BSE, source_id, result.observations)
 
 
-def _collect_bse_fixture(
-    stock: StockConfig, repo_root: Path, retrieved_at: datetime, period_label: str
-) -> CollectedSource:
+def _collect_bse_fixture(stock: StockConfig, repo_root: Path, period_label: str) -> CollectedSource:
     """Read a committed BSE fixture: a resultsSnapshot ``.json`` or an XBRL ``.xml``."""
     if stock.fixtures.bse is None:
         return _skip(SourceKind.BSE, SUMMARY_SOURCE_ID, "no BSE fixture configured")
@@ -631,9 +625,7 @@ def _load_bse_snapshot(path: Path) -> dict[str, Any]:
     return parsed
 
 
-def _collect_screener(
-    stock: StockConfig, mode: RunMode, repo_root: Path, retrieved_at: datetime
-) -> CollectedSource:
+def _collect_screener(stock: StockConfig, mode: RunMode, repo_root: Path) -> CollectedSource:
     """Pull the Screener derived quarterly P&L (cross-check only; non-fatal)."""
     source_id = "screener"
     try:
@@ -641,12 +633,13 @@ def _collect_screener(
             if stock.fixtures.screener is None:
                 return _skip(SourceKind.SCREENER, source_id, "no Screener fixture configured")
             path = repo_root / stock.fixtures.screener
-            html = path.read_text(encoding="utf-8")
-            retrieved_at = file_retrieved_at(path, _sha256(html.encode("utf-8")))
+            raw = path.read_bytes()
+            digest = _sha256(raw)
+            retrieved_at = file_retrieved_at(path, digest)
             observations = parse_quarterly_pnl(
-                html,
+                raw.decode("utf-8"),
                 source_url=f"fixture://{stock.identifiers.screener_slug}",
-                file_sha256=_sha256(html.encode("utf-8")),
+                file_sha256=digest,
                 entity_id=stock.identifiers.screener_slug,
                 consolidated=True,
                 retrieved_at=retrieved_at,
