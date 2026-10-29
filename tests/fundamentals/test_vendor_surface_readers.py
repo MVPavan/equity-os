@@ -1,81 +1,18 @@
 """G0 adapters exercised through the registry on retained subscriber responses."""
 
-import hashlib
-import io
 import json
-from datetime import UTC, datetime
 from decimal import Decimal
-from email.message import Message
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import OpenerDirector
 
 import pytest
-from pydantic import SecretStr
-from vendor_surface_support import INDEX
+from vendor_surface_support import INDEX, capture_response, retained
 
-from fundamentals.ingest.screener_session_models import Basis, BasisTopology
-from fundamentals.ingest.vendor_surface_capture import Request, capture
-from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, CompanyIds, ParseContext
+from fundamentals.ingest.screener_session_models import Basis
+from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_fetch import Site
+from fundamentals.ingest.vendor_surface_parse import PARSERS, Body
 from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
 from fundamentals.store.snapshot_store import SnapshotStore
-from fundamentals.store.vendor_values_store import VendorValuesStore
-
-IDS = {
-    "APARINDS": (211, 2446, 6594631, "apar-industries-limited", 4290),
-    "ANONDITA": (1285614, 142778403, 142927483, "anondita-medicare-ltd", 58631),
-    "RELIANCE": (2726, 811, 6598251, "reliance-industries-limited", 242),
-    "NETWEB": (1284419, 104235517, None, "netweb-technologies-india-ltd", 0),
-    "HDFCBANK": (1298, 1789, 6596237, "hdfc-bank-limited", 129),
-}
-
-
-def retained(site, surface, symbol=None, basis="standalone"):
-    rows = (
-        json.loads(INDEX.with_name("kinds-index.json").read_text())
-        if symbol
-        else json.loads(INDEX.read_text())
-    )
-    row = next(
-        r
-        for r in rows
-        if r["site"] == site
-        and r["id"] == surface
-        and r["kind"] == "response"
-        and r["status"] == 200
-        and (symbol is None or r["symbol"] == symbol and (r["basis"] in (basis, "na")))
-    )
-    raw = Path(row["path"]).read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-    symbol = symbol or (
-        "HDFCBANK"
-        if surface in ("peers-api", "company-timeline-api")
-        else "RELIANCE"
-        if site == "tijori" or surface in ("segments-api", "investors-api")
-        else "HDFCBANK"
-        if surface == "company-search-api"
-        else "APARINDS"
-    )
-    company, standalone, consolidated, slug, tijori = IDS[symbol]
-    ids = CompanyIds(
-        nse_symbol=symbol,
-        isin="",
-        tijori_slug=slug,
-        tijori_company_id=tijori,
-        screener_company_id=company,
-        topology=BasisTopology(
-            standalone_warehouse_id=standalone, consolidated_warehouse_id=consolidated
-        ),
-    )
-    return Body(raw=raw), ParseContext(
-        ids=ids,
-        basis=Basis(basis),
-        url=row["url"],
-        retrieved_at=datetime(2026, 10, 28, tzinfo=UTC),
-        body_sha256=row["sha256"],
-        capture_id="retained-g0",
-    )
 
 
 def parse(site, surface, body, context):
@@ -118,7 +55,8 @@ def test_statement_readers(surface, symbol):
         "segments-api",
     ],
 )
-def test_fragment_readers(surface):
+@pytest.mark.pg
+def test_fragment_readers(surface, pg_db, tmp_path):
     body, context = retained("screener", surface)
     if surface == "peers-api":
         context = context.model_copy(update={"basis": Basis.CONSOLIDATED})
@@ -144,6 +82,46 @@ def test_fragment_readers(surface):
     values = parse("screener", surface, body, context)
     assert values
     assert len({(v.table_key, v.row_index, v.column_index) for v in values}) == len(values)
+
+    checked = {
+        "schedules-api": ("reader/sub_rows", 0, (0, 1), (Decimal("171"), Decimal("287"))),
+        "investors-api": ("reader/holders", 0, (0, 1), (Decimal("11.20"), Decimal("11.20"))),
+        "segments-api": ("reader/lines/0", 1, (5, 6), (Decimal("451355"), Decimal("320008"))),
+    }
+    if surface in checked:
+        from fundamentals.ingest.vendor_surface_capture import Request
+
+        with pg_db.runtime_pool() as pool:
+            ref = capture_response(
+                pool,
+                SnapshotStore(tmp_path),
+                tmp_path,
+                Request(
+                    spec=spec,
+                    url=context.url,
+                    ids=context.ids,
+                    basis=context.basis,
+                    parent=context.parent,
+                    due_since=None,
+                ),
+                body.raw,
+            )
+            with pool.connection() as conn:
+                status = conn.execute(
+                    "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                    (ref.capture_ref_id,),
+                ).fetchone()[0]
+                assert status in ("OK", "PARTIAL")
+                key, row, columns, expected = checked[surface]
+                actual = conn.execute(
+                    (
+                        "SELECT value FROM eqos.vendor_values WHERE capture_ref_id=%s AND tab"
+                        "le_key=%s AND row_index=%s AND column_index=ANY(%s) ORDER BY column_"
+                        "index"
+                    ),
+                    (ref.capture_ref_id, key, row, list(columns)),
+                ).fetchall()
+                assert actual == [(value,) for value in expected]
 
 
 @pytest.mark.parametrize("symbol", ["APARINDS", "ANONDITA"])
@@ -183,10 +161,16 @@ def test_tijori_page_readers(surface, symbol):
         "company-shareholding",
         "shareholding-detailed",
     ):
-        from fundamentals.ingest.vendor_surface_readers import ReaderError
+        from fundamentals.ingest.tijori_overview_models import TijoriOverviewSectionAbsentError
+        from fundamentals.ingest.tijori_shareholding_table import TijoriShareholdingSchemaError
 
+        refusal = (
+            TijoriOverviewSectionAbsentError
+            if surface == "overview-marketshare"
+            else TijoriShareholdingSchemaError
+        )
         reason = "not available" if surface == "overview-marketshare" else "repeats node id"
-        with pytest.raises(ReaderError, match=reason):
+        with pytest.raises(refusal, match=reason):
             parse("tijori", surface, body, context)
         return
     values = parse("tijori", surface, body, context.model_copy(update={"basis": None}))
@@ -214,32 +198,13 @@ def test_tijori_api_readers(surface):
     assert parse("tijori", surface, body, context)
 
 
-class Opener(OpenerDirector):
-    def __init__(self, raw, status):
-        super().__init__()
-        self.raw, self.status = raw, status
-
-    def open(self, request, timeout):
-        return HTTPError(request.full_url, self.status, "retained", Message(), io.BytesIO(self.raw))
-
-
-class Lock:
-    def acquire(self, site):
-        return True
-
-
 def record(pg_db, tmp_path, site, surface, body, context, status=200):
     store = SnapshotStore(tmp_path)
-    session = SiteSession(site=site, session_cookie=SecretStr("synthetic"), cookie_name="sessionid")
-    fetcher = VendorFetcher(
-        store, {site: session}, Opener(body.raw, status), tmp_path, Lock(), spacing_seconds=0
-    )
     with pg_db.runtime_pool() as pool:
-        capture(
-            fetcher,
-            store,
+        capture_response(
             pool,
-            VendorValuesStore(pool),
+            store,
+            tmp_path,
             Request(
                 spec=SurfaceSpec(
                     site=site,
@@ -255,6 +220,8 @@ def record(pg_db, tmp_path, site, surface, body, context, status=200):
                 parent=context.parent,
                 due_since=None,
             ),
+            body.raw,
+            status,
         )
         with pool.connection() as conn:
             return conn.execute(
@@ -398,3 +365,66 @@ def test_popup_expands_nested_financial_rows():
     )
     assert len(requests) == 20
     assert len({r.url for r in requests}) == 20
+
+
+def test_reader_logs_exclude_vendor_text():
+    import structlog.testing
+
+    body, context = retained("tijori", "company-overview", "APARINDS")
+    body = Body(
+        raw=body.raw.replace(b'"company_id":', b'"vendor-private-sentinel":1,"company_id":')
+    )
+    with structlog.testing.capture_logs() as logs:
+        assert parse("tijori", "company-overview", body, context)
+    assert logs
+    assert "vendor-private-sentinel" not in str(logs)
+    assert all(set(event) <= {"event", "site", "surface", "log_level"} for event in logs)
+
+
+def test_event_numeric_contract_survives_unreadable_text():
+    from fundamentals.ingest.vendor_surface_readers import reader_values, tijori_reader
+
+    body, context = retained("tijori", "upcoming-events")
+    document = tijori_reader("upcoming-events", body, context)
+    original = document.rows[0].cells[0]
+    cell = original.model_copy(
+        update={
+            "raw_text": "unreadable",
+            "value": None,
+            "provenance": original.provenance.model_copy(update={"column_label": "Amount"}),
+        }
+    )
+    row = document.rows[0].model_copy(update={"cells": (cell,)})
+    values = reader_values(document.model_copy(update={"rows": (row,)}))
+    assert values[0].value is None and values[0].expected_numeric
+
+
+def test_retained_hdfc_segment_reconciliation_refusal():
+    from fundamentals.ingest.screener_company_models import SegmentReconciliationError
+    from fundamentals.ingest.vendor_surface_expand import screener_segments
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    body, context = retained("screener", "segments-api", "HDFCBANK", "consolidated")
+    page, parent = retained("screener", "company-page", "HDFCBANK", "consolidated")
+    spec = next(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.id == "segments-api"
+    )
+    request = next(
+        r
+        for r in screener_segments(
+            page, parent.model_copy(update={"parent": {"spec": spec.model_dump()}})
+        )
+        if r.url == context.url
+    )
+    with pytest.raises(SegmentReconciliationError):
+        parse(
+            "screener",
+            "segments-api",
+            body,
+            context.model_copy(update={"parent": request.parent, "basis": request.basis}),
+        )

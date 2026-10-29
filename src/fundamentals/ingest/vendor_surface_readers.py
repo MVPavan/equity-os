@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-import re
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+import structlog
 
 from fundamentals.entity.verification import screener_candidate, tijori_candidate
+from fundamentals.ingest import screener_company_artifacts as sc
 from fundamentals.ingest import screener_company_fragments as fragments
-from fundamentals.ingest.screener_company_artifacts import CorporateAction, QuickRatio
+from fundamentals.ingest import screener_financials_models as sf
+from fundamentals.ingest import tijori_analysis_models as ta
+from fundamentals.ingest import tijori_events_models as te
+from fundamentals.ingest import tijori_overview_models as to
 from fundamentals.ingest.screener_company_models import Binding, Periodicity
-from fundamentals.ingest.screener_financials_models import GrowthRow, IdentityStrength, Section
+from fundamentals.ingest.screener_financials_models import IdentityStrength, Section
 from fundamentals.ingest.screener_financials_nested import read_nested_schedule
 from fundamentals.ingest.screener_financials_schedules import read_schedule
 from fundamentals.ingest.screener_financials_tables import read_growth_section, read_section
@@ -26,36 +29,27 @@ from fundamentals.ingest.tijori_events import build_tijori_events
 from fundamentals.ingest.tijori_events_models import TijoriEventsCell, TijoriEventsSurface
 from fundamentals.ingest.tijori_overview import build_tijori_overview
 from fundamentals.ingest.tijori_overview_models import (
-    TijoriCorporateAction,
     TijoriOverviewSection,
-    TijoriQuickLookCounts,
-    TijoriQuickLookFlag,
 )
-from fundamentals.ingest.tijori_series import TijoriSeriesPoint
-from fundamentals.ingest.tijori_shareholding import build_tijori_shareholding
+from fundamentals.ingest.tijori_shareholding import (
+    TijoriShareholding,
+    TijoriShareholdingRow,
+    build_tijori_shareholding,
+)
 from fundamentals.ingest.tijori_source import TijoriSource
-from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableCell
+from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableCell, TijoriTableRow
+from fundamentals.ingest.vendor_surface_series import numeric_column
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
     from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, Parser
 
-SCREENER_SURFACES = (
-    "company-consolidated-empty-shell",
-    "section-quarters",
-    "section-profit-loss",
-    "section-balance-sheet",
-    "section-cash-flow",
-    "section-ratios",
-    "section-shareholding",
-    "schedules-api",
-    "investors-api",
-    "segments-api",
-    "quick-ratios-api",
-    "peers-api",
-    "related-party",
-    "corporate-actions-modal",
-    "company-search-api",
+SCREENER_SURFACES = tuple(
+    "company-consolidated-empty-shell section-quarters section-profit-loss "
+    "section-balance-sheet section-cash-flow section-ratios "
+    "section-shareholding schedules-api investors-api "
+    "segments-api quick-ratios-api peers-api "
+    "related-party corporate-actions-modal company-search-api ".split()
 )
 OVERVIEW = {
     "company-overview": None,
@@ -106,171 +100,259 @@ class ReaderError(ValueError):
 
 
 def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue, ...]:
-    """Convert typed reader cells, keeping structural positions and source anchors."""
-    values: list[VendorValue] = []
+    """Convert the declared reader output types, sharing one positional cell emitter."""
+    result: list[VendorValue] = []
 
-    def walk(
-        node: Any,
-        path: str,
-        table: str,
-        unit: str | None,
-        scope: str | None,
+    def emit(
+        items: Any,
+        key: str,
+        row: int = 0,
+        unit: str | None = None,
+        scope: str | None = basis,
         padding: frozenset[int] = frozenset(),
-        source_row: int | None = None,
     ) -> None:
-        """Walk reader output only; no source bytes are interpreted here."""
-        if isinstance(node, (tuple, list)):
-            for index, item in enumerate(node):
-                walk(item, f"{path}/{index}", table, unit, scope, padding, source_row)
-            return
-        if not isinstance(node, BaseModel):
-            return
-        source_row = getattr(node, "position", source_row)
-        table = str(getattr(node, "key", getattr(node, "table_id", table)))
-        unit = getattr(node, "unit", getattr(node, "unit_label", unit))
-        scope = getattr(node, "scope", scope)
-        if isinstance(node, TijoriTable) and node.key.startswith("qt_"):
-            # Evidenced SME shape: Jun/Dec columns are zero throughout the statement.
-            off_cycle = frozenset(
-                i
-                for i, label in enumerate(node.column_period_labels)
-                if label.startswith(("Jun ", "Dec "))
-            )
-            padding = (
-                off_cycle
-                if off_cycle
-                and node.rows
-                and all(
-                    row.cells and all(row.cells[i].value == 0 for i in off_cycle)
-                    for row in node.rows
+        for column, (raw, value, provenance, numeric) in enumerate(items):
+            locator, label, header = f"{key}/{row}/{column}", str(row), str(column)
+            if provenance is not None:
+                locator = provenance.context_ref or (
+                    f"#{provenance.table_id}/{provenance.row_path}"
+                    f"/column[{provenance.column_index}]"
                 )
-                and any(cell.value for row in node.rows for cell in row.cells)
-                else frozenset()
-            )
-        unaligned = getattr(node, "unaligned_raw_values", getattr(node, "raw_cells", ()))
-        for column, raw in enumerate(unaligned):
-            values.append(
+                label = provenance.row_label or provenance.row_path or label
+                header = provenance.column_label or header
+            result.append(
                 VendorValue(
-                    table_key=f"{table}/{path}",
-                    row_index=0,
+                    table_key=key,
+                    row_index=row,
                     column_index=column,
-                    locator=f"{path}/{column}",
-                    row_label=path,
-                    column_label=str(column),
                     raw_text=raw,
-                    value=None,
+                    value=value,
+                    locator=locator,
+                    row_label=label,
+                    column_label=header,
                     unit=unit,
                     basis=scope,
-                    expected_numeric=True,
+                    padded=column in padding,
+                    expected_numeric=numeric and column not in padding,
                 )
             )
-        provenance: Any = getattr(node, "provenance", None)
-        if hasattr(node, "raw_text") and hasattr(node, "value"):
-            parts = path.split("/")
-            column = (
-                0
-                if isinstance(node, GrowthRow)
-                else getattr(node, "period_index", int(parts[-1]) if parts[-1].isdigit() else 0)
-            )
-            row_path = "/".join(parts[:-2]) if parts[-1].isdigit() else path
-            expected = not isinstance(node, TijoriEventsCell) or node.value is not None
-            match = re.fullmatch(r"(.*)/(?:rows|sub_rows|holders)/(\d+)(?:/cells/\d+)?", path)
-            table_path, row_index = (match[1], int(match[2])) if match else (row_path, 0)
-            values.append(
-                VendorValue(
-                    table_key=f"{table}/{table_path}",
-                    row_index=source_row if source_row is not None else row_index,
-                    column_index=column,
-                    locator=provenance.context_ref
-                    or (
-                        f"#{provenance.table_id}/{provenance.row_path}"
-                        f"/column[{provenance.column_index}]"
-                    ),
-                    row_label=provenance.row_label or provenance.row_path or row_path,
-                    column_label=provenance.column_label or str(column),
-                    raw_text=node.raw_text,
-                    value=node.value,
-                    unit=unit,
-                    basis=scope,
-                    padded=column in padding
-                    or isinstance(node, TijoriTableCell)
-                    and not node.published,
-                    expected_numeric=expected and column not in padding,
-                )
-            )
-            return
-        if isinstance(node, (TijoriCorporateAction, TijoriQuickLookCounts)):
-            fields = (
-                ("ex_date", "event_details", "event_date")
-                if isinstance(node, TijoriCorporateAction)
-                else ("green", "red", "neutral", "gray", "total")
-            )
-            for column, name in enumerate(fields):
-                raw = getattr(node, name)
-                if raw is not None:
-                    values.append(
-                        VendorValue(
-                            table_key=f"{table}/{path}",
-                            row_index=0,
-                            column_index=column,
-                            locator=f"{path}/{name}",
-                            row_label=path,
-                            column_label=name,
-                            raw_text=str(raw),
-                            value=Decimal(raw) if isinstance(raw, int) else None,
-                        )
-                    )
-            return
-        if isinstance(node, TijoriQuickLookFlag):
-            values.append(
-                VendorValue(
-                    table_key=f"{table}/{path.rsplit('/', 1)[0]}",
-                    row_index=int(path.rsplit("/", 1)[1]),
-                    column_index=0,
-                    locator=node.provenance.context_ref or path,
-                    row_label=node.name or path,
-                    column_label="flag",
-                    raw_text=node.raw_json,
-                    value=None,
-                )
-            )
-            return
-        if isinstance(node, (QuickRatio, CorporateAction, TijoriSeriesPoint)):
-            readings = (
-                node.values
-                if isinstance(node, QuickRatio)
-                else (node.amount if isinstance(node, CorporateAction) else node.value,)
-            )
-            raw = (
-                node.title
-                if isinstance(node, CorporateAction)
-                else node.raw_value_text
-                if isinstance(node, TijoriSeriesPoint)
-                else node.raw_text
-            )
-            for column, value in enumerate(readings):
-                values.append(
-                    VendorValue(
-                        table_key=f"{table}/{path.rsplit('/', 1)[0]}",
-                        row_index=int(path.rsplit("/", 1)[1]),
-                        column_index=column,
-                        locator=path,
-                        row_label=path,
-                        column_label=str(column),
-                        raw_text=raw,
-                        value=value,
-                        unit=unit,
-                        basis=scope,
-                        expected_numeric=not isinstance(node, CorporateAction),
-                    )
-                )
-            return
-        for name in type(node).model_fields:
-            if name not in {"metadata", "comparisons", "provenance"}:
-                walk(getattr(node, name), f"{path}/{name}", table, unit, scope, padding, source_row)
 
-    walk(document, "", "reader", None, basis)
-    return tuple(values)
+    def cells(
+        items: Any,
+        key: str,
+        row: int = 0,
+        unit: str | None = None,
+        scope: str | None = basis,
+        padding: frozenset[int] = frozenset(),
+    ) -> None:
+        padding = padding | frozenset(
+            i for i, c in enumerate(items) if isinstance(c, TijoriTableCell) and not c.published
+        )
+        emit(
+            (
+                (
+                    c.raw_text,
+                    c.value,
+                    c.provenance,
+                    not isinstance(c, TijoriEventsCell)
+                    or numeric_column(c.provenance.column_label or ""),
+                )
+                for c in items
+            ),
+            key,
+            row,
+            unit,
+            scope,
+            padding,
+        )
+
+    def rows(
+        items: Any, key: str, scope: str | None = basis, padding: frozenset[int] = frozenset()
+    ) -> None:
+        for index, row in enumerate(items):
+            positioned = (
+                sf.TableRow,
+                sc.BucketRow,
+                sf.ScheduleSubRow,
+                sc.InvestorHolding,
+                sc.SegmentRow,
+                sc.RelatedPartyLine,
+                sc.PeerRow,
+            )
+            index = row.position if isinstance(row, positioned) else index
+            unit = row.unit if isinstance(row, (sf.TableRow, sc.BucketRow)) else None
+            cells(row.cells, key, index, unit, scope, padding)
+            if isinstance(
+                row,
+                (
+                    TijoriTableRow,
+                    TijoriShareholdingRow,
+                    to.TijoriCustomFinancialRow,
+                    te.TijoriListingRow,
+                    te.TijoriResultRow,
+                    te.TijoriEventDetailRow,
+                ),
+            ):
+                emit(
+                    ((raw, None, None, True) for raw in row.unaligned_raw_values),
+                    key + ":unaligned",
+                    index,
+                    unit,
+                    scope,
+                )
+
+    def series(items: Any, key: str, unit: str | None = None) -> None:
+        for index, point in enumerate(items):
+            emit(((point.raw_value_text, point.value, None, True),), key, index, unit)
+
+    def windows(items: Any, key: str) -> None:
+        for index, window in enumerate(items):
+            cells(tuple(item.amount for item in window.items), f"{key}/windows/{index}")
+
+    def convert(node: Any, key: str) -> None:
+        match node:
+            case tuple():
+                for index, item in enumerate(node):
+                    convert(item, f"{key}/{index}")
+            case sf.SectionTable(table_id=table, rows=items, growth_tables=growth):
+                rows(items, table)
+                convert(growth, table + "/ranges-table")
+            case sc.ShareholdingTable(rows=items) | sc.PeersTable(rows=items):
+                rows(items, key)
+            case sf.GrowthTable(rows=items):
+                for growth_row in items:
+                    cells((growth_row,), key, growth_row.position, growth_row.unit)
+            case sf.ScheduleFamily(sub_rows=items, basis=scope):
+                rows(items, key + "/sub_rows", scope)
+            case sc.InvestorBucket(holders=items):
+                rows(items, key + "/holders")
+            case sc.SegmentTable(lines=items):
+                for line in items:
+                    rows(line.rows, f"{key}/lines/{line.position}")
+            case sc.RelatedPartyTable(parties=items):
+                for party in items:
+                    rows(party.lines, f"{key}/parties/{party.position}")
+            case sc.CorporateActionsTable(tabs=items):
+                for tab in items:
+                    emit(
+                        ((a.title, a.amount, a.provenance, False) for a in tab.actions),
+                        f"{key}/tabs/{tab.position}",
+                    )
+            case sc.QuickRatioList(ratios=items, table_id=table):
+                for ratio in items:
+                    readings = (
+                        (ratio.raw_text, value, ratio.provenances[i], True)
+                        for i, value in enumerate(ratio.values)
+                    )
+                    emit(readings, table, ratio.position, ratio.unit)
+            case TijoriTable(rows=items, key=table, scope=scope):
+                off = frozenset(
+                    i
+                    for i, label in enumerate(node.column_period_labels)
+                    if label.startswith(("Jun ", "Dec "))
+                )
+                all_zero = all(
+                    row.cells and all(row.cells[i].value == 0 for i in off) for row in items
+                )
+                has_values = any(cell.value for row in items for cell in row.cells)
+                padded = (
+                    off
+                    if table.startswith("qt_") and items and off and all_zero and has_values
+                    else frozenset()
+                )
+                rows(items, table, scope, padded)
+            case TijoriShareholding(rows=items):
+                for index, holding_row in enumerate(items):
+                    cells(holding_row.cells, key, index, node.unit_label)
+            case to.TijoriRatiosSection(ratios=items):
+                for index, overview_ratio in enumerate(items):
+                    cells((overview_ratio.amount,), key, index, overview_ratio.unit)
+            case to.TijoriCustomFinancialsSection(blocks=items):
+                for index, block in enumerate(items):
+                    rows(block.rows, f"{key}/blocks/{index}")
+            case to.TijoriMarketShareSection(charts=items):
+                for index, chart in enumerate(items):
+                    cells((chart.latest_value,), key + "/charts", index, chart.unit)
+                    series(chart.series, f"{key}/charts/{index}/series", chart.unit)
+            case to.TijoriPeersSection(rows=items) | te.TijoriUpcomingEvents(rows=items):
+                rows(items, key)
+            case to.TijoriPriceReturnsSection(returns=items):
+                cells(tuple(item.amount for item in items), key)
+            case (
+                to.TijoriPriceSeriesSection(points=items) | ta.TijoriOpMetricsSection(points=items)
+            ):
+                series(items, key)
+            case to.TijoriPriceChartPeersSection():
+                pass
+            case to.TijoriRevenueMixSection(break_ups=items):
+                for index, breakup in enumerate(items):
+                    cells(breakup.entries, f"{key}/break_ups/{index}")
+            case to.TijoriCompanyDetailsSection():
+                cells((node.market_cap, node.price_earnings, node.price_earnings_growth), key)
+                counts = node.quick_look.counts
+                if counts:
+                    numbers = (counts.green, counts.red, counts.neutral, counts.gray, counts.total)
+                    counts_data = (
+                        (str(n), Decimal(n), None, True) for n in numbers if n is not None
+                    )
+                    emit(counts_data, key + "/counts")
+                for index, category in enumerate(node.quick_look.categories):
+                    flags = ((f.raw_json, None, f.provenance, False) for f in category.flags)
+                    emit(flags, f"{key}/flags/{index}")
+            case to.TijoriCorporateActionsSection(actions=items):
+                for index, action in enumerate(items):
+                    raw = (action.ex_date, action.event_details, action.event_date)
+                    emit(((r, None, action.provenance, False) for r in raw), key, index)
+            case ta.TijoriFundFlowSection(groups=items):
+                for index, group in enumerate(items):
+                    windows(group.windows, f"{key}/groups/{index}")
+            case ta.TijoriCashFlowWaterfallSection(windows=items):
+                windows(items, key)
+            case ta.TijoriBalanceSheetSnapshotSection(sides=items):
+                for index, side in enumerate(items):
+                    cells(tuple(entry.amount for entry in side.entries), f"{key}/sides/{index}")
+            case te.TijoriQuarterlyResults(items=items):
+                for item in items:
+                    item_key = f"{key}/items/{item.position}"
+                    cells((item.company_cell, item.announced), item_key + "/header")
+                    cells(
+                        tuple(metric.cell for metric in item.headline_metrics),
+                        item_key + "/metrics",
+                    )
+                    rows(item.rows, item_key + "/rows")
+            case te.TijoriCompanyTimeline(events=items):
+                for event in items:
+                    event_key = f"{key}/events/{event.position}"
+                    header = (
+                        event.company_cell,
+                        event.event_cell,
+                        event.content_cell,
+                        *event.link_cells,
+                    )
+                    cells(header, event_key)
+                    for detail_table in event.detail_tables:
+                        rows(detail_table.rows, f"{event_key}/tables/{detail_table.position}")
+            case _:
+                raise ReaderError("unsupported reader output")
+
+    convert(document, "reader")
+    return tuple(result)
+
+
+def candidate_value(raw: str, value: Decimal | None, locator: str) -> tuple[VendorValue, ...]:
+    """One verified search candidate under a positional address."""
+    return (
+        VendorValue(
+            table_key="candidate",
+            row_index=0,
+            column_index=0,
+            locator=locator,
+            row_label="company",
+            column_label=locator[1:],
+            raw_text=raw,
+            value=value,
+        ),
+    )
 
 
 def screener_reader(surface: str, body: Body, context: ParseContext) -> Any:
@@ -288,18 +370,7 @@ def screener_reader(surface: str, body: Body, context: ParseContext) -> Any:
         candidate = screener_candidate(body.raw, ids.nse_symbol)
         if not isinstance(candidate, int):
             raise ReaderError(str(candidate))
-        return (
-            VendorValue(
-                table_key="candidate",
-                row_index=0,
-                column_index=0,
-                locator="/id",
-                row_label=ids.nse_symbol,
-                column_label="id",
-                raw_text=str(candidate),
-                value=Decimal(candidate),
-            ),
-        )
+        return candidate_value(str(candidate), Decimal(candidate), "/id")
     if surface == "company-consolidated-empty-shell":
         assert context.basis is not None and ids.topology is not None
         _, outcome = read_page_evidence(
@@ -383,18 +454,7 @@ def tijori_reader(surface: str, body: Body, context: ParseContext) -> Any:
         candidate = tijori_candidate(body.raw)
         if not isinstance(candidate, str):
             raise ReaderError(str(candidate))
-        return (
-            VendorValue(
-                table_key="candidate",
-                row_index=0,
-                column_index=0,
-                locator="/slug",
-                row_label="company",
-                column_label="slug",
-                raw_text=candidate,
-                value=None,
-            ),
-        )
+        return candidate_value(candidate, None, "/slug")
     ids = context.ids
     if surface in {"quarterly-results", "upcoming-events"}:
         return build_tijori_events(
@@ -448,6 +508,12 @@ def make_reader(site: str, surface: str) -> Parser:
 
     def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
         """Run a reader without allowing its failures to become kept captures."""
+        config = structlog.get_config()
+
+        def sanitize(logger: Any, method: str, event: Any) -> dict[str, str]:
+            return {"event": "vendor_surface_reader", "site": site, "surface": surface}
+
+        structlog.configure(processors=[sanitize, *config["processors"]])
         try:
             document = (screener_reader if site == "screener" else tijori_reader)(
                 surface, body, context
@@ -457,7 +523,7 @@ def make_reader(site: str, surface: str) -> Parser:
             ):
                 return document
             return reader_values(document, context.basis.value if context.basis else None)
-        except Exception as error:
-            raise ReaderError(f"{type(error).__name__}: {error}") from error
+        finally:
+            structlog.configure(**config)
 
     return parse
