@@ -1,7 +1,7 @@
 -- VENDOR-SURFACE Task 16: advisory labels and inferred spans, never model numbers.
 CREATE TABLE eqos.vendor_label_proposals (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_id text NOT NULL, surface text NOT NULL, label text, units text[] NOT NULL,
+    source_id text NOT NULL, surface text NOT NULL, label text, units text[],
     field text, reason text NOT NULL CHECK (reason IN ('MAPPED','NOT_IN_DICTIONARY',
         'LABEL_ALTERED','UNIT_INCOMPATIBLE','MODEL_UNMAPPED','MALFORMED_REPLY')),
     epistemic_class text CHECK (epistemic_class = 'inferred'),
@@ -33,7 +33,7 @@ BEGIN
         EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
             'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation_except_tombstone(%s)', name,
             CASE name WHEN 'vendor_text_claims' THEN '''text'''
-                ELSE '''label'',''prompt'',''raw_response''' END);
+                ELSE '''label'',''prompt'',''raw_response'',''units''' END);
         EXECUTE format('CREATE TRIGGER reject_truncate BEFORE TRUNCATE ON eqos.%I '
             'FOR EACH STATEMENT EXECUTE FUNCTION eqos.reject_mutation()', name);
         EXECUTE format('GRANT INSERT ON eqos.%I TO eqos_runtime', name);
@@ -71,7 +71,7 @@ CREATE FUNCTION eqos.tombstone_vendor_labels() RETURNS trigger LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = pg_catalog, eqos AS $$
 BEGIN
     PERFORM set_config('eqos.tombstone', NEW.source_id, true);
-    UPDATE eqos.vendor_label_proposals SET label = NULL, prompt = NULL, raw_response = NULL
+    UPDATE eqos.vendor_label_proposals SET label = NULL, prompt = NULL, raw_response = NULL, units = NULL
         WHERE source_id = NEW.source_id;
     PERFORM set_config('eqos.tombstone', '', true);
     RETURN NULL;

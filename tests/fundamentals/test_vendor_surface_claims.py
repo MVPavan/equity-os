@@ -1,5 +1,7 @@
 """Models select offsets; code alone extracts and persists retained text."""
 
+import hashlib
+import inspect
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -141,6 +143,10 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(
                 "SELECT text,epistemic_class,span_start,span_end FROM eqos.vendor_text_claims"
             ).fetchall() == ([("Acme grows 12%", "inferred", 0, 14)] if valid else [])
             assert conn.execute(
+                "SELECT parser_sha256 FROM eqos.vendor_parser_versions WHERE parser_version=%s",
+                ("claims:fake:spans.v2",),
+            ).fetchone() == (hashlib.sha256(inspect.getsource(extract_text).encode()).hexdigest(),)
+            assert conn.execute(
                 "SELECT row_count,rejected_count FROM eqos.vendor_outcomes "
                 "WHERE parser_version='claims:fake:spans.v2'"
             ).fetchone() == (int(valid), int(not valid))
@@ -227,6 +233,68 @@ def test_extraction_outcome_cannot_mask_a_cell_yield_drop(pg_db, tmp_path):
             values.record(ref, cell, row_count=count)
         assert extract_text(pool, store, model, settings) == 2
         drift = yield_drift(pool, datetime(2000, 1, 1, tzinfo=UTC))
-    assert [(d.surface, d.check, d.detail) for d in drift] == [
+    assert [(d.surface, d.check, d.detail) for d in drift if d.check != "MISSING_OUTCOME"] == [
         ("company-page", "ROW_COUNT_DROP", "10 -> 4 rows")
     ]
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize("failure", ["source", "model"])
+def test_extraction_failures_are_recorded_continue_and_retry(pg_db, tmp_path, monkeypatch, failure):
+    from fundamentals.ingest.vendor_surface_claims import extract_text
+
+    store = SnapshotStore(tmp_path / "store")
+    settings = ModelSettings(
+        model_id="fake",
+        base_url="https://unused.example",
+        key_file="unused",
+        prompt_version="v1",
+        dictionary_version="v3",
+    )
+    failing = True
+    reads = store.read_body
+
+    def read(record):
+        if failing and failure == "source" and reads(record).endswith(b"first</div></div>"):
+            raise OSError("PRIVATE_FAILURE_SENTINEL")
+        return reads(record)
+
+    def complete(system, source):
+        if failing and failure == "model" and source == "first":
+            raise ValueError("PRIVATE_FAILURE_SENTINEL")
+        return ModelReply(text="[]", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(store, "read_body", read)
+    model = Mock(model_id="fake", complete=Mock(side_effect=complete))
+    with pg_db.runtime_pool() as pool:
+        for name in ("first", "second"):
+            raw = f'<div class="company-info"><div class="about">{name}</div></div>'.encode()
+            record = record_of(raw, "screener-subscriber", "vs.company-page")
+            store.put_capture(record, raw)
+            ref = register(
+                pool,
+                Fetched(
+                    record=record, url=f"https://www.screener.in/company/{name}/", location=None
+                ),
+            )
+            VendorValuesStore(pool).record(
+                ref,
+                outcome(version="screener:company-page.v1", surface="company-page", values=()),
+                row_count=0,
+            )
+        assert extract_text(pool, store, model, settings) == 1
+        assert extract_text(pool, store, model, settings) == 0
+        with pool.connection() as conn:
+            assert conn.execute(
+                "SELECT status,detail,row_count FROM eqos.vendor_outcomes "
+                "WHERE starts_with(parser_version,'claims:') ORDER BY id"
+            ).fetchall() == [
+                ("FAILED", "OSError" if failure == "source" else "ValueError", 0),
+                ("OK", None, 0),
+                ("FAILED", "OSError" if failure == "source" else "ValueError", 0),
+            ]
+        failing = False
+        assert extract_text(pool, store, model, settings) == 1
+        calls = model.complete.call_count
+        assert extract_text(pool, store, model, settings) == 0
+        assert model.complete.call_count == calls

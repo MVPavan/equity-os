@@ -1,6 +1,7 @@
 """Runbook canaries and capture-yield drift over registered vendor evidence."""
 
 import hashlib
+import inspect
 import json
 import re
 from collections.abc import Callable
@@ -32,7 +33,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     request_key,
 )
 from fundamentals.ingest.vendor_surface_market import traversal_key
-from fundamentals.ingest.vendor_surface_specs import Cadence, SurfaceSpec
+from fundamentals.ingest.vendor_surface_specs import Cadence, SurfaceSpec, load_specs
 from fundamentals.ingest.vendor_surface_tables import read_js_var
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import (
@@ -76,10 +77,11 @@ WHERE latest=1 AND recorded_at >= %s
 ORDER BY source_id,surface,request_key
 """
 _MISSING: LiteralString = """
-SELECT c.source_id, substr(c.surface,4), c.request_key, c.id
+SELECT c.source_id, substr(c.surface,4), c.request_key, c.id,
+    ARRAY(SELECT DISTINCT o.surface FROM eqos.vendor_outcomes o WHERE o.capture_ref_id=c.id
+        AND NOT starts_with(o.parser_version,'claims:'))
 FROM eqos.capture_refs c WHERE starts_with(c.surface,'vs.') AND c.source_id=ANY(%s)
-    AND c.registered_at >= %s AND NOT EXISTS (
-        SELECT 1 FROM eqos.vendor_outcomes o WHERE o.capture_ref_id=c.id)
+    AND c.registered_at >= %s
 ORDER BY c.source_id,c.surface,c.request_key,c.id
 """
 
@@ -115,16 +117,27 @@ def yield_drift(pool: ConnectionPool, since: datetime) -> tuple[Drift, ...]:
                     else f"{previous} -> {count} rows",
                 )
             )
-        for site, surface, key, capture in conn.execute(_MISSING, (sites, since)).fetchall():
-            found.append(
-                Drift(
-                    site=site,
-                    surface=surface,
-                    request_key=key,
-                    check=MISSING_OUTCOME,
-                    detail=f"capture {capture} has no outcome",
-                )
+        required = {
+            (spec.site, spec.id): (spec.id, *spec.sections)
+            for spec in load_specs(
+                Path("config/vendor_surface/surfaces.yaml"),
+                Path("docs/research/vendor-surface/catalog.yaml"),
             )
+        }
+        for site, parent, key, capture, completed in conn.execute(
+            _MISSING, (sites, since)
+        ).fetchall():
+            for surface in required.get((site, parent), (parent,)):
+                if surface not in completed:
+                    found.append(
+                        Drift(
+                            site=site,
+                            surface=surface,
+                            request_key=key,
+                            check=MISSING_OUTCOME,
+                            detail=f"capture {capture} has no outcome",
+                        )
+                    )
     return tuple(found)
 
 
@@ -457,7 +470,6 @@ CANARIES: tuple[Canary, ...] = (
         "&sectors=&company_ids=&daterange={dates}",
         _t7,
     ),
-    _canary("T8", "/", location="/dashboard/"),
 )
 
 
@@ -492,7 +504,6 @@ def run_canaries(
         "dates": (end - timedelta(days=7)).strftime("%m/%d/%Y") + "," + end.strftime("%m/%d/%Y")
     }
     values = VendorValuesStore(pool)
-    digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     for canary in CANARIES:
         stopped, url = False, canary.url
         try:
@@ -532,7 +543,9 @@ def run_canaries(
                 Outcome(
                     surface=canary.name,
                     parser_version=f"canary.{canary.name}.v1",
-                    parser_sha256=digest,
+                    parser_sha256=hashlib.sha256(
+                        inspect.getsource(canary.markers).encode()
+                    ).hexdigest(),
                     status=OutcomeStatus.UNUSABLE
                     if stopped
                     else OutcomeStatus.FAILED

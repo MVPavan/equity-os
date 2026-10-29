@@ -843,3 +843,37 @@ def test_replay_expands_only_verified_captures_at_shared_url(
             for row in r.parent["page_section"].rows
             for cell in row.cells
         } == {hashlib.sha256(valid.raw).hexdigest()}
+
+
+def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp_path):
+    from vendor_surface_support import capture_response
+
+    from fundamentals.ingest.vendor_surface_capture import Request
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    spec = next(s for s in specs if s.site == Site.TIJORI and s.id == "company-benchmarking")
+    body, context = retained("tijori", "company-benchmarking", "HDFCBANK")
+    store = SnapshotStore(tmp_path / "store")
+    with pg_db.runtime_pool() as pool:
+        ref = capture_response(
+            pool,
+            store,
+            tmp_path / "stops",
+            Request(spec=spec, url=context.url, ids=context.ids, due_since=None),
+            body.raw,
+        )
+        with pool.connection() as conn:
+            outcomes = conn.execute(
+                "SELECT surface,status,row_count FROM eqos.vendor_outcomes "
+                "WHERE capture_ref_id=%s ORDER BY surface",
+                (ref.capture_ref_id,),
+            ).fetchall()
+    assert [row[:2] for row in outcomes] == [
+        ("benchmarking-benchmarking-business", "OK"),
+        ("benchmarking-benchmarking-financial", "OK"),
+        ("company-benchmarking", "KEPT"),
+    ]
+    assert all(count > 0 for _, _, count in outcomes[:2])

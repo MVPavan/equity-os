@@ -8,6 +8,7 @@ import yaml
 from vendor_surface_support import rig
 
 from fundamentals.api.cli import main
+from fundamentals.ingest.vendor_surface_fetch import request_key
 
 __all__ = ["rig"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
@@ -98,7 +99,9 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart, expec
         "expected": 8,
         "completed": completed,
         "refused": [],
-        "incomplete": opener.calls[completed:],
+        "incomplete": [
+            f"screener:chart-api:{request_key(url)}" for url in opener.calls[completed:]
+        ],
         "stopped_sites": [],
     }
     assert len(opener.calls) == 8
@@ -284,7 +287,9 @@ def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch, 
     run_capture(root)
     report = json.loads(capsys.readouterr().out)
     assert (
-        report["completed"] == 1 and opener.calls[0] + ": topology unknown" in report["incomplete"]
+        report["completed"] == 1
+        and f"screener:company-page:{request_key(opener.calls[0])}: topology unknown"
+        in report["incomplete"]
     )
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(

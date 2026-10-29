@@ -31,6 +31,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteBusy,
     SiteStopped,
     VendorFetcher,
+    request_key,
 )
 from fundamentals.ingest.vendor_surface_parse import (
     PARSERS,
@@ -79,6 +80,11 @@ class Request(BaseModel):
     basis: Basis | None = None
     parent: Mapping[str, Any] | None = None
     due_since: datetime | None
+
+    @property
+    def report_key(self) -> str:
+        """Identify the request without copied URL path or query text."""
+        return f"{SITE_NAME[self.spec.site]}:{self.spec.id}:{request_key(self.url)}"
 
     def context(self, record: CaptureRecord, body_sha256: str) -> ParseContext:
         """The same verified request context for dispatch, expansion and retained replay."""
@@ -715,7 +721,7 @@ def capture_company(
         if request.spec.site in blocked:
             seen.add(request.url)
             if request.url not in cached:
-                refused.append(request.url)
+                refused.append(request.report_key)
             continue
         if request.spec.id == "company-timeline-api":
             from fundamentals.ingest.vendor_surface_market import capture_market
@@ -739,14 +745,14 @@ def capture_company(
             seen.add(request.url)
             stopped.append(error.site)
             blocked.add(error.site)
-            incomplete.append(request.url)
+            incomplete.append(request.report_key)
             continue
         except (SiteBusy, ValueError):
             # An identity page that was never read proves nothing: its site's dependents wait.
             if request.spec.id in ("company-page", "company-financials"):
                 blocked.add(request.spec.site)
             (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
-                request.url
+                request.report_key
             )
             continue
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
@@ -819,7 +825,7 @@ def capture_company(
         completed += int(usable)
         if not usable:
             incomplete.append(
-                request.url
+                request.report_key
                 + (": topology unknown" if request.basis and ids.topology is None else "")
             )
         if body is None or refusal is not None:
@@ -833,10 +839,10 @@ def capture_company(
         if requests is None:
             expected += len(children)
             pending.extend(children)
-    for url, (ref, body, request) in cached.items():
+    for ref, body, request in cached.values():
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parse_and_record(store, values, ref, record, request, body, "company identity unverified")
-        incomplete.append(url)
+        incomplete.append(request.report_key)
     return RunReport(
         expected=expected,
         completed=completed,
