@@ -19,6 +19,38 @@ from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope,
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
 
+# Hand-read from the retained bodies' DOM: (table, row, column, label, raw text, value, unit).
+EXACT = {
+    ("APARINDS", "section-insights"): (
+        "yearly-insights",
+        0,
+        1,
+        "Conductor Division Order Book",
+        "1,751",
+        Decimal("1751"),
+        "₹ crores",
+    ),
+    ("HDFCBANK", "benchmarking-benchmarking-financial"): (
+        "benchmark-financial",
+        2,
+        1,
+        "Cost To Income Ratio",
+        "39.1 %",
+        Decimal("39.1"),
+        "%",
+    ),
+    ("HDFCLIFE", "benchmarking-benchmarking-business"): (
+        "business-charts:0",
+        0,
+        1,
+        "Non Participating Funds",
+        "51.6",
+        Decimal("51.6"),
+        None,
+    ),
+    ("CREDITACC", "company-compare"): ("compare:2", 4, 2, "OPM %", "68%", Decimal("68"), "%"),
+}
+
 
 @pytest.mark.pg
 @pytest.mark.retained
@@ -90,6 +122,14 @@ def test_retained_cells_and_label_evidence(pg_db, tmp_path, monkeypatch, symbol)
                         "(SELECT id FROM eqos.vendor_outcomes WHERE surface=%s)",
                         (ref.capture_ref_id, surface),
                     ).fetchall()
+                    if (symbol, surface) in EXACT:
+                        table, row_index, column, *expected = EXACT[symbol, surface]
+                        assert conn.execute(
+                            "SELECT row_label,raw_text,value,unit FROM eqos.vendor_values "
+                            "WHERE capture_ref_id=%s AND table_key=%s AND row_index=%s "
+                            "AND column_index=%s",
+                            (ref.capture_ref_id, table, row_index, column),
+                        ).fetchone() == tuple(expected)
                 # The compound "High / Low" peer cells cannot be read as one scalar.
                 assert status == ("PARTIAL" if surface == "company-compare" else "OK")
                 assert count == len(cells) > 0
