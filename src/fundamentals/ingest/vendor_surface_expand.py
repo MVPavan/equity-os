@@ -20,7 +20,36 @@ from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
 from fundamentals.ingest.vendor_surface_specs import SurfaceSpec
 
 
-def child(spec: SurfaceSpec, context: ParseContext, **params: Any) -> Request:
+def expansion_name(spec: SurfaceSpec, parent: str) -> str | None:
+    """The declared parent relation, shared by acquisition and retained replay."""
+    if parent == spec.id == "schedules-api":
+        return "screener_nested_schedules"
+    expected = {
+        "screener_schedules": "company-page",
+        "screener_investors": "company-page",
+        "screener_segments": "company-page",
+        "screener_compare_peers": "company-page",
+        "tijori_op_metrics": "company-overview",
+        "tijori_revenue_mix_items": "company-overview",
+        "tijori_popup_fields": "company-financials",
+        "tijori_compare_selector": "company-financials",
+    }.get(spec.expand or "")
+    if spec.expand == "advertised_links":
+        expected = {
+            "quarter-source-pdf": "company-page",
+            "shareholding-detail-chart-api": "company-shareholding",
+            "market-share-peer-companies-api": "company-overview",
+        }[spec.id]
+    return spec.expand if expected == parent else None
+
+
+def child(
+    spec: SurfaceSpec,
+    context: ParseContext,
+    *,
+    reader_inputs: Mapping[str, Any] | None = None,
+    **params: Any,
+) -> Request:
     """Carry verified identity and reader inputs into one concrete child address."""
     assert context.ids is not None
     parameters = {
@@ -55,10 +84,7 @@ def child(spec: SurfaceSpec, context: ParseContext, **params: Any) -> Request:
         url=urljoin(f"https://{SITE_AUTHORITY[spec.site]}", path),
         ids=context.ids,
         basis=context.basis,
-        parent={
-            **(context.parent or {}),
-            **params,
-        },
+        parent=reader_inputs,
         due_since=None,
     )
 
@@ -73,11 +99,16 @@ def handlers(body: Body, context: ParseContext, name: str) -> tuple[Request, ...
     result = []
     tables: dict[str, Any] = {}
     for first, second in dict.fromkeys(calls):
-        params = {"row": first, "section": second, "depth": context.parent.get("depth", 1) + 1}
+        url_params = {"row": first, "section": second}
+        params = {**context.parent, **url_params, "depth": context.parent.get("depth", 1) + 1}
+        params.pop("spec", None)
+        params.pop("peers", None)
         if name == "showShareholders":
-            params = {"class": first, "quarterly|yearly": second}
+            url_params = {"class": first, "quarterly|yearly": second}
+            params = {}
         elif name == "showSegment":
-            params = {"quarters|profit-loss": first, "segment_type": second}
+            url_params = {"quarters|profit-loss": first, "segment_type": second}
+            params = {}
         if context.parent.get("depth", 1) == 1:
             key = (
                 second
@@ -115,7 +146,7 @@ def handlers(body: Body, context: ParseContext, name: str) -> tuple[Request, ...
                 )
                 if name == "showSegment":
                     params["hook"] = SegmentHook(section=first, segment_type=second)
-        result.append(child(spec, context, **params))
+        result.append(child(spec, context, reader_inputs=params, **url_params))
     if name == "showShareholders":
         result = [request.model_copy(update={"basis": None}) for request in result]
     return tuple(result)
@@ -198,7 +229,7 @@ def tijori_op_metrics(body: Body, context: ParseContext) -> tuple[Request, ...]:
         re.findall(r"/api/v1/ind/company_op_metrics/([0-9]+)/([0-9]+)/", body.raw.decode())
     )
     return tuple(
-        child(spec, context, metric_id=metric)
+        child(spec, context, reader_inputs={"metric_id": metric}, metric_id=metric)
         for company, metric in paths
         if int(company) == context.ids.tijori_company_id
     )
@@ -226,7 +257,7 @@ def tijori_popup_fields(body: Body, context: ParseContext) -> tuple[Request, ...
     assert context.parent is not None
     spec = SurfaceSpec.model_validate(context.parent["spec"])
     rows = [row for table in financials(body).values() if table for row in table.get("data", [])]
-    fields = {}
+    fields: dict[tuple[str, str, str], None] = {}
     while rows:
         row = rows.pop(0)
         if row.get("field") and row.get("source") and row.get("fs_name"):

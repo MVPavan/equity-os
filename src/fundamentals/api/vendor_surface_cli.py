@@ -9,11 +9,9 @@ import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote
 from urllib.request import OpenerDirector, build_opener
 
 import yaml
-from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg_pool import ConnectionPool
 from pydantic import SecretStr
 
@@ -23,26 +21,19 @@ from fundamentals.api.env_credentials import (
 )
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.canon.dictionary import load_dictionary
-from fundamentals.ingest.screener_session_models import Basis, ScreenerSessionError
-from fundamentals.ingest.screener_session_page import assert_logged_in, read_identity
 from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
 from fundamentals.ingest.vendor_surface_capture import (
     WATCHLIST,
-    Request,
-    RunReport,
-    capture,
     capture_company,
     company_ids,
+    registered_ids,
     reparse,
 )
 from fundamentals.ingest.vendor_surface_claims import extract_text
 from fundamentals.ingest.vendor_surface_fetch import (
-    SITE_AUTHORITY,
     PgSiteLock,
     Site,
-    SiteBusy,
     SiteSession,
-    SiteStopped,
     VendorFetcher,
 )
 from fundamentals.ingest.vendor_surface_labels import map_labels
@@ -56,7 +47,7 @@ from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, load
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.snapshot_store import SnapshotStore
-from fundamentals.store.vendor_values_store import USABLE, VendorValuesStore
+from fundamentals.store.vendor_values_store import VendorValuesStore
 
 SPECS = Path("config/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
@@ -156,6 +147,21 @@ def dispatch_vendor_command(
         return int(any(item.check != NO_BASELINE for item in drift))
     specs = load_specs(SPECS, CATALOG)
     register_tables(specs)
+    explicit = {(s.site, s.id) for s in specs}
+    specs += tuple(
+        s.model_copy(
+            update={
+                "id": section,
+                "path": s.path + "#" + section,
+                "group": ParseGroup.READER,
+                "sections": (),
+                "expand": None,
+            }
+        )
+        for s in specs
+        for section in s.sections
+        if (s.site, section) not in explicit
+    )
     selected = [
         spec
         for spec in specs
@@ -165,9 +171,21 @@ def dispatch_vendor_command(
         args.surface and set(args.surface) - {f"{SITE_NAME[s.site]}:{s.id}" for s in selected}
     ):
         raise ValueError("unknown vendor surface")
+    if args.vendor_command == "capture":
+        requested = {(s.site, s.id) for s in selected}
+        parents = {(s.site, s.path.split("#")[0]) for s in selected if "#" in s.path}
+        sites = {s.site for s in selected}
+        selected = [
+            s
+            for s in specs
+            if (s.site, s.id) in requested
+            or (s.site, s.path) in parents
+            or s.site in sites
+            and s.id in ("company-page", "company-financials")
+        ]
     resolved_sessions: Mapping[Site, SiteSession] = {}
     if args.vendor_command == "capture":
-        required = {spec.site for spec in selected} | {Site.SCREENER}
+        required = {spec.site for spec in selected}
         resolved_sessions = sessions_factory(required)
         for site in required - resolved_sessions.keys():
             raise ValueError(f"missing vendor session: {site}")
@@ -175,110 +193,25 @@ def dispatch_vendor_command(
     with pool_factory() as pool:
         values = VendorValuesStore(pool)
         if args.vendor_command == "reparse":
-            count = sum(reparse(store, pool, values, spec) for spec in selected)
+            count = sum(reparse(store, pool, values, spec, specs) for spec in selected)
             sys.stdout.write(json.dumps({"reparsed": count}) + "\n")
             return 0
         stock = next(
-            stock
-            for stock in load_watchlist_config(WATCHLIST).stocks
-            if stock.symbol == args.symbol
+            (
+                stock
+                for stock in load_watchlist_config(WATCHLIST).stocks
+                if stock.symbol == args.symbol
+            ),
+            None,
         )
-        ids = company_ids(stock)
+        ids = company_ids(stock) if stock is not None else registered_ids(pool, store, args.symbol)
         if args.tijori_slug:
             ids = ids.model_copy(update={"tijori_slug": args.tijori_slug})
-        if args.surface != ["screener:chart-api"]:
-            locks = PgSiteLock(pool)
-            fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
-            try:
-                report = capture_company(fetcher, store, pool, values, tuple(selected), ids)
-            finally:
-                locks.close()
-            sys.stdout.write(report.model_dump_json() + "\n")
-            return 0
-        page = next(spec for spec in specs if spec.id == "company-page")
-        chart = next((spec for spec in selected if spec.id == "chart-api"), None)
-        url = f"https://{SITE_AUTHORITY[page.site]}/company/{quote(ids.nse_symbol, safe='')}/"
-        pending = [Request(spec=page, url=url, ids=ids, basis=Basis.STANDALONE, due_since=None)]
-        expected, completed = 1, 0
-        refused: list[str] = []
-        incomplete: list[str] = []
-        stopped: list[Site] = []
         locks = PgSiteLock(pool)
-        fetcher = VendorFetcher(
-            store,
-            resolved_sessions,
-            opener_factory(),
-            STOP_DIR,
-            locks,
-        )
+        fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
         try:
-            while pending:
-                request = pending.pop(0)
-                try:
-                    ref, body = capture(fetcher, store, pool, values, request)
-                except SiteStopped as error:
-                    stopped.append(error.site)
-                    incomplete.append(request.url)
-                    refused.extend(item.url for item in pending if item.spec.site == error.site)
-                    pending = [item for item in pending if item.spec.site != error.site]
-                    continue
-                except (SiteBusy, ValueError):
-                    (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
-                        request.url
-                    )
-                    continue
-                with pool.connection() as conn:
-                    outcomes = conn.execute(
-                        "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
-                        (ref.capture_ref_id,),
-                    ).fetchall()
-                usable = all(status in USABLE for (status,) in outcomes)
-                completed += int(usable)
-                if not usable:
-                    incomplete.append(request.url)
-                if request.spec.id == "company-page" and chart is not None and body is not None:
-                    try:
-                        tree = body.tree()
-                        assert_logged_in(tree)
-                        company, _ = read_identity(tree)
-                    except (ScreenerSessionError, ParserError, UnicodeDecodeError):
-                        continue
-                    if company != ids.screener_company_id:
-                        continue
-                    metrics = dict.fromkeys(
-                        metric
-                        for metric in tree.xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
-                        if metric
-                    )
-                    if not metrics:
-                        expected += 1
-                        incomplete.append("screener:chart-api discovery")
-                    children = [
-                        Request(
-                            spec=chart,
-                            url=f"https://{SITE_AUTHORITY[page.site]}"
-                            + chart.path.format_map(
-                                {
-                                    "company_id": company,
-                                    "metric-set": quote(metric, safe=""),
-                                    "n": 10000,
-                                }
-                            ),
-                            ids=ids,
-                            due_since=None,
-                        )
-                        for metric in metrics
-                    ]
-                    expected += len(children)
-                    pending.extend(children)
+            report = capture_company(fetcher, store, pool, values, tuple(selected), ids)
         finally:
             locks.close()
-    report = RunReport(
-        expected=expected,
-        completed=completed,
-        refused=tuple(refused),
-        incomplete=tuple(incomplete),
-        stopped_sites=tuple(stopped),
-    )
     sys.stdout.write(report.model_dump_json() + "\n")
     return 0

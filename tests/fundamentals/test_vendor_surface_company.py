@@ -5,18 +5,15 @@ import io
 import json
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
 from urllib.request import OpenerDirector
 
 import pytest
 import yaml
 from pydantic import SecretStr
-from vendor_surface_support import load_request_index
+from vendor_surface_support import load_request_index, retained
 
-from fundamentals.ingest.screener_session_models import BasisTopology
-from fundamentals.ingest.screener_session_page import parse_document, read_identity
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import CompanyIds, register_tables
+from fundamentals.ingest.vendor_surface_parse import register_tables
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
@@ -51,40 +48,12 @@ class CompanyOpener(OpenerDirector):
 def company_rig(pg_db, tmp_path):
     def run(symbol, unknown=False, slug=True):
         opener = CompanyOpener(symbol)
-        pages = [
-            r
-            for r in opener.rows.values()
-            if r["id"] == "company-page" and r.get("symbol") == symbol
-        ]
-        company, warehouse = read_identity(
-            parse_document(
-                Path(next(r for r in pages if r["basis"] == "standalone")["path"]).read_text()
-            )
-        )
-        consolidated = read_identity(
-            parse_document(
-                Path(next(r for r in pages if r["basis"] == "consolidated")["path"]).read_text()
-            )
-        )[1]
-        overview = next(
-            r
-            for r in opener.rows.values()
-            if r["id"] == "company-overview" and r.get("symbol") == symbol
-        )
-        tree = parse_document(Path(overview["path"]).read_text())
-        tijori = json.loads(tree.xpath('//script[@id="company_details_data"]/text()')[0])
-        ids = CompanyIds(
-            nse_symbol=symbol,
-            isin="synthetic-isin",
-            screener_company_id=company,
-            tijori_company_id=tijori["company_id"],
-            tijori_slug=urlsplit(overview["url"]).path.split("/")[2] if slug else None,
-            topology=None
-            if unknown
-            else BasisTopology(
-                standalone_warehouse_id=warehouse, consolidated_warehouse_id=consolidated
-            ),
-        )
+        _, context = retained("screener", "company-page", symbol)
+        ids = context.ids.model_copy(update={"isin": "synthetic-isin"})
+        if unknown:
+            ids = ids.model_copy(update={"topology": None})
+        if not slug:
+            ids = ids.model_copy(update={"tijori_slug": None})
         with pg_db.runtime_pool() as pool, pool.connection() as conn:
             evidence = conn.execute(
                 "INSERT INTO eqos.evidence_inputs "
@@ -168,7 +137,7 @@ def run_company(pg_db, tmp_path):
 
 
 @pytest.mark.parametrize("symbol", ["APARINDS", "HDFCBANK", "NETWEB", "ANONDITA"])
-def test_company_breadth(company_rig, run_company, symbol):
+def test_company_breadth(company_rig, run_company, pg_db, symbol):
     opener, ids = company_rig(symbol)
     report, captures, outcomes, _ = run_company(opener, ids)
     actual = set(captures)
@@ -188,6 +157,16 @@ def test_company_breadth(company_rig, run_company, symbol):
         for item in report.incomplete
         if item.startswith(("screener:", "tijori:"))
     }
+    # Only these catalog obligations can legitimately lack advertisements in this corpus.
+    allowed_gaps = {
+        "company-compare",
+        "quarter-source-pdf",
+        "shareholding-detail-chart-api",
+        "market-share-peer-companies-api",
+        "op-metrics-api",
+        "revenue-mix-history-api",
+    }
+    assert gaps <= allowed_gaps
     assert actual | (gaps & expected) == expected
     if symbol in ("APARINDS", "HDFCBANK"):
         assert {
@@ -214,6 +193,58 @@ def test_company_breadth(company_rig, run_company, symbol):
     assert report.expected >= len(opener.calls)
     assert report.expected == report.completed + len(report.refused) + len(report.incomplete)
     assert any("company-compare" in item for item in report.incomplete)
+
+    retained_200 = {
+        url for url in opener.calls if url in opener.rows and opener.rows[url]["status"] == 200
+    }
+    allowed = {
+        ("company-benchmarking", "ValueError"),  # G3 parent belongs to Phase 4.
+        ("financials-balance-sheet-snapshot", "ReaderError"),
+        ("financials-fundflow-analysis", "ReaderError"),
+        ("financials-cash-flow-analysis", "ReaderError"),
+    }
+    if symbol == "HDFCBANK":
+        allowed.add(("segments-api", "SegmentReconciliationError"))
+    if symbol == "NETWEB":
+        allowed.add(("overview-marketshare", "TijoriOverviewSectionAbsentError"))
+    if symbol == "ANONDITA":
+        allowed |= {
+            ("overview-marketshare", "TijoriOverviewSectionAbsentError"),
+            ("company-shareholding", "TijoriShareholdingSchemaError"),
+            ("shareholding-detailed", "TijoriShareholdingSchemaError"),
+        }
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        results = conn.execute(
+            "SELECT o.surface,o.status,o.detail,a.url FROM eqos.vendor_outcomes o"
+            " JOIN eqos.capture_addresses a ON a.capture_ref_id=o.capture_ref_id"
+        ).fetchall()
+        unexpected = {
+            (surface, detail)
+            for surface, status, detail, url in results
+            if url in retained_200
+            and status in ("FAILED", "UNUSABLE")
+            and (surface, detail) not in allowed
+            and not (
+                symbol == "NETWEB"
+                and "/NETWEB/consolidated/" in url
+                and surface
+                in {
+                    "section-quarters",
+                    "section-profit-loss",
+                    "section-balance-sheet",
+                    "section-cash-flow",
+                    "section-ratios",
+                }
+            )
+        }
+        assert unexpected == set()
+        if symbol == "APARINDS":
+            assert conn.execute(
+                "SELECT v.value FROM eqos.vendor_values v JOIN eqos.vendor_outcomes o"
+                " ON o.id=v.outcome_id WHERE o.surface='section-quarters' AND v.basis"
+                "='standalone' AND v.column_index IN (0,1) ORDER BY v.row_index,v.col"
+                "umn_index LIMIT 2"
+            ).fetchall() == [(3500,), (3644,)]
 
 
 @pytest.mark.parametrize("symbol,binding_count", [("HDFCBANK", 2), ("NETWEB", 0)])
@@ -352,13 +383,19 @@ def test_basis_refusal_covers_sections_and_children(company_rig, run_company, pg
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert (
             conn.execute(
-                "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.capture_refs c ON c.id=v.capture_ref_id WHERE basis='consolidated' AND c.source_id='screener-subscriber'"
+                "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.capture_refs c O"
+                "N c.id=v.capture_ref_id WHERE basis='consolidated' AND c.source_id='"
+                "screener-subscriber'"
             ).fetchone()[0]
             == 0
         )
         assert (
             conn.execute(
-                "SELECT status FROM eqos.vendor_outcomes o JOIN eqos.capture_addresses a ON a.capture_ref_id=o.capture_ref_id WHERE a.url=%s AND o.surface='section-quarters'",
+                (
+                    "SELECT status FROM eqos.vendor_outcomes o JOIN eqos.capture_addresse"
+                    "s a ON a.capture_ref_id=o.capture_ref_id WHERE a.url=%s AND o.surfac"
+                    "e='section-quarters'"
+                ),
                 (consolidated["url"],),
             ).fetchone()[0]
             == "UNUSABLE"
@@ -395,3 +432,246 @@ def test_shareholder_whitespace_uses_matched_control(company_rig, run_company):
     _, captures, outcomes, _ = run_company(opener, ids)
     assert captures["investors-api"] > 0
     assert any(surface == "investors-api" and status == "OK" for surface, status, _ in outcomes)
+
+
+def test_financials_bootstraps_id_before_readers(company_rig, run_company, pg_db):
+    opener, ids = company_rig("HDFCBANK")
+    ids = ids.model_copy(update={"tijori_company_id": None})
+    _, _, outcomes, _ = run_company(opener, ids)
+    assert ("company-financials", "PARTIAL", None) in outcomes
+
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert conn.execute(
+            "SELECT count(*), count(*) FILTER (WHERE expected_numeric AND value I"
+            "S NULL) FROM eqos.vendor_values v JOIN eqos.vendor_outcomes o ON o.i"
+            "d=v.outcome_id WHERE o.surface='company-financials'"
+        ).fetchone() == (3170, 268)
+
+
+def test_slug_candidate_capture_is_reused(company_rig, run_company):
+    opener, ids = company_rig("HDFCBANK", slug=False)
+    ids = ids.model_copy(update={"tijori_company_id": None})
+    opener.overrides[
+        "https://www.tijorifinance.com/api/v1/ind/company_search/?q=synthetic-isin"
+    ] = b'[{"type":"companies","slug":"hdfc-bank-limited"}]', 200
+    _, _, outcomes, _ = run_company(opener, ids)
+    assert (
+        opener.calls.count("https://www.tijorifinance.com/company/hdfc-bank-limited/financials/")
+        == 1
+    )
+    assert ("company-financials", "PARTIAL", None) in outcomes
+
+
+@pytest.mark.parametrize(
+    "surface,old,new",
+    [
+        ("segments-api", b"showSegment(", b"missingSegment("),
+        ("chart-api", b'name="metrics"', b'name="missing-metrics"'),
+    ],
+)
+def test_missing_expected_advertisement_is_a_gap(company_rig, run_company, surface, old, new):
+    opener, ids = company_rig("APARINDS")
+    for url, row in opener.rows.items():
+        if row["id"] == "company-page" and row.get("symbol") == "APARINDS":
+            opener.overrides[url] = Path(row["path"]).read_bytes().replace(old, new), 200
+    report, _, _, _ = run_company(opener, ids)
+    assert any(f"screener:{surface}:" in gap for gap in report.incomplete)
+
+
+@pytest.mark.parametrize("surface", ["section-documents", "schedules-api", "company-trades"])
+def test_cli_selection_includes_identity_and_parents(
+    company_rig, pg_db, tmp_path, monkeypatch, capsys, surface
+):
+    from argparse import Namespace
+
+    from fundamentals.api import vendor_surface_cli as cli
+
+    opener, ids = company_rig("APARINDS")
+    monkeypatch.setattr(cli, "STOP_DIR", tmp_path / "stops")
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
+    args = Namespace(
+        command="vendor",
+        vendor_command="capture",
+        symbol=ids.nse_symbol,
+        surface=[f"screener:{surface}"],
+        snapshot_root=tmp_path / "cli",
+        tijori_slug=None,
+    )
+    assert (
+        cli.dispatch_vendor_command(
+            args,
+            opener_factory=lambda: opener,
+            pool_factory=pg_db.runtime_pool,
+            sessions_factory=lambda sites: {
+                Site.SCREENER: SiteSession(
+                    site=Site.SCREENER, session_cookie=SecretStr("fixture"), cookie_name="sid"
+                )
+            },
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert any("/company/APARINDS/" in url for url in opener.calls)
+    assert all("#" not in url for url in opener.calls)
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert (
+            conn.execute(
+                (
+                    "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND statu"
+                    "s IN ('OK','PARTIAL')"
+                ),
+                (surface,),
+            ).fetchone()[0]
+            > 0
+        )
+
+
+@pytest.mark.parametrize(
+    "surface", ["section-quarters", "schedules-api", "investors-api", "segments-api"]
+)
+def test_offline_reparse_recovers_section_and_child_inputs(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch, surface
+):
+    from fundamentals.ingest.vendor_surface_capture import reparse
+    from fundamentals.ingest.vendor_surface_parse import PARSERS
+
+    opener, ids = company_rig("RELIANCE" if surface == "segments-api" else "APARINDS")
+    key = Site.SCREENER, surface
+    current = PARSERS[key]
+
+    def broken(body, context):
+        raise ValueError("test old parser")
+
+    monkeypatch.setitem(
+        PARSERS,
+        key,
+        current.model_copy(
+            update={"version": current.version.replace(".v1", ".v0"), "parse": broken}
+        ),
+    )
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    selected = tuple(
+        s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", surface)
+    )
+    run_company(opener, ids, selected)
+    monkeypatch.setitem(PARSERS, key, current)
+    before = list(opener.calls)
+    with pg_db.runtime_pool() as pool:
+        count = reparse(
+            SnapshotStore(tmp_path / "raw"),
+            pool,
+            VendorValuesStore(pool),
+            next(
+                (s for s in specs if (s.site, s.id) == key),
+                next(s for s in specs if s.id == "company-page").model_copy(
+                    update={"id": surface, "sections": (), "group": "READER"}
+                ),
+            ),
+            specs,
+        )
+        assert count > 0
+        with pool.connection() as conn:
+            assert (
+                conn.execute(
+                    (
+                        "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND parse"
+                        "r_version=%s AND status IN ('OK','PARTIAL')"
+                    ),
+                    (surface, current.version),
+                ).fetchone()[0]
+                > 0
+            )
+            assert (
+                conn.execute(
+                    (
+                        "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.vendor_outcomes "
+                        "o ON o.id=v.outcome_id WHERE o.surface=%s AND o.parser_version=%s"
+                    ),
+                    (surface, current.version),
+                ).fetchone()[0]
+                > 0
+            )
+    assert opener.calls == before
+
+
+def test_cli_uses_verified_registry_identity_without_watchlist(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch, capsys
+):
+    from argparse import Namespace
+    from types import SimpleNamespace
+
+    from fundamentals.api import vendor_surface_cli as cli
+
+    opener, ids = company_rig("ANONDITA")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    run_company(opener, ids, tuple(s for s in specs if s.id == "company-page"))
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        entity, evidence = conn.execute(
+            "SELECT id,evidence_input_id FROM eqos.reporting_entities"
+        ).fetchone()
+        ref = conn.execute(
+            "SELECT c.id FROM eqos.capture_refs c JOIN eqos.capture_addresses a O"
+            "N a.capture_ref_id=c.id WHERE a.url LIKE '%/consolidated/' ORDER BY "
+            "c.id LIMIT 1"
+        ).fetchone()[0]
+        conn.execute(
+            (
+                "INSERT INTO eqos.evidence_input_captures(evidence_input_id,capture_r"
+                "ef_id) VALUES (%s,%s)"
+            ),
+            (evidence, ref),
+        )
+        onboarding = conn.execute(
+            (
+                "INSERT INTO eqos.onboarding_records(identifier,identifier_namespace,"
+                "outcome,entity_id,evidence_input_id) VALUES ('ANONDITA','NSE_SYMBOL'"
+                ",'PARTIAL',%s,%s) RETURNING id"
+            ),
+            (entity, evidence),
+        ).fetchone()[0]
+        conn.execute(
+            (
+                "INSERT INTO eqos.namespace_verifications(onboarding_record_id,unit,s"
+                "tate,evidence_input_id) VALUES (%s,'SCREENER','VERIFIED',%s)"
+            ),
+            (onboarding, evidence),
+        )
+    monkeypatch.setattr(cli, "load_watchlist_config", lambda _: SimpleNamespace(stocks=[]))
+    monkeypatch.setattr(cli, "STOP_DIR", tmp_path / "stops")
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
+    args = Namespace(
+        command="vendor",
+        vendor_command="capture",
+        symbol="ANONDITA",
+        surface=["screener:chart-api"],
+        snapshot_root=tmp_path / "raw",
+        tijori_slug=None,
+    )
+    assert (
+        cli.dispatch_vendor_command(
+            args,
+            opener_factory=lambda: opener,
+            pool_factory=pg_db.runtime_pool,
+            sessions_factory=lambda sites: {
+                Site.SCREENER: SiteSession(
+                    site=Site.SCREENER, session_cookie=SecretStr("fixture"), cookie_name="sid"
+                )
+            },
+        )
+        == 0
+    )
+    capsys.readouterr()
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface='company-pag"
+                "e' AND status='KEPT'"
+            ).fetchone()[0]
+            == 4
+        )
