@@ -178,9 +178,9 @@ def capture_facts(
     """The retention facts of every non-expired capture, in one statement's snapshot."""
     params = {
         "marker": LOCATION_MARKER.pattern,
-        "keep_prefix": yaml.safe_load((config_root / HOLDS_FILE).read_text())[
+        "keep_prefix": yaml.safe_load((config_root / HOLDS_FILE).read_text()).get(
             "keep_surface_prefix"
-        ],
+        ),
         "fixtures": sorted(pinned.get(HoldRoot.QUALIFICATION_FIXTURE, ())),
         "manifests": sorted(pinned.get(HoldRoot.MANIFEST_INPUT, ())),
     }
