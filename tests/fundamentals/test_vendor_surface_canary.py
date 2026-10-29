@@ -338,6 +338,16 @@ MUTATIONS = [
         id="chart_empty_rows",
     ),
     pytest.param(
+        _sub("T3", rb"var\s+chartData\s*=.*?;", b'var chartData = [["Promoters", null]];'),
+        {"T3.chartData": FAILED},
+        id="chart_null_value",
+    ),
+    pytest.param(
+        _sub("T3", rb"var\s+chartData\s*=.*?;", b'var chartData = [["Promoters", "n/a"]];'),
+        {"T3.chartData": FAILED},
+        id="chart_text_value",
+    ),
+    pytest.param(
         _sub("T3", rb"var\s+chartData\s*=.*?;", b"var chartData = [1, 2];"),
         {"T3.chartData": FAILED},
         id="chart_scalars",
@@ -374,6 +384,16 @@ MUTATIONS = [
         _hollow("T7", '//*[contains(concat(" ",@class," ")," result_item ")]'),
         {"T7.result_cards": FAILED},
         id="results_hollow",
+    ),
+    pytest.param(
+        _set("bodies", "S1", b"  "),
+        {"S1.structure": FAILED, "S4.dependency": None, "S7.dependency": None},
+        id="s1_blank",
+    ),
+    pytest.param(
+        _set("locations", "T8", "https://[/dashboard/"),
+        {"T8.location": FAILED},
+        id="t8_malformed_location",
     ),
     pytest.param(_set("locations", "S8", "/login/"), {"S8.refused": UNUSABLE}, id="s8_login"),
     pytest.param(_set("locations", "T8", "/login/"), {"T8.refused": UNUSABLE}, id="t8_login"),
@@ -486,6 +506,7 @@ def test_each_canary_check_rejects_bad_status_and_incomplete_body(canary_opener)
         ("/login/", False),
         ("https://other.example/dashboard/", False),
         ("//other.example/dashboard/", False),
+        ("https://[/dashboard/", False),
     ],
 )
 def test_t8_needs_a_same_host_dashboard_redirect(location, passed):
