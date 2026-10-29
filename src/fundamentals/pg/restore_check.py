@@ -74,6 +74,7 @@ TOMBSTONES = {
     "calculation_trace_operands": Tombstone(clear=_EXACT),
     "result_source_values": Tombstone(clear=_VALUES),
     "acquisition_attempts": Tombstone(clear=("reason",)),
+    "vendor_values": Tombstone(clear=("value", "raw_text", "row_label", "column_label", "link")),
 }
 
 
@@ -85,7 +86,11 @@ def table_rows(conn: psycopg.Connection[Any], tables: list[str]) -> Rows:
         for table in tables:
             query = sql.SQL("SELECT to_jsonb(t) FROM eqos.{} t").format(sql.Identifier(table))
             rows[table] = {
-                row.get("id", json.dumps(row, sort_keys=True, default=str)): row
+                (
+                    (row["outcome_id"], row["table_key"], row["row_index"], row["column_index"])
+                    if table == "vendor_values"
+                    else row.get("id", json.dumps(row, sort_keys=True, default=str))
+                ): row
                 for (row,) in cursor.execute(query).fetchall()
             }
     return rows
@@ -107,6 +112,11 @@ def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
         return {key for key, row in before[table].items() if test(row)}
 
     return {
+        "vendor_values": {
+            key
+            for key, row in before.get("vendor_values", {}).items()
+            if row["capture_ref_id"] in vendor
+        },
         "occurrences": pick("occurrences", lambda r: r["capture_ref_id"] in vendor),
         "interpretations": interps,
         "calculation_traces": traces,

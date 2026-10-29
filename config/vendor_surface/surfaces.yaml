@@ -1,0 +1,12 @@
+- site: screener-subscriber
+  id: company-page
+  scope: COMPANY
+  path: /company/{symbol}/[consolidated/]
+  group: NONE
+  cadence: AFTER_RESULTS
+- site: screener-subscriber
+  id: chart-api
+  scope: COMPANY
+  path: /api/company/{company_id}/chart/?q={metric-set}&days={n}&consolidated=
+  group: SERIES
+  cadence: DAILY

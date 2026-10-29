@@ -232,3 +232,21 @@ def test_a_shared_blob_goes_only_when_every_user_may(
     (found,) = shared()
     since = max(add_months(facts_of(runtime, c).registered_at, 12) for c in (first, second))
     assert (found.capture_ref_ids, found.since) == ((first, second), since)
+
+
+@pytest.mark.parametrize("ended", [False, True])
+def test_vendor_surface_keep_at_48_months(ended: bool) -> None:
+    """The explicit keep root survives age, but never licence end."""
+    root = HoldRoot.VENDOR_SURFACE_KEEP
+    facts = _facts(
+        **VENDOR,
+        surface="vs.chart-api",
+        holds=frozenset({root}),
+        licence_ended_at=T0 if ended else None,
+    )
+    expected = (
+        _eligible(T0, EligibleReason.LICENCE_END)
+        if ended
+        else Eligibility(kind=HELD, held_by=frozenset({root}))
+    )
+    assert eligibility(facts, add_months(T0, 48)) == expected

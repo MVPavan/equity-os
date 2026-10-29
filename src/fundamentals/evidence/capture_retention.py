@@ -39,6 +39,9 @@ from fundamentals.store.snapshot_store import SnapshotStore
 _INSERT_ADDRESS: LiteralString = (
     "INSERT INTO eqos.capture_addresses (capture_ref_id, url) VALUES (%s, %s)"
 )
+_INSERT_ADDRESS_LOCATION: LiteralString = (
+    "INSERT INTO eqos.capture_addresses (capture_ref_id, url, location) VALUES (%s, %s, %s)"
+)
 _RETENTION_SHARED: LiteralString = "SELECT eqos.retention_shared()"
 _STATE: LiteralString = "SELECT eqos.capture_state(%s)"
 # RP6: reuse matches a retained capture only; equal bytes after expiry are a new capture.
@@ -72,13 +75,18 @@ class Registration:
         clock: datetime = self._rows(rows_sql.STORE_CLOCK, ())[0]["now"]
         return clock.astimezone(UTC)
 
-    def insert(self, ref: CaptureReference, *, url: str | None) -> CaptureReference:
+    def insert(
+        self, ref: CaptureReference, *, url: str | None, location: str | None = None
+    ) -> CaptureReference:
         """Register a capture (an existing registration wins), recording ``url`` with a new one."""
         inserted = self._rows(
             rows_sql.INSERT_CAPTURE_REF + " RETURNING id", rows_sql.capture_params(ref)
         )
         if inserted and url is not None:
-            self._conn.execute(_INSERT_ADDRESS, (inserted[0]["id"], url))
+            if location is None:
+                self._conn.execute(_INSERT_ADDRESS, (inserted[0]["id"], url))
+            else:
+                self._conn.execute(_INSERT_ADDRESS_LOCATION, (inserted[0]["id"], url, location))
         identity = (ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         return rows_sql.capture_of(self._rows(rows_sql.SELECT_CAPTURE_REF, identity)[0])
 

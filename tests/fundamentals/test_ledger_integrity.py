@@ -49,6 +49,7 @@ from fundamentals.pg.role_secrets import (
     load_login,
 )
 from fundamentals.pg.settings import GROUP_ROLES, PgRole
+from fundamentals.store.vendor_values_store import VENDOR_TABLES
 
 __all__ = ["ledger", "runtime", "seeded"]
 pytestmark = pytest.mark.pg
@@ -591,7 +592,7 @@ def test_privileges_match_the_d2_matrix(ledger: Ledger) -> None:
         tables = [
             row[0]
             for row in conn.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'eqos'")
-            if row[0] not in RETENTION_TABLES  # test_retention_classes.py
+            if row[0] not in RETENTION_TABLES | VENDOR_TABLES  # test_retention_classes.py
         ]
         for role, inserts in INSERTERS.items():
             for table in tables:

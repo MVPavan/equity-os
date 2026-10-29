@@ -51,6 +51,7 @@ from fundamentals.pg.backup import restore_backup, verify_set, write_backup
 from fundamentals.pg.cutover import FactStoreState, store_status
 from fundamentals.store.fact_store import FactStore
 from fundamentals.store.pg_fact_store import FactStoreFrozenError, PgFactStore
+from fundamentals.store.vendor_values_store import VENDOR_TABLES
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 __all__ = ["policy"]
@@ -69,6 +70,7 @@ POST_0011_TABLES = (
     | RETENTION_TABLES
     | REVIEW_TABLES
     | DOCUMENT_TABLES
+    | VENDOR_TABLES
 )
 # The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
 EXCLUDED = {

@@ -107,9 +107,9 @@ goes through `VendorFetcher.get`, which applies these rules in order:
     inventory) see it. Source ids `screener-subscriber` and `tijori`; surface `vs.<catalog-id>`;
     request key = sha256 hex of the URL (the `entity/discovery.register_capture` convention).
 11. A 403, 429 or 503, or a 3xx whose `Location` path contains `login` or `signin`, is stored,
-    `STOP-<site>` is written, and `SiteStopped` is raised **carrying the stored `Fetched`**. The
+    and `SiteStopped` is raised **carrying the stored `Fetched`**. The
     capture coordinator (`capture`, Task 4) registers it, records its outcome `UNUSABLE` with the
-    refusal in `detail`, and only then ends work on that site. The marker stays until a person
+    refusal in `detail`, and writes `STOP-<site>` in `finally`, holding the site lock throughout. The marker stays until a person
     removes it after diagnosis (runbook §6).
 12. A per-site budget of 350 requests per command. Work over the budget stays due.
 
@@ -361,7 +361,7 @@ Goal: one GET path that:
 - refuses a site with a `STOP-<site>` marker or held by another process's site lock;
 - paces each site, never follows a redirect and keeps the `Location`;
 - stores every response, including errors and stops, with the true `BodyCompleteness`;
-- writes `STOP-<site>` after a 403, 429, 503 or login redirect;
+- raises `SiteStopped` after a 403, 429, 503 or login redirect;
 - enforces a per-site budget.
 
 Registration in PostgreSQL is Task 3; this task returns the stored `CaptureRecord` and the
@@ -398,8 +398,9 @@ Approach:
   (`ack`, `acked`, `mark`, `mark_read`, `mark_as_seen`, `seen`, `read`, `dismiss`, plus any deny
   word); deny the named paths; allow the two exceptions.
 - Surface stored as `vs.<catalog-id>`. Rights: `TIJORI_RIGHTS` for both sites (A-05 decision 005).
-- Stop: store first, write `STOP-<site>` (content: capture id and status), then raise
-  `SiteStopped(fetched=...)`; registration is the coordinator's (Task 4).
+- Stop: store first, then raise
+  `SiteStopped(fetched=...)`; the coordinator registers it and records `UNUSABLE`, then writes
+  `STOP-<site>` (capture id and status) in `finally`, still holding the site lock (Task 4).
 - Log the URL with its query redacted; never the cookie.
 
 Verification: `uv run pytest tests/fundamentals/test_vendor_surface_fetch.py`, one parametrised
@@ -408,8 +409,8 @@ table:
   exceptions; `/filter/saved-queries/` allowed; `?acked=true` denied; `/%2e%2e/watchlist/` and
   `//in//watchlist` denied after normalisation;
 - `http://`, `screener.in` (no `www`), `www.screener.in:8443` and `user@www.screener.in` refused;
-- a fake 429 stores the capture, writes the marker, raises `SiteStopped` carrying the stored
-  `Fetched`, and a new `VendorFetcher` refuses the site with no network call;
+- a fake 429 stores the capture and raises `SiteStopped` carrying the stored `Fetched`; the
+  coordinator attempts registration before writing the marker, including when registration fails;
 - a 302 to `/login/` stops the site; a 302 off-host is stored with its `Location` and no stop;
 - a truncated read stores `BodyCompleteness.PARTIAL`;
 - a held `SiteLock` raises `SiteBusy`.
@@ -577,7 +578,7 @@ Interfaces:
   - `reparse(store, pool, values, spec) -> int` (captures with no outcome under the spec's
     current parser version, including topology-gated ones).
   - `dispatch_vendor_command(args, *, opener_factory, pool_factory, store_factory, sessions_factory) -> int | None`.
-  - CLI: `vendor capture --symbol S [--tijori-slug T] [--surface site:id ...] [--snapshot-root PATH] [--stop-dir PATH]`, `vendor reparse --surface site:id`.
+  - CLI: `vendor capture --symbol S [--tijori-slug T] [--surface site:id ...] [--snapshot-root PATH]`, `vendor reparse --surface site:id`; all capture roots share `data/STOP-<site>`.
 
 Approach:
 - Outcome rules in `parse_and_record`, first match wins: a non-OK HTTP capture → `UNUSABLE`

@@ -41,6 +41,7 @@ from fundamentals.api.tijori_tables_cli import add_tijori_tables_parser
 from fundamentals.api.upstox_cli import add_upstox_parser
 from fundamentals.api.upstox_crosscheck_cli import add_upstox_crosscheck_parser
 from fundamentals.api.upstox_sensitivity_cli import add_upstox_sensitivity_parser
+from fundamentals.api.vendor_surface_cli import add_vendor_parser
 
 REGISTER_SOURCES_COMMAND = "register-sources"
 RUN_COMMAND = "run"
@@ -248,4 +249,5 @@ def build_parser() -> argparse.ArgumentParser:
     add_upstox_crosscheck_parser(subparsers)
     add_upstox_sensitivity_parser(subparsers)
     add_three_source_parser(subparsers)
+    add_vendor_parser(subparsers)
     return parser

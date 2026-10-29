@@ -12,3 +12,6 @@ manifests:
   - tests/fundamentals/fixtures/data_foundation/ledger_stage4_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/ledger_stage5_manifest.yaml
   - tests/fundamentals/fixtures/data_foundation/pilot_manifest.yaml
+
+# Owner 2026-10-28: keep vendor-surface captures unless the licence ends.
+keep_surface_prefix: "vs."

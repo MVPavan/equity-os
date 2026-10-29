@@ -90,6 +90,8 @@ WITH RECURSIVE edges(from_kind, from_id, to_kind, to_id) AS MATERIALIZED (
         WHERE blob_sha256 = ANY (%(fixtures)s)
     UNION ALL SELECT 'MANIFEST_INPUT', 'C', id FROM eqos.capture_refs
         WHERE blob_sha256 = ANY (%(manifests)s)
+    UNION ALL SELECT 'VENDOR_SURFACE_KEEP', 'C', id FROM eqos.capture_refs
+        WHERE starts_with(surface, %(keep_prefix)s)
 ), reach(root, kind, id) AS (
     SELECT root, kind, id FROM roots WHERE id IS NOT NULL
     UNION
@@ -168,11 +170,17 @@ def _hashes(node: object, key: str = "") -> Iterator[tuple[str, str]]:
 
 
 def capture_facts(
-    conn: psycopg.Connection[Any], pinned: dict[HoldRoot, frozenset[str]]
+    conn: psycopg.Connection[Any],
+    pinned: dict[HoldRoot, frozenset[str]],
+    *,
+    config_root: Path = Path("config"),
 ) -> tuple[CaptureFacts, ...]:
     """The retention facts of every non-expired capture, in one statement's snapshot."""
     params = {
         "marker": LOCATION_MARKER.pattern,
+        "keep_prefix": yaml.safe_load((config_root / HOLDS_FILE).read_text()).get(
+            "keep_surface_prefix"
+        ),
         "fixtures": sorted(pinned.get(HoldRoot.QUALIFICATION_FIXTURE, ())),
         "manifests": sorted(pinned.get(HoldRoot.MANIFEST_INPUT, ())),
     }
