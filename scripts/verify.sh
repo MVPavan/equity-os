@@ -72,6 +72,19 @@ readonly SRC_SCOPE="src"
 readonly TEST_SCOPE="tests/fundamentals"
 readonly COV_SCOPE="src/fundamentals"
 
+# The full suite runs on xdist workers, one test file per worker so module
+# fixtures are built once. tmp_path lives outside /tmp and outside any checkout: the
+# approved-config loader refuses when an ancestor's ctime moves mid-read
+# (api/source_intake.py), /tmp's moves many times a minute, and a sandbox repo
+# under a checkout would pick up that checkout's pytest config.
+readonly PYTEST_WORKERS=16
+readonly PYTEST_TEMPROOT="${XDG_CACHE_HOME:-${HOME}/.cache}/equity-os/pytest-tmp"
+suite_pytest() {
+  mkdir -p "${PYTEST_TEMPROOT}"
+  PYTEST_DEBUG_TEMPROOT="${PYTEST_TEMPROOT}" \
+    uv run pytest "${TEST_SCOPE}" -n "${PYTEST_WORKERS}" --dist loadfile "$@"
+}
+
 # The whole point of this script is that its output is bounded. A list of 37
 # failing node IDs is the same context poisoning as a traceback, so names are
 # capped here and the full set stays in the log.
@@ -236,7 +249,7 @@ mode_baseline() {
 
   echo "verify.sh baseline ${slice} · $(date -u +%Y-%m-%dT%H:%MZ)"
 
-  uv run pytest "${TEST_SCOPE}" -q --tb=no -rA >"${log}" 2>&1
+  suite_pytest -q --tb=no -rA >"${log}" 2>&1
   local n_passed n_skipped n_red
   n_passed="$(grep -cE '^PASSED ' "${log}" || true)"
   n_skipped="$(grep -cE '^SKIPPED ' "${log}" || true)"
@@ -418,7 +431,9 @@ PYEOF
   local covjson="${GATE_DIR}/${slice}-${ts}-cov.json"
   if [ -z "${shared_log}" ]; then
   note "=== pytest ==="
-  uv run pytest "${TEST_SCOPE}" -q --tb=short -rA \
+  # Per-run data file: xdist's combine step merges every worker file beside it,
+  # so a shared one would mix in a concurrent gate's coverage.
+  COVERAGE_FILE="${covjson%.json}.coverage" suite_pytest -q --tb=short -rA \
     "--cov=${COV_SCOPE}" "--cov-report=json:${covjson}" --cov-report= >>"${log}" 2>&1
   else
     cp "${shared_log}" "${log}"

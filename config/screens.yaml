@@ -7,3 +7,6 @@
 - name: aparinds-coverage
   screener: Number of equity shares > 39969150 AND Number of equity shares < 40370850
   tijori: Net Block > 1126 AND Net Block < 2092
+- name: aparinds-coverage-v2
+  screener: Number of equity shares > 3.9969 AND Number of equity shares < 4.0371 AND Face value = 10
+  tijori: Net Block > 1126 AND Net Block < 2092
