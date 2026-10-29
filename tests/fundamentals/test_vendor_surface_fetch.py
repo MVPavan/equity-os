@@ -257,3 +257,32 @@ def test_missing_session_refused_before_fetch():
             sessions_factory=lambda sites: {},
             pool_factory=lambda: pytest.fail("credentials must be checked before opening the pool"),
         )
+
+
+def test_fetch_logs_only_request_identity(tmp_path):
+    import structlog
+    from fundamentals.ingest.vendor_surface_fetch import Site, request_key
+
+    events = []
+    config = structlog.get_config()
+
+    def collect(logger, method, event):
+        if event.get("event") == "vendor_surface_fetch":
+            events.append(event.copy())
+        raise structlog.DropEvent
+
+    structlog.configure(processors=[collect])
+    url = "https://www.screener.in/company/PRIVATE_PATH_SENTINEL/?parent=PRIVATE_QUERY_SENTINEL"
+    try:
+        client, _ = fetcher(tmp_path, Opener())
+        client.get(Site.SCREENER, "company-page", url)
+    finally:
+        structlog.configure(**config)
+    assert events == [
+        {
+            "event": "vendor_surface_fetch",
+            "site": Site.SCREENER,
+            "surface": "company-page",
+            "request_key": request_key(url),
+        }
+    ]

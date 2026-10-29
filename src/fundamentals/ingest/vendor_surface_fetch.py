@@ -229,7 +229,7 @@ class VendorFetcher:
             headers["X-Requested-With"] = "XMLHttpRequest"
         self.pacers[site].wait_for_slot()
         self.counts[site] += 1
-        LOG.info("vendor_surface_fetch", site=site, url=urlunsplit((*parts[:3], "", "")))
+        LOG.info("vendor_surface_fetch", site=site, surface=surface, request_key=request_key(url))
         retrieved_at = datetime.now(UTC)
         status, location, media, encoding, raw, completeness, issue = (
             None,
