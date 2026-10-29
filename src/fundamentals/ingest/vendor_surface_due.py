@@ -357,11 +357,11 @@ def due_requests(
     ) -> None:
         """Queue due instances: obligation instances at most once a day, never when spent."""
         for key, node in {
-            **{k: Node(request=r, gaps=()) for k, r in pending.items()},
             **nodes,
+            **{k: Node(request=r, gaps=()) for k, r in pending.items()},
         }.items():
             request, hist, spec = node.request, seen.get(key, []), node.request.spec
-            notes.extend(label + gap for gap in node.gaps)
+            notes.extend(label + gap for gap in nodes.get(key, node).gaps)
             if (
                 key in spent
                 or key in pending
@@ -396,7 +396,12 @@ def due_requests(
             )
             if missing is None
         )
-        pending = {traversal_key(r): r for o in obligations for r in o.retry}
+        pending: dict[str, Request] = {}
+        for request in sorted(
+            (r for o in obligations for r in o.retry),
+            key=lambda r: r.due_since or datetime.min.replace(tzinfo=UTC),
+        ):
+            pending.setdefault(traversal_key(request), request)
         starts = {k: max(o.starts[k] for o in obligations if k in o.starts) for k in pending}
         spent = {k for o in obligations for k in o.spent} - pending.keys()
         nodes = tree(roots, seen, expand)

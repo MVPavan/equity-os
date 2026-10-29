@@ -877,3 +877,24 @@ def test_pretrigger_capture_does_not_spend_new_triggers_daily_attempt(due_rig):
     assert FINANCIALS in rig.opener.calls
     rig.run(specs, later + timedelta(hours=1))
     assert FINANCIALS not in rig.opener.calls
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_rediscovery_preserves_frozen_retry_priority(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-page", "schedules-api")
+    sales = next(u for u in rig.opener.rows if "schedules/?parent=Sales&section=profit-loss&c" in u)
+    rig.opener.overrides[sales] = b"unavailable", 404
+    rig.run(specs, NOW)
+    rig.opener.new_results_row()
+    rig.opener.newer_period(PAGES[Basis.CONSOLIDATED])
+    rig.run(specs, NOW + DAY)
+    rig.run(pick("robots", site=Site.SCREENER), NOW + 2 * DAY)
+    # Refresh discovery without changing the tree frozen by the first satisfying capture.
+    daily_page = pick("company-page")[0].model_copy(update={"cadence": Cadence.DAILY})
+    rig.run((daily_page,), NOW + 3 * DAY)
+    specs += pick("robots", site=Site.SCREENER)
+    queued, _ = due.due_requests(rig.pool, rig.store, specs, NOW + 9 * DAY + timedelta(hours=1))
+    urls = [r.url for r in queued]
+    assert urls.index(sales) < urls.index("https://www.screener.in/robots.txt")
+    assert next(r.due_since.date() for r in queued if r.url == sales) == (NOW + DAY).date()
