@@ -329,25 +329,14 @@ def identity_refusal(request: Request, body: Body) -> str | None:
         return type(error).__name__
 
 
-def covered_peers(pool: ConnectionPool, ids: CompanyIds) -> tuple[int, ...]:
-    """Screener ids of the other covered companies, the only peers a comparison may name."""
-    with pool.connection() as conn:
-        covered = {
-            row[0]
-            for row in conn.execute(
-                "SELECT id FROM eqos.reporting_entities WHERE eqos.watchlisted(id)"
-            )
-        }
-        peer_symbols = {
-            row.value
-            for row in latest_slice(conn)
-            if row.entity_id in covered and row.value != ids.nse_symbol
-        }
+def covered_peers(pool: ConnectionPool, store: SnapshotStore, ids: CompanyIds) -> tuple[int, ...]:
+    """Covered NSE peers, using registry evidence with configuration overrides."""
+    from fundamentals.ingest.vendor_surface_due import covered_universe
+
     return tuple(
-        binding.screener_company_id
-        for stock in load_watchlist_config(WATCHLIST).stocks
-        if stock.symbol in peer_symbols
-        and (binding := company_ids(stock)).screener_company_id is not None
+        peer.screener_company_id
+        for peer in covered_universe(pool, store)
+        if peer.nse_symbol != ids.nse_symbol and peer.screener_company_id is not None
     )
 
 
@@ -402,7 +391,7 @@ def retained_graph(
         and (r.basis is None or r.basis in proven)
         and r.spec.id not in IDENTITY_PAGES
     )
-    queue, peers = list(admitted.values()), covered_peers(pool, ids)
+    queue, peers = list(admitted.values()), covered_peers(pool, store, ids)
     while queue:
         request = queue.pop()
         if request.spec.id != "company-page" and not any(
@@ -696,7 +685,7 @@ def capture_company(
     basis_refusals: dict[Basis, str] = {}
     with pool.connection() as conn:
         entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
-    peers = covered_peers(pool, ids)
+    peers = covered_peers(pool, store, ids)
     if not peers and any(s.id == "company-compare" for s in specs):
         incomplete.append("screener:company-compare: no other covered stocks")
     known = {r.url for r in company_requests(specs, ids)} if requests is not None else set()

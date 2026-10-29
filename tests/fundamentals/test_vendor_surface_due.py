@@ -962,3 +962,36 @@ def test_results_rows_use_latest_parse_of_capture(pg_db, tmp_path):
         )
         remaining = len(due.results_rows(pool, (spec,)))
     assert remaining == 0, f"{remaining} superseded results rows still generate triggers"
+
+
+def test_covered_peers_not_restricted_to_yaml(due_rig, monkeypatch):
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    from types import SimpleNamespace
+
+    from fundamentals.ingest.vendor_surface_parse import CompanyIds
+
+    rig = due_rig
+    specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
+    rig.run(specs, datetime(2026, 10, 29, 12, tzinfo=UTC))
+    monkeypatch.setattr(cap, "load_watchlist_config", lambda p: SimpleNamespace(stocks=()))
+    assert cap.registered_ids(rig.pool, rig.store, "APARINDS").screener_company_id is not None
+    ids = CompanyIds(
+        nse_symbol="SELF",
+        isin="review",
+        tijori_slug=None,
+        tijori_company_id=None,
+        screener_company_id=1,
+        topology=None,
+    )
+    count = len(cap.covered_peers(rig.pool, rig.store, ids))
+    assert count == 1, f"{count} registry-only covered peers returned despite retained verified id"
