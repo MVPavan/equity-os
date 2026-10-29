@@ -75,6 +75,21 @@ _FIRST_SEEN: LiteralString = """least(c.first_seen_at, (SELECT min(a.retrieved_a
 _CAPTURE: LiteralString = (
     "SELECT c.*, " + _FIRST_SEEN + " AS first_seen FROM eqos.capture_refs c WHERE c.id = %s"
 )
+# Issuer bindings with knowledge time no later than the citing version's cutoff.
+_LOCATION_ISSUER: LiteralString = """SELECT 1
+FROM eqos.package_members m JOIN eqos.filing_packages p ON p.id = m.package_id
+WHERE m.capture_ref_id = %(capture)s AND p.entity_id = %(entity)s
+    AND m.knowledge_time_status = 'KNOWN' AND m.knowledge_time <= %(cutoff)s
+UNION ALL SELECT 1 FROM eqos.interpretations i
+LEFT JOIN eqos.occurrences o ON o.id = i.occurrence_id
+WHERE i.capture_ref_id = %(capture)s AND i.entity_id = %(entity)s
+    AND coalesce(o.knowledge_time, i.recorded_at) <= %(cutoff)s
+UNION ALL SELECT 1 FROM eqos.legacy_evidence_bindings b
+JOIN eqos.legacy_fact_translations t USING (target_store, row_handle)
+JOIN eqos.fact_rows f ON f.target_store = b.target_store AND f.handle = b.row_handle
+WHERE b.capture_ref_id = %(capture)s AND t.entity_id = %(entity)s
+    AND f.knowledge_time::timestamptz <= %(cutoff)s
+LIMIT 1"""
 # A fact's first selection time: a legacy-imported selection's own time, any other selection's
 # no earlier than its store-clock recording (0037), whatever the cited fact's origin.
 _FACT: LiteralString = """SELECT f.knowledge_time, f.fact_json, f.file_sha256 AS fact_file,
@@ -324,15 +339,23 @@ def resolve_location(
     capture_id: str,
     anchor: str,
     *,
+    entity_id: int,
+    cutoff: datetime,
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
 ) -> bool:
-    """Whether ``{{s:<capture id>|<anchor>}}`` names a non-empty span of a non-vendor capture."""
+    """Whether a prose location names a non-empty first-party span of this issuer,
+    known and first seen by the citing version's cutoff."""
     if not capture_id.isdigit():
         return False
     with cursor.connection.cursor(row_factory=dict_row) as own:
         capture = _first_party_capture(own, int(capture_id), catalog)
-        span = None if capture is None else _span(own, capture, anchor, snapshots)
+        if capture is None or capture["first_seen"] > cutoff:
+            return False
+        params = {"capture": int(capture_id), "entity": entity_id, "cutoff": cutoff}
+        if own.execute(_LOCATION_ISSUER, params).fetchone() is None:
+            return False
+        span = _span(own, capture, anchor, snapshots)
     return span is not None and span.strip() != ""
 
 
