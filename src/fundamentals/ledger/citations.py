@@ -83,12 +83,26 @@ WHERE m.capture_ref_id = %(capture)s AND p.entity_id = %(entity)s
 UNION ALL SELECT 1 FROM eqos.interpretations i
 LEFT JOIN eqos.occurrences o ON o.id = i.occurrence_id
 WHERE i.capture_ref_id = %(capture)s AND i.entity_id = %(entity)s
+    AND i.recorded_at <= %(cutoff)s
     AND coalesce(o.knowledge_time, i.recorded_at) <= %(cutoff)s
+UNION ALL SELECT 1 FROM eqos.numeric_claims q
+JOIN eqos.report_versions v ON v.id = q.version_id
+JOIN eqos.reports r ON r.id = v.report_id
+JOIN eqos.capture_refs c ON c.id = %(capture)s
+WHERE r.entity_id = %(entity)s AND q.citation_kind = 'SOURCE_QUOTE'
+    AND q.source_sha256 = c.blob_sha256 AND v.knowledge_cutoff <= %(cutoff)s
+    AND EXISTS (SELECT 1 FROM eqos.import_sources s WHERE s.version_id = v.id)
+    AND EXISTS (SELECT 1 FROM eqos.decisions d
+        WHERE d.subject_kind = 'REPORT_VERSION' AND d.subject_id = v.id
+            AND d.kind = 'IMPORT_SEAL' AND d.decider = 'PANEL'
+            AND d.recorded_at <= %(cutoff)s
+            AND d.sealed_digest = eqos.version_sealed_digest(v.id))
 UNION ALL SELECT 1 FROM eqos.legacy_evidence_bindings b
 JOIN eqos.legacy_fact_translations t USING (target_store, row_handle)
 JOIN eqos.fact_rows f ON f.target_store = b.target_store AND f.handle = b.row_handle
 WHERE b.capture_ref_id = %(capture)s AND t.entity_id = %(entity)s
-    AND f.knowledge_time::timestamptz <= %(cutoff)s
+    AND CASE WHEN b.capture_ref_id = %(capture)s AND t.entity_id = %(entity)s
+        THEN f.knowledge_time::timestamptz END <= %(cutoff)s
 LIMIT 1"""
 # A fact's first selection time: a legacy-imported selection's own time, any other selection's
 # no earlier than its store-clock recording (0037), whatever the cited fact's origin.
