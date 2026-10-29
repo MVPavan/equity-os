@@ -508,3 +508,38 @@ def test_ambiguous_terminal_page_persists_incomplete_and_prior_boundary(market_r
     )
     assert not queued
     assert "screener:announcements-feed: INCOMPLETE" in notes
+
+
+def test_traversal_checkpoint_hides_yield_drop(market_rig):
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_canary import ROW_COUNT_DROP, yield_drift
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+
+    def announcement_page(count):
+        return (
+            "<main>"
+            + "".join(
+                '<div class="announcement-item"><a href="/company/FIXTURE/">Company</a>'
+                f'<a href="/event/{i}">Event</a><time datetime="2026-10-28">Date</time></div>'
+                for i in range(count)
+            )
+            + "</main>"
+        ).encode()
+
+    opener, pool, run = market_rig
+    spec = next(s for s in specs if s.id == "announcements-feed")
+    url = "https://www.screener.in/announcements/all/"
+    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    for count in (10, 1):
+        opener.overrides[url] = announcement_page(count), 200
+        run((), requests=(request,))
+    checks = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
+    assert any(c.check == ROW_COUNT_DROP for c in checks), "10-to-1 feed shrink not detected"
