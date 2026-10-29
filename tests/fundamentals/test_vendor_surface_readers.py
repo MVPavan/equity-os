@@ -299,7 +299,10 @@ def test_namespaced_search_outcomes(pg_db, tmp_path):
         ("FAILED", "tijori:company-search-api.reader.v1"),
     ]
     assert (Site.TIJORI, "filter-advanced-search-api") not in PARSERS
-    assert (Site.TIJORI, "overview-company-timeline-sidepanel") not in PARSERS
+    assert (
+        PARSERS[Site.TIJORI, "overview-company-timeline-sidepanel"].version
+        == "tijori:overview-company-timeline-sidepanel.v1"
+    )
 
 
 @pytest.mark.pg

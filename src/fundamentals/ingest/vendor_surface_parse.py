@@ -243,7 +243,7 @@ def kept_section(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     return ()
 
 
-for _site, _surfaces in (
+for _site, _section_names in (
     (Site.SCREENER, "section-chart section-analysis section-peers"),
     (
         Site.TIJORI,
@@ -253,7 +253,7 @@ for _site, _surfaces in (
         "shareholding-faqshareholding",
     ),
 ):
-    for _surface in _surfaces.split():
+    for _surface in _section_names.split():
         PARSERS[_site, _surface] = ParserEntry(
             version=f"{('screener' if _site is Site.SCREENER else 'tijori')}:{_surface}.v1",
             parse=kept_section,

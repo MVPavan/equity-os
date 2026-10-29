@@ -342,7 +342,12 @@ def company_requests(specs: tuple[SurfaceSpec, ...], ids: CompanyIds) -> tuple[R
     for spec in sorted(
         specs, key=lambda spec: spec.id not in ("company-page", "company-financials")
     ):
-        if spec.scope is not Scope.COMPANY or spec.expand or spec.id == "chart-api":
+        if (
+            spec.scope is not Scope.COMPANY
+            or spec.expand
+            or spec.id == "chart-api"
+            or "#" in spec.path
+        ):
             continue
         if any(
             token in spec.path
