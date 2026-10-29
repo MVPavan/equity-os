@@ -3,24 +3,25 @@
 import hashlib
 import json
 import re
-import tokenize
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from tokenize import TokenError
 from typing import Any, LiteralString
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlsplit
 
 from lxml import html  # type: ignore[import-untyped]
 from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.contracts.snapshot import BodyCompleteness, CaptureRecord
+from fundamentals.contracts.snapshot import BodyCompleteness
 from fundamentals.ingest.screener_company_discovery import read_page_hooks
 from fundamentals.ingest.screener_financials_tables import schedule_parents
 from fundamentals.ingest.screener_session_models import ScreenerSessionError
 from fundamentals.ingest.vendor_surface_fetch import (
     SITE_AUTHORITY,
+    Fetched,
     Site,
     SiteBusy,
     SiteStopped,
@@ -124,6 +125,7 @@ _SECTIONS = (
     "chart analysis peers quarters profit-loss balance-sheet cash-flow "
     "ratios insights shareholding documents"
 ).split()
+_UTILS = re.compile(r"https://cdn-static\.screener\.in/js/(utils\.[a-f0-9]+\.js)")
 _HANDLERS = ("showSchedule", "showShareholders", "showSegment")
 _BASIS = '//*[@data-company-id="211"][@data-warehouse-id="6594631"][@data-consolidated="true"]'
 _GROWTH = '//*[@id="profit-loss"]//table[contains(@class,"ranges-table")]//tr[td]'
@@ -143,8 +145,7 @@ _MALFORMED = (
     AttributeError,
     ParserError,
     ScreenerSessionError,
-    SyntaxError,
-    tokenize.TokenError,
+    TokenError,
 )
 Markers = Callable[[bytes], dict[str, bool]]
 
@@ -357,27 +358,34 @@ class Canary(BaseModel):
     site: Site
     url: str
     status: int = 200
-    # Redirect controls carry no body markers.
+    # Redirect controls carry no body markers; `location` is a required redirect path.
     markers: Markers = lambda raw: {}
+    location: str | None = None
 
-    def check(self, record: CaptureRecord, raw: bytes) -> tuple[str, ...]:
-        """Fail closed on status, truncated bodies and missing or malformed markers."""
+    def check(self, fetched: Fetched, raw: bytes) -> tuple[str, ...]:
+        """Fail closed on status, truncated bodies, redirect target and malformed markers."""
+        record = fetched.record
         if record.http_status != self.status:
             return (self.name + ".http_status",)
         if record.effective_body_completeness != BodyCompleteness.COMPLETE:
             return (self.name + ".body_completeness",)
+        target, here = urlsplit(urljoin(fetched.url, fetched.location or "")), urlsplit(fetched.url)
+        if self.location and (target.netloc, target.path) != (here.netloc, self.location):
+            return (self.name + ".location",)
         try:
             return tuple(f"{self.name}.{key}" for key, ok in self.markers(raw).items() if not ok)
         except _MALFORMED:
             return (self.name + ".structure",)
 
 
-def _canary(name: str, path: str, markers: Markers | None = None) -> Canary:
+def _canary(
+    name: str, path: str, markers: Markers | None = None, location: str | None = None
+) -> Canary:
     """Bind a runbook row; S rows are Screener, T rows Tijori, and no markers means a redirect."""
     site = Site.SCREENER if name.startswith("S") else Site.TIJORI
     url = f"https://{SITE_AUTHORITY[site]}{path}"
     if markers is None:
-        return Canary(name=name, site=site, url=url, status=302)
+        return Canary(name=name, site=site, url=url, status=302, location=location)
     return Canary(name=name, site=site, url=url, markers=markers)
 
 
@@ -406,7 +414,7 @@ CANARIES: tuple[Canary, ...] = (
         "&sectors=&company_ids=&daterange={dates}",
         _t7,
     ),
-    _canary("T8", "/"),
+    _canary("T8", "/", location="/dashboard/"),
 )
 
 
@@ -419,13 +427,7 @@ def _dependencies(raw: bytes) -> dict[str, str]:
         for match in re.findall(r"showSchedule\s*\(\s*(['\"])(.*?)\1", value)
     ]
     utils = [
-        match[1]
-        for src in tree.xpath("//script[@src]/@src")
-        if (
-            match := re.fullmatch(
-                r"https://cdn-static\.screener\.in/js/(utils\.[a-f0-9]+\.js)", src
-            )
-        )
+        match[1] for src in tree.xpath("//script[@src]/@src") if (match := _UTILS.fullmatch(src))
     ]
     return ({"parent": quote(parents[0], safe="")} if parents else {}) | (
         {"utils": utils[0]} if len(utils) == 1 else {}
@@ -449,38 +451,32 @@ def run_canaries(
     values = VendorValuesStore(pool)
     digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     for canary in CANARIES:
+        stopped, url = False, canary.url
         try:
             url = canary.url.format_map(variables)
-        except KeyError:
-            found.append(
-                _drift(
-                    canary,
-                    request_key(canary.url),
-                    canary.name + ".dependency",
-                    "S1 hook unavailable",
-                )
-            )
-            continue
-        stopped = False
-        try:
             fetched = fetcher.get(canary.site, canary.name, url)
-        except (SiteStopped, SiteBusy, ValueError) as error:
+        except (KeyError, SiteStopped, SiteBusy, ValueError) as error:
             if not isinstance(error, SiteStopped) or error.fetched is None:
-                found.append(
-                    _drift(canary, request_key(url), canary.name + ".fetch", type(error).__name__)
-                )
+                # A missing S1 hook leaves a placeholder unformatted.
+                check = ".dependency" if isinstance(error, KeyError) else ".fetch"
+                found.append(_drift(canary, request_key(url), canary.name + check, repr(error)))
                 continue
             fetched, stopped = error.fetched, True
         try:
             ref = register(pool, fetched)
+            with pool.connection() as conn:
+                [address] = conn.execute(
+                    "SELECT url, location FROM eqos.capture_addresses WHERE capture_ref_id=%s",
+                    (ref.capture_ref_id,),
+                ).fetchall()
+            registered = fetched.model_copy(update={"url": address[0], "location": address[1]})
             raw = (
                 store.read_body(fetched.record)
                 if fetched.record.effective_body_completeness == BodyCompleteness.COMPLETE
                 else b""
             )
-            checks = canary.check(fetched.record, raw)
-            if canary.name == "T8" and fetched.location != "/dashboard/":
-                checks += ("T8.location",)
+            # A stop is a named refusal whatever status the canary expected.
+            checks = (canary.name + ".refused",) if stopped else canary.check(registered, raw)
             if canary.name == "S1" and raw:
                 variables |= _dependencies(raw)
             values.record(
@@ -489,14 +485,19 @@ def run_canaries(
                     surface=canary.name,
                     parser_version=f"canary.{canary.name}.v1",
                     parser_sha256=digest,
-                    status=OutcomeStatus.FAILED if checks else OutcomeStatus.OK,
+                    status=OutcomeStatus.UNUSABLE
+                    if stopped
+                    else OutcomeStatus.FAILED
+                    if checks
+                    else OutcomeStatus.OK,
                     symbol=None,
                     detail=", ".join(checks) if checks else None,
                 ),
                 row_count=0,
             )
             key = fetched.record.request.request_key
-            found.extend(_drift(canary, key, check, "runbook marker failed") for check in checks)
+            detail = "site stopped" if stopped else "runbook marker failed"
+            found.extend(_drift(canary, key, check, detail) for check in checks)
         finally:
             if stopped:
                 fetcher.stop_dir.mkdir(parents=True, exist_ok=True)

@@ -314,7 +314,7 @@ MUTATIONS = [
     ),
     pytest.param(
         _set("statuses", "S6", 429),
-        {"S6.http_status": FAILED, "S7.fetch": None, "S8.fetch": None},
+        {"S6.refused": UNUSABLE, "S7.fetch": None, "S8.fetch": None},
         id="stop",
     ),
     pytest.param(_set("statuses", "S8", 200), {"S8.http_status": FAILED}, id="modal"),
@@ -375,7 +375,8 @@ MUTATIONS = [
         {"T7.result_cards": FAILED},
         id="results_hollow",
     ),
-    pytest.param(_set("locations", "T8", "/login/"), {"T8.location": FAILED}, id="redirect"),
+    pytest.param(_set("locations", "S8", "/login/"), {"S8.refused": UNUSABLE}, id="s8_login"),
+    pytest.param(_set("locations", "T8", "/login/"), {"T8.refused": UNUSABLE}, id="t8_login"),
 ]
 
 
@@ -440,9 +441,9 @@ def test_canary_shapes_and_controls_cli(
         if status:
             outcome, detail = recorded[check.split(".")[0]]
             assert outcome == status and check in detail.split(", ")
-    if opener.statuses.get("S6") == 429:
-        assert (tmp_path / "stops" / "STOP-screener-subscriber").is_file()
-        assert not any(urlsplit(call.full_url).path.startswith("/static/") for call in opener.calls)
+    refused = {check[0] for check, status in expected.items() if status == UNUSABLE}
+    stops = {"S": "STOP-screener-subscriber", "T": "STOP-tijori"}
+    assert {path.name for path in tmp_path.glob("stops/STOP-*")} == {stops[s] for s in refused}
     if not expected:
         assert [surface for surface, *_ in outcomes] == [
             item.name for item in vendor_surface_canary.CANARIES
@@ -468,7 +469,30 @@ def test_each_canary_check_rejects_bad_status_and_incomplete_body(canary_opener)
         raw = canary_opener.bodies[canary.name]
         status = canary_opener.statuses.get(canary.name, 200)
         record = record_of(raw).model_copy(update={"http_status": status})
-        assert not canary.check(record, raw), canary.name
-        assert canary.check(record.model_copy(update={"http_status": 404}), raw), canary.name
-        truncated = record.model_copy(update={"body_completeness": BodyCompleteness.PARTIAL})
-        assert canary.check(truncated, raw), canary.name
+        location = canary_opener.locations.get(canary.name)
+        fetched = Fetched(record=record, url=canary.url, location=location)
+        assert not canary.check(fetched, raw), canary.name
+        for bad in ({"http_status": 404}, {"body_completeness": BodyCompleteness.PARTIAL}):
+            rejected = fetched.model_copy(update={"record": record.model_copy(update=bad)})
+            assert canary.check(rejected, raw), canary.name
+
+
+@pytest.mark.parametrize(
+    ("location", "passed"),
+    [
+        ("/dashboard/", True),
+        ("https://www.tijorifinance.com/dashboard/", True),
+        (None, False),
+        ("/login/", False),
+        ("https://other.example/dashboard/", False),
+        ("//other.example/dashboard/", False),
+    ],
+)
+def test_t8_needs_a_same_host_dashboard_redirect(location, passed):
+    """The logged-in marker is the resolved redirect target, not the Location spelling."""
+    from fundamentals.ingest.vendor_surface_canary import CANARIES
+
+    canary = next(item for item in CANARIES if item.name == "T8")
+    record = record_of(b"").model_copy(update={"http_status": 302})
+    fetched = Fetched(record=record, url=canary.url, location=location)
+    assert canary.check(fetched, b"") == (() if passed else ("T8.location",))
