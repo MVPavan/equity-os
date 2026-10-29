@@ -554,7 +554,8 @@ def test_nonfeed_market_table_refreshes_all_pages(market_rig):
     assert len(opener.calls) == 2, "weekly non-feed snapshot stops after old company link on page 1"
 
 
-def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys):
+def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda _: None)
     import argparse
 
     from pydantic import SecretStr

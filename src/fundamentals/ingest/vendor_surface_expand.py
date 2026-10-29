@@ -60,7 +60,7 @@ def lineage(spec: SurfaceSpec, specs: Iterable[SurfaceSpec]) -> tuple[SurfaceSpe
             (by_path.get(current.path.split("#")[0]),)
             if "#" in current.path
             else tuple(
-                by_id.get(name)
+                by_id.get(name or "")
                 for name in (parent_surface(current), *MARKET_PARENTS.get(current.expand or "", ()))
             )
         )
