@@ -1,0 +1,62 @@
+"""Bake-off scores use positive labels and exact, capture-scoped spans."""
+
+import runpy
+
+
+def test_positive_accuracy_false_mappings_and_baseline():
+    bakeoff = runpy.run_path("scripts/vendor_surface_bakeoff.py")
+    score = bakeoff["score_labels"](["a", "wrong", None, "a", None], ["a", "b", "c", None, None])
+    assert (score.accuracy, score.false_mappings, score.abstentions) == (1 / 3, 2, 1)
+    baseline = bakeoff["score_labels"]([None] * 5, ["a", "b", "c", None, None])
+    assert (baseline.accuracy, baseline.false_mappings, baseline.abstentions) == (0, 0, 3)
+
+
+def test_spans_require_capture_kind_and_exact_offsets():
+    score = runpy.run_path("scripts/vendor_surface_bakeoff.py")["score_spans"]
+    key = {("a", "NAME", 0, 4), ("a", "CLAIM", 5, 10)}
+    accepted = {("a", "NAME", 0, 4), ("b", "CLAIM", 5, 10), ("a", "NAME", 5, 10)}
+    result = score(accepted, key)
+    assert (result.precision, result.recall) == (1 / 3, 0.5)
+    assert score(set(), set()).model_dump() == {"precision": 0, "recall": 0}
+
+
+def test_two_fake_models_write_expected_table_without_selecting_runtime_model(tmp_path):
+    import json
+    from decimal import Decimal
+    from pathlib import Path
+
+    from fundamentals.ingest.vendor_surface_model import ModelReply
+
+    class Fake:
+        def __init__(self, model_id):
+            self.model_id = model_id
+
+        def complete(self, system, user):
+            if user.startswith("{"):
+                sample = json.loads(user)
+                assert "why" not in sample and "field" not in sample
+                answer = {"label": sample["label"], "field": None}
+                if self.model_id == "greedy":
+                    answer["field"] = "opm_pct"
+            else:
+                end = 4 if user.startswith("Apar,") else 17 if user.startswith("HDFC Bank") else 27
+                answer = [{"kind": "NAME", "start": 0, "end": end}]
+                if self.model_id == "greedy":
+                    answer += [
+                        {"kind": "CLAIM", "start": 0, "end": 1},
+                        {"kind": "NAME", "start": 0, "end": len(user) + 1},
+                    ]
+            return ModelReply(text=json.dumps(answer), input_tokens=10, output_tokens=2)
+
+    bakeoff = runpy.run_path("scripts/vendor_surface_bakeoff.py")
+    runtime = Path("config/vendor_surface/model.yaml")
+    before = runtime.read_bytes()
+    table = bakeoff["evaluate"](
+        [(Fake(name), Decimal(1), Decimal(2)) for name in ("safe", "greedy")]
+    )
+    assert "| always-unmapped | 0.000 | 0 | 3 | 0.000 | 0.000 | 0.000000 |" in table
+    assert "| safe | 0.000 | 0 | 3 | 1.000 | 0.500 | 0.000266 |" in table
+    assert "| greedy | 0.000 | 5 | 3 | 0.500 | 0.500 | 0.000266 |" in table
+    report = bakeoff["write_report"](table, tmp_path)
+    assert report.name.startswith("bakeoff-") and report.read_text() == table
+    assert runtime.read_bytes() == before

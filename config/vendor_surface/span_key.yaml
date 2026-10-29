@@ -1,0 +1,13 @@
+# Model-drafted; Sol check PENDING. Capture = body SHA-256; Unicode offsets, end exclusive.
+- {capture: 824955eb8e86fba728ebd56ff6c05a1a1e62af80efdeba5623e81a5f57826a81, kind: NAME,
+   span_start: 0, span_end: 4}
+- {capture: 824955eb8e86fba728ebd56ff6c05a1a1e62af80efdeba5623e81a5f57826a81, kind: CLAIM,
+   span_start: 101, span_end: 334}
+- {capture: b78085c71ebdb566d6ef074b7da6587b55221a2caeefe027d7ccdabcfc6acc33, kind: NAME,
+   span_start: 0, span_end: 17}
+- {capture: b78085c71ebdb566d6ef074b7da6587b55221a2caeefe027d7ccdabcfc6acc33, kind: CLAIM,
+   span_start: 0, span_end: 115}
+- {capture: 2e28a715adb77a2c845b91ef1c78f8fbfc71cc9be3a16b3717a824d83b127f40, kind: NAME,
+   span_start: 0, span_end: 27}
+- {capture: 2e28a715adb77a2c845b91ef1c78f8fbfc71cc9be3a16b3717a824d83b127f40, kind: CLAIM,
+   span_start: 0, span_end: 85}
