@@ -241,6 +241,24 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
         }
         assert unexpected == set()
         if symbol == "APARINDS":
+            # Every financials section has an explicit outcome. The three widget shells hold no
+            # reader input on the page (their data is the analysis APIs), so they fail closed.
+            sections = conn.execute(
+                "SELECT o.surface, o.status, o.detail FROM eqos.vendor_outcomes o JOIN eqos.c"
+                "apture_refs c ON c.id=o.capture_ref_id WHERE c.surface='vs.company-financials'"
+            ).fetchall()
+            shells = {
+                "financials-balance-sheet-snapshot",
+                "financials-fundflow-analysis",
+                "financials-cash-flow-analysis",
+            }
+            assert len(sections) == 13
+            assert all(
+                (status, detail) == ("FAILED", "ReaderError")
+                if surface in shells
+                else status in ("OK", "PARTIAL", "KEPT")
+                for surface, status, detail in sections
+            )
             assert conn.execute(
                 "SELECT v.value FROM eqos.vendor_values v JOIN eqos.vendor_outcomes o"
                 " ON o.id=v.outcome_id WHERE o.surface='section-quarters' AND v.basis"
