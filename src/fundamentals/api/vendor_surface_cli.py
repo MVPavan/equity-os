@@ -58,6 +58,13 @@ SPECS = Path("config/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
 STOP_DIR = Path("data")
 MODEL_CONFIG = Path("config/vendor_surface/model.yaml")
+CELL_SECTIONS = frozenset(
+    {
+        "section-insights",
+        "benchmarking-benchmarking-financial",
+        "benchmarking-benchmarking-business",
+    }
+)
 
 
 def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -123,7 +130,13 @@ def dispatch_vendor_command(
         if args.vendor_command == "map-labels":
             site = next(site for site, name in SITE_NAME.items() if name == args.site)
             if not any(
-                s.site == site and s.id == args.surface and s.group == ParseGroup.CELLS
+                s.site == site
+                and (
+                    s.id == args.surface
+                    and s.group == ParseGroup.CELLS
+                    or args.surface in s.sections
+                    and args.surface in CELL_SECTIONS
+                )
                 for s in load_specs(SPECS, CATALOG)
             ):
                 raise ValueError("label mapping requires a G3 surface")

@@ -142,3 +142,65 @@ def test_adapter_bounds_with_fake_transport(monkeypatch, failure):
             text="reply", input_tokens=2, output_tokens=1
         )
     assert opened.call_count == (3 if failure == "retry" else 1)
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize(
+    "site,surface",
+    [
+        (Site.SCREENER, "section-insights"),
+        (Site.TIJORI, "benchmarking-benchmarking-financial"),
+        (Site.TIJORI, "benchmarking-benchmarking-business"),
+        (Site.SCREENER, "company-compare"),
+        (Site.TIJORI, "company-benchmarking"),
+    ],
+)
+def test_cli_maps_logical_g3_labels(pg_db, tmp_path, monkeypatch, site, surface):
+    from types import SimpleNamespace
+    from retention_support import record_of
+    from fundamentals.api import vendor_surface_cli as cli
+    from fundamentals.api.cli_parser import build_parser
+    from fundamentals.ingest.vendor_surface_fetch import Fetched
+    from fundamentals.ingest.vendor_surface_specs import SITE_NAME
+    from fundamentals.store.snapshot_store import SnapshotStore
+    from fundamentals.store.vendor_values_store import VendorValuesStore, register
+
+    settings = tmp_path / "model.yaml"
+    settings.write_text(
+        "model_id: fake\nbase_url: https://unused.example\nkey_file: fake.key\nprompt_version: v1\ndictionary_version: v3\n"
+    )
+    (tmp_path / "fake.key").write_text("synthetic")
+    monkeypatch.setattr(cli, "MODEL_CONFIG", settings)
+    monkeypatch.setenv("EQOS_SECRETS_DIR", str(tmp_path))
+    model = Mock(model_id="fake")
+    model.complete.return_value = ModelReply(
+        text='{"label":"Sales","field":"sales"}', input_tokens=1, output_tokens=1
+    )
+    monkeypatch.setattr(cli, "ChatCompletionsModel", lambda *a: model)
+    monkeypatch.setattr(
+        cli,
+        "load_dictionary",
+        lambda *a: SimpleNamespace(
+            rows=[SimpleNamespace(canonical_id="sales", value_kind=ValueKind.CURRENCY_AMOUNT)]
+        ),
+    )
+    store = SnapshotStore(tmp_path / "store")
+    record = record_of(b"fixture", site, "vs.company-benchmarking")
+    store.put_capture(record, b"fixture")
+    with pg_db.runtime_pool() as pool:
+        ref = register(pool, Fetched(record=record, url="https://unused.example/", location=None))
+        cell = (
+            outcome()
+            .values[0]
+            .model_copy(update={"row_label": "Sales", "unit": "Cr", "expected_numeric": True})
+        )
+        VendorValuesStore(pool).record(ref, outcome(surface=surface, values=(cell,)), row_count=1)
+    args = build_parser().parse_args(
+        ["vendor", "map-labels", "--site", SITE_NAME[site], "--surface", surface]
+    )
+    assert cli.dispatch_vendor_command(args, pool_factory=pg_db.runtime_pool) == 0
+    assert model.complete.call_count == 1
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert conn.execute(
+            "SELECT source_id,surface,reason FROM eqos.vendor_label_proposals"
+        ).fetchall() == [(site, surface, "MAPPED")]
