@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import subprocess
 import sys
 from collections import Counter
 from contextlib import ExitStack
@@ -33,6 +35,7 @@ from fundamentals.api.compare_cli import dispatch_compare_command
 from fundamentals.api.config import FundamentalsConfig, XbrlMode, load_config
 from fundamentals.api.coverage_cli import dispatch_coverage_command
 from fundamentals.api.db_cli import dispatch_db_command
+from fundamentals.api.documents_cli import run_documents
 from fundamentals.api.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
@@ -50,7 +53,7 @@ from fundamentals.api.ledger_cli import (
 )
 from fundamentals.api.legacy_cli import dispatch_legacy_command
 from fundamentals.api.news_cli import dispatch_news_command
-from fundamentals.api.onboard_cli import dispatch_onboard_command
+from fundamentals.api.onboard_cli import dispatch_onboard_command, live_transport
 from fundamentals.api.pipeline import PipelineResult, XbrlInput, run_pipeline
 from fundamentals.api.report_cli import dispatch_report_command
 from fundamentals.api.retention_cli import dispatch_retention_command
@@ -139,6 +142,7 @@ from fundamentals.store.snapshot_store import SnapshotStore
 # The pins a pilot run's comparison run must name, by content (PILOT-GAP admission Decision 8).
 PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v6", alignment_rules="v2")
 _CONFIG_DIR = "config"  # as ``compare run``'s default config root
+TEMPORAL_SOURCES_KEY = "temporal_sources"
 _ADMITTED_IN: LiteralString = (
     "SELECT 1 FROM eqos.fact_admissions WHERE store_id = %s AND fact_origin = %s"
     " AND fact_origin_id = %s AND run_id = ANY(%s)"
@@ -665,6 +669,16 @@ def main(
     if onboard_exit_code is not None:
         return onboard_exit_code
 
+    if args.command == "documents":
+        return run_documents(
+            args,
+            send=live_transport(),
+            clock=lambda: datetime.now(UTC),
+            bd=lambda argv: subprocess.run(
+                ["bd", *argv], timeout=30, capture_output=True, text=True
+            ),
+        )
+
     if (shareholding_exit_code := dispatch_shareholding_command(args)) is not None:
         return shareholding_exit_code
 
@@ -716,9 +730,17 @@ def main(
     result = run_command(args, intake_context=intake_context)
 
     if args.out_json:
-        write_bytes_no_clobber(
-            Path(args.out_json), result.update.model_dump_json(indent=2).encode("utf-8")
-        )
+        payload = result.update.model_dump_json(indent=2)
+        if result.update.retrospective:
+            # Contract (c) evidence: each role's admission mode and registration (the pipeline
+            # admits its sources in ``SourceRole`` order).
+            artifact = json.loads(payload)
+            artifact[TEMPORAL_SOURCES_KEY] = {
+                role.value: source.model_dump(mode="json")
+                for role, source in zip(SourceRole, result.temporal_evidence.sources, strict=True)
+            }
+            payload = json.dumps(artifact, indent=2, ensure_ascii=False)
+        write_bytes_no_clobber(Path(args.out_json), payload.encode("utf-8"))
         logger.info("json_artifact_written", out_json=args.out_json)
 
     if args.out:

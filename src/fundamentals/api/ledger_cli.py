@@ -143,6 +143,14 @@ LEDGER_FAILURES = (
 )
 
 
+def _add_sources(action: argparse.ArgumentParser) -> None:
+    """The issuer and the sources a claim check reads."""
+    action.add_argument("--stock", required=True)
+    action.add_argument("--snapshot-root", type=Path, required=True)
+    action.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
+    action.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+
+
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register ``ledger`` with its ``decide``, ``check``, ``submit``, ``panel``, ``import``,
     ``stage`` and ``export`` actions."""
@@ -162,25 +170,16 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     decision.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
     check = actions.add_parser(CHECK_ACTION, help=_CHECK_HELP)
     check.add_argument("--version", type=int, required=True)
-    check.add_argument("--stock", required=True)
-    check.add_argument("--snapshot-root", type=Path, required=True)
     check.add_argument("--mode", choices=sorted(_MODES), default=RunMode.AS_KNOWN.value.lower())
-    check.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
-    check.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    _add_sources(check)
     submission = actions.add_parser(SUBMIT_ACTION, help=_SUBMIT_HELP)
     submission.add_argument("version", type=int)
-    submission.add_argument("--stock", required=True)
-    submission.add_argument("--snapshot-root", type=Path, required=True)
-    submission.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
-    submission.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    _add_sources(submission)
     panel = actions.add_parser(PANEL_ACTION, help=_PANEL_HELP)
     panel.add_argument("version", type=int)
     panel.add_argument("--verdict", type=Path, required=True)
     panel.add_argument("--response", type=Path, required=True)
-    panel.add_argument("--stock", required=True)
-    panel.add_argument("--snapshot-root", type=Path, required=True)
-    panel.add_argument("--watchlist", type=Path, default=DEFAULT_WATCHLIST)
-    panel.add_argument(ISSUER_CONFIG_FLAG, type=Path, action="append", default=[])
+    _add_sources(panel)
     imports = actions.add_parser(IMPORT_ACTION, help=_IMPORT_HELP)
     imports.add_argument("--snapshot-root", type=Path, required=True)
     imports.add_argument("--config", type=Path, default=DEFAULT_IMPORT_CONFIG)

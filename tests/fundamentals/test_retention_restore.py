@@ -75,6 +75,7 @@ from fundamentals.contracts.retention import (
     LicenceEndedError,
 )
 from fundamentals.contracts.retention_purge import PurgeReport, PurgeStep, RestoreDelta
+from fundamentals.contracts.source_catalog import TIJORI_DOCUMENT_SURFACES
 from fundamentals.pg.backup import MANIFEST_FILE, BackupError
 from fundamentals.pg.restore_check import delta_problems
 from fundamentals.pg.retention_io import (
@@ -258,6 +259,20 @@ def test_concurrent_licence_ends_both_persist(env: Env) -> None:
     assert [e.id for e in ends] == [1, 2]
     assert env.sql(ENDS) == [("tijori",), ("upstox",)]
     assert [env.state(ref) for ref in refs] == ["EXPIRED", "EXPIRED"]
+
+
+def test_a_tijori_licence_end_covers_its_document_copies(env: Env) -> None:
+    """DOCS-1: a Tijori document copy younger than four quarters is expired by Tijori's licence
+    end, its reads and new writes refused, so the licence boundary covers the copies."""
+    surface = TIJORI_DOCUMENT_SURFACES[0]
+    ref = env.capture(b"tj-transcript", surface)
+    env.backup()
+    licence_end(env)
+    assert env.state(ref) == "EXPIRED"
+    with pytest.raises(LicenceEndedError):
+        env.store.read_capture_verified(*ids(ref))
+    with pytest.raises(LicenceEndedError):
+        env.store.put_capture(record_of(b"tj-new", *surface), b"tj-new")
 
 
 def test_a_pre_purge_set_restores_closed_then_purged(

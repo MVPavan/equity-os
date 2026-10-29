@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 from fundamentals.api.adjudication_cli import add_adjudication_parser
@@ -225,6 +226,21 @@ def build_parser() -> argparse.ArgumentParser:
     add_legacy_parser(subparsers)
     add_compare_parser(subparsers)
     add_onboard_parser(subparsers)
+    documents = subparsers.add_parser("documents", help="retain first-party documents")
+    actions = documents.add_subparsers(dest="documents_command", required=True)
+    daily = actions.add_parser("daily")
+    backfill = actions.add_parser("backfill")
+    for command in (daily, backfill):
+        command.add_argument("--snapshot-root", type=Path, required=True)
+        command.add_argument("--tijori", action="store_true")
+        command.add_argument("--config-root", type=Path, default=Path("config"))
+    daily.add_argument("--lock-root", type=Path, required=True)
+    backfill.set_defaults(lock_root=Path("data/raw/documents"))
+    backfill.add_argument("--symbol", required=True)
+    backfill.add_argument("--from", dest="from_date", type=date.fromisoformat, required=True)
+    backfill.add_argument("--to", dest="to_date", type=date.fromisoformat, required=True)
+    backfill.add_argument("--annual-reports", type=int, default=5)
+    backfill.add_argument("--screener", action="store_true")
     add_shareholding_parser(subparsers)
     add_coverage_parser(subparsers)
     add_retention_parser(subparsers)

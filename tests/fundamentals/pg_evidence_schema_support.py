@@ -17,6 +17,7 @@ import psycopg
 import pytest
 from ledger_support import (
     COVERAGE_TABLES,
+    DOCUMENT_TABLES,
     IDENTITY_TABLES,
     LEDGER_TABLES,
     MEMORY_TABLES,
@@ -646,7 +647,7 @@ def _tables(conn: psycopg.Connection) -> list[str]:
         (SCHEMA_NAME,),
     ).fetchall()
     excluded = LEDGER_TABLES | REVIEW_TABLES | MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES
-    excluded |= RETENTION_TABLES | VENDOR_TABLES
+    excluded |= RETENTION_TABLES | DOCUMENT_TABLES | VENDOR_TABLES
     return [row[0] for row in rows if row[0] not in excluded]
 
 

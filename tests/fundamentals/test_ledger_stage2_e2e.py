@@ -22,7 +22,7 @@ from typing import Any, NamedTuple
 
 import pytest
 from coverage_support import watchlist
-from ledger_support import COVERAGE_TABLES, IDENTITY_TABLES, REVIEW_TABLES
+from ledger_support import COVERAGE_TABLES, DOCUMENT_TABLES, IDENTITY_TABLES, REVIEW_TABLES
 from pg_support import PgTestDatabase
 from psycopg import errors
 from retained_support import apar_store
@@ -481,7 +481,7 @@ def test_ledger_stage2_end_to_end(
     )
     tables = [*STAGE2["backup"]["tables"]]
     tables += [t["table"] for m in (load(LEDGER), MANIFEST) for t in m["backup_tables"]]
-    tables += IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
+    tables += IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES | DOCUMENT_TABLES
     tables += [
         "vendor_basis_bindings",
         "vendor_outcomes",

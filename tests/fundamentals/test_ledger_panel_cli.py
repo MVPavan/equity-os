@@ -10,20 +10,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from evidence_support import ingest, policy
 from prep2b_support import QUARTERS, STOCK, Pilot
-from retained_support import REPO_ROOT
+from retained_support import APAR_MANIFEST, REPO_ROOT
+from test_operator_cli import PILOT_STORE
 from test_prep2b_run_draft import dictionary, mapping_set, pilot
 from test_transcript_admission import issuer_config
 
+import fundamentals.api.cli as cli
+from fundamentals.api import operator_cli
 from fundamentals.api.cli import main
 from fundamentals.api.ledger_cli import DEFAULT_WATCHLIST
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.contracts.ledger import CitationKind, ClaimState, VersionStatus
 from fundamentals.ledger.lifecycle import version_status
+from fundamentals.store.pg_fact_store import _INSERT_STORE, _OPEN_EVENT
 
 __all__ = ["dictionary", "ingest", "mapping_set", "pilot", "policy"]
 
@@ -49,6 +55,38 @@ def _ledger(pilot: Pilot, action: str, version_id: int, *flags: str) -> int:
     command += ["--watchlist", str(REPO_ROOT / DEFAULT_WATCHLIST)]
     command += [flag for q in QUARTERS for flag in ("--issuer-config", str(issuer_config(q)))]
     return main(command)
+
+
+def _operator(pilot: Pilot, quarter: str, monkeypatch: pytest.MonkeyPatch) -> int:
+    """Task 1 ``fundamentals-operator`` ``stage`` then ``run`` of the quarter's accepted config;
+    the run's draft version."""
+    fiscal, number = quarter.split("_")
+    config = REPO_ROOT / f"config/aparinds-{fiscal.lower()}-{number.lower()}.yaml"
+    store, locator = pilot.tmp_path / f"intake-{quarter}", pilot.tmp_path / f"{quarter}.json"
+    store.mkdir(mode=0o700)
+    stage = ["stage", "--config", str(config), "--source-admission-store", str(store)]
+    assert operator_cli.main([*stage, "--out-manifest", str(locator)]) == 0
+    argv = ["run", "--issuer", STOCK, "--quarter", f"{number}-{fiscal}", "--config", str(config)]
+    argv += ["--source-admission-manifest", str(locator), "--source-admission-store", str(store)]
+    argv += ["--snapshot-root", str(pilot.rig.snapshots)]
+    argv += ["--watchlist", str(REPO_ROOT / DEFAULT_WATCHLIST)]
+    argv += [flag for q in QUARTERS for flag in ("--issuer-config", str(issuer_config(q)))]
+    argv += ["--compare-run", str(pilot.compare_run(quarter))]
+    argv += ["--retrospective", str(APAR_MANIFEST)]
+    drafts: list[int | None] = []
+    run_command = cli.run_command
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        result = run_command(*args, **kwargs)
+        drafts.append(result.draft_version_id)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cli, "run_command", spy)
+        assert operator_cli.main(argv) == 0
+    [draft] = drafts
+    assert draft is not None
+    return draft
 
 
 def _bound(pilot: Pilot, version_id: int) -> tuple[str, str]:
@@ -88,13 +126,16 @@ def _quotes_match(pilot: Pilot, version_id: int) -> None:
 @pytest.mark.pg
 @pytest.mark.retained
 def test_panel_approval_carries_the_route_to_the_next_quarter(
-    pilot: Pilot, capsys: pytest.CaptureFixture[str]
+    pilot: Pilot, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """FY26_Q2 run → ``ledger submit`` → ``ledger export`` → a response binding that narrative →
-    ``ledger panel`` APPROVE → FY26_Q3 run: the panel, not the owner, decides; the review row
-    records who answered and the response verbatim; FY26_Q3 builds on the approved version."""
-    q2 = pilot.run("FY26_Q2").draft_version_id
-    assert q2 is not None
+    """Operator stage + run FY26_Q2 → ``ledger submit`` → ``ledger export`` → a response binding
+    that narrative → ``ledger panel`` APPROVE → operator stage + run FY26_Q3: the panel, not the
+    owner, decides; the review row records who answered and the response verbatim; FY26_Q3
+    builds on the approved version."""
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.transaction():
+        conn.execute(_INSERT_STORE, (PILOT_STORE,))
+        conn.execute(_OPEN_EVENT, (PILOT_STORE, uuid.uuid4()))
+    q2 = _operator(pilot, "FY26_Q2", monkeypatch)
     assert _ledger(pilot, "submit", q2) == EXIT_OK
     _quotes_match(pilot, q2)
     digest, sha = _bound(pilot, q2)
@@ -109,8 +150,7 @@ def test_panel_approval_carries_the_route_to_the_next_quarter(
     with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert version_status(conn.cursor(), q2) is VersionStatus.APPROVED
 
-    q3 = pilot.run("FY26_Q3").draft_version_id
-    assert q3 is not None
+    q3 = _operator(pilot, "FY26_Q3", monkeypatch)
     assert f"Prior: version:{q2} digest {digest}." in pilot.version(q3).sections[0].body
     _quotes_match(pilot, q3)
 

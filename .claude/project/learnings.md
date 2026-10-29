@@ -346,3 +346,41 @@ Format per entry:
   with `docker compose up -d postgres` (a restart keeps the old config). If PG looks empty,
   run `docker exec equity-os-postgres-1 df -h /var/lib/postgresql`: it must show the host
   disk, not `none`.
+
+## Worktree gates need the gitignored retained data  (2026-10-28)
+
+- Observed: T3 worktrees get only tracked files. The DOCS-1 full gate reported 713 failures, and
+  VENDOR-SURFACE fix runs reported 5. Every one was a missing retained file under `data/`
+  (`data/store/aparinds.sqlite`, `data/raw/watchlist/aparinds/`, `onboarding-dev`, `infy-fy25`,
+  `data/reports/`). None was a code fault.
+- Why it matters: a missing-data failure looks like a regression and wastes a gate run.
+- Apply: before gating in a worktree, **copy** (`cp -a`) each of main's `data/` entries that the
+  worktree lacks. Do not symlink: the snapshot reader opens directories with `O_NOFOLLOW` and
+  raises `UnsafePathError` on a symlinked directory. Leave only
+  `data/holdout` as a symlink, because it must never be opened; a byte copy of
+  `data/raw/onboarding` is fine (the stage4 e2e test needs a real directory).
+  Copy all of `data/`, not only the directories you expect a test to need; partial copies cost
+  a second gate run. Prove parity by diffing `find . -type f` between the checkouts, with
+  `holdout` pruned. Then read the failure messages:
+  "retained ... missing" or a FileNotFoundError under `data/` is environmental.
+
+## A stale `.mypy_cache` hid a mypy failure on main  (2026-10-28)
+
+- Observed: `mypy --strict src` passed on main only from its cache. A fresh worktree, and
+  `--cache-dir=/dev/null`, failed on the optional `rapidocr_onnxruntime` import (the `ocr`
+  extra was not installed). Neither an inline `import-untyped` nor an `import` ignore code
+  satisfies strict mode in both the installed and the absent case.
+- Why it matters: gates in fresh checkouts fail on code that main reports clean.
+- Apply: check mypy claims with `--cache-dir=/dev/null`. For optional extras, use a
+  `[[tool.mypy.overrides]]` entry with `ignore_missing_imports = true`, not an inline ignore.
+
+## Long gates: run as systemd user units with `UMask=0022`  (2026-10-28)
+
+- Observed: a full gate under contention runs past the 2-hour background-task cap. `setsid nohup`
+  processes died when the Claude Code process exited. `systemd-run --user` units survive that,
+  but their default umask is `0002`: every test-created file was group-writable, the snapshot
+  store refused them ("unsafe ownership or permissions"), and about 532 tests failed in each of
+  three gates.
+- Why it matters: the gate fails on environment, not code, and it costs a full run.
+- Apply: `systemd-run --user --collect -p UMask=0022 -E PATH="$PATH" -E HOME="$HOME"
+  --working-directory=<checkout> bash -c 'umask 0022; ...'`. Then wait on a `done` marker file.

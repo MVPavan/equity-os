@@ -89,12 +89,11 @@ def _approved(
     transcript = bind(kinds={Representation.PDF: "transcript"}, pdf_declaration="transcript_pdf")
     if results.binding(Representation.XBRL).source_id != config.xbrl.source_id:
         raise SourceRegistrationError(XBRL_SOURCE_DIFFERS)
-    members = {
-        SourceRole.XBRL: (results, Representation.XBRL),
-        SourceRole.RESULTS_PDF: (results, Representation.PDF),
-        SourceRole.TRANSCRIPT_PDF: (transcript, Representation.PDF),
+    bound = {
+        SourceRole.XBRL: (results, results.binding(Representation.XBRL)),
+        SourceRole.RESULTS_PDF: (results, results.binding(Representation.PDF)),
+        SourceRole.TRANSCRIPT_PDF: (transcript, transcript.binding(Representation.PDF)),
     }
-    bound = {role: (intake, intake.binding(kind)) for role, (intake, kind) in members.items()}
     context = ApprovedIntakeContext(
         tuple(
             ApprovedIntakeBinding(role, member.source_id, member.expected_sha256, intake.rights)

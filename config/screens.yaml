@@ -4,3 +4,6 @@
 - name: d7-stage4
   screener: Market Capitalization > 20000
   tijori: Market Capitalization > 20000
+- name: aparinds-coverage
+  screener: Number of equity shares > 39969150 AND Number of equity shares < 40370850
+  tijori: Net Block > 1126 AND Net Block < 2092

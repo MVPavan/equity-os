@@ -100,6 +100,7 @@ from fundamentals.entity.discovery import (
     store_captures,
     write_generation,
 )
+from fundamentals.entity.discovery_origins import ORIGINS
 from fundamentals.entity.verification import outcome, tijori_candidate
 from fundamentals.evidence import vendor_screener, vendor_tijori, vendor_upstox
 from fundamentals.evidence.capture_intake import (
@@ -264,12 +265,14 @@ def live_transport() -> Send:
         if request.url.startswith(NSE_API):  # the NSE API needs the client's primed session
             return _nse_send(request.url)
         headers = {"User-Agent": _AGENT}
-        if (request.source_id, request.surface) == BSE_PEER_SEARCH:
+        if (request.source_id, request.surface) == BSE_PEER_SEARCH or urlsplit(
+            request.url
+        ).netloc == "www.bseindia.com":
             headers |= _BSE_HEADERS
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
-        api = urlsplit(request.url)[:2] == ("https", discovery.ORIGINS[UPSTOX_STATEMENT])
+        api = urlsplit(request.url)[:2] == ("https", ORIGINS[UPSTOX_STATEMENT])
         if upstox and (request.source_id, request.surface) in UPSTOX_ROUTED and api:
             headers["Authorization"] = f"Bearer {upstox.access_token.get_secret_value()}"
         try:

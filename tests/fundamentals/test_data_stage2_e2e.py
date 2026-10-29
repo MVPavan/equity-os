@@ -19,6 +19,7 @@ from evidence_support import CONFIG as EVIDENCE_CONFIG
 from evidence_support import Ingest, policy
 from ledger_support import (
     COVERAGE_TABLES,
+    DOCUMENT_TABLES,
     IDENTITY_TABLES,
     LEDGER_TABLES,
     MEMORY_TABLES,
@@ -68,6 +69,7 @@ POST_0011_TABLES = (
     | COVERAGE_TABLES
     | RETENTION_TABLES
     | REVIEW_TABLES
+    | DOCUMENT_TABLES
     | VENDOR_TABLES
 )
 # The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
