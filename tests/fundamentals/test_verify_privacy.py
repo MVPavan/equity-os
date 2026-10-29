@@ -191,18 +191,22 @@ def test_default_gate_command_registry_and_bounded_output_are_preserved(gate) ->
     assert len(result.stdout.splitlines()) == 9
     assert sum(line.startswith("ROUTE:") for line in result.stdout.splitlines()) == 1
     calls = [json.loads(line) for line in (root / "bin/calls.jsonl").read_text().splitlines()]
-    assert calls[0][:7] == [
+    assert calls[0][:11] == [
         "run",
         "pytest",
         "tests/fundamentals",
+        "-n",
+        "16",
+        "--dist",
+        "loadfile",
         "-q",
         "--tb=short",
         "-rA",
         "--cov=src/fundamentals",
     ]
     assert calls[0][-1] == "--cov-report="
-    assert calls[0][7].startswith(f"--cov-report=json:{root}/scratchpad/gate/privacy-")
-    assert calls[0][7].endswith("-cov.json")
+    assert calls[0][11].startswith(f"--cov-report=json:{root}/scratchpad/gate/privacy-")
+    assert calls[0][11].endswith("-cov.json")
     assert calls[1:] == [
         ["run", "ruff", "check", "src", "tests/fundamentals"],
         ["run", "ruff", "format", "--check", "src", "tests/fundamentals"],
