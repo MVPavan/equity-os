@@ -462,20 +462,20 @@ def tijori_idea_cards(body: Body, context: ParseContext) -> tuple[Request, ...]:
 
 
 def tijori_widgets(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Expand only widget, field and index triples actually present in the hub."""
+    """Follow the hub script: each expanding metric reads its own table, row and cell."""
     spec = child_spec(context)
+    parts = (
+        {
+            "table": metric.xpath("string(ancestor::table[1]/@data-widget)"),
+            "activeIndex": metric.xpath("string(ancestor::tr[1]/@tjiid)"),
+            "field": metric.xpath("string(ancestor::td[1]/@field)"),
+        }
+        for metric in body.tree().xpath(
+            '//*[contains(concat(" ",@class," ")," expanding_metric ")]'
+        )
+    )
     return market_children(
-        context,
-        (
-            spec.path.format(
-                table=table.get("data-widget"),
-                field=cell.get("field"),
-                activeIndex=row.get("tjiid"),
-            )
-            for table in body.tree().xpath("//*[@data-widget]")
-            for row in table.xpath(".//*[@tjiid]")
-            for cell in row.xpath(".//*[@field]")
-        ),
+        context, (spec.path.format(**part) for part in parts if all(part.values()))
     )
 
 

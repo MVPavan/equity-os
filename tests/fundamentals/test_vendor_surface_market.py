@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -13,8 +14,15 @@ from vendor_surface_support import load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_expand import EXPANSIONS
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS, ParserEntry
+from fundamentals.ingest.vendor_surface_parse import (
+    PARSERS,
+    Body,
+    ParseContext,
+    ParserEntry,
+    register_tables,
+)
 from fundamentals.ingest.vendor_surface_specs import (
     Cadence,
     ParseGroup,
@@ -29,6 +37,7 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 MARKET_SPECS = load_specs(
     Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
 )
+register_tables(MARKET_SPECS)  # The CLI root binds table parsers; this suite calls capture_market.
 
 
 class MarketOpener(OpenerDirector):
@@ -294,3 +303,32 @@ def test_retained_finite_expansions_and_missing_advertisements(market_rig, hub_n
         ]:
             assert f"{site}:{surface}: no advertised children" in report.incomplete
     assert not any("/user/account/" in url for url in opener.calls)
+
+
+def retained_context(row, spec):
+    """The expansion context of one retained parent body for one child surface."""
+    return ParseContext(
+        ids=None,
+        basis=None,
+        url=row["url"],
+        retrieved_at=datetime(2026, 10, 28, tzinfo=UTC),
+        body_sha256=row["sha256"],
+        capture_id="retained-market",
+        parent={"spec": spec.model_dump()},
+    )
+
+
+@pytest.mark.retained
+def test_widget_requests_follow_the_expanding_metric_mapping():
+    spec = next(s for s in MARKET_SPECS if s.id == "markets-indices-widget-api")
+    row = next(r for r in load_request_index().values() if r["id"] == "markets")
+    raw = Path(row["path"]).read_bytes()
+    metrics = Body(raw=raw).tree().xpath('//*[contains(@class,"expanding_metric")]')
+    urls = [r.url for r in EXPANSIONS[spec.expand](Body(raw=raw), retained_context(row, spec))]
+    # The hub script requests only what a clicked metric names: its table, row and cell.
+    assert len(urls) == len(metrics)
+    widget = metrics[0].xpath("ancestor::table[1]/@data-widget")[0]
+    blank = raw.replace(f'data-widget="{widget}"'.encode(), b'data-widget=""')
+    fewer = EXPANSIONS[spec.expand](Body(raw=blank), retained_context(row, spec))
+    assert 0 < len(fewer) < len(urls)
+    assert all("//" not in urlsplit(r.url).path for r in fewer)
