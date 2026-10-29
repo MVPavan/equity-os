@@ -36,6 +36,7 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
+TRAVERSAL_VERSION = "traversal.v2"
 MOVING = frozenset(
     "p page cursor timestamp daterange date_from date_to ts same_ts_offset_count".split()
 )
@@ -321,7 +322,7 @@ def capture_market(
                 ref,
                 Outcome(
                     surface=request.spec.id,
-                    parser_version=f"{SITE_NAME[request.spec.site]}:{request.spec.id}.traversal.v1",
+                    parser_version=f"{named(request.spec)}.{TRAVERSAL_VERSION}",
                     parser_sha256=parser_sha256(continuation),
                     status=OutcomeStatus.KEPT,
                     symbol=request.ids.nse_symbol if request.ids else None,

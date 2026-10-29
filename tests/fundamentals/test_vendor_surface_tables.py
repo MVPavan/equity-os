@@ -465,3 +465,32 @@ def test_unlinked_feed_rows_keep_identity_when_amounts_change(surface, mutable):
     unkeyed = tuple(v for v in edited if not v.column_label.startswith("Key"))
     with pytest.raises(ValueError, match="stable identity"):
         feed_rows(spec, unkeyed)
+
+
+# Sources pinned at 4cb5a9f2 (before Phase 3 round 1): a version must never change its source.
+BASE_MARKET_TABLE = "f032e0eac43296a6d720e62143d32395f799c8ff09c777dc42b080b8946d495d"
+BASE_TRAVERSAL = "01fa2b3748b0976921db4e56b76946606239c0e0d0e33e94875288241c82d121"
+
+
+def test_changed_parsers_never_reuse_a_base_revision_pin():
+    from fundamentals.ingest import vendor_surface_market as market
+    from fundamentals.ingest.vendor_surface_parse import parser_sha256
+    from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, Scope
+
+    pins = {
+        f"{SITE_NAME[s.site]}:{s.id}.v1": BASE_MARKET_TABLE
+        for s in MARKET_SPECS
+        if s.scope is Scope.MARKET and s.group is ParseGroup.TABLE
+    }
+    found = {
+        entry.version: parser_sha256(entry.parse)
+        for s in MARKET_SPECS
+        if (entry := PARSERS.get((s.site, s.id)))
+    }
+    found |= {
+        f"{SITE_NAME[s.site]}:{s.id}.{market.TRAVERSAL_VERSION}": parser_sha256(market.continuation)
+        for s in MARKET_SPECS
+    }
+    pins |= {f"{SITE_NAME[s.site]}:{s.id}.traversal.v1": BASE_TRAVERSAL for s in MARKET_SPECS}
+    # A drifted pin raises ParserVersionDrift on every capture already recorded under it.
+    assert {v for v, sha in found.items() if pins.get(v, sha) != sha} == set()
