@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,9 @@ from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
     from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
+
+# Display markers of an intentionally absent measurement, as seen in retained G3 bodies.
+MISSING = frozenset({"", "-", "n/a"})
 
 
 class LabelSample(BaseModel):
@@ -32,14 +36,14 @@ def _text(node: Any) -> str:
 
 
 def _number(cell: VendorValue, raw: str, unit: str | None = None) -> VendorValue:
-    """Read a scalar and its displayed suffix without interpreting its label."""
+    """Read a measurement's scalar and displayed suffix; only a missing marker is unexpected."""
     match = re.fullmatch(r"([+\-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+))\s*([^\d]*)", raw)
     return cell.model_copy(
         update={
             "raw_text": raw,
             "value": Decimal(match[1].replace(",", "")) if match else None,
             "unit": unit or (match[2].strip() or None if match else None),
-            "expected_numeric": bool(match),
+            "expected_numeric": raw.strip().lower() not in MISSING,
         }
     )
 
@@ -76,11 +80,19 @@ def screener_insights(body: Body, context: ParseContext) -> tuple[VendorValue, .
 def screener_compare(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     """Keep each comparison table separate, including repeated peer rows."""
     tree = body.tree()
-    return tuple(
-        _number(cell, cell.raw_text) if cell.column_index else cell
-        for index, _ in enumerate(tree.xpath("//table"))
-        for cell in read_html_table(tree, f"(//table)[{index + 1}]", f"compare:{index}")
-    )
+    values: list[VendorValue] = []
+    for index, table in enumerate(tree.xpath("//table")):
+        # Column zero and header cells classed "text" are descriptors, such as the peer name.
+        descriptors = {0} | {
+            column
+            for column, header in enumerate(table.xpath("(./thead/tr)[1]/th"))
+            if "text" in (header.get("class") or "").split()
+        }
+        values += (
+            cell if cell.column_index in descriptors else _number(cell, cell.raw_text)
+            for cell in read_html_table(tree, f"(//table)[{index + 1}]", f"compare:{index}")
+        )
+    return tuple(values)
 
 
 def benchmark_financial(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
@@ -131,24 +143,32 @@ def benchmark_business(body: Body, context: ParseContext) -> tuple[VendorValue, 
     return benchmark_business_cards(body.tree()) + benchmark_business_charts(body)
 
 
+def label_samples(cells: Iterable[tuple[str, str | None, bool]]) -> tuple[LabelSample, ...]:
+    """Group measurement units by verbatim label; descriptors and missing markers add none."""
+    units: dict[str, set[str]] = {}
+    for label, unit, measured in cells:
+        if label and measured:
+            units.setdefault(label, set()).add(unit or "")
+    return tuple(
+        LabelSample(
+            label=label,
+            units=frozenset(found),
+            per_share=bool(
+                re.search(r"per share|/share|₹/sh|\bEPS\b", " ".join([label, *found]), re.I)
+            ),
+        )
+        for label, found in sorted(units.items())
+    )
+
+
 def cell_labels(pool: ConnectionPool, site: Site, surface: str) -> tuple[LabelSample, ...]:
     """Collect units by verbatim label within one site's logical surface."""
     with pool.connection() as conn:
         rows = conn.execute(
-            "SELECT v.row_label, array_agg(DISTINCT coalesce(v.unit,'')) "
+            "SELECT v.row_label, v.unit, v.expected_numeric "
             "FROM eqos.vendor_values v JOIN eqos.vendor_outcomes o ON o.id=v.outcome_id "
             "JOIN eqos.capture_refs c ON c.id=v.capture_ref_id "
-            "WHERE c.source_id=%s AND o.surface=%s AND v.column_index>0 AND v.row_label<>'' "
-            "GROUP BY v.row_label ORDER BY v.row_label",
+            "WHERE c.source_id=%s AND o.surface=%s",
             (site, surface),
         ).fetchall()
-    return tuple(
-        LabelSample(
-            label=label,
-            units=frozenset(units),
-            per_share=bool(
-                re.search(r"per share|/share|₹/sh|\bEPS\b", " ".join([label, *units]), re.I)
-            ),
-        )
-        for label, units in rows
-    )
+    return label_samples(rows)

@@ -54,9 +54,46 @@ def test_two_fake_models_write_expected_table_without_selecting_runtime_model(tm
     table = bakeoff["evaluate"](
         [(Fake(name), Decimal(1), Decimal(2)) for name in ("safe", "greedy")]
     )
-    assert "| always-unmapped | 0.000 | 0 | 3 | 0.000 | 0.000 | 0.000000 |" in table
-    assert "| safe | 0.000 | 0 | 3 | 1.000 | 0.500 | 0.000266 |" in table
-    assert "| greedy | 0.000 | 5 | 3 | 0.500 | 0.500 | 0.000266 |" in table
+    assert "| always-unmapped | 0.000 | 0 | 4 | 0.000 | 0.000 | 0.000000 |" in table
+    assert "| safe | 0.000 | 0 | 4 | 1.000 | 0.375 | 0.000266 |" in table
+    assert "| greedy | 0.250 | 9 | 0 | 0.500 | 0.375 | 0.000266 |" in table
     report = bakeoff["write_report"](table, tmp_path)
     assert report.name.startswith("bakeoff-") and report.read_text() == table
     assert runtime.read_bytes() == before
+
+
+def test_oracle_model_scores_full_accuracy_on_the_keys():
+    import json
+    from decimal import Decimal
+
+    import yaml
+
+    from fundamentals.ingest.vendor_surface_model import ModelReply
+
+    bakeoff = runpy.run_path("scripts/vendor_surface_bakeoff.py")
+    fields = {
+        r["label"]: r["field"] for r in yaml.safe_load(open("config/vendor_surface/label_key.yaml"))
+    }
+    _, _, passages, expected = bakeoff["inputs"]()
+    spans = {
+        text: [
+            {"kind": kind, "start": start - offset, "end": end - offset}
+            for key, kind, start, end in expected
+            if key == capture
+        ]
+        for capture, offset, text in passages
+    }
+
+    class Oracle:
+        model_id = "oracle"
+
+        def complete(self, system, user):
+            if user.startswith("{"):
+                label = json.loads(user)["label"]
+                answer = {"label": label, "field": fields[label]}
+            else:
+                answer = spans[user]
+            return ModelReply(text=json.dumps(answer), input_tokens=0, output_tokens=0)
+
+    table = bakeoff["evaluate"]([(Oracle(), Decimal(0), Decimal(0))])
+    assert "| oracle | 1.000 | 0 | 0 | 1.000 | 1.000 | 0.000000 |" in table

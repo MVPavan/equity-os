@@ -64,7 +64,9 @@ def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
     )
     _, pool, ref, values = setup_store(pg_db, tmp_path)
     cell = outcome().values[0]
-    cell = cell.model_copy(update={"row_label": "Sales", "unit": "Cr", "column_index": 1})
+    cell = cell.model_copy(
+        update={"row_label": "Sales", "unit": "Cr", "column_index": 1, "expected_numeric": True}
+    )
     fields = {"sales": ValueKind.CURRENCY_AMOUNT}
     mapping = (pool, model, settings, Site.TIJORI, "chart-api", fields)
     correction = (

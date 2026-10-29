@@ -15,8 +15,8 @@
    label: "Stock P/E", field: null,
    why: "eps_basic.meaning is Basic EPS from continuing and discontinued operations, a per-share amount; a valuation multiple is different and v3 has no P/E field."}
 - {site: screener, surface: company-compare,
-   label: "Tax %", field: null,
-   why: "effective_tax_rate_pct.meaning specifies filed tax expense divided by PBT before associates; the label alone does not establish this denominator."}
+   label: "Tax %", field: effective_tax_rate_pct,
+   why: "config/dictionary/v3/derived.yaml effective_tax_rate_pct.evidence records Screener \"Tax %\" = tax_expense / profit_before_tax x 100, measured 9/9; the retained row sits under Profit before tax in the Quarterly Results and Profit & Loss tables."}
 - {site: screener, surface: section-insights,
    label: "CASA ratio", field: null,
    why: "opm_pct.meaning is Operating profit margin, not a deposit composition ratio; v3 has no CASA field."}
