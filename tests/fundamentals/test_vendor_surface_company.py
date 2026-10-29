@@ -970,3 +970,40 @@ def test_company_and_market_share_retained_transport(company_rig, run_company):
     report, _, _, _ = run_company(opener, ids, tuple(s for s in specs if s.id == "company-page"))
     assert report.completed
     assert CompanyOpener.open is MarketOpener.open
+
+
+def test_claim_failure_does_not_change_capture_usability(company_rig, run_company, pg_db, tmp_path):
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_due as due
+    from fundamentals.ingest.vendor_surface_fetch import Site
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.store.vendor_values_store import Outcome, OutcomeStatus, VendorValuesStore
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    opener, ids = company_rig("APARINDS")
+    specs = tuple(s for s in specs if s.site is Site.SCREENER and s.id == "company-page")
+    run_company(opener, ids, specs)
+    with pg_db.runtime_pool() as pool:
+        before = due.history(pool, specs)
+        assert all(s.usable for items in before.values() for s in items)
+        ref = next(iter(before.values()))[0].ref
+        VendorValuesStore(pool).record(
+            ref,
+            Outcome(
+                surface="company-page",
+                parser_version="claims:fake:spans.v2:failed:1",
+                parser_sha256="0" * 64,
+                status=OutcomeStatus.FAILED,
+                symbol=None,
+                detail="TimeoutError",
+            ),
+            row_count=0,
+        )
+        after = due.history(pool, specs)
+        assert all(s.usable for items in after.values() for s in items), (
+            "claims failure overrides acquisition outcome"
+        )
