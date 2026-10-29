@@ -26,6 +26,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     ParseContext,
     parser_sha256,
 )
+from fundamentals.ingest.vendor_surface_readers import ReaderError
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, SurfaceSpec
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import (
@@ -130,6 +131,8 @@ def parse_and_record(
                         if any(v.expected_numeric and v.value is None for v in parsed)
                         else (OutcomeStatus.OK if parsed else OutcomeStatus.EMPTY)
                     )
+        except ReaderError as error:
+            status, detail = OutcomeStatus.FAILED, str(error)
         except ScreenerSessionError as error:
             detail = type(error).__name__
         except Exception as error:

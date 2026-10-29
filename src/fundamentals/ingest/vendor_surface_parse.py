@@ -19,6 +19,11 @@ from fundamentals.ingest.screener_session_page import (
     read_page_evidence,
 )
 from fundamentals.ingest.vendor_surface_fetch import Site
+from fundamentals.ingest.vendor_surface_readers import (
+    SCREENER_SURFACES,
+    TIJORI_SURFACES,
+    make_reader,
+)
 from fundamentals.ingest.vendor_surface_series import screener_chart
 from fundamentals.store.vendor_values_store import VendorValue
 
@@ -101,3 +106,13 @@ PARSERS: dict[tuple[Site, str], ParserEntry] = {
         version="screener:company-page.v1", parse=company_page
     ),
 }
+
+# Task 8: G0 retained-reader adapters.
+for _site, _name, _surfaces in (
+    (Site.SCREENER, "screener", SCREENER_SURFACES),
+    (Site.TIJORI, "tijori", TIJORI_SURFACES),
+):
+    for _surface in _surfaces:
+        PARSERS[_site, _surface] = ParserEntry(
+            version=f"{_name}:{_surface}.reader.v1", parse=make_reader(_name, _surface)
+        )
