@@ -534,6 +534,18 @@ def capture_company(
             if request.url not in cached:
                 refused.append(request.url)
             continue
+        if request.spec.id == "company-timeline-api":
+            from fundamentals.ingest.vendor_surface_market import capture_market
+
+            report = capture_market(fetcher, store, pool, values, (), requests=(request,))
+            seen.add(request.url)
+            expected += report.expected - 1
+            completed += report.completed
+            incomplete.extend(report.incomplete)
+            refused.extend(report.refused)
+            stopped.extend(report.stopped_sites)
+            blocked.update(report.stopped_sites)
+            continue
         try:
             ref, body = (
                 cached.pop(request.url)[:2]

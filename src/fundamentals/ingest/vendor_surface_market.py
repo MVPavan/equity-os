@@ -1,0 +1,358 @@
+"""Finite market breadth and append-only traversal checkpoints."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from datetime import UTC, date, datetime
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
+from pydantic import BaseModel, ConfigDict
+
+from fundamentals.ingest.vendor_surface_capture import Request, RunReport, capture
+from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, MARKET_PARENTS
+from fundamentals.ingest.vendor_surface_fetch import (
+    SITE_AUTHORITY,
+    Site,
+    SiteBusy,
+    SiteStopped,
+    VendorFetcher,
+    normalise,
+)
+from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, parser_sha256
+from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Scope, SurfaceSpec
+from fundamentals.ingest.vendor_surface_tables import feed_rows
+from fundamentals.store.snapshot_store import SnapshotStore
+from fundamentals.store.vendor_values_store import (
+    USABLE,
+    Outcome,
+    OutcomeStatus,
+    VendorValue,
+    VendorValuesStore,
+)
+
+MAX_FEED_PAGES = 20
+MOVING = frozenset(("p", "page", "cursor", "timestamp", "daterange", "date_from", "date_to"))
+
+
+class Boundary(BaseModel):
+    """The newest stable identity from a completed traversal's first page."""
+
+    model_config = ConfigDict(frozen=True)
+    row_id: str | None = None
+    date_to: date | None = None
+    cursor: str | None = None
+
+
+class Progress(BaseModel):
+    """Only retained outcomes and addresses determine continuation."""
+
+    model_config = ConfigDict(frozen=True)
+    boundary: Boundary | None
+    resume_page: int | None
+    resume_url: str | None
+
+
+def traversal_key(request: Request) -> str:
+    """Keep path/filter identity while excluding moving pagination parameters."""
+    parts = urlsplit(normalise(request.url))
+    stable = sorted(
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in MOVING
+    )
+    return hashlib.sha256(
+        json.dumps([request.spec.site, request.spec.id, parts.path, stable]).encode()
+    ).hexdigest()
+
+
+def progress(pool: ConnectionPool, key: str) -> Progress:
+    """Recover the last completed boundary and the unfinished page from retained outcomes."""
+    with pool.connection() as conn:
+        rows = conn.execute(
+            "SELECT o.id,o.traversal_page,o.traversal_done,a.url FROM eqos.vendor_outcomes o "
+            "JOIN eqos.capture_addresses a ON a.capture_ref_id=o.capture_ref_id "
+            "WHERE o.traversal_key=%s ORDER BY o.id",
+            (key,),
+        ).fetchall()
+        done = [index for index, row in enumerate(rows) if row[2]]
+        boundary = None
+        if done:
+            # The boundary is the first page of the last completed traversal.
+            first = rows[done[-2] + 1 if len(done) > 1 else 0]
+            marks: dict[str, str] = dict(
+                conn.execute(
+                    "SELECT column_label,raw_text FROM eqos.vendor_values WHERE outcome_id=%s",
+                    (first[0],),
+                ).fetchall()
+            )
+            window = dict(parse_qsl(urlsplit(first[3]).query)).get("daterange")
+            boundary = Boundary(
+                row_id=marks.get("row_id"),
+                cursor=marks.get("cursor"),
+                date_to=datetime.strptime(window.split(",")[1], "%m/%d/%Y").date()
+                if window
+                else None,
+            )
+    pending = rows[done[-1] + 1 :] if done else rows
+    last = max(pending, key=lambda row: row[1], default=None)
+    return Progress(
+        boundary=boundary,
+        resume_page=last[1] if last else None,
+        resume_url=last[3] if last else None,
+    )
+
+
+def mark(name: str, text: str | None) -> tuple[VendorValue, ...]:
+    """Keep one traversal mark as a value, so outcome detail never holds vendor text."""
+    if text is None:
+        return ()
+    return (
+        VendorValue(
+            table_key="traversal",
+            row_index=0,
+            column_index=0 if name == "row_id" else 1,
+            locator=f"traversal:{name}",
+            row_label="",
+            column_label=name,
+            raw_text=text,
+            value=None,
+        ),
+    )
+
+
+def query_url(url: str, **params: str) -> str:
+    """Change moving parameters without discarding stable filters."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.update(params)
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def alternatives(path: str) -> list[str]:
+    """Expand catalog `[a|b]` and `{a|b}` notation into its finite concrete paths."""
+    match = re.search(r"\[([^\[\]]+)\]|\{([^{}]*\|[^{}]*)\}", path)
+    if match is None:
+        return [path]
+    return [
+        concrete
+        for item in (match[1] or match[2]).split("|")
+        if item != "..."
+        for concrete in alternatives(path[: match.start()] + item + path[match.end() :])
+    ]
+
+
+def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tuple[Request, ...]:
+    """Build finite hub requests; parameterized children wait for retained parents."""
+    requests = []
+    for spec in specs:
+        if spec.scope is not Scope.MARKET or spec.expand:
+            continue
+        for path in alternatives(spec.path):
+            path = path.split(" -> ")[0]
+            for token in re.findall(r"\{([^{}]+)\}", path):
+                path = path.replace("{" + token + "}", "1" if token == "n" else "")
+            path = path.replace("&...", "").replace(" (+ /faq/data/)", "")
+            for variant in path.split(" | "):
+                requests.append(
+                    Request(
+                        spec=spec,
+                        url=urljoin(f"https://{SITE_AUTHORITY[spec.site]}", variant),
+                        ids=None,
+                        due_since=None,
+                    )
+                )
+    return tuple(requests)
+
+
+def continuation(request: Request, body: Body, page: int) -> str | None:
+    """Read explicit next-page links, Tijori show-more, or the timeline cursor."""
+    tree = body.tree()
+    if request.spec.id in {
+        "screens-list",
+        "screen-page",
+        "product-prices",
+        "filter-popular-queries",
+        "filter-public-queries",
+        "filter-popular-queries-api",
+        "filter-public-queries-api",
+    }:
+        return None
+    if request.spec.id == "company-timeline-api":
+        cells = tree.xpath('//tr[contains(@class,"d-none")]/td')
+        if cells and cells[-1].text_content().strip() == "True":
+            return query_url(request.url, timestamp=cells[0].text_content().strip())
+        return None
+    key = (
+        "page"
+        if request.spec.site is Site.TIJORI
+        or "page" in dict(parse_qsl(urlsplit(request.url).query, keep_blank_values=True))
+        else "p"
+    )
+    for href in tree.xpath("//a[@href]/@href"):
+        target = urljoin(request.url, href)
+        number = dict(parse_qsl(urlsplit(target).query)).get(key)
+        if (
+            urlsplit(target).path == urlsplit(request.url).path
+            and number
+            and number.isdigit()
+            and int(number) == page + 1
+        ):
+            return query_url(request.url, **{key: str(page + 1)})
+    if tree.xpath('//button[contains(@class,"show_more") and not(@disabled)]'):
+        return query_url(request.url, **{key: str(page + 1)})
+    return None
+
+
+def capture_market(
+    fetcher: VendorFetcher,
+    store: SnapshotStore,
+    pool: ConnectionPool,
+    values: VendorValuesStore,
+    specs: tuple[SurfaceSpec, ...],
+    *,
+    requests: tuple[Request, ...] | None = None,
+    today: date | None = None,
+) -> RunReport:
+    """Capture finite advertisements and resume each feed from registered evidence."""
+    pending = list(market_requests(specs, pool) if requests is None else requests)
+    seen: set[str] = set()
+    stopped: list[Site] = []
+    incomplete: list[str] = []
+    refused: list[str] = []
+    expected = completed = 0
+    today = today or datetime.now(UTC).date()
+    while pending:
+        initial = pending.pop(0)
+        if initial.url in seen:
+            continue
+        seen.add(initial.url)
+        key = traversal_key(initial)
+        state = progress(pool, key)
+        request = initial.model_copy(update={"url": state.resume_url or initial.url})
+        if request.spec.site is Site.TIJORI and request.spec.feed and not state.resume_url:
+            start = (
+                state.boundary.date_to
+                if state.boundary and state.boundary.date_to
+                else date(1970, 1, 1)
+            )
+            request = request.model_copy(
+                update={
+                    "url": query_url(request.url, daterange=f"{start:%m/%d/%Y},{today:%m/%d/%Y}")
+                }
+            )
+        page = state.resume_page or 1
+        for _ in range(MAX_FEED_PAGES + int(state.resume_page is not None)):
+            expected += 1
+            if request.spec.site in stopped:
+                refused.append(request.url)
+                break
+            try:
+                ref, body = capture(fetcher, store, pool, values, request)
+            except SiteStopped as error:
+                stopped.append(error.site)
+                incomplete.append(request.url)
+                break
+            except (SiteBusy, ValueError):
+                (incomplete if fetcher.remaining(request.spec.site) == 0 else refused).append(
+                    request.url
+                )
+                break
+            with pool.connection() as conn:
+                usable = all(
+                    row[0] in USABLE
+                    for row in conn.execute(
+                        "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
+                        (ref.capture_ref_id,),
+                    )
+                )
+                with conn.cursor(row_factory=dict_row) as cursor:
+                    raw_values = cursor.execute(
+                        "SELECT * FROM eqos.vendor_values WHERE capture_ref_id=%s "
+                        "ORDER BY row_index,column_index",
+                        (ref.capture_ref_id,),
+                    ).fetchall()
+            completed += int(usable)
+            if not usable or body is None:
+                incomplete.append(request.url)
+                break
+            cells = tuple(VendorValue.model_validate(row) for row in raw_values)
+            row_ids = (
+                [row.row_id for row in feed_rows(request.spec, cells)]
+                if request.spec.feed
+                else [cell.link for cell in cells if cell.link]
+            )
+            next_url = continuation(request, body, page)
+            next_cursor = (
+                dict(parse_qsl(urlsplit(next_url).query)).get("timestamp") if next_url else None
+            )
+            boundary = state.boundary
+            done = next_url is None or bool(
+                boundary
+                and (
+                    (boundary.row_id and boundary.row_id in row_ids)
+                    or (boundary.cursor and boundary.cursor == next_cursor)
+                )
+            )
+            marks = mark("row_id", row_ids[0] if row_ids else None) + mark("cursor", next_cursor)
+            values.record(
+                ref,
+                Outcome(
+                    surface=request.spec.id,
+                    parser_version=f"{SITE_NAME[request.spec.site]}:{request.spec.id}.traversal.v1",
+                    parser_sha256=parser_sha256(continuation),
+                    status=OutcomeStatus.KEPT,
+                    symbol=request.ids.nse_symbol if request.ids else None,
+                    detail=None,
+                    values=marks,
+                    traversal_key=key,
+                    traversal_page=page,
+                    traversal_done=done,
+                ),
+                row_count=len(marks),
+            )
+            if page == 1:
+                context = ParseContext(
+                    ids=request.ids,
+                    basis=request.basis,
+                    url=request.url,
+                    retrieved_at=datetime.now(UTC),
+                    body_sha256=ref.blob_sha256,
+                    capture_id=ref.capture_id,
+                )
+                for spec in specs:
+                    if spec.site != request.spec.site or request.spec.id not in MARKET_PARENTS.get(
+                        spec.expand or "", ()
+                    ):
+                        continue
+                    ctx = context.model_copy(update={"parent": {"spec": spec.model_dump()}})
+                    try:
+                        children = EXPANSIONS[spec.expand or ""](body, ctx)
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        children = ()
+                    pending.extend(children)
+                    if not children:
+                        expected += 1
+                        incomplete.append(
+                            f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children"
+                        )
+            if done:
+                break
+            if next_url == request.url:
+                incomplete.append(request.url + ": repeated continuation")
+                break
+            assert next_url is not None
+            request = request.model_copy(update={"url": next_url})
+            page += 1
+        else:
+            incomplete.append(initial.url + ": page cap")
+    return RunReport(
+        expected=expected,
+        completed=completed,
+        refused=tuple(refused),
+        incomplete=tuple(incomplete),
+        stopped_sites=tuple(dict.fromkeys(stopped)),
+    )
