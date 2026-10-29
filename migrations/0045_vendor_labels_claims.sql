@@ -1,12 +1,12 @@
 -- VENDOR-SURFACE Task 16: advisory labels and inferred spans, never model numbers.
 CREATE TABLE eqos.vendor_label_proposals (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    source_id text NOT NULL, surface text NOT NULL, label text NOT NULL, units text[] NOT NULL,
+    source_id text NOT NULL, surface text NOT NULL, label text, units text[] NOT NULL,
     field text, reason text NOT NULL CHECK (reason IN ('MAPPED','NOT_IN_DICTIONARY',
         'LABEL_ALTERED','UNIT_INCOMPATIBLE','MODEL_UNMAPPED','MALFORMED_REPLY')),
     epistemic_class text CHECK (epistemic_class = 'inferred'),
     model_id text NOT NULL, prompt_version text NOT NULL, dictionary_version text NOT NULL,
-    prompt text NOT NULL, raw_response text NOT NULL,
+    prompt text, raw_response text,
     recorded_at timestamptz NOT NULL DEFAULT eqos.store_now(),
     CHECK (field IS NULL OR epistemic_class IS NOT DISTINCT FROM 'inferred'),
     CHECK ((field IS NOT NULL) = (reason = 'MAPPED'))
@@ -30,13 +30,10 @@ BEGIN
     FOREACH name IN ARRAY ARRAY['vendor_label_proposals','vendor_text_claims'] LOOP
         EXECUTE format('CREATE TRIGGER a0_retention_guard BEFORE INSERT ON eqos.%I '
             'FOR EACH ROW EXECUTE FUNCTION eqos.retention_guard()', name);
-        IF name = 'vendor_text_claims' THEN
-            EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
-                'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation_except_tombstone(''text'')', name);
-        ELSE
-            EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
-                'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation()', name);
-        END IF;
+        EXECUTE format('CREATE TRIGGER reject_row_mutation BEFORE UPDATE OR DELETE ON eqos.%I '
+            'FOR EACH ROW EXECUTE FUNCTION eqos.reject_mutation_except_tombstone(%s)', name,
+            CASE name WHEN 'vendor_text_claims' THEN '''text'''
+                ELSE '''label'',''prompt'',''raw_response''' END);
         EXECUTE format('CREATE TRIGGER reject_truncate BEFORE TRUNCATE ON eqos.%I '
             'FOR EACH STATEMENT EXECUTE FUNCTION eqos.reject_mutation()', name);
         EXECUTE format('GRANT INSERT ON eqos.%I TO eqos_runtime', name);
@@ -66,4 +63,19 @@ BEGIN
     PERFORM set_config('eqos.tombstone', '', true);
 END $$;
 REVOKE ALL ON FUNCTION eqos.tombstone_vendor_capture(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION eqos.tombstone_vendor_capture_cells(bigint) FROM eqos_purge;
 GRANT EXECUTE ON FUNCTION eqos.tombstone_vendor_capture(bigint) TO eqos_purge;
+
+-- Proposals are source-level, so a licence end itself redacts their copied vendor text.
+CREATE FUNCTION eqos.tombstone_vendor_labels() RETURNS trigger LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = pg_catalog, eqos AS $$
+BEGIN
+    PERFORM set_config('eqos.tombstone', NEW.source_id, true);
+    UPDATE eqos.vendor_label_proposals SET label = NULL, prompt = NULL, raw_response = NULL
+        WHERE source_id = NEW.source_id;
+    PERFORM set_config('eqos.tombstone', '', true);
+    RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION eqos.tombstone_vendor_labels() FROM PUBLIC;
+CREATE TRIGGER tombstone_vendor_labels AFTER INSERT ON eqos.licence_ends
+    FOR EACH ROW EXECUTE FUNCTION eqos.tombstone_vendor_labels();

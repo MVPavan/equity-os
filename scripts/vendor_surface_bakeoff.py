@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -16,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.ingest.screener_session_models import Basis
-from fundamentals.ingest.vendor_surface_cells import LabelSample
+from fundamentals.ingest.vendor_surface_cells import LabelSample, label_samples
 from fundamentals.ingest.vendor_surface_claims import SYSTEM as SPAN_SYSTEM
 from fundamentals.ingest.vendor_surface_claims import source_text, validate_spans
 from fundamentals.ingest.vendor_surface_fetch import Site
@@ -67,11 +66,15 @@ def score_spans(accepted: set[SpanKey], key: set[SpanKey]) -> SpanScore:
     )
 
 
-def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], dict[str, str], set[SpanKey]]:
-    """Read hash-verified references; reproduce cell_labels evidence without a database."""
+Passage = tuple[str, int, str]
+
+
+def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], list[Passage], set[SpanKey]]:
+    """Read hash-verified references; build label evidence as cell_labels does, without a
+    database, and cut each keyed region out of its normalised source."""
     keys = yaml.safe_load(Path("config/vendor_surface/label_key.yaml").read_text())
-    spans = yaml.safe_load(Path("config/vendor_surface/span_key.yaml").read_text())
-    expected = {(r["capture"], r["kind"], r["span_start"], r["span_end"]) for r in spans}
+    regions = yaml.safe_load(Path("config/vendor_surface/span_key.yaml").read_text())
+    captures = {r["capture"] for r in regions}
     index = []
     for name in ("kinds-index.json", "snapshots-index.json"):
         index += json.loads((Path("docs/research/vendor-surface") / name).read_text())
@@ -81,7 +84,7 @@ def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], dict[str, str], s
         "benchmarking-benchmarking-financial": "company-benchmarking",
         "benchmarking-benchmarking-business": "company-benchmarking",
     }
-    units: dict[tuple[str, str, str], set[str]] = {}
+    cells: dict[tuple[str, str], list[tuple[str, str | None, bool]]] = {}
     texts = {}
     for row in index:
         surfaces = {
@@ -89,13 +92,13 @@ def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], dict[str, str], s
             for r in keys
             if r["site"] == row["site"] and parents[r["surface"]] == row["id"]
         }
-        if not surfaces and row["sha256"] not in {s[0] for s in expected}:
+        if not surfaces and row["sha256"] not in captures:
             continue
         raw = Path(row["path"]).read_bytes()
         if hashlib.sha256(raw).hexdigest() != row["sha256"]:
             raise ValueError("reference body hash mismatch")
         site = Site.SCREENER if row["site"] == "screener" else Site.TIJORI
-        if row["sha256"] in {s[0] for s in expected}:
+        if row["sha256"] in captures:
             texts[row["sha256"]] = source_text(site, row["id"], raw)
         # These readers use only basis; the inert clock is never persisted.
         context = ParseContext(
@@ -110,29 +113,39 @@ def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], dict[str, str], s
         )
         body = Body(raw=raw)
         for surface in surfaces:
-            for cell in PARSERS[site, surface].parse(body, context):
-                if cell.column_index > 0 and cell.row_label:
-                    units.setdefault((row["site"], surface, cell.row_label), set()).add(
-                        cell.unit or ""
-                    )
-    samples = []
-    for row in keys:
-        found = units[row["site"], row["surface"], row["label"]]
-        evidence = " ".join([row["label"], *found])
-        per_share = bool(re.search(r"per share|/share|₹/sh|\bEPS\b", evidence, re.I))
-        samples.append(LabelSample(label=row["label"], units=frozenset(found), per_share=per_share))
-    for capture, kind, start, end in expected:
+            cells.setdefault((row["site"], surface), []).extend(
+                (c.row_label, c.unit, c.expected_numeric)
+                for c in PARSERS[site, surface].parse(body, context)
+            )
+    found = {
+        (site, surface, sample.label): sample
+        for (site, surface), group in cells.items()
+        for sample in label_samples(group)
+    }
+    samples = [found[r["site"], r["surface"], r["label"]] for r in keys]
+    passages, expected = [], set()
+    for region in regions:
+        offset, end = region["region"]
+        passage = texts[region["capture"]][offset:end]
         accepted, rejected = validate_spans(
-            texts[capture], json.dumps([{"kind": kind, "start": start, "end": end}])
+            passage,
+            json.dumps(
+                [
+                    s | {"start": s["start"] - offset, "end": s["end"] - offset}
+                    for s in region["spans"]
+                ]
+            ),
         )
-        if rejected or not accepted:
+        if rejected or len(accepted) != len(region["spans"]):
             raise ValueError("invalid span key")
-    return keys, samples, texts, expected
+        passages.append((region["capture"], offset, passage))
+        expected |= {(region["capture"], s["kind"], s["start"], s["end"]) for s in region["spans"]}
+    return keys, samples, passages, expected
 
 
 def evaluate(candidates: Sequence[tuple[LabelModel, Decimal, Decimal]]) -> str:
     """Score accepted answers and aggregate token costs in currency per million tokens."""
-    keys, samples, texts, expected = inputs()
+    keys, samples, passages, expected = inputs()
     dictionary = load_dictionary(Path("config/dictionary"), "v3")
     fields = {r.canonical_id: r.value_kind for r in dictionary.rows}
     key = [r["field"] for r in keys]
@@ -146,10 +159,10 @@ def evaluate(candidates: Sequence[tuple[LabelModel, Decimal, Decimal]]) -> str:
             )
             answers.append(accept(sample, reply.text, fields)[0])
             cost += reply.input_tokens * input_price + reply.output_tokens * output_price
-        for capture, text in texts.items():
+        for capture, offset, text in passages:
             reply = model.complete(SPAN_SYSTEM, text)
             spans, _ = validate_spans(text, reply.text)
-            accepted.update((capture, s.kind, s.start, s.end) for s in spans)
+            accepted.update((capture, s.kind, s.start + offset, s.end + offset) for s in spans)
             cost += reply.input_tokens * input_price + reply.output_tokens * output_price
         labels = score_labels(answers, key)
         spans_score = score_spans(accepted, expected)

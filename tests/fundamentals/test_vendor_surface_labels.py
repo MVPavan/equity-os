@@ -38,6 +38,12 @@ from fundamentals.ingest.vendor_surface_model import ChatCompletionsModel, Model
         ("EPS", {"%"}, True, '{"label":"EPS","field":"eps"}', "UNIT_INCOMPATIBLE"),
         ("Sales", {""}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
         ("Sales", {"Cr"}, False, '{"label":"Sales","field":"sales","value":9}', "MALFORMED_REPLY"),
+        *(
+            ("Sales", {unit}, False, '{"label":"Sales","field":"sales"}', "MAPPED")
+            for unit in ("INR Crore", "Rs crore", "Crs", "₹ crores")
+        ),
+        ("Sales", {"Crs", "MW"}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
+        ("Sales", {"MW"}, False, '{"label":"Sales","field":"sales"}', "UNIT_INCOMPATIBLE"),
     ],
 )
 def test_code_acceptance(label, units, per_share, reply, reason):
@@ -64,7 +70,9 @@ def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
     )
     _, pool, ref, values = setup_store(pg_db, tmp_path)
     cell = outcome().values[0]
-    cell = cell.model_copy(update={"row_label": "Sales", "unit": "Cr", "column_index": 1})
+    cell = cell.model_copy(
+        update={"row_label": "Sales", "unit": "Cr", "column_index": 1, "expected_numeric": True}
+    )
     fields = {"sales": ValueKind.CURRENCY_AMOUNT}
     mapping = (pool, model, settings, Site.TIJORI, "chart-api", fields)
     correction = (
@@ -91,13 +99,18 @@ def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
             ).fetchone() == (None, "correction:owner")
 
 
-def test_cli_refuses_unselected_model_without_opening_boundaries():
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["map-labels", "--site", "tijori", "--surface", "company-benchmarking"],
+        ["extract-text"],
+    ],
+)
+def test_cli_refuses_unselected_model_without_opening_boundaries(command):
     from fundamentals.api.cli_parser import build_parser
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
 
-    args = build_parser().parse_args(
-        ["vendor", "map-labels", "--site", "tijori", "--surface", "company-benchmarking"]
-    )
+    args = build_parser().parse_args(["vendor", *command])
     refused = Mock(side_effect=AssertionError("unselected model must refuse before I/O"))
     assert dispatch_vendor_command(args, pool_factory=refused, opener_factory=refused) == 2
 

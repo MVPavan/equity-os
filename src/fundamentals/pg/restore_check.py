@@ -65,6 +65,7 @@ class Tombstone(BaseModel):
 
 
 TOMBSTONES = {
+    "vendor_label_proposals": Tombstone(clear=("label", "prompt", "raw_response")),
     "vendor_text_claims": Tombstone(clear=("text",)),
     "occurrences": Tombstone(
         clear=("raw_value_text", "raw_sign"),
@@ -97,8 +98,9 @@ def table_rows(conn: psycopg.Connection[Any], tables: list[str]) -> Rows:
     return rows
 
 
-def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
-    """Keys of the pre-purge rows ``tombstone_vendor_capture`` redacts for expired VENDOR ids."""
+def tombstoned(before: Rows, expired: frozenset[int], ended: set[str]) -> dict[str, set[Any]]:
+    """Keys of the pre-purge rows ``tombstone_vendor_capture`` redacts for expired VENDOR ids,
+    and the label proposals of licence-ended sources (0045)."""
     classes = before["retention_classes"].values()
     vendor = {r["capture_ref_id"] for r in classes if r["retention_class"] == "VENDOR"} & expired
     interps = {k for k, r in before["interpretations"].items() if r["capture_ref_id"] in vendor}
@@ -113,6 +115,11 @@ def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
         return {key for key, row in before[table].items() if test(row)}
 
     return {
+        "vendor_label_proposals": {
+            key
+            for key, row in before.get("vendor_label_proposals", {}).items()
+            if row["source_id"] in ended
+        },
         "vendor_text_claims": {
             key
             for key, row in before.get("vendor_text_claims", {}).items()
@@ -150,7 +157,8 @@ def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
 def delta_problems(before: Rows, after: Rows, delta: RestoreDelta) -> tuple[str, ...]:
     """Where purge-first's delta differs from the tombstones of its expired VENDOR captures and
     the retention rows it reports adding; empty when the delta is exactly that."""
-    affected, problems = tombstoned(before, frozenset(delta.expired)), []
+    ended = {row["source_id"] for row in after.get("licence_ends", {}).values()}
+    affected, problems = tombstoned(before, frozenset(delta.expired), ended), []
     for table in sorted(before.keys() | after.keys()):
         old, new = before.get(table, {}), after.get(table, {})
         if old.keys() - new.keys():

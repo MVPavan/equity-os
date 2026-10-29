@@ -143,10 +143,48 @@ def test_fake_model_claims_and_zero_span_outcomes_are_atomic_and_idempotent(pg_d
             ).fetchone() == (int(valid), int(not valid))
 
 
-def test_extract_cli_refuses_unselected_model_before_io():
-    from fundamentals.api.cli_parser import build_parser
-    from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
+@pytest.mark.pg
+def test_extraction_outcome_cannot_mask_a_cell_yield_drop(pg_db, tmp_path):
+    from datetime import UTC, datetime, timedelta
 
-    refused = Mock(side_effect=AssertionError("no I/O before owner selection"))
-    args = build_parser().parse_args(["vendor", "extract-text"])
-    assert dispatch_vendor_command(args, pool_factory=refused, opener_factory=refused) == 2
+    from fundamentals.contracts.snapshot import CaptureRecord
+    from fundamentals.ingest.vendor_surface_canary import yield_drift
+    from fundamentals.ingest.vendor_surface_claims import extract_text
+
+    raw = b'<div class="company-info"><div class="about">Acme grows</div></div>'
+    store = SnapshotStore(tmp_path / "store")
+    base = record_of(raw, "screener-subscriber", "vs.company-page")
+    settings = ModelSettings(
+        model_id="fake",
+        base_url="https://unused.example",
+        key_file="unused",
+        prompt_version="spans.v1",
+        dictionary_version="v3",
+    )
+    model = Mock(model_id="fake")
+    model.complete.return_value = ModelReply(text="[]", input_tokens=1, output_tokens=1)
+    with pg_db.runtime_pool() as pool:
+        values = VendorValuesStore(pool)
+        for seconds, count in ((0, 10), (1, 4)):
+            record = CaptureRecord.make(
+                base.request,
+                base.retrieved_at + timedelta(seconds=seconds),
+                200,
+                "text/html",
+                None,
+                base.body,
+                base.outcome,
+                base.rights,
+            )
+            store.put_capture(record, raw)
+            ref = register(
+                pool,
+                Fetched(record=record, url="https://www.screener.in/company/X/", location=None),
+            )
+            cell = outcome(version="screener:company-page.v1", surface="company-page", values=())
+            values.record(ref, cell, row_count=count)
+        assert extract_text(pool, store, model, settings) == 2
+        drift = yield_drift(pool, datetime(2000, 1, 1, tzinfo=UTC))
+    assert [(d.surface, d.check, d.detail) for d in drift] == [
+        ("company-page", "ROW_COUNT_DROP", "10 -> 4 rows")
+    ]

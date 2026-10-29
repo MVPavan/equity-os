@@ -19,6 +19,38 @@ from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope,
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
 
+# Hand-read from the retained bodies' DOM: (table, row, column, label, raw text, value, unit).
+EXACT = {
+    ("APARINDS", "section-insights"): (
+        "yearly-insights",
+        0,
+        1,
+        "Conductor Division Order Book",
+        "1,751",
+        Decimal("1751"),
+        "₹ crores",
+    ),
+    ("HDFCBANK", "benchmarking-benchmarking-financial"): (
+        "benchmark-financial",
+        2,
+        1,
+        "Cost To Income Ratio",
+        "39.1 %",
+        Decimal("39.1"),
+        "%",
+    ),
+    ("HDFCLIFE", "benchmarking-benchmarking-business"): (
+        "business-charts:0",
+        0,
+        1,
+        "Non Participating Funds",
+        "51.6",
+        Decimal("51.6"),
+        None,
+    ),
+    ("CREDITACC", "company-compare"): ("compare:2", 4, 2, "OPM %", "68%", Decimal("68"), "%"),
+}
+
 
 @pytest.mark.pg
 @pytest.mark.retained
@@ -90,7 +122,17 @@ def test_retained_cells_and_label_evidence(pg_db, tmp_path, monkeypatch, symbol)
                         "(SELECT id FROM eqos.vendor_outcomes WHERE surface=%s)",
                         (ref.capture_ref_id, surface),
                     ).fetchall()
-                assert status == "OK" and count == len(cells) > 0
+                    if (symbol, surface) in EXACT:
+                        table, row_index, column, *expected = EXACT[symbol, surface]
+                        assert conn.execute(
+                            "SELECT row_label,raw_text,value,unit FROM eqos.vendor_values "
+                            "WHERE capture_ref_id=%s AND table_key=%s AND row_index=%s "
+                            "AND column_index=%s",
+                            (ref.capture_ref_id, table, row_index, column),
+                        ).fetchone() == tuple(expected)
+                # The compound "High / Low" peer cells cannot be read as one scalar.
+                assert status == ("PARTIAL" if surface == "company-compare" else "OK")
+                assert count == len(cells) > 0
                 assert len({c[:3] for c in cells}) == count
                 assert any(c[4] is not None for c in cells)
                 assert all(c[4] is None and not c[5] for c in cells if c[3].lower() == "n/a")
@@ -130,3 +172,32 @@ def test_business_positions_keep_duplicate_labels_and_missing_cells():
     assert {c.row_label for c in cells} == {"Repeat"}
     assert [c.value for c in cells] == [None, Decimal("12.50"), None, None]
     assert cells[3].raw_text == "n/a" and not cells[3].expected_numeric
+
+
+def test_descriptor_columns_and_missing_markers_stay_out_of_label_units():
+    from fundamentals.ingest.vendor_surface_cells import (
+        LabelSample,
+        label_samples,
+        screener_compare,
+    )
+    from fundamentals.ingest.vendor_surface_parse import Body
+
+    body = Body(
+        raw=b'<table><thead><tr><th class="text"></th><th class="text"></th><th>Mar 2025</th>'
+        b'</tr></thead><tbody><tr><td class="text">OPM %</td><td>Acme</td><td>12%</td></tr>'
+        b'<tr><td class="text">OPM %</td><td>Beta</td><td>n/a</td></tr>'
+        b'<tr><td class="text">Tax %</td><td>Acme</td><td>12?3%</td></tr></tbody></table>'
+    )
+    cells = screener_compare(body, None)
+    assert [(c.column_index, c.value, c.expected_numeric) for c in cells if c.column_index] == [
+        (1, None, False),
+        (2, Decimal("12"), True),
+        (1, None, False),
+        (2, None, False),
+        (1, None, False),
+        (2, None, True),
+    ]
+    assert label_samples((c.row_label, c.unit, c.expected_numeric) for c in cells) == (
+        LabelSample(label="OPM %", units=frozenset({"%"}), per_share=False),
+        LabelSample(label="Tax %", units=frozenset({""}), per_share=False),
+    )
