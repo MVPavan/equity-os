@@ -10,13 +10,11 @@ import re
 import tokenize
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from functools import cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.ingest.vendor_surface_specs import SurfaceSpec, load_specs
+from fundamentals.ingest.vendor_surface_specs import SurfaceSpec
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
@@ -77,25 +75,10 @@ def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValu
     return tuple(values)
 
 
-@cache
-def _selector(surface: str) -> str:
-    """Read the task's selectors from the shared finite surface table."""
-    spec = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.id == surface
-    )
-    assert spec.selector is not None
-    return spec.selector
-
-
-def screener_trades(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def screener_trades(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Keep month dividers separately so repeated trade labels never collapse."""
     values: list[VendorValue] = []
-    for table in body.tree().xpath(_selector("company-trades")):
+    for table in body.tree().xpath(selector):
         key = table.getparent().get("id")
         for row in table.xpath("./tbody/tr[td/@colspan]"):
             (cell,) = row.xpath("./td")
@@ -129,10 +112,10 @@ def _documents(tree: Any, key: str) -> tuple[VendorValue, ...]:
     return tuple(values)
 
 
-def screener_documents(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def screener_documents(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Use each document heading to distinguish present blocks from absent kinds."""
     values: list[VendorValue] = []
-    for heading in body.tree().xpath(_selector("section-documents") + "//h3"):
+    for heading in body.tree().xpath(selector + "//h3"):
         block = heading
         while "documents" not in block.get("class", "").split():
             block = block.getparent()
@@ -145,14 +128,13 @@ def screener_announcements(body: Body, context: ParseContext) -> tuple[VendorVal
     return _documents(body.tree(), "Announcements")
 
 
-def tijori_filings(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_filings(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Keep every filing cell and link at its year/category position."""
-    return read_html_table(body.tree(), _selector("overview-company-filings"), "companyFilings")
+    return read_html_table(body.tree(), selector, "companyFilings")
 
 
-def _cards(body: Body, surface: str) -> tuple[VendorValue, ...]:
+def _cards(body: Body, surface: str, selector: str) -> tuple[VendorValue, ...]:
     """An absent section heading means this company kind lacks that block."""
-    selector = _selector(surface)
     blocks = body.tree().xpath(selector)
     if not blocks or not blocks[0].xpath(".//h2"):
         return ()
@@ -163,26 +145,6 @@ def _cards(body: Body, surface: str) -> tuple[VendorValue, ...]:
         _cell(node, surface, row, 0, _text(node), _text(node.xpath("ancestor::section[1]//h2")[0]))
         for row, node in enumerate(nodes)
     )
-
-
-def tijori_customers(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read customers from the headed card list."""
-    return _cards(body, "overview-customers")
-
-
-def tijori_suppliers(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read suppliers from the headed card list."""
-    return _cards(body, "overview-suppliers")
-
-
-def tijori_brands(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read brands from the headed card list."""
-    return _cards(body, "overview-brands")
-
-
-def tijori_connections(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read the connection list, retaining its supplier/customer subheadings."""
-    return _cards(body, "overview-connections")
 
 
 def read_js_var(body: bytes, name: str) -> Any:
@@ -203,9 +165,11 @@ def read_js_var(body: bytes, name: str) -> Any:
     return json.loads("".join(parts), parse_float=Decimal, parse_int=Decimal)
 
 
-def tijori_shareholding_overview(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_shareholding_overview(
+    body: Body, context: ParseContext, selector: str
+) -> tuple[VendorValue, ...]:
     """Read the Overview table and its separately declared chart slices."""
-    values = list(read_html_table(body.tree(), _selector("shareholding-overview"), "overview"))
+    values = list(read_html_table(body.tree(), selector, "overview"))
     for row, (label, number) in enumerate(read_js_var(body.raw, "chartData")):
         values.append(
             VendorValue(
@@ -224,7 +188,9 @@ def tijori_shareholding_overview(body: Body, context: ParseContext) -> tuple[Ven
     return tuple(values)
 
 
-def tijori_shareholding_trend(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_shareholding_trend(
+    body: Body, context: ParseContext, selector: str
+) -> tuple[VendorValue, ...]:
     """Read each trend series by its own point position and timestamp."""
     values: list[VendorValue] = []
     for column, series in enumerate(read_js_var(body.raw, "trendData")):
@@ -244,6 +210,31 @@ def tijori_shareholding_trend(body: Body, context: ParseContext) -> tuple[Vendor
                 )
             )
     return tuple(values)
+
+
+def company_parser(spec: SurfaceSpec) -> Parser:
+    """Bind the configured selector once, without a second configuration read."""
+
+    def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+        assert spec.selector is not None or spec.id == "company-announcements"
+        if spec.id in {
+            "overview-customers",
+            "overview-suppliers",
+            "overview-brands",
+            "overview-connections",
+        }:
+            return _cards(body, spec.id, spec.selector or "")
+        if spec.id == "company-announcements":
+            return screener_announcements(body, context)
+        return {
+            "company-trades": screener_trades,
+            "section-documents": screener_documents,
+            "overview-company-filings": tijori_filings,
+            "shareholding-overview": tijori_shareholding_overview,
+            "shareholding-trend": tijori_shareholding_trend,
+        }[spec.id](body, context, spec.selector or "")
+
+    return parse
 
 
 class FeedRow(BaseModel):

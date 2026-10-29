@@ -16,7 +16,7 @@ from vendor_surface_support import load_request_index
 from fundamentals.ingest.screener_session_models import BasisTopology
 from fundamentals.ingest.screener_session_page import parse_document, read_identity
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import CompanyIds
+from fundamentals.ingest.vendor_surface_parse import CompanyIds, register_tables
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
@@ -122,6 +122,7 @@ def run_company(pg_db, tmp_path):
             Path("config/vendor_surface/surfaces.yaml"),
             Path("docs/research/vendor-surface/catalog.yaml"),
         )
+        register_tables(specs)
         store = SnapshotStore(tmp_path / "raw")
         with pg_db.runtime_pool() as pool:
             locks = PgSiteLock(pool)

@@ -16,7 +16,7 @@ from pydantic import SecretStr
 
 from fundamentals.ingest.vendor_surface_capture import Request, capture
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
+from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext, register_tables
 from fundamentals.ingest.vendor_surface_specs import load_specs
 from fundamentals.ingest.vendor_surface_tables import feed_rows, read_html_table, read_js_var
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -249,6 +249,7 @@ MARKET_INDEX = json.loads(Path("docs/research/vendor-surface/snapshots-index.jso
 MARKET_SPECS = load_specs(
     Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
 )
+register_tables(MARKET_SPECS)
 MARKET_NONFEEDS = (
     "market-pulse market-level index-page person-page screen-raw raw-materials idea-card-body"
 ).split()
@@ -360,3 +361,15 @@ def test_market_feed_date_failure_is_recorded(pg_db, tmp_path, monkeypatch, brok
                 assert (count == 0) if broken else (count > 0)
         finally:
             locks.close()
+
+
+def test_registry_import_does_not_read_configuration(tmp_path):
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import fundamentals.ingest.vendor_surface_parse"],
+        cwd=tmp_path,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode()

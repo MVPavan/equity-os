@@ -51,6 +51,7 @@ from fundamentals.ingest.vendor_surface_model import (
     ModelNotSelected,
     ModelSettings,
 )
+from fundamentals.ingest.vendor_surface_parse import register_tables
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
@@ -154,6 +155,7 @@ def dispatch_vendor_command(
             sys.stdout.write(item.model_dump_json() + "\n")
         return int(any(item.check != NO_BASELINE for item in drift))
     specs = load_specs(SPECS, CATALOG)
+    register_tables(specs)
     selected = [
         spec
         for spec in specs
