@@ -328,3 +328,69 @@ def test_missing_slug_retries(company_rig, run_company, resolved):
         assert any("missing slug" in item for item in report.incomplete) != resolved
         assert ("company-overview" in captures) == resolved
     assert opener.calls.count(search) == 2
+
+
+def test_basis_refusal_covers_sections_and_children(company_rig, run_company, pg_db):
+    opener, ids = company_rig("APARINDS")
+    standalone = next(
+        r
+        for r in opener.rows.values()
+        if r["id"] == "company-page"
+        and r.get("symbol") == "APARINDS"
+        and r["basis"] == "standalone"
+    )
+    consolidated = next(
+        r
+        for r in opener.rows.values()
+        if r["id"] == "company-page"
+        and r.get("symbol") == "APARINDS"
+        and r["basis"] == "consolidated"
+    )
+    opener.overrides[consolidated["url"]] = Path(standalone["path"]).read_bytes(), 200
+    run_company(opener, ids)
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.capture_refs c ON c.id=v.capture_ref_id WHERE basis='consolidated' AND c.source_id='screener-subscriber'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT status FROM eqos.vendor_outcomes o JOIN eqos.capture_addresses a ON a.capture_ref_id=o.capture_ref_id WHERE a.url=%s AND o.surface='section-quarters'",
+                (consolidated["url"],),
+            ).fetchone()[0]
+            == "UNUSABLE"
+        )
+
+
+@pytest.mark.parametrize("raw,status", [(b"missing", 404), (b"", 200), (b"\xff", 200)])
+def test_identity_acquisition_failure_is_recorded(company_rig, run_company, raw, status):
+    opener, ids = company_rig("APARINDS")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    selected = tuple(
+        s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", "company-trades")
+    )
+    for url, row in opener.rows.items():
+        if row["id"] == "company-page" and row.get("symbol") == "APARINDS":
+            opener.overrides[url] = raw, status
+    report, captures, outcomes, _ = run_company(opener, ids, selected)
+    assert "company-trades" not in captures
+    assert any(surface == "company-page" and state == "UNUSABLE" for surface, state, _ in outcomes)
+    assert report.refused
+
+
+def test_shareholder_whitespace_uses_matched_control(company_rig, run_company):
+    opener, ids = company_rig("APARINDS")
+    for url, row in opener.rows.items():
+        if row["id"] == "company-page" and row.get("symbol") == "APARINDS":
+            opener.overrides[url] = (
+                Path(row["path"]).read_bytes().replace(b"showShareholders(", b"showShareholders ("),
+                200,
+            )
+    _, captures, outcomes, _ = run_company(opener, ids)
+    assert captures["investors-api"] > 0
+    assert any(surface == "investors-api" and status == "OK" for surface, status, _ in outcomes)

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
@@ -127,16 +128,17 @@ def parse_and_record(
         parent=request.parent,
     )
     states = []
+    basis_refusal = None
     for surface in (request.spec.id, *request.spec.sections):
         entry = parser_entry(request.spec, surface)
         version, digest = entry.version, parser_sha256(entry.parse)
         parsed: tuple[VendorValue, ...] = ()
         status, detail = OutcomeStatus.UNUSABLE, None
         try:
-            if refusal is not None:
+            if refusal is not None or basis_refusal is not None:
                 version = f"{SITE_NAME[request.spec.site]}:gate.identity.v1"
                 digest = parser_sha256(identity_gate)
-                detail = refusal
+                detail = refusal or basis_refusal
             elif record.http_status != 200:
                 detail = record.outcome.code.value
             elif record.effective_body_completeness is not BodyCompleteness.COMPLETE:
@@ -168,6 +170,8 @@ def parse_and_record(
                     )
         except ScreenerSessionError as error:
             detail = type(error).__name__
+            if surface == "company-page":
+                basis_refusal = detail
         except Exception as error:
             status, detail = OutcomeStatus.FAILED, type(error).__name__
         assert ref.capture_ref_id is not None
@@ -465,6 +469,7 @@ def capture_company(
     pages: dict[Basis, CaptureReference] = {}
     cached: dict[str, tuple[CaptureReference, Body | None, Request]] = {}
     deferred: list[Request] = []
+    basis_refusals: dict[Basis, str] = {}
     with pool.connection() as conn:
         entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
         covered = {
@@ -551,13 +556,15 @@ def capture_company(
             )
             continue
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-        refusal = None
-        if body is not None and request.spec.id == "company-page":
+        refusal = basis_refusals.get(request.basis) if request.basis else None
+        if body is None and request.spec.id in ("company-page", "company-financials"):
+            refusal = "company identity acquisition failed"
+        elif body is not None and request.spec.id == "company-page":
             try:
                 assert_logged_in(body.tree())
                 if read_identity(body.tree())[0] != ids.screener_company_id:
                     refusal = "company identity mismatch"
-            except ScreenerSessionError as error:
+            except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
                 refusal = type(error).__name__
             if (
                 refusal is None
@@ -606,13 +613,20 @@ def capture_company(
             store, values, ref, record, request.model_copy(update={"ids": ids}), body, refusal
         )
         usable = all(state in USABLE for state in states)
+        if (
+            request.spec.id == "company-page"
+            and not usable
+            and ids.topology is not None
+            and request.basis is not None
+        ):
+            basis_refusals[request.basis] = "page basis refused"
         completed += int(usable)
         if not usable:
             incomplete.append(
                 request.url
                 + (": topology unknown" if request.basis and ids.topology is None else "")
             )
-        if body is None or refusal is not None:
+        if body is None or refusal is not None or request.basis in basis_refusals:
             continue
         context = ParseContext(
             ids=ids,
@@ -679,7 +693,14 @@ def capture_company(
                 ):
                     incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children")
                     expected += 1
-            except (ValueError, KeyError, IndexError, TypeError, ScreenerSessionError):
+            except (
+                ValueError,
+                KeyError,
+                IndexError,
+                TypeError,
+                StopIteration,
+                ScreenerSessionError,
+            ):
                 incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: expansion failed")
                 expected += 1
         if request.spec.id == "company-page":

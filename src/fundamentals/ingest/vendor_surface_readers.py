@@ -320,12 +320,36 @@ def screener_reader(surface: str, body: Body, context: ParseContext) -> Any:
         )
     if surface == "schedules-api":
         assert context.basis is not None
-        reader = read_nested_schedule if "expands" in parent else read_schedule
-        return reader(body.raw, basis=context.basis, **parent, **fragment)
+        reader = read_nested_schedule if "outer_parent" in parent else read_schedule
+        return reader(
+            body.raw,
+            basis=context.basis,
+            section=Section(parent["section"]),
+            parent=parent.get("outer_parent", parent["row"]),
+            periods=parent["periods"],
+            **(
+                {
+                    "expands": parent["row"],
+                    "reference_row": parent["reference_row"],
+                    "sales_row": parent["sales_row"],
+                }
+                if "outer_parent" in parent
+                else {"page_row": parent["page_row"]}
+            ),
+            **fragment,
+        )
     if surface == "investors-api":
-        return read_investor_bucket(body.raw, **parent, **fragment)
+        return read_investor_bucket(
+            body.raw, hook=parent["hook"], table=parent["table"], **fragment
+        )
     if surface == "segments-api":
-        return read_segments(body.raw, parse=parse_document, **parent, **fragment)
+        return read_segments(
+            body.raw,
+            parse=parse_document,
+            hook=parent["hook"],
+            page_section=parent["page_section"],
+            **fragment,
+        )
     if surface == "quick-ratios-api":
         return fragments.read_quick_ratios(
             body.raw,

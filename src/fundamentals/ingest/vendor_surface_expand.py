@@ -8,8 +8,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import quote, urljoin
 
-from fundamentals.ingest.screener_company_discovery import investor_hooks
-from fundamentals.ingest.screener_company_models import Periodicity, SegmentHook
+from fundamentals.ingest.screener_company_models import InvestorHook, Periodicity, SegmentHook
 from fundamentals.ingest.screener_financials_models import Section
 from fundamentals.ingest.screener_financials_schedules import parse_sub_rows
 from fundamentals.ingest.screener_financials_tables import read_section
@@ -47,6 +46,8 @@ def child(spec: SurfaceSpec, context: ParseContext, **params: Any) -> Request:
     for key, value in parameters.items():
         if "{" + key + "}" in path:
             path = path.replace("{" + key + "}", quote(str(value), safe=""))
+    if spec.id == "segments-api" and context.basis is Basis.CONSOLIDATED:
+        path = path.replace("consolidated=", "consolidated=true")
     if spec.site is Site.SCREENER and context.basis is Basis.STANDALONE:
         path = path.replace("&consolidated=", "").replace("?consolidated=", "")
     return Request(
@@ -57,7 +58,6 @@ def child(spec: SurfaceSpec, context: ParseContext, **params: Any) -> Request:
         parent={
             **(context.parent or {}),
             **params,
-            "context": context.model_copy(update={"parent": None}),
         },
         due_since=None,
     )
@@ -96,13 +96,12 @@ def handlers(body: Body, context: ParseContext, name: str) -> tuple[Request, ...
                     else read_section(body.tree(), Section(key), **provenance)
                 )
             table = tables[key]
-            params["page_body"] = body
             if name == "showShareholders":
                 params.update(
-                    hook=next(
-                        hook
-                        for hook in investor_hooks(body.tree())
-                        if hook.bucket == first and hook.periodicity == Periodicity(second)
+                    hook=InvestorHook(
+                        bucket=first,
+                        periodicity=Periodicity(second),
+                        row_label=next(row.label for row in table.rows if row.bucket == first),
                     ),
                     table=table,
                 )
@@ -141,8 +140,7 @@ def screener_nested_schedules(body: Body, context: ParseContext) -> tuple[Reques
         update={
             "parent": {
                 **(context.parent or {}),
-                "expands": (context.parent or {}).get("row"),
-                "schedule_body": body,
+                "outer_parent": (context.parent or {}).get("row"),
             }
         }
     )

@@ -14,11 +14,7 @@ import pytest
 from pydantic import SecretStr
 from vendor_surface_support import INDEX
 
-from fundamentals.ingest.screener_company_models import InvestorHook, Periodicity, SegmentHook
-from fundamentals.ingest.screener_financials_models import Section
-from fundamentals.ingest.screener_financials_tables import read_section
 from fundamentals.ingest.screener_session_models import Basis, BasisTopology
-from fundamentals.ingest.screener_shareholding import read_shareholding_table
 from fundamentals.ingest.vendor_surface_capture import Request, capture
 from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, CompanyIds, ParseContext
@@ -127,38 +123,24 @@ def test_fragment_readers(surface):
     if surface == "peers-api":
         context = context.model_copy(update={"basis": Basis.CONSOLIDATED})
     if surface in ("schedules-api", "segments-api", "investors-api"):
-        basis = "consolidated" if surface != "schedules-api" else "standalone"
+        from fundamentals.ingest.vendor_surface_expand import EXPANSIONS
+        from fundamentals.ingest.vendor_surface_specs import load_specs
+
+        basis = "consolidated"
         page, page_context = retained("screener", "company-page", context.ids.nse_symbol, basis)
-        inputs = dict(
-            source_id="screener-subscriber",
-            file_sha256=page_context.body_sha256,
-            retrieved_at=context.retrieved_at,
+        spec = next(
+            s
+            for s in load_specs(
+                Path("config/vendor_surface/surfaces.yaml"),
+                Path("docs/research/vendor-surface/catalog.yaml"),
+            )
+            if s.id == surface and s.site is Site.SCREENER
         )
-        if surface == "investors-api":
-            parent = dict(
-                hook=InvestorHook(
-                    bucket="promoters", periodicity=Periodicity.QUARTERLY, row_label="Promoters"
-                ),
-                table=read_shareholding_table(page.tree(), Periodicity.QUARTERLY, **inputs),
-            )
-        else:
-            section = Section.CASH_FLOW if surface == "schedules-api" else Section.PROFIT_LOSS
-            table = read_section(page.tree(), section, **inputs)
-            parent = (
-                dict(
-                    section=section,
-                    parent="Cash from Operating Activity",
-                    periods=table.periods,
-                    page_row=next(
-                        r for r in table.rows if r.schedule_parent == "Cash from Operating Activity"
-                    ),
-                )
-                if surface == "schedules-api"
-                else dict(
-                    hook=SegmentHook(section="profit-loss", segment_type="1"), page_section=table
-                )
-            )
-        context = context.model_copy(update={"parent": parent, "basis": Basis(basis)})
+        requests = EXPANSIONS[spec.expand](
+            page, page_context.model_copy(update={"parent": {"spec": spec.model_dump()}})
+        )
+        request = next(r for r in requests if r.url == context.url)
+        context = context.model_copy(update={"parent": request.parent, "basis": request.basis})
     values = parse("screener", surface, body, context)
     assert values
     assert len({(v.table_key, v.row_index, v.column_index) for v in values}) == len(values)
