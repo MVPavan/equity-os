@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from fundamentals.ingest import vendor_surface_series as series
 from fundamentals.ingest.screener_session_models import Basis, BasisTopology, IdentityMismatchError
 from fundamentals.ingest.screener_session_page import (
     assert_logged_in,
@@ -101,3 +102,21 @@ PARSERS: dict[tuple[Site, str], ParserEntry] = {
         version="screener:company-page.v1", parse=company_page
     ),
 }
+
+
+# Task 9: Tijori company series.
+PARSERS.update(
+    {
+        (Site.TIJORI, surface): ParserEntry(version=f"tijori:{surface}.v1", parse=parser)
+        for surface, parser in {
+            "chartdata-price-api": series.tijori_price,
+            "chartdata-valuation-api": series.tijori_valuation,
+            "chartdata-median-pe-api": series.tijori_median_pe,
+            "capex-api": series.tijori_capex,
+            "debt-api": series.tijori_debt,
+            "revenue-mix-history-api": series.tijori_revenue_mix,
+            "financials-popup-chart-api": series.tijori_popup,
+            "financial-statement-compare-api": series.tijori_statement_compare,
+        }.items()
+    }
+)

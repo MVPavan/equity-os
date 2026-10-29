@@ -2,6 +2,8 @@
 
 import hashlib
 import io
+import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from email.message import Message
 from pathlib import Path
@@ -10,14 +12,23 @@ from urllib.parse import urlsplit
 
 import pytest
 from pydantic import SecretStr
-from vendor_surface_support import RetainedOpener, load_request_index
+from vendor_surface_support import INDEX, RetainedOpener, load_request_index
 
 from fundamentals.ingest.vendor_surface_capture import Request, capture
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
-from fundamentals.ingest.vendor_surface_parse import PARSERS
+from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
 from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
 from fundamentals.store.snapshot_store import SnapshotStore
 from fundamentals.store.vendor_values_store import VendorValuesStore
+
+CONTEXT = ParseContext(
+    ids=None,
+    basis=None,
+    url="https://www.tijorifinance.com/api/v1/ind/chartdata/129/pe/",
+    retrieved_at=datetime.now(UTC),
+    body_sha256="fixture",
+    capture_id="fixture",
+)
 
 EXPECTED = {
     "85ca8991672c": (4124, "27.02", "27.05"),
@@ -34,11 +45,16 @@ EXPECTED = {
     "e7283ebbfa86": (4133, "14.92", "14.87"),
     "7808286e39e1": (30, "0.0", "0.0"),
 }
-REFERENCES = [
-    row
-    for row in load_request_index().values()
-    if row["site"] == "tijori" and row["sha256"][:12] in EXPECTED and row["status"] == 200
-]
+REFERENCES = list(
+    {
+        (row["id"], row["sha256"]): row
+        for row in [
+            *load_request_index().values(),
+            *json.loads(INDEX.with_name("kinds-index.json").read_text()),
+        ]
+        if row["site"] == "tijori" and row["sha256"][:12] in EXPECTED and row["status"] == 200
+    }.values()
+)
 
 
 class SeriesOpener(RetainedOpener):
@@ -126,9 +142,36 @@ def test_series_capture_keeps_points_or_records_failed(pg_db, tmp_path, row, tru
             locators = [f"{prefix}/{i}/1" for i in (0, 1)]
             if row["id"] == "financial-statement-compare-api":
                 locators = [f"{prefix}/{i}" for i in (0, 1)]
-            elif row["id"] == "chartdata-median-pe-api":
+            elif row["url"].rstrip("/").endswith("/median-pe"):
                 locators = ["/data/1d", "/data/1m"]
             by_locator = {locator: (text, value) for locator, text, value in cells}
             assert [by_locator[locator] for locator in locators] == [
                 (text, None if text == "null" else Decimal(text)) for text in (first, second)
             ]
+
+
+def test_valuation_rejects_unrelated_numeric_object():
+    """A changed valuation shape must not be mistaken for median-PE horizons."""
+    with pytest.raises(ValueError):
+        PARSERS[Site.TIJORI, "chartdata-valuation-api"].parse(
+            Body(raw=b'{"status":200,"data":{"changed":1}}'),
+            CONTEXT,
+        )
+
+
+def test_string_envelope_keeps_lexemes_nulls_and_duplicate_series_names():
+    """Numeric tokens survive both decoders, while labels cannot collapse series."""
+    raw = json.dumps(
+        {
+            "status": 200,
+            "data": '[{"name":"same","data":[[1,1e-8],[2,null]]},'
+            '{"name":"same","data":[[1,"-2.00%"]]}]',
+        }
+    ).encode()
+    cells = PARSERS[Site.TIJORI, "capex-api"].parse(Body(raw=raw), CONTEXT)
+    assert [(cell.raw_text, cell.value, cell.unit) for cell in cells] == [
+        ("1e-8", Decimal("1e-8"), None),
+        ("null", None, None),
+        ("-2.00%", Decimal("-2.00"), "%"),
+    ]
+    assert len({(cell.table_key, cell.row_index, cell.column_index) for cell in cells}) == 3
