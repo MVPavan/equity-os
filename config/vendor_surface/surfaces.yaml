@@ -92,7 +92,7 @@
 - {cadence: DAILY, feed: true, group: TABLE, id: concalls-feed, path: '/concalls/[upcoming/]?p=&o=&date__year=&q=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
 - {cadence: DAILY, feed: true, group: TABLE, id: annual-reports-feed, path: '/annual-reports/?p=&mcap=&optimism=&sectors=&watchlist=', scope: MARKET, selector: '//*[@data-annual-report]', site: screener-subscriber}
 - {cadence: DAILY, feed: true, group: TABLE, id: announcements-feed, path: '/announcements/[all/|results/]', scope: MARKET, selector: '//div[contains(concat(" ",@class," ")," announcement-item ")]', site: screener-subscriber}
-- {cadence: DAILY, group: TABLE, id: market-pulse, path: /filings/, scope: MARKET, selector: '//main//li/a[div]', site: screener-subscriber}
+- {cadence: WEEKLY, group: TABLE, id: market-pulse, path: /filings/, scope: MARKET, selector: '//main//li/a[div]', site: screener-subscriber}
 - {cadence: DAILY, feed: true, group: TABLE, id: corporate-actions-feed, path: '/actions/{bonus|buyback|dividend|right|split}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
 - {cadence: DAILY, feed: true, group: TABLE, id: trades-feed, path: '/trades/{bulk|block|insiders|sast}/?o=&p=', scope: MARKET, selector: '//*[@id="result_list"]', site: screener-subscriber}
 - {cadence: DAILY, feed: true, group: TABLE, id: ipo, path: '/ipo/[recent/|below-price/|rights/]', scope: MARKET, selector: '//main//table[not(ancestor::table)]', site: screener-subscriber}
