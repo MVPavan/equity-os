@@ -381,24 +381,6 @@ def test_reader_logs_exclude_vendor_text():
     assert all(set(event) <= {"event", "site", "surface", "log_level"} for event in logs)
 
 
-def test_event_numeric_contract_survives_unreadable_text():
-    from fundamentals.ingest.vendor_surface_readers import reader_values, tijori_reader
-
-    body, context = retained("tijori", "upcoming-events")
-    document = tijori_reader("upcoming-events", body, context)
-    original = document.rows[0].cells[0]
-    cell = original.model_copy(
-        update={
-            "raw_text": "unreadable",
-            "value": None,
-            "provenance": original.provenance.model_copy(update={"column_label": "Amount"}),
-        }
-    )
-    row = document.rows[0].model_copy(update={"cells": (cell,)})
-    values = reader_values(document.model_copy(update={"rows": (row,)}))
-    assert values[0].value is None and values[0].expected_numeric
-
-
 def test_retained_hdfc_segment_reconciliation_refusal():
     from fundamentals.ingest.screener_company_models import SegmentReconciliationError
     from fundamentals.ingest.vendor_surface_expand import screener_segments
@@ -428,3 +410,45 @@ def test_retained_hdfc_segment_reconciliation_refusal():
             body,
             context.model_copy(update={"parent": request.parent, "basis": request.basis}),
         )
+
+
+def outcome(values):
+    """The capture's reader-outcome rule, applied to converted values."""
+    if any(v.expected_numeric and v.value is None for v in values):
+        return "PARTIAL"
+    return "OK" if values else "EMPTY"
+
+
+def unreadable(cell):
+    return cell.model_copy(update={"raw_text": "unreadable", "value": None})
+
+
+@pytest.mark.parametrize("surface", ["quarterly-results", "company-timeline-api"])
+def test_event_measurements_expect_numbers(surface):
+    from fundamentals.ingest.vendor_surface_readers import reader_values, tijori_reader
+
+    body, context = retained("tijori", surface)
+    document = tijori_reader(surface, body, context.model_copy(update={"basis": None}))
+    if surface == "quarterly-results":
+        item, metric = next(
+            (i, m) for i in document.items for m in i.headline_metrics if m.cell.value is not None
+        )
+        metric = metric.model_copy(update={"cell": unreadable(metric.cell)})
+        item = item.model_copy(update={"headline_metrics": (metric,), "rows": ()})
+        document = document.model_copy(update={"items": (item,)})
+    else:
+        event, table, row, cell = next(
+            (e, t, r, c)
+            for e in document.events
+            for t in e.detail_tables
+            for r in t.rows
+            for c in r.cells
+            if t.column_labels and c.value is not None
+        )
+        row = row.model_copy(update={"cells": (unreadable(cell),)})
+        table = table.model_copy(update={"rows": (row,)})
+        event = event.model_copy(update={"detail_tables": (table,)})
+        document = document.model_copy(update={"events": (event,)})
+    values = reader_values(document)
+    assert [v.expected_numeric for v in values if v.raw_text == "unreadable"] == [True]
+    assert outcome(values) == "PARTIAL"

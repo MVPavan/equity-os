@@ -26,7 +26,7 @@ from fundamentals.ingest.screener_shareholding import read_investor_bucket, read
 from fundamentals.ingest.tijori_analysis import build_tijori_analysis
 from fundamentals.ingest.tijori_analysis_models import TijoriAnalysisSection
 from fundamentals.ingest.tijori_events import build_tijori_events
-from fundamentals.ingest.tijori_events_models import TijoriEventsCell, TijoriEventsSurface
+from fundamentals.ingest.tijori_events_models import TijoriEventsSurface
 from fundamentals.ingest.tijori_overview import build_tijori_overview
 from fundamentals.ingest.tijori_overview_models import (
     TijoriOverviewSection,
@@ -38,7 +38,6 @@ from fundamentals.ingest.tijori_shareholding import (
 )
 from fundamentals.ingest.tijori_source import TijoriSource
 from fundamentals.ingest.tijori_tables import TijoriTable, TijoriTableCell, TijoriTableRow
-from fundamentals.ingest.vendor_surface_series import numeric_column
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
@@ -144,21 +143,13 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
         unit: str | None = None,
         scope: str | None = basis,
         padding: frozenset[int] = frozenset(),
+        numeric: bool = True,
     ) -> None:
         padding = padding | frozenset(
             i for i, c in enumerate(items) if isinstance(c, TijoriTableCell) and not c.published
         )
         emit(
-            (
-                (
-                    c.raw_text,
-                    c.value,
-                    c.provenance,
-                    not isinstance(c, TijoriEventsCell)
-                    or numeric_column(c.provenance.column_label or ""),
-                )
-                for c in items
-            ),
+            ((c.raw_text, c.value, c.provenance, numeric) for c in items),
             key,
             row,
             unit,
@@ -167,7 +158,11 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
         )
 
     def rows(
-        items: Any, key: str, scope: str | None = basis, padding: frozenset[int] = frozenset()
+        items: Any,
+        key: str,
+        scope: str | None = basis,
+        padding: frozenset[int] = frozenset(),
+        numeric: bool = True,
     ) -> None:
         for index, row in enumerate(items):
             positioned = (
@@ -181,7 +176,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             )
             index = row.position if isinstance(row, positioned) else index
             unit = row.unit if isinstance(row, (sf.TableRow, sc.BucketRow)) else None
-            cells(row.cells, key, index, unit, scope, padding)
+            cells(row.cells, key, index, unit, scope, padding, numeric)
             if isinstance(
                 row,
                 (
@@ -194,7 +189,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 ),
             ):
                 emit(
-                    ((raw, None, None, True) for raw in row.unaligned_raw_values),
+                    ((raw, None, None, numeric) for raw in row.unaligned_raw_values),
                     key + ":unaligned",
                     index,
                     unit,
@@ -274,8 +269,10 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                 for index, chart in enumerate(items):
                     cells((chart.latest_value,), key + "/charts", index, chart.unit)
                     series(chart.series, f"{key}/charts/{index}/series", chart.unit)
-            case to.TijoriPeersSection(rows=items) | te.TijoriUpcomingEvents(rows=items):
+            case to.TijoriPeersSection(rows=items):
                 rows(items, key)
+            case te.TijoriUpcomingEvents(rows=items):
+                rows(items, key, numeric=False)
             case to.TijoriPriceReturnsSection(returns=items):
                 cells(tuple(item.amount for item in items), key)
             case (
@@ -314,7 +311,7 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
             case te.TijoriQuarterlyResults(items=items):
                 for item in items:
                     item_key = f"{key}/items/{item.position}"
-                    cells((item.company_cell, item.announced), item_key + "/header")
+                    cells((item.company_cell, item.announced), item_key + "/header", numeric=False)
                     cells(
                         tuple(metric.cell for metric in item.headline_metrics),
                         item_key + "/metrics",
@@ -329,9 +326,13 @@ def reader_values(document: Any, basis: str | None = None) -> tuple[VendorValue,
                         event.content_cell,
                         *event.link_cells,
                     )
-                    cells(header, event_key)
+                    cells(header, event_key, numeric=False)
                     for detail_table in event.detail_tables:
-                        rows(detail_table.rows, f"{event_key}/tables/{detail_table.position}")
+                        rows(
+                            detail_table.rows,
+                            f"{event_key}/tables/{detail_table.position}",
+                            numeric=bool(detail_table.column_labels),
+                        )
             case _:
                 raise ReaderError("unsupported reader output")
 
