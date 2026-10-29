@@ -22,6 +22,26 @@ if TYPE_CHECKING:
     from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, Parser
 
 
+# Numeric roles belong to table shapes, independently of whether a cell decodes.
+NUMERIC_COLUMNS = {
+    "trades-insider-trades": {1, 2, 3},
+    "trades-sast-trades": {3, 4},
+    "trades-block-deals": {2, 3},
+    "trades-bulk-deals": {2, 3},
+    "corporate-actions-feed": {4, 5},
+    "trades-feed": {4},
+    "raw-materials": set(range(2, 8)),
+}
+NUMERIC_AFTER = {
+    "overview": 1,
+    "results-latest": 1,
+    "quarterly-results-api": 1,
+    "market-level": 2,
+    "index-page": 2,
+    "screen-raw": 2,
+}
+
+
 def _text(node: Any) -> str:
     """Preserve display text apart from surrounding markup whitespace."""
     return " ".join(node.text_content().split())
@@ -66,13 +86,27 @@ def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValu
     ]
     if not headers:
         raise ValueError("table header missing")
+    shape = table_key.split(":")[0]
+    numeric = NUMERIC_COLUMNS.get(shape)
+    if shape in NUMERIC_AFTER:
+        numeric = set(range(NUMERIC_AFTER[shape], len(headers)))
+    if shape == "person-page":
+        numeric = {2, 3} if headers[0] == "Company" else set(range(1, len(headers)))
+    if shape == "ipo":
+        numeric = {1, 2, 3} if headers[0] == "Category" else {2, 4, 5, 6, 7}
+    if numeric is None:
+        numeric = {i for i, label in enumerate(headers) if numeric_column(label)}
     values: list[VendorValue] = []
     for row, node in enumerate(rows):
         cells = node.xpath("./td | ./th")
         if len(cells) != len(headers):
             raise ValueError("ragged table row")
         for column, cell in enumerate(cells):
-            values.append(_cell(cell, table_key, row, column, _text(cells[0]), headers[column]))
+            values.append(
+                _cell(cell, table_key, row, column, _text(cells[0]), headers[column]).model_copy(
+                    update={"expected_numeric": column in numeric}
+                )
+            )
             values.extend(
                 _cell(
                     link,

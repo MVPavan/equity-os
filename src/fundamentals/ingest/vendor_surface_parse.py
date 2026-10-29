@@ -166,7 +166,7 @@ from fundamentals.ingest import vendor_surface_cells as cells  # noqa: E402
 PARSERS.update(
     {
         (site, surface): ParserEntry(
-            version=f"{name}:{surface}.v{1 if parser is cells.benchmark_business else 2}",
+            version=f"{name}:{surface}.v{2 if parser is cells.benchmark_business else 3}",
             parse=parser,
         )
         for site, name, surface, parser in (
@@ -192,7 +192,7 @@ def register_tables(specs: tuple[SurfaceSpec, ...]) -> None:
     for spec in specs:
         if spec.group is ParseGroup.TABLE:
             # v2: market feeds identify unlinked rows by key cells (Phase 3 round 1).
-            version = "v2" if spec.scope is Scope.MARKET else "v1"
+            version = "v3" if spec.scope is Scope.MARKET else "v2"
             PARSERS[spec.site, spec.id] = ParserEntry(
                 version=f"{SITE_NAME[spec.site]}:{spec.id}.{version}",
                 parse=(market_parser if spec.scope is Scope.MARKET else company_parser)(spec),
