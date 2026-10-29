@@ -543,3 +543,30 @@ def test_traversal_checkpoint_hides_yield_drop(market_rig):
         run((), requests=(request,))
     checks = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
     assert any(c.check == ROW_COUNT_DROP for c in checks), "10-to-1 feed shrink not detected"
+
+
+def test_nonfeed_market_table_refreshes_all_pages(market_rig):
+    from pathlib import Path
+
+    from fundamentals.ingest import vendor_surface_capture as cap
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    opener, pool, run = market_rig
+    spec = next(s for s in specs if s.id == "market-level")
+    url = "https://www.screener.in/market/IN10/"
+    request = cap.Request(spec=spec, url=url, ids=None, due_since=None)
+    for number in (1, 2):
+        raw = (
+            f'<table class="data-table"><thead><tr><th>Company</th><th>Revenue</th></tr></thead><tbody><tr><td><a href="/company/C{number}/">Company</a></td><td>1</td></tr></tbody></table>'
+            + ('<a href="?p=2">Next</a>' if number == 1 else "")
+        ).encode()
+        opener.overrides[url if number == 1 else url + "?p=2"] = raw, 200
+    run((), requests=(request,))
+    assert len(opener.calls) == 2
+    opener.calls.clear()
+    run((), requests=(request,))
+    assert len(opener.calls) == 2, "weekly non-feed snapshot stops after old company link on page 1"
