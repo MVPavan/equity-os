@@ -238,16 +238,16 @@ Handler regexes tolerate whitespace before `(` (audit finding 4 shape).
 | Hub (parent) | Level path | Child surfaces |
 |---|---|---|
 | Screener `/market/` | macro-sector `IN##` → sector `IN####` → industry `IN######` → basic industry `IN#########` (four levels) | market-level, each listed page paginated (Task 11) |
-| Screener `explore` | index links | index-page |
+| Screener company page (verified) | benchmark index tags | index-page: `capture-due` follows them during company capture; `capture --market` routes through the latest verified retained company page per address |
 | Screener `people-search` | person links | person-page |
-| Screener `product-prices` | HS-code links | hs-data-api |
-| Tijori `markets` | sector slugs | sector-page → sector-ms-chart-api (`chart_id`), sector-company-opm-api (`metric_id`); sector-area-chart-api is kept only (pending a 200) |
+| Screener `hs-search-api` | HS-code (`/commodity/`) links | hs-data-api |
+| Tijori `search-page` | published sector options | sector-page → sector-ms-chart-api (`chart_id`), sector-company-opm-api (`metric_id`); sector-area-chart-api is kept only (pending a 200) |
 | Tijori `markets` | index ids | index-data-api → index-metric-data-api (`metric`) |
 | Tijori `macro` | indicator ids | macro-chart-api |
 | Tijori `ideas-dashboard` | idea slugs | idea-page → idea-card-body |
 | Screener `screens-list` (first page) | screen links | screen-page (G4) |
-| Screener `screens-list` (first page) | author profile links | user-public-profile (G4) |
-| Screener `product-prices` (first page) | HS-code links | commodity-page (G4) |
+| Screener `screen-page` (first page) | author profile links | user-public-profile (G4) |
+| Screener `hs-search-api` (first result page) | commodity links | commodity-page (G4) |
 | Tijori `filter-popular-queries`, `filter-public-queries` (first result page) | query links | filter-popular-query-results-api (G4) |
 
 The G4 rows are bounded: only instances linked from the hub's first page or first result page

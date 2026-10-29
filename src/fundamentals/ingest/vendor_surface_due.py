@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from itertools import groupby
@@ -38,17 +38,19 @@ from fundamentals.store.vendor_values_store import USABLE, VendorValue, VendorVa
 
 MAX_ATTEMPTS = 10
 RESULTS_FEEDS = ("results-latest", "quarterly-results-api")
+PARENTS = ("company-page", "company-financials")  # capture_company moves these to the front.
 # The latest outcome per logical surface supersedes earlier parses of the same capture.
 HISTORY = """SELECT DISTINCT ON (c.id, o.surface, o.traversal_key IS NULL) c.*, a.url,
-    o.surface AS logical, o.status, o.detail, o.traversal_key IS NOT NULL AS traversal,
+    o.id AS outcome, o.surface AS logical, o.status, o.detail,
+    o.traversal_key IS NOT NULL AS traversal, o.traversal_page AS page,
     o.traversal_key IS NULL OR o.traversal_done AS done
 FROM eqos.capture_refs c JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
 JOIN eqos.vendor_outcomes o ON o.capture_ref_id = c.id AND o.parser_version NOT LIKE '%%.slug.v1'
 WHERE c.surface LIKE 'vs.%%' ORDER BY c.id, o.surface, o.traversal_key IS NULL, o.id DESC"""
-PERIODS = """SELECT v.capture_ref_id, max(to_date(v.column_label, 'Mon YYYY'))
-FROM eqos.vendor_values v JOIN eqos.capture_refs c ON c.id = v.capture_ref_id
-WHERE c.surface = ANY(%s) AND v.column_label ~ '^[A-Z][a-z]{2} [0-9]{4}$' GROUP BY 1"""
-FEED_VALUES = """SELECT v.*, o.surface AS feed, c.capture_id AS retrieved FROM eqos.vendor_values v
+PERIODS = """SELECT outcome_id, max(to_date(column_label, 'Mon YYYY')) FROM eqos.vendor_values
+WHERE outcome_id = ANY(%s) AND column_label ~ '^[A-Z][a-z]{2} [0-9]{4}$' GROUP BY 1"""
+FEED_VALUES = """SELECT v.*, o.surface AS feed, o.parser_version, c.capture_id AS retrieved
+FROM eqos.vendor_values v
 JOIN eqos.vendor_outcomes o ON o.id = v.outcome_id
 JOIN eqos.capture_refs c ON c.id = v.capture_ref_id
 WHERE o.surface = ANY(%s) AND o.status = ANY(%s) AND v.table_key = o.surface || ':feed'
@@ -77,7 +79,8 @@ class Obligation(BaseModel):
     basis: Basis | None
     attempts: int
     state: ObligationState
-    retry: tuple[str, ...]  # Traversal keys of the instances still to capture.
+    retry: tuple[Request, ...]  # Open instances still to capture, at their parent's priority.
+    spent: tuple[str, ...]  # Traversal keys of open instances out of attempts.
 
 
 class Trigger(BaseModel):
@@ -98,15 +101,18 @@ class Seen(BaseModel):
     usable: bool
     gated: bool
     period: date | None
+    expandable: bool = True  # A traversal's first page, kept or gated: what advertises children.
 
 
 class Node(BaseModel):
-    """One request instance of the retained tree, its parent and its expansion gaps."""
+    """One request instance of the retained tree and its expansion gaps."""
 
     model_config = ConfigDict(frozen=True)
     request: Request
-    parent: str | None
     gaps: tuple[str, ...]
+
+
+Expand = Callable[[Request, Seen], tuple[tuple[Request, ...], tuple[str, ...]]]
 
 
 def is_due(
@@ -123,10 +129,11 @@ def is_due(
 def history(pool: ConnectionPool, specs: tuple[SurfaceSpec, ...]) -> dict[str, list[Seen]]:
     """Every configured capture, oldest retrieval first, keyed by its traversal identity."""
     by_id = {(spec.site, spec.id): spec for spec in specs}
-    statements = ["vs." + s.id for s in specs if s.cadence is Cadence.AFTER_RESULTS]
+    statements = {"vs." + s.id for s in specs if s.cadence is Cadence.AFTER_RESULTS}
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
         rows = cursor.execute(HISTORY).fetchall()
-        periods: dict[int, date] = dict(conn.execute(PERIODS, (statements,)).fetchall())
+        selected = [r["outcome"] for r in rows if r["surface"] in statements and not r["traversal"]]
+        periods: dict[int, date] = dict(conn.execute(PERIODS, (selected,)).fetchall())
     found: dict[str, list[Seen]] = {}
     for _, group in groupby(rows, key=lambda row: row["id"]):
         outcomes = list(group)
@@ -134,15 +141,22 @@ def history(pool: ConnectionPool, specs: tuple[SurfaceSpec, ...]) -> dict[str, l
         if not (spec := by_id.get((Site(row["source_id"]), row["surface"][3:]))):
             continue
         parsed = {o["logical"]: o for o in outcomes if not o["traversal"]}
+        complete = {spec.id, *spec.sections} <= parsed.keys() and all(
+            o["status"] in USABLE for o in outcomes
+        )
+        gated = parsed.get(spec.id, {}).get("detail") == TOPOLOGY_UNKNOWN
         key = traversal_key(Request(spec=spec, url=row["url"], ids=None, due_since=None))
         found.setdefault(key, []).append(
             Seen(
                 ref=capture_of(row),
                 retrieved_at=retrieved_at(row["capture_id"]),
-                usable={spec.id, *spec.sections} <= parsed.keys()
-                and all(o["status"] in USABLE and o["done"] for o in outcomes),
-                gated=parsed.get(spec.id, {}).get("detail") == TOPOLOGY_UNKNOWN,
-                period=periods.get(row["id"]),
+                usable=complete and all(o["done"] for o in outcomes),
+                gated=gated,
+                period=max(
+                    (periods[o["outcome"]] for o in outcomes if o["outcome"] in periods),
+                    default=None,
+                ),
+                expandable=(complete or gated) and all(o["page"] in (None, 1) for o in outcomes),
             )
         )
     for seen in found.values():
@@ -166,42 +180,48 @@ def results_rows(
     for _, group in groupby(rows, key=lambda row: row["outcome_id"]):
         cells = list(group)
         values = tuple(VendorValue.model_validate(row) for row in cells)
-        for item in feed_rows(feeds[cells[0]["feed"]], values):
+        legacy = cells[0]["parser_version"].endswith(".v1")
+        for item in feed_rows(feeds[cells[0]["feed"]], values, legacy):
             company = "/".join(urlsplit(item.company).path.split("/")[2:3])
             first.setdefault((company, item.row_id), retrieved_at(cells[0]["retrieved"]))
     return first
 
 
-def tree(
-    roots: Iterable[Request],
-    seen: dict[str, list[Seen]],
-    store: SnapshotStore,
-    specs: tuple[SurfaceSpec, ...],
-    peers: tuple[int, ...],
-) -> dict[str, Node]:
-    """The bounded request tree that the latest retained parent captures advertise."""
+def expander(
+    store: SnapshotStore, specs: tuple[SurfaceSpec, ...], peers: tuple[int, ...]
+) -> Expand:
+    """Read a retained parent capture's advertised children and gaps, once per capture."""
+    cache: dict[tuple[str, str], tuple[tuple[Request, ...], tuple[str, ...]]] = {}
+
+    def expand(request: Request, base: Seen) -> tuple[tuple[Request, ...], tuple[str, ...]]:
+        """Children carry the parent capture's retrieval as their priority."""
+        ref = base.ref
+        if (marker := (request.url, ref.capture_id)) not in cache:
+            record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
+            context = request.context(record, ref.blob_sha256)
+            children, gaps = advertised(
+                request, Body(raw=store.read_body(record)), context, specs, peers
+            )
+            update = {"due_since": base.retrieved_at}
+            cache[marker] = tuple(c.model_copy(update=update) for c in children), gaps
+        return cache[marker]
+
+    return expand
+
+
+def tree(roots: Iterable[Request], seen: dict[str, list[Seen]], expand: Expand) -> dict[str, Node]:
+    """The bounded request tree that each instance's latest first-page capture advertises."""
     nodes: dict[str, Node] = {}
-    queue: list[tuple[Request, str | None]] = [(root, None) for root in roots]
+    queue = list(roots)
     while queue:
-        request, parent = queue.pop(0)
+        request = queue.pop(0)
         if (key := traversal_key(request)) in nodes:
             continue
-        children: tuple[Request, ...] = ()
-        gaps: tuple[str, ...] = ()
-        if base := latest(seen, key):
-            ref = base.ref
-            record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-            body = Body(raw=store.read_body(record))
-            context = request.context(record, ref.blob_sha256)
-            children, gaps = advertised(request, body, context, specs, peers)
-        nodes[key] = Node(request=request, parent=parent, gaps=gaps)
-        queue.extend((item, key) for item in children)
+        base = next((s for s in reversed(seen.get(key, [])) if s.expandable), None)
+        children, gaps = expand(request, base) if base else ((), ())
+        nodes[key] = Node(request=request, gaps=gaps)
+        queue.extend(children)
     return nodes
-
-
-def latest(seen: dict[str, list[Seen]], key: str) -> Seen | None:
-    """The newest capture a parent's children can be read from."""
-    return next((s for s in reversed(seen.get(key, [])) if s.usable or s.gated), None)
 
 
 def covered_universe(pool: ConnectionPool, store: SnapshotStore) -> tuple[CompanyIds, ...]:
@@ -226,9 +246,10 @@ def covered_universe(pool: ConnectionPool, store: SnapshotStore) -> tuple[Compan
 def pending_triggers(
     ids: CompanyIds,
     specs: tuple[SurfaceSpec, ...],
-    nodes: dict[str, Node],
+    roots: tuple[Request, ...],
     seen: dict[str, list[Seen]],
     rows: dict[tuple[str, str], datetime],
+    expand: Expand,
 ) -> tuple[Trigger, ...]:
     """Results rows for this company whose statement obligations are not all satisfied."""
     triggers = []
@@ -236,7 +257,7 @@ def pending_triggers(
         if company not in (ids.nse_symbol, ids.tijori_slug):
             continue
         found = (
-            obligation(spec, basis, first, nodes, seen)
+            obligation(spec, basis, first, roots, seen, expand)
             for spec in specs
             if spec.cadence is Cadence.AFTER_RESULTS and spec.scope is Scope.COMPANY
             for basis in (
@@ -255,63 +276,60 @@ def obligation(
     spec: SurfaceSpec,
     basis: Basis | None,
     first: datetime,
-    nodes: dict[str, Node],
+    roots: tuple[Request, ...],
     seen: dict[str, list[Seen]],
+    expand: Expand,
 ) -> Obligation | None:
-    """Every required instance of one surface and basis, with its expansion parents."""
-    keys = [
-        key
-        for key, node in nodes.items()
-        if node.request.basis == basis
-        and (
-            node.request.spec.id == spec.id
-            or node.parent is None
-            and expansion_name(spec, node.request.spec.id) is not None
-        )
+    """Every instance that the satisfying parent captures advertise, frozen capture by capture.
+
+    An instance is satisfied by its first refreshing capture whose expansion has no gap for this
+    surface; only that capture's children are required, so a later parent never changes the tree
+    and descendants of an unsatisfied instance do not exist. An open instance has one attempt per
+    day with a capture since its start, and is out of attempts at MAX_ATTEMPTS.
+    """
+    queue = [
+        r
+        for r in roots
+        if r.basis == basis and (r.spec.id == spec.id or expansion_name(spec, r.spec.id))
     ]
-    if not keys:
+    if not queue:
         return None
-
-    def headed(key: str) -> bool:
-        """Roots and instances with a period header compare against their own baseline."""
-        return nodes[key].parent is None or any(s.period for s in seen.get(key, []))
-
-    def since(key: str) -> datetime | None:
-        """Headed instances count from the trigger; the others from their parent's refresh."""
-        parent = nodes[key].parent
-        return first if headed(key) or parent is None else refreshed(parent)
-
-    def refreshed(key: str) -> datetime | None:
-        """The first capture meeting the refresh rule: a newer period, or after the parent."""
-        usable = [s for s in seen.get(key, []) if s.usable]
-        if headed(key):
+    prefix = f"{SITE_NAME[spec.site]}:{spec.id}:"
+    visited: set[str] = set()
+    open_: dict[str, tuple[Request, int]] = {}
+    while queue:
+        request = queue.pop(0)
+        if (key := traversal_key(request)) in visited:
+            continue
+        visited.add(key)
+        captures = seen.get(key, [])
+        usable = [s for s in captures if s.usable]
+        start = request.due_since or first  # A headerless child counts from its parent's capture.
+        if request.due_since is None or any(s.period for s in captures):
             old = max(
                 (s.period for s in usable if s.retrieved_at <= first and s.period), default=date.min
             )
-            usable = [s for s in usable if s.period and s.period > old]
-        start = since(key)
-        return next((s.retrieved_at for s in usable if start and s.retrieved_at > start), None)
-
-    open_ = [key for key in keys if refreshed(key) is None]
-    attempts = {
-        key: sum(s.retrieved_at > start for s in seen.get(key, []))
-        for key in open_
-        if (start := since(key)) is not None
-    }
-    prefix = f"{SITE_NAME[spec.site]}:{spec.id}:"
-    gaps = any(gap.startswith(prefix) for key in keys for gap in nodes[key].gaps)
-    state = ObligationState.PENDING
-    if not open_ and not gaps:
-        state = ObligationState.SATISFIED
-    elif open_ and all(attempts.get(key, 0) >= MAX_ATTEMPTS for key in open_):
-        state = ObligationState.EXHAUSTED
+            usable, start = [s for s in usable if s.period and s.period > old], first
+        for base in (s for s in usable if s.retrieved_at > start):
+            children, gaps = expand(request, base)
+            if not any(gap.startswith(prefix) for gap in gaps):
+                queue.extend(c for c in children if c.spec.id == spec.id)
+                break
+        else:
+            days = {s.retrieved_at.date() for s in captures if s.retrieved_at > start}
+            open_[key] = request, len(days)
+    state = ObligationState.SATISFIED
+    if open_:
+        spent = all(n >= MAX_ATTEMPTS for _, n in open_.values())
+        state = ObligationState.EXHAUSTED if spent else ObligationState.PENDING
     return Obligation(
         site=spec.site,
         surface=spec.id,
         basis=basis,
-        attempts=max(attempts.values(), default=0),
+        attempts=max((n for _, n in open_.values()), default=0),
         state=state,
-        retry=tuple(key for key, count in attempts.items() if count < MAX_ATTEMPTS),
+        retry=tuple(r for r, n in open_.values() if n < MAX_ATTEMPTS),
+        spent=tuple(k for k, (_, n) in open_.items() if n >= MAX_ATTEMPTS),
     )
 
 
@@ -325,27 +343,31 @@ def due_requests(
     due: list[Request] = []
     notes: list[str] = []
 
-    def queue(nodes: dict[str, Node], pending: set[str], label: str) -> None:
-        """Queue due instances; children take their parent capture's time as priority."""
-        for key, node in nodes.items():
+    def queue(
+        nodes: dict[str, Node], pending: dict[str, Request], spent: set[str], label: str
+    ) -> None:
+        """Queue due instances: obligation instances at most once a day, never when spent."""
+        for key, node in {
+            **{k: Node(request=r, gaps=()) for k, r in pending.items()},
+            **nodes,
+        }.items():
             request, hist, spec = node.request, seen.get(key, []), node.request.spec
+            notes.extend(label + gap for gap in node.gaps)
+            if key in spent or key in pending and any(s.retrieved_at >= today for s in hist):
+                continue
             usable = [s for s in hist if s.usable]
             if request.basis and request.ids and request.ids.topology is None:
                 spec = spec.model_copy(update={"cadence": Cadence.WEEKLY})
                 usable = [s for s in hist if s.usable or s.gated]
             last = usable[-1].retrieved_at if usable else None
-            retry = key in pending and not any(s.retrieved_at >= today for s in hist)
-            if is_due(spec, last, now, retry):
-                parent = latest(seen, node.parent) if node.parent else None
-                since = parent.retrieved_at if parent else last
-                due.append(request.model_copy(update={"due_since": since}))
-            notes.extend(label + gap for gap in node.gaps)
+            if is_due(spec, last, now, key in pending):
+                due.append(request.model_copy(update={"due_since": request.due_since or last}))
 
-    queue(tree(market_requests(specs, pool), seen, store, specs, ()), set(), "")
+    queue(tree(market_requests(specs, pool), seen, expander(store, specs, ())), {}, set(), "")
     for ids in universe:
         peers = tuple(o.screener_company_id for o in universe if o != ids and o.screener_company_id)
-        nodes = tree(company_requests(specs, ids), seen, store, specs, peers)
-        triggers = pending_triggers(ids, specs, nodes, seen, rows)
+        expand, roots = expander(store, specs, peers), company_requests(specs, ids)
+        triggers = pending_triggers(ids, specs, roots, seen, rows, expand)
         obligations = [o for t in triggers for o in t.obligations]
         notes.extend(
             f"{ids.nse_symbol}:{SITE_NAME[o.site]}:{o.surface}:{o.basis or '-'}: INCOMPLETE"
@@ -361,8 +383,9 @@ def due_requests(
             )
             if missing is None
         )
-        pending = {k for o in obligations if o.state is ObligationState.PENDING for k in o.retry}
-        queue(nodes, pending, f"{ids.nse_symbol}: ")
+        pending = {traversal_key(r): r for o in obligations for r in o.retry}
+        spent = {k for o in obligations for k in o.spent} - pending.keys()
+        queue(tree(roots, seen, expand), pending, spent, f"{ids.nse_symbol}: ")
     due.sort(key=lambda r: (r.due_since is not None, r.due_since or now))
     return tuple(due), tuple(dict.fromkeys(notes))
 
@@ -375,12 +398,17 @@ def capture_due(
     specs: tuple[SurfaceSpec, ...],
     now: datetime,
 ) -> RunReport:
-    """Capture due work in rounds, market feeds first, until nothing new is due this run."""
+    """Capture due work in rounds, market feeds first, until nothing new is due this run.
+
+    Consecutive requests of one company (or the market) form one call, in global due order; a
+    parent after a non-parent starts a new call, since capture_company moves parents first.
+    """
     tried: set[str] = set()
     reports: list[RunReport] = []
     feeds_first = True
     # An unresolved slug is retried once every run, whether or not anything else is due.
     discovery = {i.nse_symbol: i for i in covered_universe(pool, store) if i.tijori_slug is None}
+    without_tijori = tuple(s for s in specs if s.site is not Site.TIJORI)
     while True:
         due, notes = due_requests(pool, store, specs, now)
         batch = [r for r in due if r.url not in tried]
@@ -388,20 +416,38 @@ def capture_due(
         feeds_first = False
         if not batch and not discovery:
             break
-        groups: dict[str, list[Request]] = {name: [] for name in discovery}
+        runs: list[list[Request]] = []
         for request in batch:
             tried.add(request.url)
-            name = request.ids.nse_symbol if request.ids else request.url
-            groups.setdefault(name, []).append(request)
-        for name, group in groups.items():
-            company = discovery.pop(name, None) or group[0].ids
-            reports.append(
-                capture_company(fetcher, store, pool, values, specs, company, tuple(group))
-                if company
-                else capture_market(
-                    fetcher, store, pool, values, specs, requests=tuple(group), today=now.date()
+            last = runs[-1][-1] if runs else None
+            if (
+                last is None
+                or last.ids != request.ids
+                or request.spec.id in PARENTS
+                and last.spec.id not in PARENTS
+            ):
+                runs.append([])
+            runs[-1].append(request)
+        listed = {r.ids.nse_symbol for r in batch if r.ids}
+        calls: list[tuple[CompanyIds | None, list[Request]]] = [(r[0].ids, r) for r in runs]
+        calls += [(ids, []) for name, ids in discovery.items() if name not in listed]
+        for company, run in calls:
+            if company is None:
+                report = capture_market(
+                    fetcher,
+                    store,
+                    pool,
+                    values,
+                    specs,
+                    requests=tuple(run),
+                    today=now.date(),
+                    scheduled=True,
                 )
-            )
+            else:
+                found = discovery.pop(company.nse_symbol, None)
+                scoped = specs if found or company.tijori_slug else without_tijori
+                report = capture_company(fetcher, store, pool, values, scoped, company, tuple(run))
+            reports.append(report)
     return RunReport(
         expected=sum(r.expected for r in reports),
         completed=sum(r.completed for r in reports),

@@ -266,10 +266,14 @@ def _feed_date(raw: str) -> date:
     return datetime.fromisoformat(raw).date()
 
 
-def _row_id(row: dict[str, VendorValue]) -> str:
+def _row_id(row: dict[str, VendorValue], legacy: bool) -> str:
     """The source link, else a digest of the company and the row's declared key cells."""
     if row["Row ID"].link:
         return row["Row ID"].link
+    if legacy:  # Parser v1 recorded no key cells and digested the row's display text.
+        return hashlib.sha256(
+            json.dumps([row["Company"].link, row["Row ID"].raw_text]).encode()
+        ).hexdigest()
     keys = [value.raw_text for label, value in sorted(row.items()) if label.startswith("Key")]
     if not keys:
         raise ValueError("feed row has no stable identity")
@@ -277,7 +281,9 @@ def _row_id(row: dict[str, VendorValue]) -> str:
     return hashlib.sha256(json.dumps([company, *keys]).encode()).hexdigest()
 
 
-def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedRow, ...]:
+def feed_rows(
+    spec: SurfaceSpec, values: tuple[VendorValue, ...], legacy: bool = False
+) -> tuple[FeedRow, ...]:
     """Read persisted feed metadata, rejecting category hubs and other non-feeds."""
     if not spec.feed:
         raise ValueError("surface is not a feed")
@@ -287,7 +293,7 @@ def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedR
             rows.setdefault(value.row_index, {})[value.column_label] = value
     return tuple(
         FeedRow(
-            row_id=_row_id(row),
+            row_id=_row_id(row, legacy),
             company=row["Company"].link or row["Company"].raw_text,
             row_date=_feed_date(row["Date"].raw_text) if "Date" in row else None,
         )

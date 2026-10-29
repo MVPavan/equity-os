@@ -49,7 +49,9 @@ NO_BASELINE = "NO_BASELINE"
 ROW_COUNT_DROP = "ROW_COUNT_DROP"
 MISSING_OUTCOME = "MISSING_OUTCOME"
 COMPANY_OVERDUE = "COMPANY_OVERDUE"
-# Statements follow quarterly results, so a quarter is their nominal cadence.
+# Operational policy (reviewed ruling, 2026-10-29): statements follow quarterly results, so a
+# covered company with no usable AFTER_RESULTS capture in 92 days (one quarter plus a day) is
+# overdue, whether or not a results trigger was seen.
 PERIOD = {
     Cadence.DAILY: timedelta(days=1),
     Cadence.WEEKLY: timedelta(days=7),
