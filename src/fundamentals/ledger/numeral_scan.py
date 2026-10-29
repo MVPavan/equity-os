@@ -38,7 +38,7 @@ _STRUCTURAL = re.compile(
             r"\b(?:hash|sha256|commit|digest)[ \t:=]+(?!\d+(?:\.\d+)?e[+-]?\d+\b)"
             r"(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b",
             r"\b(?:" + "|".join(sorted(_ID_PREFIXES)) + r"):[1-9]\d*\b",
-            r"\b(?:run-\d+|F\d{1,2})\b",  # rendered identifiers
+            r"\b(?:run-\d+|[A-Z]\d{1,2})\b",  # rendered identifiers
             r"(?:\bPBT / revenue|\(current − prior\) / prior) × 100\b",  # formulas
         )
     ),
