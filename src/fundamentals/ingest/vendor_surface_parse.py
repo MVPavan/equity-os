@@ -164,3 +164,24 @@ PARSERS[Site.TIJORI, "shareholding-overview"] = ParserEntry(
 PARSERS[Site.TIJORI, "shareholding-trend"] = ParserEntry(
     version="tijori:shareholding-trend.v1", parse=tijori_shareholding_trend
 )
+
+
+# Task 13: G2 market tables and feed metadata.
+def _register_market_tables() -> None:
+    """Append configured G2 market parsers without changing company registrations."""
+    from pathlib import Path
+
+    from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, Scope, load_specs
+    from fundamentals.ingest.vendor_surface_tables import market_parser
+
+    for spec in load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    ):
+        if spec.scope is Scope.MARKET and spec.group is ParseGroup.TABLE:
+            PARSERS[spec.site, spec.id] = ParserEntry(
+                version=f"{SITE_NAME[spec.site]}:{spec.id}.v1", parse=market_parser(spec)
+            )
+
+
+_register_market_tables()

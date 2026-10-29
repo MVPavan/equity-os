@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import io
 import json
 import re
 import tokenize
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fundamentals.ingest.vendor_surface_specs import load_specs
+from pydantic import BaseModel, ConfigDict
+
+from fundamentals.ingest.vendor_surface_specs import SurfaceSpec, load_specs
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
-    from fundamentals.ingest.vendor_surface_parse import Body, ParseContext
+    from fundamentals.ingest.vendor_surface_parse import Body, ParseContext, Parser
 
 
 def _text(node: Any) -> str:
@@ -50,12 +54,17 @@ def _cell(node: Any, key: str, row: int, column: int, label: str, header: str) -
 def read_html_table(tree: Any, selector: str, table_key: str) -> tuple[VendorValue, ...]:
     """Read a rectangular HTML table, rejecting missing or ragged markup."""
     (table,) = tree.xpath(selector)
-    return _table_rows(table, table_key, table.xpath("./tbody/tr | ./tr[td]"))
+    return _table_rows(table, table_key, table.xpath("./tbody/tr[td] | ./tr[td]"))
 
 
 def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValue, ...]:
     """Preserve source locators while applying the strict table shape contract."""
-    headers = [_text(n) for n in table.xpath("./thead/tr/th | ./tr[th]/th")]
+    headers = [
+        _text(n)
+        for n in table.xpath(
+            "(./thead/tr | ./tr[th and not(td)] | ./tbody/tr[th and not(td)])[1]/th"
+        )
+    ]
     if not headers:
         raise ValueError("table header missing")
     values: list[VendorValue] = []
@@ -235,3 +244,171 @@ def tijori_shareholding_trend(body: Body, context: ParseContext) -> tuple[Vendor
                 )
             )
     return tuple(values)
+
+
+class FeedRow(BaseModel):
+    """A source event identity with a date only when the source supplies one."""
+
+    model_config = ConfigDict(frozen=True)
+    row_id: str
+    company: str
+    row_date: date | None = None
+
+
+def _feed_date(raw: str) -> date:
+    """Accept the full date formats actually displayed by the retained feeds."""
+    for format in ("%d %B %Y", "%d %b %Y", "%d %b, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(raw, format).date()
+        except ValueError:
+            pass
+    return datetime.fromisoformat(raw).date()
+
+
+def feed_rows(spec: SurfaceSpec, values: tuple[VendorValue, ...]) -> tuple[FeedRow, ...]:
+    """Read persisted feed metadata, rejecting category hubs and other non-feeds."""
+    if not spec.feed:
+        raise ValueError("surface is not a feed")
+    rows: dict[int, dict[str, VendorValue]] = {}
+    for value in values:
+        if value.table_key == spec.id + ":feed":
+            rows.setdefault(value.row_index, {})[value.column_label] = value
+    return tuple(
+        FeedRow(
+            row_id=row["Row ID"].link
+            or hashlib.sha256(
+                json.dumps([row["Company"].link, row["Row ID"].raw_text]).encode()
+            ).hexdigest(),
+            company=row["Company"].link or row["Company"].raw_text,
+            row_date=_feed_date(row["Date"].raw_text) if "Date" in row else None,
+        )
+        for _, row in sorted(rows.items())
+    )
+
+
+def _feed_cells(
+    node: Any, company: Any, surface: str, row: int, dated: Any = None, event: Any = None
+) -> tuple[VendorValue, ...]:
+    """Anchor event and company metadata to source text and links."""
+    companies = company.xpath(
+        './/a[starts-with(@href,"/company/")] | self::a[starts-with(@href,"/company/")]'
+    )
+    company = companies[0] if companies else company
+    links = node.xpath(
+        './/a[not(starts-with(@href,"/company/")) and not(starts-with(@href,"/people/"))]/@href'
+    )
+    identity = links[0] if links else None
+    if event is not None:
+        identity = event.get("href")
+    if surface == "ipo":
+        identity = company.get("href")
+    fields = [
+        ("Company", company, company.get("href") if companies else None),
+        ("Row ID", event if event is not None else node, identity),
+    ]
+    if dated is not None:
+        fields.append(("Date", dated, None))
+    return tuple(
+        _cell(part, surface + ":feed", row, column, _text(company), label).model_copy(
+            update={"link": link, "raw_text": part.get("datetime") or _text(part)}
+        )
+        for column, (label, part, link) in enumerate(fields)
+    )
+
+
+def market_parser(spec: SurfaceSpec) -> Parser:
+    """Bind one configured market surface to its retained table or card shape."""
+    surface = spec.id
+
+    def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+        """Preserve positional cells and validate full feed dates before recording."""
+        assert spec.selector is not None
+        nodes = body.tree().xpath(spec.selector)
+        if not nodes:
+            raise ValueError("market block missing")
+        values: list[VendorValue] = []
+        event_index = 0
+        for index, node in enumerate(nodes):
+            key = f"{surface}:{index}"
+            if node.tag == "table":
+                values.extend(read_html_table(node, ".", key))
+                if spec.feed:
+                    headers = [_text(n) for n in node.xpath("./thead/tr/th")]
+                    for tr in node.xpath("./tbody/tr[td] | ./tr[td]"):
+                        cells = tr.xpath("./td | ./th")
+                        company = cells[0]
+                        date_node = next(
+                            (
+                                cell
+                                for cell, label in zip(cells, headers, strict=True)
+                                if label in {"Date", "Result date", "Pub date", "Ex date"}
+                            ),
+                            None,
+                        )
+                        if date_node is not None and date_node.xpath('./div[@class="desktop"]'):
+                            date_node = date_node.xpath('./div[@class="desktop"]')[0]
+                        values.extend(_feed_cells(tr, company, surface, event_index, date_node))
+                        event_index += 1
+            elif surface in {"results-latest", "quarterly-results-api"}:
+                table = node.xpath(".//table")[0]
+                values.extend(read_html_table(table, ".", key))
+                header = node.getprevious() if surface == "results-latest" else node
+                company = header.xpath('.//a[starts-with(@href,"/company/")]')[0]
+                dates = header.xpath('.//span[contains(@class,"event_date")]')
+                date_node = dates[0] if dates and _text(dates[0]) not in {"", "Today"} else None
+                event = (
+                    header.xpath('.//a[contains(@href,"/source/quarter/")]')[0]
+                    if surface == "results-latest"
+                    else table.xpath("./thead/tr/th[4]")[0]
+                )
+                values.extend(_feed_cells(header, company, surface, index, date_node, event))
+                for column, part in enumerate(
+                    header.xpath(
+                        './/a[@href] | .//div[@class="metrics"]/div | '
+                        './/span[@class="sub" or @data-mcap or @class="sub margin-left-16"]'
+                    )
+                ):
+                    values.append(_cell(part, key + ":header", 0, column, _text(company), "Header"))
+            elif surface == "idea-page":
+                if "no_data" not in node.get("class", "").split():
+                    raise ValueError("unretained idea card shape")
+            elif surface == "idea-card-body":
+                for column, part in enumerate(
+                    node.xpath(
+                        './/span[@class="name" or @class="symbol" '
+                        'or @class="market_cap" or @class="sector"]'
+                    )
+                ):
+                    values.append(
+                        _cell(part, surface, index, column, _text(node), part.get("class"))
+                    )
+            else:
+                parts = (
+                    node.xpath(".//a[@href]") if surface != "market-pulse" else node.xpath("./div")
+                )
+                if surface == "ratings-feed":
+                    company = node.xpath("./a")[0]
+                    label = _text(company).split(":", 1)[0]
+                    values.append(_cell(company, key, 0, 0, label, "Report"))
+                    metadata = _feed_cells(node, company, surface, index)
+                    values.extend(
+                        v.model_copy(update={"raw_text": label})
+                        if v.column_label == "Company"
+                        else v
+                        for v in metadata
+                    )
+                else:
+                    for column, part in enumerate(parts):
+                        values.append(_cell(part, surface, index, column, _text(node), "Text"))
+                    if spec.feed:
+                        company = node.xpath('.//a[starts-with(@href,"/company/")]')[0]
+                        dates = node.xpath(".//time[@datetime]")
+                        values.extend(
+                            _feed_cells(node, company, surface, index, dates[0] if dates else None)
+                        )
+        result = tuple(values)
+        if spec.feed:
+            feed_rows(spec, result)
+        return result
+
+    return parse
