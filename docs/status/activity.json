@@ -1,16 +1,19 @@
 {
   "now": {
     "title": "LIVE-RUN-1: FY26_Q2 approved; FY26_Q3 fix in progress",
-    "detail": "FY26_Q2 is APPROVED on live as version 8 (Sol panel, after the report-export fixes and the owner's materiality ruling). FY26_Q3 version 9 got REQUEST_CHANGES: the cables CAGR guidance was shown as annual point guidance and labelled MODIFIED. Fix eqos-dna.2 (honest label, 'N%-plus', comparability qualifier) is with Opus; then Sol review, a fresh rehearsal and the live rerun. Audit lane B merged; lane A gate rerunning.",
+    "detail": "FY26_Q2 is APPROVED on live as version 8 (Sol panel, after the report-export fixes and the owner's materiality ruling). FY26_Q3 version 9 got REQUEST_CHANGES: the cables CAGR guidance was shown as annual point guidance and labelled MODIFIED. Fix eqos-dna.2 (honest label, 'N%-plus', comparability qualifier) is with Opus; then Sol review, a fresh rehearsal and the live rerun. Both audit lanes merged: all five audit P1 bugs fixed.",
     "stage": "Build"
   },
   "next": [
     "eqos-dna.2 guidance fix: gate, Sol review, merge; rehearse and rerun FY26_Q3 (version 10), Sol panel",
     "FY26_Q4 and FY27_Q1: rehearsal then live step R, each Sol-approved before the next",
-    "Audit lane A (eqos-2tt, eqos-pi8, eqos-5df): gate PASS then merge",
     "VS live exit runs after the owner refreshes the Screener cookie (eqos-aa6.16)"
   ],
   "log": [
+    {
+      "date": "2026-10-29",
+      "text": "Merged audit lane A (eqos-2tt, eqos-pi8, eqos-5df) 595e086d: judgment prose carries no numbers, citation eligibility honours recording cutoffs, numeral scan exempts only identifiers. All five audit P1 bugs closed."
+    },
     {
       "date": "2026-10-29",
       "text": "LIVE-RUN-1 FY26_Q3 v9: Sol panel REQUEST_CHANGES (CAGR guidance shown as annual point, MODIFIED); recorded live (decision 15). Fix eqos-dna.2 ruled: honest presentation, no gate weakened; sealed-ledger misreading filed as eqos-dna.3."
