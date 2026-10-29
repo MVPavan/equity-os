@@ -27,6 +27,7 @@ from fundamentals.ingest.vendor_surface_capture import (
     Request,
     RunReport,
     capture,
+    capture_company,
     company_ids,
     reparse,
 )
@@ -132,6 +133,15 @@ def dispatch_vendor_command(
         ids = company_ids(stock)
         if args.tijori_slug:
             ids = ids.model_copy(update={"tijori_slug": args.tijori_slug})
+        if args.surface != ["screener:chart-api"]:
+            locks = PgSiteLock(pool)
+            fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
+            try:
+                report = capture_company(fetcher, store, pool, values, tuple(selected), ids)
+            finally:
+                locks.close()
+            sys.stdout.write(report.model_dump_json() + "\n")
+            return 0
         page = next(spec for spec in specs if spec.id == "company-page")
         chart = next((spec for spec in selected if spec.id == "chart-api"), None)
         url = f"https://{SITE_AUTHORITY[page.site]}/company/{quote(ids.nse_symbol, safe='')}/"

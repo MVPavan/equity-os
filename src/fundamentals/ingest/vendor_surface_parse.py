@@ -101,3 +101,26 @@ PARSERS: dict[tuple[Site, str], ParserEntry] = {
         version="screener:company-page.v1", parse=company_page
     ),
 }
+
+
+# Task 7: retained-only sections and discovery; numeric readers belong to Tasks 8-10.
+def kept_section(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Keep a declared nonnumeric section without manufacturing observations."""
+    return ()
+
+
+for _site, _surfaces in (
+    (Site.SCREENER, "section-chart section-analysis section-peers"),
+    (
+        Site.TIJORI,
+        "overview-quick-view overview-company-timeline-sidepanel overview-knowledgebase "
+        "overview-popular-queries overview-discussions-and-analysis overview-operationalmetrics "
+        "financials-price financials-reverse-dcf financials-faqfinancials "
+        "shareholding-faqshareholding",
+    ),
+):
+    for _surface in _surfaces.split():
+        PARSERS[_site, _surface] = ParserEntry(
+            version=f"{('screener' if _site is Site.SCREENER else 'tijori')}:{_surface}.v1",
+            parse=kept_section,
+        )
