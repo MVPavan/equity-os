@@ -835,7 +835,7 @@ def capture_company(
         if requests is None:
             expected += len(children)
             pending.extend(children)
-    for url, (ref, body, request) in cached.items():
+    for ref, body, request in cached.values():
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parse_and_record(store, values, ref, record, request, body, "company identity unverified")
         incomplete.append(request.report_key)

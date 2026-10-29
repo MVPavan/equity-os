@@ -286,7 +286,8 @@ def test_extraction_failures_are_recorded_continue_and_retry(pg_db, tmp_path, mo
         assert extract_text(pool, store, model, settings) == 0
         with pool.connection() as conn:
             assert conn.execute(
-                "SELECT status,detail,row_count FROM eqos.vendor_outcomes WHERE starts_with(parser_version,'claims:') ORDER BY id"
+                "SELECT status,detail,row_count FROM eqos.vendor_outcomes "
+                "WHERE starts_with(parser_version,'claims:') ORDER BY id"
             ).fetchall() == [
                 ("FAILED", "OSError" if failure == "source" else "ValueError", 0),
                 ("OK", None, 0),

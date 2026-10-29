@@ -215,7 +215,8 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
         with pool.connection() as conn:
             assert table_rows(conn, ["vendor_values"])["vendor_values"].keys() == before.keys()
             assert conn.execute(
-                "SELECT row_index, column_index, value, raw_text, row_label, column_label, link, unit "
+                "SELECT row_index, column_index, value, raw_text, row_label, "
+                "column_label, link, unit "
                 "FROM eqos.vendor_values ORDER BY row_index"
             ).fetchall() == [
                 (0, 0, None, None, None, None, None, None),

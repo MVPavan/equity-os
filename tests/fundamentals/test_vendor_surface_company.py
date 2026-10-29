@@ -769,6 +769,7 @@ def test_cli_uses_verified_registry_identity_without_watchlist(
 
 def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp_path):
     from vendor_surface_support import capture_response
+
     from fundamentals.ingest.vendor_surface_capture import Request
 
     specs = load_specs(
@@ -788,7 +789,8 @@ def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp
         )
         with pool.connection() as conn:
             outcomes = conn.execute(
-                "SELECT surface,status,row_count FROM eqos.vendor_outcomes WHERE capture_ref_id=%s ORDER BY surface",
+                "SELECT surface,status,row_count FROM eqos.vendor_outcomes "
+                "WHERE capture_ref_id=%s ORDER BY surface",
                 (ref.capture_ref_id,),
             ).fetchall()
     assert [row[:2] for row in outcomes] == [

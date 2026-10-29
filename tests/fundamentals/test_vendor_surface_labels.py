@@ -157,7 +157,9 @@ def test_adapter_bounds_with_fake_transport(monkeypatch, failure):
 )
 def test_cli_maps_logical_g3_labels(pg_db, tmp_path, monkeypatch, site, surface):
     from types import SimpleNamespace
+
     from retention_support import record_of
+
     from fundamentals.api import vendor_surface_cli as cli
     from fundamentals.api.cli_parser import build_parser
     from fundamentals.ingest.vendor_surface_fetch import Fetched
@@ -167,7 +169,8 @@ def test_cli_maps_logical_g3_labels(pg_db, tmp_path, monkeypatch, site, surface)
 
     settings = tmp_path / "model.yaml"
     settings.write_text(
-        "model_id: fake\nbase_url: https://unused.example\nkey_file: fake.key\nprompt_version: v1\ndictionary_version: v3\n"
+        "model_id: fake\nbase_url: https://unused.example\nkey_file: fake.key\n"
+        "prompt_version: v1\ndictionary_version: v3\n"
     )
     (tmp_path / "fake.key").write_text("synthetic")
     monkeypatch.setattr(cli, "MODEL_CONFIG", settings)

@@ -1,7 +1,6 @@
 """The tracer keeps raw evidence, parses stored bytes, and reports every requested set."""
 
 import json
-from fundamentals.ingest.vendor_surface_fetch import request_key
 from decimal import Decimal
 
 import pytest
@@ -9,6 +8,7 @@ import yaml
 from vendor_surface_support import rig
 
 from fundamentals.api.cli import main
+from fundamentals.ingest.vendor_surface_fetch import request_key
 
 __all__ = ["rig"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]

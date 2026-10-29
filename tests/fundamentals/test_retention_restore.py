@@ -199,7 +199,8 @@ def test_a_licence_end_purges_the_vendor_and_restores_expire_it(
         conn.execute(PROPOSE)
         conn.execute("INSERT INTO eqos.vendor_parser_versions VALUES ('units.v1',%s)", ("a" * 64,))
         outcome_id = conn.execute(
-            "INSERT INTO eqos.vendor_outcomes (capture_ref_id,surface,parser_version,status,row_count) "
+            "INSERT INTO eqos.vendor_outcomes "
+            "(capture_ref_id,surface,parser_version,status,row_count) "
             "VALUES (%s,'chart-api','units.v1','OK',1) RETURNING id",
             (held.capture_ref_id,),
         ).fetchone()[0]

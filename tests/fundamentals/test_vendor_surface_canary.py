@@ -581,6 +581,7 @@ def test_full_canary_reports_no_baseline_without_failure(
     pg_db, tmp_path, monkeypatch, capsys, canary_opener
 ):
     from pydantic import SecretStr
+
     from fundamentals.api import cli
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
     from fundamentals.contracts.snapshot import CaptureRecord
