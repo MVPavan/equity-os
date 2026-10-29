@@ -610,7 +610,7 @@ between rehearsal and live.
      before step 1, so rehearsal and live run the same entry.
 1. **Rehearsal** (`ENV=rehearsal`).
    - `db backup --out <scratch>/set --snapshot-root data/raw/snapshots/v1`, then `db restore
-     --set <scratch>/set --database eqos_test_live1 --snapshot-root <scratch>/root
+     --set <scratch>/set/<backup-id> --database eqos_test_live1 --snapshot-root <scratch>/root
      --live-snapshot-root data/raw/snapshots/v1` (A1's form).
    - With `EQOS_PG_DB=eqos_test_live1` and the rehearsal roots, run steps T, X, C1–C4 and R
      exactly. Use the OD-4 rehearsal `ADD`, `provider: rehearsal` verdict files, and

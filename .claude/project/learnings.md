@@ -363,6 +363,10 @@ Format per entry:
   a second gate run. Prove parity by diffing `find . -type f` between the checkouts, with
   `holdout` pruned. Then read the failure messages:
   "retained ... missing" or a FileNotFoundError under `data/` is environmental.
+- The reverse direction too (2026-10-29): when a worktree branch merges, copy any retained files
+  it added under `data/` back into main. DOCS-1's `docs-probe-2026-10-2{7,8}` stayed behind, and
+  main's first full run after the merge showed 28 failures, all of them that missing data. Before
+  merging, run the same `find` diff with the sides swapped.
 
 ## A stale `.mypy_cache` hid a mypy failure on main  (2026-10-28)
 
@@ -397,5 +401,8 @@ Format per entry:
 - Why it matters: tmp_path under `/tmp` turns that refusal into a flake; tmp_path under a
   checkout breaks the `test_verify_*` sandbox repos (they inherit its `pyproject.toml`).
 - Apply: run the full suite through `scripts/verify.sh` (`suite_pytest`), or pass the same
-  `-n 16 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
+  `-n 8 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
   `sys.modules` in-process, which xdist workers would hide.
+- Owner cap (2026-10-29): at most 8 workers in total across everything running at once (the
+  machine is shared; 16 throttled other work). The gate uses 8; concurrent worker lanes use
+  `-n 4` each, or `-n 8` only when running alone.
