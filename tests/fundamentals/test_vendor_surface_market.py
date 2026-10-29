@@ -484,9 +484,9 @@ def test_ambiguous_terminal_page_persists_incomplete_and_prior_boundary(market_r
     url = "https://www.screener.in/announcements/all/?p=1"
     request = Request(spec=spec, url=url, ids=None, due_since=None)
     item = (
-        '<div class="announcement-item"><a href="/company/FIXTURE/">Fixture</a>'
-        '<a href="/event/old">Event</a><time datetime="2026-10-28">Date</time></div>'
-    ).encode()
+        b'<div class="announcement-item"><a href="/company/FIXTURE/">Fixture</a>'
+        b'<a href="/event/old">Event</a><time datetime="2026-10-28">Date</time></div>'
+    )
     opener.overrides[url] = b"<main>" + item + b"</main>", 200
     assert not run((), requests=(request,)).incomplete
     key = market.traversal_key(request)
