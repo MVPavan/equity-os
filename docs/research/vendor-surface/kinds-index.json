@@ -149,10 +149,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1298/schedules/?parent=Fixed%20Assets&section=balance-sheet&is_consolidated=true",
     "request_key": "2639a5b02972665e14ca014163feb9f76f3f37a6d59cb7a26e9b4023830b0f54",
-    "basis": "na",
+    "basis": "standalone",
     "status": 200,
     "sha256": "f9af8ab70be20ff5c18db9a08853364c6baab71e777fddb64ea54587942eb1fc",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__2639a5b02972__na.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__2639a5b02972__standalone.json",
     "kind": "response"
   },
   {
@@ -173,10 +173,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1274197/schedules/?parent=Sales&section=quarters&consolidated=",
     "request_key": "2c17c9e86e9e0bc39cfaa5ecd3bf8b2eedc91e1cd873f0509e001435c19458ca",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "743aa259be139e633e4c37eda296418ea86b777778aa17717c8a35986faadc09",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCLIFE/schedules-api__2c17c9e86e9e__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCLIFE/schedules-api__2c17c9e86e9e__consolidated.json",
     "kind": "response"
   },
   {
@@ -245,10 +245,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/2726/schedules/?parent=Other+Assets&section=balance-sheet&consolidated=",
     "request_key": "340c70e7a9c082d6fc424e053fbd843a6b66c6f9c7517bd8741da24402f86bf2",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "16036f564633f6e2f30f87b8ba35fd920c1805c9b55113236f730b5a69ffd883",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__340c70e7a9c0__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__340c70e7a9c0__consolidated.json",
     "kind": "response"
   },
   {
@@ -257,10 +257,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/211/schedules/?parent=Other%20Assets&section=balance-sheet&consolidated=",
     "request_key": "3932e10304df625b5760c3d485b67605584533184f08d730f30f5bb9808e758d",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "c3085c352c9f6639d3ad553658c16d31c1fcbbab41c577702b648581223e7936",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__3932e10304df__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__3932e10304df__consolidated.json",
     "kind": "response"
   },
   {
@@ -281,10 +281,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/2726/schedules/?parent=Cash+from+Operating+Activity&section=cash-flow&consolidated=",
     "request_key": "4838adfbd3e52bf1b73b6df10346adb3a96aba9f5d8a90841a96aaa62f9b2650",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "a838f19989f008409aa41f0bf3421840711101bbcac9e42c1ebdcea5f97d1ae4",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__4838adfbd3e5__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__4838adfbd3e5__consolidated.json",
     "kind": "response"
   },
   {
@@ -305,10 +305,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1298/schedules/?parent=Revenue&section=quarters&consolidated=",
     "request_key": "4d1aedf568e20369f3ac0ed083739b75041cac925df5ff353b8050f7a8923f37",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "aa185cda30a8a0dcc0f235c2976de2fb86d3f69066f437f6ecd4bbd5b20980dc",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__4d1aedf568e2__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__4d1aedf568e2__consolidated.json",
     "kind": "response"
   },
   {
@@ -329,10 +329,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1298/schedules/?parent=Net+Profit&section=quarters&consolidated=",
     "request_key": "54b72c59fd99a618e0328692eda113cba6e6f42b37864ead01be15dd95a0ef78",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "7f005214926124519a96304b8c85716f4b3f7db560c2e3bc790b3e4f62afce2f",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__54b72c59fd99__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__54b72c59fd99__consolidated.json",
     "kind": "response"
   },
   {
@@ -353,10 +353,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/211/schedules/?parent=Cash%20from%20Operating%20Activity&section=cash-flow&consolidated=",
     "request_key": "59962494874b3d0f4b1f40d63b5418ac1a2d60521c3e72cac897cc1a61e0c7e3",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "f8d397343313d9c3b3318b978c9efe6470fec6e5d1c0de5a1bb7b98b571bb419",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__59962494874b__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__59962494874b__consolidated.json",
     "kind": "response"
   },
   {
@@ -365,10 +365,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/2726/schedules/?parent=Sales&section=quarters&consolidated=",
     "request_key": "61ff1671afdb58b7a1ed71cb20076188c15cb1bad5afae64a394a4b0d8e96d36",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "63a3913dfb323d996148654cdd5a1ca65fd302ea8518da5121e10b16c917093f",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__61ff1671afdb__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__61ff1671afdb__consolidated.json",
     "kind": "response"
   },
   {
@@ -485,10 +485,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/211/schedules/?parent=Sales&section=profit-loss&consolidated=",
     "request_key": "81159bca4b63de9a2747b0633d45aa89557d1f7e8f79f93f7e08bd91ea7131fe",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "03f79e8f5163d03b7e1a4714fc79470a5b1553ddc28cc28d929547e361fa36af",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__81159bca4b63__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__81159bca4b63__consolidated.json",
     "kind": "response"
   },
   {
@@ -557,10 +557,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1298/schedules/?parent=Revenue&section=quarters&is_consolidated=true",
     "request_key": "96b6923f69a06c82f123e322fa1259bb2a8568686918eba7068eab2f83036907",
-    "basis": "na",
+    "basis": "standalone",
     "status": 200,
     "sha256": "5158d548a4148d0a0ffff75f9964f94a3b6c75d1f9d8115fca24363da9013d30",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__96b6923f69a0__na.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__96b6923f69a0__standalone.json",
     "kind": "response"
   },
   {
@@ -713,10 +713,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/2726/schedules/?parent=Borrowings&section=balance-sheet&consolidated=",
     "request_key": "bdeb1da3adf77c18a2ffabb8d6a5af8922c5afdc4787982f83e31c393128755a",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "7918e62c44d0a5d3deeff80e343bdb5ea90cecab328d05861b9ef6129f748e64",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__bdeb1da3adf7__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__bdeb1da3adf7__consolidated.json",
     "kind": "response"
   },
   {
@@ -797,10 +797,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/211/schedules/?parent=Expenses&section=profit-loss&consolidated=",
     "request_key": "cab1ac8ae370819dca3d9b22fee1589cb36d8744b4ec74ba08de5f0164e0da28",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "e48b1d5965bd5f3ac1f49608f45ca305150f26ec49e6028e9f30f459c6f2676e",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__cab1ac8ae370__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__cab1ac8ae370__consolidated.json",
     "kind": "response"
   },
   {
@@ -1013,10 +1013,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/1298/schedules/?parent=Other+Liabilities&section=balance-sheet&consolidated=",
     "request_key": "effc02fdea3d083a992a4011ab721ce52bfb4947ab4019b8b66954b028231977",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "144c6aa71a839108ffe8b0c0f0ffb816ee1ad649a77d3117ed0381fe3140dd7d",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__effc02fdea3d__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/HDFCBANK/schedules-api__effc02fdea3d__consolidated.json",
     "kind": "response"
   },
   {
@@ -1037,10 +1037,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/2726/schedules/?parent=Expenses&section=profit-loss&consolidated=",
     "request_key": "f23207ef37f589dcef7bd1f2a7b801cb9dc994e8a793ba0cd5f1ffbbaeeb9839",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "949e6e43165114ef4da44ae37549365c014f5d18d77f8e35c3457c31c648f5d4",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__f23207ef37f5__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/RELIANCE/schedules-api__f23207ef37f5__consolidated.json",
     "kind": "response"
   },
   {
@@ -1097,10 +1097,10 @@
     "id": "schedules-api",
     "url": "https://www.screener.in/api/company/211/schedules/?parent=Material%20Cost%20%25&section=profit-loss&consolidated=",
     "request_key": "f96e691a12e7dc33410f05b383d0dcf064f9814c5afba809a7da67ab19219b15",
-    "basis": "standalone",
+    "basis": "consolidated",
     "status": 200,
     "sha256": "a92c936d871831a03c9a9dd1b29039c45d89eeeeb79f2e5fd4fd056ce6352092",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__f96e691a12e7__standalone.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/screener/APARINDS/schedules-api__f96e691a12e7__consolidated.json",
     "kind": "response"
   },
   {
@@ -1814,13 +1814,13 @@
   {
     "symbol": "RELIANCE",
     "site": "tijori",
-    "id": "chartdata-valuation-api",
+    "id": "chartdata-median-pe-api",
     "url": "https://www.tijorifinance.com/api/v1/ind/chartdata/242/median-pe/",
     "request_key": "99c569f77880a621ba7b271c325fb835c072d66705ff77a59fc28fb92e207fc4",
     "basis": "na",
     "status": 200,
     "sha256": "b96ddae028402eb25fcd6d9945cbf8937816bcac491795620f816eaf2be9e22b",
-    "path": "data/raw/vendor-surface/2026-10-28/kinds/tijori/RELIANCE/chartdata-valuation-api__99c569f77880__na.json",
+    "path": "data/raw/vendor-surface/2026-10-28/kinds/tijori/RELIANCE/chartdata-median-pe-api__99c569f77880__na.json",
     "kind": "response"
   },
   {

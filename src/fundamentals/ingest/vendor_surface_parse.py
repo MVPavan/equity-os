@@ -26,18 +26,7 @@ from fundamentals.ingest.vendor_surface_readers import (
     make_reader,
 )
 from fundamentals.ingest.vendor_surface_series import screener_chart
-from fundamentals.ingest.vendor_surface_tables import (
-    screener_announcements,
-    screener_documents,
-    screener_trades,
-    tijori_brands,
-    tijori_connections,
-    tijori_customers,
-    tijori_filings,
-    tijori_shareholding_overview,
-    tijori_shareholding_trend,
-    tijori_suppliers,
-)
+from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, Scope, SurfaceSpec
 from fundamentals.store.vendor_values_store import VendorValue
 
 
@@ -138,38 +127,6 @@ PARSERS.update(
     }
 )
 
-# Task 10: G2 company tables and lists.
-PARSERS[Site.SCREENER, "section-documents"] = ParserEntry(
-    version="screener:section-documents.v1", parse=screener_documents
-)
-PARSERS[Site.SCREENER, "company-trades"] = ParserEntry(
-    version="screener:company-trades.v1", parse=screener_trades
-)
-PARSERS[Site.SCREENER, "company-announcements"] = ParserEntry(
-    version="screener:company-announcements.v1", parse=screener_announcements
-)
-PARSERS[Site.TIJORI, "overview-company-filings"] = ParserEntry(
-    version="tijori:overview-company-filings.v1", parse=tijori_filings
-)
-PARSERS[Site.TIJORI, "overview-customers"] = ParserEntry(
-    version="tijori:overview-customers.v1", parse=tijori_customers
-)
-PARSERS[Site.TIJORI, "overview-suppliers"] = ParserEntry(
-    version="tijori:overview-suppliers.v1", parse=tijori_suppliers
-)
-PARSERS[Site.TIJORI, "overview-brands"] = ParserEntry(
-    version="tijori:overview-brands.v1", parse=tijori_brands
-)
-PARSERS[Site.TIJORI, "overview-connections"] = ParserEntry(
-    version="tijori:overview-connections.v1", parse=tijori_connections
-)
-PARSERS[Site.TIJORI, "shareholding-overview"] = ParserEntry(
-    version="tijori:shareholding-overview.v1", parse=tijori_shareholding_overview
-)
-PARSERS[Site.TIJORI, "shareholding-trend"] = ParserEntry(
-    version="tijori:shareholding-trend.v1", parse=tijori_shareholding_trend
-)
-
 # Task 12: Market series.
 PARSERS.update(
     {
@@ -217,24 +174,16 @@ PARSERS.update(
 
 
 # Task 13: G2 market tables and feed metadata.
-def _register_market_tables() -> None:
-    """Append configured G2 market parsers without changing company registrations."""
-    from pathlib import Path
+def register_tables(specs: tuple[SurfaceSpec, ...]) -> None:
+    """Bind company and market selectors supplied by the composition root."""
+    from fundamentals.ingest.vendor_surface_tables import company_parser, market_parser
 
-    from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, Scope, load_specs
-    from fundamentals.ingest.vendor_surface_tables import market_parser
-
-    for spec in load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    ):
-        if spec.scope is Scope.MARKET and spec.group is ParseGroup.TABLE:
+    for spec in specs:
+        if spec.group is ParseGroup.TABLE:
             PARSERS[spec.site, spec.id] = ParserEntry(
-                version=f"{SITE_NAME[spec.site]}:{spec.id}.v1", parse=market_parser(spec)
+                version=f"{SITE_NAME[spec.site]}:{spec.id}.v1",
+                parse=(market_parser if spec.scope is Scope.MARKET else company_parser)(spec),
             )
-
-
-_register_market_tables()
 
 
 # Task 7: retained-only sections and discovery; numeric readers belong to Tasks 8-10.

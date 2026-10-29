@@ -10,13 +10,12 @@ import re
 import tokenize
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from functools import cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.ingest.vendor_surface_specs import SurfaceSpec, load_specs
+from fundamentals.ingest.vendor_surface_series import numeric_cell, numeric_column, numeric_json
+from fundamentals.ingest.vendor_surface_specs import SurfaceSpec
 from fundamentals.store.vendor_values_store import VendorValue
 
 if TYPE_CHECKING:
@@ -47,7 +46,7 @@ def _cell(node: Any, key: str, row: int, column: int, label: str, header: str) -
         raw_text=raw,
         value=number,
         link=links[0] if links else None,
-        expected_numeric=bool(re.fullmatch(r"[+\-]?[\d,.]+%?", raw)),
+        expected_numeric=numeric_column(header),
     )
 
 
@@ -74,28 +73,27 @@ def _table_rows(table: Any, table_key: str, rows: list[Any]) -> tuple[VendorValu
             raise ValueError("ragged table row")
         for column, cell in enumerate(cells):
             values.append(_cell(cell, table_key, row, column, _text(cells[0]), headers[column]))
+            values.extend(
+                _cell(
+                    link,
+                    f"{table_key}:links:{column}",
+                    row,
+                    index,
+                    _text(cells[0]),
+                    headers[column],
+                )
+                for index, link in enumerate(cell.xpath(".//a[@href]")[1:], start=1)
+            )
     return tuple(values)
 
 
-@cache
-def _selector(surface: str) -> str:
-    """Read the task's selectors from the shared finite surface table."""
-    spec = next(
-        s
-        for s in load_specs(
-            Path("config/vendor_surface/surfaces.yaml"),
-            Path("docs/research/vendor-surface/catalog.yaml"),
-        )
-        if s.id == surface
-    )
-    assert spec.selector is not None
-    return spec.selector
-
-
-def screener_trades(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def screener_trades(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Keep month dividers separately so repeated trade labels never collapse."""
     values: list[VendorValue] = []
-    for table in body.tree().xpath(_selector("company-trades")):
+    tables = body.tree().xpath(selector)
+    if not tables:
+        raise ValueError("trade tables missing")
+    for table in tables:
         key = table.getparent().get("id")
         for row in table.xpath("./tbody/tr[td/@colspan]"):
             (cell,) = row.xpath("./td")
@@ -129,14 +127,17 @@ def _documents(tree: Any, key: str) -> tuple[VendorValue, ...]:
     return tuple(values)
 
 
-def screener_documents(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def screener_documents(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Use each document heading to distinguish present blocks from absent kinds."""
     values: list[VendorValue] = []
-    for heading in body.tree().xpath(_selector("section-documents") + "//h3"):
+    for index, heading in enumerate(body.tree().xpath(selector + "//h3")):
         block = heading
         while "documents" not in block.get("class", "").split():
             block = block.getparent()
-        values.extend(_documents(block, _text(heading)))
+        values.extend(
+            cell.model_copy(update={"row_label": _text(heading)})
+            for cell in _documents(block, f"documents:{index}")
+        )
     return tuple(values)
 
 
@@ -145,14 +146,13 @@ def screener_announcements(body: Body, context: ParseContext) -> tuple[VendorVal
     return _documents(body.tree(), "Announcements")
 
 
-def tijori_filings(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_filings(body: Body, context: ParseContext, selector: str) -> tuple[VendorValue, ...]:
     """Keep every filing cell and link at its year/category position."""
-    return read_html_table(body.tree(), _selector("overview-company-filings"), "companyFilings")
+    return read_html_table(body.tree(), selector, "companyFilings")
 
 
-def _cards(body: Body, surface: str) -> tuple[VendorValue, ...]:
+def _cards(body: Body, surface: str, selector: str) -> tuple[VendorValue, ...]:
     """An absent section heading means this company kind lacks that block."""
-    selector = _selector(surface)
     blocks = body.tree().xpath(selector)
     if not blocks or not blocks[0].xpath(".//h2"):
         return ()
@@ -163,26 +163,6 @@ def _cards(body: Body, surface: str) -> tuple[VendorValue, ...]:
         _cell(node, surface, row, 0, _text(node), _text(node.xpath("ancestor::section[1]//h2")[0]))
         for row, node in enumerate(nodes)
     )
-
-
-def tijori_customers(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read customers from the headed card list."""
-    return _cards(body, "overview-customers")
-
-
-def tijori_suppliers(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read suppliers from the headed card list."""
-    return _cards(body, "overview-suppliers")
-
-
-def tijori_brands(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read brands from the headed card list."""
-    return _cards(body, "overview-brands")
-
-
-def tijori_connections(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
-    """Read the connection list, retaining its supplier/customer subheadings."""
-    return _cards(body, "overview-connections")
 
 
 def read_js_var(body: bytes, name: str) -> Any:
@@ -200,50 +180,67 @@ def read_js_var(body: bytes, name: str) -> Any:
             if token.type == tokenize.STRING
             else token.string
         )
-    return json.loads("".join(parts), parse_float=Decimal, parse_int=Decimal)
+    return numeric_json("".join(parts))
 
 
-def tijori_shareholding_overview(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_shareholding_overview(
+    body: Body, context: ParseContext, selector: str
+) -> tuple[VendorValue, ...]:
     """Read the Overview table and its separately declared chart slices."""
-    values = list(read_html_table(body.tree(), _selector("shareholding-overview"), "overview"))
+    values = list(read_html_table(body.tree(), selector, "overview"))
     for row, (label, number) in enumerate(read_js_var(body.raw, "chartData")):
         values.append(
-            VendorValue(
-                table_key="chartData",
-                row_index=row,
-                column_index=0,
-                locator=f"var chartData/{row}/1",
-                row_label=label,
-                column_label="Shareholding",
-                raw_text="null" if number is None else str(number),
-                value=number,
-                expected_numeric=True,
-                unit="%",
-            )
+            numeric_cell(
+                number, "chartData", row, 0, f"var chartData/{row}/1", label, "Shareholding"
+            ).model_copy(update={"unit": "%"})
         )
     return tuple(values)
 
 
-def tijori_shareholding_trend(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+def tijori_shareholding_trend(
+    body: Body, context: ParseContext, selector: str
+) -> tuple[VendorValue, ...]:
     """Read each trend series by its own point position and timestamp."""
     values: list[VendorValue] = []
     for column, series in enumerate(read_js_var(body.raw, "trendData")):
         for row, (timestamp, number) in enumerate(series["data"]):
             values.append(
-                VendorValue(
-                    table_key="trendData",
-                    row_index=row,
-                    column_index=column,
-                    locator=f"var trendData/{column}/data/{row}/1",
-                    row_label=str(timestamp),
-                    column_label=series["name"],
-                    raw_text="null" if number is None else str(number),
-                    value=number,
-                    expected_numeric=True,
-                    unit="%",
-                )
+                numeric_cell(
+                    number,
+                    "trendData",
+                    row,
+                    column,
+                    f"var trendData/{column}/data/{row}/1",
+                    str(timestamp),
+                    series["name"],
+                ).model_copy(update={"unit": "%"})
             )
     return tuple(values)
+
+
+def company_parser(spec: SurfaceSpec) -> Parser:
+    """Bind the configured selector once, without a second configuration read."""
+
+    def parse(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+        assert spec.selector is not None or spec.id == "company-announcements"
+        if spec.id in {
+            "overview-customers",
+            "overview-suppliers",
+            "overview-brands",
+            "overview-connections",
+        }:
+            return _cards(body, spec.id, spec.selector or "")
+        if spec.id == "company-announcements":
+            return screener_announcements(body, context)
+        return {
+            "company-trades": screener_trades,
+            "section-documents": screener_documents,
+            "overview-company-filings": tijori_filings,
+            "shareholding-overview": tijori_shareholding_overview,
+            "shareholding-trend": tijori_shareholding_trend,
+        }[spec.id](body, context, spec.selector or "")
+
+    return parse
 
 
 class FeedRow(BaseModel):

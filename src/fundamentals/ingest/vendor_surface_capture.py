@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
@@ -30,7 +31,6 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteBusy,
     SiteStopped,
     VendorFetcher,
-    request_key,
 )
 from fundamentals.ingest.vendor_surface_parse import (
     PARSERS,
@@ -38,6 +38,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     CompanyIds,
     ParseContext,
     ParserEntry,
+    company_page,
     kept_section,
     parser_sha256,
 )
@@ -78,6 +79,18 @@ class Request(BaseModel):
     parent: Mapping[str, Any] | None = None
     due_since: datetime | None
 
+    def context(self, record: CaptureRecord, body_sha256: str) -> ParseContext:
+        """The same verified request context for dispatch, expansion and retained replay."""
+        return ParseContext(
+            ids=self.ids,
+            basis=self.basis,
+            url=self.url,
+            retrieved_at=record.retrieved_at,
+            body_sha256=body_sha256,
+            capture_id=record.capture_id,
+            parent=self.parent,
+        )
+
 
 class RunReport(BaseModel):
     """All expected work, including refusals and missing usable outcomes."""
@@ -107,6 +120,102 @@ def company_ids(stock: StockConfig) -> CompanyIds:
     )
 
 
+def registered_ids(pool: ConnectionPool, store: SnapshotStore, symbol: str) -> CompanyIds:
+    """Resolve registry anchors and vendor ids proved by retained onboarding evidence."""
+    with pool.connection() as conn:
+        held = [
+            r for r in latest_slice(conn) if r.value == symbol and r.namespace.value == "NSE_SYMBOL"
+        ]
+        if len(held) != 1:
+            rows = conn.execute(
+                (
+                    "SELECT isin FROM eqos.registry_view WHERE segment='NSE_EQ' AND tradi"
+                    "ng_symbol=%s AND status='LISTED'"
+                ),
+                (symbol,),
+            ).fetchall()
+            if len(rows) != 1:
+                raise ValueError("verified registry identity unavailable")
+            isin = rows[0][0]
+            entity_id, _, _ = resolve_owner(conn, symbol, isin, None)
+        else:
+            entity_id = held[0].entity_id
+            isin = next(
+                r.value
+                for r in latest_slice(conn)
+                if r.security_id == held[0].security_id and r.namespace.value == "ISIN"
+            )
+        with conn.cursor(row_factory=dict_row) as cursor:
+            proofs = cursor.execute(
+                (
+                    "SELECT c.*, a.url, v.unit FROM eqos.onboarding_records o JOIN eqos.n"
+                    "amespace_verifications v ON v.onboarding_record_id=o.id JOIN eqos.ev"
+                    "idence_input_captures e ON e.evidence_input_id=v.evidence_input_id J"
+                    "OIN eqos.capture_refs c ON c.id=e.capture_ref_id JOIN eqos.capture_a"
+                    "ddresses a ON a.capture_ref_id=c.id WHERE o.entity_id=%s AND v.state"
+                    "='VERIFIED' AND v.unit IN ('SCREENER','TIJORI') AND eqos.capture_sta"
+                    "te(c.id) IN ('RETAINED','RESTORED') ORDER BY c.id"
+                ),
+                (entity_id,),
+            ).fetchall()
+        with conn.cursor(row_factory=dict_row) as cursor:
+            proofs += cursor.execute(
+                (
+                    "SELECT c.*, a.url, CASE c.source_id WHEN 'screener-subscriber' THEN "
+                    "'SCREENER' ELSE 'TIJORI' END AS unit FROM eqos.capture_refs c JOIN e"
+                    "qos.capture_addresses a ON a.capture_ref_id=c.id WHERE eqos.capture_"
+                    "state(c.id) IN ('RETAINED','RESTORED') AND EXISTS (SELECT 1 FROM eqo"
+                    "s.vendor_outcomes o WHERE o.capture_ref_id=c.id AND o.symbol=%s AND "
+                    "o.surface IN ('company-page','company-financials') AND o.status IN ("
+                    "'KEPT','OK','PARTIAL')) ORDER BY c.id"
+                ),
+                (symbol,),
+            ).fetchall()
+    ids = CompanyIds(
+        nse_symbol=symbol,
+        isin=isin,
+        screener_company_id=None,
+        tijori_slug=None,
+        tijori_company_id=None,
+        topology=None,
+    )
+    pages: dict[Basis, CaptureReference] = {}
+    for proof in proofs:
+        record = store.get_capture(
+            proof["source_id"], proof["surface"], proof["request_key"], proof["capture_id"]
+        )
+        if (
+            record.http_status != 200
+            or record.effective_body_completeness is not BodyCompleteness.COMPLETE
+        ):
+            continue
+        body = Body(raw=store.read_body(record))
+        if proof["unit"] == "SCREENER" and "/company/" in proof["url"]:
+            assert_logged_in(body.tree())
+            ids = ids.model_copy(update={"screener_company_id": read_identity(body.tree())[0]})
+            pages[Basis.CONSOLIDATED if "/consolidated/" in proof["url"] else Basis.STANDALONE] = (
+                capture_of(proof)
+            )
+        elif (
+            proof["unit"] == "TIJORI"
+            and "/financials/" in proof["url"]
+            and classify_financials_body(
+                body.raw, expected_symbol=symbol, expected_company_id=None
+            ).code
+            is OutcomeCode.OK
+        ):
+            details = json.loads(body.tree().xpath('//script[@id="company_details"]/text()')[0])
+            ids = ids.model_copy(
+                update={
+                    "tijori_slug": urlsplit(proof["url"]).path.split("/")[2],
+                    "tijori_company_id": details["company_id"],
+                }
+            )
+    if entity_id is not None:
+        ids = ids.model_copy(update={"topology": bind_topology(pool, store, ids, entity_id, pages)})
+    return ids
+
+
 def parse_and_record(
     store: SnapshotStore,
     values: VendorValuesStore,
@@ -117,26 +226,19 @@ def parse_and_record(
     refusal: str | None = None,
 ) -> tuple[OutcomeStatus, ...]:
     """Read registered bytes and atomically store each logical surface's parse result."""
-    context = ParseContext(
-        ids=request.ids,
-        basis=request.basis,
-        url=request.url,
-        retrieved_at=record.retrieved_at,
-        body_sha256=ref.blob_sha256,
-        capture_id=record.capture_id,
-        parent=request.parent,
-    )
+    context = request.context(record, ref.blob_sha256)
     states = []
+    basis_refusal = None
     for surface in (request.spec.id, *request.spec.sections):
         entry = parser_entry(request.spec, surface)
         version, digest = entry.version, parser_sha256(entry.parse)
         parsed: tuple[VendorValue, ...] = ()
         status, detail = OutcomeStatus.UNUSABLE, None
         try:
-            if refusal is not None:
+            if refusal is not None or basis_refusal is not None:
                 version = f"{SITE_NAME[request.spec.site]}:gate.identity.v1"
                 digest = parser_sha256(identity_gate)
-                detail = refusal
+                detail = refusal or basis_refusal
             elif record.http_status != 200:
                 detail = record.outcome.code.value
             elif record.effective_body_completeness is not BodyCompleteness.COMPLETE:
@@ -168,6 +270,8 @@ def parse_and_record(
                     )
         except ScreenerSessionError as error:
             detail = type(error).__name__
+            if surface == "company-page":
+                basis_refusal = detail
         except Exception as error:
             status, detail = OutcomeStatus.FAILED, type(error).__name__
         assert ref.capture_ref_id is not None
@@ -235,34 +339,53 @@ def capture(
 
 
 def reparse(
-    store: SnapshotStore, pool: ConnectionPool, values: VendorValuesStore, spec: SurfaceSpec
+    store: SnapshotStore,
+    pool: ConnectionPool,
+    values: VendorValuesStore,
+    spec: SurfaceSpec,
+    specs: tuple[SurfaceSpec, ...],
 ) -> int:
-    """Append outcomes under the current version using registered addresses and retained bytes."""
+    """Recover logical parents and expansion inputs entirely from registered evidence."""
+    from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, expansion_name
+
+    owner = next((s for s in specs if s.site == spec.site and spec.id in s.sections), spec)
     entry = parser_entry(spec, spec.id)
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(
-            """SELECT c.*, a.url, (SELECT o.symbol FROM eqos.vendor_outcomes o
-                WHERE o.capture_ref_id=c.id AND o.symbol IS NOT NULL ORDER BY o.id LIMIT 1)
-                AS symbol FROM eqos.capture_refs c
-            JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id
-            WHERE c.source_id=%s AND c.surface=%s
-            AND eqos.capture_state(c.id) IN ('RETAINED','RESTORED')
-            AND NOT EXISTS (SELECT 1 FROM eqos.vendor_outcomes o WHERE o.capture_ref_id=c.id
-                AND o.surface=%s AND o.parser_version=%s) ORDER BY c.id""",
-            (spec.site, "vs." + spec.id, spec.id, entry.version),
+        retained = cursor.execute(
+            "SELECT c.*, a.url, (SELECT o.symbol FROM eqos.vendor_outcomes o "
+            "WHERE o.capture_ref_id=c.id AND o.symbol IS NOT NULL ORDER BY o.id LIMIT 1) AS symbol "
+            "FROM eqos.capture_refs c JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id "
+            "WHERE c.source_id=%s AND eqos.capture_state(c.id) IN ('RETAINED','RESTORED') "
+            "ORDER BY c.id",
+            (spec.site,),
         ).fetchall()
+    rows = [row for row in retained if row["surface"] == "vs." + owner.id]
     bindings = [company_ids(stock) for stock in load_watchlist_config(WATCHLIST).stocks]
+    count = 0
     for row in rows:
         ref = capture_of(row)
+        assert ref.capture_ref_id is not None
+        if values.has_outcome(ref.capture_ref_id, spec.id, entry.version):
+            continue
+        count += 1
         ids = next(
             (
                 binding
                 for binding in bindings
                 if binding.nse_symbol == row["symbol"]
                 or f"/company/{binding.nse_symbol}/" in row["url"]
+                or spec.id == "chart-api"
+                and row["symbol"] is None
+                and urlsplit(row["url"]).path
+                == f"/api/company/{binding.screener_company_id}/chart/"
             ),
             None,
         )
+        if ids is None and row["symbol"] is not None:
+            try:
+                ids = registered_ids(pool, store, row["symbol"])
+            except ValueError:
+                pass
         if ids is not None and ids.topology is None:
             with pool.connection() as conn:
                 entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
@@ -270,50 +393,87 @@ def reparse(
                 ids = ids.model_copy(
                     update={"topology": bind_topology(pool, store, ids, entity_id, {})}
                 )
-        if ids is None and row["symbol"] is None and spec.id == "chart-api":
-            matches = [
-                binding
-                for binding in bindings
-                if binding.screener_company_id is not None
-                and urlsplit(row["url"]).path
-                == f"/api/company/{binding.screener_company_id}/chart/"
-            ]
-            ids = matches[0] if len(matches) == 1 else None
-        if spec.id == "chart-api" and (
-            ids is None
-            or ids.screener_company_id is None
-            or urlsplit(row["url"]).path != f"/api/company/{ids.screener_company_id}/chart/"
+        requests = {r.url: r for r in company_requests(specs, ids)} if ids else {}
+        proven = False
+        for parent in retained:
+            if ids is None or parent["symbol"] != ids.nse_symbol:
+                continue
+            parent_request = requests.get(parent["url"])
+            if parent_request is None or parent_request.spec.id not in (
+                "company-page",
+                "company-financials",
+                "company-overview",
+                "schedules-api",
+            ):
+                continue
+            record = store.get_capture(
+                parent["source_id"], parent["surface"], parent["request_key"], parent["capture_id"]
+            )
+            if (
+                record.http_status != 200
+                or record.effective_body_completeness is not BodyCompleteness.COMPLETE
+            ):
+                continue
+            body = Body(raw=store.read_body(record))
+            context = parent_request.context(record, parent["blob_sha256"])
+            try:
+                if parent_request.spec.id == "company-page":
+                    assert_logged_in(body.tree())
+                    if read_identity(body.tree())[0] != ids.screener_company_id:
+                        continue
+                    proven = True
+                elif parent_request.spec.id == "company-financials":
+                    if (
+                        classify_financials_body(
+                            body.raw,
+                            expected_symbol=ids.nse_symbol,
+                            expected_company_id=ids.tijori_company_id,
+                        ).code
+                        is not OutcomeCode.OK
+                    ):
+                        continue
+                    proven = True
+                if not spec.expand:
+                    continue
+                expansion = expansion_name(spec, parent_request.spec.id)
+                if expansion is not None:
+                    ctx = context.model_copy(
+                        update={"parent": {**(context.parent or {}), "spec": spec.model_dump()}}
+                    )
+                    requests.update((r.url, r) for r in EXPANSIONS[expansion](body, ctx))
+            except (
+                ValueError,
+                KeyError,
+                IndexError,
+                TypeError,
+                StopIteration,
+                ScreenerSessionError,
+                ParserError,
+                UnicodeDecodeError,
+            ):
+                continue
+        request = requests.get(row["url"])
+        refusal = None
+        if spec.scope is Scope.COMPANY and (
+            ids is None or not proven or spec.expand and request is None
         ):
-            version = f"{SITE_NAME[spec.site]}:gate.identity.v1"
-            assert ref.capture_ref_id is not None
-            if not values.has_outcome(ref.capture_ref_id, spec.id, version):
-                values.record(
-                    ref,
-                    Outcome(
-                        surface=spec.id,
-                        parser_version=version,
-                        parser_sha256=parser_sha256(identity_gate),
-                        status=OutcomeStatus.UNUSABLE,
-                        symbol=None,
-                        detail="verified company binding unavailable",
-                    ),
-                    row_count=0,
-                )
-            continue
-        basis = (
-            (Basis.CONSOLIDATED if "/consolidated/" in row["url"] else Basis.STANDALONE)
-            if spec.id == "company-page"
-            else None
-        )
+            refusal = "verified company binding unavailable"
+        if request is None:
+            request = Request(spec=owner, url=row["url"], ids=ids, due_since=None)
+        if owner.id != spec.id:
+            request = request.model_copy(
+                update={"spec": owner.model_copy(update={"sections": (spec.id,)})}
+            )
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-        parse_and_record(
-            store,
-            values,
-            ref,
-            record,
-            Request(spec=spec, url=row["url"], ids=ids, basis=basis, due_since=None),
-        )
-    return len(rows)
+        if owner.id == "company-page" and refusal is None:
+            try:
+                company_page(
+                    Body(raw=store.read_body(record)), request.context(record, ref.blob_sha256)
+                )
+            except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
+                refusal = type(error).__name__
+        parse_and_record(store, values, ref, record, request, refusal=refusal)
+    return count
 
 
 def unavailable(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
@@ -374,11 +534,12 @@ def company_requests(specs: tuple[SurfaceSpec, ...], ids: CompanyIds) -> tuple[R
         )
         for basis in bases:
             for variant in variants:
+                parameters: dict[str, Any] = {alternative[1]: variant} if alternative else {}
                 result.append(
                     child(
                         spec,
                         context.model_copy(update={"basis": basis}),
-                        **({alternative[1]: variant} if alternative else {}),
+                        **parameters,
                     )
                 )
     return tuple(result)
@@ -390,7 +551,8 @@ def resolve_tijori_slug(
     *,
     pool: ConnectionPool,
     values: VendorValuesStore,
-) -> str | None:
+    cached: dict[str, tuple[CaptureReference, Body | None, Request]],
+) -> tuple[str | None, int]:
     """Register ISIN search and candidate page before existing identity verification."""
     search_spec = SurfaceSpec(
         site=Site.TIJORI,
@@ -415,21 +577,15 @@ def resolve_tijori_slug(
     )
     slug = tijori_candidate(search.raw) if search is not None else None
     if not isinstance(slug, str):
-        return None
+        return None, 0
     spec = search_spec.model_copy(update={"id": "company-financials"})
-    ref, page = capture(
-        fetcher,
-        fetcher.store,
-        pool,
-        values,
-        Request(
-            spec=spec,
-            url=f"https://www.tijorifinance.com/company/{quote(slug, safe='')}/financials/",
-            ids=ids,
-            due_since=None,
-        ),
-        parse=False,
+    request = Request(
+        spec=spec,
+        url=f"https://www.tijorifinance.com/company/{quote(slug, safe='')}/financials/",
+        ids=ids,
+        due_since=None,
     )
+    ref, page = capture(fetcher, fetcher.store, pool, values, request, parse=False)
     state = tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
     values.record(
         ref,
@@ -443,7 +599,10 @@ def resolve_tijori_slug(
         ),
         row_count=0,
     )
-    return slug if state == "VERIFIED" else None
+    if state == "VERIFIED":
+        cached[request.url] = ref, page, request
+        return slug, 2
+    return None, 1
 
 
 def capture_company(
@@ -456,7 +615,7 @@ def capture_company(
 ) -> RunReport:
     """Capture finite company obligations with site gates and retained expansions."""
     from fundamentals.ingest.screener_financials_models import MAX_SCHEDULE_DEPTH
-    from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, child
+    from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, child, expansion_name
 
     incomplete: list[str] = []
     refused: list[str] = []
@@ -465,6 +624,7 @@ def capture_company(
     pages: dict[Basis, CaptureReference] = {}
     cached: dict[str, tuple[CaptureReference, Body | None, Request]] = {}
     deferred: list[Request] = []
+    basis_refusals: dict[Basis, str] = {}
     with pool.connection() as conn:
         entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
         covered = {
@@ -484,13 +644,15 @@ def capture_company(
         if stock.symbol in peer_symbols
         and (binding := company_ids(stock)).screener_company_id is not None
     )
-    if not peers:
+    if not peers and any(s.id == "company-compare" for s in specs):
         incomplete.append("screener:company-compare: no other covered stocks")
     discovery_expected = discovery_completed = 0
     if any(s.site is Site.TIJORI for s in specs) and ids.tijori_slug is None:
         before = fetcher.counts[Site.TIJORI]
         try:
-            slug = resolve_tijori_slug(fetcher, ids, pool=pool, values=values)
+            slug, discovery_completed = resolve_tijori_slug(
+                fetcher, ids, pool=pool, values=values, cached=cached
+            )
         except SiteStopped as error:
             stopped.append(error.site)
             blocked.add(error.site)
@@ -498,28 +660,14 @@ def capture_company(
         except (SiteBusy, ValueError):
             slug = None
         discovery_expected = fetcher.counts[Site.TIJORI] - before
-        if discovery_expected:
-            with pool.connection() as conn:
-                status = conn.execute(
-                    "SELECT o.status FROM eqos.vendor_outcomes o JOIN eqos.capture_refs c "
-                    "ON c.id=o.capture_ref_id WHERE c.source_id='tijori' AND c.request_key=%s "
-                    "ORDER BY o.id DESC LIMIT 1",
-                    (
-                        request_key(
-                            "https://www.tijorifinance.com/api/v1/ind/company_search/?q="
-                            + quote(ids.isin, safe="")
-                        ),
-                    ),
-                ).fetchone()
-            discovery_completed = int(status is not None and status[0] in USABLE) + int(
-                slug is not None
-            )
+        if slug is None:
+            discovery_completed = max(discovery_completed, discovery_expected - 1)
         ids = ids.model_copy(update={"tijori_slug": slug})
         if slug is None:
             incomplete.append("tijori:missing slug")
     pending = list(company_requests(specs, ids))
-    expected = len(pending) + len(incomplete) + discovery_expected
-    completed = discovery_completed
+    expected = len(pending) + len(incomplete) + discovery_expected - len(cached)
+    completed = discovery_completed - len(cached)
     incomplete.extend(
         ["tijori:slug resolution request"] * (discovery_expected - discovery_completed)
     )
@@ -553,6 +701,7 @@ def capture_company(
                 else capture(fetcher, store, pool, values, request, parse=False)
             )
         except SiteStopped as error:
+            seen.add(request.url)
             stopped.append(error.site)
             blocked.add(error.site)
             incomplete.append(request.url)
@@ -563,13 +712,15 @@ def capture_company(
             )
             continue
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-        refusal = None
-        if body is not None and request.spec.id == "company-page":
+        refusal = basis_refusals.get(request.basis) if request.basis else None
+        if body is None and request.spec.id in ("company-page", "company-financials"):
+            refusal = "company identity acquisition failed"
+        elif body is not None and request.spec.id == "company-page":
             try:
                 assert_logged_in(body.tree())
                 if read_identity(body.tree())[0] != ids.screener_company_id:
                     refusal = "company identity mismatch"
-            except ScreenerSessionError as error:
+            except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
                 refusal = type(error).__name__
             if (
                 refusal is None
@@ -601,6 +752,18 @@ def capture_company(
             if gate.code is not OutcomeCode.OK:
                 refusal = gate.native_value
         if (
+            body is not None
+            and request.spec.id == "company-financials"
+            and refusal is None
+            and ids.tijori_company_id is None
+        ):
+            details = json.loads(body.tree().xpath('//script[@id="company_details"]/text()')[0])
+            ids = ids.model_copy(update={"tijori_company_id": details["company_id"]})
+            queued = {r.url for r in pending} | seen | {request.url}
+            discovered = [r for r in company_requests(specs, ids) if r.url not in queued]
+            pending.extend(discovered)
+            expected += len(discovered)
+        if (
             request.spec.id == "company-page"
             and deferred
             and not any(r.spec.id == "company-page" for r in pending)
@@ -611,13 +774,20 @@ def capture_company(
                 )
             pending[0:0] = deferred
             deferred.clear()
-        if refusal is not None:
+        if refusal is not None and request.basis not in basis_refusals:
             blocked.add(request.spec.site)
         seen.add(request.url)
         states = parse_and_record(
             store, values, ref, record, request.model_copy(update={"ids": ids}), body, refusal
         )
         usable = all(state in USABLE for state in states)
+        if (
+            request.spec.id == "company-page"
+            and not usable
+            and ids.topology is not None
+            and request.basis is not None
+        ):
+            basis_refusals[request.basis] = "page basis refused"
         completed += int(usable)
         if not usable:
             incomplete.append(
@@ -626,49 +796,13 @@ def capture_company(
             )
         if body is None or refusal is not None:
             continue
-        context = ParseContext(
-            ids=ids,
-            basis=request.basis,
-            url=request.url,
-            retrieved_at=record.retrieved_at,
-            body_sha256=ref.blob_sha256,
-            capture_id=record.capture_id,
-            parent=request.parent,
-        )
+        context = request.model_copy(update={"ids": ids}).context(record, ref.blob_sha256)
         children: list[Request] = []
-        if request.spec.id == "company-financials" and ids.tijori_company_id is None:
-            details = json.loads(body.tree().xpath('//script[@id="company_details"]/text()')[0])
-            ids = ids.model_copy(update={"tijori_company_id": details["company_id"]})
-            context = context.model_copy(update={"ids": ids})
-            queued = {r.url for r in pending} | seen
-            children.extend(r for r in company_requests(specs, ids) if r.url not in queued)
 
         for spec in specs:
-            parent = {
-                "screener_schedules": "company-page",
-                "screener_investors": "company-page",
-                "screener_segments": "company-page",
-                "tijori_op_metrics": "company-overview",
-                "tijori_revenue_mix_items": "company-overview",
-                "tijori_popup_fields": "company-financials",
-                "tijori_compare_selector": "company-financials",
-            }.get(spec.expand or "")
-            if spec.expand == "advertised_links":
-                parent = {
-                    "quarter-source-pdf": "company-page",
-                    "shareholding-detail-chart-api": "company-shareholding",
-                    "market-share-peer-companies-api": "company-overview",
-                }[spec.id]
-            if spec.expand == "screener_compare_peers":
-                parent = "company-page"
-            expansion = (
-                "screener_nested_schedules"
-                if request.spec.id == "schedules-api" and spec.id == "schedules-api"
-                else spec.expand
-            )
-            if parent != request.spec.id and expansion != "screener_nested_schedules":
+            expansion = expansion_name(spec, request.spec.id)
+            if expansion is None:
                 continue
-            assert expansion is not None
             ctx = context.model_copy(
                 update={
                     "parent": {**(request.parent or {}), "spec": spec.model_dump(), "peers": peers}
@@ -687,25 +821,39 @@ def capture_company(
                 if (
                     not expanded
                     and expansion != "screener_nested_schedules"
-                    and spec.id not in ("segments-api", "company-compare")
+                    and spec.id != "company-compare"
+                    and not (spec.id == "segments-api" and b"Product Segments" not in body.raw)
                 ):
                     incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: no advertised children")
                     expected += 1
-            except (ValueError, KeyError, IndexError, TypeError, ScreenerSessionError):
+            except (
+                ValueError,
+                KeyError,
+                IndexError,
+                TypeError,
+                StopIteration,
+                ScreenerSessionError,
+            ):
                 incomplete.append(f"{SITE_NAME[spec.site]}:{spec.id}: expansion failed")
                 expected += 1
         if request.spec.id == "company-page":
             for spec in specs:
                 if spec.id == "chart-api":
+                    metrics = tuple(
+                        dict.fromkeys(
+                            body.tree().xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
+                        )
+                    )
+                    if not any(metrics):
+                        incomplete.append("screener:chart-api: no advertised metrics")
+                        expected += 1
                     children.extend(
                         child(
                             spec,
                             context.model_copy(update={"basis": None}),
                             **{"metric-set": metric},
                         )
-                        for metric in dict.fromkeys(
-                            body.tree().xpath('//*[@id="chart"]//*[@name="metrics"]/@value')
-                        )
+                        for metric in metrics
                         if metric
                     )
                 elif "{warehouse_id}" in spec.path and read_identity(body.tree())[1] is not None:

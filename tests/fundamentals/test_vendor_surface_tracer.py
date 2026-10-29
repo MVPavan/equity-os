@@ -93,16 +93,16 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart, expec
     monkeypatch.setattr(opener, "open", chart_response)
     assert run_capture(root) == 0
     report = json.loads(capsys.readouterr().out)
-    completed = 2 if chart is None or expected_values else 1
+    completed = 3 if chart is None or expected_values else 2
     assert report == {
-        "expected": 7,
+        "expected": 8,
         "completed": completed,
         "refused": [],
         "incomplete": opener.calls[completed:],
         "stopped_sites": [],
     }
-    assert len(opener.calls) == 7
-    assert len(parses) == 1
+    assert len(opener.calls) == 8
+    assert len(parses) == 2
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         if chart is not None:
             status = "FAILED"
@@ -127,8 +127,8 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart, expec
             "SELECT raw_text,value FROM eqos.vendor_values WHERE row_index=0 "
             "AND column_index IN (0,3) ORDER BY column_index"
         ).fetchall() == [("9107.50", Decimal("9107.50")), ("168786", Decimal("168786"))]
-        assert conn.execute("SELECT count(*) FROM eqos.capture_refs").fetchone() == (7,)
-        assert conn.execute("SELECT count(*) FROM eqos.vendor_outcomes").fetchone() == (7,)
+        assert conn.execute("SELECT count(*) FROM eqos.capture_refs").fetchone() == (8,)
+        assert conn.execute("SELECT count(*) FROM eqos.vendor_outcomes").fetchone() == (8,)
 
 
 @pytest.mark.parametrize("registration_fails", [False, True])
@@ -157,7 +157,7 @@ def test_stop_registered_before_run_ends(rig, pg_db, capsys, monkeypatch, regist
     assert marker.exists()
     report = json.loads(capsys.readouterr().out)
     assert report["stopped_sites"] == ["screener-subscriber"]
-    assert report["expected"] == 7 and report["completed"] == 2
+    assert report["expected"] == 8 and report["completed"] == 2
     assert len(opener.calls) == 3
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
@@ -283,7 +283,9 @@ def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch, 
     opener, root = rig
     run_capture(root)
     report = json.loads(capsys.readouterr().out)
-    assert report["completed"] == 1 and opener.calls[0] in report["incomplete"]
+    assert (
+        report["completed"] == 1 and opener.calls[0] + ": topology unknown" in report["incomplete"]
+    )
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
             "SELECT detail FROM eqos.vendor_outcomes "
@@ -307,7 +309,7 @@ def test_unknown_topology_does_not_block_chart(rig, pg_db, capsys, monkeypatch, 
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert conn.execute(
             "SELECT count(*) FROM eqos.vendor_outcomes WHERE status='KEPT'"
-        ).fetchone() == (1,)
+        ).fetchone() == (2,)
 
 
 @pytest.mark.parametrize("group", ["SERIES", "NONE"])
@@ -445,14 +447,16 @@ def test_chart_discovery_from_retained_page(rig, capsys, monkeypatch, mutation):
     run_capture(root)
     report = json.loads(capsys.readouterr().out)
     if mutation == "basis":
-        assert len(opener.calls) == 7 and report["completed"] == 1
+        assert len(opener.calls) == 8 and report["completed"] == 1
+    elif mutation in ("missing", "empty"):
+        assert len(opener.calls) == 2
     else:
         assert len(opener.calls) == 1
     assert report["incomplete"]
     if mutation in ("missing", "empty"):
-        assert report["expected"] == 2 and report["completed"] == 1
+        assert report["expected"] == 4 and report["completed"] == 2
     if mutation in ("empty-body", "invalid-utf8"):
-        assert report["expected"] == 1 and report["completed"] == 0
+        assert report["expected"] == 2 and report["completed"] == 0
 
 
 def test_stop_shared_across_snapshot_roots(rig, capsys):

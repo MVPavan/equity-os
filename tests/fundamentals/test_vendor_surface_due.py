@@ -29,6 +29,7 @@ from fundamentals.ingest.vendor_surface_parse import (
     ParseContext,
     ParserEntry,
     kept_section,
+    register_tables,
 )
 from fundamentals.ingest.vendor_surface_specs import Cadence, load_specs
 from fundamentals.ingest.vendor_surface_tables import feed_rows
@@ -40,6 +41,7 @@ from fundamentals.store.vendor_values_store import VendorValuesStore
 SPECS = load_specs(
     Path("config/vendor_surface/surfaces.yaml"), Path("docs/research/vendor-surface/catalog.yaml")
 )
+register_tables(SPECS)  # The CLI root binds table parsers; this suite calls capture_due directly.
 NOW = datetime(2026, 10, 29, 12, tzinfo=UTC)
 DAY = timedelta(days=1)
 FEED = "/results/latest/"
