@@ -19,8 +19,11 @@ def catalog_patterns(site):
     section = text.split(f"\n{site}:\n" if site == "tijori" else "screener:\n", 1)[1]
     if site == "screener":
         section = section.split("\ntijori:\n", 1)[0]
-    for identifier, pattern in re.findall(
+    entries = re.findall(
         r"^  - id: (.+)\n    scope: company\n    url_pattern: (.+)$", section, re.M
+    )
+    for identifier, pattern in sorted(
+        entries, key=lambda item: -len(re.sub(r"\{[^}]+\}", "", item[1]))
     ):
         if "#" in pattern or " (" in pattern:
             continue
@@ -91,11 +94,19 @@ def main():
                 continue
             basis = "na"
             if site == "screener" and (
-                "consolidated" in query or identifier in ("company-page", "related-party")
+                "consolidated" in query
+                or identifier in ("company-page", "related-party", "schedules-api", "segments-api")
             ):
                 basis = (
                     "consolidated"
-                    if ("/consolidated/" in url.path or query.get("consolidated") == ["true"])
+                    if (
+                        "/consolidated/" in url.path
+                        or (
+                            "consolidated" in query
+                            if identifier == "schedules-api"
+                            else query.get("consolidated") == ["true"]
+                        )
+                    )
                     else "standalone"
                 )
             selector = fields.get("column_selector", "")
