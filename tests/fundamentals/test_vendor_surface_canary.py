@@ -235,6 +235,17 @@ def _json(name, edit, key=None):
     return lambda opener: opener.bodies.__setitem__(name, load_edit(opener.bodies[name]).encode())
 
 
+def _hollow(name, xpath):
+    """Keep each matched wrapper element but remove everything inside it."""
+
+    def apply(tree):
+        for node in tree.xpath(xpath):
+            del node[:]
+            node.text = None
+
+    return _html(name, apply)
+
+
 def _rename_schedule(tree):
     """Put a space before the handler's parenthesis."""
     node = tree.xpath(SCHEDULE)[0]
@@ -292,6 +303,11 @@ MUTATIONS = [
         _set("bodies", "S5", b'{"error": "unavailable"}'), {"S5.holders": FAILED}, id="holders"
     ),
     pytest.param(
+        _set("bodies", "S5", b'{"error": {"message": "unavailable"}}'),
+        {"S5.holders": FAILED},
+        id="holders_nested",
+    ),
+    pytest.param(
         _json("S6", lambda data: data["datasets"][0].update(values={"error": "unavailable"})),
         {"S6.datasets": FAILED},
         id="chart_values",
@@ -317,6 +333,21 @@ MUTATIONS = [
         id="trend",
     ),
     pytest.param(
+        _sub("T3", rb"var\s+chartData\s*=.*?;", b"var chartData = [[], []];"),
+        {"T3.chartData": FAILED},
+        id="chart_empty_rows",
+    ),
+    pytest.param(
+        _sub("T3", rb"var\s+chartData\s*=.*?;", b"var chartData = [1, 2];"),
+        {"T3.chartData": FAILED},
+        id="chart_scalars",
+    ),
+    pytest.param(
+        _sub("T3", rb"var\s+trendData\s*=.*?;", b'var trendData = [{"name": "x", "data": "e"}];'),
+        {"T3.trendData": FAILED},
+        id="trend_scalar",
+    ),
+    pytest.param(
         _json(
             "T4",
             lambda data: data.update(
@@ -333,6 +364,16 @@ MUTATIONS = [
         ),
         {"T6.cursor": FAILED},
         id="cursor",
+    ),
+    pytest.param(
+        _hollow("T6", '//td[contains(concat(" ",@class," ")," event ")]'),
+        {"T6.events": FAILED},
+        id="events_hollow",
+    ),
+    pytest.param(
+        _hollow("T7", '//*[contains(concat(" ",@class," ")," result_item ")]'),
+        {"T7.result_cards": FAILED},
+        id="results_hollow",
     ),
     pytest.param(_set("locations", "T8", "/login/"), {"T8.location": FAILED}, id="redirect"),
 ]
