@@ -3,8 +3,8 @@
 Two guarantees, both produced by *code* (a model is used only to draft, never to
 police numbers — roadmap invariant 6):
 
-* **Unsourced-number detection.** Every number a draft emits is parsed and checked
-  against the validated fact set. Any number not backed by a validated fact — a
+* **Unsourced-number detection.** Analytical amounts in model-authored judgment are
+  flagged; facts are displayed by code. Any number not backed by a validated fact — a
   rounded figure, a computed ratio, a peer or historical number, a price target —
   is surfaced as an :class:`UnsourcedClaim`. It is a red flag, never a value to
   trust.
@@ -31,10 +31,12 @@ from fundamentals.thesis.contracts import (
     ValidatedFactSet,
 )
 
-# A number token: optional currency prefix, digits with optional grouping/decimal,
-# optional percent suffix. Grouping and currency are stripped before parsing.
+# Detect numeric tokens, retaining signs and percent markers for diagnostics.
 _NUMBER_RE = re.compile(
-    r"(?:₹|\$|rs\.?|inr|usd)?\s*(?P<num>\d[\d,]*(?:\.\d+)?)(?P<pct>\s*%)?",
+    r"(?P<open>\()?\s*(?P<sign>(?<!\w)[+−-])?\s*(?P<currency>₹|\$|rs\.?|inr|usd)?\s*"
+    r"(?P<num>\d[\d,]*(?:\.\d+)?)"
+    r"(?P<unit>\s*(?:(?:inr|usd)\s+)?(?:%|percent\b|per cent\b|crores?\b|lakhs?\b|"
+    r"millions?\b|billions?\b|per share\b|shares?\b|days?\b|times\b))?(?P<close>\))?",
     re.IGNORECASE,
 )
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -93,13 +95,13 @@ class NumberHit(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     raw: str
-    value: Decimal
+    value: Decimal | None
     is_percent: bool
 
 
 def _to_decimal(raw: str) -> Decimal | None:
     """Parse a possibly grouped numeric string to a Decimal, or ``None``."""
-    cleaned = raw.replace(",", "").strip()
+    cleaned = re.sub(r"\s+", "", raw.replace(",", "").replace("−", "-"))
     if not cleaned:
         return None
     try:
@@ -112,14 +114,16 @@ def extract_numbers(text: str) -> list[NumberHit]:
     """Extract every numeric token from free text (currency/grouping tolerated)."""
     hits: list[NumberHit] = []
     for match in _NUMBER_RE.finditer(text):
-        value = _to_decimal(match.group("num"))
-        if value is None:
-            continue
+        raw = (match.group("sign") or "") + match.group("num")
+        value = _to_decimal(raw)
+        if value is not None and match.group("open") and match.group("close"):
+            value = -abs(value)
         hits.append(
             NumberHit(
-                raw=match.group("num"),
+                raw=raw,
                 value=value,
-                is_percent=match.group("pct") is not None,
+                is_percent=not match.group("currency")
+                and (match.group("unit") or "").strip().lower() in {"%", "percent", "per cent"},
             )
         )
     return hits
@@ -133,12 +137,12 @@ def _period_year(period: str | None) -> int | None:
 
 
 def known_numbers(fact_set: ValidatedFactSet) -> frozenset[Decimal]:
-    """Every number a draft may legitimately echo, derived from the fact set.
+    """Numeric tokens in the input prompt, not evidence for draft amounts.
 
     This is the validated fact values (retained and per-source), the reporting
     period's date components and nearby fiscal years, the quarter label's digits,
-    and each fact's first-party source count. A draft number outside this set is
-    an unsourced claim.
+    and each fact's first-party source count. Draft sourcing instead requires
+    a signed, unit-compatible retained fact value.
     """
     known: set[Decimal] = set()
     for fact in fact_set.facts:
@@ -180,13 +184,19 @@ def _scan_targets(draft: ThesisDraft) -> list[tuple[str, str]]:
     return targets
 
 
-def _unsourced_claims(draft: ThesisDraft, known: frozenset[Decimal]) -> list[UnsourcedClaim]:
-    """Flag every number in one draft that is not a validated fact."""
+def _unsourced_claims(draft: ThesisDraft, fact_set: ValidatedFactSet) -> list[UnsourcedClaim]:
+    """Judgment is qualitative; only exact prompt date/period tokens are metadata."""
     claims: list[UnsourcedClaim] = []
     for section_label, text in _scan_targets(draft):
-        for hit in extract_numbers(text):
-            if hit.value in known:
-                continue
+        metadata = [fact_set.quarter]
+        if fact_set.period_start and fact_set.period_end:
+            metadata.extend((fact_set.period_start, fact_set.period_end))
+        amounts = re.sub(
+            r"(?<![\w-])(?:" + "|".join(re.escape(token) for token in metadata) + r")(?![\w-])",
+            " ",
+            text,
+        )
+        for hit in extract_numbers(amounts):
             claims.append(
                 UnsourcedClaim(
                     model_label=draft.model_label,
@@ -335,12 +345,11 @@ def _divergences(draft_a: ThesisDraft, draft_b: ThesisDraft) -> list[Discrepancy
 
 def cross_verify(fact_set: ValidatedFactSet, drafts: Sequence[ThesisDraft]) -> CrossVerification:
     """Run number-checking on each usable draft and divergence-check the first two."""
-    known = known_numbers(fact_set)
     usable = [draft for draft in drafts if draft.is_usable]
 
     unsourced: list[UnsourcedClaim] = []
     for draft in usable:
-        unsourced.extend(_unsourced_claims(draft, known))
+        unsourced.extend(_unsourced_claims(draft, fact_set))
 
     discrepancies: list[Discrepancy] = []
     if len(usable) >= 2:

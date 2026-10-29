@@ -165,7 +165,16 @@ def submit(
                         version_id=version_id, predecessor_id=draft.predecessor_id, status=status
                     )
                 )
-        resolves = partial(resolve_location, cursor, catalog=catalog, snapshots=snapshots)
+        row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
+        assert row is not None
+        resolves = partial(
+            resolve_location,
+            cursor,
+            entity_id=row[0],
+            cutoff=draft.knowledge_cutoff,
+            catalog=catalog,
+            snapshots=snapshots,
+        )
         found = {state for s in draft.sections for state in scan_section(s.body, resolves=resolves)}
         if found:
             states = ", ".join(sorted(found))
@@ -272,7 +281,14 @@ def check_version(
         )
         for claim in draft.claims
     }
-    resolves = partial(resolve_location, cursor, catalog=catalog, snapshots=snapshots)
+    resolves = partial(
+        resolve_location,
+        cursor,
+        entity_id=row[0],
+        cutoff=draft.knowledge_cutoff,
+        catalog=catalog,
+        snapshots=snapshots,
+    )
     found = (
         set()
         if imported

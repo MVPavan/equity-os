@@ -188,9 +188,9 @@ def _unsourced_section(cross: CrossVerification) -> list[str]:
     """Render the unsourced-number flags."""
     lines = [_UNSOURCED_HEADING, ""]
     if not cross.unsourced_claims:
-        lines.append("None detected — no model introduced a number outside the validated fact set.")
+        lines.append("None detected — no unsourced number or judgment amount.")
         return lines
-    lines.append("Numbers a model emitted that are NOT in the validated fact set — do not trust:")
+    lines.append("Unsourced numbers or judgment amounts a model emitted — do not trust:")
     lines.append("")
     lines.append("| Model | Number | Section | Snippet |")
     lines.append("| --- | --- | --- | --- |")
