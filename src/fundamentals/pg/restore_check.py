@@ -65,6 +65,7 @@ class Tombstone(BaseModel):
 
 
 TOMBSTONES = {
+    "vendor_text_claims": Tombstone(clear=("text",)),
     "occurrences": Tombstone(
         clear=("raw_value_text", "raw_sign"),
         json_keep={"native_context": _CONTEXT_KEPT, "disclosure": _DISCLOSURE_KEPT},
@@ -112,6 +113,11 @@ def tombstoned(before: Rows, expired: frozenset[int]) -> dict[str, set[Any]]:
         return {key for key, row in before[table].items() if test(row)}
 
     return {
+        "vendor_text_claims": {
+            key
+            for key, row in before.get("vendor_text_claims", {}).items()
+            if row["capture_ref_id"] in vendor
+        },
         "vendor_values": {
             key
             for key, row in before.get("vendor_values", {}).items()
