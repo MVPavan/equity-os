@@ -97,3 +97,26 @@ def test_oracle_model_scores_full_accuracy_on_the_keys():
 
     table = bakeoff["evaluate"]([(Oracle(), Decimal(0), Decimal(0))])
     assert "| oracle | 1.000 | 0 | 0 | 1.000 | 1.000 | 0.000000 |" in table
+
+
+def test_span_prompt_carries_the_annotation_policy():
+    from decimal import Decimal
+
+    from fundamentals.ingest.vendor_surface_model import ModelReply
+
+    seen = set()
+
+    class Recorder:
+        model_id = "recorder"
+
+        def complete(self, system, user):
+            if not user.startswith("{"):
+                seen.add(system)
+            return ModelReply(text="[]", input_tokens=0, output_tokens=0)
+
+    runpy.run_path("scripts/vendor_surface_bakeoff.py")["evaluate"](
+        [(Recorder(), Decimal(0), Decimal(0))]
+    )
+    (system,) = seen
+    assert "NAME: every organisation or person name" in system
+    assert "CLAIM: each whole sentence asserting a fact about the company" in system
