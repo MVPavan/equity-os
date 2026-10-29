@@ -555,10 +555,18 @@ def test_cli_selection_includes_identity_and_parents(
 def test_offline_reparse_recovers_section_and_child_inputs(
     company_rig, run_company, pg_db, tmp_path, monkeypatch, surface
 ):
+    opener, ids = company_rig("RELIANCE" if surface == "segments-api" else "APARINDS")
+    replayed = replay_after_old_parser(
+        run_company, opener, ids, pg_db, tmp_path, monkeypatch, surface
+    )
+    assert any(status in ("OK", "PARTIAL") and n > 0 for status, n in replayed)
+
+
+def replay_after_old_parser(run, opener, ids, pg_db, tmp_path, monkeypatch, surface):
+    """Capture with an old failing parser for `surface`, then replay it with no network."""
     from fundamentals.ingest.vendor_surface_capture import reparse
     from fundamentals.ingest.vendor_surface_parse import PARSERS
 
-    opener, ids = company_rig("RELIANCE" if surface == "segments-api" else "APARINDS")
     key = Site.SCREENER, surface
     current = PARSERS[key]
 
@@ -566,11 +574,7 @@ def test_offline_reparse_recovers_section_and_child_inputs(
         raise ValueError("test old parser")
 
     monkeypatch.setitem(
-        PARSERS,
-        key,
-        current.model_copy(
-            update={"version": current.version.replace(".v1", ".v0"), "parse": broken}
-        ),
+        PARSERS, key, current.model_copy(update={"version": "old", "parse": broken})
     )
     specs = load_specs(
         Path("config/vendor_surface/surfaces.yaml"),
@@ -579,11 +583,11 @@ def test_offline_reparse_recovers_section_and_child_inputs(
     selected = tuple(
         s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", surface)
     )
-    run_company(opener, ids, selected)
+    run(opener, ids, selected)
     monkeypatch.setitem(PARSERS, key, current)
     before = list(opener.calls)
     with pg_db.runtime_pool() as pool:
-        count = reparse(
+        reparse(
             SnapshotStore(tmp_path / "raw"),
             pool,
             VendorValuesStore(pool),
@@ -595,29 +599,66 @@ def test_offline_reparse_recovers_section_and_child_inputs(
             ),
             specs,
         )
-        assert count > 0
         with pool.connection() as conn:
-            assert (
-                conn.execute(
-                    (
-                        "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND parse"
-                        "r_version=%s AND status IN ('OK','PARTIAL')"
-                    ),
-                    (surface, current.version),
-                ).fetchone()[0]
-                > 0
-            )
-            assert (
-                conn.execute(
-                    (
-                        "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.vendor_outcomes "
-                        "o ON o.id=v.outcome_id WHERE o.surface=%s AND o.parser_version=%s"
-                    ),
-                    (surface, current.version),
-                ).fetchone()[0]
-                > 0
-            )
+            replayed = conn.execute(
+                "SELECT o.status, count(v.outcome_id) FROM eqos.vendor_outcomes o LEFT JOIN"
+                " eqos.vendor_values v ON v.outcome_id=o.id WHERE o.surface=%s AND"
+                " o.parser_version<>'old' GROUP BY o.id,o.status",
+                (surface,),
+            ).fetchall()
     assert opener.calls == before
+    return replayed
+
+
+def test_replay_applies_parent_basis_gate(company_rig, run_company, pg_db, tmp_path, monkeypatch):
+    # Standalone bytes under the consolidated URL refuse that basis; replay must agree.
+    opener, ids = company_rig("APARINDS")
+    pages = {
+        r["basis"]: r
+        for r in opener.rows.values()
+        if r["id"] == "company-page" and r.get("symbol") == "APARINDS"
+    }
+    opener.overrides[pages["consolidated"]["url"]] = (
+        Path(pages["standalone"]["path"]).read_bytes(),
+        200,
+    )
+    replayed = replay_after_old_parser(
+        run_company, opener, ids, pg_db, tmp_path, monkeypatch, "schedules-api"
+    )
+    # The corpus retains only the consolidated schedules, so none may yield cells.
+    assert replayed and not any(n for _, n in replayed)
+
+
+def test_replay_refuses_chart_of_another_company(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch
+):
+    # A retained chart address bound to another Screener id never replays as this company.
+    from fundamentals.ingest import vendor_surface_expand as expand
+
+    opener, ids = company_rig("APARINDS")
+    real, forged = f"/{ids.screener_company_id}/chart/", "/999999999/chart/"
+    chart = next(r for r in opener.rows.values() if r["id"] == "chart-api" and r.get("path"))
+    opener.overrides[
+        f"https://www.screener.in/api/company{forged}?q=Price-DMA50-DMA200-Volume&days=10000"
+        "&consolidated="
+    ] = Path(chart["path"]).read_bytes(), 200
+    original = expand.advertised
+
+    def forging(*args):
+        children, gaps = original(*args)
+        return tuple(
+            c.model_copy(update={"url": c.url.replace(real, forged)}) for c in children
+        ), gaps
+
+    def forged_run(*args):
+        monkeypatch.setattr(expand, "advertised", forging)
+        run_company(*args)
+        monkeypatch.setattr(expand, "advertised", original)
+
+    replayed = replay_after_old_parser(
+        forged_run, opener, ids, pg_db, tmp_path, monkeypatch, "chart-api"
+    )
+    assert replayed and all(status == "UNUSABLE" and n == 0 for status, n in replayed)
 
 
 def test_cli_uses_verified_registry_identity_without_watchlist(

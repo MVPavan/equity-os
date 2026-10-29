@@ -62,6 +62,7 @@ from fundamentals.store.vendor_values_store import (
 
 WATCHLIST = Path("config/watchlist.yaml")
 TOPOLOGY_UNKNOWN = "topology unknown"
+IDENTITY_PAGES = ("company-page", "company-financials")
 BASIS_SECTIONS = frozenset(
     "section-quarters section-profit-loss section-balance-sheet "
     "section-cash-flow section-ratios company-consolidated-empty-shell".split()
@@ -303,6 +304,111 @@ def identity_gate(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
     return ()
 
 
+def identity_refusal(request: Request, body: Body) -> str | None:
+    """Why a retained identity page does not prove its request's company, or None."""
+    assert request.ids is not None
+    try:
+        if request.spec.id == "company-page":
+            assert_logged_in(body.tree())
+            same = read_identity(body.tree())[0] == request.ids.screener_company_id
+            return None if same else "company identity mismatch"
+        gate = classify_financials_body(
+            body.raw,
+            expected_symbol=request.ids.nse_symbol,
+            expected_company_id=request.ids.tijori_company_id,
+        )
+        return None if gate.code is OutcomeCode.OK else gate.native_value
+    except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
+        return type(error).__name__
+
+
+def covered_peers(pool: ConnectionPool, ids: CompanyIds) -> tuple[int, ...]:
+    """Screener ids of the other covered companies, the only peers a comparison may name."""
+    with pool.connection() as conn:
+        covered = {
+            row[0]
+            for row in conn.execute(
+                "SELECT id FROM eqos.reporting_entities WHERE eqos.watchlisted(id)"
+            )
+        }
+        peer_symbols = {
+            row.value
+            for row in latest_slice(conn)
+            if row.entity_id in covered and row.value != ids.nse_symbol
+        }
+    return tuple(
+        binding.screener_company_id
+        for stock in load_watchlist_config(WATCHLIST).stocks
+        if stock.symbol in peer_symbols
+        and (binding := company_ids(stock)).screener_company_id is not None
+    )
+
+
+def retained_graph(
+    store: SnapshotStore,
+    pool: ConnectionPool,
+    specs: tuple[SurfaceSpec, ...],
+    ids: CompanyIds,
+    retained: list[dict[str, Any]],
+) -> dict[str, Request]:
+    """The company requests its retained captures admit, gated as live capture gates them.
+
+    Identity pages must prove the company (and Screener pages their basis); fixed requests need
+    their site and basis proven; children need an admitted, retained parent advertising them.
+    """
+    from fundamentals.ingest.vendor_surface_expand import advertised, expansion_name
+
+    captures: dict[str, list[tuple[CaptureRecord, str]]] = {}
+    for row in retained:
+        if row["symbol"] != ids.nse_symbol:
+            continue
+        record = store.get_capture(
+            row["source_id"], row["surface"], row["request_key"], row["capture_id"]
+        )
+        if (
+            record.http_status == 200
+            and record.effective_body_completeness is BodyCompleteness.COMPLETE
+        ):
+            captures.setdefault(row["url"], []).append((record, row["blob_sha256"]))
+    fixed = company_requests(specs, ids)
+    admitted: dict[str, Request] = {}
+    proven: set[Site | Basis] = set()
+    for request in (r for r in fixed if r.spec.id in IDENTITY_PAGES):
+        for record, sha in captures.get(request.url, []):
+            body = Body(raw=store.read_body(record))
+            if identity_refusal(request, body) is not None:
+                continue
+            if request.basis is not None:
+                try:
+                    company_page(body, request.context(record, sha))
+                except ScreenerSessionError:
+                    continue
+                proven.add(request.basis)
+            proven.add(request.spec.site)
+            admitted[request.url] = request
+    admitted.update(
+        (r.url, r)
+        for r in fixed
+        if r.spec.site in proven
+        and (r.basis is None or r.basis in proven)
+        and r.spec.id not in IDENTITY_PAGES
+    )
+    queue, peers = list(admitted.values()), covered_peers(pool, ids)
+    while queue:
+        request = queue.pop()
+        if request.spec.id != "company-page" and not any(
+            expansion_name(spec, request.spec.id) for spec in specs
+        ):
+            continue
+        for record, sha in captures.get(request.url, []):
+            body = Body(raw=store.read_body(record))
+            children, _ = advertised(request, body, request.context(record, sha), specs, peers)
+            fresh = [child for child in children if child.url not in admitted]
+            admitted.update((child.url, child) for child in fresh)
+            queue.extend(fresh)
+    return admitted
+
+
 def capture(
     fetcher: VendorFetcher,
     store: SnapshotStore,
@@ -346,8 +452,6 @@ def reparse(
     specs: tuple[SurfaceSpec, ...],
 ) -> int:
     """Recover logical parents and expansion inputs entirely from registered evidence."""
-    from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, expansion_name
-
     owner = next((s for s in specs if s.site == spec.site and spec.id in s.sections), spec)
     entry = parser_entry(spec, spec.id)
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
@@ -361,6 +465,7 @@ def reparse(
         ).fetchall()
     rows = [row for row in retained if row["surface"] == "vs." + owner.id]
     bindings = [company_ids(stock) for stock in load_watchlist_config(WATCHLIST).stocks]
+    graphs: dict[str, dict[str, Request]] = {}
     count = 0
     for row in rows:
         ref = capture_of(row)
@@ -393,70 +498,11 @@ def reparse(
                 ids = ids.model_copy(
                     update={"topology": bind_topology(pool, store, ids, entity_id, {})}
                 )
-        requests = {r.url: r for r in company_requests(specs, ids)} if ids else {}
-        proven = False
-        for parent in retained:
-            if ids is None or parent["symbol"] != ids.nse_symbol:
-                continue
-            parent_request = requests.get(parent["url"])
-            if parent_request is None or parent_request.spec.id not in (
-                "company-page",
-                "company-financials",
-                "company-overview",
-                "schedules-api",
-            ):
-                continue
-            record = store.get_capture(
-                parent["source_id"], parent["surface"], parent["request_key"], parent["capture_id"]
-            )
-            if (
-                record.http_status != 200
-                or record.effective_body_completeness is not BodyCompleteness.COMPLETE
-            ):
-                continue
-            body = Body(raw=store.read_body(record))
-            context = parent_request.context(record, parent["blob_sha256"])
-            try:
-                if parent_request.spec.id == "company-page":
-                    assert_logged_in(body.tree())
-                    if read_identity(body.tree())[0] != ids.screener_company_id:
-                        continue
-                    proven = True
-                elif parent_request.spec.id == "company-financials":
-                    if (
-                        classify_financials_body(
-                            body.raw,
-                            expected_symbol=ids.nse_symbol,
-                            expected_company_id=ids.tijori_company_id,
-                        ).code
-                        is not OutcomeCode.OK
-                    ):
-                        continue
-                    proven = True
-                if not spec.expand:
-                    continue
-                expansion = expansion_name(spec, parent_request.spec.id)
-                if expansion is not None:
-                    ctx = context.model_copy(
-                        update={"parent": {**(context.parent or {}), "spec": spec.model_dump()}}
-                    )
-                    requests.update((r.url, r) for r in EXPANSIONS[expansion](body, ctx))
-            except (
-                ValueError,
-                KeyError,
-                IndexError,
-                TypeError,
-                StopIteration,
-                ScreenerSessionError,
-                ParserError,
-                UnicodeDecodeError,
-            ):
-                continue
-        request = requests.get(row["url"])
+        if ids is not None and ids.nse_symbol not in graphs:
+            graphs[ids.nse_symbol] = retained_graph(store, pool, specs, ids, retained)
+        request = graphs[ids.nse_symbol].get(row["url"]) if ids else None
         refusal = None
-        if spec.scope is Scope.COMPANY and (
-            ids is None or not proven or spec.expand and request is None
-        ):
+        if spec.scope is Scope.COMPANY and request is None:
             refusal = "verified company binding unavailable"
         if request is None:
             request = Request(spec=owner, url=row["url"], ids=ids, due_since=None)
@@ -465,13 +511,6 @@ def reparse(
                 update={"spec": owner.model_copy(update={"sections": (spec.id,)})}
             )
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-        if owner.id == "company-page" and refusal is None:
-            try:
-                company_page(
-                    Body(raw=store.read_body(record)), request.context(record, ref.blob_sha256)
-                )
-            except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
-                refusal = type(error).__name__
         parse_and_record(store, values, ref, record, request, refusal=refusal)
     return count
 
@@ -631,23 +670,7 @@ def capture_company(
     basis_refusals: dict[Basis, str] = {}
     with pool.connection() as conn:
         entity_id, _, _ = resolve_owner(conn, ids.nse_symbol, ids.isin, None)
-        covered = {
-            row[0]
-            for row in conn.execute(
-                "SELECT id FROM eqos.reporting_entities WHERE eqos.watchlisted(id)"
-            )
-        }
-        peer_symbols = {
-            row.value
-            for row in latest_slice(conn)
-            if row.entity_id in covered and row.value != ids.nse_symbol
-        }
-    peers = tuple(
-        binding.screener_company_id
-        for stock in load_watchlist_config(WATCHLIST).stocks
-        if stock.symbol in peer_symbols
-        and (binding := company_ids(stock)).screener_company_id is not None
-    )
+    peers = covered_peers(pool, ids)
     if not peers and any(s.id == "company-compare" for s in specs):
         incomplete.append("screener:company-compare: no other covered stocks")
     known = {r.url for r in company_requests(specs, ids)} if requests is not None else set()
@@ -724,15 +747,11 @@ def capture_company(
             continue
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         refusal = basis_refusals.get(request.basis) if request.basis else None
-        if body is None and request.spec.id in ("company-page", "company-financials"):
+        if body is None and request.spec.id in IDENTITY_PAGES:
             refusal = "company identity acquisition failed"
-        elif body is not None and request.spec.id == "company-page":
-            try:
-                assert_logged_in(body.tree())
-                if read_identity(body.tree())[0] != ids.screener_company_id:
-                    refusal = "company identity mismatch"
-            except (ScreenerSessionError, ParserError, UnicodeDecodeError) as error:
-                refusal = type(error).__name__
+        elif body is not None and request.spec.id in IDENTITY_PAGES:
+            refusal = identity_refusal(request, body) or refusal
+        if body is not None and request.spec.id == "company-page":
             if (
                 refusal is None
                 and request.basis is Basis.CONSOLIDATED
@@ -756,12 +775,6 @@ def capture_company(
                     cached[request.url] = (ref, body, request)
                     deferred.append(request)
                     continue
-        elif body is not None and request.spec.id == "company-financials":
-            gate = classify_financials_body(
-                body.raw, expected_symbol=ids.nse_symbol, expected_company_id=ids.tijori_company_id
-            )
-            if gate.code is not OutcomeCode.OK:
-                refusal = gate.native_value
         if (
             body is not None
             and request.spec.id == "company-financials"
