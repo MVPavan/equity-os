@@ -852,3 +852,28 @@ def test_stale_parent_gates_failed_descendants_until_refresh(due_rig):
     queued, notes = due.due_requests(rig.pool, rig.store, specs, NOW + 11 * DAY)
     assert sales not in {r.url for r in queued}
     assert "APARINDS:screener:schedules-api:consolidated: INCOMPLETE" in notes
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_pretrigger_capture_does_not_spend_new_triggers_daily_attempt(due_rig):
+    rig, specs = due_rig, pick("results-latest", "company-financials")
+    rig.opener.overrides[FINANCIALS] = b"unavailable", 404
+    rig.run(pick("company-financials"), NOW - timedelta(hours=3))
+    rig.opener.new_results_row()
+    rig.run(pick("results-latest"), NOW)
+    (ids,) = due.covered_universe(rig.pool, rig.store)
+    (trigger,) = due.pending_triggers(
+        ids,
+        specs,
+        capture.company_requests(specs, ids),
+        due.history(rig.pool, specs),
+        due.results_rows(rig.pool, specs),
+        due.expander(rig.store, specs, ()),
+    )
+    assert trigger.obligations[0].attempts == 0
+    later = NOW + timedelta(hours=1)
+    rig.run(specs, later)
+    assert FINANCIALS in rig.opener.calls
+    rig.run(specs, later + timedelta(hours=1))
+    assert FINANCIALS not in rig.opener.calls
