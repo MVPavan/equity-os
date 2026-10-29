@@ -164,3 +164,19 @@ PARSERS[Site.TIJORI, "shareholding-overview"] = ParserEntry(
 PARSERS[Site.TIJORI, "shareholding-trend"] = ParserEntry(
     version="tijori:shareholding-trend.v1", parse=tijori_shareholding_trend
 )
+
+# Task 12: Market series.
+PARSERS.update(
+    {
+        (site, surface): ParserEntry(version=f"{name}:{surface}.v1", parse=parser)
+        for site, name, surface, parser in (
+            (Site.SCREENER, "screener", "fii-api", series.screener_fii),
+            (Site.SCREENER, "screener", "hs-data-api", series.screener_hs),
+            (Site.TIJORI, "tijori", "macro-chart-api", series.tijori_macro),
+            (Site.TIJORI, "tijori", "sector-ms-chart-api", series.tijori_sector_ms),
+            (Site.TIJORI, "tijori", "sector-company-opm-api", series.tijori_sector_opm),
+            (Site.TIJORI, "tijori", "index-data-api", series.tijori_index),
+            (Site.TIJORI, "tijori", "index-metric-data-api", series.tijori_index_metric),
+        )
+    }
+)

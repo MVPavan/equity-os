@@ -269,3 +269,55 @@ def tijori_statement_compare(body: Body, context: ParseContext) -> tuple[VendorV
             basis = "consolidated" if "_c_" in key else "standalone"
             rows(table["data"], path + "/data", dates, basis)
     return tuple(values)
+
+
+def screener_fii(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read the market flow values aligned with their period labels."""
+    data = _json(body.raw)
+    labels, points = data["labels"], data["values"]
+    if not isinstance(labels, list) or not isinstance(points, list) or len(labels) != len(points):
+        raise ValueError("FII labels and values must be aligned arrays")
+    return tuple(
+        _cell(raw, "/values", row, 0, f"/values/{row}", labels[row], data["group"])
+        for row, raw in enumerate(points)
+    )
+
+
+def screener_hs(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every HS trade metric, keeping the requested code as the table identity."""
+    data = _json(body.raw)
+    if not isinstance(data, list):
+        raise ValueError("HS periods must be an array")
+    code = urlsplit(context.url).path.split("/")[-3]
+    return tuple(
+        _cell(raw[field], code, row, column, f"/{row}/{field}", raw["period"], field)
+        for row, raw in enumerate(data)
+        for column, field in enumerate(
+            ("import_value", "export_value", "export_rate", "import_rate")
+        )
+    )
+
+
+def tijori_macro(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read the macro endpoint's bare array of timestamp/value pairs."""
+    return _pairs(_json(body.raw), "", "macro")
+
+
+def tijori_sector_ms(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read each company's market-share history by its series position."""
+    return _named(_json(body.raw), "", "short_name", "data")
+
+
+def tijori_sector_opm(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read each company's operating-margin history by its series position."""
+    return _named(_json(body.raw), "", "short_name", "data")
+
+
+def tijori_index(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every index history point from the bare array."""
+    return _pairs(_json(body.raw), "", "index")
+
+
+def tijori_index_metric(body: Body, context: ParseContext) -> tuple[VendorValue, ...]:
+    """Read every index metric point with the requested metric as its label."""
+    return _pairs(_json(body.raw), "", urlsplit(context.url).path.rstrip("/").split("/")[-1])
