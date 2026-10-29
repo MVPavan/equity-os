@@ -7,10 +7,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tijori_cli_support import assert_raw_first
+from tijori_cli_support import tijori_cli_capture as tijori_cli_capture
 
 from fundamentals.api.cli import main
 from fundamentals.ingest.tijori_shareholding import TijoriShareholdingIdentityError
 from fundamentals.ingest.tijori_source import TijoriCredentials, TijoriSource
+
+pytestmark = [pytest.mark.pg, pytest.mark.usefixtures("tijori_cli_capture")]
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_tijori_shareholding.html"
 _ARTIFACT_FILENAME = "shareholding.json"
@@ -170,3 +174,9 @@ def test_shareholding_cli_requires_an_injected_session_cookie(
 
     with pytest.raises(SystemExit, match="required for tijori-shareholding"):
         main(["tijori-shareholding", "--stock", "TITAN", "--out", str(tmp_path / "out")])
+
+
+@pytest.mark.parametrize("case", ["ok", "failed", "stopped"])
+def test_shareholding_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
+    """Every raw response is registered before parsing or a durable stop."""
+    assert_raw_first("shareholding", case, tijori_cli_capture, pg_db, tmp_path, monkeypatch)
