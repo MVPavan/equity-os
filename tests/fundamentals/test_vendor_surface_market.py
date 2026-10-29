@@ -461,11 +461,50 @@ def test_ambiguous_feed_identity_never_sets_or_reaches_a_boundary(market_rig):
         )
         return f"<main>{items}{'<a href="?p=2">Next</a>' if more else ''}</main>".encode(), 200
 
-    opener.overrides[first] = page("A", "A", "B")
+    opener.overrides[first] = page("B")
     run((), requests=(request,))
-    # Two rows share /event/A, so the boundary is the newest identity that is unique.
+    # Establish a completed boundary before encountering an ambiguous page.
     assert market.progress(pool, market.traversal_key(request)).boundary.row_id == "/event/B"
     opener.overrides |= {first: page("new", "A", "A", more=True), second: page("B")}
     opener.calls.clear()
     run((), requests=(request,))
-    assert opener.calls == [first, second]  # /event/A is ambiguous and cannot end the scan.
+    assert opener.calls == [first]  # An ambiguous page stays unfinished and is retried.
+    state = market.progress(pool, market.traversal_key(request))
+    assert state.boundary.row_id == "/event/B" and state.resume_page == 1
+
+
+@pytest.mark.pg
+def test_ambiguous_terminal_page_persists_incomplete_and_prior_boundary(market_rig, tmp_path):
+    from fundamentals.ingest import vendor_surface_due as due
+
+    opener, pool, run = market_rig
+    spec = next(s for s in MARKET_SPECS if s.id == "announcements-feed").model_copy(
+        update={"path": "/announcements/all/?p=1"}
+    )
+    url = "https://www.screener.in/announcements/all/?p=1"
+    request = Request(spec=spec, url=url, ids=None, due_since=None)
+    item = (
+        '<div class="announcement-item"><a href="/company/FIXTURE/">Fixture</a>'
+        '<a href="/event/old">Event</a><time datetime="2026-10-28">Date</time></div>'
+    ).encode()
+    opener.overrides[url] = b"<main>" + item + b"</main>", 200
+    assert not run((), requests=(request,)).incomplete
+    key = market.traversal_key(request)
+    boundary = market.progress(pool, key).boundary
+    duplicate = item.replace(b"/event/old", b"/event/new")
+    opener.overrides[url] = b"<main>" + duplicate * 2 + b"</main>", 200
+    for _ in range(2):
+        assert run((), requests=(request,)).incomplete
+        state = market.progress(pool, key)
+        assert state.boundary == boundary and state.resume_page == 1
+        with pool.connection() as conn:
+            assert conn.execute(
+                "SELECT status,traversal_done FROM eqos.vendor_outcomes "
+                "WHERE traversal_key=%s ORDER BY id DESC LIMIT 1",
+                (key,),
+            ).fetchone() == ("UNUSABLE", False)
+    queued, notes = due.due_requests(
+        pool, SnapshotStore(tmp_path / "captures"), (spec,), datetime.now(UTC)
+    )
+    assert not queued
+    assert "screener:announcements-feed: INCOMPLETE" in notes

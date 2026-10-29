@@ -29,7 +29,12 @@ from fundamentals.ingest.vendor_surface_capture import (
 )
 from fundamentals.ingest.vendor_surface_expand import advertised, expansion_name
 from fundamentals.ingest.vendor_surface_fetch import Site, VendorFetcher
-from fundamentals.ingest.vendor_surface_market import capture_market, market_requests, traversal_key
+from fundamentals.ingest.vendor_surface_market import (
+    capture_market,
+    market_requests,
+    progress,
+    traversal_key,
+)
 from fundamentals.ingest.vendor_surface_parse import Body, CompanyIds
 from fundamentals.ingest.vendor_surface_specs import SITE_NAME, Cadence, Scope, SurfaceSpec
 from fundamentals.ingest.vendor_surface_tables import feed_rows
@@ -362,6 +367,8 @@ def due_requests(
         }.items():
             request, hist, spec = node.request, seen.get(key, []), node.request.spec
             notes.extend(label + gap for gap in nodes.get(key, node).gaps)
+            if spec.feed and progress(pool, key).resume_page is not None:
+                notes.append(f"{label}{SITE_NAME[spec.site]}:{spec.id}: INCOMPLETE")
             if (
                 key in spent
                 or key in pending
