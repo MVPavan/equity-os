@@ -81,6 +81,8 @@ MARGIN_LABEL = "PBT margin, PBT before associates over revenue (PBT / revenue ×
 FORMULA_VERSION = "1"
 TAX, SHARE = "tax_expense", "share_of_profit_associates_jv"
 CHANGES, CALCS = "changes", "calculations"
+OPEN_QUESTIONS, NOT_PERFORMED = "open_questions", "not_performed"
+DISCLOSED = frozenset({OPEN_QUESTIONS, NOT_PERFORMED})
 _HUNDRED = Interval.exact(Fraction(100))
 _CRORE_SCALE = UNITS[CRORE][2] or 1
 # The code-side formulas carry no equivalence proof.
