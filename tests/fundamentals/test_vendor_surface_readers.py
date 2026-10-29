@@ -244,8 +244,8 @@ def test_namespaced_search_outcomes(pg_db, tmp_path):
             context.model_copy(update={"basis": None}),
         )
     assert [(s, v) for s, _, v in outcomes] == [
-        ("OK", "screener:company-search-api.reader.v1"),
-        ("FAILED", "tijori:company-search-api.reader.v1"),
+        ("OK", "screener:company-search-api.reader.v2"),
+        ("FAILED", "tijori:company-search-api.reader.v2"),
     ]
     assert (Site.TIJORI, "filter-advanced-search-api") not in PARSERS
     assert (
@@ -507,3 +507,71 @@ def test_absent_forensic_count_keeps_positions():
 
     assert red(absent) == red(document) == 1
     assert outcome(reader_values((absent,))) == outcome(reader_values((document,)))
+
+
+@pytest.mark.pg
+@pytest.mark.parametrize(
+    "site,surface,owner_id",
+    [
+        (Site.SCREENER, "section-quarters", "company-page"),
+        (Site.TIJORI, "company-financials", "company-financials"),
+    ],
+)
+def test_replay_reprocesses_reader_v1_without_pin_drift(
+    pg_db, tmp_path, monkeypatch, site, surface, owner_id
+):
+    from fundamentals.ingest.vendor_surface_capture import reparse
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+    from fundamentals.store.vendor_values_store import VendorValuesStore
+
+    name = "screener" if site is Site.SCREENER else "tijori"
+    body, context = retained(name, owner_id, "APARINDS", "consolidated")
+    owner = next(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.site is site and s.id == owner_id
+    ).model_copy(update={"sections": (surface,) if surface != owner_id else ()})
+    spec = owner.model_copy(update={"id": surface, "sections": (), "group": ParseGroup.READER})
+    current = PARSERS[site, surface]
+    old_version = f"{name}:{surface}.reader.v1"
+
+    def previous_reader(body, context):
+        return ()
+
+    monkeypatch.setitem(
+        PARSERS,
+        (site, surface),
+        current.model_copy(update={"version": old_version, "parse": previous_reader}),
+    )
+    store = SnapshotStore(tmp_path)
+    with pg_db.runtime_pool() as pool:
+        ref = capture_response(
+            pool,
+            store,
+            tmp_path,
+            Request(
+                spec=owner,
+                url=context.url,
+                ids=context.ids,
+                basis=context.basis if site is Site.SCREENER else None,
+                due_since=None,
+            ),
+            body.raw,
+        )
+        values = VendorValuesStore(pool)
+        assert values.has_outcome(ref.capture_ref_id, surface, old_version)
+        monkeypatch.setitem(PARSERS, (site, surface), current)
+        assert reparse(store, pool, values, spec, (owner,)) == 1
+        with pool.connection() as conn:
+            result = conn.execute(
+                "SELECT parser_version,status,row_count FROM eqos.vendor_outcomes "
+                "WHERE capture_ref_id=%s AND surface=%s ORDER BY id",
+                (ref.capture_ref_id, surface),
+            ).fetchall()
+        assert result[0] == (old_version, "EMPTY", 0)
+        assert result[1][0] == f"{name}:{surface}.reader.v2"
+        assert result[1][1] in ("OK", "PARTIAL") and result[1][2] > 0
+        assert reparse(store, pool, values, spec, (owner,)) == 0

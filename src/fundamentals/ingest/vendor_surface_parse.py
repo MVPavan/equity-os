@@ -143,13 +143,14 @@ PARSERS.update(
     }
 )
 # Task 8: G0 retained-reader adapters.
+# Shared reader/converter changes require bumping every affected caller version (pin rule).
 for _site, _name, _surfaces in (
     (Site.SCREENER, "screener", SCREENER_SURFACES),
     (Site.TIJORI, "tijori", TIJORI_SURFACES),
 ):
     for _surface in _surfaces:
         PARSERS[_site, _surface] = ParserEntry(
-            version=f"{_name}:{_surface}.reader.v1", parse=make_reader(_name, _surface)
+            version=f"{_name}:{_surface}.reader.v2", parse=make_reader(_name, _surface)
         )
 
 # Task 15: G3 positional cells (imports kept in this merge-local block).
