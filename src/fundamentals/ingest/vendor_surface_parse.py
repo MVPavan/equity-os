@@ -143,15 +143,17 @@ PARSERS.update(
     }
 )
 # Task 8: G0 retained-reader adapters.
+# Shared reader/converter changes require bumping every affected caller version (pin rule).
 for _site, _name, _surfaces in (
     (Site.SCREENER, "screener", SCREENER_SURFACES),
     (Site.TIJORI, "tijori", TIJORI_SURFACES),
 ):
     for _surface in _surfaces:
+        # v2: shared converter (Phase 2 r2); v3: percent/crore decode (eqos-aa6.12.1).
         _version = (
-            2
+            3
             if _name == "tijori" and _surface in ("quarterly-results", "company-timeline-api")
-            else 1
+            else 2
         )
         PARSERS[_site, _surface] = ParserEntry(
             version=f"{_name}:{_surface}.reader.v{_version}",

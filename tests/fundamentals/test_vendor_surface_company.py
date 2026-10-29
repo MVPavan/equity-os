@@ -765,3 +765,81 @@ def test_cli_uses_verified_registry_identity_without_watchlist(
             ).fetchone()[0]
             == 4
         )
+
+
+def test_replay_expands_only_verified_captures_at_shared_url(
+    company_rig, pg_db, tmp_path, monkeypatch
+):
+    from psycopg.rows import dict_row
+    from vendor_surface_support import capture_response
+
+    from fundamentals.ingest.screener_session_models import Basis
+    from fundamentals.ingest.vendor_surface_capture import company_requests, reparse, retained_graph
+    from fundamentals.ingest.vendor_surface_parse import PARSERS
+
+    _, ids = company_rig("APARINDS")
+    specs = tuple(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.site is Site.SCREENER and s.id in ("company-page", "quick-ratios-api", "schedules-api")
+    )
+    page = next(r for r in company_requests(specs, ids) if r.basis is Basis.CONSOLIDATED)
+    valid, _ = retained("screener", "company-page", "APARINDS", "consolidated")
+    rejected, _ = retained("screener", "company-page", "APARINDS", "standalone")
+    store = SnapshotStore(tmp_path / "raw")
+    from fundamentals.ingest.vendor_surface_capture import Request
+
+    ratios = next(s for s in specs if s.id == "quick-ratios-api")
+    current = PARSERS[Site.SCREENER, ratios.id]
+    monkeypatch.setitem(
+        PARSERS, (Site.SCREENER, ratios.id), current.model_copy(update={"version": "old"})
+    )
+    with pg_db.runtime_pool() as pool:
+        # Rejected first: an admitted URL must not reuse its schedule inputs either.
+        bad = capture_response(pool, store, tmp_path, page, rejected.raw)
+        capture_response(pool, store, tmp_path, page, valid.raw)
+        child = Request(
+            spec=ratios,
+            url="https://www.screener.in/api/company/2446/quick_ratios/",
+            ids=ids,
+            basis=Basis.CONSOLIDATED,
+            due_since=None,
+        )
+        raw, _ = retained("screener", "quick-ratios-api")
+        dependent = capture_response(pool, store, tmp_path, child, raw.raw)
+        monkeypatch.setitem(PARSERS, (Site.SCREENER, ratios.id), current)
+        with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            rows = cursor.execute(
+                "SELECT c.*, a.url, 'APARINDS' AS symbol FROM eqos.capture_refs c "
+                "JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id ORDER BY c.id"
+            ).fetchall()
+        graph = retained_graph(store, pool, specs, ids, rows)
+        reparse(store, pool, VendorValuesStore(pool), ratios, specs)
+        with pool.connection() as conn:
+            assert conn.execute(
+                "SELECT o.status, count(v.outcome_id) FROM eqos.vendor_outcomes o "
+                "LEFT JOIN eqos.vendor_values v ON v.outcome_id=o.id "
+                "WHERE o.capture_ref_id=%s AND o.parser_version<>'old' GROUP BY o.id",
+                (dependent.capture_ref_id,),
+            ).fetchall() == [("UNUSABLE", 0)]
+            assert (
+                conn.execute(
+                    "SELECT count(*) FROM eqos.vendor_values WHERE capture_ref_id=%s "
+                    "AND basis='consolidated'",
+                    (bad.capture_ref_id,),
+                ).fetchone()[0]
+                == 0
+            )
+        assert child.url not in graph
+        assert "https://www.screener.in/api/company/6594631/quick_ratios/" in graph
+        schedules = [r for r in graph.values() if r.spec.id == "schedules-api"]
+        assert schedules
+        assert {
+            cell.provenance.file_sha256
+            for r in schedules
+            for row in r.parent["page_section"].rows
+            for cell in row.cells
+        } == {hashlib.sha256(valid.raw).hexdigest()}
