@@ -26,7 +26,14 @@ PLACEHOLDER = re.compile(r"\{\{c:([^|}]+)\|([^}]*)\}\}")
 PERCENT = "%"
 DASH = "–"
 COMMA = ", "
-_FLAGS = {"plus": "plus", "unit": "unit", "qual": "qualifier", "trim": "trim", "quote": "quote"}
+_FLAGS = {
+    "plus": "plus",
+    "unit": "unit",
+    "qual": "qualifier",
+    "trim": "trim",
+    "quote": "quote",
+    "ref": "ref",
+}
 _PREFIX_QUALIFIERS = {"about": "about "}
 _SUFFIX_QUALIFIERS = {"plus": "-plus"}
 # A comparator figure or filed tax cited to its filed interpretation, not an admitted fact
@@ -60,7 +67,11 @@ def rounded(value: Decimal, claim: NumericClaim) -> Decimal:
 
 
 def render_claim(claim: NumericClaim, style: DisplayStyle) -> str:
-    """The claim's display text under ``style``."""
+    """The claim's display text under ``style``; ``ref`` shows its key and stored citation."""
+    if style.ref:
+        located = claim.citation.model_dump(exclude={"kind", "quote"}, exclude_none=True)
+        fields = COMMA.join(f"{field}={value}" for field, value in located.items())
+        return f"[{claim.claim_key}: {claim.citation.kind.value} {fields}]"
     if style.quote:
         if claim.citation.kind is not CitationKind.SOURCE_QUOTE or claim.citation.quote is None:
             raise DisplayError(_NO_QUOTE.format(key=claim.claim_key))

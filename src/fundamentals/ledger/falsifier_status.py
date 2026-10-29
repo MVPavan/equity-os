@@ -28,7 +28,7 @@ from fundamentals.contracts.ledger import (
     VersionStatus,
 )
 from fundamentals.ledger import store
-from fundamentals.ledger.import_mapping import _slot
+from fundamentals.ledger.import_mapping import _slot, refs
 from fundamentals.ledger.lifecycle import _LOCK, version_status
 from fundamentals.ledger.run_traces import CALCS, MARGIN_KEY, Line, RunDraftError
 from fundamentals.output.pnl_lines import ETR_LABEL
@@ -206,7 +206,8 @@ def derived(
     )
     lines = [
         f"{{{{e:computed}}}} {{{{e:opinion}}}} Each falsifier of thesis {pinned}, tested in code: "
-        "what is measured, its traced value, the operator, the thesis threshold, and the status."
+        "what is measured: observed traced value, trigger condition (operator and thesis "
+        "threshold), status."
     ]
     thresholds = []
     for row in rows:
@@ -234,7 +235,8 @@ def derived(
         style = "plus,unit" if row.claim_key.startswith("cmp.") else ""
         triggered = "triggered" if row.disposition is Disposition.WEAKENED else "not triggered"
         lines.append(
-            f"{head}{_slot(row.claim_key, style)} {OPERATORS[row.op]} {_slot(name, '')}: "
+            f"{head}observed {_slot(row.claim_key, style)}; triggers when {OPERATORS[row.op]} "
+            f"{_slot(name, '')} {refs([row.claim_key, name])}: "
             f"{row.disposition.value} ({triggered})"
         )
     bodies = ((THESIS_IMPACT, f"{impact}\n"), (FALSIFIER_STATUS, "\n".join(lines) + "\n"))

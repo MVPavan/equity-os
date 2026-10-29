@@ -374,7 +374,7 @@ def test_a_rejection_reruns_the_lines_sharing_its_inputs(
     assert found.carried == own - rerun
     assert not any(key.startswith("thesis.") for key in found.carried | found.rerun)
     for section in drafted.sections[1:]:
-        if section.section_key in DERIVED:
+        if section.section_key in DERIVED | run_traces.DISCLOSED:
             continue
         body, lines = section.body.splitlines(), found.lines[section.section_key]
         assert len(found.scaffolds[section.section_key].splitlines()) + len(lines) == len(body)
@@ -596,7 +596,8 @@ def test_a_rework_refuses_movement_outside_its_rerun_lines_before_writing(
 def test_a_relabelled_guidance_rework_changes_only_its_claim(
     submitted_q2: tuple[Pilot, int],
 ) -> None:
-    """The rejected guidance claim takes its corrected label; nothing else moves."""
+    """The rejected guidance claim takes its corrected label on its guidance line and on its
+    outstanding question alike; nothing else moves."""
     pilot, version = submitted_q2
     _request_changes(pilot, version, CABLES)
     new = _rerun(pilot, edit=_relabel).draft_version_id
@@ -616,7 +617,9 @@ def test_a_relabelled_guidance_rework_changes_only_its_claim(
         for pair in zip(_lines(pilot, new), _lines(pilot, version), strict=True)
         if len(set(pair)) > 1
     ]
-    assert len(moved) == 1 and all(CABLES in line for line in moved[0])
+    assert len(moved) == 2, moved
+    for now, then in moved:
+        assert CABLES in now and "(corrected)" in now and "(corrected)" not in then
 
 
 def test_a_refused_rework_recovers_as_a_full_successor(

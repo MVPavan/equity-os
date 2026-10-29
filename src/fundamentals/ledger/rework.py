@@ -15,7 +15,8 @@ changed section scaffold.
 
 The derived falsifier sections and their threshold claims are re-derived on every write, so a
 rework neither carries nor reruns them; a rejection naming one, or of a version written before
-them, refuses (plan RESEARCH-1 D7).
+them, refuses (plan RESEARCH-1 D7). The disclosed open-questions and not-performed sections are
+likewise regenerated from the run's guidance on every write, outside the rework contract.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
 from fundamentals.ledger.falsifier_status import DERIVED, THESIS_IMPACT
-from fundamentals.ledger.run_traces import RunDraftError
+from fundamentals.ledger.run_traces import DISCLOSED, RunDraftError
 
 Atom = tuple[str, str]
 FactOrigin = tuple[str, int]
@@ -224,7 +225,7 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
             f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "
             "instead"
         )
-    sections = [section for section in version.sections if section.section_key not in DERIVED]
+    sections = [s for s in version.sections if s.section_key not in DERIVED | DISCLOSED]
     cited = [claim.citation for claim in claims.values()]
     trace_ids = [c.calculation_trace_id for c in cited if c.calculation_trace_id is not None]
     traces = {t.trace_id: t for t in repository.get_calculation_traces(trace_ids)}

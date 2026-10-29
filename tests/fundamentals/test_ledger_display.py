@@ -113,6 +113,47 @@ def test_quote_style_needs_a_source_quote() -> None:
         render_claim(numeric("6591.06"), parse_style("quote"))
 
 
+SHA = "ab" * 32
+
+
+@pytest.mark.parametrize(
+    ("citation", "expected"),
+    [
+        (
+            Citation(
+                kind=CitationKind.FIGURE, source_sha256=SHA, fact_origin="pilot", fact_origin_id=4
+            ),
+            f"[c: FIGURE source_sha256={SHA}, fact_origin=pilot, fact_origin_id=4]",
+        ),
+        (
+            Citation(kind=CitationKind.CALCULATION, run_id=3, calculation_trace_id=9),
+            "[c: CALCULATION run_id=3, calculation_trace_id=9]",
+        ),
+        (
+            Citation(
+                kind=CitationKind.SOURCE_QUOTE,
+                source_sha256=SHA,
+                capture_ref_id=1,
+                anchor="p1.b0.0:23",
+                quote=QUOTE,
+            ),
+            f"[c: SOURCE_QUOTE source_sha256={SHA}, capture_ref_id=1, anchor=p1.b0.0:23]",
+        ),
+        (
+            Citation(kind=CitationKind.THESIS_CLAIM, cited_claim_id=12, cited_sealed_digest=SHA),
+            f"[c: THESIS_CLAIM cited_claim_id=12, cited_sealed_digest={SHA}]",
+        ),
+    ],
+    ids=["figure", "calculation", "source-quote", "thesis-claim"],
+)
+def test_ref_renders_the_claim_key_and_its_stored_citation(
+    citation: Citation, expected: str
+) -> None:
+    """eqos-dna.1 finding 2: ``ref`` shows the claim's key, citation kind and every locator it
+    stores (never the quote text), so a reader resolves the number from the narrative alone."""
+    assert render_claim(numeric("6591.06", citation=citation), parse_style("ref")) == expected
+
+
 def test_sections_render_into_the_narrative_and_its_hash() -> None:
     """Placeholders fill in place, sections join in ordinal order with no separator (D7) and
     the content hash is the narrative's SHA-256 (P2)."""
