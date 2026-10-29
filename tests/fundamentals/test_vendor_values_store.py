@@ -98,6 +98,27 @@ def test_atomic_registration_pinning_and_capture_fk(pg_db, tmp_path):
             values.record(ref, outcome(), row_count=1)
 
 
+# Each table's no-op UPDATE, which only the tombstone's inventory columns may escape.
+TABLES = {
+    "vendor_parser_versions": "parser_version=parser_version",
+    "vendor_outcomes": "capture_ref_id=capture_ref_id",
+    "vendor_values": "capture_ref_id=capture_ref_id",
+    "vendor_basis_bindings": "capture_ref_id=capture_ref_id",
+    "vendor_label_proposals": "source_id=source_id",
+    "vendor_text_claims": "capture_ref_id=capture_ref_id",
+}
+PROPOSAL = (
+    "INSERT INTO eqos.vendor_label_proposals (source_id,surface,label,units,reason,model_id,"
+    "prompt_version,dictionary_version,prompt,raw_response) VALUES "
+    "('tijori','chart-api','Sales','{Cr}','MODEL_UNMAPPED','m','v1','v3','p','r')"
+)
+CLAIM = (
+    "INSERT INTO eqos.vendor_text_claims (capture_ref_id,surface,kind,span_start,span_end,text,"
+    "model_id,prompt_version,epistemic_class) VALUES (%s,'chart-api','NAME',0,4,'Acme','m','v1',"
+    "'inferred')"
+)
+
+
 def test_licence_end_and_immutable_tables(pg_db, tmp_path):
     _, pool, ref, values = setup_store(pg_db, tmp_path)
     with pool:
@@ -124,41 +145,54 @@ def test_licence_end_and_immutable_tables(pg_db, tmp_path):
                 "VALUES (%s,'STANDALONE',1,2,%s,'FIRST_CAPTURE')",
                 (entity, ref.capture_ref_id),
             )
+            conn.execute(PROPOSAL)
+            conn.execute(CLAIM, (ref.capture_ref_id,))
             for role in ("eqos_runtime", "eqos_panel", "eqos_owner", "eqos_purge"):
-                for table in (
-                    "vendor_parser_versions",
-                    "vendor_outcomes",
-                    "vendor_values",
-                    "vendor_basis_bindings",
-                ):
+                for table in TABLES:
                     assert conn.execute(
                         "SELECT has_table_privilege(%s,%s,'SELECT'), "
                         "has_table_privilege(%s,%s,'INSERT'), "
                         "has_table_privilege(%s,%s,'UPDATE,DELETE,TRUNCATE')",
                         (role, "eqos." + table) * 3,
                     ).fetchone() == (True, role == "eqos_runtime", False)
+            # Only the complete wrapper tombstones; its cell-only helper is not callable.
+            assert conn.execute(
+                "SELECT has_function_privilege('eqos_purge',"
+                "'eqos.tombstone_vendor_capture(bigint)','EXECUTE'), "
+                "has_function_privilege('eqos_purge',"
+                "'eqos.tombstone_vendor_capture_cells(bigint)','EXECUTE')"
+            ).fetchone() == (True, False)
 
         with pg_db.migrator_connection() as conn:
-            for table in (
-                "vendor_parser_versions",
-                "vendor_outcomes",
-                "vendor_values",
-                "vendor_basis_bindings",
-            ):
+            for table, noop in TABLES.items():
                 for statement in (
-                    f"UPDATE eqos.{table} SET "
-                    + (
-                        "parser_version=parser_version"
-                        if table == "vendor_parser_versions"
-                        else "capture_ref_id=capture_ref_id"
-                    ),
+                    f"UPDATE eqos.{table} SET {noop}",
                     f"DELETE FROM eqos.{table}",
                     f"TRUNCATE eqos.{table} CASCADE",
                 ):
                     with pytest.raises(psycopg.Error), conn.transaction():
                         conn.execute(statement)
+            # Inside a tombstone only the redaction inventory may change.
+            for statement in (
+                "UPDATE eqos.vendor_label_proposals SET label=NULL, reason='MALFORMED_REPLY'",
+                "UPDATE eqos.vendor_text_claims SET text=NULL, span_end=5",
+            ):
+                with pytest.raises(psycopg.Error), conn.transaction():
+                    conn.execute("SELECT set_config('eqos.tombstone','fixture',true)")
+                    conn.execute(statement)
+        with pool.connection() as conn:
+            before = table_rows(conn, ["vendor_label_proposals"])["vendor_label_proposals"]
         with pg_db.owner_pool() as owners, owners.connection() as owner:
             owner.execute("INSERT INTO eqos.licence_ends (source_id) VALUES ('tijori')")
+        with pool.connection() as conn:
+            after = table_rows(conn, ["vendor_label_proposals"])["vendor_label_proposals"]
+            assert after == {
+                key: row | {"label": None, "prompt": None, "raw_response": None}
+                for key, row in before.items()
+            }
+            for statement, params in ((PROPOSAL, ()), (CLAIM, (ref.capture_ref_id,))):
+                with pytest.raises(psycopg.errors.InsufficientPrivilege), conn.transaction():
+                    conn.execute(statement, params)
         with pytest.raises(psycopg.errors.InsufficientPrivilege, match="BEYOND_AUTHORITY"):
             values.record(ref, outcome(version="tijori:chart-api.v2"), row_count=2)
 
@@ -168,6 +202,7 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
     with pool:
         values.record(ref, outcome(), row_count=2)
         with pool.connection() as conn:
+            conn.execute(CLAIM, (ref.capture_ref_id,))
             before = table_rows(conn, ["vendor_values"])["vendor_values"]
         with pg_db.role_pool(PgRole.PURGE) as purges, purges.connection() as conn:
             conn.execute(
@@ -185,6 +220,9 @@ def test_tombstone_clears_content_keeps_positions(pg_db, tmp_path):
                 (0, 0, None, None, None, None, None),
                 (1, 0, None, None, None, None, None),
             ]
+            assert conn.execute(
+                "SELECT kind,span_start,span_end,text FROM eqos.vendor_text_claims"
+            ).fetchall() == [("NAME", 0, 4, None)]
 
 
 def test_capture_and_values_backup_restore(pg_db: PgTestDatabase, tmp_path: Path):
