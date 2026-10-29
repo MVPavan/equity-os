@@ -225,13 +225,13 @@ def tijori_popup_fields(body: Body, context: ParseContext) -> tuple[Request, ...
     """Follow each distinct financial row's declared field, source and statement."""
     assert context.parent is not None
     spec = SurfaceSpec.model_validate(context.parent["spec"])
-    fields = dict.fromkeys(
-        (row["field"], row["source"], row["fs_name"])
-        for table in financials(body).values()
-        if table is not None
-        for row in table.get("data", [])
-        if row.get("field") and row.get("source") and row.get("fs_name")
-    )
+    rows = [row for table in financials(body).values() if table for row in table.get("data", [])]
+    fields = {}
+    while rows:
+        row = rows.pop(0)
+        if row.get("field") and row.get("source") and row.get("fs_name"):
+            fields[row["field"], row["source"], row["fs_name"]] = None
+        rows[0:0] = row.get("sub_section") or []
     return tuple(
         child(spec, context, field=field, source=source, fs_name=name)
         for field, source, name in fields

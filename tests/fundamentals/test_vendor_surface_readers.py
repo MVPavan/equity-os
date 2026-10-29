@@ -378,3 +378,23 @@ def test_growth_rows_keep_source_positions():
     assert growth
     assert all(v.column_index == 0 for v in growth)
     assert growth[0].row_index == 1
+
+
+def test_popup_expands_nested_financial_rows():
+    from fundamentals.ingest.vendor_surface_expand import tijori_popup_fields
+    from fundamentals.ingest.vendor_surface_specs import load_specs
+
+    body, context = retained("tijori", "company-financials", "HDFCBANK")
+    spec = next(
+        s
+        for s in load_specs(
+            Path("config/vendor_surface/surfaces.yaml"),
+            Path("docs/research/vendor-surface/catalog.yaml"),
+        )
+        if s.id == "financials-popup-chart-api"
+    )
+    requests = tijori_popup_fields(
+        body, context.model_copy(update={"parent": {"spec": spec.model_dump()}})
+    )
+    assert len(requests) == 20
+    assert len({r.url for r in requests}) == 20
