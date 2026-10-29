@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import posixpath
-import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -50,7 +49,7 @@ SITE_AUTHORITY: Mapping[Site, str] = {
 DENY_WORDS = frozenset(
     (
         "logout delete remove add create rename save edit follow unfollow subscribe toggle upgrade "
-        "payment alert connect sync reset refresh ai flag ask mark share-by-email"
+        "payment alert alerts account portfolio settings profile connect sync reset refresh ai flag ask mark share-by-email"
     ).split()
 )
 DENY_KEYS = DENY_WORDS | frozenset(
@@ -155,8 +154,6 @@ def is_denied(url: str) -> bool:
     path = parts.path.lower().rstrip("/") + "/"
     if any(key.lower() in DENY_KEYS for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
         return True
-    if path == "/in/edit-columns/" or re.fullmatch(r"/capsules/[0-9]+/stock-alerts/", path):
-        return False
     if path.startswith(NAMED_PATHS) or (
         path.startswith("/annual-reports/") and path.endswith("/summary/")
     ):
