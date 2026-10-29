@@ -128,10 +128,36 @@ def extract_text(
                 (ref.capture_ref_id, surface, version),
             ).fetchone():
                 continue
-            record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-            source = source_text(Site.SCREENER, surface, store.read_body(record))
-            reply = model.complete(SYSTEM, source)
-            spans, rejected = validate_spans(source, reply.text)
+            try:
+                record = store.get_capture(
+                    ref.source_id, ref.surface, ref.request_key, ref.capture_id
+                )
+                source = source_text(Site.SCREENER, surface, store.read_body(record))
+                reply = model.complete(SYSTEM, source)
+                spans, rejected = validate_spans(source, reply.text)
+            except Exception as error:
+                # Append failed attempts separately; only the base version completes processing.
+                failure_prefix = version + ":failed:"
+                attempt = conn.execute(
+                    "SELECT count(*) FROM eqos.vendor_outcomes WHERE capture_ref_id=%s "
+                    "AND surface=%s AND starts_with(parser_version,%s)",
+                    (ref.capture_ref_id, surface, failure_prefix),
+                ).fetchone()
+                assert attempt is not None
+                values.record(
+                    ref,
+                    Outcome(
+                        surface=surface,
+                        parser_version=f"{failure_prefix}{attempt[0] + 1}",
+                        parser_sha256=digest,
+                        status=OutcomeStatus.FAILED,
+                        symbol=None,
+                        detail=type(error).__name__,
+                    ),
+                    row_count=0,
+                    conn=conn,
+                )
+                continue
             for span in spans:
                 conn.execute(
                     "INSERT INTO eqos.vendor_text_claims (capture_ref_id,surface,kind,span_start,"
