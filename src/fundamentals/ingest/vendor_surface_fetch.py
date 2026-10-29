@@ -49,7 +49,8 @@ SITE_AUTHORITY: Mapping[Site, str] = {
 DENY_WORDS = frozenset(
     (
         "logout delete remove add create rename save edit follow unfollow subscribe toggle upgrade "
-        "payment alert alerts account portfolio settings profile connect sync reset refresh ai flag ask mark share-by-email"
+        "payment alert alerts account portfolio settings profile connect sync reset refresh "
+        "ai flag ask mark share-by-email"
     ).split()
 )
 DENY_KEYS = DENY_WORDS | frozenset(
@@ -65,7 +66,7 @@ NAMED_PATHS = (
     "/user/columns/",
     "/user/quick_ratios/",
     "/user/push-notifications/",
-    "/ratios/",
+    "/ratios/new/",
     "/premium/",
     "/filter/saved-queries/",
     "/plans/",
@@ -167,7 +168,7 @@ def is_denied(url: str) -> bool:
     """Apply runbook §1 to a normalized URL, exempting company slugs."""
     parts = urlsplit(url)
     path = parts.path.lower().rstrip("/") + "/"
-    if path == "/" or any(
+    if path in ("/", "/ratios/") or any(
         key.lower() in DENY_KEYS or (key.lower() == "owner" and value.lower() == "true")
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
     ):

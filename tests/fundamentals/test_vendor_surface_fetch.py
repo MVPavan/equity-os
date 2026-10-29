@@ -127,6 +127,7 @@ def test_deny_list(path):
     "path",
     [
         "/company/ask-automotive-ltd/",
+        "/ratios/gallery/",
     ],
 )
 def test_read_only_exceptions(path):
@@ -277,6 +278,7 @@ def test_missing_session_refused_before_fetch():
 
 def test_fetch_logs_only_request_identity(tmp_path):
     import structlog
+
     from fundamentals.ingest.vendor_surface_fetch import Site, request_key
 
     events = []
