@@ -241,6 +241,24 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
         }
         assert unexpected == set()
         if symbol == "APARINDS":
+            # Every financials section has an explicit outcome. The three widget shells hold no
+            # reader input on the page (their data is the analysis APIs), so they fail closed.
+            sections = conn.execute(
+                "SELECT o.surface, o.status, o.detail FROM eqos.vendor_outcomes o JOIN eqos.c"
+                "apture_refs c ON c.id=o.capture_ref_id WHERE c.surface='vs.company-financials'"
+            ).fetchall()
+            shells = {
+                "financials-balance-sheet-snapshot",
+                "financials-fundflow-analysis",
+                "financials-cash-flow-analysis",
+            }
+            assert len(sections) == 13
+            assert all(
+                (status, detail) == ("FAILED", "ReaderError")
+                if surface in shells
+                else status in ("OK", "PARTIAL", "KEPT")
+                for surface, status, detail in sections
+            )
             assert conn.execute(
                 "SELECT v.value FROM eqos.vendor_values v JOIN eqos.vendor_outcomes o"
                 " ON o.id=v.outcome_id WHERE o.surface='section-quarters' AND v.basis"
@@ -423,6 +441,26 @@ def test_identity_acquisition_failure_is_recorded(company_rig, run_company, raw,
     assert report.refused
 
 
+def test_busy_identity_acquisition_blocks_dependents(company_rig, run_company, monkeypatch):
+    # Both identity pages meet a busy site lock; a dependent must not run once the lock frees.
+    opener, ids = company_rig("APARINDS")
+    specs = load_specs(
+        Path("config/vendor_surface/surfaces.yaml"),
+        Path("docs/research/vendor-surface/catalog.yaml"),
+    )
+    selected = tuple(
+        s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", "company-trades")
+    )
+    acquire, busy = PgSiteLock.acquire, iter((True, True))
+    monkeypatch.setattr(
+        PgSiteLock, "acquire", lambda self, site: not next(busy, False) and acquire(self, site)
+    )
+    report, captures, _, _ = run_company(opener, ids, selected)
+    assert captures == {}
+    assert report.completed == 0
+    assert report.expected == len(report.refused) + len(report.incomplete)
+
+
 def test_shareholder_whitespace_uses_matched_control(company_rig, run_company):
     opener, ids = company_rig("APARINDS")
     for url, row in opener.rows.items():
@@ -480,9 +518,20 @@ def test_missing_expected_advertisement_is_a_gap(company_rig, run_company, surfa
     assert any(f"screener:{surface}:" in gap for gap in report.incomplete)
 
 
-@pytest.mark.parametrize("surface", ["section-documents", "schedules-api", "company-trades"])
+@pytest.mark.parametrize(
+    "surface,parent",
+    [
+        ("screener:section-documents", "company/APARINDS/"),
+        ("screener:schedules-api", "company/APARINDS/"),
+        ("screener:company-trades", "company/APARINDS/"),
+        ("tijori:op-metrics-api", "company/{slug}/"),
+        ("tijori:revenue-mix-history-api", "company/{slug}/"),
+        ("tijori:market-share-peer-companies-api", "company/{slug}/"),
+        ("tijori:shareholding-detail-chart-api", "company/{slug}/shareholding/"),
+    ],
+)
 def test_cli_selection_includes_identity_and_parents(
-    company_rig, pg_db, tmp_path, monkeypatch, capsys, surface
+    company_rig, pg_db, tmp_path, monkeypatch, capsys, surface, parent
 ):
     from argparse import Namespace
 
@@ -495,7 +544,7 @@ def test_cli_selection_includes_identity_and_parents(
         command="vendor",
         vendor_command="capture",
         symbol=ids.nse_symbol,
-        surface=[f"screener:{surface}"],
+        surface=[surface],
         snapshot_root=tmp_path / "cli",
         tijori_slug=None,
         market=False,
@@ -506,16 +555,17 @@ def test_cli_selection_includes_identity_and_parents(
             opener_factory=lambda: opener,
             pool_factory=pg_db.runtime_pool,
             sessions_factory=lambda sites: {
-                Site.SCREENER: SiteSession(
-                    site=Site.SCREENER, session_cookie=SecretStr("fixture"), cookie_name="sid"
-                )
+                site: SiteSession(site=site, session_cookie=SecretStr("fixture"), cookie_name="sid")
+                for site in sites
             },
         )
         == 0
     )
     capsys.readouterr()
-    assert any("/company/APARINDS/" in url for url in opener.calls)
+    assert any(url.endswith("/" + parent.format(slug=ids.tijori_slug)) for url in opener.calls)
     assert all("#" not in url for url in opener.calls)
+    if surface.startswith("tijori:"):
+        return  # The corpus retains no APARINDS bodies for these Tijori children.
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         assert (
             conn.execute(
@@ -523,7 +573,7 @@ def test_cli_selection_includes_identity_and_parents(
                     "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND statu"
                     "s IN ('OK','PARTIAL')"
                 ),
-                (surface,),
+                (surface.split(":")[1],),
             ).fetchone()[0]
             > 0
         )
@@ -535,10 +585,18 @@ def test_cli_selection_includes_identity_and_parents(
 def test_offline_reparse_recovers_section_and_child_inputs(
     company_rig, run_company, pg_db, tmp_path, monkeypatch, surface
 ):
+    opener, ids = company_rig("RELIANCE" if surface == "segments-api" else "APARINDS")
+    replayed = replay_after_old_parser(
+        run_company, opener, ids, pg_db, tmp_path, monkeypatch, surface
+    )
+    assert any(status in ("OK", "PARTIAL") and n > 0 for status, n in replayed)
+
+
+def replay_after_old_parser(run, opener, ids, pg_db, tmp_path, monkeypatch, surface):
+    """Capture with an old failing parser for `surface`, then replay it with no network."""
     from fundamentals.ingest.vendor_surface_capture import reparse
     from fundamentals.ingest.vendor_surface_parse import PARSERS
 
-    opener, ids = company_rig("RELIANCE" if surface == "segments-api" else "APARINDS")
     key = Site.SCREENER, surface
     current = PARSERS[key]
 
@@ -546,11 +604,7 @@ def test_offline_reparse_recovers_section_and_child_inputs(
         raise ValueError("test old parser")
 
     monkeypatch.setitem(
-        PARSERS,
-        key,
-        current.model_copy(
-            update={"version": current.version.replace(".v1", ".v0"), "parse": broken}
-        ),
+        PARSERS, key, current.model_copy(update={"version": "old", "parse": broken})
     )
     specs = load_specs(
         Path("config/vendor_surface/surfaces.yaml"),
@@ -559,11 +613,11 @@ def test_offline_reparse_recovers_section_and_child_inputs(
     selected = tuple(
         s for s in specs if s.site is Site.SCREENER and s.id in ("company-page", surface)
     )
-    run_company(opener, ids, selected)
+    run(opener, ids, selected)
     monkeypatch.setitem(PARSERS, key, current)
     before = list(opener.calls)
     with pg_db.runtime_pool() as pool:
-        count = reparse(
+        reparse(
             SnapshotStore(tmp_path / "raw"),
             pool,
             VendorValuesStore(pool),
@@ -575,29 +629,66 @@ def test_offline_reparse_recovers_section_and_child_inputs(
             ),
             specs,
         )
-        assert count > 0
         with pool.connection() as conn:
-            assert (
-                conn.execute(
-                    (
-                        "SELECT count(*) FROM eqos.vendor_outcomes WHERE surface=%s AND parse"
-                        "r_version=%s AND status IN ('OK','PARTIAL')"
-                    ),
-                    (surface, current.version),
-                ).fetchone()[0]
-                > 0
-            )
-            assert (
-                conn.execute(
-                    (
-                        "SELECT count(*) FROM eqos.vendor_values v JOIN eqos.vendor_outcomes "
-                        "o ON o.id=v.outcome_id WHERE o.surface=%s AND o.parser_version=%s"
-                    ),
-                    (surface, current.version),
-                ).fetchone()[0]
-                > 0
-            )
+            replayed = conn.execute(
+                "SELECT o.status, count(v.outcome_id) FROM eqos.vendor_outcomes o LEFT JOIN"
+                " eqos.vendor_values v ON v.outcome_id=o.id WHERE o.surface=%s AND"
+                " o.parser_version<>'old' GROUP BY o.id,o.status",
+                (surface,),
+            ).fetchall()
     assert opener.calls == before
+    return replayed
+
+
+def test_replay_applies_parent_basis_gate(company_rig, run_company, pg_db, tmp_path, monkeypatch):
+    # Standalone bytes under the consolidated URL refuse that basis; replay must agree.
+    opener, ids = company_rig("APARINDS")
+    pages = {
+        r["basis"]: r
+        for r in opener.rows.values()
+        if r["id"] == "company-page" and r.get("symbol") == "APARINDS"
+    }
+    opener.overrides[pages["consolidated"]["url"]] = (
+        Path(pages["standalone"]["path"]).read_bytes(),
+        200,
+    )
+    replayed = replay_after_old_parser(
+        run_company, opener, ids, pg_db, tmp_path, monkeypatch, "schedules-api"
+    )
+    # The corpus retains only the consolidated schedules, so none may yield cells.
+    assert replayed and not any(n for _, n in replayed)
+
+
+def test_replay_refuses_chart_of_another_company(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch
+):
+    # A retained chart address bound to another Screener id never replays as this company.
+    from fundamentals.ingest import vendor_surface_expand as expand
+
+    opener, ids = company_rig("APARINDS")
+    real, forged = f"/{ids.screener_company_id}/chart/", "/999999999/chart/"
+    chart = next(r for r in opener.rows.values() if r["id"] == "chart-api" and r.get("path"))
+    opener.overrides[
+        f"https://www.screener.in/api/company{forged}?q=Price-DMA50-DMA200-Volume&days=10000"
+        "&consolidated="
+    ] = Path(chart["path"]).read_bytes(), 200
+    original = expand.advertised
+
+    def forging(*args):
+        children, gaps = original(*args)
+        return tuple(
+            c.model_copy(update={"url": c.url.replace(real, forged)}) for c in children
+        ), gaps
+
+    def forged_run(*args):
+        monkeypatch.setattr(expand, "advertised", forging)
+        run_company(*args)
+        monkeypatch.setattr(expand, "advertised", original)
+
+    replayed = replay_after_old_parser(
+        forged_run, opener, ids, pg_db, tmp_path, monkeypatch, "chart-api"
+    )
+    assert replayed and all(status == "UNUSABLE" and n == 0 for status, n in replayed)
 
 
 def test_cli_uses_verified_registry_identity_without_watchlist(
