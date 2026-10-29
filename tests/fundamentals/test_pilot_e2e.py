@@ -322,9 +322,11 @@ def _falsifiers(pilot: Pilot, quarter: str, version: VersionDraft) -> dict[str, 
     each of F1-F4 triggered exactly when the Q0 twin's predicate holds on the frozen value (F5,
     superseded, is unresolved). Returns whether each evaluated falsifier triggered."""
     keys = [section.section_key for section in version.sections]
-    assert keys[-3:] == [GUIDANCE, THESIS_IMPACT, FALSIFIER_STATUS], f"RESEARCH-1: {keys}"
+    at = keys.index(GUIDANCE)
+    derived = [GUIDANCE, THESIS_IMPACT, FALSIFIER_STATUS]
+    assert keys[at : at + 3] == derived, f"RESEARCH-1: {keys}"
     thesis_id, digest, _ = _thesis(pilot)
-    impact, rows = (section.body for section in version.sections[-2:])
+    impact, rows = (section.body for section in version.sections[at + 1 : at + 3])
     assert f"version:{thesis_id} (sealed digest {digest})" in impact, "RESEARCH-1: Q0 not named"
     lines = {line.split()[1]: line for line in rows.splitlines() if line.startswith("- ")}
     found = {}
