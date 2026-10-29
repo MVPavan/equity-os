@@ -465,7 +465,7 @@ def run_canaries(
             checks = canary.check(fetched.record, raw)
             if canary.name == "T8" and fetched.location != "/dashboard/":
                 checks += ("T8.location",)
-            if canary.name == "S1" and not checks:
+            if canary.name == "S1" and raw:
                 tree = html.fromstring(raw)
                 parents = tree.xpath('//*[@id="quarters"]//*[@onclick]/@onclick')
                 matches = [

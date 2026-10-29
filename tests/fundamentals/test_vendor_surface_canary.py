@@ -1,9 +1,13 @@
 """Yield drift compares only like versions and reports every orphaned capture."""
 
+import copy
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
 import pytest
+from lxml import html
 from retention_support import record_of
 from vendor_surface_support import rig
 
@@ -107,9 +111,28 @@ def test_retained_tracer_has_green_canary(rig, capsys):
     assert "skipped" in captured.err
 
 
+FIXED = datetime(2026, 10, 28, 9, 30, tzinfo=UTC)
+# Retained bodies chosen by catalog id because the canary's own request was not retained.
+IDS = {
+    "S4": "schedules-api",
+    "S5": "investors-api",
+    "S6": "chart-api",
+    "S7": "company-notebook-modal",
+    "T4": "chartdata-price-api",
+    "T6": "company-timeline-api",
+    "T7": "quarterly-results-api",
+}
+UTILS = "/static/js/utils.1184f12f9e79.js"
+SCHEDULE = '//*[@onclick and contains(@onclick,"showSchedule")]'
+
+
 @pytest.fixture
 def canary_opener():
-    """Serve retained surface shapes; redirect controls have synthetic empty bodies."""
+    """Serve one retained body per canary by surface, under whatever path is requested.
+
+    SHAPE/CONTROL ONLY, not exact-request acceptance: S4 gets another basis, S5, T4 and T6
+    another company, T7 page 1 for page 2, and S8 and T8 synthetic redirects (runbook §4).
+    """
     import hashlib
     import io
     from email.message import Message
@@ -120,60 +143,45 @@ def canary_opener():
 
     from vendor_surface_support import load_request_index
 
-    rows = load_request_index()
-    references = (
-        ("S1", "/company/APARINDS/consolidated/", None),
-        ("S2", "/company/NETWEB/consolidated/", None),
-        ("S3", "/company/ANONDITA/", None),
-        ("S4", "/api/company/211/schedules/", "schedules-api"),
-        ("S5", "/api/3/211/investors/promoters/quarterly/", "investors-api"),
-        ("S6", "/api/company/211/chart/", "chart-api"),
-        ("S7", "/static/js/utils.1184f12f9e79.js", "company-notebook-modal"),
-        ("S8", "/company/actions/211/", None),
-        ("T1", "/company/apar-industries-limited/", None),
-        ("T2", "/company/apar-industries-limited/financials/", None),
-        ("T3", "/company/apar-industries-limited/shareholding/", None),
-        ("T4", "/api/v1/ind/chartdata/4290/price/", "chartdata-price-api"),
-        ("T5", "/api/v1/ind/fund_flow_analysis_data/4290/", None),
-        ("T6", "/timeline/company/", "company-timeline-api"),
-        ("T7", "/results/quarterly-results/api/", "quarterly-results-api"),
-        ("T8", "/", None),
-    )
-    responses = {}
-    for name, path, identifier in references:
-        raw = b""
-        if name not in ("S8", "T8"):
+    from fundamentals.ingest.vendor_surface_canary import CANARIES
+
+    rows = load_request_index().values()
+    paths = {
+        UTILS if item.name == "S7" else urlsplit(item.url).path: item.name for item in CANARIES
+    }
+    bodies = {"S8": b"", "T8": b""}
+    for path, name in paths.items():
+        if name not in bodies:
             row = next(
                 row
-                for row in rows.values()
+                for row in rows
                 if row["path"]
                 and row["status"] == 200
-                and (row["id"] == identifier if identifier else urlsplit(row["url"]).path == path)
+                and (row["id"] == IDS[name] if name in IDS else urlsplit(row["url"]).path == path)
                 and (name != "S4" or "81159bca4b63" in row["path"])
             )
-            raw = Path(row["path"]).read_bytes()
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
-        responses[path] = [name, raw, 302 if name in ("S8", "T8") else 200]
+            bodies[name] = Path(row["path"]).read_bytes()
+            assert hashlib.sha256(bodies[name]).hexdigest() == row["sha256"]
 
     class CanaryOpener(OpenerDirector):
         """Reject unknown requests and retain request metadata for boundary assertions."""
 
         def __init__(self):
             super().__init__()
-            self.calls = []
-            self.responses = responses
-            self.location = "/dashboard/"
-            self.truncated = False
+            self.calls, self.bodies, self.truncated = [], bodies, False
+            self.statuses = {"S8": 302, "T8": 302}
+            self.locations = {"T8": "/dashboard/"}
 
         def open(self, request, timeout):
             self.calls.append(request)
-            name, raw, status = self.responses[urlsplit(request.full_url).path]
+            name = paths[urlsplit(request.full_url).path]
+            raw, status = self.bodies[name], self.statuses.get(name, 200)
             headers = Message()
             headers["Content-Type"] = "text/html"
             if self.truncated and name == "S1":
                 headers["Content-Length"] = str(len(raw) + 1)
-            if name == "T8":
-                headers["Location"] = self.location
+            if name in self.locations:
+                headers["Location"] = self.locations[name]
             response = HTTPError(request.full_url, status, "fixture", headers, io.BytesIO(raw))
             if status != 200:
                 raise response
@@ -182,132 +190,183 @@ def canary_opener():
     return CanaryOpener()
 
 
+def _drop(node):
+    """Remove one element from its tree."""
+    node.getparent().remove(node)
+
+
+def _set(attribute, name, value):
+    """Replace one canary's served body, status or Location."""
+    return lambda opener: getattr(opener, attribute).__setitem__(name, value)
+
+
+def _sub(name, pattern, replacement):
+    """Rewrite one canary's served bytes."""
+    return lambda opener: opener.bodies.__setitem__(
+        name, re.sub(pattern, replacement, opener.bodies[name], flags=re.S)
+    )
+
+
+def _html(name, edit):
+    """Edit one canary's served HTML tree."""
+
+    def apply(opener):
+        tree = html.fromstring(opener.bodies[name])
+        edit(tree)
+        opener.bodies[name] = html.tostring(tree)
+
+    return apply
+
+
+def _json(name, edit, key=None):
+    """Edit one canary's JSON body, or one of its JSON script islands."""
+
+    def load_edit(text):
+        data = json.loads(text)
+        edit(data)
+        return json.dumps(data)
+
+    def island(tree):
+        node = tree.xpath(f'//script[@id="{key}"]')[0]
+        node.text = load_edit(node.text)
+
+    if key:
+        return _html(name, island)
+    return lambda opener: opener.bodies.__setitem__(name, load_edit(opener.bodies[name]).encode())
+
+
+def _rename_schedule(tree):
+    """Put a space before the handler's parenthesis."""
+    node = tree.xpath(SCHEDULE)[0]
+    node.set("onclick", node.get("onclick").replace("showSchedule(", "showSchedule ("))
+
+
+FAILED, UNUSABLE = "FAILED", "UNUSABLE"
+MUTATIONS = [
+    pytest.param(None, {}, id="green"),
+    pytest.param(_html("S1", _rename_schedule), {"S1.handlers": FAILED}, id="handler"),
+    pytest.param(
+        _html(
+            "S1",
+            lambda tree: _drop(
+                tree.xpath('//*[@id="quarters"]//table[contains(@class,"data-table")]//th')[1]
+            ),
+        ),
+        {"S1.quarters": FAILED},
+        id="period",
+    ),
+    pytest.param(
+        _html(
+            "S1",
+            lambda tree: tree.xpath('//*[@id="profit-loss"]//table[@class="ranges-table"]//tr[td]')[
+                0
+            ].append(html.Element("td")),
+        ),
+        {"S1.growth_rows": FAILED},
+        id="growth",
+    ),
+    pytest.param(
+        _html(
+            "S1",
+            lambda tree: (node := tree.xpath(SCHEDULE)[0]).getparent().append(copy.deepcopy(node)),
+        ),
+        {"S1.structure": FAILED},
+        id="duplicate",
+    ),
+    pytest.param(
+        lambda opener: setattr(opener, "truncated", True),
+        {"S1.body_completeness": FAILED, "S4.dependency": None, "S7.dependency": None},
+        id="truncated",
+    ),
+    pytest.param(
+        _html(
+            "S1",
+            lambda tree: tree.xpath('//script[contains(@src,"/js/utils.")]')[0].set(
+                "src", "https://untrusted.example/utils.js"
+            ),
+        ),
+        {"S7.dependency": None},
+        id="script",
+    ),
+    pytest.param(
+        _set("bodies", "S5", b'{"error": "unavailable"}'), {"S5.holders": FAILED}, id="holders"
+    ),
+    pytest.param(
+        _json("S6", lambda data: data["datasets"][0].update(values={"error": "unavailable"})),
+        {"S6.datasets": FAILED},
+        id="chart_values",
+    ),
+    pytest.param(
+        _set("statuses", "S6", 429),
+        {"S6.http_status": FAILED, "S7.fetch": None, "S8.fetch": None},
+        id="stop",
+    ),
+    pytest.param(_set("statuses", "S8", 200), {"S8.http_status": FAILED}, id="modal"),
+    pytest.param(_json("T1", list.clear, "ratios_table"), {"T1.ratios_table": FAILED}, id="ratios"),
+    pytest.param(
+        _json("T1", lambda data: data[0].update(value=0), "ratios_table"), {}, id="ratios_zero"
+    ),
+    pytest.param(
+        _json("T2", lambda data: data["qt_c"]["data"][0]["value"].pop(), "fin_tables_data"),
+        {"T2.statement_rows": FAILED},
+        id="financials",
+    ),
+    pytest.param(
+        _sub("T3", rb"var\s+trendData\s*=.*?;", b"var trendData = [];"),
+        {"T3.trendData": FAILED},
+        id="trend",
+    ),
+    pytest.param(
+        _json(
+            "T4",
+            lambda data: data.update(
+                data=json.dumps({**json.loads(data["data"]), "eod_price": []})
+            ),
+        ),
+        {"T4.eod_price": FAILED},
+        id="price",
+    ),
+    pytest.param(
+        _html(
+            "T6",
+            lambda tree: [_drop(node) for node in tree.xpath('//tr[contains(@class,"d-none")]')],
+        ),
+        {"T6.cursor": FAILED},
+        id="cursor",
+    ),
+    pytest.param(_set("locations", "T8", "/login/"), {"T8.location": FAILED}, id="redirect"),
+]
+
+
 @pytest.mark.retained
-@pytest.mark.parametrize(
-    ("mutation", "failed"),
-    [
-        (None, None),
-        ("handler", "S1"),
-        ("period", "S1"),
-        ("growth", "S1"),
-        ("ratios", "T1"),
-        ("price", "T4"),
-        ("redirect", "T8"),
-        ("stop", "S6"),
-        ("script", "S7"),
-        ("duplicate", "S1"),
-        ("truncated", "S1"),
-        ("financials", "T2"),
-        ("trend", "T3"),
-        ("cursor", "T6"),
-        ("modal", "S8"),
-        ("holders", "S5"),
-        ("chart_values", "S6"),
-        ("ratios_zero", None),
-    ],
-)
-def test_runbook_canaries_cli_retains_outcomes(
-    pg_db, tmp_path, monkeypatch, capsys, canary_opener, mutation, failed
+@pytest.mark.parametrize(("mutate", "expected"), MUTATIONS)
+def test_canary_shapes_and_controls_cli(
+    pg_db, tmp_path, monkeypatch, capsys, canary_opener, mutate, expected
 ):
-    """One command must detect silent shape loss and register even failed controls."""
-    import json
+    """Shape/control test: the command names each lost marker and registers every response.
+
+    The expected check must appear both in the drift output and in its outcome detail.
+    """
     from urllib.parse import parse_qs, urlsplit
 
-    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda seconds: None)
-
-    from lxml import html
     from pydantic import SecretStr
 
     from fundamentals.api import cli, vendor_surface_cli
+    from fundamentals.ingest import vendor_surface_canary
     from fundamentals.ingest.vendor_surface_canary import yield_drift
     from fundamentals.ingest.vendor_surface_fetch import SiteSession
 
-    opener = canary_opener
-    target = {
-        "ratios": "T1",
-        "price": "T4",
-        "financials": "T2",
-        "trend": "T3",
-        "cursor": "T6",
-        "modal": "S8",
-        "holders": "S5",
-        "chart_values": "S6",
-        "ratios_zero": "T1",
-    }.get(mutation, "S1")
-    response = next(value for value in opener.responses.values() if value[0] == target)
-    if mutation in (
-        "handler",
-        "period",
-        "growth",
-        "ratios",
-        "script",
-        "duplicate",
-        "financials",
-        "cursor",
-        "ratios_zero",
-    ):
-        tree = html.fromstring(response[1])
-        if mutation == "handler":
-            node = tree.xpath('//*[@onclick and contains(@onclick,"showSchedule")]')[0]
-            node.set("onclick", node.get("onclick").replace("showSchedule(", "showSchedule ("))
-        elif mutation == "period":
-            node = tree.xpath('//*[@id="quarters"]//table[contains(@class,"data-table")]//th')[1]
-            node.getparent().remove(node)
-        elif mutation == "growth":
-            node = tree.xpath('//*[@id="profit-loss"]//table[@class="ranges-table"]//tr[td]')[0]
-            node.append(html.Element("td"))
-        elif mutation == "ratios":
-            tree.xpath('//script[@id="ratios_table"]')[0].text = "[]"
-        elif mutation == "ratios_zero":
-            node = tree.xpath('//script[@id="ratios_table"]')[0]
-            data = json.loads(node.text)
-            data[0]["value"] = 0
-            node.text = json.dumps(data)
-        elif mutation == "duplicate":
-            import copy
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return FIXED
 
-            node = tree.xpath('//*[@onclick and contains(@onclick,"showSchedule")]')[0]
-            node.getparent().append(copy.deepcopy(node))
-        elif mutation == "financials":
-            node = tree.xpath('//script[@id="fin_tables_data"]')[0]
-            data = json.loads(node.text)
-            data["qt_c"]["data"][0]["value"].pop()
-            node.text = json.dumps(data)
-        elif mutation == "cursor":
-            for node in tree.xpath('//tr[contains(concat(" ",@class," ")," d-none ")]'):
-                node.getparent().remove(node)
-        else:
-            node = tree.xpath('//script[contains(@src,"/js/utils.")]')[0]
-            node.set("src", "https://untrusted.example/utils.js")
-        response[1] = html.tostring(tree)
-    elif mutation == "holders":
-        response[1] = b'{"error": "unavailable"}'
-    elif mutation == "chart_values":
-        document = json.loads(response[1])
-        document["datasets"][0]["values"] = {"error": "unavailable"}
-        response[1] = json.dumps(document).encode()
-    elif mutation == "price":
-        document = json.loads(response[1])
-        data = json.loads(document["data"])
-        data["eod_price"] = []
-        document["data"] = json.dumps(data)
-        response[1] = json.dumps(document).encode()
-    elif mutation == "trend":
-        import re
-
-        response[1] = re.sub(
-            rb"var\s+trendData\s*=.*?;", b"var trendData = [];", response[1], flags=re.S
-        )
-    elif mutation == "truncated":
-        opener.truncated = True
-    elif mutation == "modal":
-        response[2] = 200
-    elif mutation == "redirect":
-        opener.location = "/login/"
-    elif mutation == "stop":
-        next(value for value in opener.responses.values() if value[0] == "S6")[2] = 429
-
+    monkeypatch.setattr(vendor_surface_canary, "datetime", Frozen)
+    monkeypatch.setattr("fundamentals.ingest.http_session.time.sleep", lambda seconds: None)
     monkeypatch.setattr(vendor_surface_cli, "STOP_DIR", tmp_path / "stops")
+    opener = canary_opener
+    if mutate:
+        mutate(opener)
     monkeypatch.setattr(
         cli,
         "dispatch_vendor_command",
@@ -324,58 +383,51 @@ def test_runbook_canaries_cli_retains_outcomes(
         ),
     )
     root = tmp_path / "captures"
-    assert cli.main(["vendor", "canary", "--snapshot-root", str(root)]) == int(failed is not None)
+    assert cli.main(["vendor", "canary", "--snapshot-root", str(root)]) == int(bool(expected))
     output = capsys.readouterr().out
-    failures = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
-    assert any(item["surface"] == failed for item in failures) if failed else not failures
+    assert {json.loads(line)["check"] for line in output.splitlines()} == expected.keys()
     with pg_db.runtime_pool() as pool, pool.connection() as conn:
         outcomes = conn.execute(
-            "SELECT c.capture_id,o.surface,o.status,a.location FROM eqos.vendor_outcomes o "
+            "SELECT o.surface,o.status,o.detail,a.location FROM eqos.vendor_outcomes o "
             "JOIN eqos.capture_refs c ON c.id=o.capture_ref_id "
             "JOIN eqos.capture_addresses a ON a.capture_ref_id=c.id ORDER BY o.id"
         ).fetchall()
-        assert len(outcomes) == len(opener.calls)
-        if mutation == "stop":
-            assert (tmp_path / "stops" / "STOP-screener-subscriber").is_file()
-            assert not any(
-                urlsplit(call.full_url).path.startswith("/static/") for call in opener.calls
-            )
         assert not yield_drift(pool, datetime.min.replace(tzinfo=UTC))
-        if failed:
-            assert (
-                any(surface == failed and status == "FAILED" for _, surface, status, _ in outcomes)
-                if mutation != "script"
-                else True
-            )
-        else:
-            assert {surface for _, surface, _, _ in outcomes} == {
-                f"{site}{index}" for site in ("S", "T") for index in range(1, 9)
-            }
-            assert all(status == "OK" for _, _, status, _ in outcomes)
-            assert outcomes[-1][3] == "/dashboard/"
-            calls = {urlsplit(call.full_url).path: call for call in opener.calls}
-            schedule = parse_qs(urlsplit(calls["/api/company/211/schedules/"].full_url).query)
-            assert schedule["parent"] and schedule["section"] == ["quarters"]
-            assert schedule["consolidated"] == ["true"]
-            assert not calls["/company/actions/211/"].has_header("X-requested-with")
-            dates = parse_qs(urlsplit(calls["/results/quarterly-results/api/"].full_url).query)[
-                "daterange"
-            ][0]
-            assert dates == (datetime.now(UTC) - timedelta(days=7)).strftime(
-                "%m/%d/%Y"
-            ) + "," + datetime.now(UTC).strftime("%m/%d/%Y")
-        assert len(list(root.rglob("record.json"))) == len(outcomes)
+    assert len(outcomes) == len(opener.calls) == len(list(root.rglob("record.json")))
+    recorded = {surface: (status, detail) for surface, status, detail, _ in outcomes}
+    for check, status in expected.items():
+        if status:
+            outcome, detail = recorded[check.split(".")[0]]
+            assert outcome == status and check in detail.split(", ")
+    if opener.statuses.get("S6") == 429:
+        assert (tmp_path / "stops" / "STOP-screener-subscriber").is_file()
+        assert not any(urlsplit(call.full_url).path.startswith("/static/") for call in opener.calls)
+    if not expected:
+        assert [surface for surface, *_ in outcomes] == [
+            item.name for item in vendor_surface_canary.CANARIES
+        ]
+        assert all(status == "OK" for _, status, _, _ in outcomes)
+        assert outcomes[-1][3] == "/dashboard/"
+        calls = {urlsplit(call.full_url).path: call for call in opener.calls}
+        schedule = parse_qs(urlsplit(calls["/api/company/211/schedules/"].full_url).query)
+        assert schedule["parent"] and schedule["section"] == ["quarters"]
+        assert schedule["consolidated"] == ["true"]
+        assert not calls["/company/actions/211/"].has_header("X-requested-with")
+        query = parse_qs(urlsplit(calls["/results/quarterly-results/api/"].full_url).query)
+        assert query["daterange"] == ["10/21/2026,10/28/2026"]
 
 
 @pytest.mark.retained
-def test_each_runbook_check_rejects_bad_status_and_incomplete_body(canary_opener):
-    """Every named pure check must validate status and EOF before trusting markers."""
+def test_each_canary_check_rejects_bad_status_and_incomplete_body(canary_opener):
+    """Shape/control: every pure check validates status and EOF before trusting markers."""
     from fundamentals.contracts.snapshot import BodyCompleteness
     from fundamentals.ingest.vendor_surface_canary import CANARIES
 
-    for canary, (_, raw, status) in zip(CANARIES, canary_opener.responses.values(), strict=True):
+    for canary in CANARIES:
+        raw = canary_opener.bodies[canary.name]
+        status = canary_opener.statuses.get(canary.name, 200)
         record = record_of(raw).model_copy(update={"http_status": status})
         assert not canary.check(record, raw), canary.name
         assert canary.check(record.model_copy(update={"http_status": 404}), raw), canary.name
-        partial = record.model_copy(update={"body_completeness": BodyCompleteness.PARTIAL})
-        assert canary.check(partial, raw), canary.name
+        truncated = record.model_copy(update={"body_completeness": BodyCompleteness.PARTIAL})
+        assert canary.check(truncated, raw), canary.name

@@ -73,6 +73,8 @@ All ids are for APARINDS: Screener company 211 and warehouse 6594631; Tijori slu
 | T7 | `/results/quarterly-results/api/?page=2&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=&daterange={MM/DD/YYYY,MM/DD/YYYY}` | 200; at least 1 result card |
 | T8 | `/` | 302 to `/dashboard/`, which is the logged-in marker. Anything else means the session has expired |
 
+Exact-request acceptance is incomplete until matching responses are retained: the retained canary test is a shape/control test for S4 (another basis), S5, T4 and T6 (another company), T7 (page 1 for page 2), and S8 and T8 (synthetic redirects).
+
 ## 5. Record keeping
 
 - **Catalog entries.** Record one entry per URL pattern. Its example URL must be fetched exactly, and its sha256 must come from the gateway. Name fields only; never copy values.
