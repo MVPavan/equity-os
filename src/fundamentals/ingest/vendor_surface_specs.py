@@ -52,6 +52,7 @@ class SurfaceSpec(BaseModel):
     expand: str | None = None
     sections: tuple[str, ...] = ()
     selector: str | None = None
+    feed: bool = False
 
 
 def load_specs(path: Path, catalog: Path) -> tuple[SurfaceSpec, ...]:

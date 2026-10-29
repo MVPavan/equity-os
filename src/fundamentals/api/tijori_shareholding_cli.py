@@ -8,14 +8,12 @@ from pathlib import Path
 import structlog
 
 from fundamentals.api.artifact_writer import preflight_out_paths, write_json_no_clobber
+from fundamentals.api.tijori_overview_cli import _capture_page
 from fundamentals.api.watchlist_config import load_watchlist_config
 from fundamentals.ingest.tijori_common import TijoriIslandStatus
-from fundamentals.ingest.tijori_shareholding import TijoriShareholding
-from fundamentals.ingest.tijori_source import (
-    TijoriCredentials,
-    TijoriSource,
-    TijoriSourceConfig,
-)
+from fundamentals.ingest.tijori_shareholding import TijoriShareholding, build_tijori_shareholding
+from fundamentals.ingest.tijori_source import TijoriCredentials
+from fundamentals.ingest.vendor_surface_readers import sanitized_reader_logs
 
 TIJORI_SHAREHOLDING_COMMAND = "tijori-shareholding"
 
@@ -38,6 +36,7 @@ def add_tijori_shareholding_parser(
         help="acquire the typed Tijori detailed shareholding table for one watchlist stock",
     )
     parser.add_argument("--stock", required=True, help="watchlist NSE symbol, e.g. TITAN")
+    parser.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
     parser.add_argument(
         "--out",
         default=None,
@@ -68,12 +67,22 @@ def run_tijori_shareholding_command(
             f"Tijori identifiers for {stock.symbol} are not verified: {', '.join(unverified)}"
         )
 
-    source = TijoriSource(TijoriSourceConfig(credentials=credentials))
-    shareholding = source.fetch_shareholding(
-        slug=stock.identifiers.tijori_slug,
-        expected_symbol=stock.symbol,
-        expected_company_id=stock.identifiers.tijori_company_id,
+    record, raw, url = _capture_page(
+        stock,
+        credentials,
+        args.snapshot_root,
+        "company-shareholding",
+        "/company/{slug}/shareholding/",
     )
+    with sanitized_reader_logs("tijori", "company-shareholding"):
+        shareholding = build_tijori_shareholding(
+            raw,
+            slug=stock.identifiers.tijori_slug,
+            expected_symbol=stock.symbol,
+            expected_company_id=stock.identifiers.tijori_company_id,
+            source_url=url,
+            retrieved_at=record.retrieved_at,
+        )
 
     out_dir = Path(args.out).resolve() if args.out else _DEFAULT_OUT_ROOT / stock.symbol
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -85,9 +94,7 @@ def run_tijori_shareholding_command(
         stock=stock.symbol,
         rows=len(shareholding.rows),
         columns=len(shareholding.column_period_labels),
-        quarantined_rows=shareholding.cardinality_mismatch_rows,
-        breakups=[breakup.subcategory for breakup in shareholding.breakups],
-        identity_islands=shareholding.metadata.identity_island_ids,
+        quarantined_rows=len(shareholding.cardinality_mismatch_rows),
         path=str(out_path),
     )
     return shareholding

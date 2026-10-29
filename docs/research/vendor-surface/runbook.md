@@ -60,21 +60,35 @@ All ids are for APARINDS: Screener company 211 and warehouse 6594631; Tijori slu
 | S2 | `/company/NETWEB/consolidated/` | 200; `section#quarters` exists, and its data table has zero period `<th>` (the empty-shell detector still works) |
 | S3 | `/company/ANONDITA/` | `#quarters` heading "Half Yearly Results"; period months are only Mar and Sep |
 | S4 | `/api/company/211/schedules/?parent={label from an S1 showSchedule button}&section=quarters&consolidated=true` | 200 JSON object with at least 1 key; every value is a non-empty object keyed by period labels (`Mon YYYY`). Anything else, including an error envelope, fails |
-| S5 | `/api/3/211/investors/promoters/quarterly/` | 200 JSON with at least 1 holder |
+| S5 | `/api/3/211/investors/promoters/quarterly/` | 200 JSON with at least 1 holder; every holder is an object keyed by period labels (`Mon YYYY`) beside period fields and metadata (the retained fixture includes `setAttributes`), so an error envelope fails |
 | S6 | `/api/company/211/chart/?q=Price-DMA50-DMA200-Volume&days=365&consolidated=true` | 200 JSON; `datasets` holds Price, DMA50, DMA200 and Volume, each with a non-empty `values` array |
 | S7 | `/static/js/utils.<hash>.js` | 200; `getUrls` contains `getChartMetric`, `tradeData` and `getSegments` |
 | S8 | `/company/actions/211/` with no header | 302 (a 200 would mean the modal's XHR-only protection has changed) |
 | T1 | `/company/apar-industries-limited/` | 200; islands parse and their nested payloads are non-empty: `company_details_data` has non-empty `company` and `company_id`; `ratios_table` is a non-empty list, every item with a `name` and a non-empty `value`; `custom_fin_table` is a non-empty list, every item with non-empty `report_dates` and non-empty `data.sub_rows`, each row's `value` a list as long as `report_dates`; every `ms-charts` item has a non-empty `data`; `peers_table_data` is a list that collectively contains a non-empty `columns` and a non-empty `data` (separate objects); `corporate_actions` has at least 1 non-empty list; `companyId` a positive integer; div ids `custom_ratios`, `forensics`, `revenuemix`, `operationalmetrics`, `company_filings`; at least 1 `company_op_metrics/4290/` URL; the `price_chart` island is still absent |
 | T2 | `/company/apar-industries-limited/financials/` | `fin_tables_data` has 15 keys including `qt_c`, `qt_s`, `growth`; every table has a non-empty `report_dates` and non-empty `data`, and every statement row's `value` array is non-empty and as long as `report_dates` |
-| T3 | `/company/apar-industries-limited/shareholding/` | `#overview`, `#trend` and `#detailed` present; the Overview script's `var chartData` has a header row plus at least 1 category row; `var trendData` is a non-empty list whose every series has a non-empty `data`; the detailed table has rows |
+| T3 | `/company/apar-industries-limited/shareholding/` | `#overview`, `#trend` and `#detailed` present; the Overview script's `var chartData` is a non-empty list of `[category label, number]` rows (the 2026-10-28 body has no header row); `var trendData` is a non-empty list whose every series has a non-empty `data` list of point lists; the detailed table has rows |
 | T4 | `/api/v1/ind/chartdata/4290/price/` | 200 `{data, status}`; `data` parses as a JSON object whose `eod_price` is a non-empty list |
 | T5 | `/api/v1/ind/fund_flow_analysis_data/4290/` (trailing slash) | 200 JSON `{data, status}`; `data` is a non-empty list (not `[]` or `{}`); every item has a non-empty `name` and a non-empty `data` object |
-| T6 | `/timeline/company/?company_id=4290&timestamp=0` | 200; at least 1 event row plus a cursor |
-| T7 | `/results/quarterly-results/api/?page=2&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=&daterange={MM/DD/YYYY,MM/DD/YYYY}` | 200; at least 1 result card |
+| T6 | `/timeline/company/?company_id=4290&timestamp=0` | 200; at least 1 event row (a row with a non-blank `td.event` and a non-blank `td.content`) plus a cursor |
+| T7 | `/results/quarterly-results/api/?page=2&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=&daterange={MM/DD/YYYY,MM/DD/YYYY}` | 200; at least 1 result card (`.result_item` with a non-blank `.result_item__header` and `.result_item__body`) |
 | T8 | `/` | 302 to `/dashboard/`, which is the logged-in marker. Anything else means the session has expired |
+
+Exact-request acceptance is incomplete until matching responses are retained: the retained canary test is a shape/control test for S4 (another basis), S5, T4 and T6 (another company), T7 (page 1 for page 2), and S8 and T8 (synthetic redirects).
 
 ## 5. Record keeping
 
 - **Catalog entries.** Record one entry per URL pattern. Its example URL must be fetched exactly, and its sha256 must come from the gateway. Name fields only; never copy values.
 - **Snapshots.** Reference bodies live in `data/raw/vendor-surface/<date>/<site>/` (gitignored), one file per distinct body; section entries point at their parent page body plus an `anchor`. `snapshots-index.json` rows carry `kind`: `response` (200), `error` (non-200, with `status` and any `location`) or `discovery` (the script or page that names a never-fetched or non-200 surface). The 2026-10-28 consolidation used throwaway generators hand-mapped to that crawl's three outputs (not committed); a new crawl consolidates fresh against this catalog and never overwrites an earlier date's store.
 - **Diffing.** A full recrawl always repeats the whole §2 navigation and the §3 script-discovery walk. The canaries check only their named surfaces; passing canaries never narrow discovery. Then diff the new catalog's ids and contents against the previous run.
+
+## 6. Scheduled capture
+
+- **One cron line.** The owner's crontab runs the cadence command once a day, after 00:00 UTC (cron reads the machine's local time; any one daily slot works). `EQOS_REPO` is the checkout's root, set in the crontab; the log directory must exist:
+
+  ```
+  30 2 * * * cd "$EQOS_REPO" && set -a && . ./.env && set +a && uv run --no-sync fundamentals vendor capture-due >> data/logs/vendor-capture-due.jsonl 2>&1
+  ```
+
+  Each run writes one JSON report line (expected, completed, refused, incomplete, stopped sites) and exits 1 when a site is stopped or a request was refused. A second run on the same UTC day does no new work unless a feed shows a new event or an acquisition is unfinished.
+- **`STOP-<site>` reset.** A 403, 429, 503 or login redirect writes `data/STOP-<site>` and stops that site for every later run. Remove the file only after a person has diagnosed the cause (session expired, rate limit, site change); the next run resumes the site's due work oldest first.
+- **Site lock.** Each command holds one PostgreSQL session advisory lock per site for its whole run. A second command on the same site (an overlapping cron run, or a manual `vendor capture`) refuses that site at start; it is never run in parallel.

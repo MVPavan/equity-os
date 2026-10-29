@@ -487,5 +487,7 @@ def test_ledger_stage2_end_to_end(
         "vendor_outcomes",
         "vendor_parser_versions",
         "vendor_values",
+        "vendor_label_proposals",
+        "vendor_text_claims",
     ]
     assert sorted(verify_set(sets).table_counts) == sorted(tables)
