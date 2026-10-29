@@ -46,6 +46,7 @@ from fundamentals.ingest.vendor_surface_fetch import (
     VendorFetcher,
 )
 from fundamentals.ingest.vendor_surface_labels import map_labels
+from fundamentals.ingest.vendor_surface_market import capture_market
 from fundamentals.ingest.vendor_surface_model import (
     ChatCompletionsModel,
     ModelNotSelected,
@@ -71,7 +72,9 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
         parser.add_argument("--surface", nargs="+", default=[], required=name == "reparse")
         parser.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
         if name == "capture":
-            parser.add_argument("--symbol", required=True)
+            target = parser.add_mutually_exclusive_group(required=True)
+            target.add_argument("--symbol")
+            target.add_argument("--market", action="store_true")
             parser.add_argument("--tijori-slug")
 
     labels = commands.add_parser("map-labels")
@@ -181,7 +184,9 @@ def dispatch_vendor_command(
         raise ValueError("unknown vendor surface")
     resolved_sessions: Mapping[Site, SiteSession] = {}
     if args.vendor_command == "capture":
-        required = {spec.site for spec in selected} | {Site.SCREENER}
+        required = {spec.site for spec in selected}
+        if not args.market:
+            required.add(Site.SCREENER)
         resolved_sessions = sessions_factory(required)
         for site in required - resolved_sessions.keys():
             raise ValueError(f"missing vendor session: {site}")
@@ -191,6 +196,15 @@ def dispatch_vendor_command(
         if args.vendor_command == "reparse":
             count = sum(reparse(store, pool, values, spec) for spec in selected)
             sys.stdout.write(json.dumps({"reparsed": count}) + "\n")
+            return 0
+        if args.market:
+            locks = PgSiteLock(pool)
+            fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
+            try:
+                report = capture_market(fetcher, store, pool, values, tuple(selected))
+            finally:
+                locks.close()
+            sys.stdout.write(report.model_dump_json() + "\n")
             return 0
         stock = next(
             stock
