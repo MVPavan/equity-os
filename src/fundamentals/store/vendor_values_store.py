@@ -32,6 +32,7 @@ USABLE = frozenset(
 )
 VENDOR_TABLES = frozenset(
     {"vendor_parser_versions", "vendor_outcomes", "vendor_values", "vendor_basis_bindings"}
+    | {"vendor_label_proposals", "vendor_text_claims"}
 )
 
 

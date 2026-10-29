@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -11,14 +12,17 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.request import OpenerDirector, build_opener
 
+import yaml
 from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg_pool import ConnectionPool
+from pydantic import SecretStr
 
 from fundamentals.api.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
 )
 from fundamentals.api.watchlist_config import load_watchlist_config
+from fundamentals.canon.dictionary import load_dictionary
 from fundamentals.ingest.screener_session_models import Basis, ScreenerSessionError
 from fundamentals.ingest.screener_session_page import assert_logged_in, read_identity
 from fundamentals.ingest.vendor_surface_canary import NO_BASELINE, yield_drift
@@ -39,7 +43,13 @@ from fundamentals.ingest.vendor_surface_fetch import (
     SiteStopped,
     VendorFetcher,
 )
-from fundamentals.ingest.vendor_surface_specs import SITE_NAME, load_specs
+from fundamentals.ingest.vendor_surface_labels import map_labels
+from fundamentals.ingest.vendor_surface_model import (
+    ChatCompletionsModel,
+    ModelNotSelected,
+    ModelSettings,
+)
+from fundamentals.ingest.vendor_surface_specs import SITE_NAME, ParseGroup, load_specs
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -48,6 +58,7 @@ from fundamentals.store.vendor_values_store import USABLE, VendorValuesStore
 SPECS = Path("config/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
 STOP_DIR = Path("data")
+MODEL_CONFIG = Path("config/vendor_surface/model.yaml")
 
 
 def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -60,6 +71,10 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
         if name == "capture":
             parser.add_argument("--symbol", required=True)
             parser.add_argument("--tijori-slug")
+
+    labels = commands.add_parser("map-labels")
+    labels.add_argument("--site", choices=tuple(SITE_NAME.values()), required=True)
+    labels.add_argument("--surface", required=True)
 
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true", required=True)
@@ -92,6 +107,32 @@ def dispatch_vendor_command(
     """Construct the authorized boundaries, then capture or reparse finite specs."""
     if args.command != "vendor":
         return None
+    if args.vendor_command == "map-labels":
+        settings = ModelSettings.model_validate(yaml.safe_load(MODEL_CONFIG.read_text()))
+        try:
+            if not settings.model_id:
+                raise ModelNotSelected("owner-selected model is not configured")
+        except ModelNotSelected as error:
+            sys.stderr.write(str(error) + "\n")
+            return 2
+        site = next(site for site, name in SITE_NAME.items() if name == args.site)
+        if not any(
+            s.site == site and s.id == args.surface and s.group == ParseGroup.CELLS
+            for s in load_specs(SPECS, CATALOG)
+        ):
+            raise ValueError("label mapping requires a G3 surface")
+        key = (
+            Path(os.environ.get("EQOS_SECRETS_DIR", "~/.secrets")).expanduser() / settings.key_file
+        )
+        model = ChatCompletionsModel(
+            settings.model_id, settings.base_url, SecretStr(key.read_text().strip())
+        )
+        dictionary = load_dictionary(Path("config/dictionary"), settings.dictionary_version)
+        fields = {row.canonical_id: row.value_kind for row in dictionary.rows}
+        with pool_factory() as pool:
+            count = map_labels(pool, model, settings, site, args.surface, fields)
+        sys.stdout.write(json.dumps({"proposed": count}) + "\n")
+        return 0
     if args.vendor_command == "canary":
         with pool_factory() as pool:
             drift = yield_drift(pool, datetime.min.replace(tzinfo=UTC))
