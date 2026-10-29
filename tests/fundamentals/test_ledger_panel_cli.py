@@ -38,6 +38,9 @@ _ROWS = "SELECT (SELECT count(*) FROM eqos.decisions), (SELECT count(*) FROM eqo
 _DECIDED = """SELECT d.kind, d.decider, r.provider, r.model, r.effort, r.brief_version, r.verdict,
     r.rationale FROM eqos.decisions d JOIN eqos.panel_reviews r ON r.id = d.panel_review_id
     WHERE d.id = %s"""
+_RETIRED = """SELECT d.kind, d.decider, d.rejected_claims, d.sealed_digest, r.verdict,
+    r.rationale FROM eqos.decisions d JOIN eqos.panel_reviews r ON r.id = d.panel_review_id
+    WHERE d.id = %s"""
 _BINDING = "EQOS-BINDING subject=REPORT_VERSION:{id} sealed_digest={digest} narrative_sha256={sha}"
 _RESPONDER = {
     "provider": "rehearsal",
@@ -57,15 +60,19 @@ def _ledger(pilot: Pilot, action: str, version_id: int, *flags: str) -> int:
     return main(command)
 
 
-def _operator(pilot: Pilot, quarter: str, monkeypatch: pytest.MonkeyPatch) -> int:
+def _operator(
+    pilot: Pilot, quarter: str, monkeypatch: pytest.MonkeyPatch, *, stage: bool = True
+) -> int:
     """Task 1 ``fundamentals-operator`` ``stage`` then ``run`` of the quarter's accepted config;
-    the run's draft version."""
+    the run's draft version. ``stage=False`` reruns on the manifest and intake store an earlier
+    call staged, as a live rerun of the quarter does."""
     fiscal, number = quarter.split("_")
     config = REPO_ROOT / f"config/aparinds-{fiscal.lower()}-{number.lower()}.yaml"
     store, locator = pilot.tmp_path / f"intake-{quarter}", pilot.tmp_path / f"{quarter}.json"
-    store.mkdir(mode=0o700)
-    stage = ["stage", "--config", str(config), "--source-admission-store", str(store)]
-    assert operator_cli.main([*stage, "--out-manifest", str(locator)]) == 0
+    if stage:
+        store.mkdir(mode=0o700)
+        staging = ["stage", "--config", str(config), "--source-admission-store", str(store)]
+        assert operator_cli.main([*staging, "--out-manifest", str(locator)]) == 0
     argv = ["run", "--issuer", STOCK, "--quarter", f"{number}-{fiscal}", "--config", str(config)]
     argv += ["--source-admission-manifest", str(locator), "--source-admission-store", str(store)]
     argv += ["--snapshot-root", str(pilot.rig.snapshots)]
@@ -123,6 +130,19 @@ def _quotes_match(pilot: Pilot, version_id: int) -> None:
     assert quoted and {states[key] for key in quoted} == {ClaimState.MATCH}
 
 
+def _open_pilot_store(pilot: Pilot) -> None:
+    """Register the pilot fact store and open its event, as the operator run requires."""
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.transaction():
+        conn.execute(_INSERT_STORE, (PILOT_STORE,))
+        conn.execute(_OPEN_EVENT, (PILOT_STORE, uuid.uuid4()))
+
+
+def _status(pilot: Pilot, version_id: int) -> VersionStatus:
+    """The version's lifecycle status."""
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        return version_status(conn.cursor(), version_id)
+
+
 @pytest.mark.pg
 @pytest.mark.retained
 def test_panel_approval_carries_the_route_to_the_next_quarter(
@@ -132,9 +152,7 @@ def test_panel_approval_carries_the_route_to_the_next_quarter(
     that narrative → ``ledger panel`` APPROVE → operator stage + run FY26_Q3: the panel, not the
     owner, decides; the review row records who answered and the response verbatim; FY26_Q3
     builds on the approved version."""
-    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.transaction():
-        conn.execute(_INSERT_STORE, (PILOT_STORE,))
-        conn.execute(_OPEN_EVENT, (PILOT_STORE, uuid.uuid4()))
+    _open_pilot_store(pilot)
     q2 = _operator(pilot, "FY26_Q2", monkeypatch)
     assert _ledger(pilot, "submit", q2) == EXIT_OK
     _quotes_match(pilot, q2)
@@ -147,12 +165,53 @@ def test_panel_approval_carries_the_route_to_the_next_quarter(
     assert pilot.query(_DECIDED, decision) == [
         ("APPROVE", "PANEL", *_RESPONDER.values(), "APPROVE", response)
     ]
-    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
-        assert version_status(conn.cursor(), q2) is VersionStatus.APPROVED
+    assert _status(pilot, q2) is VersionStatus.APPROVED
 
     q3 = _operator(pilot, "FY26_Q3", monkeypatch)
     assert f"Prior: version:{q2} digest {digest}." in pilot.version(q3).sections[0].body
     _quotes_match(pilot, q3)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_panel_request_changes_retires_the_version_for_a_rerun(
+    pilot: Pilot, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """eqos-dna.1 Task 1, the live retire-and-rerun order: a panel ``REQUEST_CHANGES`` naming no
+    claims closes the submitted version for good, so the quarter's rerun on the same staged
+    manifest and intake store writes an ordinary successor, which the panel then approves. If
+    any leg refuses, a live REQUEST_CHANGES leaves the quarter unable to move on."""
+    _open_pilot_store(pilot)
+    first = _operator(pilot, "FY26_Q2", monkeypatch)
+    assert _ledger(pilot, "submit", first) == EXIT_OK
+    digest, sha = _bound(pilot, first)
+    response = (
+        f"Request changes: cite each claim.\n\n{_line(first, digest, sha, 'REQUEST_CHANGES')}\n"
+    )
+    capsys.readouterr()
+
+    assert _panel(pilot, first, response) == EXIT_OK
+    decision = int(capsys.readouterr().out.removeprefix("decision\t"))
+    assert pilot.query(_RETIRED, decision) == [
+        ("REQUEST_CHANGES", "PANEL", None, digest, "REQUEST_CHANGES", response)
+    ]
+    assert _status(pilot, first) is VersionStatus.CHANGES_REQUESTED
+    before = pilot.query(_ROWS)
+    assert _panel(pilot, first, response) == EXIT_REFUSED
+    assert pilot.query(_ROWS) == before
+
+    second = _operator(pilot, "FY26_Q2", monkeypatch, stage=False)
+    successor = pilot.version(second)
+    assert successor.predecessor_id == first
+    assert "Full successor" not in successor.sections[0].body
+    assert _ledger(pilot, "submit", second) == EXIT_OK
+    approval = _line(second, *_bound(pilot, second))
+    capsys.readouterr()
+
+    assert _panel(pilot, second, f"Approve.\n{approval}\n") == EXIT_OK
+    assert _status(pilot, second) is VersionStatus.APPROVED
+    assert _status(pilot, first) is VersionStatus.CHANGES_REQUESTED
+    assert pilot.query(_DIGEST, first) == [(digest,)]
 
 
 def _no_line(version_id: int, digest: str, sha: str) -> str:
