@@ -25,8 +25,10 @@ from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ingest import vendor_surface_capture as capture
 from fundamentals.ingest import vendor_surface_due as due
 from fundamentals.ingest import vendor_surface_expand as expand
+from fundamentals.ingest import vendor_surface_fetch as fetch
 from fundamentals.ingest.screener_session_models import Basis, BasisTopology
 from fundamentals.ingest.vendor_surface_canary import COMPANY_OVERDUE, overdue
+from fundamentals.ingest.vendor_surface_capture import Request
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_market import capture_market, market_requests
 from fundamentals.ingest.vendor_surface_parse import (
@@ -171,19 +173,26 @@ def due_rig(pg_db, tmp_path, monkeypatch):
             )
 
         def run(specs, now, budget=350):
+            # Fetches are stamped on the run's day, so attempt days follow the simulated clock.
+            offset = now - datetime.now(UTC)
+            shifted = staticmethod(lambda tz: datetime.now(tz) + offset)
+            monkeypatch.setattr(fetch, "datetime", type("Clock", (datetime,), {"now": shifted}))
             opener.calls.clear()
-            return due.capture_due(
-                fetcher(budget), store, pool, VendorValuesStore(pool), specs, now
-            )
+            try:
+                return due.capture_due(
+                    fetcher(budget), store, pool, VendorValuesStore(pool), specs, now
+                )
+            finally:
+                monkeypatch.setattr(fetch, "datetime", datetime)
 
         yield SimpleNamespace(**locals())  # The rig's handles, by name.
 
 
 def states(rig, specs):
     (ids,) = due.covered_universe(rig.pool, rig.store)
-    seen = due.history(rig.pool, specs)
-    nodes = due.tree(capture.company_requests(specs, ids), seen, rig.store, specs, ())
-    triggers = due.pending_triggers(ids, specs, nodes, seen, due.results_rows(rig.pool, specs))
+    seen, roots = due.history(rig.pool, specs), capture.company_requests(specs, ids)
+    rows, expand = due.results_rows(rig.pool, specs), due.expander(rig.store, specs, ())
+    triggers = due.pending_triggers(ids, specs, roots, seen, rows, expand)
     return {(o.surface, o.basis): o.state for t in triggers for o in t.obligations}
 
 
@@ -211,52 +220,101 @@ def seen_of(day, usable, period):
 
 OLD, NEW = date(2026, 6, 1), date(2026, 9, 1)
 PAGE = {"page": [at(-5, period=OLD), at(1, period=NEW)]}  # Shows the new period on day 1.
+GAP = (), ("screener:schedules-api: expansion failed: KeyError",)
+DAYS = range(2, 12)  # Ten attempt days after the parent's refresh.
 
 
 @pytest.mark.parametrize(
-    "parents,seen,state,retry",
+    "advertises,seen,state,retry",
     [
         # A child with a period header must show a period newer than its own baseline.
-        ({"s1": "page"}, PAGE | {"s1": [at(-5, period=OLD), at(2, period=OLD)]}, "PENDING", ["s1"]),
-        ({"s1": "page"}, PAGE | {"s1": [at(-5, period=OLD), at(2, period=NEW)]}, "SATISFIED", []),
-        # A headerless child needs a usable capture after its parent's refresh.
-        ({"s1": "page"}, PAGE | {"s1": [at(-5), at(2)]}, "SATISFIED", []),
-        ({"s1": "page"}, {"page": PAGE["page"][:1], "s1": [at(2)]}, "PENDING", ["page"]),
-        # Nested instances are required, each against its own parent.
-        ({"s1": "page", "s2": "s1"}, PAGE | {"s1": [at(2)], "s2": [at(-5)]}, "PENDING", ["s2"]),
-        # A successful empty expansion satisfies; a failed one keeps the obligation pending.
-        ({}, PAGE, "SATISFIED", []),
-        ({"gap": None}, PAGE, "PENDING", []),
-        # Attempts and exhaustion are per instance.
         (
-            {"s1": "page", "s2": "page"},
-            PAGE | {"s1": [at(2, usable=False)] * 10, "s2": [at(2, usable=False)] * 3},
+            {"page": ("s1",)},
+            PAGE | {"s1": [at(-5, period=OLD), at(2, period=OLD)]},
+            "PENDING",
+            ["s1"],
+        ),
+        (
+            {"page": ("s1",)},
+            PAGE | {"s1": [at(-5, period=OLD), at(2, period=NEW)]},
+            "SATISFIED",
+            [],
+        ),
+        # A headerless child needs a usable capture after its parent's refresh.
+        ({"page": ("s1",)}, PAGE | {"s1": [at(-5), at(2)]}, "SATISFIED", []),
+        ({"page": ("s1",)}, {"page": PAGE["page"][:1], "s1": [at(2)]}, "PENDING", ["page"]),
+        # Nested instances are required, each against its own parent.
+        (
+            {"page": ("s1",), "s1": ("s2",)},
+            PAGE | {"s1": [at(2)], "s2": [at(-5)]},
+            "PENDING",
+            ["s2"],
+        ),
+        # A successful empty expansion satisfies; a failed one keeps the parent open, bounded.
+        ({}, PAGE, "SATISFIED", []),
+        ({"page": GAP}, PAGE, "PENDING", ["page"]),
+        (
+            {"page": GAP},
+            {"page": [at(-5, period=OLD), *(at(d, period=NEW) for d in DAYS)]},
+            "EXHAUSTED",
+            [],
+        ),
+        # The satisfying parent capture fixes the tree: a later parent dropping s1 still needs s1.
+        (
+            {("page", 1): ("s1", "s2"), ("page", 3): ("s2",)},
+            {"page": [*PAGE["page"], at(3, period=NEW)], "s2": [at(2)]},
+            "PENDING",
+            ["s1"],
+        ),
+        # One attempt per day, however many captures; exhaustion is per instance.
+        ({"page": ("s1",)}, PAGE | {"s1": [at(2, usable=False)] * 10}, "PENDING", ["s1"]),
+        (
+            {"page": ("s1", "s2")},
+            PAGE | {"s1": [at(d, usable=False) for d in DAYS], "s2": [at(2, usable=False)] * 3},
             "PENDING",
             ["s2"],
         ),
         (
-            {"s1": "page", "s2": "page"},
-            PAGE | {"s1": [at(2, usable=False)] * 10, "s2": [at(2, usable=False)] * 10},
+            {"page": ("s1", "s2")},
+            PAGE
+            | {
+                "s1": [at(d, usable=False) for d in DAYS],
+                "s2": [at(d, usable=False) for d in DAYS],
+            },
+            "EXHAUSTED",
+            [],
+        ),
+        # Descendants of a parent that never refreshes are not required; the parent exhausts.
+        (
+            {"page": ("s1",)},
+            {"page": [at(-5, period=OLD), *(at(d, usable=False) for d in DAYS)]},
             "EXHAUSTED",
             [],
         ),
     ],
 )
-def test_obligation_requires_every_instance_of_the_retained_tree(parents, seen, state, retry):
+def test_obligation_requires_the_satisfying_captures_tree(advertises, seen, state, retry):
     page, schedules = pick("company-page", "schedules-api")
 
-    def node(spec, parent=None, gaps=()):
-        request = due.Request(
-            spec=spec, url="https://x/", ids=None, basis=Basis.STANDALONE, due_since=None
-        )
-        return due.Node(request=request, parent=parent, gaps=gaps)
+    def request(name, spec=schedules, after=None):
+        url = f"https://x/{name}/"
+        return due.Request(spec=spec, url=url, ids=None, basis=Basis.STANDALONE, due_since=after)
 
-    gaps = ("screener:schedules-api: expansion failed: KeyError",) if "gap" in parents else ()
-    nodes = {"page": node(page, gaps=gaps)}
-    nodes |= {key: node(schedules, parent) for key, parent in parents.items() if key != "gap"}
-    seen = {key: [seen_of(*item) for item in items] for key, items in seen.items()}
-    found = due.obligation(schedules, Basis.STANDALONE, NOW, nodes, seen)
-    assert (found.state, list(found.retry)) == (state, retry)
+    def expand(parent, base):
+        name, day = urlsplit(parent.url).path.strip("/"), (base.retrieved_at - NOW) / DAY
+        found = advertises.get((name, day), advertises.get(name, ()))
+        children, gaps = found if found and isinstance(found[0], tuple) else (found, ())
+        return tuple(request(child, after=base.retrieved_at) for child in children), gaps
+
+    root = request("page", page)
+    keys = {due.traversal_key(r): r for r in (root, request("s1"), request("s2"))}
+    by_key = {
+        key: [seen_of(*item) for item in seen.get(urlsplit(r.url).path.strip("/"), [])]
+        for key, r in keys.items()
+    }
+    found = due.obligation(schedules, Basis.STANDALONE, NOW, (root,), by_key, expand)
+    names = [urlsplit(r.url).path.strip("/") for r in found.retry]
+    assert (found.state, names) == (state, retry)
 
 
 def test_obligations_follow_published_bases_only():
@@ -270,8 +328,7 @@ def test_obligations_follow_published_bases_only():
     )
     specs = pick("company-page")
     roots = capture.company_requests(specs, ids)
-    nodes = {r.url: due.Node(request=r, parent=None, gaps=()) for r in roots}
-    (trigger,) = due.pending_triggers(ids, specs, nodes, {}, {("APARINDS", "row"): NOW})
+    (trigger,) = due.pending_triggers(ids, specs, roots, {}, {("APARINDS", "row"): NOW}, None)
     assert [(o.surface, o.basis) for o in trigger.obligations] == [
         ("company-page", Basis.STANDALONE)
     ]
@@ -568,3 +625,205 @@ def test_historical_results_rows_keep_their_first_retrieval(due_rig):
         VendorValuesStore(rig.pool).record(ref, outcome, row_count=len(cells))
     (first,) = due.results_rows(rig.pool, SPECS).values()
     assert first == due.retrieved_at(older.capture_id)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_scheduled_market_children_keep_their_own_cadence(due_rig, monkeypatch):
+    entry = ParserEntry(version="screener:person-page.fixture.v1", parse=kept_section)
+    monkeypatch.setitem(PARSERS, (Site.SCREENER, "person-page"), entry)
+    rig, opener = due_rig, due_rig.opener
+    serve, hub = opener.open, "https://www.screener.in/people/"
+
+    def open(request, timeout):
+        if request.full_url != hub:
+            opener.overrides.setdefault(request.full_url, (b"<html></html>", 200))
+        return serve(request, timeout)
+
+    monkeypatch.setattr(opener, "open", open)
+    day = datetime.now(UTC)
+    rig.run(pick("people-search"), day)
+    assert opener.calls == [hub]
+    both = pick("people-search", "person-page")
+    rig.run(both, day + DAY)
+    # Each advertised child once, scheduled by the due set, never refetched by its parent.
+    assert hub not in opener.calls and len(opener.calls) == len(set(opener.calls)) > 1
+    rig.run(both, day + 7 * DAY + timedelta(hours=1))
+    assert opener.calls == [hub]  # The hub is due again; children captured a day later are not.
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_never_usable_obligation_instance_is_tried_once_a_day_until_spent(due_rig, monkeypatch):
+    monkeypatch.setattr(due, "MAX_ATTEMPTS", 2)
+    rig, specs = due_rig, pick("results-latest", "company-financials")
+    rig.opener.overrides[FINANCIALS] = b"unretained", 404
+    rig.opener.new_results_row()
+    day = datetime.combine(datetime.now(UTC).date(), datetime.min.time(), UTC) + timedelta(hours=6)
+    for at_time, fetched in ((day, True), (day + timedelta(hours=1), False), (day + DAY, True)):
+        rig.run(specs, at_time)
+        assert (FINANCIALS in rig.opener.calls) is fetched
+    report = rig.run(specs, day + 2 * DAY)
+    # Two attempt days spend the obligation: no initial-acquisition fallback refetches it.
+    assert FINANCIALS not in rig.opener.calls
+    assert "APARINDS:tijori:company-financials:-: INCOMPLETE" in report.incomplete
+
+
+def test_capture_due_keeps_global_order_and_feeds_before_discovery(monkeypatch):
+    ids = due.CompanyIds(
+        nse_symbol="APARINDS",
+        isin="INE372A01015",
+        tijori_slug=None,
+        tijori_company_id=None,
+        screener_company_id=211,
+        topology=None,
+    )
+
+    def request(spec_id, url, company=None):
+        spec = pick(spec_id, site=Site.SCREENER)[0]
+        return due.Request(spec=spec, url=url, ids=company, due_since=None)
+
+    feed, market = request("results-latest", "https://feed/"), request("robots", "https://m/")
+    old, new1, new2 = (
+        request(s, f"https://c/{s}/", ids) for s in ("chart-api", "schedules-api", "company-page")
+    )
+    calls = []
+
+    def company(fetcher, store, pool, values, specs, company, requests):
+        tijori = any(s.site is Site.TIJORI for s in specs)
+        calls.append((company.nse_symbol, [r.url for r in requests], tijori))
+        return due.RunReport(expected=0, completed=0, refused=(), incomplete=(), stopped_sites=())
+
+    def market_capture(fetcher, store, pool, values, specs, requests, **_):
+        calls.append(("market", [r.url for r in requests], False))
+        return due.RunReport(expected=0, completed=0, refused=(), incomplete=(), stopped_sites=())
+
+    monkeypatch.setattr(due, "covered_universe", lambda *_: (ids,))
+    monkeypatch.setattr(due, "due_requests", lambda *_: ((feed, old, market, new1, new2), ()))
+    monkeypatch.setattr(due, "capture_company", company)
+    monkeypatch.setattr(due, "capture_market", market_capture)
+    due.capture_due(None, None, None, None, SPECS, NOW)
+    # Global due order holds across companies; slug discovery runs once, after the feeds.
+    assert calls == [
+        ("market", ["https://feed/"], False),
+        ("APARINDS", [], True),
+        ("APARINDS", [old.url], False),
+        ("market", [market.url], False),
+        ("APARINDS", [new1.url], False),
+        ("APARINDS", [new2.url], False),  # capture_company would move a parent first.
+    ]
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_market_capture_reaches_index_pages_through_verified_company_pages(due_rig, monkeypatch):
+    from fundamentals.api import vendor_surface_cli as cli
+
+    rig = due_rig
+    rig.run(pick("company-page"), NOW)
+    monkeypatch.setattr(cli, "load_specs", lambda *_: SPECS)
+    monkeypatch.setattr(cli, "STOP_DIR", rig.tmp_path / "cli-stops")
+    args = argparse.Namespace(
+        command="vendor",
+        vendor_command="capture",
+        market=True,
+        symbol=None,
+        tijori_slug=None,
+        surface=["screener:index-page"],
+        snapshot_root=rig.tmp_path / "raw",
+    )
+    rig.locks.close()  # The CLI is a separate command and takes its own site locks.
+    rig.opener.calls.clear()
+    status = cli.dispatch_vendor_command(
+        args,
+        opener_factory=lambda: rig.opener,
+        pool_factory=rig.pg_db.runtime_pool,
+        sessions_factory=lambda sites: {
+            s: SiteSession(site=s, session_cookie=SecretStr("x"), cookie_name="sessionid")
+            for s in sites
+        },
+    )
+    paths = {urlsplit(url).path for url in rig.opener.calls}
+    # Index pages are advertised only as a company page's benchmark tags.
+    assert status == 0 and paths and all(p.startswith("/company/") for p in paths)
+    assert not paths & {urlsplit(url).path for url in PAGES.values()}
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_reparse_that_changes_periods_moves_the_capture_period(due_rig):
+    from fundamentals.store.vendor_values_store import VendorValue
+
+    rig, specs = due_rig, pick("company-page")
+    rig.run(specs, NOW)
+    with rig.pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+        row = cursor.execute(
+            "SELECT c.* FROM eqos.capture_refs c JOIN eqos.capture_addresses a "
+            "ON a.capture_ref_id = c.id WHERE a.url = %s",
+            (PAGES[Basis.CONSOLIDATED],),
+        ).fetchone()
+    key = due.traversal_key(
+        due.Request(spec=specs[0], url=PAGES[Basis.CONSOLIDATED], ids=None, due_since=None)
+    )
+    for version, label in ((2, "Sep 2031"), (3, "Jan 2001")):
+        value = VendorValue(
+            table_key="fixture",
+            row_index=0,
+            column_index=0,
+            locator="/fixture",
+            row_label="Sales",
+            column_label=label,
+            raw_text="1",
+            value=None,
+        )
+        outcome = Outcome(
+            surface="section-quarters",
+            parser_version=f"screener:section-quarters.fixture.v{version}",
+            parser_sha256="a" * 64,
+            status=OutcomeStatus.OK,
+            symbol="APARINDS",
+            detail=None,
+            values=(value,),
+        )
+        VendorValuesStore(rig.pool).record(capture_of(row), outcome, row_count=1)
+        (seen,) = due.history(rig.pool, specs)[key]
+        # Only the latest parse of each logical surface counts; a superseded 2031 is gone.
+        assert (seen.period == date(2031, 9, 1)) is (version == 2)
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_retained_tree_expands_a_traversal_first_page(due_rig):
+    rig, specs = due_rig, pick("market-overview", "market-level")
+    overview, level = (
+        Request(spec=pick(spec_id)[0], url=url, ids=None, due_since=None)
+        for spec_id, url in (
+            ("market-overview", "https://www.screener.in/market/"),
+            ("market-level", "https://www.screener.in/market/IN10/"),
+        )
+    )
+    assert b"IN1098" not in Path(rig.opener.rows[overview.url]["path"]).read_bytes()
+    table = (
+        '<table class="data-table"><thead><tr><th>Name</th></tr></thead>'
+        "<tbody><tr><td>{}</td></tr></tbody></table>"
+    )
+    rig.opener.overrides[level.url] = (
+        (table.format('<a href="/market/IN10/IN1098/">a</a>') + '<a href="?p=2">2</a>').encode(),
+        200,
+    )
+    rig.opener.overrides[level.url + "?p=2"] = (
+        (table.format('<a href="/market/IN10/IN1099/">b</a>')).encode(),
+        200,
+    )
+    capture_market(
+        rig.fetcher(),
+        rig.store,
+        rig.pool,
+        VendorValuesStore(rig.pool),
+        (),
+        requests=(overview, level),
+    )
+    urls = {r.url for r in due.due_requests(rig.pool, rig.store, specs, NOW)[0]}
+    # A traversal's children are what its first page advertises, as the live run expanded them.
+    assert "https://www.screener.in/market/IN10/IN1098/" in urls
+    assert "https://www.screener.in/market/IN10/IN1099/" not in urls
