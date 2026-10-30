@@ -474,3 +474,105 @@ def test_stop_shared_across_snapshot_roots(rig, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report["stopped_sites"] == ["screener-subscriber"]
     assert len(opener.calls) == before
+
+
+def test_anonymous_onboarding_identity_allows_capture(rig, pg_db, capsys):
+    from coverage_support import watchlist
+    from onboarding_support import seed
+    from retention_support import record_of
+
+    from fundamentals.ingest.vendor_surface_capture import registered_ids
+    from fundamentals.ingest.vendor_surface_fetch import Fetched
+    from fundamentals.pg.settings import PgRole
+    from fundamentals.store.snapshot_store import SnapshotStore
+    from fundamentals.store.vendor_values_store import register
+
+    _, root = rig
+    store = SnapshotStore(root)
+    entity = seed(pg_db, "APARINDS", "INE372A01015", "APARINDS", "532259")
+    raw = (
+        b'<div id="company-info" data-company-id="901" data-warehouse-id="902"></div>'
+        b"Consolidated Figures"
+    )
+    record = record_of(raw, "screener-subscriber", "company-page")
+    store.put_capture(record, raw)
+    with pg_db.runtime_pool() as pool, pg_db.role_pool(PgRole.OWNER) as owner:
+        watchlist({PgRole.RUNTIME: pool, PgRole.OWNER: owner}, entity, store)
+        ref = register(
+            pool,
+            Fetched(
+                record=record,
+                url="https://www.screener.in/company/APARINDS/consolidated/",
+                location=None,
+            ),
+        )
+        with owner.connection() as conn:
+            load = conn.execute(
+                "INSERT INTO eqos.registry_loads (capture_ref_id,content_sha256) "
+                "VALUES (%s,'seed') RETURNING id",
+                (ref.capture_ref_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO eqos.registry_sightings "
+                "(listing_id,load_id,trading_symbol,exchange_token,name) "
+                "SELECT id,%s,'APARINDS','1','seed' FROM eqos.registry_listings "
+                "WHERE segment='NSE_EQ'",
+                (load,),
+            )
+        with pool.connection() as conn:
+            onboarding = conn.execute(
+                "SELECT id FROM eqos.onboarding_records WHERE entity_id=%s", (entity,)
+            ).fetchone()[0]
+            evidence = conn.execute(
+                "SELECT evidence_input_id FROM eqos.reporting_entities WHERE id=%s", (entity,)
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO eqos.evidence_input_captures(evidence_input_id,capture_ref_id) "
+                "VALUES (%s,%s)",
+                (evidence, ref.capture_ref_id),
+            )
+            conn.execute(
+                "INSERT INTO eqos.namespace_verifications "
+                "(onboarding_record_id,unit,state,evidence_input_id) "
+                "VALUES (%s,'SCREENER','VERIFIED',%s)",
+                (onboarding, evidence),
+            )
+        assert registered_ids(pool, store, "APARINDS").screener_company_id == 901
+    capsys.readouterr()
+    assert run_capture(root) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["completed"] == 3
+    assert report["stopped_sites"] == []
+
+
+def test_anonymous_fresh_page_reports_stopped_site(rig, pg_db, capsys, monkeypatch):
+    import io
+    from urllib.error import HTTPError
+
+    from lxml import html
+
+    from fundamentals.ingest.screener_session_page import parse_document
+
+    opener, root = rig
+    original = opener.open
+
+    def anonymous(request, timeout):
+        response = original(request, timeout)
+        tree = parse_document(response.read().decode())
+        for form in tree.xpath('//form[@action="/logout/"]'):
+            form.getparent().remove(form)
+        return HTTPError(
+            request.full_url, 200, "fixture", response.headers, io.BytesIO(html.tostring(tree))
+        )
+
+    monkeypatch.setattr(opener, "open", anonymous)
+    assert run_capture(root) == 0
+    output = capsys.readouterr()
+    report = json.loads(output.out)
+    assert report["stopped_sites"] == ["screener-subscriber"]
+    assert report["completed"] == 0 and report["incomplete"]
+    assert len(opener.calls) == 1 and "Traceback" not in output.err
+    with pg_db.runtime_pool() as pool, pool.connection() as conn:
+        assert conn.execute("SELECT status,detail FROM eqos.vendor_outcomes").fetchall() == [
+            ("UNUSABLE", "AnonymousPageError")
+        ]

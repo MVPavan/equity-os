@@ -10,7 +10,6 @@ from fundamentals.contracts.snapshot import BodyCompleteness
 from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ingest.screener_session_models import Basis, BasisTopology
 from fundamentals.ingest.screener_session_page import (
-    assert_logged_in,
     parse_document,
     read_identity,
     read_markers,
@@ -61,7 +60,6 @@ def bind_topology(
             ):
                 continue
             tree = parse_document(store.read_body(record).decode())
-            assert_logged_in(tree)
             company, warehouse = read_identity(tree)
             marker = "Consolidated Figures" if basis is Basis.CONSOLIDATED else "Standalone Figures"
             if (

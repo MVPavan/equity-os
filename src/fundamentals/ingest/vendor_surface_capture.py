@@ -199,7 +199,6 @@ def registered_ids(pool: ConnectionPool, store: SnapshotStore, symbol: str) -> C
             continue
         body = Body(raw=store.read_body(record))
         if proof["unit"] == "SCREENER" and "/company/" in proof["url"]:
-            assert_logged_in(body.tree())
             ids = ids.model_copy(update={"screener_company_id": read_identity(body.tree())[0]})
             pages[Basis.CONSOLIDATED if "/consolidated/" in proof["url"] else Basis.STANDALONE] = (
                 capture_of(proof)
@@ -814,6 +813,7 @@ def capture_company(
             pending[0:0] = deferred
             deferred.clear()
         if refusal is not None and request.basis not in basis_refusals:
+            stopped.append(request.spec.site)
             blocked.add(request.spec.site)
         seen.add(request.url)
         states = parse_and_record(
