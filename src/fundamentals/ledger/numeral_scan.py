@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import VersionState
+from fundamentals.contracts.memory import SupportTarget
 from fundamentals.ledger.display import PLACEHOLDER
 
 CLASS_MARKER = re.compile(r"\{\{e:([^}]*)\}\}")
@@ -19,6 +20,10 @@ LOCATION_MARKER = re.compile(r"\{\{s:([^|}]*)\|([^}]*)\}\}")
 _PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 _NOT_PROSE = re.compile(r"^(#.*|-{3,}|\s*)$")
 _NUMERAL = re.compile(r"\d")
+# run_draft.recall emits memory row IDs and the shared support-target IDs.
+_ID_PREFIXES = frozenset(
+    {"memory", *(target.value.removesuffix("_id") for target in SupportTarget)}
+)
 # Structural numerals (ledger spec §1), removed before the numeral search.
 _STRUCTURAL = re.compile(
     "|".join(
@@ -32,8 +37,9 @@ _STRUCTURAL = re.compile(
             # provenance hashes, never a number in scientific notation
             r"\b(?:hash|sha256|commit|digest)[ \t:=]+(?!\d+(?:\.\d+)?e[+-]?\d+\b)"
             r"(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b",
-            r"\b[a-z][a-z_]*[-:#]\d+\b|\b[A-Z]\d{1,2}\b",  # ids: run-12, decision:42, F1
-            r"× 100\b",  # registered formula literal
+            r"\b(?:" + "|".join(sorted(_ID_PREFIXES)) + r"):[1-9]\d*\b",
+            r"\b(?:run-\d+|[A-Z]\d{1,2})\b",  # rendered identifiers
+            r"(?:\bPBT / revenue|\(current − prior\) / prior) × 100\b",  # formulas
         )
     ),
     re.MULTILINE,

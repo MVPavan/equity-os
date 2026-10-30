@@ -703,3 +703,15 @@ def test_section_three_renders_the_same_p_and_l_lines_as_section_two(tmp_path: P
     assert _section_table_labels(markdown, "3. changes") == _section_table_labels(
         markdown, "2. facts"
     )
+
+
+def test_comparator_fixtures_keep_actual_read_time(tmp_path: Path) -> None:
+    before = datetime.now(UTC)
+    report = _run(_stock(), tmp_path)
+    after = datetime.now(UTC)
+
+    priors = [
+        change.prior_source for item in report.comparatives for change in (item.qoq, item.yoy)
+    ]
+    assert priors and all(source is not None for source in priors)
+    assert all(before <= source.retrieved_at <= after for source in priors if source is not None)

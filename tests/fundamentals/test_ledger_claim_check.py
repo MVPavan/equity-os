@@ -524,7 +524,12 @@ def test_location_markers(cited: Cited, which: str, anchor: str, holds: bool) ->
     capture_id, span = cited.location(which, anchor)
     with cited.runtime() as cursor:
         resolves = partial(
-            resolve_location, cursor, catalog=cited.catalog, snapshots=cited.snapshots
+            resolve_location,
+            cursor,
+            entity_id=cited.entity_id,
+            cutoff=datetime.now(UTC),
+            catalog=cited.catalog,
+            snapshots=cited.snapshots,
         )
         states = scan_section(
             f"{{{{e:observed}}}} Said so {{{{s:{capture_id}|{span}}}}}.", resolves=resolves
@@ -662,3 +667,21 @@ def test_disagreeing_imports_bind_nothing_and_unsealed_drafts_never_count(
     assert _bound(ledger, runtime) == CONTRACT
     import_quote(ledger, OTHER_CONTRACT)
     assert _bound(ledger, runtime) is None
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_location_eligibility_uses_report_issuer_and_cutoff(cited: Cited) -> None:
+    """A real retained span cannot be borrowed by another issuer or an earlier report."""
+    capture_id, anchor = cited.location("pdf", "valid")
+    with cited.runtime() as cursor:
+        resolves = partial(
+            resolve_location, cursor, catalog=cited.catalog, snapshots=cited.snapshots
+        )
+        assert resolves(capture_id, anchor, entity_id=cited.entity_id, cutoff=datetime.now(UTC))
+        assert not resolves(
+            capture_id, anchor, entity_id=cited.entity_id + 1000, cutoff=datetime.now(UTC)
+        )
+        assert not resolves(
+            capture_id, anchor, entity_id=cited.entity_id, cutoff=datetime(1900, 1, 1, tzinfo=UTC)
+        )

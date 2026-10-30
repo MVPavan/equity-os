@@ -358,3 +358,13 @@ def test_bridge_reports_no_unsourced_number() -> None:
     assert build.renderable
     for fact in build.update.facts:
         assert fact.sources, f"{fact.role} rendered with no source anchor"
+
+
+def test_legacy_report_labels_current_data_and_shows_acquisition_time() -> None:
+    markdown = render_report(_report(_full_sources()), _stock())
+
+    assert "Retrospective current-data diagnostic" in markdown
+    assert "cannot prove historical possession or absence of hindsight" in markdown
+    assert "anything later is out of scope" not in markdown
+    assert "Information cutoff:" not in markdown
+    assert _RETRIEVED_AT.isoformat() in markdown
