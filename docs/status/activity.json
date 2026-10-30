@@ -1,15 +1,20 @@
 {
   "now": {
-    "title": "LIVE-RUN-1 complete; VS live exit runs paused for a rate-limit cool-down",
-    "detail": "All four Apar quarters are APPROVED on live. VS live run 1 (tracer) passed 8/8. Run 2 stopped twice: first Tijori 1010 + Screener 429 (no User-Agent; fixed by eqos-aa6.19), then on rerun Tijori captured 40 pages but a space in a popup URL crashed the run and Screener 429'd after 21 requests at 3 s. eqos-aa6.20 (encode the path) and 10 s spacing are merged; run 2 reruns after the Screener cool-down (15:33Z).",
+    "title": "LIVE-RUN-1 complete; VS live run 2 passed; capture-due runs next",
+    "detail": "All four Apar quarters are APPROVED on live. VS live run 2 (vendor capture --symbol APARINDS) passed after the UA, path-encoding and 10 s spacing fixes: 211 pages stored (Screener 109, Tijori 102), no blocks, refused 0, incomplete 35 listed (24 redirects/404 -> eqos-aa6.22, 9 live-shape parser failures -> eqos-aa6.21). Next: two capture-due runs, then canary.",
     "stage": "Build"
   },
   "next": [
-    "Rerun VS live run 2 after the cool-down; then capture-due x2 and canary",
-    "If Tijori still blocks the honest UA: owner decision (allowlist/API, or drop Tijori from the live exit)",
+    "Two live vendor capture-due runs on one day, then vendor canary",
+    "eqos-aa6.21: fix readers that fail on live APARINDS shapes",
+    "eqos-aa6.22: redirecting surfaces (quarter PDFs, shareholding detail charts)",
     "eqos-dna.3: sealed legacy ledger misreads FY26_Q3 cables CAGR"
   ],
   "log": [
+    {
+      "date": "2026-10-30",
+      "text": "VS live run 2 passed: capture --symbol APARINDS exit 0, expected 213 / completed 178 / refused 0 / incomplete 35; 211 fetches, no 429 or 1010. eqos-aa6.19 and eqos-aa6.20 closed (live-verified); follow-ups eqos-aa6.21, eqos-aa6.22. Worktrees cleaned up (46 removed)."
+    },
     {
       "date": "2026-10-30",
       "text": "VS: eqos-aa6.20 merged (44627736): opened path percent-encoded (request keys unchanged); default spacing 3 s -> 10 s after Screener 429 at the 21st request. Main: fetch+tracer+stage4 205 passed."
