@@ -27,6 +27,7 @@ from fundamentals.contracts.snapshot import (
     RequestIdentity,
 )
 from fundamentals.ingest.http_session import NoRedirectHandler, RequestPacer, read_bounded_capture
+from fundamentals.ingest.screener_session_models import DEFAULT_USER_AGENT, USER_AGENT_HEADER
 from fundamentals.ingest.tijori_capture import (
     TIJORI_RIGHTS,
     classify_http_status,
@@ -204,7 +205,7 @@ class VendorFetcher:
         stop_dir: Path,
         lock: SiteLock,
         *,
-        spacing_seconds: float = 1.5,
+        spacing_seconds: float = 3.0,
         site_budget: int = 350,
         timeout_seconds: float = 30.0,
         max_bytes: int = 20_000_000,
@@ -243,7 +244,10 @@ class VendorFetcher:
         if marker.exists():
             raise SiteStopped(site)
         session = self.sessions[site]
-        headers = {"Cookie": f"{session.cookie_name}={session.session_cookie.get_secret_value()}"}
+        headers = {
+            "Cookie": f"{session.cookie_name}={session.session_cookie.get_secret_value()}",
+            USER_AGENT_HEADER: DEFAULT_USER_AGENT,
+        }
         if xhr:
             headers["X-Requested-With"] = "XMLHttpRequest"
         self.pacers[site].wait_for_slot()

@@ -193,11 +193,16 @@ def test_response_retained_before_stop(tmp_path, status, location, stop):
 
 
 def test_partial_busy_and_budget(tmp_path: Path):
-    from fundamentals.ingest.vendor_surface_fetch import Site, SiteBusy
+    import inspect
+
+    from fundamentals.ingest.vendor_surface_fetch import Site, SiteBusy, VendorFetcher
 
     opener = Opener(partial=True)
     client, store = fetcher(tmp_path, opener, budget=1)
     fetched = client.get(Site.SCREENER, "chart-api", "https://www.screener.in/api/chart/")
+    # Live: urllib's default UA drew a Cloudflare 1010 ban, and 1.5 s spacing a 429.
+    assert opener.calls[0].get_header("User-agent") == "EquityOS Research"
+    assert inspect.signature(VendorFetcher).parameters["spacing_seconds"].default == 3.0
     assert fetched.record.effective_body_completeness is BodyCompleteness.PARTIAL
     assert store.read_evidence_body(fetched.record) == b"prefix"
     assert client.remaining(Site.SCREENER) == 0
