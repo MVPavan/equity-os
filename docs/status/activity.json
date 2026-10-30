@@ -1,15 +1,31 @@
 {
   "now": {
-    "title": "LIVE-RUN-1: FY26_Q2 approved; FY26_Q3 fix in progress",
-    "detail": "FY26_Q2 is APPROVED on live as version 8 (Sol panel, after the report-export fixes and the owner's materiality ruling). FY26_Q3 version 9 got REQUEST_CHANGES: the cables CAGR guidance was shown as annual point guidance and labelled MODIFIED. Fix eqos-dna.2 (honest label, 'N%-plus', comparability qualifier) is with Opus; then Sol review, a fresh rehearsal and the live rerun. Both audit lanes merged: all five audit P1 bugs fixed.",
+    "title": "LIVE-RUN-1 complete: four Apar quarters approved on live",
+    "detail": "FY26_Q2 (v8), FY26_Q3 (v10), FY26_Q4 (v11) and FY27_Q1 (v12) are APPROVED on live, each by a fresh Sol panel and with every live write matching its rehearsal. The ledger is exported with status notes and backed up (set d7cd472d). eqos-dna closed. VS live exit runs wait on the eqos-aa6.18 fix.",
     "stage": "Build"
   },
   "next": [
-    "eqos-dna.2 guidance fix: gate, Sol review, merge; rehearse and rerun FY26_Q3 (version 10), Sol panel",
-    "FY26_Q4 and FY27_Q1: rehearsal then live step R, each Sol-approved before the next",
-    "VS live exit runs after the owner refreshes the Screener cookie (eqos-aa6.16)"
+    "eqos-aa6.18 fix (Opus): gate, merge; then VS live exit runs (tracer, full capture, capture-due x2, canary)",
+    "eqos-dna.3: sealed legacy ledger misreads FY26_Q3 cables CAGR",
+    "Owner-gated: Phase 4 bake-off; push to the public remote"
   ],
   "log": [
+    {
+      "date": "2026-10-30",
+      "text": "LIVE-RUN-1 closed: ledger export --status-notes (12 versions) and post-run backup d7cd472d5884409bb04c8516a41d232a; eqos-dna and eqos-dna.2 closed."
+    },
+    {
+      "date": "2026-10-30",
+      "text": "FY27_Q1 APPROVED as v12 (decision 21): 56 MATCH, all falsifiers HELD; every delta equal to the eqos_test_live6 rehearsal."
+    },
+    {
+      "date": "2026-10-30",
+      "text": "FY26_Q4 APPROVED as v11 (decision 19): 56 MATCH, F5 HELD. Stage attempt 1 hit the eqos-0bp clock flake (no DB write); rerun once after rehearsing it on a copy of the intake store."
+    },
+    {
+      "date": "2026-10-30",
+      "text": "FY26_Q3 APPROVED as v10 (decision 17): Sol panel found the v9 CAGR-guidance finding resolved by eqos-dna.2. Merged VS fixes eqos-aa6.17/16 (7ec8b7a2) and guidance fix (2aa9db59)."
+    },
     {
       "date": "2026-10-29",
       "text": "Merged audit lane A (eqos-2tt, eqos-pi8, eqos-5df) 595e086d: judgment prose carries no numbers, citation eligibility honours recording cutoffs, numeral scan exempts only identifiers. All five audit P1 bugs closed."
