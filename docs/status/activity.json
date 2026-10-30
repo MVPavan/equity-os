@@ -1,7 +1,7 @@
 {
   "now": {
     "title": "LIVE-RUN-1 complete; VS live exit runs paused for a rate-limit cool-down",
-    "detail": "All four Apar quarters are APPROVED on live. VS live run 1 (tracer) passed 8/8. Run 2 (full company capture) stopped both sites: Tijori Cloudflare 1010 and Screener 429, caused by the VS fetcher sending no User-Agent. Fix eqos-aa6.19 (honest project UA, 3 s spacing) is merged; run 2 reruns after Screener cools down.",
+    "detail": "All four Apar quarters are APPROVED on live. VS live run 1 (tracer) passed 8/8. Run 2 stopped twice: first Tijori 1010 + Screener 429 (no User-Agent; fixed by eqos-aa6.19), then on rerun Tijori captured 40 pages but a space in a popup URL crashed the run and Screener 429'd after 21 requests at 3 s. eqos-aa6.20 (encode the path) and 10 s spacing are merged; run 2 reruns after the Screener cool-down (15:33Z).",
     "stage": "Build"
   },
   "next": [
@@ -10,6 +10,10 @@
     "eqos-dna.3: sealed legacy ledger misreads FY26_Q3 cables CAGR"
   ],
   "log": [
+    {
+      "date": "2026-10-30",
+      "text": "VS: eqos-aa6.20 merged (44627736): opened path percent-encoded (request keys unchanged); default spacing 3 s -> 10 s after Screener 429 at the 21st request. Main: fetch+tracer+stage4 205 passed."
+    },
     {
       "date": "2026-10-30",
       "text": "VS: eqos-aa6.18 merged (96d6462e); live tracer 8/8. Full capture stopped (Tijori 1010, Screener 429): VS fetcher had no User-Agent. eqos-aa6.19 fix merged (fdd0cd65): project UA + 3 s spacing; STOP markers kept until the rerun."
