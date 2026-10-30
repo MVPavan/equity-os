@@ -39,7 +39,7 @@ ACCEPTED_CONFIGS: Mapping[str, str] = {
         "2e179d03dcc6dcfb0feeb6d0e909ccc018624ea8df04f816c4799b96cf40156d"
     ),
     "config/aparinds-fy26-q3.yaml": (
-        "bd13979cca37b9d6be4e083c3a98add4ab30256b0a588e124a3eb93c8eaf2129"
+        "83c7d7b2fbe0634e06680855ee95fad4e6ecff43c012f3dd9815d0f76824bf3c"
     ),
     "config/aparinds-fy26-q4-pg.yaml": (
         "91cc4641de6350f4b023d2f56372e22281241e3362fbaab52ea4bada8c25e8fd"

@@ -400,7 +400,7 @@ def _pilot5_promote(pilot: Pilot, quarter: str, version_id: int, memory: dict[st
     elif quarter == Q2:
         (section,) = (s for s in pilot.version(version_id).sections if s.section_key == GUIDANCE)
         (cables,) = (line for line in section.body.splitlines() if f"{{{{c:{CABLES}|" in line)
-        assert " — MODIFIED: " in cables, (
+        assert " — MODIFIED (comparability not established): " in cables, (
             f"PILOT-5: PQ2's cables guidance is not MODIFIED: {cables}"
         )
         item = _item(pilot, _claim_id(pilot, version_id, CABLES), "Cables guidance, restated")

@@ -84,7 +84,14 @@ Q2_TRANSCRIPT = "c9ed50d30185"  # the FY26_Q2 transcript every FY26_Q3 carried c
 WAIT_SECONDS = 10
 IST = ZoneInfo("Asia/Kolkata")
 # A guidance line's claim key and status, as the version body stores it.
-GUIDED = re.compile(r"\{\{c:([^|}]+)\|[^}]*\}\} for [^\n]*? — ([A-Z]+): \"")
+GUIDED = re.compile(r"\{\{c:([^|}]+)\|[^}]*\}\} for [^\n]*? — ([A-Z]+)(?: \([^)]*\))?: \"")
+# FY26_Q3's open-ended CAGR quote: a lower bound only, and not comparable to FY26_Q2's
+# year-on-year guidance (the approval panel's correction, eqos-dna.2).
+CAGR_LINE = re.compile(
+    r"- Cables revenue: management's description of a CAGR trajectory \(lower bound only\): "
+    r"\d+%-plus for annual \(target period not specified by the extracted guidance\) — "
+    r"MODIFIED \(comparability not established\): \""
+)
 STATUS_FIELDS = ("lower_bound", "upper_bound", "unit", "constant_currency", "qualifiers")
 FAMILIES = "SELECT DISTINCT revision_family FROM eqos.fact_rows WHERE target_store = %s"
 ADMITTED_FAMILY = "admitted:"
@@ -624,6 +631,7 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
             exported = export_version(conn.cursor(), version_id)
         assert hashlib.sha256(exported).hexdigest() == version.content_hash
         if quarter == "FY26_Q3":
+            assert CAGR_LINE.search(exported.decode())
             _refuses(pilot, quarter, "FY26_Q3's head version .* is open")
         with pilot.pg_db.runtime_pool() as runtime:
             lifecycle.submit(runtime, version_id, **pilot.sources())
