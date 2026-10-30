@@ -52,12 +52,15 @@ def fetcher(tmp_path, opener, lock=None, budget=350):
     from fundamentals.ingest.vendor_surface_fetch import Site, SiteSession, VendorFetcher
     from fundamentals.store.snapshot_store import SnapshotStore
 
-    site = Site.SCREENER
     store = SnapshotStore(tmp_path / "store")
-    session = SiteSession(site=site, session_cookie=SecretStr("synthetic"), cookie_name="sessionid")
     return VendorFetcher(
         store,
-        {site: session},
+        {
+            site: SiteSession(
+                site=site, session_cookie=SecretStr("synthetic"), cookie_name="sessionid"
+            )
+            for site in Site
+        },
         opener,
         tmp_path,
         lock or Lock(),
@@ -200,9 +203,9 @@ def test_partial_busy_and_budget(tmp_path: Path):
     opener = Opener(partial=True)
     client, store = fetcher(tmp_path, opener, budget=1)
     fetched = client.get(Site.SCREENER, "chart-api", "https://www.screener.in/api/chart/")
-    # Live: urllib's default UA drew a Cloudflare 1010 ban, and 1.5 s spacing a 429.
+    # Live: urllib's default UA drew a Cloudflare 1010 ban, and 3 s spacing a 429 after 21 calls.
     assert opener.calls[0].get_header("User-agent") == "EquityOS Research"
-    assert inspect.signature(VendorFetcher).parameters["spacing_seconds"].default == 3.0
+    assert inspect.signature(VendorFetcher).parameters["spacing_seconds"].default == 10.0
     assert fetched.record.effective_body_completeness is BodyCompleteness.PARTIAL
     assert store.read_evidence_body(fetched.record) == b"prefix"
     assert client.remaining(Site.SCREENER) == 0
@@ -309,3 +312,19 @@ def test_fetch_logs_only_request_identity(tmp_path):
             "request_key": request_key(url),
         }
     ]
+
+
+def test_opened_path_is_percent_encoded_but_key_is_not(tmp_path):
+    from fundamentals.ingest.vendor_surface_fetch import Site, normalise, request_key
+
+    # Live: a raw space in a Tijori popup-chart path raised http.client.InvalidURL.
+    url = (
+        "https://www.tijorifinance.com/api/v1/ind/"
+        "financial_statement_popup_chart_data/1/Ferro Alloy/derived/rm/"
+    )
+    opener = Opener()
+    client, store = fetcher(tmp_path, opener)
+    fetched = client.get(Site.TIJORI, "financials-popup-chart-api", url)
+    assert opener.calls[0].full_url == url.replace(" ", "%20")
+    assert fetched.record.request.request_key == request_key(normalise(url))
+    assert store.read_body(fetched.record) == b"fixture"
