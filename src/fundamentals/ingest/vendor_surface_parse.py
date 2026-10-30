@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import cache
@@ -65,7 +66,9 @@ class Body(BaseModel):
     def tree(self) -> Any:
         """Parse HTML once for all consumers of this body."""
         if self._tree is None:
-            self._tree = parse_document(self.raw.decode("utf-8"))
+            # lxml rejects a str that keeps its XML encoding declaration (sitemap.xml).
+            text = re.sub(r"^\s*<\?xml[^>]*\?>", "", self.raw.decode("utf-8"))
+            self._tree = parse_document(text)
         return self._tree
 
 

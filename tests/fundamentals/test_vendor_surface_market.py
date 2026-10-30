@@ -561,3 +561,13 @@ def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys, monke
     capsys.readouterr()
     count = len(opener.calls)
     assert count > 0, f"{count} requests for selected market surface; its hub was omitted"
+
+
+def test_sitemap_with_xml_declaration_has_no_continuation():
+    """Live capture-due died on sitemap.xml: lxml rejects a str with an encoding declaration."""
+    spec = next(s for s in MARKET_SPECS if s.site is Site.SCREENER and s.id == "sitemap")
+    request = Request(
+        spec=spec, url="https://www.screener.in/sitemap.xml", ids=None, due_since=None
+    )
+    raw = b'<?xml version="1.0" encoding="UTF-8"?><sitemapindex><sitemap/></sitemapindex>'
+    assert market.continuation(request, Body(raw=raw), 1) is None
