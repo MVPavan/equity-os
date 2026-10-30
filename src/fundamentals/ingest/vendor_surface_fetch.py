@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, OpenerDirector, Request
 
 import structlog
@@ -205,7 +205,7 @@ class VendorFetcher:
         stop_dir: Path,
         lock: SiteLock,
         *,
-        spacing_seconds: float = 3.0,
+        spacing_seconds: float = 10.0,
         site_budget: int = 350,
         timeout_seconds: float = 30.0,
         max_bytes: int = 20_000_000,
@@ -265,8 +265,10 @@ class VendorFetcher:
         )
         try:
             try:
+                # normalise() decodes the path; re-encode it only on the wire.
+                wire = parts._replace(path=quote(parts.path, safe="/:@!$&'()*+,;="))
                 response = self.opener.open(
-                    Request(url, headers=headers, method="GET"), timeout=self.timeout
+                    Request(urlunsplit(wire), headers=headers, method="GET"), timeout=self.timeout
                 )
             except HTTPError as error:
                 response = error
