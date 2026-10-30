@@ -198,7 +198,7 @@ def registered_ids(pool: ConnectionPool, store: SnapshotStore, symbol: str) -> C
         ):
             continue
         body = Body(raw=store.read_body(record))
-        if proof["unit"] == "SCREENER" and "/company/" in proof["url"]:
+        if proof["unit"] == "SCREENER" and urlsplit(proof["url"]).path.startswith("/company/"):
             ids = ids.model_copy(update={"screener_company_id": read_identity(body.tree())[0]})
             pages[Basis.CONSOLIDATED if "/consolidated/" in proof["url"] else Basis.STANDALONE] = (
                 capture_of(proof)

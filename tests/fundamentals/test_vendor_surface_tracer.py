@@ -476,7 +476,8 @@ def test_stop_shared_across_snapshot_roots(rig, capsys):
     assert len(opener.calls) == before
 
 
-def test_anonymous_onboarding_identity_allows_capture(rig, pg_db, capsys):
+@pytest.mark.parametrize("search", [False, True], ids=["page", "with_search_proof"])
+def test_anonymous_onboarding_identity_allows_capture(rig, pg_db, capsys, search):
     from coverage_support import watchlist
     from onboarding_support import seed
     from retention_support import record_of
@@ -494,18 +495,20 @@ def test_anonymous_onboarding_identity_allows_capture(rig, pg_db, capsys):
         b'<div id="company-info" data-company-id="901" data-warehouse-id="902"></div>'
         b"Consolidated Figures"
     )
-    record = record_of(raw, "screener-subscriber", "company-page")
-    store.put_capture(record, raw)
+    proofs = [(raw, "company-page", "https://www.screener.in/company/APARINDS/consolidated/")]
+    if search:  # the live namespace check also retains the JSON search endpoint
+        search_url = "https://www.screener.in/api/company/search/?q=APARINDS"
+        proofs.append((b'[{"url": "/company/APARINDS/"}]', "company-search", search_url))
+    records = [record_of(body, "screener-subscriber", surface) for body, surface, _ in proofs]
+    for record, (body, _, _) in zip(records, proofs, strict=True):
+        store.put_capture(record, body)
     with pg_db.runtime_pool() as pool, pg_db.role_pool(PgRole.OWNER) as owner:
         watchlist({PgRole.RUNTIME: pool, PgRole.OWNER: owner}, entity, store)
-        ref = register(
-            pool,
-            Fetched(
-                record=record,
-                url="https://www.screener.in/company/APARINDS/consolidated/",
-                location=None,
-            ),
-        )
+        refs = [
+            register(pool, Fetched(record=record, url=url, location=None))
+            for record, (_, _, url) in zip(records, proofs, strict=True)
+        ]
+        ref = refs[0]
         with owner.connection() as conn:
             load = conn.execute(
                 "INSERT INTO eqos.registry_loads (capture_ref_id,content_sha256) "
@@ -526,11 +529,12 @@ def test_anonymous_onboarding_identity_allows_capture(rig, pg_db, capsys):
             evidence = conn.execute(
                 "SELECT evidence_input_id FROM eqos.reporting_entities WHERE id=%s", (entity,)
             ).fetchone()[0]
-            conn.execute(
-                "INSERT INTO eqos.evidence_input_captures(evidence_input_id,capture_ref_id) "
-                "VALUES (%s,%s)",
-                (evidence, ref.capture_ref_id),
-            )
+            for proof in refs:
+                conn.execute(
+                    "INSERT INTO eqos.evidence_input_captures(evidence_input_id,capture_ref_id) "
+                    "VALUES (%s,%s)",
+                    (evidence, proof.capture_ref_id),
+                )
             conn.execute(
                 "INSERT INTO eqos.namespace_verifications "
                 "(onboarding_record_id,unit,state,evidence_input_id) "
