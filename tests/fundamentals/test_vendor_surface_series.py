@@ -13,6 +13,7 @@ from vendor_surface_support import INDEX, capture_response, load_request_index
 from fundamentals.ingest.vendor_surface_capture import Request
 from fundamentals.ingest.vendor_surface_fetch import Site
 from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
+from fundamentals.ingest.vendor_surface_series import tijori_data
 from fundamentals.ingest.vendor_surface_specs import Cadence, ParseGroup, Scope, SurfaceSpec
 from fundamentals.store.snapshot_store import SnapshotStore
 
@@ -124,6 +125,14 @@ def test_valuation_rejects_unrelated_numeric_object():
             Body(raw=b'{"status":200,"data":{"changed":1}}'),
             CONTEXT,
         )
+
+
+def test_envelope_without_status_still_reads_and_a_bad_status_still_refuses():
+    """Tijori dropped `status` from some envelopes on 2026-10-31 (canary T4)."""
+    data = json.dumps({"eod_price": []})
+    assert tijori_data(json.dumps({"data": data}).encode()) == {"eod_price": []}
+    with pytest.raises(ValueError):
+        tijori_data(json.dumps({"status": 500, "data": data}).encode())
 
 
 def test_string_envelope_keeps_lexemes_nulls_and_duplicate_series_names():
