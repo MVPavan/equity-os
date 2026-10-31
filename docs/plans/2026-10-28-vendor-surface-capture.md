@@ -241,7 +241,7 @@ Handler regexes tolerate whitespace before `(` (audit finding 4 shape).
 | Screener company page (verified) | benchmark index tags | index-page: `capture-due` follows them during company capture; `capture --market` routes through the latest verified retained company page per address |
 | Screener `people-search` | person links | person-page |
 | Screener `hs-search-api` | HS-code (`/commodity/`) links | hs-data-api |
-| Tijori `search-page` | published sector options | sector-page → sector-ms-chart-api (`chart_id`), sector-company-opm-api (`metric_id`); sector-area-chart-api is kept only (pending a 200) |
+| Tijori company overview (verified; aa6.24) | its one sector link (`/sector/None` = none), so only covered companies' sectors | sector-page → sector-ms-chart-api (`chart_id`), sector-company-opm-api (`metric_id`); sector-area-chart-api is kept only (pending a 200) |
 | Tijori `markets` | index ids | index-data-api → index-metric-data-api (`metric`) |
 | Tijori `macro` | indicator ids | macro-chart-api |
 | Tijori `ideas-dashboard` | idea slugs | idea-page → idea-card-body |

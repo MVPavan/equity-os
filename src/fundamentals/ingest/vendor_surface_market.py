@@ -38,11 +38,12 @@ from fundamentals.store.vendor_values_store import (
 
 MAX_FEED_PAGES = 20
 TRAVERSAL_VERSION = "traversal.v4"
-# Index pages are advertised only by company pages: route through verified retained ones.
+# Index and sector pages are advertised only by company pages: route through verified ones.
 COMPANY_PAGES = """SELECT DISTINCT ON (a.url) c.*, a.url FROM eqos.capture_refs c
 JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
-JOIN eqos.vendor_outcomes o ON o.capture_ref_id = c.id AND o.surface = 'company-page'
-WHERE c.surface = 'vs.company-page' AND o.status = ANY(%s) ORDER BY a.url, c.capture_id DESC"""
+JOIN eqos.vendor_outcomes o ON o.capture_ref_id = c.id AND o.surface = %(page)s
+WHERE c.surface = 'vs.' || %(page)s AND o.status = ANY(%(usable)s)
+ORDER BY a.url, c.capture_id DESC"""
 MOVING = frozenset(
     "p page cursor timestamp daterange date_from date_to ts same_ts_offset_count".split()
 )
@@ -192,27 +193,28 @@ def company_routes(
     store: SnapshotStore, pool: ConnectionPool, specs: tuple[SurfaceSpec, ...]
 ) -> tuple[tuple[Request, ...], tuple[str, ...]]:
     """Market children of the latest verified company page per address, or the missing level."""
-    page = next((s for s in specs if s.id == "company-page"), None)
-    targets = [s for s in specs if "company-page" in MARKET_PARENTS.get(s.expand or "", ())]
-    if page is None or not targets:
-        return (), ()
-    with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-        rows = cursor.execute(COMPANY_PAGES, (list(USABLE),)).fetchall()
     found: list[Request] = []
     gaps: list[str] = []
-    for row in rows:
-        ref = capture_of(row)
-        record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
-        parent = Request(spec=page, url=row["url"], ids=None, due_since=None)
-        body = Body(raw=store.read_body(record))
-        children, missing = advertised(
-            parent, body, parent.context(record, ref.blob_sha256), targets, ()
-        )
-        found.extend(children)
-        gaps.extend(gap.replace(": ", f":{ref.request_key}: ", 1) for gap in missing)
-    if rows:
-        return tuple(found), tuple(gaps)
-    return (), tuple(f"{named(s)}: no advertised children" for s in targets)
+    for page in (s for s in specs if s.scope is Scope.COMPANY):
+        targets = [s for s in specs if page.id in MARKET_PARENTS.get(s.expand or "", ())]
+        if not targets:
+            continue
+        with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            query = {"page": page.id, "usable": list(USABLE)}
+            rows = cursor.execute(COMPANY_PAGES, query).fetchall()
+        if not rows:
+            gaps.extend(f"{named(s)}: no advertised children" for s in targets)
+        for row in rows:
+            ref = capture_of(row)
+            record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
+            parent = Request(spec=page, url=row["url"], ids=None, due_since=None)
+            body = Body(raw=store.read_body(record))
+            children, missing = advertised(
+                parent, body, parent.context(record, ref.blob_sha256), targets, ()
+            )
+            found.extend(children)
+            gaps.extend(gap.replace(": ", f":{ref.request_key}: ", 1) for gap in missing)
+    return tuple(found), tuple(gaps)
 
 
 def continuation(request: Request, body: Body, page: int) -> str | None:
