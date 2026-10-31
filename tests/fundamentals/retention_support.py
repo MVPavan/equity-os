@@ -37,7 +37,9 @@ from fundamentals.contracts.evidence import CaptureReference
 from fundamentals.contracts.retention import CaptureFacts, Eligibility, HoldRoot
 from fundamentals.contracts.snapshot import (
     A05_DECISION_005,
+    CAPTURE_SCHEMA_VERSION,
     BlobRef,
+    BodyCompleteness,
     CaptureRecord,
     RequestIdentity,
     SnapshotRights,
@@ -50,7 +52,7 @@ from fundamentals.pg.settings import PgRole
 from fundamentals.retention.eligibility import add_months, eligibility
 from fundamentals.retention.holds import capture_facts
 from fundamentals.retention.purge_first import restore_purge_first
-from fundamentals.store.snapshot_store import BLOBS_DIRNAME
+from fundamentals.store.snapshot_store import BLOBS_DIRNAME, SnapshotStore
 
 # The tables the retention migrations add; each D9 migration extends this in its own change.
 RETENTION_TABLES = frozenset(
@@ -263,6 +265,35 @@ def restore_args(
         "purge_login": database.logins[PgRole.PURGE],
         "purge_first": restore_purge_first(set_dir, backup_dir, snapshot_root, live),
     }
+
+
+def register_body_absent(conn: psycopg.Connection, root: Path) -> int:
+    """SYNTHETIC: publish under ``root`` and register a body-absent transport failure the way the
+    VS fetcher records one (no body, ``blob_sha256`` of no bytes); returns its capture ref id."""
+    request = RequestIdentity(
+        source_id="screener-subscriber", surface="vs.market-level", request_key=uuid.uuid4().hex,
+        parameters=(),
+    )  # fmt: skip
+    failed = OutcomeRecord(
+        code=OutcomeCode.TRANSPORT_ERROR, native_kind="synthetic.Kind", native_value="timeout"
+    )
+    record = CaptureRecord.make(
+        request, RETRIEVED, None, None, None, None, failed,
+        SnapshotRights(authority_refs=(A05_DECISION_005,)),
+        schema_version=CAPTURE_SCHEMA_VERSION, body_completeness=BodyCompleteness.ABSENT,
+    )  # fmt: skip
+    SnapshotStore(root).put_capture(record, None)
+    ref = synthetic(request.source_id, request.surface).model_copy(
+        update={
+            "request_key": request.request_key,
+            "capture_id": record.capture_id,
+            "blob_sha256": hashlib.sha256(b"").hexdigest(),
+            "record_sha256": record.record_sha256,
+        }
+    )
+    row = conn.execute(rows_sql.INSERT_CAPTURE_REF + " RETURNING id", rows_sql.capture_params(ref))
+    ((capture_ref_id,),) = row.fetchall()
+    return int(capture_ref_id)
 
 
 def record_of(body: bytes, source_id: str = "nse", surface: str = "NSE_XBRL_INSTANCE") -> Any:
