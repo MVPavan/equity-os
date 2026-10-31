@@ -34,7 +34,7 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.compare.run_models import DatabaseIdentity
 from fundamentals.contracts.retention import CaptureState, JournalEventKind
 from fundamentals.contracts.retention_purge import RestoreDelta
-from fundamentals.contracts.snapshot import SnapshotError
+from fundamentals.contracts.snapshot import CaptureRecord, MissingSnapshotError, SnapshotError
 from fundamentals.pg.approvals import current_database, is_test_database
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.restore_check import (
@@ -240,7 +240,7 @@ def write_backup(
                 if c not in captures
             )
             for capture in captures:
-                record, body = source.read_capture_verified(*capture[1:5])
+                record, body = _read(source, capture)
                 if not _matches(record.record_sha256, body, capture):
                     raise BackupError(f"capture {capture[0]} differs from its registration")
                 archive.put_capture(record, body)
@@ -347,7 +347,7 @@ def restore_backup(
         _client(client_prefix, settings, database, ("pg_restore", "--exit-on-error"), stdin=dump)
     archive, target = SnapshotStore(set_dir / CAPTURES_DIR), SnapshotStore(snapshot_root)
     for capture in manifest.captures:
-        target.put_capture(*archive.read_capture_verified(*capture[1:5]))
+        target.put_capture(*_read(archive, capture))
     for item in manifest.expired:
         target.put_record(archive.read_record(*item.capture[1:5], item.capture[6]), item.capture[6])
     bad = tuple(capture[0] for capture in manifest.captures if not _restored(target, capture))
@@ -430,15 +430,28 @@ def _authority(backup_dir: Path, manifest: BackupManifest, live: Path | None) ->
 def _restored(target: SnapshotStore, capture: Capture) -> bool:
     """Whether a capture re-reads from ``target`` with its registered record and blob hashes."""
     try:
-        record, body = target.read_capture_verified(*capture[1:5])
+        record, body = _read(target, capture)
     except SnapshotError:
         return False
     return _matches(record.record_sha256, body, capture)
 
 
-def _matches(record_sha256: str, body: bytes, capture: Capture) -> bool:
-    """Whether a record hash and body equal the registered ``record_sha256`` and ``blob_sha256``."""
-    return record_sha256 == capture[6] and _sha256(body) == capture[5]
+def _read(store: SnapshotStore, capture: Capture) -> tuple[CaptureRecord, bytes | None]:
+    """A capture's verified record and body; a body-absent capture (a recorded transport
+    failure) yields its registration-checked record and no body."""
+    try:
+        return store.read_capture_verified(*capture[1:5])
+    except MissingSnapshotError:
+        record = CaptureRecord.model_validate_json(store.read_record(*capture[1:5], capture[6]))
+        if record.body is not None:
+            raise
+        return record, None
+
+
+def _matches(record_sha256: str, body: bytes | None, capture: Capture) -> bool:
+    """Whether a record hash and body equal the registered ``record_sha256`` and ``blob_sha256``
+    (registered as the digest of no bytes when there is no body)."""
+    return record_sha256 == capture[6] and _sha256(body or b"") == capture[5]
 
 
 def _verify(set_dir: Path) -> BackupManifest:

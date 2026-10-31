@@ -17,7 +17,7 @@ import psycopg
 import pytest
 import yaml
 from pg_support import PgTestDatabase, create_database, drop_database, mint_name
-from retention_support import restore_args
+from retention_support import register_body_absent, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage
 from test_legacy_import import Rig
 from test_store import _fact
@@ -95,6 +95,8 @@ def test_round_trip_snapshot_and_tamper(
         stage = Stage(pg_db, pool, tmp_path, RUNS["APARINDS-Q2FY26"])
         stage.first_party()
         run_id = stage.execute(vendors=[]).run_id
+    with pg_db.migrator_connection() as conn:
+        nobody = register_body_absent(conn, snapshots)
 
     set_dir = write_backup(
         settings,
@@ -110,6 +112,7 @@ def test_round_trip_snapshot_and_tamper(
     bound = set(query(settings, pg_db.dbname, BOUND))
     assert len(bound) == 8 and bound <= {capture[0] for capture in manifest.captures}
     assert manifest.run_ids == (run_id,)
+    assert nobody in {capture[0] for capture in manifest.captures}  # restored with check.ok below
 
     check = restore_backup(
         set_dir,
