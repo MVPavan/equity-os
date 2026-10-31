@@ -240,7 +240,8 @@ def _envelope(raw: bytes) -> tuple[bool, Any]:
     """Read Tijori's `{data, status}` envelope, decoding string-encoded data."""
     data = json.loads(raw)
     payload = data["data"]
-    return data["status"] == 200, json.loads(payload) if isinstance(payload, str) else payload
+    ok = data.get("status", 200) == 200  # `status` absent since 2026-10-31
+    return ok, json.loads(payload) if isinstance(payload, str) else payload
 
 
 def _s1(raw: bytes) -> dict[str, bool]:

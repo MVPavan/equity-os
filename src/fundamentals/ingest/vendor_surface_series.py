@@ -111,7 +111,8 @@ def numeric_json(raw: bytes | str) -> Any:
 def tijori_data(body: bytes) -> Any:
     """Unwrap successful Tijori data, including its JSON-string variant."""
     envelope = numeric_json(body)
-    if not isinstance(envelope, dict) or envelope["status"] != 200:
+    # Tijori dropped `status` from some envelopes on 2026-10-31; a present one must be 200.
+    if not isinstance(envelope, dict) or envelope.get("status", 200) != 200:
         raise ValueError("invalid Tijori envelope")
     data = envelope["data"]
     return numeric_json(data) if isinstance(data, str) else data
