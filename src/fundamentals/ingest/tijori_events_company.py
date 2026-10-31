@@ -293,7 +293,10 @@ def build_company_timeline(
     kept: list[RawTimelineEvent] = []
     mismatched: list[str] = []
     matched = 0
-    for raw_event in fragment.events:
+    for index, raw_event in enumerate(fragment.events):
+        # Tijori renders some event rows twice verbatim; a differing repeat still collides.
+        if raw_event in fragment.events[:index]:
+            continue
         failure = _row_identity_failure(raw_event, slug=slug, company_id=company_id)
         if failure is not None:
             _LOGGER.warning(

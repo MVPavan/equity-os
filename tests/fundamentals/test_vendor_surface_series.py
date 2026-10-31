@@ -220,3 +220,53 @@ def test_market_series_capture_preserves_cells_or_fails(pg_db, tmp_path, row, tr
             ]
             if row["id"] == "hs-data-api":
                 assert {cell[3] for cell in cells} == {"74031100"}
+
+
+def test_statement_compare_reads_live_ratio_rows_and_quarterly_growth_axis():
+    """APARINDS shapes (2026-10-30): ratio rows omit value_perc; quarterly growth has its own
+    shorter axis, and a group header pads it with nulls on the main axis."""
+
+    def row(name, value, yoy, perc=None, children=""):
+        shares = {} if perc is None else {"value_perc": perc}
+        return {"name": name, "value": value, "value_yoy": yoy, **shares, "sub_section": children}
+
+    annual = {
+        "report_dates": ["Mar 2025", "Mar 2026"],
+        "data": [row("Sales", [10, 12], [None, "20%"], [100, 100]), row("OPM (%)", [9, 8], [1, 2])],
+    }
+    quarterly = {
+        "report_dates": ["Jun 2026", "Sep 2026"],
+        "report_dates_yoy": ["Sep 2026"],
+        "data": [
+            row("Net Sales", [5, 6], ["25%"], [100, 100]),
+            row(
+                "Quarterly Ratios",
+                [0, 0],
+                [None, None],
+                [None, None],
+                [row("EPS", [1, 2], ["9%"], [None, None])],
+            ),
+        ],
+    }
+
+    def cells(tables):
+        raw = json.dumps({"data": [{k: json.dumps(v) for k, v in tables.items()}]}).encode()
+        return PARSERS[Site.TIJORI, "financial-statement-compare-api"].parse(Body(raw=raw), CONTEXT)
+
+    read = {
+        (c.row_label, c.table_key.rsplit("/", 1)[1], c.column_label): c.raw_text
+        for c in cells({"pl_c_s": annual, "qt_c": quarterly})
+    }
+    assert read[("Sales", "value_perc", "Mar 2026")] == "100"
+    assert not any(label == "OPM (%)" and field == "value_perc" for label, field, _ in read)
+    assert read[("Net Sales", "value_yoy", "Sep 2026")] == "25%"
+    assert read[("EPS", "value_yoy", "Sep 2026")] == "9%"
+    assert read[("Quarterly Ratios", "value_yoy", "Jun 2026")] == "null"
+    assert PARSERS[Site.TIJORI, "financial-statement-compare-api"].version.endswith(".v2")
+    # Still refused: a breakdown one column short (live pl_s_*) has no axis naming the gap,
+    # and a real growth reading laid on the main axis of a quarterly table.
+    short = {**annual, "data": [row("Others", [1], [None], [5])]}
+    misplaced = {**quarterly, "data": [row("Net Sales", [5, 6], ["1%", "2%"], [100, 100])]}
+    for tables in ({"pl_s_s": short}, {"qt_s": misplaced}):
+        with pytest.raises(ValueError, match="report dates"):
+            cells(tables)

@@ -104,7 +104,7 @@
 - {cadence: DAILY, feed: true, group: TABLE, id: quarterly-results-api, path: '/results/quarterly-results/api/?page=&sort_by=&mcap=&timeline_type=&sectors=&company_ids=', scope: MARKET, selector: '//div[@class="result_item"]', site: tijori}
 - {cadence: DAILY, feed: true, group: TABLE, id: upcoming-events-api, path: '/results/upcoming-events/api/?page=&mcap=&timeline_type=&type=', scope: MARKET, selector: '//div[@class="table_container"]/table[not(contains(@class,"loader"))]', site: tijori}
 - {cadence: WEEKLY, group: TABLE, id: raw-materials, path: /in/raw-materials, scope: MARKET, selector: '//table[starts-with(@id,"rawmaterial__table__")]', site: tijori}
-- {cadence: WEEKLY, group: TABLE, id: idea-page, path: '/ideas-dashboard/{slug}/', scope: MARKET, selector: '//div[@class="cards_container"]/div', site: tijori, expand: tijori_ideas}
+- {cadence: WEEKLY, group: TABLE, id: idea-page, path: '/ideas-dashboard/{slug}/', scope: MARKET, selector: '//div[@class="cards_container"]/div | //table', site: tijori, expand: tijori_ideas}
 - {cadence: WEEKLY, group: TABLE, id: idea-card-body, path: '/ideas-dashboard/{slug}/card-body/', scope: MARKET, selector: '//div[@class="card_row"]', site: tijori, expand: tijori_idea_cards}
 
 - {site: screener-subscriber, id: quick-ratios-api, scope: COMPANY, path: '/api/company/{warehouse_id}/quick_ratios/', group: READER, cadence: WEEKLY}

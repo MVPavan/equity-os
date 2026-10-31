@@ -519,7 +519,10 @@ def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
     context = context.model_copy(update={"basis": None})
     values = parse("tijori", surface, body, context)
     assert outcome(values) == "OK"
-    assert PARSERS[Site.TIJORI, surface].version == f"tijori:{surface}.reader.v5"
+    assert (
+        PARSERS[Site.TIJORI, surface].version
+        == f"tijori:{surface}.reader.v{5 if surface == 'quarterly-results' else 6}"
+    )
     assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "OK"
     positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
     for table, row, column, raw, value, unit, numeric in EVENT_CELLS[surface]:
@@ -643,3 +646,28 @@ def test_g0_series_preserves_source_timestamp_label(pg_db, tmp_path):
     for index, (point, cell) in enumerate(zip(document.points, values, strict=True)):
         assert cell["row_label"] == point.timestamp_raw_text
         assert cell["locator"] == document.series_provenance.context_ref + f"/{index}/1"
+
+
+def test_timeline_collapses_a_verbatim_repeated_event_row():
+    """APARINDS's live timeline (2026-10-30) renders one event row twice, byte for byte."""
+    from fundamentals.ingest.tijori_events_models import TijoriEventsSchemaError
+
+    body, context = retained("tijori", "company-timeline-api")
+    context = context.model_copy(update={"basis": None})
+    start = body.raw.index(b"<tr data-id=")
+    end = body.raw.index(b"<tr data-id=", start + 1)
+    row = body.raw[start:end]
+    repeated = Body(raw=body.raw[:end] + row + body.raw[end:])
+    assert parse("tijori", "company-timeline-api", repeated, context) == parse(
+        "tijori", "company-timeline-api", body, context
+    )
+    # A repeat that differs is two claims on one source row, not a rendering echo.
+    changed = row.replace(b'data-name="Uncategorised"', b'data-name="Changed"')
+    assert changed != row
+    with pytest.raises(TijoriEventsSchemaError):
+        parse(
+            "tijori",
+            "company-timeline-api",
+            Body(raw=body.raw[:end] + changed + body.raw[end:]),
+            context,
+        )

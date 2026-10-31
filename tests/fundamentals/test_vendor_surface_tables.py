@@ -554,3 +554,123 @@ def test_unreadable_numeric_g2_column_remains_expected(pg_db, tmp_path, surface,
                 "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
                 (ref.capture_ref_id,),
             ).fetchall() == [("PARTIAL",)]
+
+
+IDEA_CARD = (
+    '<div class="cards_container"><div class="card_tj"><div class="company">'
+    '<div class="name_cap__container"><div class="name__container"><a href="/company/x/">'
+    '<span>X Sec.</span></a></div><div class="mcap_classification"><span>Small cap</span></div>'
+    '</div><div class="date"> Oct 30, 2026 </div></div><div class="link_date_container">'
+    '<div class="link"><a href="https://www.bseindia.com/x.pdf"><span>X Proposes Merger</span>'
+    '</a></div><div class="date"> </div></div></div></div>'
+)
+IDEA_TABLE = (
+    '<div class="table_container"><table><thead><tr><th>Company</th><th>Date</th>'
+    '<th>Market Cap (Cr.)</th></tr></thead><tbody><tr><td><a href="/company/y/">Y Ltd</a></td>'
+    "<td>30 Oct 2026</td><td>1,234</td></tr></tbody></table></div>"
+)
+
+
+@pytest.mark.parametrize(
+    ("page", "expected"),
+    [
+        (
+            IDEA_CARD,
+            [
+                ("X Sec.", "/company/x/"),
+                ("Oct 30, 2026", None),
+                ("X Proposes Merger", "https://www.bseindia.com/x.pdf"),
+            ],
+        ),
+        (IDEA_TABLE, [("Y Ltd", "/company/y/"), ("30 Oct 2026", None), ("1,234", None)]),
+        (
+            IDEA_TABLE.split("<tbody>")[0] + "<tbody></tbody></table></div>",
+            [],  # Live buyback page: the header with no rows is legitimately empty.
+        ),
+    ],
+    ids=["filing-cards", "stock-table", "empty-table"],
+)
+def test_live_idea_pages_keep_cards_and_tables(page, expected):
+    """Live idea slugs (2026-10-30) render filing cards or stock tables, not only no_data."""
+    entry = PARSERS[Site.TIJORI, "idea-page"]
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url="https://www.tijorifinance.com/ideas-dashboard/merger/",
+        retrieved_at=datetime(2026, 10, 30, tzinfo=UTC),
+        body_sha256="fixture",
+        capture_id="fixture",
+    )
+    cells = entry.parse(Body(raw=f"<html><body>{page}</body></html>".encode()), context)
+    assert [(c.raw_text, c.link) for c in cells] == expected
+    # A card without its company link is an unknown shape, not an empty one.
+    broken = IDEA_CARD.replace('<a href="/company/x/">', "<a>")
+    with pytest.raises(ValueError):
+        entry.parse(Body(raw=f"<html><body>{broken}</body></html>".encode()), context)
+
+
+@pytest.mark.parametrize(
+    ("surface", "headers", "rows", "dates"),
+    [
+        (
+            "corporate-actions-feed",
+            ["Company", "Ex-Date", "Old fv", "New fv"],
+            [["30 November 2026", "10.00", "2.00"]],
+            [date(2026, 11, 30)],
+        ),
+        (
+            "corporate-actions-feed",
+            ["Company", "Ex date", "End date", "Offer Type", "Max Price", "Amount in Cr"],
+            [["-", "-", "Tender Offer", "125.00", "105.93"]],
+            [None],
+        ),
+        (
+            "corporate-actions-feed",
+            ["Company", "Ex date", "Div type", "Percent"],
+            [["22 September 2026", "Special", "50.00"], ["22 September 2026", "Final", "10.00"]],
+            [date(2026, 9, 22)] * 2,
+        ),
+        (
+            "trades-feed",
+            ["Company", "Person name", "Date", "Type", "Percent"],
+            [["P One", "yesterday", "Acq", "1%"], ["P Two", "today", "Acq", "1%"]],
+            [None, None],
+        ),
+    ],
+    ids=["split-ex-date", "buyback-undated", "dividend-type", "sast-relative"],
+)
+def test_live_feed_headers_dates_and_identities(surface, headers, rows, dates):
+    """Live Screener feeds (2026-10-30) label, date and distinguish rows these ways."""
+    spec = next(s for s in MARKET_SPECS if s.id == surface)
+    head = "".join(f"<th>{h}</th>" for h in headers)
+    body = "".join(
+        '<tr><td><a href="/company/A/">A</a></td>' + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
+        for r in rows
+    )
+    page = f'<table id="result_list"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+    context = ParseContext(
+        ids=None,
+        basis=None,
+        url="https://www.screener.in/actions/",
+        body_sha256="fixture",
+        retrieved_at=datetime(2026, 10, 30, tzinfo=UTC),
+        capture_id="fixture",
+    )
+    events = feed_rows(spec, PARSERS[spec.site, surface].parse(Body(raw=page.encode()), context))
+    assert [e.row_date for e in events] == dates
+    assert len({e.row_id for e in events}) == len(rows)
+    # Any other date text is still refused rather than read as no date.
+    with pytest.raises(ValueError):
+        feed_rows(
+            spec,
+            PARSERS[spec.site, surface].parse(
+                Body(
+                    raw=page.replace("<td>-</td>", "<td>soon</td>")
+                    .replace("yesterday", "soon")
+                    .replace("30 November 2026", "soon")
+                    .replace("22 September 2026", "soon")
+                    .encode()
+                ),
+                context,
+            ),
+        )

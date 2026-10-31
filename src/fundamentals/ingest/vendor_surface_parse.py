@@ -116,7 +116,11 @@ PARSERS: dict[tuple[Site, str], ParserEntry] = {
 # Task 9: Tijori company series.
 PARSERS.update(
     {
-        (Site.TIJORI, surface): ParserEntry(version=f"tijori:{surface}.v1", parse=parser)
+        (Site.TIJORI, surface): ParserEntry(
+            # Statement compare advanced for live ratio rows and the quarterly growth axis.
+            version=f"tijori:{surface}.v{2 if surface == 'financial-statement-compare-api' else 1}",
+            parse=parser,
+        )
         for surface, parser in {
             "chartdata-price-api": series.tijori_price,
             "chartdata-valuation-api": series.tijori_valuation,
@@ -154,8 +158,8 @@ for _site, _name, _surfaces in (
     for _surface in _surfaces:
         # Shared sanitization and series conversion advance every reader pin.
         _version = (
-            5
-            if _name == "tijori" and _surface in ("quarterly-results", "company-timeline-api")
+            {"quarterly-results": 5, "company-timeline-api": 6}.get(_surface, 4)
+            if _name == "tijori"
             else 4
         )
         PARSERS[_site, _surface] = ParserEntry(
@@ -195,7 +199,7 @@ def register_tables(specs: tuple[SurfaceSpec, ...]) -> None:
     for spec in specs:
         if spec.group is ParseGroup.TABLE:
             # Numeric table roles advance both company and market parser pins.
-            version = "v4" if spec.scope is Scope.MARKET else "v3"
+            version = "v5" if spec.scope is Scope.MARKET else "v3"
             PARSERS[spec.site, spec.id] = ParserEntry(
                 version=f"{SITE_NAME[spec.site]}:{spec.id}.{version}",
                 parse=(market_parser if spec.scope is Scope.MARKET else company_parser)(spec),
