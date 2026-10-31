@@ -263,7 +263,6 @@ def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
             "/screens/",
             "/commodity/",
             "/api/hs/",
-            "/sector/",
             "/api/v1/macro/chart/",
             "/api/v1/sector/index-data/",
             "/api/v1/sector/index-metric-data/",
@@ -545,7 +544,7 @@ def test_selected_market_surface_includes_its_hub(pg_db, tmp_path, capsys, monke
         vendor_command="capture",
         market=True,
         symbol=None,
-        surface=["tijori:sector-ms-chart-api"],
+        surface=["tijori:index-data-api"],
         snapshot_root=tmp_path / "captures",
         tijori_slug=None,
     )
