@@ -31,6 +31,7 @@ CONCALL_SUBJECTS = {
     "about schedule of meet": "CONCALL_SCHEDULE",
     "about link of recording": "CONCALL_RECORDING",
 }
+RESULTS_CATEGORIES = frozenset({"Outcome of Board Meeting", "Financial Result Updates"})
 NSE_API = "https://www.nseindia.com/api/"
 ENDPOINTS = {
     ANNOUNCEMENTS: "corporate-announcements",
@@ -81,7 +82,9 @@ def classify_announcement(row: dict[str, Any]) -> AnnouncementClass:
         return AnnouncementClass.PRESENTATION
     if desc.startswith("Credit Rating"):
         return AnnouncementClass.CREDIT_RATING
-    if desc == "Outcome of Board Meeting" and "financial results" in text:
+    # NSE files the same results under either category (Apar: "Financial Result Updates"
+    # until Jan 2025, "Outcome of Board Meeting" since).
+    if desc in RESULTS_CATEGORIES and "financial results" in text:
         return AnnouncementClass.RESULTS
     return AnnouncementClass.OTHER
 

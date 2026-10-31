@@ -141,3 +141,16 @@ def test_unresolved_missing_sequence_and_non_exchange_links_fail_closed() -> Non
         "from_date": ["02-01-2026"],
         "to_date": ["01-02-2026"],
     }
+
+
+def test_results_are_recognised_under_both_nse_categories() -> None:
+    """Apar's 2023-07..2025-01 results sit under 'Financial Result Updates'; missing them hid
+    seven of thirteen quarters, while a board-meeting notice without results stays OTHER."""
+    from fundamentals.ingest.first_party_documents import classify_announcement
+
+    text = "Issuer has submitted to the Exchange, the financial results for the period ended"
+    for desc in ("Financial Result Updates", "Outcome of Board Meeting"):
+        assert classify_announcement(dict(desc=desc, attchmntText=text)) == "RESULTS"
+    notice = dict(desc="Outcome of Board Meeting", attchmntText="regarding Board meeting held")
+    assert classify_announcement(notice) == "OTHER"
+    assert classify_announcement(dict(desc="Press Release", attchmntText=text)) == "OTHER"
