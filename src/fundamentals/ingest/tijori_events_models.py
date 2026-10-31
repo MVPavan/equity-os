@@ -153,10 +153,12 @@ COMPANY_TIMELINE_NEEDS_STOCK = (
 # response, or a template change, so it can never be reported as a verified
 # empty result. The site timeline's ``li.no-res`` belongs to the company-search
 # dropdown, not the feed, and is not a marker for this surface.
+# FACT (APARINDS live, 2026-10-31): a timeline's last page renders only a blank
+# pager row; that one shape is read as the end (see ``RawTimelineFragment``).
 FRAGMENT_NO_EVENT_ROWS = (
-    "tijori company-timeline fragment carries no tr[data-id] event row and no "
-    "empty-state marker this adapter can recognize; an empty rendering has never "
-    "been observed, so zero rows cannot be distinguished from a broken read"
+    "tijori company-timeline fragment carries no tr[data-id] event row and is not "
+    "the blank pager page that ends a timeline, so zero rows cannot be "
+    "distinguished from a broken read"
 )
 
 # Deepest nesting observed across all five captures is 15 elements. The cap sits

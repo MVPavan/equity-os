@@ -59,6 +59,7 @@ _HREF_ATTRIBUTE = "href"
 _TYPE_ATTRIBUTE = "type"
 
 _COLLAPSED_ROW_CLASS = "collapsedrow"
+_PAGER_ROW_CLASS = "d-none"
 _COMPANY_CELL_CLASS = "company"
 _EVENT_CELL_CLASS = "event"
 _CONTENT_CELL_CLASS = "content"
@@ -387,6 +388,10 @@ class RawTimelineFragment(BaseModel):
     survived as an event or was quarantined. It is the POSITIVE evidence the
     caller gates on: a response with no such row proves nothing about the
     company's timeline, so it is refused rather than reported as empty.
+
+    ``exhausted`` is True for the one empty rendering observed (APARINDS,
+    2026-10-31): no event row and no text, only the pager row with neither a
+    cursor nor a has-more flag. That is the timeline's end, not a broken read.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -395,6 +400,7 @@ class RawTimelineFragment(BaseModel):
     malformed_rows: tuple[str, ...] = ()
     page_shell: bool = False
     row_count: int = 0
+    exhausted: bool = False
 
 
 def _lazy_table_classes(root: _El) -> tuple[str, ...]:
@@ -678,6 +684,9 @@ def collect_company_timeline(fragment: str) -> RawTimelineFragment:
         malformed_rows=tuple(malformed),
         page_shell=carries_page_shell(root),
         row_count=row_count,
+        exhausted=not row_count
+        and not text_of(root)
+        and bool(find_all(root, ROW_TAG, _PAGER_ROW_CLASS)),
     )
 
 
