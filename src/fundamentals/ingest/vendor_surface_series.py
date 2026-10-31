@@ -247,14 +247,19 @@ def tijori_statement_compare(body: Body, context: ParseContext) -> tuple[VendorV
     """Read all nested statement values, growth and composition cells by position."""
     values: list[VendorValue] = []
 
-    def rows(data: Any, path: str, dates: list[str], basis: str) -> None:
+    def rows(data: Any, path: str, axes: dict[str, Any], basis: str) -> None:
         if not isinstance(data, list):
             raise ValueError("statement rows must be an array")
         for index, row in enumerate(data):
-            for field in ("value", "value_yoy", "value_perc"):
-                if not isinstance(row[field], list) or len(row[field]) != len(dates):
-                    raise ValueError("statement columns differ from report dates")
-                for column, raw in enumerate(row[field]):
+            # Ratio rows carry no composition share, so value_perc alone may be absent.
+            for field in ("value", "value_yoy", *(("value_perc",) if "value_perc" in row else ())):
+                cells, dates = row[field], axes[field]
+                if not isinstance(cells, list) or len(cells) != len(dates):
+                    # Group header rows pad growth with nulls on the main date axis.
+                    if field != "value_yoy" or cells != [None] * len(axes["value"]):
+                        raise ValueError("statement columns differ from report dates")
+                    dates = axes["value"]
+                for column, raw in enumerate(cells):
                     values.append(
                         numeric_cell(
                             raw,
@@ -269,7 +274,7 @@ def tijori_statement_compare(body: Body, context: ParseContext) -> tuple[VendorV
                     )
             children = row["sub_section"]
             child_path = f"{path}/{index}/sub_section"
-            rows([] if children == "" else children, child_path, dates, basis)
+            rows([] if children == "" else children, child_path, axes, basis)
 
     data = tijori_data(body.raw)
     if not isinstance(data, list):
@@ -278,15 +283,17 @@ def tijori_statement_compare(body: Body, context: ParseContext) -> tuple[VendorV
         for key, encoded in tables.items():
             table = numeric_json(encoded)
             dates = table["report_dates"]
-            if (
-                not isinstance(dates, list)
-                or not dates
-                or not all(isinstance(date, str) for date in dates)
+            # Quarterly tables date growth on their own shorter axis.
+            yoy = table.get("report_dates_yoy", dates)
+            if not all(
+                isinstance(axis, list) and axis and all(isinstance(date, str) for date in axis)
+                for axis in (dates, yoy)
             ):
                 raise ValueError("invalid statement dates")
             path = f"/data/{index}/{key}"
             basis = "consolidated" if "_c_" in key else "standalone"
-            rows(table["data"], path + "/data", dates, basis)
+            axes = {"value": dates, "value_yoy": yoy, "value_perc": dates}
+            rows(table["data"], path + "/data", axes, basis)
     return tuple(values)
 
 

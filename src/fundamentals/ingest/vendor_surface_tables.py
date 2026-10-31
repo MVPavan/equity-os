@@ -282,7 +282,9 @@ def company_parser(spec: SurfaceSpec) -> Parser:
 
 
 # Unlinked table rows are identified by these fixed facts, never by amounts or prices.
-KEY_LABELS = frozenset(("Person", "Type", "Offer Type"))
+KEY_LABELS = frozenset(("Person", "Person name", "Type", "Offer Type", "Div type"))
+# A feed shows these instead of a full date; the cell stays, the row date does not.
+UNDATED = frozenset(("-", "today", "yesterday"))
 
 
 class FeedRow(BaseModel):
@@ -294,8 +296,10 @@ class FeedRow(BaseModel):
     row_date: date | None = None
 
 
-def _feed_date(raw: str) -> date:
+def _feed_date(raw: str) -> date | None:
     """Accept the full date formats actually displayed by the retained feeds."""
+    if raw in UNDATED:
+        return None
     for format in ("%d %B %Y", "%d %b %Y", "%d %b, %Y", "%b %d, %Y"):
         try:
             return datetime.strptime(raw, format).date()
@@ -401,7 +405,8 @@ def market_parser(spec: SurfaceSpec) -> Parser:
                             (
                                 cell
                                 for cell, label in zip(cells, headers, strict=True)
-                                if label in {"Date", "Result date", "Pub date", "Ex date"}
+                                if label
+                                in {"Date", "Result date", "Pub date", "Ex date", "Ex-Date"}
                             ),
                             None,
                         )
@@ -443,7 +448,17 @@ def market_parser(spec: SurfaceSpec) -> Parser:
                 ):
                     values.append(_cell(part, key + ":header", 0, column, _text(company), "Header"))
             elif surface == "idea-page":
-                if "no_data" not in node.get("class", "").split():
+                # Filing cards link a company and its source; an empty page shows a no_data card.
+                if node.get("class") == "card_tj":
+                    (company,) = node.xpath(
+                        './/div[@class="name__container"]/a[starts-with(@href,"/company/")]'
+                    )
+                    parts = node.xpath('.//a[@href] | .//div[@class="date"][normalize-space()]')
+                    values.extend(
+                        _cell(part, surface, index, column, _text(company), "Text")
+                        for column, part in enumerate(parts)
+                    )
+                elif node.get("class") != "card_tj no_data":
                     raise ValueError("unretained idea card shape")
             elif surface == "idea-card-body":
                 for column, part in enumerate(
