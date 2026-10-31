@@ -1,16 +1,24 @@
 {
   "now": {
-    "title": "LIVE-RUN-1 complete; VS live run 2 passed; capture-due runs next",
-    "detail": "All four Apar quarters are APPROVED on live. VS live run 2 (vendor capture --symbol APARINDS) passed after the UA, path-encoding and 10 s spacing fixes: 211 pages stored (Screener 109, Tijori 102), no blocks, refused 0, incomplete 35 listed (24 redirects/404 -> eqos-aa6.22, 9 live-shape parser failures -> eqos-aa6.21). Next: two capture-due runs, then canary.",
+    "title": "VS phases 2-3 passed live; DOCS-1 backfill live; canary waits on aa6.21/.22",
+    "detail": "Vendor phase 2 and 3 live exits passed (eqos-aa6.12/.13 closed); Tijori sector charts scoped to covered companies (aa6.24). DOCS-1 Apar document backfill is live: transcripts 12/8, presentations 12/8, annual reports 5/5, credit ratings 6/6 (RESULTS classifier gap eqos-msq.2); daily intake scheduled 21:30 IST. Live canary: all runbook checks green after the Tijori envelope fix (aa6.25); red only on 4 never-usable company surfaces, being fixed in eqos-aa6.21/.22.",
     "stage": "Build"
   },
   "next": [
-    "Two live vendor capture-due runs on one day, then vendor canary",
-    "eqos-aa6.21: fix readers that fail on live APARINDS shapes",
-    "eqos-aa6.22: redirecting surfaces (quarter PDFs, shareholding detail charts)",
+    "eqos-aa6.21 / eqos-aa6.22 (Opus, in progress) -> canary green -> close eqos-aa6.15",
+    "eqos-msq.2: results classifier; then close eqos-msq",
+    "Owner: scope remaining market-wide Tijori listings?",
     "eqos-dna.3: sealed legacy ledger misreads FY26_Q3 cables CAGR"
   ],
   "log": [
+    {
+      "date": "2026-10-31",
+      "text": "DOCS-1 Task 5: rehearsal + live backfill (CITE/GAP equal), acceptance MET except RESULTS (eqos-msq.2), backup drill faithful, daily schedule 16:00 UTC. Fixes: eqos-azn (backup body-absent captures), eqos-msq.1 (honest UA to vendors), eqos-aa6.24 (sector scope)."
+    },
+    {
+      "date": "2026-10-31",
+      "text": "VS: Tijori dropped 'status' from JSON envelopes overnight; canary T4 caught it; eqos-aa6.25 merged (cbca7b6b). Phase 2+3 live exits passed; eqos-aa6.12/.13 closed."
+    },
     {
       "date": "2026-10-30",
       "text": "VS live run 2 passed: capture --symbol APARINDS exit 0, expected 213 / completed 178 / refused 0 / incomplete 35; 211 fetches, no 429 or 1010. eqos-aa6.19 and eqos-aa6.20 closed (live-verified); follow-ups eqos-aa6.21, eqos-aa6.22. Worktrees cleaned up (46 removed)."
