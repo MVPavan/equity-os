@@ -119,7 +119,7 @@ from fundamentals.evidence.vendor_screener import ScreenerIssuerBinding
 from fundamentals.ingest.http_session import NoRedirectHandler, read_bounded
 from fundamentals.ingest.nse_filings import NSE_API
 from fundamentals.ingest.screener_financials_models import Section
-from fundamentals.ingest.screener_session_models import BasisTopology
+from fundamentals.ingest.screener_session_models import DEFAULT_USER_AGENT, BasisTopology
 from fundamentals.ingest.screener_session_page import parse_document, read_identity
 from fundamentals.ingest.tijori_capture import COMPANY_DETAILS_ISLAND, FINANCIALS_PAGE_LABEL
 from fundamentals.ingest.tijori_page import JsonScriptCollector, decode_document
@@ -269,6 +269,9 @@ def live_transport() -> Send:
             request.url
         ).netloc == "www.bseindia.com":
             headers |= _BSE_HEADERS
+        # Vendor sites get the honest project UA, never a browser's.
+        if request.source_id in cookies:
+            headers["User-Agent"] = DEFAULT_USER_AGENT
         cookie = cookies.get(request.source_id)
         if cookie:
             headers["Cookie"] = _SESSION_COOKIE.format(value=cookie.get_secret_value())
