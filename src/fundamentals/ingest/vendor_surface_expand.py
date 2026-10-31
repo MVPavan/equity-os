@@ -365,6 +365,7 @@ EXPANSIONS: Mapping[str, Callable[[Body, ParseContext], tuple[Request, ...]]] = 
 }
 
 
+NO_SECTOR = "/sector/None"
 # Parent ids are finite; only these retained advertisements may create requests.
 MARKET_PARENTS = {
     "screener_market_levels": ("market-overview", "market-level"),
@@ -376,7 +377,7 @@ MARKET_PARENTS = {
     "screener_authors": ("screen-page",),
     "screener_capsules": ("explore",),
     "screener_insiders": ("trades-feed",),
-    "tijori_sectors": ("search-page",),
+    "tijori_sectors": ("company-overview",),
     "tijori_indices": ("markets",),
     "tijori_widgets": ("markets",),
     "tijori_sector_charts": ("sector-page",),
@@ -449,10 +450,9 @@ def screener_hs(body: Body, context: ParseContext) -> tuple[Request, ...]:
 
 
 def tijori_sectors(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Sector slugs are the search page's published sector options."""
-    return market_children(
-        context, body.tree().xpath('//option[starts-with(@value,"/sector/")]/@value')
-    )
+    """A covered company page links its one sector, or `/sector/None` when it has none."""
+    links = re.findall(r'"url": "(/sector/[^"]+)"', body.raw.decode())
+    return market_children(context, (link for link in links if link != NO_SECTOR))
 
 
 def tijori_indices(body: Body, context: ParseContext) -> tuple[Request, ...]:
@@ -574,6 +574,7 @@ def advertised(
             not children
             and spec.id != "company-compare"
             and not (spec.id == "segments-api" and b"Product Segments" not in body.raw)
+            and not (spec.id == "sector-page" and f'"{NO_SECTOR}"'.encode() in body.raw)
         ):
             gaps.append(f"{prefix}: no advertised children")
         found.extend(children)
