@@ -37,7 +37,7 @@ from fundamentals.store.vendor_values_store import (
 )
 
 MAX_FEED_PAGES = 20
-TRAVERSAL_VERSION = "traversal.v4"
+TRAVERSAL_VERSION = "traversal.v5"
 # Index and sector pages are advertised only by company pages: route through verified ones.
 COMPANY_PAGES = """SELECT DISTINCT ON (a.url) c.*, a.url FROM eqos.capture_refs c
 JOIN eqos.capture_addresses a ON a.capture_ref_id = c.id
@@ -166,17 +166,21 @@ def alternatives(path: str) -> list[str]:
     ]
 
 
-def market_requests(specs: tuple[SurfaceSpec, ...], pool: ConnectionPool) -> tuple[Request, ...]:
-    """Build finite hub requests; parameterized children wait for retained parents."""
+def market_requests(
+    specs: tuple[SurfaceSpec, ...], pool: ConnectionPool, covered: tuple[int, ...]
+) -> tuple[Request, ...]:
+    """Build finite hub requests; result feeds name only the covered Tijori company ids."""
     requests = []
     for spec in specs:
-        if spec.scope is not Scope.MARKET or spec.expand:
+        by_company = "company_ids=" in spec.path
+        if spec.scope is not Scope.MARKET or spec.expand or by_company and not covered:
             continue
         for path in alternatives(spec.path):
             path = path.split(" -> ")[0]
             for token in re.findall(r"\{([^{}]+)\}", path):
                 path = path.replace("{" + token + "}", "1" if token == "n" else "")
             path = re.sub(r" \(\+ (\S+)\)", r" | \1", path.replace("&...", ""))
+            path = path.replace("company_ids=", f"company_ids={','.join(map(str, covered))}")
             for variant in path.split(" | "):
                 requests.append(
                     Request(
@@ -228,6 +232,9 @@ def continuation(request: Request, body: Body, page: int) -> str | None:
         "screens-list",
         "screen-page",
         "product-prices",
+        "quarterly-results",
+        "upcoming-events",
+        "whats-new",
         "filter-popular-queries",
         "filter-public-queries",
         "filter-popular-queries-api",
@@ -270,13 +277,14 @@ def capture_market(
     requests: tuple[Request, ...] | None = None,
     today: date | None = None,
     scheduled: bool = False,
+    covered: tuple[int, ...] = (),
 ) -> RunReport:
     """Capture finite advertisements and resume each feed from registered evidence.
 
     A scheduled subset captures only its requests (each traversal to its end or cap); advertised
     children wait for the scheduler, which enqueues the eligible ones.
     """
-    pending = list(market_requests(specs, pool) if requests is None else requests)
+    pending = list(market_requests(specs, pool, covered) if requests is None else requests)
     routes, gaps = company_routes(store, pool, specs) if requests is None else ((), ())
     pending.extend(routes)
     seen: set[str] = set()

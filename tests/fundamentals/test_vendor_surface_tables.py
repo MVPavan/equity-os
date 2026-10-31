@@ -238,7 +238,7 @@ MARKET_SPECS = load_specs(
 )
 register_tables(MARKET_SPECS)
 MARKET_NONFEEDS = (
-    "market-pulse market-level index-page person-page screen-raw raw-materials idea-card-body"
+    "market-pulse market-level index-page person-page screen-raw raw-materials"
 ).split()
 MARKET_ROWS = {
     "results-latest": ("Info Edg.(India)", "K P R Mill Ltd"),
@@ -258,8 +258,6 @@ MARKET_ROWS = {
     "quarterly-results-api": ("Kkalpana Plastick", "Hindustan Unilever"),
     "upcoming-events-api": ("Adjia Technologies", "Vishal Nirmiti"),
     "raw-materials": ("Acetone", "Caustic Soda Lye"),
-    "idea-page": (),
-    "idea-card-body": ("Seshasayee Paper", "Shakti Pumps (India)"),
 }
 
 
@@ -289,11 +287,7 @@ def test_market_tables_and_feed_rows(surface):
     assert len({(v.table_key, v.row_index, v.column_index) for v in cells}) == len(cells)
     for expected in MARKET_ROWS[surface]:
         assert any(v.raw_text == expected for v in cells)
-    if surface == "idea-page":
-        assert cells == ()  # The only retained 200 explicitly reports no data.
-        with pytest.raises(ValueError):
-            entry.parse(Body(raw=raw.replace(b"card_tj no_data", b"card_tj changed")), context)
-    elif surface not in MARKET_NONFEEDS:
+    if surface not in MARKET_NONFEEDS:
         events = feed_rows(spec, cells)
         assert len(events) >= 2 and all(e.row_id and e.company for e in events)
         # Two retained trades differ only by value; the market run reports that page.
@@ -554,59 +548,6 @@ def test_unreadable_numeric_g2_column_remains_expected(pg_db, tmp_path, surface,
                 "SELECT status FROM eqos.vendor_outcomes WHERE capture_ref_id=%s",
                 (ref.capture_ref_id,),
             ).fetchall() == [("PARTIAL",)]
-
-
-IDEA_CARD = (
-    '<div class="cards_container"><div class="card_tj"><div class="company">'
-    '<div class="name_cap__container"><div class="name__container"><a href="/company/x/">'
-    '<span>X Sec.</span></a></div><div class="mcap_classification"><span>Small cap</span></div>'
-    '</div><div class="date"> Oct 30, 2026 </div></div><div class="link_date_container">'
-    '<div class="link"><a href="https://www.bseindia.com/x.pdf"><span>X Proposes Merger</span>'
-    '</a></div><div class="date"> </div></div></div></div>'
-)
-IDEA_TABLE = (
-    '<div class="table_container"><table><thead><tr><th>Company</th><th>Date</th>'
-    '<th>Market Cap (Cr.)</th></tr></thead><tbody><tr><td><a href="/company/y/">Y Ltd</a></td>'
-    "<td>30 Oct 2026</td><td>1,234</td></tr></tbody></table></div>"
-)
-
-
-@pytest.mark.parametrize(
-    ("page", "expected"),
-    [
-        (
-            IDEA_CARD,
-            [
-                ("X Sec.", "/company/x/"),
-                ("Oct 30, 2026", None),
-                ("X Proposes Merger", "https://www.bseindia.com/x.pdf"),
-            ],
-        ),
-        (IDEA_TABLE, [("Y Ltd", "/company/y/"), ("30 Oct 2026", None), ("1,234", None)]),
-        (
-            IDEA_TABLE.split("<tbody>")[0] + "<tbody></tbody></table></div>",
-            [],  # Live buyback page: the header with no rows is legitimately empty.
-        ),
-    ],
-    ids=["filing-cards", "stock-table", "empty-table"],
-)
-def test_live_idea_pages_keep_cards_and_tables(page, expected):
-    """Live idea slugs (2026-10-30) render filing cards or stock tables, not only no_data."""
-    entry = PARSERS[Site.TIJORI, "idea-page"]
-    context = ParseContext(
-        ids=None,
-        basis=None,
-        url="https://www.tijorifinance.com/ideas-dashboard/merger/",
-        retrieved_at=datetime(2026, 10, 30, tzinfo=UTC),
-        body_sha256="fixture",
-        capture_id="fixture",
-    )
-    cells = entry.parse(Body(raw=f"<html><body>{page}</body></html>".encode()), context)
-    assert [(c.raw_text, c.link) for c in cells] == expected
-    # A card without its company link is an unknown shape, not an empty one.
-    broken = IDEA_CARD.replace('<a href="/company/x/">', "<a>")
-    with pytest.raises(ValueError):
-        entry.parse(Body(raw=f"<html><body>{broken}</body></html>".encode()), context)
 
 
 @pytest.mark.parametrize(

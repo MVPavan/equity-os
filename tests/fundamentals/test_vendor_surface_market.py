@@ -238,7 +238,7 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
     "hub_names",
     [
         "explore screens-list hs-search-api search-page markets macro people-search",
-        "sector-page screen-page ideas-dashboard filter-popular-queries-api",
+        "sector-page screen-page filter-popular-queries-api",
     ],
 )
 def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
@@ -272,7 +272,6 @@ def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
             "/api/v1/sector/company-opm/",
             "/api/v1/sector/area-chart/",
             "/user/",
-            "/ideas-dashboard/",
         )
     )
     assert all(
@@ -359,7 +358,7 @@ def test_announcements_continue_through_the_show_more_timestamp(market_rig):
 def test_hub_requests_include_optional_bases_and_named_companions():
     found = {
         (r.spec.id, urlsplit(r.url).path, urlsplit(r.url).query)
-        for r in market.market_requests(MARKET_SPECS, None)
+        for r in market.market_requests(MARKET_SPECS, None, ())
     }
     # `[x]` is optional in the catalog: the bare page is a real, distinct listing.
     assert {
@@ -392,7 +391,7 @@ def test_unusable_market_surfaces_are_not_requested_and_feeds_send_accepted_quer
     }
     found = {
         (r.spec.id, urlsplit(r.url).path, urlsplit(r.url).query)
-        for r in market.market_requests(MARKET_SPECS, None)
+        for r in market.market_requests(MARKET_SPECS, None, (129, 7))
         if r.spec.id in fixed
     }
     # Screener 302s blank date filters (and /concalls/upcoming/) to the bare listing; Tijori
@@ -405,14 +404,30 @@ def test_unusable_market_surfaces_are_not_requested_and_feeds_send_accepted_quer
         (
             "quarterly-results-api",
             "/results/quarterly-results/api/",
-            "page=1&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=",
+            "page=1&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=129,7",
         ),
         (
             "upcoming-events-api",
             "/results/upcoming-events/api/",
-            "page=1&mcap=&timeline_type=all&sectors=&company_ids=&type=results",
+            "page=1&mcap=&timeline_type=all&sectors=&company_ids=129,7&type=results",
         ),
     }
+
+
+def test_tijori_market_listings_fetch_only_covered_companies():
+    """Owner (eqos-aa6.26): fetch only what the covered universe needs, not market-wide pages."""
+    feeds = {"quarterly-results-api", "upcoming-events-api"}
+    # The result feeds name the covered companies, so no page carries an uncovered company.
+    assert not {r.spec.id for r in market.market_requests(MARKET_SPECS, None, ())} & feeds
+    # Idea themes are not tied to a covered company, so none is requested.
+    assert not {s.id for s in MARKET_SPECS} & {"idea-page", "idea-card-body"}
+    # Landing pages and the changelog keep their first page; later pages are market-wide.
+    more = Body(raw=b'<html><body><button class="show_more">More</button></body></html>')
+    for spec in (
+        s for s in MARKET_SPECS if s.id in {"quarterly-results", "upcoming-events", "whats-new"}
+    ):
+        request = Request(spec=spec, url=f"https://x{spec.path}", ids=None, due_since=None)
+        assert market.continuation(request, more, 1) is None
 
 
 @pytest.mark.pg
@@ -431,10 +446,10 @@ def test_market_children_expand_at_the_parent_retrieval_time(market_rig, tmp_pat
     from fundamentals.ingest.vendor_surface_fetch import request_key
 
     opener, pool, run = market_rig
-    row = next(r for r in opener.rows.values() if r["id"] == "ideas-dashboard")
+    row = next(r for r in opener.rows.values() if r["id"] == "macro")
     hub = next(s for s in MARKET_SPECS if s.id == row["id"])
     seen = []
-    monkeypatch.setitem(EXPANSIONS, "tijori_ideas", lambda body, ctx: seen.append(ctx) or ())
+    monkeypatch.setitem(EXPANSIONS, "tijori_macro", lambda body, ctx: seen.append(ctx) or ())
     run(MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),))
     record = SnapshotStore(tmp_path / "captures").get_capture(
         Site.TIJORI.value, "vs." + hub.id, request_key(row["url"]), seen[0].capture_id

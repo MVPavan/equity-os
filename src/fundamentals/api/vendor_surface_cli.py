@@ -36,7 +36,7 @@ from fundamentals.ingest.vendor_surface_capture import (
     reparse,
 )
 from fundamentals.ingest.vendor_surface_claims import extract_text
-from fundamentals.ingest.vendor_surface_due import capture_due
+from fundamentals.ingest.vendor_surface_due import capture_due, covered_universe
 from fundamentals.ingest.vendor_surface_expand import lineage
 from fundamentals.ingest.vendor_surface_fetch import (
     PgSiteLock,
@@ -242,7 +242,14 @@ def dispatch_vendor_command(
             locks = PgSiteLock(pool)
             fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
             try:
-                report = capture_market(fetcher, store, pool, values, tuple(selected))
+                covered = tuple(
+                    i.tijori_company_id
+                    for i in covered_universe(pool, store)
+                    if i.tijori_company_id
+                )
+                report = capture_market(
+                    fetcher, store, pool, values, tuple(selected), covered=covered
+                )
             finally:
                 locks.close()
             sys.stdout.write(report.model_dump_json() + "\n")
