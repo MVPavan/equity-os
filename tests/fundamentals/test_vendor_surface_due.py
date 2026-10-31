@@ -440,7 +440,7 @@ def test_budget_captures_each_due_request_once_oldest_first(due_rig):
         "fii-api",
         site=Site.SCREENER,
     )
-    oldest_first = tuple(reversed(market_requests(specs, rig.pool)))
+    oldest_first = tuple(reversed(market_requests(specs, rig.pool, ())))
     assert len(oldest_first) == 7
     capture_market(
         rig.fetcher(), rig.store, rig.pool, VendorValuesStore(rig.pool), (), requests=oldest_first

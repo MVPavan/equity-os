@@ -62,3 +62,12 @@ Each row never returned a usable page in live runs, so `config/vendor_surface/su
 | tijori | `index-search-api` `/api/v1/sector/index-search/{q}/` | no parameter | A blank term 404s; any term would be invented, and index ids come from `/in/markets` |
 | tijori | `index-metric-data-api` `/api/v1/sector/index-metric-data/{index_id}/{metric}` | no parameter | All 27 widget-field metrics 500; no retained page advertises the metric names |
 | tijori | `filter-popular-query-results-api` `/api/filter_queries/popular-query/results/?financial=` | broken | All 22 advertised queries 500; the `filters.js` toggle values were never retained |
+
+## Dropped from the capture spec: not tied to a covered company (2026-10-31, eqos-aa6.26)
+
+Owner directive: fetch only what the covered universe needs. The catalog entry stays as the research record. The Tijori result feeds (`quarterly-results-api`, `upcoming-events-api`) stay, but now send the covered companies' Tijori ids in `company_ids=`; the `quarterly-results`, `upcoming-events` and `whats-new` pages keep only their first page.
+
+| Site | Surface / URL | Class | Reason |
+|---|---|---|---|
+| tijori | `idea-page` `/ideas-dashboard/{slug}/` | out of scope | Not tied to a covered company: one page per market-wide idea theme (19 advertised) |
+| tijori | `idea-card-body` `/ideas-dashboard/{slug}/card-body/` | out of scope | Not tied to a covered company: the card fragment of each idea theme |

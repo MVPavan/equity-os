@@ -390,7 +390,9 @@ def due_requests(
             if is_due(spec, last, now, key in pending):
                 due.append(request.model_copy(update={"due_since": request.due_since or last}))
 
-    queue(tree(market_requests(specs, pool), seen, expander(store, specs, ())), {}, {}, set(), "")
+    covered = tuple(i.tijori_company_id for i in universe if i.tijori_company_id)
+    hubs = market_requests(specs, pool, covered)
+    queue(tree(hubs, seen, expander(store, specs, ())), {}, {}, set(), "")
     for ids in universe:
         peers = tuple(o.screener_company_id for o in universe if o != ids and o.screener_company_id)
         expand, roots = expander(store, specs, peers), company_requests(specs, ids)

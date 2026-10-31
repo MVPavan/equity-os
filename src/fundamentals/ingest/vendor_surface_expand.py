@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urljoin
 
 from fundamentals.ingest.screener_company_models import InvestorHook, Periodicity, SegmentHook
 from fundamentals.ingest.screener_financials_models import MAX_SCHEDULE_DEPTH, Section
@@ -371,8 +371,6 @@ MARKET_PARENTS = {
     "tijori_widgets": ("markets",),
     "tijori_sector_charts": ("sector-page",),
     "tijori_macro": ("macro",),
-    "tijori_ideas": ("ideas-dashboard",),
-    "tijori_idea_cards": ("idea-page",),
 }
 
 
@@ -452,11 +450,6 @@ def tijori_indices(body: Body, context: ParseContext) -> tuple[Request, ...]:
     )
 
 
-def tijori_idea_cards(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """The card fragment is the one fixed child of the retained idea page."""
-    return market_children(context, (urlsplit(context.url).path.rstrip("/") + "/card-body/",))
-
-
 def tijori_widgets(body: Body, context: ParseContext) -> tuple[Request, ...]:
     """Follow the hub script: each expanding metric reads its own table, row and cell."""
     spec = child_spec(context)
@@ -485,7 +478,6 @@ MARKET_EXPANSIONS.update(
             screener_hs,
             tijori_sectors,
             tijori_indices,
-            tijori_idea_cards,
             tijori_widgets,
         )
     }

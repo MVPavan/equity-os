@@ -194,7 +194,7 @@ surfaces are fetched for discovery only. **G4** surfaces are fetched and kept bu
 | G1 series | screener | chart-api, fii-api, hs-data-api |
 | G1 series | tijori | chartdata-price-api, chartdata-valuation-api, chartdata-median-pe-api, capex-api, debt-api, revenue-mix-history-api, financials-popup-chart-api, financial-statement-compare-api, macro-chart-api, sector-ms-chart-api, sector-company-opm-api, index-data-api, index-metric-data-api |
 | G2 tables/lists | screener | section-documents, company-trades, company-announcements, results-latest, upcoming-results, concalls-feed, annual-reports-feed, announcements-feed, market-pulse, corporate-actions-feed, trades-feed, ipo, ratings-feed, market-level, index-page, person-page, screen-raw (HTML, Task 10's table reader) |
-| G2 tables/lists | tijori | overview-company-filings, overview-customers, overview-suppliers, overview-brands, overview-connections, shareholding-overview (Overview table), shareholding-trend, quarterly-results-api, upcoming-events-api, raw-materials, idea-page, idea-card-body |
+| G2 tables/lists | tijori | overview-company-filings, overview-customers, overview-suppliers, overview-brands, overview-connections, shareholding-overview (Overview table), shareholding-trend, quarterly-results-api, upcoming-events-api, raw-materials |
 | G3 cells + label proposals | screener | section-insights, company-compare |
 | G3 cells + label proposals | tijori | company-benchmarking, benchmarking-benchmarking-financial, benchmarking-benchmarking-business |
 | TXT | screener | company-page (About, Key Points; its headline is G0), plus the subject text of rows already parsed from company-announcements and announcements-feed |
@@ -244,7 +244,6 @@ Handler regexes tolerate whitespace before `(` (audit finding 4 shape).
 | Tijori company overview (verified; aa6.24) | its one sector link (`/sector/None` = none), so only covered companies' sectors | sector-page → sector-ms-chart-api (`chart_id`), sector-company-opm-api (`metric_id`); sector-area-chart-api is kept only (pending a 200) |
 | Tijori `markets` | index ids | index-data-api → index-metric-data-api (`metric`) |
 | Tijori `macro` | indicator ids | macro-chart-api |
-| Tijori `ideas-dashboard` | idea slugs | idea-page → idea-card-body |
 | Screener `screens-list` (first page) | screen links | screen-page (G4) |
 | Screener `screen-page` (first page) | author profile links | user-public-profile (G4) |
 | Screener `hs-search-api` (first result page) | commodity links | commodity-page (G4) |
@@ -983,7 +982,9 @@ Goal: parsers for the G2 market surfaces:
 - Screener: results-latest, upcoming-results, concalls-feed, annual-reports-feed,
   announcements-feed, market-pulse, corporate-actions-feed, trades-feed, ipo, ratings-feed,
   market-level, index-page, person-page, screen-raw (an HTML table, read by `read_html_table`);
-- Tijori: quarterly-results-api, upcoming-events-api, raw-materials, idea-page, idea-card-body.
+- Tijori: quarterly-results-api, upcoming-events-api (both scoped by `company_ids=` to the covered
+  companies, aa6.26), raw-materials. Idea pages are not tied to a covered company and are dropped
+  (aa6.26, `not-capturable.md`).
 
 Only the feeds (spec flag `feed: true`) convert to `FeedRow`: results-latest, upcoming-results,
 concalls-feed, annual-reports-feed, announcements-feed, corporate-actions-feed, trades-feed, ipo,
@@ -992,7 +993,7 @@ stable row id (link or announcement id), the company link or symbol, and its dat
 feed shows a full one. Ratings and annual-report rows are undated or year-only: `row_date` is
 `None`, a year stays a cell, and retrieval time stays capture metadata; no date is invented. The
 other G2 market surfaces (market-pulse, a hub of category links and counts; market-level,
-index-page, person-page, screen-raw, raw-materials, idea-page, idea-card-body) keep only
+index-page, person-page, screen-raw, raw-materials) keep only
 positional cells and links; no date is validated on them.
 
 Files:
