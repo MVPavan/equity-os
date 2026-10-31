@@ -137,7 +137,15 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
         for entry in catalog[site]["entries"]
         if entry["scope"] == "company"
         and "#" not in entry["url_pattern"]
-        and entry["id"] not in ("pre-listing-company", "company-consolidated-empty-shell")
+        and entry["id"]
+        not in (
+            "pre-listing-company",
+            "company-consolidated-empty-shell",
+            # Dropped from the spec: docs/research/vendor-surface/not-capturable.md.
+            "quarter-source-pdf",
+            "company-benchmarking",
+            "market-share-api",
+        )
     }
     if symbol not in ("APARINDS", "HDFCBANK"):
         expected.remove("segments-api")
@@ -153,7 +161,6 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
     # Only these catalog obligations can legitimately lack advertisements in this corpus.
     allowed_gaps = {
         "company-compare",
-        "quarter-source-pdf",
         "shareholding-detail-chart-api",
         "market-share-peer-companies-api",
         "op-metrics-api",
@@ -190,9 +197,7 @@ def test_company_breadth(company_rig, run_company, pg_db, symbol):
     retained_200 = {
         url for url in opener.calls if url in opener.rows and opener.rows[url]["status"] == 200
     }
-    allowed = {
-        ("company-benchmarking", "ValueError"),  # G3 parent belongs to Phase 4.
-    }
+    allowed = set()
     if symbol == "HDFCBANK":
         allowed.add(("segments-api", "SegmentReconciliationError"))
     if symbol == "NETWEB":
@@ -836,40 +841,6 @@ def test_replay_expands_only_verified_captures_at_shared_url(
         } == {hashlib.sha256(valid.raw).hexdigest()}
 
 
-def test_configured_benchmarking_parent_is_kept_with_section_outcomes(pg_db, tmp_path):
-    from vendor_surface_support import capture_response
-
-    from fundamentals.ingest.vendor_surface_capture import Request
-
-    specs = load_specs(
-        Path("config/vendor_surface/surfaces.yaml"),
-        Path("docs/research/vendor-surface/catalog.yaml"),
-    )
-    spec = next(s for s in specs if s.site == Site.TIJORI and s.id == "company-benchmarking")
-    body, context = retained("tijori", "company-benchmarking", "HDFCBANK")
-    store = SnapshotStore(tmp_path / "store")
-    with pg_db.runtime_pool() as pool:
-        ref = capture_response(
-            pool,
-            store,
-            tmp_path / "stops",
-            Request(spec=spec, url=context.url, ids=context.ids, due_since=None),
-            body.raw,
-        )
-        with pool.connection() as conn:
-            outcomes = conn.execute(
-                "SELECT surface,status,row_count FROM eqos.vendor_outcomes "
-                "WHERE capture_ref_id=%s ORDER BY surface",
-                (ref.capture_ref_id,),
-            ).fetchall()
-    assert [row[:2] for row in outcomes] == [
-        ("benchmarking-benchmarking-business", "OK"),
-        ("benchmarking-benchmarking-financial", "OK"),
-        ("company-benchmarking", "KEPT"),
-    ]
-    assert all(count > 0 for _, _, count in outcomes[:2])
-
-
 def test_replay_uses_each_captures_parent_not_oldest(
     company_rig, run_company, pg_db, tmp_path, monkeypatch
 ):
@@ -975,3 +946,22 @@ def test_claim_failure_does_not_change_capture_usability(company_rig, run_compan
         assert all(s.usable for items in after.values() for s in items), (
             "claims failure overrides acquisition outcome"
         )
+
+
+def test_unusable_company_surfaces_are_not_requested_and_redirects_are_corrected():
+    """Live 2026-10-30/31 captures never returned a page for these requests (eqos-aa6.22)."""
+    from fundamentals.ingest.vendor_surface_expand import child
+
+    # Off-host BSE PDF redirect, vendor move to /factors/, and an NSE-symbol 404 never
+    # yield a usable page: requesting them only reports COMPANY_OVERDUE (not-capturable.md).
+    assert not {s.id for s in SPECS} & {
+        "quarter-source-pdf",
+        "company-benchmarking",
+        "market-share-api",
+    }
+    # The modal 302s to the company page unless sent as XHR, as the vendor page sends it.
+    assert next(s for s in SPECS if s.id == "commentary-modal").xhr
+    # The unslashed chart address 301s to its slashed form.
+    _, context = retained("screener", "company-page", "APARINDS")
+    spec = next(s for s in SPECS if s.id == "shareholding-detail-chart-api")
+    assert child(spec, context, field="f", source="s").url.endswith("/f/s/")

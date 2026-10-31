@@ -525,24 +525,24 @@ def test_t8_needs_a_same_host_dashboard_redirect(location, passed):
     assert canary.check(fetched, b"") == (() if passed else ("T8.location",))
 
 
-@pytest.mark.parametrize(
-    "initial", ["company-benchmarking", "benchmarking-benchmarking-financial", "claims-only"]
-)
+@pytest.mark.parametrize("initial", ["company-shareholding", "shareholding-trend", "claims-only"])
 def test_missing_logical_outcomes_are_detected_until_parent_dispatch_completes(pg_db, initial):
     from fundamentals.ingest.vendor_surface_canary import yield_drift
 
     required = [
-        "company-benchmarking",
-        "benchmarking-benchmarking-financial",
-        "benchmarking-benchmarking-business",
+        "company-shareholding",
+        "shareholding-overview",
+        "shareholding-trend",
+        "shareholding-detailed",
+        "shareholding-faqshareholding",
     ]
-    record = record_of(b"fixture", "tijori", "vs.company-benchmarking")
+    record = record_of(b"fixture", "tijori", "vs.company-shareholding")
     with pg_db.runtime_pool() as pool:
         ref = register(
             pool,
             Fetched(
                 record=record,
-                url="https://www.tijorifinance.com/company/x/benchmarking/",
+                url="https://www.tijorifinance.com/company/x/shareholding/",
                 location=None,
             ),
         )

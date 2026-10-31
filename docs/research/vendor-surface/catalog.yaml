@@ -1382,7 +1382,7 @@ screener:
     existing:
       status: none
       ref: S26
-    notes: XHR-only modal; 302 without X-Requested-With.
+    notes: "XHR-only modal; 302 without X-Requested-With. Live 2026-10-30/31 (eqos-aa6.22): 302 to the company page without X-Requested-With; the spec sends it as XHR."
   - id: company-notebook-modal
     scope: account
     url_pattern: /notebook/{company_id}/
@@ -1518,7 +1518,7 @@ screener:
     existing:
       status: none
       ref: S21; link extraction exists (parent hrefs parsed into RowLink, ingest/screener_financials_tables.py:479); redirect target never fetched
-    notes: 302 to an off-host BSE PDF.
+    notes: "302 to an off-host BSE PDF. Live 2026-10-30/31 (eqos-aa6.22): every month 302s to bseindia.com AnnPdfOpen; not requested (not-capturable.md)."
   - id: company-sublists-api
     scope: account
     url_pattern: /api/company/sublists/{company_id}/
@@ -1856,7 +1856,7 @@ screener:
     notes: null
   - id: sectors-filter-api
     scope: market
-    url_pattern: /api/get/sectors/?url_name={screen|goto_sublist|company_page}&...
+    url_pattern: "/api/get/sectors/?url_name=goto_sublist"
     format: html-fragment
     found_by:
     - opus
@@ -1882,7 +1882,7 @@ screener:
     existing:
       status: none
       ref: ''
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): screen and company_page 404 without a screen id; goto_sublist returns 200."
   - id: market-overview
     scope: market
     url_pattern: /market/
@@ -2118,7 +2118,7 @@ screener:
     notes: null
   - id: results-latest
     scope: market
-    url_pattern: /results/latest/?p=&mcap=&result_update_date__day=&__month=&__year=
+    url_pattern: /results/latest/
     format: html
     found_by:
     - opus
@@ -2155,10 +2155,10 @@ screener:
     existing:
       status: none
       ref: S38
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): blank date filters 302 to /results/latest/, the reference address."
   - id: upcoming-results
     scope: market
-    url_pattern: /upcoming-results/?p=&mcap=&sme=&watchlist=&result_date__month=
+    url_pattern: /upcoming-results/
     format: html
     found_by:
     - opus
@@ -2187,10 +2187,10 @@ screener:
     existing:
       status: none
       ref: S37
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): blank date filters 302 to /upcoming-results/, the reference address."
   - id: concalls-feed
     scope: market
-    url_pattern: /concalls/[upcoming/]?p=&o=&date__year=&q=
+    url_pattern: /concalls/
     format: html
     found_by:
     - opus
@@ -2218,7 +2218,7 @@ screener:
     existing:
       status: none
       ref: S35
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): both forms with blank filters 302 to /concalls/, the reference address."
   - id: annual-reports-feed
     scope: market
     url_pattern: /annual-reports/?p=&mcap=&optimism=&sectors=&watchlist=
@@ -4777,7 +4777,7 @@ tijori:
     notes: Templated Q&A text.
   - id: shareholding-detail-chart-api
     scope: company
-    url_pattern: /api/v1/ind/shareholding_detailed_chart_data/{company_id}/{field}/{source}
+    url_pattern: "/api/v1/ind/shareholding_detailed_chart_data/{company_id}/{field}/{source}/"
     format: json
     found_by:
     - sol
@@ -4795,7 +4795,7 @@ tijori:
     existing:
       status: none
       ref: T03 parses rendered breakups only
-    notes: 'Never fetched: discovery evidence only.'
+    notes: "Never fetched: discovery evidence only. Live 2026-10-30/31 (eqos-aa6.22): the unslashed script template 301s to this slashed form."
   - id: company-benchmarking
     scope: company
     url_pattern: /company/{slug}/benchmarking/
@@ -4835,7 +4835,7 @@ tijori:
     existing:
       status: none
       ref: T33/T34
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): 301 to /company/{slug}/factors/, a page with no retained reference; not requested (not-capturable.md)."
   - id: benchmarking-benchmarking-financial
     scope: company
     url_pattern: /company/{slug}/benchmarking/#benchmarking-financial
@@ -5824,8 +5824,7 @@ tijori:
     existing:
       status: none
       ref: T07 parses the island only
-    notes: market-share-chart.js takes {ticker} from the ms-charts island's all_peers[].ticker (absent from today's APARINDS island) or, when
-      company_ms and ms_locks.historic hold, from market-share-peer-companies-api data[][1]. The NSE symbol 404s.
+    notes: "market-share-chart.js takes {ticker} from the ms-charts island's all_peers[].ticker (absent from today's APARINDS island) or, when company_ms and ms_locks.historic hold, from market-share-peer-companies-api data[][1]. The NSE symbol 404s. Live 2026-10-30/31 (eqos-aa6.22): 404 \"Market share data not available!\" for APARINDS; not requested (not-capturable.md)."
   - id: market-share-peer-companies-api
     scope: company
     url_pattern: /api/v1/ind/market_share_peer_companies/{company_id}/{chart_company_id}/
@@ -6275,7 +6274,7 @@ tijori:
     existing:
       status: none
       ref: T44
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): 404 for the blank search term; any term would be invented; not requested (not-capturable.md)."
   - id: index-data-api
     scope: market
     url_pattern: /api/v1/sector/index-data/{index_id}/
@@ -6325,7 +6324,7 @@ tijori:
     existing:
       status: none
       ref: T44
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): 500 for all 27 index/widget-field pairs (company_trailings, price, roe); the only 200 is the reference metric pe, which no retained page advertises; not requested (not-capturable.md)."
   - id: filter
     scope: market
     url_pattern: /filter/[?qt=basic]
@@ -6803,7 +6802,7 @@ tijori:
     notes: null
   - id: quarterly-results-api
     scope: market
-    url_pattern: /results/quarterly-results/api/?page=&sort_by=&mcap=&timeline_type=&sectors=&company_ids=
+    url_pattern: "/results/quarterly-results/api/?page={n}&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids="
     format: html-fragment
     found_by:
     - opus
@@ -6836,7 +6835,7 @@ tijori:
     existing:
       status: none
       ref: T40
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): blank page 400s \"Invalid page number\"; values follow the reference and runbook T7."
   - id: upcoming-events
     scope: market
     url_pattern: /results/upcoming-events/
@@ -6953,7 +6952,7 @@ tijori:
     notes: null
   - id: upcoming-events-api
     scope: market
-    url_pattern: /results/upcoming-events/api/?page=&mcap=&timeline_type=&type=
+    url_pattern: "/results/upcoming-events/api/?page={n}&mcap=&timeline_type=all&sectors=&company_ids=&type=results"
     format: html-fragment
     found_by:
     - opus
@@ -6977,7 +6976,7 @@ tijori:
     existing:
       status: none
       ref: T40/T41
-    notes: null
+    notes: "Live 2026-10-30/31 (eqos-aa6.22): blank page 400s \"Invalid page number\"; values follow the reference."
   - id: concall-monitor
     scope: market
     url_pattern: /results/concall-monitor/
@@ -8012,7 +8011,7 @@ tijori:
     existing:
       status: none
       ref: T51
-    notes: 'Used instead of advanced_search when /filter/ is opened with ?popular= (filters.js createUrl). Never fetched: discovery evidence only.'
+    notes: "Used instead of advanced_search when /filter/ is opened with ?popular= (filters.js createUrl). Never fetched: discovery evidence only. Live 2026-10-30/31 (eqos-aa6.22): 500 for all 22 advertised popular queries with blank toggles; filters.js values not retained; not requested (not-capturable.md)."
   - id: site-timeline-upcoming
     scope: account
     url_pattern: /in/timeline/upcoming/self?portfolios={ids}&watchlists={ids}&companysearch={q}

@@ -149,10 +149,7 @@ def test_adapter_bounds_with_fake_transport(monkeypatch, failure):
     "site,surface",
     [
         (Site.SCREENER, "section-insights"),
-        (Site.TIJORI, "benchmarking-benchmarking-financial"),
-        (Site.TIJORI, "benchmarking-benchmarking-business"),
         (Site.SCREENER, "company-compare"),
-        (Site.TIJORI, "company-benchmarking"),
     ],
 )
 def test_cli_maps_logical_g3_labels(pg_db, tmp_path, monkeypatch, site, surface):

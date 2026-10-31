@@ -58,13 +58,7 @@ SPECS = Path("config/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
 STOP_DIR = Path("data")
 MODEL_CONFIG = Path("config/vendor_surface/model.yaml")
-CELL_SECTIONS = frozenset(
-    {
-        "section-insights",
-        "benchmarking-benchmarking-financial",
-        "benchmarking-benchmarking-business",
-    }
-)
+CELL_SECTIONS = frozenset({"section-insights"})
 
 
 def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
