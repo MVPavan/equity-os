@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "VS fixes merged; canary down to the Tijori timeline (eqos-aa6.27)",
-    "detail": "Merged and pushed: eqos-aa6.21 (live reader fixes), eqos-aa6.22 (stop requesting never-usable surfaces, correct rejected requests), eqos-aa6.26 (Tijori market feeds scoped to covered companies via company_ids; idea pages dropped), eqos-msq.2 (NSE 'Financial Result Updates' recognised: Apar RESULTS 13 of 13 quarters, was 6). Live canary: one red check left, company-timeline-api, whose traversal is stuck at page 18; a reparse also marked its 28 continuation pages unusable. Both being fixed in eqos-aa6.27.",
+    "title": "Vendor canary green; results classifier live for tonight's documents run",
+    "detail": "Live vendor canary exit 0 (all runbook checks green) after eqos-aa6.21/.22/.26/.27. Tijori timeline traversal now finishes (reparse binding fix; reader v7 reads the blank end-of-timeline page). Tijori market feeds limited to covered companies. eqos-aa6.15 (phase 5) met live but stays blocked on phase 4's owner-gated bake-off (eqos-aa6.14). DOCS-1: results classifier fixed (13 of 13 quarters); the 16:00 UTC daily run fetches the new PDFs, then acceptance reruns.",
     "stage": "Build"
   },
   "next": [
-    "eqos-aa6.27 (Opus, in progress): timeline traversal + reparse binding -> corrective reparse -> canary green -> close eqos-aa6.15",
-    "16:00 UTC daily documents run fetches the 7 newly classified results PDFs -> rerun DOCS-1 acceptance -> close eqos-msq",
+    "16:00 UTC daily documents run -> rerun DOCS-1 acceptance -> close eqos-msq",
+    "Owner: Phase 4 bake-off (candidate models + API key) unblocks eqos-aa6.14 and .15",
     "Owner: keep macro charts (132/week) and index widgets (89/week)?",
-    "eqos-dna.3: sealed legacy ledger misreads FY26_Q3 cables CAGR"
+    "eqos-aa6.28: log reader error messages at capture; eqos-8mnm tmp-root flake; eqos-dna.3"
   ],
   "log": [
+    {
+      "date": "2026-10-31",
+      "text": "eqos-aa6.27 fixed in two rounds (reparse continuation binding; timeline reader v7) and merged; live corrective reparse restored 28 pages, traversal finished, canary green (exit 0)."
+    },
     {
       "date": "2026-10-31",
       "text": "Gates passed (only clock/tmp flakes, each re-passed in isolation) and merged: eqos-aa6.21, aa6.22, aa6.26, msq.2. Live: company_ids filter verified (quarterly-results 144 -> 11 rows); canary red 4 -> 1. Owner waived the browser-UA rule for NSE/BSE (honest UA also works there). Found eqos-aa6.27 (timeline traversal stuck; reparse identity regression)."
