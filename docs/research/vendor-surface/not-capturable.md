@@ -49,3 +49,16 @@ A link-following crawler must deny-list `rename`, `add`, `create`, `remove`, `de
 | tijori | `/accounts/logout/` (POST), `/account/signin`, `/account/signup` | account | Session |
 | tijori | twitter, valuepickr, substack and youtube links in `#discussions_and_analysis` | off-host | Third-party discussion |
 | tijori | `/us/api/v1/usa/...` | out of scope | US market variant |
+
+## Dropped from the capture spec after live runs (2026-10-30/31, eqos-aa6.22)
+
+Each row never returned a usable page in live runs, so `config/vendor_surface/surfaces.yaml` no longer lists it and nothing requests it. The catalog entry stays as the research record.
+
+| Site | Surface / URL | Class | Reason |
+|---|---|---|---|
+| screener | `quarter-source-pdf` `/company/source/quarter/{company_id}/{month}/{year}/` | off-host | Every month 302s to `bseindia.com` AnnPdfOpen; redirects are never followed |
+| tijori | `company-benchmarking` `/company/{slug}/benchmarking/` | moved | 301 to `/company/{slug}/factors/`, which has no retained reference to build readers from |
+| tijori | `market-share-api` `/api/v1/ind/company_market_share_data/{ticker}/` | no parameter | The NSE symbol 404s ("Market share data not available!"); the vendor ticker is absent from the APARINDS island |
+| tijori | `index-search-api` `/api/v1/sector/index-search/{q}/` | no parameter | A blank term 404s; any term would be invented, and index ids come from `/in/markets` |
+| tijori | `index-metric-data-api` `/api/v1/sector/index-metric-data/{index_id}/{metric}` | no parameter | All 27 widget-field metrics 500; no retained page advertises the metric names |
+| tijori | `filter-popular-query-results-api` `/api/filter_queries/popular-query/results/?financial=` | broken | All 22 advertised queries 500; the `filters.js` toggle values were never retained |

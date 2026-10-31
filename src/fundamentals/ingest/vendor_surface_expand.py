@@ -27,7 +27,6 @@ def parent_surface(spec: SurfaceSpec) -> str | None:
         return "company-page"
     if spec.expand == "advertised_links":
         return {
-            "quarter-source-pdf": "company-page",
             "shareholding-detail-chart-api": "company-shareholding",
             "market-share-peer-companies-api": "company-overview",
         }[spec.id]
@@ -79,7 +78,6 @@ def child(
     assert context.ids is not None
     parameters = {
         "symbol": context.ids.nse_symbol,
-        "ticker": context.ids.nse_symbol,
         "slug": context.ids.tijori_slug,
         "company_id": context.ids.screener_company_id
         if spec.site is Site.SCREENER
@@ -321,18 +319,9 @@ def screener_compare_peers(body: Body, context: ParseContext) -> tuple[Request, 
 
 
 def advertised_links(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Follow the three remaining finite company endpoint advertisements."""
+    """Follow the two remaining finite company endpoint advertisements."""
     assert context.parent is not None and context.ids is not None
     spec = SurfaceSpec.model_validate(context.parent["spec"])
-    if spec.id == "quarter-source-pdf":
-        matches = re.findall(
-            r"/company/source/quarter/([0-9]+)/([^/]+)/([0-9]+)/", body.raw.decode()
-        )
-        return tuple(
-            child(spec, context, month=month, year=year)
-            for company, month, year in dict.fromkeys(matches)
-            if int(company) == context.ids.screener_company_id
-        )
     if spec.id == "shareholding-detail-chart-api":
         fields = dict.fromkeys(
             (e.get("field"), e.get("source")) for e in body.tree().xpath("//*[@field and @source]")
@@ -381,11 +370,9 @@ MARKET_PARENTS = {
     "tijori_indices": ("markets",),
     "tijori_widgets": ("markets",),
     "tijori_sector_charts": ("sector-page",),
-    "tijori_index_metrics": ("markets",),
     "tijori_macro": ("macro",),
     "tijori_ideas": ("ideas-dashboard",),
     "tijori_idea_cards": ("idea-page",),
-    "tijori_queries": ("filter-popular-queries-api", "filter-public-queries-api"),
 }
 
 
@@ -465,34 +452,6 @@ def tijori_indices(body: Body, context: ParseContext) -> tuple[Request, ...]:
     )
 
 
-def tijori_index_metrics(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Use metrics advertised by the market index table cells."""
-    requests = tijori_indices(body, context)
-    metrics = body.tree().xpath("//*[@data-widget]//*[@field]/@field")
-    return tuple(
-        request.model_copy(update={"url": request.url.replace("{metric}", quote(metric, safe=""))})
-        for request in requests
-        for metric in dict.fromkeys(metrics)
-    )
-
-
-def tijori_queries(body: Body, context: ParseContext) -> tuple[Request, ...]:
-    """Fetch only popular/public queries present on the first API result page."""
-    spec = child_spec(context)
-    data = json.loads(body.raw)
-    rows = (
-        data["results"] if "results" in data else [row for group in data.values() for row in group]
-    )
-    return market_children(
-        context,
-        (
-            spec.path.replace("{query}", quote(row["financial_query"], safe=""))
-            for row in rows
-            if row.get("financial_query")
-        ),
-    )
-
-
 def tijori_idea_cards(body: Body, context: ParseContext) -> tuple[Request, ...]:
     """The card fragment is the one fixed child of the retained idea page."""
     return market_children(context, (urlsplit(context.url).path.rstrip("/") + "/card-body/",))
@@ -526,8 +485,6 @@ MARKET_EXPANSIONS.update(
             screener_hs,
             tijori_sectors,
             tijori_indices,
-            tijori_index_metrics,
-            tijori_queries,
             tijori_idea_cards,
             tijori_widgets,
         )

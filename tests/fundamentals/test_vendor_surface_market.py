@@ -265,7 +265,6 @@ def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
             "/api/hs/",
             "/api/v1/macro/chart/",
             "/api/v1/sector/index-data/",
-            "/api/v1/sector/index-metric-data/",
         )
         if "markets" in hubs
         else (
@@ -274,7 +273,6 @@ def test_retained_finite_expansions_reach_every_level(market_rig, hub_names):
             "/api/v1/sector/area-chart/",
             "/user/",
             "/ideas-dashboard/",
-            "/api/filter_queries/popular-query/results/",
         )
     )
     assert all(
@@ -365,8 +363,6 @@ def test_hub_requests_include_optional_bases_and_named_companions():
     }
     # `[x]` is optional in the catalog: the bare page is a real, distinct listing.
     assert {
-        ("concalls-feed", "/concalls/", "p=&o=&date__year=&q="),
-        ("concalls-feed", "/concalls/upcoming/", "p=&o=&date__year=&q="),
         ("ipo", "/ipo/", ""),
         ("ipo", "/ipo/recent/", ""),
         ("announcements-feed", "/announcements/", ""),
@@ -375,6 +371,48 @@ def test_hub_requests_include_optional_bases_and_named_companions():
         ("faq", "/in/faq/", ""),
         ("faq", "/faq/data/", ""),
     } <= found
+
+
+def test_unusable_market_surfaces_are_not_requested_and_feeds_send_accepted_queries():
+    """Live 2026-10-30/31 404, 500, 400 and 302 responses for these requests (eqos-aa6.22)."""
+    # A blank search term 404s; every widget field 500s as an index metric; every popular
+    # query 500s. None has advertised parameters that work, so none is requested.
+    assert not {s.id for s in MARKET_SPECS} & {
+        "index-search-api",
+        "index-metric-data-api",
+        "filter-popular-query-results-api",
+    }
+    fixed = {
+        "concalls-feed",
+        "results-latest",
+        "upcoming-results",
+        "sectors-filter-api",
+        "quarterly-results-api",
+        "upcoming-events-api",
+    }
+    found = {
+        (r.spec.id, urlsplit(r.url).path, urlsplit(r.url).query)
+        for r in market.market_requests(MARKET_SPECS, None)
+        if r.spec.id in fixed
+    }
+    # Screener 302s blank date filters (and /concalls/upcoming/) to the bare listing; Tijori
+    # 400s a blank page ("Invalid page number"); only goto_sublist works without a screen id.
+    assert found == {
+        ("concalls-feed", "/concalls/", ""),
+        ("results-latest", "/results/latest/", ""),
+        ("upcoming-results", "/upcoming-results/", ""),
+        ("sectors-filter-api", "/api/get/sectors/", "url_name=goto_sublist"),
+        (
+            "quarterly-results-api",
+            "/results/quarterly-results/api/",
+            "page=1&sort_by=latest&mcap=&timeline_type=all&sectors=&company_ids=",
+        ),
+        (
+            "upcoming-events-api",
+            "/results/upcoming-events/api/",
+            "page=1&mcap=&timeline_type=all&sectors=&company_ids=&type=results",
+        ),
+    }
 
 
 @pytest.mark.pg
@@ -411,12 +449,12 @@ def test_market_report_names_requests_without_vendor_addresses(market_rig):
     import re
 
     opener, pool, run = market_rig
-    row = next(r for r in opener.rows.values() if r["id"] == "filter-popular-queries-api")
+    row = next(r for r in opener.rows.values() if r["id"] == "explore")
     hub = next(s for s in MARKET_SPECS if s.id == row["id"])
     report = run(
         MARKET_SPECS, requests=(Request(spec=hub, url=row["url"], ids=None, due_since=None),)
     )
-    # Unretained query children stay gaps; the cron line logs only site, surface and key.
+    # Unadvertised children stay gaps; the cron line logs only site, surface and key.
     assert report.incomplete
     assert all(
         re.fullmatch(r"(screener|tijori):[a-z0-9-]+(:[0-9a-f]{64})?(: [a-z -]+)?", entry)
