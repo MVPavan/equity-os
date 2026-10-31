@@ -1,16 +1,20 @@
 {
   "now": {
-    "title": "Vendor canary green; results classifier live for tonight's documents run",
-    "detail": "Live vendor canary exit 0 (all runbook checks green) after eqos-aa6.21/.22/.26/.27. Tijori timeline traversal now finishes (reparse binding fix; reader v7 reads the blank end-of-timeline page). Tijori market feeds limited to covered companies. eqos-aa6.15 (phase 5) met live but stays blocked on phase 4's owner-gated bake-off (eqos-aa6.14). DOCS-1: results classifier fixed (13 of 13 quarters); the 16:00 UTC daily run fetches the new PDFs, then acceptance reruns.",
+    "title": "DOCS-1 accepted live: all five document kinds met; vendor canary green",
+    "detail": "First daily documents run (16:00 UTC): fetched the 7 newly classified 2023-07..2025-01 results and Apar's new Q2 FY27 results and presentation; same 36 known gaps as the backfill; backup bac13f25. DOCS-1 acceptance: transcripts 12/8, presentations 12/8, annual reports 5/5, credit ratings 6/6, results 13/13 (all MET). Vendor canary green (exit 0). eqos-msq stays open only for its P3 follow-ups (msq.3-.7).",
     "stage": "Build"
   },
   "next": [
-    "16:00 UTC daily documents run -> rerun DOCS-1 acceptance -> close eqos-msq",
     "Owner: Phase 4 bake-off (candidate models + API key) unblocks eqos-aa6.14 and .15",
     "Owner: keep macro charts (132/week) and index widgets (89/week)?",
-    "eqos-aa6.28: log reader error messages at capture; eqos-8mnm tmp-root flake; eqos-dna.3"
+    "Daily documents run 16:00 UTC (scheduled); confirm a no-new-filings day gives zero new revisions",
+    "eqos-aa6.28 capture error messages; eqos-8mnm tmp-root flake; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-10-31",
+      "text": "DOCS-1 daily run #1: exit 4 steady state (known gaps only), 9 new documents incl. Q2 FY27 results/presentation; acceptance RESULTS 13/13 -> all DOCS-1 kinds MET. Backup bac13f252168498eae9fbc68ce37a6f7."
+    },
     {
       "date": "2026-10-31",
       "text": "eqos-aa6.27 fixed in two rounds (reparse continuation binding; timeline reader v7) and merged; live corrective reparse restored 28 pages, traversal finished, canary green (exit 0)."
