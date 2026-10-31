@@ -451,6 +451,8 @@ def reparse(
     specs: tuple[SurfaceSpec, ...],
 ) -> int:
     """Recover logical parents and expansion inputs entirely from registered evidence."""
+    from fundamentals.ingest.vendor_surface_market import traversal_key
+
     owner = next((s for s in specs if s.site == spec.site and spec.id in s.sections), spec)
     entry = parser_entry(spec, spec.id)
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
@@ -512,6 +514,17 @@ def reparse(
             else {}
         )
         request = graph.get(row["url"])
+        if request is None:
+            # A continuation page is bound, as at capture, through its admitted traversal root.
+            key = traversal_key(Request(spec=owner, url=row["url"], ids=None, due_since=None))
+            request = next(
+                (
+                    r.model_copy(update={"url": row["url"]})
+                    for r in graph.values()
+                    if traversal_key(r) == key
+                ),
+                None,
+            )
         refusal = None
         if spec.scope is Scope.COMPANY and request is None:
             refusal = "verified company binding unavailable"

@@ -965,3 +965,42 @@ def test_unusable_company_surfaces_are_not_requested_and_redirects_are_corrected
     _, context = retained("screener", "company-page", "APARINDS")
     spec = next(s for s in SPECS if s.id == "shareholding-detail-chart-api")
     assert child(spec, context, field="f", source="s").url.endswith("/f/s/")
+
+
+def test_reparse_binds_timeline_continuation_through_its_root(
+    company_rig, run_company, pg_db, tmp_path, monkeypatch
+):
+    # A continuation address names no company itself; capture binds it through its traversal
+    # root, so a replay that refuses it as unbound would leave the traversal never usable.
+    from fundamentals.ingest.vendor_surface_capture import reparse
+    from fundamentals.ingest.vendor_surface_market import query_url
+    from fundamentals.ingest.vendor_surface_parse import PARSERS, Body
+
+    opener, ids = company_rig("HDFCBANK")
+    row = next(r for r in opener.rows.values() if r["id"] == "company-timeline-api")
+    body = Body(raw=Path(row["path"]).read_bytes())
+    cursor = body.tree().xpath('//tr[contains(@class,"d-none")]/td')[0].text_content().strip()
+    terminal = body.raw.replace(b"True</td>", b"False</td>")
+    opener.overrides[query_url(row["url"], timestamp=cursor)] = terminal, 200
+    specs = tuple(
+        s
+        for s in SPECS
+        if s.site is Site.TIJORI and s.id in ("company-financials", "company-timeline-api")
+    )
+    run_company(opener, ids, specs)
+    key = Site.TIJORI, "company-timeline-api"
+    monkeypatch.setitem(PARSERS, key, PARSERS[key].model_copy(update={"version": "review.v1"}))
+    with pg_db.runtime_pool() as pool:
+        timeline = next(s for s in specs if s.id == key[1])
+        assert (
+            reparse(SnapshotStore(tmp_path / "raw"), pool, VendorValuesStore(pool), timeline, specs)
+            == 2
+        )
+        with pool.connection() as conn:
+            replayed = conn.execute(
+                "SELECT status, parser_version FROM eqos.vendor_outcomes "
+                "WHERE surface=%s AND traversal_key IS NULL AND id > (SELECT max(id) "
+                "FROM eqos.vendor_outcomes WHERE parser_version LIKE %s) ORDER BY id",
+                (key[1], "%traversal%"),
+            ).fetchall()
+    assert replayed == [("OK", "review.v1")] * 2

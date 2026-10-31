@@ -234,6 +234,36 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
 
 @pytest.mark.pg
 @pytest.mark.retained
+def test_timeline_resumes_past_an_unreadable_page_and_finishes(market_rig):
+    # An unreadable page records no progress; the next run must resume and reach the end, or
+    # the timeline root stays unusable and the canary reports the company overdue forever.
+    from fundamentals.ingest.vendor_surface_parse import Body, CompanyIds
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "company-timeline-api")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    ids = CompanyIds(
+        nse_symbol="HDFCBANK",
+        isin="INE040A01034",
+        tijori_slug="hdfc-bank-limited",
+        tijori_company_id=129,
+        screener_company_id=None,
+        topology=None,
+    )
+    request = Request(spec=spec, url=row["url"], ids=ids, due_since=None)
+    body = Body(raw=Path(row["path"]).read_bytes())
+    cursor = body.tree().xpath('//tr[contains(@class,"d-none")]/td')[0].text_content().strip()
+    next_url = market.query_url(row["url"], timestamp=cursor)
+    opener.overrides[next_url] = b"<table></table>", 200
+    assert run((), requests=(request,)).incomplete
+    opener.overrides[next_url] = body.raw.replace(b"True</td>", b"False</td>"), 200
+    report = run((), requests=(request,))
+    assert not report.incomplete and opener.calls[-1] == next_url
+    assert market.progress(pool, market.traversal_key(request)).resume_page is None
+
+
+@pytest.mark.pg
+@pytest.mark.retained
 @pytest.mark.parametrize(
     "hub_names",
     [
