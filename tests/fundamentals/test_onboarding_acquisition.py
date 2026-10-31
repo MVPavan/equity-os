@@ -14,6 +14,7 @@ import io
 import json
 import shlex
 import shutil
+import urllib.error
 import urllib.request
 import urllib.response
 from collections.abc import Callable
@@ -56,6 +57,7 @@ from retained_support import REPO_ROOT
 from fundamentals.api import onboard_cli
 from fundamentals.api.cli import main
 from fundamentals.api.onboard_cli import RETRIEVAL_NAME
+from fundamentals.contracts.onboarding import VerificationUnit
 from fundamentals.contracts.source_catalog import VENDOR_SURFACES
 from fundamentals.entity.discovery import (
     MANIFEST_NAME,
@@ -576,3 +578,21 @@ def test_bse_peer_search_sends_the_probed_headers_and_follows_no_redirect(
         "Accept": "application/json, text/plain, */*",
         "Cookie": None,
     }
+
+
+def test_live_transport_names_the_project_to_vendor_sites(monkeypatch):
+    """Tijori blocks a default client and the site rules forbid a browser UA: vendors get ours."""
+    sent: list[urllib.request.Request] = []
+
+    class Opener:
+        def open(self, request: urllib.request.Request, timeout: float) -> Any:
+            sent.append(request)
+            raise urllib.error.HTTPError(request.full_url, 404, "", email.message.Message(), None)
+
+    monkeypatch.setattr(onboard_cli.urllib.request, "build_opener", lambda *_: Opener())
+    send = onboard_cli.live_transport()
+    for source in ("tijori", "screener-subscriber"):
+        send(
+            Request(unit=VerificationUnit.EXCHANGE, source_id=source, surface="s", url="https://x/")
+        )
+    assert [r.get_header("User-agent") for r in sent] == ["EquityOS Research"] * 2
