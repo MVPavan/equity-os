@@ -521,7 +521,7 @@ def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
     assert outcome(values) == "OK"
     assert (
         PARSERS[Site.TIJORI, surface].version
-        == f"tijori:{surface}.reader.v{5 if surface == 'quarterly-results' else 6}"
+        == f"tijori:{surface}.reader.v{5 if surface == 'quarterly-results' else 7}"
     )
     assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "OK"
     positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
@@ -671,3 +671,22 @@ def test_timeline_collapses_a_verbatim_repeated_event_row():
             Body(raw=body.raw[:end] + changed + body.raw[end:]),
             context,
         )
+
+
+# The last page of APARINDS's live timeline (2026-10-31): no event row, only the pager row,
+# with no cursor and no has-more flag.
+EXHAUSTED_TIMELINE = b'<tr class="d-none"><td> </td><td></td></tr>'
+
+
+def test_timeline_reads_a_blank_pager_page_as_the_end_of_the_timeline():
+    """Tijori ends a timeline on an empty page; refusing it blocks the traversal forever."""
+    from fundamentals.ingest.tijori_events_models import TijoriEventsSchemaError
+
+    body, context = retained("tijori", "company-timeline-api")
+    context = context.model_copy(update={"basis": None})
+    assert parse("tijori", "company-timeline-api", Body(raw=EXHAUSTED_TIMELINE), context) == ()
+    # A pager still carrying a cursor promises rows; zero of them is drift, not emptiness.
+    start = body.raw.index(b'<tr class="d-none')
+    pager = body.raw[start : body.raw.index(b"</tr>", start) + len(b"</tr>")]
+    with pytest.raises(TijoriEventsSchemaError):
+        parse("tijori", "company-timeline-api", Body(raw=pager), context)

@@ -264,6 +264,34 @@ def test_timeline_resumes_past_an_unreadable_page_and_finishes(market_rig):
 
 @pytest.mark.pg
 @pytest.mark.retained
+def test_timeline_finishes_on_an_empty_last_page(market_rig):
+    # Tijori's has-more flag stays True on the last page of events and the next page renders
+    # only a blank pager row; reading that page is what ends the traversal.
+    from fundamentals.ingest.vendor_surface_parse import Body, CompanyIds
+
+    opener, pool, run = market_rig
+    row = next(r for r in opener.rows.values() if r["id"] == "company-timeline-api")
+    spec = next(s for s in MARKET_SPECS if s.id == row["id"])
+    ids = CompanyIds(
+        nse_symbol="HDFCBANK",
+        isin="INE040A01034",
+        tijori_slug="hdfc-bank-limited",
+        tijori_company_id=129,
+        screener_company_id=None,
+        topology=None,
+    )
+    request = Request(spec=spec, url=row["url"], ids=ids, due_since=None)
+    body = Body(raw=Path(row["path"]).read_bytes())
+    cursor = body.tree().xpath('//tr[contains(@class,"d-none")]/td')[0].text_content().strip()
+    next_url = market.query_url(row["url"], timestamp=cursor)
+    opener.overrides[next_url] = b'<tr class="d-none"><td> </td><td></td></tr>', 200
+    report = run((), requests=(request,))
+    assert not report.incomplete and opener.calls[-1] == next_url
+    assert market.progress(pool, market.traversal_key(request)).resume_page is None
+
+
+@pytest.mark.pg
+@pytest.mark.retained
 @pytest.mark.parametrize(
     "hub_names",
     [

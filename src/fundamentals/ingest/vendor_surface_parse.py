@@ -158,7 +158,7 @@ for _site, _name, _surfaces in (
     for _surface in _surfaces:
         # Shared sanitization and series conversion advance every reader pin.
         _version = (
-            {"quarterly-results": 5, "company-timeline-api": 6}.get(_surface, 4)
+            {"quarterly-results": 5, "company-timeline-api": 7}.get(_surface, 4)
             if _name == "tijori"
             else 4
         )

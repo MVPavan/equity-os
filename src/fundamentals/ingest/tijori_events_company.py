@@ -287,7 +287,7 @@ def build_company_timeline(
             "tijori company-timeline response is a whole HTML document, not the bare "
             "fragment this endpoint returns to a subscribed session"
         )
-    if fragment.row_count == 0:
+    if fragment.row_count == 0 and not fragment.exhausted:
         raise TijoriEventsSchemaError(FRAGMENT_NO_EVENT_ROWS)
 
     kept: list[RawTimelineEvent] = []
