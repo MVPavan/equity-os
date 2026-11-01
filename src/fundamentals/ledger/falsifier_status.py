@@ -41,9 +41,8 @@ from fundamentals.verify.thesis_predicates import (
 )
 
 THESIS_IMPACT, FALSIFIER_STATUS = "thesis_impact", "observable_falsifiers"
-DERIVED = frozenset({THESIS_IMPACT, FALSIFIER_STATUS})
-# The risk probe's section: re-derived on every run like ``DERIVED``, rendered by ``risk_probe``.
 RISK_PROBE = "risk_probe"
+DERIVED = frozenset({THESIS_IMPACT, FALSIFIER_STATUS, RISK_PROBE})
 _PCT, _DAYS, _RATIO = ValueKind.PERCENTAGE, ValueKind.DAYS, ValueKind.RATIO
 # A metric id: its label, the run claim measuring it (``None``: the ETR line's claim) and its
 # value kind.
