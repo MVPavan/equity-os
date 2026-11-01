@@ -1012,6 +1012,21 @@ Verification: four new `APPROVED` versions; the probe gate passes on each; the r
 passed; `db check-live` exits 0 after every write step; counts deltas equal the rehearsal's
 (the recovery steps excepted, which run only in rehearsal).
 
+Panel scope amendment (orchestrator ruling, 2026-11-01, after the FY26_Q2 version 14 panel
+`REQUEST_CHANGES`, which found no numeric or status defect):
+- Materiality. The panel brief first omitted the owner's 2026-10-29 ruling
+  (`LIVE-RUN-1-report-export-gaps.md`), which every earlier panel received. That ruling names
+  LIVE-RUN-1. This amendment applies the same treatment to the S1 regenerated drafts only: they are
+  approvable with materiality disclosed as not built, and S06's materiality invariant does not bind
+  this approval. S06 is unchanged and register item A-10 stays open. The owner may overturn this.
+- Drivers and thesis narrative. Spec section 4 assigns `drivers` and `thesis_narrative` to S3
+  (`ledger narrate`), and S1's acceptance is the risk table and explanation. The panel judges that
+  these gaps are clearly disclosed, not that S1 fills them.
+- R6 interpretation. Sol's minor finding that R6's implication is generic is parked: the template is
+  deliberately conditional, and business interpretation is S3's model notes (spec section 2).
+- These approvals are limited to the S1 demonstration. They do not satisfy A-04 or B-02, and
+  CORE_RESEARCH_RELEASE stays NO.
+
 Dependencies: Task 5.
 
 Risks:
