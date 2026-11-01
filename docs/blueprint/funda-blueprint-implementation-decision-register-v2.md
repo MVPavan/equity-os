@@ -5,7 +5,7 @@
 - `funda-blueprint-final-consolidated-review.md` — frozen architectural rationale
 - `funda-third-order-review-disposition-report.md` — disposition of the third-order audit
 
-**Updated:** 12 August 2026  
+**Updated:** 1 November 2026 (A-rows; eqos-4j2.9)  
 **Purpose:** Single operational source of truth for decisions, acceptance evidence, and phase gates.
 
 ---
@@ -28,19 +28,21 @@ The wording in this register is authoritative for implementation gates. Narrativ
 
 | ID | Priority | Decision or action | Required evidence / acceptance | Dependencies | Status |
 |---|---:|---|---|---|---|
-| A-01 | Critical | Freeze initial user and distribution boundary | Written statement covering private/internal use, public or paid distribution, personalization, execution linkage, and intended future boundary; document does not claim legal sufficiency | — | Open |
-| A-02 | Critical | Select one discovery company and four consecutive quarters | Quarter 0 is reserved for the manual baseline and bootstrap thesis; Quarters 1–3 are reserved for three assisted incremental updates; source package exists for all quarters and at least one management commitment can be tracked across periods | — | Open |
-| A-03 | Critical | Define and perform the manual baseline workflow | Quarter 0 is completed manually with time-stamped reading, source location, verification, calculation, drafting, and approval; the same lightweight instrumentation is used in manual and assisted workflows and its overhead is recorded | A-02, A-04 v0, A-10, A-13 | Open |
-| A-04 | Critical | Freeze the first output contract | A provisional v0 exists before baseline; final contract after baseline includes event/cutoff, facts, changes, driver analysis, management ledger, thesis impact, observable falsifiers, open questions, calculations, memory draft, and approval record | A-03 for final freeze | Open |
-| A-05 | Critical | Create provider and data-rights register scoped to the declared boundary | For every source: access method, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement path | A-01 | Open |
-| A-06 | Critical | Run filing-channel-aware XBRL-versus-PDF spike | Coverage matrix by company, quarter, filing channel, taxonomy/version, statement, segment, note, ownership/share count, restatement behavior, mapping stability, and reconciliation effort | A-02 | Open |
-| A-07 | High | Define initial per-workflow budgets | Ceilings or measurement rules for model cost, tool calls, latency, document volume, retries, and analyst minutes | A-13 | Open |
-| A-08 | High | Appoint golden-test-set owner | Named owner, repository location, review cadence, and first twenty labeled cases, including prompt-injection/source-confusion cases | — | Open |
-| A-09 | Medium | Verify project name and trademark risk | Search record and decision on continued use of “Funda” | — | Open |
-| A-10 | Critical | Define claim materiality policy | Versioned policy combining quantitative magnitude, always-material categories, thesis relevance, source conflict/uncertainty, and coverage-specific overrides; validator test cases approved | A-01, A-02 | Open |
-| A-11 | Critical | Author and approve bootstrap thesis for the discovery company | Using Quarter 0, a concise initial thesis, assumptions, management commitments, risks, open questions, and observable falsifiers are manually written, approved, versioned, and available before Quarter 1; full initiation remains deferred | A-03 | Open |
-| A-12 | High | Define operating calendar, standing budget, and capacity | Weekly builder/analyst capacity, target phase dates, monthly provider/model/infrastructure ceilings, maintenance allowance, and expected company coverage documented | A-01, A-02 | Open |
-| A-13 | Critical | Freeze success-metric contract | Versioned definitions and measurement methods for factual accuracy, citation correctness, numerical traceability, unsupported claims, analyst minutes, per-claim verification time, coverage capacity, latency, cost, failure/retry rate, and phase applicability | A-01 | Open |
+| A-01 | Critical | Freeze initial user and distribution boundary | Written statement covering private/internal use, public or paid distribution, personalization, execution linkage, and intended future boundary; document does not claim legal sufficiency | — | Accepted |
+| A-02 | Critical | Select one discovery company and four consecutive quarters | Quarter 0 is reserved for the manual baseline and bootstrap thesis; Quarters 1–3 are reserved for three assisted incremental updates; source package exists for all quarters and at least one management commitment can be tracked across periods | — | Accepted |
+| A-03 | Critical | Define and perform the manual baseline workflow | Quarter 0 is completed manually with time-stamped reading, source location, verification, calculation, drafting, and approval; the same lightweight instrumentation is used in manual and assisted workflows and its overhead is recorded | A-02, A-04 v0, A-10, A-13 | Accepted |
+| A-04 | Critical | Freeze the first output contract | A provisional v0 exists before baseline; final contract after baseline includes event/cutoff, facts, changes, driver analysis, management ledger, thesis impact, observable falsifiers, open questions, calculations, memory draft, and approval record | A-03 for final freeze | Accepted |
+| A-05 | Critical | Create provider and data-rights register scoped to the declared boundary | For every source: access method, automation, caching, retention, commercial use, derived outputs, redistribution, account limits, point-in-time availability, and replacement path | A-01 | Accepted |
+| A-06 | Critical | Run filing-channel-aware XBRL-versus-PDF spike | Coverage matrix by company, quarter, filing channel, taxonomy/version, statement, segment, note, ownership/share count, restatement behavior, mapping stability, and reconciliation effort | A-02 | Accepted |
+| A-07 | High | Define initial per-workflow budgets | Ceilings or measurement rules for model cost, tool calls, latency, document volume, retries, and analyst minutes | A-13 | Accepted |
+| A-08 | High | Appoint golden-test-set owner | Named owner, repository location, review cadence, and first twenty labeled cases, including prompt-injection/source-confusion cases | — | Accepted |
+| A-09 | Medium | Verify project name and trademark risk | Search record and decision on continued use of “Funda” | — | Accepted (private-gate waiver) |
+| A-10 | Critical | Define claim materiality policy | Versioned policy combining quantitative magnitude, always-material categories, thesis relevance, source conflict/uncertainty, and coverage-specific overrides; validator test cases approved | A-01, A-02 | Accepted |
+| A-11 | Critical | Author and approve bootstrap thesis for the discovery company | Using Quarter 0, a concise initial thesis, assumptions, management commitments, risks, open questions, and observable falsifiers are manually written, approved, versioned, and available before Quarter 1; full initiation remains deferred | A-03 | Accepted |
+| A-12 | High | Define operating calendar, standing budget, and capacity | Weekly builder/analyst capacity, target phase dates, monthly provider/model/infrastructure ceilings, maintenance allowance, and expected company coverage documented | A-01, A-02 | Accepted |
+| A-13 | Critical | Freeze success-metric contract | Versioned definitions and measurement methods for factual accuracy, citation correctness, numerical traceability, unsupported claims, analyst minutes, per-claim verification time, coverage capacity, latency, cost, failure/retry rate, and phase applicability | A-01 | Accepted |
+
+Statuses per the Phase 0A exit record (`docs/evidence/phase-0a/manifest.json`, eqos-3ps closed 2026-08-21). A-09 is accepted for the private gate only, on a product-owner non-legal basis; formal trademark clearance is required before any public or commercial launch. A-02 v2 (`a-02-discovery-slice-selection-v2.md`, 2026-09-06) replaced Infosys with Apar Industries, issuer Q2 FY26–Q1 FY27, for Phase 0.5; the Infosys A-03/A-11 artefacts remain valid Phase 0A evidence.
 
 ---
 
