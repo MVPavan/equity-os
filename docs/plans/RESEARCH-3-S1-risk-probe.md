@@ -11,6 +11,8 @@ residuals #7 and #8 and its two notes, marked "r3". r4 resolves foreign test cap
 SHA (Sol r3 #8). r5 (2026-11-01) fixes Sol's closing review (four P1), marked "r5": every
 `map_q0` caller, a new test module under the 800-line ceiling, PILOT-11's trace closure, and the
 probe's rework semantics (P11).
+**Status:** approved r5 (2026-11-01) — approver gpt-6.1-sol, `APPROVE` on the re-review of the
+closing critical review's fixes (plan rounds r1–r3, closing review, re-review).
 **Goal:** every Apar run draft carries a `risk_probe` section after `observable_falsifiers`.
 For R1–R6 it shows the traced ratio, the cited raw filed amounts, the balance date and flow
 window, and a code-computed status with its reason (guards, rules S/T/L, staleness). It ends with
