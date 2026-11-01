@@ -49,6 +49,7 @@ from pilot_e2e_support import (
 from pilot_manifest_check import KEYS as CLAIM_KEYS
 from pilot_manifest_check import citations_allowed
 from prep2b_support import COUNTS, STOCK, Pilot
+from test_credibility_binding import check_credibility
 from test_cutover_rollback import CUTOVER, Window
 from test_frozen_manifests import REPO, load
 from test_legacy_import import Rig
@@ -264,7 +265,7 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     _, thesis_digest, falsifier_ids = _thesis(pilot)
     for key, claim in claims.items():
         cited = claim.citation
-        if claim.section_key == GUIDANCE:
+        if claim.section_key in (GUIDANCE, "management_credibility"):
             assert cited.kind is CitationKind.SOURCE_QUOTE, f"PILOT-4: {key} is not a quote"
             continue
         falsifier = key.replace("thesis.", "falsifier.", 1)
@@ -300,6 +301,7 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     states = set(dict(pilot.validate(version_id).claim_states).values())
     assert states == {ClaimState.MATCH}, f"PILOT-4: {quarter} claim check {states}"
     check_probe(pilot, {quarter: version_id})
+    check_credibility(pilot, {quarter: version_id})
 
 
 def _margin(quarter: str) -> Fraction:

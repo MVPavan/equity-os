@@ -622,8 +622,14 @@ def test_a_relabelled_guidance_rework_changes_only_its_claim(
         after[CABLES].model_copy(update={"metric_label": before[CABLES].metric_label})
         == before[CABLES]
     )
-    assert {key: c for key, c in after.items() if key != CABLES} == {
-        key: c for key, c in before.items() if key != CABLES
+    copies = {key for key in before if key.startswith("episode.cables_revenue_growth.")}
+    assert len(copies) == 2, copies  # the claim's ``.original`` and ``.latest`` (R11)
+    for key in copies:
+        assert after[key].metric_label == "Cables revenue growth guidance (corrected)"
+        update = {"metric_label": before[key].metric_label}
+        assert after[key].model_copy(update=update) == before[key]
+    assert {key: c for key, c in after.items() if key != CABLES and key not in copies} == {
+        key: c for key, c in before.items() if key != CABLES and key not in copies
     }
     moved = [
         pair

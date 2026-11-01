@@ -39,7 +39,7 @@ QUESTION = (
 NOT_DONE = (
     "forward scenarios",
     "forensic checks",
-    "a management-credibility assessment",
+    "a judgment of management credibility",
     "a narrative thesis-impact assessment",
     "no claim carries a materiality decision",
 )
@@ -85,6 +85,7 @@ def test_the_run_draft_shows_what_the_panel_found_missing(
     claims = {claim.claim_key: claim for claim in version.claims}
     bodies = {section.section_key: section.body for section in version.sections}
 
+    assert "management_credibility" in bodies  # the loop below reads the section
     # Task 2: a claim line references exactly the claims it shows; a claimless line none.
     for line in (line for body in bodies.values() for line in body.splitlines()):
         found = PLACEHOLDER.findall(line)
