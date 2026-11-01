@@ -16,7 +16,8 @@ predecessor run version's admitted ``fact.<role>`` when its key, value and file 
 (``predecessor``, PILOT-4), checked before the run's first write and swapped in at the write;
 that version's comparison runs join the draft's pins. The derived falsifier sections and
 their threshold claims follow, bound to the thesis approved at the derivation cutoff
-(:mod:`falsifier_status`), then the risk probe (:mod:`risk_probe`).
+(:mod:`falsifier_status`), then the risk probe (:mod:`risk_probe`) and management credibility
+(:mod:`credibility`).
 """
 
 from __future__ import annotations
@@ -53,11 +54,12 @@ from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_rows import capture_of
-from fundamentals.ledger import store
+from fundamentals.ledger import credibility, store
 from fundamentals.ledger.citations import _FILE_CAPTURES, TRACES, _first_party
 from fundamentals.ledger.claim_check import UNITS, quote_qualifiers
 from fundamentals.ledger.display import FILED, content_hash
-from fundamentals.ledger.falsifier_status import approved_thesis, derived, evaluate
+from fundamentals.ledger.falsifier_status import CREDIBILITY, approved_thesis, derived, evaluate
+from fundamentals.ledger.guidance_targets import GUIDANCE_KEY
 from fundamentals.ledger.import_mapping import (
     BOUNDS_STYLE,
     CONTRACT_FIELDS,
@@ -99,7 +101,6 @@ from fundamentals.store.fact_store import FactRef
 from fundamentals.store.snapshot_store import SnapshotStore
 
 RUN_AUTHOR = "fundamentals-run"
-GUIDANCE_KEY = "ledger.{metric}.{horizon}.{scope}"  # as import_mapping keys a ledger entry
 HEADING, RESULTS = "heading", "results"
 FACT_PREFIX, QOQ_PRIOR = "fact.", ".qoq.prior"
 GUIDANCE = "management_ledger"
@@ -122,7 +123,9 @@ NOT_DONE = (
     "- forward scenarios",
     "- forensic checks beyond the risk probe's ratio checks (see `risk_probe` for the sources "
     "it does not assess)",
-    "- a management-credibility assessment",
+    "- a judgment of management credibility: `management_credibility` holds only the mapped "
+    "record, revision events and code-computed outcomes; no model explanation, trend or thesis "
+    "consequence",
     "- an earnings-driver analysis",
     "- a narrative thesis-impact assessment",
     "- materiality decisions: no claim carries a materiality decision, because the pipeline "
@@ -169,8 +172,9 @@ class Successor(BaseModel):
 class Prior(BaseModel):
     """The run's entity, the pinned predecessor head (``None`` for the bootstrap period) with
     its guidance claims and, for a run-generated head, its ``fact.*`` claims and pinned runs,
-    the first-seen time of each required original, and the period's head this run reworks,
-    selectively or whole."""
+    its episode claims, credibility record and carried actuals with the captures behind them, the
+    period's own head with its record, the first-seen time of each required original, and the
+    period's head this run reworks, selectively or whole."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -183,6 +187,13 @@ class Prior(BaseModel):
     pinned_run_ids: tuple[int, ...] = ()
     rework: Rework | None = None
     full_successor: Successor | None = None
+    episodes: tuple[NumericClaim, ...] = ()
+    record: credibility.Record = credibility.Record()
+    same_period_id: int | None = None
+    same_period_digest: str | None = None
+    same_period_record: credibility.Record = credibility.Record()
+    actuals: tuple[NumericClaim, ...] = ()
+    actual_blobs: frozenset[str] = frozenset()
 
 
 class Retrospective(BaseModel):
@@ -197,9 +208,9 @@ class Retrospective(BaseModel):
 
 class RunDraft(BaseModel):
     """What the draft is written from: the emitted update, its guidance claims, each required
-    role's selected fact, its bound changes and calculations lines, its risk probe, the run's
-    originals (XBRLs incl. comparators; PDFs), the comparison run its facts were admitted from
-    and designation."""
+    role's selected fact, its bound changes and calculations lines, its risk probe and credibility
+    inputs, the run's originals (XBRLs incl. comparators; PDFs), the comparison run its facts were
+    admitted from and designation."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -209,6 +220,7 @@ class RunDraft(BaseModel):
     facts: Mapping[str, FactRef]
     lines: tuple[Line, ...]
     probe: Probe
+    credibility: credibility.CredibilityInputs
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
     memory: str
@@ -282,6 +294,14 @@ def preflight(
             prior = prior.model_copy(
                 update={"rework": plan(cursor, EvidenceRepository(pool), current)}
             )
+        if current is not None:
+            prior = prior.model_copy(
+                update={
+                    "same_period_id": current,
+                    "same_period_digest": store.sealed_digest(cursor, current),
+                    "same_period_record": _record(store.read_version(cursor, current)),
+                }
+            )
         if _bootstrap(cursor, entity_id, period):
             return prior
         previous = _predecessor(period)
@@ -297,13 +317,18 @@ def preflight(
             assert sha256 is not None
             _original(cursor, sha256, catalog, snapshots)
         digest = store.sealed_digest(cursor, head)
+        actuals = credibility.carried_actuals(claims)
         return prior.model_copy(
             update={
                 "version_id": head,
                 "sealed_digest": digest,
-                "entries": quotes,
+                "entries": tuple(c for c in quotes if c.section_key != CREDIBILITY),
                 "facts": facts,
                 "pinned_run_ids": pins,
+                "episodes": tuple(c for c in quotes if c.section_key == CREDIBILITY),
+                "record": _record(version),
+                "actuals": actuals,
+                "actual_blobs": frozenset(_operand_blobs(cursor, actuals)),
             }
         )
 
@@ -335,8 +360,12 @@ def write_run_draft(
                 raise RunDraftError(f"the pinned prior version {prior.version_id} changed")
         current = _require_closed(cursor, entity_id, run.period)
         check_head(cursor, prior, run.period)
+        if current != prior.same_period_id or (
+            current is not None and store.sealed_digest(cursor, current) != prior.same_period_digest
+        ):
+            raise RunDraftError(f"{run.period}'s head changed: it is version {current}")
         reworked = prior.rework
-        carried = {} if reworked is None else {k: reworked.claims[k] for k in reworked.carried}
+        carried = _carried(prior)
         run_ids = {run.run_id, *prior.pinned_run_ids}
         if reworked is not None:  # carried citations keep their head's comparison runs
             run_ids.update(store.read_version(cursor, reworked.head).pinned_run_ids)
@@ -350,14 +379,16 @@ def write_run_draft(
             body.add(GUIDANCE, text, shown)
             if not _specified(shown.horizon):
                 body.lines[OPEN_QUESTIONS].append(_question(shown))
+        built = credibility.built_from(run.credibility)
         claims = predecessor(prior, tuple(body.claims.values())) + run.probe.claims
+        claims += built.claims + run.credibility.actuals
         assert update.derivation_cutoff is not None
         bound = approved_thesis(cursor, entity_id, update.nse_symbol, update.derivation_cutoff)
         by_key = {claim.claim_key: claim for claim in claims}
         rows = () if bound is None else evaluate(bound, by_key, run.lines, run.probe.stale_keys)
         falsifiers, thresholds = derived(bound, rows)
         _check_sources(cursor, claims, run, prior, catalog)
-        derived_sections = (*falsifiers, probe_section(run.probe, rows))
+        derived_sections = (*falsifiers, probe_section(run.probe, rows), (CREDIBILITY, built.body))
         sections = _sections(run, prior, body.lines, derived_sections)
         claims += thresholds
         kind = ReportKind.EARNINGS_UPDATE
@@ -441,6 +472,34 @@ def gate_lines(
         gate.line(RESULTS, text, (claim,))
     for text, claim in _guidance(cursor, guidance, update, prior, catalog):
         gate.line(GUIDANCE, text, (claim,))
+
+
+def stated_claims(
+    cursor: Cursor[Any],
+    guidance: tuple[GuidanceClaim, ...],
+    update: EarningsUpdate,
+    prior: Prior,
+    catalog: SourceCatalog,
+) -> tuple[NumericClaim, ...]:
+    """The run's own statements as ``_guidance`` writes them, a rework's carried form included."""
+    carried = _carried(prior)
+    quoted = (
+        _quote(cursor, source, rendered.metric_label, rendered.quote, catalog)
+        for source, rendered in zip(guidance, update.guidance, strict=True)
+    )
+    return tuple(carried.get(claim.claim_key, claim) for claim in quoted)
+
+
+def _carried(prior: Prior) -> dict[str, NumericClaim]:
+    """The claims a rework carries from the version it reworks."""
+    reworked = prior.rework
+    return {} if reworked is None else {key: reworked.claims[key] for key in reworked.carried}
+
+
+def _record(version: Any) -> credibility.Record:
+    """A stored version's credibility record (empty for a legacy version)."""
+    body = next((s.body for s in version.sections if s.section_key == CREDIBILITY), None)
+    return credibility.read_record(body, version.claims)
 
 
 def check_head(cursor: Cursor[Any], prior: Prior, period: str) -> None:
@@ -633,9 +692,8 @@ def _check_sources(
     """Every capture behind every claim passes ``check_blobs``."""
     cutoff = run.update.source_cutoff
     assert cutoff is not None
-    traces = [c.citation.calculation_trace_id for c in claims if c.citation.calculation_trace_id]
     blobs = {c.citation.source_sha256 for c in claims if c.citation.source_sha256 is not None}
-    blobs |= {row[0] for row in cursor.execute(_OPERAND_BLOBS, {"traces": traces}).fetchall()}
+    blobs |= _operand_blobs(cursor, claims)
     check_blobs(
         cursor,
         blobs,
@@ -646,12 +704,19 @@ def _check_sources(
     )
 
 
+def _operand_blobs(cursor: Cursor[Any], claims: tuple[NumericClaim, ...]) -> set[str]:
+    """The captures behind the claims' traces."""
+    traces = [c.citation.calculation_trace_id for c in claims if c.citation.calculation_trace_id]
+    return {row[0] for row in cursor.execute(_OPERAND_BLOBS, {"traces": traces}).fetchall()}
+
+
 def allowed_captures(prior: Prior, xbrl: tuple[str, ...], pdfs: tuple[str, ...]) -> set[str]:
-    """The captures a run may cite: its originals, the prior's and, in a rework, those the
-    carried claims rest on (admitted for the reworked version)."""
-    cited = {entry.citation.source_sha256 for entry in prior.entries}
+    """The captures a run may cite: its originals, the prior's, those behind its carried actuals
+    and, in a rework, those the carried claims rest on (admitted for the reworked version)."""
+    cited = {entry.citation.source_sha256 for entry in (*prior.entries, *prior.episodes)}
     carried = prior.rework.blobs if prior.rework is not None else frozenset()
-    return {*xbrl, *pdfs, *(blob for blob in cited if blob is not None), *carried}
+    blobs = (blob for blob in cited if blob is not None)
+    return {*xbrl, *pdfs, *blobs, *carried, *prior.actual_blobs}
 
 
 def check_blobs(

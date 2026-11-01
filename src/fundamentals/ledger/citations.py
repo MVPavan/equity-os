@@ -26,6 +26,7 @@ import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path, PurePosixPath
 from typing import Any, LiteralString
 
@@ -34,6 +35,7 @@ from psycopg import Cursor
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.canon.interval import truncate_value
 from fundamentals.canon.role_translation import translate
 from fundamentals.compare.queue import overlay_at
 from fundamentals.compare.trust import trusted
@@ -57,7 +59,7 @@ from fundamentals.evidence.admission import ADMITTED_CONCEPT_PREFIX
 from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
-from fundamentals.ledger.display import FILED
+from fundamentals.ledger.display import EXACT_DIGITS, FILED
 from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
 from fundamentals.ledger.probe_operands import FILED_KEYS
 from fundamentals.reconcile.fact_view import CANONICAL_ENTITY_SCHEME
@@ -155,7 +157,8 @@ _FILED_TAX = "calc.2"
 _INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
 FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED' AND entity_id = %s"""
 _TRACE: LiteralString = (
-    "SELECT value, key_digest FROM eqos.calculation_traces WHERE id = %s AND state = 'COMPUTED'"
+    "SELECT value, exact_value, key_digest FROM eqos.calculation_traces "
+    "WHERE id = %s AND state = 'COMPUTED'"
 )
 _POLICY: LiteralString = """SELECT d.policy_value, d.policy_unit, d.recorded_at
 FROM eqos.decisions d JOIN eqos.reports r ON r.id = d.subject_id
@@ -561,9 +564,12 @@ def _trace(
     times = _input_times(own, (trace_id,), (), catalog)
     if row is None or row["value"] is None or times is None:
         return None
-    return ResolvedCitation(
-        value=_claim_scaled(row["value"], claim), key_digest=row["key_digest"], times=times
+    value = (
+        truncate_value(Fraction(row["exact_value"]), claim.precision)
+        if EXACT_DIGITS in claim.qualifiers
+        else _claim_scaled(row["value"], claim)
     )
+    return ResolvedCitation(value=value, key_digest=row["key_digest"], times=times)
 
 
 def _issuer_key(claim: NumericClaim, entity_id: int) -> MeasurementKey | None:

@@ -78,6 +78,7 @@ from fundamentals.output.pnl_lines import (
     OPERAND_MISSING,
     TAX_LABEL,
 )
+from fundamentals.pg.identity_seed import SettingKey
 
 ROUNDING_POLICY = Path(__file__).resolve().parents[3] / "config" / "rounding_policy" / "v1.yaml"
 DIFFERENCE, SUM, CHANGE_PCT = "run.difference", "run.sum", "run.change_pct"
@@ -552,6 +553,17 @@ def _shown(line: Line) -> str:
     if line.drift:
         shown += f"; {line.drift}"
     return f"{shown} {refs(keys)}"
+
+
+def _fiscal_month(repository: EvidenceRepository, entity_id: int, update: EarningsUpdate) -> int:
+    """The entity's fiscal-year-end month governing the run's period, as of the store clock."""
+    period_end = date.fromisoformat(update.period_end)
+    record = repository.settings_as_of(
+        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock(), period_end
+    )
+    if record is None:
+        raise RunDraftError(f"entity {entity_id} has no fiscal-year-end month")
+    return int(record.value_text)
 
 
 def cite(claim: NumericClaim, **record: object) -> NumericClaim:

@@ -16,8 +16,9 @@ changed section scaffold.
 The derived falsifier sections and their threshold claims are re-derived on every write, so a
 rework neither carries nor reruns them; a rejection naming one, or of a version written before
 them, refuses (plan RESEARCH-1 D7): a threshold's route is superseding the thesis, a probe figure
-or calculation's is diagnosis, then ``--full-successor``. The disclosed open-questions and
-not-performed sections are likewise regenerated from the run's guidance on every write, outside
+or calculation's is diagnosis, then ``--full-successor``, and a credibility claim's is diagnosis, a
+mapping correction if the mapping is wrong, then ``--full-successor``. The disclosed open-questions
+and not-performed sections are likewise regenerated from the run's guidance on every write, outside
 the rework contract.
 """
 
@@ -35,7 +36,7 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
-from fundamentals.ledger.falsifier_status import DERIVED, RISK_PROBE, THESIS_IMPACT
+from fundamentals.ledger.falsifier_status import CREDIBILITY, DERIVED, RISK_PROBE, THESIS_IMPACT
 from fundamentals.ledger.run_traces import DISCLOSED, RunDraftError
 
 Atom = tuple[str, str]
@@ -227,6 +228,12 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
         raise RunDraftError(
             f"{', '.join(filed)} is computed from the filed statement; diagnose it, then rerun "
             "with --full-successor"
+        )
+    mapped = {c.claim_key for c in version.claims if c.section_key == CREDIBILITY}
+    if held := sorted(mapped.intersection(keys)):
+        raise RunDraftError(
+            f"{', '.join(held)} comes from the guidance mapping file; diagnose it, append a "
+            "supersedes entry if the mapping is wrong, then rerun with --full-successor"
         )
     if derived := sorted(set(keys) - set(claims)):
         raise RunDraftError(

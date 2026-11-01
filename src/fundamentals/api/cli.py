@@ -110,6 +110,8 @@ from fundamentals.evidence.admission import admit_run, key_identity, select_admi
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.ledger import store as ledger_store
+from fundamentals.ledger.credibility import CredibilityInputs, bind_credibility, prepare
+from fundamentals.ledger.guidance_targets import check_pins, load_targets
 from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.importer import load_import_config
 from fundamentals.ledger.rework import Rework
@@ -125,16 +127,16 @@ from fundamentals.ledger.run_draft import (
     preflight,
     recall,
     section_body,
+    stated_claims,
     write_run_draft,
 )
-from fundamentals.ledger.run_traces import Line, RunDraftError, bind_computed
+from fundamentals.ledger.run_traces import Line, RunDraftError, _fiscal_month, bind_computed
 from fundamentals.output.earnings_update import (
     REQUIRED_ROLES,
     EarningsUpdate,
     render_earnings_update,
 )
 from fundamentals.pg.cutover import open_fact_store
-from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.fact_store import FactRef
@@ -357,6 +359,9 @@ def run_command(
                 snapshots=snapshots,
                 full_successor=args.full_successor,
             )
+            targets = load_targets(symbol)
+            check_pins(targets, prior.record.pins)
+            check_pins(targets, prior.same_period_record.pins)
             memory = recall(pool, prior.entity_id)
             repository = EvidenceRepository(pool)
             versions, members = _comparison(
@@ -364,6 +369,7 @@ def run_command(
             )
             bound: list[tuple[Line, ...]] = []
             probes: list[Probe] = []
+            credibility: list[CredibilityInputs] = []
             facts: dict[str, FactRef] = {}
 
             def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
@@ -380,13 +386,25 @@ def run_command(
 
             def before_commit(update: EarningsUpdate, guidance: tuple[GuidanceClaim, ...]) -> None:
                 gate = None
-                if prior.rework is not None or prior.full_successor is not None:
-                    with pool.connection() as conn, conn.cursor() as cursor:
-                        check_head(cursor, prior, period)  # before the run's first write
-                        if prior.rework is not None:
-                            gate = prior.rework.gate(section_body, partial(admit, update))
-                            gate_lines(cursor, gate, update, guidance, prior, catalog)
-                            _check_carried(cursor, prior.rework, store_id)
+                month = _fiscal_month(repository, prior.entity_id, update)
+                with pool.connection() as conn, conn.cursor() as cursor:
+                    check_head(cursor, prior, period)  # before the run's first write
+                    ready = prepare(
+                        stated_claims(cursor, guidance, update, prior, catalog),
+                        prior.record,
+                        prior.same_period_record,
+                        targets,
+                        period=period,
+                        period_end=update.period_end,
+                        month=month,
+                        filed_at={} if retrospective is None else retrospective.published,
+                        actual_blobs=prior.actual_blobs,
+                    )
+                    if prior.rework is not None:
+                        gate = prior.rework.gate(section_body, partial(admit, update))
+                        gate_lines(cursor, gate, update, guidance, prior, catalog)
+                        _check_carried(cursor, prior.rework, store_id)
+                admit(update, ready.blobs)
                 lines = bind_computed(
                     repository,
                     update,
@@ -402,7 +420,17 @@ def run_command(
                         update,
                         entity_id=prior.entity_id,
                         versions=versions,
-                        fiscal_year_end_month=_fiscal_month(repository, prior.entity_id, update),
+                        fiscal_year_end_month=month,
+                    )
+                )
+                credibility.append(
+                    bind_credibility(
+                        repository,
+                        update,
+                        ready,
+                        prior.actuals,
+                        entity_id=prior.entity_id,
+                        versions=versions,
                     )
                 )
                 facts.update(
@@ -437,6 +465,7 @@ def run_command(
                 facts=facts,
                 lines=bound[0],
                 probe=probes[0],
+                credibility=credibility[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
                 memory=memory,
@@ -446,17 +475,6 @@ def run_command(
             version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
             structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
             return result.model_copy(update={"draft_version_id": version_id})
-
-
-def _fiscal_month(repository: EvidenceRepository, entity_id: int, update: EarningsUpdate) -> int:
-    """The entity's fiscal-year-end month governing the run's period, as of the store clock."""
-    period_end = date.fromisoformat(update.period_end)
-    record = repository.settings_as_of(
-        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock(), period_end
-    )
-    if record is None:
-        raise RunDraftError(f"entity {entity_id} has no fiscal-year-end month")
-    return int(record.value_text)
 
 
 def _comparison(
