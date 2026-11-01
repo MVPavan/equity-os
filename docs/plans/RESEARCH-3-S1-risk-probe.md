@@ -5,6 +5,8 @@ gpt-6.1-sol `APPROVE`), with §0–§2, §6 and the owner rulings (OD-2: raw fil
 ratios; invariant 7 extension). Bead `eqos-bnx`, slice 3 → S1. LIVE-RUN-1 (`eqos-dna`) is done:
 the four live Apar run drafts FY26_Q2..FY27_Q1 are `APPROVED` (versions 8, 10, 11, 12), so live
 regeneration is not blocked.
+**Revision:** r2 (2026-11-01) fixes the 12 findings of Sol's r1 plan review (`REQUEST_CHANGES`);
+the changed parts are marked "r2" with the finding number.
 **Goal:** every Apar run draft carries a `risk_probe` section after `observable_falsifiers`.
 For R1–R6 it shows the traced ratio, the cited raw filed amounts, the balance date and flow
 window, and a code-computed status with its reason (guards, rules S/T/L, staleness). It ends with
@@ -179,10 +181,22 @@ package-checked through it.
   - `probe.R<n>.prior` (`CALCULATION` on the matching prior).
   The `R<n>` ids pass the numeral scan as rendered identifiers (`numeral_scan.py:37`). A shared
   operand (revenue in R1 and R5) gets one raw claim per row, shown beside each ratio.
-- **P2, flow window.** On the selected capture, the flow window is the longest `MAPPED`
-  `revenue_from_operations` duration ending at the balance date. That is the half-year or annual
-  window on Apar; it needs no fiscal-calendar config. `D` is that window's inclusive day count,
-  taken from the flow operand's key period inside `run.days`.
+- **P2, flow window (r2, Sol r1 #1).** The window does not depend on any one operand.
+  - On the selected capture, the candidates are the periods of every `MAPPED` interpretation
+    under the pins and the run's context that end at the balance date and whose
+    `PeriodInterval.kind(fiscal_year_end_month)` (`contracts/measurement_key.py:57-85`) is
+    `HALF_YEAR` or `YEAR`. The month is the entity's `FISCAL_YEAR_END_MONTH` setting
+    (`pg/identity_seed.py:66`), read as `api/onboard_cli.py:479` does.
+  - The window is the longest candidate (`YEAR` over `HALF_YEAR`). Quarters, nine-month, TTM
+    and `OTHER` periods are never windows.
+  - No candidate → `Statement.window` is `None`: R1–R5 are `NOT_ASSESSED` ("no half-year or
+    annual flow window in the statement"); R6 (instants only) is still assessed.
+  - Each flow operand is then read at that window. A missing one (revenue included) affects
+    only the checks that use it: missing revenue makes R1 and R5 `NOT_ASSESSED`; R2–R4 and R6
+    are unaffected.
+  - `D` is the window's inclusive day count, taken from the flow operand's key period inside
+    `run.days`.
+  - Binding test: Task 4 (q), missing revenue on the pilot.
 - **P3, child sums.**
   - M is `run.sum(run.sum(cost_of_materials_consumed, purchases_of_stock_in_trade),
     changes_in_inventories)`: two child traces, as the spec says.
@@ -192,7 +206,8 @@ package-checked through it.
     unreferenced, content-addressed trace, which is harmless.
 - **P4, missing versus ambiguous at run time.** Zero `MAPPED` interpretations of an operand →
   the row is `NOT_ASSESSED`, naming the canonical id. More than one → `RunDraftError` (a store
-  fault, as `_Binder.operand` treats it today; Task 0 shows none on Apar).
+  fault, as `_Binder.operand` treats it today, `run_traces.py:172-185`; Task 0 shows none on
+  Apar). Both are proven at the database boundary by Task 4 (q).
 - **P5, stale falsifier status.** Spec §2 says the falsifier "shows `NOT_ASSESSED: latest
   statement predates the period`". `Disposition` gains `NOT_ASSESSED`, used only for that case.
   Every other unevaluable falsifier stays `UNRESOLVED`, as in RESEARCH-1.
@@ -211,9 +226,18 @@ package-checked through it.
   mismatched priors). The guards, rules and statuses are a pure function of operand values and
   windows (Task 3), so they are tested without a database. The database path (traces, unitless
   claims, raw figures, `MATCH`) is proven on the retained pilot (Task 4). This is cheaper and
-  covers the same logic (`.claude/rules/python/testing.md`).
-- **P9, `not_performed` unchanged.** Its "- forensic checks" line stays. The probe is a ratio
-  screen, and it names every forensic source it does not assess.
+  covers the same logic (`.claude/rules/python/testing.md`). The pure tests do not replace the
+  two database-boundary tests: lookup failures (Task 4 (q)) and the recursive cutoff and
+  package check (Task 4 (r)).
+- **P9, `not_performed` qualified (r2, Sol r1 #11).** The owner counts receivable and payable
+  days, OCF against profit and capex intensity as forensic checks
+  (`docs/goals/2026-10-27-research-report-targets.md:14`), so the bare "- forensic checks" line
+  (`run_draft.py:118-123`) would contradict the probe. It becomes "- forensic checks beyond the
+  risk probe's ratio checks (see `risk_probe` for the sources it does not assess)". Wording
+  only; PILOT-4 asserts the new line.
+- **P10, non-evaluated sources (r2, Sol r1 #10).** S1 does not check whether a source is in the
+  package or merely not extracted (spec lines 86-88 distinguish the two). Each renders the fixed
+  "NOT_ASSESSED: <source> not assessed by this probe", which is true either way.
 
 ## File map
 
@@ -226,18 +250,63 @@ package-checked through it.
 | `src/fundamentals/ledger/run_traces.py` | modify | `_Binder`: interpretation-read operands, closing and window keys, `CLOSING` role, formulas `run.days`/`run.ratio`/`run.outflow_pct`, child sums |
 | `src/fundamentals/ledger/citations.py` | modify | `_filed_key` admits `probe.R<n>.<canonical_id>` |
 | `src/fundamentals/ledger/risk_probe.py` | create | the probe: check table, guards, rules S/T/L, statuses, statement selection and prior matching, binding to traces and claims, section body, explanation, non-evaluated sources |
-| `src/fundamentals/ledger/run_draft.py` | modify | `RunDraft.probe`, probe claims in the version, stale keys into `evaluate`, `risk_probe` section after `observable_falsifiers`, recursive `_OPERAND_BLOBS` |
+| `src/fundamentals/ledger/run_draft.py` | modify | `RunDraft.probe`, probe claims in the version, stale keys into `evaluate`, `risk_probe` section after `observable_falsifiers`, recursive `_OPERAND_BLOBS`, qualified `NOT_DONE` line (P9) |
 | `src/fundamentals/api/cli.py` | modify | call `bind_probe` in `before_commit` after `bind_computed` and pass it to `RunDraft` |
 | `tests/fundamentals/test_falsifier_status.py` | modify | typed-limit import refusals, `DAYS` limits flag on breach, evaluator kind mismatch, stale `NOT_ASSESSED` |
 | `tests/fundamentals/test_risk_probe.py` | create | pure guards, rules, statuses, prior matching, explanation and section text |
-| `tests/fundamentals/test_prep2b_traces.py` | modify | `run.days` (inclusive `D`, leap year), `run.outflow_pct` and `CLOSING` role on a stored trace, if the pure tests cannot reach them |
-| `tests/fundamentals/test_pilot_e2e.py` | modify | PILOT-4: probe keys, R1–R6 values, raw amounts cite filed facts, windows, stale, T on FY26_Q2 and FY26_Q4 |
+| `tests/fundamentals/test_prep2b_traces.py` | modify | trace-digest characterization (Task 2); `run.days` (inclusive `D`, leap year, `CLOSING` role) and `run.outflow_pct` on stored traces |
+| `tests/fundamentals/test_prep2b_run_draft.py` | modify | lookup failures and the unevaluable section at the binding boundary (Task 4 (q)); recursive cutoff and package refusal (Task 4 (r)) |
+| `tests/fundamentals/test_pilot_e2e.py` | modify | PILOT-4: probe keys, R1–R6 values, raw amounts cite filed facts, windows, stale, T on FY26_Q2 and FY26_Q4, qualified `not_performed` line |
 | `docs/evidence/phase-0.5/q0-thesis-successor-2.{md,yaml}` | create (Task 5) | successor thesis 1.2.0 with typed probe limits |
 | `config/ledger_import.yaml` | modify (Task 5) | `thesis_successor` → successor-2 |
 
-Estimate: about **450 production lines** (Task 1 ≈ 40, Task 2 ≈ 70, Task 3 ≈ 170, Task 4 ≈ 170)
-and **≈ 400 test lines**. That is below the spec's 600–900 because guards and rules are one
-table-driven pure function, and no new module wraps the binder.
+Scratch helpers (never committed) are listed in the Files blocks of Tasks 5 and 6.
+
+Estimate: about **460 production lines** (Task 1 ≈ 40, Task 2 ≈ 70, Task 3 ≈ 170, Task 4 ≈ 180)
+and **≈ 520 test lines** (Task 1 ≈ 90, Task 2 ≈ 60, Task 3 ≈ 200, Task 4 ≈ 170). r2 adds about 10
+production lines (P2's window discovery) and 120 test lines (Task 2 characterization, Task 4
+(q)(r)). Scratch helpers for Tasks 5–6: ≈ 250 lines, not committed. Production stays below the
+spec's 600–900 because guards and rules are one table-driven pure function, and no new module
+wraps the binder.
+
+## Test-first order and the red proof (r2, Sol r1 #6)
+
+`scripts/verify.sh gate RESEARCH-3-S1` needs a red proof (`scripts/verify.sh:343-395`). The red
+run seals every acceptance file, plus each local module it imports, by SHA-256
+(`:197-217`). The gate then fails `tests-untouched` if any of them changes. S1 adds behaviour, so
+the refactor `baseline` route does not apply. The sequence is:
+1. **Tests round (one Opus round, before any production change).** Write every test named in
+   Tasks 1–4, final, in the four test files of the file map plus `test_risk_probe.py`. Shared
+   helpers (`tests/fundamentals/prep2b_support.py`, conftests) are changed in this round or not
+   at all. Every file must still collect on the pre-change source, because one collection error
+   interrupts the whole red session: a production name that does not exist yet is imported
+   inside the test or its fixture, not at module level. Each node then fails on its own.
+2. **Characterization check.** On the pre-change source, `uv run pytest
+   tests/fundamentals/test_prep2b_traces.py::test_trace_digests_are_unchanged -n 0` passes. It is
+   not an acceptance node (the red proof requires every recorded node to fail).
+3. **Red capture** on the pre-change source (`HEAD` = this plan's commit plus the tests), the
+   orchestrator only:
+   `scripts/verify.sh red RESEARCH-3-S1 tests/fundamentals/test_risk_probe.py
+   tests/fundamentals/test_falsifier_status.py::test_a_probe_limit_imports_typed_by_its_suffix
+   tests/fundamentals/test_falsifier_status.py::test_an_unknown_or_mismatched_probe_limit_refuses
+   tests/fundamentals/test_falsifier_status.py::test_a_probe_measure_of_another_kind_refuses
+   tests/fundamentals/test_falsifier_status.py::test_a_days_limit_weakens_on_breach
+   tests/fundamentals/test_falsifier_status.py::test_a_stale_measure_is_not_assessed
+   tests/fundamentals/test_prep2b_traces.py::test_probe_formulas_store_closing_and_outflow_traces
+   tests/fundamentals/test_prep2b_run_draft.py::test_probe_lookup_failures
+   tests/fundamentals/test_prep2b_run_draft.py::test_a_nested_probe_operand_outside_the_package_or_cutoff_refuses
+   tests/fundamentals/test_pilot_e2e.py::test_pilot_end_to_end`.
+   It must report every node `FAILED` or `ERROR`, with none missing. A node that passes
+   pre-change is vacuous: fix the test, then re-capture, still before production code.
+4. **Implement** Tasks 1–4 without touching the sealed files.
+5. **Reseal only if a contract is wrong.** If an implementer shows a sealed test is wrong, the
+   orchestrator stops, has the test amended, and runs `scripts/verify.sh reseal RESEARCH-3-S1
+   <proof-file>` with a proof file naming the amendment and showing the amended assertion
+   failing against the implementation it was wrong about
+   (`docs/graph-loops/v2-build-pipeline.md:243-250`). No other test edit is allowed.
+6. **Gate:** `scripts/verify.sh gate RESEARCH-3-S1` → `ROUTE PASS`.
+
+The node names above are binding; the tests round uses exactly these names.
 
 ## Tasks
 
@@ -290,15 +359,16 @@ Approach:
 - `derived` needs no change: it already copies the threshold's kind and unit into the
   `THESIS_CLAIM`, and the `thesis_impact` count by status picks up `NOT_ASSESSED`.
 
-Verification: `uv run pytest tests/fundamentals/test_falsifier_status.py tests/fundamentals/test_ledger_import.py -n 0` passes. The new cases are:
-- (a) `_days` limits on `probe_receivable_days`, `probe_inventory_materials_days` and
-  `probe_payable_materials_days` import as `DAYS`, unitless.
-- (b) an unknown suffix is refused;
-- (c) with `METRICS` patched so a `_days` metric is `PERCENTAGE`, import is refused;
-- (d) with `METRICS` pointing a `_days` metric at a `PERCENTAGE` claim, `evaluate` raises
-  `RunDraftError`;
-- (e) a `_days` limit flags `WEAKENED` on breach, for each of the three days metrics;
-- (f) a stale key gives `NOT_ASSESSED` with `STALE`.
+Verification: `uv run pytest tests/fundamentals/test_falsifier_status.py tests/fundamentals/test_ledger_import.py -n 0` passes. The new cases (written in the tests round, sealed by the red proof):
+- (a) `test_a_probe_limit_imports_typed_by_its_suffix`: `_days` limits on
+  `probe_receivable_days`, `probe_inventory_materials_days` and `probe_payable_materials_days`
+  import as `DAYS`, unitless; a `_ratio` limit imports as `RATIO`.
+- (b)(c) `test_an_unknown_or_mismatched_probe_limit_refuses`, parametrized: an unknown suffix is
+  refused; with `METRICS` patched so a `_days` metric is `PERCENTAGE`, import is refused.
+- (d) `test_a_probe_measure_of_another_kind_refuses`: with `METRICS` pointing a `_days` metric
+  at a `PERCENTAGE` claim, `evaluate` raises `RunDraftError`.
+- (e) `test_a_days_limit_weakens_on_breach`, parametrized over the three days metrics.
+- (f) `test_a_stale_measure_is_not_assessed`: a stale key gives `NOT_ASSESSED` with `STALE`.
 
 Dependencies: None.
 
@@ -345,8 +415,13 @@ Interfaces:
 
 Approach:
 - Refactor `_compute` into `evaluate` plus the run-value check, so every existing trace keeps
-  its content hash. That makes this characterization-first: `test_prep2b_traces.py` and the
-  pilot must stay green before any new formula lands.
+  its content hash. The existing trace tests check values, citations and write counts, not
+  trace content (`test_prep2b_traces.py:149-196,262-269`), so they cannot catch a changed hash
+  (`canon/formula.py:149-152` hashes every field). The tests round therefore adds one
+  characterization test, `test_trace_digests_are_unchanged`. It binds one quarter with
+  `bind_computed` and asserts the sorted content digests of the traces it stores equal a
+  literal tuple. That tuple is printed by running the test body once on the pre-change source,
+  never typed by a model. It passes before and after the refactor and is not a red-proof node.
 - Add the three formulas to `evaluate`. `run.days` reads D from operand b's key period.
 - Instant keys are `key.model_copy(update={"period": PeriodInterval.at(day)})`, as `bind_computed`
   already builds prior keys.
@@ -354,10 +429,12 @@ Approach:
   guards run first (Task 3).
 
 Verification:
-- `uv run pytest tests/fundamentals/test_prep2b_traces.py -n 0` passes unchanged.
-- One added case: a stored `run.days` trace over a `CLOSING` instant and a 366-day leap-year
-  window carries D = 366 inside its exact value and records the `CLOSING` role.
-- One added case: `run.outflow_pct` on a negative outflow is positive.
+- `uv run pytest tests/fundamentals/test_prep2b_traces.py -n 0` passes, including
+  `test_trace_digests_are_unchanged` (green on the pre-change source and after).
+- `test_probe_formulas_store_closing_and_outflow_traces` (red-proof node), parametrized:
+  - a stored `run.days` trace over a `CLOSING` instant and a 366-day leap-year window carries
+    D = 366 inside its exact value and records the `CLOSING` role;
+  - `run.outflow_pct` on a negative outflow is positive.
 - `uv run mypy --strict src` is clean.
 
 Test seams: `_Binder` over a test-DB evidence repository, as `test_prep2b_traces.py` already uses.
@@ -365,7 +442,7 @@ Test seams: `_Binder` over a test-DB evidence repository, as `test_prep2b_traces
 Dependencies: None.
 
 Risks: characterization-first. A changed hash on any existing trace breaks the four live
-approved versions' replay; the existing trace tests are the guard.
+approved versions' replay; `test_trace_digests_are_unchanged` is the guard.
 
 ### Task 3: Probe assessment and section text (pure)
 
@@ -392,6 +469,8 @@ outside placeholders and structural dates. It must hold exactly as spec §2:
 - **Status, first match wins.** Guard; else a fired rule → `FLAGGED`; else an evaluated rule →
   `PASSED`; else `COMPUTED` ("no rule evaluable: no prior, no limit").
 - **Stale.** Values render with a statement note, and the metric goes to `stale`.
+- **No flow window.** `Statement.window` `None` → R1–R5 `NOT_ASSESSED`, "no half-year or annual
+  flow window in the statement"; R6 is assessed (P2).
 - **No balance sheet.** One paragraph: "NOT_ASSESSED: no filed balance sheet in the run's
   package".
 
@@ -407,7 +486,8 @@ Interfaces:
     `label` (no digits), `formula`, the numerator and denominator canonical ids (M expands to
     its three ids), `arrow: int | None` (+1 ↑, −1 ↓, None), `category` (P6) and `meaning` (P7
     sentence).
-  - `Statement` (frozen): `capture_sha256: str`, `balance_date: date`, `window: PeriodInterval`,
+  - `Statement` (frozen): `capture_sha256: str`, `balance_date: date`, `window: PeriodInterval |
+    None` (P2),
     `stale: bool`, `values: Mapping[str, Decimal]`. The values are exact base-unit amounts of
     the operands found; an absent id is missing.
   - `guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None`. It returns
@@ -424,19 +504,19 @@ Interfaces:
     raw-figure keys it shows.
 
 Approach:
-- Write the tests first, from the spec §5 S1 acceptance list. Then build one table-driven
-  module: no per-check classes, no strategy objects.
+- The tests come from the spec §5 S1 acceptance list and are written in the tests round
+  (above). Build one table-driven module: no per-check classes, no strategy objects.
 - Each row line carries its own `{{e:computed}}` marker. Raw amounts carry `{{e:observed}}`
   (and render `FILED_SUFFIX` through their claim). A limit carries `{{e:opinion}}`.
 - The explanation paragraph is `{{e:computed}}`. It has one sentence per `FLAGGED` row (P7),
   then one closing sentence naming the categories that carry flags (P6) and the coverage gaps:
   the `NOT_ASSESSED` rows and the non-evaluated sources.
-- The non-evaluated sources are a constant tuple, each rendered "NOT_ASSESSED: <source> not in
-  the run's package": related parties, pledges, contingent liabilities, auditor opinion,
-  capitalised intangibles, rating remarks, disclosure lapses.
+- The non-evaluated sources are a constant tuple, each rendered "NOT_ASSESSED: <source> not
+  assessed by this probe" (P10): related parties, pledges, contingent liabilities, auditor
+  opinion, capitalised intangibles, rating remarks, disclosure lapses.
 
-Verification: `uv run pytest tests/fundamentals/test_risk_probe.py -n 0` passes. One case per
-acceptance item:
+Verification: `uv run pytest tests/fundamentals/test_risk_probe.py -n 0` passes. The whole file
+is a red-proof target. One case per acceptance item, parametrized where cases share a shape:
 - (a) R4 is `FLAGGED` by S when cfo < PAT;
 - (b) R4 with a loss is `FLAGGED` ("non-positive profit"), and the ratio is not shown;
 - (c) R6 with negative equity is `FLAGGED` ("non-positive equity"), not `NOT_ASSESSED`;
@@ -450,8 +530,9 @@ acceptance item:
 - (i) a `WEAKENED` limit flags and names the falsifier id;
 - (j) `COMPUTED` when there is no prior and no limit;
 - (k) a stale statement renders its note;
-- (l) every non-evaluated source is named;
-- (m) `scan_section` on a rendered body (all statuses) returns no state.
+- (l) every non-evaluated source is named with "not assessed by this probe";
+- (m) `scan_section` on a rendered body (all statuses) returns no state;
+- (n) a statement with no window: R1–R5 `NOT_ASSESSED` with the window reason, R6 assessed.
 
 Test seams: `guard`, `matches`, `assess`, `body`. Pure, no I/O.
 
@@ -489,7 +570,8 @@ Interfaces:
     `priors: Mapping[str, Decimal]` (per check id), `notes: Mapping[str, str]` (guard or T
     reasons), `stale_keys: frozenset[str]`.
   - `bind_probe(repo: EvidenceRepository, update: EarningsUpdate, *, entity_id: int, versions:
-    ConfigVersions) -> Probe`.
+    ConfigVersions, fiscal_year_end_month: int) -> Probe`. The CLI passes the entity's
+    `FISCAL_YEAR_END_MONTH` setting (P2).
   - `probe_section(probe: Probe, rows: Sequence[FalsifierRow]) -> tuple[str, str]`, the
     `(RISK_PROBE, body)` pair.
   - `RunDraft.probe: Probe`.
@@ -497,8 +579,10 @@ Interfaces:
 Approach:
 - **Candidates.** `bind_probe` collects the package's XBRL provenances: own, QoQ and YoY prior
   sources, from `update` (F-6).
-- **Statement.** It reads each needed operand with `_Binder.filed` under the window or instant
-  keys (P2).
+- **Statement.** It reads the balance-sheet instants with `_Binder.filed`. It discovers the
+  window from all eligible `MAPPED` periods on the capture (P2), never from revenue alone, then
+  reads each flow operand at that window. A missing operand is absent from `values`; only the
+  checks that use it are affected.
 - **Prior.** It finds the prior among the candidates by `matches`.
 - **Per check.**
   - If `guard` passes, it builds the child sums and the parent trace and stores them. The claim
@@ -515,6 +599,7 @@ Approach:
   - It passes `probe.stale_keys` to `evaluate`.
   - It appends `probe_section(probe, rows)` after the falsifier sections and before
     `open_questions`.
+  - `NOT_DONE`'s forensic line is qualified (P9).
 - **Operand blobs.** `_OPERAND_BLOBS` becomes recursive over `operand_trace_id`, in the
   `_INPUTS` form (F-7), so child-sum operands are package- and cutoff-checked.
 - **PILOT-4** in `test_pilot_e2e.py`:
@@ -530,12 +615,31 @@ Approach:
       constants' direction.
     - Raw amounts are `FIGURE` on the interpretation of the selected capture, with `FILED`.
     - R5 is positive.
+    - The `not_performed` section carries the qualified forensic line (P9).
     - Every claim is `MATCH`.
+- **Binding-boundary tests** in `test_prep2b_run_draft.py`, on the `pilot` fixture's FY26_Q2
+  run, patching only `_Binder._interpretations` (the store read) or `_Binder.filed`'s source:
+  - (q) `test_probe_lookup_failures`, parametrized (Sol r1 #1, #7):
+    - `revenue_from_operations` has no `MAPPED` interpretation → the draft is written; R1 and R5
+      are `NOT_ASSESSED` naming it; R2, R3, R4 and R6 carry claims, with the window still the
+      half-year (proves P2 does not depend on revenue);
+    - `cfo` has two `MAPPED` interpretations → `RunDraftError`, no version written;
+    - no balance-sheet instant on the run's or the QoQ capture → the section is the single
+      "no filed balance sheet" paragraph, and the rest of the draft is written.
+  - (r) `test_a_nested_probe_operand_outside_the_package_or_cutoff_refuses`, parametrized
+    (Sol r1 #8): R6's child-sum operand `borrowings_current` is read from another quarter's
+    registered XBRL capture that no other claim cites: (a) outside the run's package; (b)
+    admitted to it (`allowed_captures` patched to include it) but with its
+    `Retrospective.published` time after the source cutoff (the pilot runs `--retrospective`,
+    `prep2b_support.py:278-282`). The parent trace's direct operands are child traces, so only
+    the recursive `_OPERAND_BLOBS` sees that capture. Each refuses with `check_blobs`'s message (`run_draft.py:657-668`), and no report
+    version persists. With today's non-recursive query both would write.
 
 Verification:
 - `uv run pytest tests/fundamentals/test_pilot_e2e.py tests/fundamentals/test_prep2b_run_draft.py tests/fundamentals/test_falsifier_status.py -n 0`
   passes. This needs the compose postgres plus the retained originals.
-- Then the full gate: `scripts/verify.sh gate RESEARCH-3-S1`.
+- Then the full gate: `scripts/verify.sh gate RESEARCH-3-S1` → `ROUTE PASS`, against the red
+  proof captured before Task 1 (see "Test-first order and the red proof").
 
 Test seams: the pilot's four-quarter run on its own `eqos_test_*` database and the version it
 writes.
@@ -555,34 +659,77 @@ Goal: an approved thesis successor 1.2.0, imported into the live ledger as the h
 FY26_Q2 `BOOTSTRAP_THESIS` chain. It keeps F1–F5 of 1.1.0 unchanged and adds one typed
 falsifier per probe metric, each an opinion with a stated recipe.
 
+Files (r2, Sol r1 #12):
+- Create: `docs/evidence/phase-0.5/q0-thesis-successor-2.{md,yaml}` (Opus round writes, script
+  fills thresholds); `scratchpad/research3-s1/q0_probe.py`, `thresholds.py` (orchestrator,
+  never committed).
+- Modify: `config/ledger_import.yaml` (orchestrator).
+- Scratch outputs under `scratchpad/research3-s1/task5/`: `q0_probe.json`, `recipes.yaml`,
+  `thresholds.json`, `counts/`, `digests/`, `logs/`.
+
+Interfaces:
+- Consumes: Tasks 1–4 at the phase-approved commit (`map_q0(..., metrics=)`, `METRICS`,
+  `CHECKS`, `guard`, the formula constants); the pinned retrieval manifest `RM` and its
+  `published_package` (`api/source_admission.py`); A1's `counts.py` and `digests.py`.
+- Produces:
+  - `q0_probe.py` → `q0_probe.json`: for each Q0-window statement (capture, balance date,
+    window, publication time, acquisition time) and each check, the exact value and its value
+    quantised at the claim precision, or the guard reason. Read-only, migrator role, asserts
+    `current_database()`.
+  - `recipes.yaml` (Opus round): per probe metric, `metric_id`, operator, direction rationale
+    and a numeral-free recipe over named `q0_probe.json` values (below).
+  - `thresholds.py` → `thresholds.json` and the threshold lexemes in the pair. It reconciles
+    the pair against the recipes and exits non-zero on any difference.
+  - Successor-2 pair: 1.1.0's F1–F5 unchanged plus six typed probe falsifiers.
+
 Approach (the RESEARCH-1 Task 6 and Amendment A1 path):
-1. A read-only scratchpad script computes R1–R6 from the Q0-window statements only: those first
-   seen by the thesis cutoff 2025-11-06, i.e. FY26_Q2 H1, FY25_Q2 H1 and FY25 annual. It uses
-   the same formulas, `Decimal` and quantisation as Task 4. No later quarter is read. The
-   numbers come only from this script.
-2. A fresh Opus round proposes one limit per probe metric (`metric_id`, operator, threshold,
-   recipe). Each is stated as an opinion against the script output. The round writes
-   `docs/evidence/phase-0.5/q0-thesis-successor-2.{md,yaml}`:
-   - a copy of 1.1.0 plus the new falsifiers;
-   - a reason paragraph citing this plan and spec §2 L;
-   - `approved_by` Sol.
-   The pair must map losslessly (`map_q0` with the registered kinds).
-3. A fresh Sol review reads the pair with the script output and judges recipes, directions and
-   thresholds. On `APPROVE`, commit the pair: that commit is the evidence commit. Then replace
-   the `thesis_successor` block in `config/ledger_import.yaml` with successor-2 (evidence
-   commit, `decided_on`, ruling) and commit.
-4. Rehearse on a restored copy (`db backup` → `db restore --database eqos_test_s1`, A1's form):
+1. **Inputs (Sol r1 #2).** The Q0-window statements are the hash-pinned filings in the retrieval
+   manifest whose publication time is at or before the thesis cutoff 2025-11-06: FY26_Q2 H1
+   (capture 1), FY25_Q2 H1 (capture 13) and FY25 annual (capture 15). This is the existing
+   retrospective contract (`api/cli.py:572-590`; `run_draft.py:662-668` uses publication, not
+   first-seen, under `--retrospective`). The originals were acquired in September 2026
+   (`docs/plans/LIVE-RUN-1-prerequisites.md:51-63`); `q0_probe.json` records both times and
+   the md repeats 1.1.0's retrospective disclosure. No later quarter is read.
+2. **Observed values.** `q0_probe.py` computes R1–R6 on those statements with the Task 4 code
+   (`CHECKS`, `guard`, the formulas), in `Decimal`, quantised as Task 4. Its output is the only
+   source of observed numbers.
+3. **Recipes, not numbers (Sol r1 #3).** A fresh Opus round reads `q0_probe.json` and writes
+   `recipes.yaml` and the pair.
+   - The model chooses only the metric, the operator, the direction and the recipe. A recipe is
+     numeral-free: a base (one named observation, or the max or min of named observations)
+     plus, optionally, a spread (the absolute difference of two named observations). It holds
+     no numeric literal.
+   - The falsifier itself is an opinion (`{{e:opinion}}`): the choice of recipe and direction.
+     The threshold is a calculation from that recipe; the md states each recipe in words and
+     marks its threshold "calculated by `thresholds.py`". S1 admits no chosen opinion
+     constant. A limit that would need one is dropped from successor-2 and recorded for the
+     owner.
+   - The pair is a copy of 1.1.0 plus the new falsifiers, a reason paragraph citing this plan
+     and spec §2 L, and `approved_by` Sol. Each threshold is the placeholder
+     `{{threshold:<metric_id>}}` until step 4.
+4. **Thresholds by code.** `thresholds.py` evaluates each recipe over `q0_probe.json` in
+   `Decimal` and quantises at the threshold kind's precision (`config/rounding_policy/v1.yaml`:
+   `DAYS` 2, `PERCENTAGE` 2, `RATIO` 6). It writes the exact lexemes into both files of the
+   pair, then re-reads the pair, maps it with `map_q0(metrics=...)`, and asserts each mapped
+   threshold equals its recomputation. Any difference → exit non-zero, no review.
+5. **Review.** A fresh Sol round reads the pair, `recipes.yaml`, `q0_probe.json` and
+   `thresholds.json`, and judges recipes, directions and the reconciliation. On `APPROVE`,
+   commit the pair: that commit is the evidence commit. Then replace the `thesis_successor`
+   block in `config/ledger_import.yaml` with successor-2 (evidence commit, `decided_on`,
+   ruling) and commit. A Sol change to a recipe goes back through steps 3–5; no threshold is
+   ever edited by hand.
+6. Rehearse on a restored copy (`db backup` → `db restore --database eqos_test_s1`, A1's form):
    - `ledger import --thesis-successor` → one line, `FY26_Q2 BOOTSTRAP_THESIS <id> APPROVED`;
    - counts deltas: one version, two decisions, two import sources, one validation, and the
      sections and claims of the mapped pair;
    - version 6 becomes `SUPERSEDED`;
    - `approved_thesis` binds the new version.
-5. Live: `db check-live` → counts → digests (all prior versions) → `ledger import
+7. Live: `db check-live` → counts → digests (all prior versions) → `ledger import
    --thesis-successor --snapshot-root data/raw/snapshots/v1`. Then `db check-live`, counts
    (deltas equal the rehearsal's) and digests (prior versions unchanged).
 
-Verification: the import line shows `APPROVED`; `db check-live` exits 0; deltas match the
-rehearsal's; every earlier sealed digest is unchanged.
+Verification: `thresholds.py` exits 0 (reconciled); the import line shows `APPROVED`;
+`db check-live` exits 0; deltas match the rehearsal's; every earlier sealed digest is unchanged.
 
 Dependencies: Tasks 1–4 committed and Sol's phase-end `APPROVE`; the live code is that commit.
 
@@ -598,18 +745,58 @@ Goal:
 - Each is `AS_KNOWN` with every claim `MATCH`/`MATCH_UNTRUSTED`.
 - Sol's `APPROVE` on each, through `ledger panel`, judges the explanation readable as analysis.
 
+Files (r2, Sol r1 #12):
+- Create: `scratchpad/research3-s1/probe_gate.py` (orchestrator, never committed). No repo
+  file changes.
+- Scratch outputs: the `OUT` tree below.
+
+Interfaces:
+- Consumes: successor-2 (Task 5) and its sealed digest `THESIS_S2` (recorded after Task 5's live import); the LIVE-RUN-1 per-quarter
+  table (configs, `--compare-run` 1–4, `$CFGS`, `RM`); the existing locators `$LOC/<Q>.json`
+  and intake store `$INTAKE` (inputs only, reused); A1's `counts.py`, `digests.py` and
+  LIVE-RUN-1's `check_rehearsal.py`.
+- Produces: per quarter `$OUT/out/<Q>.json`, `$OUT/out/<Q>.md`, `$OUT/out/<Q>-v<v>.md`,
+  `$OUT/responses/<Q>.{md,task}`, `$OUT/verdicts/<Q>.json`, `$OUT/gate/<Q>.txt`
+  (`probe_gate.py`: pass/fail per check and status labels only), `$OUT/counts/<n>.tsv`,
+  `$OUT/logs/<step>-<Q>.log`; at close `$OUT/export/`. Four new `APPROVED` versions.
+
+**Paths (Sol r1 #4).** A fresh S1 namespace; no output path is shared with LIVE-RUN-1 or between
+rehearsal and live.
+- `OUT=scratchpad/research3-s1/task6/$ENV`, `ENV` = `rehearsal` or `live`, holding `out/`,
+  `responses/`, `verdicts/`, `gate/`, `counts/`, `logs/` and (at close) `export/`.
+- Rehearsal: DB `eqos_test_s1_runs`, restored from a `db backup` taken after Task 5's live
+  import. Roots are copies (`cp -a`) of the live roots under `$OUT/roots/{snap,intake,locators}`,
+  so no rehearsal write lands in a live root.
+- Live: `SNAP=data/raw/snapshots/v1`, `INTAKE=data/raw/source-intake/store`,
+  `LOC=data/raw/source-intake/locators` (LIVE-RUN-1's; read as inputs).
+- **Preflight, before the environment's first write** (read-only; any failure stops before
+  any write):
+  - `$OUT` does not exist; it is then created with `mkdir -m 700` and each subdirectory
+    likewise. A write-and-delete probe file proves each is writable.
+  - For each quarter, none of `$OUT/out/<Q>.json`, `$OUT/out/<Q>.md`, `$OUT/out/<Q>-v*.md`,
+    `$OUT/responses/<Q>.md` or `$OUT/verdicts/<Q>.json` exists (the run's JSON write refuses
+    to clobber only after the draft commits, `api/cli.py:730-747`,
+    `api/artifact_writer.py:42-52`).
+  - For each quarter, the reused inputs `$LOC/<Q>.json` and `$INTAKE` exist and are readable.
+
 Approach: LIVE-RUN-1 Task 5 step R, per quarter in order FY26_Q2 → FY27_Q1, each approved
-before the next. Values are from the LIVE-RUN-1 table: configs, `--compare-run` 1–4, `$CFGS`,
-the live roots.
-1. Rehearsal first, on a restored copy, for all four quarters. Record every exit code, printed
-   id, counts delta, claim state and probe-gate result.
+before the next, with the paths above in place of LIVE-RUN-1's.
+1. Rehearsal first, for all four quarters. Record every exit code, printed id, counts delta,
+   claim state and probe-gate result.
+   - **Recovery rehearsal (Sol r1 #5).** After FY26_Q2's rehearsal draft is submitted, record
+     `ledger decide REPORT_VERSION <v> REQUEST_CHANGES --claim probe.R1` (rehearsal DB only).
+     An ordinary `run` must refuse (`rework.py:222-227`: a `DERIVED` claim is not reworkable).
+     `run … --full-successor` (`run_draft.py:265-274`) must then write a new draft, which
+     passes `ledger check` and the probe gate, and is taken through submit and panel. Record
+     its deltas; the remaining quarters continue from it.
 2. Live, per quarter:
    - Reuse the quarter's existing locator `$LOC/<Q>.json`: no `stage`, as the LIVE-RUN-1
      rework mode does.
-   - `fundamentals-operator run …` → `run_draft_written version=<v>`.
+   - `fundamentals-operator run … --out-json $OUT/out/<Q>.json --out $OUT/out/<Q>.md` →
+     `run_draft_written version=<v>`.
    - `ledger check` → all `MATCH`/`MATCH_UNTRUSTED`.
-   - **Probe gate** (read-only scratch helper; prints pass/fail and status labels only). Every
-     check must pass:
+   - **Probe gate** (`probe_gate.py --version <v> --thesis-digest $THESIS_S2`, read-only, output to
+     `$OUT/gate/<Q>.txt`). Every check must pass:
      - (a) the draft binds successor-2 by its sealed digest;
      - (b) the `risk_probe` section follows `observable_falsifiers`;
      - (c) the selected capture and staleness are as Task 0: FY26_Q2 own, FY26_Q3 ← FY26_Q2
@@ -619,23 +806,30 @@ the live roots.
      - (e) priors exist exactly on FY26_Q2 and FY26_Q4;
      - (f) each falsifier on a stale metric is `NOT_ASSESSED`;
      - (g) the statuses equal the rehearsal's.
-   - `ledger submit` → `ledger export` → a fresh Sol round on the export, with the A-04/B-02
-     brief plus: "judge whether the risk explanation reads as analysis a reader can act on; list
-     every issue". The reply ends with the `EQOS-BINDING` line.
-   - `ledger panel` → `APPROVED`.
-3. Close: `ledger export --stock APARINDS --status-notes`; post-run `db backup`; bead notes
-   record every id, the backup set id and Sol's verdicts.
+   - `ledger submit` → `ledger export <v> --out $OUT/out/<Q>-v<v>.md` → a fresh Sol round on
+     the export, with the A-04/B-02 brief plus: "judge whether the risk explanation reads as
+     analysis a reader can act on; list every issue". The reply ends with the `EQOS-BINDING`
+     line and is saved to `$OUT/responses/<Q>.md`; the verdict to `$OUT/verdicts/<Q>.json`.
+   - `ledger panel <v> --verdict $OUT/verdicts/<Q>.json --response $OUT/responses/<Q>.md …` →
+     `APPROVED`.
+3. Close: `ledger export --stock APARINDS --out $OUT/export --status-notes`; post-run `db
+   backup`; bead notes record every id, the backup set id and Sol's verdicts.
 
-Verification: four new `APPROVED` versions; the probe gate passes on each; `db check-live` exits
-0 after every write step; counts deltas equal the rehearsal's.
+Verification: four new `APPROVED` versions; the probe gate passes on each; the recovery rehearsal
+passed; `db check-live` exits 0 after every write step; counts deltas equal the rehearsal's
+(the recovery steps excepted, which run only in rehearsal).
 
 Dependencies: Task 5.
 
 Risks:
-- Permanent writes.
+- Permanent writes. Failure branch as LIVE-RUN-1 step R: stop at the first deviation; never
+  re-run a write step that partly committed.
 - A Sol `REQUEST_CHANGES` on readability goes to a fresh Opus round on the Task 3 templates,
   then a re-review. A code change re-enters the phase-end loop before any further live write.
-  A claim rejection goes through the normal rework; probe claims are re-derived, not carried.
+- A rejected probe claim (Sol r1 #5): ordinary rework refuses it (`rework.py:222-227`). After
+  diagnosis, any code fix verified and Sol-reviewed, the quarter is rerun with
+  `--full-successor` (`run_draft.py:265-274`), the route the recovery rehearsal proved; new
+  output paths `$OUT/out/<Q>-r<n>.{json,md}` pass the same preflight.
 
 ## Acceptance map (spec §5 S1)
 
@@ -644,7 +838,10 @@ Risks:
 | R1–R6 equal hand-computed values; balance date and flow window on each row | Task 4 PILOT-4 constants; Task 6 gate (d) |
 | R5 positive for negative canonical capex | Task 2 `run.outflow_pct` case; Task 4 PILOT-4 |
 | R4 `FLAGGED` by S; R4 loss `FLAGGED` "non-positive profit"; R6 negative equity `FLAGGED` "non-positive equity" | Task 3 (a)(b)(c) |
-| Zero or negative revenue or M → `NOT_ASSESSED`; missing operand named | Task 3 (d)(e) |
+| Zero or negative revenue or M → `NOT_ASSESSED`; missing operand named | Task 3 (d)(e); Task 4 (q) at the binding boundary |
+| Missing revenue leaves the other checks assessed; ambiguous interpretation → `RunDraftError`; no balance sheet → one paragraph (spec §1 rule 2) | Task 3 (n); Task 4 (q) |
+| Child-sum operands are package- and cutoff-checked | Task 4 (r) |
+| Existing traces keep their content hash | Task 2 `test_trace_digests_are_unchanged` |
 | T on Q4 evaluated and flags in the arrow direction; half-year vs annual not evaluable; different D uses its own D | Task 3 (g)(h); Task 4 PILOT-4 T on FY26_Q4 (and FY26_Q2, T0-2) |
 | L: `_days` limit on R1 flags on breach | Task 1 (e); Task 3 (i) |
 | Registered `_days` metric with `PERCENTAGE` kind refused at import | Task 1 (c) |
@@ -653,6 +850,7 @@ Risks:
 | R2/R3 limits import as `DAYS` and flag on breach | Task 1 (a)(e) |
 | Stale: Q3 shows FY26_Q2 values; its falsifier `NOT_ASSESSED` | Task 1 (f); Task 3 (k); Task 4 PILOT-4; Task 6 gate (c)(f) |
 | `COMPUTED` with no prior and no limit; non-evaluated sources named | Task 3 (j)(l) |
+| Limit thresholds are calculated, not model-written | Task 5 `thresholds.py` reconciliation; Sol review |
 | Raw amounts cite their filed facts | Task 4 PILOT-4 routes; all `MATCH` |
 | Regenerated Apar reports show the table and explanation; Sol `APPROVE` judges it readable | Task 6 |
 
@@ -662,7 +860,9 @@ Risks:
 - `uv run mypy --strict src`
 - `uv run pytest tests/fundamentals` (compose postgres plus retained originals; the pilot e2e is
   the acceptance test)
-- `scripts/verify.sh gate RESEARCH-3-S1`
+- Before Task 1: the tests round, then `scripts/verify.sh red RESEARCH-3-S1 <nodes>` on the
+  pre-change source, every node red (nodes listed under "Test-first order and the red proof")
+- `scripts/verify.sh gate RESEARCH-3-S1` → `ROUTE PASS`
 - `git status` shows only the files in the file map.
 
 ## Self-review
@@ -679,8 +879,9 @@ Risks:
   - the successor thesis → Task 5.
   Every acceptance case is in the map above. Spec §1 rule 3 (order after
   `observable_falsifiers`, joins `DERIVED`) → Tasks 1 and 4.
-- **Placeholders.** None. The successor's thresholds are deliberately not in this plan:
-  Task 5's script and Sol decide them, as in RESEARCH-1 Task 6.
+- **Placeholders.** None. The successor's thresholds are deliberately not in this plan: Opus
+  proposes numeral-free recipes, `thresholds.py` calculates the thresholds, and Sol reviews
+  (Task 5). As in RESEARCH-1 Task 6, no number comes from a model.
 - **Name/type consistency.** `METRICS` (3-tuple), `RISK_PROBE`, `STALE`, `evaluate(stale=)`,
   `Disposition.NOT_ASSESSED`, `_Binder.filed/evaluate/child/store`, `CHECKS`, `Statement`,
   `guard`, `matches`, `assess`, `body`, `Probe`, `bind_probe`, `probe_section` and
@@ -692,10 +893,14 @@ Risks:
   - R6's numerator sum → P3.
   - Ambiguous interpretation at run time → P4.
   - The successor import chaining onto 1.1.0 → F-10; no code needed.
-  - `not_performed` wording → P9, unchanged.
+  - `not_performed` wording → P9, qualified.
+  - Window discovery when revenue is missing → P2, Task 4 (q).
+  - Recovering a rejected probe claim → Task 6, `--full-successor`, rehearsed.
+  - Fresh output paths for the live writes → Task 6 preflight.
   - `rework.plan`'s refusal message for a rejected derived claim says "re-derived from the
-    approved thesis", which is inaccurate for a probe claim. NOTICED BUT NOT TOUCHING: wording
-    only; the refusal itself is right.
+    approved thesis; supersede the thesis instead" (`rework.py:224-227`), which misdirects for
+    a probe claim, whose route is `--full-successor`. NOTICED BUT NOT TOUCHING: wording only;
+    the refusal itself is right, and Task 6 names the real route.
   - The status dashboard (`docs/status/dashboard.html`) is refreshed by the orchestrator after
     each committed task (routine, not a plan task).
   - Docs: none. The spec and this plan are the record.
