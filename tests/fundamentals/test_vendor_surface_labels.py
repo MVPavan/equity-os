@@ -56,6 +56,17 @@ def test_code_acceptance(label, units, per_share, reply, reason):
     assert field == (json.loads(reply)["field"] if reason == "MAPPED" else None)
 
 
+def test_multi_year_average_never_lands_in_a_period_field():
+    """A multi-year average is not a period margin; `%` alone would store the wrong number."""
+    label = "5yr Avg Operating Profit Margin"
+    sample = LabelSample(label=label, units=frozenset({"%"}), per_share=False)
+    fields = {"opm_pct": ValueKind.PERCENTAGE, "opm_5yr_avg_pct": ValueKind.PERCENTAGE}
+    period = json.dumps({"label": label, "field": "opm_pct"})
+    assert accept(sample, period, fields) == (None, "NOT_IN_DICTIONARY")
+    average = json.dumps({"label": label, "field": "opm_5yr_avg_pct"})
+    assert accept(sample, average, fields) == ("opm_5yr_avg_pct", "MAPPED")
+
+
 @pytest.mark.pg
 def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
     reply = '{"label":"Sales","field":"sales"}'

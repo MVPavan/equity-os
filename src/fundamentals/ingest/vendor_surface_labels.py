@@ -1,6 +1,7 @@
 """Model proposals are advisory: deterministic code decides every mapping."""
 
 import json
+import re
 from collections.abc import Mapping
 from enum import StrEnum
 
@@ -31,6 +32,11 @@ UNIT_KINDS: Mapping[str, frozenset[ValueKind]] = {
     "days": frozenset({ValueKind.DAYS}),
     "count": frozenset({ValueKind.COUNT}),
 }
+# A multi-year statistic is not a period value, though its unit passes.
+# A field means one only if its id carries the same words.
+MULTI_YEAR_OR_AVERAGE = re.compile(
+    r"\b(?:avg|averages?|cagr)\b|\d\s*-?\s*y(?:rs?|ears?)?\b", re.IGNORECASE
+)
 
 
 class MapReason(StrEnum):
@@ -55,7 +61,7 @@ class Proposal(BaseModel):
 def accept(
     sample: LabelSample, reply_text: str, fields: Mapping[str, ValueKind]
 ) -> tuple[str | None, MapReason]:
-    """Require an unchanged label, dictionary membership and compatible code-read units."""
+    """Require an unchanged label, a dictionary field of the same span and compatible units."""
     try:
         reply = Proposal.model_validate_json(reply_text)
     except ValidationError:
@@ -65,6 +71,11 @@ def accept(
     if reply.field is None:
         return None, MapReason.MODEL_UNMAPPED
     if reply.field not in fields:
+        return None, MapReason.NOT_IN_DICTIONARY
+    if MULTI_YEAR_OR_AVERAGE.search(sample.label) and not MULTI_YEAR_OR_AVERAGE.search(
+        reply.field.replace("_", " ")
+    ):
+        # Migration 0045 fixes the reason set; the dictionary has no field for this measure.
         return None, MapReason.NOT_IN_DICTIONARY
     kinds = (
         UNIT_KINDS.get(next(iter(sample.units)).strip().lower(), frozenset())
