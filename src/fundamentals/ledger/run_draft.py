@@ -220,7 +220,7 @@ class RunDraft(BaseModel):
     facts: Mapping[str, FactRef]
     lines: tuple[Line, ...]
     probe: Probe
-    credibility: credibility.CredibilityInputs
+    credibility: credibility.Built
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
     memory: str
@@ -299,7 +299,9 @@ def preflight(
                 update={
                     "same_period_id": current,
                     "same_period_digest": store.sealed_digest(cursor, current),
-                    "same_period_record": _record(store.read_version(cursor, current)),
+                    "same_period_record": credibility.version_record(
+                        store.read_version(cursor, current)
+                    ),
                 }
             )
         if _bootstrap(cursor, entity_id, period):
@@ -317,7 +319,11 @@ def preflight(
             assert sha256 is not None
             _original(cursor, sha256, catalog, snapshots)
         digest = store.sealed_digest(cursor, head)
-        actuals = credibility.carried_actuals(claims)
+        actuals = tuple(
+            c
+            for c in claims
+            if c.claim_key.startswith("cred.") and credibility.YTD not in c.claim_key
+        )
         return prior.model_copy(
             update={
                 "version_id": head,
@@ -326,7 +332,7 @@ def preflight(
                 "facts": facts,
                 "pinned_run_ids": pins,
                 "episodes": tuple(c for c in quotes if c.section_key == CREDIBILITY),
-                "record": _record(version),
+                "record": credibility.version_record(version),
                 "actuals": actuals,
                 "actual_blobs": frozenset(_operand_blobs(cursor, actuals)),
             }
@@ -379,9 +385,9 @@ def write_run_draft(
             body.add(GUIDANCE, text, shown)
             if not _specified(shown.horizon):
                 body.lines[OPEN_QUESTIONS].append(_question(shown))
-        built = credibility.built_from(run.credibility)
+        built = run.credibility
         claims = predecessor(prior, tuple(body.claims.values())) + run.probe.claims
-        claims += built.claims + run.credibility.actuals
+        claims += built.claims + built.actuals
         assert update.derivation_cutoff is not None
         bound = approved_thesis(cursor, entity_id, update.nse_symbol, update.derivation_cutoff)
         by_key = {claim.claim_key: claim for claim in claims}
@@ -494,12 +500,6 @@ def _carried(prior: Prior) -> dict[str, NumericClaim]:
     """The claims a rework carries from the version it reworks."""
     reworked = prior.rework
     return {} if reworked is None else {key: reworked.claims[key] for key in reworked.carried}
-
-
-def _record(version: Any) -> credibility.Record:
-    """A stored version's credibility record (empty for a legacy version)."""
-    body = next((s.body for s in version.sections if s.section_key == CREDIBILITY), None)
-    return credibility.read_record(body, version.claims)
 
 
 def check_head(cursor: Cursor[Any], prior: Prior, period: str) -> None:

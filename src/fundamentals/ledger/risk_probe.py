@@ -33,7 +33,6 @@ from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.ledger import NumericClaim, Rounding
 from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.provenance import Provenance
-from fundamentals.contracts.role import FactRole
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger.claim_check import CRORE, PERCENT
 from fundamentals.ledger.display import FILED
@@ -61,6 +60,7 @@ from fundamentals.ledger.run_traces import (
     SUM,
     _Binder,
     _Operand,
+    admitted_xbrl,
     cite,
 )
 from fundamentals.output.earnings_update import EarningsUpdate
@@ -460,21 +460,12 @@ def bind_probe(
     prior claim on a matching package statement for each trend check."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end, versions)
-    (own,) = (fact.sources[0] for fact in update.facts if fact.role is FactRole.PROFIT_BEFORE_TAX)
-    comparators = {
-        change.kind: (change.prior_source, change.period_end)
-        for comparative in update.comparatives
-        for change in (comparative.qoq, comparative.yoy)
-        if change.prior_source is not None
-    }
+    own, comparators = admitted_xbrl(update)
     historical = SelectionSource.HISTORICAL_PACKAGE
     reads = [_read(binder, own, end, SelectionSource.PACKAGE_AS_REPORTED, fiscal_year_end_month)]
     reads += [
         _read(binder, source, at, historical, fiscal_year_end_month)
-        for kind in (ComparatorKind.QOQ, ComparatorKind.YOY)
-        if kind in comparators
-        for source, at in (comparators[kind],)
-        if source is not None
+        for source, at in comparators.values()
     ]
     selected = reads[0] or (reads[1] if ComparatorKind.QOQ in comparators else None)
     if selected is None:

@@ -1,9 +1,7 @@
 """Rule H: a stock's reviewed guidance mapping file and the window rule (RESEARCH-3 S2).
 
-``config/guidance_targets/<symbol>.yaml`` holds one live entry per stated quote, keyed by (guidance
-claim key, capture blob, anchor). Its digest is computed here over a fixed preimage; a sealed row
-pins it, so a used entry can only be corrected by a ``supersedes`` entry, never edited. A wrong file
-refuses at load; a missing one is empty, so every row reads "window not mapped".
+``config/guidance_targets/<symbol>.yaml`` holds one live entry per stated quote. A sealed row pins
+its digest, so a used entry can only be corrected by a ``supersedes`` entry, never edited.
 """
 
 from __future__ import annotations
@@ -27,6 +25,7 @@ from fundamentals.ledger.run_traces import RunDraftError
 ROOT = Path(__file__).resolve().parents[3]
 GUIDANCE_KEY = "ledger.{metric}.{horizon}.{scope}"  # as import_mapping keys a ledger entry
 WINDOW_MULTI_YEAR, WINDOW_AMBIGUOUS = "MULTI_YEAR", "AMBIGUOUS"
+UNDATED = {WINDOW_MULTI_YEAR: "window not single-year", WINDOW_AMBIGUOUS: "window not established"}
 _DIGEST_FIELDS = set(
     "id claim_key source_sha256 anchor quote window_text window reading definition same_as "
     "supersedes".split()
@@ -107,8 +106,7 @@ class Targets(BaseModel):
         return next((e for e in found if self.successor(e.id) is None), None)
 
     def chain(self, entry: TargetEntry) -> tuple[TargetEntry, ...]:
-        """Every entry deciding ``entry``'s episode: entry, live successor, its ``same_as``, that
-        one's live successor and so on; refuses a cycle."""
+        """Every entry deciding ``entry``'s episode, successors and links alike; refuses a cycle."""
         walked = [entry]
         while True:
             current = walked[-1]
@@ -136,10 +134,9 @@ def load_targets(symbol: str, root: Path = ROOT) -> Targets:
         entries = [TargetEntry(**item) for item in raw]
     except ValidationError as error:
         raise RunDraftError(f"guidance targets of {symbol}: {error}") from error
-    by_id = {entry.id: entry for entry in entries}
-    if len(by_id) != len(entries):
+    targets = Targets(entries={entry.id: entry for entry in entries})
+    if len(targets.entries) != len(entries):
         raise RunDraftError(f"guidance targets of {symbol}: duplicate id")
-    targets = Targets(entries=by_id)
     _check_links(entries, targets)
     return targets
 
@@ -162,26 +159,15 @@ def _check_links(entries: list[TargetEntry], targets: Targets) -> None:
     for entry in entries:
         targets.chain(entry)
     live = [entry for entry in entries if entry.id not in corrected]
-    for triple, count in Counter(entry.triple for entry in live).items():
-        if count > 1:
-            raise RunDraftError(f"guidance targets: several live entries on {triple}")
+    if repeated := [triple for triple, n in Counter(e.triple for e in live).items() if n > 1]:
+        raise RunDraftError(f"guidance targets: several live entries on {repeated[0]}")
     for entry in live:
-        if entry.same_as:
-            _check_link(entry, targets)
-
-
-def _check_link(entry: TargetEntry, targets: Targets) -> None:
-    """A live entry's ``same_as`` must reach a live commitment of the same metric, scope and
-    window."""
-    named = targets.entries[entry.same_as or ""]
-    target = targets.live(*named.triple)
-    assert target is not None  # the chains are acyclic, so every statement has a live entry
-    if (
-        (*_metric_scope(entry), entry.window) != (*_metric_scope(target), target.window)
-        or entry.reading is Reading.DESCRIPTIVE
-        or target.reading is Reading.DESCRIPTIVE
-    ):
-        raise RunDraftError(f"guidance target {entry.id}: same_as restates no such promise")
+        target = targets.live(*by_id[entry.same_as].triple) if entry.same_as else None
+        if target is not None and (
+            (*_metric_scope(entry), entry.window) != (*_metric_scope(target), target.window)
+            or Reading.DESCRIPTIVE in (entry.reading, target.reading)
+        ):
+            raise RunDraftError(f"guidance target {entry.id}: same_as restates no such promise")
 
 
 def _metric_scope(entry: TargetEntry) -> tuple[str, str]:
@@ -214,8 +200,7 @@ def fiscal_span(label: str, month: int) -> tuple[date, date]:
 
 
 def derive_window(text: str, filed_at: datetime | None, stated_end: date, month: int) -> str:
-    """``FY<yy>``, ``MULTI_YEAR`` or ``AMBIGUOUS``, from the words alone; a relative year needs a
-    filing inside the fiscal year it was stated for."""
+    """``FY<yy>``, ``MULTI_YEAR`` or ``AMBIGUOUS``, from the quote's words alone (plan P3)."""
     words = _BASIS.sub(" ", text)
     if _RECURRING.search(words):
         return WINDOW_MULTI_YEAR

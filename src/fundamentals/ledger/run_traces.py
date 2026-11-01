@@ -46,7 +46,11 @@ from fundamentals.canon.interval import (
 )
 from fundamentals.canon.role_translation import LEGACY_CONCEPTS
 from fundamentals.contracts.canonical import Representation, TemporalRole, ValueKind
-from fundamentals.contracts.comparative import RUN_PERCENT_PLACES, TAXONOMY_DRIFT_PREFIX
+from fundamentals.contracts.comparative import (
+    RUN_PERCENT_PLACES,
+    TAXONOMY_DRIFT_PREFIX,
+    ComparatorKind,
+)
 from fundamentals.contracts.comparison import CalculationState, SelectionSource, SourceState
 from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import CaptureReference, Interpretation, InterpretationStatus
@@ -564,6 +568,21 @@ def _fiscal_month(repository: EvidenceRepository, entity_id: int, update: Earnin
     if record is None:
         raise RunDraftError(f"entity {entity_id} has no fiscal-year-end month")
     return int(record.value_text)
+
+
+def admitted_xbrl(
+    update: EarningsUpdate,
+) -> tuple[Provenance, dict[ComparatorKind, tuple[Provenance, date]]]:
+    """The run's own XBRL and its comparators' with their period ends, QoQ before YoY."""
+    (own,) = (fact.sources[0] for fact in update.facts if fact.role is FactRole.PROFIT_BEFORE_TAX)
+    found = {
+        change.kind: (change.prior_source, change.period_end)
+        for comparative in update.comparatives
+        for change in (comparative.qoq, comparative.yoy)
+        if change.prior_source is not None
+    }
+    order = (ComparatorKind.QOQ, ComparatorKind.YOY)
+    return own, {kind: found[kind] for kind in order if kind in found}
 
 
 def cite(claim: NumericClaim, **record: object) -> NumericClaim:

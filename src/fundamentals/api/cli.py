@@ -110,7 +110,7 @@ from fundamentals.evidence.admission import admit_run, key_identity, select_admi
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ingest.xbrl_source import NseXbrlSource
 from fundamentals.ledger import store as ledger_store
-from fundamentals.ledger.credibility import CredibilityInputs, bind_credibility, prepare
+from fundamentals.ledger.credibility import Built, bind_credibility, prepare
 from fundamentals.ledger.guidance_targets import check_pins, load_targets
 from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.importer import load_import_config
@@ -369,7 +369,7 @@ def run_command(
             )
             bound: list[tuple[Line, ...]] = []
             probes: list[Probe] = []
-            credibility: list[CredibilityInputs] = []
+            credibility: list[Built] = []
             facts: dict[str, FactRef] = {}
 
             def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
