@@ -646,7 +646,7 @@ def test_a_prior_denominator_interval_reaching_zero_leaves_only_its_trend_uneval
 
 # R4 on a profit whose interval reaches zero: S compares two filed amounts and needs no quotient.
 
-S_ONLY = f"{UNCERTAIN}, so the ratio is not shown"
+S_ONLY = f"{UNCERTAIN}, so only cash against profit is assessed, not the ratio, trend or limits"
 _S_CASES = [("-1", "FLAGGED", ("S",)), ("5", "PASSED", ())]
 _S_IDS = ["cash-below-profit", "cash-above-profit"]
 

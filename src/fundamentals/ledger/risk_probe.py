@@ -196,7 +196,10 @@ NO_SHEET = "NOT_ASSESSED: no filed balance sheet in the run's package"
 NO_WINDOW = "no half-year or annual flow window in the statement"
 SIGN_ANOMALY = "sign anomaly in filed line"
 UNCERTAIN_DENOMINATOR = "denominator's uncertainty interval reaches zero"
-S_ONLY = f"{UNCERTAIN_DENOMINATOR}, so the ratio is not shown"
+S_ONLY = (
+    f"{UNCERTAIN_DENOMINATOR}, so only cash against profit is assessed, "
+    "not the ratio, trend or limits"
+)
 NO_TREND = "trend not evaluable: no matching prior"
 NO_RULE = "no rule evaluable: no prior, no limit"
 STALE_NOTE = (
