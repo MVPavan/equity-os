@@ -491,7 +491,8 @@ def test_a_flag_sentence_names_every_fired_rule() -> None:
 
 def test_the_rule_legend_is_stated_once_where_rows_render() -> None:
     """ "FLAGGED by S, T" means nothing without a legend, and a reader must not take a flag for a
-    breached falsifier; the one-paragraph fallbacks show no rule, so they carry no legend."""
+    breached falsifier, or a breach for a seasonally comparable result; the one-paragraph
+    fallbacks show no rule, so they carry no legend."""
     legend = "independent checks"
     text = _body(_statement())
     assert text.count(legend) == 1
@@ -500,6 +501,8 @@ def test_the_rule_legend_is_stated_once_where_rows_render() -> None:
         "T, an adverse move against the same window a year earlier",
         "L, a breach of the approved thesis limit",
         "a row can be flagged while its falsifier holds",
+        "limits are derived from half-year and annual observations without seasonal adjustment",
+        "a breach warrants examination under that limitation",
     ):
         assert phrase in text, text
     assert scan_section(_body(_statement(stale=True)), resolves=lambda *_: True) == ()

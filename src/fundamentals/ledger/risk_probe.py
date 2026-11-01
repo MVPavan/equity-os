@@ -211,7 +211,9 @@ LEGEND = (
     "Rules: S, operating cash below reported profit in the same flow window; "
     "T, an adverse move against the same window a year earlier; "
     "L, a breach of the approved thesis limit; "
-    "these are independent checks, so a row can be flagged while its falsifier holds."
+    "these are independent checks, so a row can be flagged while its falsifier holds. "
+    "The thesis limits are derived from half-year and annual observations without seasonal "
+    "adjustment, so a breach warrants examination under that limitation."
 )
 SOURCES = (
     "related parties",
