@@ -642,3 +642,69 @@ def test_a_prior_denominator_interval_reaching_zero_leaves_only_its_trend_uneval
         row = _rendered_row(probe, (), check_id)
         assert f"COMPUTED (trend not evaluable: prior {UNCERTAIN})" in row, row
     assert len(store.traces) == 13
+
+
+# R4 on a profit whose interval reaches zero: S compares two filed amounts and needs no quotient.
+
+S_ONLY = f"{UNCERTAIN}, so the ratio is not shown"
+_S_CASES = [("-1", "FLAGGED", ("S",)), ("5", "PASSED", ())]
+_S_IDS = ["cash-below-profit", "cash-above-profit"]
+
+
+@pytest.mark.parametrize(("cfo", "status", "rules"), _S_CASES, ids=_S_IDS)
+def test_an_uncertain_profit_still_evaluates_s_and_nothing_else(
+    cfo: str, status: str, rules: tuple[str, ...]
+) -> None:
+    """PAT 1 ± 1 cannot bound a quotient, but cash below it is still a finding on two filed
+    amounts. A prior and a weakened limit are present so T or L would fire if evaluated: both
+    read the ratio, so neither may, and the reason tells a reader only S was assessed."""
+    probe = _probe()
+    statement = _statement({"cfo": cfo, "profit_for_period": "1"})
+    lows = {**statement.lows, "profit_for_period": Fraction(0)}
+    statement = statement.model_copy(update={"lows": lows})
+    limits = (_limit("R4", Disposition.WEAKENED),)
+    row = probe.assess("R4", statement, None, Decimal("500.00"), None, limits)
+    assert (row.status.value, row.rules, row.falsifier_ids) == (status, rules, ())
+    assert row.reason == S_ONLY
+    assert (row.shown, row.prior_shown) == (False, False)
+    if rules:
+        sentence = _flag_sentence(row, statement)
+        assert "operating cash was below reported profit" in sentence, sentence
+        assert "flagged because of" not in sentence, sentence
+
+
+@pytest.mark.parametrize(("cfo", "status", "rules"), _S_CASES, ids=_S_IDS)
+def test_an_uncertain_profit_binds_the_raw_figures_and_no_ratio(
+    cfo: str, status: str, rules: tuple[str, ...]
+) -> None:
+    """Binding keeps the two amounts S compared, so the row cites them through the normal render
+    path; no ratio claim or trace is stored for R4. The ten traces are the other five ratios and
+    their five sums."""
+    amounts, widths = {"cfo": cfo, "profit_for_period": "1"}, {"profit_for_period": "1"}
+    store = _Store({_OWN_SHA: _filing(BALANCE, H1, amounts, widths)})
+    probe = _bind(store)
+    r4 = {c.claim_key: c.value for c in probe.claims if c.claim_key.startswith("probe.R4")}
+    crore = Decimal(10**7)
+    assert r4 == {"probe.R4.cfo": Decimal(cfo) / crore, "probe.R4.profit_for_period": 1 / crore}
+    row = _rendered_row(probe, (), "R4")
+    says = f"{status} by S" if rules else status
+    assert f"{says} ({S_ONLY})" in row, row
+    assert "filed cfo" in row and "profit_for_period" in row, row
+    assert len(store.traces) == 10
+
+
+def test_a_prior_with_an_uncertain_profit_leaves_only_its_trend_unevaluable() -> None:
+    """S's exception is for the current statement's own row: a prior profit that cannot be divided
+    still has no ratio to compare, so T says why and no prior is stored."""
+    weak = {"profit_for_period": "1", "cfo": "-1"}
+    store = _Store(
+        {
+            _OWN_SHA: _filing(BALANCE, H1),
+            _PRIOR_SHA: _filing(date(2024, 9, 30), PRIOR_H1, weak, {"profit_for_period": "1"}),
+        }
+    )
+    probe = _bind(store)
+    keys = {c.claim_key for c in probe.claims}
+    assert "probe.R4" in keys and "probe.R4.prior" not in keys
+    row = _rendered_row(probe, (), "R4")
+    assert f"PASSED (trend not evaluable: prior {UNCERTAIN})" in row, row

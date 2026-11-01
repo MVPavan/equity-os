@@ -708,9 +708,14 @@ Approach:
   - If `guard` passes, it builds the child sums and the parent trace and stores them. The claim
     value is the stored trace value at the rounding policy's scale for its kind (`RATIO` 6,
     `DAYS` and `PERCENTAGE` 2), half-even, shown at that precision, so L, T and the claim check
-    read the same value and rounding cannot hide a breach or trend (F-3; Sol closing review).
+    read the same value (F-3; Sol closing review). A move or breach smaller than that scale can
+    still be hidden or triggered at a rounding boundary, notably sub-0.01 for `DAYS` and
+    `PERCENTAGE`; the rounding policy accepts this.
   - `guard` also refuses a denominator whose uncertainty interval reaches zero: `NOT_ASSESSED`
-    for the current statement, an unevaluable T for a prior; nothing is stored for it.
+    for the current statement, an unevaluable T for a prior; nothing is stored for it. R4's
+    current statement is the exception, because S compares two filed amounts and needs no
+    quotient: S is evaluated as usual (`FLAGGED` or `PASSED`) and the raw figures are stored and
+    cited, but no ratio is stored or shown, T and L are not evaluated, and the reason says so.
   - It builds the raw figure claims from the operands (value = interpretation value ÷ crore
     scale, `FILED`).
   - It does the same for the prior when one matches and the prior passes its own guard.

@@ -3,11 +3,11 @@
 
 R1–R6 read closing balances and half-year or annual flows. Guards run first: a missing operand,
 a non-positive flow denominator, a denominator whose uncertainty interval reaches zero or a sign
-anomaly is ``NOT_ASSESSED``; a loss (R4) or non-positive equity (R6) is ``FLAGGED`` without its
-ratio. Then S (cash below profit), L (a
-weakened thesis limit) and T (a strict move in the arrow's direction against the same window one
-year earlier). Status, first match wins: guard, a fired rule, an evaluated rule, ``COMPUTED``.
-Labels, reasons and sentences hold no digits; every number is a claim placeholder.
+anomaly is ``NOT_ASSESSED``, except that R4 on such an interval keeps S, which needs no quotient;
+a loss (R4) or non-positive equity (R6) is ``FLAGGED`` without its ratio. Then S (cash below
+profit), L (a weakened thesis limit) and T (a strict move in the arrow's direction against the
+same window one year earlier). Status, first match wins: guard, a fired rule, an evaluated rule,
+``COMPUTED``. Labels, reasons and sentences hold no digits; every number is a claim placeholder.
 ``bind_probe`` reads the statement straight from its interpretations (``_Binder.filed``), stores
 each ratio's trace (sums as child traces) and cites it at the rounding policy's stored scale, so
 rules and the report read one value; ``probe_section`` renders the rows.
@@ -170,7 +170,7 @@ CHECKS: Mapping[str, Check] = {
         formula=OUTFLOW_PCT,
         arrow=None,
         category=BUSINESS,
-        implication="if this spending stays heavy, it may strain free cash flow",
+        implication="if this spending is heavy for the business, it may strain free cash flow",
         nonpositive=_NO_REVENUE,
     ),
     "R6": Check(
@@ -179,7 +179,7 @@ CHECKS: Mapping[str, Check] = {
         formula=RATIO,
         arrow=1,
         category=SOLVENCY,
-        implication="if leverage keeps rising, balance-sheet risk may increase",
+        implication="if this leverage is high for the business, balance-sheet risk may be higher",
         nonpositive=(ProbeStatus.FLAGGED, "non-positive equity"),
     ),
 }
@@ -196,6 +196,7 @@ NO_SHEET = "NOT_ASSESSED: no filed balance sheet in the run's package"
 NO_WINDOW = "no half-year or annual flow window in the statement"
 SIGN_ANOMALY = "sign anomaly in filed line"
 UNCERTAIN_DENOMINATOR = "denominator's uncertainty interval reaches zero"
+S_ONLY = f"{UNCERTAIN_DENOMINATOR}, so the ratio is not shown"
 NO_TREND = "trend not evaluable: no matching prior"
 NO_RULE = "no rule evaluable: no prior, no limit"
 STALE_NOTE = (
@@ -218,7 +219,7 @@ PERCENT_FORMULAS = frozenset({RATIO_PCT, OUTFLOW_PCT})
 
 def guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None:
     """The guard outcome of a check on ``statement``, or ``None`` when its ratio may be
-    computed."""
+    computed; any outcome but ``NOT_ASSESSED`` still cites the check's filed amounts."""
     check = CHECKS[check_id]
     numerator, denominator = OPERANDS[check_id]
     ids = numerator + denominator
@@ -232,7 +233,8 @@ def guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None
     if sum(values[i] for i in denominator) <= 0:
         return check.nonpositive
     if sum(statement.lows[i] for i in denominator) <= 0:
-        return ProbeStatus.NOT_ASSESSED, UNCERTAIN_DENOMINATOR
+        status = ProbeStatus.PASSED if check_id == S_CHECK else ProbeStatus.NOT_ASSESSED
+        return status, UNCERTAIN_DENOMINATOR
     return None
 
 
@@ -296,7 +298,9 @@ def assess(
             fired += [T] if (value - prior) * check.arrow > 0 else []
     note = (prior_note or NO_TREND) if check.arrow is not None and T not in evaluated else None
     status, reason = (
-        guarded
+        (ProbeStatus.FLAGGED if fired else ProbeStatus.PASSED, S_ONLY)
+        if guarded is not None and guarded[1] == UNCERTAIN_DENOMINATOR
+        else guarded
         if guarded is not None
         else (ProbeStatus.FLAGGED, note)
         if fired
@@ -381,7 +385,7 @@ def _line(row: ProbeRow, dated: str, raw: tuple[str, ...]) -> str:
 def _flag_sentence(row: ProbeRow) -> str:
     """What a flagged row's guard or first fired rule established, then what that could mean."""
     check = CHECKS[row.check_id]
-    if not row.shown:
+    if not row.shown and row.reason != S_ONLY:
         return f"{row.check_id} is flagged because of {row.reason}, so its ratio is not shown."
     moved = "" if check.arrow is None else ARROW_MOVES[check.arrow]
     established = PHRASES[row.rules[0]].format(moved=moved)
