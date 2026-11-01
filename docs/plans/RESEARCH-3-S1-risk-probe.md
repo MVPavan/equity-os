@@ -7,7 +7,10 @@ the four live Apar run drafts FY26_Q2..FY27_Q1 are `APPROVED` (versions 8, 10, 1
 regeneration is not blocked.
 **Revision:** r2 (2026-11-01) fixes the 12 findings of Sol's r1 plan review (`REQUEST_CHANGES`);
 the changed parts are marked "r2" with the finding number. r3 (2026-11-01) fixes Sol's r2
-residuals #7 and #8 and its two notes, marked "r3".
+residuals #7 and #8 and its two notes, marked "r3". r4 resolves foreign test captures by pinned
+SHA (Sol r3 #8). r5 (2026-11-01) fixes Sol's closing review (four P1), marked "r5": every
+`map_q0` caller, a new test module under the 800-line ceiling, PILOT-11's trace closure, and the
+probe's rework semantics (P11).
 **Goal:** every Apar run draft carries a `risk_probe` section after `observable_falsifiers`.
 For R1–R6 it shows the traced ratio, the cited raw filed amounts, the balance date and flow
 window, and a code-computed status with its reason (guards, rules S/T/L, staleness). It ends with
@@ -159,6 +162,26 @@ package-checked through it.
   `DERIVED` section therefore never needs reworkable atoms, and its child-trace operands carry
   no interpretation.
 - `DISCLOSED` sections are not scaffolds (`:227`).
+- r5: `DERIVED` means *re-derived on every run*, rework included. `write_run_draft` calls
+  `evaluate` and `derived` on every run (`run_draft.py:347-349`), and `before_commit` calls
+  `bind_computed` with the rework's `carry` gate (`api/cli.py:378-394`).
+- r5: the PREP-5 `calls` fixture (`tests/fundamentals/test_prep5_rework.py:410-432`) spies
+  `_Binder.operand`, `run_traces.conclude` and `EvidenceRepository.put_calculation_trace`. These
+  assertions read its `conclude`/`put_calculation_trace` lists:
+  - `test_prep5_rework.py:511-512, 539-540, 591-592, 644, 732-736`;
+  - `test_prep5_corrected_filing.py:122-123, 151, 189`;
+  - `test_pilot_citations.py:154`;
+  - `test_pilot_e2e.py:533`.
+  They encode "a rework computes and stores only its rejected lines' traces".
+
+**F-11. Trace reachability (r5, Sol closing #3).**
+- PILOT-11's resume check `retried["calculation_traces"] <= cited`
+  (`tests/fundamentals/test_pilot_e2e.py:510-514`) admits only traces that a claim cites
+  directly.
+- A probe child sum is reached through its parent's `operand_trace_id` (F-2), so it would read as
+  an orphan.
+- The recursive `traces(id)` CTE inside `citations._INPUTS` (`ledger/citations.py:174-178`)
+  already walks `operand_trace_id`.
 
 **F-9. Pilot.**
 - PILOT-4 asserts the exact non-quote key set (`tests/fundamentals/test_pilot_e2e.py:258-260`),
@@ -239,6 +262,45 @@ package-checked through it.
 - **P10, non-evaluated sources (r2, Sol r1 #10).** S1 does not check whether a source is in the
   package or merely not extracted (spec lines 86-88 distinguish the two). Each renders the fixed
   "NOT_ASSESSED: <source> not assessed by this probe", which is true either way.
+- **P11, rework re-derives the probe (r5, Sol closing #4).** Option (b): every run, selective
+  rework included, recomputes the probe. Option (a), carrying the head's probe through an
+  unrejected rework, is rejected:
+  - Spec §1 rule 3 puts `risk_probe` in `DERIVED`, and every `DERIVED` section is re-derived on
+    every run today (F-8). Carrying would make the probe the one `DERIVED` section that is not.
+  - The probe's operands are half-year, annual and instant interpretations, which rework atoms
+    do not track. Carrying would need probe atoms in `rework.plan`, or it would carry a stale
+    probe after a corrected filing. It would also need to rebuild the section from stored claims,
+    because L reads the current falsifier rows. That is new production code; (b) needs none.
+  - (b) costs one test-fixture change and one assertion change, and every PREP-5 guarantee on
+    run lines keeps its text and its meaning:
+    - **Probe output keys.** Every probe trace's output key has a canonical id starting
+      `probe.`: `probe.R<n>` for a ratio (its prior at the prior's period), `probe.R<n>.<sum>`
+      for a child sum. Free canonical ids are the existing pattern for computed outputs:
+      `bind_computed` keys calculations by their label (`run_traces.py:396-437`).
+    - **Probe calls are counted apart.** The `calls` fixture records a `conclude` call whose
+      output canonical id starts `probe.` under `calls["probe"]`, not `"conclude"`. It records
+      a `put_calculation_trace` call whose trace's `key_digest` is one of those under
+      `calls["probe_put"]`, not `"put_calculation_trace"`. Before the change no output id starts
+      `probe.`, so the fixture behaves exactly as today. Every assertion listed in F-8 is
+      unchanged and still proves that a rework computes and stores only its rejected run lines.
+    - `bind_probe` reads operands only through `_Binder.filed`, never `_Binder.operand`, so the
+      `operand` spy is unaffected.
+    - **One changed assertion:** `test_prep5_rework.py:643-644`
+      (`test_a_refused_rework_recovers_as_a_full_successor`). `len(calls["conclude"]) ==
+      len(computed)` counts every `CALCULATION` claim, and the probe adds those claims. `computed`
+      therefore excludes claim keys starting `probe.`. Before the change it is the same list.
+    - **New assertion:**
+      `test_risk_probe_binding.py::test_a_selective_rework_rederives_the_probe_on_the_heads_traces`
+      (Task 4 (s)) proves the probe is regenerated and reuses the head's traces.
+  - Rejecting a probe claim still refuses selective rework (`rework.py:222-227`); its route is
+    `--full-successor` (Task 6).
+- **P12, one trace closure (r5, Sol closing #3).** The recursive `traces(id)` CTE in `_INPUTS`
+  (F-11) becomes the public `citations.TRACES: LiteralString`. It has one parameter,
+  `%(traces)s`. Three users compose it with `"WITH RECURSIVE " + TRACES + ...`:
+  - `_INPUTS`, with the same query text it runs today;
+  - the recursive `_OPERAND_BLOBS` (F-7), instead of writing a second recursion;
+  - the test helper `trace_closure(pilot, trace_ids) -> frozenset[int]`, which runs
+    `TRACES + " SELECT id FROM traces"`. PILOT-11 and Task 4 (s) use it.
 
 ## File map
 
@@ -246,29 +308,52 @@ package-checked through it.
 |---|---|---|
 | `src/fundamentals/verify/thesis_predicates.py` | modify | `Disposition.NOT_ASSESSED` (P5) |
 | `src/fundamentals/ledger/import_mapping.py` | modify | typed `_falsifier` (`METRIC_KINDS`), the `map_q0` registered-kind check, unitless `measurement_key`/`_valued` |
-| `src/fundamentals/ledger/importer.py` | modify | pass the registered metric kinds to `map_q0` |
-| `src/fundamentals/ledger/falsifier_status.py` | modify | typed `METRICS` plus the six probe metrics, `RISK_PROBE` in `DERIVED`, value-kind check, stale → `NOT_ASSESSED` |
+| `src/fundamentals/ledger/importer.py` | modify | pass `falsifier_status.KINDS` to `map_q0` at both calls (`:172`, `:218`) |
+| `src/fundamentals/ledger/falsifier_status.py` | modify | typed `METRICS` plus the six probe metrics, `KINDS` (metric → value kind), `RISK_PROBE` in `DERIVED`, value-kind check, stale → `NOT_ASSESSED` |
 | `src/fundamentals/ledger/run_traces.py` | modify | `_Binder`: interpretation-read operands, closing and window keys, `CLOSING` role, formulas `run.days`/`run.ratio`/`run.outflow_pct`, child sums |
-| `src/fundamentals/ledger/citations.py` | modify | `_filed_key` admits `probe.R<n>.<canonical_id>` |
+| `src/fundamentals/ledger/citations.py` | modify | `_filed_key` admits `probe.R<n>.<canonical_id>`; public `TRACES` CTE shared by `_INPUTS` (P12) |
 | `src/fundamentals/ledger/risk_probe.py` | create | the probe: check table, guards, rules S/T/L, statuses, statement selection and prior matching, binding to traces and claims, section body, explanation, non-evaluated sources |
-| `src/fundamentals/ledger/run_draft.py` | modify | `RunDraft.probe`, probe claims in the version, stale keys into `evaluate`, `risk_probe` section after `observable_falsifiers`, recursive `_OPERAND_BLOBS`, qualified `NOT_DONE` line (P9) |
+| `src/fundamentals/ledger/run_draft.py` | modify | `RunDraft.probe`, probe claims in the version, stale keys into `evaluate`, `risk_probe` section after `observable_falsifiers`, `_OPERAND_BLOBS` recursive over `TRACES`, qualified `NOT_DONE` line (P9) |
 | `src/fundamentals/api/cli.py` | modify | call `bind_probe` in `before_commit` after `bind_computed` and pass it to `RunDraft` |
-| `tests/fundamentals/test_falsifier_status.py` | modify | typed-limit import refusals, `DAYS` limits flag on breach, evaluator kind mismatch, stale `NOT_ASSESSED` |
+| `tests/fundamentals/test_falsifier_status.py` | modify | typed-limit import refusals, `DAYS` limits flag on breach, evaluator kind mismatch, stale `NOT_ASSESSED`; `metrics=KINDS` at the existing `map_q0` calls `:108`, `:196` (r5) |
+| `tests/fundamentals/test_ledger_import.py` | modify (r5) | `metrics=KINDS` at the existing `map_q0` calls `:201`, `:293`, `:367`; assertions unchanged |
 | `tests/fundamentals/test_risk_probe.py` | create | pure guards, rules, statuses, prior matching, explanation and section text |
 | `tests/fundamentals/test_prep2b_traces.py` | modify | trace-digest characterization (Task 2); `run.days` (inclusive `D`, leap year, `CLOSING` role) and `run.outflow_pct` on stored traces |
-| `tests/fundamentals/test_prep2b_run_draft.py` | modify | lookup failures and the unevaluable section at the binding boundary (Task 4 (q)); recursive cutoff and package refusal (Task 4 (r)) |
-| `tests/fundamentals/test_pilot_e2e.py` | modify | PILOT-4: probe keys, R1–R6 values, raw amounts cite filed facts, windows, stale, T on FY26_Q2 and FY26_Q4, qualified `not_performed` line |
+| `tests/fundamentals/test_risk_probe_binding.py` | create (r5) | binding-boundary tests (q) lookup failures, (r) nested-source refusal with its isolation spy, (s) rework re-derivation; the helpers `trace_closure` and `check_probe` (PILOT-4's probe constants and assertions) |
+| `tests/fundamentals/test_prep5_rework.py` | modify (r5) | `calls` fixture routes probe `conclude`/`put_calculation_trace` calls to `"probe"`/`"probe_put"`; `:643` `computed` excludes `probe.*` keys (P11) |
+| `tests/fundamentals/test_pilot_e2e.py` | modify | PILOT-4: probe keys and routes, then `check_probe` (values, raw amounts, windows, stale, T, qualified `not_performed` line); PILOT-11 orphan check against `trace_closure` (r5) |
 | `docs/evidence/phase-0.5/q0-thesis-successor-2.{md,yaml}` | create (Task 5) | successor thesis 1.2.0 with typed probe limits |
 | `config/ledger_import.yaml` | modify (Task 5) | `thesis_successor` → successor-2 |
 
 Scratch helpers (never committed) are listed in the Files blocks of Tasks 5 and 6.
 
-Estimate: about **460 production lines** (Task 1 ≈ 40, Task 2 ≈ 70, Task 3 ≈ 170, Task 4 ≈ 180)
-and **≈ 520 test lines** (Task 1 ≈ 90, Task 2 ≈ 60, Task 3 ≈ 200, Task 4 ≈ 170). r2 adds about 10
-production lines (P2's window discovery) and 120 test lines (Task 2 characterization, Task 4
-(q)(r)); r3 adds about 40 more test lines (two (q) cases, the (r) spy). Scratch helpers for Tasks 5–6: ≈ 250 lines, not committed. Production stays below the
-spec's 600–900 because guards and rules are one table-driven pure function, and no new module
-wraps the binder.
+Unchanged on purpose (r5): `test_prep2b_run_draft.py` (the new boundary tests moved out),
+`test_prep5_corrected_filing.py` and `test_pilot_citations.py`. Their spy assertions keep their
+text and meaning (P11).
+
+Estimate (r5): about **475 production lines**: Task 1 ≈ 42, Task 2 ≈ 74 (including the `TRACES`
+extraction), Task 3 ≈ 170, Task 4 ≈ 190 (including P2's window discovery). The recursive
+`_OPERAND_BLOBS` reuses `TRACES`, so it adds no second recursion.
+
+About **745 test lines**:
+- Task 1 ≈ 100, including the five existing `map_q0` call sites;
+- Task 2 ≈ 60;
+- Task 3 ≈ 200;
+- Task 4 ≈ 385: `test_risk_probe_binding.py` ≈ 310 for (q), (r), (s), `trace_closure` and
+  `check_probe`; PILOT-4 and PILOT-11 edits ≈ 25; the `calls` fixture ≈ 10.
+
+Expected sizes after the tests round, against the 800-line ceiling:
+- `test_pilot_e2e.py` ≈ 700 (675 today);
+- `test_prep5_rework.py` ≈ 750 (737);
+- `test_ledger_import.py` ≈ 712 (705);
+- `test_falsifier_status.py` ≈ 495 (400);
+- `test_prep2b_traces.py` ≈ 330 (269);
+- `test_risk_probe.py` ≈ 200 (new);
+- `test_risk_probe_binding.py` ≈ 310 (new).
+
+Scratch helpers for Tasks 5–6: ≈ 250 lines, not committed. Production stays below the spec's
+600–900 because guards and rules are one table-driven pure function, and no new module wraps
+the binder.
 
 ## Test-first order and the red proof (r2, Sol r1 #6)
 
@@ -276,12 +361,28 @@ wraps the binder.
 run seals every acceptance file, plus each local module it imports, by SHA-256
 (`:197-217`). The gate then fails `tests-untouched` if any of them changes. S1 adds behaviour, so
 the refactor `baseline` route does not apply. The sequence is:
-1. **Tests round (one Opus round, before any production change).** Write every test named in
-   Tasks 1–4, final, in the four test files of the file map plus `test_risk_probe.py`. Shared
-   helpers (`tests/fundamentals/prep2b_support.py`, conftests) are changed in this round or not
-   at all. Every file must still collect on the pre-change source, because one collection error
-   interrupts the whole red session: a production name that does not exist yet is imported
-   inside the test or its fixture, not at module level. Each node then fails on its own.
+1. **Tests round (one Opus round, before any production change).** Write every test-contract
+   change in its final form: every test named in Tasks 1–4, and every edit below, in the test
+   files of the file map. Shared helpers (`tests/fundamentals/prep2b_support.py`, conftests) are
+   changed in this round or not at all. Every file must still collect on the pre-change source,
+   because one collection error interrupts the whole red session. A production name that does
+   not exist yet (`KINDS`, `TRACES`, `risk_probe.*`) is imported inside the test, helper or
+   fixture, never at module level. Each node then fails on its own. The round also does:
+   - **Every changed caller (r5, Sol closing #1).** Run `git grep -n "map_q0(" -- src tests
+     scripts`, plus the same grep for every other function whose signature this plan changes
+     (`evaluate(`, `measurement_key(`, `_valued(`). Today the only test calls of `map_q0` are
+     `test_falsifier_status.py:108, :196` and `test_ledger_import.py:201, :293, :367`. Each gets
+     `metrics=KINDS`, imported inside the test, with its assertions unchanged. These five fail
+     pre-change with `TypeError` (they are not red nodes) and pass after Task 1. `evaluate`'s
+     new `stale` parameter and the `ValueKind` arm of `measurement_key`/`_valued` have defaults
+     or widen a type, so their callers do not change. The round reports the grep output.
+   - **The rework fixture and PILOT-11 (r5, P11, P12).** Make the `calls` routing and the `:643`
+     filter in `test_prep5_rework.py`. Replace `cited` in PILOT-11's orphan check with
+     `trace_closure(pilot, cited)`.
+   - **Size check (r5, Sol closing #2).** Run `wc -l` on every changed or created test file. Each
+     must be ≤ 800 lines (`scripts/verify.sh:455-474` routes an oversized changed test file to
+     CONTRACT). If one is over, move its new helpers into `test_risk_probe_binding.py` before
+     red capture.
 2. **Characterization check.** On the pre-change source, `uv run pytest
    tests/fundamentals/test_prep2b_traces.py::test_trace_digests_are_unchanged -n 0` passes. It is
    not an acceptance node (the red proof requires every recorded node to fail).
@@ -294,9 +395,11 @@ the refactor `baseline` route does not apply. The sequence is:
    tests/fundamentals/test_falsifier_status.py::test_a_days_limit_weakens_on_breach
    tests/fundamentals/test_falsifier_status.py::test_a_stale_measure_is_not_assessed
    tests/fundamentals/test_prep2b_traces.py::test_probe_formulas_store_closing_and_outflow_traces
-   tests/fundamentals/test_prep2b_run_draft.py::test_probe_lookup_failures
-   tests/fundamentals/test_prep2b_run_draft.py::test_a_nested_probe_operand_outside_the_package_or_cutoff_refuses
+   tests/fundamentals/test_risk_probe_binding.py
    tests/fundamentals/test_pilot_e2e.py::test_pilot_end_to_end`.
+   The whole of `test_risk_probe_binding.py` is a target: (q), (r) and (s) (r5). The red run
+   also seals the unchanged modules the targets import (`test_prep5_rework.py`,
+   `test_prep2b_run_draft.py`, the support modules), so the `calls` fixture edit is frozen too.
    It must report every node `FAILED` or `ERROR`, with none missing. A node that passes
    pre-change is vacuous: fix the test, then re-capture, still before production code.
 4. **Implement** Tasks 1–4 without touching the sealed files.
@@ -325,7 +428,8 @@ Goal:
 
 Files:
 - Modify: `src/fundamentals/verify/thesis_predicates.py`, `src/fundamentals/ledger/import_mapping.py`, `src/fundamentals/ledger/importer.py`, `src/fundamentals/ledger/falsifier_status.py`
-- Test: `tests/fundamentals/test_falsifier_status.py`
+- Test: `tests/fundamentals/test_falsifier_status.py`, `tests/fundamentals/test_ledger_import.py`
+  (the existing `map_q0` calls only, r5)
 
 Interfaces:
 - Consumes: existing `PredicateOp`, `FalsifierRow`, `BoundThesis`, `LosslessError`, `ValueKind`, `PERCENT`.
@@ -343,6 +447,8 @@ Interfaces:
     - `probe_capex_intensity_pct` → `probe.R5`, `PERCENTAGE`
     - `probe_borrowings_to_equity_ratio` → `probe.R6`, `RATIO`
     - The existing five entries get `PERCENTAGE`.
+  - `falsifier_status.KINDS: Mapping[str, ValueKind]`, metric → value kind, derived from
+    `METRICS` in one line. It is what every `map_q0` caller passes (r5).
   - `falsifier_status.RISK_PROBE = "risk_probe"`, a member of `DERIVED`.
   - `falsifier_status.STALE = "latest statement predates the period"`.
   - `evaluate(bound, claims, lines, stale: frozenset[str] = frozenset()) ->
@@ -353,7 +459,8 @@ Approach:
 - `_falsifier` looks up the suffix in `METRIC_KINDS` (`_require` on a miss) and builds the
   threshold with that kind and unit. Unitless thresholds have unit, currency and scale `None`.
 - `map_q0` refuses when a falsifier's metric is in `metrics` with a kind other than its suffix's.
-- `importer` passes the kinds from `METRICS` at both `map_q0` calls.
+- `importer` passes `KINDS` at both `map_q0` calls (`importer.py:172, :218`). The tests pass it
+  at their five calls (tests round).
 - `evaluate` reads the kind from `METRICS`:
   - A stale key gives `NOT_ASSESSED` with `STALE`, before any value test.
   - A measured claim whose `value_kind` differs from the threshold claim's raises.
@@ -365,7 +472,8 @@ Verification: `uv run pytest tests/fundamentals/test_falsifier_status.py tests/f
   `probe_receivable_days`, `probe_inventory_materials_days` and `probe_payable_materials_days`
   import as `DAYS`, unitless; a `_ratio` limit imports as `RATIO`.
 - (b)(c) `test_an_unknown_or_mismatched_probe_limit_refuses`, parametrized: an unknown suffix is
-  refused; with `METRICS` patched so a `_days` metric is `PERCENTAGE`, import is refused.
+  refused; `map_q0` with `metrics=KINDS | {<a _days metric>: PERCENTAGE}` is refused (`KINDS`
+  is built at import time, so the test passes the bad kind instead of patching `METRICS`, r5).
 - (d) `test_a_probe_measure_of_another_kind_refuses`: with `METRICS` pointing a `_days` metric
   at a `PERCENTAGE` claim, `evaluate` raises `RunDraftError`.
 - (e) `test_a_days_limit_weakens_on_breach`, parametrized over the three days metrics.
@@ -413,6 +521,9 @@ Interfaces:
     and returns the operand with its `calculation_trace_id`.
   - `_Binder.store(name, result) -> int`, which stores a parent trace.
   - `citations._filed_key` accepts `probe.R<n>.<canonical_id>` but not `probe.R<n>.prior`.
+  - `citations.TRACES: LiteralString`, the recursive `traces(id)` CTE taken out of `_INPUTS`
+    unchanged (P12, r5). `_INPUTS` becomes `"WITH RECURSIVE " + TRACES + ", interps(id) AS
+    ..."` with the same text as today.
 
 Approach:
 - Refactor `_compute` into `evaluate` plus the run-value check, so every existing trace keeps
@@ -561,7 +672,8 @@ Goal:
 
 Files:
 - Modify: `src/fundamentals/ledger/risk_probe.py` (binding half), `src/fundamentals/ledger/run_draft.py`, `src/fundamentals/api/cli.py`
-- Test: `tests/fundamentals/test_pilot_e2e.py`
+- Test: `tests/fundamentals/test_pilot_e2e.py`, `tests/fundamentals/test_prep5_rework.py` (r5,
+  P11), create `tests/fundamentals/test_risk_probe_binding.py` (r5)
 
 Interfaces:
 - Consumes:
@@ -608,12 +720,18 @@ Approach:
   - It appends `probe_section(probe, rows)` after the falsifier sections and before
     `open_questions`.
   - `NOT_DONE`'s forensic line is qualified (P9).
-- **Operand blobs.** `_OPERAND_BLOBS` becomes recursive over `operand_trace_id`, in the
-  `_INPUTS` form (F-7), so child-sum operands are package- and cutoff-checked.
+- **Operand blobs.** `_OPERAND_BLOBS` becomes `"WITH RECURSIVE " + TRACES + ...`, with its
+  operand join over every trace in the closure (F-7, P12). Child-sum operands are then package-
+  and cutoff-checked. Its parameter becomes `%(traces)s`.
+- **Output keys.** Every probe trace's output canonical id starts with `probe.` (P11).
+- **Rework.** Nothing special: `risk_probe` is `DERIVED`, so a rework re-derives it like the
+  falsifier sections (P11).
 - **PILOT-4** in `test_pilot_e2e.py`:
   - The `want_keys` set gains each quarter's probe keys, and the route check accepts probe
     `CALCULATION` and `FILED` `FIGURE` routes.
-  - New assertions:
+  - New assertions, in `check_probe(pilot, version_ids)`. It lives in
+    `test_risk_probe_binding.py` with its constants, so `test_pilot_e2e.py` stays well under 800
+    lines (r5). PILOT-4 calls it:
     - R1–R6 and every raw amount equal literal constants. They are computed once by an
       independent scratch computation from the filed figures in `Fraction`, quantised at 2,
       half-even; the probe code is not used.
@@ -625,7 +743,15 @@ Approach:
     - R5 is positive.
     - The `not_performed` section carries the qualified forensic line (P9).
     - Every claim is `MATCH`.
-- **Binding-boundary tests** in `test_prep2b_run_draft.py`, on the `pilot` fixture's FY26_Q2
+- **PILOT-11 (r5, Sol closing #3).** In `_pilot11_resume`, `assert retried["calculation_traces"]
+  <= cited` becomes `<= trace_closure(pilot, cited)`. A child sum reached only through a parent
+  operand then passes. A trace that no cited trace reaches still fails "an orphan trace". Its
+  other assertions and `_pilot11_rework` are unchanged: `:533` reads `calls["conclude"]`, which
+  no longer holds probe calls (P11).
+- **Binding-boundary tests** in the new `test_risk_probe_binding.py` (r5, Sol closing #2;
+  `test_prep2b_run_draft.py` is at 763 lines). It imports `dictionary`, `mapping_set` and `pilot`
+  from `test_prep2b_run_draft`, and `submitted_q2`, `calls`, `_request_changes` and `_rerun` from
+  `test_prep5_rework`, as existing modules do. On the `pilot` fixture's FY26_Q2
   run, patching only `_Binder._interpretations` (the store read) or `_Binder.filed`'s source:
   - (q) `test_probe_lookup_failures`, parametrized (Sol r1 #1, #7):
     - `revenue_from_operations` has no `MAPPED` interpretation at the half-year window (r3, Sol
@@ -675,9 +801,22 @@ Approach:
       version persists.
     - Run kind: ordinary (`prior.rework` is `None`), so the binder's `blobs` never reach
       `allowed_captures` (`run_draft.py:643`).
+  - (s) `test_a_selective_rework_rederives_the_probe_on_the_heads_traces` (r5, P11),
+    parametrized over two rejections of FY26_Q2's submitted draft (`submitted_q2`): `fact.revenue`
+    (run lines rerun) and the cables guidance claim (guidance only). The spies are installed
+    after the head's run, by fixture order, as at `test_prep5_rework.py:490`. After the rework:
+    - The head carries `probe.*` claims; this fails pre-change.
+    - The successor's `probe.*` claims equal the head's, the same trace ids included
+      (content-addressed reuse).
+    - `sorted(calls["probe"])` equals the sorted `key_digest`s of the traces in
+      `trace_closure(pilot, <head's probe trace ids>)`: each probe trace is computed exactly
+      once.
+    - `set(calls["probe_put"])` equals that closure.
+    - `calls["conclude"]` and `calls["put_calculation_trace"]` are left to the existing PREP-5
+      tests, which still assert the run-line guarantee.
 
 Verification:
-- `uv run pytest tests/fundamentals/test_pilot_e2e.py tests/fundamentals/test_prep2b_run_draft.py tests/fundamentals/test_falsifier_status.py -n 0`
+- `uv run pytest tests/fundamentals/test_pilot_e2e.py tests/fundamentals/test_risk_probe_binding.py tests/fundamentals/test_prep5_rework.py tests/fundamentals/test_prep5_corrected_filing.py tests/fundamentals/test_pilot_citations.py tests/fundamentals/test_prep2b_run_draft.py tests/fundamentals/test_falsifier_status.py tests/fundamentals/test_ledger_import.py -n 0`
   passes. This needs the compose postgres plus the retained originals.
 - Then the full gate: `scripts/verify.sh gate RESEARCH-3-S1` → `ROUTE PASS`, against the red
   proof captured before Task 1 (see "Test-first order and the red proof").
@@ -692,7 +831,7 @@ Risks:
   contexts, as live's do (Task 0). If the pilot's do not, the fixture's comparator intake is the
   gap: fix it there, not around it.
 - Rework: probe claims sit in a `DERIVED` section, so `rework.plan` neither carries nor needs
-  atoms for them (F-8).
+  atoms for them (F-8). Every run, rework included, re-derives them (P11); (s) proves it.
 
 ### Task 5: Successor thesis with probe limits (operational, orchestrator)
 
@@ -751,7 +890,7 @@ Approach (the RESEARCH-1 Task 6 and Amendment A1 path):
 4. **Thresholds by code.** `thresholds.py` evaluates each recipe over `q0_probe.json` in
    `Decimal` and quantises at the threshold kind's precision (`config/rounding_policy/v1.yaml`:
    `DAYS` 2, `PERCENTAGE` 2, `RATIO` 6). It writes the exact lexemes into both files of the
-   pair, then re-reads the pair, maps it with `map_q0(metrics=...)`, and asserts each mapped
+   pair, then re-reads the pair, maps it with `map_q0(metrics=KINDS)`, and asserts each mapped
    threshold equals its recomputation. Any difference → exit non-zero, no review.
 5. **Review.** A fresh Sol round reads the pair, `recipes.yaml`, `q0_probe.json` and
    `thresholds.json`, and judges recipes, directions and the reconciliation. On `APPROVE`,
@@ -887,6 +1026,7 @@ Risks:
 | Zero or negative revenue or M → `NOT_ASSESSED`; missing operand named | Task 3 (d)(e); Task 4 (q) at the binding boundary |
 | Missing revenue leaves the other checks assessed; ambiguous interpretation → `RunDraftError`; no balance sheet, or a statement with no evaluable row → one paragraph (spec §1 rule 2) | Task 3 (n); Task 4 (q) |
 | Child-sum operands are package- and cutoff-checked | Task 4 (r) |
+| Selective rework keeps its run-line guarantees and re-derives the probe on the head's traces (r5) | existing PREP-5/PILOT-11 assertions (P11); Task 4 (s) |
 | Existing traces keep their content hash | Task 2 `test_trace_digests_are_unchanged` |
 | T on Q4 evaluated and flags in the arrow direction; half-year vs annual not evaluable; different D uses its own D | Task 3 (g)(h); Task 4 PILOT-4 T on FY26_Q4 (and FY26_Q2, T0-2) |
 | L: `_days` limit on R1 flags on breach | Task 1 (e); Task 3 (i) |
@@ -909,6 +1049,7 @@ Risks:
 - Before Task 1: the tests round, then `scripts/verify.sh red RESEARCH-3-S1 <nodes>` on the
   pre-change source, every node red (nodes listed under "Test-first order and the red proof")
 - `scripts/verify.sh gate RESEARCH-3-S1` → `ROUTE PASS`
+- `wc -l` of every changed test file ≤ 800 (tests round, r5)
 - `git status` shows only the files in the file map.
 
 ## Self-review
@@ -930,8 +1071,9 @@ Risks:
   (Task 5). As in RESEARCH-1 Task 6, no number comes from a model.
 - **Name/type consistency.** `METRICS` (3-tuple), `RISK_PROBE`, `STALE`, `evaluate(stale=)`,
   `Disposition.NOT_ASSESSED`, `_Binder.filed/evaluate/child/store`, `CHECKS`, `Statement`,
-  `guard`, `matches`, `assess`, `body`, `Probe`, `bind_probe`, `probe_section` and
-  `RunDraft.probe` are each produced once and consumed by name.
+  `guard`, `matches`, `assess`, `body`, `Probe`, `bind_probe`, `probe_section`,
+  `RunDraft.probe`, `KINDS`, `TRACES`, `trace_closure` and `check_probe` are each produced once
+  and consumed by name.
 - **What has nobody named?**
   - Child-sum operand blobs escaping the package and cutoff check → Task 4 (recursive
     `_OPERAND_BLOBS`).
@@ -943,6 +1085,8 @@ Risks:
   - Window discovery when revenue is missing → P2, Task 4 (q).
   - Recovering a rejected probe claim → Task 6, `--full-successor`, rehearsed.
   - Fresh output paths for the live writes → Task 6 preflight.
+  - The probe in a selective rework → P11, re-derived; the spies count it apart.
+  - Child sums under PILOT-11's orphan check → P12, `trace_closure`.
   - `rework.plan`'s refusal message for a rejected derived claim says "re-derived from the
     approved thesis; supersede the thesis instead" (`rework.py:224-227`), which misdirects for
     a probe claim, whose route is `--full-successor`. NOTICED BUT NOT TOUCHING: wording only;
