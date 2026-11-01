@@ -7,21 +7,45 @@ non-positive equity (R6) is ``FLAGGED`` without its ratio. Then S (cash below pr
 weakened thesis limit) and T (a strict move in the arrow's direction against the same window one
 year earlier). Status, first match wins: guard, a fired rule, an evaluated rule, ``COMPUTED``.
 Labels, reasons and sentences hold no digits; every number is a claim placeholder.
+``bind_probe`` reads the statement straight from its interpretations (``_Binder.filed``), stores
+each ratio's trace (sums as child traces) and cites it; ``probe_section`` renders the rows.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.canonical import PeriodKind, ValueKind
+from fundamentals.contracts.comparative import ComparatorKind
+from fundamentals.contracts.comparison import SelectionSource
+from fundamentals.contracts.config_versions import ConfigVersions
+from fundamentals.contracts.ledger import NumericClaim, Rounding
 from fundamentals.contracts.measurement_key import PeriodInterval
-from fundamentals.ledger.falsifier_status import RISK_PROBE, FalsifierRow
-from fundamentals.ledger.import_mapping import _slot, refs
-from fundamentals.ledger.run_traces import CRORE_UNIT, DAYS, OUTFLOW_PCT, RATIO, RATIO_PCT
+from fundamentals.contracts.provenance import Provenance
+from fundamentals.contracts.role import FactRole
+from fundamentals.evidence.repository import EvidenceRepository
+from fundamentals.ledger.claim_check import CRORE, PERCENT
+from fundamentals.ledger.display import FILED
+from fundamentals.ledger.falsifier_status import METRICS, RISK_PROBE, FalsifierRow
+from fundamentals.ledger.import_mapping import _slot, _valued, refs
+from fundamentals.ledger.run_traces import (
+    _CRORE_SCALE,
+    CRORE_UNIT,
+    DAYS,
+    OUTFLOW_PCT,
+    RATIO,
+    RATIO_PCT,
+    SUM,
+    _Binder,
+    _Operand,
+    cite,
+)
+from fundamentals.output.earnings_update import EarningsUpdate
 from fundamentals.verify.thesis_predicates import Disposition
 
 
@@ -383,3 +407,214 @@ def _explanation(rows: Sequence[ProbeRow]) -> str:
         + "the sources below."
     )
     return " ".join(sentences)
+
+
+class Probe(BaseModel):
+    """A run's bound probe: the selected statement and its matching prior, the cited probe
+    claims, each check's value and prior value, why a trend is not evaluable, and the measuring
+    claim keys a stale statement withholds from falsifier evaluation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    statement: Statement | None
+    prior: Statement | None
+    claims: tuple[NumericClaim, ...]
+    values: Mapping[str, Decimal]
+    priors: Mapping[str, Decimal]
+    notes: Mapping[str, str]
+    stale_keys: frozenset[str]
+
+
+FLOWS = (
+    frozenset(i for check in CHECKS.values() for i in check.numerator + check.denominator)
+    - BALANCES
+)
+WINDOWS = frozenset({PeriodKind.HALF_YEAR, PeriodKind.YEAR})
+PRIOR = ".prior"
+_CENT = Decimal("0.01")
+# A statement read from one capture: the statement, its operands and the capture's provenance.
+_Read = tuple[Statement, Mapping[str, _Operand], Provenance]
+
+
+def bind_probe(
+    repo: EvidenceRepository,
+    update: EarningsUpdate,
+    *,
+    entity_id: int,
+    versions: ConfigVersions,
+    fiscal_year_end_month: int,
+) -> Probe:
+    """The run's probe: the run's own statement, else its QoQ comparator's (stale), else none;
+    a stored trace and claim per guarded-in check, a ``FILED`` figure per operand shown, and a
+    prior claim on a matching package statement for each trend check."""
+    start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
+    binder = _Binder(repo, entity_id, start, end, versions)
+    (own,) = (fact.sources[0] for fact in update.facts if fact.role is FactRole.PROFIT_BEFORE_TAX)
+    comparators = {
+        change.kind: (change.prior_source, change.period_end)
+        for comparative in update.comparatives
+        for change in (comparative.qoq, comparative.yoy)
+        if change.prior_source is not None
+    }
+    historical = SelectionSource.HISTORICAL_PACKAGE
+    reads = [_read(binder, own, end, SelectionSource.PACKAGE_AS_REPORTED, fiscal_year_end_month)]
+    reads += [
+        _read(binder, source, at, historical, fiscal_year_end_month)
+        for kind in (ComparatorKind.QOQ, ComparatorKind.YOY)
+        if kind in comparators
+        for source, at in (comparators[kind],)
+        if source is not None
+    ]
+    selected = reads[0] or (reads[1] if ComparatorKind.QOQ in comparators else None)
+    if selected is None:
+        return Probe(
+            statement=None,
+            prior=None,
+            claims=(),
+            values={},
+            priors={},
+            notes={},
+            stale_keys=frozenset(),
+        )
+    statement, operands, source = selected
+    statement = statement.model_copy(update={"stale": selected is not reads[0]})
+    prior = next((r for r in reads if r is not None and matches(statement, r[0])), None)
+    claims: list[NumericClaim] = []
+    values: dict[str, Decimal] = {}
+    priors: dict[str, Decimal] = {}
+    notes: dict[str, str] = {}
+    for check_id, check in CHECKS.items():
+        outcome = guard(check_id, statement)
+        if outcome is not None and outcome[0] is ProbeStatus.NOT_ASSESSED:
+            continue
+        name = key(check_id)
+        shown = [i for i in check.numerator + check.denominator if i in operands]
+        claims += [_figure(f"{name}.{i}", operands[i], source) for i in shown]
+        if outcome is not None:
+            continue
+        values[check_id], claim = _ratio(binder, check_id, operands, name)
+        claims.append(claim)
+        if check.arrow is None or prior is None:
+            continue
+        if (failed := guard(check_id, prior[0])) is not None:
+            notes[check_id] = f"trend not evaluable: prior {failed[1]}"
+            continue
+        priors[check_id], claim = _ratio(binder, check_id, prior[1], name + PRIOR)
+        claims.append(claim)
+    return Probe(
+        statement=statement,
+        prior=None if prior is None else prior[0],
+        claims=tuple(claims),
+        values=values,
+        priors=priors,
+        notes=notes,
+        stale_keys=frozenset(map(key, CHECKS)) if statement.stale else frozenset(),
+    )
+
+
+def probe_section(probe: Probe, rows: Sequence[FalsifierRow]) -> tuple[str, str]:
+    """The ``risk_probe`` section as (key, body), its rows assessed against the falsifier
+    rows."""
+    statement, keys = probe.statement, [claim.claim_key for claim in probe.claims]
+    assessed = (
+        []
+        if statement is None
+        else [
+            assess(
+                check_id,
+                statement,
+                probe.values.get(check_id),
+                probe.priors.get(check_id),
+                probe.notes.get(check_id),
+                rows,
+            )
+            for check_id in CHECKS
+        ]
+    )
+    raw = {
+        check_id: tuple(
+            k for k in keys if k.startswith(f"{key(check_id)}.") and not k.endswith(PRIOR)
+        )
+        for check_id in CHECKS
+    }
+    return RISK_PROBE, body(statement, assessed, raw)
+
+
+def _read(
+    binder: _Binder,
+    source: Provenance,
+    balance: date,
+    selection: SelectionSource,
+    fiscal_year_end_month: int,
+) -> _Read | None:
+    """``source``'s statement at ``balance``: its closing balances and, at the longest
+    half-year or annual window ending then, its flows; ``None`` with no balance at all."""
+
+    def filed(canonical_id: str, period: PeriodInterval) -> _Operand | None:
+        found = binder.key(canonical_id, CRORE).model_copy(update={"period": period})
+        return binder.filed(source, found, selection)
+
+    found = {i: filed(i, PeriodInterval.at(balance)) for i in sorted(BALANCES)}
+    if all(operand is None for operand in found.values()):
+        return None
+    windows = [
+        item.key.period
+        for item in binder.mapped(source)
+        if item.key is not None
+        and item.key.period.end == balance
+        and item.key.period.kind(fiscal_year_end_month) in WINDOWS
+    ]
+    window = min(windows, key=lambda period: period.start or balance, default=None)  # longest
+    if window is not None:
+        found |= {i: filed(i, window) for i in sorted(FLOWS)}
+    operands = {i: operand for i, operand in found.items() if operand is not None}
+    statement = Statement(
+        capture_sha256=source.file_sha256,
+        balance_date=balance,
+        window=window,
+        stale=False,
+        values={i: held.value for i, (_, held) in operands.items() if held.value is not None},
+    )
+    return statement, operands, source
+
+
+def _figure(name: str, operand: _Operand, source: Provenance) -> NumericClaim:
+    """A probe operand's filed amount in crore, cited to its interpretation and labelled
+    filed."""
+    held = operand[1]
+    assert held.value is not None and held.interpretation_id is not None
+    claim = _valued(name, RISK_PROBE, held.value / _CRORE_SCALE, CRORE, held.key, source)
+    claim = claim.model_copy(update={"qualifiers": tuple(sorted({*claim.qualifiers, FILED}))})
+    return cite(claim, interpretation_id=held.interpretation_id)
+
+
+def _ratio(
+    binder: _Binder, check_id: str, operands: Mapping[str, _Operand], name: str
+) -> tuple[Decimal, NumericClaim]:
+    """A check's stored trace over ``operands`` and its claim ``name`` at two places,
+    half-even; summed operands are child traces."""
+    check, probe_key = CHECKS[check_id], key(check_id)
+    numerator = _total(binder, probe_key, [operands[i] for i in check.numerator])
+    denominator = _total(binder, probe_key, [operands[i] for i in check.denominator])
+    kind = METRICS[check.metric_id][2]
+    unit: str | ValueKind = PERCENT if kind is ValueKind.PERCENTAGE else kind
+    output = binder.key(probe_key, unit).model_copy(update={"period": denominator[1].key.period})
+    result = binder.evaluate(probe_key, check.formula, output, (numerator, denominator))
+    trace_id = binder.store(probe_key, result)
+    assert result.value is not None
+    value = result.value.quantize(_CENT, ROUND_HALF_EVEN)
+    claim = _valued(
+        name, RISK_PROBE, value, unit, output, precision=2, rounding=Rounding.ROUND_HALF_EVEN
+    )
+    return value, cite(claim, calculation_trace_id=trace_id)
+
+
+def _total(binder: _Binder, probe_key: str, leaves: Sequence[_Operand]) -> _Operand:
+    """One operand, or the running sum of several as stored child traces."""
+    total, names = leaves[0], [leaves[0][1].key.canonical_id]
+    for leaf in leaves[1:]:
+        names.append(leaf[1].key.canonical_id)
+        canonical_id = f"{probe_key}.{'+'.join(names)}"
+        output = total[1].key.model_copy(update={"canonical_id": canonical_id})
+        total = binder.child(canonical_id, SUM, output, (total, leaf))
+    return total

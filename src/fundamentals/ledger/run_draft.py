@@ -16,7 +16,7 @@ predecessor run version's admitted ``fact.<role>`` when its key, value and file 
 (``predecessor``, PILOT-4), checked before the run's first write and swapped in at the write;
 that version's comparison runs join the draft's pins. The derived falsifier sections and
 their threshold claims follow, bound to the thesis approved at the derivation cutoff
-(:mod:`falsifier_status`).
+(:mod:`falsifier_status`), then the risk probe (:mod:`risk_probe`).
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from fundamentals.evidence.capture_retention import retained_capture
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_rows import capture_of
 from fundamentals.ledger import store
-from fundamentals.ledger.citations import _FILE_CAPTURES, _first_party
+from fundamentals.ledger.citations import _FILE_CAPTURES, TRACES, _first_party
 from fundamentals.ledger.claim_check import UNITS, quote_qualifiers
 from fundamentals.ledger.display import FILED, content_hash
 from fundamentals.ledger.falsifier_status import approved_thesis, derived, evaluate
@@ -78,6 +78,7 @@ from fundamentals.ledger.lifecycle import (
     version_status,
 )
 from fundamentals.ledger.rework import Rework, plan, rejected
+from fundamentals.ledger.risk_probe import Probe, probe_section
 from fundamentals.ledger.run_traces import (
     CALCS,
     CHANGES,
@@ -119,7 +120,8 @@ INTROS = {
 }
 NOT_DONE = (
     "- forward scenarios",
-    "- forensic checks",
+    "- forensic checks beyond the risk probe's ratio checks (see `risk_probe` for the sources "
+    "it does not assess)",
     "- a management-credibility assessment",
     "- a narrative thesis-impact assessment",
     "- materiality decisions: no claim carries a materiality decision, because the pipeline "
@@ -140,11 +142,15 @@ WHERE r.entity_id = %s AND r.period = %s AND r.kind = 'EARNINGS_UPDATE'"""
 _BOOTSTRAPS: LiteralString = """SELECT DISTINCT r.period FROM eqos.reports r
 JOIN eqos.report_versions v ON v.report_id = r.id
 WHERE r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'"""
-_OPERAND_BLOBS: LiteralString = """SELECT DISTINCT c.blob_sha256
-FROM eqos.calculation_trace_operands o
+# The captures behind every operand of the given traces and of the traces they reach.
+_OPERAND_BLOBS: LiteralString = (
+    "WITH RECURSIVE "
+    + TRACES
+    + """ SELECT DISTINCT c.blob_sha256
+FROM traces t JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = t.id
 JOIN eqos.interpretations i ON i.id = o.interpretation_id
-JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
-WHERE o.calculation_trace_id = ANY(%s)"""
+JOIN eqos.capture_refs c ON c.id = i.capture_ref_id"""
+)
 _READ_COMMITTED: LiteralString = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
 MEMORY_LINE = "Memory retrieved at store time {boundary}: {items}."
 _MEMORY_ITEM = "memory:{id} (needs revalidation: {flag}; supports {supports})"
@@ -190,8 +196,9 @@ class Retrospective(BaseModel):
 
 class RunDraft(BaseModel):
     """What the draft is written from: the emitted update, its guidance claims, each required
-    role's selected fact, its bound changes and calculations lines, the run's originals (XBRLs
-    incl. comparators; PDFs), the comparison run its facts were admitted from and designation."""
+    role's selected fact, its bound changes and calculations lines, its risk probe, the run's
+    originals (XBRLs incl. comparators; PDFs), the comparison run its facts were admitted from
+    and designation."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -200,6 +207,7 @@ class RunDraft(BaseModel):
     guidance: tuple[GuidanceClaim, ...]
     facts: Mapping[str, FactRef]
     lines: tuple[Line, ...]
+    probe: Probe
     xbrl: tuple[str, ...]
     pdfs: tuple[str, ...]
     memory: str
@@ -341,14 +349,15 @@ def write_run_draft(
             body.add(GUIDANCE, text, shown)
             if not _specified(shown.horizon):
                 body.lines[OPEN_QUESTIONS].append(_question(shown))
-        claims = predecessor(prior, tuple(body.claims.values()))
+        claims = predecessor(prior, tuple(body.claims.values())) + run.probe.claims
         assert update.derivation_cutoff is not None
         bound = approved_thesis(cursor, entity_id, update.nse_symbol, update.derivation_cutoff)
         by_key = {claim.claim_key: claim for claim in claims}
-        rows = () if bound is None else evaluate(bound, by_key, run.lines)
+        rows = () if bound is None else evaluate(bound, by_key, run.lines, run.probe.stale_keys)
         falsifiers, thresholds = derived(bound, rows)
         _check_sources(cursor, claims, run, prior, catalog)
-        sections = _sections(run, prior, body.lines, falsifiers)
+        derived_sections = (*falsifiers, probe_section(run.probe, rows))
+        sections = _sections(run, prior, body.lines, derived_sections)
         claims += thresholds
         kind = ReportKind.EARNINGS_UPDATE
         row = cursor.execute(_REPORT, (entity_id, run.period, kind.value)).fetchone()
@@ -625,7 +634,7 @@ def _check_sources(
     assert cutoff is not None
     traces = [c.citation.calculation_trace_id for c in claims if c.citation.calculation_trace_id]
     blobs = {c.citation.source_sha256 for c in claims if c.citation.source_sha256 is not None}
-    blobs |= {row[0] for row in cursor.execute(_OPERAND_BLOBS, (traces,)).fetchall()}
+    blobs |= {row[0] for row in cursor.execute(_OPERAND_BLOBS, {"traces": traces}).fetchall()}
     check_blobs(
         cursor,
         blobs,
@@ -676,7 +685,7 @@ def _sections(
     lines: Mapping[str, list[str]],
     falsifiers: Sequence[tuple[str, str]],
 ) -> tuple[ReportSection, ...]:
-    """The heading, then each section's lines, the derived falsifier sections and the
+    """The heading, then each section's lines, the derived falsifier and probe sections and the
     disclosures; every number is a claim placeholder or a structural date, id or digest."""
     update, retrospective = run.update, run.retrospective
     assert update.source_cutoff is not None and update.derivation_cutoff is not None

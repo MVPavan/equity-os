@@ -160,7 +160,7 @@ class _Binder:
         self.binds: dict[str, Callable[[], NumericClaim]] = {}
         self.blobs: set[str] = set()
 
-    def key(self, canonical_id: str, unit: str) -> MeasurementKey:
+    def key(self, canonical_id: str, unit: str | ValueKind) -> MeasurementKey:
         """A key of this run's quarter."""
         return measurement_key(canonical_id, unit, self.entity_id, self.start, self.end)
 
@@ -189,17 +189,10 @@ class _Binder:
     ) -> _Operand | None:
         """The single mapped interpretation of ``key`` in ``source``'s capture under the run's
         pins, named by its canonical id; ``None`` when there is none."""
-        self.blobs.add(source.file_sha256)
-        capture = self.repo.find_capture_ref(
-            source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
-        )
         found = [
             item
-            for item in self._interpretations(capture)
-            if item.status is InterpretationStatus.MAPPED
-            and _context(item) == self.context
-            and item.key is not None
-            and item.key.digest() == key.digest()
+            for item in self.mapped(source)
+            if item.key is not None and item.key.digest() == key.digest()
         ]
         where = f"{key.canonical_id} in {source.file_sha256[:12]}"
         if not found:
@@ -227,6 +220,20 @@ class _Binder:
             precision_supported=True,
             reasons=(),
         )
+
+    def mapped(self, source: Provenance) -> list[Interpretation]:
+        """Every keyed ``MAPPED`` interpretation of ``source``'s capture under the run's pins."""
+        self.blobs.add(source.file_sha256)
+        capture = self.repo.find_capture_ref(
+            source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
+        )
+        return [
+            item
+            for item in self._interpretations(capture)
+            if item.status is InterpretationStatus.MAPPED
+            and _context(item) == self.context
+            and item.key is not None
+        ]
 
     def lazy(
         self,
