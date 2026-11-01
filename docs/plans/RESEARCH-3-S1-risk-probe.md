@@ -655,9 +655,13 @@ Approach:
       keeps its in-package capture: each comes from the `Statement` read, not from `child`'s
       arguments. Citations stay valid (`citations.py:260-261`), and `run.sum` checks no period
       (`run_traces.py:284-285`).
-    - **Cases.** (a) `foreign` = FY25_Q4 (capture 15): outside FY26_Q2's package, published
-      before the cutoff → "captures not in the run's package". (b) `foreign` = FY26_Q4 (capture
-      5), admitted with `allowed_captures` patched to include it, its
+    - **Foreign captures by content, not id.** Resolve each `foreign` with
+      `Repository.find_capture_ref(source_id, surface, sha)` (`evidence/repository.py:258`) from
+      the pilot's pinned XBRL SHA for that quarter; never carry live-DB capture ids (Task 0's
+      ids are live; the test fixture registers in a different order, Sol r3 #8).
+    - **Cases.** (a) `foreign` = FY25_Q4: outside FY26_Q2's package, published
+      before the cutoff → "captures not in the run's package". (b) `foreign` = FY26_Q4,
+      admitted with `allowed_captures` patched to include it, its
       `Retrospective.published` time after the source cutoff (the pilot runs
       `--retrospective`, `prep2b_support.py:278-282`) → "captures past the source cutoff"
       (`run_draft.py:658-670`). The test first asserts these preconditions (the capture is
