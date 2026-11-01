@@ -217,6 +217,7 @@ def seed(
                         "interpretation_id": new_id,
                         "basis": basis,
                         "period": span,
+                        "canonical_id": canonical,
                         "key": key,
                         "value": Decimal(value),
                         "interval": interval or Interval.exact(Decimal(value)),
