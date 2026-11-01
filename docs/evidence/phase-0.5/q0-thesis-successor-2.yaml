@@ -1,0 +1,89 @@
+# APPROVED Q0 bootstrap thesis — Apar Industries Ltd (APARINDS), Q2 FY26.
+# Machine-readable twin of q0-thesis-successor-2.md; supersedes q0-thesis-successor-1.yaml 1.1.0.
+# Approved by gpt-6.1-sol. Bound by each run draft's falsifier status sections.
+# Do not edit without issuing a new version; the ledger seals this file's digest.
+symbol: "APARINDS"
+version: "1.2.0"
+approved_by: "gpt-6.1-sol"
+approved_at: "2026-11-01"
+stance: "Constructive but conditional on continued company-level revenue and earnings growth, retention of the prior-year margin improvement, and positive per-share growth. The sequential profit decline in Q2 FY26 makes temporary margin pressure a hypothesis to test rather than an established fact."
+assumptions:
+  - "[FACT] Q2 FY26 combines strong year-on-year revenue and profit growth with sequential profit contraction: revenue rose 23.1 percent year on year and 12.0 percent sequentially, while PBT fell 3.4 percent and PAT fell 4.3 percent sequentially."
+  - "[FACT] Expenses grew faster than revenue sequentially, 13.1 percent against 12.0 percent, moving the expense-to-revenue ratio from 93.58 percent to 94.52 percent."
+  - "[SPECULATION] That sequential margin pressure is temporary rather than structural. This is the central uncertain assumption the three assisted quarters must test."
+  - "[INFERENCE] Retaining at least half of the Q0 revenue and PAT growth rates is sufficient to preserve the growth case."
+  - "[INFERENCE] Positive earnings-per-share growth is independently necessary for the shareholder case, because company-level profit growth can coexist with dilution."
+  - "[INFERENCE] An unusually high effective tax rate can impair the translation of PBT into PAT; the adverse direction only is tested."
+falsifiers:
+  - falsifier_id: "F1"
+    statement: "Revenue year-on-year growth falls below half its Q0 rate."
+    predicate:
+      metric_id: "revenue_yoy_pct"
+      op: "LT"
+      threshold: 11.55
+  - falsifier_id: "F2"
+    statement: "PBT margin, PBT before associates over revenue, falls below the approximate prior-year floor."
+    predicate:
+      metric_id: "pbt_margin_pct"
+      op: "LT"
+      threshold: 5.53
+  - falsifier_id: "F3"
+    statement: "PAT year-on-year growth falls below half its Q0 rate."
+    predicate:
+      metric_id: "pat_yoy_pct"
+      op: "LT"
+      threshold: 14.90
+  - falsifier_id: "F4"
+    statement: "Basic earnings per share fails to grow year on year."
+    predicate:
+      metric_id: "eps_yoy_pct"
+      op: "LTE"
+      threshold: 0
+  - falsifier_id: "F5"
+    statement: "Effective tax rate, filed total tax over PBT before associates, exceeds the recent-results upper tolerance of 26.74 percent."
+    predicate:
+      metric_id: "filed_effective_tax_rate_pct"
+      op: "GT"
+      threshold: 26.74
+  - falsifier_id: "F6"
+    statement: "Receivable days rise above the highest level the Q0-window statements show."
+    predicate:
+      metric_id: "probe_receivable_days"
+      op: "GT"
+      threshold: 85.23
+  - falsifier_id: "F7"
+    statement: "Inventory days, materials-cost basis, rise above the highest level the Q0-window statements show."
+    predicate:
+      metric_id: "probe_inventory_materials_days"
+      op: "GT"
+      threshold: 82.46
+  - falsifier_id: "F8"
+    statement: "Payable days, materials-cost basis, rise above the highest level the Q0-window statements show."
+    predicate:
+      metric_id: "probe_payable_materials_days"
+      op: "GT"
+      threshold: 137.41
+  - falsifier_id: "F9"
+    statement: "Cash conversion, CFO over PAT, falls below the lowest level the Q0-window statements show."
+    predicate:
+      metric_id: "probe_cash_conversion_pct"
+      op: "LT"
+      threshold: 32.81
+  - falsifier_id: "F10"
+    statement: "Capex intensity, capex over revenue, rises above the highest level the Q0-window statements show by more than the move between the two half-years."
+    predicate:
+      metric_id: "probe_capex_intensity_pct"
+      op: "GT"
+      threshold: 4.80
+  - falsifier_id: "F11"
+    statement: "Borrowings to equity rises above the highest level the Q0-window statements show by more than the move between the two half-year balance dates."
+    predicate:
+      metric_id: "probe_borrowings_to_equity_ratio"
+      op: "GT"
+      threshold: 0.128761
+open_questions:
+  - "Neither management commitment is machine-checkable. Conductor EBITDA of 30,000 INR per metric ton needs a segment EBITDA and a conductor volume metric; cables revenue growth of 25 percent needs a cables segment revenue metric. Neither exists in the registry and neither was mapped onto a company-level metric."
+  - "Commitment horizons are undefined. The conductor guidance does not say when medium term is judged, nor whether 30,000 is a target, a floor or an average. The cables guidance does not fix the annual window, so quarterly year-on-year growth does not settle annual delivery."
+  - "Segment mix is the whole mechanism behind the margin move and the consolidated P&L cannot show it. Segment revenue and segment results are wanted."
+  - "Breach aggregation and recovery are undefined. Each quarter is evaluated independently; a falsifier that fires once and then recovers has no defined effect on the standing thesis."
+  - "No valuation basis. This is a business-performance thesis; nothing here establishes that the shares are attractive at any particular price."

@@ -1,0 +1,35 @@
+# RESEARCH-3 S1 Task 5: numeral-free recipes over q0_probe.json. thresholds.py calculates each limit.
+# Rule: the limit starts at the most adverse level the three Q0-window statements show, and the
+# operator is strict. Where FY26_Q2 itself holds that level, the next adverse reading would fire on
+# any drift, so the limit adds that metric's like-for-like move (the two half-years). R4 is the one
+# exception, stated in its rationale.
+- metric_id: probe_receivable_days
+  falsifier_id: F6
+  op: GT
+  rationale: "CHECKS R1 arrow +1: rising days are adverse. FY26_Q2 sits below the highest Q0-window level, so the highest level already leaves headroom and no spread is needed. Fires when collections are slower than any Q0-window statement shows."
+  recipe: {base: {fn: max, of: [FY26_Q2_H1.R1, FY25_Q2_H1.R1, FY25_FY.R1]}}
+- metric_id: probe_inventory_materials_days
+  falsifier_id: F7
+  op: GT
+  rationale: "CHECKS R2 arrow +1: rising days are adverse. FY26_Q2 sits below the highest Q0-window level, so no spread is needed. Fires when stock is held longer than any Q0-window statement shows, on the same materials-cost basis."
+  recipe: {base: {fn: max, of: [FY26_Q2_H1.R2, FY25_Q2_H1.R2, FY25_FY.R2]}}
+- metric_id: probe_payable_materials_days
+  falsifier_id: F8
+  op: GT
+  rationale: "CHECKS R3 has no trend arrow, so direction comes from its implication: supplier payments stretching means leaning on supplier credit, so high is adverse. FY26_Q2 sits below the highest Q0-window level, so no spread is needed."
+  recipe: {base: {fn: max, of: [FY26_Q2_H1.R3, FY25_Q2_H1.R3, FY25_FY.R3]}}
+- metric_id: probe_cash_conversion_pct
+  falsifier_id: F9
+  op: LT
+  rationale: "CHECKS R4 arrow -1: falling conversion is adverse. FY26_Q2 itself holds the lowest level and the strict operator does not fire on it. No spread, the exception to the rule: the half-year move is larger than the base, so subtracting it would put the limit below zero, which tests operating cash outflow and not lower conversion, and rule S already flags any reading with cash below profit. Fires when conversion is lower than any Q0-window statement shows."
+  recipe: {base: {fn: min, of: [FY26_Q2_H1.R4, FY25_Q2_H1.R4, FY25_FY.R4]}}
+- metric_id: probe_capex_intensity_pct
+  falsifier_id: F10
+  op: GT
+  rationale: "CHECKS R5 has no trend arrow, so direction comes from its implication: heavy spending may strain free cash flow, so high is adverse. FY26_Q2 itself holds the highest level, so the limit adds the half-year-on-half-year move: spending must step up by at least that move again. Heavy capex can be deliberate, so a breach is a prompt to examine cash strain and nothing more."
+  recipe: {base: {fn: max, of: [FY26_Q2_H1.R5, FY25_Q2_H1.R5, FY25_FY.R5]}, spread: {between: [FY26_Q2_H1.R5, FY25_Q2_H1.R5]}}
+- metric_id: probe_borrowings_to_equity_ratio
+  falsifier_id: F11
+  op: GT
+  rationale: "CHECKS R6 arrow +1: rising leverage is adverse. FY26_Q2 itself holds the highest level, so the limit adds the move between the two half-year balance dates, one year apart: leverage must rise by at least that move again. Rule T already reports any smaller rise where a matching prior exists."
+  recipe: {base: {fn: max, of: [FY26_Q2_H1.R6, FY25_Q2_H1.R6, FY25_FY.R6]}, spread: {between: [FY26_Q2_H1.R6, FY25_Q2_H1.R6]}}

@@ -1,0 +1,62 @@
+{
+  "probe_receivable_days": {
+    "falsifier_id": "F6",
+    "op": "GT",
+    "threshold": "85.23",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  },
+  "probe_inventory_materials_days": {
+    "falsifier_id": "F7",
+    "op": "GT",
+    "threshold": "82.46",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  },
+  "probe_payable_materials_days": {
+    "falsifier_id": "F8",
+    "op": "GT",
+    "threshold": "137.41",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  },
+  "probe_cash_conversion_pct": {
+    "falsifier_id": "F9",
+    "op": "LT",
+    "threshold": "32.81",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  },
+  "probe_capex_intensity_pct": {
+    "falsifier_id": "F10",
+    "op": "GT",
+    "threshold": "4.80",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  },
+  "probe_borrowings_to_equity_ratio": {
+    "falsifier_id": "F11",
+    "op": "GT",
+    "threshold": "0.128761",
+    "breached": {
+      "FY26_Q2_H1": false,
+      "FY25_Q2_H1": false,
+      "FY25_FY": false
+    }
+  }
+}

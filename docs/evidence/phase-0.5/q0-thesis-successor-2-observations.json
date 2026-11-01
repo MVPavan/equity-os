@@ -1,0 +1,134 @@
+{
+  "cutoff": "2025-11-06",
+  "statements": {
+    "FY26_Q2_H1": {
+      "capture_ref_id": 1,
+      "blob_sha256": "90baae0babfa7724e652def20f613efbf33bdadbbbe545e97ff77617d467d799",
+      "balance_date": "2025-09-30",
+      "window": [
+        "2025-04-01",
+        "2025-09-30"
+      ],
+      "published_at": "2025-10-29T15:28:58+00:00",
+      "first_seen_at": "2026-10-20T12:27:04.942313+00:00",
+      "checks": {
+        "R1": {
+          "metric_id": "probe_receivable_days",
+          "exact": "41948724/540979",
+          "value": "77.54"
+        },
+        "R2": {
+          "metric_id": "probe_inventory_materials_days",
+          "exact": "6841150/94491",
+          "value": "72.40"
+        },
+        "R3": {
+          "metric_id": "probe_payable_materials_days",
+          "exact": "32292302/283473",
+          "value": "113.92"
+        },
+        "R4": {
+          "metric_id": "probe_cash_conversion_pct",
+          "exact": "1688400/51461",
+          "value": "32.81"
+        },
+        "R5": {
+          "metric_id": "probe_capex_intensity_pct",
+          "exact": "2034150/540979",
+          "value": "3.76"
+        },
+        "R6": {
+          "metric_id": "probe_borrowings_to_equity_ratio",
+          "exact": "59092/485251",
+          "value": "0.121776"
+        }
+      }
+    },
+    "FY25_Q2_H1": {
+      "capture_ref_id": 13,
+      "blob_sha256": "c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60",
+      "balance_date": "2024-09-30",
+      "window": [
+        "2024-04-01",
+        "2024-09-30"
+      ],
+      "published_at": "2024-10-30T05:17:06+00:00",
+      "first_seen_at": "2026-10-29T06:31:59.975419+00:00",
+      "checks": {
+        "R1": {
+          "metric_id": "probe_receivable_days",
+          "exact": "73765287/865502",
+          "value": "85.23"
+        },
+        "R2": {
+          "metric_id": "probe_inventory_materials_days",
+          "exact": "11361006/137773",
+          "value": "82.46"
+        },
+        "R3": {
+          "metric_id": "probe_payable_materials_days",
+          "exact": "88522041/688865",
+          "value": "128.50"
+        },
+        "R4": {
+          "metric_id": "probe_cash_conversion_pct",
+          "exact": "4078400/39641",
+          "value": "102.88"
+        },
+        "R5": {
+          "metric_id": "probe_capex_intensity_pct",
+          "exact": "1178250/432751",
+          "value": "2.72"
+        },
+        "R6": {
+          "metric_id": "probe_borrowings_to_equity_ratio",
+          "exact": "47150/410747",
+          "value": "0.114791"
+        }
+      }
+    },
+    "FY25_FY": {
+      "capture_ref_id": 15,
+      "blob_sha256": "943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2",
+      "balance_date": "2025-03-31",
+      "window": [
+        "2024-04-01",
+        "2025-03-31"
+      ],
+      "published_at": "2025-05-14T16:01:25+00:00",
+      "first_seen_at": "2026-10-29T06:32:09.787165+00:00",
+      "checks": {
+        "R1": {
+          "metric_id": "probe_receivable_days",
+          "exact": "148853205/1858121",
+          "value": "80.11"
+        },
+        "R2": {
+          "metric_id": "probe_inventory_materials_days",
+          "exact": "60416625/736967",
+          "value": "81.98"
+        },
+        "R3": {
+          "metric_id": "probe_payable_materials_days",
+          "exact": "9206030/66997",
+          "value": "137.41"
+        },
+        "R4": {
+          "metric_id": "probe_cash_conversion_pct",
+          "exact": "12905600/82131",
+          "value": "157.13"
+        },
+        "R5": {
+          "metric_id": "probe_capex_intensity_pct",
+          "exact": "5096900/1858121",
+          "value": "2.74"
+        },
+        "R6": {
+          "metric_id": "probe_borrowings_to_equity_ratio",
+          "exact": "23507/225177",
+          "value": "0.104393"
+        }
+      }
+    }
+  }
+}
