@@ -31,8 +31,8 @@ commitments, calculations, uncertainties, and thesis.
   `docs/evidence/pilot/report.md`), `CORE_RESEARCH_RELEASE: NO`,
   `VISION_SATISFIED: NO`.
   Scope (2026-10-23, eqos-bnx): the PASS proves the pipeline (PILOT-1…13), not research
-  content. The report's analyst sections are still placeholders, so register A-04/B-02 are
-  unmet. They must be met before Phase 1 and `CORE_RESEARCH_RELEASE`.
+  content. The report's analyst sections are still placeholders, so register B-02 is
+  unmet (A-04, freezing the output contract, was accepted in Phase 0A). It must be met before Phase 1 and `CORE_RESEARCH_RELEASE`.
 - **Research report targets** (owner, 2026-10-27): theses must carry forward-view scenarios,
   forensic risk checks and management-credibility tracking, built from concalls and filings
   (`docs/goals/2026-10-27-research-report-targets.md`).
