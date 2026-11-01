@@ -106,10 +106,17 @@ def test_fake_mapping_persistence_and_corrections(pg_db, tmp_path):
         ["extract-text"],
     ],
 )
-def test_cli_refuses_unselected_model_without_opening_boundaries(command):
+def test_cli_refuses_unselected_model_without_opening_boundaries(command, tmp_path, monkeypatch):
+    from fundamentals.api import vendor_surface_cli
     from fundamentals.api.cli_parser import build_parser
     from fundamentals.api.vendor_surface_cli import dispatch_vendor_command
 
+    settings = tmp_path / "model.yaml"
+    settings.write_text(
+        "model_id: null\nbase_url: https://unused.example\nkey_file: fake.key\n"
+        "prompt_version: v1\ndictionary_version: v3\n"
+    )
+    monkeypatch.setattr(vendor_surface_cli, "MODEL_CONFIG", settings)
     args = build_parser().parse_args(["vendor", *command])
     refused = Mock(side_effect=AssertionError("unselected model must refuse before I/O"))
     assert dispatch_vendor_command(args, pool_factory=refused, opener_factory=refused) == 2
@@ -204,3 +211,14 @@ def test_cli_maps_logical_g3_labels(pg_db, tmp_path, monkeypatch, site, surface)
         assert conn.execute(
             "SELECT source_id,surface,reason FROM eqos.vendor_label_proposals"
         ).fetchall() == [(site, surface, "MAPPED")]
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://example.com/v1", "http://localhost:4000@example.com/v1", "ftp://localhost/v1"],
+)
+def test_the_model_key_never_leaves_the_machine_in_clear(url: str) -> None:
+    """Plain HTTP would expose the key on the wire, so only this machine's loopback may use it."""
+    with pytest.raises(ValueError, match="requires HTTPS"):
+        ChatCompletionsModel("m", url, SecretStr("k"))
+    assert ChatCompletionsModel("m", "http://localhost:4000/v1", SecretStr("k")).model_id == "m"

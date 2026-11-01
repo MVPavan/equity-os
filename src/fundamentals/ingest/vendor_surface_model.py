@@ -3,6 +3,7 @@
 import json
 from typing import Protocol
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -58,8 +59,10 @@ class ChatCompletionsModel:
         max_output_tokens: int = 512,
         max_retries: int = 2,
     ) -> None:
-        if not base_url.startswith("https://"):
-            raise ValueError("model endpoint requires HTTPS")
+        endpoint = urlsplit(base_url)
+        loopback = endpoint.scheme == "http" and endpoint.hostname in {"localhost", "127.0.0.1"}
+        if endpoint.scheme != "https" and not loopback:
+            raise ValueError("model endpoint requires HTTPS, or plain HTTP on this machine")
         self.model_id, self.base_url, self.api_key = model_id, base_url, api_key
         self.timeout_seconds, self.max_response_bytes = timeout_seconds, max_response_bytes
         self.max_output_tokens, self.max_retries = max_output_tokens, max_retries
