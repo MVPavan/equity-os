@@ -1,16 +1,24 @@
 {
   "now": {
-    "title": "DOCS-1 accepted live: all five document kinds met; vendor canary green",
-    "detail": "First daily documents run (16:00 UTC): fetched the 7 newly classified 2023-07..2025-01 results and Apar's new Q2 FY27 results and presentation; same 36 known gaps as the backfill; backup bac13f25. DOCS-1 acceptance: transcripts 12/8, presentations 12/8, annual reports 5/5, credit ratings 6/6, results 13/13 (all MET). Vendor canary green (exit 0). eqos-msq stays open only for its P3 follow-ups (msq.3-.7).",
-    "stage": "Build"
+    "title": "WSL clock fix under test; register A-rows brought current",
+    "detail": "Ubuntu's own NTP service (systemd-timesyncd) was fighting WSL's host time sync and stepping the clock back (10 'time jumped backwards' in a day, the eqos-0bp gate flake). Disabled 03:32 UTC; no backward steps since. A 2-hour watcher confirms before eqos-0bp is closed."
   },
   "next": [
     "Owner: Phase 4 bake-off (candidate models + API key) unblocks eqos-aa6.14 and .15",
     "Owner: keep macro charts (132/week) and index widgets (89/week)?",
+    "Close eqos-0bp if the clock watcher and next gate stay clean",
     "Daily documents run 16:00 UTC (scheduled); confirm a no-new-filings day gives zero new revisions",
-    "eqos-aa6.28 capture error messages; eqos-8mnm tmp-root flake; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
+    "eqos-aa6.28 capture error messages; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-11-01",
+      "text": "Register v2 A-01..A-13 marked Accepted per the Phase 0A exit record (eqos-4j2.9). eqos-ghv P1->P2 (pilot passed without PQ3 segment). Filed eqos-ac4h: blueprint ledger validator pins a stale register hash."
+    },
+    {
+      "date": "2026-11-01",
+      "text": "Disabled systemd-timesyncd inside WSL (owner ran it): likely cause of the backward clock steps behind eqos-0bp."
+    },
     {
       "date": "2026-10-31",
       "text": "DOCS-1 daily run #1: exit 4 steady state (known gaps only), 9 new documents incl. Q2 FY27 results/presentation; acceptance RESULTS 13/13 -> all DOCS-1 kinds MET. Backup bac13f252168498eae9fbc68ce37a6f7."
