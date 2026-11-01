@@ -407,27 +407,40 @@ FACTS = 3  # the first three TABLES: fact rows, admissions and selections
 CONDUCTOR = "ledger.conductor_ebitda_per_mt.medium_term.consolidated"
 PBT = "fact.profit_before_tax"
 Calls = dict[str, list[Any]]
+PROBE, PROBE_CALLS, PROBE_PUTS = "probe.", "probe", "probe_put"
 
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
     """Every operand lookup (its key), trace computation (its output key), trace store,
-    admission (the rows it created) and admitted selection (its fact's family) the run makes."""
+    admission (the rows it created) and admitted selection (its fact's family) the run makes.
+    The risk probe's computations and stores (output canonical id ``probe.…``) are recorded
+    apart, under ``probe`` and ``probe_put``: a run re-derives its probe (RESEARCH-3 P11), so
+    only the run lines' calls prove what a rework reran."""
     found: Calls = defaultdict(list)
 
-    def spy(owner: Any, name: str, record: Callable[..., Any]) -> None:
+    def spy(
+        owner: Any, name: str, record: Callable[..., Any], route: Callable[..., str] | None = None
+    ) -> None:
         real = getattr(owner, name)
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             result = real(*args, **kwargs)
-            found[name].append(record(result, *args))
+            found[name if route is None else route(*args)].append(record(result, *args))
             return result
 
         monkeypatch.setattr(owner, name, wrapper)
 
+    def computed(_kind: Any, output: Any, *_: Any) -> str:
+        return PROBE_CALLS if output.canonical_id.startswith(PROBE) else "conclude"
+
+    def stored(_self: Any, trace: CalculationTrace) -> str:
+        probe = trace.key_digest in found.get(PROBE_CALLS, ())
+        return PROBE_PUTS if probe else "put_calculation_trace"
+
     spy(_Binder, "operand", lambda _, _self, _name, _source, key, *__: key.digest())
-    spy(run_traces, "conclude", lambda _, _kind, output, *__: output.digest())
-    spy(EvidenceRepository, "put_calculation_trace", lambda trace_id, *_: trace_id)
+    spy(run_traces, "conclude", lambda _, _kind, output, *__: output.digest(), computed)
+    spy(EvidenceRepository, "put_calculation_trace", lambda trace_id, *_: trace_id, stored)
     spy(cli, "admit_run", lambda outcome, *_: outcome.created)
     spy(cli, "select_admitted", lambda revision, *_: revision.fact.revision_family)
     return found
@@ -640,7 +653,11 @@ def test_a_refused_rework_recovers_as_a_full_successor(
     assert f"Full successor of version:{version} (full rework requested; rejected {PBT})" in heading
     claims = {c.claim_key: c for c in pilot.version(new).claims}
     assert claims[CABLES].metric_label == "Cables revenue growth guidance (corrected)"
-    computed = [c for c in claims.values() if c.citation.kind is CitationKind.CALCULATION]
+    computed = [
+        c
+        for key, c in claims.items()
+        if c.citation.kind is CitationKind.CALCULATION and not key.startswith(PROBE)
+    ]
     assert len(calls["conclude"]) == len(computed)
     pilot.approve(new)
     with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:

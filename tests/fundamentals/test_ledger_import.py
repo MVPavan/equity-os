@@ -198,7 +198,9 @@ def test_q0_yaml_only_content_becomes_sections_and_policy_claims() -> None:
     """Q0's Markdown sections are its bytes; assumptions, falsifiers and open questions follow as
     sections in YAML order; each threshold is a self-cited ``POLICY`` claim at its lexeme's
     precision (``14.90`` keeps its zero)."""
-    mapped = map_q0(read(Q0_MD), read(Q0_YAML), cutoff=date(2025, 11, 6))
+    from fundamentals.ledger.falsifier_status import KINDS
+
+    mapped = map_q0(read(Q0_MD), read(Q0_YAML), cutoff=date(2025, 11, 6), metrics=KINDS)
     rendered = narrative(mapped.sections, mapped.claims)
     assert rendered.startswith(read(Q0_MD))
     tail = rendered[len(read(Q0_MD)) :].decode()
@@ -289,8 +291,10 @@ def test_a_source_that_does_not_parse_fails_only_its_version(lexeme: bytes, bad:
 @pytest.mark.parametrize("yaml_body", [b"", b"- a\n- b\n", b"thesis\n"])
 def test_a_q0_yaml_root_that_is_not_a_mapping_fails_only_q0(yaml_body: bytes) -> None:
     """An empty, list-root or scalar-root Q0 YAML fails the Q0 version, not the import."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
     with pytest.raises(LosslessError, match="Q0: not lossless"):
-        map_q0(read(Q0_MD), yaml_body, cutoff=date(2025, 11, 6))
+        map_q0(read(Q0_MD), yaml_body, cutoff=date(2025, 11, 6), metrics=KINDS)
 
 
 @pytest.mark.retained
@@ -362,9 +366,11 @@ def test_every_twin_field_maps_but_the_approved_bookkeeping(quarter: str) -> Non
 @pytest.mark.retained
 def test_q0_altered_threshold_fails() -> None:
     """A Q0 threshold must equal the predicate in its Markdown (``revenue_yoy_pct LT 11.55``)."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
     twin = read(Q0_YAML).replace(b"threshold: 11.55", b"threshold: 11.56")
     with pytest.raises(LosslessError):
-        map_q0(read(Q0_MD), twin, cutoff=date(2025, 11, 6))
+        map_q0(read(Q0_MD), twin, cutoff=date(2025, 11, 6), metrics=KINDS)
 
 
 def _git(repo: Path, *args: str, date_iso: str = "2026-09-07T11:44:46+00:00") -> str:
