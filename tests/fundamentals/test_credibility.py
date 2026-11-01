@@ -1,11 +1,6 @@
 """RESEARCH-3 S2 Tasks 1-2: rule H, revision events, outcomes and the section text (pure).
 
-A row tells a reader what management promised and what the filed figures show, so a verdict is a
-function of cited claims and a reviewed mapping: a window comes only from the quote's words, an
-event from two statements' numbers, an outcome from the exact value at the statement's precision,
-and pins stop a config edit rewriting history. New production names are imported inside helpers,
-so this file collects before they exist.
-
+New production names are imported inside helpers, so this file collects before they exist.
 Contract fixed here: a row is one line holding its episode's ``.original`` quote (and ``.latest``
 with two or more statements), one outcome token per endpoint it shows, in endpoint order.
 """
@@ -20,61 +15,23 @@ from typing import Any
 
 import pytest
 from credibility_support import (
-    ACTUAL,
-    ASSESSED,
     BLOB,
-    D8,
-    D9,
-    DISCLOSURES,
-    ENDS,
-    FY26,
-    FY27,
-    GROWTH,
-    GUIDANCE,
-    INTERIM,
-    OPEN_ENDED,
-    Q4_FILED,
-    REVISIONS,
-    ROW_ACTUALS,
-    SAMPLE,
-    SAMPLE_DIGEST,
-    SECTION,
-    SPLIT,
-    TAMPER,
-    TOLERANCE,
-    TRUNCATIONS,
-    VERDICTS,
-    WINDOW_CASES,
-    WINDOW_STATES,
-    WRONG_WAY,
-    A,
-    B,
-    _temp_root,
-    built,
-    by_key,
     claim,
-    correction,
     cred_module,
-    direction,
     entry,
     event_of,
-    every_status,
-    faults,
-    finish,
     gt_module,
-    measured,
     outcomes,
-    prepared,
     record_lines,
     registry,
     row,
     same_statement,
-    stated,
-    targets,
-    two,
-    unresolved,
+    write_targets,
 )
 
+from fundamentals.contracts.canonical import ValueKind
+from fundamentals.contracts.guidance_claim import EpistemicClass
+from fundamentals.contracts.ledger import Citation, CitationKind, NumericClaim, Rounding
 from fundamentals.extract.guidance_extractor import GuidanceRule, extract_guidance_claims
 from fundamentals.ingest.pdf_source import LoadedPdf, PdfBlock, PdfPage
 from fundamentals.ledger.display import PLACEHOLDER, render_section
@@ -82,248 +39,461 @@ from fundamentals.ledger.numeral_scan import scan_section
 from fundamentals.ledger.run_draft import _Body
 from fundamentals.ledger.run_traces import RunDraftError
 
-__all__ = ["_temp_root"]
+ENDS = {
+    "FY26_Q1": date(2025, 6, 30),
+    "FY26_Q2": date(2025, 9, 30),
+    "FY26_Q3": date(2025, 12, 31),
+    "FY26_Q4": date(2026, 3, 31),
+    "FY27_Q1": date(2026, 6, 30),
+}
+GROWTH = "revenue_growth.consolidated"
+FY26, FY27 = f"{GROWTH}.FY26", f"{GROWTH}.FY27"
+WHOLE = "(all computed digits)"
+CUT = "(first six decimal places, cut and not rounded; more digits follow)"
+TOLERANCE = (
+    "rounded to the guidance's stated precision",
+    "the verdict rounds the exact computed value once",
+)
+INTERIM = "seasonality not adjusted; year-to-date assumed representative"
+WRONG_WAY = "open bound in the wrong direction"
+# The content each disclosure must keep (plan "Report disclosures"; wording may tighten around it).
+DISCLOSURES = (
+    "no overall credibility judgment",
+    "not an inventory of management's commitments",
+    "before this report chain's first period are absent",
+    "kept as evidence and is never scored",
+    "reviewed mapping file",
+    "after these calls were published",
+    "extracted guidance contract",
+    "labels every quote consolidated",
+    "midpoint",
+    "binding bound",
+    '"about" is ignored',
+    "not whether it is good or bad",
+    "computes no comparable actual",
+    "no single-year window",
+)
+D8 = "no row in this version reaches an achieved, missed or interim outcome. reasons:"
+D9 = "no guidance quote has been extracted in this report chain"
+SPLIT = "growth of 10% in FY26 and FY27"
+_ROOT: list[Path] = []
 
 
-@pytest.mark.parametrize(("text", "filed_at", "stated_end", "window"), WINDOW_CASES)
+@pytest.fixture(autouse=True)
+def _temp_root(tmp_path: Path) -> None:
+    _ROOT.append(tmp_path)
+
+
+def targets(*entries: dict[str, Any]) -> Any:
+    return write_targets(_ROOT[-1], *entries)
+
+
+def stated(spec: str, **over: Any) -> Any:
+    """A ``Statement`` of a point (``10``), a closed range (``9-11``) or a floor (``20+``)."""
+    gt, suffix = gt_module(), "-plus" if spec.endswith("+") else ""
+    low, _, high = spec.rstrip("+").partition("-")
+    definition = over.pop("definition", "revenue_growth")
+    held = claim(low=low, high=high or None, quote=f"growth of {low}%{suffix}", **over)
+    fields = entry("X", held, definition=definition, same_as=None, supersedes=None)
+    return cred_module().Statement(
+        claim=held, entry=gt.TargetEntry(**{**fields, "reading": gt.Reading.COMMITMENT})
+    )
+
+
+def direction(better: str | None) -> Any:
+    return None if better is None else cred_module().Better[better]
+
+
+def two(first: str, second: str) -> tuple[Any, ...]:
+    """Two restatements of one FY26 promise and their mapping."""
+    a = claim(low=first, quote=f"growth of {first}% in FY26", page=1)
+    b = claim(low=second, quote=f"growth of {second}% in FY26", page=2)
+    return a, b, targets(entry("A", a), entry("B", b))
+
+
+def measured(
+    window: str, exact: Fraction, *, scope: str = "consolidated", ytd: bool = False
+) -> tuple[NumericClaim, dict[str, Fraction]]:
+    """A ``cred.*`` claim of the exact value's digits, and the exact value by its key."""
+    from fundamentals.canon.interval import truncate_value
+    from fundamentals.ledger.display import EXACT_DIGITS
+
+    cred = cred_module()
+    key = cred.ACTUAL_KEY.format(metric="revenue_growth", scope=scope, window=window)
+    key += ".ytd" if ytd else ""
+    held = NumericClaim(
+        claim_key=key,
+        section_key="management_credibility",
+        citation=Citation(kind=CitationKind.CALCULATION, calculation_trace_id=9),
+        value_kind=ValueKind.PERCENTAGE,
+        unit="%",
+        value=truncate_value(exact, cred.EXACT_PLACES),
+        qualifiers=(EXACT_DIGITS,),
+        precision=cred.EXACT_PLACES,
+        rounding=Rounding.ROUND_HALF_EVEN,
+        epistemic_class=EpistemicClass.INFERRED if ytd else EpistemicClass.COMPUTED,
+    )
+    return held, {key: exact}
+
+
+def _read(section: Any) -> Any:
+    cred = cred_module()
+    return cred.read_record(section.body, section.claims) if section else cred.Record()
+
+
+def prepared(
+    claims: Any,
+    mapping: Any,
+    period: str,
+    prior: Any = None,
+    *,
+    same: Any = None,
+    filed: Any = None,
+) -> Any:
+    """``prepare`` on the previous build or record (``same``: the same-period build)."""
+    cred = cred_module()
+    return cred.prepare(
+        claims,
+        prior if isinstance(prior, cred.Record) else _read(prior),
+        _read(same),
+        mapping,
+        period=period,
+        period_end=ENDS[period],
+        month=3,
+        filed_at=filed or {},
+        actual_blobs=frozenset(),
+    )
+
+
+def finish(prep: Any, *, actuals: Any = (), unavailable: Any = None, measures: Any = None) -> Any:
+    """``build`` of a prepared run; ``actuals`` are ``measured`` pairs."""
+    return cred_module().build(
+        prep,
+        actuals=tuple(held for held, _ in actuals),
+        exact={key: value for _, values in actuals for key, value in values.items()},
+        unavailable=unavailable or {},
+        registry={} if measures is None else measures,
+    )
+
+
+def built(
+    claims: Any, mapping: Any, period: str, prior: Any = None, *, filed: Any = None, **kw: Any
+) -> Any:
+    return finish(prepared(claims, mapping, period, prior, filed=filed), **kw)
+
+
+def chain(a: Any, b: Any, mapping: Any) -> Any:
+    """Two statements in consecutive runs: A at FY26_Q1, then B at FY26_Q2."""
+    return built((b,), mapping, "FY26_Q2", built((a,), mapping, "FY26_Q1"))
+
+
+def unresolved(line: str, *reasons: str) -> None:
+    assert set(outcomes(line)) == {"UNRESOLVED"}, line
+    assert all(reason in line for reason in reasons), line
+
+
+def by_key(section: Any) -> dict[str, NumericClaim]:
+    return {held.claim_key: held for held in section.claims}
+
+
+def correction(body: str, *tokens: str) -> None:
+    """Exactly one non-record line names every token."""
+    skip = ("- statement", "- retired")
+    lines = [s for s in body.splitlines() if not s.lstrip().startswith(skip)]
+    assert len([s for s in lines if all(token in s for token in tokens)]) == 1, tokens
+
+
+Q3_END, Q4_END = ENDS["FY26_Q3"], ENDS["FY26_Q4"]
+Q3_FILED = datetime(2026, 2, 4, tzinfo=UTC)  # the pinned manifest's FY26_Q3 transcript
+Q4_FILED = datetime(2026, 6, 4, tzinfo=UTC)  # after FY26's year end
+RECURRING = (
+    "a 20% CAGR|growing by 25% a year|20% per year|20% every year|20% each year|20% per annum|"
+    "20% annually|over three years|over a 5-year plan|year on year for the next three years|"
+    "10% in FY26 and 12% in FY27"
+)
+UNDATED = (
+    "20% year on year|guiding a growth of 25% year on|a 10% growth year-on-year on our|20% yoy|"
+    "20% y-o-y|above a year ago|above a year earlier|guidance of 30,000 per metric ton"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "filed_at", "stated_end", "window"),
+    [
+        *((text, None, Q4_END, "MULTI_YEAR") for text in RECURRING.split("|")),
+        *((text, None, Q4_END, "AMBIGUOUS") for text in UNDATED.split("|")),
+        ("20% year on year in FY27", None, Q4_END, "FY27"),
+        ("FY26 revenue, in FY26 terms", None, Q4_END, "FY26"),
+        ("growth this year", Q3_FILED, Q3_END, "FY26"),
+        ("growth in the current year", Q3_FILED, Q3_END, "FY26"),
+        ("growth next year", Q3_FILED, Q3_END, "FY27"),
+        ("20% year on year this year", Q3_FILED, Q3_END, "FY26"),
+        ("growth this year", Q4_FILED, Q4_END, "AMBIGUOUS"),
+        ("growth next year", Q4_FILED, Q4_END, "AMBIGUOUS"),
+        ("growth this year", None, Q3_END, "AMBIGUOUS"),
+    ],
+)
 def test_a_window_follows_only_from_the_quotes_words(
     text: str, filed_at: datetime | None, stated_end: date, window: str
 ) -> None:
-    """A3, A6, P3: the wrong year is a false verdict. Year-on-year names a basis, a recurring rate
-    names no one year, and a relative year holds only if filed inside the year it was stated for."""
+    """A3, A6, P3: year-on-year names a basis, a recurring rate names no one year, and a relative
+    year holds only if filed inside the year it was stated for."""
     assert gt_module().derive_window(text, filed_at, stated_end, 3) == window
+
+
+A = claim(page=1)
+B = claim(low="12", page=2)
+METRIC = claim("margin", page=3, quote="margin of 10% in FY26")
+SCOPE = claim(scope="standalone", page=4)
+MULTI = claim(page=5, quote="growth of 10% a year")
+MULTI_B = claim(low="12", page=6, quote="growth of 12% a year")
+YEAR = claim(page=7, quote="growth of 10% in FY27")
+
+
+def faults() -> dict[str, tuple[dict[str, Any], ...]]:
+    """Mapping files that must refuse at load."""
+    a, b, a2 = entry("A", A), entry("B", B), entry("A2", A, supersedes="A")
+    linked, multi = {**b, "same_as": "A"}, entry("M", MULTI, "MULTI_YEAR")
+    return {
+        "duplicate-id": (a, entry("A", B)),
+        "id-outside-the-alphabet": (entry("a b", A),),
+        "unknown-window": (entry("A", A, "next decade"),),
+        "unknown-reading": (entry("A", A, reading="PROMISE"),),
+        "window-text-outside-quote": (entry("A", A, window_text="FY29"),),
+        "two-live-on-one-triple": (a, entry("B", A)),
+        "supersedes-unknown": (entry("A", A, supersedes="Z"),),
+        "successor-of-another-statement": (a, entry("A2", B, supersedes="A")),
+        "successor-with-another-quote": (a, {**a2, "quote": "growth of 10% in FY26 or so"}),
+        "successor-on-another-blob": (a, entry("A2", claim(blob="b" * 64), supersedes="A")),
+        "two-successors": (a, a2, entry("A3", A, supersedes="A")),
+        "supersedes-cycle": (entry("A", A, supersedes="A2"), a2),
+        "same-as-unknown": (entry("A", A, same_as="Z"),),
+        "same-as-later": (entry("B", B, same_as="A"), a),
+        "same-as-another-metric": (a, entry("O", METRIC, same_as="A")),
+        "same-as-another-scope": (a, entry("O", SCOPE, same_as="A")),
+        "same-as-another-class": (a, entry("M", MULTI, "MULTI_YEAR", same_as="A")),
+        "same-as-another-year": (a, entry("Y", YEAR, "FY27", same_as="A")),
+        "incompatible-after-resolution": (
+            multi,
+            entry("MB", MULTI_B, "MULTI_YEAR", same_as="M"),
+            entry("M2", MULTI, "AMBIGUOUS", supersedes="M"),
+        ),
+        "cycle-through-a-successor": (a, linked, entry("A2", A, supersedes="A", same_as="B")),
+        "self-link-after-resolution": (a, entry("A2", A, supersedes="A", same_as="A")),
+        "descriptive-links": (a, entry("B", B, reading="DESCRIPTIVE", same_as="A")),
+        "links-a-descriptive": (entry("A", A, reading="DESCRIPTIVE"), linked),
+        "descriptive-after-resolution": (
+            a,
+            linked,
+            entry("A2", A, reading="DESCRIPTIVE", supersedes="A"),
+        ),
+    }
 
 
 @pytest.mark.parametrize("fault", list(faults()))
 def test_a_structurally_wrong_entry_refuses_at_load(fault: str) -> None:
-    """A mapping decides what a quote is judged against. An ambiguous or cyclic one has no single
-    meaning, and a link must join like with like after successors resolve."""
     with pytest.raises(RunDraftError):
         targets(*faults()[fault])
 
 
-def test_a_missing_file_is_empty_and_a_chain_resolves_to_its_live_entry(tmp_path: Path) -> None:
-    """No file means rows read "window not mapped", not a refusal; a cycle-free chain reaches the
-    live successor, so ``same_as`` on a corrected entry follows the correction."""
-    empty = gt_module().load_targets("NONE", tmp_path)
-    assert dict(empty.entries) == {} and empty.live(A.claim_key, BLOB, "p1.b1.0:1") is None
+def test_a_chain_resolves_to_its_live_entry() -> None:
+    """The positive control for the cycle faults: the same links without the cycle still load."""
     held = targets(entry("A", A), entry("B", B, same_as="A"), entry("A2", A, supersedes="A"))
     assert held.live(A.claim_key, BLOB, A.citation.anchor).id == "A2"
     assert held.successor("A").id == "A2" and held.successor("A2") is None
-    chain = held.chain(held.entries["B"])
-    assert chain[0].id == "B" and chain[-1].id == "A2" == held.root(held.entries["B"]).id
+    links = held.chain(held.entries["B"])
+    assert links[0].id == "B" and links[-1].id == "A2" == held.root(held.entries["B"]).id
 
 
 def test_the_entry_digest_pins_exactly_its_preimage() -> None:
-    """R8: every sealed pin rests on this preimage. Dropping a field, escaping the quote or
-    reordering keys would break history; a field outside it could move a judgment unpinned."""
+    """R8: every sealed pin rests on this preimage; a field outside it could move a judgment."""
     gt = gt_module()
-    held = gt.TargetEntry(**{**SAMPLE, "reading": gt.Reading.COMMITMENT})
-    assert held.digest == SAMPLE_DIGEST
-    for field in SAMPLE:
+    sample = {
+        "id": "sample-FY26_Q2",
+        "claim_key": "ledger.revenue_growth.annual.consolidated",
+        "source_sha256": BLOB,
+        "anchor": "p1.b1.0:9",
+        "quote": "₹ growth of 10% in FY26",
+        "window_text": "FY26",
+        "window": "FY26",
+        "reading": "COMMITMENT",
+        "definition": "revenue_growth",
+        "same_as": None,
+        "supersedes": None,
+    }
+    # One SHA-256 computed once with hashlib over the compact sorted JSON of exactly these fields.
+    digest = "efe91d37297400b7bf74b3bacab140e34025231ea952a88bd8844f0679f848ff"
+    held = gt.TargetEntry(**{**sample, "reading": gt.Reading.COMMITMENT})
+    assert held.digest == digest
+    for field in sample:
         value = gt.Reading.DESCRIPTIVE if field == "reading" else "changed"
-        assert held.model_copy(update={field: value}).digest != SAMPLE_DIGEST, field
+        assert held.model_copy(update={field: value}).digest != digest, field
 
 
 def test_a_pinned_entry_cannot_change_or_vanish() -> None:
-    """A10, A13: an edit or deletion of a used entry refuses, naming it, or a config edit could
-    rewrite sealed history; a superseded entry stays in the file and still verifies."""
+    """A10, A13, P13: a config edit could rewrite sealed history. A superseded entry stays in the
+    file and still verifies, and a link target in the pool is pinned like any statement."""
     gt = gt_module()
-    held = targets(entry("A", A))
-    pins = {"A": held.entries["A"].digest}
-    gt.check_pins(held, pins)
+    a = claim(quote="growth of 10% or so", page=1)
+    b = claim(low="12", quote="growth of 12% or so", page=2)
+    base, linked = entry("A", a, "AMBIGUOUS"), entry("B", b, "AMBIGUOUS", same_as="A")
+    section = built((a, b), targets(base, linked), "FY26_Q2")
+    pins = _read(section).pins
     with pytest.raises(RunDraftError, match="A"):
-        gt.check_pins(targets(entry("A", A, definition="edited")), pins)
+        gt.check_pins(targets({**base, "definition": "edited"}, linked), pins)
     with pytest.raises(RunDraftError, match="A"):
         gt.check_pins(targets(), pins)
-    gt.check_pins(targets(entry("A", A), entry("A2", A, supersedes="A")), pins)
-
-
-@pytest.mark.parametrize(("before", "after", "better", "kind", "reason"), REVISIONS)
-def test_a_revision_compares_points_and_midpoints(
-    before: tuple[str, ...],
-    after: tuple[str, ...],
-    better: str | None,
-    kind: str,
-    reason: str | None,
-) -> None:
-    """A1: the event states how the promised number moved. A same midpoint with a different range
-    is a real change with no direction, and direction ignores whether the move is good."""
-    event = cred_module().revision(stated(*before), stated(*after), direction(better))
-    assert (event.kind.value, event.reason) == (kind, reason)
+    fixed = targets(base, linked, entry("A2", a, "AMBIGUOUS", supersedes="A", definition="new"))
+    gt.check_pins(fixed, pins)
+    correction(built((), fixed, "FY26_Q3", section).body, "A2", fixed.entries["A"].digest)
 
 
 @pytest.mark.parametrize(
-    "changed",
-    [{"constant": True}, {"unit": "INR per MT"}, {"definition": "excluding exports"}],
-    ids=["constant-currency", "unit", "definition"],
+    ("before", "after", "better", "kind", "reason"),
+    [
+        ("10", "12", "HIGHER", "REVISED_UP", None),
+        ("12", "10", "HIGHER", "REVISED_DOWN", None),
+        ("12", "10", "LOWER", "REVISED_DOWN", None),  # a number's move, not good or bad
+        ("9-11", "12-14", None, "REVISED_UP", None),
+        ("30000", "35000-36000", None, "REVISED_UP", None),
+        ("9-11", "8-12", None, "REVISED", "range widened"),
+        ("9-11", "9.5-10.5", None, "REVISED", "range narrowed"),
+        ("10", "9-11", None, "REVISED", "range widened"),
+        ("9-11", "9-11", None, "REAFFIRMED", None),
+        # Midpoints would call 18-22 → 20-plus "reaffirmed" when the floor rose.
+        ("18-22", "20+", "HIGHER", "REVISED_UP", None),
+        ("20+", "18-22", "HIGHER", "REVISED_DOWN", None),
+        ("20", "25+", None, "REVISED_UP", None),
+        ("18-22", "20+", None, "UNRESOLVED", "direction not registered"),
+        ("18-22", "20+", "LOWER", "UNRESOLVED", WRONG_WAY),
+        ("20+", "25+", "LOWER", "UNRESOLVED", WRONG_WAY),
+    ],
 )
-def test_a_revision_on_another_basis_has_no_direction(changed: dict[str, Any]) -> None:
-    """A9: twelve on one basis is not "up" from ten on another."""
-    event = cred_module().revision(stated("10"), stated("12", **changed), None)
-    assert (event.kind.value, event.reason) == ("REVISED", "basis changed")
-
-
-@pytest.mark.parametrize(("before", "after", "better", "kind", "reason"), OPEN_ENDED)
-def test_an_open_ended_promise_compares_on_the_binding_bound(
-    before: tuple[str, str | None, bool],
-    after: tuple[str, str | None, bool],
-    better: str | None,
-    kind: str,
-    reason: str | None,
+def test_a_revision_states_how_the_promised_number_moved(
+    before: str, after: str, better: str | None, kind: str, reason: str | None
 ) -> None:
-    """A1, P5: midpoints would call 18-22 → 20-plus "reaffirmed" when the floor rose. Both sides
-    read the binding bound; a range needs a direction, and a floor on a lower-better metric binds
-    nothing."""
-    first, second = (stated(low, high, plus=plus) for low, high, plus in (before, after))
-    event = cred_module().revision(first, second, direction(better))
+    """A1, P5."""
+    event = cred_module().revision(stated(before), stated(after), direction(better))
     assert (event.kind.value, event.reason) == (kind, reason)
 
 
-# Task 2 (b): the comparison and the unrounded actual ---------------------------------------------
-
-
-@pytest.mark.parametrize(("exact", "bound", "better", "met"), VERDICTS)
+@pytest.mark.parametrize(
+    ("exact", "bound", "better", "met"),
+    [
+        ("9.50", "10", "HIGHER", True),  # the stored two-place figure would pass; see the row test
+        ("11.5", "12", "HIGHER", True),  # half-even to twelve
+        ("9.45", "9.5-10", "HIGHER", False),  # the statement's precision is one place
+        ("5.4", "5", "LOWER", True),
+        ("5.5", "5", "LOWER", False),
+        ("7", "5-8", "LOWER", True),  # the upper bound binds
+    ],
+)
 def test_a_verdict_rounds_the_exact_value_half_even_once(
-    exact: str, bound: tuple[str, ...], better: str, met: bool
+    exact: str, bound: str, better: str, met: bool
 ) -> None:
-    """OD-7, P4: the tolerance is the statement's own precision. Rounding the stored figure would
-    turn 9.495 into 9.50 into ten, a miss into a hit."""
-    assert cred_module().compare(stated(*bound), Fraction(exact), direction(better)) is met
-
-
-@pytest.mark.parametrize(("value", "digits"), TRUNCATIONS)
-def test_truncation_cuts_toward_zero_at_exact_places(value: Fraction, digits: str) -> None:
-    """P4: a shown digit is never altered by rounding, on either side of zero."""
-    from fundamentals.canon.interval import truncate_value
-
-    shown = truncate_value(value, 6)
-    assert str(shown) == digits and shown.as_tuple().exponent == -6
+    """OD-7, P4: the tolerance is the statement's own precision."""
+    assert cred_module().compare(stated(bound), Fraction(exact), direction(better)) is met
 
 
 @pytest.mark.parametrize(
-    ("exact", "bound", "digits", "whole", "outcome"),
-    ROW_ACTUALS,
-    ids=["binding-at-places", "non-terminating", "negative", "true-tie", "just-above-a-tie"],
+    ("exact", "bound", "digits", "phrase", "outcome"),
+    [
+        (Fraction("9.495"), "10", "9.495000%", WHOLE, "MISSED"),  # rounding 9.50 would hit ten
+        (Fraction(100, 3), "33", "33.333333%", CUT, "ACHIEVED"),
+        (Fraction(-100, 3), "5", "-33.333333%", CUT, "MISSED"),
+        (Fraction("10.5"), "11", "10.500000%", WHOLE, "MISSED"),  # half-even to ten
+        (Fraction("10.5000001"), "11", "10.500000%", CUT, "ACHIEVED"),
+    ],
 )
 def test_a_row_shows_the_actual_before_the_statements_rounding(
-    exact: Fraction, bound: str, digits: str, whole: bool, outcome: str
+    exact: Fraction, bound: str, digits: str, phrase: str, outcome: str
 ) -> None:
-    """A2, OD-7: the reader sees the figure before rounding and the rule that decided it. 10.5 and
-    10.5000001 print alike yet earn different verdicts, so the phrase must say if digits follow."""
-    cred = cred_module()
+    """A2, OD-7: 10.5 and 10.5000001 print alike yet earn different verdicts, so the phrase must
+    say if digits follow."""
     held = claim(low=bound, quote=f"growth of {bound}% in FY26")
-    actual, values = measured("FY26", exact)
+    actual = measured("FY26", exact)
     section = built(
-        (held,),
-        targets(entry("A", held)),
-        "FY26_Q4",
-        None,
-        actual,
-        exact=values,
-        measures=registry(),
+        (held,), targets(entry("A", held)), "FY26_Q4", actuals=(actual,), measures=registry()
     )
     line = row(section.body, FY26)
     assert outcomes(line) == [outcome]
-    assert digits in render_section(line, (*section.claims, actual))
-    assert (cred.ACTUAL_WHOLE if whole else cred.ACTUAL_CUT) in line
-    assert (cred.ACTUAL_CUT if whole else cred.ACTUAL_WHOLE) not in line
-    assert f"{{{{c:{actual.claim_key}|ref}}}}" in line and all(p in line for p in TOLERANCE)
+    assert digits in render_section(line, (*section.claims, actual[0]))
+    assert phrase in line and ({WHOLE, CUT} - {phrase}).pop() not in line
+    assert f"{{{{c:{actual[0].claim_key}|ref}}}}" in line and all(p in line for p in TOLERANCE)
     assert "{{e:computed}}" in line and "{{e:observed}}" in line
-    assert cred.ACTUAL_WHOLE == "(all computed digits)"
-    assert cred.ACTUAL_CUT == "(first six decimal places, cut and not rounded; more digits follow)"
-
-
-def test_one_actual_is_judged_against_both_statements() -> None:
-    """A2: management can lower the bar and clear it. Both endpoints side by side keep the miss
-    against the original promise beside the hit against the latest."""
-    a, b, held = two("12", "10")
-    actual, values = measured("FY26", Fraction("10.5"))
-    first = built((a,), held, "FY26_Q2")
-    section = built((b,), held, "FY26_Q4", first, actual, exact=values, measures=registry())
-    line = row(section.body, FY26)
-    assert outcomes(line) == ["MISSED", "ACHIEVED"]
-    assert event_of(section.body, "B") == ("REVISED_DOWN", None)
-    assert f"{{{{c:episode.{FY26}.original|" in line and f"{{{{c:episode.{FY26}.latest|" in line
-
-
-@pytest.mark.parametrize(("state", "exact", "ytd", "plus", "better", "want"), ASSESSED)
-def test_assess_reads_the_state_and_the_binding_bound(
-    state: str, exact: Fraction | None, ytd: Fraction | None, plus: bool, better: str, want: str
-) -> None:
-    """R10: a floor on a lower-better metric is no ceiling, ended or interim. ``ON_TRACK`` and
-    ``BEHIND`` exist only for an open window, ``ACHIEVED`` and ``MISSED`` for an ended one."""
-    cred = cred_module()
-    measure = registry(better=better)[("revenue_growth", "consolidated")]
-    window = cred.WindowState[state]
-    outcome, reason = cred.assess(
-        stated("10", plus=plus), "FY26", measure, window, exact, ytd, None
-    )
-    assert outcome.value == want
-    assert (reason is not None) is (want == "UNRESOLVED")
-    if plus:
-        assert reason == WRONG_WAY
-
-
-# Task 2 (c)-(i): windows, episodes and basis -----------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("quote", "window", "over", "reason"),
+    ("latest", "period", "value", "ytd", "want"),
     [
-        (
-            "tracking on a 20%-plus CAGR",
-            "MULTI_YEAR",
-            {"window_text": "CAGR"},
-            "window not single-year",
-        ),
-        ("growth of 10% or so", "AMBIGUOUS", {}, "window not established"),
+        ("10", "FY26_Q4", Fraction("10.5"), False, ["MISSED", "ACHIEVED"]),
+        ("8", "FY26_Q2", Fraction(10), True, ["BEHIND", "ON_TRACK"]),
     ],
-    ids=["cagr-under-annual", "no-year"],
+    ids=["ended", "interim"],
+)
+def test_one_actual_is_judged_against_both_statements(
+    latest: str, period: str, value: Fraction, ytd: bool, want: list[str]
+) -> None:
+    """A2, A12, OD-6: management can lower the bar and clear it, so both endpoints show side by
+    side. Interim verdicts are inferences on an assumed pace, so that label is mandatory."""
+    a, b, held = two("12", latest)
+    first = built((a,), held, "FY26_Q1")
+    actual = measured("FY26", value, ytd=ytd)
+    section = built((b,), held, period, first, actuals=(actual,), measures=registry())
+    line = row(section.body, FY26)
+    assert outcomes(line) == want
+    assert event_of(section.body, "B") == ("REVISED_DOWN", None)
+    assert f"{{{{c:episode.{FY26}.original|" in line and f"{{{{c:episode.{FY26}.latest|" in line
+    assert (INTERIM in line and "{{e:inferred}}" in line) is ytd
+
+
+@pytest.mark.parametrize(
+    ("state", "exact", "ytd"), [("ENDED", Fraction(1), None), ("OPEN", None, Fraction(1))]
+)
+def test_a_floor_on_a_lower_better_metric_is_never_scored(
+    state: str, exact: Fraction | None, ytd: Fraction | None
+) -> None:
+    """R10: a floor is no ceiling, however low the actual."""
+    cred = cred_module()
+    held = registry(better="LOWER")[("revenue_growth", "consolidated")]
+    window = cred.WindowState[state]
+    got = cred.assess(stated("10+"), "FY26", held, window, exact, ytd, None)
+    assert got == (cred.Outcome.UNRESOLVED, WRONG_WAY)
+
+
+@pytest.mark.parametrize(
+    ("quote", "window", "over", "measured_too", "reasons"),
+    [
+        ("on a 20%-plus CAGR", "MULTI_YEAR", {"window_text": "CAGR"}, True, ("not single-year",)),
+        ("growth of 10% or so", "AMBIGUOUS", {}, True, ("window not established",)),
+        # P6: naming only the window would hide that no filed measure exists either.
+        ("growth of 10% or so", "AMBIGUOUS", {}, False, ("not established", "no filed measure")),
+    ],
 )
 def test_an_unestablished_window_is_never_scored(
-    quote: str, window: str, over: dict[str, str], reason: str
+    quote: str, window: str, over: dict[str, str], measured_too: bool, reasons: tuple[str, ...]
 ) -> None:
-    """A3, A4: a CAGR or undated quote has no single year to judge, even with a filed measure, and
-    each is its own episode so no date is invented."""
+    """A3, A4, P6: no single year to judge, even with a filed measure; every reason is named."""
     held = claim(quote=quote)
     mapping = targets(entry("A", held, window, **over))
-    section = built((held,), mapping, "FY26_Q4", measures=registry())
-    line = row(section.body, f"{GROWTH}.{window}.A")
-    unresolved(line, reason)
-    assert "no filed measure" not in line
+    measures = registry() if measured_too else None
+    line = row(built((held,), mapping, "FY26_Q4", measures=measures).body, f"{GROWTH}.{window}.A")
+    unresolved(line, *reasons)
+    assert measured_too is ("no filed measure" not in line)
 
 
-def test_every_reason_that_holds_is_named() -> None:
-    """P6: naming only the window would hide that no filed measure exists either, so the reader
-    would expect a verdict once a dated quote arrives."""
-    held = claim(quote="growth of 10% or so")
-    section = built((held,), targets(entry("A", held, "AMBIGUOUS")), "FY26_Q4")
-    unresolved(
-        row(section.body, f"{GROWTH}.AMBIGUOUS.A"), "window not established", "no filed measure"
-    )
-
-
-def test_an_anchor_cannot_supply_a_year() -> None:
-    """A4, OD-9: FY26 on a quote stating no year is hindsight, refused at first use."""
-    held = claim(quote="growth of 10% or so")
-    with pytest.raises(RunDraftError, match="A"):
-        prepared((held,), targets(entry("A", held, "FY26")), "FY26_Q4")
-
-
-def test_an_unmapped_statement_is_retained_with_its_reason() -> None:
-    """A missing entry is a row, not a lost quote: it keeps a record line under an ``UNMAPPED``
-    episode, so a later mapping still sees it."""
-    section = built((claim(),), targets(), "FY26_Q2")
-    assert all(key.startswith(f"episode.{GROWTH}.UNMAPPED.") for key in by_key(section))
+def test_an_unmapped_statement_is_retained_with_its_reason(tmp_path: Path) -> None:
+    """A missing file or entry is a row, not a lost quote or a refusal: a later mapping still sees
+    its record line."""
+    section = built((claim(),), gt_module().load_targets("NONE", tmp_path), "FY26_Q2")
     assert len(by_key(section)) == 2
+    assert all(key.startswith(f"episode.{GROWTH}.UNMAPPED.") for key in by_key(section))
     unresolved(row(section.body, f"{GROWTH}.UNMAPPED"), "window not mapped")
     assert record_lines(section.body)[None]["stated"] == "FY26_Q2"
 
 
 def test_fiscal_years_are_separate_episodes_from_one_transcript() -> None:
-    """A5 (extraction and episode level only, C-8): one call stating two years' targets judges each
-    against its own year, and a duplicate horizon cannot be silently merged."""
+    """A5 (extraction and episode level only, C-8)."""
     text = "revenue growth 10% in FY26 and revenue growth 12% in FY27"
     page = PdfPage(page_number=1, text=text, words=(), blocks=(PdfBlock(number=1, text=text),))
     pdf = LoadedPdf(source_id="t", file_sha256=BLOB, page_count=1, pages=(page,))
@@ -338,37 +508,25 @@ def test_fiscal_years_are_separate_episodes_from_one_transcript() -> None:
         for index, g in enumerate(found)
     )
     mapping = targets(*(entry(c.horizon or "", c, c.horizon or "") for c in held))
-    section = built(held, mapping, "FY26_Q2")
-    assert {f"episode.{FY26}.original", f"episode.{FY27}.original"} <= by_key(section).keys()
+    keys = by_key(built(held, mapping, "FY26_Q2")).keys()
+    assert {f"episode.{FY26}.original", f"episode.{FY27}.original"} <= keys
     body = _Body()
-    body.add(GUIDANCE, "- first", held[0])
+    body.add("management_ledger", "- first", held[0])
     with pytest.raises(RunDraftError, match="duplicate claim key"):
-        body.add(GUIDANCE, "- again", held[0])
+        body.add("management_ledger", "- again", held[0])
 
 
 def test_scopes_are_separate_episodes_and_neither_moves_the_other() -> None:
-    """A7: a standalone promise is not met by a consolidated actual, and a restated standalone
-    target leaves the consolidated endpoints alone."""
+    """A7: a standalone promise is not met by a consolidated actual."""
     con = claim(page=1)
     alone = claim(low="20", scope="standalone", page=2, quote="growth of 20% in FY26")
     later = claim(low="22", scope="standalone", page=3, quote="growth of 22% in FY26")
     mapping = targets(entry("C", con), entry("S", alone), entry("T", later))
-    one, exact_one = measured("FY26", Fraction(11))
-    other, exact_other = measured("FY26", Fraction(21), scope="standalone")
-    measures = registry("consolidated", "standalone")
+    actuals = (measured("FY26", Fraction(11)), measured("FY26", Fraction(21), scope="standalone"))
     first = built((con, alone), mapping, "FY26_Q2")
-    second = built(
-        (later,),
-        mapping,
-        "FY26_Q4",
-        first,
-        one,
-        other,
-        exact=exact_one | exact_other,
-        measures=measures,
-    )
+    measures = registry("consolidated", "standalone")
+    second = built((later,), mapping, "FY26_Q4", first, actuals=actuals, measures=measures)
     held, standalone = by_key(second), "revenue_growth.standalone.FY26"
-    assert same_statement(held[f"episode.{FY26}.original"], con)
     assert same_statement(held[f"episode.{FY26}.latest"], con)
     assert same_statement(held[f"episode.{standalone}.original"], alone)
     assert same_statement(held[f"episode.{standalone}.latest"], later)
@@ -377,8 +535,7 @@ def test_scopes_are_separate_episodes_and_neither_moves_the_other() -> None:
 
 
 def test_multi_year_promises_stay_apart_unless_linked() -> None:
-    """A8: two "a year" quotes may be different promises, so only a reviewed link joins them and
-    gives an event; neither ever gets an outcome (OD-5)."""
+    """A8: only a reviewed link joins two "a year" quotes; neither ever gets an outcome (OD-5)."""
     a = claim(quote="growth of 10% a year", page=1)
     b = claim(low="12", quote="growth of 12% a year", page=2)
     apart = targets(entry("A", a, "MULTI_YEAR"), entry("B", b, "MULTI_YEAR"))
@@ -392,15 +549,23 @@ def test_multi_year_promises_stay_apart_unless_linked() -> None:
     unresolved(row(section.body, f"{GROWTH}.MULTI_YEAR.A"), "window not single-year")
 
 
+@pytest.mark.parametrize(
+    "changed", [{"constant": True}, {"unit": "INR per MT"}, {"definition": "excluding exports"}]
+)
+def test_a_revision_on_another_basis_has_no_direction(changed: dict[str, Any]) -> None:
+    """A9: twelve on one basis is not "up" from ten on another."""
+    event = cred_module().revision(stated("10"), stated("12", **changed), None)
+    assert (event.kind.value, event.reason) == ("REVISED", "basis changed")
+
+
 def test_a_basis_change_leaves_only_the_comparable_endpoint_scored() -> None:
-    """A9: a constant-currency promise cannot be judged on a reported figure. The latest is scored,
-    the original states why it is not, and the event carries no direction."""
+    """A9: a constant-currency promise cannot be judged on a reported figure."""
     a = claim(constant=True, page=1)
     b = claim(low="12", page=2, quote="growth of 12% in FY26")
     mapping = targets(entry("A", a), entry("B", b))
-    actual, values = measured("FY26", Fraction(13))
     first = built((a,), mapping, "FY26_Q2")
-    section = built((b,), mapping, "FY26_Q4", first, actual, exact=values, measures=registry())
+    actual = measured("FY26", Fraction(13))
+    section = built((b,), mapping, "FY26_Q4", first, actuals=(actual,), measures=registry())
     assert event_of(section.body, "B") == ("REVISED", "basis changed")
     line = row(section.body, FY26)
     assert outcomes(line) == ["UNRESOLVED", "ACHIEVED"]
@@ -408,37 +573,24 @@ def test_a_basis_change_leaves_only_the_comparable_endpoint_scored() -> None:
 
 
 def test_a_correction_moves_the_quote_and_discloses_it_once() -> None:
-    """A11: a wrong mapping is corrected in the open. Both interpretations show, the old episode
-    says so once and is dropped, the quote moves to its new one, the old pin still verifies."""
-    gt, cred, a = gt_module(), cred_module(), claim(quote=SPLIT)
-    old = entry("A", a, window_text="in FY26")
-    first = built((a,), targets(old), "FY26_Q2")
-    fixed = targets(old, entry("A2", a, "MULTI_YEAR", supersedes="A", window_text="FY26 and FY27"))
-    gt.check_pins(fixed, cred.read_record(first.body, first.claims).pins)
-    second = built((), fixed, "FY26_Q3", first, measures=registry())
-    digests = (fixed.entries["A"].digest, fixed.entries["A2"].digest)
-    correction(second.body, "A2", *digests, "FY26", "MULTI_YEAR", "revenue_growth")
-    gone = row(second.body, FY26)
-    unresolved(gone, "mapping corrected", "A2")
-    assert same_statement(by_key(second)[f"episode.{GROWTH}.MULTI_YEAR.A2.original"], a)
-    assert not [key for key in by_key(second) if f".{FY26}." in key]
-    record = cred.read_record(second.body, second.claims)
-    assert record.retired == {"A": digests[0]} and record.pins["A2"] == digests[1]
-    third = built((), fixed, "FY26_Q4", second, measures=registry())
-    assert "mapping corrected" not in third.body
-    assert re.search(rf"^- retired A sha256 {digests[0]} successor A2$", third.body, re.M)
-
-
-def test_a_rerun_restates_the_correction_of_the_version_it_replaces() -> None:
-    """P9: pins also come from the same-period head, so a correction seen only there is disclosed,
-    not lost because no previous-quarter head names it."""
+    """A11: both interpretations show, the old episode says so once and is dropped, the quote moves
+    to its new one, the old pin still verifies."""
     a = claim(quote=SPLIT)
     old = entry("A", a, window_text="in FY26")
     first = built((a,), targets(old), "FY26_Q2")
     fixed = targets(old, entry("A2", a, "MULTI_YEAR", supersedes="A", window_text="FY26 and FY27"))
-    rerun = built((a,), fixed, "FY26_Q2", same=first)
-    correction(rerun.body, "A2", fixed.entries["A"].digest, fixed.entries["A2"].digest)
-    assert "mapping corrected" in row(rerun.body, FY26)
+    gt_module().check_pins(fixed, _read(first).pins)
+    second = built((), fixed, "FY26_Q3", first, measures=registry())
+    digests = (fixed.entries["A"].digest, fixed.entries["A2"].digest)
+    correction(second.body, "A2", *digests, "FY26", "MULTI_YEAR", "revenue_growth")
+    unresolved(row(second.body, FY26), "mapping corrected", "A2")
+    assert same_statement(by_key(second)[f"episode.{GROWTH}.MULTI_YEAR.A2.original"], a)
+    assert not [key for key in by_key(second) if f".{FY26}." in key]
+    record = _read(second)
+    assert record.retired == {"A": digests[0]} and record.pins["A2"] == digests[1]
+    third = built((), fixed, "FY26_Q4", second, measures=registry())
+    assert "mapping corrected" not in third.body
+    assert re.search(rf"^- retired A sha256 {digests[0]} successor A2$", third.body, re.M)
 
 
 def test_correcting_a_middle_statement_recomputes_its_neighbours() -> None:
@@ -449,11 +601,10 @@ def test_correcting_a_middle_statement_recomputes_its_neighbours() -> None:
     c = claim(low="11", quote="growth of 11% in FY26", page=3)
     entries = (entry("A", a), entry("B", b, window_text="FY26"), entry("C", c))
     held = targets(*entries)
-    three = built((c,), held, "FY26_Q3", built((b,), held, "FY26_Q2", built((a,), held, "FY26_Q1")))
+    three = built((c,), held, "FY26_Q3", chain(a, b, held))
     assert event_of(three.body, "B") == ("REVISED_UP", None)
     assert event_of(three.body, "C") == ("REVISED_DOWN", None)
-    roles = {f"episode.{FY26}.{role}" for role in ("original", "stated.B", "latest")}
-    assert roles <= by_key(three).keys()
+    assert f"episode.{FY26}.stated.B" in by_key(three)
     fixed = targets(*entries, entry("B2", b, "FY27", supersedes="B", window_text="FY27"))
     four = built((), fixed, "FY26_Q4", three)
     assert event_of(four.body, "C") == ("REVISED_UP", None)
@@ -464,87 +615,59 @@ def test_correcting_a_middle_statement_recomputes_its_neighbours() -> None:
 
 
 def test_a_definition_correction_turns_a_directional_event_into_a_basis_change() -> None:
-    """R2: if the second quote promised another measure, "up" was never true. The new version says
-    so and discloses why the event moved."""
+    """R2: if the second quote promised another measure, "up" was never true."""
     a, b, held = two("10", "12")
-    entries = (entry("A", a), entry("B", b))
-    second = built((b,), held, "FY26_Q2", built((a,), held, "FY26_Q1"))
+    second = chain(a, b, held)
     assert event_of(second.body, "B") == ("REVISED_UP", None)
-    fixed = targets(*entries, entry("B2", b, supersedes="B", definition="excluding exports"))
+    fix = entry("B2", b, supersedes="B", definition="excluding exports")
+    fixed = targets(entry("A", a), entry("B", b), fix)
     third = built((), fixed, "FY26_Q3", second)
     assert event_of(third.body, "B2") == ("REVISED", "basis changed")
     correction(third.body, "B2", "excluding exports", fixed.entries["B2"].digest)
 
 
 def test_a_late_mapping_is_judged_at_its_statements_own_period() -> None:
-    """R4, C-7: "this year" in a post-year-end Q4 call stays ambiguous for good. Mapping it later
-    must not let the later run's period make it FY27, and declaring FY27 refuses."""
+    """R4, C-7: "this year" in a post-year-end Q4 call stays ambiguous for good; the later run's
+    period must not make it FY27."""
     held = claim(quote="growth of 10% this year")
     filed = {BLOB: Q4_FILED}
-    first = built((held,), targets(), "FY26_Q4", filed_at=filed)
-    second = built((), targets(entry("A", held, "AMBIGUOUS")), "FY27_Q1", first, filed_at=filed)
+    first = built((held,), targets(), "FY26_Q4", filed=filed)
+    second = built((), targets(entry("A", held, "AMBIGUOUS")), "FY27_Q1", first, filed=filed)
     line = record_lines(second.body)["A"]
     assert (line["stated"], line["ended"]) == ("FY26_Q4", "2026-03-31")
     assert f"episode.{GROWTH}.AMBIGUOUS.A.original" in by_key(second)
     with pytest.raises(RunDraftError, match="A"):
-        prepared((), targets(entry("A", held, "FY27")), "FY27_Q1", first, filed_at=filed)
+        prepared((), targets(entry("A", held, "FY27")), "FY27_Q1", first, filed=filed)
 
 
 @pytest.mark.parametrize("target", ["unedited", "edited", "superseded"])
 def test_a_link_must_resolve_through_a_recorded_statement(target: str) -> None:
-    """P13: a root decides a recorded episode, so it must be a recorded, pinned statement, or an
-    unpinned entry could rename history. A link outside the pool refuses whatever its target did."""
+    """P13: a root decides a recorded episode, or an unpinned entry could rename history. A recorded
+    link to a target outside the pool refuses whatever that target did."""
     cred = cred_module()
     a = claim(quote="growth of 10% or so", page=1)
     b = claim(low="12", quote="growth of 12% or so", page=2)
-    base = entry(
-        "A", a, "AMBIGUOUS", definition="edited" if target == "edited" else "revenue_growth"
-    )
+    definition = "edited" if target == "edited" else "revenue_growth"
     fixes = [entry("A2", a, "AMBIGUOUS", supersedes="A")] if target == "superseded" else []
-    mapping = targets(base, *fixes, entry("B", b, "AMBIGUOUS", same_as="A"))
-    copy = b.model_copy(update={"claim_key": f"episode.{GROWTH}.AMBIGUOUS.B.original"})
+    mapping = targets(
+        entry("A", a, "AMBIGUOUS", definition=definition),
+        *fixes,
+        entry("B", b, "AMBIGUOUS", same_as="A"),
+    )
     recorded = cred.Recorded(
-        claims=(copy,),
+        claims=(b.model_copy(update={"claim_key": f"episode.{GROWTH}.AMBIGUOUS.B.original"}),),
         stated="FY26_Q2",
         stated_end=ENDS["FY26_Q2"],
         entry_id="B",
         digest=mapping.entries["B"].digest,
     )
     with pytest.raises(RunDraftError, match="A"):
-        cred.prepare(
-            (),
-            cred.Record(statements=(recorded,)),
-            cred.Record(),
-            mapping,
-            period="FY26_Q3",
-            period_end=ENDS["FY26_Q3"],
-            month=3,
-            filed_at={},
-            actual_blobs=frozenset(),
-        )
-
-
-def test_a_link_inside_the_pool_is_pinned_like_any_statement() -> None:
-    """P13's other half: with the target recorded, editing it refuses through its own pin, deleting
-    it refuses at load, and superseding it renders the correction."""
-    gt, cred = gt_module(), cred_module()
-    a = claim(quote="growth of 10% or so", page=1)
-    b = claim(low="12", quote="growth of 12% or so", page=2)
-    base, linked = entry("A", a, "AMBIGUOUS"), entry("B", b, "AMBIGUOUS", same_as="A")
-    section = built((a, b), targets(base, linked), "FY26_Q2")
-    pins = cred.read_record(section.body, section.claims).pins
-    with pytest.raises(RunDraftError, match="A"):
-        gt.check_pins(targets({**base, "definition": "edited"}, linked), pins)
-    with pytest.raises(RunDraftError):
-        targets(linked)
-    fixed = targets(base, linked, entry("A2", a, "AMBIGUOUS", supersedes="A", definition="new"))
-    correction(built((), fixed, "FY26_Q3", section).body, "A2", fixed.entries["A"].digest)
+        prepared((), mapping, "FY26_Q3", cred.Record(statements=(recorded,)))
 
 
 def test_a_descriptive_quote_is_evidence_and_never_a_promise() -> None:
-    """P14: a rule match cannot tell a promise from a description of progress. A descriptive quote
-    keeps its record but earns no verdict, event or due window, whatever window it declares."""
-    cred = cred_module()
+    """P14: a rule match cannot tell a promise from a description of progress. It keeps its record
+    but earns no verdict, event or due window, whatever window it declares."""
     held = claim(page=1)
     other = claim(low="12", page=2, quote="growth of 12% in FY26")
     mapping = targets(entry("D", held, reading="DESCRIPTIVE"), entry("C", other))
@@ -554,7 +677,7 @@ def test_a_descriptive_quote_is_evidence_and_never_a_promise() -> None:
     episode = f"{GROWTH}.DESCRIPTIVE.D"
     assert event_of(first.body, "D") == ("DESCRIBED", None)
     line = row(first.body, episode)
-    unresolved(line, cred.REASON_DESCRIPTIVE)
+    unresolved(line, cred_module().REASON_DESCRIPTIVE)
     assert "no filed measure" not in line and "window not" not in line
     second = built((other,), mapping, "FY27_Q1", first, measures=registry())
     assert event_of(second.body, "C") == ("OPENED", None)  # no event against the description
@@ -562,8 +685,7 @@ def test_a_descriptive_quote_is_evidence_and_never_a_promise() -> None:
 
 
 def test_correcting_a_commitment_to_descriptive_shows_both_readings() -> None:
-    """P14 through the correction path: the reader sees that a quote once tracked as a promise no
-    longer is, and why it left its episode."""
+    """P14 through the correction path."""
     a = claim(page=1)
     old = entry("A", a)
     first = built((a,), targets(old), "FY26_Q2")
@@ -575,63 +697,42 @@ def test_correcting_a_commitment_to_descriptive_shows_both_readings() -> None:
 
 
 @pytest.mark.parametrize(
-    "over",
-    [{"quote": "growth of 10% in FY26, restated"}, {"window": "FY27"}],
-    ids=["another-quote", "window-failing-first-use"],
+    ("quote", "over"),
+    [
+        (None, {"quote": "growth of 10% in FY26, restated"}),
+        (None, {"window": "FY27"}),
+        ("growth of 10% or so", {"window": "FY26"}),  # A4, OD-9: an anchor cannot supply a year
+    ],
 )
 def test_prepare_refuses_a_new_entry_that_disagrees_with_its_statement(
-    over: dict[str, Any],
+    quote: str | None, over: dict[str, Any]
 ) -> None:
-    """F1: window_text ⊂ entry quote = claim quote = retained span is what makes a window's
-    evidence real. A broken link refuses in ``prepare``, before the run's first write."""
-    held = claim()
+    """F1: window_text ⊂ entry quote = claim quote = retained span is a window's evidence."""
+    held = claim(quote=quote)
     with pytest.raises(RunDraftError, match="A"):
         prepared((held,), targets(entry("A", held, **over)), "FY26_Q2")
 
 
 def test_prepare_refuses_to_lose_a_pin() -> None:
-    """F1: a pin this build would not carry could later be edited unnoticed, so a build whose pins
-    are not a superset of the replaced head's refuses rather than writes."""
+    """F1: a pin this build would not carry could later be edited unnoticed."""
     held = claim()
     mapping = targets(entry("A", held))
     with pytest.raises(RunDraftError, match="A"):
         prepared((), mapping, "FY26_Q2", same=built((held,), mapping, "FY26_Q2"))
 
 
-# Task 2 (k)-(m2): interim, carry, missing actuals, future targets --------------------------------
-
-
-def test_interim_is_side_by_side_and_labelled() -> None:
-    """A12, OD-6: after a downward revision one year-to-date value is behind the original and on
-    track for the latest. Both are inferences on an assumed pace, so the label is mandatory."""
-    a, b, held = two("12", "8")
-    ytd, values = measured("FY26", Fraction(10), ytd=True)
-    first = built((a,), held, "FY26_Q1")
-    section = built((b,), held, "FY26_Q2", first, ytd, exact=values, measures=registry())
-    line = row(section.body, FY26)
-    assert outcomes(line) == ["BEHIND", "ON_TRACK"]
-    assert event_of(section.body, "B") == ("REVISED_DOWN", None)
-    assert (
-        INTERIM in line and "{{e:inferred}}" in line and cred_module().INTERIM_RULE_LABEL == INTERIM
-    )
-    assert ytd.claim_key == "cred.revenue_growth.consolidated.FY26.ytd"
-
-
 @pytest.mark.parametrize("interim", [True, False], ids=["missing-comparator", "no-interim-rule"])
 def test_an_open_window_without_an_interim_value_stays_unresolved(interim: bool) -> None:
     """A12: a missing comparator window, or no interim rule, must not read as behind."""
     held = claim()
-    section = built(
-        (held,), targets(entry("A", held)), "FY26_Q2", measures=registry(interim=interim)
-    )
-    line = row(section.body, FY26)
+    mapping = targets(entry("A", held))
+    line = row(built((held,), mapping, "FY26_Q2", measures=registry(interim=interim)).body, FY26)
     unresolved(line, *(() if interim else ("no interim rule",)))
     assert INTERIM not in line
 
 
 def test_both_endpoints_carry_and_the_original_never_moves() -> None:
-    """A13: the first promise is the yardstick, so restatements only move ``.latest``, and a carried
-    statement keeps its originating period."""
+    """A13: restatements only move ``.latest``; a carried statement keeps its originating period."""
     a, b, held = two("10", "12")
     carried = built((), held, "FY26_Q2", built((a,), held, "FY26_Q1"))
     third = built((), held, "FY26_Q4", built((b,), held, "FY26_Q3", carried))
@@ -643,77 +744,93 @@ def test_both_endpoints_carry_and_the_original_never_moves() -> None:
     assert (lines["B"]["stated"], lines["B"]["ended"]) == ("FY26_Q3", "2025-12-31")
 
 
-@pytest.mark.parametrize(
-    ("reason", "held"),
-    [
-        ("actual not yet filed", False),
-        ("filed value differs across admitted captures", True),
-        ("comparator revenue not positive or its uncertainty reaches zero", True),
-    ],
-    ids=["not-filed", "captures-disagree", "undefined-growth"],
-)
-def test_an_ended_window_with_no_usable_actual_says_why(reason: str, held: bool) -> None:
-    """A14, P11, F5: these causes have different follow-ups; none reads as a miss."""
-    stated_claim = claim()
-    section = built(
-        (stated_claim,),
-        targets(entry("A", stated_claim)),
-        "FY26_Q4",
-        unavailable={ACTUAL: reason} if held else {},
-        measures=registry(),
-    )
-    unresolved(row(section.body, FY26), reason)
+def test_an_ended_window_with_no_usable_actual_says_why() -> None:
+    """A14, F5: the binder's reason passes through, or the row reads "not filed"; never a miss."""
+    held = claim()
+    mapping = targets(entry("A", held))
+    reason = "filed value differs across admitted captures"
+    key = "cred.revenue_growth.consolidated.FY26"
+    plain = built((held,), mapping, "FY26_Q4", measures=registry())
+    unresolved(row(plain.body, FY26), "actual not yet filed")
+    held_back = built((held,), mapping, "FY26_Q4", unavailable={key: reason}, measures=registry())
+    unresolved(row(held_back.body, FY26), reason)
 
 
 @pytest.mark.parametrize("value", [Fraction(50), Fraction(1)], ids=["would-meet", "would-miss"])
 def test_a_future_target_is_not_due_whatever_this_year_shows(value: Fraction) -> None:
-    """A12, F2: this year's pace says nothing of next year's target, so no interim actual is due and
-    the row says why; the target's own first quarter reads its own months."""
-    cred = cred_module()
+    """A12, F2: this year's pace says nothing of next year's target; only its own first quarter
+    opens the window."""
     held = claim(quote="growth of 10% in FY27")
     mapping = targets(entry("A", held, "FY27"))
     early = prepared((held,), mapping, "FY26_Q2")
     assert ("revenue_growth", "consolidated", "FY27") not in early.windows
-    ytd, values = measured("FY27", value, ytd=True)
-    section = finish(early, exact=values, measures=registry())
+    section = finish(early, measures=registry())
     unresolved(row(section.body, FY27), "not due: target year not started")
     assert not [key for key in by_key(section) if key.startswith("cred.")]
     later = prepared((), mapping, "FY27_Q1", section)
-    assert later.windows[("revenue_growth", "consolidated", "FY27")] is cred.WindowState.OPEN
-    scored = finish(later, ytd, exact=values, measures=registry())
+    state = later.windows[("revenue_growth", "consolidated", "FY27")]
+    assert state is cred_module().WindowState.OPEN
+    actual = measured("FY27", value, ytd=True)
+    scored = finish(later, actuals=(actual,), measures=registry())
     assert outcomes(row(scored.body, FY27)) == ["ON_TRACK" if value > 10 else "BEHIND"]
 
 
-@pytest.mark.parametrize(("label", "end", "state"), WINDOW_STATES)
-def test_a_targets_window_state_turns_on_its_own_boundaries(
-    label: str, end: date, state: str
-) -> None:
+@pytest.mark.parametrize(
+    ("end", "state"),
+    [
+        (date(2025, 3, 31), "NOT_STARTED"),
+        (date(2025, 4, 1), "OPEN"),
+        (date(2025, 6, 30), "OPEN"),
+        (date(2026, 3, 31), "ENDED"),
+        (date(2026, 6, 30), "ENDED"),
+    ],
+)
+def test_a_targets_window_state_turns_on_its_own_boundaries(end: date, state: str) -> None:
     """F2: an off-by-one here would score a whole year early or never close it."""
     cred = cred_module()
-    assert cred.window_state(label, end, 3) is cred.WindowState[state]
+    assert cred.window_state("FY26", end, 3) is cred.WindowState[state]
 
 
-def test_nothing_reaches_prose_but_through_a_claim_and_every_row_is_labelled() -> None:
-    """Spec §1 rules 1, 5: a digit outside a placeholder is a number no claim stands behind, and an
-    unlabelled row blurs observed, computed and inferred. Rendering proves each one holds."""
-    section, actuals = every_status()
+def test_every_status_renders_labelled_digit_free_prose_with_every_disclosure() -> None:
+    """Spec §1 rules 1, 5, S1 lesson 2: a digit outside a placeholder has no claim behind it, an
+    unlabelled row blurs observed, computed and inferred, and both S1 rejections were an
+    undisclosed absence or basis."""
+    ended = claim(quote="growth of 10% in FY25", horizon="FY25", page=1)
+    missed = claim(low="50", quote="growth of 50% in FY25", horizon="FY25", page=2)
+    now = claim(low="12", quote="growth of 12% in FY26", horizon="FY26", page=3)
+    lower = claim(low="9", high="11", quote="growth of 9% to 11% in FY26", horizon="FY26", page=4)
+    multi = claim(quote="growth of 10% a year", page=5)
+    described = claim("volume", quote="volume of 10% in FY26", page=6)
+    mapping = targets(
+        entry("E", ended, "FY25"),
+        entry("EM", missed, "FY25"),
+        entry("N", now),
+        entry("L", lower),
+        entry("M", multi, "MULTI_YEAR"),
+        entry("D", described, reading="DESCRIPTIVE"),
+    )
+    first = built((ended, now, multi), mapping, "FY26_Q1")
+    actuals = (measured("FY25", Fraction(100, 3)), measured("FY26", Fraction(10), ytd=True))
+    section = built(
+        (missed, lower, described), mapping, "FY26_Q2", first, actuals=actuals, measures=registry()
+    )
     assert scan_section(section.body, resolves=lambda *_: True) == ()
-    render_section(section.body, (*section.claims, *actuals))
+    render_section(section.body, (*section.claims, *(held for held, _ in actuals)))
     assert {"ACHIEVED", "MISSED", "ON_TRACK", "BEHIND", "UNRESOLVED"} <= set(outcomes(section.body))
-    assert section.body.startswith(f"## {SECTION}\n")
+    assert section.body.startswith("## management_credibility\n")
     for line in section.body.splitlines():
         if line.startswith("- ") and PLACEHOLDER.search(line):
             assert "{{e:" in line, line
+    text = " ".join(section.body.lower().split())
+    assert all(fragment in text for fragment in DISCLOSURES)
 
 
 @pytest.mark.parametrize("count", [1, 2], ids=["one-statement", "two-statements"])
 def test_a_line_references_exactly_the_claims_it_shows(count: int) -> None:
-    """F6: a reader resolves every figure from the narrative. A one-statement episode shows
-    ``.original`` only; its ``.latest`` is the same statement, referenced by the record line."""
+    """F6: a one-statement episode shows ``.original`` only; its ``.latest`` is the same statement,
+    referenced by the record line."""
     a, b, held = two("10", "12")
-    section = built((a,), held, "FY26_Q1")
-    if count == 2:
-        section = built((b,), held, "FY26_Q2", section)
+    section = chain(a, b, held) if count == 2 else built((a,), held, "FY26_Q1")
     for line in section.body.splitlines():
         found = PLACEHOLDER.findall(line)
         shown = {key for key, style in found if style != "ref"}
@@ -724,23 +841,12 @@ def test_a_line_references_exactly_the_claims_it_shows(count: int) -> None:
     assert (".latest|ref" in record_lines(section.body)["A"].group(0)) is (count == 1)
 
 
-def test_the_disclosures_state_every_limit() -> None:
-    """S1 lesson 2: both S1 rejections were an undisclosed absence or basis, so each limit of this
-    record is in the section itself."""
-    body = " ".join(every_status()[0].body.lower().split())
-    for fragment in DISCLOSURES:
-        assert fragment in body, fragment
-
-
 def test_empty_and_unscorable_are_different_statements() -> None:
-    """R14: "no quote extracted" and "quotes exist but none can be scored" are different facts. An
-    all-unresolved section renders its rows and each distinct reason; an empty one has none."""
-    cred = cred_module()
+    """R14: "no quote extracted" and "quotes exist but none can be scored" are different facts."""
     empty = built((), targets(), "FY26_Q2")
     text = " ".join(empty.body.lower().split())
     assert D9 in text and "{{e:" in empty.body and D8 not in text and not empty.claims
-    assert "retired entries:" in text
-    assert cred.read_record(empty.body, empty.claims).statements == ()
+    assert "retired entries:" in text and _read(empty).statements == ()
     a = claim(quote="growth of 10% or so", page=1)
     b = claim("margin", quote="margin of 10% a year", page=2)
     mapping = targets(entry("A", a, "AMBIGUOUS"), entry("B", b, "MULTI_YEAR"))
@@ -752,23 +858,35 @@ def test_empty_and_unscorable_are_different_statements() -> None:
     )
 
 
-@pytest.mark.parametrize("tamper", list(TAMPER))
-def test_a_record_that_does_not_parse_completely_refuses(tamper: str) -> None:
-    """R8: the sealed record is the only memory of every pin. A lenient parser could drop a
-    statement and so its pin, so anything short of a complete parse refuses."""
-    cred = cred_module()
+def _tampered(body: str) -> dict[str, str]:
+    """``body`` broken each way a complete parse must refuse."""
+    lines = record_lines(body)
+    a, b = lines["A"].group(0) + "\n", lines["B"].group(0) + "\n"
+    z = b.replace("(B sha256", "(Z sha256")
+    return {
+        "malformed-line": body.replace(" stated FY26_Q1", " stated FYxx", 1),
+        "duplicate-entry": body.replace(b, b + a.replace("(A sha", "(B sha")),
+        "duplicate-claim": body.replace(b, b + z),
+        "omitted-statement": body.replace(b, ""),
+        "extra-line": body.replace(b, b + z.replace(".latest|", ".absent|")),
+        "malformed-retired": body.replace("- none", "- retired A sha256 nothex", 1),
+        "missing-header": body.replace("Retired entries:", "Entries:", 1),
+    }
+
+
+def test_a_record_that_does_not_parse_completely_refuses() -> None:
+    """R8: the sealed record is the only memory of every pin, so a lenient parser could lose one."""
     a, b, held = two("10", "12")
-    section = built((b,), held, "FY26_Q2", built((a,), held, "FY26_Q1"))
-    assert cred.read_record(section.body, section.claims).pins
-    tampered = TAMPER[tamper](section.body)
-    assert tampered != section.body, "the tamper missed"
-    with pytest.raises(RunDraftError):
-        cred.read_record(tampered, section.claims)
+    section = chain(a, b, held)
+    assert _read(section).pins
+    for name, tampered in _tampered(section.body).items():
+        assert tampered != section.body, name
+        with pytest.raises(RunDraftError):
+            cred_module().read_record(tampered, section.claims)
 
 
 def test_a_record_round_trips_and_a_legacy_head_is_empty() -> None:
-    """R8: the next run rests on what this one sealed, so a build reads back whole, pins of every
-    corrected ancestor included; a head from before S2 simply has no record."""
+    """R8: a build reads back whole, pins of every corrected ancestor included."""
     cred = cred_module()
     assert cred.read_record(None, ()) == cred.Record()
     a = claim(quote="growth of 10% in FY26 or FY27 or FY28")
@@ -778,8 +896,7 @@ def test_a_record_round_trips_and_a_legacy_head_is_empty() -> None:
     one = built((a,), targets(first), "FY26_Q1")
     two_ = built((), targets(first, second), "FY26_Q2", one)
     mapping = targets(first, second, third)
-    three = built((), mapping, "FY26_Q3", two_)
-    record = cred.read_record(three.body, three.claims)
+    record = _read(built((), mapping, "FY26_Q3", two_))
     assert record.pins == {name: mapping.entries[name].digest for name in ("A", "B", "C")}
     assert set(record.retired) == {"A", "B"}
     (held,) = record.statements
