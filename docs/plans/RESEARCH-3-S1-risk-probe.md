@@ -244,9 +244,10 @@ package-checked through it.
   - R4 cash conversion → accounting.
   - R5 capex intensity → business.
   - R6 borrowings to equity → solvency.
-- **P7, one sentence per flagged row.** A row whose rules fire carries one sentence. Its rule
-  phrase is chosen by the first fired rule in the order guard, S, L, T, and its business
-  meaning by the check. Six check meanings and four rule phrases replace a 6 × 4 sentence table.
+- **P7, one sentence per flagged row.** A row whose rules fire carries one sentence. A guard's
+  reason stands alone; otherwise it names every fired rule's phrase, joined with "and" in the
+  order S, L, T, and its business meaning comes from the check. Six check meanings and the rule
+  phrases replace a 6 × 4 sentence table.
 - **P8, adverse cases are pure unit tests.** The spec suggests synthetic test-DB interpretations
   for the adverse cases (loss, negative equity, cfo below PAT, zero denominator, sign anomaly,
   mismatched priors). The guards, rules and statuses are a pure function of operand values and

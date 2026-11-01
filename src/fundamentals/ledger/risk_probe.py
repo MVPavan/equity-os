@@ -185,7 +185,7 @@ CHECKS: Mapping[str, Check] = {
 }
 S_CHECK = "R4"
 S, L, T = "S", "L", "T"
-# What a shown row's first fired rule established (P7); T's direction is its check's arrow.
+# What each of a shown row's fired rules established (P7); T's direction is its check's arrow.
 PHRASES = {
     S: "operating cash was below reported profit within the same flow window",
     L: "its value breached the approved thesis limit",
@@ -202,8 +202,16 @@ S_ONLY = (
 )
 NO_TREND = "trend not evaluable: no matching prior"
 NO_RULE = "no rule evaluable: no prior, no limit"
+NO_LIMIT = "no rule evaluable: no limit"
+STALE_LIMITS = "limits not assessed on a stale statement"
 STALE_NOTE = (
     "; stale: this statement predates the run's period, so its limits are not assessed here"
+)
+LEGEND = (
+    "Rules: S, operating cash below reported profit in the same flow window; "
+    "T, an adverse move against the same window a year earlier; "
+    "L, a breach of the approved thesis limit; "
+    "these are independent checks, so a row can be flagged while its falsifier holds."
 )
 SOURCES = (
     "related parties",
@@ -300,6 +308,11 @@ def assess(
             evaluated.append(T)
             fired += [T] if (value - prior) * check.arrow > 0 else []
     note = (prior_note or NO_TREND) if check.arrow is not None and T not in evaluated else None
+    unevaluable = (
+        "; ".join(filter(None, (STALE_LIMITS, note)))
+        if statement.stale
+        else prior_note or (NO_LIMIT if check.arrow is None else NO_RULE)
+    )
     status, reason = (
         (ProbeStatus.FLAGGED if fired else ProbeStatus.PASSED, S_ONLY)
         if guarded is not None and guarded[1] == UNCERTAIN_DENOMINATOR
@@ -309,7 +322,7 @@ def assess(
         if fired
         else (ProbeStatus.PASSED, note)
         if evaluated
-        else (ProbeStatus.COMPUTED, prior_note or NO_RULE)
+        else (ProbeStatus.COMPUTED, unevaluable)
     )
     return ProbeRow(
         check_id=check_id,
@@ -345,7 +358,7 @@ def body(
     stale = STALE_NOTE if statement.stale else ""
     intro = (
         f"{{{{e:computed}}}} Risk probe on the filed statement of {statement.balance_date}"
-        f"{stale}. Each value is computed in code from the filed amounts beside it."
+        f"{stale}. Each value is computed in code from the filed amounts beside it. {LEGEND}"
     )
     lines = [_line(row, dated, claim_keys.get(row.check_id, ())) for row in rows]
     paragraphs = (
@@ -386,12 +399,12 @@ def _line(row: ProbeRow, dated: str, raw: tuple[str, ...]) -> str:
 
 
 def _flag_sentence(row: ProbeRow) -> str:
-    """What a flagged row's guard or first fired rule established, then what that could mean."""
+    """What a flagged row's guard or every fired rule established, then what that could mean."""
     check = CHECKS[row.check_id]
     if not row.shown and row.reason != S_ONLY:
         return f"{row.check_id} is flagged because of {row.reason}, so its ratio is not shown."
     moved = "" if check.arrow is None else ARROW_MOVES[check.arrow]
-    established = PHRASES[row.rules[0]].format(moved=moved)
+    established = " and ".join(PHRASES[rule].format(moved=moved) for rule in row.rules)
     return f"{row.check_id} is flagged because {established}; {check.implication}."
 
 

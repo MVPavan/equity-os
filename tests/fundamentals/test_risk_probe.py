@@ -444,6 +444,72 @@ def test_an_empty_section_still_names_every_non_evaluated_source(selected: bool)
     assert scan_section(text, resolves=lambda *_: True) == ()
 
 
+@pytest.mark.parametrize(
+    ("check_id", "stale", "says", "never"),
+    [
+        ("R1", True, ("limits not assessed", "no matching prior"), ("no limit",)),
+        ("R3", True, ("limits not assessed",), ("no limit", "prior")),
+        ("R5", True, ("limits not assessed",), ("no limit", "prior")),
+        ("R3", False, ("no rule evaluable", "no limit"), ("prior", "stale")),
+        ("R1", False, ("no prior", "no limit"), ("stale",)),
+    ],
+    ids=["stale-arrow", "stale-r3", "stale-r5", "fresh-no-arrow", "fresh-arrow"],
+)
+def test_an_uncomputed_rule_gives_the_reason_that_actually_applies(
+    check_id: str, stale: bool, says: tuple[str, ...], never: tuple[str, ...]
+) -> None:
+    """The thesis does have limits when a stale statement withholds them, so "no limit" would
+    misreport it; and a check with no trend arrow never needed a prior, so none may be blamed."""
+    probe = _probe()
+    update = {"claim_key": None, "disposition": Disposition.NOT_ASSESSED}
+    withheld = _limit(check_id, Disposition.HELD).model_copy(update=update)
+    statement = _statement(stale=stale)
+    row = probe.assess(check_id, statement, Decimal("40.00"), None, None, (withheld,))
+    assert row.status is probe.ProbeStatus.COMPUTED
+    for phrase in says:
+        assert phrase in row.reason, row.reason
+    for phrase in never:
+        assert phrase not in row.reason, row.reason
+    assert not any(character.isdigit() for character in row.reason), row.reason
+
+
+def test_a_flag_sentence_names_every_fired_rule() -> None:
+    """A row flagged by two rules has two findings: naming only the first hides the other signal
+    from a reader, while the implication stays the check's conditional one."""
+    probe = _probe()
+    plain, low_cash = _statement(), _statement({"cfo": "50"})
+    limit = (_limit("R6", Disposition.WEAKENED),)
+    both = probe.assess("R6", plain, Decimal("0.30"), Decimal("0.20"), None, limit)
+    sentence = _flag_sentence(both, plain)
+    assert "thesis limit and its value rose against the same window" in sentence, sentence
+    assert "balance-sheet risk may be higher" in sentence, sentence
+    both = probe.assess("R4", low_cash, Decimal("50.00"), Decimal("120.00"), None, ())
+    sentence = _flag_sentence(both, low_cash)
+    assert "same flow window and its value fell against the same window" in sentence, sentence
+    assert "less of reported profit may turn into operating cash" in sentence, sentence
+
+
+def test_the_rule_legend_is_stated_once_where_rows_render() -> None:
+    """ "FLAGGED by S, T" means nothing without a legend, and a reader must not take a flag for a
+    breached falsifier; the one-paragraph fallbacks show no rule, so they carry no legend."""
+    legend = "independent checks"
+    text = _body(_statement())
+    assert text.count(legend) == 1
+    for phrase in (
+        "S, operating cash below reported profit in the same flow window",
+        "T, an adverse move against the same window a year earlier",
+        "L, a breach of the approved thesis limit",
+        "a row can be flagged while its falsifier holds",
+    ):
+        assert phrase in text, text
+    assert scan_section(_body(_statement(stale=True)), resolves=lambda *_: True) == ()
+    probe = _probe()
+    empty = _statement({key: None for key in BASE})
+    rows = tuple(probe.assess(c, empty, None, None, None, ()) for c in probe.CHECKS)
+    assert legend not in str(probe.body(empty, rows, {}))
+    assert legend not in str(probe.body(None, (), {}))
+
+
 # Bound over an in-memory store ------------------------------------------------------------------
 
 VERSIONS = ConfigVersions()
