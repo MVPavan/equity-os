@@ -16,22 +16,53 @@ from typing import Any
 import pytest
 from credibility_support import (
     BLOB,
+    CUT,
+    D8,
+    D9,
+    DIGEST_SAMPLE,
+    DISCLOSURES,
+    ENDS,
+    FY26,
+    FY27,
+    GROWTH,
+    INTERIM,
+    Q3_END,
+    Q3_FILED,
+    Q4_END,
+    Q4_FILED,
+    RECURRING,
+    SPLIT,
+    TOLERANCE,
+    UNDATED,
+    WHOLE,
+    WRONG_WAY,
+    A,
+    B,
+    _read,
+    _tampered,
+    built,
+    by_key,
+    chain,
     claim,
+    correction,
     cred_module,
+    direction,
     entry,
     event_of,
+    faults,
+    finish,
     gt_module,
+    measured,
     outcomes,
+    prepared,
     record_lines,
     registry,
     row,
     same_statement,
+    unresolved,
     write_targets,
 )
 
-from fundamentals.contracts.canonical import ValueKind
-from fundamentals.contracts.guidance_claim import EpistemicClass
-from fundamentals.contracts.ledger import Citation, CitationKind, NumericClaim, Rounding
 from fundamentals.extract.guidance_extractor import GuidanceRule, extract_guidance_claims
 from fundamentals.ingest.pdf_source import LoadedPdf, PdfBlock, PdfPage
 from fundamentals.ledger.display import PLACEHOLDER, render_section
@@ -39,43 +70,6 @@ from fundamentals.ledger.numeral_scan import scan_section
 from fundamentals.ledger.run_draft import _Body
 from fundamentals.ledger.run_traces import RunDraftError
 
-ENDS = {
-    "FY26_Q1": date(2025, 6, 30),
-    "FY26_Q2": date(2025, 9, 30),
-    "FY26_Q3": date(2025, 12, 31),
-    "FY26_Q4": date(2026, 3, 31),
-    "FY27_Q1": date(2026, 6, 30),
-}
-GROWTH = "revenue_growth.consolidated"
-FY26, FY27 = f"{GROWTH}.FY26", f"{GROWTH}.FY27"
-WHOLE = "(all computed digits)"
-CUT = "(first six decimal places, cut and not rounded; more digits follow)"
-TOLERANCE = (
-    "rounded to the guidance's stated precision",
-    "the verdict rounds the exact computed value once",
-)
-INTERIM = "seasonality not adjusted; year-to-date assumed representative"
-WRONG_WAY = "open bound in the wrong direction"
-# The content each disclosure must keep (plan "Report disclosures"; wording may tighten around it).
-DISCLOSURES = (
-    "no overall credibility judgment",
-    "not an inventory of management's commitments",
-    "before this report chain's first period are absent",
-    "kept as evidence and is never scored",
-    "reviewed mapping file",
-    "after these calls were published",
-    "extracted guidance contract",
-    "labels every quote consolidated",
-    "midpoint",
-    "binding bound",
-    '"about" is ignored',
-    "not whether it is good or bad",
-    "computes no comparable actual",
-    "no single-year window",
-)
-D8 = "no row in this version reaches an achieved, missed or interim outcome. reasons:"
-D9 = "no guidance quote has been extracted in this report chain"
-SPLIT = "growth of 10% in FY26 and FY27"
 _ROOT: list[Path] = []
 
 
@@ -100,121 +94,11 @@ def stated(spec: str, **over: Any) -> Any:
     )
 
 
-def direction(better: str | None) -> Any:
-    return None if better is None else cred_module().Better[better]
-
-
 def two(first: str, second: str) -> tuple[Any, ...]:
     """Two restatements of one FY26 promise and their mapping."""
     a = claim(low=first, quote=f"growth of {first}% in FY26", page=1)
     b = claim(low=second, quote=f"growth of {second}% in FY26", page=2)
     return a, b, targets(entry("A", a), entry("B", b))
-
-
-def measured(
-    window: str, exact: Fraction, *, scope: str = "consolidated", ytd: bool = False
-) -> tuple[NumericClaim, dict[str, Fraction]]:
-    """A ``cred.*`` claim of the exact value's digits, and the exact value by its key."""
-    from fundamentals.canon.interval import truncate_value
-    from fundamentals.ledger.display import EXACT_DIGITS
-
-    cred = cred_module()
-    key = cred.ACTUAL_KEY.format(metric="revenue_growth", scope=scope, window=window)
-    key += ".ytd" if ytd else ""
-    held = NumericClaim(
-        claim_key=key,
-        section_key="management_credibility",
-        citation=Citation(kind=CitationKind.CALCULATION, calculation_trace_id=9),
-        value_kind=ValueKind.PERCENTAGE,
-        unit="%",
-        value=truncate_value(exact, cred.EXACT_PLACES),
-        qualifiers=(EXACT_DIGITS,),
-        precision=cred.EXACT_PLACES,
-        rounding=Rounding.ROUND_HALF_EVEN,
-        epistemic_class=EpistemicClass.INFERRED if ytd else EpistemicClass.COMPUTED,
-    )
-    return held, {key: exact}
-
-
-def _read(section: Any) -> Any:
-    cred = cred_module()
-    return cred.read_record(section.body, section.claims) if section else cred.Record()
-
-
-def prepared(
-    claims: Any,
-    mapping: Any,
-    period: str,
-    prior: Any = None,
-    *,
-    same: Any = None,
-    filed: Any = None,
-) -> Any:
-    """``prepare`` on the previous build or record (``same``: the same-period build)."""
-    cred = cred_module()
-    return cred.prepare(
-        claims,
-        prior if isinstance(prior, cred.Record) else _read(prior),
-        _read(same),
-        mapping,
-        period=period,
-        period_end=ENDS[period],
-        month=3,
-        filed_at=filed or {},
-        actual_blobs=frozenset(),
-    )
-
-
-def finish(prep: Any, *, actuals: Any = (), unavailable: Any = None, measures: Any = None) -> Any:
-    """``build`` of a prepared run; ``actuals`` are ``measured`` pairs."""
-    return cred_module().build(
-        prep,
-        actuals=tuple(held for held, _ in actuals),
-        exact={key: value for _, values in actuals for key, value in values.items()},
-        unavailable=unavailable or {},
-        registry={} if measures is None else measures,
-    )
-
-
-def built(
-    claims: Any, mapping: Any, period: str, prior: Any = None, *, filed: Any = None, **kw: Any
-) -> Any:
-    return finish(prepared(claims, mapping, period, prior, filed=filed), **kw)
-
-
-def chain(a: Any, b: Any, mapping: Any) -> Any:
-    """Two statements in consecutive runs: A at FY26_Q1, then B at FY26_Q2."""
-    return built((b,), mapping, "FY26_Q2", built((a,), mapping, "FY26_Q1"))
-
-
-def unresolved(line: str, *reasons: str) -> None:
-    assert set(outcomes(line)) == {"UNRESOLVED"}, line
-    assert all(reason in line for reason in reasons), line
-
-
-def by_key(section: Any) -> dict[str, NumericClaim]:
-    return {held.claim_key: held for held in section.claims}
-
-
-def correction(body: str, *tokens: str) -> None:
-    """Exactly one non-record line names every token."""
-    skip = ("- statement", "- retired")
-    lines = [s for s in body.splitlines() if not s.lstrip().startswith(skip)]
-    assert len([s for s in lines if all(token in s for token in tokens)]) == 1, tokens
-
-
-Q3_END, Q4_END = ENDS["FY26_Q3"], ENDS["FY26_Q4"]
-Q3_FILED = datetime(2026, 2, 4, tzinfo=UTC)  # the pinned manifest's FY26_Q3 transcript
-Q4_FILED = datetime(2026, 6, 4, tzinfo=UTC)  # after FY26's year end
-RECURRING = (
-    "a 20% CAGR|growing by 25% a year|20% per year|20% every year|20% each year|20% per annum|"
-    "20% annually|over three years|over a 5-year plan|year on year for the next three years|"
-    "10% in FY26 and 12% in FY27"
-)
-UNDATED = (
-    "20% year on year|guiding a growth of 25% year on|a 10% growth year-on-year on our|20% yoy|"
-    "20% y-o-y|above a year ago|above a year earlier|guidance of 30,000 per metric ton"
-)
 
 
 @pytest.mark.parametrize(
@@ -241,55 +125,6 @@ def test_a_window_follows_only_from_the_quotes_words(
     assert gt_module().derive_window(text, filed_at, stated_end, 3) == window
 
 
-A = claim(page=1)
-B = claim(low="12", page=2)
-METRIC = claim("margin", page=3, quote="margin of 10% in FY26")
-SCOPE = claim(scope="standalone", page=4)
-MULTI = claim(page=5, quote="growth of 10% a year")
-MULTI_B = claim(low="12", page=6, quote="growth of 12% a year")
-YEAR = claim(page=7, quote="growth of 10% in FY27")
-
-
-def faults() -> dict[str, tuple[dict[str, Any], ...]]:
-    """Mapping files that must refuse at load."""
-    a, b, a2 = entry("A", A), entry("B", B), entry("A2", A, supersedes="A")
-    linked, multi = {**b, "same_as": "A"}, entry("M", MULTI, "MULTI_YEAR")
-    return {
-        "duplicate-id": (a, entry("A", B)),
-        "id-outside-the-alphabet": (entry("a b", A),),
-        "unknown-window": (entry("A", A, "next decade"),),
-        "unknown-reading": (entry("A", A, reading="PROMISE"),),
-        "window-text-outside-quote": (entry("A", A, window_text="FY29"),),
-        "two-live-on-one-triple": (a, entry("B", A)),
-        "supersedes-unknown": (entry("A", A, supersedes="Z"),),
-        "successor-of-another-statement": (a, entry("A2", B, supersedes="A")),
-        "successor-with-another-quote": (a, {**a2, "quote": "growth of 10% in FY26 or so"}),
-        "successor-on-another-blob": (a, entry("A2", claim(blob="b" * 64), supersedes="A")),
-        "two-successors": (a, a2, entry("A3", A, supersedes="A")),
-        "supersedes-cycle": (entry("A", A, supersedes="A2"), a2),
-        "same-as-unknown": (entry("A", A, same_as="Z"),),
-        "same-as-later": (entry("B", B, same_as="A"), a),
-        "same-as-another-metric": (a, entry("O", METRIC, same_as="A")),
-        "same-as-another-scope": (a, entry("O", SCOPE, same_as="A")),
-        "same-as-another-class": (a, entry("M", MULTI, "MULTI_YEAR", same_as="A")),
-        "same-as-another-year": (a, entry("Y", YEAR, "FY27", same_as="A")),
-        "incompatible-after-resolution": (
-            multi,
-            entry("MB", MULTI_B, "MULTI_YEAR", same_as="M"),
-            entry("M2", MULTI, "AMBIGUOUS", supersedes="M"),
-        ),
-        "cycle-through-a-successor": (a, linked, entry("A2", A, supersedes="A", same_as="B")),
-        "self-link-after-resolution": (a, entry("A2", A, supersedes="A", same_as="A")),
-        "descriptive-links": (a, entry("B", B, reading="DESCRIPTIVE", same_as="A")),
-        "links-a-descriptive": (entry("A", A, reading="DESCRIPTIVE"), linked),
-        "descriptive-after-resolution": (
-            a,
-            linked,
-            entry("A2", A, reading="DESCRIPTIVE", supersedes="A"),
-        ),
-    }
-
-
 @pytest.mark.parametrize("fault", list(faults()))
 def test_a_structurally_wrong_entry_refuses_at_load(fault: str) -> None:
     with pytest.raises(RunDraftError):
@@ -308,19 +143,7 @@ def test_a_chain_resolves_to_its_live_entry() -> None:
 def test_the_entry_digest_pins_exactly_its_preimage() -> None:
     """R8: every sealed pin rests on this preimage; a field outside it could move a judgment."""
     gt = gt_module()
-    sample = {
-        "id": "sample-FY26_Q2",
-        "claim_key": "ledger.revenue_growth.annual.consolidated",
-        "source_sha256": BLOB,
-        "anchor": "p1.b1.0:9",
-        "quote": "₹ growth of 10% in FY26",
-        "window_text": "FY26",
-        "window": "FY26",
-        "reading": "COMMITMENT",
-        "definition": "revenue_growth",
-        "same_as": None,
-        "supersedes": None,
-    }
+    sample = DIGEST_SAMPLE
     # One SHA-256 computed once with hashlib over the compact sorted JSON of exactly these fields.
     digest = "efe91d37297400b7bf74b3bacab140e34025231ea952a88bd8844f0679f848ff"
     held = gt.TargetEntry(**{**sample, "reading": gt.Reading.COMMITMENT})
@@ -856,22 +679,6 @@ def test_empty_and_unscorable_are_different_statements() -> None:
     assert all(
         r in tail for r in ("window not established", "window not single-year", "no filed measure")
     )
-
-
-def _tampered(body: str) -> dict[str, str]:
-    """``body`` broken each way a complete parse must refuse."""
-    lines = record_lines(body)
-    a, b = lines["A"].group(0) + "\n", lines["B"].group(0) + "\n"
-    z = b.replace("(B sha256", "(Z sha256")
-    return {
-        "malformed-line": body.replace(" stated FY26_Q1", " stated FYxx", 1),
-        "duplicate-entry": body.replace(b, b + a.replace("(A sha", "(B sha")),
-        "duplicate-claim": body.replace(b, b + z),
-        "omitted-statement": body.replace(b, ""),
-        "extra-line": body.replace(b, b + z.replace(".latest|", ".absent|")),
-        "malformed-retired": body.replace("- none", "- retired A sha256 nothex", 1),
-        "missing-header": body.replace("Retired entries:", "Entries:", 1),
-    }
 
 
 def test_a_record_that_does_not_parse_completely_refuses() -> None:
