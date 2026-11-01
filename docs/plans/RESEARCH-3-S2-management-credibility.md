@@ -13,7 +13,7 @@ role changes; it records the rulings on C-13, the estimate and the deferred veri
 r2 fixed the 14 findings of Sol's r1 review (at `09112a32`) and carried its rulings on C-4, C-8, C-12, the
 provisional mapping predictions and the `Interim` simplification, marked "r2 (R<n>)". One mechanism answers
 R1, R2, R4 and R8: a sealed record line per statement (P2). **No finding needs a migration.**
-**Status:** draft, awaiting Sol review
+**Status:** approved r4 (2026-11-01) — approver gpt-6.1-sol, `APPROVE` on the re-review of the closing critical review's fixes (plan rounds r1–r3, closing review, re-review). The owner may overturn the S2 panel scope and C-15.
 **Goal:** every Apar run draft carries a `management_credibility` section after `risk_probe`. Each
 commitment episode shows its first and latest quote, its mapping entry and digest, its revision
 events, and a code-computed outcome against both statements, or a stated reason why none exists.
