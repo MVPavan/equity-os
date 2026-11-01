@@ -94,6 +94,11 @@ def store_value(value: Fraction, kind: ValueKind, policy: RoundingPolicy) -> Dec
     return _scaled(round(value * 10**scale), scale)
 
 
+def truncate_value(value: Fraction, places: int) -> Decimal:
+    """An exact value's first ``places`` decimal places, cut toward zero."""
+    return _scaled(int(value * 10**places), places)
+
+
 def store_bounds(
     interval: Interval, kind: ValueKind, policy: RoundingPolicy
 ) -> tuple[Decimal, Decimal]:

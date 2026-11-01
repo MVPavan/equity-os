@@ -40,6 +40,8 @@ _SUFFIX_QUALIFIERS = {"plus": "-plus"}
 # (invariant 7): always shown with its label, whatever the slot's style.
 FILED = "filed"
 FILED_SUFFIX = " (filed value, single source, not cross-checked)"
+# A computed claim holding the exact value's digits, checked against them, not the stored rounding.
+EXACT_DIGITS = "exact_digits"
 _BAD_TOKEN = "style token {token!r} is unknown, repeated or conflicting in {style!r}"
 _NO_QUOTE = "claim {key!r} is not a SOURCE_QUOTE, so it has no quote to show"
 _NO_CLAIM = "placeholder names no claim of this version: {key!r}"
