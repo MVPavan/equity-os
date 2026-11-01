@@ -364,12 +364,17 @@ def _places(value: Decimal) -> int:
     return max(0, -exponent) if isinstance(exponent, int) else 0
 
 
+def _kind(unit: str | ValueKind) -> tuple[ValueKind, str | None, int | None]:
+    """A unit's value kind, currency and scale; a bare value kind is unitless."""
+    return (unit, None, None) if isinstance(unit, ValueKind) else UNITS[unit]
+
+
 def measurement_key(
-    canonical_id: str, unit: str, entity_id: int, start: date, end: date
+    canonical_id: str, unit: str | ValueKind, entity_id: int, start: date, end: date
 ) -> MeasurementKey:
     """A consolidated Ind AS key, as the legacy translation builds a reported value's; a
     computed value's ``canonical_id`` names what it computes."""
-    value_kind, currency, _ = UNITS[unit]
+    value_kind, currency, _ = _kind(unit)
     return MeasurementKey(
         entity_id=entity_id,
         canonical_id=canonical_id,
@@ -394,7 +399,7 @@ def _valued(
     name: str,
     section: str,
     value: Decimal,
-    unit: str,
+    unit: str | ValueKind,
     key: MeasurementKey,
     source: Provenance | None = None,
     *,
@@ -402,8 +407,9 @@ def _valued(
     rounding: Rounding = Rounding.ROUND_HALF_UP,
 ) -> NumericClaim:
     """A reported value (``FIGURE`` on its source file's fact, looked up at import) or, with no
-    source, a computed one (``CALCULATION`` with no stored trace: unresolved, plan D6)."""
-    value_kind, currency, scale = UNITS[unit]
+    source, a computed one (``CALCULATION`` with no stored trace: unresolved, plan D6). A bare
+    value kind is a unitless claim."""
+    value_kind, currency, scale = _kind(unit)
     return NumericClaim(
         claim_key=name,
         section_key=section,
@@ -413,7 +419,7 @@ def _valued(
         ),
         measurement_key=key,
         value_kind=value_kind,
-        unit=unit,
+        unit=None if isinstance(unit, ValueKind) else unit,
         currency=currency,
         scale=scale,
         value=value,

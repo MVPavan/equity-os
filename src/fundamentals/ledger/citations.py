@@ -151,6 +151,7 @@ _SOURCE: LiteralString = """SELECT coalesce(
      JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
     (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
 _FILED_TAX = "calc.2"
+_PROBE_FIGURE = re.compile(r"probe\.R\d\.[a-z_]+")
 _INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
 FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED' AND entity_id = %s"""
 _TRACE: LiteralString = (
@@ -168,15 +169,19 @@ WHERE c.id = %s AND r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'
     AND starts_with(c.claim_key, 'falsifier.') AND d.kind IN ('APPROVE', 'IMPORTED_APPROVAL')
     AND d.sealed_digest = %s AND d.sealed_digest = eqos.version_sealed_digest(c.version_id)
 ORDER BY d.recorded_at, d.id LIMIT 1"""
+# The given traces and every trace they reach through operand traces (``WITH RECURSIVE``).
+TRACES: LiteralString = """traces(id) AS (
+    SELECT unnest(%(traces)s::bigint[])
+    UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
+        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
+)"""
 # Every interpretation behind the cited traces and interpretations, through trace operands,
 # nested traces and constructed interpretations' operands, in id order so the pinned input
 # fingerprint does not depend on the query plan.
 _INPUTS: LiteralString = (
-    """WITH RECURSIVE traces(id) AS (
-    SELECT unnest(%(traces)s::bigint[])
-    UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
-        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
-), interps(id) AS (
+    "WITH RECURSIVE "
+    + TRACES
+    + """, interps(id) AS (
     SELECT unnest(%(interpretations)s::bigint[])
     UNION SELECT o.interpretation_id FROM eqos.calculation_trace_operands o
         JOIN traces t ON o.calculation_trace_id = t.id WHERE o.interpretation_id IS NOT NULL
@@ -370,9 +375,12 @@ def resolve_location(
 
 
 def _filed_key(claim_key: str) -> bool:
-    """Whether a claim key may cite a filed value: a comparator prior or the filed tax total."""
-    return claim_key == _FILED_TAX or (
-        claim_key.startswith("cmp.") and claim_key.endswith(".prior")
+    """Whether a claim key may cite a filed value: a comparator prior, the filed tax total or
+    a risk probe's raw amount (``probe.R<n>.<canonical id>``)."""
+    return (
+        claim_key == _FILED_TAX
+        or (claim_key.startswith("cmp.") and claim_key.endswith(".prior"))
+        or (_PROBE_FIGURE.fullmatch(claim_key) is not None and not claim_key.endswith(".prior"))
     )
 
 
