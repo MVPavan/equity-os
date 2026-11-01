@@ -1,16 +1,19 @@
 {
   "now": {
-    "title": "WSL clock fix under test; register A-rows brought current",
-    "detail": "Ubuntu's own NTP service (systemd-timesyncd) was fighting WSL's host time sync and stepping the clock back (10 'time jumped backwards' in a day, the eqos-0bp gate flake). Disabled 03:32 UTC; no backward steps since. A 2-hour watcher confirms before eqos-0bp is closed."
+    "title": "RESEARCH-3 S1 risk probe closed live; S2 next",
+    "detail": "All four Apar quarters regenerated with the risk probe and approved by Sol: FY26_Q2 v15, FY26_Q3 v16, FY26_Q4 v18, FY27_Q1 v19. Sol sent v14 and v17 back for missing disclosures; both were fixed in code and re-sealed. This is an S1 demonstration only: A-04/B-02 remain unmet and the core research release stays NO."
   },
   "next": [
-    "Owner: Phase 4 bake-off (candidate models + API key) unblocks eqos-aa6.14 and .15",
+    "RESEARCH-3 S2 (management credibility), then S3, then RESEARCH-4",
+    "eqos-aa6.29 guard: holds live map-labels and extract-text until it lands",
     "Owner: keep macro charts (132/week) and index widgets (89/week)?",
-    "Close eqos-0bp if the clock watcher and next gate stay clean",
-    "Daily documents run 16:00 UTC (scheduled); confirm a no-new-filings day gives zero new revisions",
     "eqos-aa6.28 capture error messages; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-11-01",
+      "text": "RESEARCH-3 S1 Task 6 closed live: v15, v16, v18, v19 APPROVED by Sol; probe gate and check-live pass; deltas matched rehearsal; backup 1a330a2f. Phase 4 candidate set to GPT-6 Luna via Bodha LiteLLM. Filed eqos-j8dq (gate rails) and eqos-1ir4 (temp-root flake)."
+    },
     {
       "date": "2026-11-01",
       "text": "Register v2 A-01..A-13 marked Accepted per the Phase 0A exit record (eqos-4j2.9). eqos-ghv P1->P2 (pilot passed without PQ3 segment). Filed eqos-ac4h: blueprint ledger validator pins a stale register hash."
