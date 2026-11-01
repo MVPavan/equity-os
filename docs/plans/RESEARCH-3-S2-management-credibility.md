@@ -3,7 +3,11 @@
 **Origin:** `docs/specs/2026-10-27-research-3-thesis-analysis.md` §5 "S2" (approved r4,
 gpt-6.1-sol `APPROVE`), with §0, §1, §3, §6 and the owner rulings. Bead `eqos-bnx`, slice 3 → S2.
 S1 closed live on 2026-11-01. Format and lessons: `docs/plans/RESEARCH-3-S1-risk-probe.md`.
-**Revision:** r3 (2026-11-01) fixes Sol's r2 residuals (re-review at `a779bdfd`): R5's unrounded actual,
+**Revision:** r4 (2026-11-01) fixes Sol's closing review (at `85521918`), marked "r4 (F<n>)": one prepare step before
+the first write (F1, P12), target-year windows (F2, P7), links resolved through the pool (F3, P13), a reviewed
+`reading` on each entry (F4, P14), all admitted XBRLs searched (F5), one reference contract (F6), a frozen
+correction delta (F7), and the approving round's three simplifications.
+r3 (2026-11-01) fixed Sol's r2 residuals (re-review at `a779bdfd`): R5's unrounded actual,
 R3's cycles after successor resolution, R12's preservation gate on the recovery draft, and gate (e)'s
 role changes; it records the rulings on C-13, the estimate and the deferred verification. Marked "r3".
 r2 fixed the 14 findings of Sol's r1 review (at `09112a32`) and carried its rulings on C-4, C-8, C-12, the
@@ -41,7 +45,7 @@ The draft still validates `AS_KNOWN` with every claim `MATCH`.
 
 ## Spec against code at HEAD
 
-Checked at `2f422db8`; r2 rechecked at `09112a32` and r3 at `a779bdfd` (no code change between them). The
+Checked at `2f422db8`; r2 rechecked at `09112a32`, r3 at `a779bdfd` and r4 at `85521918` (no code change between them). The
 code won each of these unless stated.
 
 | # | Spec says | Code or data says | Followed |
@@ -60,6 +64,7 @@ code won each of these unless stated.
 | C-12 | Owner goal (`docs/goals/2026-10-27-research-report-targets.md:15`): a table showing "where credibility is rising or falling and what that means" | Not in spec §3; left to S3 model notes | Spec. Disclosed as absent (D1, `NOT_DONE`). r2 (Sol ruling): this deferral holds only if S3 explicitly delivers the owner's trend and thesis-consequence requirement. S3's plan must carry it as an acceptance case, and the S2 close records that in the bead. |
 | C-13 | §3 "Apar today": cables revenue growth is `MULTI_YEAR` | r2 (R7): that holds for the CAGR and "a year" quotes. The FY26_Q2 pattern ends "% year on" (`aparinds-fy26-q2.yaml:123`), an undated comparison basis | Its entry is `AMBIGUOUS`. The spec's conclusion still holds: the rows stay `UNRESOLVED`. r3 (ruling): accepted. `AMBIGUOUS` is justified for the FY26_Q2 quote; the CAGR and "a year" statements stay `MULTI_YEAR`. The changed episode and link expectations freeze after source review (Task 3). |
 | C-14 | r3: OD-7 (spec §3, §6): the row "shows the unrounded actual" | A claim holds a `Decimal`; `_trace` resolves a calculation claim to the trace's stored value (`citations.py:564-566`), which `check_claim` compares at the claim's precision (`claim_check.py:110-115`). `calculation_traces.exact_value` already holds the exact reduced fraction, unread here. | Spec. A narrow, explicit exact path in the resolver (P4). OD-7 is not amended. |
+| C-15 | r4 (F4): §3 gives an entry no eligibility field; every extracted quote opens or joins an episode, and "Apar today" reads the cables quotes as one `MULTI_YEAR` promise. Only `same_as` is a reviewed judgment ("Sol checks each link") | The retained context does not support that for FY26_Q3 (PDF page 14, management's answer on progress): a rule match cannot tell a promise from a description of progress | Addition to the spec, not a contradiction: one reviewed `reading` field (P14). The spec's conclusion holds: those rows stay `UNRESOLVED`. |
 
 ## Investigation findings
 
@@ -141,8 +146,8 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   displays nor compares it.
 
   **Displayed (r3, R5), the unrounded actual.** Each `cred.*` claim carries the exact value's digits:
-  - **Value.** `truncate_value(exact, EXACT_PLACES)`, the first six decimal places, cut toward zero, built
-    from an integer so no `Decimal` context applies. `precision=6`, and the qualifier `EXACT_DIGITS`. The
+  - **Value.** `truncate_value(exact, EXACT_PLACES)`, the first six decimal places, cut toward zero. r4: it is
+    `_scaled(int(value * 10**places), places)` (`canon/interval.py:109`), so there is no second conversion. `precision=6`, and the qualifier `EXACT_DIGITS`. The
     claim holds these digits; no second claim holds a stored figure. `rounding` stays `ROUND_HALF_EVEN`: the
     column's check (`migrations/0012_report_ledger.sql:70`) admits no truncating mode, and at six places on
     a six-place value the mode changes nothing.
@@ -173,6 +178,10 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   default rule set's metric (`guidance_extractor.py:58-62`), computed as `run.change_pct` of
   `revenue_from_operations` over the window against a year earlier, with the interim rule. The spec's
   interim fields have one supported form, so `Actual.interim` is a plain `bool` and the label a constant.
+  r4 (F2): the target is `FY<yy>`, from the day after the prior fiscal year's end to its own end. A run's
+  period end before that start is `NOT_STARTED`: `UNRESOLVED` ("not due: target year not started") with no
+  interim actual. Inside it is `OPEN`: the numerator runs from the target's start to the period end, so it lies
+  in the target year, and the comparator is the same months a year earlier. On or after its end is `ENDED`.
   It makes the `cred.*` path real and testable on the retained pilot. Apar emits no such metric, so its
   report has no `cred.*` claim. Tests of scope and direction inject a registry.
 - **P8, adverse cases are pure tests**, as S1's P8. Outcomes and events are pure functions of claims
@@ -192,6 +201,27 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   (`risk_probe.py:248`). Otherwise no trace or claim exists and the row reads `UNRESOLVED` ("comparator
   revenue not positive or its uncertainty reaches zero"), so `run_traces.py:349-350` cannot abort the
   report. Several mapped interpretations of a key still raise (`_Binder.filed`): that one is structural.
+- **P12, prepare before the first write (r4, F1).** `prepare` is pure and does every check a mapping or pool can
+  fail: the statement join, first-use windows, link presence (P13), episode construction and the pin superset. The
+  CLI calls it first in `before_commit`, after the head check and before `bind_computed` stores a trace or `_admit`
+  selects a fact, then runs `admit` on its statement blobs and carried-actual blobs. `bind_credibility` and `build`
+  take its `Prepared` result and repeat none of it.
+  - **Guaranteed zero on every table:** `preflight`, `check_pins`, `check_head`, the rework gate, `prepare`, `admit`.
+  - **Late:** the under-lock identity and digest checks, `_Binder.filed`'s structural raise, and `AS_KNOWN`
+    validation. The version rolls back, but traces and facts already committed in their own transactions stay
+    (`evidence/repository.py:636`). These occur only through a concurrent head change or a store fault, not a
+    mapping fault, and the run reports them as refusals with no such guarantee.
+- **P13, a link resolves through the pool (r4, F3).** Episode identity depends on every entry on `chain(entry)`.
+  Each entry on a statement's chain must name a triple present in the pool, checked on every `prepare`, else
+  `RunDraftError`. So every entry that decides a recorded root is itself a recorded, pinned statement, and no
+  second pin mechanism exists. A link to a pre-chain statement is refused; the author drops the `same_as`, and D2
+  already discloses earlier promises as absent.
+- **P14, a reviewed reading (r4, F4).** Each entry has `reading`: `COMMITMENT` (management states or restates a
+  target) or `DESCRIPTIVE` (the quote describes performance or anything else short of a promise). It is judged from
+  the quote's transcript context, is in the digest, and is what source review can reject. A `DESCRIPTIVE` entry
+  keeps its quote and record line as evidence, in its own episode `<metric>.<scope>.DESCRIPTIVE.<entry id>`, whatever
+  its window. Its event is `DESCRIBED`, its outcome `UNRESOLVED` (`REASON_DESCRIPTIVE`, alone: P6's other reasons
+  concern a promise). It binds no actual, computes no revision, and may neither link nor be linked.
 
 Considered and cut, for "could this be half?": a stored digest (C-4); a separate episode table or a
 version-id reference per statement (P2); parsing events back (P1); an `Interim` model (P7); segment
@@ -199,7 +229,9 @@ actuals (C-3); a CLI to author entries (a scratch seed script does it); slug val
 per-metric definition registry (`definition` is a plain string, compared for equality). r3: a displayed
 fraction (a claim value is a `Decimal`, and a ratio of two long integers helps no reader; the trace holds it);
 a stored and an exact claim per actual (one exact claim suffices); a truncating `Rounding` member (needs a
-migration, changes nothing at six places); a new display style or scan rule.
+migration, changes nothing at six places); a new display style or scan rule. r4: pinning the link chain in the
+record (P13 needs one membership check and no grammar change); a separate eligibility table or a model verdict
+on context (one reviewed field, P14); a mapping validator in the writer (P12).
 
 ## File map
 
@@ -218,16 +250,17 @@ migration, changes nothing at six places); a new display style or scan rule.
 | `tests/fundamentals/test_credibility.py` | create | Pure: windows, entries, events, outcomes, carry, pins, correction, section text |
 | `tests/fundamentals/test_credibility_binding.py` | create | Pilot: `check_credibility`, actuals on retained filings, a carried actual, the rework route |
 | `tests/fundamentals/test_pilot_e2e.py` | modify | PILOT-4: quote route admits the section; calls `check_credibility` |
-| `tests/fundamentals/test_report_export_gaps.py` | modify | `:42` follows the new `NOT_DONE` line |
+| `tests/fundamentals/test_report_export_gaps.py` | modify | `:42` follows the new `NOT_DONE` line. r4 (F6): the assertion at `:88-94` stays as it is and binds the new section |
 | `tests/fundamentals/test_prep5_rework.py` | modify | r2 (R11): `test_a_relabelled_guidance_rework_changes_only_its_claim` admits the regenerated episode copies |
 
-r3 estimate: about **555 production lines** (`guidance_targets.py` ≈ 135, `credibility.py` ≈ 355, wiring
-≈ 65), still inside the spec's 400–600, up from r2's 530: the cycle check adds about 5 and the exact display
-path about 20. About **590 test lines** (`test_credibility.py` ≈ 360, `test_credibility_binding.py` ≈ 205,
-edits ≈ 25), **over the spec's 300–400**, up from r2's 560. r3 (ruling): the overrun is justified, since the
-spec gives an estimate, not a ceiling. Keep the distinct adverse scenarios; parametrize window variants,
-invalid-entry cases and comparator-domain cases where setup is shared; do not remove coverage merely to reach
-400 lines. Expected sizes: `test_pilot_e2e.py` ≈ 680 (676), `test_prep5_rework.py` ≈ 765 (754), every new file
+r4 estimate: about **600 production lines** (`guidance_targets.py` ≈ 140, `credibility.py` ≈ 390, wiring
+≈ 70), at the top of the spec's 400–600, up from r3's 555: `prepare` about 20 net, the source search about 10,
+`reading` about 8, target windows about 5, link presence about 2; the shared walk and `_scaled` save about 2 each.
+F6 and F7 add none (F7 is scratch). About **685 test lines** (`test_credibility.py` ≈ 405,
+`test_credibility_binding.py` ≈ 255, edits ≈ 25), **over the spec's 300–400**, up from r3's 590. r3 (ruling): the
+overrun is justified, since the spec gives an estimate, not a ceiling. r4: keep each distinct adverse assertion, and
+parametrize only shared setup (window variants, invalid-entry cases, comparator-domain cases, the F1 refusal cases);
+do not remove coverage merely to reach 400 lines. Expected sizes: `test_pilot_e2e.py` ≈ 680 (676), `test_prep5_rework.py` ≈ 765 (754), every new file
 under 500; each ≤ 800.
 
 ## Test-first order, gate and sealing
@@ -267,8 +300,8 @@ under 500; each ≤ 800.
 Goal:
 - `config/guidance_targets/<symbol>.yaml` loads into frozen `Targets`. A missing file gives empty
   targets, so every row reads "window not mapped". A structural fault raises `RunDraftError`:
-  - duplicate id, or an id outside `[A-Za-z0-9_-]+`; an unknown window form; `window_text` not a
-    substring of `quote`;
+  - duplicate id, or an id outside `[A-Za-z0-9_-]+`; an unknown window form or r4 (F4) `reading`; `window_text` not
+    a substring of `quote`;
   - r2 (R3): more than one live entry for one `(claim_key, source_sha256, anchor)`;
   - `supersedes` naming an unknown id or an entry with a different `(claim_key, source_sha256, anchor)`
     or `quote`; two successors of one entry; a cycle;
@@ -278,13 +311,14 @@ Goal:
     from the two `claim_key`s; `FY<yy>` windows must also be equal.
   - r3 (R3): a cycle in the resolved graph, a self-link included. File order cannot exclude one: `A`; `B`
     `same_as: A`; `A2` `supersedes: A`, `same_as: B` has only backward references, yet resolves to
-    `B → A2 → B`. At load, from each entry, walk: entry → live successor → `same_as` → its live successor,
-    refusing on a revisited entry. So `root` always terminates.
+    `B → A2 → B`. r4: one walk, `chain(entry)`: entry → live successor → `same_as` → its live successor, refusing
+    on a revisited entry. Load calls it for each entry and `root` is its last element, so `root` always terminates.
+  - r4 (F4): a `same_as` whose linking entry or resolved target is `DESCRIPTIVE`.
 - r2 (R8): the digest is computed at load: SHA-256 of the UTF-8 bytes of `json.dumps({…},
   sort_keys=True, ensure_ascii=False, separators=(",", ":"))` over exactly `id, claim_key,
-  source_sha256, anchor, quote, window_text, window, definition, same_as, supersedes`, an absent option
+  source_sha256, anchor, quote, window_text, window, reading, definition, same_as, supersedes`, an absent option
   as `null`. No other field joins without changing every pin, so the list is a constant.
-- r2 (R3): at join time (Task 2) an entry's `quote` must equal the joined claim's `citation.quote`, else
+- r2 (R3), r4 (F1): at join time (`prepare`, Task 2) an entry's `quote` must equal the joined claim's `citation.quote`, else
   `RunDraftError`. With the claim check's `resolved.quote_text == citation.quote`
   (`claim_check.py:117`), that gives the chain: `window_text` ⊂ entry quote = claim quote = retained span.
 - `live(key, blob, anchor)` returns the entry that is not superseded; `same_as` naming a superseded
@@ -302,11 +336,12 @@ Interfaces:
   - `GUIDANCE_KEY`, moved here from `run_draft.py:102`, which imports it: an episode copy's ledger
     key is rebuilt from its metric, horizon and scope, and `credibility.py` cannot import `run_draft`.
   - `WINDOW_MULTI_YEAR = "MULTI_YEAR"`, `WINDOW_AMBIGUOUS = "AMBIGUOUS"`.
+  - r4 (F4): `Reading(StrEnum)`: `COMMITMENT, DESCRIPTIVE`.
   - `TargetEntry` (frozen): `id, claim_key, source_sha256, anchor, quote, window_text, window,
-    definition: str`, `same_as, supersedes: str | None`, and property `digest -> str`.
+    definition: str`, `reading: Reading`, `same_as, supersedes: str | None`, and property `digest -> str`.
   - `Targets` (frozen) with `entries: Mapping[str, TargetEntry]`, `live(claim_key, sha, anchor) ->
-    TargetEntry | None`, `root(entry) -> TargetEntry` (follows `same_as` through live successors)
-    and `successor(entry_id) -> TargetEntry | None`.
+    TargetEntry | None`, r4 `chain(entry) -> tuple[TargetEntry, ...]` (P13), `root(entry) -> TargetEntry` (its last
+    element) and `successor(entry_id) -> TargetEntry | None`.
   - `load_targets(symbol: str, root: Path = ROOT) -> Targets`.
   - `derive_window(text: str, filed_at: datetime | None, stated_end: date, month: int) -> str`.
   - `check_pins(targets: Targets, pins: Mapping[str, str]) -> None`.
@@ -320,7 +355,8 @@ passes. Cases: A3, A4, A6, A10, A13's missing entry, and each structural fault (
 r2 (R3): two live entries on one triple; a successor of another statement; a successor with another
 quote; a later `same_as`; a `same_as` to another metric or scope; a `same_as` incompatible only after
 successor resolution. r3 (R3): the three-entry `A`, `B`, `A2` cycle above; `A2` `supersedes: A`, `same_as: A`,
-a self-link only after resolution; the same chain without the cycle still loads. r2 (R7): explicit-year, relative-year, undated, truncated ("year on") and recurring
+a self-link only after resolution; the same chain without the cycle still loads. r4 (F4): a `same_as` from and to a
+`DESCRIPTIVE` entry, including one that becomes so only after successor resolution. r2 (R7): explicit-year, relative-year, undated, truncated ("year on") and recurring
 year-on-year, and "a year ago". r2 (R8): one literal digest computed once by an independent scratch
 `hashlib` call pins the preimage, and changing any listed field changes it.
 
@@ -333,10 +369,10 @@ Risks: low. A wrong `derive_window` branch misdates a promise; the A6 cases pin 
 ### Task 2: Events, outcomes, episode build and the section (pure)
 
 Goal: given the run's stated guidance claims, the previous-quarter and same-period records, targets,
-actuals and the run's period, the module builds each episode and renders the section exactly as spec §3
-and "Report disclosures" below.
+actuals and the run's period, the module prepares (P12) and builds each episode and renders the section exactly
+as spec §3 and "Report disclosures" below.
 - **Episode id** `<metric>.<scope>.<window key>`. The window key is the `FY<yy>` label, else
-  `<class>.<root entry id>`. r2 (R4): an unmapped statement is `UNMAPPED.<blob prefix>.<anchor>`, so it is
+  `<class>.<root entry id>`; r4 (F4) a `DESCRIPTIVE` entry's is always `DESCRIPTIVE.<entry id>` (P14). r2 (R4): an unmapped statement is `UNMAPPED.<blob prefix>.<anchor>`, so it is
   retained until mapped; that key appears only inside placeholders, whose digits the scan removes. Claims
   are `episode.<id>.original`, `.latest` and, r2 (R2), `.stated.<entry id>` for each statement between
   them, copies of the guidance claim with `claim_key` and `section_key` changed and everything else kept.
@@ -344,7 +380,7 @@ and "Report disclosures" below.
   new to the pool has this run's period. A live entry not yet pinned is validated once (C-7, against the
   statement's originating `stated_end`), then pinned. So a post-year-end Q4 statement unmapped in the Q4
   run and first mapped in Q1 stays `AMBIGUOUS` under its Q4 period (R4). An event is computed for each
-  consecutive pair on every build (R2).
+  consecutive pair on every build (R2). r4 (F3): every entry on a statement's `chain` names a pool triple (P13).
 - **Record (P2, r2, R8).** Under each row, one line per statement, fully matching:
   ```
     - statement (<entry id> sha256 <64 hex>|unmapped) stated <FY<yy>_Q<n>> ended <YYYY-MM-DD>: <EVENT>[ (<reason>)] {{c:<key>|ref}}[ {{c:<key>|ref}}]
@@ -364,7 +400,7 @@ and "Report disclosures" below.
     version lacks. That catches an omitted statement, and a future format change, which must add a new
     header and parser rather than edit this one.
 
-  `build` also refuses if its own record's pins are not a superset of the input pins, so a dropped retired
+  r4 (F1): `prepare` refuses if its record's pins are not a superset of the input pins, so a dropped retired
   line cannot be written.
 - **Events** follow the spec's three steps. Comparability first: metric, scope, unit, currency,
   constant-currency and `definition` must be equal, else `REVISED` ("basis changed"). Then the
@@ -391,35 +427,44 @@ Interfaces:
 - Consumes: Task 1; `_slot`, `refs` (`import_mapping`); `CREDIBILITY` (`falsifier_status`); `PERCENT`
   (`claim_check`); `NumericClaim`.
 - Produces:
-  - `EventKind(StrEnum)`: `OPENED, REVISED_UP, REVISED_DOWN, REVISED, REAFFIRMED, UNRESOLVED`.
+  - `EventKind(StrEnum)`: `OPENED, REVISED_UP, REVISED_DOWN, REVISED, REAFFIRMED, UNRESOLVED`, r4 `DESCRIBED`.
     `Event` (frozen): `kind`, `reason: str | None`.
   - `Outcome(StrEnum)`: `ACHIEVED, MISSED, ON_TRACK, BEHIND, UNRESOLVED`.
   - `Better(StrEnum)`: `HIGHER, LOWER`.
-  - r2 (Sol note): `INTERIM_RULE_LABEL`, no model. The two windows are one fixed rule: fiscal start to the
-    run's period end, and the same fiscal months a year earlier (February 29 has no comparator, so
-    `UNRESOLVED`). The year-to-date value is compared directly.
+  - r2 (Sol note), r4 (F2): `INTERIM_RULE_LABEL`, no model. The two windows are one fixed rule: the **target
+    year's** start to the run's period end, and the same fiscal months a year earlier (February 29 has no
+    comparator, so `UNRESOLVED`). The year-to-date value is compared directly.
+  - r4 (F2): `WindowState(StrEnum)`: `NOT_STARTED, OPEN, ENDED`; `window_state(label, period_end, month) ->
+    WindowState`, the one reading of P7's boundaries.
   - `Actual` (frozen): `numerator: str, better: Better, unit: str, currency: str | None,
     definition: str, interim: bool`. Its key is `ACTUAL_KEY =
     "cred.{metric}.{scope}.{window}"`; the interim value is `<that>.ytd`.
   - `ACTUALS: Mapping[tuple[str, str], Actual]` (P7).
   - `revision(before: Statement, after: Statement, better: Better | None) -> Event`.
   - `compare(statement: Statement, exact: Fraction, better: Better) -> bool` (P4).
-  - `assess(statement, window, actual_entry, ended, exact, ytd, reason) -> tuple[Outcome, str | None]`,
-    where `reason` is P11's.
+  - `assess(statement, window, actual_entry, state: WindowState, exact, ytd, reason) -> tuple[Outcome, str |
+    None]`, where `reason` is P11's or F5's.
   - `Statement` (frozen): `claim: NumericClaim`, `entry: TargetEntry`.
+  - r4 (F1): `Prepared` (frozen): `statements` (each with its episode id, event inputs and, once validated, its
+    entry), `corrections`, `pins: Mapping[str, str]`, `windows: Mapping[tuple[str, str, str], WindowState]` ((metric, scope, `FY<yy>`) of
+    live `COMMITMENT` entries whose state is not `NOT_STARTED`), `blobs: frozenset[str]`, `period`, `period_end`,
+    `month`.
   - `Built` (frozen): `claims: tuple[NumericClaim, ...]`, `body: str`.
   - `Recorded` (frozen): `claims: tuple[NumericClaim, ...]`, `stated: str`, `stated_end: date`,
     `entry_id, digest: str | None`.
   - `Record` (frozen): `statements: tuple[Recorded, ...] = ()`, `retired: Mapping[str, str] = {}`, property
     `pins -> dict[str, str]`.
   - `read_record(body: str | None, claims: Sequence[NumericClaim]) -> Record`.
-  - `build(stated_claims, record, same_period, targets, *, actuals, exact, unavailable, registry=ACTUALS,
-    period, period_end, month, filed_at) -> Built`, where `filed_at: Mapping[str, datetime]`,
-    `exact: Mapping[str, Fraction]`, `unavailable: Mapping[str, str]`.
+  - r4 (F1): `prepare(stated_claims, record, same_period, targets, *, period, period_end, month, filed_at,
+    actual_blobs) -> Prepared`, where `filed_at: Mapping[str, datetime]`.
+  - `build(prepared, *, actuals, exact, unavailable, registry=ACTUALS) -> Built`, where `exact: Mapping[str,
+    Fraction]`, `unavailable: Mapping[str, str]`.
 
 Approach: table-free functions; one row renderer. Each row carries `{{e:observed}}` for the quotes,
-`{{e:computed}}` for events and actuals, `{{e:inferred}}` for interim. `.latest` shows only its ref
-when it is the same location as `.original`. r3 (R5): a row's actual is the `cred.*` claim's digits, its
+`{{e:computed}}` for events and actuals, `{{e:inferred}}` for interim. r4 (F6), one contract: **a line that shows
+a claim references exactly the claims it shows** (`test_report_export_gaps.py:88-94`, unweakened). A one-statement
+row shows and references `.original` only; its `.latest` is the same statement, so its one reference is the
+ref-only record line (P2), which shows nothing. A row with two statements shows and references both. r3 (R5): a row's actual is the `cred.*` claim's digits, its
 `ACTUAL_WHOLE` or `ACTUAL_CUT` phrase and its trace `ref` (P4). Rows render the metric id, never
 `metric_label`.
 
@@ -440,8 +485,21 @@ a red-proof target. Named cases:
   same-horizon rules refusing through `_Body.add`. This is episode-level proof only (C-8).
 - (f) A7's episode separation, through an injected registry; neither scope's `.latest` touches the other.
   Binding proof is Task 3 (R9).
-- (g) A8; (h) A9; (i) A10; (j) A11, full correction path over two builds; (k) A12, including the
+- (g) A8, synthetic: r4 (F4) Apar no longer proves it; (h) A9; (i) A10; (j) A11, full correction path over two builds; (k) A12, including the
   side-by-side downward revision and a missing comparator; (l) A13; (m) A14.
+- r4 (F2): (m2) a statement in an FY26 period targeting FY27, on a registered metric, whose FY26 year-to-date value
+  would meet the bound (and, parametrized, miss it): `UNRESOLVED` ("not due: target year not started"), never
+  `ON_TRACK` or `BEHIND`, no `.ytd`. The same statement in FY27's first quarter reads FY27's months against the same
+  months a year earlier. Boundaries: the period end on the target's last day is `ENDED`, on its first quarter's end
+  `OPEN`.
+- r4 (F3): (j5) an entry `B` whose `same_as` target `A` has no pool statement, with `B` recorded and unchanged,
+  parametrized on `A` unedited, edited and superseded: each `prepare` refuses; `A` deleted refuses at load. With
+  `A` in the pool, editing or deleting `A` refuses through `check_pins`, and superseding it renders the correction.
+- r4 (F4): (j6) a `DESCRIPTIVE` entry, including one declaring `FY26`: its own episode, `DESCRIBED`, `UNRESOLVED`
+  with only `REASON_DESCRIPTIVE`, no event against a same-metric statement, no due window. A `supersedes` correction
+  from `COMMITMENT` to `DESCRIPTIVE` moves the quote through the correction path and shows both readings.
+- r4 (F1): (j7) `prepare` refuses a new entry with a different quote and a declared window failing first use.
+- r4 (F6): (n2) every line of a one- and a two-statement episode's body satisfies the reference contract.
 - r2 (R2): (j2) A → B → C with B corrected into another episode: B keeps its full contract and citation,
   A → C is recomputed, and the earlier body is unchanged. (j3) A definition-only correction turns a
   directional event into `REVISED` ("basis changed"), with a correction line.
@@ -455,7 +513,7 @@ a red-proof target. Named cases:
 - (n) `scan_section` on rendered bodies of all statuses returns no state.
 - (o) every disclosure constant is in the body.
 
-Test seams: `revision`, `assess`, `build`. Pure, no I/O.
+Test seams: `revision`, `assess`, `prepare`, `build`. Pure, no I/O.
 
 Dependencies: Task 1.
 
@@ -474,7 +532,8 @@ Goal:
   the repository. r3 (R5): the claim holds its `truncate_value` digits under `EXACT_DIGITS`, and the check
   resolves them from the trace's `exact_value` (P4). r2 (R6): an ineligible comparator gives P11's reason,
   not a claim.
-- A used entry that changed refuses before the run's first write, and no version persists.
+- A used entry that changed, or r4 (F1) a new entry failing `prepare`, refuses before the run's first write:
+  every table unchanged.
 - A rejected `episode.*` or `cred.*` claim refuses with P10's route.
 
 Files:
@@ -491,10 +550,12 @@ Interfaces:
 - Consumes: Tasks 1, 2; `_Binder.filed/evaluate/store`, `CHANGE_PCT`, `cite`, `_valued`,
   `_fiscal_month`; `_OPERAND_BLOBS`.
 - Produces:
-  - `CredibilityInputs` (frozen): `targets: Targets`, `actuals: tuple[NumericClaim, ...]`,
-    `exact: Mapping[str, Fraction]`, `unavailable: Mapping[str, str]`, `fiscal_year_end_month: int`.
-  - `bind_credibility(repo, update, targets, prior_actuals, shas, *, entity_id, versions,
-    fiscal_year_end_month, registry=ACTUALS) -> CredibilityInputs`.
+  - `CredibilityInputs` (frozen): r4 (F1) `prepared: Prepared`, `actuals: tuple[NumericClaim, ...]`,
+    `exact: Mapping[str, Fraction]`, `unavailable: Mapping[str, str]`.
+  - r4: `stated_claims(cursor, guidance, update, prior, catalog) -> tuple[NumericClaim, ...]` (`run_draft.py`), the
+    run's `_quote`d claims with a rework's carried form. `_guidance` is unchanged.
+  - `bind_credibility(repo, update, prepared, prior_actuals, *, entity_id, versions, registry=ACTUALS) ->
+    CredibilityInputs`.
   - `RunDraft.credibility: CredibilityInputs`.
   - r3 (R5): `truncate_value(value: Fraction, places: int) -> Decimal` (`canon/interval.py`);
     `EXACT_DIGITS = "exact_digits"` (`display.py`); `EXACT_PLACES = 6`, `ACTUAL_WHOLE`, `ACTUAL_CUT`
@@ -510,14 +571,20 @@ Approach:
   `actuals` its `cred.*` claims without `.ytd`; `actual_blobs` from `_OPERAND_BLOBS` over their traces.
 - **`allowed_captures`** adds `episodes`' blobs and `actual_blobs`.
 - **`write_run_draft`.** r2 (R1): under lock, `current` must equal `prior.same_period_id` with the same
-  sealed digest, else `RunDraftError`, beside the existing previous-quarter check. Build from the claims
-  `run.guidance` stated (`_guidance`'s first `len(run.guidance)`, a rework's carried form included) and
-  both records, add `Built.claims` and the used actuals to `claims` before `_check_sources`, append the
-  section after `probe_section`. `filed_at` is `run.retrospective.published`, or empty on an ordinary run.
-- **`bind_credibility`.** Windows due: live `FY<yy>` entries of registered metrics whose blob is in
-  `shas` (the run's transcript plus prior episodes' blobs, so no later transcript's window computes
-  early). Sources: the run's own XBRL, then the YoY comparator's, as `bind_probe` reads them.
-  Missing either window leaves no claim, and the row reads as spec §3.
+  sealed digest, else `RunDraftError`, beside the existing previous-quarter check. r4 (F1): `build` from
+  `run.credibility.prepared`, add `Built.claims` and the used actuals to `claims` before `_check_sources`, append
+  the section after `probe_section`.
+- **`before_commit`, r4 (F1, P12).** First, in one read-only cursor: the head check, then
+  `prepare(stated_claims(…), prior.record, prior.same_period_record, targets, …, actual_blobs=prior.actual_blobs)`,
+  then `admit(update, prepared.blobs)`. `filed_at` is `retrospective.published`, or empty on an ordinary run. Only then
+  `bind_computed`, `bind_probe`, `bind_credibility` and `_admit`.
+- **`bind_credibility`.** r4 (F1, F2): windows due are `prepared.windows` of registered metrics: a pool statement's
+  entry, so no later transcript's window computes early, and never `NOT_STARTED`. r4 (F5): sources are **every
+  admitted XBRL** in the fixed order own, QoQ, YoY, as `bind_probe` reads them (`risk_probe.py:471-478`; admitted at
+  `cli.py:343-347`). Each required operand is sought separately through `_Binder.filed` in every source: no source
+  has it, so no claim and the row reads as spec §3 (ended: "actual not yet filed"); every value found equal, so the
+  first in order is used; values differing, so no claim, no trace and `UNRESOLVED` ("filed value differs across
+  admitted captures").
   r2 (R9): `measurement_key` hard-codes `Basis.CONSOLIDATED` (`import_mapping.py:372-385`), so operand and
   output keys take `.model_copy(update={"basis": Basis(scope.upper()), "period": …})`. `_Binder.filed`
   matches on `key.digest()`, which includes basis, so scope selects the operand and stays on the output.
@@ -526,28 +593,33 @@ Approach:
   code-computed outcomes; no model explanation, trend or thesis consequence".
 - **Apar file.** A scratch seed reads quote, blob and anchor from the S1 export's `ref` and quote
   text (`scratchpad/research3-s1/task6/live/export/APARINDS`). The implementer adds only `id`,
-  `window_text`, `window`, `definition` and `same_as`, after reading each quote's transcript
+  `window_text`, `window`, r4 (F4) `reading`, `definition` and `same_as`, after reading each quote's transcript
   context. **Provisional predictions from the rule patterns (r2, R7 revisited them):**
 
-  | Entry id | Quote from | Window (reason) | `same_as` | Definition |
-  |---|---|---|---|---|
-  | `conductor-ebitda-FY26_Q2` | FY26_Q2 | `AMBIGUOUS` (no year) | | `conductor_ebitda_per_mt` |
-  | `cables-growth-FY26_Q2` | FY26_Q2 | `AMBIGUOUS` (undated "year on") | | `cables_revenue_growth` |
-  | `cables-growth-FY26_Q3` | FY26_Q3 | `MULTI_YEAR` (CAGR) | | `cables_revenue_cagr` |
-  | `cables-margin-FY26_Q3` | FY26_Q3 | `AMBIGUOUS` (no year) | | `cables_ebitda_margin` |
-  | `conductor-ebitda-FY26_Q4` | FY26_Q4 | `AMBIGUOUS` (no year) | `conductor-ebitda-FY26_Q2` | `conductor_ebitda_per_mt` |
-  | `conductor-volume-FY26_Q4` | FY26_Q4 | `AMBIGUOUS` (undated "year-on-year") | | `conductor_volume_growth` |
-  | `cables-growth-FY26_Q4` | FY26_Q4 | `MULTI_YEAR` ("a year") | `cables-growth-FY26_Q3` | `cables_revenue_growth` |
-  | `cables-margin-FY27_Q1` | FY27_Q1 | `AMBIGUOUS` (no year) | `cables-margin-FY26_Q3` | `cables_ebitda_margin` |
+  | Entry id | Quote from (PDF page) | Reading | Window (reason) | `same_as` | Definition |
+  |---|---|---|---|---|---|
+  | `conductor-ebitda-FY26_Q2` | FY26_Q2 (12) | `COMMITMENT` | `AMBIGUOUS` (no year) | | `conductor_ebitda_per_mt` |
+  | `cables-growth-FY26_Q2` | FY26_Q2 (20) | `COMMITMENT` | `AMBIGUOUS` (undated "year on") | | `cables_revenue_growth` |
+  | `cables-growth-FY26_Q3` | FY26_Q3 (14) | `DESCRIPTIVE` | `MULTI_YEAR` (CAGR) | | `cables_revenue_cagr` |
+  | `cables-margin-FY26_Q3` | FY26_Q3 (30) | `COMMITMENT` | `AMBIGUOUS` (no year) | | `cables_ebitda_margin` |
+  | `conductor-ebitda-FY26_Q4` | FY26_Q4 (9) | `COMMITMENT` | `AMBIGUOUS` (no year) | `conductor-ebitda-FY26_Q2` | `conductor_ebitda_per_mt` |
+  | `conductor-volume-FY26_Q4` | FY26_Q4 (16) | `COMMITMENT` | `AMBIGUOUS` (undated "year-on-year") | | `conductor_volume_growth` |
+  | `cables-growth-FY26_Q4` | FY26_Q4 (16) | `COMMITMENT` | `MULTI_YEAR` ("a year") | | `cables_revenue_growth` |
+  | `cables-margin-FY27_Q1` | FY27_Q1 (8) | `COMMITMENT` | `AMBIGUOUS` (no year) | `cables-margin-FY26_Q3` | `cables_ebitda_margin` |
 
   A no-year entry's `window_text` is its whole quote, the strictest input to P3. The FY26_Q2 cables quote
   is `AMBIGUOUS`, so r1's link from the CAGR quote fails the window-class check (R3) and that quote opens
-  its own episode. The FY26_Q4 "a year" quote links the CAGR quote; each has its own definition, so its
-  event reads `REVISED` ("basis changed"), not a numeric direction. Conductor and margin carry the numeric
-  events. No episode reaches three statements, so Apar holds no `.stated.*` claim.
-- **Freeze before rehearsal (r2, Sol ruling).** The table, `E` and the delta table are planning inputs only.
-  After the implementer's transcript reading, Sol's phase-end review judges each entry and link against
-  the source. The orchestrator then commits the approved entries, windows, links, event and reason literals
+  its own episode. r4 (F4), from reading the retained pages: the FY26_Q3 quote is management's answer on progress
+  against an existing program, so it is `DESCRIPTIVE`. The FY26_Q4 quote looks forward, but page 16 ties it to what the
+  program needed at launch, not to a change from the Q3 quote, so r3's link and its "basis changed" event are removed.
+  It cannot link the FY26_Q2 quote either, since the window classes differ (R3); those two rows stand side by side
+  with no event. Conductor and margin carry the numeric events; FY27_Q1 restates standing guidance while explaining
+  the quarter, the weakest `COMMITMENT` reading, and Sol's review must rule on it. No episode reaches three
+  statements, so Apar holds no `.stated.*` claim.
+- **Freeze before rehearsal (r2, Sol ruling; r4, F4).** The table, `E` and the delta table are planning inputs only.
+  After the implementer's transcript reading, Sol's phase-end review judges each entry's **reading**, window, definition
+  and link against the source, by page and section, and rejects any link or commitment the context does not
+  support. The orchestrator then commits the approved entries, readings, windows, links, event and reason literals
   and recomputed deltas to this plan as **frozen expectations**, naming Sol's verdict and date. Task 4 does
   not start before that commit. An observed rehearsal delta or row that differs is a deviation; it never
   replaces a frozen value. Changing one needs a recorded reason and a fresh Sol round.
@@ -568,6 +640,20 @@ passes (compose postgres plus retained originals). Named tests in `test_credibil
 - `test_a_carried_actual_keeps_its_citation_and_captures`: the next run's `cred.*` is the prior's
   citation, its blobs admitted; an unadmitted one refuses "captures not in the run's package".
 - `test_a_changed_entry_refuses_before_any_write`: parametrized edit and delete; counts unchanged.
+- r4 (F1) `test_a_new_invalid_entry_refuses_before_upstream_writes`, through `pilot.run` on FY26_Q2 on a database
+  where it has not run, so upstream work has records to add. Parametrized on a new entry whose quote differs from the
+  joined claim, a declared window failing first use, and a link to an absent statement: each refuses with every
+  table's count unchanged. Then the same run with a valid file succeeds and `calculation_traces` **and** the admitted
+  facts strictly increase, which proves the refused run had new writes to make. A fourth case has a prior episode's
+  capture fail `check_blobs` (for example published after the run's cutoff); its fixture is settled in the tests round,
+  before red sealing, and must not mock the call order.
+- r4 (F5) `test_an_ended_target_reads_its_operands_from_the_qoq_capture`, same synthetic fixture as R9: an FY26 target
+  first mapped in the FY27_Q1 run, with both annual operands seeded only on that run's QoQ capture and no carried
+  actual: a `cred.*` claim whose operands name that capture, `MATCH`, not "actual not yet filed". Parametrized: the
+  same operand on own and QoQ with one value uses own; with differing values gives no trace and the disagreement
+  reason; on no capture gives "actual not yet filed". Sol did not reproduce a stored case; this fixture is the proof.
+- r4 (F2) `test_a_future_target_binds_no_interim_actual`, same fixture: FY27 target at an FY26 run with year-to-date
+  operands present: no `.ytd`, no trace added, the "not due" row.
 - `test_a_rejected_episode_claim_routes_to_a_mapping_correction`: the ordinary run refuses naming the route
   with zero writes, **even after** a `supersedes` entry is appended; `--full-successor` then writes a draft
   carrying the correction line.
@@ -645,7 +731,7 @@ source of episode carry.
 r3: gate (d) always compares with `$S1`, gate (d2) with `$SAME` when `$SAME` is not `$S1`, gate (e) with `$PREV`.
 
 **Paths.** `OUT=scratchpad/research3-s2/task4/$ENV`, `ENV` = `rehearsal` or `live`, holding `out/`,
-`responses/`, `verdicts/`, `gate/`, `counts/`, `logs/`, `export/` at close. No path is shared with S1
+`responses/`, `verdicts/`, `gate/`, `counts/`, `logs/`, `rulings/`, `export/` at close. No path is shared with S1
 or between environments. Preflight before each environment's first write: `$OUT` does not exist,
 and is then created `mkdir -m 700`; for each quarter no output exists and `$LOC/<Q>.json` and
 `$INTAKE` are readable. Any failure stops before any write. Attempt `<n>` of a recovery uses
@@ -659,8 +745,8 @@ maximum is two statements, so `2E`.
 |---|---|---|---|
 | FY26_Q2 | 2 | +1, +11, +91 (S1 87 + 2E) | states +91 |
 | FY26_Q3 | 4 | +1, +11, +86 (S1 78 + 2E) | states +86 |
-| FY26_Q4 | 5 | +1, +11, +99 (S1 89 + 2E) | states +99 |
-| FY27_Q1 | 5 | +1, +11, +89 (S1 79 + 2E) | states +89 |
+| FY26_Q4 | 6 | +1, +11, +101 (S1 89 + 2E) | states +101 |
+| FY27_Q1 | 6 | +1, +11, +91 (S1 79 + 2E) | states +91 |
 
 `calculation_traces` and `calculation_trace_operands` +0 on each run (F-8). `check`: `validations`
 +1. `submit`: `decisions` +1. `export`: none. `panel`: `decisions` +1, `panel_reviews` +1,
@@ -670,13 +756,16 @@ r2 (R13), recovery writes, rehearsal only:
 
 | Step | Delta |
 |---|---|
+| r4 (F7): the correction drill's `run --full-successor` on FY27_Q1 | the quarter's `run` row, same claim count |
 | `ledger decide … REQUEST_CHANGES --claim <key>` | `decisions` +1 |
 | The refused ordinary `run` | every table 0 |
 | Appending a mapping correction, when one is needed | every table 0 (a file change, committed) |
 | `run --full-successor` | the quarter's `run` row, same claim count |
 | Its `check`, `submit`, `panel` | as above |
 
-Any other refusal in Task 4 is also 0 on every table. In the rehearsal, a delta differing from these tables
+r4 (F1): any other Task 4 refusal from P12's guaranteed-zero list is 0 on every table. A late refusal (P12) rolls
+back its version but may leave traces and facts: stop, record the measured delta, and explain it. It is never expected,
+never retried blindly, and a live one is a deviation. In the rehearsal, a delta differing from these tables
 is a deviation to explain before live. Then each live step must equal its rehearsal step's delta; the
 recovery steps have no live counterpart.
 
@@ -701,6 +790,14 @@ Approach:
         exercise before any live work; a failure is a deviation that stops the rehearsal.
 
      The remaining quarters continue from `<v2>`.
+   - **Correction drill, r4 (F7), on FY27_Q1, the last quarter, so nothing depends on it.** After its normal `run`,
+     `check`, gates and `submit`: `REQUEST_CHANGES --claim <an episode key>`; then copy `src` to `$OUT/drill-src` and
+     change one disclosure sentence there, a real S2 wording correction, never committed and never on a live path;
+     write its delta file (below); `PYTHONPATH=$OUT/drill-src run --full-successor` writes `<v2>`. Before submit, the
+     gate must **fail** with an empty delta, and with a delta naming `risk_probe`, and **pass** with the true one. Then
+     `submit`, `export`, response, verdict, `panel` → `APPROVED`. An unaffected section or claim moving is a deviation.
+     Apar has no `cred.*` claim, so the delta's `cred.*` branch is not exercised live; `cred_gate.py` is run on a
+     scratch pair of `model_dump()`s to prove that branch.
    - **Rehearsal health, r2 (R13).** `db check-live` refuses an `eqos_test_*` database by design
      (`db_cli.py:136-137`), so it is not a rehearsal step. After each rehearsal write the checks are the counts
      delta, `ledger check`'s states and the gates; `digests.py` runs at the rehearsal's close. `db check-live`
@@ -723,12 +820,15 @@ Approach:
        measurement key and citation included. **The citation exception list is empty.** If the rehearsal
        shows a citation id moved, that is a deviation: one named id field may be excused only where its
        record has the same key digest, file and value, with the reason in the bead and Sol's review;
-     - (d2) r3 (R12), **the recovery changed nothing else**, against `$SAME`, only when `$SAME` is not `$S1`.
-       Section keys are equal, in order. Every section except `heading` is byte-identical, and `heading` names
-       `$SAME` as the full successor's head (`run_draft.py:706`). Every claim's `model_dump()` is equal, with
-       the same key set. If a `supersedes` entry was appended for this recovery, `management_credibility` and
-       `episode.*` claims may differ, only as its correction line names and as (c), (e) and (f) hold against
-       freshly frozen expectations (Task 3);
+     - (d2) r3 (R12), r4 (F7), **the recovery changed only what its delta names**, against `$SAME`, only when `$SAME`
+       is not `$S1`. Section keys are equal, in order, and `heading` names `$SAME` as the full successor's head
+       (`run_draft.py:706`). Every section and claim the delta does not name is identical; every named one must
+       differ, so no stale exception passes. The delta is `$OUT/rulings/<Q>-r<n>-delta.json`, written before the
+       successor runs: `sections` ⊆ {`management_credibility`, `not_performed`}, `claims` (exact keys added, changed or
+       removed, each `episode.*` or `cred.*`), `reason`, `review`. No delta file means an empty delta. Live, `review`
+       names Sol's `APPROVE` and date on the fix, and the delta and any changed literal in (c), (e) and (f) are committed
+       to this plan as frozen expectations (Task 3) first. A `supersedes` correction and a code fix use this one
+       mechanism. Gate (d) still holds against `$S1`, so no correction can reach earlier content;
      - (e) r2 (R12), r3, each event recomputed in `Decimal` from the version's own statement claims in record
        order. Every `$PREV` statement is in the new record with the same entry, digest and period, and the
        same claim under `model_dump(exclude={"claim_key"})`, so its contract, citation and originating period
@@ -737,7 +837,8 @@ Approach:
        equal but for the key, becomes `.original` alone, and a former `.latest` that is now between two
        statements becomes `.stated.<entry id>`. FY26_Q2 has no `$PREV`;
      - (f) every outcome and reason equals the frozen literals (Task 3);
-     - (g) the results equal the rehearsal's.
+     - (g) the results equal the rehearsal's, r4 (F7) on each quarter's approved attempt, or, for FY27_Q1, its
+       first attempt, since the drill's wording is not live's.
    - `ledger submit` → `ledger export <v> --out $OUT/out/<Q>-v<v>.md` → a fresh Sol round on the
      export, with the brief below. The reply ends with `EQOS-BINDING`; saved to
      `$OUT/responses/<Q>.md`; verdict to `$OUT/verdicts/<Q>.json`. It is read before recording.
@@ -778,7 +879,7 @@ and each mapping entry, and the frozen-expectations commit (Task 3).
 Risks:
 - Permanent writes. A panel `REQUEST_CHANGES` with no claims is recorded, and the quarter reruns
   from a verified fix as S1's v14 and v17 did; a code change re-enters the phase-end loop before any
-  further live write.
+  further live write, r4 (F7) and gate (d2) reads its frozen delta.
 - A rejected mapping after any live version pins it: a `supersedes` entry and a correction line,
   never an edit, then P10's route.
 
@@ -790,8 +891,8 @@ in the report, and test (o) asserts each constant.
 | Id | Limit | Sentence (implementer may tighten wording, not drop content) |
 |---|---|---|
 | D1 | No verdict | This section records stated guidance and code-computed comparisons. No overall credibility judgment, trend or thesis consequence is computed or drafted. |
-| D2 | Coverage | Only quotes the run's extraction rules captured are tracked, and each rule keeps its first match, so this is not an inventory of management's commitments. Promises before this report chain's first period are absent. A captured quote is treated as a commitment because a rule matched it; surrounding context is not assessed. |
-| D3 | Mapping basis | Each quote's window, definition and restatement link come from a reviewed mapping file written after these calls were published, not from the filing. Each row names its entry and digest. |
+| D2 | Coverage (r4, F4) | Only quotes the run's extraction rules captured are tracked, and each rule keeps its first match, so this is not an inventory of management's commitments. Promises before this report chain's first period are absent. Whether a captured quote is a commitment is a reviewed reading of its context; a quote read as descriptive is kept as evidence and is never scored or compared as a promise. |
+| D3 | Mapping basis | Each quote's reading, window, definition and restatement link come from a reviewed mapping file written after these calls were published, not from the filing. Each row names its entry and digest. |
 | D4 | Scope | Scope is the extracted guidance contract's field. Extraction labels every quote consolidated, so a metric naming a segment is identified by that name. |
 | D5 | Event basis | Events compare a point, a range's midpoint, or a binding bound when one statement is open-ended. A qualifier such as "about" is ignored. Up and down state a number's move, not whether it is good or bad. |
 | D6 | Measures | An outcome needs a registered filed measure. "No filed measure" means this pipeline computes no comparable actual, not that the company files none. |
@@ -806,18 +907,18 @@ in the report, and test (o) asserts each constant.
 |---|---|---|
 | A1 | Revision events, including plus against range | Task 2 (a) |
 | A2 | Ended: `MISSED` `.original`, `ACHIEVED` `.latest`, tolerance, r3 (R5) and the unrounded actual: a traced, checked claim of the exact value's digits, whole or declared cut (P4) | Task 2 (b); Task 3 `test_a_verdict_reads_…` |
-| A3 | CAGR under `annual` → `MULTI_YEAR`, `UNRESOLVED` | Task 1; Task 2 (c); Apar via `check_credibility` |
+| A3 | CAGR under `annual` → `MULTI_YEAR`, `UNRESOLVED` | Task 1; Task 2 (c). r4 (F4): Apar's CAGR quote is `DESCRIPTIVE`; its "a year" quote shows `MULTI_YEAR`, `UNRESOLVED` via `check_credibility` |
 | A4 | No year → `AMBIGUOUS`; anchor-only year refused | Task 1; Task 2 (c) |
 | A5 | FY26 and FY27 two episodes; one transcript, one rule per year; same horizon refuses | Task 2 (d)(e): extraction and episode level, not end-to-end `AS_KNOWN` (C-8) |
 | A6 | Relative years, Q3 against Q4 | Task 1 |
 | A7 | Standalone and consolidated | Task 2 (f); r2 (R9) Task 3 `test_standalone_and_consolidated_…` |
-| A8 | Two `MULTI_YEAR` apart, linked one with an event | Task 2 (g); Apar's CAGR and "a year" quotes |
+| A8 | Two `MULTI_YEAR` apart, linked one with an event | Task 2 (g), synthetic. r4 (F4): Apar has no such link |
 | A9 | Basis-changing revision | Task 2 (h) |
 | A10 | Editing or deleting a used entry refused on the next run | Task 1; Task 2 (i); Task 3 `test_a_changed_entry_…`; r2 (R1) `test_a_same_quarter_rerun_…` |
 | A11 | Correction with `supersedes` | Task 2 (j)(j2)(j3); r2 (R1) `test_a_same_quarter_rerun_…` |
-| A12 | Interim, side by side, missing comparator | Task 2 (k); Task 3 `test_filed_actuals_…` |
+| A12 | Interim, side by side, missing comparator; r4 (F2) a future target not due | Task 2 (k)(m2); Task 3 `test_filed_actuals_…`, `test_a_future_target_…` |
 | A13 | Plan note: both carried endpoints; a used entry gone | Task 2 (l); Task 1; `check_credibility` chain |
-| A14 | Ended with no actual → "actual not yet filed" | Task 2 (m) |
+| A14 | Ended with no actual → "actual not yet filed"; r4 (F5) only after every admitted capture | Task 2 (m); Task 3 `test_an_ended_target_…` |
 | A15 | Apar regenerated with events and reasoned rows | Task 3 `check_credibility`; Task 4 |
 
 ## Verification summary
@@ -841,7 +942,8 @@ in the report, and test (o) asserts each constant.
   `Statement`, `Event`, `Outcome`, `Better`, `Actual`, `INTERIM_RULE_LABEL`, `ACTUALS`, `ACTUAL_KEY`,
   `revision`, `compare`, `assess`, `Recorded`, `Record`, `read_record`, `build`, `Built`,
   `CredibilityInputs`, `bind_credibility`, `CREDIBILITY`, `check_credibility`, r3 `truncate_value`,
-  `EXACT_DIGITS`, `EXACT_PLACES`, `ACTUAL_WHOLE`, `ACTUAL_CUT` are each produced once and consumed by name.
+  `EXACT_DIGITS`, `EXACT_PLACES`, `ACTUAL_WHOLE`, `ACTUAL_CUT`, r4 `Reading`, `REASON_DESCRIPTIVE`, `chain`, `prepare`,
+  `Prepared`, `stated_claims`, `WindowState`, `window_state` are each produced once and consumed by name.
 - **What has nobody named?**
   - Episode quotes re-emitted as guidance → C-2.
   - A later run flipping a relative window → C-7.
@@ -852,14 +954,18 @@ in the report, and test (o) asserts each constant.
   - Regeneration order and S1 chain → Task 4 lineage.
   - v15 and v16's missing limit sentence → Task 4 gate (d).
   - r3: a recovery draft's predecessor already holding S2 → Task 4 `$S1`, gate (d2).
+  - r4: a mapping fault found after upstream writes → P12. Next year's target scored on this year → P7. A root outside
+    the pins → P13. A description read as a promise → P14. An operand only in the QoQ capture → Task 3. A legitimate S2
+    fix blocked by the recovery gate → the delta in (d2).
   - Hindsight in the mapping → D3.
   - The hard-coded `consolidated` → C-10, D4.
   - The status dashboard (`docs/status/dashboard.html`) is refreshed by the orchestrator after each
     committed task (routine, not a plan task).
   - Follow-up bead to file: sealed binding for a year-specific rule (C-8).
   - S3's duty to deliver the trend and thesis-consequence requirement → C-12, bead note at close.
-- **Unverified.** The same-as links, windows, `E` and deltas rest on rule patterns, not the transcript
-  context; they are provisional until the freeze (Task 3). The empty citation-exception list in gate (d) is
+- **Unverified.** r4: the readings, links and windows rest on one reading of the retained pages named in the Task 3
+  table, not on Sol's review; they, `E` and the deltas are provisional until the freeze (Task 3). That `_quote` and the
+  rework gate write nothing, on which P12's guarantee rests, is read from the code, and F1's test proves it. The empty citation-exception list in gate (d) is
   inferred from the code, not observed. r3 (ruling): deferring it to the rehearsal is accepted, provided a
   deviation stops progression and any exception gets the review gate (d) specifies. The synthetic fixture's
   write mechanism is settled in the tests round, before red sealing and production changes, and must demonstrate
