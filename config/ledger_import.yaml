@@ -17,13 +17,13 @@ q0:
   evidence_commit: 4f0afa25cd1156b2d867e967367e7a2db1805d54
   decided_on: 2026-09-07
   ruling: accept all
-# Successor thesis 1.1.0 (RESEARCH-1 Task 6): F5 on filed tax / PBT; same derivation window as q0.
+# Successor thesis 1.2.0 (RESEARCH-3 S1 Task 5): F1-F5 unchanged; F6-F11 are the risk probe's limits.
 thesis_successor:
   period: FY26_Q2
-  markdown: docs/evidence/phase-0.5/q0-thesis-successor-1.md
-  twin: docs/evidence/phase-0.5/q0-thesis-successor-1.yaml
+  markdown: docs/evidence/phase-0.5/q0-thesis-successor-2.md
+  twin: docs/evidence/phase-0.5/q0-thesis-successor-2.yaml
   cutoff: 2025-11-06
   # The commit holding the gpt-6.1-sol-approved pair (evidence rule).
-  evidence_commit: 445f70ddbd80292a82ffebe77834444fb8025e9d
-  decided_on: 2026-10-27
+  evidence_commit: ac811af6499943e06f5fa646c3bed51b4aa763f9
+  decided_on: 2026-11-01
   ruling: gpt-6.1-sol APPROVE r2
