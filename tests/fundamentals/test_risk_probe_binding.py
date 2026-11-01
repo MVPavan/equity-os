@@ -90,11 +90,12 @@ FY25_Q2 = "c44ac3766fedbf697bb91551d55c59015a3253bac99ec95ff03f1bc7795b9d60"
 FY26_Q4 = "be8ef6514df9d4ba25265ace74b85eb476d1f0a7891356a8319458d99f73bf01"
 FY25_Q4 = "943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2"
 # The filed consolidated figures (INR, canonical sign: capex is an outflow, so negative) at each
-# statement's balance date and flow window, and R1–R6 at two places half-even. Computed once by
-# an independent stdlib reader of the pinned XBRL instances (non-dimensional facts, declared
-# reporting periods; scratchpad/research3-s1/tests-round/filed.py), in Fraction, not by the
-# probe: R1 = receivables / revenue × D; R2, R3 = inventories, payables / M × D with M = materials
-# + purchases + change in inventories; R4 = cfo / profit × 100; R5 = −capex / revenue × 100;
+# statement's balance date and flow window, and R1–R6 half-even at the rounding policy's stored
+# scale (days and percentages two places, R6 six). Computed once by an independent stdlib reader
+# of the pinned XBRL instances (non-dimensional facts, declared reporting periods;
+# scratchpad/research3-s1/tests-round/filed.py), in Fraction, not by the probe: R1 = receivables /
+# revenue × D; R2, R3 = inventories, payables / M × D with M = materials + purchases + change in
+# inventories; R4 = cfo / profit × 100; R5 = −capex / revenue × 100;
 # R6 = (current + non-current borrowings) / equity. E.g. FY26_Q2 R1 = 45845600000 /
 # 108195800000 × 183 = 41948724/540979 ≈ 77.5422 → 77.54.
 STATEMENTS: dict[str, dict[str, Any]] = {
@@ -122,7 +123,7 @@ STATEMENTS: dict[str, dict[str, Any]] = {
             "R3": "113.92",  # 32292302/283473
             "R4": "32.81",  # 1688400/51461
             "R5": "3.76",  # 2034150/540979
-            "R6": "0.12",  # 59092/485251
+            "R6": "0.121776",  # 59092/485251
         },
     },
     FY25_Q2: {
@@ -132,7 +133,7 @@ STATEMENTS: dict[str, dict[str, Any]] = {
             "R1": "85.23",  # 73765287/865502
             "R2": "82.46",  # 11361006/137773
             "R4": "102.88",  # 4078400/39641
-            "R6": "0.11",  # 47150/410747
+            "R6": "0.114791",  # 47150/410747
         },
     },
     FY26_Q4: {
@@ -159,7 +160,7 @@ STATEMENTS: dict[str, dict[str, Any]] = {
             "R3": "138.32",  # 50047997/361817
             "R4": "99.05",  # 20900/211
             "R5": "3.22",  # 1841650/572553
-            "R6": "0.16",  # 84051/539338
+            "R6": "0.155841",  # 84051/539338
         },
     },
     FY25_Q4: {
@@ -169,7 +170,7 @@ STATEMENTS: dict[str, dict[str, Any]] = {
             "R1": "80.11",  # 148853205/1858121
             "R2": "81.98",  # 60416625/736967
             "R4": "157.13",  # 12905600/82131
-            "R6": "0.10",  # 23507/225177
+            "R6": "0.104393",  # 23507/225177
         },
     },
 }
@@ -555,3 +556,21 @@ def test_a_selective_rework_rederives_the_probe_on_the_heads_traces(
         traces = EvidenceRepository(pool).get_calculation_traces(sorted(closure))
     assert sorted(calls["probe"]) == sorted(t.trace.key_digest for t in traces)
     assert set(calls["probe_put"]) == closure
+
+
+@pytest.mark.parametrize(
+    "rejected",
+    [f"{PROBE}R1.trade_receivables_current", f"{PROBE}R1"],
+    ids=["raw-figure", "calculation"],
+)
+def test_a_rejected_probe_claim_routes_to_diagnosis_and_a_full_successor(
+    submitted_q2: tuple[Pilot, int], rejected: str
+) -> None:
+    """A probe amount comes from the filed interpretation, not the thesis, so superseding the
+    thesis could never fix it: the refusal names the route that does, and that route runs."""
+    pilot, head = submitted_q2
+    _request_changes(pilot, head, rejected)
+    with pytest.raises(RunDraftError, match="diagnose.*--full-successor") as refused:
+        _rerun(pilot)
+    assert rejected in str(refused.value) and "thesis" not in str(refused.value)
+    assert _rerun(pilot, "--full-successor").draft_version_id is not None

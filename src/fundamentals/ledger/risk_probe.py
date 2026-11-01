@@ -2,21 +2,24 @@
 (RESEARCH-3 S1, spec §2).
 
 R1–R6 read closing balances and half-year or annual flows. Guards run first: a missing operand,
-a non-positive flow denominator or a sign anomaly is ``NOT_ASSESSED``; a loss (R4) or
-non-positive equity (R6) is ``FLAGGED`` without its ratio. Then S (cash below profit), L (a
+a non-positive flow denominator, a denominator whose uncertainty interval reaches zero or a sign
+anomaly is ``NOT_ASSESSED``; a loss (R4) or non-positive equity (R6) is ``FLAGGED`` without its
+ratio. Then S (cash below profit), L (a
 weakened thesis limit) and T (a strict move in the arrow's direction against the same window one
 year earlier). Status, first match wins: guard, a fired rule, an evaluated rule, ``COMPUTED``.
 Labels, reasons and sentences hold no digits; every number is a claim placeholder.
 ``bind_probe`` reads the statement straight from its interpretations (``_Binder.filed``), stores
-each ratio's trace (sums as child traces) and cites it; ``probe_section`` renders the rows.
+each ratio's trace (sums as child traces) and cites it at the rounding policy's stored scale, so
+rules and the report read one value; ``probe_section`` renders the rows.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import date
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import Decimal
 from enum import StrEnum
+from fractions import Fraction
 from functools import cache
 from pathlib import Path
 
@@ -91,7 +94,7 @@ class Check(BaseModel):
 
 class Statement(BaseModel):
     """The filed statement a probe reads: its balance date, flow window, whether it predates
-    the run's period, and the exact base-unit amounts of the operands found."""
+    the run's period, and the exact base-unit amounts and lower bounds of the operands found."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -99,6 +102,7 @@ class Statement(BaseModel):
     window: PeriodInterval | None
     stale: bool
     values: Mapping[str, Decimal]
+    lows: Mapping[str, Fraction]
 
 
 class ProbeRow(BaseModel):
@@ -191,6 +195,7 @@ ARROW_MOVES = {1: "rose", -1: "fell"}
 NO_SHEET = "NOT_ASSESSED: no filed balance sheet in the run's package"
 NO_WINDOW = "no half-year or annual flow window in the statement"
 SIGN_ANOMALY = "sign anomaly in filed line"
+UNCERTAIN_DENOMINATOR = "denominator's uncertainty interval reaches zero"
 NO_TREND = "trend not evaluable: no matching prior"
 NO_RULE = "no rule evaluable: no prior, no limit"
 STALE_NOTE = (
@@ -226,6 +231,8 @@ def guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None
         return ProbeStatus.NOT_ASSESSED, SIGN_ANOMALY
     if sum(values[i] for i in denominator) <= 0:
         return check.nonpositive
+    if sum(statement.lows[i] for i in denominator) <= 0:
+        return ProbeStatus.NOT_ASSESSED, UNCERTAIN_DENOMINATOR
     return None
 
 
@@ -295,7 +302,7 @@ def assess(
         if fired
         else (ProbeStatus.PASSED, note)
         if evaluated
-        else (ProbeStatus.COMPUTED, NO_RULE)
+        else (ProbeStatus.COMPUTED, prior_note or NO_RULE)
     )
     return ProbeRow(
         check_id=check_id,
@@ -413,7 +420,6 @@ class Probe(BaseModel):
 FLOWS = frozenset(i for sides in OPERANDS.values() for side in sides for i in side) - BALANCES
 WINDOWS = frozenset({PeriodKind.HALF_YEAR, PeriodKind.YEAR})
 PRIOR = ".prior"
-_CENT = Decimal("0.01")
 _DICTIONARY_ROOT = Path(__file__).resolve().parents[3] / "config" / "dictionary"
 # A statement read from one capture: the statement, its operands and the capture's provenance.
 _Read = tuple[Statement, Mapping[str, _Operand], Provenance]
@@ -526,8 +532,8 @@ def _read(
     fiscal_year_end_month: int,
 ) -> _Read | None:
     """``source``'s statement at ``balance``: its closing balances and, at the longest
-    half-year or annual window ending then, its flows; ``None`` with no mapped balance-sheet line
-    there, the probe's own or any other."""
+    half-year or annual window of the run's measurement context ending then, its flows; ``None``
+    with no mapped balance-sheet line there, the probe's own or any other."""
 
     def keyed(canonical_id: str, period: PeriodInterval) -> MeasurementKey:
         return binder.key(canonical_id, CRORE).model_copy(update={"period": period})
@@ -536,11 +542,14 @@ def _read(
         return binder.filed(source, keyed(canonical_id, period), selection)
 
     at = PeriodInterval.at(balance)
-    keys = [item.key for item in binder.mapped(source) if item.key is not None]
+    keys = [
+        item.key
+        for item in binder.mapped(source)
+        if item.key is not None
+        and item.key.digest() == keyed(item.key.canonical_id, item.key.period).digest()
+    ]
     sheet = _balance_sheet_ids(binder.context[0])
-    if not any(
-        k.canonical_id in sheet and k.digest() == keyed(k.canonical_id, at).digest() for k in keys
-    ):
+    if not any(k.canonical_id in sheet and k.period == at for k in keys):
         return None
     found = {i: filed(i, at) for i in sorted(BALANCES)}
     windows = [
@@ -557,6 +566,7 @@ def _read(
         window=window,
         stale=False,
         values={i: held.value for i, (_, held) in operands.items() if held.value is not None},
+        lows={i: held.interval.lower for i, (_, held) in operands.items() if held.interval},
     )
     return statement, operands, source
 
@@ -574,8 +584,8 @@ def _figure(name: str, operand: _Operand, source: Provenance) -> NumericClaim:
 def _ratio(
     binder: _Binder, check_id: str, operands: Mapping[str, _Operand], name: str
 ) -> NumericClaim:
-    """A check's stored trace over ``operands`` and its claim ``name`` at two places,
-    half-even; summed operands are child traces."""
+    """A check's stored trace over ``operands`` and its claim ``name``, the stored value at the
+    rounding policy's scale; summed operands are child traces."""
     check, probe_key = CHECKS[check_id], key(check_id)
     numerator, denominator = (
         _total(binder, probe_key, [operands[i] for i in side]) for side in OPERANDS[check_id]
@@ -586,9 +596,14 @@ def _ratio(
     result = binder.evaluate(probe_key, check.formula, output, (numerator, denominator))
     trace_id = binder.store(probe_key, result)
     assert result.value is not None
-    value = result.value.quantize(_CENT, ROUND_HALF_EVEN)
     claim = _valued(
-        name, RISK_PROBE, value, unit, output, precision=2, rounding=Rounding.ROUND_HALF_EVEN
+        name,
+        RISK_PROBE,
+        result.value,
+        unit,
+        output,
+        precision=binder.policy.scale[kind],
+        rounding=Rounding.ROUND_HALF_EVEN,
     )
     return cite(claim, calculation_trace_id=trace_id)
 

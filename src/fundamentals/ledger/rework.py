@@ -15,8 +15,10 @@ changed section scaffold.
 
 The derived falsifier sections and their threshold claims are re-derived on every write, so a
 rework neither carries nor reruns them; a rejection naming one, or of a version written before
-them, refuses (plan RESEARCH-1 D7). The disclosed open-questions and not-performed sections are
-likewise regenerated from the run's guidance on every write, outside the rework contract.
+them, refuses (plan RESEARCH-1 D7): a threshold's route is superseding the thesis, a probe figure
+or calculation's is diagnosis, then ``--full-successor``. The disclosed open-questions and
+not-performed sections are likewise regenerated from the run's guidance on every write, outside
+the rework contract.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
-from fundamentals.ledger.falsifier_status import DERIVED, THESIS_IMPACT
+from fundamentals.ledger.falsifier_status import DERIVED, RISK_PROBE, THESIS_IMPACT
 from fundamentals.ledger.run_traces import DISCLOSED, RunDraftError
 
 Atom = tuple[str, str]
@@ -220,6 +222,12 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
             f"version {head} predates the falsifier sections; rerun with --full-successor"
         )
     claims = {c.claim_key: c for c in version.claims if c.section_key not in DERIVED}
+    probed = {c.claim_key for c in version.claims if c.section_key == RISK_PROBE}
+    if filed := sorted(probed.intersection(keys)):
+        raise RunDraftError(
+            f"{', '.join(filed)} is computed from the filed statement; diagnose it, then rerun "
+            "with --full-successor"
+        )
     if derived := sorted(set(keys) - set(claims)):
         raise RunDraftError(
             f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "

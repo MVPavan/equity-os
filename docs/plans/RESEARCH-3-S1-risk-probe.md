@@ -699,14 +699,18 @@ Approach:
 - **Candidates.** `bind_probe` collects the package's XBRL provenances: own, QoQ and YoY prior
   sources, from `update` (F-6).
 - **Statement.** It reads the balance-sheet instants with `_Binder.filed`. It discovers the
-  window from all eligible `MAPPED` periods on the capture (P2), never from revenue alone, then
+  window from all eligible `MAPPED` periods of the run's measurement context (entity, basis,
+  framework, currency, no dimensions) on the capture (P2), never from revenue alone, then
   reads each flow operand at that window. A missing operand is absent from `values`; only the
   checks that use it are affected.
 - **Prior.** It finds the prior among the candidates by `matches`.
 - **Per check.**
   - If `guard` passes, it builds the child sums and the parent trace and stores them. The claim
-    value is the stored trace value at precision 2, half-even, so the claim check's rounding
-    agrees (F-3).
+    value is the stored trace value at the rounding policy's scale for its kind (`RATIO` 6,
+    `DAYS` and `PERCENTAGE` 2), half-even, shown at that precision, so L, T and the claim check
+    read the same value and rounding cannot hide a breach or trend (F-3; Sol closing review).
+  - `guard` also refuses a denominator whose uncertainty interval reaches zero: `NOT_ASSESSED`
+    for the current statement, an unevaluable T for a prior; nothing is stored for it.
   - It builds the raw figure claims from the operands (value = interpretation value ÷ crore
     scale, `FILED`).
   - It does the same for the prior when one matches and the prior passes its own guard.
@@ -735,8 +739,8 @@ Approach:
     `test_risk_probe_binding.py` with its constants, so `test_pilot_e2e.py` stays well under 800
     lines (r5). PILOT-4 calls it:
     - R1–R6 and every raw amount equal literal constants. They are computed once by an
-      independent scratch computation from the filed figures in `Fraction`, quantised at 2,
-      half-even; the probe code is not used.
+      independent scratch computation from the filed figures in `Fraction`, quantised half-even at
+      the rounding policy's scale; the probe code is not used.
     - Each row shows its balance date and flow window.
     - FY26_Q3 shows FY26_Q2's statement and FY27_Q1 shows FY26_Q4's, both stale.
     - FY26_Q2 and FY26_Q4 carry `probe.R1/R2/R4/R6.prior`, and their T outcome equals the
@@ -1089,10 +1093,9 @@ Risks:
   - Fresh output paths for the live writes → Task 6 preflight.
   - The probe in a selective rework → P11, re-derived; the spies count it apart.
   - Child sums under PILOT-11's orphan check → P12, `trace_closure`.
-  - `rework.plan`'s refusal message for a rejected derived claim says "re-derived from the
-    approved thesis; supersede the thesis instead" (`rework.py:224-227`), which misdirects for
-    a probe claim, whose route is `--full-successor`. NOTICED BUT NOT TOUCHING: wording only;
-    the refusal itself is right, and Task 6 names the real route.
+  - `rework.plan` refuses a rejected probe claim naming its route (diagnose, then
+    `--full-successor`); a rejected thesis threshold keeps "supersede the thesis" (Sol closing
+    review).
   - The status dashboard (`docs/status/dashboard.html`) is refreshed by the orchestrator after
     each committed task (routine, not a plan task).
   - Docs: none. The spec and this plan are the record.

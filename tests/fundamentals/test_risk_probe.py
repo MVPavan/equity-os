@@ -3,7 +3,9 @@
 A row's status is a pure function of its statement's filed values, the matching prior's value
 and the falsifier rows: an adverse input is never an ordinary ``PASSED``, a missing input names
 what is missing, and trend and limit rules fire only in their own direction. The rendered body
-holds no number outside a placeholder, a date or a check id (spec §1 rules 1 and 5; §2).
+holds no number outside a placeholder, a date or a check id (spec §1 rules 1 and 5; §2). The last
+tests bind over an in-memory store: rules read the policy's stored precision, a window comes from
+the run's own measurement context, and an interval reaching zero is a gap, not an aborted report.
 ``fundamentals.ledger.risk_probe`` is imported inside each test so the file collects before it
 exists.
 """
@@ -11,16 +13,30 @@ exists.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from types import ModuleType
+from fractions import Fraction
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 
+from fundamentals.contracts.canonical import Basis
+from fundamentals.contracts.comparative import ComparatorKind
+from fundamentals.contracts.config_versions import ConfigVersions
+from fundamentals.contracts.evidence import Interpretation, InterpretationStatus
+from fundamentals.contracts.interval import Interval
+from fundamentals.contracts.measurement_key import DimensionSet, PeriodInterval
+from fundamentals.contracts.observation import AccountingFramework
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
+from fundamentals.contracts.role import FactRole
+from fundamentals.evidence.xbrl_adapter import XBRL_EXTRACTOR_VERSION
+from fundamentals.ledger.claim_check import CRORE
+from fundamentals.ledger.display import render_section
 from fundamentals.ledger.falsifier_status import FalsifierRow
+from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.numeral_scan import scan_section
-from fundamentals.verify.thesis_predicates import Disposition, PredicateOp
+from fundamentals.verify.thesis_predicates import Disposition, FalsifierPredicate, PredicateOp
 
 H1 = (date(2025, 4, 1), date(2025, 9, 30))
 BALANCE = date(2025, 9, 30)
@@ -67,14 +83,14 @@ def _statement(
     stale: bool = False,
 ) -> Any:
     """A statement of ``BASE`` with ``changes`` applied (``None`` drops an operand)."""
-    from fundamentals.contracts.measurement_key import PeriodInterval
-
     merged: dict[str, str | None] = {**BASE, **(changes or {})}
+    values = {key: Decimal(value) for key, value in merged.items() if value is not None}
     return _probe().Statement(
         balance_date=balance,
         window=None if window is None else PeriodInterval.duration(*window),
         stale=stale,
-        values={key: Decimal(value) for key, value in merged.items() if value is not None},
+        values=values,
+        lows={key: Fraction(value) for key, value in values.items()},
     )
 
 
@@ -426,3 +442,203 @@ def test_an_empty_section_still_names_every_non_evaluated_source(selected: bool)
     for source in SOURCES:
         assert f"NOT_ASSESSED: {source} not assessed by this probe" in paragraph
     assert scan_section(text, resolves=lambda *_: True) == ()
+
+
+# Bound over an in-memory store ------------------------------------------------------------------
+
+VERSIONS = ConfigVersions()
+PRIOR_H1 = (date(2024, 4, 1), date(2024, 9, 30))
+UNCERTAIN = "denominator's uncertainty interval reaches zero"
+_OWN_SHA, _PRIOR_SHA = "a" * 64, "b" * 64
+
+
+def _mapped(
+    canonical_id: str, amount: str, period: PeriodInterval, half_width: str | None, **key_parts: Any
+) -> Interpretation:
+    """A ``MAPPED`` interpretation under the run's pins, ± ``half_width`` around ``amount``."""
+    value = Decimal(amount)
+    width = Decimal(half_width or 0)
+    key = measurement_key(canonical_id, CRORE, 1, *H1).model_copy(
+        update={"period": period, **key_parts}
+    )
+    return Interpretation.model_construct(
+        status=InterpretationStatus.MAPPED,
+        key=key,
+        value=value,
+        interval=Interval(lower=Fraction(value - width), upper=Fraction(value + width)),
+        interpretation_id=1,
+        mapping_entry_id=None,
+        qualification_ref=None,
+        dictionary_version=VERSIONS.dictionary,
+        mapping_set_version=VERSIONS.mapping_set,
+        normalisation_policy_version=VERSIONS.normalisation_policy,
+        extractor_version=XBRL_EXTRACTOR_VERSION,
+    )
+
+
+def _filing(
+    balance: date,
+    window: tuple[date, date],
+    changes: Mapping[str, str] | None = None,
+    widths: Mapping[str, str] | None = None,
+) -> tuple[Interpretation, ...]:
+    """``BASE`` with ``changes``: balances at ``balance``, flows at ``window``."""
+    instant, flow = PeriodInterval.at(balance), PeriodInterval.duration(*window)
+    return tuple(
+        _mapped(
+            line,
+            amount,
+            instant if line in _probe().BALANCES else flow,
+            (widths or {}).get(line),
+        )
+        for line, amount in {**BASE, **(changes or {})}.items()
+    )
+
+
+class _Store:
+    """The reads ``_Binder`` makes of a capture's interpretations; traces are collected."""
+
+    def __init__(self, filings: Mapping[str, tuple[Interpretation, ...]]) -> None:
+        self.filings, self.traces = filings, list[Any]()
+
+    def find_capture_ref(self, source_id: str, surface: str, sha: str) -> SimpleNamespace:
+        return SimpleNamespace(capture_ref_id=sha)
+
+    def list_capture_interpretations(self, sha: str) -> tuple[Interpretation, ...]:
+        return self.filings[sha]
+
+    def put_calculation_trace(self, trace: Any) -> int:
+        self.traces.append(trace)
+        return len(self.traces)
+
+
+def _source(sha: str) -> Provenance:
+    return Provenance(
+        source_id="filing",
+        file_sha256=sha,
+        anchor_type=SourceAnchorType.XBRL_CONTEXT,
+        context_ref="ctx",
+        retrieved_at=datetime.now(UTC),
+    )
+
+
+def _bind(store: _Store, end: date = BALANCE) -> Any:
+    """``bind_probe`` of a run ending ``end`` on its own filing, the YoY prior one if filed."""
+    prior_end = date(end.year - 1, end.month, end.day)
+    yoy = (_source(_PRIOR_SHA), prior_end) if _PRIOR_SHA in store.filings else (None, None)
+    update = SimpleNamespace(
+        period_start=date(end.year, end.month, 1).isoformat(),
+        period_end=end.isoformat(),
+        facts=[SimpleNamespace(role=FactRole.PROFIT_BEFORE_TAX, sources=[_source(_OWN_SHA)])],
+        comparatives=[
+            SimpleNamespace(
+                qoq=SimpleNamespace(kind=ComparatorKind.QOQ, prior_source=None, period_end=None),
+                yoy=SimpleNamespace(
+                    kind=ComparatorKind.YOY, prior_source=yoy[0], period_end=yoy[1]
+                ),
+            )
+        ],
+    )
+    return _probe().bind_probe(
+        store, update, entity_id=1, versions=VERSIONS, fiscal_year_end_month=3
+    )
+
+
+def _rendered_row(probe: Any, rows: tuple[FalsifierRow, ...], check_id: str) -> str:
+    """A check's row, placeholders filled."""
+    _, body = _probe().probe_section(probe, rows)
+    (line,) = (x for x in body.splitlines() if x.startswith(f"- {{{{e:computed}}}} {check_id} "))
+    return render_section(line, probe.claims)
+
+
+def test_a_breach_and_a_rise_inside_one_displayed_hundredth_still_flag() -> None:
+    """Leverage of 0.1249 against a limit of 0.123, up from 0.1210: both read 0.12 at two places,
+    which would report a held limit and no trend on a real breach and a real rise. Rules read the
+    value at the policy's stored scale, and the report shows that same value."""
+    levered = {"borrowings_current": "12.49", "borrowings_noncurrent": "0"}
+    before = {"borrowings_current": "12.10", "borrowings_noncurrent": "0"}
+    store = _Store(
+        {
+            _OWN_SHA: _filing(BALANCE, H1, levered),
+            _PRIOR_SHA: _filing(date(2024, 9, 30), PRIOR_H1, before),
+        }
+    )
+    probe = _bind(store)
+    claims = {claim.claim_key: claim for claim in probe.claims}
+    measured = claims["probe.R6"]
+    assert (measured.value, claims["probe.R6.prior"].value) == (
+        Decimal("0.124900"),
+        Decimal("0.121000"),
+    )
+    assert {key: claims[key].precision for key in ("probe.R1", "probe.R4", "probe.R6")} == {
+        "probe.R1": 2,
+        "probe.R4": 2,
+        "probe.R6": 6,
+    }
+    limit = FalsifierPredicate(metric_id="m", op=PredicateOp.GT, threshold=Decimal("0.123"))
+    assert limit.holds(measured.value)
+    row = _rendered_row(probe, (_limit("R6", Disposition.WEAKENED),), "R6")
+    assert "FLAGGED by L, T" in row, row
+    assert "0.124900" in row and "0.121000" in row, row
+
+
+@pytest.mark.parametrize(
+    "foreign",
+    [
+        {"basis": Basis.STANDALONE},
+        {"dimensions": DimensionSet(pairs=(("segment", "cables"),))},
+        {"currency": "USD"},
+        {"framework": AccountingFramework.IFRS},
+    ],
+    ids=["standalone", "dimensional", "other-currency", "other-framework"],
+)
+def test_a_window_from_another_measurement_context_is_not_chosen(foreign: dict[str, Any]) -> None:
+    """Complete consolidated half-year flows beside one annual revenue key of another basis,
+    segment, currency or framework: taking that longer window would lose every consolidated flow
+    and report filed lines as missing when they are there."""
+    end = date(2026, 3, 31)
+    half = (date(2025, 10, 1), end)
+    year = PeriodInterval.duration(date(2025, 4, 1), end)
+    stray = _mapped("revenue_from_operations", "5000", year, None, **foreign)
+    probe = _bind(_Store({_OWN_SHA: (*_filing(end, half), stray)}), end)
+    assert probe.statement.window == PeriodInterval.duration(*half)
+    assert {f"probe.R{number}" for number in range(1, 7)} <= {c.claim_key for c in probe.claims}
+
+
+def test_a_current_denominator_interval_reaching_zero_is_not_assessed() -> None:
+    """Materials cost 100 + 1 − 100, each ± 0.5, has a positive point but cannot bound a quotient.
+    R2 and R3 say so and store nothing; the report and its other checks go on. The five traces are
+    R1, R4, R5, R6 and R6's borrowings sum."""
+    lines = ("cost_of_materials_consumed", "purchases_of_stock_in_trade", "changes_in_inventories")
+    amounts = dict(zip(lines, ("100", "1", "-100"), strict=True))
+    store = _Store({_OWN_SHA: _filing(BALANCE, H1, amounts, dict.fromkeys(lines, "0.5"))})
+    probe = _bind(store)
+    for check_id in ("R2", "R3"):
+        row = _rendered_row(probe, (), check_id)
+        assert f"NOT_ASSESSED ({UNCERTAIN})" in row, row
+    assert not [c for c in probe.claims if c.claim_key.startswith(("probe.R2", "probe.R3"))]
+    assert "probe.R1" in {c.claim_key for c in probe.claims}
+    assert len(store.traces) == 5
+
+
+def test_a_prior_denominator_interval_reaching_zero_leaves_only_its_trend_unevaluable() -> None:
+    """A prior that cannot be divided must not cost the current figures: R2 and R6 stay computed,
+    say why their trend is not evaluable and store no prior trace, and R1's own prior still holds.
+    The thirteen traces are the six current ratios, their five sums, and R1's and R4's priors."""
+    lines = ("cost_of_materials_consumed", "purchases_of_stock_in_trade", "changes_in_inventories")
+    weak = {**dict(zip(lines, ("100", "1", "-100"), strict=True)), "total_equity": "1"}
+    widths = {**dict.fromkeys(lines, "0.5"), "total_equity": "2"}
+    store = _Store(
+        {
+            _OWN_SHA: _filing(BALANCE, H1),
+            _PRIOR_SHA: _filing(date(2024, 9, 30), PRIOR_H1, weak, widths),
+        }
+    )
+    probe = _bind(store)
+    keys = {c.claim_key for c in probe.claims}
+    assert {"probe.R2", "probe.R6", "probe.R1.prior", "probe.R4.prior"} <= keys
+    assert not {"probe.R2.prior", "probe.R6.prior"} & keys
+    for check_id in ("R2", "R6"):
+        row = _rendered_row(probe, (), check_id)
+        assert f"COMPUTED (trend not evaluable: prior {UNCERTAIN})" in row, row
+    assert len(store.traces) == 13
