@@ -59,19 +59,14 @@ from test_prep3_resume import ADMITTED_ROWS, RUN_TABLES, added, ids, interrupted
 from test_prep5_rework import QOQ, Calls, _lines, _plan, calls
 from test_prep6_review import (
     ACCEPTED,
-    ANSWER,
-    R1,
     REJECTED,
     T0,
     _claim,
     _finish,
-    _review_set,
-    _seeds,
-    _shadow,
-    _sources,
     _start,
     _ticking,
 )
+from test_prep6_review_flow import ANSWER, R1, _review_set, _seeds, _shadow, _sources
 from test_risk_probe_binding import check_probe, probe_keys, trace_closure
 
 import fundamentals.api.cli as fundamentals_cli

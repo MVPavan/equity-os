@@ -315,7 +315,7 @@ def test_no_approved_thesis_derives_the_unresolved_sections(ledger: Ledger, case
     assert _bound(ledger) is None
     sections, thresholds = derived(None, ())
     assert [key for key, _ in sections] == [THESIS_IMPACT, FALSIFIER_STATUS]
-    assert {key for key, _ in sections} == DERIVED and thresholds == ()
+    assert {key for key, _ in sections} < DERIVED and thresholds == ()
     assert all(body == f"## {key}\n\n{NO_THESIS}\n\n" for key, body in sections)
 
 

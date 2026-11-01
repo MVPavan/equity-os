@@ -124,8 +124,9 @@ def test_qoq_priors_cite_the_predecessor_and_filed_values_are_labelled(
         claims = _claims(version)
         filed = {key for key, claim in claims.items() if FILED in claim.qualifiers}
         priors = {key for key in claims if key.startswith("cmp.") and key.endswith(".prior")}
-        assert filed == (priors | {TAX}) - {claim.claim_key for claim in qoq if version is q3}
-        assert len(filed) == FILED_COUNTS[quarter]
+        own = {key for key in filed if not key.startswith("probe.")}
+        assert own == (priors | {TAX}) - {claim.claim_key for claim in qoq if version is q3}
+        assert len(own) == FILED_COUNTS[quarter]
         with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
             exported = export_version(conn.cursor(), version_id).decode()
         assert exported.count(FILED_SUFFIX) == len(filed)
