@@ -13,6 +13,7 @@ import hashlib
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from evidence_support import CONFIG, XBRL_KIND, Ingest, ingest, policy
@@ -22,7 +23,8 @@ from temporal_fixture_support import FIXTURE_ACQUIRED_AT, run_trusted_fixture_pi
 from fundamentals.api.config import load_config
 from fundamentals.api.pipeline import PipelineResult, XbrlInput
 from fundamentals.canon.dictionary import CanonicalDictionary, load_dictionary
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.canonical import Representation, TemporalRole, ValueKind
+from fundamentals.contracts.comparison import SelectionSource
 from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
@@ -30,10 +32,14 @@ from fundamentals.contracts.ledger import (
     ClaimState,
     NumericClaim,
 )
+from fundamentals.contracts.measurement_key import PeriodInterval
+from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.contracts.role import FactRole
+from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.mapping import MappingSet, load_mapping_set
 from fundamentals.ledger.citations import resolve_citation
-from fundamentals.ledger.claim_check import check_claim
+from fundamentals.ledger.claim_check import CRORE, PERCENT, check_claim
+from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.run_traces import (
     MARGIN_KEY,
     MARGIN_LABEL,
@@ -69,6 +75,9 @@ GAPS = {"fy26-q4-pg": "19.72", "fy27-q1": "33.65"}
 TRACES = "SELECT count(*) FROM eqos.calculation_traces"
 # The fixture's pins: dictionary v2, mapping set v5.
 VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v5")
+SOURCE_OF = (
+    "SELECT source_id FROM eqos.capture_refs WHERE blob_sha256 = %s AND surface = %s ORDER BY id"
+)
 MAPPED_VERSIONS = (
     "SELECT DISTINCT mapping_set_version FROM eqos.interpretations WHERE status = 'MAPPED' "
     "ORDER BY 1"
@@ -267,3 +276,111 @@ def test_a_margin_without_revenue_is_a_claimless_line(
     assert MARGIN_KEY not in claims
     traced = [c for c in claims.values() if c.citation.calculation_trace_id is not None]
     assert _traces(ingest) - count == len(traced)
+
+
+# RESEARCH-3 S1 Task 2 ------------------------------------------------------------------------
+
+DIGESTS = (
+    "SELECT content_sha256 FROM eqos.calculation_traces WHERE id = ANY(%s) ORDER BY content_sha256"
+)
+# Every trace one fy27-q1 binding stores, by content hash, printed from the source before the
+# RESEARCH-3 binder refactor (never typed): a changed hash breaks every approved version's replay.
+TRACE_DIGESTS = (
+    "102f943bee4e6fa79a2b9b76b79a921f04f076b41d091bc1b1ad1f0315903e43",
+    "109488f9994b58a367f8d710690ca5bcff570143114975df183991068dd35a27",
+    "1bb56b015eb7fbabc9fcfa056be4d43a2be3caf31bc30fbe685e65fdfa03b373",
+    "38b3df2a0fd2366e29cc80f3440fd21967c77ae3c0e715fd1d5b5ee47b4b13e1",
+    "43b98779e6402c5bf8416e9c9ba2ecdf82007e45718dfbe12c7358a0db39beb1",
+    "43ed97ee1a27263c90a0ed3ef8d6ee50c2b05ca7ed492f4eec507138473d7c0f",
+    "4c5ab957ab9d956297c8c1eac6dfd068d098b4f79a9d7ea67651746170320b7d",
+    "52c13c378abe79ccc88de181c0cc7cdd122bace4ed45b1b3a351e8130b270063",
+    "652048eb0020bd237f41f733d241f115cf810af05081f15c4bd587be23591413",
+    "6c534ae6e831072e76586028fdac286a51804958666ceccc76f9e1f5eec1b0f4",
+    "6e7585807e62a99f0620272b09758ba0a031f13b1979dfa4cbf4cc12265f9e70",
+    "7168e3c0b5b4815e0fb4e26783c6d51ee85f4d11d3f32832463a1e19013eea25",
+    "7cf12346bf3f7dad77622dd3b722adf74671780140c282c633168be2f2d25957",
+    "8293a0141f42a4c30fd798c232596b5d8381d7c23849c5855ddbf02e9a694460",
+    "898ed3d76090807c997b9c74199ecc8750567451d0f3f95ee9d14de139182b30",
+    "95e14fe12ad446e7d3105d1cf70e39dc5b3b4a4dbc37d6085f59afcabfe4657b",
+    "9a0323a8b23db9af25e859575e1e0c4b370293ec2f0b64385482932ee1580700",
+    "a1260cebf4db4f41c112c955b864cc8974dcfc425ff61ff0150985a387a990b7",
+    "a9ac4f10e8d46842c58cc817a137f8a932ca70cfc3e7d8437541d6f52521015e",
+    "c59919e80e368c35ebddf015341e670cf373c44dbdfbb7035c8fe4dd0c05ade2",
+    "c7d04222a76a13c680e47bb4f06b15c7383b9f7910a4948e2a9bbaedcda9219c",
+    "ca150bff375bfb1deb519d0c1bf7040c0515bc1d1ef0e96a6b3c449779ec0285",
+    "d12b46bc5a7fa0bfb5567088a09e0e585d027c2c74d7b78b407809ffc79b0d77",
+    "d3cd7e9b24178a4921855c17891dc8bae214421b9a52bbbcdbeee95ca16a5ecd",
+    "e68f102237ce136ab38b008cb021025440a833b2d686bfd50de5597d9a5f45bb",
+    "f68c6d5a5e4c9562f272178cd727f4a7e2e93e50c5f8501c7a33d9f2de0bc354",
+    "f85082c58dba488391a5fe036c845bd4295d5c2ef29185ea44aa3b488eba0423",
+    "fbe64df4925e7ab07c34222a5c86f7c15000eb5f5b1623136578df83c0c126a8",
+)
+FY25_Q4 = "943873742981759927022eb5963d1ed0a4e1d2fe2aac8d9feda0fcf3c64f4cc2"
+FY25 = (date(2024, 4, 1), date(2025, 3, 31))
+# A leap fiscal year (366 days); no retained Apar statement has one, so the annual revenue
+# operand is re-keyed to it: D must come from the operand's own interval, not the calendar.
+FY24 = PeriodInterval.duration(date(2023, 4, 1), date(2024, 3, 31))
+
+
+def test_trace_digests_are_unchanged(ingest: Ingest, tmp_path: Path) -> None:
+    """Characterization (not a red node): the existing run traces keep their content hashes."""
+    result = _run("fy27-q1", tmp_path)
+    _ingest(ingest, "fy27-q1")
+    lines = bind_computed(
+        ingest.repository, result.update, entity_id=ingest.entity_id, versions=VERSIONS
+    )
+    ids = [c.citation.calculation_trace_id for c in _claims(lines).values()]
+    with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        rows = conn.execute(DIGESTS, ([i for i in ids if i is not None],)).fetchall()
+    assert tuple(row[0] for row in rows) == TRACE_DIGESTS
+
+
+@pytest.mark.parametrize("formula", ["days", "outflow"])
+def test_probe_formulas_store_closing_and_outflow_traces(ingest: Ingest, formula: str) -> None:
+    """``run.days`` divides a closing balance by a flow and multiplies by the flow window's own
+    inclusive day count (366 in a leap year), recording the balance ``CLOSING``;
+    ``run.outflow_pct`` negates the inflow-positive capex line, so spending reads positive."""
+    from fundamentals.ledger.run_traces import DAYS, OUTFLOW_PCT, _Binder
+
+    ingest.run(ingest.intake({Representation.XBRL: COMPARATOR_KIND}, "FY25_Q4"), FY25[1])
+    surface = SURFACE_OF[Representation.XBRL].value
+    with ingest.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        found = conn.execute(SOURCE_OF, (FY25_Q4, surface)).fetchone()
+    assert found is not None
+    source = Provenance(
+        source_id=found[0],
+        file_sha256=FY25_Q4,
+        anchor_type=SourceAnchorType.XBRL_CONTEXT,
+        context_ref="FourD",
+        retrieved_at=datetime.now(UTC),
+    )
+    binder = _Binder(ingest.repository, ingest.entity_id, *FY25, VERSIONS)
+
+    def filed(canonical_id: str, period: PeriodInterval) -> Any:
+        key = binder.key(canonical_id, CRORE).model_copy(update={"period": period})
+        operand = binder.filed(source, key, SelectionSource.HISTORICAL_PACKAGE)
+        assert operand is not None, canonical_id
+        return operand
+
+    revenue = filed("revenue_from_operations", PeriodInterval.duration(*FY25))
+    if formula == "days":
+        balance = filed("trade_receivables_current", PeriodInterval.at(FY25[1]))
+        leap = revenue[1].model_copy(
+            update={"key": revenue[1].key.model_copy(update={"period": FY24})}
+        )
+        output = measurement_key("probe.R1", ValueKind.DAYS, ingest.entity_id, *FY25)
+        result = binder.evaluate("probe.R1", DAYS, output, (balance, (revenue[0], leap)))
+        want = balance[1].exact / revenue[1].exact * 366
+        roles = (TemporalRole.CLOSING, TemporalRole.DURATION)
+    else:
+        capex = filed("cf_capex_ppe", PeriodInterval.duration(*FY25))
+        assert capex[1].exact < 0  # the canonical outflow is negative (spec §0)
+        output = binder.key("probe.R5", PERCENT)
+        result = binder.evaluate("probe.R5", OUTFLOW_PCT, output, (capex, revenue))
+        want = -capex[1].exact / revenue[1].exact * 100
+        roles = (TemporalRole.DURATION, TemporalRole.DURATION)
+    (stored,) = ingest.repository.get_calculation_traces(
+        [binder.store(output.canonical_id, result)]
+    )
+    assert stored.trace.exact_value == want and want > 0
+    assert tuple(o.temporal_role for o in stored.trace.operands) == roles

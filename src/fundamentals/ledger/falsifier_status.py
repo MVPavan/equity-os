@@ -19,6 +19,7 @@ from typing import Any, LiteralString
 from psycopg import Cursor
 from pydantic import BaseModel, ConfigDict
 
+from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.guidance_claim import EpistemicClass
 from fundamentals.contracts.ledger import (
     Citation,
@@ -40,21 +41,32 @@ from fundamentals.verify.thesis_predicates import (
 )
 
 THESIS_IMPACT, FALSIFIER_STATUS = "thesis_impact", "observable_falsifiers"
-DERIVED = frozenset({THESIS_IMPACT, FALSIFIER_STATUS})
-# A metric id: its label and the run claim measuring it (``None``: the ETR line's claim).
-METRICS: Mapping[str, tuple[str, str | None]] = {
-    "revenue_yoy_pct": ("Revenue YoY growth (%)", "cmp.revenue.yoy.pct"),
-    "pbt_margin_pct": ("PBT margin, PBT before associates over revenue (%)", MARGIN_KEY),
-    "pat_yoy_pct": ("PAT YoY growth (%)", "cmp.profit_for_period.yoy.pct"),
-    "eps_yoy_pct": ("Basic EPS YoY growth (%)", "cmp.basic_eps.yoy.pct"),
-    "filed_effective_tax_rate_pct": ("Effective tax rate, filed tax over PBT (%)", None),
+RISK_PROBE = "risk_probe"
+DERIVED = frozenset({THESIS_IMPACT, FALSIFIER_STATUS, RISK_PROBE})
+_PCT, _DAYS, _RATIO = ValueKind.PERCENTAGE, ValueKind.DAYS, ValueKind.RATIO
+# A metric id: its label, the run claim measuring it (``None``: the ETR line's claim) and its
+# value kind.
+METRICS: Mapping[str, tuple[str, str | None, ValueKind]] = {
+    "revenue_yoy_pct": ("Revenue YoY growth (%)", "cmp.revenue.yoy.pct", _PCT),
+    "pbt_margin_pct": ("PBT margin, PBT before associates over revenue (%)", MARGIN_KEY, _PCT),
+    "pat_yoy_pct": ("PAT YoY growth (%)", "cmp.profit_for_period.yoy.pct", _PCT),
+    "eps_yoy_pct": ("Basic EPS YoY growth (%)", "cmp.basic_eps.yoy.pct", _PCT),
+    "filed_effective_tax_rate_pct": ("Effective tax rate, filed tax over PBT (%)", None, _PCT),
+    "probe_receivable_days": ("Receivable days", "probe.R1", _DAYS),
+    "probe_inventory_materials_days": ("Inventory days, materials-cost basis", "probe.R2", _DAYS),
+    "probe_payable_materials_days": ("Payable days, materials-cost basis", "probe.R3", _DAYS),
+    "probe_cash_conversion_pct": ("Cash conversion, CFO over PAT (%)", "probe.R4", _PCT),
+    "probe_capex_intensity_pct": ("Capex intensity, capex over revenue (%)", "probe.R5", _PCT),
+    "probe_borrowings_to_equity_ratio": ("Borrowings to equity", "probe.R6", _RATIO),
 }
+KINDS: Mapping[str, ValueKind] = {metric: kind for metric, (*_, kind) in METRICS.items()}
 SUPERSEDED_METRICS = frozenset({"effective_tax_rate_pct"})
 SUPERSEDED_LABEL, UNREGISTERED_LABEL = "Effective tax rate (%)", "Unregistered metric"
 SUPERSEDED = "definition superseded, pending approval"
 UNREGISTERED = "metric not registered"
 NO_VALUE = "measured value not available"
 NO_THRESHOLD = "threshold claim not found"
+STALE = "latest statement predates the period"
 OPERATORS = {
     PredicateOp.LT: "below",
     PredicateOp.LTE: "at or below",
@@ -137,11 +149,15 @@ def bindable_thesis(sources: Sequence[tuple[str, bytes]], symbol: str) -> Approv
 
 
 def evaluate(
-    bound: BoundThesis, claims: Mapping[str, NumericClaim], lines: Sequence[Line]
+    bound: BoundThesis,
+    claims: Mapping[str, NumericClaim],
+    lines: Sequence[Line],
+    stale: frozenset[str] = frozenset(),
 ) -> tuple[FalsifierRow, ...]:
     """Each falsifier's status on the run's claims: ``WEAKENED`` when its predicate holds on
-    the stored value, else ``HELD``; ``UNRESOLVED`` for a superseded or unregistered metric, a
-    missing value or a missing threshold."""
+    the stored value, else ``HELD``; ``NOT_ASSESSED`` when its measuring claim is in ``stale``;
+    ``UNRESOLVED`` for a superseded or unregistered metric, a missing value or a missing
+    threshold. A measure of another value kind than its threshold raises."""
     etr = next(
         (
             c
@@ -154,21 +170,27 @@ def evaluate(
     rows = []
     for falsifier in bound.thesis.falsifiers:
         metric, fid = falsifier.predicate.metric_id, falsifier.falsifier_id
-        label, key = METRICS.get(metric, (UNREGISTERED_LABEL, None))
+        label, key, _ = METRICS.get(metric, (UNREGISTERED_LABEL, None, _PCT))
         measured = etr if key is None else claims.get(key)
+        threshold = bound.thresholds.get(fid)
         reason = (
-            SUPERSEDED
+            STALE
+            if key in stale
+            else SUPERSEDED
             if metric in SUPERSEDED_METRICS
             else UNREGISTERED
             if metric not in METRICS
             else NO_VALUE
             if measured is None or measured.value is None
             else NO_THRESHOLD
-            if fid not in bound.thresholds
+            if threshold is None
             else None
         )
-        disposition, claim_key = Disposition.UNRESOLVED, None
+        disposition = Disposition.NOT_ASSESSED if reason == STALE else Disposition.UNRESOLVED
+        claim_key = None
         if reason is None and measured is not None and measured.value is not None:
+            if threshold is None or measured.value_kind is not threshold[1].value_kind:
+                raise RunDraftError(f"{fid}: {measured.claim_key} is not a {metric} measure")
             weakened = falsifier.predicate.holds(measured.value)
             disposition = Disposition.WEAKENED if weakened else Disposition.HELD
             claim_key = measured.claim_key

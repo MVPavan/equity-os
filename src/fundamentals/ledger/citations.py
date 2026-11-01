@@ -11,9 +11,9 @@ only its admissions under the citing version's pinned runs, and a declared
 ``source_sha256`` only the cited fact's file or capture's blob. A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
 A claim is labelled ``FILED`` exactly when it is an interpretation ``FIGURE`` with no run, and
-only a comparator prior (``cmp.*.prior``) or the filed tax total (``calc.2``) may be one
-(invariant 7). A drafted quote's guidance contract is the one a sealed import binds to the same
-quote (``bound_contract``, plan D4 M9).
+only a comparator prior (``cmp.*.prior``), the filed tax total (``calc.2``) or a risk probe's
+own operand (``FILED_KEYS``) may be one (invariant 7). A drafted quote's guidance contract is
+the one a sealed import binds to the same quote (``bound_contract``, plan D4 M9).
 Run-store values (cells, pair differences, traces) are base units, stated in the claim's
 scale (``scale`` 10^7 for crore); display never rescales.
 """
@@ -59,6 +59,7 @@ from fundamentals.evidence.repository_rows import capture_of, period_of
 from fundamentals.ingest.pdf_source import PdfIntegrityError, load_pdf
 from fundamentals.ledger.display import FILED
 from fundamentals.ledger.import_mapping import UPDATE_FILES, ledger_contracts
+from fundamentals.ledger.probe_operands import FILED_KEYS
 from fundamentals.reconcile.fact_view import CANONICAL_ENTITY_SCHEME
 from fundamentals.store.pg_fact_store import NATIVE_ORIGIN
 from fundamentals.store.snapshot_store import SnapshotStore
@@ -168,15 +169,19 @@ WHERE c.id = %s AND r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'
     AND starts_with(c.claim_key, 'falsifier.') AND d.kind IN ('APPROVE', 'IMPORTED_APPROVAL')
     AND d.sealed_digest = %s AND d.sealed_digest = eqos.version_sealed_digest(c.version_id)
 ORDER BY d.recorded_at, d.id LIMIT 1"""
+# The given traces and every trace they reach through operand traces (``WITH RECURSIVE``).
+TRACES: LiteralString = """traces(id) AS (
+    SELECT unnest(%(traces)s::bigint[])
+    UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
+        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
+)"""
 # Every interpretation behind the cited traces and interpretations, through trace operands,
 # nested traces and constructed interpretations' operands, in id order so the pinned input
 # fingerprint does not depend on the query plan.
 _INPUTS: LiteralString = (
-    """WITH RECURSIVE traces(id) AS (
-    SELECT unnest(%(traces)s::bigint[])
-    UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
-        JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
-), interps(id) AS (
+    "WITH RECURSIVE "
+    + TRACES
+    + """, interps(id) AS (
     SELECT unnest(%(interpretations)s::bigint[])
     UNION SELECT o.interpretation_id FROM eqos.calculation_trace_operands o
         JOIN traces t ON o.calculation_trace_id = t.id WHERE o.interpretation_id IS NOT NULL
@@ -254,7 +259,7 @@ def resolve_citation(
         and citation.interpretation_id is not None
         and citation.run_id is None
     )
-    if (FILED in claim.qualifiers) != filed or (filed and not _filed_key(claim.claim_key)):
+    if (FILED in claim.qualifiers) != filed or (filed and not _filed_key(claim)):
         return None
     with cursor.connection.cursor(row_factory=dict_row) as own:
         if citation.source_sha256 is not None and citation.source_sha256 != _source(own, citation):
@@ -369,10 +374,16 @@ def resolve_location(
     return span is not None and span.strip() != ""
 
 
-def _filed_key(claim_key: str) -> bool:
-    """Whether a claim key may cite a filed value: a comparator prior or the filed tax total."""
-    return claim_key == _FILED_TAX or (
-        claim_key.startswith("cmp.") and claim_key.endswith(".prior")
+def _filed_key(claim: NumericClaim) -> bool:
+    """Whether a claim may cite a filed value: a comparator prior, the filed tax total, or a
+    risk probe's own operand under a currency-amount key naming that operand."""
+    name, key = claim.claim_key, claim.measurement_key
+    if name == _FILED_TAX or (name.startswith("cmp.") and name.endswith(".prior")):
+        return True
+    return (
+        key is not None
+        and key.canonical_id == FILED_KEYS.get(name)
+        and key.value_kind is ValueKind.CURRENCY_AMOUNT
     )
 
 

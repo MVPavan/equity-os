@@ -5,7 +5,9 @@ sealed digest, at the approval's time; the schema keeps its columns to that kind
 selects the newest bootstrap thesis version ``APPROVED`` as of a time and refuses one whose twin
 cannot be read. Each case seeds imported versions holding the Q0 thesis bytes (or a successor
 re-registering F5) on its own ``eqos_test_*`` database. A rework refuses a rejected threshold
-claim or a version written before the falsifier sections (on the retained pilot).
+claim or a version written before the falsifier sections (on the retained pilot). RESEARCH-3 S1
+Task 1: a probe limit imports typed by its metric suffix, a measure of another kind refuses and
+a stale measure is ``NOT_ASSESSED``.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from psycopg import errors
 from test_prep2b_run_draft import dictionary, mapping_set
 from test_prep5_rework import _plan, _request_changes, _rerun, _successor, submitted_q2
 
+from fundamentals.contracts.canonical import ValueKind
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import (
     Citation,
@@ -37,7 +40,7 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import lifecycle, store
 from fundamentals.ledger.citations import resolve_citation
-from fundamentals.ledger.claim_check import check_claim
+from fundamentals.ledger.claim_check import PERCENT, check_claim
 from fundamentals.ledger.display import content_hash
 from fundamentals.ledger.falsifier_status import (
     DERIVED,
@@ -51,13 +54,14 @@ from fundamentals.ledger.falsifier_status import (
     derived,
     evaluate,
 )
-from fundamentals.ledger.import_mapping import map_q0
+from fundamentals.ledger.import_mapping import LosslessError, map_q0
 from fundamentals.ledger.run_traces import CALCS, MARGIN_KEY, MARGIN_LABEL, Line, RunDraftError
 from fundamentals.pg.settings import PgRole
 from fundamentals.verify.thesis_predicates import (
     Disposition,
     FalsifierPredicate,
     PredicateOp,
+    parse_thesis,
 )
 
 __all__ = [
@@ -104,8 +108,10 @@ def thesis(
 ) -> int:
     """An imported thesis version of ``report`` holding the (successor) thesis bytes and any
     ``extra`` claims."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
     md, twin = _files(successor)
-    mapped = map_q0(md, twin, cutoff=date(2025, 11, 6))
+    mapped = map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=KINDS)
     files = (("thesis.md", md), ("thesis.yaml", twin)) if sources is None else sources
     return ledger.imported(
         report,
@@ -192,8 +198,10 @@ def test_a_thesis_claim_resolves_only_through_an_approval_of_its_digest(
     """``MATCH`` on an approved thesis's falsifier threshold at its sealed digest; another
     digest, an unapproved version or a non-falsifier claim are ``UNRESOLVED``; an approval
     recorded after the cutoff is ``POST_CUTOFF``."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
     md, twin = _files()
-    (first, *_) = map_q0(md, twin, cutoff=date(2025, 11, 6)).claims
+    (first, *_) = map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=KINDS).claims
     extra = (first.model_copy(update={"claim_key": "threshold.F1"}),)
     version = thesis(ledger, _report(ledger), approve=case != "unapproved", extra=extra)
     cited = _cite(ledger, version)
@@ -307,7 +315,7 @@ def test_no_approved_thesis_derives_the_unresolved_sections(ledger: Ledger, case
     assert _bound(ledger) is None
     sections, thresholds = derived(None, ())
     assert [key for key, _ in sections] == [THESIS_IMPACT, FALSIFIER_STATUS]
-    assert {key for key, _ in sections} == DERIVED and thresholds == ()
+    assert {key for key, _ in sections} < DERIVED and thresholds == ()
     assert all(body == f"## {key}\n\n{NO_THESIS}\n\n" for key, body in sections)
 
 
@@ -341,6 +349,121 @@ def test_an_unmeasured_or_superseded_falsifier_is_unresolved(ledger: Ledger) -> 
     sections, thresholds = derived(bound, rows)
     assert thresholds == ()
     assert "UNRESOLVED F1, F2, F3, F4, F5." in sections[0][1]
+
+
+# RESEARCH-3 S1 Task 1: typed probe limits ------------------------------------------------------
+
+DAYS_METRICS = {
+    "probe_receivable_days": "probe.R1",
+    "probe_inventory_materials_days": "probe.R2",
+    "probe_payable_materials_days": "probe.R3",
+}
+# F5 (``effective_tax_rate_pct GT 26.78``) re-registered on a probe metric: above the limit
+# breaches, as days or leverage do.
+F5_METRIC = b"effective_tax_rate_pct"
+BREACH, WITHIN = Decimal("30.00"), Decimal("20.00")
+
+
+def _renamed(*pairs: tuple[bytes, bytes]) -> tuple[bytes, bytes]:
+    """The Q0 thesis Markdown and twin with each metric id renamed in both."""
+    md, twin = _files()
+    for old, new in pairs:
+        md, twin = md.replace(old, new), twin.replace(old, new)
+    return md, twin
+
+
+def _probe_bound(metric: str) -> tuple[BoundThesis, NumericClaim]:
+    """Q0 with F5 on ``metric``, mapped and bound without a store, and F5's threshold claim."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
+    md, twin = _renamed((F5_METRIC, metric.encode()))
+    mapped = map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=KINDS)
+    thresholds = {
+        c.claim_key.removeprefix("falsifier."): (row, c) for row, c in enumerate(mapped.claims, 1)
+    }
+    bound = BoundThesis(
+        version_id=1, sealed_digest="0" * 64, thesis=parse_thesis(twin), thresholds=thresholds
+    )
+    return bound, thresholds["F5"][1]
+
+
+def _f5(rows: tuple[Any, ...]) -> Any:
+    """F5's row."""
+    (row,) = (row for row in rows if row.falsifier_id == "F5")
+    return row
+
+
+def test_a_probe_limit_imports_typed_by_its_suffix() -> None:
+    """A ``_days`` limit is a unitless day count and a ``_ratio`` limit a unitless ratio, so
+    each compares with its probe claim at its own kind; ``_pct`` stays a percentage."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
+    renames = (
+        (b"revenue_yoy_pct", b"probe_receivable_days"),
+        (b"pbt_margin_pct", b"probe_inventory_materials_days"),
+        (b"pat_yoy_pct", b"probe_payable_materials_days"),
+        (b"eps_yoy_pct", b"probe_borrowings_to_equity_ratio"),
+    )
+    md, twin = _renamed(*renames)
+    mapped = map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=KINDS)
+    typed = {c.claim_key: (c.value_kind, c.unit, c.currency, c.scale) for c in mapped.claims}
+    unitless = (None, None, None)
+    assert typed == {
+        **{f"falsifier.F{n}": (ValueKind.DAYS, *unitless) for n in (1, 2, 3)},
+        "falsifier.F4": (ValueKind.RATIO, *unitless),
+        "falsifier.F5": (ValueKind.PERCENTAGE, PERCENT, None, None),
+    }
+
+
+@pytest.mark.parametrize("case", ["unknown-suffix", "registered-kind"])
+def test_an_unknown_or_mismatched_probe_limit_refuses(case: str) -> None:
+    """A suffix with no kind, or a registered metric whose kind is not its suffix's, cannot be
+    compared with its claim, so the thesis does not import."""
+    from fundamentals.ledger.falsifier_status import KINDS
+
+    metric = b"revenue_yoy_bps" if case == "unknown-suffix" else b"probe_receivable_days"
+    md, twin = _renamed((b"revenue_yoy_pct", metric))
+    metrics = dict(KINDS)
+    if case == "registered-kind":
+        map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=KINDS)  # imports at its own kind
+        metrics[metric.decode()] = ValueKind.PERCENTAGE
+    with pytest.raises(LosslessError):
+        map_q0(md, twin, cutoff=date(2025, 11, 6), metrics=metrics)
+
+
+def test_a_probe_measure_of_another_kind_refuses() -> None:
+    """A days limit tested on a percentage claim would compare unlike numbers: a structural
+    fault, not an unresolved falsifier."""
+    bound, threshold = _probe_bound("probe_receivable_days")
+    measured = threshold.model_copy(
+        update={"claim_key": "probe.R1", "value_kind": ValueKind.PERCENTAGE, "unit": PERCENT}
+    )
+    with pytest.raises(RunDraftError):
+        evaluate(bound, {"probe.R1": measured}, ())
+
+
+@pytest.mark.parametrize("metric", sorted(DAYS_METRICS))
+def test_a_days_limit_weakens_on_breach(metric: str) -> None:
+    """Each days limit weakens the thesis when its probe measure crosses it, and holds when
+    it does not; the row names the measuring claim."""
+    bound, threshold = _probe_bound(metric)
+    key = DAYS_METRICS[metric]
+    for value, disposition in ((BREACH, Disposition.WEAKENED), (WITHIN, Disposition.HELD)):
+        measured = threshold.model_copy(update={"claim_key": key, "value": value})
+        row = _f5(evaluate(bound, {key: measured}, ()))
+        assert (row.disposition, row.claim_key) == (disposition, key)
+
+
+def test_a_stale_measure_is_not_assessed() -> None:
+    """A measure read from an earlier statement is not this period's: even past the limit it
+    is ``NOT_ASSESSED``, so a breach is reported once, in the run that owns the statement."""
+    from fundamentals.ledger.falsifier_status import STALE
+
+    bound, threshold = _probe_bound("probe_receivable_days")
+    measured = threshold.model_copy(update={"claim_key": "probe.R1", "value": BREACH})
+    rows = evaluate(bound, {"probe.R1": measured}, (), stale=frozenset({"probe.R1"}))
+    row = _f5(rows)
+    assert (row.disposition, row.reason) == (Disposition.NOT_ASSESSED, STALE)
 
 
 def _pre_slice(pilot: Pilot, version: int) -> int:

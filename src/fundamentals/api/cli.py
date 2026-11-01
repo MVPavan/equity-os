@@ -113,6 +113,7 @@ from fundamentals.ledger import store as ledger_store
 from fundamentals.ledger.import_mapping import measurement_key
 from fundamentals.ledger.importer import load_import_config
 from fundamentals.ledger.rework import Rework
+from fundamentals.ledger.risk_probe import Probe, bind_probe
 from fundamentals.ledger.run_draft import (
     Retrospective,
     RunDraft,
@@ -133,6 +134,7 @@ from fundamentals.output.earnings_update import (
     render_earnings_update,
 )
 from fundamentals.pg.cutover import open_fact_store
+from fundamentals.pg.identity_seed import SettingKey
 from fundamentals.pg.pool import open_pool
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.fact_store import FactRef
@@ -361,6 +363,7 @@ def run_command(
                 pool, repository, args.compare_run, prior.entity_id, config, xbrl, pdfs
             )
             bound: list[tuple[Line, ...]] = []
+            probes: list[Probe] = []
             facts: dict[str, FactRef] = {}
 
             def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
@@ -393,6 +396,15 @@ def run_command(
                     check=partial(predecessor, prior),  # before any trace persists
                 )
                 bound.append(lines)
+                probes.append(
+                    bind_probe(
+                        repository,
+                        update,
+                        entity_id=prior.entity_id,
+                        versions=versions,
+                        fiscal_year_end_month=_fiscal_month(repository, prior.entity_id, update),
+                    )
+                )
                 facts.update(
                     _admit(
                         pool,
@@ -424,6 +436,7 @@ def run_command(
                 guidance=result.guidance_claims,
                 facts=facts,
                 lines=bound[0],
+                probe=probes[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
                 memory=memory,
@@ -433,6 +446,17 @@ def run_command(
             version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
             structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
             return result.model_copy(update={"draft_version_id": version_id})
+
+
+def _fiscal_month(repository: EvidenceRepository, entity_id: int, update: EarningsUpdate) -> int:
+    """The entity's fiscal-year-end month governing the run's period, as of the store clock."""
+    period_end = date.fromisoformat(update.period_end)
+    record = repository.settings_as_of(
+        entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock(), period_end
+    )
+    if record is None:
+        raise RunDraftError(f"entity {entity_id} has no fiscal-year-end month")
+    return int(record.value_text)
 
 
 def _comparison(

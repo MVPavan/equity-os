@@ -29,7 +29,14 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.canon.formula import CalculationTrace, OperandValue, TraceKind, conclude
+from fundamentals.canon.formula import (
+    CalculationResult,
+    CalculationTrace,
+    OperandValue,
+    TraceKind,
+    conclude,
+    operand_from_result,
+)
 from fundamentals.canon.interval import (
     Interval,
     RoundingPolicy,
@@ -76,6 +83,7 @@ ROUNDING_POLICY = Path(__file__).resolve().parents[3] / "config" / "rounding_pol
 DIFFERENCE, SUM, CHANGE_PCT = "run.difference", "run.sum", "run.change_pct"
 ETR = "effective_tax_rate_pct"
 RATIO_PCT = "run.ratio_pct"
+DAYS, RATIO, OUTFLOW_PCT = "run.days", "run.ratio", "run.outflow_pct"
 MARGIN_KEY = "calc.pbt_margin"
 MARGIN_LABEL = "PBT margin, PBT before associates over revenue (PBT / revenue × 100, %)"
 FORMULA_VERSION = "1"
@@ -84,6 +92,7 @@ CHANGES, CALCS = "changes", "calculations"
 OPEN_QUESTIONS, NOT_PERFORMED = "open_questions", "not_performed"
 DISCLOSED = frozenset({OPEN_QUESTIONS, NOT_PERFORMED})
 _HUNDRED = Interval.exact(Fraction(100))
+_NEG_HUNDRED = Interval.exact(Fraction(-100))
 _CRORE_SCALE = UNITS[CRORE][2] or 1
 # The code-side formulas carry no equivalence proof.
 _UNPROVEN = ScopedTier(
@@ -151,7 +160,7 @@ class _Binder:
         self.binds: dict[str, Callable[[], NumericClaim]] = {}
         self.blobs: set[str] = set()
 
-    def key(self, canonical_id: str, unit: str) -> MeasurementKey:
+    def key(self, canonical_id: str, unit: str | ValueKind) -> MeasurementKey:
         """A key of this run's quarter."""
         return measurement_key(canonical_id, unit, self.entity_id, self.start, self.end)
 
@@ -165,27 +174,35 @@ class _Binder:
     ) -> _Operand:
         """The single mapped interpretation of ``key`` in ``source``'s capture under
         the run's pins, equal to the run's value."""
-        self.blobs.add(source.file_sha256)
-        capture = self.repo.find_capture_ref(
-            source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
-        )
+        found = self.filed(source, key, selection)
+        where = f"{key.canonical_id} in {source.file_sha256[:12]}"
+        if found is None:
+            raise RunDraftError(f"no single mapped interpretation of {where}")
+        if found[1].value != run_value * _scale(key):
+            raise RunDraftError(
+                f"interpretation of {where} is {found[1].value}, the run's {run_value}"
+            )
+        return name, found[1]
+
+    def filed(
+        self, source: Provenance, key: MeasurementKey, selection: SelectionSource
+    ) -> _Operand | None:
+        """The single mapped interpretation of ``key`` in ``source``'s capture under the run's
+        pins, named by its canonical id; ``None`` when there is none."""
         found = [
             item
-            for item in self._interpretations(capture)
-            if item.status is InterpretationStatus.MAPPED
-            and _context(item) == self.context
-            and item.key is not None
-            and item.key.digest() == key.digest()
+            for item in self.mapped(source)
+            if item.key is not None and item.key.digest() == key.digest()
         ]
         where = f"{key.canonical_id} in {source.file_sha256[:12]}"
-        if len(found) != 1:
+        if not found:
+            return None
+        if len(found) > 1:
             raise RunDraftError(f"no single mapped interpretation of {where}")
         (item,) = found
         if item.value is None or item.interval is None:
             raise RunDraftError(f"interpretation of {where} has no value with precision")
-        if item.value != run_value * _scale(key):
-            raise RunDraftError(f"interpretation of {where} is {item.value}, the run's {run_value}")
-        return name, OperandValue(
+        return key.canonical_id, OperandValue(
             key=key,
             state=SourceState.VALUE,
             exact=Fraction(item.value),
@@ -203,6 +220,20 @@ class _Binder:
             precision_supported=True,
             reasons=(),
         )
+
+    def mapped(self, source: Provenance) -> list[Interpretation]:
+        """Every keyed ``MAPPED`` interpretation of ``source``'s capture under the run's pins."""
+        self.blobs.add(source.file_sha256)
+        capture = self.repo.find_capture_ref(
+            source.source_id, SURFACE_OF[Representation.XBRL].value, source.file_sha256
+        )
+        return [
+            item
+            for item in self._interpretations(capture)
+            if item.status is InterpretationStatus.MAPPED
+            and _context(item) == self.context
+            and item.key is not None
+        ]
 
     def lazy(
         self,
@@ -275,6 +306,21 @@ class _Binder:
         run_value: Decimal,
     ) -> None:
         """Compute one trace, check it against the run's value and hold it for storing."""
+        result = self.evaluate(name, formula, output, operands)
+        expected = Fraction(run_value) * _scale(output)
+        if result.value != store_value(expected, output.value_kind, self.policy):
+            raise RunDraftError(f"{name}: computed {result.value}, the run's {run_value}")
+        self.pending[name] = result.trace
+
+    def evaluate(
+        self,
+        name: str,
+        formula: str,
+        output: MeasurementKey,
+        operands: tuple[_Operand, _Operand],
+    ) -> CalculationResult:
+        """One trace computed exactly from two operands; an instant operand is ``CLOSING``,
+        a duration ``DURATION``. ``run.days`` scales by operand b's inclusive day count."""
         (_, a), (_, b) = operands
         assert a.exact is not None and a.interval is not None
         assert b.exact is not None and b.interval is not None
@@ -288,12 +334,22 @@ class _Binder:
                 point = ((a.exact - b.exact) / b.exact * 100, ratio.mul(_HUNDRED))
             elif formula in (ETR, RATIO_PCT):
                 point = (a.exact / b.exact * 100, a.interval.div(b.interval).mul(_HUNDRED))
+            elif formula == RATIO:
+                point = (a.exact / b.exact, a.interval.div(b.interval))
+            elif formula == OUTFLOW_PCT:
+                point = (-a.exact / b.exact * 100, a.interval.div(b.interval).mul(_NEG_HUNDRED))
+            elif formula == DAYS:
+                period = b.key.period
+                assert period.start is not None and period.end is not None
+                days = Fraction((period.end - period.start).days + 1)
+                ratio = a.interval.div(b.interval).mul(Interval.exact(days))
+                point = (a.exact / b.exact * days, ratio)
             else:
                 raise RunDraftError(f"{name}: unknown formula {formula}")
         except (UndefinedDivisionError, ZeroDivisionError) as error:
             raise RunDraftError(f"{name}: {formula} is undefined: {error}") from error
-        entries = [(operand, TemporalRole.DURATION, value) for operand, value in operands]
-        result = conclude(
+        entries = [(operand, _role(value.key.period), value) for operand, value in operands]
+        return conclude(
             TraceKind.FORMULA,
             output,
             entries,
@@ -304,10 +360,23 @@ class _Binder:
             formula_version=FORMULA_VERSION,
             formula_scoped=_UNPROVEN,
         )
-        expected = Fraction(run_value) * _scale(output)
-        if result.value != store_value(expected, output.value_kind, self.policy):
-            raise RunDraftError(f"{name}: computed {result.value}, the run's {run_value}")
-        self.pending[name] = result.trace
+
+    def child(
+        self,
+        name: str,
+        formula: str,
+        output: MeasurementKey,
+        operands: tuple[_Operand, _Operand],
+    ) -> _Operand:
+        """A computed operand: its trace evaluated and stored, its id on the operand."""
+        result = self.evaluate(name, formula, output, operands)
+        held = operand_from_result(result, key=output, selection_source=None)
+        return name, held.model_copy(update={"calculation_trace_id": self.store(name, result)})
+
+    def store(self, name: str, result: CalculationResult) -> int:
+        """Store ``name``'s computed trace; its id."""
+        assert result.value is not None, name
+        return self.repo.put_calculation_trace(result.trace)
 
 
 def bind_computed(
@@ -499,6 +568,11 @@ def _context(item: Interpretation) -> tuple[str, str, str, str]:
         item.normalisation_policy_version,
         item.extractor_version,
     )
+
+
+def _role(period: PeriodInterval) -> TemporalRole:
+    """An instant operand is a closing balance, a duration a flow."""
+    return TemporalRole.DURATION if period.instant is None else TemporalRole.CLOSING
 
 
 def _scale(key: MeasurementKey) -> int:

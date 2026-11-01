@@ -28,6 +28,7 @@ from prep2b_support import STOCK, Pilot
 from psycopg import sql
 from retained_support import APAR_MANIFEST, apar_store
 from test_prep2b_run_draft import dictionary, mapping_set
+from test_risk_probe_binding import trace_closure
 
 import fundamentals.api.cli as cli
 import fundamentals.api.ledger_cli as ledger_cli
@@ -324,7 +325,7 @@ def run_resumes(
     assert committed["fact_rows"] <= {row[0] for row in pilot.query(ADMITTED_ROWS, run_id)}
     pilot.admitted(result.draft_version_id)
     cited = {c.citation.calculation_trace_id for c in version.claims}
-    assert committed["calculation_traces"] <= cited
+    assert committed["calculation_traces"] <= trace_closure(pilot, cited)
     assert (delta(start, ingest.table_counts()), claims(version)) == baseline
     states = {state for _, state in pilot.validate(result.draft_version_id).claim_states}
     assert states == {ClaimState.MATCH}

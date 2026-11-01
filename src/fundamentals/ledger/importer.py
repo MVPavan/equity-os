@@ -42,7 +42,7 @@ from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
 from fundamentals.ledger.claim_check import cutoff_instant
 from fundamentals.ledger.display import content_hash
-from fundamentals.ledger.falsifier_status import bindable_thesis
+from fundamentals.ledger.falsifier_status import KINDS, bindable_thesis
 from fundamentals.ledger.import_mapping import (
     UPDATE_FILES,
     LosslessError,
@@ -169,7 +169,9 @@ def import_versions(
     q0 = config.q0
     files = sources(q0.markdown, q0.twin)
     try:
-        thesis: MappedVersion | LosslessError = map_q0(files[0][1], files[1][1], cutoff=q0.cutoff)
+        thesis: MappedVersion | LosslessError = map_q0(
+            files[0][1], files[1][1], cutoff=q0.cutoff, metrics=KINDS
+        )
     except LosslessError as failure:
         thesis = failure
     outcomes.append((q0.period, ReportKind.BOOTSTRAP_THESIS, files, thesis))
@@ -215,7 +217,7 @@ def import_thesis_successor(
         return ImportedVersion(period=config.q0.period, kind=kind, failure="no thesis_successor")
     files = tuple((path, (repo / path).read_bytes()) for path in (entry.markdown, entry.twin))
     try:
-        version = map_q0(files[0][1], files[1][1], cutoff=entry.cutoff)
+        version = map_q0(files[0][1], files[1][1], cutoff=entry.cutoff, metrics=KINDS)
         try:
             bindable_thesis(files, config.stock)
         except ValueError as error:

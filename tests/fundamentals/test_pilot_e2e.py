@@ -59,19 +59,15 @@ from test_prep3_resume import ADMITTED_ROWS, RUN_TABLES, added, ids, interrupted
 from test_prep5_rework import QOQ, Calls, _lines, _plan, calls
 from test_prep6_review import (
     ACCEPTED,
-    ANSWER,
-    R1,
     REJECTED,
     T0,
     _claim,
     _finish,
-    _review_set,
-    _seeds,
-    _shadow,
-    _sources,
     _start,
     _ticking,
 )
+from test_prep6_review_flow import ANSWER, R1, _review_set, _seeds, _shadow, _sources
+from test_risk_probe_binding import check_probe, probe_keys, trace_closure
 
 import fundamentals.api.cli as fundamentals_cli
 import fundamentals.pg.cutover as cutover
@@ -256,7 +252,7 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     statuses = _falsifiers(pilot, quarter, version)
     thresholds = {f"thesis.{fid}" for fid in statuses}
     figures = {k for k, c in claims.items() if c.citation.kind is not CitationKind.SOURCE_QUOTE}
-    want_keys = CLAIM_KEYS | {MARGIN_KEY} | thresholds
+    want_keys = CLAIM_KEYS | {MARGIN_KEY} | thresholds | probe_keys(quarter)
     assert figures == want_keys, f"PILOT-4: {quarter} keys {sorted(figures ^ want_keys)}"
     for key in CLAIM_KEYS:
         got, want = Fraction(claims[key].value or 0), frozen_value(quarter, key)
@@ -264,6 +260,7 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     margin = Fraction(claims[MARGIN_KEY].value or 0)
     assert margin == _margin(quarter), f"PILOT-4: {quarter} margin {margin}"
     filed = {key for key, claim in claims.items() if FILED in claim.qualifiers}
+    probed = {key for key in filed if key.startswith("probe.")}  # checked by check_probe
     _, thesis_digest, falsifier_ids = _thesis(pilot)
     for key, claim in claims.items():
         cited = claim.citation
@@ -283,8 +280,10 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
         )
         assert routed, f"PILOT-4: {quarter} {key} cites no fact, trace or labelled filed value"
     priors = {key for key in filed if key.startswith("cmp.") and key.endswith(".prior")}
-    assert filed - priors <= {"calc.2"}, f"PILOT-4: {quarter} FILED on {sorted(filed - priors)}"
-    assert len(filed) == FILED_COUNTS[quarter], f"PILOT-4: {quarter} {len(filed)} FILED claims"
+    stray = filed - priors - probed
+    assert stray <= {"calc.2"}, f"PILOT-4: {quarter} FILED on {sorted(stray)}"
+    count = len(filed - probed)
+    assert count == FILED_COUNTS[quarter], f"PILOT-4: {quarter} {count} FILED claims"
     if prior is not None:
         predecessor = pilot.version(prior)
         qoq = [c for k, c in claims.items() if k.startswith("cmp.") and k.endswith(".qoq.prior")]
@@ -300,6 +299,7 @@ def _pilot4(pilot: Pilot, quarter: str, result: PipelineResult, prior: int | Non
     assert body.decode().count(FILED_SUFFIX) == len(filed), f"PILOT-4: {quarter} suffix"
     states = set(dict(pilot.validate(version_id).claim_states).values())
     assert states == {ClaimState.MATCH}, f"PILOT-4: {quarter} claim check {states}"
+    check_probe(pilot, {quarter: version_id})
 
 
 def _margin(quarter: str) -> Fraction:
@@ -511,7 +511,8 @@ def _pilot11_resume(pilot: Pilot, ingest: Ingest) -> PipelineResult:
     cited = {claim.citation.calculation_trace_id for claim in version.claims}
     admitted = {row[0] for row in pilot.query(ADMITTED_ROWS, run_id)}
     assert committed["fact_rows"] <= admitted, "PILOT-11: a committed fact is not admitted"
-    assert retried["calculation_traces"] <= cited, "PILOT-11: an orphan trace"
+    closure = trace_closure(pilot, cited)
+    assert retried["calculation_traces"] <= closure, "PILOT-11: an orphan trace"
     assert retried["report_versions"] == {result.draft_version_id}, "PILOT-11: PQ1 drafts"
     return result
 
