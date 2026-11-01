@@ -165,8 +165,7 @@ An adverse condition is never an ordinary `PASSED`.
     in the run that owns the statement.
 
 **Status, first match wins.** Guard result; else any evaluated rule fired → `FLAGGED` (rules
-named); else a rule was evaluated → `PASSED`; else `COMPUTED` ("no rule evaluable: no prior, no
-limit").
+named); else a rule was evaluated → `PASSED`; else `COMPUTED` (with a reason naming what was not evaluable (for example limits not assessed on a stale statement)).
 
 Non-evaluated sources (related parties, pledges, contingent liabilities, auditor opinion,
 capitalised intangibles, rating remarks, disclosure lapses) each render `NOT_ASSESSED` naming the

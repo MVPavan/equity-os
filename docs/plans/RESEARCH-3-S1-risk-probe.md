@@ -582,7 +582,7 @@ outside placeholders and structural dates. It must hold exactly as spec §2:
   is also not evaluable.
 - **L.** A `WEAKENED` falsifier flags the row and names the falsifier id.
 - **Status, first match wins.** Guard; else a fired rule → `FLAGGED`; else an evaluated rule →
-  `PASSED`; else `COMPUTED` ("no rule evaluable: no prior, no limit").
+  `PASSED`; else `COMPUTED` (with a reason naming what was not evaluable (for example limits not assessed on a stale statement)).
 - **Stale.** Values render with a statement note, and the metric goes to `stale`.
 - **No flow window.** `Statement.window` `None` → R1–R5 `NOT_ASSESSED`, "no half-year or annual
   flow window in the statement"; R6 is assessed (P2).
