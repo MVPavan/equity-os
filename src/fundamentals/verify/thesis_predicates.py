@@ -28,6 +28,7 @@ class Disposition(StrEnum):
     WEAKENED = "WEAKENED"
     HELD = "HELD"
     UNRESOLVED = "UNRESOLVED"
+    NOT_ASSESSED = "NOT_ASSESSED"
 
 
 class FalsifierPredicate(BaseModel):

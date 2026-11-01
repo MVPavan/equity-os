@@ -84,7 +84,12 @@ CALC_UNITS = {"(₹ crore)": CRORE, "(%)": PERCENT}
 FALSIFIERS = "falsifiers"
 FALSIFIER_FIELDS = frozenset({"falsifier_id", "statement", "predicate"})
 PREDICATE_FIELDS = frozenset({"metric_id", "op", "threshold"})
-PERCENT_METRIC = "_pct"
+# A falsifier's metric-id suffix: its threshold's value kind and unit (``None``: unitless).
+METRIC_KINDS: Mapping[str, tuple[ValueKind, str | None]] = {
+    "_pct": (ValueKind.PERCENTAGE, PERCENT),
+    "_days": (ValueKind.DAYS, None),
+    "_ratio": (ValueKind.RATIO, None),
+}
 ABS, PCT = "abs", "pct"
 Q0 = "Q0"
 # The generator's facts label (now, then) when the retained updates were rendered.
@@ -261,9 +266,12 @@ def map_earnings_update(
     )
 
 
-def map_q0(md: bytes, twin: bytes, *, cutoff: date) -> MappedVersion:
+def map_q0(
+    md: bytes, twin: bytes, *, cutoff: date, metrics: Mapping[str, ValueKind]
+) -> MappedVersion:
     """Map the Q0 thesis: its Markdown sections, then one section per top-level YAML list in
-    YAML order; every YAML scalar outside them is stated in the Markdown."""
+    YAML order; every YAML scalar outside them is stated in the Markdown. A falsifier on a
+    ``metrics`` metric must be of its registered value kind."""
     with _parsing(Q0):
         text, root = md.decode(), yaml.compose(twin.decode())
     _require(isinstance(root, yaml.MappingNode), Q0, "YAML root is not a mapping")
@@ -276,7 +284,10 @@ def map_q0(md: bytes, twin: bytes, *, cutoff: date) -> MappedVersion:
             _require(" ".join(value.split()) in flat, Q0, f"{name} is not in the Markdown")
             continue
         _require(isinstance(value, list), Q0, name)
-        items = [_falsifier(item, text, claims) if name == FALSIFIERS else item for item in value]
+        items = [
+            _falsifier(item, text, claims, metrics) if name == FALSIFIERS else item
+            for item in value
+        ]
         _require(all(isinstance(item, str) for item in items), Q0, name)
         body = f"{HEADING}{name}\n\n" + "".join(f"- {item}\n" for item in items)
         sections.append(ReportSection(ordinal=len(sections), section_key=name, body=body))
@@ -575,15 +586,20 @@ def _lexemes(node: yaml.Node) -> Any:
     return node.value
 
 
-def _falsifier(item: Any, text: str, claims: list[NumericClaim]) -> str:
-    """A falsifier's section line; its threshold becomes a self-cited ``POLICY`` claim and its
-    predicate must be the one the Markdown states."""
+def _falsifier(
+    item: Any, text: str, claims: list[NumericClaim], metrics: Mapping[str, ValueKind]
+) -> str:
+    """A falsifier's section line; its threshold becomes a self-cited ``POLICY`` claim typed by
+    its metric-id suffix, and its predicate must be the one the Markdown states."""
     _require(isinstance(item, dict) and item.keys() == FALSIFIER_FIELDS, Q0, "falsifier")
     predicate = item["predicate"]
     _require(isinstance(predicate, dict) and predicate.keys() == PREDICATE_FIELDS, Q0, "predicate")
     metric, threshold = predicate["metric_id"], predicate["threshold"]
     _require(f"`{metric} {predicate['op']} {threshold}`" in text, Q0, f"{metric} predicate")
-    _require(metric.endswith(PERCENT_METRIC), Q0, f"{metric} unit")
+    typed = [kind for suffix, kind in METRIC_KINDS.items() if metric.endswith(suffix)]
+    _require(len(typed) == 1, Q0, f"{metric} unit")
+    (value_kind, unit), registered = typed[0], metrics.get(metric)
+    _require(registered in (None, value_kind), Q0, f"{metric} kind")
     name, value = f"falsifier.{item['falsifier_id']}", Decimal(threshold)
     claims.append(
         NumericClaim(
@@ -591,8 +607,8 @@ def _falsifier(item: Any, text: str, claims: list[NumericClaim]) -> str:
             section_key=FALSIFIERS,
             citation=Citation(kind=CitationKind.POLICY),
             value=value,
-            value_kind=ValueKind.PERCENTAGE,
-            unit=PERCENT,
+            value_kind=value_kind,
+            unit=unit,
             precision=_places(value),
             rounding=Rounding.ROUND_HALF_UP,
             epistemic_class=EpistemicClass.OPINION,

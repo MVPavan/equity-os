@@ -33,10 +33,12 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
-from fundamentals.ledger.falsifier_status import DERIVED, THESIS_IMPACT
+from fundamentals.ledger.falsifier_status import DERIVED, RISK_PROBE, THESIS_IMPACT
 from fundamentals.ledger.run_traces import DISCLOSED, RunDraftError
 
 Atom = tuple[str, str]
+# Sections every run re-derives: never carried, their claims never reworkable.
+REDERIVED = DERIVED | {RISK_PROBE}
 FactOrigin = tuple[str, int]
 # A run binds these, so a carried claim takes the version's (a quote's text and anchor included).
 _BINDING = {"citation", "unresolved"}
@@ -219,13 +221,13 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
         raise RunDraftError(
             f"version {head} predates the falsifier sections; rerun with --full-successor"
         )
-    claims = {c.claim_key: c for c in version.claims if c.section_key not in DERIVED}
+    claims = {c.claim_key: c for c in version.claims if c.section_key not in REDERIVED}
     if derived := sorted(set(keys) - set(claims)):
         raise RunDraftError(
             f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "
             "instead"
         )
-    sections = [s for s in version.sections if s.section_key not in DERIVED | DISCLOSED]
+    sections = [s for s in version.sections if s.section_key not in REDERIVED | DISCLOSED]
     cited = [claim.citation for claim in claims.values()]
     trace_ids = [c.calculation_trace_id for c in cited if c.calculation_trace_id is not None]
     traces = {t.trace_id: t for t in repository.get_calculation_traces(trace_ids)}
