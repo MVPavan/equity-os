@@ -123,6 +123,7 @@ NOT_DONE = (
     "- forensic checks beyond the risk probe's ratio checks (see `risk_probe` for the sources "
     "it does not assess)",
     "- a management-credibility assessment",
+    "- an earnings-driver analysis",
     "- a narrative thesis-impact assessment",
     "- materiality decisions: no claim carries a materiality decision, because the pipeline "
     "produces no materiality policy, candidate inventory or per-claim decision",
