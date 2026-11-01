@@ -1,5 +1,5 @@
-model_id: null
-base_url: https://api.openai.com/v1
+model_id: openai/gpt-6-luna
+base_url: http://localhost:4000/v1
 key_file: vendor_surface_model_key
 prompt_version: labels.v1
 dictionary_version: v3
