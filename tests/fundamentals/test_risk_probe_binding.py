@@ -24,7 +24,7 @@ from prep2b_support import Pilot
 from test_prep2b_run_draft import dictionary, mapping_set, pilot
 from test_prep5_rework import CABLES, Calls, _request_changes, _rerun, calls, submitted_q2
 
-from fundamentals.contracts.canonical import Representation
+from fundamentals.contracts.canonical import Representation, ValueKind
 from fundamentals.contracts.comparison import SelectionSource
 from fundamentals.contracts.evidence import CaptureReference, Interpretation
 from fundamentals.contracts.ledger import CitationKind, ClaimState, NumericClaim, VersionDraft
@@ -33,6 +33,7 @@ from fundamentals.contracts.provenance import Provenance, SourceAnchorType
 from fundamentals.evidence.capture_intake import SURFACE_OF
 from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.ledger import run_draft
+from fundamentals.ledger.citations import resolve_citation
 from fundamentals.ledger.display import FILED
 from fundamentals.ledger.falsifier_status import FALSIFIER_STATUS
 from fundamentals.ledger.run_traces import NOT_PERFORMED, RunDraftError, _Binder
@@ -49,6 +50,15 @@ FORENSIC = (
 NO_SHEET = "NOT_ASSESSED: no filed balance sheet in the run's package"
 NO_WINDOW = "no half-year or annual flow window in the statement"
 STATUSES = ("NOT_ASSESSED", "FLAGGED", "PASSED", "COMPUTED")
+SOURCES = (
+    "related parties",
+    "pledges",
+    "contingent liabilities",
+    "auditor opinion",
+    "capitalised intangibles",
+    "rating remarks",
+    "disclosure lapses",
+)
 VERSIONS = "SELECT count(*) FROM eqos.report_versions"
 CAPTURE_OF = (
     "SELECT c.blob_sha256 FROM eqos.interpretations i "
@@ -322,17 +332,41 @@ def _no_evaluable_row(capture: CaptureReference, found: tuple[Interpretation, ..
     return tuple(i for i in found if not (_is(i, None, H1) or _is(i, "total_equity", equity)))
 
 
+def _only_other_balances(capture: CaptureReference, found: tuple[Interpretation, ...]) -> Any:
+    if capture.blob_sha256 != FY26_Q2:
+        return found
+    at = PeriodInterval.at(STATEMENTS[FY26_Q2]["balance"])
+    assert any(_is(i, "total_assets", at) for i in found), "fixture gap: no other balance"
+    lines = {i for c in ("R1", "R2", "R3", "R6") for i in OPERANDS[c] if i not in M}
+    lines -= {"revenue_from_operations"}
+    return tuple(i for i in found if not any(_is(i, line, at) for line in lines))
+
+
 @pytest.mark.parametrize(
     "edit",
-    [_no_revenue_window, _ambiguous_cfo, _no_balance_sheet, _no_evaluable_row],
-    ids=["missing-revenue-window", "ambiguous-cfo", "no-balance-sheet", "no-evaluable-row"],
+    [
+        _no_revenue_window,
+        _ambiguous_cfo,
+        _no_balance_sheet,
+        _no_evaluable_row,
+        _only_other_balances,
+    ],
+    ids=[
+        "missing-revenue-window",
+        "ambiguous-cfo",
+        "no-balance-sheet",
+        "no-evaluable-row",
+        "only-other-balances",
+    ],
 )
 def test_probe_lookup_failures(pilot: Pilot, monkeypatch: pytest.MonkeyPatch, edit: Edit) -> None:
     """A missing input fails its own rows, not the report; an ambiguous one is a store fault.
     Revenue missing at the half-year leaves R2–R4 and R6 assessed on the same window (the window
     is not read from revenue); two mapped cfo interpretations refuse with nothing written; no
     balance sheet, or no row evaluable on the selected statement, is one labelled paragraph
-    beside an otherwise complete draft."""
+    naming every source the probe does not assess, beside an otherwise complete draft. A current
+    statement holding other balances but none of the probe's is still the current statement, not
+    a stale substitute: its balance rows report the missing lines and its flow rows are assessed."""
     _edit(monkeypatch, edit)
     before = pilot.query(VERSIONS)
     if edit is _ambiguous_cfo:
@@ -356,14 +390,64 @@ def test_probe_lookup_failures(pilot: Pilot, monkeypatch: pytest.MonkeyPatch, ed
         window = _row(body, "R2")
         assert all(day.isoformat() in window for day in STATEMENTS[FY26_Q2]["window"]), window
         return
+    if edit is _only_other_balances:
+        assert "stale" not in body.lower(), body
+        assert {f"{PROBE}R4", f"{PROBE}R5"} <= claims.keys()
+        for check_id, line in (("R1", "trade_receivables_current"), ("R6", "total_equity")):
+            row = _row(body, check_id)
+            assert STATEMENTS[FY26_Q2]["balance"].isoformat() in row, row
+            assert "NOT_ASSESSED" in row and line in row, row
+        return
     (paragraph,) = _paragraphs(body)
     assert not claims and "{{e:computed}}" in paragraph
+    for source in SOURCES:
+        assert f"NOT_ASSESSED: {source} not assessed by this probe" in paragraph
     if edit is _no_balance_sheet:
         assert NO_SHEET in paragraph
     else:
         assert STATEMENTS[FY26_Q2]["balance"].isoformat() in paragraph
         assert NO_WINDOW in paragraph and "total_equity" in paragraph
         assert all(re.search(rf"\b{c}\b", paragraph) for c in OPERANDS), paragraph
+
+
+# Filed-figure exception (invariant 7, OD-2) ------------------------------------------------------
+
+
+def _resolved(pilot: Pilot, version: VersionDraft, claim: NumericClaim) -> Any:
+    """What the claim's citation resolves to under the version's pins."""
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        return resolve_citation(
+            conn.cursor(),
+            claim,
+            entity_id=pilot.entity_id,
+            overlay_position=datetime.now(UTC),
+            run_ids=version.pinned_run_ids,
+            **pilot.sources(),
+        )
+
+
+def test_only_the_probes_own_operands_may_cite_a_filed_value(pilot: Pilot) -> None:
+    """OD-2 widened invariant 7 to the amounts the probe uses, not to anything probe-shaped: an
+    unknown check, an operand that is not that check's, a key naming another line and a key of
+    another amount kind all fail to resolve, while the stored raw claim resolves."""
+    version_id = pilot.run("FY26_Q2").draft_version_id
+    assert version_id is not None
+    version = pilot.version(version_id)
+    raw = _probe_claims(version)[f"{PROBE}R1.revenue_from_operations"]
+    assert raw.measurement_key is not None
+    assert _resolved(pilot, version, raw) is not None
+    renamed = raw.measurement_key.model_copy(update={"canonical_id": "total_income"})
+    per_share = raw.measurement_key.model_copy(update={"value_kind": ValueKind.PER_SHARE_AMOUNT})
+    for update in (
+        {"claim_key": f"{PROBE}R9.revenue_from_operations"},
+        {"claim_key": f"{PROBE}R1.total_income"},
+        {"claim_key": f"{PROBE}R6.revenue_from_operations"},
+        {"claim_key": f"{PROBE}R1.total_income", "measurement_key": renamed},
+        {"measurement_key": renamed},
+        {"measurement_key": per_share},
+    ):
+        claim = raw.model_copy(update=update)
+        assert _resolved(pilot, version, claim) is None, update
 
 
 # Binding boundary (r) -------------------------------------------------------------------------

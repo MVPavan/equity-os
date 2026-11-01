@@ -17,15 +17,18 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 from enum import StrEnum
+from functools import cache
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from fundamentals.contracts.canonical import PeriodKind, ValueKind
+from fundamentals.canon.dictionary import load_dictionary
+from fundamentals.contracts.canonical import PeriodKind, StatementFamily, ValueKind
 from fundamentals.contracts.comparative import ComparatorKind
 from fundamentals.contracts.comparison import SelectionSource
 from fundamentals.contracts.config_versions import ConfigVersions
 from fundamentals.contracts.ledger import NumericClaim, Rounding
-from fundamentals.contracts.measurement_key import PeriodInterval
+from fundamentals.contracts.measurement_key import MeasurementKey, PeriodInterval
 from fundamentals.contracts.provenance import Provenance
 from fundamentals.contracts.role import FactRole
 from fundamentals.evidence.repository import EvidenceRepository
@@ -33,6 +36,18 @@ from fundamentals.ledger.claim_check import CRORE, PERCENT
 from fundamentals.ledger.display import FILED
 from fundamentals.ledger.falsifier_status import METRICS, RISK_PROBE, FalsifierRow
 from fundamentals.ledger.import_mapping import _slot, _valued, refs
+from fundamentals.ledger.probe_operands import (
+    BORROWINGS,
+    CAPEX,
+    CFO,
+    EQUITY,
+    INVENTORIES,
+    OPERANDS,
+    PAYABLES,
+    PROFIT,
+    RECEIVABLES,
+    key,
+)
 from fundamentals.ledger.run_traces import (
     _CRORE_SCALE,
     CRORE_UNIT,
@@ -59,30 +74,27 @@ class ProbeStatus(StrEnum):
 
 
 class Check(BaseModel):
-    """One probe check: its thesis metric, label, formula, operands (the denominator's ids are
-    summed), trend arrow (+1 up is adverse, −1 down, ``None`` no trend), category, business
-    meaning and its outcome when the denominator is not positive."""
+    """One probe check: its thesis metric, label, formula, trend arrow (+1 up is adverse, −1
+    down, ``None`` no trend), category, conditional business implication and its outcome when
+    the denominator is not positive."""
 
     model_config = ConfigDict(frozen=True)
 
     metric_id: str
     label: str
     formula: str
-    numerator: tuple[str, ...]
-    denominator: tuple[str, ...]
     arrow: int | None
     category: str
-    meaning: str
+    implication: str
     nonpositive: tuple[ProbeStatus, str]
 
 
 class Statement(BaseModel):
-    """The filed statement a probe reads: its capture, balance date, flow window, whether it
-    predates the run's period, and the exact base-unit amounts of the operands found."""
+    """The filed statement a probe reads: its balance date, flow window, whether it predates
+    the run's period, and the exact base-unit amounts of the operands found."""
 
     model_config = ConfigDict(frozen=True)
 
-    capture_sha256: str
     balance_date: date
     window: PeriodInterval | None
     stale: bool
@@ -104,20 +116,6 @@ class ProbeRow(BaseModel):
     prior_shown: bool
 
 
-RECEIVABLES, INVENTORIES, PAYABLES = (
-    "trade_receivables_current",
-    "inventories",
-    "trade_payables_current",
-)
-BORROWINGS = ("borrowings_current", "borrowings_noncurrent")
-EQUITY, REVENUE, CFO, PROFIT, CAPEX = (
-    "total_equity",
-    "revenue_from_operations",
-    "cfo",
-    "profit_for_period",
-    "cf_capex_ppe",
-)
-M = ("cost_of_materials_consumed", "purchases_of_stock_in_trade", "changes_in_inventories")
 BALANCES = frozenset({RECEIVABLES, INVENTORIES, PAYABLES, *BORROWINGS, EQUITY})
 # The sign a filed line must not oppose: balances other than equity, and capex (an outflow).
 _SIGNS = {**dict.fromkeys(BALANCES - {EQUITY}, 1), CAPEX: -1}
@@ -130,79 +128,66 @@ CHECKS: Mapping[str, Check] = {
         metric_id="probe_receivable_days",
         label="Receivable days",
         formula=DAYS,
-        numerator=(RECEIVABLES,),
-        denominator=(REVENUE,),
         arrow=1,
         category=ACCOUNTING,
-        meaning="customers owe a large share of revenue, so revenue may run ahead of cash",
+        implication="if collections are slowing, revenue may be running ahead of cash",
         nonpositive=_NO_REVENUE,
     ),
     "R2": Check(
         metric_id="probe_inventory_materials_days",
         label="Inventory days, materials-cost basis",
         formula=DAYS,
-        numerator=(INVENTORIES,),
-        denominator=M,
         arrow=1,
         category=BUSINESS,
-        meaning="stock is heavy against materials used, so it may be slow-moving",
+        implication="if stock is building faster than it is used, it may be slow-moving",
         nonpositive=_NO_MATERIALS,
     ),
     "R3": Check(
         metric_id="probe_payable_materials_days",
         label="Payable days, materials-cost basis",
         formula=DAYS,
-        numerator=(PAYABLES,),
-        denominator=M,
         arrow=None,
         category=LIQUIDITY,
-        meaning="suppliers are carrying a large share of materials cost, so the company may "
-        "lean on supplier credit",
+        implication="if supplier payments are stretching, the company may lean on supplier credit",
         nonpositive=_NO_MATERIALS,
     ),
     "R4": Check(
         metric_id="probe_cash_conversion_pct",
         label="Cash conversion",
         formula=RATIO_PCT,
-        numerator=(CFO,),
-        denominator=(PROFIT,),
         arrow=-1,
         category=ACCOUNTING,
-        meaning="reported profit was not matched by operating cash",
+        implication="if this persists, less of reported profit may turn into operating cash",
         nonpositive=(ProbeStatus.FLAGGED, "non-positive profit"),
     ),
     "R5": Check(
         metric_id="probe_capex_intensity_pct",
         label="Capex intensity",
         formula=OUTFLOW_PCT,
-        numerator=(CAPEX,),
-        denominator=(REVENUE,),
         arrow=None,
         category=BUSINESS,
-        meaning="capital spending is heavy against revenue",
+        implication="if this spending stays heavy, it may strain free cash flow",
         nonpositive=_NO_REVENUE,
     ),
     "R6": Check(
         metric_id="probe_borrowings_to_equity_ratio",
         label="Borrowings to equity",
         formula=RATIO,
-        numerator=BORROWINGS,
-        denominator=(EQUITY,),
         arrow=1,
         category=SOLVENCY,
-        meaning="borrowings are high against equity, so balance-sheet risk is higher",
+        implication="if leverage keeps rising, balance-sheet risk may increase",
         nonpositive=(ProbeStatus.FLAGGED, "non-positive equity"),
     ),
 }
 S_CHECK = "R4"
-GUARD, S, L, T = "guard", "S", "L", "T"
-# The first fired rule's phrase in a flagged row's sentence (P7).
+S, L, T = "S", "L", "T"
+# What a shown row's first fired rule established (P7); T's direction is its check's arrow.
 PHRASES = {
-    GUARD: "because its denominator is not positive",
-    S: "within the same flow window",
-    L: "against the approved thesis limit",
-    T: "on its trend against the same window a year earlier",
+    S: "operating cash was below reported profit within the same flow window",
+    L: "its value breached the approved thesis limit",
+    T: "its value {moved} against the same window a year earlier",
 }
+ARROW_MOVES = {1: "rose", -1: "fell"}
 NO_SHEET = "NOT_ASSESSED: no filed balance sheet in the run's package"
 NO_WINDOW = "no half-year or annual flow window in the statement"
 SIGN_ANOMALY = "sign anomaly in filed line"
@@ -220,19 +205,18 @@ SOURCES = (
     "rating remarks",
     "disclosure lapses",
 )
+_FOOTER = "Sources outside this probe:\n" + "\n".join(
+    f"- NOT_ASSESSED: {source} not assessed by this probe" for source in SOURCES
+)
 PERCENT_FORMULAS = frozenset({RATIO_PCT, OUTFLOW_PCT})
-
-
-def key(check_id: str) -> str:
-    """A check's claim key."""
-    return f"probe.{check_id}"
 
 
 def guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None:
     """The guard outcome of a check on ``statement``, or ``None`` when its ratio may be
     computed."""
     check = CHECKS[check_id]
-    ids = check.numerator + check.denominator
+    numerator, denominator = OPERANDS[check_id]
+    ids = numerator + denominator
     if statement.window is None and not BALANCES.issuperset(ids):
         return ProbeStatus.NOT_ASSESSED, NO_WINDOW
     values = statement.values
@@ -240,23 +224,24 @@ def guard(check_id: str, statement: Statement) -> tuple[ProbeStatus, str] | None
         return ProbeStatus.NOT_ASSESSED, f"missing filed line {', '.join(missing)}"
     if any(values[i] * _SIGNS.get(i, 0) < 0 for i in ids):
         return ProbeStatus.NOT_ASSESSED, SIGN_ANOMALY
-    if sum(values[i] for i in check.denominator) <= 0:
+    if sum(values[i] for i in denominator) <= 0:
         return check.nonpositive
     return None
 
 
 def matches(current: Statement, prior: Statement) -> bool:
     """Whether ``prior`` is ``current``'s trend comparator: balance date one year earlier
-    (same month-day), and a flow window of the same length class and start month."""
+    (same month-day, so February 29 has none), and a flow window of the same length class and
+    start month."""
     now, then = current.window, prior.window
     if now is None or then is None or now.start is None or then.start is None:
         return False
     assert now.end is not None and then.end is not None
     months = (now.end.year - now.start.year) * 12 + now.end.month - now.start.month
     prior_months = (then.end.year - then.start.year) * 12 + then.end.month - then.start.month
-    balance = current.balance_date
+    balance, earlier = current.balance_date, prior.balance_date
     return (
-        prior.balance_date == balance.replace(year=balance.year - 1)
+        (earlier.year + 1, earlier.month, earlier.day) == (balance.year, balance.month, balance.day)
         and months == prior_months
         and now.start.month == then.start.month
     )
@@ -333,12 +318,12 @@ def body(
     ``claim_keys`` maps each check to the raw-figure claim keys it shows."""
     head = f"## {RISK_PROBE}\n\n"
     if statement is None:
-        return f"{head}{{{{e:computed}}}} {NO_SHEET}\n\n"
+        return f"{head}{{{{e:computed}}}} {NO_SHEET}. {_FOOTER}\n\n"
     if all(row.status is ProbeStatus.NOT_ASSESSED for row in rows):
         reasons = "; ".join(f"{row.check_id} {row.reason}" for row in rows)
         return (
             f"{head}{{{{e:computed}}}} NOT_ASSESSED: no check is evaluable on the statement of "
-            f"{statement.balance_date}: {reasons}.\n\n"
+            f"{statement.balance_date}: {reasons}. {_FOOTER}\n\n"
         )
     window = statement.window
     span = "no flow window" if window is None else f"flow window {window.start} to {window.end}"
@@ -349,14 +334,11 @@ def body(
         f"{stale}. Each value is computed in code from the filed amounts beside it."
     )
     lines = [_line(row, dated, claim_keys.get(row.check_id, ())) for row in rows]
-    sources = "\n".join(
-        f"- NOT_ASSESSED: {source} not assessed by this probe" for source in SOURCES
-    )
     paragraphs = (
         intro,
         "\n".join(lines),
         f"{{{{e:computed}}}} {_explanation(rows)}",
-        f"{{{{e:computed}}}} Sources outside this probe:\n{sources}",
+        f"{{{{e:computed}}}} {_FOOTER}",
     )
     return head + "".join(f"{paragraph}\n\n" for paragraph in paragraphs)
 
@@ -389,14 +371,20 @@ def _line(row: ProbeRow, dated: str, raw: tuple[str, ...]) -> str:
     return f"{text} {refs([*shown, *raw])}".rstrip()
 
 
+def _flag_sentence(row: ProbeRow) -> str:
+    """What a flagged row's guard or first fired rule established, then what that could mean."""
+    check = CHECKS[row.check_id]
+    if not row.shown:
+        return f"{row.check_id} is flagged because of {row.reason}, so its ratio is not shown."
+    moved = "" if check.arrow is None else ARROW_MOVES[check.arrow]
+    established = PHRASES[row.rules[0]].format(moved=moved)
+    return f"{row.check_id} is flagged because {established}; {check.implication}."
+
+
 def _explanation(rows: Sequence[ProbeRow]) -> str:
     """One sentence per flagged row, then the flagged categories and the coverage gaps."""
     flagged = [row for row in rows if row.status is ProbeStatus.FLAGGED]
-    sentences = [
-        f"{row.check_id} is flagged {PHRASES[row.rules[0] if row.shown else GUARD]}: "
-        f"{CHECKS[row.check_id].meaning}."
-        for row in flagged
-    ]
+    sentences = [_flag_sentence(row) for row in flagged]
     categories = {CHECKS[row.check_id].category for row in flagged}
     named = ", ".join(category for category in CATEGORIES if category in categories)
     gaps = [row.check_id for row in rows if row.status is ProbeStatus.NOT_ASSESSED]
@@ -410,28 +398,23 @@ def _explanation(rows: Sequence[ProbeRow]) -> str:
 
 
 class Probe(BaseModel):
-    """A run's bound probe: the selected statement and its matching prior, the cited probe
-    claims, each check's value and prior value, why a trend is not evaluable, and the measuring
-    claim keys a stale statement withholds from falsifier evaluation."""
+    """A run's bound probe: the selected statement, the cited probe claims, why a trend is not
+    evaluable, and the measuring claim keys a stale statement withholds from falsifier
+    evaluation."""
 
     model_config = ConfigDict(frozen=True)
 
     statement: Statement | None
-    prior: Statement | None
     claims: tuple[NumericClaim, ...]
-    values: Mapping[str, Decimal]
-    priors: Mapping[str, Decimal]
     notes: Mapping[str, str]
     stale_keys: frozenset[str]
 
 
-FLOWS = (
-    frozenset(i for check in CHECKS.values() for i in check.numerator + check.denominator)
-    - BALANCES
-)
+FLOWS = frozenset(i for sides in OPERANDS.values() for side in sides for i in side) - BALANCES
 WINDOWS = frozenset({PeriodKind.HALF_YEAR, PeriodKind.YEAR})
 PRIOR = ".prior"
 _CENT = Decimal("0.01")
+_DICTIONARY_ROOT = Path(__file__).resolve().parents[3] / "config" / "dictionary"
 # A statement read from one capture: the statement, its operands and the capture's provenance.
 _Read = tuple[Statement, Mapping[str, _Operand], Provenance]
 
@@ -467,46 +450,32 @@ def bind_probe(
     ]
     selected = reads[0] or (reads[1] if ComparatorKind.QOQ in comparators else None)
     if selected is None:
-        return Probe(
-            statement=None,
-            prior=None,
-            claims=(),
-            values={},
-            priors={},
-            notes={},
-            stale_keys=frozenset(),
-        )
+        return Probe(statement=None, claims=(), notes={}, stale_keys=frozenset())
     statement, operands, source = selected
     statement = statement.model_copy(update={"stale": selected is not reads[0]})
     prior = next((r for r in reads if r is not None and matches(statement, r[0])), None)
     claims: list[NumericClaim] = []
-    values: dict[str, Decimal] = {}
-    priors: dict[str, Decimal] = {}
     notes: dict[str, str] = {}
     for check_id, check in CHECKS.items():
+        numerator, denominator = OPERANDS[check_id]
         outcome = guard(check_id, statement)
         if outcome is not None and outcome[0] is ProbeStatus.NOT_ASSESSED:
             continue
         name = key(check_id)
-        shown = [i for i in check.numerator + check.denominator if i in operands]
+        shown = [i for i in numerator + denominator if i in operands]
         claims += [_figure(f"{name}.{i}", operands[i], source) for i in shown]
         if outcome is not None:
             continue
-        values[check_id], claim = _ratio(binder, check_id, operands, name)
-        claims.append(claim)
+        claims.append(_ratio(binder, check_id, operands, name))
         if check.arrow is None or prior is None:
             continue
         if (failed := guard(check_id, prior[0])) is not None:
             notes[check_id] = f"trend not evaluable: prior {failed[1]}"
             continue
-        priors[check_id], claim = _ratio(binder, check_id, prior[1], name + PRIOR)
-        claims.append(claim)
+        claims.append(_ratio(binder, check_id, prior[1], name + PRIOR))
     return Probe(
         statement=statement,
-        prior=None if prior is None else prior[0],
         claims=tuple(claims),
-        values=values,
-        priors=priors,
         notes=notes,
         stale_keys=frozenset(map(key, CHECKS)) if statement.stale else frozenset(),
     )
@@ -515,7 +484,7 @@ def bind_probe(
 def probe_section(probe: Probe, rows: Sequence[FalsifierRow]) -> tuple[str, str]:
     """The ``risk_probe`` section as (key, body), its rows assessed against the falsifier
     rows."""
-    statement, keys = probe.statement, [claim.claim_key for claim in probe.claims]
+    statement, values = probe.statement, {claim.claim_key: claim.value for claim in probe.claims}
     assessed = (
         []
         if statement is None
@@ -523,8 +492,8 @@ def probe_section(probe: Probe, rows: Sequence[FalsifierRow]) -> tuple[str, str]
             assess(
                 check_id,
                 statement,
-                probe.values.get(check_id),
-                probe.priors.get(check_id),
+                values.get(key(check_id)),
+                values.get(key(check_id) + PRIOR),
                 probe.notes.get(check_id),
                 rows,
             )
@@ -533,11 +502,20 @@ def probe_section(probe: Probe, rows: Sequence[FalsifierRow]) -> tuple[str, str]
     )
     raw = {
         check_id: tuple(
-            k for k in keys if k.startswith(f"{key(check_id)}.") and not k.endswith(PRIOR)
+            k for k in values if k.startswith(f"{key(check_id)}.") and not k.endswith(PRIOR)
         )
         for check_id in CHECKS
     }
     return RISK_PROBE, body(statement, assessed, raw)
+
+
+@cache
+def _balance_sheet_ids(dictionary_version: str) -> frozenset[str]:
+    """The canonical ids of a dictionary's balance-sheet rows."""
+    rows = load_dictionary(_DICTIONARY_ROOT, dictionary_version).rows
+    return frozenset(
+        row.canonical_id for row in rows if row.family is StatementFamily.BALANCE_SHEET
+    )
 
 
 def _read(
@@ -548,28 +526,33 @@ def _read(
     fiscal_year_end_month: int,
 ) -> _Read | None:
     """``source``'s statement at ``balance``: its closing balances and, at the longest
-    half-year or annual window ending then, its flows; ``None`` with no balance at all."""
+    half-year or annual window ending then, its flows; ``None`` with no mapped balance-sheet line
+    there, the probe's own or any other."""
+
+    def keyed(canonical_id: str, period: PeriodInterval) -> MeasurementKey:
+        return binder.key(canonical_id, CRORE).model_copy(update={"period": period})
 
     def filed(canonical_id: str, period: PeriodInterval) -> _Operand | None:
-        found = binder.key(canonical_id, CRORE).model_copy(update={"period": period})
-        return binder.filed(source, found, selection)
+        return binder.filed(source, keyed(canonical_id, period), selection)
 
-    found = {i: filed(i, PeriodInterval.at(balance)) for i in sorted(BALANCES)}
-    if all(operand is None for operand in found.values()):
+    at = PeriodInterval.at(balance)
+    keys = [item.key for item in binder.mapped(source) if item.key is not None]
+    sheet = _balance_sheet_ids(binder.context[0])
+    if not any(
+        k.canonical_id in sheet and k.digest() == keyed(k.canonical_id, at).digest() for k in keys
+    ):
         return None
+    found = {i: filed(i, at) for i in sorted(BALANCES)}
     windows = [
-        item.key.period
-        for item in binder.mapped(source)
-        if item.key is not None
-        and item.key.period.end == balance
-        and item.key.period.kind(fiscal_year_end_month) in WINDOWS
+        k.period
+        for k in keys
+        if k.period.end == balance and k.period.kind(fiscal_year_end_month) in WINDOWS
     ]
     window = min(windows, key=lambda period: period.start or balance, default=None)  # longest
     if window is not None:
         found |= {i: filed(i, window) for i in sorted(FLOWS)}
     operands = {i: operand for i, operand in found.items() if operand is not None}
     statement = Statement(
-        capture_sha256=source.file_sha256,
         balance_date=balance,
         window=window,
         stale=False,
@@ -590,12 +573,13 @@ def _figure(name: str, operand: _Operand, source: Provenance) -> NumericClaim:
 
 def _ratio(
     binder: _Binder, check_id: str, operands: Mapping[str, _Operand], name: str
-) -> tuple[Decimal, NumericClaim]:
+) -> NumericClaim:
     """A check's stored trace over ``operands`` and its claim ``name`` at two places,
     half-even; summed operands are child traces."""
     check, probe_key = CHECKS[check_id], key(check_id)
-    numerator = _total(binder, probe_key, [operands[i] for i in check.numerator])
-    denominator = _total(binder, probe_key, [operands[i] for i in check.denominator])
+    numerator, denominator = (
+        _total(binder, probe_key, [operands[i] for i in side]) for side in OPERANDS[check_id]
+    )
     kind = METRICS[check.metric_id][2]
     unit: str | ValueKind = PERCENT if kind is ValueKind.PERCENTAGE else kind
     output = binder.key(probe_key, unit).model_copy(update={"period": denominator[1].key.period})
@@ -606,7 +590,7 @@ def _ratio(
     claim = _valued(
         name, RISK_PROBE, value, unit, output, precision=2, rounding=Rounding.ROUND_HALF_EVEN
     )
-    return value, cite(claim, calculation_trace_id=trace_id)
+    return cite(claim, calculation_trace_id=trace_id)
 
 
 def _total(binder: _Binder, probe_key: str, leaves: Sequence[_Operand]) -> _Operand:

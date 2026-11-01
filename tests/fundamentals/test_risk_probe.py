@@ -71,7 +71,6 @@ def _statement(
 
     merged: dict[str, str | None] = {**BASE, **(changes or {})}
     return _probe().Statement(
-        capture_sha256="a" * 64,
         balance_date=balance,
         window=None if window is None else PeriodInterval.duration(*window),
         stale=stale,
@@ -196,8 +195,13 @@ def test_a_negative_balance_or_capex_inflow_is_a_sign_anomaly(
             (date(2024, 3, 31), (date(2023, 4, 1), date(2024, 3, 31))),
             True,
         ),
+        (
+            (date(2024, 2, 29), (date(2023, 3, 1), date(2024, 2, 29))),
+            (date(2023, 2, 28), (date(2022, 3, 1), date(2023, 2, 28))),
+            False,
+        ),
     ],
-    ids=["annual-on-annual", "half-year-on-annual", "leap-year-prior"],
+    ids=["annual-on-annual", "half-year-on-annual", "leap-year-prior", "feb-29-has-no-prior"],
 )
 def test_a_trend_needs_the_same_window_one_year_earlier(
     current: tuple[date, tuple[date, date]],
@@ -206,7 +210,8 @@ def test_a_trend_needs_the_same_window_one_year_earlier(
 ) -> None:
     """(g) A trend compares like with like: the balance date one year earlier, the same
     duration class and start month. A half-year against a full year is not a trend; a prior
-    with a 366-day window still matches (each statement keeps its own D)."""
+    with a 366-day window still matches (each statement keeps its own D); a February 29 balance
+    has no same month-day a year earlier, so it has no prior rather than aborting the report."""
     probe = _probe()
     now = _statement(balance=current[0], window=current[1])
     then = _statement(balance=prior[0], window=prior[1])
@@ -314,3 +319,110 @@ def test_a_statement_with_no_flow_window_assesses_only_the_balance_check() -> No
     for check_id in ("R1", "R2", "R3", "R4", "R5"):
         assert probe.guard(check_id, statement) == (probe.ProbeStatus.NOT_ASSESSED, NO_WINDOW)
     assert probe.guard("R6", statement) is None
+
+
+def _flag_sentence(row: Any, statement: Any) -> str:
+    """The explanation's sentence for a flagged row."""
+    body = str(_probe().body(statement, (row,), {}))
+    (paragraph,) = (part for part in body.split("\n\n") if f"{row.check_id} is flagged" in part)
+    return paragraph.split(". ")[0]
+
+
+@pytest.mark.parametrize(
+    ("check_id", "changes", "value", "prior", "limits", "says", "never"),
+    [
+        (
+            "R4",
+            {"cfo": "150", "profit_for_period": "100"},
+            "150.00",
+            "200.00",
+            (),
+            "fell against the same window a year earlier",
+            ("not matched", "below reported profit", "large"),
+        ),
+        (
+            "R4",
+            {"cfo": "50"},
+            "50.00",
+            None,
+            (),
+            "operating cash was below reported profit",
+            ("fell", "limit"),
+        ),
+        (
+            "R6",
+            {"borrowings_current": "0", "borrowings_noncurrent": "0", "total_equity": "-5"},
+            None,
+            None,
+            (),
+            "non-positive equity",
+            ("borrowings are high", "high against"),
+        ),
+        (
+            "R1",
+            {},
+            "90.00",
+            "80.00",
+            (),
+            "rose against the same window a year earlier",
+            ("large share", "customers owe"),
+        ),
+        (
+            "R3",
+            {},
+            "40.00",
+            None,
+            ("R3",),
+            "breached the approved thesis limit",
+            ("large share", "are carrying"),
+        ),
+    ],
+    ids=["t-with-cash-above-profit", "s", "guard-zero-borrowings", "t-receivables", "l"],
+)
+def test_an_explanation_states_only_what_its_rule_established(
+    check_id: str,
+    changes: dict[str, str],
+    value: str | None,
+    prior: str | None,
+    limits: tuple[str, ...],
+    says: str,
+    never: tuple[str, ...],
+) -> None:
+    """A flag's sentence names the condition that fired it, so a reader is never told something
+    the figures contradict: conversion falling while cash still exceeds profit is not profit
+    unmatched by cash, negative equity with no debt is not high borrowings, and rising
+    receivable days are not a large share of revenue. No sentence claims misconduct."""
+    probe = _probe()
+    statement = _statement(changes)
+    row = probe.assess(
+        check_id,
+        statement,
+        None if value is None else Decimal(value),
+        None if prior is None else Decimal(prior),
+        None,
+        tuple(_limit(limit, Disposition.WEAKENED) for limit in limits),
+    )
+    assert row.status is probe.ProbeStatus.FLAGGED
+    sentence = _flag_sentence(row, statement)
+    assert says in sentence, sentence
+    for phrase in (*never, "fraud", "manipulat", "misstat", "mislead", "conceal"):
+        assert phrase not in sentence.lower(), sentence
+
+
+@pytest.mark.parametrize("selected", [False, True], ids=["no-statement", "no-evaluable-row"])
+def test_an_empty_section_still_names_every_non_evaluated_source(selected: bool) -> None:
+    """(l) The one-paragraph fallbacks are where silence is likeliest to read as a clean bill, so
+    they name the same sources in that paragraph, and stay free of stray numerals."""
+    probe = _probe()
+    statement = _statement({key: None for key in BASE}) if selected else None
+    rows = (
+        tuple(probe.assess(c, statement, None, None, None, ()) for c in probe.CHECKS)
+        if selected
+        else ()
+    )
+    text = str(probe.body(statement, rows, {}))
+    (heading, paragraph) = (part for part in text.split("\n\n") if part)
+    assert heading.startswith("## ")
+    for source in SOURCES:
+        assert f"NOT_ASSESSED: {source} not assessed by this probe" in paragraph
+    assert scan_section(text, resolves=lambda *_: True) == ()
