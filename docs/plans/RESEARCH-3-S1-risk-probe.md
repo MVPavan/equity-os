@@ -6,7 +6,8 @@ ratios; invariant 7 extension). Bead `eqos-bnx`, slice 3 → S1. LIVE-RUN-1 (`eq
 the four live Apar run drafts FY26_Q2..FY27_Q1 are `APPROVED` (versions 8, 10, 11, 12), so live
 regeneration is not blocked.
 **Revision:** r2 (2026-11-01) fixes the 12 findings of Sol's r1 plan review (`REQUEST_CHANGES`);
-the changed parts are marked "r2" with the finding number.
+the changed parts are marked "r2" with the finding number. r3 (2026-11-01) fixes Sol's r2
+residuals #7 and #8 and its two notes, marked "r3".
 **Goal:** every Apar run draft carries a `risk_probe` section after `observable_falsifiers`.
 For R1–R6 it shows the traced ratio, the cited raw filed amounts, the balance date and flow
 window, and a code-computed status with its reason (guards, rules S/T/L, staleness). It ends with
@@ -265,7 +266,7 @@ Scratch helpers (never committed) are listed in the Files blocks of Tasks 5 and 
 Estimate: about **460 production lines** (Task 1 ≈ 40, Task 2 ≈ 70, Task 3 ≈ 170, Task 4 ≈ 180)
 and **≈ 520 test lines** (Task 1 ≈ 90, Task 2 ≈ 60, Task 3 ≈ 200, Task 4 ≈ 170). r2 adds about 10
 production lines (P2's window discovery) and 120 test lines (Task 2 characterization, Task 4
-(q)(r)). Scratch helpers for Tasks 5–6: ≈ 250 lines, not committed. Production stays below the
+(q)(r)); r3 adds about 40 more test lines (two (q) cases, the (r) spy). Scratch helpers for Tasks 5–6: ≈ 250 lines, not committed. Production stays below the
 spec's 600–900 because guards and rules are one table-driven pure function, and no new module
 wraps the binder.
 
@@ -473,6 +474,10 @@ outside placeholders and structural dates. It must hold exactly as spec §2:
   flow window in the statement"; R6 is assessed (P2).
 - **No balance sheet.** One paragraph: "NOT_ASSESSED: no filed balance sheet in the run's
   package".
+- **No evaluable row (r3, Sol r2 #7; spec §1 rule 2).** A statement is selected but all six rows
+  are `NOT_ASSESSED`: `body` renders one `{{e:computed}}` paragraph instead of the rows and the
+  explanation: "NOT_ASSESSED: no check is evaluable on the statement of <balance date>", then
+  each check id with its reason, in check order. Raw amounts are not shown.
 
 Files:
 - Create: `src/fundamentals/ledger/risk_probe.py` (assessment and rendering half)
@@ -592,6 +597,9 @@ Approach:
     scale, `FILED`).
   - It does the same for the prior when one matches and the prior passes its own guard.
 - **Fail closed.** No balance sheet → `Probe` with `statement=None`.
+- **Raw figures are read once.** The raw `FIGURE` claims and the parent traces' top-level
+  operands come from the `Statement` reads; a child sum receives its leaves as arguments to
+  `_Binder.child`. Test (r) relies on this seam.
 - **CLI.** It calls `bind_probe` right after `bind_computed` in `before_commit` and passes the
   result to `RunDraft`.
 - **`write_run_draft`.**
@@ -620,20 +628,49 @@ Approach:
 - **Binding-boundary tests** in `test_prep2b_run_draft.py`, on the `pilot` fixture's FY26_Q2
   run, patching only `_Binder._interpretations` (the store read) or `_Binder.filed`'s source:
   - (q) `test_probe_lookup_failures`, parametrized (Sol r1 #1, #7):
-    - `revenue_from_operations` has no `MAPPED` interpretation → the draft is written; R1 and R5
-      are `NOT_ASSESSED` naming it; R2, R3, R4 and R6 carry claims, with the window still the
-      half-year (proves P2 does not depend on revenue);
+    - `revenue_from_operations` has no `MAPPED` interpretation at the half-year window (r3, Sol
+      r2 note): the filter hides only that key's 2025-04-01..2025-09-30 interpretation. Its
+      quarterly interpretation stays, so the mandatory run binder (`run_traces.py:172-187`) does
+      not refuse first. → the draft is written; R1 and R5 are `NOT_ASSESSED` naming it; R2, R3,
+      R4 and R6 carry claims, with the window still the half-year (proves P2 does not depend on
+      revenue);
     - `cfo` has two `MAPPED` interpretations → `RunDraftError`, no version written;
     - no balance-sheet instant on the run's or the QoQ capture → the section is the single
-      "no filed balance sheet" paragraph, and the rest of the draft is written.
+      "no filed balance sheet" paragraph, and the rest of the draft is written;
+    - every row unevaluable with a statement selected (r3, Sol r2 #7): hide every half-year
+      interpretation on the run's capture (no window, so R1–R5 are `NOT_ASSESSED`) and the
+      `total_equity` instant (R6 missing). The run binder reads only quarter keys
+      (`run_traces.py:146-148`), and the receivables, inventories, payables and borrowings
+      instants stay, so the run's own capture is still selected, not stale. → the section is
+      exactly one paragraph: it names the balance date, the window reason for R1–R5 and
+      `total_equity` for R6. There are no `probe.*` claims. The version persists with every other
+      section and all its claims `MATCH`.
   - (r) `test_a_nested_probe_operand_outside_the_package_or_cutoff_refuses`, parametrized
-    (Sol r1 #8): R6's child-sum operand `borrowings_current` is read from another quarter's
-    registered XBRL capture that no other claim cites: (a) outside the run's package; (b)
-    admitted to it (`allowed_captures` patched to include it) but with its
-    `Retrospective.published` time after the source cutoff (the pilot runs `--retrospective`,
-    `prep2b_support.py:278-282`). The parent trace's direct operands are child traces, so only
-    the recursive `_OPERAND_BLOBS` sees that capture. Each refuses with `check_blobs`'s message (`run_draft.py:657-668`), and no report
-    version persists. With today's non-recursive query both would write.
+    (Sol r1 #8; redesigned r3, Sol r2 #8). The offending blob reaches the draft only through a
+    nested child-sum leaf:
+    - **Interception.** Wrap `_Binder.child`. For R6's borrowings sum only, replace the
+      `borrowings_current` leaf with `binder.filed(foreign, key)`, where `foreign` is another
+      registered XBRL capture's provenance and `key` is that capture's period-end instant. Every
+      raw `FIGURE` claim, including `probe.R6.borrowings_current`, and every top-level operand
+      keeps its in-package capture: each comes from the `Statement` read, not from `child`'s
+      arguments. Citations stay valid (`citations.py:260-261`), and `run.sum` checks no period
+      (`run_traces.py:284-285`).
+    - **Cases.** (a) `foreign` = FY25_Q4 (capture 15): outside FY26_Q2's package, published
+      before the cutoff → "captures not in the run's package". (b) `foreign` = FY26_Q4 (capture
+      5), admitted with `allowed_captures` patched to include it, its
+      `Retrospective.published` time after the source cutoff (the pilot runs
+      `--retrospective`, `prep2b_support.py:278-282`) → "captures past the source cutoff"
+      (`run_draft.py:658-670`). The test first asserts these preconditions (the capture is
+      registered, outside or admitted to the package, published before or after the cutoff), so
+      a fixture gap fails loud.
+    - **Isolation spy.** Wrap `run_draft._check_sources`. Before delegating, it records on the
+      same cursor the direct citation SHAs (`run_draft.py:626-627`) and the result of the pre-change
+      non-recursive query (copied as a test literal from `run_draft.py:143-147`) over the claims'
+      trace ids. The test asserts the foreign SHA is in neither set, so today's check would let
+      the draft through. It also asserts the real call raises the case's message and no report
+      version persists.
+    - Run kind: ordinary (`prior.rework` is `None`), so the binder's `blobs` never reach
+      `allowed_captures` (`run_draft.py:643`).
 
 Verification:
 - `uv run pytest tests/fundamentals/test_pilot_e2e.py tests/fundamentals/test_prep2b_run_draft.py tests/fundamentals/test_falsifier_status.py -n 0`
@@ -787,7 +824,8 @@ before the next, with the paths above in place of LIVE-RUN-1's.
      `ledger decide REPORT_VERSION <v> REQUEST_CHANGES --claim probe.R1` (rehearsal DB only).
      An ordinary `run` must refuse (`rework.py:222-227`: a `DERIVED` claim is not reworkable).
      `run … --full-successor` (`run_draft.py:265-274`) must then write a new draft, which
-     passes `ledger check` and the probe gate, and is taken through submit and panel. Record
+     passes `ledger check` and the probe gate, and is taken through submit and panel, on the
+     attempt-specific paths under Risks (`<Q>-r1`). Record
      its deltas; the remaining quarters continue from it.
 2. Live, per quarter:
    - Reuse the quarter's existing locator `$LOC/<Q>.json`: no `stage`, as the LIVE-RUN-1
@@ -829,7 +867,11 @@ Risks:
 - A rejected probe claim (Sol r1 #5): ordinary rework refuses it (`rework.py:222-227`). After
   diagnosis, any code fix verified and Sol-reviewed, the quarter is rerun with
   `--full-successor` (`run_draft.py:265-274`), the route the recovery rehearsal proved; new
-  output paths `$OUT/out/<Q>-r<n>.{json,md}` pass the same preflight.
+  output paths pass the same preflight (r3, Sol r2 note). Attempt `<n>` (1 for the first
+  recovery, in rehearsal and live alike) uses `$OUT/out/<Q>-r<n>.{json,md}`,
+  `$OUT/out/<Q>-r<n>-v<v>.md` (export), `$OUT/responses/<Q>-r<n>.md`,
+  `$OUT/verdicts/<Q>-r<n>.json`, `$OUT/gate/<Q>-r<n>.txt` and `$OUT/logs/<step>-<Q>-r<n>.log`.
+  No attempt reuses another's path.
 
 ## Acceptance map (spec §5 S1)
 
@@ -839,7 +881,7 @@ Risks:
 | R5 positive for negative canonical capex | Task 2 `run.outflow_pct` case; Task 4 PILOT-4 |
 | R4 `FLAGGED` by S; R4 loss `FLAGGED` "non-positive profit"; R6 negative equity `FLAGGED` "non-positive equity" | Task 3 (a)(b)(c) |
 | Zero or negative revenue or M → `NOT_ASSESSED`; missing operand named | Task 3 (d)(e); Task 4 (q) at the binding boundary |
-| Missing revenue leaves the other checks assessed; ambiguous interpretation → `RunDraftError`; no balance sheet → one paragraph (spec §1 rule 2) | Task 3 (n); Task 4 (q) |
+| Missing revenue leaves the other checks assessed; ambiguous interpretation → `RunDraftError`; no balance sheet, or a statement with no evaluable row → one paragraph (spec §1 rule 2) | Task 3 (n); Task 4 (q) |
 | Child-sum operands are package- and cutoff-checked | Task 4 (r) |
 | Existing traces keep their content hash | Task 2 `test_trace_digests_are_unchanged` |
 | T on Q4 evaluated and flags in the arrow direction; half-year vs annual not evaluable; different D uses its own D | Task 3 (g)(h); Task 4 PILOT-4 T on FY26_Q4 (and FY26_Q2, T0-2) |
