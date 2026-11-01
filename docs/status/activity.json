@@ -5,11 +5,14 @@
   },
   "next": [
     "RESEARCH-3 S2 (management credibility), then S3, then RESEARCH-4",
-    "eqos-aa6.29 guard: holds live map-labels and extract-text until it lands",
     "Owner: keep macro charts (132/week) and index widgets (89/week)?",
     "eqos-aa6.28 capture error messages; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-11-01",
+      "text": "eqos-aa6.29 closed (cc93aac5): multi-year and average labels stay unmapped. No live label proposals existed. Follow-up eqos-aa6.30 on TTM labels."
+    },
     {
       "date": "2026-11-01",
       "text": "RESEARCH-3 S1 Task 6 closed live: v15, v16, v18, v19 APPROVED by Sol; probe gate and check-live pass; deltas matched rehearsal; backup 1a330a2f. Phase 4 candidate set to GPT-6 Luna via Bodha LiteLLM. Filed eqos-j8dq (gate rails) and eqos-1ir4 (temp-root flake)."
