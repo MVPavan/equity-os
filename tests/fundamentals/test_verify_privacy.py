@@ -150,10 +150,22 @@ def test_identifier_rail_ignores_bare_four_digit_values_and_reports_every_match(
     assert "2023" not in result.stdout.split("real captured identifier")[1].split("\n")[0]
 
 
-def test_identifier_rail_still_catches_a_four_digit_id_in_id_context(gate) -> None:
-    """A real short id pasted as a company URL is a leak, even though a bare one is not judged."""
+@pytest.mark.parametrize(
+    "line",
+    [
+        'url = "/company/1234/"',
+        'url = "/company/id/1234/"',
+        '<tr data-row-company-id="1234">',
+        'company_id = "1234"',
+        "row_id = 1234",
+        '{"company_id": 1234}',
+        "rowId: '1234'",
+    ],
+)
+def test_identifier_rail_still_catches_a_four_digit_id_in_id_context(gate, line: str) -> None:
+    """A real short id written as an id is a leak, even though a bare number is not judged."""
     root, _ = gate
-    (root / "tests/fundamentals/test_synthetic.py").write_text('url = "/company/1234/"\n')
+    (root / "tests/fundamentals/test_synthetic.py").write_text(f"{line!r}\n")
     _capture(root, '<tr data-row-company-id="1234">')
 
     result = _run(gate)
